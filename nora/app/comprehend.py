@@ -24,7 +24,6 @@ from nora.domain.comprehend import PARTS, REFUSAL_REASONS, ComprehendItem, build
 from nora.domain.extraction import partition_claims
 from nora.domain.memory_graph import (
     POINTER_KINDS,
-    PROPOSED_KINDS,
     Admission,
     Correction,
     Entity,
@@ -40,7 +39,6 @@ from nora.domain.ports import CognitionStore, NewCognitionSession, NewCognitionS
 from nora.language.comprehend_render import (
     COMPREHEND,
     RESHAPE,
-    preview_text,
     render_comprehend,
     render_reshape,
 )
@@ -348,54 +346,6 @@ class ComprehendRunner:
         if any(t.tool_name not in READ_NAMES for t in held):
             raise ValueError("unexpected read tool")
 
-        async def memory_search(query: str) -> dict[str, Any]:
-            """Search this unit's graph. Call this when a reference needs more context.
-
-            Returns ok, nothing_found or unavailable with a labelled graph preview.
-
-            Args:
-                query: A name or phrase from the item to resolve locally.
-            """
-            aliases = await self.graph.aliases(unit=work.unit)
-            seeds = [
-                key
-                for alias, key in aliases.items()
-                if alias and alias.casefold() in query.casefold()
-            ]
-            for kind in PROPOSED_KINDS:
-                seeds.extend(
-                    e.key
-                    for e in await self.graph.candidates(
-                        unit=work.unit, kind=kind, name=query, limit=5
-                    )
-                )
-            graph = await self.graph.walk(
-                tuple(dict.fromkeys(seeds)),
-                Walk(
-                    unit=work.unit,
-                    persons=frozenset(state.persons),
-                    depth=2,
-                    nodes=100,
-                    fan_out=20,
-                    valid_at=work.as_of,
-                ),
-            )
-            if graph.status == "unavailable":
-                return {"status": "unavailable", "note": "The graph could not be read."}
-            from nora.domain.comprehend import Preview
-
-            return {
-                "status": "ok" if graph.nodes else "nothing_found",
-                "preview": preview_text(
-                    Preview(tuple(seeds), graph, (), preview.window),
-                    tokens=self.config.preview_tokens,
-                ),
-            }
-
-        # Shadow mode does not turn on the tag path's index-read switch. If
-        # that registry surface is withheld, the same port supplies a local
-        # graph-only search; it creates no second model or retrieval store.
-        local_reads = [] if any(t.tool_name == "memory_search" for t in held) else [memory_search]
         staged: GraphWrite | None = None
 
         async def memory_stage(
@@ -441,7 +391,7 @@ class ComprehendRunner:
             result = await self.agent.run(
                 system_prompt=COMPREHEND,
                 prompt=prompt,
-                tools=[*(ComprehendRead(t, state) for t in held), *local_reads, memory_stage],
+                tools=[*(ComprehendRead(t, state) for t in held), memory_stage],
                 budget=self.budget,
                 trace_attributes={"cognition.session_id": str(session), "unit": work.unit},
             )

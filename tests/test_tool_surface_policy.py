@@ -571,6 +571,7 @@ def test_no_text_after_args_is_silently_dropped(tool: str, doc: str) -> None:
 #: for a handle or link input, not only through the tool's own
 #: person-resolution branch. A tool absent here has no delegate return.
 _DELEGATE_REACHABLE_STATUSES: dict[str, frozenset[str]] = {
+    "memory_read": frozenset({"ok", "partial", "nothing_found", "unavailable"}),
     "send_to": frozenset({"ok", "ambiguous", "refused", "unavailable"}),
     "x_read": frozenset({"ok", "nothing_found", "unavailable"}),
     "x_search": frozenset({"ok", "nothing_found", "unavailable"}),

@@ -721,12 +721,12 @@ def test_the_shipped_default_is_the_number_d11_grades_at():
 # ---------------------------------------------------------------------------
 
 
-def test_the_memory_verbs_are_these_five():
+def test_the_memory_verbs_are_these_six():
     """The verbs the memory ceiling counts: every memory verb of both memory
     surfaces (DEC-316), so the ration binds whichever one is registered."""
     assert set(MEMORY_TOOLS) == {
         "about", "ask_memory", "search_memory_workspace", "lookup_person",
-        "memory_search",
+        "memory_search", "memory_read",
     }
 
 

@@ -74,7 +74,7 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     "about", "ask_memory", "search_memory", "search_memory_workspace",
     # the graph surface's (DEC-316): built instead of the Honcho memory verbs
     # above while `[memory.index] read`, never beside them
-    "memory_search",
+    "memory_search", "memory_read",
 })
 
 #: The side-effect audit of every tool in the catalogue
@@ -122,7 +122,8 @@ READ_TOOL_AUDIT: Mapping[str, str] = {
     "search_memory": "Honcho session `search` read; counters only.",
     "search_memory_workspace": "Honcho workspace `search` read, narrowed to the "
                                "unit's scope; counters only.",
-    "memory_search": "SQL reads of the memory index (`SqlMemoryIndex`, which "
+    "memory_read": "Scoped SQL graph, node fields and evidence reads; counters only. No write.",
+    "memory_search": "SQL reads of the memory index and graph (`SqlMemoryIndex`, which "
                      "writes nothing) and one query embedding; counters only. "
                      "No write.",
 }

@@ -73,7 +73,10 @@ async def graph(request):
     async with engine.begin() as conn:
         await conn.execute(sa.text("SET LOCAL session_replication_role = replica"))
         await conn.execute(
-            sa.text("TRUNCATE relation_evidence, relation, entity, memory_work_item CASCADE")
+            sa.text(
+                "TRUNCATE relation_evidence, relation, entity, memory_work_item, "
+                "memory_node CASCADE"
+            )
         )
     try:
         yield SqlMemoryGraph(engine)
@@ -740,10 +743,16 @@ async def test_cognition_06_evidence_is_present_shown_and_quoted(graph: MemoryGr
     if fault == "unquoted":
         evidence = (replace(EV, span="invented quotation"),)
     refused = await graph.stage_and_admit(
-        entities=(PERSON, EVENT), relations=(REL,), evidence=evidence, sources=sources,
+        entities=(PERSON, EVENT),
+        relations=(REL,),
+        evidence=evidence,
+        sources=sources,
     )
-    reason = {"missing": "missing_evidence", "unshown": "unseen_source",
-              "unquoted": "span_not_in_source"}[fault]
+    reason = {
+        "missing": "missing_evidence",
+        "unshown": "unseen_source",
+        "unquoted": "span_not_in_source",
+    }[fault]
     assert Refusal("relation", REL.id, reason) in refused.refused
     assert not refused.relations
     await load(graph)  # positive control: the same shape with shown evidence admits
@@ -753,7 +762,10 @@ async def test_cognition_04_correction_closes_without_deleting(graph: MemoryGrap
     await load(graph)
     correction = Correction(REL.id, "close", NOW, evidence=(SOURCE.key,))
     admitted = await graph.stage_and_admit(
-        entities=(), relations=(), evidence=(), sources={SOURCE.key: SOURCE},
+        entities=(),
+        relations=(),
+        evidence=(),
+        sources={SOURCE.key: SOURCE},
         corrections=(correction,),
     )
     assert admitted.corrections == (correction,)
@@ -772,8 +784,10 @@ async def test_cognition_scope_inside_walk(graph: MemoryGraph, scenario: int):
     hidden = replace(REL, id="hidden", rel="interested_in", dst=topic.key, persons=("p1", "p2"))
     source = replace(SOURCE, persons=("p1", "p2"))
     admitted = await graph.stage_and_admit(
-        entities=(PERSON, topic), relations=(hidden,),
-        evidence=(replace(EV, relation_id=hidden.id),), sources={SOURCE.key: source},
+        entities=(PERSON, topic),
+        relations=(hidden,),
+        evidence=(replace(EV, relation_id=hidden.id),),
+        sources={SOURCE.key: source},
     )
     assert admitted.relations == (hidden,)
     for query in (Walk("u1", frozenset({"p1"})), Walk("other-unit", frozenset({"p1", "p2"}))):
@@ -788,7 +802,8 @@ async def test_cognition_12_interest_weight_counts_distinct_evidence(graph: Memo
     relation = replace(REL, rel="interested_in", dst=topic.key)
     sources = tuple(replace(SOURCE, key=("message", f"count-{i}")) for i in range(3))
     admitted = await graph.stage_and_admit(
-        entities=(PERSON, topic), relations=(relation,),
+        entities=(PERSON, topic),
+        relations=(relation,),
         evidence=tuple(Evidence(s.key, relation_id=relation.id) for s in sources),
         sources={s.key: s for s in sources},
     )
@@ -799,3 +814,298 @@ async def test_cognition_12_interest_weight_counts_distinct_evidence(graph: Memo
     assert set(activity.persons[0].sources) == {s.key for s in sources}
     outside = await graph.topic_activity(unit="other-unit", topic=topic.key, at=NOW)
     assert outside.status == "nothing_found"
+
+
+@pytest.mark.parametrize(
+    "rule",
+    ["unit", "listed", "presence", "presence_unrestricted", "social", "listed_room", "excluded"],
+)
+async def test_tool_scope_cuts_path_at_evidence(graph, rule):
+    """Every forbidden evidence row must cut the edge before it becomes a bridge."""
+    from nora.domain.memory_index import IndexedNode, MemoryScope
+
+    scope = MemoryScope(
+        ("u1",),
+        ("chat:one",),
+        frozenset({"p1"}),
+        frozenset({"p1"}),
+        False,
+        frozenset({"p1"}),
+        {"chat:one": frozenset({"p1"})},
+        social_off=frozenset(),
+    )
+    node = IndexedNode(
+        "social" if rule == "social" else "message",
+        "generated-scope-source",
+        text="I attended the event.",
+        unit="u1",
+        origin_room="chat:one",
+        persons=() if rule == "presence_unrestricted" else ("p1",),
+    )
+    target = replace(EVENT, kind="place") if rule.startswith("presence") else EVENT
+    relation = replace(
+        REL,
+        dst=target.key,
+        persons=node.persons,
+        rel="lives_in" if rule.startswith("presence") else REL.rel,
+    )
+    source = replace(SOURCE, key=node.key, persons=node.persons)
+    await graph.stage_and_admit(
+        entities=(PERSON, target),
+        relations=(relation,),
+        evidence=(Evidence(node.key, relation_id=REL.id),),
+        sources={node.key: source},
+    )
+    if isinstance(graph, FakeMemoryGraph):
+        graph.indexed[node.key] = node
+    else:
+        import sqlalchemy as sa
+
+        from nora.infra.sql.schema import MEMORY_NODE
+
+        async with graph.engine.begin() as conn:
+            await conn.execute(
+                sa.insert(MEMORY_NODE).values(
+                    kind=node.kind,
+                    source_id=node.source_id,
+                    text=node.text,
+                    unit=node.unit,
+                    origin_room=node.origin_room,
+                    persons=list(node.persons),
+                    exclude_persons=[],
+                    lineage=[],
+                    state="live",
+                )
+            )
+    if not isinstance(graph, FakeMemoryGraph):
+        from nora.infra.sql.memory_graph import walk_parameters, walk_sql
+
+        q = Walk("u1", scope.listed_here, scope=scope)
+        sql, params = walk_sql(q)
+        params.update(walk_parameters((PERSON.key,), q))
+        async with graph.engine.begin() as conn:
+            await conn.execute(sa.text(sql), params)
+    allowed = await graph.walk((PERSON.key,), Walk("u1", scope.listed_here, depth=2, scope=scope))
+    assert [e.relation.id for e in allowed.relations] == [REL.id]
+    if rule == "unit":
+        query = Walk("u2", scope.listed_here, scope=replace(scope, units=("u2",), rooms=()))
+    elif rule == "listed":
+        query = Walk("u1", frozenset(), scope=replace(scope, listed_here=frozenset()))
+    else:
+        if rule.startswith("presence"):
+            scope = replace(scope, presence_persons=frozenset())
+        elif rule == "social":
+            scope = replace(scope, social_off=frozenset({"p1"}))
+        elif rule == "listed_room":
+            scope = replace(scope, room_persons={"chat:one": frozenset()})
+        elif rule == "excluded":
+            node = replace(node, exclude_persons=("p1",))
+            if isinstance(graph, FakeMemoryGraph):
+                graph.indexed[node.key] = node
+            else:
+                import sqlalchemy as sa
+
+                from nora.infra.sql.schema import MEMORY_NODE
+
+                async with graph.engine.begin() as conn:
+                    await conn.execute(sa.update(MEMORY_NODE).values(exclude_persons=["p1"]))
+        query = Walk("u1", scope.listed_here, scope=scope)
+    if not isinstance(graph, FakeMemoryGraph):
+        sql, params = walk_sql(query)
+        params.update(walk_parameters((PERSON.key,), query))
+        async with graph.engine.begin() as conn:
+            raw = (await conn.execute(sa.text(sql), params)).all()
+            assert not raw, "scope must cut the SQL path, before Python hydration"
+    denied = await graph.walk((PERSON.key,), query)
+    assert denied.status != "unavailable"
+    assert not denied.nodes and not denied.relations
+
+
+async def test_unit_and_listed_rules_cut_nonentity_intermediates(graph):
+    # Register endpoints are pointers, not entities: the relation scan itself owns scope.
+    relation = replace(
+        REL, src=("note", "generated-seed"), rel="concerns", dst=("note", "generated-end")
+    )
+    admitted = await graph.stage_and_admit(
+        entities=(), relations=(relation,), evidence=(EV,), sources={SOURCE.key: SOURCE}
+    )
+    assert admitted.relations == (relation,)
+    allowed = await graph.walk((relation.src,), Walk("u1", frozenset({"p1"})))
+    assert {node.key for node in allowed.nodes} == {relation.src, relation.dst}
+    for query in (Walk("u2", frozenset({"p1"})), Walk("u1", frozenset())):
+        denied = await graph.walk((relation.src,), query)
+        assert denied.status == "ok" and not denied.nodes and not denied.relations
+
+
+async def test_entity_only_rollups_honor_person_and_date_filters(graph):
+    from nora.domain.memory_index import MemoryFilter, MemoryScope
+
+    place = Entity("generated-place", "place", "u1", "Generated place")
+    relation = replace(REL, rel="stayed_at", layer="rollup", dst=place.key, persons=())
+    assert (
+        await graph.stage_and_admit(
+            entities=(PERSON, place), relations=(relation,), evidence=(), sources={}
+        )
+    ).relations == (relation,)
+    scope = MemoryScope(
+        ("u1",),
+        (),
+        frozenset({"p1", "p2"}),
+        frozenset({"p1"}),
+        True,
+        frozenset({"p1"}),
+        social_off=frozenset(),
+    )
+    at = int(NOW.timestamp() * 1000)
+    for only in (
+        MemoryFilter(since_ms=at + 1),
+        MemoryFilter(until_ms=at - 1),
+        MemoryFilter(person="p2"),
+    ):
+        query = Walk("u1", scope.listed_here, scope=replace(scope, only=only))
+        denied = await graph.walk((PERSON.key,), query)
+        assert denied.status == "ok" and not denied.nodes
+    found = await graph.walk(
+        (PERSON.key,),
+        Walk(
+            "u1",
+            scope.listed_here,
+            scope=replace(scope, only=MemoryFilter(since_ms=at, until_ms=at, person="p1")),
+        ),
+    )
+    assert [edge.relation.id for edge in found.relations] == [relation.id]
+
+
+async def test_hidden_intermediate_never_enters_recursive_sql_paths(graph):
+    from nora.domain.memory_index import IndexedNode, MemoryScope
+
+    entities = tuple(
+        Entity(
+            f"generated-bridge-{i}", "event" if i == 0 else "work", "u1", f"Generated bridge {i}"
+        )
+        for i in range(4)
+    )
+    sources = tuple(
+        Source(
+            ("social" if i == 1 else "message", f"generated-source-{i}"),
+            "record",
+            "u1",
+            ("p1",),
+            "Generated link evidence.",
+        )
+        for i in range(3)
+    )
+    relations = tuple(
+        Relation(
+            f"generated-link-{i}",
+            entities[i].key,
+            "features" if i == 0 else "same_as",
+            entities[i + 1].key,
+            "notebook",
+            "u1",
+            ("p1",),
+            asserted_at=NOW,
+        )
+        for i in range(3)
+    )
+    admitted = await graph.stage_and_admit(
+        entities=entities,
+        relations=relations,
+        evidence=tuple(
+            Evidence(s.key, relation_id=r.id) for r, s in zip(relations, sources, strict=True)
+        ),
+        sources={s.key: s for s in sources},
+    )
+    assert admitted.relations == relations
+    nodes = [
+        IndexedNode(*s.key, text=s.text, unit="u1", origin_room="chat:one", persons=("p1",))
+        for s in sources
+    ]
+    if isinstance(graph, FakeMemoryGraph):
+        graph.indexed.update((n.key, n) for n in nodes)
+    else:
+        import sqlalchemy as sa
+
+        from nora.infra.sql.schema import MEMORY_NODE
+
+        async with graph.engine.begin() as conn:
+            await conn.execute(
+                sa.insert(MEMORY_NODE),
+                [
+                    {
+                        "kind": n.kind,
+                        "source_id": n.source_id,
+                        "text": n.text,
+                        "unit": n.unit,
+                        "origin_room": n.origin_room,
+                        "persons": list(n.persons),
+                        "exclude_persons": [],
+                        "lineage": [],
+                    }
+                    for n in nodes
+                ],
+            )
+    scope = MemoryScope(
+        ("u1",),
+        ("chat:one",),
+        frozenset({"p1"}),
+        frozenset({"p1"}),
+        False,
+        frozenset(),
+        {"chat:one": frozenset({"p1"})},
+        social_off=frozenset(),
+    )
+    visible = await graph.walk(
+        (entities[0].key,), Walk("u1", scope.listed_here, depth=3, scope=scope)
+    )
+    assert entities[3].key in {n.key for n in visible.nodes}
+    query = Walk(
+        "u1", scope.listed_here, depth=3, scope=replace(scope, social_off=frozenset({"p1"}))
+    )
+    if not isinstance(graph, FakeMemoryGraph):
+        from nora.infra.sql.memory_graph import walk_parameters, walk_sql
+
+        sql, params = walk_sql(query)
+        params.update(walk_parameters((entities[0].key,), query))
+        async with graph.engine.begin() as conn:
+            raw = (await conn.execute(sa.text(sql), params)).mappings().all()
+        assert entities[2].key not in {(r["kind"], r["id"]) for r in raw}
+        assert entities[3].key not in {(r["kind"], r["id"]) for r in raw}
+    denied = await graph.walk((entities[0].key,), query)
+    assert {n.key for n in denied.nodes} == {entities[0].key, entities[1].key}
+
+
+async def test_scoped_walk_does_not_fan_out_through_a_person(graph):
+    from nora.domain.memory_index import IndexedNode, MemoryScope
+
+    other = Entity("generated-other-event", "event", "u1", "Generated other event")
+    second = replace(REL, id="other-plan", dst=other.key)
+    admitted = await graph.stage_and_admit(
+        entities=(PERSON, EVENT, other), relations=(REL, second),
+        evidence=(EV, replace(EV, relation_id=second.id)), sources={SOURCE.key: SOURCE},
+    )
+    assert len(admitted.relations) == 2
+    scope = MemoryScope(("u1",), (), frozenset({"p1"}), frozenset({"p1"}),
+                        True, frozenset(), social_off=frozenset())
+    if isinstance(graph, FakeMemoryGraph):
+        graph.indexed[SOURCE.key] = IndexedNode("message", "m1", unit="u1")
+    else:
+        import sqlalchemy as sa
+
+        from nora.infra.sql.schema import MEMORY_NODE
+        async with graph.engine.begin() as conn:
+            await conn.execute(sa.insert(MEMORY_NODE).values(
+                kind="message", source_id="m1", unit="u1", text="Generated evidence"))
+    query = Walk("u1", scope.listed_here, depth=3, scope=scope)
+    result = await graph.walk((EVENT.key,), query)
+    assert {n.key for n in result.nodes} == {EVENT.key, PERSON.key}
+    if not isinstance(graph, FakeMemoryGraph):
+        from nora.infra.sql.memory_graph import walk_parameters, walk_sql
+        sql, params = walk_sql(query)
+        params.update(walk_parameters((EVENT.key,), query))
+        async with graph.engine.begin() as conn:
+            paths = (await conn.execute(sa.text(sql), params)).mappings().all()
+        assert other.key not in {(p["kind"], p["id"]) for p in paths}
+    # An explicitly requested person may start a walk of their meaning relations.
+    direct = await graph.walk((PERSON.key,), query)
+    assert other.key in {n.key for n in direct.nodes}

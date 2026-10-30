@@ -8,6 +8,7 @@ attempt to reuse an id for a different kind or unit is rejected, never conflated
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import asdict
 from datetime import datetime, timedelta
@@ -36,8 +37,10 @@ from nora.domain.memory_graph import (
     WorkItem,
 )
 from nora.infra.sql.schema import (
+    COMPREHEND_WEB_PAGE,
     ENTITY,
     MEMORY_GRAPH_REFUSAL,
+    MEMORY_NODE,
     MEMORY_WORK_ITEM,
     RELATION,
     RELATION_EVIDENCE,
@@ -75,7 +78,9 @@ WITH RECURSIVE paths(kind, id, depth, seen, edge) AS (
        WHERE r.dst_kind=p.kind AND r.dst_id=p.id
          AND r.unit=:unit AND r.persons <@ CAST(:persons AS text[])
      ) adjacent
-     WHERE status='current' AND layer!='record' AND layer=ANY(CAST(:layers AS text[]))
+     WHERE status='current'
+       AND (layer!='record' OR (p.depth=0 AND src_kind=p.kind AND src_id=p.id))
+       AND layer=ANY(CAST(:layers AS text[]))
        AND (cardinality(CAST(:rels AS text[]))=0 OR rel=ANY(CAST(:rels AS text[])))
        AND (CAST(:at AS timestamptz) IS NULL OR
          ((valid_from IS NULL OR valid_from<=:at) AND (valid_to IS NULL OR :at<valid_to)))
@@ -85,10 +90,118 @@ WITH RECURSIVE paths(kind, id, depth, seen, edge) AS (
    ) ranked WHERE ordinal<=:fan
  ) r
  WHERE p.depth<=:depth
+   AND (NOT :scoped OR p.depth=0 OR p.kind NOT IN ('person','room','unit','nora','place'))
    AND NOT (r.other_kind || ':' || r.other_id)=ANY(p.seen)
 )
 SELECT * FROM paths LIMIT :budget
 """
+
+
+def walk_sql(query: Walk) -> tuple[str, dict[str, Any]]:
+    """Scope every endpoint and evidence source before it can enter a path."""
+    if query.scope is None:
+        return WALK_SQL, {}
+    from sqlalchemy.dialects import postgresql
+
+    from nora.infra.sql.memory_read import _in_scope
+
+    n = MEMORY_NODE.alias("scoped_node")
+    scoped_select = sa.select(n.c.kind, n.c.source_id, n.c.origin_room).where(
+        _in_scope(n, query.scope)
+    )
+    compiled = scoped_select.compile(
+        dialect=postgresql.dialect(paramstyle="named"),  # type: ignore[no-untyped-call]
+        compile_kwargs={"render_postcompile": True},
+    )
+    predicate = re.sub(r":(\w+)::([A-Z]+(?:\[\])?)", r"CAST(:\1 AS \2)", str(compiled))
+
+    # Correlated endpoint probes use the memory_node key index. No whole-unit preload.
+    def permitted(kind: str, ident: str) -> str:
+        # Only code-owned column expressions and a compiled bound predicate enter SQL.
+        return f"""(EXISTS (SELECT 1 FROM entity e WHERE e.kind={kind} AND e.id={ident}
+          AND e.unit=:unit AND (e.kind!='person'
+            OR coalesce(e.attributes->>'ref',e.id)=ANY(CAST(:persons AS text[]))))
+          OR EXISTS (SELECT 1 FROM ({predicate}) scoped_node
+          WHERE scoped_node.kind=CASE WHEN {kind}='event_entry' THEN 'event' ELSE {kind} END
+          AND scoped_node.source_id={ident}
+          AND (scoped_node.origin_room IS NULL OR NOT EXISTS (
+            SELECT 1 FROM (
+              SELECT unnest(r.persons) AS person UNION
+              SELECT coalesce(subject.attributes->>'ref',subject.id) FROM entity subject
+              WHERE subject.kind='person' AND subject.unit=:unit
+                AND (subject.id=r.src_id OR subject.id=r.dst_id)
+            ) subjects WHERE NOT EXISTS (
+              SELECT 1 FROM jsonb_each(CAST(:room_persons AS jsonb)) room
+              WHERE room.key=scoped_node.origin_room AND room.value ? subjects.person))))
+          OR ({kind}='web_page' AND EXISTS (SELECT 1 FROM comprehend_web_page page
+              WHERE page.id={ident} AND page.unit=:unit
+                AND (CAST(:since_ms AS bigint) IS NULL
+                  OR extract(epoch FROM page.fetched_at)*1000>=:since_ms)
+                AND (CAST(:until_ms AS bigint) IS NULL
+                  OR extract(epoch FROM page.fetched_at)*1000<=:until_ms)
+                AND CAST(:only_person AS text) IS NULL)))"""  # noqa: S608
+
+    conditions = [permitted("r.src_kind", "r.src_id"), permitted("r.dst_kind", "r.dst_id")]
+    conditions.append("""(NOT (r.rel=ANY(CAST(:location_rels AS text[]))) OR (
+        r.persons <@ CAST(:presence AS text[]) AND NOT EXISTS (
+          SELECT 1 FROM entity subject WHERE subject.kind='person' AND subject.unit=:unit
+            AND subject.id IN (r.src_id,r.dst_id)
+            AND NOT coalesce(subject.attributes->>'ref',subject.id)=ANY(CAST(:presence AS text[]))
+        )))""")
+    conditions.append(
+        "NOT EXISTS (SELECT 1 FROM relation_evidence ev WHERE ev.relation_id=r.id AND NOT "  # noqa: S608
+        + permitted("ev.source_kind", "ev.source_id")
+        + ")"
+    )
+    conditions.append(
+        "NOT EXISTS (SELECT 1 FROM relation_evidence attribute_ev "  # noqa: S608
+        "WHERE attribute_ev.entity_id IN (r.src_id,r.dst_id) AND NOT "
+        + permitted("attribute_ev.source_kind", "attribute_ev.source_id")
+        + ")"
+    )
+    conditions.append("""(
+        (CAST(:since_ms AS bigint) IS NULL OR extract(epoch FROM r.asserted_at)*1000>=:since_ms)
+        AND (CAST(:until_ms AS bigint) IS NULL OR extract(epoch FROM r.asserted_at)*1000<=:until_ms)
+        AND (CAST(:only_person AS text) IS NULL OR :only_person=ANY(r.persons)
+          OR EXISTS (SELECT 1 FROM entity subject WHERE subject.kind='person'
+            AND subject.unit=:unit AND subject.id IN (r.src_id,r.dst_id)
+            AND coalesce(subject.attributes->>'ref',subject.id)=:only_person)
+          OR NOT EXISTS (SELECT 1 FROM entity e WHERE e.kind=r.src_kind AND e.id=r.src_id)
+          OR NOT EXISTS (SELECT 1 FROM entity e WHERE e.kind=r.dst_kind AND e.id=r.dst_id)
+          OR EXISTS (SELECT 1 FROM relation_evidence ev WHERE ev.relation_id=r.id
+                      OR ev.entity_id IN (r.src_id,r.dst_id)))
+    )""")
+    cte = (
+        "eligible AS NOT MATERIALIZED (SELECT r.* FROM relation r WHERE "  # noqa: S608
+        + " AND ".join(conditions)
+        + "), "
+    )
+    sql = WALK_SQL.replace("WITH RECURSIVE ", "WITH RECURSIVE " + cte).replace(
+        "FROM relation r", "FROM eligible r"
+    )
+    # The replacement must leave the CTE's base table intact.
+    sql = sql.replace("SELECT r.* FROM eligible r WHERE", "SELECT r.* FROM relation r WHERE", 1)
+    params = dict(compiled.params)
+    only = query.scope.only
+    params.update(
+        since_ms=only.since_ms if only else None,
+        until_ms=only.until_ms if only else None,
+        only_person=only.person if only else None,
+    )
+    params.update(
+        room_persons=json.dumps({k: sorted(v) for k, v in query.scope.room_persons.items()}),
+        presence=sorted(query.scope.presence_persons),
+        location_rels=[
+            "works_at",
+            "studies_at",
+            "lives_in",
+            "member_of",
+            "stayed_at",
+            "co_located_with",
+            "during",
+        ],
+    )
+    return sql, params
 
 
 def walk_parameters(seeds: tuple[Key, ...], query: Walk) -> dict[str, Any]:
@@ -96,6 +209,7 @@ def walk_parameters(seeds: tuple[Key, ...], query: Walk) -> dict[str, Any]:
         "kinds": [k for k, _ in seeds],
         "ids": [i for _, i in seeds],
         "unit": query.unit,
+        "scoped": query.scope is not None,
         "persons": sorted(query.persons),
         "layers": list(query.layers),
         "rels": list(query.relations),
@@ -106,10 +220,71 @@ def walk_parameters(seeds: tuple[Key, ...], query: Walk) -> dict[str, Any]:
     }
 
 
+async def node_fields(conn: AsyncConnection, keys: set[Key]) -> dict[Key, Mapping[str, object]]:
+    """Canonical source fields, grouped into indexed reads by kind."""
+    from uuid import UUID
+
+    from nora.infra.sql import schema
+
+    tables = {
+        "message": schema.MESSAGES,
+        "note": schema.NOTE,
+        "event_entry": schema.EVENTS,
+        "memo": schema.MEMO,
+        "lesson": schema.LESSON,
+        "profile_line": schema.PROFILE_LINE,
+        "web_page": schema.COMPREHEND_WEB_PAGE,
+    }
+    revisions = {
+        "note": (schema.NOTE_REVISION, "note_id"),
+        "memo": (schema.MEMO_REVISION, "memo_id"),
+        "lesson": (schema.LESSON_REVISION, "lesson_id"),
+    }
+    result: dict[Key, Mapping[str, object]] = {}
+    for kind, table in tables.items():
+        ids: list[Any] = []
+        for k, ident in keys:
+            if k != kind:
+                continue
+            try:
+                if kind == "message":
+                    ids.append(int(ident))
+                elif kind == "web_page":
+                    ids.append(ident)
+                else:
+                    value = UUID(ident)
+                    ids.append(value if getattr(table.c.id.type, "as_uuid", False) else str(value))
+            except ValueError:
+                continue
+        if not ids:
+            continue
+        for row in (await conn.execute(sa.select(table).where(table.c.id.in_(ids)))).mappings():
+            result[(kind, str(row["id"]))] = dict(row)
+        if kind in revisions:
+            revision, owner = revisions[kind]
+            if kind == "note":
+                heads = [
+                    fields["head_revision_id"] for (k, _), fields in result.items() if k == kind
+                ]
+                stmt = sa.select(revision).where(revision.c.id.in_(heads))
+            else:
+                stmt = (
+                    sa.select(revision)
+                    .where(revision.c[owner].in_(ids))
+                    .distinct(revision.c[owner])
+                    .order_by(revision.c[owner], revision.c.seq.desc())
+                )
+            rows = (await conn.execute(stmt)).mappings()
+            for row in rows:
+                key = (kind, str(row[owner]))
+                if key in result:
+                    result[key] = {**result[key], "revision": dict(row)}
+    return result
+
+
 def entity_row(row: Mapping[Any, Any]) -> Entity:
     values = dict(row)
     values["aliases"] = tuple(values["aliases"])
-    values["created_at"] = None
     attrs = dict(values["attributes"])
     if "location" in attrs:
         attrs["location"] = tuple(attrs["location"])
@@ -201,6 +376,7 @@ async def enqueue(conn: AsyncConnection, item: WorkItem) -> WorkItem:
 
 
 class SqlMemoryGraph:
+    # ponytail: live walks; precomputed neighbourhoods if measured p95 exceeds 200 ms.
     def __init__(
         self, engine: AsyncEngine, *, metrics: Any = None, statement_timeout_ms: int = 1000
     ) -> None:
@@ -443,11 +619,17 @@ class SqlMemoryGraph:
         depth = 0
         try:
             async with self.engine.begin() as conn:
+                # Scope, fields and evidence must see the same source revision.
+                await conn.execute(
+                    sa.text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+                )
                 await conn.execute(
                     sa.text(f"SET LOCAL statement_timeout = {int(self.statement_timeout_ms)}"),
                 )
                 params = walk_parameters(seeds, query)
-                paths = (await conn.execute(sa.text(WALK_SQL), params)).mappings().all()
+                sql, scope_params = walk_sql(query)
+                params.update(scope_params)
+                paths = (await conn.execute(sa.text(sql), params)).mappings().all()
                 state = AdmissionState()
                 ids = {p["edge"] for p in paths if p["edge"] is not None}
                 depth = min(query.depth, max((p["depth"] for p in paths), default=0))
@@ -465,7 +647,7 @@ class SqlMemoryGraph:
                             )
                         ),
                     )
-                    if seeds
+                    if seeds and query.scope is None
                     else sa.false()
                 )
                 for row in (
@@ -492,7 +674,7 @@ class SqlMemoryGraph:
                     await conn.execute(
                         sa.select(RELATION_EVIDENCE).where(
                             sa.or_(
-                                RELATION_EVIDENCE.c.relation_id.in_(ids),
+                                RELATION_EVIDENCE.c.relation_id.in_(state.relations),
                                 RELATION_EVIDENCE.c.entity_id.in_([i for _, i in keys]),
                             )
                         )
@@ -502,6 +684,59 @@ class SqlMemoryGraph:
                     values.pop("id")
                     values["source"] = (values.pop("source_kind"), values.pop("source_id"))
                     state.evidence.append(Evidence(**values))
+                source_keys = keys | {e.source for e in state.evidence}
+                index_keys = {
+                    ("event", i) if k == "event_entry" else (k, i) for k, i in source_keys
+                }
+                if source_keys:
+                    from nora.infra.sql.memory_read import _columns, _node
+
+                    n = MEMORY_NODE.alias("n")
+                    stmt = sa.select(*_columns(n)).where(
+                        sa.tuple_(n.c.kind, n.c.source_id).in_(index_keys)
+                    )
+                    for indexed_row in (await conn.execute(stmt)).all():
+                        node = _node(indexed_row, query.scope)
+                        state.indexed[node.key] = node
+                        if node.kind == "event":
+                            from dataclasses import replace
+
+                            state.indexed[("event_entry", node.source_id)] = replace(
+                                node, kind="event_entry"
+                            )
+                    page_ids = [i for k, i in source_keys if k == "web_page"]
+                    if page_ids:
+                        from nora.domain.memory_index import IndexedNode
+
+                        for page in (
+                            await conn.execute(
+                                sa.select(COMPREHEND_WEB_PAGE).where(
+                                    COMPREHEND_WEB_PAGE.c.id.in_(page_ids),
+                                    COMPREHEND_WEB_PAGE.c.unit == query.unit,
+                                )
+                            )
+                        ).mappings():
+                            node = IndexedNode(
+                                "web_page",
+                                page["id"],
+                                page["text"],
+                                int(page["fetched_at"].timestamp() * 1000),
+                                unit=page["unit"],
+                            )
+                            state.indexed[node.key] = node
+                state.fields = await node_fields(conn, source_keys)
+                from dataclasses import replace
+
+                for key, fields in state.fields.items():
+                    if key in state.indexed:
+                        revision = fields.get("revision")
+                        body = (
+                            revision.get("body")
+                            if isinstance(revision, dict)
+                            else fields.get("body") or fields.get("text")
+                        )
+                        if isinstance(body, str):
+                            state.indexed[key] = replace(state.indexed[key], text=body)
                 result = await state._walk(seeds, query)
                 if len(paths) >= params["budget"]:
                     result = Subgraph("partial", result.nodes, result.relations)

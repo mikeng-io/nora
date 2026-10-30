@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, Protocol, get_args
 
+from nora.domain.memory_index import IndexedNode, MemoryScope
+
 EntityKind = Literal[
     "person", "room", "unit", "nora", "place", "event", "work", "organisation", "topic"
 ]
@@ -179,7 +181,7 @@ class Entity:
     aliases: tuple[str, ...] = ()
     attributes: Mapping[str, object] = field(default_factory=dict)
     state: str = "live"
-    created_at: datetime | None = None
+    created_at: datetime | None = field(default=None, compare=False)
     merged_into: str | None = None
 
     @property
@@ -318,6 +320,8 @@ class Walk:
     valid_at: datetime | None = None
     relations: tuple[str, ...] = ()
 
+    scope: MemoryScope | None = None
+
     def __post_init__(self) -> None:
         if not 0 <= self.depth <= 4 or self.nodes < 1 or self.fan_out < 1:
             raise ValueError("walk requires depth 0..4 and positive node/fan-out caps")
@@ -328,12 +332,16 @@ class GraphNode:
     key: Key
     entity: Entity | None = None
     evidence_count: int = 0
+    indexed: IndexedNode | None = None
+    fields: Mapping[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class GraphEdge:
     relation: Relation
     evidence_count: int
+    evidence: tuple[Evidence, ...] = ()
+    sources: tuple[IndexedNode, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -56,7 +56,7 @@ NOT_LOOKUPS: frozenset[str] = frozenset({
     "room_list", "room_read", "search_memory_workspace",
     # `memory_search` (DEC-316) reads the memory index across the unit's
     # rooms, so it is not the worker's either
-    "memory_search",
+    "memory_search", "memory_read",
     # the social reads stay on the tag path (a person asked for that account, now)
     "instagram_read", "instagram_search", "x_read", "x_search",
     "linkedin_read", "linkedin_search",

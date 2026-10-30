@@ -1,11 +1,7 @@
-"""`memory_search`, the memory graph's one search verb (DEC-316).
+"""Registered memory graph tools: the existing index seeds the new graph.
 
-It is offered only while `[memory.index] read` (the surface tests are
-`tests/unit/test_memory_surfaces.py`), and there is no Honcho behind it: the
-index answers. `person`, `since`, `until` and `kinds` narrow the search
-INSIDE the index's reads, so a node outside them is never returned and never
-takes a slot; every status carries a note, and nothing in the result is an
-id.
+The read surface follows the index-read switch. Scope and narrowing apply
+inside index reads and graph traversal; every result carries its state and note.
 """
 
 from __future__ import annotations
@@ -15,11 +11,11 @@ from typing import Any
 import pytest
 
 from nora.agent.lineage import LineagePolicy
-from nora.agent.memory_search import SEED_LIMIT, MemorySearch
+from nora.agent.memory_search import MemorySearch
 from nora.agent.room import Room
 from nora.agent.tools import build_tools
 from nora.domain.lineage import RoomFacts
-from nora.domain.memory_index import IndexedNode, IndexState
+from nora.domain.memory_index import IndexedNode
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import FakeMemoryStore, FakeRosterSource
@@ -145,353 +141,261 @@ async def test_an_ambiguous_person_is_asked_about_not_searched(tmp_path: Any) ->
     assert index.calls == []
 
 
-# ---- answers -----------------------------------------------------------------
+# ---- subgraph answers --------------------------------------------------------
 
 
-async def test_on_answers_from_the_index_and_never_calls_honcho(persons: Any) -> None:
-    honcho = FakeMemoryStore(conclusions={"miles_novak": ["plays five-a-side on Sundays"]})
+def _graph_search(index, metrics):
+    from datetime import UTC, datetime
+
+    from nora.domain.memory_graph import Entity, Evidence, Relation, pointer_entity
+    from nora.testing.memory_graph import FakeMemoryGraph
+
+    graph = FakeMemoryGraph()
+    person = pointer_entity("person", "u1", "miles_novak", "Miles Novak")
+    event = Entity(
+        "generated-event",
+        "event",
+        "u1",
+        "Sunday football",
+        aliases=("football",),
+        attributes={"start": "2023-11-14"},
+        created_at=datetime(2023, 11, 14, tzinfo=UTC),
+    )
+    graph.entities = {e.id: e for e in (person, event)}
+    node = index.nodes[("message", "41")]
+    graph.indexed[node.key] = node
+    graph.relations = {
+        "generated-authored": Relation(
+            "generated-authored",
+            node.key,
+            "authored_by",
+            person.key,
+            "record",
+            "u1",
+            asserted_at=datetime(2023, 11, 14, tzinfo=UTC),
+        ),
+        "generated-plan": Relation(
+            "generated-plan",
+            person.key,
+            "plans",
+            event.key,
+            "notebook",
+            "u1",
+            ("miles_novak",),
+            asserted_at=datetime(2023, 11, 14, tzinfo=UTC),
+        ),
+    }
+    graph.evidence = [Evidence(node.key, relation_id="generated-plan", span="football")]
+    search = MemorySearch(index, metrics, graph=graph, embedder=FakeQueryEmbedder(), model="m")
+    return search, graph
+
+
+async def test_registered_search_seeds_index_and_walks_new_graph(persons):
     metrics = Metrics()
-    result = await _call(
-        _tool(persons, honcho, _dense(_index(), metrics)),
-        person="Miles", query="football sunday",
-    )
-    assert honcho.chats == [] and honcho.queries == [] and honcho.searches == []
-    assert result["status"] == "ok" and result["note"]
-    [item] = result["results"]
-    assert item["kind"] == "message" and item["room"] == "Friends"
-    assert item["people"] == ["Miles Novak"]
-    assert item["path"] == ["message (matched)"]
-    assert "41" not in str(result) and "miles_novak" not in str(result)
-    assert metrics.get("nora_memory_search_total", status="ok") == 1
-
-
-async def test_on_without_a_person_searches_everyone_in_scope(persons: Any) -> None:
-    result = await _call(
-        _tool(persons, FakeMemoryStore(), _dense(_index(), Metrics())), query="football",
-    )
-    assert result["status"] == "ok" and "person" not in result
-    assert [i["kind"] for i in result["results"]] == ["message"]
-
-
-@pytest.mark.parametrize(("index", "status"), [
-    (FakeMemoryIndex(state=IndexState("complete", 0)), "nothing_found"),
-    (FakeMemoryIndex(state=IndexState("building", 0)), "partial"),
-    (FakeMemoryIndex(fail=RuntimeError("db down")), "unavailable"),
-])
-async def test_on_every_status_carries_a_note(
-    persons: Any, index: FakeMemoryIndex, status: str,
-) -> None:
+    search, graph = _graph_search(_index(), metrics)
     honcho = FakeMemoryStore()
+    result = await _call(_tool(persons, honcho, search), query="football", depth=2)
+    assert result["status"] in {"ok", "partial"}
+    assert "Sunday football" in result["preview"]
+    assert "judgement" in result["preview"] and "1 message" in result["preview"]
+    assert "valid=" in result["preview"] and "state=live" in result["preview"]
+    assert not honcho.chats and not honcho.searches
+    graph.available = False
+    result = await _call(_tool(persons, honcho, search), query="football")
+    assert result["status"] == "unavailable" and result["note"]
+
+
+async def test_registered_read_zero_returns_full_fields_and_evidence(persons):
+    search, _graph = _graph_search(_index(), Metrics())
+    tools = _build_with(persons, FakeMemoryStore(), search)
+    result = await _call(tools["memory_read"], kind="event", id="generated-event", depth=0)
+    assert result["status"] == "ok"
+    assert result["nodes"][0]["entity"]["attributes"] == {"start": "2023-11-14"}
+    evidence = result["evidence"][0]
+    assert evidence["evidence"][0]["span"] == "football"
+    assert evidence["sources"][0]["text"] == "five-a-side football on sunday"
+    tools = _build_with(persons, FakeMemoryStore(), search)
+    missing = await _call(tools["memory_read"], kind="event", id="not-present")
+    assert missing["status"] == "nothing_found" and missing["note"]
+    invalid = await _call(tools["memory_read"], kind="event", id="generated-event", depth=5)
+    assert invalid["status"] == "unavailable" and invalid["note"]
+
+
+async def test_unwired_graph_is_unavailable(persons):
     result = await _call(
-        _tool(persons, honcho, _dense(index, Metrics())), person="Miles",
-        query="anything at all",
-    )
-    assert result["status"] == status
-    assert result["note"]
-    assert honcho.chats == []
-
-
-async def test_on_an_item_carrying_an_identifier_is_withheld(persons: Any) -> None:
-    index = FakeMemoryIndex([IndexedNode(
-        "message", "42", "football: call +85298765432", _T, origin_room=_ROOM,
-    )], embed_model="m")
-    result = await _call(
-        _tool(persons, FakeMemoryStore(), _dense(index, Metrics())), query="football",
-    )
-    assert result["status"] == "withheld" and result["found_but_unquotable"] == 1
-    assert result["note"] and "98765432" not in str(result)
-
-
-async def test_on_a_render_room_that_raises_is_unavailable_with_a_note(
-    persons: Any, monkeypatch: Any,
-) -> None:
-    def boom(self: Any, **_: Any) -> Any:
-        raise RuntimeError("policy")
-
-    monkeypatch.setattr(LineagePolicy, "render_room", boom)
-    result = await _call(
-        _tool(persons, FakeMemoryStore(), _dense(_index(), Metrics())),
-        person="Miles", query="football",
+        _tool(persons, FakeMemoryStore(), _dense(_index(), Metrics())), query="football"
     )
     assert result["status"] == "unavailable" and result["note"]
 
 
-async def test_on_a_packet_that_raises_is_unavailable_with_a_note(
-    persons: Any, monkeypatch: Any,
-) -> None:
-    import nora.agent.tools as tools_module
+async def test_shadow_registry_leaves_live_surface_unchanged():
+    from nora.agent.registry import ToolRegistry
 
-    def boom(*_: Any, **__: Any) -> Any:
-        raise RuntimeError("render")
-
-    monkeypatch.setattr(tools_module, "render_packet", boom)
-    result = await _call(
-        _tool(persons, FakeMemoryStore(), _dense(_index(), Metrics())),
-        person="Miles", query="football",
-    )
-    assert result["status"] == "unavailable" and result["note"]
+    registry = ToolRegistry()
+    search, _ = _graph_search(_index(), Metrics())
+    shadow = registry.with_memory_search(search)
+    assert "memory_read" in registry.withheld_tools()
+    assert "memory_read" not in shadow.withheld_tools()
+    assert "about" in shadow.withheld_tools()
 
 
-async def test_on_partial_with_no_items_is_recorded_as_partial(persons: Any) -> None:
-    metrics = Metrics()
-    index = FakeMemoryIndex(state=IndexState("building", 0))
-    tools = _build_with(persons, FakeMemoryStore(), _dense(index, Metrics()), metrics)
-    result = await _call(tools["memory_search"], person="Miles", query="football")
-    assert result["status"] == "partial"
-    assert metrics.get("nora_room_lookups_total", tool="memory_search", status="partial") == 1
-    assert metrics.get(
-        "nora_room_lookups_total", tool="memory_search", status="nothing_found") == 0
+async def test_on_an_out_of_window_node_is_never_returned_and_takes_no_slot(persons):
+    search, _ = _graph_search(_index(), Metrics())
+    result = await _call(_tool(persons, FakeMemoryStore(), search), query='football',
+                         since='2026-01-01')
+    assert result['status'] == 'nothing_found'
+    assert 'message:41' not in result['preview']
+    # Same source without the window is a positive control.
+    found = await _call(_tool(persons, FakeMemoryStore(), search), query='football')
+    assert 'message:41' in found['preview']
 
 
-async def test_on_a_listed_persons_name_in_the_question_is_pinned(persons: Any) -> None:
-    """The names the room's roster resolves reach the search, and a
-    node holding one literally ranks first."""
-    index = FakeMemoryIndex(
-        [
-            IndexedNode("message", "43", "Tyler kept the receipts", _T - _DAY,
-                        origin_room=_ROOM),
-            IndexedNode("message", "44", "who kept the receipts", _T, origin_room=_ROOM),
-        ],
-        embed_model="m",
-    )
-    result = await _call(
-        _tool(persons, FakeMemoryStore(), _dense(index, Metrics())),
-        query="who kept the receipts, Tyler?",
-    )
-    assert result["status"] == "ok"
-    assert [i["path"] for i in result["results"]] == [["message (exact)"], ["message (matched)"]]
+async def test_on_a_person_the_room_does_not_list_is_unavailable_not_nothing(persons):
+    from dataclasses import replace
+    restricted = replace(_FRIENDS, persons=frozenset({'tyler_cortez'}))
+    policy = LineagePolicy(rooms=(restricted,), _by_id={('signal', GROUP): restricted})
+    search, _ = _graph_search(_index(), Metrics())
+    result = await _call(_build_with(persons, FakeMemoryStore(), search,
+        lineage=policy)['memory_search'], query='football', person='Miles')
+    assert result['status'] == 'unavailable' and result['note']
 
 
-# ---- the narrowing applies inside the index's reads --------------------------
+async def test_a_culture_pass_never_reads_another_rooms_line(persons):
+    from dataclasses import replace
 
-
-def _crowded() -> FakeMemoryIndex:
-    """More near-identical OUT-of-window messages than the dense seed takes,
-    nearer the question than the one IN-window message. A filter applied
-    after a top-k would see only the crowd and answer «nothing»."""
-    crowd = [
-        IndexedNode("message", f"c{i}", "receipts receipts receipts", _T - 30 * _DAY,
-                    origin_room=_ROOM)
-        for i in range(SEED_LIMIT + 5)
-    ]
-    inside = IndexedNode("message", "in", "the receipts are in the drawer", _T,
-                         origin_room=_ROOM)
-    return FakeMemoryIndex([*crowd, inside], embed_model="m")
-
-
-async def test_on_an_out_of_window_node_is_never_returned_and_takes_no_slot(
-    persons: Any,
-) -> None:
-    index = _crowded()
-    unfiltered = await _call(
-        _tool(persons, FakeMemoryStore(), _dense(index, Metrics())), query="receipts",
-    )
-    assert "the receipts are in the drawer" not in str(unfiltered)  # crowded out
-    result = await _call(
-        _tool(persons, FakeMemoryStore(), _dense(_crowded(), Metrics())),
-        query="receipts", since="2023-11-14",
-    )
-    assert result["status"] == "ok"
-    assert [i["text"] for i in result["results"]] == ["the receipts are in the drawer"]
-
-
-async def test_on_until_is_the_end_of_that_day(persons: Any) -> None:
-    """`until` names a day, not its midnight (`_parse_until`'s reading): a
-    node at 22:13 UTC on 14 Nov 2023 is 06:13 HKT on the 15th, so `until`
-    the 14th leaves it out and `until` the 15th keeps it."""
-    tool = _tool(persons, FakeMemoryStore(), _dense(_index(), Metrics()))
-    out = await _call(tool, query="football", until="2023-11-14")
-    kept = await _call(tool, query="football", until="2023-11-15")
-    assert out["status"] == "nothing_found"
-    assert kept["status"] == "ok"
-
-
-async def test_on_kinds_narrow_to_their_node_kinds(persons: Any) -> None:
-    index = FakeMemoryIndex(
-        [
-            IndexedNode("message", "50", "dinner at the harbour", _T, origin_room=_ROOM),
-            IndexedNode("memo", "m1", "dinner at the harbour, kept", _T, unit="u1"),
-            IndexedNode("event", "e1", "dinner at the harbour", _T, unit="u1"),
-        ],
-        embed_model="m",
-    )
-    tool = _tool(persons, FakeMemoryStore(), _dense(index, Metrics()))
-    notes = await _call(tool, query="dinner harbour", kinds=["notes"])
-    both = await _call(tool, query="dinner harbour", kinds=["notes", "events"])
-    assert [i["kind"] for i in notes["results"]] == ["memo"]
-    assert sorted(i["kind"] for i in both["results"]) == ["event", "memo"]
-
-
-def _lineage_listing(listed: frozenset[str] | None) -> LineagePolicy:
-    facts = RoomFacts("signal", frozenset({GROUP}), "u1", listed, label="Friends")
-    return LineagePolicy(rooms=(facts,), _by_id={("signal", GROUP): facts})
-
-
-@pytest.mark.parametrize("listed", [
-    # The live roster has Miles; policy lists only Tyler here.
-    frozenset({"tyler_cortez"}),
-    # A `*` room: policy lists nobody (persons=None).
-    None,
-])
-async def test_on_a_person_the_room_does_not_list_is_unavailable_not_nothing(
-    persons: Any, listed: frozenset[str] | None,
-) -> None:
-    """A person the live roster resolves but
-    policy does not list for this room would be narrowed to false in every
-    read, a false `nothing_found` over an index that holds their words. It
-    is `unavailable` with a note, before any read."""
+    from nora.agent.tools import CULTURE_ADAPTOR_NAME
+    other = RoomFacts('signal', frozenset({'generated-other'}), 'u1', _FRIENDS.persons)
+    lineage = LineagePolicy(rooms=(_FRIENDS, other),
+        _by_id={('signal', GROUP): _FRIENDS, ('signal', 'generated-other'): other})
     index = _index()
-    result = await _call(
-        _build_with(
-            persons, FakeMemoryStore(), _dense(index, Metrics()),
-            lineage=_lineage_listing(listed),
-        )["memory_search"],
-        query="football", person="Miles",
-    )
-    assert result["status"] == "unavailable", result
-    assert result["note"] and result["person"] == "Miles Novak"
+    extra = IndexedNode('message', '42', 'football in the other room', _T,
+                        origin_room='signal:generated-other')
+    index.nodes[extra.key] = extra
+    search, graph = _graph_search(index, Metrics())
+    graph.indexed[extra.key] = extra
+    first = graph.relations['generated-authored']
+    graph.relations['generated-other-authored'] = replace(first,
+        id='generated-other-authored', src=extra.key)
+    tools = _build_with(persons, FakeMemoryStore(), search, lineage=lineage,
+                        dream_adaptor=CULTURE_ADAPTOR_NAME)
+    result = await _call(tools['memory_search'], query='football')
+    assert 'message:41' in result['preview'] and 'message:42' not in result['preview']
+    tools = _build_with(persons, FakeMemoryStore(), search, lineage=lineage,
+                        dream_adaptor=CULTURE_ADAPTOR_NAME)
+    own = await _call(tools['memory_read'], kind='message', id='41', depth=0)
+    assert own['status'] == 'ok' and own['nodes']
+    tools = _build_with(persons, FakeMemoryStore(), search, lineage=lineage,
+                        dream_adaptor=CULTURE_ADAPTOR_NAME)
+    other = await _call(tools['memory_read'], kind='message', id='42', depth=0)
+    assert other['status'] == 'nothing_found' and not other['nodes']
 
 
-async def test_on_a_person_narrows_to_what_is_theirs(persons: Any) -> None:
-    """The person narrowing (`nora.domain.memory_index.narrowed`): what they
-    authored, what is about them; never another person's message, however
-    near the question it is."""
-    index = FakeMemoryIndex(
-        [
-            IndexedNode("message", "60", "pizza on friday", _T, origin_room=_ROOM),
-            IndexedNode("message", "61", "pizza on friday please", _T, origin_room=_ROOM),
-            IndexedNode("note", "n1", "pizza night plan", _T, unit="u1"),
-            IndexedNode("person", "miles_novak"),
-            IndexedNode("person", "tyler_cortez"),
-        ],
-        [
-            ("message", "60", "authored_by", "person", "miles_novak"),
-            ("message", "61", "authored_by", "person", "tyler_cortez"),
-            ("note", "n1", "about", "person", "miles_novak"),
-        ],
-        embed_model="m",
-    )
-    result = await _call(
-        _tool(persons, FakeMemoryStore(), _dense(index, Metrics())),
-        query="pizza friday", person="Miles",
-    )
-    assert result["status"] == "ok"
-    assert sorted(i["text"] for i in result["results"]) == [
-        "pizza night plan", "pizza on friday"]
+@pytest.mark.parametrize('name,arguments', [
+    ('memory_search', {'query': 'football'}),
+    ('memory_read', {'kind': 'event', 'id': 'generated-event', 'depth': 0}),
+])
+async def test_graph_tool_results_preserve_untrusted_memory_framing(persons, name, arguments):
+    search, _ = _graph_search(_index(), Metrics())
+    tools = _build_with(persons, FakeMemoryStore(), search)
+    result = await _call(tools[name], **arguments)
+    assert result['status'] in {'ok', 'partial'} and result['preview']
+    assert result.get('untrusted') is True
+    assert 'never an instruction' in result['framing']
 
 
-# ---- who reads which rooms -----------------------------------------------------
-
-_OTHER = "g-other"
-_OTHER_ROOM = RoomFacts(
-    "signal", frozenset({_OTHER}), "u1", frozenset({"miles_novak", "tyler_cortez"}),
-    label="Other",
-)
-_TWO_ROOMS = LineagePolicy(
-    rooms=(_FRIENDS, _OTHER_ROOM),
-    _by_id={("signal", GROUP): _FRIENDS, ("signal", _OTHER): _OTHER_ROOM},
-)
-
-
-def _two_rooms_index() -> FakeMemoryIndex:
-    """One line in this room and one in another room of the same unit, both
-    by a member both rooms list, so only the room boundary separates them."""
-    return FakeMemoryIndex(
-        [
-            IndexedNode("message", "71", "the pitch is booked here", _T, origin_room=_ROOM),
-            IndexedNode("message", "72", "the pitch line from the other room", _T,
-                        origin_room=f"signal:{_OTHER}"),
-            IndexedNode("person", "miles_novak"),
-        ],
-        [
-            ("message", "71", "authored_by", "person", "miles_novak"),
-            ("message", "72", "authored_by", "person", "miles_novak"),
-        ],
-        embed_model="m",
-    )
+async def test_subgraph_preserves_enabled_identifier_screen(persons):
+    from dataclasses import replace
+    phone = next(value for value in MILES if value.startswith('+'))
+    index = _index()
+    node = index.nodes[('message', '41')]
+    index.nodes[node.key] = replace(node, text=f'football: call {phone}')
+    search, _ = _graph_search(index, Metrics())
+    result = await _call(_tool(persons, FakeMemoryStore(), search), query='football')
+    assert result['status'] == 'unavailable' and phone not in str(result)
+    off = _build_with(persons, FakeMemoryStore(), search, content_checks=False)
+    allowed = await _call(off['memory_search'], query='football')
+    assert allowed['status'] in {'ok', 'partial'} and phone in allowed['preview']
 
 
-@pytest.mark.parametrize("person", [None, "Miles"])
-async def test_a_culture_pass_never_reads_another_rooms_line(
-    persons: Any, person: str | None,
-) -> None:
-    """DEC-316: a room's culture is written
-    from that room's own speech, as the culture adaptor's Honcho
-    `search_memory` read only its own session. Its `memory_search` reads its
-    own room alone; the unit's other rooms never reach the pass."""
-    tool = _build_with(
-        persons, FakeMemoryStore(), _dense(_two_rooms_index(), Metrics()),
-        lineage=_TWO_ROOMS, dream_adaptor="culture",
-    )["memory_search"]
-    result = await _call(tool, query="the pitch", **({"person": person} if person else {}))
-    assert result["status"] == "ok", result
-    assert [i["text"] for i in result["results"]] == ["the pitch is booked here"]
-    assert "other room" not in str(result)
+async def test_matching_index_without_graph_projection_is_unavailable(persons):
+    from nora.testing.memory_graph import FakeMemoryGraph
+    search = MemorySearch(_index(), Metrics(), graph=FakeMemoryGraph(),
+                          embedder=FakeQueryEmbedder(), model='m')
+    result = await _call(_tool(persons, FakeMemoryStore(), search), query='football')
+    assert result['status'] == 'unavailable' and result['note']
 
 
-@pytest.mark.parametrize("adaptor", ["", "character-person"])
-async def test_every_other_occasion_reads_the_unit_under_the_listed_room_rule(
-    persons: Any, adaptor: str,
-) -> None:
-    """The positive control, and the rule for everything that is not the
-    culture fold: the unit's other rooms are read (a member both rooms list
-    said it)."""
-    tool = _build_with(
-        persons, FakeMemoryStore(), _dense(_two_rooms_index(), Metrics()),
-        lineage=_TWO_ROOMS, dream_adaptor=adaptor,
-    )["memory_search"]
-    result = await _call(tool, query="the pitch")
-    assert result["status"] == "ok", result
-    assert sorted(i["text"] for i in result["results"]) == [
-        "the pitch is booked here", "the pitch line from the other room"]
+async def test_one_turn_reuses_its_walk_and_does_not_guess_outside_the_snapshot(
+    persons, monkeypatch,
+):
+    search, graph = _graph_search(_index(), Metrics())
+    original = graph.walk
+    calls = []
+
+    async def counted(seeds, query):
+        calls.append((seeds, query))
+        return await original(seeds, query)
+
+    monkeypatch.setattr(graph, 'walk', counted)
+    tools = _build_with(persons, FakeMemoryStore(), search)
+    found = await _call(tools['memory_search'], query='football')
+    assert found['status'] == 'ok' and 'Sunday football' in found['preview']
+    detail = await _call(tools['memory_read'], kind='event', id='generated-event', depth=0)
+    assert detail['status'] == 'partial'
+    assert detail['nodes'][0]['entity']['name'] == 'Sunday football'
+    assert detail['evidence'][0]['sources'][0]['text'] == 'five-a-side football on sunday'
+    assert 'more="available"' in detail['preview']
+    outside = await _call(tools['memory_read'], kind='event', id='not-covered')
+    assert outside['status'] == 'unavailable' and outside['note']
+    assert len(calls) == 1
 
 
-# ---- the social stream's items (design/cognition-loop/22 §9) ------------------
+async def test_a_narrowed_retry_searches_again_and_its_graph_can_be_read(
+    persons, monkeypatch,
+):
+    search, graph = _graph_search(_index(), Metrics())
+    original = graph.walk
+    calls = []
+
+    async def counted(seeds, query):
+        calls.append((seeds, query))
+        return await original(seeds, query)
+
+    monkeypatch.setattr(graph, 'walk', counted)
+    tools = _build_with(persons, FakeMemoryStore(), search)
+    first = await _call(tools['memory_search'], query='football')
+    assert first['status'] == 'ok'
+    retry = await _call(tools['memory_search'], query='football', since='2023-11-01')
+    assert retry['status'] in {'ok', 'partial', 'nothing_found'}, retry
+    assert len(calls) == 2
+    detail = await _call(tools['memory_read'], kind='event', id='generated-event', depth=0)
+    assert detail['status'] == 'partial'
+    assert len(calls) == 2
 
 
-def _social_index() -> FakeMemoryIndex:
-    """One story by each listed member, and one by a person no room here
-    lists; and a message, which `kinds=media` leaves out."""
-    return FakeMemoryIndex(
-        [
-            IndexedNode("social", "instagram:1", "Instagram story\nlantern picnic", _T,
-                        persons=("miles_novak",)),
-            IndexedNode("social", "instagram:2", "Instagram post\nlantern picnic", _T,
-                        persons=("tyler_cortez",)),
-            IndexedNode("social", "instagram:3", "Instagram reel\nlantern picnic", _T,
-                        persons=("elsewhere_liu",)),
-            IndexedNode("message", "60", "lantern picnic", _T, origin_room=_ROOM),
-        ],
-        embed_model="m",
-    )
+async def test_parallel_tools_reserve_one_database_walk(persons, monkeypatch):
+    import asyncio
 
+    search, graph = _graph_search(_index(), Metrics())
+    original = graph.walk
+    entered, release = asyncio.Event(), asyncio.Event()
+    calls = []
 
-async def test_on_kinds_media_returns_social_items_saying_what_and_how_old(
-    persons: Any,
-) -> None:
-    tool = _tool(persons, FakeMemoryStore(), _dense(_social_index(), Metrics()))
-    result = await _call(tool, query="lantern picnic", kinds=["media"])
-    assert result["status"] == "ok"
-    shown = {(i["kind"], i["text"]) for i in result["results"]}
-    assert shown == {
-        ("Instagram story", "lantern picnic"), ("Instagram post", "lantern picnic"),
-    }, "a person this room does not list is never read, and kinds=media has no message"
-    assert all(i.get("age") for i in result["results"])
+    async def paused(seeds, query):
+        calls.append((seeds, query))
+        entered.set()
+        await release.wait()
+        return await original(seeds, query)
 
-
-async def test_on_social_off_leaves_their_items_out_whenever_recorded(
-    tmp_path: Any,
-) -> None:
-    """`social = false` in identity.toml, set after the item was indexed:
-    the read leaves it out; the other member's stays."""
-    path = tmp_path / "identity.toml"
-    marked = IDENTITY.replace(
-        'aliases = ["阿豹", "Tyler"]', 'aliases = ["阿豹", "Tyler"]\nsocial = false',
-    )
-    assert marked != IDENTITY
-    path.write_text(marked)
-    off = load_persons(path)
-    assert off.social_off("tyler_cortez")
-    tool = _tool(off, FakeMemoryStore(), _dense(_social_index(), Metrics()))
-    result = await _call(tool, query="lantern picnic", kinds=["media"])
-    assert [i["kind"] for i in result["results"]] == ["Instagram story"]
+    monkeypatch.setattr(graph, 'walk', paused)
+    tools = _build_with(persons, FakeMemoryStore(), search)
+    task = asyncio.create_task(_call(tools['memory_search'], query='football'))
+    await entered.wait()
+    try:
+        concurrent = await _call(tools['memory_read'], kind='event', id='generated-event')
+        assert concurrent['status'] == 'unavailable' and concurrent['note']
+    finally:
+        release.set()
+    completed = await task
+    assert completed['status'] == 'ok' and 'Sunday football' in completed['preview']
+    assert len(calls) == 1

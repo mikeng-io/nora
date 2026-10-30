@@ -328,6 +328,7 @@ def test_budgets_match_todays_table():
         # DEC-316: the graph surface's memory verb, offered instead of the two
         # above while `[memory.index] read`; `ask_memory`'s number.
         "memory_search": 8,
+        "memory_read": 8,
         # 2: the same shape `ask_memory`'s own
         # note describes for a recall verb — run once, notice a different
         # `limit` is needed, run once more.
@@ -996,7 +997,7 @@ READ_ONLY = frozenset({
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
     "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
     # DEC-316: the graph surface's memory search, an index read
-    "memory_search",
+    "memory_search", "memory_read",
     # reads a shared file; the account cannot write.
     "file_fetch",
     "media_search",
