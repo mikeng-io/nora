@@ -83,7 +83,7 @@ def _wake(r: Any) -> WakeRow:
         oldest_pending_ms=None if r.oldest_pending_ms is None else int(r.oldest_pending_ms),
         cut_cooldown=bool(r.cut_cooldown), at_ms=int(r.at_ms),
         recorded_at_ms=_ms(r.recorded_at), detail=_wake_detail(r.detail),
-        tracked=bool(r.tracked), unclaimed_ids=_unclaimed(r.detail),
+        tracked=bool(r.tracked), unclaimed_ids=unclaimed_ids(r.detail),
     )
 
 
@@ -93,15 +93,19 @@ def _wake(r: Any) -> WakeRow:
 _UNCLAIMED_KEY = "unclaimed"
 
 
-def _unclaimed(raw: Any) -> tuple[int, ...]:
-    return tuple(int(i) for i in _detail(raw).get(_UNCLAIMED_KEY, ()))  # type: ignore[attr-defined]
+def unclaimed_ids(raw: Any) -> tuple[int, ...]:
+    """A wake row's unclaimed stimulus ids, whichever form its detail was written in."""
+    ids: Any = jsonb_object(raw).get(_UNCLAIMED_KEY) or ()
+    while isinstance(ids, str):
+        ids = json.loads(ids)
+    return tuple(int(i) for i in ids or ())
 
 
 def _wake_detail(raw: Any) -> dict[str, object]:
-    return {k: v for k, v in _detail(raw).items() if k != _UNCLAIMED_KEY}
+    return {k: v for k, v in jsonb_object(raw).items() if k != _UNCLAIMED_KEY}
 
 
-def _detail(raw: Any) -> dict[str, object]:
+def jsonb_object(raw: Any) -> dict[str, object]:
     """The jsonb object, from either form a row was written in: an object
     or a jsonb STRING holding the JSON (rows written with a double encoding;
     also, on some drivers, the text of the column)."""
@@ -529,7 +533,7 @@ class SqlStimulusStore:
             # The mapping AS ITSELF: the JSONB type serializes what it is
             # handed. `sa.cast(json.dumps(...), JSONB)` would store a jsonb STRING
             # holding the JSON (`jsonb_typeof = 'string'`, so `detail->'unclaimed'`
-            # reads NULL); `_detail` reads either form.
+            # reads NULL); `jsonb_object` reads either form.
             detail=_with_unclaimed(wake),
             at_ms=wake.at_ms, recorded_at=_at(recorded_at_ms), tracked=int(wake.tracked),
         ).returning(COGNITION_WAKE.c.id)
