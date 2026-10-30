@@ -14,6 +14,7 @@ edges:
 
 Operator, 2026-10-29: scenarios before the build, so the session is measured
 and not trusted. This brief orders the work for [29](29-one-cognition-session.md).
+Current acceptance and delivery order are owned by [§6](#6-bounded-cutover-acceptance-2026-10-31); earlier phase/gate wording below is qualified by that amendment.
 Nothing in production changes until phase 5's go-ahead: the graph's shadow
 switches stay off and the backfill waits for the operator.
 
@@ -80,7 +81,7 @@ are from different vendors (ORCHESTRATION.md).
 | 3 | **The session.** The `graph` block joins Cognition's `_BLOCKS`; `memory_propose` (admission in the call; the answer: admitted, refused with reasons, connected subgraph); act tools refuse until a proposal is admitted; `profile_*` inside the session, in shadow; retries, parking and re-link by id (29 §3); stays and plays covered; the backfill lane with act tools withheld; the per-item runner and the separate reshape session deleted, **with their one other caller, the spike harness, moved onto the session in the same PR** | §2's code tests green; named tests that a stimulus is consumed only by an admitted proposal covering it or an explicit nothing-to-understand, that agenda carry and a strike keep it pending until comprehended, that a partial proposal consumes only what it covers, that a failed or refused session leaves its stimuli pending, that five failures park it with the operator requeue, and that a retried link write re-links the existing Register row by id; the gate test (an act before an admitted proposal is refused); scenario 9's no-acts test; recorded-wake eval cases run and reported, with unanchored cases parked |
 | 4 | **The vocabulary.** 29 §4's renames over every kind; `tests/architecture/test_tool_names.py` extended to session-built tools; Honcho-era names left for phase 8 | the naming gate fails on a seeded misnamed session tool (positive control); `tool_selection` before and after **per rename**, a rename that worsens routing does not ship |
 | 5 | **Worked examples.** Three or four in the instruction, the shape of the reasoning (understand, propose, read the answer, decide or not), at least one "do nothing" | the suite before and after on the held-out cases; an example that lowers them is removed |
-| 6 | **The spike, re-scoped.** On the harness PR 3 moved onto the session: it replays the snapshot's stimulus batches with act tools withheld; `--smoke` first from the projected dump with `SMOKE_MARKS`; then the 27 §11 rows with the judges `cx/gpt-6.1-sol` and `kmc/k3-256k` | smoke PASS before the full run; the full report: every §11 row, AGE adopt-or-not, cost per batch (the backfill budget) |
+| 6 | **The spike, re-scoped.** On the harness PR 3 moved onto the session: it replays the snapshot's stimulus batches with act tools withheld; `--smoke` first from the projected dump with `SMOKE_MARKS`; then the 27 §11 rows with the judges `cx/gpt-6.1-sol` and `kmc/k3-256k` | smoke PASS before the full run; the full report: every applicable §11 row, AGE adopt-or-not, token cost per wake/batch (the backfill budget). Retired: separate step 1/2 costs and step 2 session counts (one session now); per-work-item retries and lost-work states (worker retired; replaced by session completion and consumption without admission). Precision, recall, merges, enrichment, egress, zero acts and depth-3 latency remain. Missing evidence is ERROR/INSUFFICIENT, never PASS. `--compare` reports per-row deltas. |
 
 PRs 4 (registered vocabulary) and 5 (worked examples) follow PR 3. The session's own new tools use 29 §4 names from the start.
 
@@ -91,7 +92,8 @@ cost per batch as its budget. The query and presentation work of phase 6 is
 largely PR 2. Profile cards from the session (phase 7) and the switch, the
 14-day hold and Honcho's removal (phase 8) follow as 27 §15 orders them.
 
-**This holds unless** PR 1's anchoring finds most scenarios have no real
+**Historical condition, resolved by the final §5 ruling and superseded by §6:**
+PR 1's anchoring finds most scenarios have no real
 instance in the clone; then the suite is too thin to gate the build, and the
 operator decides whether to wait for live data or accept parked scenarios.
 
@@ -123,3 +125,104 @@ its F1–F6 acceptance into this build; this is not a second implementation trac
 projection and model exposure are distinct deliverables. Its contract journeys
 belong in the eventual observation implementation; this amendment enables no
 collector, profile promotion, extra model spending or deployment.
+
+Operator, 2026-10-30: the anchored scenario suite is too thin to gate this build
+(one confirmed match in 220 checks on the busiest wakes). The session spike
+measures the session now and the worked examples before/after next. The operator
+runs smoke first, then full, on the private host snapshot; no host data enters Git.
+
+## 6. Bounded cutover acceptance (2026-10-31)
+
+**Canonical acceptance owner.** The operator makes replacing Nora's Honcho
+dependency the highest priority. Private friend-group traffic cannot supply
+statistically conclusive long-term parity within a useful wait ("not possible
+within a year"). This amends the fixed minimum populations and mandatory
+population-parity switch gates in 00, 10, 18, 27, 45, 70 and 75; their earlier
+wording remains historical. It extends §5's one confirmed match in 220 checks
+and parked-scenarios ruling, not a claim that the model passed. The
+[issue #435 clarification](https://github.com/mikeng-io/nora/issues/435)
+keeps LongMemEval-S, GroupMemBench and Mem2ActBench (#429–#431) as parallel
+quality work, with their own full-benchmark acceptance.
+
+### What must hold
+
+- **Engineering guarantees gate the replacement:** deterministic scope and
+  disclosure, admission before action, no historical acts during backfill,
+  preserved source/sender/mention/reply input, and no stuck or lost input.
+  Failed/refused work stays pending or is explicitly parked and recoverable;
+  retries preserve identity and do not duplicate the persisted matter.
+  Wiring/instrument ERROR and known reachable correctness failures are repaired,
+  never waived for low volume. Admission proves custody, not semantic truth.
+- **Read the actual assembled input before changing instructions.** Verify
+  source anchors, context age and authorship, scoped automatic recall and tool
+  retrieval, semantic association persistence through write/retry/later read,
+  and the profile/read-surface handoff. Before claiming replacement, read back
+  the loaded configuration, persisted live profile/account and its use by a
+  later turn; a shadow receipt is not that handoff. §5 and 27 §17 own the
+  existing repair contracts.
+- **Run the existing recorded-wake smoke, then one bounded full spike.** Smoke
+  must pass before the full run. Bind reports to exact source revisions and
+  snapshot boundaries. Freeze comparison populations before answers are seen;
+  match source population, configuration and effective models/judges across
+  arms, including blind different-vendor judgement, and record their actual
+  resolved identities rather than trusting aliases. Report each applicable
+  27 §11 row with its numerator/denominator (or measured quantity and population
+  count for cost/latency), errors, exclusions and comparison deltas. Missing or
+  failed instruments are ERROR; absent/too-small populations are INSUFFICIENT,
+  never PASS. A replay beginning without prior session/carry is not evidence of
+  full longitudinal understanding.
+- **Quality remains measured and consequential.** Retain 27 §11's reading,
+  relation, merge and enrichment targets on observed populations, and report
+  answer grounding, reply preference and corrections on the available matched
+  journeys. A missed target is a finding to investigate against assembled
+  input, sources and later answers, with repair and remeasurement where it
+  exposes a reachable correctness failure. Do not relabel every quality FAIL
+  optional. The operator reviews the findings, dispositions and residual
+  uncertainty before deciding cutover. Sample insufficiency alone neither
+  blocks indefinitely nor proves population-wide parity; the former ≥80-pair,
+  ≥80% answerability and <5% answer-error switch formula is superseded.
+- **Use a small available set of complete real journeys:** retrieval →
+  interpretation → persisted account → later answer or correction. Preserve
+  the active/parked/held-out census and independent judgement; generated
+  deterministic fixtures prove code guarantees, not real model anchors.
+  Accumulate further real journeys during use. Any future extended-history or
+  fragment-plus-context experiment is separately labelled, not already built
+  or authorized to substitute for recorded-wake anchors. The operator can
+  accept a bounded decision from these journeys and available-data evidence,
+  with the limits explicit.
+
+### Delivery and operational boundary
+
+Practical core wiring (#441's scope), semantic links/profile handoff and the
+planned backfill preparation come first; bounded validation supports the
+operator's switch decision, followed by observation and removal. The pre-backfill
+spike supplies **measured per-wake total tokens** for the backfill budget, not
+retired step-1/step-2 estimates. No dollar budget is inferred without a billing
+split and no cost is invented as free. Historical act tools stay withheld;
+still-open catch-up follows [27 §10](27-the-memory-is-a-graph.md#10-one-backfill-built-in-time-order),
+not a new historical-action lane.
+
+Retain [70 §4](70-honcho-cutover.md#4-the-hold--14-days-00-sequence-step-9)'s
+**14-day operational observation** after the authorized switch. Watch loaded
+surfaces, input progress and projector/error readbacks; fix actual defects.
+Low/no traffic proves no semantic quality and does not extend observation
+forever solely to reach a sample quota. Report quality limitations separately.
+Live switch, backfill and deployment still use their separate validated
+procedure and concrete operator go-ahead; overall work authorization is not
+an automatic switch. This docs amendment authorizes none of those operations.
+Removal means Nora's dependency only; the Honcho server used by others stays.
+
+Cross-session persistent judgements belong to the existing
+[Notebook kinds](../notebook-memory-types/00-design.md): **note, topic, lesson,
+profile, decision**, curated by the shared Cognition loop. Standing is the
+common rendered concept, not a sixth store or a new agent. Preserve same-matter
+identity and actual execution feedback across the unit; rooms retain source,
+disclosure and destination. Coordinate overlapping contracts with platform
+observations and bridge decoupling; their complete programs, full Notebook
+migration, personalisation and all public benchmarks are not new cutover
+prerequisites. This changes acceptance, not their implementation status.
+
+**Reopen on evidence:** a reachable scope/input/persistence failure, an observed
+unsupported interpretation or correction lost in a later answer, or operational
+readback contradicting the replacement claim requires investigation and repair.
+Sparse traffic alone does not reopen a demand for conclusive population parity.

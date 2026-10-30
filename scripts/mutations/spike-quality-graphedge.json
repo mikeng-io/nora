@@ -1,0 +1,9 @@
+[
+  {
+    "name": "connected edges unwrap their nested relation",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "            relation = edge[\"relation\"]",
+    "new": "            relation = edge",
+    "target": "tests/unit/test_memory_graph_spike.py::test_session_quality_uses_shown_input_and_only_committed_relations"
+  }
+]

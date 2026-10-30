@@ -27,7 +27,7 @@ CREATE TABLE cognition_wake (
   cut_cooldown int NOT NULL DEFAULT 0, detail jsonb NOT NULL DEFAULT '{}',
   at_ms bigint NOT NULL, recorded_at timestamptz NOT NULL, tracked int NOT NULL DEFAULT 0
 );
-CREATE TABLE cognition_session (wake_id bigint, agenda jsonb);
+CREATE TABLE cognition_session (wake_id bigint, agenda jsonb, started_at_ms bigint);
 """
 
 STIMULUS_ROW = ("INSERT INTO stimulus (id, unit, kind, item, ref, platform, "
@@ -37,7 +37,8 @@ STIMULUS_ROW = ("INSERT INTO stimulus (id, unit, kind, item, ref, platform, "
 
 WAKE_ROW = ("INSERT INTO cognition_wake (id, unit, mode, reason, from_stimulus_id, "
             "through_stimulus_id, stimulus_count, eligible_count, at_ms, recorded_at) "
-            "VALUES (%s, 'generated-unit', 'live', 'batch', %s, %s, %s, 1, %s, now())")
+            "VALUES (%s, 'generated-unit', 'live', 'batch', %s, %s, %s, 1, %s, "
+            "to_timestamp(%s / 1000.0))")
 
 
 async def test_finder_reads_generated_eval_clone(
@@ -59,8 +60,8 @@ async def test_finder_reads_generated_eval_clone(
                 # Wake 9's batch holds message 1; wake 10's recorded count is
                 # incomplete, so it is skipped even though its row claims 2.
                 conn.execute(STIMULUS_ROW, (1, "messages:1", "generated-room", 1000, 1000))
-                conn.execute(WAKE_ROW, (9, 0, 1, 1, 1500))
-                conn.execute(WAKE_ROW, (10, 0, 1, 2, 1600))
+                conn.execute(WAKE_ROW, (9, 0, 1, 1, 1500, 1500))
+                conn.execute(WAKE_ROW, (10, 0, 1, 2, 1600, 1600))
             url = (f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
                    f"@{pg_admin.host}:{pg_admin.port}/{name}")
             result = await scan(url)
@@ -169,7 +170,7 @@ async def test_finder_keeps_nora_in_generated_window(pg_admin, monkeypatch, tmp_
                 conn.execute(COGNITION_DDL)
                 conn.execute(STIMULUS_ROW, (1, "messages:1", "generated-room", 1000, 1000))
                 conn.execute(STIMULUS_ROW, (2, "messages:2", "generated-room", 2000, 2000))
-                conn.execute(WAKE_ROW, (9, 0, 2, 2, 2500))
+                conn.execute(WAKE_ROW, (9, 0, 2, 2, 2500, 2500))
             url = (f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
                    f"@{pg_admin.host}:{pg_admin.port}/{name}")
             result = await scan(url)

@@ -41,6 +41,13 @@ Rebuild may project shadow rows; projection alone never makes them readable.
 
 ## 3. The flip (operator, on `norty`)
 
+> **2026-10-31:** [31 §6](31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31) supersedes the fixed sample/parity
+> acceptance in the historical 2026-10-21 amendment below. This remains an
+> operational preparation document, not proof that its earlier flags match the
+> installed deployment. Select the actual mode and validated-copy procedure
+> through `nora-deploy`, with operator go-ahead and loaded-config/later-turn
+> readback; this amendment authorizes no live operation.
+
 > 2026-10-21 (18 / ADR 0026): **Nora can answer what Honcho could** — the new Views and Honcho's dialectic answer the same frozen question set, judged blind — replaces Character-line fact coverage. The ≥80-pair reply replay stays ([45 §6](45-persona-adaptor.md#6-what-honcho-knew-is-re-derived-and-that-is-measured)). Q1 in [18](18-extraction.md) decides the set is built and frozen before any run, with no editing after the first answer is seen; pass requires blind judgement that the new Views are at least as good as Honcho’s dialectic on ≥80% of questions AND an error rate <5% (answers asserting something their sources do not support). Both must hold; this is not a passed gate or permission to flip. The revised forward sequence in [00](00-intent.md#sequence) puts answering and both gates before the operator's `[memory.index] read` switch; Honcho's feed stops later. The `[persona] render` procedure below is the earlier prompt-switch procedure, superseded in part by [18’s gate](18-extraction.md#the-switch-gate). Views use `memory_search` + pre-fetch over readings, Rollup and entries; Nora’s own turn does the reasoning Honcho’s dialectic agent does, with no new tool.
 
 1. Edit a COPY of the live `config.toml`: `[persona] render = true`.
@@ -60,8 +67,10 @@ Rebuild may project shadow rows; projection alone never makes them readable.
 
 ## 4. The hold — 14 days (00 «Sequence» step 9)
 
-The client is deleted only after the switch has held 14 days with the gates'
-readings unchanged. During the hold, watch:
+The client is deleted only after the authorized switch has held 14 days under
+[31 §6](31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31). This is operational observation, not statistical
+semantic parity. Low/no traffic proves no semantic quality; do not extend the
+hold indefinitely solely for volume. During the hold, watch:
 
 - `nora_errors_total{stage="peer_card"}` — flat at zero NEW counts: the path
   is no longer called, so any increment is the switch leaking.
@@ -69,9 +78,9 @@ readings unchanged. During the hold, watch:
 - `/health`'s `index.queue` — drains after each write burst; a queue that
   only grows is a projector defect, not load.
 - the projection-failure counter — flat.
-- the 45 §6 gates (coverage, the reply replay) were the precondition for
-  building the switch, not the hold's measure; the hold's measure is that
-  nothing above moves.
+- [31 §6](31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31) owns the bounded pre-switch evidence review.
+  The hold measures operational behaviour above; report later real journeys
+  and quality limits separately.
 
 ## 5. Step 9 — removal, in an order that keeps a rollback until the last step
 

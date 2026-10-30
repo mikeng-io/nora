@@ -1,0 +1,44 @@
+[
+  {
+    "name": "smoke errors cannot pass",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "\"ERROR\"\n        if errors or missing or len(samples) < 5",
+    "new": "\"PASS\"\n        if errors or missing or len(samples) < 5",
+    "target": "tests/unit/test_memory_graph_spike.py::test_session_smoke_marks"
+  },
+  {
+    "name": "acts detect in-place durable writes",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "\"SELECT md5(coalesce(string_agg(body, ',' ORDER BY body), '')) AS digest \"",
+    "new": "\"SELECT count(*) AS digest \"",
+    "target": "tests/integration/test_spike_act_footprints.py::test_every_generated_act_footprint_moves_invariant"
+  },
+  {
+    "name": "compare reports numeric deltas",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "delta = b - a",
+    "new": "delta = a - b",
+    "target": "tests/unit/test_memory_graph_spike.py::test_compare_reports_prints_each_row_and_delta"
+  },
+  {
+    "name": "every act table is real",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "    \"events\",\n    \"event_revision\",",
+    "new": "    \"event_entry\",\n    \"event_revision\",",
+    "target": "tests/unit/test_memory_graph_spike.py::test_every_act_table_exists"
+  },
+  {
+    "name": "comparison refuses different populations",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "if key not in before or key not in after or before[key] != after[key]:",
+    "new": "if False:",
+    "target": "tests/unit/test_memory_graph_spike.py::test_compare_refuses_mismatched_population"
+  },
+  {
+    "name": "judge cannot be silently pinned",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "if selected_model != model_id:",
+    "new": "if False:",
+    "target": "tests/unit/test_memory_graph_spike.py::test_judge_refuses_effective_model_override"
+  }
+]

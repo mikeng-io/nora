@@ -1,0 +1,37 @@
+[
+  {
+    "name": "session execution clock replaces pending watermark",
+    "file": "nora/infra/sql/cognition_replay.py",
+    "old": "        at_ms = (session[\"started_at_ms\"] if session is not None\n                 else int(wake[\"recorded_at\"].timestamp() * 1000))",
+    "new": "        at_ms = wake[\"at_ms\"]",
+    "target": "tests/integration/test_cognition_wake_replay.py::test_due_floor_replay_restores_the_session_clock_and_evidence"
+  },
+  {
+    "name": "physical member bound permits a floor already due at cutoff",
+    "file": "nora/infra/sql/cognition_replay.py",
+    "old": "datetime.fromtimestamp(at_ms / 1000, UTC)",
+    "new": "datetime.fromtimestamp(wake[\"at_ms\"] / 1000, UTC)",
+    "target": "tests/integration/test_cognition_wake_replay.py::test_due_floor_replay_restores_the_session_clock_and_evidence"
+  },
+  {
+    "name": "dumped subject override preserves nested config types",
+    "file": "nora/subject/obtain.py",
+    "old": "    if isinstance(value, dict):\n        value = TypeAdapter(type(obj).model_fields[head].annotation).validate_python(value)\n",
+    "new": "",
+    "target": "tests/unit/test_subject_obtain.py::test_dumped_spike_overrides_remain_typed_and_sandboxed"
+  },
+  {
+    "name": "host rewriting follows effective overrides",
+    "file": "nora/subject/obtain.py",
+    "old": "    if not _resolves(_DOCKER_HOST):\n        cfg = _with(cfg, \"llm.base_url\", _from_host(cfg.llm.base_url))",
+    "new": "    if False:\n        cfg = _with(cfg, \"llm.base_url\", _from_host(cfg.llm.base_url))",
+    "target": "tests/unit/test_subject_obtain.py::test_dumped_spike_overrides_remain_typed_and_sandboxed"
+  },
+  {
+    "name": "range fallback does not claim a future due row",
+    "file": "nora/infra/sql/cognition_replay.py",
+    "old": "            sa.func.coalesce(STIMULUS.c.due_ms,\n                sa.extract(\"epoch\", STIMULUS.c.recorded_at) * 1000) <= wake[\"at_ms\"]",
+    "new": "            sa.true()",
+    "target": "tests/integration/test_cognition_wake_replay.py::test_due_floor_replay_restores_the_session_clock_and_evidence"
+  }
+]

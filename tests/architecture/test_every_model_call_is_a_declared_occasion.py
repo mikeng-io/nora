@@ -70,6 +70,7 @@ PKG = ROOT / "nora"
 #: may ignore it.
 _EXTRA_DOORS = (
     ROOT / "scripts" / "confirm_cognition_anchors.py",
+    ROOT / "scripts" / "memory_graph_spike.py",
 )
 
 #: Calls that send a prompt to a model, matched on the callee's trailing name

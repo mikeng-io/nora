@@ -145,6 +145,30 @@ async def test_refusals_keep_reason_without_private_content(store):
         assert records.refusals == [(1, "relation", "unseen_source")]
 
 
+async def test_load_missing_message_projection_raises_no_result_found(store):
+    """An exact `("message", <id>)` source with no projection row is
+    `NoResultFound` in BOTH implementations — the wake's grounded-text
+    fallback (`nora.app.cognition_memory`) catches exactly that, so the fake
+    cannot silently return a different failure shape than SQL. The SQL
+    positive control is `test_sql_source_reader_joins_...` above."""
+    records, engine = store
+    from sqlalchemy.exc import NoResultFound
+
+    from nora.domain.memory_graph import WorkItem
+
+    work = WorkItem(
+        "generated-missing-work", ("message", "404042042"), UNIT,
+        "generated-hash", WORK.as_of,
+    )
+    with pytest.raises(NoResultFound):
+        await records.load(work)
+    if engine is None:
+        # The fake distinguishes absent from present rather than always
+        # raising: seed the key and the same call returns the item.
+        records.items[work.source] = ITEM
+        assert (await records.load(work)).work == work
+
+
 async def test_sql_source_reader_joins_the_reply_parent_and_refuses_another_unit(store):
     records, engine = store
     if engine is None:

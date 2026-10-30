@@ -1,5 +1,48 @@
 # Changelog
 
+## [7.11.54](https://github.com/mikeng-io/nora/compare/v7.11.53...v7.11.54) (2026-10-30)
+
+
+### Bug Fixes
+
+* **evals:** check the replay subjects effective embedder configuration ([8fb273b](https://github.com/mikeng-io/nora/commit/8fb273bd6d0f63c4da980ae38bac37faced02580))
+* **scripts:** the memory-graph spike indexes each replay sandbox before inspect ([064d1a0](https://github.com/mikeng-io/nora/commit/064d1a0448f520ead952e888d843e45a176cdede))
+
+## [7.11.53](https://github.com/mikeng-io/nora/compare/v7.11.52...v7.11.53) (2026-10-30)
+
+
+### Bug Fixes
+
+* **replay:** restore recorded session clocks and typed subject overrides ([e7dcd15](https://github.com/mikeng-io/nora/commit/e7dcd157b03d3150cbca337f7ce03b91b97244c9))
+
+## [7.11.52](https://github.com/mikeng-io/nora/compare/v7.11.51...v7.11.52) (2026-10-30)
+
+
+### Maintenance
+
+* **memory:** bound Honcho cutover acceptance to available evidence ([242e295](https://github.com/mikeng-io/nora/commit/242e29598fc1e30ef7f0ecf58c8cad97b4473670))
+* **memory:** qualify remaining historical cutover formulas ([8d32ab7](https://github.com/mikeng-io/nora/commit/8d32ab7ac2a41338b07d8ae562bc94025c31623e))
+
+## [7.11.51](https://github.com/mikeng-io/nora/compare/v7.11.50...v7.11.51) (2026-10-30)
+
+
+### Maintenance
+
+* **observability:** align dependent design bundles with SigNoz ([590e5b1](https://github.com/mikeng-io/nora/commit/590e5b1fd7e806e62b262a8daf21aa1eab6bad72))
+* **observability:** record the SigNoz migration design ([396c7a6](https://github.com/mikeng-io/nora/commit/396c7a68ed317fca400946de5e1373f0e28c5cd9))
+
+## [7.11.50](https://github.com/mikeng-io/nora/compare/v7.11.49...v7.11.50) (2026-10-30)
+
+
+### Features
+
+* **memory:** measure recorded Cognition sessions in the snapshot spike ([f1648d8](https://github.com/mikeng-io/nora/commit/f1648d80ad5adc6c0561e585536f7783bd4d3073))
+
+
+### Bug Fixes
+
+* **memory:** close snapshot spike review measurement gaps ([2c4f5cb](https://github.com/mikeng-io/nora/commit/2c4f5cb33e1abf9a0bfd099f381a7c9355d24135))
+
 ## [7.11.49](https://github.com/mikeng-io/nora/compare/v7.11.48...v7.11.49) (2026-10-30)
 
 

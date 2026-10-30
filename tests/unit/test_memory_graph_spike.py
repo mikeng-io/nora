@@ -12,6 +12,59 @@ from nora.app.composition import search_provider
 from scripts import memory_graph_spike as spike
 
 
+@pytest.mark.parametrize("read,embed", [(True, True), (False, True), (True, False)])
+async def test_replay_embedder_check_uses_effective_subject_config(
+    tmp_path, monkeypatch, read, embed,
+):
+    from nora.subject.obtain import build_config
+    from tests.unit.test_subject_obtain import _spec
+
+    source = build_config(_spec(tmp_path / "source", overrides={
+        "memory.index.read": not read, "memory.index.embed": not embed,
+        "memory.index.embedder_model": "generated-source.gguf@0000feedbeef",
+    }))
+    effective = build_config(_spec(tmp_path / "subject", overrides={
+        "memory.index.read": read, "memory.index.embed": embed,
+        "memory.index.embedder_url": "http://127.0.0.1:8092",
+        "memory.index.embedder_model": "generated-subject.gguf@0000feedbeef",
+    }))
+    assert source.memory.index.read != effective.memory.index.read
+    checked, indexed = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(spike, "check_served_model", checked)
+    monkeypatch.setattr(spike, "index_sandbox", indexed)
+    await spike.index_replay_sandbox(
+        SimpleNamespace(database_url="generated-sandbox", cfg=effective),
+        source_url="generated-source",
+    )
+    if read and embed:
+        checked.assert_awaited_once_with(
+            effective.memory.index.embedder_url, "generated-subject.gguf@0000feedbeef")
+    else:
+        checked.assert_not_awaited()
+    indexed.assert_awaited_once_with(
+        "generated-sandbox", source_url="generated-source",
+        model_id="generated-subject.gguf@0000feedbeef")
+
+
+async def test_effective_embedder_refusal_prevents_index_preparation(tmp_path, monkeypatch):
+    from nora.subject.obtain import build_config
+    from nora.subject.sandbox_index import GraphIndexRefusedError
+    from tests.unit.test_subject_obtain import _spec
+
+    effective = build_config(_spec(tmp_path, overrides={
+        "memory.index.read": True, "memory.index.embed": True,
+    }))
+    indexed = AsyncMock()
+    monkeypatch.setattr(spike, "index_sandbox", indexed)
+    monkeypatch.setattr(spike, "check_served_model", AsyncMock(
+        side_effect=GraphIndexRefusedError("generated unavailable embedder")))
+    with pytest.raises(GraphIndexRefusedError, match="generated unavailable"):
+        await spike.index_replay_sandbox(
+            SimpleNamespace(database_url="generated-sandbox", cfg=effective),
+            source_url="generated-source")
+    indexed.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     "ack,url",
     [
@@ -30,19 +83,6 @@ def test_refuses_unacknowledged_or_production_url(ack, url):
     )
 
 
-def test_acts_fail():
-    clean = spike.invariants({"notes": 2}, {"notes": 2}, ["settled"], 1, 0)
-    assert clean["acts"]["status"] == "PASS"
-    dirty = spike.invariants({"notes": 2}, {"notes": 3}, ["settled"], 1, 0)
-    assert dirty["acts"] == {"status": "FAIL", "count": 1}
-
-
-def test_lost_work_fails():
-    assert spike.invariants({}, {}, ["settled", "failed"], 2, 0)["lost"]["count"] == 0
-    assert spike.invariants({}, {}, ["settled"], 2, 0)["lost"]["status"] == "FAIL"
-    assert spike.invariants({}, {}, ["pending"], 1, 0)["lost"]["status"] == "FAIL"
-
-
 def test_judge_error_never_passes():
     assert spike.rate(["supported", "ERROR"], 1, 0.5)["status"] == "ERROR"
     assert spike.rate([], 1, 0.5)["status"] == "INSUFFICIENT"
@@ -50,7 +90,10 @@ def test_judge_error_never_passes():
 
 
 async def test_judge_malformed_is_error(monkeypatch):
-    judges = spike.Judges(SimpleNamespace(), ["generated-a", "generated-b"])
+    judges = spike.Judges(
+        SimpleNamespace(endpoint=lambda purpose, model: ("", "", model)),
+        ["generated-a", "generated-b"],
+    )
     monkeypatch.setattr(
         judges,
         "call",
@@ -66,7 +109,6 @@ async def test_judge_malformed_is_error(monkeypatch):
 
 def test_egress_uses_existing_screen():
     assert egress_reason("Generated Private Person", ("Generated Private Person",))
-    assert spike.invariants({}, {}, ["settled"], 1, 1)["egress"]["status"] == "FAIL"
     assert egress_reason("public venue programme", ()) is None
 
 
@@ -117,35 +159,6 @@ def test_age_scope_and_query_grammar_cannot_read_foreign_unit():
         spike.scoped_cypher("MATCH (n) RETURN n; CREATE (n)")
 
 
-async def test_relation_judge_sees_only_cited_sources(monkeypatch, tmp_path):
-    source = {"key": ["message", "generated-one"], "text": "Generated cited evidence"}
-    unrelated = {"key": ["message", "generated-two"], "text": "Generated uncited evidence"}
-    # Shaped like candidates(): asdict() of the item keeps its tuples.
-    candidate = {"input": {"sources": (source, unrelated), "snapshot": {"messages": ()}}}
-    shown = {"work_id": "generated-work", "part": "shown_sources", "payload": {"sources": []}}
-    receipt = {
-        "work_id": "generated-work",
-        "part": "graph",
-        "payload": {
-            "relations": [{"id": "generated-relation", "rel": "concerns"}],
-            "entities": [],
-            "evidence": [{"relation_id": "generated-relation", "source": source["key"]}],
-        },
-    }
-
-    async def judge(payload):
-        if payload["proposition"].get("id") == "generated-relation":
-            assert payload["evidence"]["sources"] == [source]
-        return ["supported", "supported"]
-
-    monkeypatch.setattr(spike, "rows", AsyncMock(return_value=[]))
-    report = await spike.quality(
-        None, {"generated-work": candidate}, [shown, receipt], SimpleNamespace(score=judge),
-        tmp_path, 1,
-    )
-    assert report["relation_precision"]["status"] == "PASS"
-
-
 def test_operator_script_is_a_declared_assembled_occasion():
     import ast
     from pathlib import Path
@@ -171,31 +184,6 @@ def test_cost_diagnostic_median_and_p95():
     assert spike.percentile([], 0.5) is None
 
 
-def test_cost_row_counts_sessions_and_tokens_per_step():
-    sessions = [
-        {"id": "s1", "situation": {"step": "comprehend", "work_item": "w1"}},
-        {"id": "s2", "situation": {"step": "reshape", "work_item": "w1"}},
-        {"id": "s3", "situation": {"step": "reshape", "work_item": "w1"}},
-        {"id": "s4", "situation": {"step": "comprehend", "work_item": "w2"}},
-    ]
-    receipts = [
-        {"part": "model", "session_id": "s1", "work_id": "w1", "payload": {"total_tokens": 100}},
-        {"part": "model", "session_id": "s2", "work_id": "w1", "payload": {"total_tokens": 40}},
-        {"part": "model", "session_id": "s4", "work_id": "w2", "payload": {"total_tokens": 300}},
-    ]
-    reshape = spike.cost_row("reshape", ["w1", "w2"], receipts, sessions)
-    assert reshape["sessions_per_item"] == 1.0
-    assert reshape["status"] == "REPORTED"
-    comprehend = spike.cost_row("comprehend", ["w1", "w2"], receipts, sessions)
-    assert comprehend["token_median"] == 200
-
-
-def test_cost_row_without_usage_is_error():
-    sessions = [{"id": "s1", "situation": {"step": "comprehend", "work_item": "w1"}}]
-    receipts = [{"part": "model", "session_id": "s1", "work_id": "w1", "payload": {}}]
-    assert spike.cost_row("comprehend", ["w1"], receipts, sessions)["status"] == "ERROR"
-
-
 @pytest.mark.parametrize("provider", ["exa", "tavily"])
 def test_search_provider_builds_from_the_template(example_config, monkeypatch, provider):
     """The spike's step one gets the production search backend, not a hand-built one."""
@@ -205,87 +193,208 @@ def test_search_provider_builds_from_the_template(example_config, monkeypatch, p
     assert search_provider(cfg) is not None
 
 
-async def test_an_item_with_a_media_source_is_in_the_attachment_stratum(monkeypatch):
-    from dataclasses import dataclass
-
-    from nora.domain.memory_graph import WorkItem
-
-    @dataclass(frozen=True)
-    class Source:
-        key: tuple[str, str]
-        text: str
-
-    @dataclass(frozen=True)
-    class Item:
-        sources: tuple[Source, ...]
-        snapshot: dict
-
-    # Shaped like the snapshot's message rows: no media column on them.
-    item = Item(
-        (Source(("message", "generated-1"), "Generated text"),
-         Source(("media", "generated-2"), "Generated reading")),
-        {"messages": ({"id": "generated-1", "body": "Generated text"},)},
+def test_session_smoke_marks():
+    healthy = [
+        {
+            "status": "PASS",
+            "tokens": 100,
+            "admitted": 1,
+            "refused": 0,
+            "acts": 0,
+            "refused_consumed": 0,
+        }
+        for _ in range(5)
+    ]
+    assert spike.session_smoke(healthy)["status"] == "PASS"
+    for field in ("acts", "refused_consumed"):
+        assert spike.session_smoke([*healthy[:-1], {**healthy[-1], field: 1}])["status"] == "FAIL"
+    assert (
+        spike.session_smoke([*healthy[:-1], {**healthy[-1], "tokens": None}])["status"] == "ERROR"
     )
-    work = WorkItem("generated-work", ("message", "generated-1"), "generated-unit", "h", 0)
-    monkeypatch.setattr(spike, "rows", AsyncMock(return_value=[{}]))
-    monkeypatch.setattr(spike, "work_row", lambda row: work)
-    records = SimpleNamespace(load=AsyncMock(return_value=item))
-    [candidate] = await spike.candidates(None, records)
-    assert "attachment" in candidate["strata"]
+    assert (
+        spike.session_smoke([*healthy[:-1], {**healthy[-1], "status": "ERROR"}])["status"]
+        == "ERROR"
+    )
+    assert spike.session_smoke([])["status"] == "ERROR"
 
 
-
-def _graph(work_id, relations):
-    return {"work_id": work_id, "payload": {"relations": [{}] * relations, "entities": []}}
-
-
-ITEMS = [f"w{i}" for i in range(5)]
-SETTLED = ["settled"] * 5
+def test_session_acts_invariant_counts_deletions_and_creations():
+    assert spike.check_acts({"notes": 2}, {"notes": 2}) == 0
+    assert spike.check_acts({"notes": 2}, {"notes": 3}) == 1
+    assert spike.check_acts({"notes": 2}, {"notes": 1}) == 1
 
 
-def _smoke(graphs, refusals=(), claims=None, states=SETTLED):
-    claims = dict.fromkeys(ITEMS, 4) if claims is None else claims
-    return spike.smoke_health(ITEMS, states, graphs, list(refusals), claims)
+def test_compare_reports_prints_each_row_and_delta():
+    identity = {
+        "sample_sha256": "generated",
+        "seed": 17,
+        "judges": ["a", "b"],
+        "effective_judges": ["a", "b"],
+        "strata": {"text": 1},
+    }
+    out = spike.compare_reports(
+        {**identity, "precision": {"status": "FAIL", "rate": 0.5}},
+        {**identity, "precision": {"status": "PASS", "rate": 0.75}},
+    )
+    assert 'precision.status: "FAIL" -> "PASS"' in out
+    assert "precision.rate: 0.5 -> 0.75 (delta +0.25)" in out
 
 
-def test_smoke_passes_a_healthy_sample():
-    healthy = _smoke([_graph(w, 2) for w in ITEMS], [{"part": "relation", "reason": "wrong_ends"}])
-    assert healthy["status"] == "PASS" and healthy["relations_admitted"] == 10
+def test_tool_exchanges_pairs_admission_and_refusal():
+    messages = []
+    for number, result in enumerate(
+        (
+            {"status": "refused", "admitted": [], "refused": [{"reason": "schema"}]},
+            {"status": "ok", "admitted": [0], "refused": []},
+        )
+    ):
+        messages.extend(
+            [
+                {
+                    "content": [
+                        {
+                            "toolUse": {
+                                "toolUseId": str(number),
+                                "name": "memory_propose",
+                                "input": {"items": [0]},
+                            }
+                        }
+                    ]
+                },
+                {
+                    "content": [
+                        {"toolResult": {"toolUseId": str(number), "content": [{"json": result}]}}
+                    ]
+                },
+            ]
+        )
+    parsed = spike.tool_exchanges(messages)
+    assert [e["result"]["status"] for e in parsed] == ["refused", "ok"]
+    with pytest.raises(ValueError, match="missing tool results"):
+        spike.tool_exchanges(messages[:-1])
 
 
-def test_smoke_counts_only_productive_writes():
-    # Four empty writes and one relation is 20% productive, not 100%.
-    graphs = [_graph("w0", 1), *(_graph(w, 0) for w in ITEMS[1:])]
-    sick = _smoke(graphs, claims={})
-    assert sick["valid_writes"] == 5 and sick["productive_rate"] == 0.2
-    assert sick["status"] == "FAIL"
-    # At the mark (3 of 5 = 0.6) it passes; one fewer fails.
-    at_mark = _smoke([_graph(w, 1) for w in ITEMS[:3]], claims={})
-    assert at_mark["productive_rate"] == 0.6 and at_mark["status"] == "PASS"
-    below = _smoke([_graph(w, 1) for w in ITEMS[:2]], claims={})
-    assert below["status"] == "FAIL"
+async def test_session_quality_uses_shown_input_and_only_committed_relations():
+    """Score the serialized Relation nested in each committed GraphEdge."""
+    from dataclasses import asdict
+    from datetime import UTC, datetime
+
+    from nora.domain.memory_graph import GraphEdge, Relation, Subgraph
+
+    def relation(relation_id: str, rel: str) -> Relation:
+        return Relation(
+            id=relation_id,
+            src=("event", "generated-source"),
+            rel=rel,
+            dst=("topic", "generated-topic"),
+            layer="notebook",
+            unit="generated-unit",
+            asserted_at=datetime(2026, 10, 1, tzinfo=UTC),
+        )
+
+    def serialized(value):
+        # The exact expression memory_propose returns as `connected`.
+        return json.loads(json.dumps(asdict(value), default=str))
+
+    committed, merge, existing = (
+        relation("generated-committed", "concerns"),
+        relation("generated-merge", "same_as"),
+        relation("generated-existing", "concerns"),
+    )
+    connected = serialized(
+        Subgraph(
+            status="ok",
+            relations=tuple(
+                GraphEdge(relation=r, evidence_count=1) for r in (committed, merge, existing)
+            ),
+        )
+    )
+    seen = []
+
+    async def judge(payload):
+        proposition = payload["proposition"]
+        seen.append((proposition, payload["evidence"]))
+        verdict = "supported" if proposition.get("rel") == "concerns" else "unsupported"
+        return [verdict, verdict]
+
+    read = {"name": "memory_read", "input": {"key": "generated"}, "result": {"status": "ok"}}
+    result = await spike.session_quality(
+        SimpleNamespace(score=judge),
+        {"prompt": "Generated source"},
+        [
+            read,
+            {"name": "profile_revise", "input": {}, "result": {"status": "ok"}},
+            {
+                "name": "memory_propose",
+                "input": {"readings": [{"text": "Generated claim"}]},
+                "result": {
+                    "admitted": [0],
+                    "committed": ["generated-committed", "generated-merge"],
+                    "connected": connected,
+                },
+            },
+        ],
+    )
+    # The judge scored the nested serialized Relations, never the GraphEdge
+    # wrappers, and only committed ids — `generated-existing` stays unscored.
+    relations = [
+        p for p, _ in seen if isinstance(p, dict) and str(p.get("id", "")).startswith("generated-")
+    ]
+    assert relations == [serialized(committed), serialized(merge)]
+    assert result["relation_precision"] == [["supported", "unsupported"]] * 2
+    assert [p for p, _ in seen if "different_entities" in p] == [
+        {"different_entities": serialized(merge)}
+    ]
+    assert result["wrong_merges"] == [["unsupported"]] * 2
+    assert result["reading_precision"] == [["unsupported"]] * 2
+    expected_evidence = {"input": {"prompt": "Generated source"}, "reads": [read]}
+    assert seen and all(e == expected_evidence for _, e in seen)
 
 
-def test_smoke_refused_relation_share_is_a_ceiling():
-    graphs = [_graph(w, 1) for w in ITEMS[:4]]  # 4 admitted relations
-    one = [{"part": "relation", "reason": "wrong_ends"}]
-    assert _smoke(graphs, one)["relation_refused_share"] == 0.2
-    assert _smoke(graphs, one)["status"] == "PASS"
-    assert _smoke(graphs, one * 2)["status"] == "FAIL"
+def test_report_error_exit_is_distinct_from_fail():
+    assert spike.report_exit({"row": {"status": "PASS"}}) == 0
+    assert spike.report_exit({"row": {"status": "FAIL"}}) == 1
+    assert spike.report_exit({"row": {"status": "REPORTED", "usage": {"status": "ERROR"}}}) == 2
 
 
-def test_smoke_refused_reading_share_is_a_ceiling():
-    graphs = [_graph(w, 1) for w in ITEMS]
-    claims = {"w0": 4}
-    one = [{"part": "reading", "reason": "event_expression_absent"}]
-    assert _smoke(graphs, one, claims)["reading_refused_share"] == 0.2
-    assert _smoke(graphs, one, claims)["status"] == "PASS"
-    assert _smoke(graphs, one * 2, claims)["status"] == "FAIL"
+@pytest.mark.parametrize("key", ["sample_sha256", "seed", "judges", "effective_judges", "strata"])
+def test_compare_refuses_mismatched_population(key):
+    report = {
+        "sample_sha256": "generated",
+        "seed": 17,
+        "judges": ["a", "b"],
+        "effective_judges": ["a", "b"],
+        "strata": {"text": 1},
+    }
+    with pytest.raises(ValueError, match="incomparable reports"):
+        spike.compare_reports(report, {**report, key: "different"})
+    with pytest.raises(ValueError, match="incomparable reports"):
+        spike.compare_reports({}, {})
 
 
-def test_smoke_fails_a_failed_item_and_is_insufficient_when_small():
-    graphs = [_graph(w, 2) for w in ITEMS]
-    assert _smoke(graphs, states=["failed", *SETTLED[1:]])["status"] == "FAIL"
-    assert _smoke([])["status"] == "FAIL"
-    small = spike.smoke_health(ITEMS[:3], SETTLED[:3], graphs[:3], [], {})
-    assert small["status"] == "INSUFFICIENT"
+def test_every_act_table_exists():
+    from nora.infra.sql.schema import METADATA
+
+    assert set(spike.ACT_TABLES) <= METADATA.tables.keys()
+    assert {
+        "events",
+        "event_revision",
+        "standing",
+        "standing_revision",
+        "note_revision",
+        "memo_revision",
+        "reminders",
+        "cognition_self_wake",
+    } <= set(spike.ACT_TABLES)
+
+
+async def test_judge_refuses_effective_model_override(monkeypatch):
+    cfg = SimpleNamespace(endpoint=lambda purpose, model: ("generated-url", "", "pinned"))
+    judges = spike.Judges(cfg, ["requested-a", "requested-b"])
+    assert judges.effective_models == ["pinned", "pinned"]
+    build = AsyncMock(side_effect=AssertionError("must refuse before model call"))
+    monkeypatch.setattr(spike, "build_structured_model", build)
+    assert await judges.score({}) == ["ERROR", "ERROR"]
+    with pytest.raises(ValueError, match="effective judge"):
+        await judges.call("requested-a", "generated", {})
+    build.assert_not_called()
