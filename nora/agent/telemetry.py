@@ -52,7 +52,7 @@ from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.sampling import Sampler
 from opentelemetry.trace import Span
 from strands.telemetry import StrandsTelemetry
-from strands.telemetry.tracer import get_tracer
+from strands.telemetry.tracer import get_tracer, serialize
 from strands.types.content import Message, Messages
 from strands.types.event_loop import Metrics, StopReason, Usage
 
@@ -86,7 +86,17 @@ _SESSION_ID_MAX = 200
 #: installed `strands/telemetry/tracer.py`).
 #: A Dreamer unit has no room; its session is the tick that dispatched it
 #: (`nora.app.runtime.dream_loop`), so one pass's units read as one session.
-_CONVERSATION_KEYS = ("nora.conversation_id", "nora.dreamer.pass_id")
+#: A Cognition session has no room either: `nora.cognition.session_id` is its
+#: own natural identity (one session's agent calls group as one conversation —
+#: a multi-room background session is not forced into one room). Extraction is
+#: not conversational, but a batch is the stable job/attempt identifier its
+#: spans group under (`nora.extraction.batch_id`).
+_CONVERSATION_KEYS = (
+    "nora.conversation_id",
+    "nora.dreamer.pass_id",
+    "nora.cognition.session_id",
+    "nora.extraction.batch_id",
+)
 
 #: First match wins. Langfuse's recognised `langfuse.observation.type` values;
 #: a span not in the table is left to Langfuse, which types the model calls,
@@ -160,6 +170,7 @@ class TraceIdentityProcessor(SpanProcessor):
 def setup_agent_tracing(
     *, sampler: Sampler, service_name: str, exporter: str, endpoint: str,
     headers_env: str, credentials: dict[str, str] | None = None,
+    service_version: str = "", environment: str = "",
 ) -> None:
     """Register the global `TracerProvider` through `StrandsTelemetry`,
     keeping Nora's own sampler.
@@ -195,8 +206,16 @@ def setup_agent_tracing(
     """
     if exporter not in ("console", "file", "otlp_http"):
         raise ValueError(f"unknown tracing exporter: {exporter!r}")
+    resource_attrs: dict[str, str] = {"service.name": service_name}
+    # The installed artifact and the deployment, on every span in the process —
+    # what "is this new since the last deploy" and "which deployment produced
+    # this trace" are answered from. Empty means unknown, never a guessed SHA.
+    if service_version:
+        resource_attrs["service.version"] = service_version
+    if environment:
+        resource_attrs["deployment.environment"] = environment
     provider = TracerProvider(
-        resource=Resource.create({"service.name": service_name}),
+        resource=Resource.create(resource_attrs),
         sampler=sampler,
     )
     # First, so the stamp is on the span before any processor can read it; and
@@ -269,6 +288,7 @@ def end_raw_model_span(
     *, span: Span | None, content: str, finish_reason: str,
     input_tokens: int | None = None, output_tokens: int | None = None,
     total_tokens: int | None = None, latency_seconds: float | None = None,
+    response_model: str = "", provider: str = "",
 ) -> None:
     """Close a span opened by `start_raw_model_span`, in the SDK's own
     `Usage`/`Metrics`/`StopReason` vocabulary. **Never load-bearing** — see
@@ -277,29 +297,72 @@ def end_raw_model_span(
     failure), must not turn an already-obtained model verdict into a
     discarded one.
 
-    **Usage is written as zero when the provider omitted it.**
+    **Unknown usage stays unknown — it is never written as zero.**
     `Tracer.end_model_invoke_span` writes `gen_ai.usage.*` unconditionally
-    from the `Usage` dict it is given — there is no "omit if absent" branch.
-    OpenAI-compatible providers return usage on essentially every response, so
-    the omitted case is rare.
+    from the `Usage` dict it is given, so passing zeros through it would stamp
+    "0 tokens" on a call whose usage the provider simply did not return —
+    the fabricated zero the acceptance contract forbids. When the caller has
+    no usage at all, the span ends with its message/finish-reason event and
+    *no* `gen_ai.usage.*` attributes: absent means "not reported" (R-27), and
+    the token/cost totals on the backend treat a missing reading as missing,
+    not free. `provider` (the requested lane — OmniRoute or a direct provider)
+    and `response_model` (the served model, distinct from the requested alias)
+    are attributes on the live span, so they land whichever end path runs.
     """
     if span is None:
         return
     try:
+        if provider:
+            span.set_attribute("gen_ai.provider.name", provider)
+        if response_model and response_model != "":
+            span.set_attribute("gen_ai.response.model", response_model)
         stop_reason = _STOP_REASON_FROM_FINISH_REASON.get(finish_reason, "end_turn")
         message: Message = {"role": "assistant", "content": [{"text": content}]}
-        usage: Usage = {
-            "inputTokens": input_tokens or 0,
-            "outputTokens": output_tokens or 0,
-            "totalTokens": total_tokens or 0,
-        }
-        metrics: Metrics = {
-            "latencyMs": int((latency_seconds or 0.0) * 1000),
-        }
-        get_tracer().end_model_invoke_span(
-            span=span, message=message, usage=usage, metrics=metrics,
-            stop_reason=stop_reason,
+        usage_known = (
+            input_tokens is not None
+            or output_tokens is not None
+            or total_tokens is not None
         )
+        if usage_known:
+            usage: Usage = {
+                "inputTokens": input_tokens or 0,
+                "outputTokens": output_tokens or 0,
+                "totalTokens": total_tokens or 0,
+            }
+            metrics: Metrics = {
+                "latencyMs": int((latency_seconds or 0.0) * 1000),
+            }
+            get_tracer().end_model_invoke_span(
+                span=span, message=message, usage=usage, metrics=metrics,
+                stop_reason=stop_reason,
+            )
+            return
+        # Unknown usage: end the span with its output event and no fabricated
+        # usage. The private helpers below are Strands' own span-closing
+        # machinery, reached through the same module-level boundary the public
+        # call uses — this is the one place a hand-spelled event name is
+        # allowed, because the public API has no usage-less end.
+        tracer = get_tracer()
+        if tracer.use_latest_genai_conventions:
+            parts = tracer._map_content_blocks_to_otel_parts(message["content"])
+            output = serialize([
+                {"role": message["role"], "parts": parts,
+                 "finish_reason": str(stop_reason)}
+            ])
+            tracer._add_event(
+                span, "gen_ai.client.inference.operation.details",
+                {"gen_ai.output.messages": tracer._redact(
+                    "gen_ai.output.messages", output)},
+                to_span_attributes=tracer._span_attributes_only,
+            )
+        else:
+            tracer._add_event(
+                span, "gen_ai.choice",
+                {"finish_reason": str(stop_reason),
+                 "message": tracer._redact(
+                     "gen_ai.output.messages", serialize(message["content"]))},
+            )
+        tracer._end_span(span)
     except Exception:
         log.debug("raw model span could not end cleanly", exc_info=True)
 
@@ -318,6 +381,50 @@ def end_raw_model_span_with_error(
         get_tracer().end_span_with_error(span, error_message, exception)
     except Exception:
         log.debug("raw model span error not recorded", exc_info=True)
+
+
+class RawSpanRecorder:
+    """The vision client's model-span seam, as an injectable object.
+
+    `nora.infra.vision.client` is below `nora.obs`/`nora.agent` in the layered
+    contract, so it cannot reach `start_raw_model_span` itself. The
+    composition root hands it one of these instead — an object whose
+    `start`/`finish`/`fail` delegate to this module's own functions. The
+    client names the protocol it needs (`VisionSpanRecorder`); this is the
+    concrete half the boundary allows.
+    """
+
+    def start(
+        self, *, messages: list, model_id: str, provider: str = "",
+    ) -> Span | None:
+        # The gen_ai attribute NAMES stay inside this module (the dialect gate
+        # in tests/architecture forbids them elsewhere); the provider VALUE is
+        # the caller's to declare.
+        attrs: dict[str, Any] = {}
+        if provider:
+            attrs["gen_ai.provider.name"] = provider
+        return start_raw_model_span(
+            messages=messages, model_id=model_id,
+            custom_trace_attributes=attrs or None,
+        )
+
+    def finish(
+        self, span: Any, *, content: str, finish_reason: str,
+        input_tokens: int | None = None, output_tokens: int | None = None,
+        total_tokens: int | None = None, latency_seconds: float | None = None,
+        response_model: str = "", provider: str = "",
+    ) -> None:
+        end_raw_model_span(
+            span=span, content=content, finish_reason=finish_reason,
+            input_tokens=input_tokens, output_tokens=output_tokens,
+            total_tokens=total_tokens, latency_seconds=latency_seconds,
+            response_model=response_model, provider=provider,
+        )
+
+    def fail(self, span: Any, *, error: Exception) -> None:
+        end_raw_model_span_with_error(
+            span=span, error_message=type(error).__name__, exception=error,
+        )
 
 
 @contextmanager

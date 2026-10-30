@@ -77,6 +77,10 @@ def setup_errors(
             release=release or None,
             # Errors only; see the module docstring.
             traces_sample_rate=0.0,
+            # Take trace context from the OTel provider rather than Sentry's
+            # own: error events then carry the SAME trace_id/span_id the span
+            # exported to the collector — one tracing pipeline, one id space.
+            instrumenter="otel",
             # `event_level=ERROR` turns `log.exception` sites into Sentry
             # issues; `level=WARNING` is the BREADCRUMB floor, so an issue
             # arrives with the warnings that led to it.

@@ -1,4 +1,4 @@
-"""OTel plumbing: the R-76 sampler, the generic named-span helper, and context
+"""OTel plumbing: the sampler, the generic named-span helper, and context
 propagation — everything here is pure OpenTelemetry with no `strands` import,
 which is the point (`tests/test_boundaries.py::test_strands_import_boundary`
 allows `strands` only under `nora/agent/`).
@@ -40,16 +40,19 @@ from nora.secret import resolve
 
 log = logging.getLogger("nora.tracing")
 
-#: The attribute a ROOT span uses to say what kind of work is under it, and the
-#: only thing `build_sampler` reads. A CLOSED set as a `Literal` so the
-#: vocabulary is DERIVED from the code rather than hand-copied into the sampler.
+#: The attribute a ROOT span uses to say what kind of work is under it. A
+#: CLOSED set as a `Literal` so the vocabulary is DERIVED from the code rather
+#: than hand-copied into the collector's retention policy.
 #:
-#: * `generation` — a model call can happen under this root. The trace is what
-#:   the collector exists for; it is kept whether or not this particular run
-#:   reached the model (a tag refused at admission is still a tag, and DEC-141's
-#:   whole point is that it leaves a trace SAYING it was refused).
+#: Since the SigNoz cutover (ADR 0034) this is a RETENTION HINT that travels
+#: with the span, not an SDK drop: the collector's tail policy reads it after
+#: the outcome is known. A head sampler deciding at span START could never
+#: keep "a plumbing root that later failed" — the failure does not exist yet.
+#:
+#: * `generation` — a model call can happen under this root. Always retained.
 #: * `plumbing` — deterministic stage sequencing with no model call anywhere
-#:   under it. Never exported. Its signal belongs on a counter.
+#:   under it. The collector drops it when the run ends well and keeps it on
+#:   error; its routine signal belongs on a counter either way.
 TraceKind = Literal["generation", "plumbing"]
 
 #: The attribute name itself, `nora.` prefixed like every other attribute this
@@ -65,31 +68,30 @@ _TRACE_KINDS: frozenset[str] = frozenset(get_args(TraceKind))
 TraceCarrier = Context
 
 
-class _PlumbingIsNotATrace(Sampler):
-    """THE ROOT DECISION (R-76): a trace reaches the collector when the work
-    under it can contain a generation.
+class _EveryRootIsRecorded(Sampler):
+    """THE ROOT DECISION (R-76, amended for SigNoz): **every root is recorded
+    and exported** — retention is the collector's job, taken with the outcome
+    in hand.
 
-    Langfuse is an LLM-observability tool. Everything Nora does that is not a
-    model call — sequencing ingest stages, writing a row, resolving an
-    identity, counting a refusal — is plumbing, and plumbing's questions
-    («how many», «how often», «with what outcome») are Prometheus' questions.
-    `nora/ingest/pipeline.py` opens spans with no model call under any of
-    them, and it is the highest-volume entry point, so exporting it would bury
-    the turns that matter.
+    Before ADR 0034 the sampler dropped `plumbing` roots outright, because the
+    only destinations were Langfuse (an LLM-observability tool) and a Jaeger
+    that could not use them. Under SigNoz the plumbing drop moves to a tail
+    policy in the collector pipeline, where it is evaluated AFTER the trace's
+    spans — and therefore its errors — exist. A plumbing root that dies at a
+    named stage is a user-visible failure the backend must hold; a head
+    sampler deciding at span START cannot keep "this routine root later
+    failed" without keeping everything anyway, which is what this sampler now
+    does.
 
-    **This is a decision about ROOTS, not about every span.**
-    `engagement.admission` has no generation in it either, and it must keep
-    being exported: as a CHILD of a trace that has one, it is how a turn that
-    ended before the model call ends visibly at a named stage. Composed under
-    `ParentBased`, so a child never re-decides — it inherits whatever its root
-    was given, which also keeps a QUEUED tag's turn (re-attached to a captured
-    context whose root span has already ended) in the same trace as the root
-    that admitted it.
+    **`nora.trace_kind` is still validated and still stamped**: it is the hint
+    the collector's drop rule keys on, and an unrecognised value is LOGGED and
+    exported — the same "wrong towards export costs noise, wrong towards
+    silence costs an invisible gap" judgement as before, one seam down.
 
-    **DEFAULT: EXPORT.** An undeclared root is kept. Erring towards export
-    costs visible noise; erring towards silence costs an invisible missing
-    trace for a model call. Only an explicit `plumbing` drops. An undeclared
-    value is LOGGED and kept.
+    Composed under `ParentBased`, so a child never re-decides — it inherits
+    whatever its root was given, which also keeps a QUEUED tag's turn
+    (re-attached to a captured context whose root span has already ended) in
+    the same trace as the root that admitted it.
     """
 
     def should_sample(
@@ -109,12 +111,10 @@ class _PlumbingIsNotATrace(Sampler):
                 "— exporting it anyway; add it to TraceKind",
                 name, declared, sorted(_TRACE_KINDS),
             )
-            declared = None
-        decision = Decision.DROP if declared == "plumbing" else Decision.RECORD_AND_SAMPLE
-        return SamplingResult(decision, attributes, trace_state)
+        return SamplingResult(Decision.RECORD_AND_SAMPLE, attributes, trace_state)
 
     def get_description(self) -> str:
-        return "NoraPlumbingIsNotATrace"
+        return "NoraEveryRootIsRecorded"
 
 
 def build_sampler() -> Sampler:
@@ -125,7 +125,7 @@ def build_sampler() -> Sampler:
     provider would export spans production drops, and assertions about «what
     reaches the collector» would measure a provider no deployment has.
     """
-    return ParentBased(root=_PlumbingIsNotATrace())
+    return ParentBased(root=_EveryRootIsRecorded())
 
 
 #: Provider setup is not here: `nora.agent` sits ABOVE `nora.obs` in the
@@ -202,6 +202,36 @@ def span(name: str, **attributes: object) -> Iterator[None]:
             # Same reason: a failing exporter on span end must not surface as a
             # tag failure. See the acquisition guard above.
             log.debug("span %s did not close cleanly", name, exc_info=True)
+
+
+def instrument_aiohttp_app(app: object) -> None:
+    """Attach the contrib aiohttp-server middleware to a `web.Application`,
+    skipping the routes that are only ever polled.
+
+    `/health` and `/metrics` are scraped on a timer — their spans are the same
+    "97% plumbing" noise R-76 was registered for, except here they can never
+    fail interestingly either (a dead endpoint produces no span to keep). The
+    rest of the app — portal, OTP, voice and API routes — gets a request span
+    per boundary, which is the application-HTTP coverage ADR 0034 asks for.
+
+    Never load-bearing, like everything in this module: a missing contrib
+    package or a middleware that will not install costs the spans, not the
+    app. Installed as a thin wrapper rather than `instrument()`, because the
+    contrib exclusion mechanism is a process-wide env var and these paths are
+    per-app.
+    """
+    _EXCLUDED_PATHS = frozenset({"/health", "/metrics"})
+    try:
+        from opentelemetry.instrumentation.aiohttp_server import middleware as _otel_mw
+
+        async def _nora_middleware(request, handler):  # type: ignore[no-untyped-def]
+            if request.path in _EXCLUDED_PATHS:
+                return await handler(request)
+            return await _otel_middleware(request, handler)
+
+        app.middlewares.append(_nora_middleware)  # type: ignore[attr-defined]
+    except Exception:
+        log.debug("aiohttp server tracing not installed", exc_info=True)
 
 
 def _safe_attributes(attributes: dict[str, object]) -> dict[str, str | bool | int | float]:

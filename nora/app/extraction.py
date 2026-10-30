@@ -158,7 +158,13 @@ class ExtractionWorker:
             self.metrics.inc("nora_extraction_terminal_batches_total")
             return 0
         # A recovered batch uses its recorded model, not a newly edited lane.
-        with span("extraction", **{"nora.extraction.version": job["version"]}):
+        with span("extraction", **{
+            "nora.extraction.version": job["version"],
+            # The batch is the stable job/attempt identifier its spans group
+            # under (a batch is not a conversation, so it gets job identity,
+            # not a room's).
+            "nora.extraction.batch_id": str(job.get("id") or ""),
+        }):
             try:
                 with _at_stage("storage"):
                     await self.store.set_trace(job, current_trace_id())
