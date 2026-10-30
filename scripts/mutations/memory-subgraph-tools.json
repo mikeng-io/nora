@@ -105,11 +105,18 @@
     "target": "tests/unit/test_memory_search_tool.py::test_graph_tool_results_preserve_untrusted_memory_framing[memory_read-arguments1]"
   },
   {
-    "name": "one turn reuses its graph rather than issuing another walk",
+    "name": "a read reuses this turn's graph rather than issuing another walk",
     "file": "nora/agent/memory_search.py",
-    "old": "            if cache is None or \"_subgraph\" not in cache:",
+    "old": "            if seed is None or not held_all:",
     "new": "            if True:",
     "target": "tests/unit/test_memory_search_tool.py::test_one_turn_reuses_its_walk_and_does_not_guess_outside_the_snapshot"
+  },
+  {
+    "name": "a narrowed search walks again instead of being refused",
+    "file": "nora/agent/memory_search.py",
+    "old": "            if seed is None or not held_all:",
+    "new": "            if not held_all:",
+    "target": "tests/unit/test_memory_search_tool.py::test_a_narrowed_retry_searches_again_and_its_graph_can_be_read"
   },
   {
     "name": "person hubs do not bridge the scoped walk",
