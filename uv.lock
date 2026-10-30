@@ -1926,7 +1926,7 @@ wheels = [
 
 [[package]]
 name = "nora"
-version = "7.11.55"
+version = "7.11.57"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },

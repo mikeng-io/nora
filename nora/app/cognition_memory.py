@@ -10,10 +10,11 @@ from typing import Any
 from pydantic import ValidationError
 from sqlalchemy.exc import NoResultFound
 
+from nora.agent.egress import scan_identifiers
 from nora.app.comprehend import GraphWrite, MemoryProposalAdmission, ProfileProposal, _shape_errors
-from nora.domain.comprehend import ComprehendItem, Preview
+from nora.domain.comprehend import ComprehendItem, Preview, preview_seeds
 from nora.domain.extraction import partition_claims
-from nora.domain.memory_graph import Source, Walk, WorkItem
+from nora.domain.memory_graph import Key, Source, Walk, WorkItem
 from nora.language.comprehend_render import preview_text
 
 #: Characters of each row's body kept in the reading slot map.
@@ -22,7 +23,8 @@ READING_CLIP = 160
 
 class WakeMemory:
     def __init__(self, *, graph: Any, records: Any, metrics: Any,
-                 private_names: tuple[str, ...] = ()) -> None:
+                 private_names: tuple[str, ...] = (), content_checks: bool = True) -> None:
+        self.metrics, self.content_checks = metrics, content_checks
         self.private_names = private_names
         self.graph, self.records = graph, records
         self.admission = MemoryProposalAdmission(graph=graph, records=records, metrics=metrics)
@@ -55,9 +57,12 @@ class WakeMemory:
     async def prepare(self, state: Any, stimuli: Any, grounding: Any) -> None:
         """Freeze exactly what the agenda shows, including each non-message source."""
         at = datetime.fromtimestamp(state.now_ms / 1000, UTC)
+        anchors: list[Key] = []
+        aliases = await self.graph.aliases(unit=state.unit)
         for index, agenda in state.items_by_index.items():
             sources = []
             rows = []
+            loaded_items = []
             for sid in agenda.stimulus_ids:
                 stimulus = stimuli[sid]
                 row = grounding.records.get(stimulus.ref)
@@ -73,8 +78,10 @@ class WakeMemory:
                         # ponytail: social and play stimuli still need their projection.
                         loaded = None
                     if loaded is not None:
+                        loaded_items.append(loaded)
                         sources.extend(loaded.sources)
                         rows.extend(loaded.snapshot.get("messages", []))
+                        rows.extend(loaded.snapshot.get("context", []))
                     rows.append({"id": row.message_id, "body": row.text, "ts": row.at_ms,
                                  "person_id": row.person_id, "mentions": []})
                 elif stimulus.kind in ("social", "play"):
@@ -82,15 +89,19 @@ class WakeMemory:
                     work = WorkItem(f"stimulus:{sid}", (kind, ref), state.unit, "", at,
                                     historical=state.historical)
                     loaded = await self.records.load(work)
+                    loaded_items.append(loaded)
                     sources.extend(loaded.sources)
                     rows.extend(loaded.snapshot.get("messages", []))
+                    rows.extend(loaded.snapshot.get("context", []))
                 else:
                     line = grounding.rollups.get(stimulus.ref)
                     text = json.dumps(asdict(line), default=str) if line else stimulus.ref
                     sources.append(Source((stimulus.kind, str(sid)), "rollup", state.unit,
                         (stimulus.person_id,) if stimulus.person_id else (), text))
             sources = list({s.key: s for s in sources}.values())
-            original_rows = {r["id"]: r for r in rows}
+            original_rows: dict[int, Any] = {}
+            for r in rows:
+                original_rows[r["id"]] = {**r, **original_rows.get(r["id"], {})}
             rows = []
             source_keys = {}
             next_id = max([int(s.key[1]) for s in sources if s.key[0] == "message"] + [0]) + 1
@@ -99,10 +110,11 @@ class WakeMemory:
                     continue
                 row_id = int(source.key[1]) if source.key[0] == "message" else next_id
                 next_id += 1
-                rows.append({"id": row_id, "body": source.text,
+                rows.append({**original_rows.get(row_id, {}), "id": row_id, "body": source.text,
                     "ts": original_rows.get(row_id, {}).get("ts", state.now_ms),
-                    "person_id": source.persons[0] if len(source.persons) == 1 else "",
-                    "mentions": []})
+                    "person_id": original_rows.get(row_id, {}).get("person_id")
+                    or (source.persons[0] if len(source.persons) == 1 else ""),
+                    "mentions": original_rows.get(row_id, {}).get("mentions", [])})
                 source_keys[str(row_id)] = list(source.key)
             digest = hashlib.sha256(json.dumps([asdict(s) for s in sources],
                                               sort_keys=True).encode()).hexdigest()
@@ -111,18 +123,30 @@ class WakeMemory:
                             historical=state.historical)
             item = ComprehendItem(work, tuple(sources), agenda.room.platform,
                                   agenda.room.conversation_id,
+                                  author=next((r.get("person_id") for r in rows
+                                               if r.get("person_id")), ""),
                                   snapshot={"messages": rows, "context": [],
                                             "source_keys": source_keys})
+            from dataclasses import replace
+            if loaded_items:
+                item = replace(item, author=item.author or loaded_items[0].author,
+                    reply_parent=next((v.reply_parent for v in loaded_items
+                        if v.platform == item.platform and v.room == item.room), None),
+                    urls=tuple(dict.fromkeys(u for v in loaded_items for u in v.urls)),
+                    accounts=tuple(dict.fromkeys(a for v in loaded_items for a in v.accounts)),
+                    faces=tuple(dict.fromkeys(p for v in loaded_items for p in v.faces)),
+                    mentions=tuple(dict.fromkeys(p for v in [item, *loaded_items]
+                        for p in (v.author, *v.mentions, *v.faces) if p)), snapshot=item.snapshot)
+            anchors.extend(preview_seeds(item, aliases))
+            for loaded in loaded_items:
+                anchors.extend(preview_seeds(loaded, aliases))
             state.memory_items[index] = item
             for source in sources:
                 state.graph_fetched.show(source)
         persons = frozenset(p for s in state.graph_fetched.sources.values() for p in s.persons)
-        seeds = tuple(state.graph_fetched.sources)
-        aliases = await self.graph.aliases(unit=state.unit)
-        text = " ".join(s.text.casefold() for s in state.graph_fetched.sources.values())
-        seeds = tuple(dict.fromkeys((*seeds, *(k for a, k in aliases.items()
-                                              if a and a.casefold() in text))))
+        seeds = tuple(dict.fromkeys(anchors))
         graph = await self.graph.walk(seeds, Walk(unit=state.unit, persons=persons, depth=2,
+                                                layers=("record", "rollup", "notebook"),
                                                 valid_at=at))
         if graph.status == "unavailable":
             raise RuntimeError("wake graph unavailable")
@@ -135,6 +159,9 @@ class WakeMemory:
                 {**r, "body": str(r.get("body") or "")[:READING_CLIP]}
                 for r in v.snapshot["messages"]]}
              for i, v in state.memory_items.items()}, default=str)
+        if scan_identifiers(state.graph_text, content_checks=self.content_checks):
+            state.graph_text = ""
+            self.metrics.inc("nora_errors_total", stage="wake_prefetch")
 
     async def propose(
         self, state: Any, *, items: list[int], payload: dict[str, Any],

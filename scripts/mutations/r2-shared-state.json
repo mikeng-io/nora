@@ -124,5 +124,12 @@
     "old": "evidence = f\"source={record_ref}; recorded={recorded_at}\"",
     "new": "evidence = \"provenance omitted\"",
     "target": "tests/unit/test_shared_state.py::test_an_unresolved_only_view_is_rendered"
+  },
+  {
+    "name": "merged-context-retains-shared-state",
+    "file": "nora/engagement/context.py",
+    "old": "            shared=shared,",
+    "new": "            shared=None,",
+    "target": "tests/unit/test_memory_prefetch.py::test_graph_prefetch_and_shared_state_reach_the_same_turn"
   }
 ]
