@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.11.53](https://github.com/mikeng-io/nora/compare/v7.11.52...v7.11.53) (2026-10-30)
+
+
+### Bug Fixes
+
+* **replay:** restore recorded session clocks and typed subject overrides ([e7dcd15](https://github.com/mikeng-io/nora/commit/e7dcd157b03d3150cbca337f7ce03b91b97244c9))
+
 ## [7.11.52](https://github.com/mikeng-io/nora/compare/v7.11.51...v7.11.52) (2026-10-30)
 
 
