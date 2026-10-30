@@ -40,3 +40,30 @@ async def test_generated_recorded_wake_replays_own_stimulus_batch(database):  # 
         assert fake.calls == 1
     finally:
         await engine.dispose()
+
+
+async def test_a_wake_whose_detail_was_written_as_a_string_still_replays(database):  # noqa: F811
+    """Older rows hold `detail` as a jsonb STRING of the JSON; the store reads
+    both forms, and so must the replay, or one such wake stops every search."""
+    import json
+
+    from nora.infra.sql.cognition_replay import recorded_wake
+
+    engine = create_sql_engine(database)
+    try:
+        async with engine.begin() as conn:
+            ids = [(await conn.execute(sa.insert(STIMULUS).values(unit="unit-1", kind="message",
+                item="message", ref=f"messages:generated-{n}", platform="signal",
+                conversation_id="home-room", at_ms=NOW,
+                recorded_at=datetime.fromtimestamp(NOW / 1000, UTC)).returning(STIMULUS.c.id)
+            )).scalar_one() for n in range(2)]
+            wid = (await conn.execute(sa.insert(COGNITION_WAKE).values(unit="unit-1", mode="live",
+                reason="settled", from_stimulus_id=ids[0] - 1, through_stimulus_id=ids[1],
+                stimulus_count=1, eligible_count=1, at_ms=NOW,
+                detail=json.dumps({"unclaimed": [ids[1]]})).returning(COGNITION_WAKE.c.id)
+            )).scalar_one()
+        at, view = await recorded_wake(engine, wid)
+        assert at == NOW
+        assert [s.id for s in view.pending] == [ids[0]]
+    finally:
+        await engine.dispose()

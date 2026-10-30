@@ -83,7 +83,7 @@ def _wake(r: Any) -> WakeRow:
         oldest_pending_ms=None if r.oldest_pending_ms is None else int(r.oldest_pending_ms),
         cut_cooldown=bool(r.cut_cooldown), at_ms=int(r.at_ms),
         recorded_at_ms=_ms(r.recorded_at), detail=_wake_detail(r.detail),
-        tracked=bool(r.tracked), unclaimed_ids=_unclaimed(r.detail),
+        tracked=bool(r.tracked), unclaimed_ids=unclaimed_ids(r.detail),
     )
 
 
@@ -93,7 +93,8 @@ def _wake(r: Any) -> WakeRow:
 _UNCLAIMED_KEY = "unclaimed"
 
 
-def _unclaimed(raw: Any) -> tuple[int, ...]:
+def unclaimed_ids(raw: Any) -> tuple[int, ...]:
+    """A wake row's unclaimed stimulus ids, whichever form its detail was written in."""
     return tuple(int(i) for i in _detail(raw).get(_UNCLAIMED_KEY, ()))  # type: ignore[attr-defined]
 
 

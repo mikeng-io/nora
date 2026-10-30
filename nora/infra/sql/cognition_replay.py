@@ -1,7 +1,6 @@
 """Read a recorded wake's stimulus batch from a restored snapshot."""
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 
 import sqlalchemy as sa
@@ -9,15 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.infra.sql.schema import COGNITION_SESSION, COGNITION_WAKE, STIMULUS
+from nora.infra.sql.stimuli import unclaimed_ids
 
 
 async def recorded_wake(engine: AsyncEngine, wake_id: int) -> tuple[int, UnitView]:
     async with engine.connect() as conn:
         wake = (await conn.execute(sa.select(COGNITION_WAKE).where(
             COGNITION_WAKE.c.id == wake_id))).mappings().one()
-        excluded = wake["detail"].get("unclaimed") or []
-        if isinstance(excluded, str):
-            excluded = json.loads(excluded)
+        excluded = list(unclaimed_ids(wake["detail"]))
         session = (await conn.execute(sa.select(COGNITION_SESSION.c.agenda).where(
             COGNITION_SESSION.c.wake_id == wake_id))).scalar_one_or_none()
         ids = None
