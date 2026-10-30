@@ -178,7 +178,8 @@ async def test_cypher_embedded_labels_are_not_binds():
             compiled = clause.compile(dialect=dialect)
             sent.append(str(compiled))
             assert compiled.construct_params() == {}
-            return SimpleNamespace(scalars=lambda: iter(['"person:p1"', '"event:e1"']))
+            wire = ['"person:p1"', '"event:e1"'] if "RETURN DISTINCT b.key" in str(compiled) else []
+            return SimpleNamespace(scalars=lambda: iter(wire))
 
     cases = [
         ('CREATE (:N {key: "generated:key"})', "$$"),
@@ -198,10 +199,8 @@ async def test_cypher_embedded_labels_are_not_binds():
         ('CREATE (:N {key: "has$$tag:1"})', "$aa$"),
     ]
     for query, _ in cases:
-        assert await spike.cypher(Conn(), "generated_graph", query) == [
-            "person:p1",
-            "event:e1",
-        ]
+        expected = ["person:p1", "event:e1"] if query.startswith("MATCH (a:N)-[") else []
+        assert await spike.cypher(Conn(), "generated_graph", query) == expected
     for (query, tag), compiled in zip(cases, sent, strict=True):
         assert compiled.startswith("SELECT value FROM ag_catalog.cypher($$generated_graph$$, ")
         assert f"{tag}{query}{tag})" in compiled
