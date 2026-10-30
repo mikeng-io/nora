@@ -146,12 +146,12 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
     # formatter that walks the declared `subagent_*` blocks through
     # `ContextBlock`.
     "nora/app/subagent_runner.py": (("nora/language/subagent_render.py",), "imports"),
-    # The eval arm's context selector: the candidate blocks it assembles are
-    # built by prefill's declared table, which it imports; the prompt it runs
-    # is that table's output, plus its authored SYSTEM instruction — the
-    # residual text a RUNNER entry cannot see, named here rather than
-    # declared over blocks whose orders are not this module's to state.
-    "nora/subject/context_filter.py": (("nora/agent/prefill.py",), "imports"),
+    # The eval arm's context selector: the system text, the clock/window line
+    # and the candidate blocks it posts are all built by ONE declared
+    # occasion it imports; it only dispatches the POST and records receipts.
+    "nora/subject/context_filter.py": (
+        ("nora/subject/context_selector_render.py",), "imports",
+    ),
     # The host-only confirmation judge: it POSTs to the deployment's
     # chat-completions endpoint, and the system and user messages it sends
     # are built by ONE declared occasion it imports.

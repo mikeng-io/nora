@@ -205,7 +205,8 @@ def test_the_operator_review_channel_keeps_the_link_clickable():
 HAND_BUILT = {
     ("nora/agent/prefill.py", "build_tag_message"): "<tag_message>, the message she answers",
     ("nora/agent/prefill.py", "_replying_to_block"): "<replying_to>, the quoted parent",
-    ("nora/subject/context_filter.py", "router_input"): "the eval router's <tag_message>",
+    ("nora/subject/context_selector_render.py", "selector_prompt"):
+        "the eval selector's <tag_message>",
     ("nora/agent/reaction.py", "render_recent"): "the GIF picker's recent lines",
     ("nora/agent/tools.py", "_transcript_messages"):
         "load_transcript / room_read / record_query results",

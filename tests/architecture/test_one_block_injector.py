@@ -209,7 +209,7 @@ CONVERTED = (
     "nora/language/doctrine_check.py",
     "nora/domain/summons.py",
     "nora/skills/loader.py",
-    "nora/subject/context_filter.py",
+    "nora/subject/context_selector_render.py",
 )
 
 
