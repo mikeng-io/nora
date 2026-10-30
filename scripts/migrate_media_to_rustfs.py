@@ -13,7 +13,8 @@ file, the same posture `nora.ingest.stages.media._take` already takes.
 
 Usage (the `deploy/smoke_giphy_signal.py` pattern — copy in, run inside):
     docker cp scripts/migrate_media_to_rustfs.py nora:/tmp/migrate.py
-    docker compose exec -T \\
+    python3 ~/workspace/nora/scripts/secret_delivery.py \\
+        --runtime-root ~/workspace/nora --compose-exec -T \\
         -e RUSTFS_ENDPOINT=http://rustfs:9000 \\
         -e RUSTFS_BUCKET=nora-media \\
         nora uv run --no-sync python /tmp/migrate.py

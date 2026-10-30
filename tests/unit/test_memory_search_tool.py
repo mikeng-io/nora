@@ -350,6 +350,29 @@ async def test_one_turn_reuses_its_walk_and_does_not_guess_outside_the_snapshot(
     assert len(calls) == 1
 
 
+async def test_a_narrowed_retry_searches_again_and_its_graph_can_be_read(
+    persons, monkeypatch,
+):
+    search, graph = _graph_search(_index(), Metrics())
+    original = graph.walk
+    calls = []
+
+    async def counted(seeds, query):
+        calls.append((seeds, query))
+        return await original(seeds, query)
+
+    monkeypatch.setattr(graph, 'walk', counted)
+    tools = _build_with(persons, FakeMemoryStore(), search)
+    first = await _call(tools['memory_search'], query='football')
+    assert first['status'] == 'ok'
+    retry = await _call(tools['memory_search'], query='football', since='2023-11-01')
+    assert retry['status'] in {'ok', 'partial', 'nothing_found'}, retry
+    assert len(calls) == 2
+    detail = await _call(tools['memory_read'], kind='event', id='generated-event', depth=0)
+    assert detail['status'] == 'partial'
+    assert len(calls) == 2
+
+
 async def test_parallel_tools_reserve_one_database_walk(persons, monkeypatch):
     import asyncio
 

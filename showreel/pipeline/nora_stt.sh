@@ -3,7 +3,7 @@
 # service on norty, reached from inside the `nora` container because its port
 # is private to the compose network. Prints the text (already OpenCC s2t).
 #   pipeline/nora_stt.sh < audio/vo/yue/vo1.mp3
-exec ssh norty 'cd ~/workspace/nora && docker compose exec -T nora /app/.venv/bin/python -c "
+exec ssh norty 'cd ~/workspace/nora && python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T nora /app/.venv/bin/python -c "
 import sys, json, urllib.request
 data = sys.stdin.buffer.read(); b = \"----showreel\"
 body = (f\"--{b}\r\nContent-Disposition: form-data; name=\\\"model\\\"\r\n\r\nnoise-detection\r\n\"

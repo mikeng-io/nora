@@ -1,6 +1,6 @@
 [project]
 name = "nora"
-version = "7.11.39"
+version = "7.11.41"
 description = "A self-hosted, sessionless social AI agent with memory and background cognition"
 requires-python = ">=3.11"
 dependencies = [

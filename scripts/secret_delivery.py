@@ -175,10 +175,21 @@ def migrate(runtime: Path, *, apply: bool) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runtime-root", type=Path, required=True)
-    parser.add_argument("--apply", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--apply", action="store_true")
+    modes.add_argument("--compose-exec", nargs=argparse.REMAINDER)
     args = parser.parse_args()
+    if args.compose_exec == []:
+        parser.error("--compose-exec requires exec arguments")
     try:
-        migrate(args.runtime_root.resolve(), apply=args.apply)
+        runtime = args.runtime_root.resolve()
+        if args.compose_exec is not None:
+            values = source(runtime)
+            os.chdir(runtime)
+            os.execvpe(  # noqa: S606 -- replace helper; preserve stdin and exit status
+                "docker",  # noqa: S607 -- host Docker CLI resolved through PATH
+                ["docker", "compose", "exec", *args.compose_exec], values)
+        migrate(runtime, apply=args.apply)
     except (ValueError, OSError):
         raise SystemExit("FAILED: private migration validation; values withheld") from None
 
