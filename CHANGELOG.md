@@ -1,5 +1,31 @@
 # Changelog
 
+## [7.11.57](https://github.com/mikeng-io/nora/compare/v7.11.56...v7.11.57) (2026-10-30)
+
+
+### Bug Fixes
+
+* **memory:** inject graph context before automatic decisions ([6bec06d](https://github.com/mikeng-io/nora/commit/6bec06d5addd17d34aca3e8cd4f4053d05923964))
+* **memory:** preserve agenda scope and overlap safe graph prefetch ([5c32748](https://github.com/mikeng-io/nora/commit/5c327485d630787a11f3566ef4058b1edc2beb47))
+
+## [7.11.56](https://github.com/mikeng-io/nora/compare/v7.11.55...v7.11.56) (2026-10-30)
+
+
+### Bug Fixes
+
+* **spike:** quote AGE cypher arguments so sa.text can execute them ([9dcae2e](https://github.com/mikeng-io/nora/commit/9dcae2e78b2d58333c765521788969ffc2c5653f))
+
+## [7.11.55](https://github.com/mikeng-io/nora/compare/v7.11.54...v7.11.55) (2026-10-30)
+
+
+### Bug Fixes
+
+* **evals:** resolve the default source URL from the deployment's credential source ([9eb45b1](https://github.com/mikeng-io/nora/commit/9eb45b1542cb3d665f782aa0fb2025bf888e2b73))
+* **scripts:** exit nonzero when character synthesis draws error or go unstable ([8e66726](https://github.com/mikeng-io/nora/commit/8e667265c42ca88ca1e1b6a1d5f798169e4fa0e8))
+* **skills:** include every declared location-routing negative ([495f35d](https://github.com/mikeng-io/nora/commit/495f35da68a7a9cc8473aa082c384ab7a31c99c6))
+* **skills:** stop failed trace reads and clarify builder routing ([afa6213](https://github.com/mikeng-io/nora/commit/afa62138e29530d997642125b50fa1cd3d03ef53))
+* **spike:** score the nested Relation inside each connected GraphEdge ([c9c192d](https://github.com/mikeng-io/nora/commit/c9c192da08aa8546f304f86f8361ede8ac559e94))
+
 ## [7.11.54](https://github.com/mikeng-io/nora/compare/v7.11.53...v7.11.54) (2026-10-30)
 
 
