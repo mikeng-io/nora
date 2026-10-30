@@ -19,7 +19,7 @@ identity.toml
 showreel/
 
 secret.toml
-.secret-delivery/
+**/.secret-delivery/
 secret-migration-*/
 state/
 policy.toml
