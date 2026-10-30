@@ -42,6 +42,11 @@ class InMemoryComprehendRecords:
     async def load(self, work: WorkItem) -> Any:
         if "load" in self.fail_on:
             raise RuntimeError("source unavailable")
+        if work.source not in self.items:
+            # The SQL store's exact-key read: an unprojected source has no row.
+            from sqlalchemy.exc import NoResultFound
+
+            raise NoResultFound("No row was found when one was required")
         return replace(self.items[work.source], work=work)
 
     async def record_refusal(self, session: int, part: str, reason: str) -> None:
