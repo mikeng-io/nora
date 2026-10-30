@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -593,6 +594,21 @@ async def test_no_private_metadata_leaks(example_config_path: Path):
 
 
 # ── the atomic write path -----------------------------------------------------
+
+
+async def test_projection_permissions_are_private_and_legacy_files_heal(example_config_path: Path):
+    _sources(example_config_path.parent)
+    pub = _publisher(example_config_path.parent)
+    await pub.tick()
+    before = _read(pub)
+    assert ROOM_SIGNAL in before["rooms"]
+    assert stat.S_IMODE(pub.target.stat().st_mode) == 0o600
+
+    pub.target.chmod(0o644)
+    assert stat.S_IMODE(pub.target.stat().st_mode) == 0o644
+    await pub.tick()
+    assert stat.S_IMODE(pub.target.stat().st_mode) == 0o600
+    assert _read(pub)["rooms"] == before["rooms"]
 
 
 async def test_write_is_temp_fsync_rename_dirsync(example_config_path: Path, monkeypatch):

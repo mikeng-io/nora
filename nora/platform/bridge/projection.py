@@ -57,6 +57,7 @@ import hashlib
 import json
 import logging
 import os
+import stat
 import tempfile
 import time
 from collections.abc import Callable, Iterable, Mapping
@@ -255,9 +256,6 @@ def _write_atomic(path: Path, data: bytes) -> None:
             f.write(data)
             f.flush()
             os.fsync(f.fileno())
-        # The shared volume is read-only to OTHER containers (bridges read it
-        # under their own uid) — a mkstemp 0600 file would deny them.
-        os.chmod(tmp, 0o644)
         os.replace(tmp, path)
         dirfd = os.open(path.parent, os.O_RDONLY)
         try:
@@ -530,6 +528,8 @@ class ProjectionPublisher:
         excluded from the comparison — identical truth must not churn mtime,
         which is the signal bridges poll."""
         try:
+            if stat.S_IMODE(self.target.stat().st_mode) != 0o600:
+                return True
             existing = json.loads(self.target.read_bytes())
         except (OSError, json.JSONDecodeError):
             return True

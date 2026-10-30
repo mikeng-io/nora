@@ -14,6 +14,10 @@ scopes admit capture without waiting for the app.
 /bridge-projection/{platform}.json   # atomically written (tmp + fsync + rename + dir-fsync)
 ```
 
+Files stay owner-only (`0600`). The publisher and all four bridge images use
+UID 1000, so their read-only mounts remain readable. A poll also replaces an
+existing permissive file even when its authorization content is unchanged.
+
 File shape (the frozen `nora-bridge-wire` contract):
 
 ```json
