@@ -48,13 +48,15 @@ from typing import Any
 
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
+from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.sampling import Sampler
 from opentelemetry.trace import Span
 from strands.telemetry import StrandsTelemetry
 from strands.telemetry.tracer import get_tracer, serialize
 from strands.types.content import Message, Messages
 from strands.types.event_loop import Metrics, StopReason, Usage
+
+from ..obs.tracing import TraceIdentityProcessor
 
 log = logging.getLogger("nora.agent.telemetry")
 
@@ -73,98 +75,6 @@ _STOP_REASON_FROM_FINISH_REASON: dict[str, StopReason] = {
     "tool_calls": "end_turn",
     "function_call": "end_turn",
 }
-
-
-#: Langfuse drops a session id longer than this, or with a non-ASCII character,
-#: silently (langfuse.com/docs/observability/features/sessions).
-_SESSION_ID_MAX = 200
-
-#: The attribute a span carries its room under, WHEN IT IS STARTED WITH IT:
-#: the roots and stages that pass it to `nora.obs.tracing.span`. Strands spans
-#: never start with it: Strands opens a span and sets `trace_attributes` after,
-#: past `on_start`, so they take their session from the parent instead (see the
-#: installed `strands/telemetry/tracer.py`).
-#: A Dreamer unit has no room; its session is the tick that dispatched it
-#: (`nora.app.runtime.dream_loop`), so one pass's units read as one session.
-#: A Cognition session has no room either: `nora.cognition.session_id` is its
-#: own natural identity (one session's agent calls group as one conversation —
-#: a multi-room background session is not forced into one room). Extraction is
-#: not conversational, but a batch is the stable job/attempt identifier its
-#: spans group under (`nora.extraction.batch_id`).
-_CONVERSATION_KEYS = (
-    "nora.conversation_id",
-    "nora.dreamer.pass_id",
-    "nora.cognition.session_id",
-    "nora.extraction.batch_id",
-)
-
-#: First match wins. Langfuse's recognised `langfuse.observation.type` values;
-#: a span not in the table is left to Langfuse, which types the model calls,
-#: agents and tools from their GenAI attributes. What goes here is the plumbing
-#: UNDER a model call that R-76 keeps on purpose, so an operator can filter a
-#: trace to the LLM work without reading span names.
-_OBSERVATION_TYPES: tuple[tuple[str, str], ...] = (
-    ("engagement.admission", "guardrail"),
-    ("store.", "retriever"),
-    ("engagement.", "chain"),
-    ("agent.prefill", "chain"),
-    ("execute_event_loop_cycle", "chain"),
-)
-
-
-def _session_id_for(span: Any, parent_context: Any) -> str | None:
-    """The room a span belongs to: its own start attribute, else its parent's stamp.
-
-    A session id is valid when Langfuse will keep it. One it would drop is not
-    stamped, so the trace's absence from a session is in the data, not a
-    silent loss downstream."""
-    attrs = getattr(span, "attributes", None) or {}
-    for key in _CONVERSATION_KEYS:
-        value = attrs.get(key)
-        if value is not None:
-            return _valid_session_id(str(value))
-    parent = trace.get_current_span(parent_context)
-    parent_attrs = getattr(parent, "attributes", None) or {}
-    inherited = parent_attrs.get("session.id")
-    return _valid_session_id(str(inherited)) if inherited is not None else None
-
-
-def _valid_session_id(value: str) -> str | None:
-    if not value or len(value) > _SESSION_ID_MAX or not value.isascii():
-        return None
-    return value
-
-
-class TraceIdentityProcessor(SpanProcessor):
-    """Stamp every span with its conversation and its observation type.
-
-    **One seam, not a stamp at each call site.** Engagement roots carry
-    `nora.conversation_id`, but Langfuse groups sessions only by `session.id`.
-    OTel GenAI names the same thing `gen_ai.conversation.id` ("session, thread"); Langfuse reads
-    `session.id`, and asks for it on each span rather than only the root. A
-    child inherits from its parent at start, so the Strands spans and the
-    `store.*` reads, which never carry the id themselves, end up in the same
-    session.
-
-    **Never load-bearing**, the rule `nora.obs.tracing.span` and provider setup
-    hold: a failure here costs the stamp, never the span or the turn.
-    """
-
-    def on_start(self, span: Any, parent_context: Any = None) -> None:
-        try:
-            session = _session_id_for(span, parent_context)
-            if session is not None:
-                span.set_attribute("session.id", session)
-                span.set_attribute("gen_ai.conversation.id", session)
-            attrs = getattr(span, "attributes", None) or {}
-            if "langfuse.observation.type" not in attrs:
-                name = getattr(span, "name", "") or ""
-                for prefix, kind in _OBSERVATION_TYPES:
-                    if name.startswith(prefix):
-                        span.set_attribute("langfuse.observation.type", kind)
-                        break
-        except Exception:
-            log.debug("trace identity not stamped", exc_info=True)
 
 
 def setup_agent_tracing(
@@ -318,16 +228,15 @@ def end_raw_model_span(
             span.set_attribute("gen_ai.response.model", response_model)
         stop_reason = _STOP_REASON_FROM_FINISH_REASON.get(finish_reason, "end_turn")
         message: Message = {"role": "assistant", "content": [{"text": content}]}
-        usage_known = (
+        if (
             input_tokens is not None
-            or output_tokens is not None
-            or total_tokens is not None
-        )
-        if usage_known:
+            and output_tokens is not None
+            and total_tokens is not None
+        ):
             usage: Usage = {
-                "inputTokens": input_tokens or 0,
-                "outputTokens": output_tokens or 0,
-                "totalTokens": total_tokens or 0,
+                "inputTokens": input_tokens,
+                "outputTokens": output_tokens,
+                "totalTokens": total_tokens,
             }
             metrics: Metrics = {
                 "latencyMs": int((latency_seconds or 0.0) * 1000),
@@ -337,11 +246,16 @@ def end_raw_model_span(
                 stop_reason=stop_reason,
             )
             return
-        # Unknown usage: end the span with its output event and no fabricated
-        # usage. The private helpers below are Strands' own span-closing
-        # machinery, reached through the same module-level boundary the public
-        # call uses — this is the one place a hand-spelled event name is
-        # allowed, because the public API has no usage-less end.
+        # Unknown or PARTIAL usage: end the span with its output event and only
+        # the `gen_ai.usage.*` fields that were actually reported. Missing
+        # stays missing — `end_model_invoke_span` indexes every field, so it
+        # cannot take a partial `Usage`, and filling the gaps with zeros would
+        # stamp "0 tokens" on a call whose provider simply did not report that
+        # field (the fabricated zero the acceptance contract forbids; R-27).
+        # The private helpers are Strands' own span-closing machinery, reached
+        # through the same module-level boundary the public call uses — this is
+        # the one place a hand-spelled event name is allowed, because the
+        # public API has no usage-less end.
         tracer = get_tracer()
         if tracer.use_latest_genai_conventions:
             parts = tracer._map_content_blocks_to_otel_parts(message["content"])
@@ -362,7 +276,18 @@ def end_raw_model_span(
                  "message": tracer._redact(
                      "gen_ai.output.messages", serialize(message["content"]))},
             )
-        tracer._end_span(span)
+        end_attrs: dict[str, Any] = {}
+        if input_tokens is not None:
+            end_attrs["gen_ai.usage.prompt_tokens"] = input_tokens
+            end_attrs["gen_ai.usage.input_tokens"] = input_tokens
+        if output_tokens is not None:
+            end_attrs["gen_ai.usage.completion_tokens"] = output_tokens
+            end_attrs["gen_ai.usage.output_tokens"] = output_tokens
+        if total_tokens is not None:
+            end_attrs["gen_ai.usage.total_tokens"] = total_tokens
+        if latency_seconds is not None and latency_seconds > 0:
+            end_attrs["gen_ai.server.request.duration"] = int(latency_seconds * 1000)
+        tracer._end_span(span, end_attrs or None)
     except Exception:
         log.debug("raw model span could not end cleanly", exc_info=True)
 

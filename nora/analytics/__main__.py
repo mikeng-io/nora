@@ -132,7 +132,8 @@ async def _run(config_path: Path, *, rebuild: bool = False) -> None:
 
         _entry = VersionManifest().current().entry
     except Exception:
-        pass
+        log.debug("version manifest unreadable; release stamped as empty",
+                  exc_info=True)
     _release = _entry.version if _entry is not None else ""
     setup_errors(
         enabled=cfg.obs.errors.enabled, dsn_env=cfg.obs.errors.dsn_env,
@@ -141,9 +142,9 @@ async def _run(config_path: Path, *, rebuild: bool = False) -> None:
     )
     if cfg.obs.tracing.enabled:
         try:
-            from nora.agent.telemetry import setup_agent_tracing
+            from nora.obs.tracing import setup_process_tracing
 
-            setup_agent_tracing(
+            setup_process_tracing(
                 sampler=build_sampler(), service_name="analytics",
                 exporter=cfg.obs.tracing.exporter,
                 endpoint=cfg.obs.tracing.endpoint,

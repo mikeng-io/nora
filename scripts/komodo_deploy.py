@@ -22,7 +22,6 @@ COHORT = {
     'app': 'app', 'site': 'site', 'stt': 'stt', 'voice-wake': 'voice-wake',
     'voice-sidecar': 'voice-sidecar', 'signal-cli': 'signal-cli',
     'whatsapp-bridge': 'whatsapp-bridge', 'instagram-bridge': 'instagram-bridge',
-    'alert-bridge': 'alert-bridge',
 }
 
 

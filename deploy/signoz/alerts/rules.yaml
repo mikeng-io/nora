@@ -1,141 +1,294 @@
 # Declarative SigNoz alert rules — provisioned by scripts/signoz_provision.py.
-# 1:1 semantic port of deploy/prometheus/rules/nora.yml (19 rules) onto the
-# metrics the ingester's prometheus receiver scrapes (job names preserved).
-# Notifications go to channels created by the same script; the receiver is a
-# local webhook endpoint, never a real Discord post in tests.
 #
-# Kinds:
-#   threshold: query result > value for `for_seconds`
-#   absent:    series absent/stale for `for_seconds` (SigNoz alertOnAbsent —
-#              replaces Prometheus's absent/for semantics and the old
-#              PrometheusNotIngesting self-monitor)
+# A 1:1 semantic port of deploy/prometheus/rules/nora.yml: 18 of its 19 rules
+# carry across unchanged; PrometheusNotIngesting (absent on the Prometheus
+# self-scrape) is replaced by IngestionSilent, which measures the SigNoz
+# ingestion path itself. The comments that explain WHY each rule exists live
+# in the original file — every `port` line names the original expression so
+# this file stays an index, not a second copy.
+#
+# How Prometheus semantics map onto the SigNoz v2alpha1 rule schema
+# (verified against signoz:v0.148.1, pkg/types/ruletypes):
+#   query    the PromQL expression, minus the outermost comparison when it is
+#            `expr OP constant` — SigNoz's threshold applies that comparison.
+#            Compound conditions (`unless`, `and`, `absent`, series-vs-series)
+#            stay in the query whole; the threshold then checks "result > 0".
+#   op/target  the comparison the Prometheus expr carried.
+#   match    `for: Nm` maps to matchType all_the_times over evalWindow Nm —
+#            every point in the window must hold, the same sustained-condition
+#            meaning Prometheus's `for` has. `for: 0m`/absent maps to
+#            at_least_once over a 1m window.
+#   window   the rolling evalWindow; frequency is always 1m.
+#
+# NO `absentFor`: the SigNoz API accepts it but multiplies it by MINUTES
+# (pkg/query-service/rules/base_rule.go), which silently inflates a seconds-
+# based intent 60x. Absence is expressed as `absent(...)` inside the query
+# instead, where the unit is seconds-accurate by construction.
+#
+# Channels carry the DISPLAY NAME of a /api/v1/channels receiver; the script
+# creates `nora-alerts` as a webhook receiver pointing at the configured sink.
+#
+# Label mapping (verified against the live v0.144.15 collector): the
+# prometheus receiver emits OTel semantics, so the classic `job`/`instance`
+# labels do not exist — scrape `job_name` lands on `service.name`, the target
+# address on `service.instance.id`/`server.address`/`server.port`. Queries and
+# `{{ $labels.* }}` annotations below use the OTel names; app-emitted labels
+# (platform, reason, circle, guild_id, status, stage, lane, verdict) pass
+# through unchanged.
 defaults:
-  eval_window: "5m0s"
-  eval_delay: "30s"
-  group_by: ["alertname"]
-  send_resolved: true
+  channel: nora-alerts
+  frequency: "1m"
 rules:
-  # ---- liveness (7) ----
-  - name: NoraDown
-    kind: threshold
-    query: 'up{job="nora"} == 0'
-    for_seconds: 120
+  # ---- nora-liveness (7) ----
+  - name: TargetDown
+    port: "up == 0 for 3m"
+    query: up
+    op: equal
+    target: 0
+    match: all_the_times
+    window: "3m"
     severity: critical
-    summary: Nora container stopped or /metrics unreachable
-  - name: PresenceDown
-    kind: threshold
-    query: 'up{job="presence"} == 0'
-    for_seconds: 120
+    summary: "{{ $labels.service.name }} is not answering its metrics endpoint"
+    description: >-
+      The scrape target {{ $labels.service.instance.id }} has not answered for 3 minutes.
+      Either the process is down or its port is unreachable.
+  - name: HeartbeatStalled
+    port: "nora_heartbeat_last_tick_age_seconds > 300 for 2m"
+    query: nora_heartbeat_last_tick_age_seconds
+    op: above
+    target: 300
+    match: all_the_times
+    window: "2m"
     severity: critical
-    summary: Presence process down
-  - name: AnalyticsDown
-    kind: threshold
-    query: 'up{job="analytics"} == 0'
-    for_seconds: 120
-    severity: critical
-    summary: Analytics process down
-  - name: NoraHeartbeatStale
-    kind: threshold
-    query: 'time() - nora_heartbeat_timestamp_seconds > 300'
-    for_seconds: 60
-    severity: critical
-    summary: Nora alive but main loop stalled
-  - name: PresenceRefreshesStale
-    kind: absent
-    query: 'nora_presence_refresh_timestamp_seconds'
-    for_seconds: 900
+    summary: "Nora's heartbeat has not ticked for {{ $value }}s"
+  - name: PlatformSilent
+    port: "nora_adapter_last_event_age_seconds > 900 for 5m"
+    query: nora_adapter_last_event_age_seconds
+    op: above
+    target: 900
+    match: all_the_times
+    window: "5m"
     severity: warning
-    summary: Presence collector stopped refreshing
-  - name: AnalyticsRunsStale
-    kind: absent
-    query: 'nora_analytics_run_timestamp_seconds'
-    for_seconds: 172800
-    severity: warning
-    summary: Analytics rollup stopped running
-  - name: IngestionSilent
-    kind: absent
-    query: 'otelcol_receiver_accepted_spans'
-    for_seconds: 300
+    summary: "no {{ $labels.platform }} event for {{ $value }}s"
+    description: >-
+      The listener may have died without the connection closing. Compare
+      against /health's per-platform last_event_age_seconds.
+  - name: PresenceCollectionStalled
+    port: "nora_presence_last_collection_age_seconds > 1800 for 10m"
+    query: nora_presence_last_collection_age_seconds
+    op: above
+    target: 1800
+    match: all_the_times
+    window: "10m"
     severity: critical
-    summary: >
-      The SigNoz ingestion path itself stopped producing series — replaces
-      PrometheusNotIngesting; fires when spans/metrics stop being accepted
-      (collector dead, exporter wedged, or OTLP unreachable), so the monitor
-      cannot fail silently.
-  # ---- R-27 / three-state (2) ----
-  - name: NoraUnavailableResultsSpike
-    kind: threshold
-    query: 'rate(nora_tool_results_total{result="unavailable"}[15m]) * 60 > 3'
-    for_seconds: 300
+    summary: "presence has not collected circle {{ $labels.circle }} for {{ $value }}s"
+    description: >-
+      Everything Nora says about where people are or have been stops at the
+      last successful read. Check the presence container log for
+      `life360 auth failed` / `banned/refused` before restarting it.
+  - name: PresenceNotRecording
+    port: "(sum(increase(nora_presence_fixes_total[2h])) or vector(0)) == 0 for 15m"
+    query: (sum(increase(nora_presence_fixes_total[2h])) or vector(0))
+    op: equal
+    target: 0
+    match: all_the_times
+    window: "15m"
+    severity: critical
+    summary: "presence has written no location fix for anyone in 2 hours"
+    description: >-
+      No new fix has been recorded for any member in 2h, including across
+      restarts. Every where_is / where_been answer stops at the last one.
+      Check the presence container log for `life360 auth failed`,
+      `banned/refused` or `access token rejected`, and its restart count.
+  - name: PresenceAuthRefused
+    port: "sum by (reason) (increase(nora_presence_auth_alarms_total{reason!=\"token_rejected\"}[15m])) > 0 for 5m"
+    query: 'sum by (reason) (increase(nora_presence_auth_alarms_total{reason!="token_rejected"}[15m]))'
+    op: above
+    target: 0
+    match: all_the_times
+    window: "5m"
     severity: warning
-    summary: Tool results reporting unavailable above baseline
-  - name: NoraPermissionErrors
-    kind: threshold
-    query: 'increase(nora_errors_total{kind="permission"}[15m]) > 0'
-    for_seconds: 0
+    summary: "Life360 is refusing the presence collector ({{ $labels.reason }})"
+    description: >-
+      auth_403 means Life360 refused the password login. A verified phone
+      number on the account blocks the password grant for good, which is
+      what happened on 2026-09-24. It needs the operator, not a restart:
+      switch to token mode (LIFE360_AUTH_TOKEN, docs/runbook.md §4c).
+  - name: Life360TokenRejected
+    port: "sum by (job) (increase(nora_presence_auth_alarms_total{reason=\"token_rejected\"}[2h])) > 0 for 0m"
+    query: 'sum by (service.name) (increase(nora_presence_auth_alarms_total{reason="token_rejected"}[2h]))'
+    op: above
+    target: 0
+    match: at_least_once
+    window: "1m"
+    severity: critical
+    summary: "Life360 rejected LIFE360_AUTH_TOKEN — no locations are being recorded"
+    description: >-
+      Every where_is / where_been answer stops at the last fix until this is
+      fixed. Sign in at https://life360.com/login as Nora's Life360 account,
+      open DevTools > Application > Cookies > life360.com, and copy the
+      LIFE360_AUTH_TOKEN value into secret.toml on the host. Then recreate
+      the presence container (a restart keeps the old environment). The full
+      steps are in docs/runbook.md §4c.
+  # ---- nora-r27 (2) ----
+  - name: UnavailableOutcomes
+    port: "sum by (job, __name__) (increase({__name__=~\".+_total\", __name__!=\"nora_computer_calls_total\", status=\"unavailable\"}[15m])) > 0 for 5m"
+    query: 'sum by (service.name, __name__) (increase({__name__=~".+_total", __name__!="nora_computer_calls_total", status="unavailable"}[15m]))'
+    op: above
+    target: 0
+    match: all_the_times
+    window: "5m"
     severity: warning
-    summary: Permission errors observed — a guard tripped
+    summary: "a counter is reporting unavailable ({{ $labels.service.name }})"
+    description: >-
+      Something could not be checked at all — a wiring gap or a dead
+      dependency, not an empty answer. This is the state that replaces an
+      exception in this codebase, so nothing else will report it. Which
+      counter: `{__name__=~".+_total", status="unavailable"}` in metrics.
+  - name: MediaCustodyNotConfigured
+    port: "increase(nora_media_custody_total{status=\"not_configured\"}[1h]) > 0 (no for)"
+    query: 'increase(nora_media_custody_total{status="not_configured"}[1h])'
+    op: above
+    target: 0
+    match: at_least_once
+    window: "1m"
+    severity: warning
+    summary: "attachments are arriving with media custody switched off"
   # ---- music (3) ----
-  - name: NoraMusicPlaysFailing
-    kind: threshold
-    query: 'increase(nora_music_plays_total{result="failed"}[30m]) > 0'
-    for_seconds: 0
+  - name: MusicWedged
+    port: "(nora_music_expected_playing == 1) unless (nora_music_controller_playing == 1) for 2m"
+    query: (nora_music_expected_playing == 1) unless (nora_music_controller_playing == 1)
+    op: above
+    target: 0
+    match: all_the_times
+    window: "2m"
+    severity: critical
+    summary: "guild {{ $labels.guild_id }}: nora thinks music is playing, the controller disagrees"
+    description: >-
+      nora holds a current track and the audio controller reports no audio
+      moving (status not playing, position frozen, or autopaused).
+      CAPTURE THE SIDECAR LOG BEFORE RESTARTING ANYTHING — every previous
+      occurrence was diagnosed from nothing because the restart that
+      restored service destroyed the evidence.
+  - name: MusicControllerUnreadable
+    port: "increase(nora_music_liveness_total{verdict=\"unknown\"}[10m]) >= 5 for 0m"
+    query: 'increase(nora_music_liveness_total{verdict="unknown"}[10m])'
+    op: above_or_equal
+    target: 5
+    match: at_least_once
+    window: "1m"
     severity: warning
-    summary: Music play failures observed
-  - name: NoraMusicSearchesStale
-    kind: absent
-    query: 'nora_music_searches_timestamp_seconds'
-    for_seconds: 86400
-    severity: info
-    summary: Music search path unused or dead for a day
-  - name: NoraMusicQueueStuck
-    kind: threshold
-    query: 'nora_music_queue_depth > 20'
-    for_seconds: 600
+    summary: "guild {{ $labels.guild_id }}: the audio controller could not be read for 10 minutes"
+  - name: MusicStreamFailing
+    port: "increase(nora_music_stream_failed_total[15m]) >= 3 for 0m"
+    query: 'increase(nora_music_stream_failed_total[15m])'
+    op: above_or_equal
+    target: 3
+    match: at_least_once
+    window: "1m"
     severity: warning
-    summary: Music queue depth sustained high
+    summary: "guild {{ $labels.guild_id }}: 3+ music streams failed in 15 minutes (reason {{ $labels.reason }})"
   # ---- computer (3) ----
-  - name: NoraComputerCallsFailing
-    kind: threshold
-    query: 'increase(nora_computer_calls_total{result="failed"}[30m]) > 0'
-    for_seconds: 0
+  - name: ComputerDown
+    port: "nora_computer_up == 0 for 5m"
+    query: nora_computer_up
+    op: equal
+    target: 0
+    match: all_the_times
+    window: "5m"
+    severity: critical
+    summary: "Nora's computer has not answered for 5 minutes"
+    description: >-
+      Every computer tool answers unavailable until this clears. On the host:
+      `deploy/computer/nora-computer status` (sandbox=, computerd=,
+      egress=), `systemctl --user status nora-computer`, `sbx ls`. A
+      computerd that is up but answers 401 is a token the container does
+      not hold; deploy/computer/README.md "Rotating the token" is the fix.
+  - name: ComputerCallsFailing
+    port: "sum by (job) (increase(nora_computer_calls_total{status=\"unavailable\"}[15m])) >= 5 for 0m"
+    query: 'sum by (service.name) (increase(nora_computer_calls_total{status="unavailable"}[15m]))'
+    op: above_or_equal
+    target: 5
+    match: at_least_once
+    window: "1m"
     severity: warning
-    summary: Computer tool call failures observed
-  - name: NoraComputerIdleStale
-    kind: absent
-    query: 'nora_computer_calls_timestamp_seconds'
-    for_seconds: 86400
-    severity: info
-    summary: Computer path unused or dead for a day
-  - name: NoraComputerLatencyHigh
-    kind: threshold
-    query: 'histogram_quantile(0.95, rate(nora_computer_call_seconds_bucket[15m])) > 120'
-    for_seconds: 600
+    summary: "{{ $value }} computer calls answered unavailable in 15 minutes"
+    description: >-
+      Compare by op: `nora_computer_calls_total{status="unavailable"}`.
+      When `nora_computer_up` is also 0 this is `ComputerDown`'s cause;
+      when it is 1 computerd is answering and failing, so read its unit
+      journal (`journalctl --user -u nora-computer -n 100`).
+  - name: ComputerAuditFailing
+    port: "sum by (job, stage) (increase(nora_computer_audit_failures_total[1h])) > 0 for 0m"
+    query: 'sum by (service.name, stage) (increase(nora_computer_audit_failures_total[1h]))'
+    op: above
+    target: 0
+    match: at_least_once
+    window: "1m"
     severity: warning
-    summary: p95 computer call latency above 2 minutes
+    summary: "computer audit writes are failing (stage {{ $labels.stage }})"
+    description: >-
+      A computer call ran without its audit row (stage row), or its full
+      input/output was not kept (blob). The tool still answered. Check the
+      db and the blob store; the rows that failed are not recoverable.
   # ---- oauth (3) ----
-  - name: NoraOauthTokenRefreshFailing
-    kind: threshold
-    query: 'increase(nora_oauth_refresh_total{result="failed"}[30m]) > 0'
-    for_seconds: 0
+  - name: OAuthRefreshStale
+    port: "time() - nora_oauth_last_refresh_timestamp_seconds > 2 * nora_oauth_refresh_interval_seconds for 15m"
+    query: time() - nora_oauth_last_refresh_timestamp_seconds > 2 * nora_oauth_refresh_interval_seconds
+    op: above
+    target: 0
+    match: all_the_times
+    window: "15m"
     severity: critical
-    summary: OAuth token refresh failures — platform calls will start failing
-  - name: NoraOauthTokenExpiringSoon
-    kind: threshold
-    query: 'time() - nora_oauth_expiry_timestamp_seconds > -3600'
-    for_seconds: 300
-    severity: warning
-    summary: An OAuth token expires within the hour
-  - name: NoraOauthRefreshesStale
-    kind: absent
-    query: 'nora_oauth_refresh_timestamp_seconds'
-    for_seconds: 86400
-    severity: info
-    summary: OAuth refresh path quiet for a day
-  # ---- self-monitor (1) ----
-  - name: SignozIngesterDown
-    kind: threshold
-    query: 'up{job="signoz-ingester"} == 0'
-    for_seconds: 120
+    summary: "the {{ $labels.lane }} login has not refreshed for over twice its interval"
+    description: >-
+      Image generation on this lane fails once its access token expires.
+      Read why in the nora log (`oauth_lane` / `oauth keepalive` lines name
+      the lane and the reason). `auth` means the refresh token is dead: run
+      `nora xai-login` (lane xai) or `nora openai-codex-login` (lane
+      openai_codex), then recreate nora.
+  - name: OAuthAccessTokenExpired
+    port: "nora_oauth_access_expiry_timestamp_seconds > 0 and nora_oauth_access_expiry_timestamp_seconds < time() for 30m"
+    query: nora_oauth_access_expiry_timestamp_seconds > 0 and nora_oauth_access_expiry_timestamp_seconds < time()
+    op: above
+    target: 0
+    match: all_the_times
+    window: "30m"
     severity: critical
-    summary: The ingester stopped answering scrapes
+    summary: "the {{ $labels.lane }} access token has expired and was not refreshed"
+    description: >-
+      Image generation on this lane fails until a refresh succeeds. The nora
+      log names the lane and the reason the keepalive is retrying (`oauth
+      keepalive` / `oauth_lane` lines). A transient reason heals on its own;
+      `auth` needs a new login (see OAuthRefreshRefused).
+  - name: OAuthRefreshRefused
+    port: "nora_oauth_refresh_refused == 1 for 0m"
+    query: nora_oauth_refresh_refused
+    op: equal
+    target: 1
+    match: at_least_once
+    window: "1m"
+    severity: critical
+    summary: "the {{ $labels.lane }} login was refused and needs the operator"
+    description: >-
+      The issuer refused the lane's refresh token (`invalid_grant`), or the
+      state dir is not writable. Log in again with `nora xai-login` (lane
+      xai) or `nora openai-codex-login` (lane openai_codex) and recreate
+      nora; the keepalive retries once per interval until then. No other
+      checkout may hold the same token: a second holder spending one
+      rotating token revokes the chain.
+  # ---- monitoring-itself (1) ----
+  - name: IngestionSilent
+    port: "replaces absent(up{job=\"prometheus\"} == 1) for 5m"
+    query: absent(up{service.name="/signoz-otel-collector"})
+    op: above
+    target: 0
+    match: all_the_times
+    window: "5m"
+    severity: critical
+    summary: "the SigNoz ingestion path is not reporting — the monitor may be dead"
+    description: >-
+      The ingester's own scrape target has produced no `up` series for 5
+      minutes: the collector is down, wedged, or cannot write. Replaces
+      PrometheusNotIngesting — an alert evaluated by a stopped backend
+      cannot report that backend's death, which remains a known ceiling.

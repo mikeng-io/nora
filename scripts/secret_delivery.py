@@ -89,8 +89,6 @@ def projection(config: dict, values: dict[str, str]) -> dict:
         "app": {"NORA_OTP_API_TOKEN": config.get("otp", {}).get("api_token_env", "")},
         "voice-sidecar": {"DISCORD_BOT_TOKEN": config.get("platforms", {}).get(
             "discord", {}).get("token_env", "")},
-        "alert-bridge": {"DISCORD_BOT_TOKEN": config.get("platforms", {}).get(
-            "discord", {}).get("token_env", "")},
     }
     for service, aliases in native.items():
         projected = {target: values[ref] for target, ref in aliases.items() if ref in values}

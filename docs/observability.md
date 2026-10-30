@@ -26,20 +26,38 @@ two copies drift and the one that drifts is the one you did not read
 
 ## Accepted direction: self-hosted SigNoz
 
-**Decision accepted 2026-10-30; implementation and runtime acceptance pending.**
-[ADR 0034](adr/0034-self-hosted-signoz-unifies-application-and-llm-observability.md)
+**Decision accepted 2026-10-30; implemented and proven locally, not yet
+deployed.** [ADR 0034](adr/0034-self-hosted-signoz-unifies-application-and-llm-observability.md)
 records why. [Issue #440](https://github.com/mikeng-io/nora/issues/440) tracks
 implementation and its evidence. This section owns the target design and
 acceptance; the sections below describe the existing Langfuse/Jaeger deployment
-until the replacement is read back. A merged design is not a deployed backend.
+until the replacement is deployed on the host — a read-back backend is not a
+running one until then.
+
+**Local acceptance record (synthetic, Docker Desktop, `signoz:v0.148.1` +
+collector `v0.144.15`):** the repository's own ingester config runs the local
+stack (custom image `deploy/signoz/collector/Dockerfile` adding `journalctl`);
+synthetic generation/plumbing/error/undeclared traces exercise the tail
+policies; the filelog pipeline delivers docker-json lines with `trace_id`/
+`span_id` promoted for log↔trace correlation; all 19 alert rules provision via
+`scripts/signoz_provision.py` and evaluate — `TargetDown` fired and
+`IngestionSilent` resolved into a webhook sink end-to-end; the SigNoz MCP
+server answers trace/log/metric queries. What remains unproven is only what
+locality cannot prove: Linux journald (Docker Desktop has no journal — the
+receiver retries every 2s against an empty mount, as expected), a real Discord
+delivery, and the host's own volumes/capacity.
 
 ### Scope and ownership
 
 Use **SigNoz Community** for application APM, LLM/agent traces and centralized
 logs. Retain Sentry for grouped error reporting, linked to the same OTel trace.
-Keep Prometheus scraping/storage and the existing absence-alert delivery until
-replacement rules and delivery have been measured. Sentry errors alone do not
-replace detection of a stopped collector, stale work or an absent target.
+The standalone Prometheus, Alertmanager and alert-bridge services are RETIRED in
+this change — `deploy/signoz/alerts/rules.yaml` ports all 19 rules 1:1 (verified
+against `deploy/prometheus/rules/nora.yml` in git history) and the SigNoz
+webhook channel reaches Discord directly; `prometheus-client` and each service's
+`/metrics` endpoint stay (the ingester's prometheus receiver scrapes them).
+Sentry errors alone do not replace detection of a stopped collector, stale work
+or an absent target.
 
 The dedicated AI Observability experience shipped in
 [SigNoz v0.143.0](https://github.com/SigNoz/signoz/releases/tag/v0.143.0).
@@ -219,8 +237,8 @@ into fixtures and no paid model calls required for the ingestion proof.
    controls; no bulk import into SigNoz is assumed and no data deletion is
    authorized here. Verify Langfuse-dependent eval/readback consumers have a
    replacement or remain supported. Retire Jaeger and old collector filters only
-   after trace acceptance; retire Alertmanager/bridge only after required
-   absence rules and notification delivery have a verified replacement.
+   after trace acceptance. Alertmanager and alert-bridge are retired in this
+   change — the 19-rule port and webhook delivery are verified locally above.
 
 Rollback before retirement selects the previous backend routing and application
 configuration; it does not erase the new data. Do not assume SDK-dropped or
@@ -706,38 +724,40 @@ conventioned; the editorial judgement is not.
 
 ## Alerting
 
-Three stores and no reader was the state until 2026-09-09. `deploy/prometheus/`
-and `deploy/alertmanager/` are the reader; `deploy/alert-bridge/` is how an
-alert reaches a person.
+Three stores and no reader was the state until 2026-09-09; the reader is now
+the SigNoz backend itself. The ingester's prometheus receiver scrapes the
+same three endpoints, `deploy/signoz/alerts/rules.yaml` carries the same 19
+rules (`scripts/signoz_provision.py` applies them to the backend), and a
+SigNoz notification channel POSTs the alert to its sink — a Discord webhook
+in deployment, an HTTP endpoint in test.
 
 ```
 nora:9100  ─┐
-presence:  ─┼─▶ Prometheus ──▶ Alertmanager ──▶ alert-bridge ──▶ Discord
-  9101      │   (scrape 30s,     (group,          (webhook →      review
-analytics: ─┘    rules)           throttle)        REST POST)     channel
-  9103
+presence:  ─┼─▶ signoz-ingester ──▶ ClickHouse ──▶ SigNoz rules ──▶ Discord
+  9101      │   (scrape 30s,       (series)        (every 1m,       (webhook
+analytics: ─┘    prometheus        store)          per-rule)       receiver)
+  9103          receiver)
 ```
 
 **It lands in the same Discord channel the participation mirror posts to**, so
 an alert arrives beside the determinations it is about rather than in a second
 place to remember.
 
-**The bridge is a separate container and does not go through Nora.** Nora
-already holds a Discord connection, so an `/alerts` endpoint on its aiohttp app
-would have been three lines — and it would have made the most important alert
-this stack can send, "Nora is down", depend on Nora being up. An alerting path
-that shares a failure domain with the thing it watches is decoration. It is
-stdlib only for the same reason: every dependency it does not have is one that
-cannot fail during an incident.
+**The rule semantics ported intact** — every expression, `for` window, severity
+and annotation of the old `deploy/prometheus/rules/nora.yml` (in git history)
+carries across. Two changes the port required, both recorded at the top of
+`rules.yaml`: scrape `job`/`instance` labels do not survive the OTel prometheus
+receiver — queries and annotations use `service.name`/`service.instance.id`
+instead — and `PrometheusNotIngesting` is replaced by `IngestionSilent`, which
+measures the ingestion path's own scrape (`absent(up{service.name=
+"/signoz-otel-collector"})`), not the old Prometheus self-scrape.
 
-**Discord's REST API, not the Gateway and not a webhook.** The Gateway is a
-persistent connection with a reconnect state machine — a lot of moving parts
-for one POST an hour at most. A webhook would work and would avoid handling a
-token, but it must be created by hand in the Discord UI and kept as a second
-credential, where `DISCORD_BOT_TOKEN` is already in `.env`. Alertmanager's own
-`discord_configs` receiver is the same trade and posts a fixed template we
-would then work around. The REST call does not care whether Nora's Gateway
-session is alive, which is the whole point of this container being separate.
+**An alert path that shares a failure domain with what it watches is
+decoration**, so the delivery chain is still outside Nora's process: the
+backend evaluates and the webhook POST goes from the SigNoz container, not
+through her. A Discord webhook URL is created by hand in the Discord UI and
+carried as `NORA_ALERT_WEBHOOK` (secret.toml delivery) — the retired
+alert-bridge's `DISCORD_BOT_TOKEN` REST path is gone with it.
 
 **Every rule is an ABSENCE**, which is the whole reason this exists alongside
 Sentry rather than instead of it — see "what counts as an error" below.
@@ -762,17 +782,14 @@ Sentry rather than instead of it — see "what counts as an error" below.
 | `OAuthRefreshStale` | an image OAuth lane has not refreshed for twice its `refresh_interval_hours` (DEC-308), on the timestamp the boot republishes | 2026-10-09: the xAI login was refused on the first call after twelve idle days, and nothing had logged it |
 | `OAuthAccessTokenExpired` | a lane's access token is past its expiry for 30m | xAI's token lives ~6h, so waiting for the 48h staleness window would leave a lane stuck on a transient failure broken for most of two days |
 | `OAuthRefreshRefused` | a lane's refresh token was refused, or its state dir is unwritable | neither heals by retrying: it needs a new login, so it fires at once instead of waiting for the staleness window |
-| `PrometheusNotIngesting` | it stops scraping itself | a monitoring stack's own failure mode is to go quiet and leave everything green |
+| `IngestionSilent` | the ingester's own scrape produces no `up` for 5m | a monitoring stack's own failure mode is to go quiet and leave everything green |
 
 **What this pipeline cannot say, stated rather than discovered.** There is **no
-dead-man switch**: if Prometheus, Alertmanager or the bridge stops, nothing says so
-(`PrometheusNotIngesting` is evaluated BY Prometheus, so it cannot report its own
-death). A dead-man switch needs a receiver OUTSIDE this pipeline that alerts on
-the absence of a regular ping (an external heartbeat service); the repo carries
-none and a second path inside the same compose project would fail with it, so none
-was added. And the bridge answers 202 to Alertmanager even when its Discord POST
-fails (`deploy/alert-bridge/bridge.py`), so a transient Discord failure loses an
-alert for the 12 h `repeat_interval`. **Not alerted on, on purpose (2026-10-03,
+dead-man switch**: `IngestionSilent` is evaluated BY the SigNoz backend, so a
+backend that is down cannot report its own death — the same ceiling the old
+stack had. A dead-man switch needs a receiver OUTSIDE this deployment that
+alerts on the absence of a regular ping (an external heartbeat service); the
+repo carries none. **Not alerted on, on purpose (2026-10-03,
 AGENTS.md «A guard needs a consequence»):** a restart loop, a rising error count, a
 stalled cognition wake loop, a stimulus backlog, failing cognition sessions and a
 lost delete. Five of them were built 2026-10-02 around a loop that had never run, and

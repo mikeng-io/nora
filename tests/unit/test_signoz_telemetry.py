@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from nora.agent.telemetry import (
     RawSpanRecorder,
     TraceIdentityProcessor,
@@ -85,7 +87,7 @@ def test_cognition_session_stamps_conversation_identity():
     proc = TraceIdentityProcessor()
 
     class _Fake:
-        attributes = {"nora.cognition.session_id": "cog-42"}
+        attributes: ClassVar[dict] = {"nora.cognition.session_id": "cog-42"}
 
         def __init__(self):
             self.stamped: dict = {}

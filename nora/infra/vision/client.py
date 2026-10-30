@@ -38,8 +38,7 @@ import logging
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
-
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 import httpx
 from openai import AsyncOpenAI, DefaultAsyncHttpxClient
@@ -62,7 +61,10 @@ class VisionSpanRecorder(Protocol):
     strands-free layer.
     """
 
-    def start(self, *, messages: list, model_id: str, provider: str) -> object: ...
+    def start(
+        self, *, messages: list[dict[str, object]],
+        model_id: str, provider: str,
+    ) -> object: ...
     def finish(self, span: object, *, content: str, finish_reason: str,
                input_tokens: int | None = None, output_tokens: int | None = None,
                total_tokens: int | None = None, latency_seconds: float | None = None,
@@ -528,7 +530,7 @@ class VisionClient:
                 self._client.chat.completions.create(
                     model=request_model,
                     max_tokens=self._max_tokens,
-                    messages=request_messages,
+                    messages=cast(Any, request_messages),
                     extra_body={"reasoning_effort": self._reasoning_effort},
                 ),
                 timeout=self._call_timeout(None),
@@ -545,7 +547,7 @@ class VisionClient:
         return _checked(response, what="the text-only vision call")
 
     def _span_start(
-        self, *, messages: list, model_id: str, provider: str,
+        self, *, messages: list[dict[str, object]], model_id: str, provider: str,
     ) -> object | None:
         """Open the model-invoke span for one request, or `None` untraced.
 

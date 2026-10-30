@@ -29,7 +29,6 @@ BUILDS = {
     'signal-cli': ('deploy/signal-cli', 'deploy/signal-cli/Dockerfile'),
     'whatsapp-bridge': ('deploy/whatsapp-bridge', 'deploy/whatsapp-bridge/Dockerfile'),
     'instagram-bridge': ('deploy/instagram-bridge', 'deploy/instagram-bridge/Dockerfile'),
-    'alert-bridge': ('deploy/alert-bridge', 'deploy/alert-bridge/Dockerfile'),
 }
 # Reviewed recipes: pinned external images, locked language dependencies, no
 # inputs outside their context. A changed recipe builds until reviewed here.
@@ -42,7 +41,6 @@ REUSE_RECIPES = {
     'signal-cli': 'cdaa57b8438964a2a72ea56187f3e72d81477655eec011ae959284de0226656c',
     'whatsapp-bridge': '71ae929c8dab80bf43ac27df9e390d1770933a1028d2c592e3ff041c93d7cdab',
     'instagram-bridge': '92a0e637d9c9a699f903bb745fdc753d366badb9186ed19d41e5a312dcf923c7',
-    'alert-bridge': '722d580bb9a573afcfefc3b86adee214d097fd481ae1e14d20dcc84f0517ad65',
 }
 
 REGISTRY = 'ghcr.io/mikeng-io/nora-'
