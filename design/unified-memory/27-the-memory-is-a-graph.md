@@ -635,6 +635,13 @@ how many and at what cost before the backfill budget is set.
 
 ## 11. Gates, fixed before the spike
 
+> **2026-10-31:** [31 §6](31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31) owns current acceptance and
+> qualifies this original two-step spike table. Quality targets below remain
+> reported on observed populations; engineering guarantees still gate. Retired
+> worker/step-cost rows follow 31 §3's session replacements. The later
+> answerability/reply switch gates in §11, §14–§16 are historical, superseded
+> by 31 §6's bounded decision, not waived quality findings.
+
 A stratified sample (text-only, attachment-only, link, social item, and items
 where an event spans several signals), run through steps 1 and 2 of the loop on a frozen
 snapshot, judged by the precision judge used in 2026-10-27's spike and a
@@ -761,6 +768,10 @@ layer word and evidence count are on every relation, and the answerability
 gate scores whether an answer is grounded, not only whether it is right.
 
 ## 15. Order of work
+
+> **Current order and cutover acceptance:** [31 §6](31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31). The sequence
+> below predates the one-session build and is retained as history; it imposes
+> no additional parity/sample quota.
 
 1. This node ratified, and the amendments it points from.
 2. **Stores and projections:** `entity`, `relation`, `relation_evidence`;
