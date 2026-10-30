@@ -6675,20 +6675,31 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         kinds: list[MemoryKind] | None = None,
         depth: int = 2,
     ) -> dict:
-        """Search memory and its connections. Call this when an answer needs older
-        context; returns a labelled subgraph.
+        """Search what this group said, shared, kept, planned and where people
+        went. Call this when an answer needs something older than what you see.
 
-        SHOULD: write the topic you need in query.
-        Returns `status`: ok, partial, nothing_found or unavailable with a note;
-        naming a person can also return not_found, or ambiguous (ask which one).
+        It returns what matches as a graph, each item with its age and links.
+        The other arguments narrow it to one person, a span of dates or some
+        kinds of memory. Asked what you know about someone, set `person` to
+        them. Reading everything said on a day or span, with no topic to look
+        for, is `record_query`.
+
+        SHOULD: write `query` yourself, as what you are looking for, not the raw
+        tag message.
+
+        Returns `status`: ok, partial, nothing_found, unavailable, not_found or
+        ambiguous, with a `note` on how to report it.
 
         Args:
-            query: The topic or phrase to find.
-            person: Narrow to this person's name.
-            since: First day, YYYY-MM-DD.
-            until: Last day, YYYY-MM-DD.
-            kinds: Memory categories to return.
-            depth: Hops from seeds, zero to four; default two.
+            query: What you are looking for: a topic, a phrase or a question.
+            person: Only what is about this person or said by them: the name
+                or nickname the message used. Leave it out for everyone.
+            since: The first day to include, as YYYY-MM-DD.
+            until: The last day to include, as YYYY-MM-DD.
+            kinds: Only these kinds of memory. `media` is pictures and videos
+                sent in a chat; a shared link is a message. Leave it out to
+                search them all.
+            depth: Links out from each match, 0 to 4; default 2.
         """
         # The model writes the dates, so a bad one is an ordinary event, never
         # an exception (R-5) and never silently dropped: `unavailable` with
