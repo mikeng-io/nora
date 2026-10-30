@@ -159,6 +159,55 @@ def test_age_scope_and_query_grammar_cannot_read_foreign_unit():
         spike.scoped_cypher("MATCH (n) RETURN n; CREATE (n)")
 
 
+async def test_cypher_embedded_labels_are_not_binds():
+    """Cypher's ':label' inside the dollar-quoted literal must not read as a
+    bind, and the agtype JSON result must decode.
+
+    The conn fake stands in for the REAL asyncpg boundary: it compiles the
+    clause cypher() built with the asyncpg dialect — construct_params is what
+    raises 'A value is required for bind parameter N' in production — and
+    answers with the agtype wire serialization the driver delivers.
+    """
+    from sqlalchemy.dialects import postgresql
+
+    dialect = postgresql.asyncpg.dialect()
+    sent = []
+
+    class Conn:
+        async def execute(self, clause):
+            compiled = clause.compile(dialect=dialect)
+            sent.append(str(compiled))
+            assert compiled.construct_params() == {}
+            return SimpleNamespace(scalars=lambda: iter(['"person:p1"', '"event:e1"']))
+
+    cases = [
+        ('CREATE (:N {key: "generated:key"})', "$$"),
+        (
+            'MATCH (a:N), (b:N) WHERE a.key="person:p1" AND b.key="event:e1" '
+            "CREATE (a)-[:attended]->(b)",
+            "$$",
+        ),
+        (
+            'MATCH (a:N)-[:attended|concerns*0..3]-(b:N) WHERE a.key="person:p1" '
+            "RETURN DISTINCT b.key",
+            "$$",
+        ),
+        ("CREATE (:N {key: \"it's:quoted\"})", "$$"),
+        ('CREATE (:N {key: "pct%50\\\\:backslash"})', "$$"),
+        # A '$$' inside the value forces a tag the value cannot close.
+        ('CREATE (:N {key: "has$$tag:1"})', "$aa$"),
+    ]
+    for query, _ in cases:
+        assert await spike.cypher(Conn(), "generated_graph", query) == [
+            "person:p1",
+            "event:e1",
+        ]
+    for (query, tag), compiled in zip(cases, sent, strict=True):
+        assert compiled.startswith("SELECT value FROM ag_catalog.cypher($$generated_graph$$, ")
+        assert f"{tag}{query}{tag})" in compiled
+        assert query in compiled
+
+
 def test_operator_script_is_a_declared_assembled_occasion():
     import ast
     from pathlib import Path
