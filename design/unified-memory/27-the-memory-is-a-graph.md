@@ -857,9 +857,9 @@ Re-check each finding against the receiving session's exact head before repairin
 
 **Five Cs: Correctness / Completeness. Reproduced input regression.**
 
-The existing `build_preview` seeds the source, author, mentions/faces, room, unit, reply parent and explicit references, and requests Record/Rollup/Notebook layers (`nora/domain/comprehend.py:77`). The unified wake's `WakeMemory.prepare` reconstructs `ComprehendItem` without author, mentions, reply parent, URLs, accounts or place; its rebuilt source rows reset mentions and discard reply structure and metadata (`nora/app/cognition_memory.py:92`).
+The existing `build_preview` seeds the source, author, mentions/faces, room, unit, reply parent and explicit references, and requests Record/Rollup/Notebook layers (`nora/domain/comprehend.py`, `build_preview`). The unified wake's `WakeMemory.prepare` reconstructs `ComprehendItem` without author, mentions, reply parent, URLs, accounts or place; its rebuilt source rows reset mentions and discard reply structure and metadata (`nora/app/cognition_memory.py`, `WakeMemory.prepare`).
 
-It then seeds only source keys and aliases literally found in source text (`:119`). Source persons are used as scope restrictions, not graph seeds. Its `Walk` does not specify layers, so the domain default is Rollup + Notebook (`nora/domain/memory_graph.py:314`). Knowing the sender's identity therefore does not ensure the sender's existing plans or the room's curated context are in the pre-model input.
+It then seeds only source keys and aliases literally found in source text (the alias/seed construction in `WakeMemory.prepare`). Source persons are used as scope restrictions, not graph seeds. Its `Walk` does not specify layers, so the domain default is Rollup + Notebook (`nora/domain/memory_graph.py`, `Walk`). Knowing the sender's identity therefore does not ensure the sender's existing plans or the room's curated context are in the pre-model input.
 
 Generated probe: an actor already has a valid `plans` relation. A new reply contains no actor/event name. The wake preview omits the relation; a direct actor seed on the same graph retrieves it. The previous `build_preview` also retrieves it. The rebuilt wake item has an empty author and no reply parent. This is a concrete mechanism for failing to interpret an implicit acknowledgement using established context; it does not prove every such utterance will be misread, since tools may recover the missing context.
 
@@ -881,7 +881,7 @@ Smallest direction: have automatic recall obtain a bounded view from the same sc
 
 **Five Cs: Correctness / Completeness. Reproduced mechanism and ceiling.**
 
-`RegisterGraphLinks.project` chooses targets by `alias.casefold() in body.casefold()` (`nora/app/register_graph.py:29`). Notes use `concerns`, memos `settles`. Gatherings unconditionally obtain a Register-derived event entity (`:37`). This automatic linking cannot establish that a breakfast arrangement belongs to a differently named underlying activity merely from the session's understanding.
+`RegisterGraphLinks.project` chooses targets by `alias.casefold() in body.casefold()` (`nora/app/register_graph.py`, `RegisterGraphLinks.project`). Notes use `concerns`, memos `settles`. Gatherings unconditionally obtain a Register-derived event entity (the `event_entry` branch in that method). This automatic linking cannot establish that a breakfast arrangement belongs to a differently named underlying activity merely from the session's understanding.
 
 Generated probe: a new note about breakfast and an existing event produce zero new links. Keeping the evidence and graph fixed but adding the event's exact name to the note produces one link. No model was used, and the test does not claim that every natural note lacks an appropriate alias. It proves that semantic context alone is not represented by this linking mechanism.
 
@@ -891,11 +891,11 @@ Smallest direction: carry an evidence-grounded association selected in the exist
 
 **Five Cs: Completeness. Intentional rollout boundary, not an accidental failing write.**
 
-The unified session's `profile_revise` calls `WakeMemory.profile`; it validates admitted relations and shown evidence, then calls `records.shadow` (`nora/app/cognition_memory.py:196`). SQL saves a `reshape` receipt containing `would_writes` (`nora/infra/sql/comprehend.py:619`). That path does not write live profile heads, room culture or Lessons.
+The unified session's `profile_revise` calls `WakeMemory.profile`; it validates admitted relations and shown evidence, then calls `records.shadow` (`nora/app/cognition_memory.py`, `WakeMemory.profile`). SQL saves a `reshape` receipt containing `would_writes` (`nora/infra/sql/comprehend.py`, `SqlComprehendRecords.shadow`). That path does not write live profile heads, room culture or Lessons.
 
 Generated probe: a valid proposal returns `ok` with the explicit shadow note and creates one shadow receipt. The code itself establishes the destination; the probe is not a claim about live profile content.
 
-Separate `ProfilePersonAdaptor` and collective adaptors still exist in composition and can write profile stores under their own configuration and evidence cycle (`nora/app/composition.py:4225`). Consequently it would be wrong to report that Nora has no long-term profile system. The precise gap is that new unified-session reshape output is not automatically the profile read by later turns. The ratified session design explicitly stages this as a later surface switch.
+Separate `ProfilePersonAdaptor` and collective adaptors still exist in composition and can write profile stores under their own configuration and evidence cycle (`nora/app/composition.py`, the `ProfilePersonAdaptor` construction). Consequently it would be wrong to report that Nora has no long-term profile system. The precise gap is that new unified-session reshape output is not automatically the profile read by later turns. The ratified session design explicitly stages this as a later surface switch.
 
 Smallest direction: verify the intended phase/promotion and its acceptance before claiming a closed learning loop. No silent flag flip or deployment is authorized by this audit. A graph relation may remain useful even while a free-text behavioural account is still shadow-only; assess both separately.
 
@@ -903,7 +903,7 @@ Smallest direction: verify the intended phase/promotion and its acceptance befor
 
 **Five Cs: Correctness evidence boundary. Reproduced, not a request for deterministic semantic validation.**
 
-`validate_relation` checks the closed vocabulary, endpoint kinds, layer, evidence availability, exact span presence and scope (`nora/domain/memory_graph.py:273`). It does not determine whether a source semantically entails a proposed relation.
+`validate_relation` checks the closed vocabulary, endpoint kinds, layer, evidence availability, exact span presence and scope (`nora/domain/memory_graph.py`, `validate_relation`). It does not determine whether a source semantically entails a proposed relation.
 
 Generated probe: an `attended` judgement supported only by a literal assent is structurally admitted with no refusals. This demonstrates that a saved relation/evidence count cannot certify that Nora distinguished intent, teasing and actual attendance. The session instruction already says a plan does not establish attendance. The semantic property must be measured using the model's real input and trajectory, not patched with keyword/time-of-day/person-specific rules.
 
