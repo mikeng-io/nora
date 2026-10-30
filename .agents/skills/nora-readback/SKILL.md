@@ -130,11 +130,12 @@ ssh nora-host 'python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-roo
 ```bash
 ssh nora-host bash -s > log.txt 2>&1 <<'EOF'
 cd ~/workspace/nora || exit 1
-docker compose logs --no-log-prefix --since 1h nora | jq -c 'select(.severity_number >= 13) | {ts, level, logger, message}'
+docker logs --since 1h nora | jq -c 'select(.severity_number >= 13) | {ts, level, logger, message}'
 EOF
 ```
 
-- Without `--no-log-prefix` every line starts `nora  | ` and `jq` rejects it.
+- `docker logs` reads the installed `nora` container without Compose interpolation
+  or a Compose service-name prefix.
 - An idle process logs nothing at INFO, so the log alone does not separate
   idle from dead; read `/health` or a counter.
 - A recreate discards the old container's log: capture it before recreating.
