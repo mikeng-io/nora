@@ -32,17 +32,34 @@ and never arrived, recorded PASS for a day). Record `accepted` as UNVERIFIED.
 
 ## 2. Langfuse (one turn, one pass)
 
-Langfuse runs as its own compose project on nora-host, port 3100. The key is in
-`LANGFUSE_OTLP_HEADERS` in nora-host's `~/workspace/nora/.env`, shaped
-`Authorization=Basic%20<base64>`; its `=` padding is URL-encoded, and without
-decoding `%3D` every call is 401 (measured 2026-09-24).
+Langfuse runs as its own compose project on nora-host, port 3100. The key is
+`LANGFUSE_OTLP_HEADERS`, resolved through the deployment's credential source —
+`scripts/secret_delivery.py`'s `source()`, process env > `.env` > `secret.toml`
+— shaped `Authorization=Basic%20<base64>`; its `=` padding is URL-encoded, and
+without decoding `%3D` every call is 401 (measured 2026-09-24). Decode and send
+inside one Python process: the value never reaches argv, a log or stdout, and
+missing/empty fails closed. (`--compose-exec` is exec-only, not a curl wrapper.)
 
 ```bash
 ssh nora-host bash -s > lf.log 2>&1 <<'EOF'
+set -e
 cd ~/workspace/nora || exit 1
-B64=$(sed -n 's/^LANGFUSE_OTLP_HEADERS=Authorization=Basic%20//p' .env | sed 's/%3D/=/g')
-curl -s -H "Authorization: Basic $B64" -o /tmp/lf.json -w 'HTTP=%{http_code}\n' \
-  '127.0.0.1:3100/api/public/traces?name=engagement&limit=50&page=1'
+python3 - <<'PY'
+import sys, urllib.parse, urllib.request
+from pathlib import Path
+from scripts.secret_delivery import source
+
+header = source(Path.cwd()).get("LANGFUSE_OTLP_HEADERS", "")
+name, _, encoded = header.partition("=")
+if not name or not encoded:
+    sys.exit("LANGFUSE_OTLP_HEADERS missing or empty in the deployment's credentials")
+req = urllib.request.Request(
+    "http://127.0.0.1:3100/api/public/traces?name=engagement&limit=50&page=1",
+    headers={name: urllib.parse.unquote(encoded)})
+with urllib.request.urlopen(req) as r:
+    Path("/tmp/lf.json").write_bytes(r.read())
+    print(f"HTTP={r.status}")
+PY
 jq -r '.meta, (.data[] | [.id, .timestamp, .name] | @tsv)' /tmp/lf.json
 EOF
 ```
@@ -161,6 +178,7 @@ ssh nora-host 'python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-roo
 ## Credential-source amendment
 
 Use [the configuration migration procedure](../../../docs/configuration.md) for
-secret.toml, installed helper delivery and scoped recreation. Older .env-only
-examples above remain legacy compatibility instructions. Do not print values or
-copy rotating OAuth state into the bootstrap source.
+secret.toml, installed helper delivery and scoped recreation. `source()` reads
+`.env` too, so the recipes above work unchanged on a legacy `.env`-only
+deployment. Do not print values or copy rotating OAuth state into the
+bootstrap source.

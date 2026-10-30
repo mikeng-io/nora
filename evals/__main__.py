@@ -195,37 +195,50 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 #: The clone's name on the deploy host, and the loopback publish its compose
 #: file gives the database container (`ports: ["127.0.0.1:5435:5432"]`).
 EVAL_CLONE = "nora_eval"
-_DEPLOY_DB = "127.0.0.1:5435"
+_DEPLOY_DB_HOST = "127.0.0.1"
+_DEPLOY_DB_PORT = 5435
 
 
 def source_url_for(stated: str, deployment_dir: Path) -> str:
     """The source URL, or a refusal.
 
-    Stated wins; otherwise it is derived from the deployment's own `.env`
-    (`POSTGRES_PASSWORD`) and the clone's name — so on the deploy host the
-    default is right and nowhere else is there one. Either way the database
-    NAME must be a clone's: the live database is `nora`, and one flag away
-    from running 150 cases' seeds and turns into production is not a
-    default anybody should be able to reach.
+    Stated wins and no credential file is read. Otherwise the URL is derived
+    from the deployment's own credentials — `scripts.secret_delivery.source`'s
+    precedence, process environment > `.env` > `secret.toml`, so a
+    secret-only deployment still resolves and a present-empty value refuses —
+    and the clone's name. On the deploy host the default is right and nowhere
+    else is there one. Either way the database NAME must be a clone's: the
+    live database is `nora`, and one flag away from running 150 cases' seeds
+    and turns into production is not a default anybody should be able to
+    reach.
     """
-    from sqlalchemy.engine import make_url
+    from sqlalchemy.engine import URL, make_url
 
     if not stated:
-        env = deployment_dir / ".env"
-        password = ""
+        from scripts.secret_delivery import source
+
         try:
-            for line in env.read_text(encoding="utf-8").splitlines():
-                if line.startswith("POSTGRES_PASSWORD="):
-                    password = line.split("=", 1)[1].strip()
-        except OSError as exc:
+            password = source(deployment_dir).get("POSTGRES_PASSWORD", "")
+        except (OSError, ValueError) as exc:
             raise ValueError(
-                f"--source-url not given and {env} is unreadable ({exc}); "
-                "the default source is the deploy host's clone, derived from "
-                "its own .env"
+                "--source-url not given and the deployment's credentials "
+                f"under {deployment_dir} are unreadable ({exc}); the default "
+                "source is the deploy host's clone, derived from its "
+                "secret.toml/.env"
             ) from exc
         if not password:
-            raise ValueError(f"--source-url not given and {env} states no POSTGRES_PASSWORD")
-        stated = f"postgresql+asyncpg://nora:{password}@{_DEPLOY_DB}/{EVAL_CLONE}"
+            raise ValueError(
+                "--source-url not given and the deployment's credentials "
+                f"under {deployment_dir} state no POSTGRES_PASSWORD"
+            )
+        stated = URL.create(
+            "postgresql+asyncpg",
+            username="nora",
+            password=password,
+            host=_DEPLOY_DB_HOST,
+            port=_DEPLOY_DB_PORT,
+            database=EVAL_CLONE,
+        ).render_as_string(hide_password=False)
     name = make_url(stated).database or ""
     if not name.endswith("_eval"):
         raise ValueError(
@@ -559,7 +572,8 @@ def _main() -> int:
         "--source-url", default=os.environ.get("NORA_EVAL_SOURCE_URL", ""),
         help="the deployment's CLONE (nora_eval), read and never written; "
              "every case composes against a sandbox database cloned beside "
-             "it. Defaults to the clone on the deploy host, from its .env. "
+             "it. Defaults to the clone on the deploy host, derived from its "
+             "credentials (process env > .env > secret.toml). "
              "A name that is not a clone's is refused.",
     )
     ap.add_argument(
