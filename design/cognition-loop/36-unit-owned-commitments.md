@@ -161,7 +161,7 @@ delivery uses a new `remind` decision with the same subject.
 
 The comments in `fire.py` `_read_decisions` and `prefill.py` `_decisions_block`
 saying proactive rows fire only into the home room are stale. The actual row
-address drives `proactive_event`. Home is a fallback here, not a routing law.
+address drives `proactive_occasion` (`nora/app/fire.py`). Home is a fallback here, not a routing law.
 
 For an existing pending subject, `remind` **supersedes** it atomically, like
 `wake_at`: one replacement, with old id and reason recorded, not two open rows.
@@ -196,7 +196,10 @@ the merged-note survivor handling. Absence never proves settlement.
 Read actual successful sends about the canonical subject across **all rooms
 of the stored unit since its subject decision**, not only room transcripts or
 `proactive_act spoke` verdicts. Use recorded send receipts linked by code to
-reminder, subject, unit, delivery address and trace. A silent decision is not
+reminder, subject, unit, delivery address and trace. A receipt is the existing
+audit-first `messages` row of Nora's own send plus `tag_trace.sent_message_ids`;
+add only the reminder-and-subject link to them, and a separate receipts store
+only if a read-back shows these cannot carry it. A silent decision is not
 a send. A same-subject send cancels the pending repeat with a named outcome;
 an unavailable send-history read prevents fire. A new decision after a prior
 send may deliberately ask again; the previous-subject window remains visible.
