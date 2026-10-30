@@ -42,6 +42,7 @@ missing/empty fails closed. (`--compose-exec` is exec-only, not a curl wrapper.)
 
 ```bash
 ssh nora-host bash -s > lf.log 2>&1 <<'EOF'
+set -e
 cd ~/workspace/nora || exit 1
 python3 - <<'PY'
 import sys, urllib.parse, urllib.request

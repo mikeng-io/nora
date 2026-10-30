@@ -10,8 +10,8 @@ Rules and reasons: `CONTRIBUTING.md`, `AGENTS.md`. Every step ends in a check:
 the log or the read-back, never an exit code alone. Go end to end; stop only
 for a blocker or a fact only the operator holds (a decision is not input).
 Two roles, one procedure (ORCHESTRATION.md): a builder under a bounded brief
-runs the brief's named checks, commits, pushes, opens the PR and STOPS — the
-orchestrator owns the gate once on the final head, review, merge, read-back.
+runs named checks (1–2), commits (4–5), pushes/opens the PR (6) and STOPS.
+The orchestrator gates the final head (3), then reviews, merges and reads back (7–9).
 
 ```bash
 TYPE=<commit-type>; SLUG=<kebab-slug>; WT=<new-worktree-path>        # WT outside every checkout
@@ -112,7 +112,7 @@ only generated metadata auto-merges on its exact head. Application PRs retain ex
 
 ```bash
 git fetch origin; git rev-list --count HEAD..origin/master    # 0: branch is the merged tree
-git merge origin/master -m "merge: origin/master into $SLUG, <what came in>"   # only if >0, then step 3
+git merge origin/master -m "merge: origin/master into $SLUG, <what came in>"   # if >0: focused checks; orchestrator gates
 git push -u origin HEAD
 cp .github/pull_request_template.md "$LOG/pr.md"   # fill in, delete the comments
 gh pr create --base master --title "<type(scope): description> (#N, DEC-M)" --body-file "$LOG/pr.md"
