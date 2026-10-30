@@ -109,7 +109,8 @@ def test_named_media_missing_key_degrades_without_losing_other_clients(
     clients = _direct_describer_clients(cfg)
     assert set(clients) == {"alpha"}
     assert str(clients["alpha"].base_url) == "https://alpha.invalid/v1/"
-    assert "BETA is unset" in caplog.text
+    assert "provider 'beta' has no configured credential" in caplog.text
+    assert "synthetic-alpha" not in caplog.text
 
 
 def test_schema_validation_does_not_read_secret(example_config_path, tmp_path):

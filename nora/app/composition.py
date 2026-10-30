@@ -897,8 +897,8 @@ def _direct_describer_clients(cfg: Config) -> dict[str, AsyncOpenAI]:
         api_key = cfg.credentials.get(endpoint.api_key_env, "")
         if not api_key:
             log.warning(
-                "media describer provider %r selected but %s is unset — "
-                "its modalities answer unavailable", name, endpoint.api_key_env,
+                "media describer provider %r has no configured credential — "
+                "its modalities answer unavailable", name,
             )
             continue
         clients[name] = create_client(
