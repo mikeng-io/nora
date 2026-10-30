@@ -118,10 +118,18 @@ What the tests enforce today (checked 2026-09-24, working tree):
 
 ## 7. Measure, before and after
 
-1. **Routing**, for any change to a name, a first paragraph or a level:
-   `python -m evals tool_selection --sample 5 --reasons`, on master and on the
-   branch. `--reasons` prints the tools each draw executed. How and where to run
-   it (the deploy host, the eval worktree, one run at a time) is `nora-eval`.
+1. **Routing**, for any change to a name, a first paragraph or a level: the
+   `tool_selection` corpus on master and on the branch, narrowed by `--case`
+   to what the change can move — every case naming the tool in `tools`, the
+   sibling negatives naming it in `not_tools`, and one control that routes
+   elsewhere (`evals/corpora/tool_selection.yaml` `metadata:`). For a
+   `where_is` change:
+   `python -m evals tool_selection --case route_where_is_now --case route_where_been_today --case route_routine_read_future --case route_weather_not_web --sample N --reasons`
+   `--reasons` prints the tools each draw executed. Choose N for the claim and
+   check the `estimate:` line — the run refuses over 60 minutes, so the whole
+   corpus at `--sample 5` (~7 h an arm) can never be the recipe. How and where
+   to run it (the deploy host, the eval worktree, one run at a time, n by the
+   question) is `nora-eval`.
 2. **Reporting**, when interpretation moves into a result: the `tool_reporting`
    corpus with `--judge`, same two arms.
 3. **Check the eval feeds the tool what production does.** A tool's next step
