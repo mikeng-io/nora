@@ -21,6 +21,7 @@ from nora.domain.memory_graph import (
     Walk,
     validate_relation,
 )
+from nora.domain.memory_index import IndexedNode, in_scope, narrowed
 
 GraphBatchOutcome = Literal["ok", "nothing_found", "unavailable"]
 GRAPH_BATCH_OUTCOMES: tuple[str, ...] = get_args(GraphBatchOutcome)
@@ -34,6 +35,8 @@ class AdmissionState:
         self.relations: dict[str, Relation] = {}
         self.evidence: list[Evidence] = []
         self.available = True
+        self.indexed: dict[Key, IndexedNode] = {}
+        self.fields: dict[Key, Mapping[str, object]] = {}
 
     async def _upsert_entity(self, entity: Entity) -> Entity:
         if entity.kind not in ENTITY_KINDS:
@@ -80,7 +83,8 @@ class AdmissionState:
             if reason is None:
                 for key in (relation.src, relation.dst):
                     if key[0] in ENTITY_KINDS and (
-                        key[1] not in candidates or candidates[key[1]].unit != relation.unit
+                        key[1] not in candidates
+                        or candidates[key[1]].unit != relation.unit
                         or candidates[key[1]].kind != key[0]
                     ):
                         reason = "wrong_ends"
@@ -204,10 +208,74 @@ class AdmissionState:
     async def _walk(self, seeds: tuple[Key, ...], query: Walk) -> Subgraph:
         if not self.available:
             return Subgraph("unavailable")
+
+        def scoped(r: Relation) -> bool:
+            scope = query.scope
+            if scope is None:
+                return True
+            only = scope.only
+            at_ms = int(r.asserted_at.timestamp() * 1000)
+            if only and (
+                (only.since_ms is not None and at_ms < only.since_ms)
+                or (only.until_ms is not None and at_ms > only.until_ms)
+            ):
+                return False
+            subjects = set(r.persons)
+            for key in (r.src, r.dst):
+                entity = self.entities.get(key[1])
+                if entity and entity.kind == "person":
+                    subjects.add(str(entity.attributes.get("ref", entity.id)))
+            if (r.location or r.rel in {"stayed_at", "co_located_with", "during"}) and (
+                not subjects <= scope.presence_persons
+            ):
+                return False
+            keys = [
+                r.src,
+                r.dst,
+                *(
+                    e.source
+                    for e in self.evidence
+                    if e.relation_id == r.id or e.entity_id in {r.src[1], r.dst[1]}
+                ),
+            ]
+            if (
+                only
+                and only.person
+                and all(
+                    key[1] in self.entities and self.entities[key[1]].key == key for key in keys
+                )
+                and only.person not in subjects
+            ):
+                return False
+            for key in keys:
+                entity = self.entities.get(key[1])
+                if entity and entity.key == key:
+                    if entity.unit != query.unit:
+                        return False
+                    if (
+                        entity.kind == "person"
+                        and str(entity.attributes.get("ref", entity.id)) not in scope.listed_here
+                    ):
+                        return False
+                    continue
+                node = self.indexed.get(key)
+                # ponytail: no `linked` here, so a person-narrowed walk can drop a
+                # relation SQL's `_narrowed` admits through a person edge. It only
+                # under-returns; pass the node's person links if that is measured.
+                if node is None or not in_scope(node, scope) or not narrowed(node, scope):
+                    return False
+                # Evidence about a person only counts in a room that lists them.
+                if node.origin_room and not subjects <= scope.room_persons.get(
+                    node.origin_room, frozenset()
+                ):
+                    return False
+            return True
+
         eligible = [
             r
             for r in self.relations.values()
             if r.unit == query.unit
+            and scoped(r)
             and set(r.persons) <= query.persons
             and r.status == "current"
             and r.layer in query.layers
@@ -223,7 +291,7 @@ class AdmissionState:
         # Record pointers are never adjacency, even when explicitly requested.
         adjacency: dict[Key, list[Relation]] = defaultdict(list)
         for r in eligible:
-            if r.layer != "record":
+            if r.layer != "record" or r.src in seeds:
                 adjacency[r.src].append(r)
                 adjacency[r.dst].append(r)
         reachable = {k for r in eligible for k in (r.src, r.dst)}
@@ -242,14 +310,35 @@ class AdmissionState:
                 partial = True
                 return False
             nodes[key] = GraphNode(
-                key, entity, sum(e.entity_id == key[1] for e in self.evidence) if entity else 0
+                key,
+                entity,
+                sum(e.entity_id == key[1] for e in self.evidence) if entity else 0,
+                self.indexed.get(key),
+                self.fields.get(key, {}),
             )
             return True
 
         frontier = [k for k in dict.fromkeys(seeds) if add(k)]
+        if query.depth == 0 and query.scope is not None:
+            incident = [r for r in eligible if r.src in nodes or r.dst in nodes]
+            for r in incident[: query.fan_out]:
+                evidence = tuple(e for e in self.evidence if e.relation_id == r.id)
+                edges[r.id] = GraphEdge(
+                    r,
+                    len(evidence),
+                    evidence,
+                    tuple(self.indexed[e.source] for e in evidence if e.source in self.indexed),
+                )
+            partial = len(incident) > query.fan_out
+            return Subgraph(
+                "partial" if partial else "ok", tuple(nodes.values()), tuple(edges.values())
+            )
         for depth in range(query.depth + 1):
             following = []
             for key in frontier:
+                if (query.scope is not None and depth > 0
+                        and key[0] in {"person", "room", "unit", "nora", "place"}):
+                    continue
                 counts: dict[str, int] = defaultdict(int)
                 for r in sorted(adjacency[key], key=lambda r: r.id):
                     if r.id in edges:
@@ -262,7 +351,14 @@ class AdmissionState:
                     seen = other in nodes
                     if add(other):
                         edges[r.id] = GraphEdge(
-                            r, sum(e.relation_id == r.id for e in self.evidence)
+                            r,
+                            sum(e.relation_id == r.id for e in self.evidence),
+                            tuple(e for e in self.evidence if e.relation_id == r.id),
+                            tuple(
+                                self.indexed[e.source]
+                                for e in self.evidence
+                                if e.relation_id == r.id and e.source in self.indexed
+                            ),
                         )
                         if not seen:
                             following.append(other)

@@ -139,6 +139,7 @@ _TOOL_RESULT_CAPS: Mapping[str, int] = {
     # The memory graph's one search verb (DEC-316), offered instead of the
     # Honcho verbs above while `[memory.index] read`: same number.
     "memory_search": MAX_MEMORY_RESULT_CHARS,
+    "memory_read": MAX_MEMORY_RESULT_CHARS,
 }
 
 #: The same table under a public name, for the Cognition session's guard
@@ -178,7 +179,7 @@ TOOL_RESULT_CAPS: Mapping[str, int] = _TOOL_RESULT_CAPS
 #: a deployment registers.
 MEMORY_TOOLS: frozenset[str] = frozenset({
     "about", "ask_memory", "search_memory_workspace", "lookup_person",
-    "memory_search",
+    "memory_search", "memory_read",
 })
 
 DreamStatus = Literal["ok", "nothing_found", "unavailable"]
@@ -562,7 +563,7 @@ UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
     # memory index through a room's scope, so a unit-keyed run with no home room
     # answers `unavailable` (`media_search`'s shape above), never an empty answer.
     # Offered only while `[memory.index] read`.
-    "memory_search",
+    "memory_search", "memory_read",
     # `load_tools` reads neither a room nor a unit: it registers tools from THIS
     # run's own shelf onto THIS run's own agent, so it is as unit-safe as `now`.
     # Being here makes it grantable; whether a run holds it is

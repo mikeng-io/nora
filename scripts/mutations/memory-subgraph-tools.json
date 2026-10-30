@@ -1,0 +1,135 @@
+[
+  {
+    "name": "unit cuts paths before expansion",
+    "file": "nora/domain/memory_admission.py",
+    "old": "            if r.unit == query.unit\n            and scoped(r)",
+    "new": "            if scoped(r)",
+    "target": "tests/contract/test_memory_graph_contract.py::test_unit_and_listed_rules_cut_nonentity_intermediates[fake]"
+  },
+  {
+    "name": "listed persons cut paths before expansion",
+    "file": "nora/domain/memory_admission.py",
+    "old": "            and set(r.persons) <= query.persons",
+    "new": "",
+    "target": "tests/contract/test_memory_graph_contract.py::test_unit_and_listed_rules_cut_nonentity_intermediates[fake]"
+  },
+  {
+    "name": "presence evidence cuts paths before expansion",
+    "file": "nora/domain/memory_admission.py",
+    "old": "            and scoped(r)",
+    "new": "",
+    "target": "tests/contract/test_memory_graph_contract.py::test_tool_scope_cuts_path_at_evidence[fake-presence]"
+  },
+  {
+    "name": "social evidence cuts paths before expansion",
+    "file": "nora/domain/memory_admission.py",
+    "old": "            and scoped(r)",
+    "new": "",
+    "target": "tests/contract/test_memory_graph_contract.py::test_tool_scope_cuts_path_at_evidence[fake-social]"
+  },
+  {
+    "name": "listed_room evidence cuts paths before expansion",
+    "file": "nora/domain/memory_admission.py",
+    "old": "            and scoped(r)",
+    "new": "",
+    "target": "tests/contract/test_memory_graph_contract.py::test_tool_scope_cuts_path_at_evidence[fake-listed_room]"
+  },
+  {
+    "name": "excluded evidence cuts paths before expansion",
+    "file": "nora/domain/memory_admission.py",
+    "old": "            and scoped(r)",
+    "new": "",
+    "target": "tests/contract/test_memory_graph_contract.py::test_tool_scope_cuts_path_at_evidence[fake-excluded]"
+  },
+  {
+    "name": "presence includes endpoint people without audience restrictions",
+    "file": "nora/domain/memory_admission.py",
+    "old": "not subjects <= scope.presence_persons",
+    "new": "not set(r.persons) <= scope.presence_persons",
+    "target": "tests/contract/test_memory_graph_contract.py::test_tool_scope_cuts_path_at_evidence[fake-presence_unrestricted]"
+  },
+  {
+    "name": "SQL presence includes endpoint people before paths",
+    "file": "nora/infra/sql/memory_graph.py",
+    "old": "AND NOT coalesce(subject.attributes->>'ref',subject.id)=ANY(CAST(:presence AS text[]))",
+    "new": "AND FALSE",
+    "target": "tests/contract/test_memory_graph_contract.py::test_tool_scope_cuts_path_at_evidence[sql-presence_unrestricted]"
+  },
+  {
+    "name": "graph tools retain enabled identifier screening",
+    "file": "nora/agent/memory_search.py",
+    "old": "if any(scan_identifiers(body, content_checks=content_checks) for body in bodies):",
+    "new": "if False:",
+    "target": "tests/unit/test_memory_search_tool.py::test_subgraph_preserves_enabled_identifier_screen"
+  },
+  {
+    "name": "every recursive branch reads the scoped relation source",
+    "file": "nora/infra/sql/memory_graph.py",
+    "old": "\"FROM relation r\", \"FROM eligible r\"",
+    "new": "\"FROM relation r WHERE\", \"FROM eligible r WHERE\"",
+    "target": "tests/contract/test_memory_graph_contract.py::test_hidden_intermediate_never_enters_recursive_sql_paths[sql]"
+  },
+  {
+    "name": "missing graph projection is not an authoritative empty search",
+    "file": "nora/agent/memory_search.py",
+    "old": "if seed is None and found.hits and not graph.nodes:",
+    "new": "if False:",
+    "target": "tests/unit/test_memory_search_tool.py::test_matching_index_without_graph_projection_is_unavailable"
+  },
+  {
+    "name": "full SQL fields remain JSON data rather than a repr string",
+    "file": "nora/agent/memory_search.py",
+    "old": "            result = to_jsonable_python(result)",
+    "new": "            pass",
+    "target": "tests/infra/test_a_cognition_sessions_read_tools_write_nothing.py::test_every_read_tool_the_session_holds_writes_nothing_live[graph_surface]"
+  },
+  {
+    "name": "memory_read preserves the culture reader room boundary",
+    "file": "nora/agent/tools.py",
+    "old": "                now_ms=int(now_fn().timestamp() * 1000),\n                own_room=dream_adaptor in ROOM_ONLY_MEMORY_ADAPTORS,",
+    "new": "                now_ms=int(now_fn().timestamp() * 1000),",
+    "target": "tests/unit/test_memory_search_tool.py::test_a_culture_pass_never_reads_another_rooms_line"
+  },
+  {
+    "name": "search graph content retains untrusted memory framing",
+    "file": "nora/agent/tools.py",
+    "old": "        _record_room(metrics, \"memory_read\" if seed else \"memory_search\", result[\"status\"])\n        return _memory_result(result) if result[\"status\"] in {\"ok\", \"partial\"} else result",
+    "new": "        _record_room(metrics, \"memory_read\" if seed else \"memory_search\", result[\"status\"])\n        return result",
+    "target": "tests/unit/test_memory_search_tool.py::test_graph_tool_results_preserve_untrusted_memory_framing[memory_search-arguments0]"
+  },
+  {
+    "name": "read graph content retains untrusted memory framing",
+    "file": "nora/agent/tools.py",
+    "old": "            if result[\"status\"] in {\"ok\", \"partial\"}:\n                result.update(_memory_result(result))\n            return _with_note(result, _GRAPH_READ_NOTES)",
+    "new": "            return _with_note(result, _GRAPH_READ_NOTES)",
+    "target": "tests/unit/test_memory_search_tool.py::test_graph_tool_results_preserve_untrusted_memory_framing[memory_read-arguments1]"
+  },
+  {
+    "name": "a read reuses this turn's graph rather than issuing another walk",
+    "file": "nora/agent/memory_search.py",
+    "old": "            if seed is None or not held_all:",
+    "new": "            if True:",
+    "target": "tests/unit/test_memory_search_tool.py::test_one_turn_reuses_its_walk_and_does_not_guess_outside_the_snapshot"
+  },
+  {
+    "name": "a narrowed search walks again instead of being refused",
+    "file": "nora/agent/memory_search.py",
+    "old": "            if seed is None or not held_all:",
+    "new": "            if not held_all:",
+    "target": "tests/unit/test_memory_search_tool.py::test_a_narrowed_retry_searches_again_and_its_graph_can_be_read"
+  },
+  {
+    "name": "person hubs do not bridge the scoped walk",
+    "file": "nora/domain/memory_admission.py",
+    "old": "if (query.scope is not None and depth > 0",
+    "new": "if (False and depth > 0",
+    "target": "tests/contract/test_memory_graph_contract.py::test_scoped_walk_does_not_fan_out_through_a_person[fake]"
+  },
+  {
+    "name": "SQL hubs do not bridge the scoped walk",
+    "file": "nora/infra/sql/memory_graph.py",
+    "old": "AND (NOT :scoped OR p.depth=0 OR p.kind NOT IN ('person','room','unit','nora','place'))",
+    "new": "AND TRUE",
+    "target": "tests/contract/test_memory_graph_contract.py::test_scoped_walk_does_not_fan_out_through_a_person[sql]"
+  }
+]

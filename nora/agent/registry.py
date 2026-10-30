@@ -739,6 +739,15 @@ class ToolRegistry:
             and name != LOADER_TOOL
         )
 
+    def with_memory_search(self, search: MemorySearch) -> ToolRegistry:
+        """The shadow comprehension reader, without switching the live tag surface."""
+        from copy import copy
+
+        scoped = copy(self)
+        scoped._memory_search = search
+        scoped._withheld = (self._withheld - GRAPH_MEMORY_TOOLS) | HONCHO_MEMORY_TOOLS
+        return scoped
+
     def withheld_tools(self) -> frozenset[str]:
         """The tools no occasion in this process is offered: a read with no
         store wired, and the memory surface not selected (DEC-316). The ONE
