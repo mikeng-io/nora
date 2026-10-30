@@ -58,7 +58,7 @@ def test_the_operating_table_no_longer_says_a_unit_restart_is_a_rotation() -> No
 
 
 def test_the_alert_that_points_at_this_section_points_at_one_that_exists() -> None:
-    rules = (ROOT / "deploy" / "prometheus" / "rules" / "nora.yml").read_text(encoding="utf-8")
+    rules = (ROOT / "deploy" / "signoz" / "alerts" / "rules.yaml").read_text(encoding="utf-8")
     assert 'README.md "Rotating the token"' in rules
     assert "## Rotating the token" in README
 

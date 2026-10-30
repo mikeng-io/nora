@@ -147,12 +147,32 @@ def clear_tag_id() -> None:
     structlog.contextvars.clear_contextvars()
 
 
+def _trace_ids(_logger: Any, _method_name: str, event_dict: dict[str, Any]) -> dict:
+    """`trace_id`/`span_id` of the live OTel span, when there is one.
+
+    What makes a log line join its trace in a backend that holds both. A line
+    emitted outside a span gets NO fields rather than an invented correlation
+    id — absent means "there was no recording span", never a guessed one.
+    Imported lazily: `nora.obs.tracing` is a sibling module, but this processor
+    must also survive a process that never set up a provider (it reads the
+    current span, which is then simply absent).
+    """
+    from nora.obs.tracing import current_span_ids
+
+    trace_id, span_id = current_span_ids()
+    if trace_id:
+        event_dict["trace_id"] = trace_id
+        event_dict["span_id"] = span_id
+    return event_dict
+
+
 def _shared_processors(secrets: list[str]) -> list[_Processor]:
     return [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         _uppercase_level,
+        _trace_ids,
         structlog.stdlib.ExtraAdder(),
         # RFC 3339: `ts` is machine-read (a log store windows and sorts on it),
         # so it must carry a UTC offset rather than a naive timestamp.

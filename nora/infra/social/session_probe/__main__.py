@@ -13,7 +13,7 @@ import sys
 from datetime import timedelta
 from pathlib import Path
 
-from .alerts import AlertBridgeSink, FanOutSink, LogSink
+from .alerts import FanOutSink, LogSink
 from .cookies import read_cookies
 from .decide import NETWORKS
 from .probe import Probe, ProbeConfig
@@ -50,7 +50,7 @@ def main() -> int:
         cfg,
         read_chrome=lambda: read_cookies(cfg.chrome_db, NETWORKS),
         run=subprocess_runner,
-        sink=FanOutSink([LogSink(), AlertBridgeSink(subprocess_runner)]),
+        sink=FanOutSink([LogSink()]),
     )
     verdict, record = probe.run_once()
     logging.getLogger("nora.session_probe").info(

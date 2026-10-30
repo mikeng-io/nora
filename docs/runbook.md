@@ -434,7 +434,7 @@ container that exits on startup reports `DOWN`, each exit 1.
 delivered it to Discord — the chain worked perfectly. It was not ACTED on,
 because `PlatformSilent` trips on 900 seconds of ordinary quiet and flaps all
 day, so the channel delivers every ~25 minutes and a four-day outage is
-invisible inside it. `deploy/alertmanager/alertmanager.yml` predicts exactly
+invisible inside it. The retired Alertmanager configuration predicted exactly
 this in its own comment: *"a repeat every few minutes is how an alert channel
 becomes a muted one."* A new alert would have joined the noise; a check that
 fails the deploy does not compete for attention that is already spent.
@@ -461,8 +461,10 @@ counter. Absence here means «no event yet», never «not instrumented».)
 
 ## 4. "An alert arrived in the Discord review channel"
 
-Prometheus evaluates the rules in `deploy/prometheus/rules/`, Alertmanager groups and
-throttles them, and `deploy/alert-bridge/` posts the result into the review channel.
+SigNoz evaluates the rules in `deploy/signoz/alerts/rules.yaml` (`scripts/
+signoz_provision.py` puts them live; retired `deploy/prometheus/` +
+`deploy/alert-bridge/` in this change) and its slack-format channel posts the
+result into the review channel.
 `PlatformSilent` is the SSE-silence one — no adapter event for 900 seconds — and the
 rest are in `docs/observability.md`'s table with the incident behind each.
 
@@ -534,7 +536,7 @@ The container healthcheck only proves the HTTP layer serves (curl exists in
 the image precisely because node:24-trixie-slim ships none). The real detector is
 Nora `/health`'s per-platform `last_event_age_seconds` — the bridge emits
 SSE heartbeats so a dead WhatsApp socket ages that value in a quiet room,
-and Prometheus's `PlatformSilent` rule alerts on it (`deploy/prometheus/rules/`,
+and the `PlatformSilent` rule alerts on it (`deploy/signoz/alerts/rules.yaml`,
 delivered to the Discord review channel; the old `watchdog.sh` was deleted 2026-09-09). `dropped_events` on the bridge's
 `/health` (and a WARNING in Nora's log) means inbound events were discarded
 while Nora was disconnected — audit rows were lost; that is counted, never
@@ -635,19 +637,19 @@ before; the stop does not wait out a 360 s turn.
 
 Monitoring reload remains outside the Komodo application release path.
 
-**Putting a rule change live.** The rules are bind-mounted
-(`./deploy/prometheus/rules:/etc/prometheus/rules`) and Prometheus runs with
-`--web.enable-lifecycle`, so after the deploy checkout has the new file:
+**Putting a rule change live.** The rules live in
+`deploy/signoz/alerts/rules.yaml` and are APPLIED, not bind-mounted, so a rule
+change is: edit the file, run the provisioner against the backend, read back.
 
 ```bash
-python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T prometheus promtool check rules /etc/prometheus/rules/nora.yml
-curl -fsS -X POST http://127.0.0.1:9190/-/reload
-curl -fsS http://127.0.0.1:9190/api/v1/rules | jq -r '[.data.groups[].rules[].name] | length'   # 16
+export SIGNOZ_API_KEY=...        # the same key provision used (SigNoz UI → API Keys)
+uv run python scripts/signoz_provision.py --api http://localhost:8080
+# upserts are idempotent on the rule name; list returns non-200 -> it stops, never blind-POSTs
 ```
 
 **Known limits.** There is no dead-man switch (`docs/observability.md`, «What this
-pipeline cannot say»): nothing says so if Prometheus, Alertmanager or the bridge
-stops, and the bridge answers 202 to Alertmanager when its Discord POST fails.
+pipeline cannot say»): nothing says so if the SigNoz backend itself stops —
+`IngestionSilent` is evaluated BY the backend and cannot report its own death.
 
 ## 5. "Which doctrine produced this reply?"
 
@@ -1137,7 +1139,7 @@ One tree. If it is not under `~/workspace/nora/`, Nora does not own it.
 ~/workspace/nora/
   docker-compose.yml        every service: nora, db, signal-cli, whatsapp-bridge,
                             presence, analytics, rustfs, stt,
-                            prometheus, alertmanager, alert-bridge
+                            the SigNoz cutover overlay lives under deploy/signoz/
   deploy/signal-cli/        Dockerfile + fetch.sh (16K; the 115MB tarball is
                             fetched on demand, never committed)
   config.toml               deploy cadence: ports, models, timeouts

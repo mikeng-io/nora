@@ -9,7 +9,10 @@ from scripts.secret_delivery import prepare
 
 
 @pytest.mark.parametrize("external_output", [False, True])
-def test_native_compose_consumes_projection_without_shared_secret_mount(tmp_path, external_output):
+@pytest.mark.parametrize("signoz", [False, True])
+def test_native_compose_consumes_projection_without_shared_secret_mount(
+    tmp_path, external_output, signoz,
+):
     import os
     import shutil
     import subprocess
@@ -23,6 +26,13 @@ def test_native_compose_consumes_projection_without_shared_secret_mount(tmp_path
         '[platforms.discord]\ntoken_env="CUSTOM_DISCORD"\n'
         '[presence]\nclient_credential_env="CUSTOM_LIFE360"\n'
         'geocode_api_key_env="CUSTOM_MAPS"\n')
+    if signoz:
+        with (tmp_path / "config.toml").open("a") as config:
+            config.write('[obs.tracing]\nenabled=true\n'
+                         'endpoint="http://signoz-ingester:4318/v1/traces"\n')
+        overlay = tmp_path / "deploy/signoz/docker-compose.signoz.yaml"
+        overlay.parent.mkdir(parents=True)
+        shutil.copyfile(root / "deploy/signoz/docker-compose.signoz.yaml", overlay)
     synthetic = dict.fromkeys([
         "SIGNAL_ACCOUNT", "NORA_BRIDGE_TOKEN", "POSTGRES_PASSWORD", "DISCORD_CLIENT_ID",
         "DISCORD_CLIENT_SECRET", "AUTH_SECRET", "RUSTFS_ROOT_USER", "RUSTFS_ROOT_PASSWORD",
@@ -41,13 +51,20 @@ def test_native_compose_consumes_projection_without_shared_secret_mount(tmp_path
          "config", "--format", "json"], capture_output=True, check=True,
         env={"PATH": os.environ["PATH"]})
     services = json.loads(result.stdout)["services"]
+    for service in ("nora", "presence", "analytics"):
+        if signoz:
+            assert "signoz" in services[service]["networks"]
+            assert "nora" in services[service]["networks"]
+            assert services[service]["logging"]["driver"] == "journald"
+            assert services[service]["logging"]["options"] == {"tag": service}
+        else:
+            assert "signoz" not in services[service]["networks"]
     delivered = services["nora"]["environment"]["CUSTOM_ENDPOINT_KEY"].replace("$$", "$")
     assert delivered == synthetic["CUSTOM_ENDPOINT_KEY"]
     assert services["app"]["environment"]["NORA_OTP_API_TOKEN"] == synthetic["CUSTOM_OTP"]
     assert (services["voice-sidecar"]["environment"]["DISCORD_BOT_TOKEN"]
             == synthetic["CUSTOM_DISCORD"])
-    assert (services["alert-bridge"]["environment"]["DISCORD_BOT_TOKEN"]
-            == synthetic["CUSTOM_DISCORD"])
+    assert "alert-bridge" not in services
     assert "CUSTOM_LIFE360" not in services["nora"]["environment"]
     assert services["presence"]["environment"]["CUSTOM_LIFE360"] == synthetic["CUSTOM_LIFE360"]
     assert "CUSTOM_MAPS" not in services["presence"]["environment"]

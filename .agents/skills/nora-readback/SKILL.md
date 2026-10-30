@@ -18,6 +18,23 @@ instrument that cannot see the thing is not evidence (`AGENTS.md`, Never list).
 
 ## 1. Pick the store by the question
 
+Read the active deployment's tracing endpoint before choosing a backend.
+After the SigNoz cutover, use its official MCP with a read-only API key to
+search traces, logs and metrics; the Langfuse/Prometheus instructions below
+remain for the previous deployment and retained history. A merged migration
+does not prove the host has switched.
+
+For a SigNoz investigation, first record the time window, service and deployed
+version. Find the error/log, follow its trace ID to the complete root and
+children, and compare model-leaf usage with trace totals (agent summaries must
+not add a second charge). Missing usage or model pricing is unknown. Compare
+Sentry's error trace ID to that same root; never infer correlation from a
+matching timestamp. Query retained logs across the recreation time, not just
+the current container's stdout. An empty result needs a positive control for
+that service and signal before it can support a conclusion. Backend setup and
+the cutover sequence live in `docs/observability.md`; do not operate a second
+alert stack from this skill.
+
 | question | store | what it cannot tell you |
 |---|---|---|
 | what happened in THIS turn, in what order, at what cost | Langfuse trace | anything that is not a model call (plumbing is dropped) |

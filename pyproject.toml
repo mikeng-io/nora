@@ -45,6 +45,7 @@ dependencies = [
     # Pure Python with no dependencies of its own; the stdlib has no PDF
     # parser, and docx/xlsx/pptx are read with zipfile + ElementTree instead.
     "pypdf>=6.21.1",
+    "opentelemetry-instrumentation-aiohttp-server>=0.66b2",
 ]
 
 [project.optional-dependencies]
@@ -384,6 +385,7 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-xdist>=3.8.0",
     "ruff>=0.6",
+    "sentry-sdk==2.44.0",
     "testcontainers[postgres]>=4.15.0",
     "tiktoken>=0.14.0",
     "tomli-w>=1.0",
