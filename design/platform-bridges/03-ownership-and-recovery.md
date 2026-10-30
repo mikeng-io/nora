@@ -1,0 +1,65 @@
+# Persisted ownership and recovery — proposed
+
+The queue ACK follows **durable responsibility**, not Dispatcher or EngagementPipeline return. This section specifies the minimum new state because current transcript, debounce and turn archives cannot provide it.
+
+## Concrete state and transaction seams
+
+Proposed schema additions, all unbuilt:
+
+| Store | Key and fields / invariant |
+|---|---|
+| bridge_event | source-key digest PK, safe event_id UNIQUE, platform/account/conversation, stream ID, normalized snapshot, source/receive/enqueue times, audit target, ingestion phase, admission decision, stable tag_id, state, outcome/reason, timestamps. UNIQUE canonical platform/account/conversation/kind/source identity, independent of HMAC key version; no body in telemetry. |
+| bridge_work | PK(event_id, kind, ordinal), conversation order, typed input/reference, due_at, state, attempts, owner generation, last failure and prior attempt evidence. Kinds limited to ingest continuation, turn, participation candidate/window, stimulus, memory_feed, media comprehension, reply feedback/trace/debrief. No user-defined DAG. |
+| bridge_action | stable action_id PK, typed durable owner identity, ordinal, request hash, generation for work-bound owners, pending outbound message row, state (prepared/started/confirmed/rejected/uncertain), platform reference/time, bounded safe error, attempt timestamps. Intent precedes every non-replay-safe external effect. |
+
+Reuse messages/message_edit/message_reaction/message_delete as the only transcript; extraction enqueue and memory projection retain existing transaction. Add source mapping and initial required bridge_work rows **in that same audit transaction**, via a transaction-taking internal store helper; do not call current independently committing append then separately mark ingested. Edit/touch mutations similarly commit mapping+obligations atomically. No global uniqueness on platform_message_id alone: different accounts/platforms and legitimate revisions remain distinct.
+
+Pre-audit media preparation is hash-keyed and idempotent. If its cost involves STT/model calls, create a work/action intent before starting it; retain output/reference before moving the phase. A crash with uncertain model/tool cost is retained, not a free new call. Persist normalized post-custody snapshot once; recovery never parses raw text again. Orphan/unmodified edits and target-missing touches are explicit existing semantic outcomes, not DB errors.
+
+The single elected stream reader persists bridge_event registration and ordered ingest responsibility before scheduling execution. An ACK may occur after this registration **only if** all pending phase/work rows were atomically committed and a boot-scanned DB worker owns every next step. The initial implementation instead keeps Redis pending until ingestion and turn finish or each deferred task has a committed DB owner; this simpler observable rule is the acceptance baseline. Registration alone is not the “finished” metric.
+
+A phase failure that is swallowed today must become typed `done`, `intentional_skip(reason)`, `retryable_failure`, `retained_failure` or `uncertain_effect` at this seam. Helpers may keep never-raise APIs elsewhere, but cannot report None as successful queue completion. Save attempts and failures append-only inside bounded attempt JSON, retaining latest and first failure when capped. Default five safe attempts with capped exponential delay, then failed_retained; operator requeue resets the allowance with a new attempt identity and retained prior evidence. Uncertain effects get no automatic replay allowance.
+
+## Ordering and claim ownership
+
+Register stream entries sequentially; assign monotonic DB per-conversation ordinal at registration. Process ingestion in that order, so an edit cannot outrun its parent custody/commit. Turns execute FIFO among admitted triggers, with existing debounce/queue-limit semantics persisted at admission. The ingest lane may record later messages while an earlier model turn runs, preserving current ability to accumulate context and participation windows. Do not serialize all ingestion behind a slow model. Edit/delete arrival after a turn started does not rewind an external effect already begun.
+
+Use distinct Postgres session advisory-lock namespaces: reader election per stream; ingestion and speaking per platform/account/conversation. Ingest claims admit only the earliest unfinished ingestion ordinal, including custody and ingest continuations; two workers cannot advance adjacent ordinals concurrently. The ingestion lock is released after its terminal ingestion/handoff commit and is separate from the speaking slot, so recording later input does not wait for a running model turn. Use one speaking slot per conversation; reuse ConversationSlots as a local scheduling facade, with DB ownership authoritative. Fire/participation/tag paths contend on the same DB slot; heartbeat skips a held slot as today. No lease-expiry-only steal while a previous live session still holds the lock. DB connection loss cancels work, prohibits new effects, and clears ownership only after the old session is gone. Claims increment a generation; completion UPDATEs require matching generation/state. Reclaim in Redis only changes delivery ownership, never authorizes executing an already-owned DB work row.
+
+App workers own event/work state; bridges own action reservation/result writes. Give bridge DB roles only the required scoped owner-authorization reads and action-store operations, not transcript access. For app-submitted work-bound actions, the bridge validates the current work generation from DB before atomically reserving action_id/request hash. Generation is not invented for actions without bridge_work: queued receipts use event ID plus receipt phase; OTP sends use their already-persisted challenge ID plus send ordinal; live non-queued invocations use their already-committed pending outbound audit row/tag intent plus operation ordinal. Validate the actual typed owner and its allowed phase/authority before reserving any of these actions. These callers all use the same reservation/result contract, not a generation-check bypass or another reply API. Work-bound IDs are deterministic from stable work identity plus operation ordinal (including multi-message replies); a request hash binds exact bytes and target. Persist the ordinal before submission; recovery never assigns a fresh action ID to an old effect. Duplicate same ID/hash returns stored state; different hash is a conflict. A started action whose worker dies is uncertain, so a replacement does not issue another platform call even if the DB slot is free. There is still no external atomic fence against a platform accepting an in-flight request after local cancellation: its reserved action remains the serialization point and is reconciled, not replayed. Tests must suspend a stale owner before reservation and after submission to cover both cases.
+
+## Deferred work and termination
+
+| Path | Durable ownership / allowed terminal result |
+|---|---|
+| Scope/identity admission | Current policy recheck before ingest, turn and each effect. Denied scope terminal cancelled, no model/send; explicit sender denial retains only currently permitted audit behavior. Policy read failure retries, not denied/silent. |
+| Direct addressed turn | Persist accepted request/tag_id before spawn. A QUEUED verdict keeps a DB turn row pending; in-memory factory is only a wakeup. Completion records actual stop/delivery disposition after critical persistence. |
+| Debounce/self-tag/flood refusal | Persist the named admission reason as intentional suppression; replay reuses it. A previously accepted request bypasses re-debounce after restart. |
+| Intentional model silence | Only a completed healthy invocation with a deliberate silent disposition may finish silent. Timeout, provider error, audit failure and cancellation are not silence; a guard veto is an explicit refused outcome, with its reason. Never-silent/fallback behavior remains current delivery policy. |
+| Participation | Atomically store eligible candidate ID and window membership before note_message returns. Existing cursors remain; reconstruct only persisted eligible candidates, never all messages. Persist closed window and any spawned FirePath request together. Busy-slot/shadow/no-go/cooldown are explicit current skips; failed evaluation is failure. |
+| Stimulus | Insert alongside audit when enabled, or persist a work row naming the committed item. Retry that item only; no re-ingest. Existing cognition session then owns its consumption. |
+| Media comprehension, memory feed, reply feedback | Persist typed work/reference before scheduling. Disabled/unmapped/not-absorbed are explicit skips. Inspect actual bool/status returns (Honcho can swallow errors). Failure retained after bounded safe retries; uncertain external write/cost is retained without blind repeat. |
+| Trace archive/debrief | Persist the completed turn snapshot/reference and obligations before detached execution. Archive/queue logs do not prove execution; DB work state does. A reply already sent is never repeated to repair archival/debrief failure. |
+| Indicator/queued receipt | Cosmetic, bounded attempt with persisted action ID; failure is retained evidence but does not reopen a completed authored reply. Use distinct queued/progress/terminal phases; one stable reaction transition per phase so old queued receipts cannot overwrite a newer terminal indicator. |
+
+On shutdown stop reading/claiming, request cancellation and await unwind within the existing shutdown budget. Cancellation must propagate past the queue seam even if the inner pipeline catches BaseException. Persist interrupted safe phase or uncertain started effect; hard kill relies on prior intents and DB startup scan. No ACK from a finally block. Startup scans nonterminal DB work as well as Redis pending so already transferred obligations do not disappear.
+
+## Crash windows and actual retry reuse
+
+| Crash boundary | Persisted truth / next attempt |
+|---|---|
+| Upstream delivery before journal fsync | Not guaranteed captured; no queued receipt. Transport reconnect/history may help but cannot prove recovery. Report capture/storage failure. |
+| Journal fsync before XADD, or XADD response lost | Replay same source key/envelope through Lua; return original stream ID on duplicate. No second normalized event or receipt action. |
+| XREADGROUP before DB registration | Entry remains pending; elected reader XAUTOCLAIMs after configured idle bound, registers original ID in order, before new reads. |
+| Audit before transaction commit | Rollback message/mapping/obligations together; retry same ingestion phase and reuse staged blob/action evidence. |
+| Audit+mapping committed, before trigger/work handoff | Required work rows were in that commit. Load snapshot/audit ID/admission, do not append message again. |
+| Turn queued, or running before any effect | Resume stable work/tag. Safe computation may restart only with an explicit new attempt/budget; an already-started paid call is uncertain. |
+| Reply pending row/action prepared, before submission | Same action ID/hash and pending row reused; started marker must be durable before platform call. |
+| Platform accepted, response or local outcome lost | Started action => uncertain. Query stored bridge action; use platform readback/idempotency only when genuinely supported. Otherwise retain uncertain and do not resend. |
+| Confirmed action, app dies before turn completion | Load confirmation, fix pending audit status/reference, suppress repeat send, settle turn or retain interrupted remaining work. Do not rerun whole agent merely because archive is absent. |
+| DB terminal/handoff commit before XACK; XACK response lost | Redelivery finds final state or durable obligations, repeats XACK only. ACK is idempotent; no model, ingest or outbound retry. |
+| Consumer stale completion/concurrent reclaim | Generation mismatch rejects completion/effect reservation; existing owner/work/action is reused. Redis ownership is not a DB execution fence. |
+
+An interrupted agent with a known earlier write is not safely “resumable” just because its input is recorded. Initial conservative behavior is failed_retained unless its remaining trajectory was durably checkpointed and all effects can be reconciled. Retaining and exposing this interruption meets “not silently discarded”; it does not promise automatic completion of every killed model turn. Unknown paid/external effects require operator reconciliation, not a new model asked to guess what happened.
+
+DB-first completion plus replay dedupe avoids a DB/Redis atomic commit: commit final outcome or complete durable handoff, then XACK. Failed-retained work can be ACKed only after its full payload and failure receipt are durably in DB; it remains visible and requeueable there. It is never counted completed/silent. No transactional outbox is needed for this boundary.
