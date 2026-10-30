@@ -67,3 +67,32 @@ async def test_a_wake_whose_detail_was_written_as_a_string_still_replays(databas
         assert [s.id for s in view.pending] == [ids[0]]
     finally:
         await engine.dispose()
+
+
+async def test_a_session_agenda_written_as_a_string_still_selects_its_batch(database):  # noqa: F811
+    """A recorded session's agenda in the string form picks the same batch."""
+    import json
+
+    from nora.infra.sql.cognition_replay import recorded_wake
+    from nora.infra.sql.schema import COGNITION_SESSION
+
+    engine = create_sql_engine(database)
+    try:
+        async with engine.begin() as conn:
+            ids = [(await conn.execute(sa.insert(STIMULUS).values(unit="unit-1", kind="message",
+                item="message", ref=f"messages:agenda-{n}", platform="signal",
+                conversation_id="home-room", at_ms=NOW,
+                recorded_at=datetime.fromtimestamp(NOW / 1000, UTC)).returning(STIMULUS.c.id)
+            )).scalar_one() for n in range(2)]
+            wid = (await conn.execute(sa.insert(COGNITION_WAKE).values(unit="unit-1", mode="live",
+                reason="settled", from_stimulus_id=ids[0] - 1, through_stimulus_id=ids[1],
+                stimulus_count=1, eligible_count=1, at_ms=NOW).returning(COGNITION_WAKE.c.id)
+            )).scalar_one()
+            await conn.execute(sa.insert(COGNITION_SESSION).values(unit="unit-1", mode="live",
+                wake_id=wid, started_at_ms=NOW, from_stimulus_id=ids[0],
+                through_stimulus_id=ids[1], situation={},
+                agenda=json.dumps({"items": [{"stimulus_ids": [ids[1]]}]})))
+        _at, view = await recorded_wake(engine, wid)
+        assert [s.id for s in view.pending] == [ids[1]]
+    finally:
+        await engine.dispose()
