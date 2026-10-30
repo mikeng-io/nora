@@ -214,9 +214,8 @@ def test_a_named_provider_is_dialled_on_loopback_from_the_host(
     obtain = importlib.import_module("nora.subject.obtain")
 
     monkeypatch.setattr(obtain, "_resolves", lambda host: False)
-    cfg = example_config.model_copy(update={"providers": {"primary": ProviderConfig(
-        base_url="http://host.docker.internal:20128/v1", api_key_env="OMNIROUTE_API_KEY")}})
-    built = obtain._baseline(cfg, tmp_path)
+    built = build_config(_spec(tmp_path, overrides={"providers": {"primary": ProviderConfig(
+        base_url="http://host.docker.internal:20128/v1", api_key_env="OMNIROUTE_API_KEY")}}))
     assert built.providers["primary"].base_url == "http://127.0.0.1:20128/v1"
     assert built.providers["primary"].api_key_env == "OMNIROUTE_API_KEY"
 
@@ -235,3 +234,35 @@ def test_the_judge_endpoint_is_dialled_on_loopback_from_the_host(
     monkeypatch.setattr(obtain, "_resolves", lambda host: False)
     url, _key, _model = obtain.model_endpoint(tmp_path / "config.toml", "tag")
     assert url == "http://127.0.0.1:20128/v1"
+
+
+def test_dumped_spike_overrides_remain_typed_and_sandboxed(
+    tmp_path, monkeypatch, example_config,
+):
+    import importlib
+
+    from nora.config import CognitionConfig, LLMConfig, ModelRoute
+
+    module = importlib.import_module("nora.subject.obtain")
+    monkeypatch.setattr(module, "_resolves", lambda host: False)
+    llm = {**example_config.llm.model_dump(), "model": "generated-host-model",
+           "base_url": "http://host.docker.internal:20128/v1", "provider": "generated"}
+    spec = _spec(tmp_path, overrides={
+        "llm": llm,
+        "model_routes": {"cognition": {"model": "generated-cognition-model",
+                                       "provider": "generated"}},
+        "providers": {"generated": {"base_url": "http://host.docker.internal:20128/v1",
+                                    "api_key_env": "OMNIROUTE_API_KEY"}},
+        "cognition": {**example_config.cognition.model_dump(), "enabled": True},
+    })
+    cfg = build_config(spec)
+    assert isinstance(cfg.llm, LLMConfig)
+    assert isinstance(cfg.cognition, CognitionConfig)
+    assert isinstance(cfg.model_routes["cognition"], ModelRoute)
+    assert cfg.endpoint("cognition")[2] == "generated-cognition-model"
+    assert cfg.endpoint("cognition")[0] == "http://127.0.0.1:20128/v1"
+    assert cfg.llm.model == "generated-host-model"
+    assert cfg.llm.base_url == "http://127.0.0.1:20128/v1"
+    assert cfg.cognition.enabled
+    assert cfg.store.data_dir == tmp_path
+    assert spec.database_url == "postgresql+asyncpg://x/x"
