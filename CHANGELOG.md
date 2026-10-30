@@ -1,5 +1,15 @@
 # Changelog
 
+## [7.11.49](https://github.com/mikeng-io/nora/compare/v7.11.48...v7.11.49) (2026-10-30)
+
+
+### Maintenance
+
+* **memory:** preserve graph findings and platform observation design ([c156fea](https://github.com/mikeng-io/nora/commit/c156feada35e8f74aacf227234fbe30cbed7f230))
+* **memory:** reference audited source by verified symbols ([9dddd00](https://github.com/mikeng-io/nora/commit/9dddd0039967e92f7bb4ca395a5d695f107722ec))
+* **platforms:** expand observation contracts into a design bundle ([33748b6](https://github.com/mikeng-io/nora/commit/33748b64458df4928e144068696bcfae6274db8f))
+* **platforms:** give observation acceptance one owner ([a2b8c22](https://github.com/mikeng-io/nora/commit/a2b8c22f46bf17804f49c6ab6ebce494f30f0489))
+
 ## [7.11.48](https://github.com/mikeng-io/nora/compare/v7.11.47...v7.11.48) (2026-10-30)
 
 
