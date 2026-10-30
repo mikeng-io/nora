@@ -12,6 +12,59 @@ from nora.app.composition import search_provider
 from scripts import memory_graph_spike as spike
 
 
+@pytest.mark.parametrize("read,embed", [(True, True), (False, True), (True, False)])
+async def test_replay_embedder_check_uses_effective_subject_config(
+    tmp_path, monkeypatch, read, embed,
+):
+    from nora.subject.obtain import build_config
+    from tests.unit.test_subject_obtain import _spec
+
+    source = build_config(_spec(tmp_path / "source", overrides={
+        "memory.index.read": not read, "memory.index.embed": not embed,
+        "memory.index.embedder_model": "generated-source.gguf@0000feedbeef",
+    }))
+    effective = build_config(_spec(tmp_path / "subject", overrides={
+        "memory.index.read": read, "memory.index.embed": embed,
+        "memory.index.embedder_url": "http://127.0.0.1:8092",
+        "memory.index.embedder_model": "generated-subject.gguf@0000feedbeef",
+    }))
+    assert source.memory.index.read != effective.memory.index.read
+    checked, indexed = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(spike, "check_served_model", checked)
+    monkeypatch.setattr(spike, "index_sandbox", indexed)
+    await spike.index_replay_sandbox(
+        SimpleNamespace(database_url="generated-sandbox", cfg=effective),
+        source_url="generated-source",
+    )
+    if read and embed:
+        checked.assert_awaited_once_with(
+            effective.memory.index.embedder_url, "generated-subject.gguf@0000feedbeef")
+    else:
+        checked.assert_not_awaited()
+    indexed.assert_awaited_once_with(
+        "generated-sandbox", source_url="generated-source",
+        model_id="generated-subject.gguf@0000feedbeef")
+
+
+async def test_effective_embedder_refusal_prevents_index_preparation(tmp_path, monkeypatch):
+    from nora.subject.obtain import build_config
+    from nora.subject.sandbox_index import GraphIndexRefusedError
+    from tests.unit.test_subject_obtain import _spec
+
+    effective = build_config(_spec(tmp_path, overrides={
+        "memory.index.read": True, "memory.index.embed": True,
+    }))
+    indexed = AsyncMock()
+    monkeypatch.setattr(spike, "index_sandbox", indexed)
+    monkeypatch.setattr(spike, "check_served_model", AsyncMock(
+        side_effect=GraphIndexRefusedError("generated unavailable embedder")))
+    with pytest.raises(GraphIndexRefusedError, match="generated unavailable"):
+        await spike.index_replay_sandbox(
+            SimpleNamespace(database_url="generated-sandbox", cfg=effective),
+            source_url="generated-source")
+    indexed.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     "ack,url",
     [
