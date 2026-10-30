@@ -20,6 +20,7 @@ import pytest
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.domain.standing import STANDING_BODY_CEILING_CHARS, Standing, WorkingSetItem
 from nora.domain.tag_trace import TagTrace
+from nora.domain.turn_record import TurnItem
 from nora.engagement.stages import debrief
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import span
@@ -93,7 +94,7 @@ def _trace(outcome: str = "send_reply", messages: tuple = ()) -> TagTrace:
 async def _run(*, store=None, client=None, metrics=None,
                max_chars=1200, timeout_seconds=5.0, store_timeout_seconds=5.0,
                now_ms_override=None, trace=None, record_store=None,
-               fold_batch=200, culture=None,
+               fold_batch=200, culture=None, conclusions=None,
                working_set_max_items=5, working_set_max_chars=600) -> tuple:
     store = store if store is not None else InMemoryStandingStore()
     metrics = metrics if metrics is not None else Metrics()
@@ -110,6 +111,7 @@ async def _run(*, store=None, client=None, metrics=None,
         culture=culture,
         working_set_max_items=working_set_max_items,
         working_set_max_chars=working_set_max_chars,
+        conclusions=conclusions,
     )
     return store, metrics
 
@@ -1517,3 +1519,79 @@ async def test_the_working_set_rule_names_both_caps_in_the_system_prompt():
         client=client, working_set_max_items=5, working_set_max_chars=600)
     assert "at most 5 items" in client.prompts[0]
     assert "600 characters combined" in client.prompts[0]
+
+
+class _NoSynthesis:
+    """The wired route never calls the model: `complete` is an ERROR."""
+
+    async def complete(self, *a, **kw):
+        raise AssertionError("the faithful route must never synthesize")
+
+
+def _conclude_item(args: dict, result_status: str = "ok") -> TurnItem:
+    result = (
+        {"content": [{"json": {"status": result_status}}]}
+        if result_status else None
+    )
+    return TurnItem(
+        call_id="c1", name="decision_conclude", arguments=args,
+        result=result, requirements=(),
+    )
+
+
+async def test_wired_route_applies_a_recorded_delta_without_synthesis():
+    """An `ok` decision_conclude carrying standing_body is applied verbatim;
+    the fold's model is never invoked."""
+    store, _metrics = await _run(
+        client=_NoSynthesis(),
+        conclusions=(
+            _conclude_item({
+                "subject": "decision:d1", "decision": "the pier wins",
+                "standing_body": "dinner is at the pier",
+                "hold_open": "who else comes", "i_owe": "book it",
+            }),
+        ),
+    )
+    prior = await store.read(platform="signal", conversation_id="g1")
+    assert prior is not None and prior.body == "dinner is at the pier"
+    assert prior.hold_open == "who else comes" and prior.i_owe == "book it"
+
+
+async def test_wired_route_rejects_a_failed_conclusion():
+    """A `decision_conclude` whose recorded result is not `ok` applies
+    nothing and is never treated as accepted — the toolUse alone proves
+    nothing."""
+    store, _metrics = await _run(
+        client=_NoSynthesis(),
+        conclusions=(
+            _conclude_item(
+                {"decision": "the pier wins",
+                 "standing_body": "dinner is at the pier"},
+                result_status="refused"),
+        ),
+    )
+    assert await store.read(platform="signal", conversation_id="g1") is None
+
+
+async def test_wired_route_without_a_delta_leaves_the_prior():
+    """No recorded standing delta means prior stands and no synthesis runs —
+    `no_conclusions` is an honest outcome, not an inferred position."""
+    store, _metrics = await _run(
+        client=_NoSynthesis(),
+        conclusions=(
+            _conclude_item({"subject": "d1", "decision": "just a note"},
+                           result_status="ok"),
+        ),
+    )
+    assert await store.read(platform="signal", conversation_id="g1") is None
+
+
+async def test_wired_route_without_results_keeps_prior_standing():
+    """A `conclusions` list of only unparseable items applies nothing."""
+    store, _metrics = await _run(
+        client=_NoSynthesis(),
+        conclusions=(
+            _conclude_item({"standing_body": "x"}, result_status=""),
+        ),
+    )
+    assert await store.read(platform="signal", conversation_id="g1") is None

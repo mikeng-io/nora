@@ -374,7 +374,7 @@ async def read_shared(
                                 f"{args.get('room') or 'the room'}: "
                                 f"{key[0]!r} unresolved"
                             )
-                    elif item.name == "conclude":
+                    elif item.name == "decision_conclude":
                         args = item.arguments
                         conclusion = _result_payload(item.result)
                         if conclusion.get("status") != "ok":
@@ -385,7 +385,7 @@ async def read_shared(
                             # accepted state.
                             if conclusion.get("status") != "unresolved":
                                 unresolved_lines.append(
-                                    f"conclude "
+                                    f"decision_conclude "
                                     f"{str(args.get('subject') or '?')[:80]!r}: "
                                     f"{conclusion.get('status') or 'no result'}"
                                 )

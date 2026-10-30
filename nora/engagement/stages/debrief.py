@@ -554,7 +554,7 @@ async def run(
             outcome = "no_conclusions"
             room_ref = f"{platform}:{trace.conversation_id}"
             for item in conclusions:
-                if item.name != "conclude":
+                if item.name != "decision_conclude":
                     continue
                 delta = item.arguments
                 if _tool_result_status(item.result) != "ok":
@@ -566,6 +566,8 @@ async def run(
                 at_room = delta.get("standing_room") or room_ref
                 if not body or at_room != room_ref:
                     continue
+                # One position per debrief: the newest recorded delta is the
+                # answer, and a bounded loop is the slot-hold contract.
                 try:
                     await asyncio.wait_for(
                         standing_revise(
@@ -592,6 +594,7 @@ async def run(
                         trace.tag_id,
                     )
                     outcome = "unavailable"
+                break
             return
 
         # THE WATERMARK BATCH READ. The fold reads the NEXT `fold_batch` rows

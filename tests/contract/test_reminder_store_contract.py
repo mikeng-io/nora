@@ -980,3 +980,49 @@ async def test_concurrent_two_process_creates_cannot_split_the_act(
     assert isinstance(errors[0], ConflictingProactiveActError)
     rows = await store_a.pending_of("nora")
     assert len(list(rows)) == 1
+
+
+async def test_0141_index_downgrade_and_upgrade_preserve_populated_rows(pg_url):
+    """A POPULATED table, not an index-only assertion: synthetic proactive
+    rows with subject payloads survive `downgrade` (index dropped, data
+    untouched) and `upgrade` (the unique index builds over populated data
+    and still arbitrates)."""
+    import sqlalchemy as sa
+    from alembic import command
+
+    from nora.infra.sql.migrations_runner import _migration_lock, alembic_config
+
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    store = SqlReminderStore(engine)
+    row = _subject(subject_id="dec-9", action="ask-time",
+                   conversation_id="conv-mig")
+    await store.create(row)
+
+    with _migration_lock(pg_url):
+        command.downgrade(alembic_config(pg_url), "-1")
+    async with engine.connect() as conn:
+        rows = (await conn.execute(
+            sa.text("SELECT id FROM reminders WHERE id = :i"), {"i": row.id}
+        )).all()
+        idx = (await conn.execute(sa.text(
+            "SELECT to_regclass('uq_reminders_proactive_open_subject')"))
+        ).scalar()
+    assert len(rows) == 1 and idx is None
+
+    with _migration_lock(pg_url):
+        command.upgrade(alembic_config(pg_url), "+1")
+    async with engine.connect() as conn:
+        idx = (await conn.execute(sa.text(
+            "SELECT to_regclass('uq_reminders_proactive_open_subject')"))
+        ).scalar()
+        kept = (await conn.execute(
+            sa.text("SELECT payload FROM reminders WHERE id = :i"),
+            {"i": row.id})).scalar_one()
+    assert idx == "uq_reminders_proactive_open_subject"
+    assert kept["subject_id"] == "dec-9" and kept["action"] == "ask-time"
+    with pytest.raises(DuplicateProactiveSubjectError):
+        await store.create(
+            _subject(subject_id="dec-9", action="ask-time",
+                     conversation_id="conv-mig"))
+    await engine.dispose()

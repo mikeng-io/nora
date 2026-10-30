@@ -1579,6 +1579,14 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                            side_effect_state="confirmed", idempotency="non_idempotent",
                            retry="never",
                            output_contract="three_state", level=2),
+    # The shared-state producer's explicit conclusion (design 20): the call
+    # itself is the record — it lands in this turn's trace as a toolUse the
+    # shared view and the debrief read back — so nothing here writes a
+    # store, and the same shape the Cognition `conclude` verb produces.
+    "decision_conclude": NativeTool(1,
+                                    side_effect_state="confirmed", idempotency="non_idempotent",
+                                    retry="never",
+                                    output_contract="three_state", level=2),
     # The dispute door beside `remember_told` (35 §2): «that's wrong» or
     # «forget that» about a remembered fact, on the graph surface only (the
     # Profile account it rules on exists there). One write, confirmed, never
@@ -6924,6 +6932,43 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             partial_view=view.degraded,
             content_checks=content_checks,
         )
+
+    async def decision_conclude(
+        subject: str, decision: str, options: str = "", leaning: str = "",
+        conditions: str = "", sources: list[str] | None = None,
+        standing_room: str = "", standing_body: str = "",
+        hold_open: str = "", i_owe: str = "",
+    ) -> dict[str, object]:
+        """Record what this turn concluded. Call this when you settled
+        something this turn.
+
+        Say what you decided, what the options were, which way you lean,
+        what would close it, and the rows or entries it rests on. The call
+        itself IS the record, shown to the next turn and the next session.
+        It writes no Notebook row.
+
+        Returns `status`: ok, refused or unavailable, with a `reason`
+        and `detail` when it is not ok.
+
+        Args:
+            subject: The `kind:id` of the open entry this conclusion is
+                about, or a short name when none applies.
+            decision: The conclusion in one sentence.
+            options: Optional. The options you weighed.
+            leaning: Optional. Which way you lean, and why.
+            conditions: Optional. What would settle or close this.
+            sources: Optional. The row/entry ids this rests on.
+            standing_room: Optional. `platform:conversation_id`, set it
+                with `standing_body` when the conclusion is a position
+                update for that room.
+            standing_body: Optional. The new position, verbatim.
+            hold_open: Optional. What you are deliberately keeping open.
+            i_owe: Optional. What you owe that room.
+        """
+        if not decision.strip():
+            return {"status": "refused", "reason": "no_decision",
+                    "detail": "say what you concluded"}
+        return {"status": "ok"}
 
     async def now() -> str:
         """The current date and time, in this deployment's time zone. Call this
@@ -16978,6 +17023,7 @@ Args:
 
     specs = (
         _spec("now", now),
+        _spec("decision_conclude", decision_conclude),
         _spec("calculate", calculate),
         _spec("transit", transit),
         _spec("route", route),

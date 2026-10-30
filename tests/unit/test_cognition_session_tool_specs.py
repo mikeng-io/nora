@@ -141,7 +141,7 @@ EXPECTED: dict[str, tuple[dict[str, tuple[str, Any]], set[str]]] = {
          "new_action": ("string", None)},
         {"intent", "text", "subject", "action", "subject_rows", "at"},
     ),
-    "conclude": (
+    "decision_conclude": (
         {"subject": ("string", None), "decision": ("string", None),
          "options": ("string", None), "leaning": ("string", None),
          "conditions": ("string", None),

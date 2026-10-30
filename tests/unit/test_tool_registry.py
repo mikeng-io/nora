@@ -183,6 +183,8 @@ def test_the_registry_exposes_every_declared_tool():
         # which rooms this group has, and what is
         # said in one of them.
         "room_list", "room_read",
+        # The shared-state producer record (design 20).
+        "decision_conclude",
         # the Record over an interval,
         # under lineage.
         "record_query",
@@ -501,7 +503,7 @@ def test_budgets_match_todays_table():
         # model looping on a tool it should have trusted to have worked (the
         # remember verb's write lane). `profile_dispute` is its graph-surface
         # sibling (35 §2), the same one-call write.
-        "remember": 1, "profile_dispute": 1,
+        "remember": 1, "decision_conclude": 1, "profile_dispute": 1,
         # `search_memory_workspace` is 4 like its room-scoped sibling — the
         # same verb at a wider scope, the same sizing.
         "search_memory_workspace": 4,
@@ -920,6 +922,8 @@ def test_cacheable_tools_is_a_frozenset_not_a_list():
 # act verbs goes stale as verbs are added (the events family, DEC-117), and a
 # stale list would hand a background agent write verbs.
 ACT_VERBS = frozenset({
+    # records the turn's own explicit conclusion into the Record.
+    "decision_conclude",
     "remind", "cancel_reminder",
     "event_propose", "event_revise", "event_rsvp", "event_set_status",
     # a command, a file write and a file edit all

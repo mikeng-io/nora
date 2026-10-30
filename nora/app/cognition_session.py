@@ -2520,7 +2520,7 @@ class CognitionSessionRunner:
                 self._inc("nora_self_wake_total", outcome="cancelled")
             return _answer(answer)
 
-        async def conclude(
+        async def decision_conclude(
             subject: str, decision: str, options: str = "", leaning: str = "",
             conditions: str = "", sources: list[str] | None = None,
             standing_room: str = "", standing_body: str = "",
@@ -2933,7 +2933,7 @@ class CognitionSessionRunner:
                 note_create, note_revise, note_set_status, note_merge, memo_create,
                 memo_revise, memo_set_status, event_propose, event_revise, event_set_status,
                 standing_revise, wake_at, wake_move, wake_cancel, remind, remind_move,
-                remind_cancel, conclude,
+                remind_cancel, decision_conclude,
             )),
         )
         if self._memory is not None:

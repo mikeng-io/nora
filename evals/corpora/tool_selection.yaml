@@ -1483,3 +1483,22 @@ cases:
       tools: [room_read]
       not_tools: [standing_read, record_read]
       args_include: {room_read: [thread, th7]}
+
+  # design/notebook-memory-types/20 §producer: the turn's OWN settled thing is
+  # recorded, not remembered (a Notebook entry a person asked for) and not
+  # narrated — `decision_conclude` is the record lane. Host eval pending.
+  - name: route_decision_conclude_settled
+    entry: tag
+    expect: reply
+    mention: true
+    input: 搞掂晒 — 就係星期六去食午飯，就係 pier 嗰間
+    metadata: {tools: [decision_conclude], not_tools: [remember, send_reply]}
+    snapshot: *room_a
+
+  - name: route_decision_conclude_english
+    entry: tag
+    expect: reply
+    mention: true
+    input: alright, settled — we are doing Saturday lunch at the pier place
+    metadata: {tools: [decision_conclude], not_tools: [remember, send_reply]}
+    snapshot: *room_a

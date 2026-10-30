@@ -80,7 +80,10 @@ DEFAULT_STANDING_STORE_TIMEOUT_SECONDS = 5.0
 #: `test_the_slot_hold_counts_every_store_await_the_stage_makes` counts the
 #: `asyncio.wait_for` calls in the stage and asserts they match, so adding a
 #: fifth fails a test instead of silently widening the hold.
-STANDING_STORE_CALLS_PER_FOLD = 4
+#: Bounded store awaits the stage can make on ONE debrief: the prior read,
+#: the watermark batch read, the media join, the fold's `standing_revise`,
+#: and — on the wired faithful route — the recorded delta's own revise.
+STANDING_STORE_CALLS_PER_FOLD = 5
 
 #: The ABSOLUTE ceiling on how many items `Standing.working_set` may hold —
 #: the `working_set` sibling of `STANDING_BODY_CEILING_CHARS`: asserted HERE,

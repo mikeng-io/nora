@@ -327,7 +327,7 @@ async def test_trace_conclusions_and_unresolved_are_read_back():
     store = FakeTagTraceStore()
     messages = (
         {"role": "assistant", "content": [
-            {"toolUse": {"toolUseId": "c1", "name": "conclude", "input": {
+            {"toolUse": {"toolUseId": "c1", "name": "decision_conclude", "input": {
                 "subject": "decision:d1", "decision": "the pier wins",
                 "options": "pier, cove", "leaning": "pier",
                 "sources": ["d1", "101"]}}}]},
