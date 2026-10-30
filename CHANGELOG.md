@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.11.40](https://github.com/mikeng-io/nora/compare/v7.11.39...v7.11.40) (2026-10-30)
+
+
+### Bug Fixes
+
+* **config:** resolve secrets for host Compose audit sync ([c80dcdd](https://github.com/mikeng-io/nora/commit/c80dcdd046a2e3476a681dfbc4e017a715842a30))
+
 ## [7.11.39](https://github.com/mikeng-io/nora/compare/v7.11.38...v7.11.39) (2026-10-30)
 
 
