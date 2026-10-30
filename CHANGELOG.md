@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.43](https://github.com/mikeng-io/nora/compare/v7.11.42...v7.11.43) (2026-10-30)
+
+
+### Bug Fixes
+
+* **evals:** dial named model providers on loopback from the host ([7f142af](https://github.com/mikeng-io/nora/commit/7f142afb0861dfc1d31d0615b197b6fe8536da96))
+* **evals:** give the judge's endpoint the same host rewrite ([1be6393](https://github.com/mikeng-io/nora/commit/1be63932ccc0ed068e684e88b9ea212ffe086b73))
+
 ## [7.11.42](https://github.com/mikeng-io/nora/compare/v7.11.41...v7.11.42) (2026-10-30)
 
 
