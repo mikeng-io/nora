@@ -36,13 +36,14 @@ import getpass
 import hashlib
 import http.server
 import json
-import os
 import secrets
 import sys
 import urllib.parse
 import urllib.request
 import webbrowser
 from pathlib import Path
+
+from nora.secret import credentials
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from nora.infra.google.scopes import all_scopes, undeclared_write_scopes
@@ -109,9 +110,10 @@ def _wait_for_code(server: http.server.HTTPServer, state: str) -> str:
 
 
 def main() -> int:
-    client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip() or input("Client id: ").strip()
+    client_id = (credentials().get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
+                 or input("Client id: ").strip())
     client_secret = (
-        os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
+        credentials().get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
         or getpass.getpass("Client secret: ").strip()
     )
     if not client_id or not client_secret:

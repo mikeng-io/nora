@@ -116,3 +116,7 @@ deploy/voice-wake/tests/fixtures/seam_frames.bin
 docs-site/node_modules/
 docs-site/dist/
 docs-site/.astro/
+
+/secret.toml
+/.secret-delivery/
+/secret-migration-*/

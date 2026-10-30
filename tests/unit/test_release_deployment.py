@@ -1068,7 +1068,7 @@ def test_native_reconcile_forces_only_explicit_file_readers(tmp_path, monkeypatc
     assert readers == ['nora']
     assert commands[-1][-2:] == ['--force-recreate', 'nora']
     assert '--force-recreate' not in commands[-2]
-    for files in ([], ['.env'], ['config.toml', '.env']):
+    for files in ([], ['unknown.toml'], ['config.toml', 'unknown.toml']):
         request.write_text(json.dumps({'files': files}))
         with pytest.raises(ValueError, match='reload'):
             wrapper.reload_services(resolved, pins, request)

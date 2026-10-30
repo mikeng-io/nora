@@ -16,10 +16,10 @@ Raw-model-call spans are `nora.agent.telemetry.start_raw_model_span`/
 from __future__ import annotations
 
 import logging
-import os
 import time
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Literal, TypeVar, get_args
 
 from opentelemetry import context as otel_context
@@ -35,6 +35,8 @@ from opentelemetry.trace import Link, SpanKind, Status, StatusCode
 from opentelemetry.trace.span import TraceState
 from opentelemetry.util.re import parse_env_headers
 from opentelemetry.util.types import Attributes
+
+from nora.secret import resolve
 
 log = logging.getLogger("nora.tracing")
 
@@ -394,7 +396,9 @@ def attached(carrier: Context | None) -> Iterator[None]:
                 log.debug("trace context could not be detached", exc_info=True)
 
 
-def resolve_otlp_headers(headers_env: str) -> dict[str, str] | None:
+def resolve_otlp_headers(
+    headers_env: str, credentials: dict[str, str] | None = None,
+) -> dict[str, str] | None:
     """`headers_env` names an environment variable (DEC-8: `*_env`, never the
     value inlined, no `${VAR}` interpolation); its content is OTel's own
     `OTEL_EXPORTER_OTLP_HEADERS` shape — comma-separated `key=value` pairs,
@@ -408,7 +412,8 @@ def resolve_otlp_headers(headers_env: str) -> dict[str, str] | None:
     """
     if not headers_env:
         return None
-    raw = os.environ.get(headers_env, "")
+    values = resolve(Path("secret.toml")) if credentials is None else credentials
+    raw = values.get(headers_env, "")
     if not raw:
         return None
     return dict(parse_env_headers(raw))

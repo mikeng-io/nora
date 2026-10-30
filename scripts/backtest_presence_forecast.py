@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import sys
 import time
 from pathlib import Path
+
+from nora.secret import credentials
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -40,7 +41,7 @@ async def main() -> None:
     parser.add_argument("--tz", default="Asia/Hong_Kong")
     args = parser.parse_args()
 
-    database_url = os.environ.get("NORA_DATABASE_URL", os.environ.get("DATABASE_URL", ""))
+    database_url = credentials().get("NORA_DATABASE_URL", credentials().get("DATABASE_URL", ""))
     if not database_url:
         print("NORA_DATABASE_URL or DATABASE_URL must be set", file=sys.stderr)
         raise SystemExit(2)

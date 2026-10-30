@@ -322,6 +322,14 @@ and in `docs/maintainers/conventions-rationale.md`, catalogued in `design/dreame
 - **Pair every zero-assertion with a positive control.** `== 0` is also true of
   a stage that crashed; assert something only a run that RAN produces.
 
+## Comments and maintained documentation
+
+Comments are minimal local descriptions or short constraints with pointers.
+Architecture, rationale and decisions belong in canonical maintained docs, never
+primarily in comments. Apply this across the repository; do not mechanically
+strip existing comments. See [configuration contract](docs/configuration.md) and
+its accepted amendment (DEC-325).
+
 ## Conventions (short — full text in `docs/maintainers/conventions-rationale.md`)
 
 - **One stage, one module, one public entry point** — about RESPONSIBILITIES, not
@@ -444,19 +452,21 @@ reset them. Deploys must not overlap. Key auth only: never `sshpass` or password
 in `.env`, chat or session-readable files. Setup: `docs/maintainers/conventions-rationale.md`.
 The host's `config.toml` is authoritative: read it before asserting a live flag.
 
-## The three config files
+## Settings, identity, policy and secrets
 
-Three files, three lifetimes, deliberately not merged (DEC-8):
+The three non-secret files retain their lifetimes (DEC-8); the credential-source
+amendment adds private `secret.toml` with controlled recreation:
 
 | file | answers | changes when |
 |---|---|---|
 | `config.toml` | ports, models, timeouts | the deployment changes |
 | `identity.toml` | **who people are** | a human joins |
 | `policy.toml` | **who may talk to her, and where** | trust changes |
+| `secret.toml` | private credential values with explicit environment overrides | credentials change; controlled recreation |
 
-All three are gitignored; `config.example.toml` records the config's shape.
+All four are gitignored; `config.example.toml` and `secret.example.toml` record their shapes.
 **No config change reaches a process unvalidated.** Use **`nora-deploy`**'s
-validated-copy procedure; secrets stay in `.env`, referenced by name.
+validated-copy procedure; secrets live in private `secret.toml`, referenced by name with environment overrides.
 `config.toml` also mounts read-only into `stt`/`voice-wake`, which read
 `[speech.stt]`/`[speech.wake]` at boot. Identity and policy are read-only and
 **hot-reloaded after validation every three seconds** in each reader process.

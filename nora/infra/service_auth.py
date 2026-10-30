@@ -21,19 +21,21 @@ controller with `service_auth_headers()`, and the wake gate calls nora's
 from __future__ import annotations
 
 import hmac
-import os
+from pathlib import Path
+
+from nora.secret import resolve
 
 
 def service_auth_headers() -> dict[str, str]:
     """`Authorization: Bearer <token>` for a call to one of Nora's bridges."""
-    token = os.environ.get("NORA_BRIDGE_TOKEN", "")
+    token = resolve(Path("secret.toml")).get("NORA_BRIDGE_TOKEN", "")
     return {"Authorization": f"Bearer {token}"} if token else {}
 
 
 def service_auth_ok(authorization: str | None) -> bool:
     """True only for the exact shared bearer. An unset token admits nothing,
     so a deployment that forgot it refuses rather than serving open."""
-    token = os.environ.get("NORA_BRIDGE_TOKEN", "")
+    token = resolve(Path("secret.toml")).get("NORA_BRIDGE_TOKEN", "")
     if not token or not authorization:
         return False
     # Byte compare: compare_digest is constant-time and returns False, rather

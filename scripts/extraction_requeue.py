@@ -7,14 +7,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.extraction import SqlExtraction
+from nora.secret import credentials
 
 
 async def requeue(extraction_id: int) -> bool:
-    engine = create_sql_engine(os.environ["DATABASE_URL"])
+    engine = create_sql_engine(credentials()["DATABASE_URL"])
     try:
         store = SqlExtraction(engine)
         return await store.requeue(extraction_id)

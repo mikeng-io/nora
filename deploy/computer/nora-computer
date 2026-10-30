@@ -172,10 +172,23 @@ else:
 }
 
 load_token() {
-    # The last assignment wins, as in a shell or compose; surrounding quotes
-    # and a CR from a file edited elsewhere are stripped.
-    COMPUTERD_TOKEN=$(grep -E '^NORA_COMPUTER_TOKEN=' "$ENV_FILE" 2>/dev/null | tail -n 1 \
-        | cut -d= -f2- | tr -d '\r' | sed -e 's/^["'"'"']//' -e 's/["'"'"']$//')
+    COMPUTERD_TOKEN=$(python3 - "$ENV_FILE" <<'TOKEN_PY'
+import os, pathlib, shlex, sys, tomllib
+path = pathlib.Path(sys.argv[1])
+secret = path.with_name("secret.toml")
+values = tomllib.loads(secret.read_text()).get("credentials", {}) if secret.exists() else {}
+config = path.with_name("config.toml")
+settings = tomllib.loads(config.read_text()) if config.exists() else {}
+reference = settings.get("computer", {}).get("token_env", "NORA_COMPUTER_TOKEN")
+if path.exists():
+    for line in path.read_text().splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key == reference:
+            parts = shlex.split(value, comments=True)
+            values[key] = parts[0] if parts else ""
+print(os.environ.get(reference, values.get(reference, "")))
+TOKEN_PY
+    )
     [ -n "$COMPUTERD_TOKEN" ] || { log "NORA_COMPUTER_TOKEN is not set in $ENV_FILE"; exit 3; }
     export COMPUTERD_TOKEN
 }

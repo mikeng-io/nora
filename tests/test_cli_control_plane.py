@@ -928,7 +928,8 @@ async def test_character_report_requires_a_separately_configured_judge(monkeypat
     cfg = SimpleNamespace(
         evals=SimpleNamespace(judge_model="writer"), dreamer_model=lambda: "writer",
         obs=SimpleNamespace(tracing=SimpleNamespace(enabled=False)),
-        llm=SimpleNamespace(base_url="http://example.invalid", api_key_env="UNSET_TEST_KEY"))
+        llm=SimpleNamespace(base_url="http://example.invalid", api_key_env="UNSET_TEST_KEY"),
+        endpoint=lambda purpose, model="": ("http://example.invalid", "synthetic-key", model))
     monkeypatch.setattr(cli, "_config", lambda _: cfg)
     monkeypatch.setattr(cli, "_persons", lambda _: SimpleNamespace(by_person={}))
     reached = []

@@ -19,7 +19,6 @@ missing one is a `PresenceStartupError`.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 
 from nora.config import Config
@@ -118,12 +117,13 @@ def build_collector(cfg: Config) -> PresenceDependencies:
     )
     circles = LiveSequence(lambda: _circles_from_identity(persons))
 
-    credential = os.environ.get(presence.client_credential_env, "")
-    username = os.environ.get(presence.username_env, "")
-    password = os.environ.get(presence.password_env, "")
+    credentials = cfg.credentials
+    credential = credentials.get(presence.client_credential_env, "")
+    username = credentials.get(presence.username_env, "")
+    password = credentials.get(presence.password_env, "")
     # Token mode: an operator-supplied bearer replaces the password grant, so
     # the three login vars are not what the collector needs to start.
-    access_token = os.environ.get(presence.auth_token_env, "")
+    access_token = credentials.get(presence.auth_token_env, "")
     missing = [
         name
         for name, value in (
@@ -139,7 +139,7 @@ def build_collector(cfg: Config) -> PresenceDependencies:
             f"({', '.join(missing)}); refusing to start (DEC-8: creds via env)"
         )
 
-    database_url = os.environ.get(cfg.store.database_url_env, "")
+    database_url = cfg.credentials.get(cfg.store.database_url_env, "")
     if not database_url:
         raise PresenceStartupError(
             f"environment variable {cfg.store.database_url_env} is not set — the "
