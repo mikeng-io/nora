@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.39](https://github.com/mikeng-io/nora/compare/v7.11.38...v7.11.39) (2026-10-30)
+
+
+### Bug Fixes
+
+* **deploy:** write secret projections in the writable control directory ([1eb32c6](https://github.com/mikeng-io/nora/commit/1eb32c6e695398bd13da738c3dca78faaa2e49a0))
+* **secrets:** exclude generated delivery files at every depth ([1415cc9](https://github.com/mikeng-io/nora/commit/1415cc9683a80e08687ba5a140b7bb4b662e2167))
+
 ## [7.11.38](https://github.com/mikeng-io/nora/compare/v7.11.37...v7.11.38) (2026-10-30)
 
 
