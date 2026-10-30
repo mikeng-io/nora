@@ -1,5 +1,17 @@
 # Changelog
 
+## [7.11.50](https://github.com/mikeng-io/nora/compare/v7.11.49...v7.11.50) (2026-10-30)
+
+
+### Features
+
+* **memory:** measure recorded Cognition sessions in the snapshot spike ([f1648d8](https://github.com/mikeng-io/nora/commit/f1648d80ad5adc6c0561e585536f7783bd4d3073))
+
+
+### Bug Fixes
+
+* **memory:** close snapshot spike review measurement gaps ([2c4f5cb](https://github.com/mikeng-io/nora/commit/2c4f5cb33e1abf9a0bfd099f381a7c9355d24135))
+
 ## [7.11.49](https://github.com/mikeng-io/nora/compare/v7.11.48...v7.11.49) (2026-10-30)
 
 
