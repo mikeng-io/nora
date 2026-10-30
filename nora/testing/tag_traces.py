@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import dataclasses
+import json
+from collections.abc import Sequence
 
 from nora.domain.tag_trace import TagTrace
 
@@ -45,6 +47,22 @@ class FakeTagTraceStore:
             key=lambda t: t.created_at, reverse=True,
         )
         return tuple(rows[:limit])
+
+    async def recent_unit_turns(
+        self, *, unit: str, tool_names: Sequence[str], limit: int,
+        offset: int = 0,
+    ) -> tuple[TagTrace, ...]:
+        if limit <= 0 or not tool_names:
+            return ()
+        names = tuple(tool_names)
+        rows = sorted(
+            (t for t in self._rows
+             if t.unit == unit
+             and any(f'"{name}"' in json.dumps(t.messages)
+                     for name in names)),
+            key=lambda t: (t.created_at, t.tag_id), reverse=True,
+        )
+        return tuple(rows[offset:offset + limit])
 
     async def get(self, *, turn_id: int, unit: str) -> TagTrace | None:
         row = self._turn_ids.get(turn_id)

@@ -23,6 +23,9 @@ _ROOM_SOURCES = frozenset({
     "now", "calculate", "transit", "route", "place_info", "weather",
     "web_search", "web_fetch", "parking_status", "find_parking",
     "reverse_geocode", "search_gifs", "send_reply", "send_gif", "media_send",
+    # `decision_conclude` records a requirement for every source it cites
+    # itself; a source-less call's only gate is the room it ran in.
+    "decision_conclude",
 })
 
 

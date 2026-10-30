@@ -408,3 +408,125 @@ def test_render_preserves_positions_conclusions_and_withholds_their_content():
     assert "tag-1" in rendered.body
     assert "SECRET" not in rendered.body
     assert "withheld" in rendered.body
+
+
+async def test_a_filtered_fact_walk_finds_unresolved_past_irrelevant_turns():
+    """R2-5: forty irrelevant newer traces cannot crowd an unresolved act out
+    of the fact read — the server-side tool-name filter means the scan counts
+    relevant turns, not chatter."""
+    from nora.domain.tag_trace import TagTrace
+    from nora.testing.tag_traces import FakeTagTraceStore
+
+    store = FakeTagTraceStore()
+    await store.save(TagTrace(
+        tag_id="t-old", conversation_id="room-a", messages=(
+            {"role": "assistant", "content": [
+                {"toolUse": {"toolUseId": "r1", "name": "remind", "input": {
+                    "intent": "ask", "text": "ask when",
+                    "subject": "note:gone", "action": "ask-time",
+                    "subject_rows": ["1"], "at": "2026-01-01T20:00:00Z"}}}]},
+            {"role": "user", "content": [
+                {"toolResult": {"toolUseId": "r1", "status": "success",
+                                "content": [{"json": {
+                                    "status": "unresolved",
+                                    "reason": "subject_unresolved"}}]}}]},
+        ), transcript=(), outcome="send_reply", created_at=T0_MS - 5000,
+        unit="u1", occasion="cognition"))
+    for i in range(40):
+        await store.save(TagTrace(
+            tag_id=f"t-chatter-{i}", conversation_id="room-a", messages=(
+                {"role": "user", "content": [{"text": f"noise {i}"}]},),
+            transcript=(), outcome="send_reply",
+            created_at=T0_MS - 4000 + i, unit="u1", occasion="tag"))
+
+    view = await read_shared(
+        unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS, traces=store)
+    assert view.unresolved and "note:gone" in view.unresolved[0]
+    assert ("turns", "ok") in view.sources
+
+
+async def test_capped_relevant_history_reports_partial_not_nothing():
+    """R2-5: with more relevant turns than the scan bound, coverage is
+    `partial` — never `nothing_found` reading as «no facts»."""
+    from nora.domain.tag_trace import TagTrace
+    from nora.testing.tag_traces import FakeTagTraceStore
+
+    store = FakeTagTraceStore()
+    for i in range(205):
+        await store.save(TagTrace(
+            tag_id=f"t-c-{i}", conversation_id="room-a", messages=(
+                {"role": "assistant", "content": [
+                    {"toolUse": {"toolUseId": f"c{i}", "name": "decision_conclude",
+                                 "input": {"subject": "d", "decision": f"c{i}"}}}]},
+                {"role": "user", "content": [
+                    {"toolResult": {"toolUseId": f"c{i}", "status": "success",
+                                    "content": [{"json": {"status": "ok"}}]}}]},
+            ), transcript=(), outcome="send_reply",
+            created_at=T0_MS - 10_000 + i, unit="u1", occasion="cognition"))
+
+    view = await read_shared(
+        unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS, traces=store)
+    assert view.status == "partial"
+    assert ("turns", "partial") in view.sources
+
+
+async def test_an_expired_finding_and_an_excluded_position_stay_out():
+    """R2-1: the 48h TTL and the section gate run on the shared read too —
+    a 72h finding and an excluded position/finding are not presented."""
+    from nora.agent.lineage import visible_sections
+    from nora.domain.lineage import (
+        BODY,
+        HOLD_OPEN,
+        I_OWE,
+        WORKING_SET,
+        LiveRoom,
+        RenderRoom,
+        RoomFacts,
+        own_room_lineage,
+    )
+    from nora.domain.standing import Standing, WorkingSetItem
+    from nora.testing import InMemoryStandingStore
+
+    store = InMemoryStandingStore()
+    stale = WorkingSetItem(what="expired option", source="old-tool",
+                           found_at=T0_MS - 72 * 3_600_000, bears_on="topic")
+    live = WorkingSetItem(what="current option", source="live-source",
+                          found_at=T0_MS - 1000)
+    excluded_pos = Standing(
+        platform="signal", conversation_id="room-a",
+        body="EXCLUDED POSITION", fold_count=1, updated_at=T0_MS,
+        lineage=own_room_lineage("signal:room-a", (BODY, WORKING_SET)),
+        exclude_persons=("listener-x",),
+        working_set=(WorkingSetItem(what="EXCLUDED FINDING",
+                                    source="s", found_at=T0_MS),),
+    )
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="room-a",
+        body="the position", fold_count=1, updated_at=T0_MS,
+        working_set=(stale, live)))
+    view = await read_shared(
+        unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS, standing=store)
+    whats = [e.subject for e in view.entries if e.kind == "finding"]
+    assert "current option" in whats and "expired option" not in whats
+    src = next(e for e in view.entries if e.subject == "current option")
+    assert "live-source" in src.detail and src.at_ms == live.found_at
+
+    # Excluded position + finding: the real section gate over a real
+    # RenderRoom with the listener present.
+    store2 = InMemoryStandingStore()
+    await store2.write(standing=excluded_pos)
+    target = RenderRoom(
+        room=RoomFacts("signal", frozenset({"room-a"}), "u1",
+                       frozenset({"listener-x"}), primary_id="room-a"),
+        live=LiveRoom(frozenset({"listener-x"})), mode="on",
+        content_checks=True)
+    def permits(pos):
+        return visible_sections(
+            pos.lineage, (BODY, HOLD_OPEN, I_OWE, WORKING_SET), target,
+            origin="signal:room-a", exclude_persons=pos.exclude_persons)
+    view2 = await read_shared(
+        unit="u1", rooms=ROOMS, room=ROOMS[0], ai_peer="nora", now_ms=T0_MS,
+        standing=store2, standing_permits=permits)
+    bodies = [e.subject for e in view2.entries]
+    assert "EXCLUDED POSITION" not in bodies
+    assert "EXCLUDED FINDING" not in bodies

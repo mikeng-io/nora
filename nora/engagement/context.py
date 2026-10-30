@@ -30,6 +30,7 @@ from nora.agent.lineage import (
     excluded,
     profile_lines_for,
     section_permits,
+    visible_sections,
 )
 from nora.agent.memory_search import (
     PREFETCH_TOKENS,
@@ -49,7 +50,13 @@ from nora.domain.culture import (
 )
 from nora.domain.documents_context import DocumentsView
 from nora.domain.external_files import render_file_links
-from nora.domain.lineage import RenderRoom
+from nora.domain.lineage import (
+    BODY,
+    HOLD_OPEN,
+    I_OWE,
+    WORKING_SET,
+    RenderRoom,
+)
 from nora.domain.media_join import MediaJoin
 from nora.domain.memo import Memo, MemoStore
 from nora.domain.models import (
@@ -1033,12 +1040,24 @@ class TranscriptInjection:
                             req.entries, narrowed, origin=req.origin)
                         for req in requirements
                     )
+
+                def standing_permits(position: Standing) -> dict[str, bool]:
+                    # The derived-view gate, run against the destination's
+                    # RenderRoom: an excluded or unpermitted section is
+                    # withheld exactly as the retired standing blocks did.
+                    return visible_sections(
+                        position.lineage,
+                        (BODY, HOLD_OPEN, I_OWE, WORKING_SET), narrowed,
+                        origin=room_key(position.platform, position.conversation_id),
+                        exclude_persons=position.exclude_persons,
+                    )
         try:
             return await self._shared_reader(
                 unit=convo.unit,
                 room=(msg.platform, msg.conversation_id),
                 permit=permit,
                 permit_req=permit_req,
+                standing_permits=standing_permits,
                 now_ms=int(self._clock().timestamp() * 1000),
             )
         except Exception:

@@ -4807,6 +4807,7 @@ async def build_dependencies(
                     memos=memo_store,
                     reminders=reminders, ai_peer=cfg.honcho.ai_peer,
                     ledger=ledger_store, shared=shared,
+                    rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
                     reminder_caps=reminder_caps,
                     room_proactive=lambda platform, conversation_id: allowlist.proactive_allowed(
                         platform=platform, conversation_id=conversation_id,

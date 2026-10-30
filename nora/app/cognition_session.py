@@ -149,7 +149,7 @@ from nora.domain.reminders import (
     DuplicateReminderError,
     Reminder,
     ReminderState,
-    open_proactive_subject,
+    proactive_subject,
 )
 from nora.domain.shared_state import SharedView
 from nora.domain.standing import StandingHead
@@ -628,6 +628,7 @@ class CognitionSessionRunner:
         ledger: Any = None, shared: Any = None,
         content_checks: bool = True,
         tag_trace_store: Any = None, memory: Any = None,
+        rooms_of_unit: Callable[[str], Sequence[tuple[str, str]]] | None = None,
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -691,6 +692,7 @@ class CognitionSessionRunner:
         self._reminders = reminders
         self._ledger = ledger
         self._shared = shared
+        self._rooms_of_unit = rooms_of_unit
         self._ai_peer = ai_peer
         self._stimuli = stimulus_store
         self._agent_runner = agent_runner
@@ -2555,6 +2557,27 @@ class CognitionSessionRunner:
             """
             if not decision.strip():
                 return _refused("no_decision", "say what you concluded")
+            # Same source contract as the engagement tool: every citation
+            # must resolve — a transcript row id, or a `kind:id` open entry
+            # the canonical stores can confirm — else the record stays
+            # `unresolved`, never an ok on a guessed provenance.
+            for source in sources or ():
+                if not isinstance(source, str):
+                    return {"status": "unresolved",
+                            "reason": "source_unresolved",
+                            "detail": f"{source!r} is not a citation this "
+                                      "session can resolve"}
+                if source.isdigit():
+                    continue
+                resolved_source = await self._resolve_named_subject(
+                    unit, state, source)
+                if resolved_source is None:
+                    return {"status": "unresolved",
+                            "reason": "source_unresolved",
+                            "detail": (
+                                f"{source!r} is not a transcript row id or an "
+                                "open entry this session can cite"
+                            )}
             return {"status": "ok"}
 
         async def remind(
@@ -2701,11 +2724,9 @@ class CognitionSessionRunner:
                     # deliberate stronger invariant: a note-subject act is
                     # single-destination, while `also_rooms` covers acts on
                     # decisions, commitments, threads and events.
-                    link = {
-                        "note_id": shown_note[0].id,
-                        "revision_id": shown_note[1].id,
-                        "note_title": shown_note[0].title,
-                    }
+                    link["note_id"] = shown_note[0].id
+                    link["revision_id"] = shown_note[1].id
+                    link["note_title"] = shown_note[0].title
                 pending_dests = {
                     (p.platform, p.conversation_id) for p in pending
                     if p.subject == resolved_subject and p.action == action_key
@@ -2724,7 +2745,7 @@ class CognitionSessionRunner:
                             "detail": "the delivered check could not be completed"}
                 delivered = [
                     r for r in recent
-                    if open_proactive_subject(r) == (
+                    if proactive_subject(r) == (
                         subject_kind, subject_id, action_key,
                     ) and r.outcome == "sent"
                 ]
@@ -2753,15 +2774,30 @@ class CognitionSessionRunner:
                         "duplicate_pending",
                         "the same act is already pending for the room(s) named",
                     )
+                unit_rooms = (
+                    list(self._rooms_of_unit(unit))
+                    if self._rooms_of_unit is not None
+                    # Unwired harnesses have no canonical scope: the agenda's
+                    # own rooms are all the scope there is (the same parity
+                    # the unwired debrief keeps).
+                    else [tuple(k.split(":", 1)) for k in state.rooms]
+                )
+                if not unit_rooms:
+                    # The conflict arbiter needs the CANONICAL unit, not this
+                    # agenda's room list: an act pending in a unit room the
+                    # agenda did not name is exactly the race the lock exists
+                    # to stop, so a scope we cannot establish refuses the
+                    # write rather than narrowing it.
+                    return {"status": "unavailable",
+                            "reason": "unit_scope_unavailable",
+                            "detail": "the unit's room set could not be read"}
                 try:
                     # ONE transaction, advisory-locked on the unit with the
                     # cross-room conflict check INSIDE it: every destination
                     # lands or none does, against any writer in any process.
                     await self._reminders.create_many(
                         rows, arbitration_key=f"proactive:{unit}",
-                        arbitration_rooms=[
-                            tuple(k.split(":", 1)) for k in state.rooms
-                        ],
+                        arbitration_rooms=[tuple(r) for r in unit_rooms],
                     )
                 except (ConflictingProactiveActError,
                         DuplicateProactiveNoteError,

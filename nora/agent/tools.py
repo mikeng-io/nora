@@ -6968,6 +6968,23 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return {"status": "refused", "reason": "no_decision",
                     "detail": "say what you concluded",
                     "note": "No conclusion was accepted. State the decision before trying again."}
+        origin = room_key(room.platform, conversation_id)
+        for source in sources or ():
+            # A source must be a resolvable evidence handle — a transcript
+            # row id, whose disclosure gate is the room it was said in —
+            # and each resolved citation's requirement is RECORDED so the
+            # destination projection and turn citations see it. Anything
+            # else is not accepted: the record stays `unresolved` evidence
+            # for the next session, never an ok on a guessed provenance.
+            if not isinstance(source, str) or not source.isdigit():
+                return {"status": "unresolved",
+                        "reason": "source_unresolved",
+                        "detail": (
+                            f"{source!r} is not a transcript row id this turn "
+                            "can cite: name the row, or leave `sources` out"
+                        )}
+            record_requirement(
+                DisclosureRequirement(origin, (message_lineage(origin),)))
         return {"status": "ok"}
 
     async def now() -> str:

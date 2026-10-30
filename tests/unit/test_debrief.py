@@ -1525,7 +1525,7 @@ class _NoSynthesis:
     """The wired route never calls the model: `complete` is an ERROR."""
 
     async def complete(self, *a, **kw):
-        raise AssertionError("the faithful route must never synthesize")
+        raise AssertionError("the wired route must never synthesize")
 
 
 def _conclude_item(args: dict, result_status: str = "ok") -> TurnItem:
@@ -1539,84 +1539,66 @@ def _conclude_item(args: dict, result_status: str = "ok") -> TurnItem:
     )
 
 
-async def test_wired_route_applies_a_recorded_delta_without_synthesis():
-    """An `ok` decision_conclude carrying standing_body is applied verbatim;
-    the fold's model is never invoked."""
-    store, _metrics = await _run(
-        client=_NoSynthesis(),
+async def test_wired_route_leaves_the_prior_untouched():
+    """A wired debrief applies NOTHING to persistent Standing — an
+    Engagement `decision_conclude` is a Record conclusion, not authority;
+    Cognition writes positions through `standing_revise`. The record
+    carries the proposal; the row is unchanged, open/owe included."""
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="generated prior",
+        fold_count=4, updated_at=1, hold_open="generated open",
+        i_owe="generated obligation"))
+    await _run(
+        store=store, client=_NoSynthesis(),
         conclusions=(
             _conclude_item({
                 "subject": "decision:d1", "decision": "the pier wins",
-                "standing_body": "dinner is at the pier",
-                "hold_open": "who else comes", "i_owe": "book it",
+                "standing_body": "generated unauthorized replacement",
+                "standing_room": "signal:g1",
             }),
         ),
     )
+    after = await store.read(platform="signal", conversation_id="g1")
+    assert after is not None and after.body == "generated prior"
+    assert after.hold_open == "generated open"
+    assert after.i_owe == "generated obligation"
+    assert after.fold_count == 4
+
+
+async def test_wired_route_counts_record_only_and_never_folds():
+    """The wired outcome is `record_only` — no version, no fold_count, no
+    synthesis."""
+    store, metrics = await _run(
+        client=_NoSynthesis(),
+        conclusions=(
+            _conclude_item({"decision": "x", "standing_body": "y"}),
+        ),
+    )
+    assert _counter(metrics, "nora_debrief_total", outcome="record_only") == 1
+    assert await store.read(platform="signal", conversation_id="g1") is None
+
+
+async def test_an_unwired_debrief_still_folds():
+    """`conclusions=None` is the legacy harness: the fold runs as before."""
+    store, _metrics = await _run(client=_Client(_ok("a folded position")))
     prior = await store.read(platform="signal", conversation_id="g1")
-    assert prior is not None and prior.body == "dinner is at the pier"
-    assert prior.hold_open == "who else comes" and prior.i_owe == "book it"
+    assert prior is not None and prior.body == "a folded position"
 
 
-async def test_wired_route_rejects_a_failed_conclusion():
-    """A `decision_conclude` whose recorded result is not `ok` applies
-    nothing and is never treated as accepted — the toolUse alone proves
-    nothing."""
-    store, _metrics = await _run(
-        client=_NoSynthesis(),
-        conclusions=(
-            _conclude_item(
-                {"decision": "the pier wins",
-                 "standing_body": "dinner is at the pier"},
-                result_status="refused"),
-        ),
+async def test_wired_route_survives_a_broken_store():
+    """The record-only branch does not read the store at all: a store that
+    raises cannot produce `unavailable` or switch the route into folding."""
+
+    class _Down:
+        async def read(self, **kw):
+            raise RuntimeError("down")
+
+        async def write(self, **kw):
+            raise AssertionError("no writes on the wired route")
+
+    _store, metrics = await _run(
+        store=_Down(), client=_NoSynthesis(),
+        conclusions=(_conclude_item({"decision": "x"}),),
     )
-    assert await store.read(platform="signal", conversation_id="g1") is None
-
-
-async def test_wired_route_without_a_delta_leaves_the_prior():
-    """No recorded standing delta means prior stands and no synthesis runs —
-    `no_conclusions` is an honest outcome, not an inferred position."""
-    store, _metrics = await _run(
-        client=_NoSynthesis(),
-        conclusions=(
-            _conclude_item({"subject": "d1", "decision": "just a note"},
-                           result_status="ok"),
-        ),
-    )
-    assert await store.read(platform="signal", conversation_id="g1") is None
-
-
-async def test_wired_route_without_results_keeps_prior_standing():
-    """A `conclusions` list of only unparseable items applies nothing."""
-    store, _metrics = await _run(
-        client=_NoSynthesis(),
-        conclusions=(
-            _conclude_item({"standing_body": "x"}, result_status=""),
-        ),
-    )
-    assert await store.read(platform="signal", conversation_id="g1") is None
-
-
-async def test_faithful_delta_preserves_findings_and_uses_the_latest_delta():
-    store = InMemoryStandingStore()
-    finding = WorkingSetItem(what="another option", source="web_search", found_at=1)
-    await store.write(standing=Standing(
-        platform="signal", conversation_id="g1", body="prior position",
-        fold_count=1, updated_at=1, working_set=(finding,),
-    ))
-    await _run(store=store, client=_NoSynthesis(), conclusions=(
-        _conclude_item({"decision": "first", "standing_body": "first position"}),
-        _conclude_item({"decision": "latest", "standing_body": "latest position"}),
-    ))
-    row = await store.read(platform="signal", conversation_id="g1")
-    assert row.body == "latest position"
-    assert row.working_set == (finding,)
-
-
-@pytest.mark.parametrize("body,max_chars", [(" ", 1200), ("x" * 20, 10)])
-async def test_faithful_delta_does_not_report_a_refused_write_as_applied(body, max_chars):
-    store, metrics = await _run(client=_NoSynthesis(), max_chars=max_chars, conclusions=(
-        _conclude_item({"decision": "recorded", "standing_body": body}),
-    ))
-    assert await store.read(platform="signal", conversation_id="g1") is None
-    assert _counter(metrics, "nora_debrief_total", outcome="applied") == 0
+    assert _counter(metrics, "nora_debrief_total", outcome="record_only") == 1

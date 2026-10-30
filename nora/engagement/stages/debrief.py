@@ -458,28 +458,6 @@ class Wiring:
     working_set_max_chars: int = DEFAULT_WORKING_SET_MAX_CHARS
 
 
-def _tool_result_status(result: Any) -> str:
-    """The verb's `status` out of a Strands `toolResult`, or `""` when the
-    result carries no parseable payload — an empty string is never `ok`, so
-    a malformed or absent result applies nothing."""
-    if not isinstance(result, dict):
-        return ""
-    for block in result.get("content") or ():
-        if isinstance(block, dict):
-            payload = block.get("json")
-            if isinstance(payload, dict):
-                return str(payload.get("status") or "")
-            text = block.get("text")
-            if isinstance(text, str):
-                try:
-                    parsed = json.loads(text)
-                except (ValueError, TypeError):
-                    continue
-                if isinstance(parsed, dict):
-                    return str(parsed.get("status") or "")
-    return ""
-
-
 async def run(
     *,
     trace: TagTrace,
@@ -522,6 +500,18 @@ async def run(
     started = time.perf_counter()
     outcome = "error"
     try:
+        if conclusions is not None:
+            # THE WIRED ROUTE WRITES NOTHING. Producer conclusions are
+            # already durable in this turn's Record — the shared view
+            # projects them to every later read — and applying one to the
+            # persistent position is Cognition's call (`standing_revise`,
+            # with base revision and citations), not a stage running after
+            # delivery. A wired debrief that synthesized a position anyway
+            # would be an unauthorized writer; one that applied a raw
+            # proposal would be worse. The prior stands, untouched, on
+            # every exit of this branch — including an unreadable store.
+            outcome = "record_only"
+            return
         # The prior is read first: a store that cannot be read is
         # `unavailable`, and a fold against a guessed-empty prior is the
         # two-contradictory-rows failure. An ERROR is never a PASS.
@@ -544,62 +534,6 @@ async def run(
             prior="read" if prior is not None else "absent",
         )
 
-        if conclusions is not None:
-            # THE WIRED ROUTE IS FAITHFUL APPLICATION, NOT SYNTHESIS: the
-            # producer's `conclude` records are the only source of a new
-            # position. A recorded `standing` delta for THIS room applies
-            # verbatim through the same CAS revise the fold used; no
-            # recorded delta means the prior stands — the stage never
-            # derives a position from narration.
-            outcome = "no_conclusions"
-            room_ref = f"{platform}:{trace.conversation_id}"
-            for item in reversed(conclusions):
-                if item.name != "decision_conclude":
-                    continue
-                delta = item.arguments
-                if _tool_result_status(item.result) != "ok":
-                    # A `conclude` that did not succeed is not an accepted
-                    # conclusion — a toolUse with a failed or missing result
-                    # applies nothing.
-                    continue
-                body = delta.get("standing_body")
-                at_room = delta.get("standing_room") or room_ref
-                if not body or at_room != room_ref:
-                    continue
-                if len(str(body)) > max_chars:
-                    outcome = "unavailable"
-                    return
-                # One position per debrief: the newest recorded delta is the
-                # answer, and a bounded loop is the slot-hold contract.
-                try:
-                    revision = await asyncio.wait_for(
-                        standing_revise(
-                            store=store, prior=prior,
-                            platform=platform,
-                            conversation_id=trace.conversation_id,
-                            where_it_stands=str(body),
-                            hold_open=str(delta["hold_open"])
-                            if delta.get("hold_open") else None,
-                            i_owe=str(delta["i_owe"])
-                            if delta.get("i_owe") else None,
-                            working_set=prior.working_set if prior is not None else (),
-                            last_folded_row_id=(
-                                prior.last_folded_row_id
-                                if prior is not None else None
-                            ),
-                            now_ms=now_ms,
-                        ),
-                        timeout=store_timeout_seconds,
-                    )
-                    outcome = "applied" if revision.committed else "unavailable"
-                except Exception:
-                    log.exception(
-                        "debrief: recorded standing delta failed (tag=%s)",
-                        trace.tag_id,
-                    )
-                    outcome = "unavailable"
-                break
-            return
 
         # THE WATERMARK BATCH READ. The fold reads the NEXT `fold_batch` rows
         # since the last fold's row-id watermark — including Nora's own rows,

@@ -55,7 +55,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 
 from nora.app.proactive_screen import PROACTIVE_KIND, ProactiveScreen
@@ -443,7 +443,14 @@ class HeartbeatLoop:
             hits = await self._store.recent_in(
                 unit_rooms,
                 requester_person_id=row.requester_person_id,
-                since=row.created_at, limit=50,
+                # A delivered same-act row is often CREATED before this row
+                # was: the history must reach back from the act's own moment,
+                # never from this row's birth. Bounded, and the cap below
+                # fails closed on any unproven remainder.
+                since=(
+                    (row.fired_at or row.due_at or row.created_at)
+                    - timedelta(days=7)
+                ), limit=50,
             )
             if len(hits) >= 50:
                 # The read cut off: an earlier delivered row could sit past

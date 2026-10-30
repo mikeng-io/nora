@@ -17,6 +17,7 @@ read where `TagTrace.transcript` promises `TranscriptRow`s with a real Enum.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Sequence
 from typing import Any
 from uuid import uuid4
 
@@ -123,6 +124,33 @@ class SqlTagTraceStore:
             sa.select(TAG_TRACE)
             .where(TAG_TRACE.c.unit == unit)
             .order_by(TAG_TRACE.c.created_at.desc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return tuple(self._trace(r) for r in rows)
+
+    async def recent_unit_turns(
+        self, *, unit: str, tool_names: Sequence[str], limit: int,
+        offset: int = 0,
+    ) -> tuple[TagTrace, ...]:
+        """Newest-first traces in the unit CONTAINING one of `tool_names` —
+        the fact read (`remind`, `decision_conclude`), so a long tail of
+        irrelevant turns cannot crowd the relevant rows past a bounded page.
+        The LIKE is on the JSONB serialised messages; a false positive costs
+        a scanned row, never a missed one. `offset` pages the same
+        deterministic order (`created_at`, `tag_id` desc)."""
+        if limit <= 0 or not tool_names:
+            return ()
+        messages = sa.cast(TAG_TRACE.c.messages, sa.Text)
+        stmt = (
+            sa.select(TAG_TRACE)
+            .where(
+                TAG_TRACE.c.unit == unit,
+                sa.or_(*(messages.like(f'%"{name}"%') for name in tool_names)),
+            )
+            .order_by(TAG_TRACE.c.created_at.desc(), TAG_TRACE.c.tag_id.desc())
+            .offset(offset)
             .limit(limit)
         )
         async with self._engine.connect() as conn:

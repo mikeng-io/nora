@@ -5,6 +5,8 @@ over in-memory stores, with a scripted agent (`tests/unit/cognition_rig.py`)."""
 
 from __future__ import annotations
 
+import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from nora.app.cognition_session import now_utc
@@ -12,7 +14,7 @@ from nora.domain.cognition_ground import Grounding, NoteLine
 from nora.domain.cognition_session import AgendaItem, Room, build_agenda
 from nora.domain.gatherings import GatheringStatus
 from nora.domain.notes import Note, NoteSupersedeReason, likely_duplicates
-from nora.domain.reminders import ReminderState
+from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import StandingHead
 from nora.domain.stimuli import Stimulus
 from nora.language.cognition_render import render_agenda
@@ -411,3 +413,71 @@ async def test_the_upcoming_reader_names_each_room_once_inside_the_horizon():
         room_proactive=lambda platform, cid: cid != "room-c",
     )
     assert list(await read("unit-1", NOW)) == [("signal", "room-a"), ("signal", "room-d")]
+
+
+async def test_remind_refuses_when_a_same_act_is_firing_in_a_unit_room_off_agenda():
+    """R2-3: a one-room agenda does not narrow the conflict arbiter — a same
+    (subject,action) row FIRING in ANOTHER unit room refuses the write, via
+    the canonical unit scope inside the advisory lock."""
+    stores = Stores()
+    result = []
+
+    async def behave(by, tools):
+        event = await by["event_propose"](
+            title="generated-event", reasoning="told", confidence="high",
+            cited_ids=["101"], when=iso(NOW + 86_400_000))
+        assert event["status"] == "ok", event
+        t = datetime.fromtimestamp(NOW / 1000, UTC)
+        existing = Reminder(
+            id=uuid.uuid4(), kind="proactive", requester_person_id="nora",
+            platform="signal", conversation_id="room-b",
+            conversation_type="group", text="generated active act",
+            created_at=t - timedelta(hours=1), due_at=t, fired_at=t,
+            state=ReminderState.FIRING, outcome=None,
+            payload={
+                "unit": "u", "subject_kind": "event",
+                "subject_id": event["id"], "action": "generated-ask",
+                "plan_id": "generated-existing-plan"})
+        await stores.reminders.create(existing)
+        result.append(await by["remind"](
+            intent="ask", text="generated duplicate act",
+            subject=f"event:{event['id']}", action="generated-ask",
+            subject_rows=["101"], at=iso(NOW + 300_000)))
+
+    await session(
+        behave, stores=stores, rooms=(A,),
+        runner_kwargs={
+            "rooms_of_unit": lambda unit: (
+                ("signal", "room-a"), ("signal", "room-b"))})
+    assert result[0]["status"] in ("refused", "unavailable"), result
+
+
+async def test_remind_refuses_a_same_act_already_delivered():
+    """R2-4: a DONE+sent row for the same (subject,action,destination) is
+    delivered evidence, not an open act — `proactive_subject` reads it."""
+    stores = Stores()
+    result = []
+
+    async def behave(by, tools):
+        note = await by["note_create"](body=GOOD_BODY, **NOTE)
+        old = Reminder(
+            id=uuid.uuid4(), kind="proactive", requester_person_id="nora",
+            platform="signal", conversation_id="room-a",
+            conversation_type="group", text="generated old ask",
+            created_at=datetime.fromtimestamp((NOW - 3_600_000) / 1000, UTC),
+            due_at=datetime.fromtimestamp((NOW - 600_000) / 1000, UTC),
+            fired_at=datetime.fromtimestamp((NOW - 300_000) / 1000, UTC),
+            state=ReminderState.DONE, outcome="sent",
+            payload={
+                "subject_kind": "note", "subject_id": note["note_id"],
+                "action": "generated-ask", "plan_id": "generated-old-plan"})
+        await stores.reminders.create(old)
+        result.append(await by["remind"](
+            intent="ask", text="generated new ask",
+            subject=f"note:{note['note_id']}", action="generated-ask",
+            subject_rows=["101"], at=iso(NOW + 300_000)))
+
+    await session(behave, stores=stores, runner_kwargs={
+        "rooms_of_unit": lambda unit: (("signal", "room-a"),)})
+    assert result[0]["status"] == "refused", result
+    assert result[0]["reason"] == "duplicate_pending"

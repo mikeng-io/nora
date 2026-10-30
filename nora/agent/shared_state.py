@@ -30,14 +30,28 @@ from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
+from nora.domain.lineage import BODY, HOLD_OPEN, I_OWE, WORKING_SET
 from nora.domain.shared_state import SharedEntry, SharedView, ViewStatus
+from nora.domain.standing import WORKING_SET_TTL_HOURS
 from nora.domain.turn_record import turn_items
 
 log = logging.getLogger("nora.agent.shared_state")
 
+#: An ungated section map — the unit read and the lineage-off answer alike.
+_ALL_SECTIONS = {BODY: True, HOLD_OPEN: True, I_OWE: True, WORKING_SET: True}
+
 #: How far back the "said lately" and act-history reads reach.
 _SEND_LOOKBACK_MS = 24 * 3600_000
 _HISTORY_LOOKBACK_MS = 7 * 24 * 3600_000
+
+#: The tool names whose toolUse/toolResult pairs the view reads as facts —
+#: producer conclusions and act attempts. Server-side filtered, so the scan
+#: bound counts RELEVANT turns, never the unit's chatter.
+_TURN_FACT_TOOLS = ("remind", "decision_conclude")
+#: How many relevant turns the fact read may walk before it reports coverage
+#: unproven (`partial`). Five 40-row pages; a busier unit still answers, just
+#: honestly marked.
+_TURN_FACT_SCAN_LIMIT = 200
 
 
 def _ms(dt: datetime | None) -> int:
@@ -64,6 +78,7 @@ async def read_shared(
     wakes: Sequence[Any] | None = None,
     permit: Callable[[Any], bool] | None = None,
     permit_req: Callable[[Any], bool] | None = None,
+    standing_permits: Callable[[Any], dict[str, bool]] | None = None,
     send_limit: int = 6,
     history_limit: int = 50,
     trace_limit: int = 40,
@@ -195,11 +210,26 @@ async def read_shared(
                 position = await standing.read(
                     platform=platform, conversation_id=conversation_id)
                 scope = f"{platform}:{conversation_id}"
-                if position is not None:
+                if position is None:
+                    continue
+                # The SAME section gate the legacy blocks run
+                # (`visible_sections` over the destination's RenderRoom):
+                # a withheld section is dropped whole — never an existence
+                # hint, the parity `derived_view`/`render_standing` keeps.
+                # `room is None` is the unit read, which sees everything;
+                # `standing_permits` absent means lineage off, same answer.
+                allowed_sections = (
+                    standing_permits(position)
+                    if room is not None and standing_permits is not None
+                    else _ALL_SECTIONS
+                )
+                if allowed_sections[BODY]:
                     detail = " · ".join(
                         part for part in (
-                            position.hold_open and f"open: {position.hold_open}",
-                            position.i_owe and f"owe: {position.i_owe}",
+                            position.hold_open and allowed_sections[HOLD_OPEN]
+                            and f"open: {position.hold_open}",
+                            position.i_owe and allowed_sections[I_OWE]
+                            and f"owe: {position.i_owe}",
                         ) if part
                     )
                     entries.append(SharedEntry(
@@ -207,20 +237,25 @@ async def read_shared(
                         status="open", subject=position.body,
                         detail=detail, at_ms=position.updated_at,
                         provenance="fold",
-                        permitted=scoped(scope, (platform, conversation_id)),
                     ))
-                for item in getattr(position, "working_set", ()) or ():
-                    findings += 1
-                    detail = item.what
-                    if item.bears_on:
-                        detail += f" (for {item.bears_on})"
-                    entries.append(SharedEntry(
-                        kind="finding", id=f"{scope}#{item.found_at}",
-                        scope=scope, status="open",
-                        subject=detail, at_ms=item.found_at,
-                        provenance=f"fold:{item.source}",
-                        permitted=scoped(scope, (platform, conversation_id)),
-                    ))
+                if allowed_sections[WORKING_SET]:
+                    ttl_ms = int(WORKING_SET_TTL_HOURS * 3_600_000)
+                    for item in getattr(position, "working_set", ()) or ():
+                        # The 48-hour TTL `render_standing_working_set`
+                        # applies: an expired finding is not knowledge.
+                        if now_ms - item.found_at > ttl_ms:
+                            continue
+                        findings += 1
+                        detail = item.source
+                        if item.bears_on:
+                            detail += f" (for {item.bears_on})"
+                        entries.append(SharedEntry(
+                            kind="finding", id=f"{scope}#{item.found_at}",
+                            scope=scope, status="open",
+                            subject=item.what, detail=detail,
+                            at_ms=item.found_at,
+                            provenance=f"fold:{item.source}",
+                        ))
             sources.append(("findings", "ok" if findings else "nothing_found"))
         except Exception:
             log.exception("shared view: findings read failed for %s", unit)
@@ -340,9 +375,26 @@ async def read_shared(
             # first. An unresolved act is discharged only by a NEWER `ok`
             # result for the same (subject, action): the record retains the
             # attempt until something valid resolved it.
-            unit_traces = await traces.recent_unit(
-                unit=unit, limit=trace_limit)
-            if len(unit_traces) >= trace_limit:
+            unit_traces: list[Any] = []
+            # The FACT read is a filtered, paginated walk — server-side on
+            # the tool names the view consumes — so a long tail of turns
+            # with no `remind`/`decision_conclude` cannot crowd a still-open
+            # fact past the page, and a remainder is read as «coverage
+            # unproven», never as «absent».
+            offset = 0
+            exhausted = True
+            while len(unit_traces) < _TURN_FACT_SCAN_LIMIT:
+                page = await traces.recent_unit_turns(
+                    unit=unit, tool_names=_TURN_FACT_TOOLS,
+                    limit=trace_limit, offset=offset,
+                )
+                unit_traces.extend(page)
+                if len(page) < trace_limit:
+                    break
+                offset += trace_limit
+            else:
+                exhausted = False
+            if not exhausted:
                 partial = True
                 sources.append(("turns", "partial"))
             else:
@@ -426,10 +478,12 @@ async def read_shared(
     status: ViewStatus
     if "unavailable" in statuses:
         status = "unavailable"
+    elif partial or "partial" in statuses:
+        # Coverage comes before emptiness: a source that could not be fully
+        # read is «unproven», never read as «nothing there».
+        status = "partial"
     elif not entries:
         status = "nothing_found"
-    elif partial or "partial" in statuses:
-        status = "partial"
     else:
         status = "ok"
     return SharedView(
@@ -482,6 +536,7 @@ def shared_reader(
         room: tuple[str, str] | None = None,
         permit: Callable[[Any], bool] | None = None,
         permit_req: Callable[[Any], bool] | None = None,
+        standing_permits: Callable[[Any], dict[str, bool]] | None = None,
         wakes: Sequence[Any] | None = None,
     ) -> SharedView:
         return await read_shared(
@@ -490,6 +545,7 @@ def shared_reader(
             reminders=reminders, record_query=record_query,
             standing=standing, traces=traces, wakes=wakes,
             permit=permit, permit_req=permit_req,
+            standing_permits=standing_permits,
         )
 
     return read
