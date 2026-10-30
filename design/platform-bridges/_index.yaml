@@ -7,7 +7,7 @@ implementation_status: not-built
 timestamp: '2026-10-30'
 governance: operator-directed
 origin: https://github.com/mikeng-io/nora/issues/422
-revision: 'Source base 14e89fc7af04584fc9dab69a13039f5d0be22cc7; includes per-message tracing clarification.'
+revision: 'Source base 14e89fc7af04584fc9dab69a13039f5d0be22cc7; includes per-message tracing clarification and six source-verified review amendments.'
 docs:
   - 00-contract.md
   - 01-source-map.md

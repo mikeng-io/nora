@@ -4,6 +4,8 @@
 
 The target is continuity across application stops/replacements: admitted events received by an independently running bridge remain owned until processing finishes or durable downstream work owns them. Optional receipt reactions mean **queued**, never completed. Host/disk destruction, upstream transport loss before bridge capture, and exactly-once arbitrary external effects are outside this guarantee. Concrete limits and retry behavior are in [recovery](03-ownership-and-recovery.md).
 
+The authenticated live voice-utterance HTTP route remains app-local, non-queued ingress. Its 202 means accepted into the current dispatcher, not durable completion; app downtime yields a caller-visible connection/HTTP failure, with no queue receipt or restart-durability promise. It must not fabricate a platform source key or bypass the shared speaking slot, policy or bridge delivery contract. Controller connection/playout continuity is separate from accepting new spoken turns while the app is absent. Extending durable intake to voice requires a real producer utterance identity and an explicit contract amendment.
+
 ## Responsibilities and non-negotiable scope
 
 | Owner | Responsibility |
