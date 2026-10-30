@@ -311,7 +311,7 @@ class TestTransitionIdentity:
         # The committed upstream IS the frame's revision — a later
         # frame-less redelivery resolves to it (the durable answer).
         ledger_key = f"r:{CONV}:{TARGET}:{MEMBER}:" + "\U0001F44D:0"
-        state, seq, upstream = journal.transitions()[ledger_key]
+        state, seq, upstream = journal.transition_ledger()[ledger_key]
         assert (state, seq, upstream) == ("add", 1, "g:sess-1:42")
 
     async def test_the_ledger_survives_a_process_restart(self, tmp_path):
@@ -351,7 +351,7 @@ class TestTransitionIdentity:
         # The ledger is UNTOUCHED by the ambiguous evidence — no phantom
         # state a later legitimate transition could skip over.
         ledger_key = f"r:{CONV}:{TARGET}:{MEMBER}:" + "\U0001F44D:0"
-        assert journal.transitions()[ledger_key] == ("add", 1, "g:sess-42:4242")
+        assert journal.transition_ledger()[ledger_key] == ("add", 1, "g:sess-42:4242")
 
     async def test_a_delayed_old_callback_after_restart_mints_nothing(
             self, tmp_path):
@@ -374,7 +374,7 @@ class TestTransitionIdentity:
         # The ledger still names the remove — the unprovable callback did
         # not rewind durable state.
         ledger_key = f"r:{CONV}:{TARGET}:{MEMBER}:" + "\U0001F44D:0"
-        assert journal2.transitions()[ledger_key][0] == "remove"
+        assert journal2.transition_ledger()[ledger_key][0] == "remove"
 
     async def test_a_replayed_frame_after_restart_dedupes(
             self, tmp_path):
@@ -425,7 +425,7 @@ class TestTransitionIdentity:
         # The IN-MEMORY ledger never advanced past the failed fsync — the
         # recorded state is still the committed `add`.
         ledger_key = f"r:{CONV}:{TARGET}:{MEMBER}:" + "\U0001F44D:0"
-        assert journal.transitions()[ledger_key] == ("add", 1, "g:sess-1:41")
+        assert journal.transition_ledger()[ledger_key] == ("add", 1, "g:sess-1:41")
         # The next provenanced dispatch derives its step from the SAME
         # recorded state — seq 2, not a phantom-skip 3.
         await _sequenced_touch(bridge, "reaction_remove", 43)
@@ -927,12 +927,13 @@ class TestBootstrap:
         assert proc.returncode == 0, proc.stderr
         assert "PROVIDER:TracerProvider" not in proc.stdout
 
-    def test_discord_entry_bootstrap_reads_the_same_config(self, tmp_path):
+    def test_discord_entry_bootstrap_reads_the_same_config(
+            self, tmp_path, example_config_path):
         """`entry._bootstrap_obs` — the exact call `__main__` makes — reads
         the SAME `config.toml` (`obs.logging` + `obs.tracing`): JSON logging
         comes up with the deployment's own settings and a real provider is
         registered when `[obs.tracing].enabled`."""
-        cfg_text = (ROOT / "config.example.toml").read_text().replace(
+        cfg_text = example_config_path.read_text().replace(
             'exporter = "file"', 'exporter = "console"')
         cfg = tmp_path / "config.toml"
         cfg.write_text(cfg_text)

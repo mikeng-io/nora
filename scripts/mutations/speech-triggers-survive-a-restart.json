@@ -24,8 +24,8 @@
   {
     "name": "the message cursor is re-derived from the record at hydration",
     "file": "nora/app/participation.py",
-    "old": "            if cursor.last_message_at is not None:\n                self._last_message_at.setdefault(key, cursor.last_message_at / 1000.0)",
-    "new": "            if False:\n                pass",
+    "old": "                self._last_message_at.setdefault(key, cursor.last_message_at / 1000.0)",
+    "new": "                pass",
     "target": "tests/unit/test_participation.py -k test_a_burst_that_arrived_after_the_last_window_still_closes"
   },
   {
@@ -45,8 +45,8 @@
   {
     "name": "a failed hydration is retried, not assumed",
     "file": "nora/app/participation.py",
-    "old": "        if self._hydrated or self._store is None:\n            return\n        for cursor in await self._store.read_cursors():",
-    "new": "        if self._hydrated or self._store is None:\n            return\n        self._hydrated = True\n        for cursor in await self._store.read_cursors():",
+    "old": "        if self._hydrated or self._store is None:\n            return\n",
+    "new": "        if self._hydrated or self._store is None:\n            return\n        self._hydrated = True\n",
     "target": "tests/unit/test_participation.py -k test_a_failed_hydration_is_retried_rather_than_assumed"
   },
   {

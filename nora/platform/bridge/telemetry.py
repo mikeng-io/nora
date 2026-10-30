@@ -96,7 +96,7 @@ INSPECTION_RESULTS: frozenset[str] = frozenset(get_args(InspectionResult))
 #: `stage` on `nora_bridge_stage_seconds`: the `bridge_work.kind` vocabulary
 #: plus the bounded queue operations that are not work attempts.
 QueueStage = Literal[
-    "ingest", "stimulus", "memory_feed", "turn", "participation",
+    "ingest", "stimulus", "memory_feed", "turn", "participation", "participation_fire",
     "receipt", "trace_debrief", "deliver", "claim", "ack", "custody",
 ]
 QUEUE_STAGES: frozenset[str] = frozenset(get_args(QueueStage))

@@ -95,7 +95,7 @@ class Journal:
             raise JournalError(
                 f"journal append failed: {type(exc).__name__}") from exc
 
-    def transitions(self) -> dict[str, tuple[str, int, str | None]]:
+    def transition_ledger(self) -> dict[str, tuple[str, int, str | None]]:
         """The clockless-transition ledger:
         `key -> (last_state, seq, upstream_identity)`.
 

@@ -71,9 +71,9 @@ def resolve_clockless_transition(
       the caller retains the event without publishing.
 
     A ledger that cannot be read raises `JournalError` out of
-    `journal.transitions()` — never a guessed sequence.
+    `journal.transition_ledger()` — never a guessed sequence.
     """
-    last = journal.transitions().get(key)
+    last = journal.transition_ledger().get(key)
     if last is not None and last[0] == state and last[1] > 0:
         upstream = last[2] if last[2] else f"l:{key}:{state}:{last[1]}"
         return upstream, None
@@ -92,7 +92,7 @@ def commit_transition(
     so `add/remove/add` stays three distinct events and the seq remains a
     stable fingerprint of the state path, never a fabricated identity.
     """
-    last = journal.transitions().get(key)
+    last = journal.transition_ledger().get(key)
     last_state, last_seq = (last[0], last[1]) if last is not None else ("", 0)
     seq = last_seq if last_state == state and last_seq > 0 else last_seq + 1
     return {"key": key, "state": state, "seq": seq, "upstream": upstream}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -93,14 +94,7 @@ class SinkSender:
         """A facade carrying the durable owner into its sends. The recorded
         `sent` lists are the endpoint-equivalent: shared with the parent,
         like `BridgeAdapter` shares the bridge endpoint."""
-        clone = SinkSender(
-            succeed=self._succeed, account=self._account,
-            timestamp=self._timestamp)
-        clone.sent = self.sent
-        clone.sent_mentions = self.sent_mentions
-        clone.sent_styles = self.sent_styles
-        clone.sent_attachments = self.sent_attachments
-        clone.sent_owners = self.sent_owners
+        clone = copy.copy(self)
         clone._action_owner = owner
         return clone
 

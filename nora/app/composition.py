@@ -4091,8 +4091,15 @@ async def build_dependencies(
             # other obligation: watermark + candidate folds + fire row in ONE
             # commit, so a force-recreate never finds a judged window whose
             # turn nobody owns.
-            participation_trigger.set_close_handoff(
-                bridge_store.close_participation_window)
+            async def close_participation_window(
+                platform: str, conversation_id: str, window_end_ms: int,
+                conversation_type: str,
+            ) -> None:
+                await bridge_store.close_participation_window(
+                    platform, conversation_id, window_end_ms,
+                    conversation_type)
+
+            participation_trigger.set_close_handoff(close_participation_window)
         bridge_runner = WorkRunner(
             store=bridge_store, redis=bridge_redis, ingest=ingest,
             engagement=engagement, slots=slots, db_locks=bridge_locks,
