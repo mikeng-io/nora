@@ -124,7 +124,14 @@ What the tests enforce today (checked 2026-09-24, working tree):
    sibling negatives naming it in `not_tools`, and one control that routes
    elsewhere (`evals/corpora/tool_selection.yaml` `metadata:`). For a
    `where_is` change:
-   `python -m evals tool_selection --case route_where_is_now --case route_where_been_today --case route_routine_read_future --case route_weather_not_web --sample N --reasons`
+   ```bash
+   python -m evals tool_selection \
+     --case route_where_is_now --case route_where_been_today \
+     --case route_routine_read_future --case route_routine_read_english \
+     --case route_routine_read_usually --case route_routine_read_arrival \
+     --case route_routine_read_departure_english --case route_typed_residence_correction \
+     --case route_weather_not_web --sample N --reasons
+   ```
    `--reasons` prints the tools each draw executed. Choose N for the claim and
    check the `estimate:` line — the run refuses over 60 minutes, so the whole
    corpus at `--sample 5` (~7 h an arm) can never be the recipe. How and where
