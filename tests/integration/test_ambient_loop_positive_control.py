@@ -504,8 +504,17 @@ async def _drive(tmp_path: Path) -> _Journey:
 
 @pytest.fixture
 async def journey(tmp_path, monkeypatch) -> _Journey:
+    import time
+
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    return await _drive(tmp_path)
+    with monkeypatch.context() as zone:
+        zone.setenv("TZ", "Asia/Hong_Kong")
+        time.tzset()
+        try:
+            return await _drive(tmp_path)
+        finally:
+            zone.undo()
+            time.tzset()
 
 
 # ---------------------------------------------------------------------------

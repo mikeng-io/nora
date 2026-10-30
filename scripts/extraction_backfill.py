@@ -8,7 +8,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -26,6 +25,7 @@ from nora.infra.sql.schema import EXTRACTION_CLAIM as CLAIM
 from nora.infra.sql.schema import EXTRACTION_QUEUE as QUEUE
 from nora.infra.sql.schema import MESSAGE_DELETE, MESSAGES
 from nora.policy import Policy, load_policy
+from nora.secret import credentials
 
 CHUNK_SIZE = 500
 
@@ -141,7 +141,7 @@ async def status(engine: AsyncEngine) -> dict[str, Any]:
 
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     policy = None if args.status else load_policy(args.policy)
-    engine = create_sql_engine(os.environ["DATABASE_URL"])
+    engine = create_sql_engine(credentials()["DATABASE_URL"])
     try:
         if args.status:
             return await status(engine)

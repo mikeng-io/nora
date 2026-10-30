@@ -1066,3 +1066,12 @@ own laptop:** SQLAlchemy's async engine needs `greenlet`, and SQLAlchemy's own
 dependency marker skips macOS arm64, so on an Apple Silicon machine every
 SQL-touching test errored with "the greenlet library is required". The
 container is Linux and never saw it. `greenlet` is now declared directly.
+
+## Local comments and configuration sources
+
+Keep comments short and descriptive. Maintained docs own architecture, rationale
+and decisions. The [configuration contract](../configuration.md) amends the old
+environment-only credential-source guidance; `*_env` references retain their names.
+Private `secret.toml` and generated delivery files never enter Git. Config and
+secret changes require validated controlled recreation; identity/policy retain
+their existing validated reload.

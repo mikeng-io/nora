@@ -1,20 +1,11 @@
-# All example names, account IDs, nicknames and room mappings in this file are
-# synthetic pseudonyms; replace them with your own installation values.
+# Deployment settings; credentials and endpoint examples: docs/configuration.md.
 
 identity_file = "identity.toml"
 policy_file = "policy.toml"   # who may talk to her, and where; see policy.example.toml
 
 [agent]
-# Machine name: the agent id and the trace span name. Keep it lowercase and
-# stable; renaming starts a new trace lineage. Optional (default "nora").
-# A second agent needs its own name, [doctrine].display_name,
-# [engagement].trigger.text, doctrine files, ai_peer and workspace_id.
 name = "nora"
 
-# Her own public handle on each network, shown in <presence> so she knows what
-# people call her. Display text only; never matched against anyone.
-# Declare one only where it cannot be read live: Instagram (bridge /health) and
-# Discord (read at startup) take a value here only as a fallback.
 [agent.handles]
 signal = "@nora.000"
 whatsapp = "@noraexample"
@@ -33,293 +24,287 @@ token_env = "DISCORD_BOT_TOKEN"  # env var holding the bot token; never the valu
 [platforms.whatsapp]
 enabled = false                  # off by default; requires pairing first
 base_url = "http://whatsapp-bridge:18081"  # bridge holds the paired session; no token or account here
-                                  # pair with: docker compose run --rm whatsapp-bridge
-                                  # --pair --phone <digits>
 
-# Messaging (send and receive). Separate from [social.instagram], which reads
-# stories through the same bridge; each has its own flag.
-# An enabled adapter that cannot authenticate does not stop startup: it runs
-# degraded (refuses sends, ingests nothing); see /health platforms.instagram.degraded.
 [platforms.instagram]
 enabled = false                  # off by default; requires a session first
 base_url = "http://instagram-bridge:18082"  # bridge holds the cookie session; no token or account here
-                                  # session: log in at instagram.com in a private window,
-                                  # copy the cookie header into the bridge's /session volume
 
 [honcho]
-# Honcho (memory) endpoint. Honcho has no authentication, so never publish it
-# on the host: use http://honcho:8000 on the private honcho_memory network
-# (see docs/runbook.md, "Closing Honcho").
 base_url = "http://127.0.0.1:8000"
-# Honcho workspace of the implicit Nora workspace, used only when policy.toml
-# has no [units] table (DEC-214). With [units], each Nora workspace binds via
-# identity.toml [workspaces.<name>] and this routes nothing. Exempt from the
-# nora_owner ownership check; every other bound workspace must carry that marker.
 workspace_id = "nora"
-# Her conclusions about the tagger included in the per-tag prefill
-# (<peer_history>). 0 disables. Each is ~45 tokens; raise with the token budget in mind.
 tagger_card_conclusions = 8
-# <people_in_window> on a participation turn: conclusions per speaker, and how
-# many distinct speakers (most recent first). Either at 0 turns the block off.
-# Each speaker costs one concurrent memory read, so raising speakers adds latency.
 people_in_window_conclusions = 3
 people_in_window_speakers = 4
-# Wall-clock bound in seconds on the whole batch of participation memory reads.
 read_timeout_seconds = 5.0
 
 [llm]
 base_url = "http://localhost:20128/v1"
 api_key_env = "OMNIROUTE_API_KEY"     # env var NAME, never the value
 
-# Pinned to one upstream rather than a combo: combos fan out per request and
-# upstreams disagree about forced tool_choice (ADR 0006). Use deepseek-v4-flash,
-# never -pro. The id needs its version tag; the bare id is not served.
 model = "ollamacloud/deepseek-v4-flash:0731"
-# Provider's per-call output ceiling in tokens; not the turn budget
-# (see [llm.limits]).
 max_tokens = 2000
-# Sampling temperature. top_p has no key and stays at the provider default.
 temperature = 0.7
 
-# One of "none" | "low" | "medium" | "high"; "auto" is rejected by the provider.
-# "high" makes her end turns without sending a reply more often; use "low"
-# unless silent turns are acceptable.
 reasoning_effort = "low"
-# true: only the six hot tools ship full schemas; the rest are listed in
-# <tool_catalogue> and loaded on demand with load_tools (which adds one to
-# [llm.limits] turns). false: every schema resident. Applies to tag and fire
-# paths only.
 defer_tools = false
-# Whole-turn wall-clock limit in seconds. Media reads may spend 0.6 of it, and
-# the per-call vision ceiling derives from it, capped by vision_timeout_seconds.
-# Raise both for long video reads.
 timeout_seconds = 360
 
-# Per-tool call-count overrides, applied over the default table in
-# nora/agent/tools.py (DEC-10); empty means the table unchanged. An unknown tool
-# name or a value below 1 is a startup failure.
 [llm.budgets]
 web_fetch = 6
 
-# Caps around the whole agent loop for one tag. Size total_tokens so turns,
-# not tokens, binds first. Keep total_tokens identical in config.toml.
 [llm.limits]
 turns = 20
 total_tokens = 1024000
-# Output tokens across every call of the turn; separate from the per-call
-# [llm] max_tokens and should be several times larger.
 output_tokens = 12000
 
+[engagement]
+policy = "trigger_text"
+
+[engagement.reactions]
+enabled = true
+
+[engagement.queue]
+max_depth = 16
+
+[engagement.trigger]
+enabled = true
+text = "nora"
+min_interval_seconds = 5
+
 [participation]
-# Lets her speak in a room she was not tagged in, judged once per
-# quiescence-closed window; silence is the default. Off by default. A room must
-# also opt in with `relevance_gate = true` on its [[conversations]] entry in
-# policy.toml.
 enabled = false
-# Seconds of quiet that close a window; one evaluation runs per closed window.
 settle_seconds = 10
-# A window also closes after this many messages since the last judgement, so a
-# busy room is still judged. Keep below [relevance_gate] transcript_rows so
-# consecutive windows overlap.
 max_window_messages = 10
-# Reasoning for the participation turn, separate from the tag lane. Keep "none":
-# more reasoning produces more silent turns.
 reasoning_effort = "none"
-# Minimum minutes between participation messages per room. Evaluations still
-# run; a "speak" inside the cooldown stays silent.
 cooldown_minutes = 10
-# Mirror every participation verdict (speak and silence) to shadow_channel.
-# Works on top of `enabled` and the room opt-in.
 shadow = false
-# Mirror destination in shadow_platform's id shape; on discord that is
-# "<guild_id>/<channel_id>", and a bare channel id is refused at startup.
 # shadow_channel = "1234567890123456789/9876543210987654321"  # required when shadow = true
 # shadow_platform = "discord"              # the mirror's platform
 
 [proactive]
-# The turn where a due reminder lets her decide whether to speak in the room.
-# Has its own reasoning setting, independent of [participation].
 reasoning_effort = "low"
-# Per-call output ceiling for this turn, replacing [llm] max_tokens here.
-# Reasoning counts against it; keep it high enough not to cut a call mid-reply.
-# [llm.limits] output_tokens still bounds the turn.
 max_tokens = 20000
 
 [relevance_gate]
-# One cheap structured call per closed window that decides whether a
-# participation turn runs at all. No tools or doctrine; it answers
-# {"verdict": "go"|"no_go", "relevance_score": 0.0-1.0}. A failed or unparseable
-# call is a no-go.
-# Off by default. Requires [participation] enabled = true or startup refuses; a
-# room must also opt in with `relevance_gate = true` in policy.toml.
 enabled = false
-# Own OmniRoute combo, separate from the tag lane: the gate needs JSON mode and
-# no reasoning (ADR 0006).
 model = "nora-gate"
-# Declared so the gate stays at no reasoning if the combo's members change.
 reasoning_effort = "none"
-# Ceiling for a verdict JSON; keep it small so the gate cannot draft a reply.
 max_tokens = 512
 temperature = 0.0
 timeout_seconds = 20.0
-# Transcript rows given to the gate, plus the room's standing; its only inputs.
 transcript_rows = 40
-# true: the gate runs on every closed window and only "go" verdicts are posted
-# to shadow_channel; Nora takes no turn. false: a "go" runs a participation turn.
 shadow = true
-# Destination in shadow_platform's id shape; on discord "<guild_id>/<channel_id>",
-# never a bare channel id.
 # shadow_channel = "1234567890123456789/9876543210987654321"  # required when enabled AND shadow
 # shadow_platform = "discord"
 
 [reaction]
-# GIF reaction on a tag turn's first reply: one cheap call decides whether a
-# GIF fits, a second picks one from Giphy results. Needs GIPHY_API_KEY in .env.
-# Any failure sends her words unchanged. Off by default.
 enabled = false
 model = ""                 # empty = [llm] model
 reasoning_effort = "none"  # empty inherits [llm]
 timeout_seconds = 6.0      # bounds the whole pick, download included
 max_tokens = 200
 
-[engagement]
-policy = "trigger_text"
-
-[engagement.reactions]
-# 👀 while she works, then ✅ (replied) or ⚠️ (failed).
-# Off = she writes nothing to the group but replies.
-enabled = true
-
-[engagement.queue]
-# Per-conversation queue depth beyond which an arriving tag is shed as a flood
-# (R-30). Queued tags wait however long the turn ahead takes.
-max_depth = 16
-
-[engagement.trigger]
-# false disables the trigger phrase only; an @mention or a reply to her still engages her.
-enabled = true
-# Phrase that engages her when a message contains it.
-text = "nora"
-min_interval_seconds = 5
 [store]
-# Record store: PostgreSQL. The URL comes from the env var named here (DEC-8:
-# name the var, never inline the value); docker compose sets it from `.env`.
 database_url_env = "DATABASE_URL"
-# On-disk root for media blobs, stored under `data_dir/media`.
 data_dir = "~/workspace/nora/data"
 max_per_conversation = 500   # rows kept per conversation by the retention sweep
 context_window = 40          # rows read per conversation; `who_said` searches this depth
-# Rows of that window shown in the tag prompt's group transcript. Default 20.
-# Must be <= context_window.
 prompt_window = 20
-# When a reply quotes a message outside `context_window`, the window grows to
-# reach the quoted row plus `quote_margin` rows of context, capped at
-# `context_window * quote_window_multiplier`. Beyond the cap the reply renders unthreaded.
 quote_margin = 10
 quote_window_multiplier = 3
-# Whether the retention sweep runs (every 300s, pruning to `max_per_conversation`).
-# Default true when the key is absent.
-#
-# Set false to keep the conversation record in full. At the cap a busy group
-# silently evicts its oldest message on every new one, so the record becomes a
-# rolling window, not a history. Turn the sweep off if anything reads the past
-# (aggregator, audit, export), and watch disk.
-#
-# Do not widen `max_per_conversation` to fake this: every sweep still scans the
-# whole `messages` table to delete nothing.
-#
-# Left commented out here on purpose: tests load this file to pin the default
-# (absent means enabled).
 # prune_enabled = false
 
-# Attachment byte custody (DEC-43), encrypted at rest (DEC-47). Optional section:
-# every key is its own default.
-#
-# Media lives under `store.data_dir` as `media/<first2>/<rest>`, keyed by the
-# sha256 of the content; there is no separate media path key.
-#
-# Bytes on disk are AES-256-GCM ciphertext. Images have EXIF/embedded metadata
-# (GPS, device id) stripped before hashing. Audio, video and documents are NOT
-# stripped; their metadata survives inside the encrypted blob. Custody is on only
-# when `enabled` is true AND `encryption_key_env` names an env var holding a valid
-# key; a missing or malformed key turns custody off (never plaintext, never a crash).
-#
-# Retention (DEC-43): no sweep deletes blobs. `store.max_per_conversation`
-# prunes messages only, so blobs grow without bound and outlive the rows that
-# named them. These are the most PII-heavy data held. `enabled = false` is the
-# off switch: attachments are recorded as a placeholder with no handle.
+[memory.graph]
+enabled = false
+
+[memory.extraction]
+enabled = false
+model = "ollamacloud/deepseek-v4.1-flash"
+messages_per_call = 20
+context_messages = 20
+min_message_age_seconds = 2.0
+timeout_seconds = 90.0
+max_tokens = 6000
+
+[memory.index]
+refresh_seconds = 60.0
+read = false
+embed = false
+embedder_url = "http://embedder:8080"
+embedder_model = "Qwen3-VL-Embedding-2B.Q4_K_M.gguf@7812c91cd1e0"
+embed_batch = 64
+embed_images_per_hour = 120
+
+[memory.profile]
+write = false
+read = false
+update_every_seconds = 604800
+
+[memory.profile.person]
+update_every_messages = 100
+
+[memory.profile.unit]
+update_every_room_profile_changes = 5
+
+[memory.profile.nora]
+update_every_replies = 100
+
+[memory.graph.comprehend]
+enabled = false
+turns = 8
+total_tokens = 120000
+output_tokens = 12000
+timeout_seconds = 240
+live_concurrency = 1
+historical_concurrency = 1
+preview_tokens = 1500
+web_searches = 3
+page_fetches = 3
+
+[lineage]
+mode = "off"
+
+[record_query]
+enabled = false
+
+[cognition]
+enabled = false
+tick_seconds = 30                     # how often the evaluator checks every unit; one read per unit, no model call
+quiet_seconds = 1800
+cue_quiet_seconds = 120               # strong cue (date/time, place link, keep instruction, pending RSVP), then this much quiet
+batch_max = 80                        # wake when this many stimuli are pending
+max_age_seconds = 3600                # wake when the oldest pending stimulus is this old
+cooldown_seconds = 300                # pause after each session; one strong cue may cut it once
+max_concurrent_sessions = 2           # sessions running at once across all units
+reply_quiet_seconds = 600             # a reply to Nora's message inside this window is recorded but never wakes a session alone
+time_floors = ["07:00", "00:00"]
+timezone = "Asia/Hong_Kong"
+floor_grace_seconds = 3600
+upcoming_days = 3
+store_timeout_seconds = 5
+max_items = 12                        # items per session
+max_strikes = 3
+# session_timeout_seconds = 3900
+max_self_wakes = 5
+max_self_wakes_per_day = 12
+backoff_max_seconds = 21600
+max_consecutive_failures = 5
+# model_window_tokens = 200000
+overflow_window_fraction = 0.8
+record_chars = 40000
+message_chars = 400
+register_lines = 40
+own_send_lookback_seconds = 1800.0
+own_sends_max = 6
+
+[dreamer]
+dir = "nora/dreamer"
+reload = "mtime"
+strict = true
+enabled = false
+tick_seconds = 300
+safety_lag = 300
+quiet_seconds = 1800
+max_age_seconds = 86400
+batch_limit = 400
+store_timeout_seconds = 15.0
+# max_unit_hold_seconds = 1200.0
+reasoning_effort = "none"
+
+model = "ollamacloud/deepseek-v4-flash:0731"
+max_tokens = 6000
+
+[dreamer.budgets.culture]
+turns = 10
+total_tokens = 120000
+output_tokens = 6000
+max_memory_calls = 12
+
+[dreamer.budgets.culture.tool_calls]
+lookup_person = 12
+
+[dreamer.budgets.cognition]
+turns = 200
+total_tokens = 10240000
+output_tokens = 120000
+timeout_seconds = 3600.0
+
+[dreamer.budgets.subagent]
+turns = 200
+total_tokens = 10240000
+output_tokens = 120000
+timeout_seconds = 3600.0
+
+[heartbeat]
+enabled = false
+tick_seconds = 60          # how often it wakes. Reminders fire at or after due_at,
+timeout_seconds = 120
+
+[reminders]
+max_pending_per_requester = 20
+min_lead_seconds = 120     # must exceed heartbeat.tick_seconds or Nora refuses to start
+max_horizon_days = 365     # furthest-out due date. Recurring series are bounded by
+max_occurrences_per_series = 60   # total firings in one recurring series (one pending row at a time)
+min_interval_seconds = 300 # fastest a series may repeat; 300 = at most 12 firings/hour.
+timezone = "Asia/Hong_Kong"   # IANA zone name (not an offset) a recurrence keeps its wall clock in
+
+[notes]
+enabled = false
+
+[culture]
+enabled = false
+wake_batch = 200
+stale_seconds = 604800
+batch_limit = 300
+
+[lessons]
+enabled = false
+wake_batch = 50
+stale_seconds = 604800
+horizon_seconds = 5184000
+batch_limit = 100
+render = false
+correction_quiet_seconds = 600
+check_model = ""
+check_reasoning_effort = ""            # "" = low
+check_timeout_seconds = 60
+check_max_tokens = 2048
+
+[standing]
+enabled = false
+max_chars = 1200
+fold_batch = 40
+timeout_seconds = 20.0
+store_timeout_seconds = 5.0
+max_slot_hold_seconds = 150.0
+model = ""
+reasoning_effort = "none"
+
+[assess]
+mode = "off"
+nightly_at = "03:00"                  # documentation only: nothing schedules a run; use your own cron or systemd timer
+timezone = "Asia/Hong_Kong"
+rollup_diff_window_seconds = 86400    # how far back the Rollup incremental-vs-batch check rebuilds when asked
+store_timeout_seconds = 5
+
 [media]
 enabled = true
-# Env var holding the base64 of a 32-byte AES-256 key (DEC-8: name the var, never
-# inline the secret). Host-injected. Generate:
-#   python -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"
-# Empty or var unset = custody off.
 encryption_key_env = "MEDIA_ENCRYPTION_KEY"
 max_bytes = 104857600     # 100 MiB, Signal's attachment ceiling
 timeout_seconds = 8.0     # ingest-path timeout
-# Settings for reading a stored image back through the vision model (the
-# `media_fetch` tool, DEC-56). All defaulted.
-# Model for image reads. Deprecated name kept so older configs load;
-# `[media.describe.image] model` overrides it when both are set. The sticker
-# reader uses the same model (DEC-114).
 vision_model = "ollamacloud/glm-5.3-flash"
-# Per-request completion-token allowance, shared by images, audio, every video
-# window and the text pass. The model reasons before answering, so a low value
-# truncates the read and it is reported `unavailable` (DEC-197). A cap, not a
-# reservation: a read that stops sooner costs no more.
 vision_max_tokens = 16384
 vision_reasoning_effort = "low"
 vision_max_bytes = 8388608   # 8 MiB, ~10.7 MiB base64 body; ceiling on bytes sent to the model
-# Ceiling on one vision call, in seconds. The effective per-call budget is
-# `min(this, llm.timeout_seconds * 0.6 / serial windows)`, where serial windows is
-# the number of windows one read awaits in sequence (an image or a clip up to
-# `chunk_seconds` is one). This value binds only when it is no larger than the
-# loop's 0.6 share; a multi-window clip divides the loop share instead. Raise it
-# if long windows time out and the loop timeout allows (DEC-197).
 vision_timeout_seconds = 120.0
-# Whether stickers are read by the model. Off excludes stickers from reads only;
-# the sticker identity ladder (repeat sightings cost no platform RPC) stays on
-# whenever `enabled` is on. On costs one model call per new sticker.
 sticker_descriptions = true
 
-# One model read per medium at ingest (image, video, sticker, voice note),
-# producing a title, a description and full legible content. The transcript shows
-# `[image a3f2c1: <title> - <description>]`; `media_fetch` serves the rest.
-#
-# The read runs in the background, never on the ingest path; custody stays inline.
-#
-# false = no model reads any media: handles in the body, nothing described,
-# and no description is claimed. A voice note's transcript is still written inline
-# to `media_objects.content` (but does not reach Honcho), and the sticker
-# identity ladder keeps working.
-# `sticker_descriptions` gates sticker reads only.
 comprehension = true
-# Cheap text pass that titles a voice note (over its STT transcript from
-# [speech.stt]) and a video (over its timecoded chunk run). It never re-listens
-# or re-watches.
-#
-# Empty = no text pass, and BOTH media keep what the expensive half produced: a
-# voice note keeps its words, a video its chunk run. Neither gets a title and the
-# transcript renders the run itself. Any text model on the gateway works,
-# including the image model. Worth setting for videos, where the run is a long prompt.
 comprehension_text_model = ""
-# Character bound on one attachment's title + description in the transcript.
-# Stored comprehension is unbounded and `media_fetch` serves it whole. Voice
-# notes are exempt.
 comprehension_render_chars = 240
-# Time limit, in seconds, on one media-join query. On expiry the render shows
-# bare `[image a3f2c1]` markers. Keep it below `[standing] store_timeout_seconds`.
 join_timeout_seconds = 3.0
-# Media reads in flight at once. A memory and quota limit, not throughput: each
-# holds a decrypted blob plus its base64 copy (8 MiB per still, 100 MiB per clip),
-# and a video makes up to chunk_max sequential model calls. Raise it if new media
-# is slow to become readable; lower it if container memory spikes on photo bursts.
 comprehension_max_concurrent = 4
 
-# Where the (always encrypted) blobs land (DEC-136). Off by default: blobs go to
-# `store.data_dir/media`. On, an S3-compatible store takes over; credentials are
-# named by env var (DEC-8). If it is misconfigured or unreachable, writes fall
-# back to the filesystem.
 [media.rustfs]
 enabled = false
 endpoint = ""              # e.g. "http://rustfs:9000"
@@ -327,98 +312,60 @@ bucket = "nora-media"
 access_key_env = "RUSTFS_ROOT_USER"      # RustFS root credentials, by env var name
 secret_key_env = "RUSTFS_ROOT_PASSWORD"
 
-# Image generation (DEC-137), provider-selectable; the xAI adapter uses Nora's
-# own X Premium subscription OAuth lane (quota-bounded, not per-call billing).
-# Off by default. While off, the `generate_image` tool answers `unavailable`.
-#
-# To enable: set `enabled = true`, run `nora xai-login` (device flow; appends
-# `XAI_OAUTH_REFRESH_TOKEN` to the host `.env`), then recreate the container.
-# The access token is not in `.env`; it lives in `./state/xai-oauth.json` and
-# refreshes from the `.env` refresh token.
+[media.describe.image]
+enabled = true
+model = "ollamacloud/glm-5.3-flash"
+provider = "omniroute"
+
+[media.describe.audio]
+enabled = true
+model = "mimo-v2.6-flash"
+provider = "opencode-go"
+
+[media.describe.video]
+enabled = true
+model = "mimo-v2.6-flash"
+provider = "opencode-go"
+max_bytes = 104857600
+chunk_seconds = 90
+chunk_max = 10
+
 [image_gen]
 enabled = false
 provider = "xai"
 
-# Reference images (editing a photo already in this conversation) upload to a
-# third-party cloud, so they are off by default. Only photos Nora already holds
-# in this conversation can be referenced, never an external URL.
 allow_reference_images = false
 
-# OAuth keepalive (DEC-308). With `enabled = true` the daemon refreshes every
-# OAuth lane whose token env var is set, whichever `provider` is selected, at the
-# earlier of the access token's expiry minus an hour and `refresh_interval_hours`
-# after the last refresh. xAI tokens live ~6 h, so xAI refreshes about every 5 h;
-# Codex tokens live ~10 days, so the interval drives it. 24 h keeps a lane well
-# inside the idle period after which a refresh token is refused. `keepalive = false`
-# turns a lane's keeper off (it then refreshes only when a call needs it).
-
 [image_gen.xai]
-# xAI adapter. `refresh_token_env` is the env var NAME holding the refresh token
-# (DEC-8); the login CLI writes it.
 model = "grok-imagine-image-2.0"
-# Model for the quality option. xAI is retiring `grok-imagine-image-quality`
-# and will serve it as the standard model at low quality; change it then.
 quality_model = "grok-imagine-image-quality"
 refresh_token_env = "XAI_OAUTH_REFRESH_TOKEN"
 timeout_seconds = 90.0
-# References per generate_image call. Unset = xAI's limit, 5 (DEC-307). May only
-# lower it (1..5, refused at load otherwise).
 # max_reference_images = 5
 keepalive = true
 refresh_interval_hours = 24.0
 
 [image_gen.openai_codex]
-# OpenAI gpt-image through the ChatGPT subscription (the `codex` CLI's lane),
-# used when `provider = "openai_codex"` (DEC-304). Its keys are read only when
-# selected; its login is kept alive whenever its token is set (`keepalive`).
-# `responses_model` is the text model hosting the image tool. Size and quality
-# are requests; the host model may choose differently.
-#
-# `refresh_token_env` names the env var holding the bootstrap token written by
-# `nora openai-codex-login`. OpenAI rotates refresh tokens on use: the first
-# refresh spends it and the rotated token lives in ./state/openai-codex-oauth.json
-# (losing that file means logging in again). Use Nora's own ChatGPT login, never a
-# copy of ~/.codex/auth.json. Two checkouts must not share this `.env` token with
-# separate ./state dirs; give each its own login.
 model = "gpt-image-2"
 responses_model = "gpt-5.5"
 standard_quality = "medium"
 high_quality = "high"
 refresh_token_env = "OPENAI_CODEX_REFRESH_TOKEN"
 timeout_seconds = 180.0
-# References per generate_image call. Unset = the gpt-image limit, 16 (DEC-307).
-# May only lower it (1..16, refused at load otherwise).
 # max_reference_images = 16
 keepalive = true
 refresh_interval_hours = 24.0
 
-# Video generation (`video_create`): MiniMax CN. A clip renders for one to three
-# minutes and is delivered later as a link through the compute poller, so
-# `enabled = true` requires `[compute] enabled = true` (refused at load
-# otherwise). Off by default: a 15 s clip uses about 11% of the CN plan's weekly
-# quota, shared with speech. Without the API key below the tool is withheld.
 [video_gen]
 enabled = false
 provider = "minimax_cn"
 resolution = "480P"                 # the only accepted value
 duration_seconds = 15
-# Aspect ratio. "adaptive" is not accepted.
 ratio = "3:4"
-# Privacy gate, as [image_gen]: a reference image leaves the host for a
-# third-party cloud. Only photos Nora holds (this conversation's, or her canonical
-# picture) can be references, sent as data: URIs.
 allow_reference_images = false
-# Same gate for reference clips and for audio (voice notes or other audio): each
-# separate and off by default. A voice note as reference lends that person's voice
-# to the clip. Each is fitted with ffmpeg before sending, not refused for format.
 allow_reference_video = false
 allow_reference_audio = false
-# Seconds of reference clip, and separately of audio, one create sends, shared
-# across references of that kind (6 to 15). Clip seconds are billed; audio is not.
 reference_seconds = 6.0
-# Hard cap on clips per room (platform + conversation) per local day (timezone
-# `tz_name` of [analytics]), counted from compute_jobs so a restart does not reset
-# it. Failed clips do not count. The old key `max_clips_per_day` is refused.
 max_clips_per_room_per_day = 1
 
 [video_gen.minimax_cn]
@@ -427,42 +374,152 @@ api_key_env = "MINIMAX_CN_API_KEY"   # env var name (DEC-8), the [speech.tts] ke
 host = "https://api.minimaxi.com"
 timeout_seconds = 45.0
 
-# Google routing for the `route` tool (DEC-46). Optional section; every key
-# defaults. Off by default because `route` costs money and calls Google Maps
-# Platform; while off the tool answers `unavailable`.
-#
-# `api_key_env` names the env var holding the key; the value is never in config
-# (DEC-8). Restrict the key at Google to Routes + Places + Geocoding and set a
-# budget alert.
+[speech]
+
+[speech.stt]
+enabled = false
+endpoint = "http://stt:8000"   # the deploy/stt service on the private nora network
+model = "noise-detection"      # STT engine: "noise-detection" (Cantonese whisper)
+language = "yue"               # the engine's own language code, not BCP-47
+
+[speech.tts]
+enabled = false
+provider = ""                  # "" = no speaker; set "minimax_cn" to speak. The API
+sidecars = []
+# voice = "Cantonese_CuteGirl" # a native Cantonese voice
+speed = 1.0                    # speaking rate, 0.5 to 2.0
+pitch = 0.0                    # semitones, -12 to 12
+vol = 1.0                      # volume, 0.1 to 10
+emotion = ""                   # e.g. "fluent"; "" lets MiniMax match the text.
+text_normalization = false     # vendor digit/English normalization (slightly slower)
+pronunciation = []             # entries "original/replacement", e.g. "RV/(aa1)(wai1)"; [] = off
+# duck_gain = 0.25             # music volume while she speaks (0<x<1); currently unread
+# duck_ramp_ms = 150           # ramp time for ducking, ms; currently unread
+
+[speech.tts.format]
+mode = "off"
+model = "nora-gate"            # model alias; "" = [llm] model
+reasoning_effort = "none"
+timeout_seconds = 2.0          # worst-case delay added before she is heard
+max_tokens = 1024
+min_chars = 12                 # fewer letters+digits than this: no model call
+max_chars = 200                # more than this: no model call
+
+[speech.wake]
+enabled = false
+threshold = 0.5                    # wake score that starts utterance collection
+model_path = "/app/models/喂Nora.onnx"  # wake model baked into the voice-wake image
+stt_model = "sensevoice"           # STT engine for the wake path, preloaded by the stt
+vad_enabled = true                 # end an utterance when Silero VAD hears no speech for
+vad_threshold = 0.5                # speech probability at/above this counts as speech
+silence_tail_ms = 800              # no-speech tail that ends an utterance
+max_utterance_s = 10.0             # utterance ceiling
+silence_rms = 400.0                # int16 RMS under this reads as silence (RMS fallback only)
+
+[music]
+enabled = false
+idle_timeout_seconds = 300.0
+crossfade_seconds = 0.0
+autoplay_enabled = false
+autoplay_prewarm_seconds = 0.0
+
 [route]
 enabled = false
 api_key_env = "GOOGLE_MAPS_API_KEY"
 
-# MCP tool providers. Off unless enabled = true; the token value goes in .env,
-# never here.
+[search]
+enabled = false
+provider = "tavily"              # "tavily" | "exa"
+# max_results = 5                 # at most 20
+# content_max_chars = 1500        # per-result snippet clamp
+# extract_max_chars = 3000        # fetched-page clamp
+# timeout_seconds = 12.0
+
+[search.tavily]
+api_key_env = "TAVILY_API_KEY"   # names the env var; the key never lives here (DEC-8)
+# url = "https://api.tavily.com/search"
+# extract_url = "https://api.tavily.com/extract"
+# search_depth = "basic"         # "basic" (1 credit) | "advanced" (2, richer)
+# extract_depth = "basic"        # "basic" (1 credit) | "advanced" (2, richer)
+# min_score = 0.1                 # relevance floor; 0.0 disables it
+
+[search.exa]
+api_key_env = "EXA_API_KEY"      # names the env var; the key never lives here (DEC-8)
+# url = "https://api.exa.ai/search"
+# contents_url = "https://api.exa.ai/contents"
+# type = "auto"                   # instant | fast | auto | deep-lite | deep | deep-reasoning
+# fetch_max_age_hours = 24        # web_fetch: cache younger than this, else crawl live
+
+[online]
+enabled = false
+api_key_env = "STEAM_WEB_API_KEY"
+# timeout_seconds = 8.0
+
+[social]
+enabled = false
+bridge_url = "http://127.0.0.1:19826"
+# timeout_seconds = 90.0                  # keep above the bridge's ~75 s subprocess timeout
+# content_max_chars = 4000                # retrieved-text clamp
+# story_expiry_enabled = false
+# story_media_keep_days = 7
+# story_media_keep_max_days = 30
+
+[social.instagram]
+enabled = false
+# base_url = "http://instagram-bridge:18082"   # private compose `nora` network; publishes nothing
+# timeout_seconds = 30.0
+
+[social.instagram.summons]
+enabled = false
+mode = "dry_run"
+# max_age_minutes = 60.0      # an older summons is recorded stale, never answered
+# handle = "noraexample"      # her username, removed from the question
+
+[social.poll]
+enabled = false
+# tick_seconds = 600.0            # how often the poller looks for members due
+# activity_multiplier = 3.0       # learned posting rhythm during current activity
+# floor_minutes = 30.0            # no member probed more often than this
+# ceiling_hours = 6.0             # every member probed at least this often
+# hourly_budget = 60              # upstream calls per hour for the login (a probe costs 2)
+# back_off_start_minutes = 15.0   # first pause after a rejected or rate-limited call
+# back_off_max_hours = 6.0        # the pause doubles up to this, until a clean probe
+# jitter_seconds = 10.0           # random pause of up to this before each call
+# perception_daily_cap = 200      # model calls per unit per day; past it, an item waits a day
+# backfill_full_history = false  # true walks every opted-in member to grid end, reopening old bounded walks
+# backfill_max_days = 90.0        # the back-fill pages history back to this age...
+# backfill_max_items = 50         # ...or this many back-filled items, whichever comes first
+# backfill_pages_per_tick = 2     # back-fill pages a tick, one per member, from what probes leave; 0 is off
+# relist_pages_per_tick = 2       # once-only re-walk pages a tick that re-check tagged places; 0 is off
+# recount_interval_hours = 24.0   # re-read a member's first page for its counts this long after their last list read; 0 is off
+
+[social.linkedin]
+enabled = false
+
+[preview]
+enabled = false
+# timeout_seconds = 3.0     # total fetch timeout; the reply path is waiting on it
+# max_bytes = 262144        # bytes of the document read (og tags are in <head>)
+# image = true              # also fetch og:image (the costlier half)
+# image_max_bytes = 262144
+
+[weather]
+enabled = false
+provider = "hko"           # only "hko" exists
+# url = "https://data.weather.gov.hk/weatherAPI/opendata/weather.php"
+# lang = "tc"              # HKO language: tc | en | sc
+# timeout_seconds = 8.0
+
 [tools.mcp.pulse]
 enabled = false
 base_url = "https://orion.tail0a1b2c3d.ts.net/pulse/mcp"
 token_env = "PULSE_MCP_TOKEN"
 budget = 5
 
-# Deferred delivery: a background poller that tells a room when a promised job has
-# finished. Supported backends are the optional sub-agent worker and MiniMax video
-# generation. Enable the relevant backend and its credentials/budgets as well as
-# [compute]; delivery also needs the fire path. With no backend, no poller starts.
 [compute]
 enabled = false
 # poll_tick_seconds = 10      # seconds between poller checks for a finished job; a lateness bound, not a deadline
 
-# Nora's computer (DEC-243, ADR 0019): the `computer_*` tools run commands and
-# move files on a per-room workspace in a VM served by computerd.
-# Off by default: every computer tool answers `unavailable` until enabled.
-# Enabling lets model-authored bash run on a VM on this host.
-#
-# Requires computerd listening at `base_url` and its bearer token in .env under
-# the name `token_env` gives (DEC-8: never put the value here). Startup refuses
-# if `enabled = true` and that variable is unset or empty.
-# Every call is recorded in the `computer_events` audit table.
 [computer]
 enabled = false
 # base_url = "http://172.17.0.1:18765"
@@ -474,40 +531,16 @@ enabled = false
 # max_read_chars = 20000         # one computer_read, cut beyond this
 # export_max_bytes = 26214400    # the largest file computer_export sends out (25 MiB; at most 50 MiB)
 # import_max_bytes = 26214400    # the largest attachment computer_import copies in (25 MiB; at most 50 MiB)
-# A computer_export link goes to the portal's /artifacts page ([documents]
-# public_url, ADR 0023); without a public_url a link export answers unavailable.
-#
-# Per-command resource limits are reserved: computerd ignores them today. Only
-# keys set here are sent, and only when at least one is.
 # [computer.limits]
 # cpu_seconds = 60
 # max_processes = 256
 # max_file_bytes = 1073741824
-#
-# Sessions: one task in progress per room, opened and continued by code on each
-# computer call. A session expires after idle_expiry_hours with no call and no
-# running tmux job; a running job keeps it open for up to max_running_days
-# without calls (the job is flagged in the audit and left running). It also
-# expires when every tmux session it held is gone and the room has been idle for
-# idle_after_minutes, which is also when an open session with no call and no
-# running job shows as idle. Expiry never ends a tmux job or deletes a file,
-# profile or audit row. An expired session shows as lapsed for
-# lapsed_visible_hours and is not resumed; the next call opens a new one.
 # [computer.sessions]
 # idle_expiry_hours = 24
 # max_running_days = 7
 # lapsed_visible_hours = 24
 # sweep_interval_seconds = 300
 # idle_after_minutes = 30
-#
-# The <computer> prompt block: what is on the computer for this room, rebuilt
-# each tag and fire turn from the live machine and the audit. It renders only in
-# a room that used the computer within active_days or has an open or lapsed
-# session; other rooms pay nothing. Each section is capped (extra items show as
-# "+N more"); files count only if changed within recent_file_days. max_tokens
-# caps the block body; past it the oldest lines drop first. If the machine read
-# exceeds read_timeout_seconds the block renders from the database alone. A good
-# read is cached per room for state_cache_seconds.
 # [computer.context]
 # active_days = 7
 # recent_file_days = 7
@@ -522,11 +555,6 @@ enabled = false
 # read_timeout_seconds = 1.5
 # state_cache_seconds = 30
 
-# computer_browse (ADR 0022): hands a whole browser task to a sub-agent in the
-# room's own Chrome, via computerd's CDP websocket. Off by default; needs
-# [computer] enabled. An empty model means [llm] model. max_steps counts page
-# actions; timeout_seconds bounds the whole task; turns, output_tokens and
-# total_tokens are its loop caps.
 # [computer.browse]
 # enabled = false
 # model = ""
@@ -539,107 +567,42 @@ enabled = false
 # total_tokens = 400000
 # read_chars = 6000
 
-# Presence collector (DEC-54, DEC-55): a separate process (`python -m nora.presence`)
-# that records circle members' location fixes in the `nora` database (plaintext).
-# The section is optional and every key has a default. Off by default: while off,
-# no collector or Life360 client is built and `whereis` answers `unavailable`.
-#
-# Credentials are named, never inlined (DEC-8): `client_credential_env` names the
-# env var holding the Basic client credential; `username_env` and `password_env`
-# name the account login.
-#
-# The poll interval is adaptive. `cadence_moving_seconds` is the floor while
-# anyone in the circle is driving; `cadence_still_seconds` is the ceiling a
-# stationary circle ramps toward. `cadence_seconds` is the base for the
-# auth-failure back-off, which always wins over the moving floor (a Life360 429
-# lengthens the sleep). Keep the band about 15-300 s; set all three equal for a
-# fixed interval. The collector writes only when a member's position advances.
-# `retention_days` is the prune window; long retention keeps forecasting
-# training data. `metrics_port` serves the daemon's own /metrics and /health
-# (separate from obs.metrics.port because it is a separate process).
-#
-# No ids live here. Circle membership is in identity.toml: each person gets a
-# `[[persons.<id>.life360]]` block with `member_id` and `circle_id` (`nora
-# presence members` prints both); circles are grouped by circle_id. Startup
-# refuses if enabled with no life360 block, or a block without a circle_id.
+[documents]
+enabled = false
+public_url = ""
+
+[external_files]
+enabled = false
+sources = ["google_drive"]
+
+[google]
+client_id_env = "GOOGLE_OAUTH_CLIENT_ID"
+client_secret_env = "GOOGLE_OAUTH_CLIENT_SECRET"
+refresh_token_env = "GOOGLE_OAUTH_REFRESH_TOKEN"
+
+[subagent]
+enabled = false
+reasoning_effort = "low"
+
 [presence]
 enabled = false
 client_credential_env = "LIFE360_CLIENT_CREDENTIAL"
 username_env = "LIFE360_USERNAME"
 password_env = "LIFE360_PASSWORD"
-# Optional. If Life360 refuses the password grant despite a correct password
-# (accounts with a verified phone number), put the LIFE360_AUTH_TOKEN cookie
-# from a life360.com browser login in this env var. Token mode never sends the
-# password; a rejected token raises the `token_rejected` alarm.
 auth_token_env = "LIFE360_AUTH_TOKEN"
 cadence_seconds = 90
-# Adaptive cadence: floor while a circle has a driver, ceiling once it has been
-# still long enough to ramp.
 cadence_moving_seconds = 5
 cadence_still_seconds = 60
 retention_days = 720
 metrics_port = 9101
-# On-demand live refresh (DEC-67): where_is pings the phone for a fresh position
-# before answering. `refresh_url` is the collector's HTTP endpoint as Nora
-# reaches it (the compose service name, e.g. "http://presence:9101"); empty
-# leaves where_is read-only, answering from the last stored fix.
 refresh_url = ""
 refresh_timeout_seconds = 8
-# Reverse-geocode backend: "google" (default; needs GOOGLE_MAPS_API_KEY) or
-# "hkgov" (HK-gov LandsD ArcGIS locator). Both are optional; with no credential
-# there is no geocoder and fixes keep the coordinate or Life360 label. For
-# hkgov, set the full .../reverseGeocode service URL and the token env var from
-# your LandsD Map API account, and set hkgov_lang_zh/_en to the langCode strings
-# your locator accepts.
 # geocode_provider = "hkgov"
 # hkgov_geocode_url = "https://api.hkmapservice.gov.hk/.../GeocodeServer/reverseGeocode"
 # hkgov_token_env = "HKGOV_MAPS_TOKEN"
 # hkgov_lang_zh = "zh"
 # hkgov_lang_en = "en"
 
-[memory.graph]
-# Code projections and parallel work queue only; no model calls or prompt reads.
-enabled = false
-
-[memory.extraction]
-# Record writer only: no readers, index projection, history backfill or Character consumption.
-enabled = false
-# Existing OmniRoute/Ollama Cloud Flash route; shared [llm] endpoint and API-key environment.
-# This lane never inherits a tag or synthesis model. V4 Pro and MiniMax are refused.
-model = "ollamacloud/deepseek-v4.1-flash"
-messages_per_call = 20
-context_messages = 20
-# The first queued source must reach this age before a batch is formed.
-min_message_age_seconds = 2.0
-timeout_seconds = 90.0
-# Per-call ceiling, not a daily budget. Truncated responses fail closed and retry.
-max_tokens = 6000
-
-# Memory index: a projection written by every store's own write. A failed
-# projection is queued and re-projected every `refresh_seconds`. `nora memory
-# rebuild` rebuilds the whole index. `read` selects ONE memory tool surface
-# (DEC-316): on, `memory_search` answers from the index (scoped to the room's
-# unit) and no Honcho tool is offered (`ask_memory`, `search_memory`,
-# `search_memory_workspace`, `who_said`, `about`, `remember`); off, those
-# Honcho tools and no `memory_search`.
-[memory.index]
-refresh_seconds = 60.0
-read = false
-# Embedding worker: needs the `embedder` compose service (`--profile embedder`).
-# `embedder_model` is `<gguf file name>@<sha256 prefix>`; the worker embeds only
-# while the service reports loading that file. It is part of every stored
-# vector's fingerprint, so changing it clears and re-embeds all vectors. With
-# `read` also on, `memory_search` seeds from the question's vector and pins
-# literal names, handles, URLs and ids; the trigram seed is the fallback
-# (embedder down or no vectors yet) and answers `partial`.
-embed = false
-embedder_url = "http://embedder:8080"
-embedder_model = "Qwen3-VL-Embedding-2B.Q4_K_M.gguf@7812c91cd1e0"
-embed_batch = 64
-embed_images_per_hour = 120
-
-# Presence analytics: the derived layer computed from presence fixes (DEC-115).
-# Off by default; turning it on is an operator decision. Computation knobs only.
 [analytics]
 enabled = false
 # tick_seconds = 120
@@ -678,449 +641,7 @@ enabled = false
 # tz_name = "Asia/Hong_Kong"
 # metrics_port = 9103
 
-# Optional web search and page fetch through remote Tavily or Exa APIs.
-# Off by default; enable the section and supply the selected provider's key.
-# Both tools answer `unavailable` while disabled or without a usable provider.
-# Provider-neutral caps bound text re-sent on later model calls.
-[search]
-# web_search + web_fetch (DEC-73, DEC-116): web_search returns ranked results
-# with content, web_fetch opens a specific link; both crawl from the provider's
-# servers. To enable, set enabled = true and export the key named by the chosen
-# backend's api_key_env.
-enabled = false
-# The search backend (DEC-157); everything else is the same whichever you pick.
-provider = "tavily"              # "tavily" | "exa"
-# Provider-neutral caps on what re-enters the model's input on every later call.
-# max_results = 5                 # at most 20
-# content_max_chars = 1500        # per-result snippet clamp
-# extract_max_chars = 3000        # fetched-page clamp
-# timeout_seconds = 12.0
-
-[search.tavily]
-api_key_env = "TAVILY_API_KEY"   # names the env var; the key never lives here (DEC-8)
-# url = "https://api.tavily.com/search"
-# extract_url = "https://api.tavily.com/extract"
-# search_depth = "basic"         # "basic" (1 credit) | "advanced" (2, richer)
-# extract_depth = "basic"        # "basic" (1 credit) | "advanced" (2, richer)
-# min_score = 0.1                 # relevance floor; 0.0 disables it
-#
-# min_score applies to Tavily only (DEC-157): Exa results carry no score, so
-# choosing "exa" gives up this floor.
-
-[search.exa]
-api_key_env = "EXA_API_KEY"      # names the env var; the key never lives here (DEC-8)
-# url = "https://api.exa.ai/search"
-# contents_url = "https://api.exa.ai/contents"
-# type = "auto"                   # instant | fast | auto | deep-lite | deep | deep-reasoning
-# fetch_max_age_hours = 24        # web_fetch: cache younger than this, else crawl live
-#
-# fetch_max_age_hours: unset, Exa serves web_fetch from its cache however old.
-# 0 always crawls live (2-5 s); -1 always uses the cache. A failed live read
-# falls back to the cache once and tells the model it is an older copy.
-# web_search always uses the cache.
-#
-# The three deep* types run multi-step research and routinely outrun
-# timeout_seconds, which is sized for one round trip. Raise it before choosing
-# one, or every call is `unavailable`.
-#
-# Exa may cut a page server-side to the maxCharacters Nora sends; Nora reports
-# such a page as `truncated`.
-
-[online]
-# online_now: read-only live activity for the room: who is online, who is
-# playing what (Steam), who is in a voice channel (Discord). Off by default;
-# while off, the `online`/`playing` arms answer `unavailable`.
-#
-# This section gates the Steam half only. The `voice` arm reads the live Discord
-# client and works whenever the Discord platform is enabled.
-enabled = false
-# Names the env var holding the Steam Web API key; never put the key here
-# (DEC-8). If enabled with the variable unset, a warning is logged and the Steam
-# half stays unavailable.
-api_key_env = "STEAM_WEB_API_KEY"
-# Bounds the single batched GetPlayerSummaries call a question costs. It runs on
-# the reply path, so a dead Steam API costs seconds and an `unavailable`.
-# timeout_seconds = 8.0
-
-[social]
-# x_read and x_search (DEC-201): read-only X access through the host-side OpenCLI
-# bridge (`python -m nora.infra.social`, a systemd user service; see
-# deploy/social-bridge/). Instagram is configured under [social.instagram]
-# below. Keyless, so `enabled` is the only gate; off by default. The bridge
-# enforces an allowlist of read-only commands, so posting, liking, following
-# and deleting are not reachable.
-enabled = false
-# Where Nora's container reaches the host-side bridge. On the compose `nora`
-# network use `http://host.docker.internal:19826`; the loopback value below
-# suits host networking.
-bridge_url = "http://127.0.0.1:19826"
-# timeout_seconds = 90.0                  # keep above the bridge's ~75 s subprocess timeout
-# content_max_chars = 4000                # retrieved-text clamp
-# A story frame's media bytes, kept in custody by [social.poll], are deleted
-# story_media_keep_days after the frame expires once its media is both perceived
-# and embedded, and story_media_keep_max_days after it expires whatever is done.
-# The memory index embeds no social item yet, so only the second bound deletes
-# today. Its rows and its description stay; posts and reels keep their bytes.
-# Off by default: nothing is deleted until story_expiry_enabled = true, and
-# setting it back to false (and recreating) stops the deletions.
-# story_expiry_enabled = false
-# story_media_keep_days = 7
-# story_media_keep_max_days = 30
-
-[social.instagram]
-# Instagram backend for instagram_read and instagram_search: a person's profile
-# and current story, and accounts matching a name or handle, via the
-# instagram-bridge container. Separate from [social] because it needs a
-# co-networked container holding an authenticated Instagram session, not a host
-# service.
-#
-# Off by default. Turning it on also needs identity.toml to carry each person's
-# `igid` ([[persons.<id>.instagram]]): reads name a person, never a handle. A
-# person with no igid answers "no Instagram account on file", one with two is
-# ambiguous, and a story is read only for someone listed in a group room of
-# policy.toml: by instagram_read on a turn where somebody asked, or by the
-# poller of [social.poll] below.
-#
-# Keep `enabled` written out so a mistyped key in this section is caught at load.
-enabled = false
-# base_url = "http://instagram-bridge:18082"   # private compose `nora` network; publishes nothing
-# timeout_seconds = 30.0
-
-[social.instagram.summons]
-# Public summons: somebody in identity.toml tags her in a comment under an
-# Instagram post, and she answers once in the comments. Needs [social.instagram]
-# enabled (refused at load otherwise). Only identity.toml people can summon her,
-# matched by igid. Summons arrive as the bridge's `summons` SSE event; while off,
-# each is counted and dropped.
-#
-# Three switches, all off here. `enabled` starts the consumer. `mode` is
-# "dry_run" (the turn runs and her would-be reply is stored in the
-# instagram_summons table, nothing is posted) or "live". The bridge also posts
-# nothing unless its own INSTAGRAM_COMMENT_WRITES=on, which Nora cannot set.
-enabled = false
-mode = "dry_run"
-# poll_seconds                # deprecated, ignored
-# max_age_minutes = 60.0      # an older summons is recorded stale, never answered
-# handle = "noraexample"      # her username, removed from the question
-
-[social.poll]
-# The social stream's poller: each member's Instagram account (a person listed in
-# a group room of policy.toml, with exactly one igid in identity.toml) is probed,
-# and their story or their newest posts and reels are read only when the probe
-# says something changed. New items are recorded with their media in custody.
-# From a member's first list read, their past posts and reels are paged back
-# (the back-fill) with what the probes leave of the hour's budget.
-# Needs [social.instagram] enabled (refused at load otherwise). It reads through
-# the login Nora's Instagram messaging uses: a checkpoint halts it until the
-# bridge reports the session healthy again.
-#
-# With [media] comprehension on, a second pass perceives each new item's media
-# under a per-unit daily cap of MODEL CALLS: one per image, and per video one
-# per [media.describe.video] chunk_seconds window (up to chunk_max) plus one text
-# pass. Polled items go first; back-filled history may use at most half of what
-# they leave. An item that fails three times, or for good, is not read again. A read
-# that recorded new items then raises one `social` stimulus for the person,
-# with [cognition] enabled. The day is [cognition] timezone's.
-enabled = false
-# tick_seconds = 600.0            # how often the poller looks for members due
-# activity_multiplier = 3.0       # learned posting rhythm during current activity
-# floor_minutes = 30.0            # no member probed more often than this
-# ceiling_hours = 6.0             # every member probed at least this often
-# hourly_budget = 60              # upstream calls per hour for the login (a probe costs 2)
-# back_off_start_minutes = 15.0   # first pause after a rejected or rate-limited call
-# back_off_max_hours = 6.0        # the pause doubles up to this, until a clean probe
-# jitter_seconds = 10.0           # random pause of up to this before each call
-# perception_daily_cap = 200      # model calls per unit per day; past it, an item waits a day
-# backfill_full_history = false  # true walks every opted-in member to grid end, reopening old bounded walks
-# backfill_max_days = 90.0        # the back-fill pages history back to this age...
-# backfill_max_items = 50         # ...or this many back-filled items, whichever comes first
-# backfill_pages_per_tick = 2     # back-fill pages a tick, one per member, from what probes leave; 0 is off
-# relist_pages_per_tick = 2       # once-only re-walk pages a tick that re-check tagged places; 0 is off
-# recount_interval_hours = 24.0   # re-read a member's first page for its counts this long after their last list read; 0 is off
-
-[social.linkedin]
-# linkedin_read and linkedin_search (DEC-201): read-only LinkedIn through the same
-# host-side OpenCLI bridge as X, so [social] must be enabled too (refused at
-# load otherwise). The social Chrome must be logged into a dedicated LinkedIn
-# account with profile viewing set to private (Settings, Visibility, Profile
-# viewing options), since every read opens a profile as that account. While off,
-# both tools answer that LinkedIn is not set up.
-enabled = false
-
-[preview]
-# Link-preview cards on outbound replies: when a reply carries a URL, Nora
-# fetches its OpenGraph tags and attaches a title/description (and image) card.
-# Optional, off by default, keyless. Enabling makes Nora fetch model-supplied
-# URLs from her own network (http(s) only, globally routable addresses only,
-# redirects re-validated per hop, byte and time limits applied).
-enabled = false
-# timeout_seconds = 3.0     # total fetch timeout; the reply path is waiting on it
-# max_bytes = 262144        # bytes of the document read (og tags are in <head>)
-# image = true              # also fetch og:image (the costlier half)
-# image_max_bytes = 262144
-
-[weather]
-# The `weather` tool (DEC-72): HK Observatory Open Data. Optional, off by
-# default; keyless, so enabling needs no key and has no cost.
-enabled = false
-provider = "hko"           # only "hko" exists
-# url = "https://data.weather.gov.hk/weatherAPI/opendata/weather.php"
-# lang = "tc"              # HKO language: tc | en | sc
-# timeout_seconds = 8.0
-
-[speech]
-# Voice. STT transcribes Cantonese voice notes at ingest through the local
-# deploy/stt service (audio stays on the host). TTS speaks replies in voice
-# channels through MiniMax's CN cloud endpoint (reply text leaves the host).
-# Both are optional and off by default.
-[speech.stt]
-enabled = false
-endpoint = "http://stt:8000"   # the deploy/stt service on the private nora network
-model = "noise-detection"      # STT engine: "noise-detection" (Cantonese whisper)
-                               # or "sensevoice" (FunASR)
-language = "yue"               # the engine's own language code, not BCP-47
-
-# Setting enabled = true lets a 「喂 Nora」 wake answer aloud in the voice
-# channel; leave false until voice answers are wanted.
-[speech.tts]
-enabled = false
-provider = ""                  # "" = no speaker; set "minimax_cn" to speak. The API
-                               # key is read from the env var named by api_key_env
-                               # (default MINIMAX_CN_API_KEY), never from this file.
-# One audio controller per Discord guild; it alone owns that guild's voice
-# connection. Empty = voice unwired; joins and speech fail closed. This list is
-# the join allow-list (where speech is recorded is policy.toml `voice = true`).
-# One entry per guild; the sidecar process can be shared, so endpoints are
-# usually identical. Example:
-#
-#   sidecars = [
-#     { guild = "<guild_id>", endpoint = "http://voice-sidecar:4600" },
-#     { guild = "<other_id>", endpoint = "http://voice-sidecar:4600" },
-#   ]
-sidecars = []
-# voice = "Cantonese_CuteGirl" # a native Cantonese voice
-speed = 1.0                    # speaking rate, 0.5 to 2.0
-pitch = 0.0                    # semitones, -12 to 12
-vol = 1.0                      # volume, 0.1 to 10
-emotion = ""                   # e.g. "fluent"; "" lets MiniMax match the text.
-                               # "whisper" is refused (unsupported)
-text_normalization = false     # vendor digit/English normalization (slightly slower)
-pronunciation = []             # entries "original/replacement", e.g. "RV/(aa1)(wai1)"; [] = off
-# duck_gain = 0.25             # music volume while she speaks (0<x<1); currently unread
-# duck_ramp_ms = 150           # ramp time for ducking, ms; currently unread
-[speech.tts.format]
-# Fits a spoken reply to the TTS voice; only the spoken copy changes, never the
-# recorded reply. mode:
-#   off       reply goes to MiniMax as written
-#   normalise emoji, markdown and stray symbols removed; no model call
-#   model     normalise, then one cheap call may add pauses <#x#> and
-#             interjection tags; used only if every letter and digit is
-#             unchanged, otherwise the normalised reply is spoken
-mode = "off"
-model = "nora-gate"            # model alias; "" = [llm] model
-reasoning_effort = "none"
-timeout_seconds = 2.0          # worst-case delay added before she is heard
-max_tokens = 1024
-min_chars = 12                 # fewer letters+digits than this: no model call
-max_chars = 200                # more than this: no model call
-[speech.wake]
-# Wake gate (「喂 Nora」 in a Discord voice channel), run by the voice-wake
-# container, which reads this file at startup; changes need `docker compose
-# restart voice-wake`. One gate serves every guild. STT endpoint, language and
-# timeout come from [speech.stt]. Optional, off by default.
-enabled = false
-threshold = 0.5                    # wake score that starts utterance collection
-model_path = "/app/models/喂Nora.onnx"  # wake model baked into the voice-wake image
-stt_model = "sensevoice"           # STT engine for the wake path, preloaded by the stt
-                                   # service at boot (another engine loads cold on first
-                                   # wake); voice notes use [speech.stt].model
-vad_enabled = true                 # end an utterance when Silero VAD hears no speech for
-                                   # silence_tail_ms; false = RMS loudness fallback
-vad_threshold = 0.5                # speech probability at/above this counts as speech
-silence_tail_ms = 800              # no-speech tail that ends an utterance
-max_utterance_s = 10.0             # utterance ceiling
-silence_rms = 400.0                # int16 RMS under this reads as silence (RMS fallback only)
-
-[heartbeat]
-# Background tick that fires due reminders. Optional, off by default.
-enabled = false
-tick_seconds = 60          # how often it wakes. Reminders fire at or after due_at,
-                           # never before; a busy conversation defers its group to
-                           # a later tick, so lateness can exceed this.
-# Bound on one tick's turn, in seconds. Independent of [llm].timeout_seconds
-# (that one bounds a turn a human waits on; this bounds an unattended turn).
-timeout_seconds = 120
-
-[reminders]
-# Caps on reminder creation; apply whether or not [heartbeat] is firing.
-max_pending_per_requester = 20
-min_lead_seconds = 120     # must exceed heartbeat.tick_seconds or Nora refuses to start
-max_horizon_days = 365     # furthest-out due date. Recurring series are bounded by
-                           # max_occurrences_per_series instead; a rule whose period
-                           # exceeds this (yearly) gets one period of headroom (DEC-85).
-max_occurrences_per_series = 60   # total firings in one recurring series (one pending row at a time)
-min_interval_seconds = 300 # fastest a series may repeat; 300 = at most 12 firings/hour.
-                           # Cannot go below 60 (heartbeat.tick_seconds).
-timezone = "Asia/Hong_Kong"   # IANA zone name (not an offset) a recurrence keeps its wall clock in
-
-
-[notes]
-# Note tier. Optional, off by default. On, every tag reads the room unit's note
-# index as <notes> and holds the note tools (`note_create`/`note_revise`; DEC-105,
-# R-55); the background writer is the Cognition session ([cognition]). Off, no
-# store is built and the block never appears.
-enabled = false
-
-[culture]
-# Culture tier. Optional, off by default. On, a background pass reads each
-# room's messages and appends one short, message-cited account of what the room
-# is and why (how they talk, decide, name themselves); it reads no presence or
-# Standing (R-31).
-# Enabling also changes live prompts: the room's account renders as <culture>
-# in tag turns, fire occasions and the Standing fold (DEC-207), and Cognition
-# reads accounts through `character_read` (never the Relevance Gate). There is
-# no separate read switch. A room renders nothing until its first fold.
-# Accounts never expire or retire.
-# Also writes per-person accounts (<character>), per-unit accounts
-# (<unit_culture>) and Nora's own per-unit account (<self>, first in every tag,
-# fire and Cognition prompt; needs at least three cited episodes). All follow
-# `enabled`.
-enabled = false
-# New human messages in a room that wake its fold at once (DEC-288).
-wake_batch = 200
-# Seconds since a room's last fold after which any new human message wakes it.
-stale_seconds = 604800
-# Messages read per room fold (persons and Nora use their own batch sizes). The
-# batch is the corpus the account is written from, so this sets how much the
-# model sees; it is not a throttle.
-batch_limit = 300
-
-[memory.profile]
-# Profile sessions: one Dreamer session per (unit, listed person) writes typed
-# lines. Prompts read them only when write and read are both true; otherwise
-# the sessions write in shadow. Woken
-# like the person's Character session ([memory.profile.person] update_every_messages and
-# [memory.profile] update_every_seconds) and at once by a fact a turn's `remember` wrote about them.
-# Each person's first session is the backfill. Needs [dreamer] and [culture].
-write = false
-# The switch (step 8): prompts render each entity's Profile account as
-# <profile> INSTEAD of the peer card/history and the prose culture/character/
-# self blocks. Off is the shadow: the sessions keep writing and prompts render
-# what they always have, so flipping this back is the whole rollback. Ignored
-# unless `write` is on.
-read = false
-# Seconds since a Profile update after which new evidence wakes its writer.
-# Independent of [culture] stale_seconds, which still controls the room fold.
-update_every_seconds = 604800
-
-[memory.profile.person]
-# New messages by a person across their unit's rooms that wake their Profile.
-update_every_messages = 100
-
-[memory.profile.unit]
-# Room Profile changes that wake the unit Profile writer.
-update_every_room_profile_changes = 5
-
-[memory.profile.nora]
-# Replies with closed response episodes that wake Nora's Profile writer.
-update_every_replies = 100
-
-[lessons]
-# Lessons. Optional, off by default. On, one background session per unit reads
-# her messages whose response window has closed (with the replies, reactions and
-# silence that followed) and writes lessons, each citing at least three of those
-# episodes, through checked write verbs (`nora lessons list` to read,
-# `retire`/`rollback` to undo). Requires [dreamer] enabled; its model budget is
-# [dreamer.budgets.culture]'s unless a [dreamer.budgets.lessons] block is set.
-# Lessons render into prompts only when `render` is true.
-enabled = false
-# Closed episodes in a unit that wake its session at once.
-wake_batch = 50
-# Seconds since a unit's last session after which any new closed episode wakes it.
-stale_seconds = 604800
-# A lesson not written or reinforced for this long is retired (5184000 = 60 days).
-horizon_seconds = 5184000
-# Closed episodes one session is handed (the newest).
-batch_limit = 100
-# Render the unit's active lessons as <lessons> on tag and fire turns, after
-# <self>. Changes what she reads (DEC-301).
-render = false
-# A message addressed to her that reads as an instruction about how she acts
-# ("stop", "唔好", "next time") wakes the unit's session once it is this many
-# seconds old, instead of waiting for wake_batch. 0 = off.
-correction_quiet_seconds = 600
-# Doctrine check: a separate model call reads each lesson against the law before
-# it is written; a conflict is refused and kept as a tension row (`nora lessons
-# tensions`). "" = [llm] model. Must differ from the Dreamer's model or config
-# refuses to load.
-check_model = ""
-check_reasoning_effort = ""            # "" = low
-check_timeout_seconds = 60
-check_max_tokens = 2048
-
-[standing]
-# Standing tier (debrief stage). Optional, off by default. On, a second model
-# reads each finished turn and revises one short paragraph on where the
-# conversation stands, injected as <standing> at the top of the next turn. Off,
-# no fold runs and the block never appears.
-# Unlike [notes] this runs inside the conversation's slot right after the reply,
-# so its cost lands on the next person queued behind a busy conversation.
-enabled = false
-# Operating cap on the paragraph, in characters. The database has an absolute
-# ceiling of 4000; a larger value refuses to start. The block is injected on
-# every turn (about 300 tokens per 1200 characters in English, up to ~1200 in
-# CJK-heavy rooms). A fold that will not fit is refused and the model is asked
-# to consolidate; nothing is truncated.
-max_chars = 1200
-# Rows one fold reads and the event trigger's accumulator threshold (one number):
-# each fold reads the next fold_batch rows after its watermark, capped at 40.
-fold_batch = 40
-# The fold's model-call timeout, in seconds. It counts twice toward the slot
-# hold below (client timeout and the wrapper around the fold).
-timeout_seconds = 20.0
-# Timeout for each of the stage's five store calls (prior position, watermark
-# batch, media join, revised position, note proposals), in seconds. They run
-# while the conversation's slot is held, so keep it small.
-store_timeout_seconds = 5.0
-# Ceiling, in seconds, on the whole hold the stage may add to a conversation's
-# slot. Startup refuses if timeout_seconds + 5 x store_timeout_seconds exceeds it
-# (20 + 5 x 5 = 45); [llm] timeout_seconds is not a term. Shorten the hold with
-# store_timeout_seconds or timeout_seconds, not this value. A config omitting
-# the key gets the code default of 60.
-max_slot_hold_seconds = 150.0
-# Model for the fold. Empty = [llm] model; set a cheaper or more literal one if wanted.
-model = ""
-# Reasoning budget for the fold. One of: none, minimal, low, medium, high,
-# xhigh, max (checked at startup). Empty = inherit [llm] reasoning_effort.
-reasoning_effort = "none"
-
-[music]
-# Discord music bot. Optional, off by default. On, with [platforms.discord]
-# enabled, /music play|skip|queue|pause|resume|stop register as slash commands
-# (a deterministic per-guild player, never model-mediated). Off, they are not
-# registered.
-enabled = false
-# With the queue empty and nothing playing, end the music session after this
-# many seconds. The audio controller keeps the voice connection (e.g. for wake).
-# When humans leave the voice channel the controller leaves immediately.
-idle_timeout_seconds = 300.0
-# Accepted but effectively zero: tracks advance on actual completion and the
-# controller reports crossfade_seconds: 0.
-crossfade_seconds = 0.0
-# False: leave after idle_timeout_seconds once the queue empties. True: seed a
-# YouTube "Mix" recommendation from the finished track instead (opt-in).
-autoplay_enabled = false
-# At 0 the next autoplay track is picked only after the current one ends (audible gap).
-# Above 0, it is resolved that many seconds ahead so the next track starts at once.
-# Only used with autoplay_enabled; 12.0 is a reasonable start on a slow network.
-autoplay_prewarm_seconds = 0.0
-
 [otp]
-# One-time codes sent by direct message on Signal or WhatsApp, used for the
-# portal's sign-in and for adopting a person. A code goes only to a person in
-# identity.toml, at their Signal or WhatsApp account there, and is requested by
-# phone number (or Signal ACI), never by person_id.
-# Optional, off by default: no service is built and /app/v1/otp/* is not mounted.
 enabled = false
 # secret_env = "NORA_OTP_SECRET"        # HMAC key codes are hashed under; required when enabled
 # api_token_env = "NORA_OTP_API_TOKEN"  # bearer the portal sends; required when enabled
@@ -1128,6 +649,9 @@ enabled = false
 # max_attempts = 5                      # wrong codes before it dies
 # max_per_hour = 5                      # codes one person can be sent in an hour
 # max_per_day = 10                      # and in a day: bounds messages and guesses
+
+[content_checks]
+enabled = false
 
 [doctrine]
 dir = "nora/doctrine"
@@ -1137,250 +661,8 @@ language_hint = "yue-Hant-HK"         # BCP 47 (RFC 5646): Cantonese, Traditiona
 canary = "CHANGE-ME-PER-DEPLOYMENT"   # fixed string; R-6 leak sentinel
 display_name = "Nora"
 
-[dreamer]
-# The Dreamer's instruction corpus: `doctrine/` (one file, applies to every run) and
-# `objectives/` (one per adaptor). Bind-mounted read-only, so an edit is live on the
-# next tick with no rebuild: any pull on the deploy host is a deploy.
-dir = "nora/dreamer"
-reload = "mtime"
-strict = true
-# Master switch for the Dreamer runtime. Off (default): nothing is constructed and no adaptor ticks.
-enabled = false
-# Clock for the loop that ticks every scheduled adaptor.
-#
-# Wake interval, seconds. Best case for lateness, not a bound.
-tick_seconds = 300
-# Fire once an adaptor has this many unread messages, however recently the room spoke.
-safety_lag = 300
-# Fire when there is some lag plus this many seconds of room silence.
-quiet_seconds = 1800
-# Fire when the watermark row is this old (seconds), even at zero lag. The only
-# condition that reaches a quiet room.
-max_age_seconds = 86400
-# Most messages one cycle reads. A per-adaptor schedule entry overrides it.
-batch_limit = 400
-# Per-call-site timeout (seconds) for a store call. The runtime multiplies it by an
-# adaptor's `store_calls_per_tick` to bound its `inputs` and `commit` phases. On
-# timeout the unit is released. Sized for the slowest adaptor's degraded case;
-# raise only against evidence that legitimate runs are cut off, never to quiet an alarm.
-store_timeout_seconds = 15.0
-# Wall clock (seconds) around one whole (adaptor, key) unit cycle; on timeout the unit
-# is released. Unset (default): derived at load from the model budgets and store bounds
-# plus a 300s margin, so it follows edits to any `[dreamer.budgets.*]` block. Set it
-# only to require more headroom; startup refuses a value that does not exceed the
-# derived known-bounded minimum. Raise it only if the wall clock cuts off a legitimate
-# run, never to get past that refusal.
-# max_unit_hold_seconds = 1200.0
-# Reasoning effort for background passes. "none" because reasoning counts as completion
-# tokens and a low effort can spend the whole budget before any answer, returning an
-# error or an empty result. `""` inherits `[llm] reasoning_effort`.
-reasoning_effort = "none"
-
-# Model the Dreamer runs; the same as Nora's.
-model = "ollamacloud/deepseek-v4-flash:0731"
-# Provider ceiling on ONE Dreamer completion, tokens; `0` inherits `[llm] max_tokens`.
-# Not the same as `[dreamer.budgets.*] output_tokens`, the loop budget, which ends the
-# loop quietly without raising. Hitting this ceiling truncates the reply ("model cut
-# off at max_tokens"). The inherited tag-turn ceiling is too small for batch passes,
-# so it is set explicitly. If a pass truncates, raise this, and keep the loop budget a
-# multiple of it.
-max_tokens = 6000
-
-# Culture fold budget. The fold researches with read verbs before it writes, and each
-# turn re-sends the full context, so the defaults are too small. A cut loop holds the
-# watermark and retries the batch; the third cut in a row skips past it and that
-# batch is lost (DEC-280). `output_tokens` must let the loop emit a
-# realistic account twice (tool-call arguments, then the account); keep it well above
-# that, and raise `[dreamer] max_tokens` rather than this if a fold truncates. Removing
-# this block leaves a fold that cannot finish.
-[dreamer.budgets.culture]
-turns = 10
-total_tokens = 120000
-output_tokens = 6000
-# Memory reads per pass. Raised above the default because the pass resolves several
-# room members. Past the ceiling a read returns `unavailable` with a reason. Must be
-# raised together with the per-tool ceiling below: this one binds first for memory tools.
-max_memory_calls = 12
-
-# Per-tool call ceilings for this fold. A key naming a verb the adaptor does not
-# declare refuses startup.
-[dreamer.budgets.culture.tool_calls]
-lookup_person = 12
-
-# Cognition session budget (DEC-247). Required when the cognition section is enabled;
-# config refuses to load without it. Sessions are bounded by rounds, tokens and time
-# only: `max_memory_calls`, `max_tool_calls` and a `tool_calls` table are refused at
-# load for this adaptor. Uses `[dreamer] model`; the per-call ceiling is `[dreamer]
-# max_tokens`, not this block. `timeout_seconds` must end at least
-# 60s before the cognition section's `session_timeout_seconds` (3900) or the runner
-# refuses to start. Starting values, not tuned. Do not state these limits in the prompt.
-[dreamer.budgets.cognition]
-turns = 200
-total_tokens = 10240000
-output_tokens = 120000
-timeout_seconds = 3600.0
-
-# Sub-agent worker budget (DEC-247): rounds, tokens and a wall clock only. Per-tool
-# keys (`max_memory_calls`, `max_tool_calls`, `tool_calls`) are refused at load.
-# Required when `[subagent]` is enabled. Starting values, not tuned. A stop at a bound
-# ends the job failed with that reason. Do not state these limits in the prompt.
-[dreamer.budgets.subagent]
-turns = 200
-total_tokens = 10240000
-output_tokens = 120000
-timeout_seconds = 3600.0
-
-
-# Lineage filtering for derived blocks (<notes>, <standing>, <standing_working_set>,
-# <culture>): a row shows only in a room its lineage passes for. Modes: "off",
-# "shadow" (records what would be withheld, renders everything), "on" (drops failing
-# sections). Leave "off" (DEC-231): separate rooms by unit, not by filter, and Memory
-# carries no lineage anyway.
-[lineage]
-mode = "off"
-
-
-# Tool `record_query`: recorded messages over a time span, by author or words, under
-# lineage. Off by default; off, no turn is offered the tool.
-[record_query]
-enabled = false
-
-
-# Tools `document_publish`, `document_read` and `document_set_status`: a document is a
-# JSON spec the web app renders, opened signed in under Documents. Off by default; off,
-# no turn is offered any of the three.
-[documents]
-enabled = false
-# Web app's public origin, used to give the room a link to a document
-# (`<public_url>/documents/<12-hex handle>`). Origin only: no path, query, fragment or
-# login. Empty: no link; she points to Documents by title.
-public_url = ""
-
-
-# Opening shared file links (Google Doc, Sheet, Slides, Drive). A posted link is always
-# recorded as a handle (`[Google Doc link c41d09]`) regardless of this section. Off by
-# default; `enabled` controls opening. On, it needs the three [google] env vars set,
-# otherwise opening answers unavailable. `sources` lists providers, in order.
-[external_files]
-enabled = false
-sources = ["google_drive"]
-
-# Nora's single Google identity: one Desktop-app OAuth client and one refresh token,
-# shared by every Google service. Each key names the env var in `.env` that holds the
-# value; never put the value here. `uv run python scripts/google_auth.py` requests all
-# scopes at once and prints the refresh token. A service whose scope the token lacks
-# is unavailable on its own. API keys (e.g. the Maps key under [route]) are separate.
-[google]
-client_id_env = "GOOGLE_OAUTH_CLIENT_ID"
-client_secret_env = "GOOGLE_OAUTH_CLIENT_SECRET"
-refresh_token_env = "GOOGLE_OAUTH_REFRESH_TOKEN"
-
-
-[subagent]
-# Background worker that does one objective in Nora's computer workspace and reports
-# once through the compute-job outbox. Off by default; needs a restart to change.
-# Enabling requires `[dreamer] enabled = true`, `[compute] enabled = true` and a
-# `[dreamer.budgets.subagent]` block, or load is refused. No model-facing tool starts
-# one yet.
-enabled = false
-# Reasoning effort for the worker; its model is `[dreamer] model`.
-reasoning_effort = "low"
-
-
-[cognition]
-# The cognition loop: the wake evaluator and Cognition session, the one
-# background writer of the notebook, events, Standing and Nora's own reminders.
-# Off by default; turn off with this flag and a restart.
-# On requires `[dreamer] enabled = true`, `[notes] enabled = true`, a
-# `[dreamer.budgets.cognition]` block (startup is refused without it), and a
-# `home_room = true` room in policy.toml for every unit it should cover (a unit
-# with none is named at boot and never woken).
-enabled = false
-tick_seconds = 30                     # how often the evaluator checks every unit; one read per unit, no model call
-# `quiet_seconds` and `max_age_seconds` share names with [dreamer] but are
-# configured independently.
-#
-# Settled: a stimulus is pending and the unit's rooms have been quiet this long (seconds).
-quiet_seconds = 1800
-cue_quiet_seconds = 120               # strong cue (date/time, place link, keep instruction, pending RSVP), then this much quiet
-# A Rollup stimulus (co-location, arrival, deviation) never wakes a session on
-# its own: it rides the next wake for any reason, a daily floor included (DEC-279).
-batch_max = 80                        # wake when this many stimuli are pending
-max_age_seconds = 3600                # wake when the oldest pending stimulus is this old
-cooldown_seconds = 300                # pause after each session; one strong cue may cut it once
-max_concurrent_sessions = 2           # sessions running at once across all units
-reply_quiet_seconds = 600             # a reply to Nora's message inside this window is recorded but never wakes a session alone
-# Daily floors: local times in `timezone`, raised as one `time` stimulus per unit
-# per day. Each wakes a session that reviews the notebook (passed anchors, due
-# revisits, likely duplicates) and takes every pending Rollup stimulus, so a
-# floor bounds how long one waits in a unit nobody talks in.
-# A floor is raised only while it is no more than `floor_grace_seconds` late.
-time_floors = ["07:00", "00:00"]
-timezone = "Asia/Hong_Kong"
-floor_grace_seconds = 3600
-# With each floor, every room holding an open event that starts within this many
-# days gets its own `time` item bound to that room (DEC-303); the session decides
-# whether and when the room hears about it. 0 turns the look-ahead off.
-upcoming_days = 3
-store_timeout_seconds = 5
-max_items = 12                        # items per session
-max_strikes = 3
-# How long a tracked wake may stay open (no outcome row) before it is expired and
-# read as failed, its stimuli pending again (DEC-242). The session's wall clock,
-# `[dreamer.budgets.cognition] timeout_seconds`, must end at least 60 s before it
-# or startup is refused. Leave unset for the default.
-# session_timeout_seconds = 3900
-# `wake_at` (the session's own next look, DEC-242): at most this many self-wakes
-# pending per unit, and at most this many `wake_at` calls per unit per rolling
-# 24 hours. Guards only; the model is never told the limits.
-max_self_wakes = 5
-max_self_wakes_per_day = 12
-# Failure backoff: after `n` consecutive failed or timed-out sessions, a unit's
-# next wake waits `cooldown_seconds * 2 ** (n - 1)`, capped at `backoff_max_seconds`;
-# one closed session resets it. After `max_consecutive_failures` the stimuli those
-# sessions claimed are struck (retracted, reason `failed`), so an agenda that
-# always fails stops.
-backoff_max_seconds = 21600
-max_consecutive_failures = 5
-# What counts as the agenda failing (DEC-244). A failed session is infrastructure
-# (backs off, never strikes) unless proven the agenda's own doing. A context
-# overflow is proven only when the prompt's estimated tokens (characters / 4) are
-# at least `overflow_window_fraction` of the model window AND the same agenda
-# overflowed on the previous attempt. A reply cut at max_tokens is never the
-# agenda's. Unset = window unknown: every overflow is infrastructure and nothing
-# is struck for one. Set it to the `[dreamer] model` context window in tokens.
-# model_window_tokens = 200000
-overflow_window_fraction = 0.8
-# What a session is shown beside its agenda: each item's Record rows (author,
-# message id, time, room, photo content) and the Register index lines.
-# `record_chars` is shared across items by need; `message_chars` clips one
-# message; `register_lines` caps index lines per kind. When an item's messages do
-# not fit, the oldest are dropped and the prompt says how many. Raise
-# `record_chars` if sessions need more history, since with `record_query` off the
-# session cannot read what was cut. Independent of `[record_query] enabled`.
-record_chars = 40000
-message_chars = 400
-register_lines = 40
-# Nora's own sends inside each item's window are shown, marked as hers (DEC-245).
-# The window opens `own_send_lookback_seconds` before the item's oldest message;
-# at most `own_sends_max` of the newest are shown.
-own_send_lookback_seconds = 1800.0
-own_sends_max = 6
-
-# The Assess adaptor: reports and metrics only, never a tier write.
-# Off by default; `nora assess run-nightly` is refused until `mode` is "on".
-[assess]
-mode = "off"
-nightly_at = "03:00"                  # documentation only: nothing schedules a run; use your own cron or systemd timer
-timezone = "Asia/Hong_Kong"
-rollup_diff_window_seconds = 86400    # how far back the Rollup incremental-vs-batch check rebuilds when asked
-store_timeout_seconds = 5
-
-
 [obs.logging]
 level = "INFO"
-# Logs go to stdout as JSON lines; there is no `path` key, and a leftover
-# `path =` line fails startup. Read with `docker compose logs nora`, or pipe to `jq`.
 format = "json"
 
 [obs.metrics]
@@ -1393,21 +675,11 @@ endpoint = ""
 headers_env = ""                      # env var NAME holding OTLP auth headers, never the value (DEC-8); read only when exporter is "otlp_http"
 
 [obs.errors]
-# Sentry error capture only, never tracing. It catches raised exceptions with a
-# stack trace. It does not see failures reported as a counter label or a
-# status such as `unavailable`; those are caught by the Prometheus alerts in
-# `deploy/prometheus/`. See `docs/observability.md`.
 enabled = false
 dsn_env = "SENTRY_DSN"                # env var NAME holding the DSN (DEC-8), never the value; unset or empty = off, not an error
 environment = ""                      # deployment label such as "server" or "laptop"; "" records `unknown`
 
 [evals]
-# The model that grades the adversarial live run (DEC-75). Must differ from
-# llm.model's exact id or the runner refuses. Its verdict binds the gate. It runs
-# once per graded case, before deploy only. `--suite adversarial` costs 10
-# replies (llm.model) plus `judge_samples` judge calls per reply (this model); an
-# unchanged re-run costs 0 through the verdict cache, which `--force` and
-# `--no-cache` bypass. Usage-billed provider: do not run it repeatedly.
 judge_model = "ollamacloud/glm-5.3"
 judge_samples = 1                     # the judge grades each reply this many times; the majority safety verdict binds the gate; multiplies judge calls
 journey_samples = 3                   # `--suite journeys` runs each journey this many times, majority-gated; runs on llm.model, not the judge
@@ -1416,67 +688,3 @@ journey_samples = 3                   # `--suite journeys` runs each journey thi
 enabled = false                       # opt-in: also requires `--export-langfuse` on the CLI
 host = "http://127.0.0.1:3100"
 headers_env = ""                      # env var NAME holding auth headers; reuses the obs.tracing.headers_env credential, never the value
-
-# Per-modality describers. `vision_model` remains the image model's alias.
-# Each lane has `enabled`, `model` and `provider`. `provider` selects the
-# transport: "omniroute" (default) uses the shared gateway client; "kimi" goes
-# direct to api.kimi.com/coding/v1 with `KIMI_CODE_API_KEY`; "opencode-go" goes
-# direct to opencode.ai/zen/go/v1 with `OPENCODE_GO_API_KEY` (DEC-197). A direct
-# lane whose key is unset answers `unavailable`, never falling back to omniroute.
-# `api_key_env` (optional, direct lanes only) NAMES the env var holding the key,
-# never the value; empty uses the lane's default variable.
-[media.describe.image]
-enabled = true
-model = "ollamacloud/glm-5.3-flash"
-provider = "omniroute"
-
-[media.describe.audio]
-# Describes an audio blob (`media_fetch`, automatic comprehension of audio
-# files). A voice note's words come from the STT lane at ingest, not this.
-# Needs all three: `enabled`, a `model`, and a `provider` (a model without
-# `provider` travels omniroute). Needs `OPENCODE_GO_API_KEY` for opencode-go (DEC-197).
-enabled = true
-model = "mimo-v2.6-flash"
-provider = "opencode-go"
-
-[media.describe.video]
-# Describes video. Must use a direct provider:
-# omniroute drops `video_url` content blocks. opencode-go needs
-# `OPENCODE_GO_API_KEY` injected (docker-compose.yml); without it the answer is
-# `unavailable` (DEC-197). Fallback: `model = "k3-256k"`, `provider = "kimi"`
-# (needs `KIMI_CODE_API_KEY`).
-enabled = true
-model = "mimo-v2.6-flash"
-provider = "opencode-go"
-# Per-clip byte ceiling, set equal to `[media] max_bytes` so anything Nora can
-# receive she can describe. Larger than the shared `vision_max_bytes` (images),
-# which would reject real clips as `too_large`. The direct lane's call timeout
-# must cover the upload of a base64 body (~1.33x the clip size).
-max_bytes = 104857600
-# A clip is read in transient windows of `chunk_seconds`, each sent to the
-# describer; storage keeps the whole original. `chunk_max` caps windows per clip
-# (10 x 90 s = 15 minutes read in full). When it binds, the description says how
-# much was read and the clip's length is recorded in provenance. Windows keep the audio track;
-# a clip whose audio cannot be decoded is read silent.
-chunk_seconds = 90
-chunk_max = 10
-
-# Optional phone/UUID/coordinate, third-party place/person-name and location
-# audience filters. Re-enable with true and restart. Credential-pattern blocking
-# and doctrine/canary/prompt-markup protection always remain enabled.
-[content_checks]
-enabled = false
-
-# Shadow graph comprehension. Both flags must be true to run either lane.
-
-[memory.graph.comprehend]
-enabled = false
-turns = 8
-total_tokens = 120000
-output_tokens = 12000
-timeout_seconds = 240
-live_concurrency = 1
-historical_concurrency = 1
-preview_tokens = 1500
-web_searches = 3
-page_fetches = 3

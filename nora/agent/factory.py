@@ -1,6 +1,6 @@
 """The only module that constructs Strands objects (spec C.7).
 
-One `AsyncOpenAI` client for the whole process, never one per tag. One
+One `AsyncOpenAI` client per selected endpoint in the process, never per tag. One
 `OpenAIModel` PER TAG, though (DEC-42, `ModelSource` below): the client pools
 connections, while the model is a config dict whose `tool_choice` is per-turn
 state. Sharing the model would apply one tag's relaxation to a concurrent tag's
@@ -8,9 +8,9 @@ first call.
 
 The client guarantee lives in the composition root's call discipline, not in a
 module-level singleton (DEC-13): `create_client` is a plain constructor, called
-once by `nora.app.composition.build_dependencies`, whose result is threaded
+by `nora.app.composition.build_dependencies`, whose results are threaded
 through `Dependencies.client` to every consumer. `nora.__main__.App.shutdown`
-closes that same object (`await self.deps.client.close()`). The module holds no
+closes the default and additional endpoint clients. The module holds no
 import-time state.
 
 Takes explicit scalars, never `nora.config` objects: the composition root

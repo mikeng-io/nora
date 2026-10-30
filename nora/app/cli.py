@@ -3,7 +3,7 @@
 the config write surface (`nora config set/get/unset/validate` — see
 `nora.app.config_cli`). Most of this module's commands only READ the record
 store; each one that writes says so where it is registered. Among them:
-`xai-login` and `openai-codex-login` (the host `.env`), `memory backfill`,
+`xai-login` and `openai-codex-login` (the host `secret.toml`), `memory backfill`,
 `memory carry-conclusions` and `memory detach-unit`, each only with `--apply`
 (Honcho, DEC-214), `memory rebuild` (the memory index, unless `--dry-run`),
 `lessons retire` and `lessons rollback` (one lesson revision, only with
@@ -43,7 +43,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import contextlib
 import functools
 import json
 import os
@@ -474,34 +473,24 @@ def add_subcommands(
     # double-validation guarantees.
     config_cli.add_config_subcommands(subparsers, parent)
 
-    # `xai-login` (DEC-137): the ONE command that WRITES — it walks Miles
-    # through the xAI OAuth device flow and appends the refresh token to the
-    # host `.env` (the same "edit .env, recreate" loop every other Nora
-    # credential uses). Deliberately outside the read-only engine guarantees
-    # this module otherwise holds: it never touches the DB, it talks to
-    # `auth.x.ai`, and it fails cleanly (CliError) when the flow is refused
-    # or the token was not issued.
+    # OAuth bootstrap writers; current chains remain in state/.
     xai_login = subparsers.add_parser(
         "xai-login", parents=[parent],
         help="xAI OAuth device flow — get XAI_OAUTH_REFRESH_TOKEN for image generation",
     )
     xai_login.add_argument(
-        "--env-file", default=".env",
-        help="host .env file to append the refresh token to (default .env)",
+        "--env-file", default=None,
+        help="legacy .env bootstrap output (default: secret.toml beside config)",
     )
     xai_login.set_defaults(func=cmd_xai_login)
 
-    # `openai-codex-login` (DEC-304): the same shape for the OpenAI Codex
-    # lane — a device login against auth.openai.com (or, with
-    # `--from-codex-auth`, a DEDICATED `codex login`'s auth.json), and the
-    # refresh token appended to the host `.env` as the lane's BOOTSTRAP.
     codex_login = subparsers.add_parser(
         "openai-codex-login", parents=[parent],
         help="OpenAI device login — get OPENAI_CODEX_REFRESH_TOKEN for image generation",
     )
     codex_login.add_argument(
-        "--env-file", default=".env",
-        help="host .env file to append the refresh token to (default .env)",
+        "--env-file", default=None,
+        help="legacy .env bootstrap output (default: secret.toml beside config)",
     )
     codex_login.add_argument(
         "--from-codex-auth", default="",
@@ -554,47 +543,42 @@ def _persons(cfg: Config) -> Persons:
         raise CliError(f"person mapping error: {exc}") from exc
 
 
+def _bootstrap_path(args: argparse.Namespace) -> Path:
+    if args.env_file:
+        return Path(args.env_file)
+    return Path(args.config).resolve().parent / "secret.toml"
+
+
+def _write_bootstrap(path: Path, marker: str, token: str) -> None:
+    if path.suffix == ".toml":
+        from nora.secret import write
+        write(path, marker.removesuffix("="), token)
+    else:
+        _rewrite_env(path, marker, token)
+
+
 def _rewrite_env(env_path: Path, marker: str, refresh_token: str) -> None:
-    """Idempotently replace-or-append one `KEY=value` line in `.env`.
-    Sync by design — runs under `asyncio.to_thread` from the CLI (never
-    blocks the event loop). The write is ATOMIC — tmp +
-    os.replace — so a crash/interrupt mid-write can never corrupt the whole
-    `.env` (which holds Postgres, Discord, xAI, Life360 secrets). The
-    original file mode is preserved explicitly because os.replace installs
-    the tmp file's inode."""
+    """Legacy explicit env output; atomic private replacement."""
+    import tempfile
     try:
         lines = env_path.read_text(encoding="utf-8").splitlines()
-    except OSError:
+    except FileNotFoundError:
         lines = []
-    kept: list[str] = []
-    replaced = False
-    for line in lines:
-        if line.startswith(marker):
-            kept.append(f"{marker}{refresh_token}")
-            replaced = True
-        else:
-            kept.append(line)
-    if not replaced:
-        kept.append(f"{marker}{refresh_token}")
-    mode = 0o600
-    with contextlib.suppress(OSError):
-        mode = env_path.stat().st_mode & 0o777
-    tmp = env_path.with_suffix(env_path.suffix + ".tmp")
-    tmp.write_text("\n".join(kept) + "\n", encoding="utf-8")
-    os.chmod(tmp, mode)
-    os.replace(tmp, env_path)
+    kept = [line for line in lines if not line.startswith(marker)]
+    kept.append(f"{marker}{refresh_token}")
+    fd, temporary = tempfile.mkstemp(prefix=".bootstrap-", dir=env_path.parent)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            stream.write("\n".join(kept) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, env_path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
 
 
 async def cmd_xai_login(args: argparse.Namespace) -> int:
-    """Run the xAI OAuth device flow and append the refresh token to `.env`.
-
-    The ONE command in this module that writes — but it never touches the
-    DB: it talks to `auth.x.ai`, then edits the HOST `.env` the operator
-    already owns (the same file every other Nora credential lives in,
-    DEC-8). Idempotent: an existing `XAI_OAUTH_REFRESH_TOKEN` line is
-    replaced, not duplicated. The access token stays out of `.env`
-    entirely — that is the state file's job.
-    """
+    """Write a new bootstrap; rotating state stays in state/."""
     from nora.infra.image_gen.xai_oauth import (
         XaiOAuthFlowError,
         device_flow_login,
@@ -604,25 +588,20 @@ async def cmd_xai_login(args: argparse.Namespace) -> int:
     except XaiOAuthFlowError as exc:
         raise CliError(str(exc)) from exc
 
-    env_path = Path(args.env_file)
+    env_path = _bootstrap_path(args)
     marker = "XAI_OAUTH_REFRESH_TOKEN="
-    await asyncio.to_thread(_rewrite_env, env_path, marker, refresh_token)
+    await asyncio.to_thread(_write_bootstrap, env_path, marker, refresh_token)
 
     print(f"ok — refresh token written to {env_path}")
-    print("recreate the container (`docker compose up -d --force-recreate nora`) "
-          "for it to pick up the new env; access tokens refresh automatically.")
+    if not args.env_file:
+        print("Remove legacy XAI_OAUTH_REFRESH_TOKEN overrides before recreation.")
+    print("Recreate affected readers through the installed deployment path; "
+          "see the configuration guide. Access tokens refresh automatically.")
     return 0
 
 
 async def cmd_openai_codex_login(args: argparse.Namespace) -> int:
-    """Log Nora's OWN ChatGPT account in and write the bootstrap refresh
-    token to `.env` (DEC-304). Like `xai-login` it touches no database.
-
-    The token is a BOOTSTRAP: OpenAI rotates refresh tokens on use, so the
-    first refresh spends it and the lane keeps the rotated one in
-    `./state/openai-codex-oauth.json`. A new login here replaces that chain
-    on the next start (the state file is fingerprinted to the `.env` token).
-    """
+    """Write a fresh Codex bootstrap without changing current state."""
     from nora.infra.image_gen.openai_codex_oauth import (
         CodexLoginError,
         device_flow_login,
@@ -636,16 +615,18 @@ async def cmd_openai_codex_login(args: argparse.Namespace) -> int:
     except CodexLoginError as exc:
         raise CliError(str(exc)) from exc
 
-    env_path = Path(args.env_file)
+    env_path = _bootstrap_path(args)
     await asyncio.to_thread(
-        _rewrite_env, env_path, "OPENAI_CODEX_REFRESH_TOKEN=", refresh_token,
+        _write_bootstrap, env_path, "OPENAI_CODEX_REFRESH_TOKEN=", refresh_token,
     )
     print(f"ok — bootstrap refresh token written to {env_path}")
+    if not args.env_file:
+        print("Remove legacy OPENAI_CODEX_REFRESH_TOKEN overrides before recreation.")
     if args.from_codex_auth:
         print(f"delete {args.from_codex_auth} and its CODEX_HOME now: a codex CLI "
               "that refreshes from it logs Nora out.")
-    print("recreate the container (`docker compose up -d --force-recreate nora`); "
-          "the first refresh spends this token and keeps the rotated one in "
+    print("Recreate affected readers through the installed deployment path; "
+          "see the configuration guide. Current tokens remain in "
           "./state/openai-codex-oauth.json.")
     return 0
 
@@ -679,7 +660,7 @@ async def cmd_groups(args: argparse.Namespace) -> int:
     # the mode column — is the live verdict, not a copy of it.
     discord_cfg = cfg.platforms.discord
     if discord_cfg.enabled:
-        token = os.environ.get(discord_cfg.token_env, "")
+        token = cfg.credentials.get(discord_cfg.token_env, "")
         guild_entries = [c for c in policy.conversations if c.guild]
         error = ""
         guilds: list[discord_directory.DiscordGuild] = []
@@ -733,16 +714,17 @@ async def cmd_presence_members(args: argparse.Namespace) -> int:
     cfg = _config(args)
     presence = cfg.presence
     creds = {
-        presence.client_credential_env: os.environ.get(presence.client_credential_env, ""),
-        presence.username_env: os.environ.get(presence.username_env, ""),
-        presence.password_env: os.environ.get(presence.password_env, ""),
+        presence.client_credential_env: cfg.credentials.get(presence.client_credential_env, ""),
+        presence.username_env: cfg.credentials.get(presence.username_env, ""),
+        presence.password_env: cfg.credentials.get(presence.password_env, ""),
     }
-    access_token = os.environ.get(presence.auth_token_env, "")
+    access_token = cfg.credentials.get(presence.auth_token_env, "")
     missing = [name for name, value in creds.items() if not value and not access_token]
     if missing:
         raise CliError(
             "these Life360 env vars are unset: " + ", ".join(missing) + "\n"
-            f"Add them to .env. {presence.client_credential_env} is the Life360 "
+            "Add them to secret.toml or the explicit environment. "
+            f"{presence.client_credential_env} is the Life360 "
             "app's Basic credential (a public app constant, the same for every "
             f"unofficial client); {presence.username_env}/{presence.password_env} "
             f"are your Life360 login — or set {presence.auth_token_env} if "
@@ -1106,7 +1088,6 @@ async def cmd_profile_window(args: argparse.Namespace) -> int:
 
 async def cmd_profile_report(args: argparse.Namespace) -> int:
     import functools
-    import os
 
     from nora.app.profile_spike import (
         event_judge,
@@ -1130,8 +1111,9 @@ async def cmd_profile_report(args: argparse.Namespace) -> int:
         from nora.agent.structured import build_structured_model
         if cfg.evals.judge_model == cfg.dreamer_model():
             raise CliError("events-as-traits judge must differ from the writer model")
-        model = build_structured_model(base_url=cfg.llm.base_url,
-            api_key=os.environ.get(cfg.llm.api_key_env, ""), model_id=cfg.evals.judge_model,
+        model = build_structured_model(base_url=cfg.endpoint("eval_judge")[0],
+            api_key=cfg.endpoint("eval_judge")[1],
+            model_id=cfg.endpoint("eval_judge", cfg.evals.judge_model)[2],
             max_tokens=128, temperature=0)
         judge = functools.partial(event_judge, model=model, name_of=name_of)
     observations = (json.loads(args.sessions.read_text()) if args.sessions else
@@ -1256,9 +1238,9 @@ async def cmd_memory_backfill_places(args: argparse.Namespace) -> int:
     from nora.infra.geocode import CachingBilingualGeocoder, GoogleGeocoder
 
     cfg = _config(args)
-    route_key = os.environ.get(cfg.route.api_key_env, "") if cfg.route.enabled else ""
+    route_key = cfg.credentials.get(cfg.route.api_key_env, "") if cfg.route.enabled else ""
     places = GoogleGeocoder(api_key=route_key) if route_key else None
-    found = reverse_geocoder(cfg, os.environ, cache_store=None)
+    found = reverse_geocoder(cfg, cfg.credentials, cache_store=None)
     geocoder = found if isinstance(found, CachingBilingualGeocoder) else None
     engine = create_sql_engine(_database_url(cfg))
     try:
@@ -1658,7 +1640,7 @@ def _database_url(cfg: Config) -> str:
     A `CliError`, not a startup crash: the operator running this by hand needs a
     readable sentence about the one variable to export, not a traceback.
     """
-    url = os.environ.get(cfg.store.database_url_env, "")
+    url = cfg.credentials.get(cfg.store.database_url_env, "")
     if not url:
         raise CliError(
             f"environment variable {cfg.store.database_url_env} is not set — it "

@@ -96,6 +96,7 @@ and configuration to the runtime.
 | `obs/` | Health, metrics, logging and tracing |
 | `subject/`, `testing/` | Evaluation subject and shared test doubles |
 | `config.py` | Validated deployment configuration |
+| `secret.py` | Private credential resolution and atomic bootstrap writes |
 | `persons.py`, `persons_file.py` | Identity resolution and identity-file loading |
 | `policy.py` | Room membership and grants |
 | `config_reload.py` | Validated identity/policy holders and per-process reload polling |

@@ -97,8 +97,11 @@ def reload_services(resolved: dict, images: dict, request: Path) -> list[str]:
     files = value['files']
     if (set(value) != {'files'} or not isinstance(files, list) or not files
             or not all(isinstance(f, str) for f in files)
-            or not set(files) <= {'config.toml', 'identity.toml', 'policy.toml'}):
+            or not set(files) <= {
+                'config.toml', 'identity.toml', 'policy.toml', 'secret.toml', '.env'}):
         raise ValueError('invalid scoped config reload request')
+    if set(files) & {'secret.toml', '.env'}:
+        return [name for name in images if name not in {'site', 'stt', 'signal-cli'}]
     targets = {'/app/' + f for f in files}
     readers = [name for name in images if any(
         v['target'] in targets for v in resolved['services'][name].get('volumes', []))]
@@ -126,6 +129,12 @@ def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str
     if marker.exists() and json.loads(marker.read_text())['manifest_sha256'] == fingerprint:
         raise RuntimeError('candidate blocked after failed/interrupted deployment; '
                            'inspect privately')
+    try:
+        from secret_delivery import prepare
+    except ModuleNotFoundError:
+        from scripts.secret_delivery import prepare
+    prefix = [*prefix, *prepare(
+        runtime, output_directory=Path(__file__).parent / '.secret-delivery')]
     if site:
         prefix = [*prefix, '--profile', 'site']
     # Resolve only in this captured host process; never return this config to Komodo.
@@ -163,6 +172,22 @@ def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str
              '-v', f'{config}:/tmp/config.toml:ro', '--entrypoint', '/app/.venv/bin/nora',
              images['nora'], 'config', 'validate', '--config', '/tmp/config.toml'],  # noqa: S108 -- container path
             stage='config-validation')
+        environment = nora.get('environment')
+        if isinstance(environment, dict):
+            if any(not isinstance(v, str) or '\n' in v or '\r' in v
+                   for v in environment.values()):
+                raise ValueError('invalid candidate credential environment')
+            candidate_env = Path(temporary) / 'candidate.env'
+            # Compose renders literal dollars escaped for a second parse.
+            decoded = {k: v.replace('$$', '$') for k, v in environment.items()}
+            candidate_env.write_text(''.join(f'{k}={v}\n' for k, v in decoded.items()))
+            candidate_env.chmod(0o600)
+            run(['docker', 'run', '--rm', '--network', 'none',
+                 '--user', f'{os.getuid()}:{os.getgid()}',
+                 '--env-file', str(candidate_env), '-v', f'{config}:/tmp/config.toml:ro',
+                 '--entrypoint', '/app/.venv/bin/python', images['nora'], '-c',
+                 'from pathlib import Path; from nora.config import load; '
+                 'load(Path("/tmp/config.toml"))'], stage='credential-validation')
     spec = importlib.util.spec_from_file_location('verify_deploy',
                                                  Path(__file__).with_name('verify-deploy.py'))
     if spec is None or spec.loader is None:

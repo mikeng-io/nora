@@ -556,7 +556,7 @@ async def test_the_app_stops_the_cognition_sessions_before_it_closes_the_client_
 
     deps = SimpleNamespace(
         cognition_shutdown=_Stop(), subagent_backend=None,
-        client=_Closable("client"), audit=_Closable("audit"),
+        client=_Closable("client"), model_clients=[], audit=_Closable("audit"),
     )
     app = App(cfg=None, deps=deps)              # type: ignore[arg-type]
     await app.shutdown()

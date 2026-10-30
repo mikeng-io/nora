@@ -20,6 +20,7 @@ from nora.domain.computer import computer_scope, computer_unit_scope
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import COMPUTER_SESSIONS as T
 from nora.policy import Policy, load_policy
+from nora.secret import credentials
 
 
 def mapping_for(policy: Policy, inventory: list[str]) -> dict[str, str]:
@@ -92,7 +93,7 @@ async def bind_sessions(conn: Any, document: dict, receipt: dict, *, apply: bool
 
 
 async def run(args: argparse.Namespace) -> None:
-    engine = create_sql_engine(os.environ["DATABASE_URL"])
+    engine = create_sql_engine(credentials()["DATABASE_URL"])
     try:
         async with engine.begin() as conn:
             if args.action == "plan":

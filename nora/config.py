@@ -7,7 +7,6 @@ failure, not a default.
 
 from __future__ import annotations
 
-import os
 import re
 import tomllib
 from pathlib import Path
@@ -18,6 +17,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    PrivateAttr,
     ValidationError,
     ValidationInfo,
     field_validator,
@@ -244,11 +244,25 @@ class LimitsConfig(BaseModel):
     output_tokens: int
 
 
+class ProviderConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    base_url: str
+    api_key_env: str
+    api: Literal["openai-chat-completions"] = "openai-chat-completions"
+
+
+class ModelRoute(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    provider: str = ""
+    model: str = ""
+
+
 class LLMConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    base_url: str
-    api_key_env: str
+    provider: str = ""
+    base_url: str = Field(default_factory=str)
+    api_key_env: str = "OMNIROUTE_API_KEY"
     model: str
     max_tokens: int
     temperature: float
@@ -687,7 +701,7 @@ class DescriberConfig(BaseModel):
 
     enabled: bool = False
     model: str = ""
-    provider: Literal["omniroute", "kimi", "opencode-go"] = "omniroute"
+    provider: str = "omniroute"
     api_key_env: str = ""
     # ---- video chunking ----------------------------------------------------
     #
@@ -3940,6 +3954,65 @@ class ContentChecksConfig(BaseModel):
 
 
 class Config(BaseModel):
+    providers: dict[str, ProviderConfig] = Field(default_factory=dict)
+    model_routes: dict[str, ModelRoute] = Field(default_factory=dict)
+    _secret_path: Path = PrivateAttr(default=Path("secret.toml"))
+    _credentials: dict[str, str] | None = PrivateAttr(default=None)
+
+    @property
+    def credentials(self) -> dict[str, str]:
+        import os
+
+        from nora.secret import read
+        values = self._credentials if self._credentials is not None else read(self._secret_path)
+        return {**values, **os.environ}
+
+    def redaction_values(self) -> list[str]:
+        names = {"NORA_BRIDGE_TOKEN", "GIPHY_API_KEY", "PULSE_API_TOKEN", "PULSE_MCP_TOKEN"}
+
+        def collect(data: dict[str, object]) -> None:
+            for key, value in data.items():
+                if isinstance(value, dict):
+                    collect(value)
+                elif key.endswith("_env") and isinstance(value, str):
+                    names.add(value)
+
+        collect(self.model_dump())
+        values = self.credentials
+        return [values[name] for name in names if values.get(name)]
+
+    def endpoint(self, purpose: str, model: str = "") -> tuple[str, str, str]:
+        route = self.model_routes.get(purpose, ModelRoute())
+        provider = route.provider or self.llm.provider
+        endpoint = self.providers[provider] if provider else self.llm
+        selected = route.model or (model if provider == self.llm.provider else "") or self.llm.model
+        return endpoint.base_url, self.credentials.get(endpoint.api_key_env, ""), selected
+
+    @model_validator(mode="after")
+    def _validate_model_routes(self) -> Config:
+        if self.llm.provider and self.llm.provider not in self.providers:
+            raise ValueError("unknown default model provider")
+        if not self.llm.provider and not self.llm.base_url:
+            raise ValueError("llm requires provider or base_url")
+        purposes = {"tag", "participation", "proactive", "summons", "browse", "vision",
+                    "speech_format", "reaction", "standing", "relevance_gate", "lesson_check",
+                    "dreamer", "subagent", "extraction", "eval_judge", "context_filter"}
+        for purpose, route in self.model_routes.items():
+            if purpose not in purposes:
+                raise ValueError("unknown model route purpose")
+            if route.provider and route.provider not in self.providers:
+                raise ValueError("unknown model route provider")
+            if route.provider and route.provider != self.llm.provider and not route.model:
+                raise ValueError("a changed provider requires an explicit model")
+        for modality in ("image", "audio", "video"):
+            describer = self.media.describer_for(modality)
+            if describer and describer.provider not in {"omniroute", "kimi", "opencode-go"}:
+                if describer.provider not in self.providers:
+                    raise ValueError("unknown media model provider")
+                if describer.enabled and not describer.model:
+                    raise ValueError("a media provider requires an explicit model")
+        return self
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="before")
@@ -4569,21 +4642,10 @@ class Config(BaseModel):
 
 
 def load(path: Path, *, require_secrets: bool = True) -> Config:
-    """Parse and validate config.toml.
+    """Validate settings; runtime loading also resolves required credentials.
 
-    `require_secrets` defaults to True and that is the daemon's behaviour,
-    unchanged: a missing LLM key must be a startup failure, because a Nora who
-    starts without one is a Nora who is silently unable to answer.
-
-    The read-only operator control plane (`nora groups`, `nora persons
-    pending`) passes False, and the reason is the 3am path it exists for: the
-    key lives in `.env`, which docker compose injects into the CONTAINER, so an
-    operator running these commands from his own shell — typically with the
-    container stopped, which is exactly when he needs them — has no such
-    variable exported. Neither command constructs an LLM client or reaches the
-    provider at all, so refusing to list group ids over a credential that
-    nothing on that path uses would be a self-inflicted outage of the tool
-    brought in to diagnose an outage.
+    Schema-only callers pass require_secrets=False. Credential-source and restart
+    semantics are documented in docs/configuration.md.
     """
     path = Path(path).expanduser().resolve()
     if not path.exists():
@@ -4597,8 +4659,21 @@ def load(path: Path, *, require_secrets: bool = True) -> Config:
         cfg = Config.model_validate(data, context={"base": path.parent})
     except ValidationError as exc:
         raise ConfigError(str(exc)) from exc
-    if require_secrets and not os.environ.get(cfg.llm.api_key_env):
-        raise ConfigError(
-            f"environment variable {cfg.llm.api_key_env} is not set — refusing to start"
-        )
+    if cfg.llm.provider:
+        provider = cfg.providers[cfg.llm.provider]
+        cfg = cfg.model_copy(update={"llm": cfg.llm.model_copy(update={
+            "base_url": provider.base_url, "api_key_env": provider.api_key_env,
+        })})
+    cfg._secret_path = path.parent / "secret.toml"
+    from nora.secret import SecretError, read, require
+    try:
+        cfg._credentials = read(path.parent / "secret.toml") if require_secrets else None
+        if require_secrets:
+            default = cfg.providers[cfg.llm.provider] if cfg.llm.provider else cfg.llm
+            require(cfg.credentials, default.api_key_env)
+            for route in cfg.model_routes.values():
+                if route.provider:
+                    require(cfg.credentials, cfg.providers[route.provider].api_key_env)
+    except SecretError as exc:
+        raise ConfigError(str(exc)) from None
     return cfg

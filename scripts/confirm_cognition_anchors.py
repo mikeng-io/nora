@@ -15,7 +15,6 @@ import logging
 import os
 import re
 import sys
-import tomllib
 from pathlib import Path
 
 import httpx
@@ -61,12 +60,14 @@ def candidate(value: object, aliases: dict[str, str]) -> dict[str, object]:
     return {"room": room, "before_ms": before, "scenario": scenario}
 
 
-async def judge(client: httpx.AsyncClient, llm: dict, scenario: str, moment: dict) -> str:
+async def judge(
+    client: httpx.AsyncClient, llm: dict, scenario: str, moment: dict, api_key: str,
+) -> str:
     # One plain POST, not the SDK: the SDK retries by default, and a retried
     # verdict is a second, different judgement of the same moment.
     response = await client.post(
         str(llm["base_url"]).rstrip("/") + "/chat/completions",
-        headers={"Authorization": "Bearer " + os.environ[llm["api_key_env"]]},
+        headers={"Authorization": "Bearer " + api_key},
         json={"model": llm["model"], "max_tokens": llm["max_tokens"],
               # The production model, at temperature 0: a yes/no verdict
               # with no retry must not flip between runs.
@@ -102,7 +103,11 @@ async def judge(client: httpx.AsyncClient, llm: dict, scenario: str, moment: dic
 async def confirm(source_url: str, config: Path, inputs: list[dict[str, object]],
                   aliases: dict[str, str]) -> list[dict[str, object]]:
     url = clone_url(source_url)  # same refusal as finder, before connecting
-    llm = tomllib.loads(await asyncio.to_thread(config.read_text))["llm"]
+    from nora.config import load
+    cfg = await asyncio.to_thread(load, config, require_secrets=False)
+    url_llm, api_key, selected_model = cfg.endpoint("eval_judge")
+    llm = cfg.llm.model_dump()
+    llm.update(base_url=url_llm, model=selected_model)
     descriptions = scenarios()
     rooms = {alias: real for real, alias in aliases.items()}
     output = []
@@ -135,7 +140,7 @@ async def confirm(source_url: str, config: Path, inputs: list[dict[str, object]]
                             async with asyncio.timeout(llm["timeout_seconds"]):
                                 status = await judge(
                                     client, llm, descriptions[int(str(item["scenario"]))],
-                                    {"before_ms": item["before_ms"], "messages": messages})
+                                    {"before_ms": item["before_ms"], "messages": messages}, api_key)
                     except Exception:  # noqa: BLE001 -- private errors must not escape
                         status = "unavailable"
                     output.append({**item, "result": status})

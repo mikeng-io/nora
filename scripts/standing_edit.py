@@ -61,7 +61,6 @@ import argparse
 import asyncio
 import dataclasses
 import difflib
-import os
 import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -69,6 +68,7 @@ from pathlib import Path
 
 from nora.domain.standing import Standing
 from nora.infra.sql.standing import SqlStandingStore
+from nora.secret import credentials
 
 CONFIG_PATH = Path("/app/config.toml")
 
@@ -242,7 +242,7 @@ async def _main(argv: list[str]) -> int:
         new_body = args.body_file.read_text(encoding="utf-8").strip()
 
     cfg = load(args.config, require_secrets=False)
-    database_url = os.environ.get(cfg.store.database_url_env, "")
+    database_url = credentials().get(cfg.store.database_url_env, "")
     if not database_url:
         print(f"{cfg.store.database_url_env} is not set", file=sys.stderr)
         return 2
