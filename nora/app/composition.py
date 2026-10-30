@@ -4016,6 +4016,7 @@ async def build_dependencies(
                     self_ids=registry.self_aliases()).members(),
                 circles=presence_circles, content_checks=content_checks))
         cognition_memory = WakeMemory(graph=memory_graph, records=graph_records, metrics=metrics,
+            content_checks=content_checks,
             private_names=tuple({name for p in persons.by_person.values()
                 for name in (p.person_id, p.name, p.first_name, p.last_name, *p.aliases) if name}
                 | {value for (_, value) in persons.index}
