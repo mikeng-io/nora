@@ -899,7 +899,7 @@ restriction moot rather than argued around.
 
 `supersede` returns 0 for an unknown target and **never raises**, so a
 retirement that silently did nothing looks exactly like one that was never
-attempted. `nora_note_set_statusments_total{because,result}` splits `applied` from
+attempted. `nora_note_retirements_total{because,result}` splits `applied` from
 `no_rows` for precisely that. The shape generalises: **any verb that returns a
 count instead of raising has this gap**, and the others have not been looked at.
 

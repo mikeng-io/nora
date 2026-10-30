@@ -966,7 +966,7 @@ timezone = "Asia/Hong_Kong"   # IANA zone name (not an offset) a recurrence keep
 
 [notes]
 # Note tier. Optional, off by default. On, every tag reads the room unit's note
-# index as <notes> and holds the note tools (`note_create`/`note_update`; DEC-105,
+# index as <notes> and holds the note tools (`note_create`/`note_revise`; DEC-105,
 # R-55); the background writer is the Cognition session ([cognition]). Off, no
 # store is built and the block never appears.
 enabled = false
