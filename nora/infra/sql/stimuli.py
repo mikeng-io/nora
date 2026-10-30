@@ -95,7 +95,10 @@ _UNCLAIMED_KEY = "unclaimed"
 
 def unclaimed_ids(raw: Any) -> tuple[int, ...]:
     """A wake row's unclaimed stimulus ids, whichever form its detail was written in."""
-    return tuple(int(i) for i in jsonb_object(raw).get(_UNCLAIMED_KEY, ()))  # type: ignore[attr-defined]
+    ids: Any = jsonb_object(raw).get(_UNCLAIMED_KEY) or ()
+    while isinstance(ids, str):
+        ids = json.loads(ids)
+    return tuple(int(i) for i in ids or ())
 
 
 def _wake_detail(raw: Any) -> dict[str, object]:
