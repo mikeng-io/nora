@@ -140,8 +140,12 @@ async def test_relation_judge_sees_only_cited_sources(monkeypatch, tmp_path):
 
     monkeypatch.setattr(spike, "rows", AsyncMock(return_value=[]))
     report = await spike.quality(
-        None, {"generated-work": candidate}, [shown, receipt], SimpleNamespace(score=judge),
-        tmp_path, 1,
+        None,
+        {"generated-work": candidate},
+        [shown, receipt],
+        SimpleNamespace(score=judge),
+        tmp_path,
+        1,
     )
     assert report["relation_precision"]["status"] == "PASS"
 
@@ -222,8 +226,10 @@ async def test_an_item_with_a_media_source_is_in_the_attachment_stratum(monkeypa
 
     # Shaped like the snapshot's message rows: no media column on them.
     item = Item(
-        (Source(("message", "generated-1"), "Generated text"),
-         Source(("media", "generated-2"), "Generated reading")),
+        (
+            Source(("message", "generated-1"), "Generated text"),
+            Source(("media", "generated-2"), "Generated reading"),
+        ),
         {"messages": ({"id": "generated-1", "body": "Generated text"},)},
     )
     work = WorkItem("generated-work", ("message", "generated-1"), "generated-unit", "h", 0)
@@ -234,58 +240,108 @@ async def test_an_item_with_a_media_source_is_in_the_attachment_stratum(monkeypa
     assert "attachment" in candidate["strata"]
 
 
-
-def _graph(work_id, relations):
-    return {"work_id": work_id, "payload": {"relations": [{}] * relations, "entities": []}}
-
-
-ITEMS = [f"w{i}" for i in range(5)]
-SETTLED = ["settled"] * 5
-
-
-def _smoke(graphs, refusals=(), claims=None, states=SETTLED):
-    claims = dict.fromkeys(ITEMS, 4) if claims is None else claims
-    return spike.smoke_health(ITEMS, states, graphs, list(refusals), claims)
-
-
-def test_smoke_passes_a_healthy_sample():
-    healthy = _smoke([_graph(w, 2) for w in ITEMS], [{"part": "relation", "reason": "wrong_ends"}])
-    assert healthy["status"] == "PASS" and healthy["relations_admitted"] == 10
-
-
-def test_smoke_counts_only_productive_writes():
-    # Four empty writes and one relation is 20% productive, not 100%.
-    graphs = [_graph("w0", 1), *(_graph(w, 0) for w in ITEMS[1:])]
-    sick = _smoke(graphs, claims={})
-    assert sick["valid_writes"] == 5 and sick["productive_rate"] == 0.2
-    assert sick["status"] == "FAIL"
-    # At the mark (3 of 5 = 0.6) it passes; one fewer fails.
-    at_mark = _smoke([_graph(w, 1) for w in ITEMS[:3]], claims={})
-    assert at_mark["productive_rate"] == 0.6 and at_mark["status"] == "PASS"
-    below = _smoke([_graph(w, 1) for w in ITEMS[:2]], claims={})
-    assert below["status"] == "FAIL"
+def test_session_smoke_marks():
+    healthy = [
+        {
+            "status": "PASS",
+            "tokens": 100,
+            "admitted": 1,
+            "refused": 0,
+            "acts": 0,
+            "refused_consumed": 0,
+        }
+        for _ in range(5)
+    ]
+    assert spike.session_smoke(healthy)["status"] == "PASS"
+    for field in ("acts", "refused_consumed"):
+        assert spike.session_smoke([*healthy[:-1], {**healthy[-1], field: 1}])["status"] == "FAIL"
+    assert (
+        spike.session_smoke([*healthy[:-1], {**healthy[-1], "tokens": None}])["status"] == "ERROR"
+    )
+    assert (
+        spike.session_smoke([*healthy[:-1], {**healthy[-1], "status": "ERROR"}])["status"]
+        == "ERROR"
+    )
+    assert spike.session_smoke([])["status"] == "ERROR"
 
 
-def test_smoke_refused_relation_share_is_a_ceiling():
-    graphs = [_graph(w, 1) for w in ITEMS[:4]]  # 4 admitted relations
-    one = [{"part": "relation", "reason": "wrong_ends"}]
-    assert _smoke(graphs, one)["relation_refused_share"] == 0.2
-    assert _smoke(graphs, one)["status"] == "PASS"
-    assert _smoke(graphs, one * 2)["status"] == "FAIL"
+def test_session_acts_invariant_counts_deletions_and_creations():
+    assert spike.check_acts({"notes": 2}, {"notes": 2}) == 0
+    assert spike.check_acts({"notes": 2}, {"notes": 3}) == 1
+    assert spike.check_acts({"notes": 2}, {"notes": 1}) == 1
 
 
-def test_smoke_refused_reading_share_is_a_ceiling():
-    graphs = [_graph(w, 1) for w in ITEMS]
-    claims = {"w0": 4}
-    one = [{"part": "reading", "reason": "event_expression_absent"}]
-    assert _smoke(graphs, one, claims)["reading_refused_share"] == 0.2
-    assert _smoke(graphs, one, claims)["status"] == "PASS"
-    assert _smoke(graphs, one * 2, claims)["status"] == "FAIL"
+def test_compare_reports_prints_each_row_and_delta():
+    out = spike.compare_reports(
+        {"precision": {"status": "FAIL", "rate": 0.5}},
+        {"precision": {"status": "PASS", "rate": 0.75}},
+    )
+    assert 'precision.status: "FAIL" -> "PASS"' in out
+    assert "precision.rate: 0.5 -> 0.75 (delta +0.25)" in out
 
 
-def test_smoke_fails_a_failed_item_and_is_insufficient_when_small():
-    graphs = [_graph(w, 2) for w in ITEMS]
-    assert _smoke(graphs, states=["failed", *SETTLED[1:]])["status"] == "FAIL"
-    assert _smoke([])["status"] == "FAIL"
-    small = spike.smoke_health(ITEMS[:3], SETTLED[:3], graphs[:3], [], {})
-    assert small["status"] == "INSUFFICIENT"
+def test_tool_exchanges_pairs_admission_and_refusal():
+    messages = []
+    for number, result in enumerate(
+        (
+            {"status": "refused", "admitted": [], "refused": [{"reason": "schema"}]},
+            {"status": "ok", "admitted": [0], "refused": []},
+        )
+    ):
+        messages.extend(
+            [
+                {
+                    "content": [
+                        {
+                            "toolUse": {
+                                "toolUseId": str(number),
+                                "name": "memory_propose",
+                                "input": {"items": [0]},
+                            }
+                        }
+                    ]
+                },
+                {
+                    "content": [
+                        {"toolResult": {"toolUseId": str(number), "content": [{"json": result}]}}
+                    ]
+                },
+            ]
+        )
+    parsed = spike.tool_exchanges(messages)
+    assert [e["result"]["status"] for e in parsed] == ["refused", "ok"]
+    with pytest.raises(ValueError, match="missing tool results"):
+        spike.tool_exchanges(messages[:-1])
+
+
+async def test_session_quality_uses_shown_input_and_only_committed_relations():
+    judge = SimpleNamespace(score=AsyncMock(return_value=["supported", "unsupported"]))
+    result = await spike.session_quality(
+        judge,
+        {"prompt": "Generated source"},
+        [
+            {
+                "name": "memory_propose",
+                "input": {"readings": [{"text": "Generated claim"}]},
+                "result": {
+                    "admitted": [0],
+                    "committed": ["generated-committed"],
+                    "connected": {
+                        "relations": [
+                            {"id": "generated-committed", "rel": "concerns"},
+                            {"id": "generated-existing", "rel": "concerns"},
+                        ]
+                    },
+                },
+            }
+        ],
+    )
+    assert result["relation_precision"] == [["supported"], ["unsupported"]]
+    assert result["reading_precision"] == [["supported"], ["unsupported"]]
+    assert judge.score.call_args.args[0]["evidence"]["input"] == {"prompt": "Generated source"}
+
+
+def test_report_error_exit_is_distinct_from_fail():
+    assert spike.report_exit({"row": {"status": "PASS"}}) == 0
+    assert spike.report_exit({"row": {"status": "FAIL"}}) == 1
+    assert spike.report_exit({"row": {"status": "REPORTED", "usage": {"status": "ERROR"}}}) == 2

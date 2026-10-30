@@ -12,7 +12,6 @@ import os
 import random
 import re
 import statistics
-from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
@@ -640,63 +639,177 @@ async def quality(
     return report
 
 
-# Fixed before any smoke run: step one is healthy enough for the full spike only
-# when most items admit something and few proposals are refused. An empty write
-# is valid but not productive, so it does not count towards the first mark.
-SMOKE_MARKS = {"productive_rate": 0.6, "relation_refused_share": 0.2, "reading_refused_share": 0.2}
+# Fixed before the run: explicit empty understanding is valid; productivity is
+# a quality measurement, not a smoke admission threshold.
+SMOKE_MARKS = {
+    "sample": 5,
+    "completion_rate": 1.0,
+    "acts": 0,
+    "refused_consumed": 0,
+    "missing_usage": 0,
+}
 
 
-def smoke_health(
-    items: Sequence[str],
-    states: Sequence[str],
-    graphs: Sequence[dict[str, Any]],
-    refusals: Sequence[dict[str, Any]],
-    claims: Mapping[str, int],
-) -> dict[str, Any]:
-    """Step one's write health on a small sample; counts and reasons only.
-
-    The smoke also runs step two (the runner reshapes after each write); its
-    sessions are not marked here.
-    """
-    productive = {
-        g["work_id"]
-        for g in graphs
-        if g["payload"].get("relations") or g["payload"].get("entities")
-    } | {w for w, n in claims.items() if n}
-    relations = sum(len(g["payload"].get("relations", ())) for g in graphs)
-    entities = sum(len(g["payload"].get("entities", ())) for g in graphs)
-    readings = sum(claims.values())
-    by = Counter(f"{r['part']}:{r['reason']}" for r in refusals)
-    refused_relations = sum(v for k, v in by.items() if k.startswith("relation:"))
-    refused_readings = sum(v for k, v in by.items() if k.startswith("reading:"))
-    measured = {
-        "productive_rate": len(productive & set(items)) / len(items) if items else 0.0,
-        "relation_refused_share": refused_relations / ((relations + refused_relations) or 1),
-        "reading_refused_share": refused_readings / ((readings + refused_readings) or 1),
-    }
-    passed = (
-        all(s == "settled" for s in states)
-        and relations > 0
-        and measured["productive_rate"] >= SMOKE_MARKS["productive_rate"]
-        and measured["relation_refused_share"] <= SMOKE_MARKS["relation_refused_share"]
-        and measured["reading_refused_share"] <= SMOKE_MARKS["reading_refused_share"]
-    )
+def session_smoke(samples: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    missing = sum(s.get("tokens") is None for s in samples)
+    errors = sum(s.get("status") == "ERROR" for s in samples)
+    completed = sum(s.get("status") == "PASS" for s in samples)
+    changed = sum(s.get("acts", 0) for s in samples)
+    consumed = sum(s.get("refused_consumed", 0) for s in samples)
+    counted = sum(s.get("admitted", 0) + s.get("refused", 0) for s in samples)
     return {
-        "status": "INSUFFICIENT" if len(items) < 5 else "PASS" if passed else "FAIL",
-        "items": len(items),
-        "settled": sum(s == "settled" for s in states),
-        "valid_writes": len({g["work_id"] for g in graphs} & set(items)),
-        "relations_admitted": relations,
-        "entities_admitted": entities,
-        "readings_admitted": readings,
-        "refusals": dict(by.most_common()),
+        "status": "ERROR"
+        if errors or missing or len(samples) < 5
+        else "PASS"
+        if completed == len(samples) and counted and not changed and not consumed
+        else "FAIL",
+        "sessions": len(samples),
+        "completed": completed,
+        "proposals_admitted": sum(s.get("admitted", 0) for s in samples),
+        "proposals_refused": sum(s.get("refused", 0) for s in samples),
+        "acts": changed,
+        "refused_consumed": consumed,
+        "missing_usage": missing,
         "marks": SMOKE_MARKS,
-        **measured,
     }
 
 
-def cost_row(step: str, selected: Sequence[str], receipts: Sequence[dict[str, Any]],
-             sessions: Sequence[dict[str, Any]]) -> dict[str, Any]:
+def check_acts(before: Mapping[str, int], after: Mapping[str, int]) -> int:
+    """Measure any change, including deletion; the snapshot has no other writers."""
+    return sum(abs(after.get(k, 0) - before.get(k, 0)) for k in set(before) | set(after))
+
+
+def compare_reports(before: dict[str, Any], after: dict[str, Any]) -> str:
+    """Print every leaf, including added/retired rows and status changes."""
+
+    def flatten(value: Any, prefix: str = "") -> dict[str, Any]:
+        if isinstance(value, dict):
+            return {
+                k: v
+                for key, child in value.items()
+                for k, v in flatten(child, f"{prefix}.{key}" if prefix else key).items()
+            }
+        if isinstance(value, list):
+            return {
+                k: v
+                for i, child in enumerate(value)
+                for k, v in flatten(child, f"{prefix}.{i}").items()
+            }
+        return {prefix: value}
+
+    left, right = flatten(before), flatten(after)
+    lines = []
+    for key in sorted(left.keys() | right.keys()):
+        a, b = left.get(key), right.get(key)
+        delta = b - a if isinstance(a, (int, float)) and isinstance(b, (int, float)) else None
+        lines.append(
+            f"{key}: {json.dumps(a)} -> {json.dumps(b)}"
+            + (f" (delta {delta:+g})" if delta is not None else "")
+        )
+    return "\n".join(lines)
+
+
+def tool_exchanges(messages: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    calls: dict[str, Any] = {}
+    exchanges = []
+    for message in messages:
+        for block in message.get("content", []):
+            if "toolUse" in block:
+                use = block["toolUse"]
+                calls[use["toolUseId"]] = use
+            if "toolResult" in block:
+                result = block["toolResult"]
+                use = calls.pop(result["toolUseId"], None)
+                if use is None:
+                    raise ValueError("unpaired tool result")
+                values = []
+                for part in result.get("content", []):
+                    if "json" in part:
+                        values.append(part["json"])
+                    elif "text" in part:
+                        try:
+                            values.append(json.loads(part["text"]))
+                        except (ValueError, TypeError):
+                            values.append(part["text"])
+                exchanges.append(
+                    {
+                        "name": use["name"],
+                        "input": use["input"],
+                        "result": values[0] if len(values) == 1 else values,
+                    }
+                )
+    if calls:
+        raise ValueError("missing tool results")
+    return exchanges
+
+
+async def session_quality(
+    judges: Judges, inspection: Any, exchanges: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Judge committed understanding against exactly the shown input and reads."""
+    evidence = {
+        "input": inspection,
+        "reads": [
+            e for e in exchanges if e["name"] not in {"memory_propose", "profile_revise", "close"}
+        ],
+    }
+    scored: dict[str, list[list[str]]] = {
+        k: [[], []]
+        for k in (
+            "reading_precision",
+            "reading_recall",
+            "relation_precision",
+            "wrong_merges",
+            "enrichment_support",
+            "enrichment_entity",
+        )
+    }
+
+    async def score(name: str, proposition: Any) -> None:
+        for i, verdict in enumerate(
+            await judges.score({"proposition": proposition, "evidence": evidence})
+        ):
+            scored[name][i].append(verdict)
+
+    readings = []
+    for exchange in exchanges:
+        if exchange["name"] != "memory_propose" or not isinstance(exchange["result"], dict):
+            continue
+        result, proposal = exchange["result"], exchange["input"]
+        if result.get("admitted"):
+            readings.extend(proposal.get("readings", []))
+            for reading in proposal.get("readings", []):
+                await score("reading_precision", reading)
+        committed = set(result.get("committed", []))
+        for relation in result.get("connected", {}).get("relations", []):
+            if relation["id"] in committed:
+                await score("relation_precision", relation)
+                if relation["rel"] == "same_as":
+                    await score("wrong_merges", {"different_entities": relation})
+        for entity in proposal.get("entities", []) if result.get("admitted") else []:
+            for attr, value in entity.get("attributes", {}).items():
+                await score(
+                    "enrichment_support",
+                    {
+                        "attribute": attr,
+                        "value": value,
+                        "requirement": "supported by the cited fetched page",
+                    },
+                )
+                await score(
+                    "enrichment_entity",
+                    {"entity": entity, "requirement": "cited fetched page is about this entity"},
+                )
+    await score("reading_recall", {"all_storable_statements_covered": True, "readings": readings})
+    return scored
+
+
+def cost_row(
+    step: str,
+    selected: Sequence[str],
+    receipts: Sequence[dict[str, Any]],
+    sessions: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
     """Tokens and sessions per work item for one step; money is tokens times the route's price."""
     steps = {s["id"]: s["situation"]["step"] for s in sessions}
     tokens = dict[str, int].fromkeys(selected, 0)
@@ -708,8 +821,11 @@ def cost_row(step: str, selected: Sequence[str], receipts: Sequence[dict[str, An
                 missing += 1
             else:
                 tokens[r["work_id"]] += used
-    ran = sum(1 for s in sessions
-              if s["situation"]["step"] == step and s["situation"].get("work_item") in tokens)
+    ran = sum(
+        1
+        for s in sessions
+        if s["situation"]["step"] == step and s["situation"].get("work_item") in tokens
+    )
     return {
         # ponytail: total tokens only; no input/output split or failed-call usage in receipts
         "status": "ERROR" if missing or not selected else "REPORTED",
@@ -763,55 +879,247 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         if not args.skip_projection:
             await project(engine, scope, args.projection_rate)
         if args.project_only:
-            return {"status": "REPORTED", "projected": True}
-        # PR 3 moves the driver; PR 6 adds the integrated precision/cost comparison.
+            return {
+                "status": "REPORTED",
+                "projected": True,
+                "acts": {"status": "FAIL" if check_acts(before, await acts(engine)) else "PASS"},
+            }
         from tempfile import TemporaryDirectory
 
         from nora.infra.sql.cognition_replay import recorded_wake
         from nora.subject import SubjectSpec, obtain, sandbox_as_of
 
         wakes = await rows(engine, "SELECT id,at_ms FROM cognition_wake ORDER BY at_ms,id")
-        if not wakes:
-            raise ValueError("snapshot contains no recorded wakes")
-        results = []
-        for wake in wakes[:args.per_stratum]:
+        candidates = []
+        for wake in wakes:
+            _, view = await recorded_wake(engine, wake["id"])
+            kinds = {s.kind for s in view.pending}
+            strata = []
+            for stimulus in view.pending:
+                if stimulus.kind == "message":
+                    message = await rows(
+                        engine,
+                        "SELECT body FROM messages WHERE id=:id",
+                        {"id": int(stimulus.ref.split(":")[-1])},
+                    )
+                    body = str(message[0]["body"]) if message else ""
+                    strata.append(
+                        "link"
+                        if "http://" in body or "https://" in body
+                        else "attachment"
+                        if "[image " in body
+                        or "[audio " in body
+                        or "[video " in body
+                        or "[file " in body
+                        else "text"
+                    )
+            if "social" in kinds:
+                strata.append("social")
+            if "rollup" in kinds and len(kinds) > 1:
+                strata.append("multi_signal")
+            candidates.append({**wake, "strata": sorted(set(strata))})
+        sample = stratify(candidates, 1 if args.smoke else args.per_stratum, args.seed)
+        selected = {w["id"]: w for group in sample.values() for w in group}
+        # Smoke is five distinct wakes; absent strata remain explicitly counted.
+        if args.smoke:
+            for wake in candidates:
+                if len(selected) >= SMOKE_MARKS["sample"]:
+                    break
+                selected.setdefault(wake["id"], wake)
+        freeze(output / "sample.json", list(selected.values()))
+        results: list[dict[str, Any]] = []
+        scores: dict[str, list[list[str]]] = {}
+        age_results = []
+        judges = Judges(cfg, [args.judge_a, args.judge_b])
+        for wake in selected.values():
             at = datetime.fromtimestamp(wake["at_ms"] / 1000, UTC)
             _, view = await recorded_wake(engine, wake["id"])
             room = next((c for c in policy.rooms() if c.unit == view.unit), None)
             if room is None:
                 raise ValueError("wake has no policy room")
+            measured: dict[str, Any] = {"status": "ERROR", "tokens": None}
             async with sandbox_as_of(args.database_url, at) as (url, _):
                 with TemporaryDirectory(prefix="nora-spike-") as workdir:
-                    subject = await obtain(SubjectSpec(database_url=url, workdir=Path(workdir),
-                        room=(room.platform, room.primary_id), now=at,
-                        identity=args.identity.read_text(), policy=args.policy.read_text(),
-                        overrides={"cognition.enabled": True, "memory.graph.enabled": True,
-                            "memory.graph.comprehend.enabled": True,
-                            "llm.base_url": cfg.llm.base_url, "llm.model": cfg.llm.model}))
+                    subject = await obtain(
+                        SubjectSpec(
+                            database_url=url,
+                            workdir=Path(workdir),
+                            room=(room.platform, room.primary_id),
+                            now=at,
+                            identity=args.identity.read_text(),
+                            policy=args.policy.read_text(),
+                            overrides={
+                                "cognition.enabled": True,
+                                "memory.graph.enabled": True,
+                                "memory.graph.comprehend.enabled": True,
+                                "llm": cfg.llm.model_dump(),
+                                "model_routes": {
+                                    k: v.model_dump() for k, v in cfg.model_routes.items()
+                                },
+                                "cognition": {**cfg.cognition.model_dump(), "enabled": True},
+                            },
+                        )
+                    )
+                    sandbox_engine = create_sql_engine(url)
+                    before_sandbox = await acts(sandbox_engine)
                     try:
                         runner = subject.deps.cognition_runner
                         if runner is None:
                             raise ValueError("snapshot session unavailable")
-                        sandbox_engine = create_sql_engine(url)
-                        before_sandbox = await acts(sandbox_engine)
+                        inspection = await runner.inspect(view=view, now_ms=wake["at_ms"])
+                        tokens_before = subject.deps.metrics.get("nora_cognition_unit_tokens_total")
                         outcome = await runner.replay(
-                            view=view, now_ms=wake["at_ms"], historical=True)
-                        after_sandbox = await acts(sandbox_engine)
-                        await sandbox_engine.dispose()
-                        if before_sandbox != after_sandbox:
-                            raise ValueError("backfill wrote an act")
-                        results.append({"wake": wake["id"], "session": outcome.session_id,
-                                        "stimuli": [s.id for s in view.pending]})
+                            view=view, now_ms=wake["at_ms"], historical=True
+                        )
+                        if outcome is None:
+                            raise ValueError("empty session")
+                        traces = await rows(
+                            sandbox_engine,
+                            "SELECT messages FROM tag_trace WHERE tag_id=:tag",
+                            {"tag": f"cognition:{outcome.session_id}"},
+                        )
+                        if len(traces) != 1:
+                            raise ValueError("session trace missing")
+                        exchanges = tool_exchanges(traces[0]["messages"])
+                        proposals = [e for e in exchanges if e["name"] == "memory_propose"]
+                        if any(not isinstance(e["result"], dict) for e in proposals):
+                            raise ValueError("unreadable admission result")
+                        admitted = {i for e in proposals for i in e["result"].get("admitted", [])}
+                        consumed = {
+                            c.item_index
+                            for c in outcome.closed
+                            if c.reason in {"written", "no_change", "covered"}
+                        }
+                        tokens = (
+                            subject.deps.metrics.get("nora_cognition_unit_tokens_total")
+                            - tokens_before
+                        )
+                        from nora.agent.comprehend_tools import egress_reason
+
+                        private_names = tuple(
+                            name
+                            for p in persons.by_person.values()
+                            for name in (p.name, *p.aliases)
+                        )
+                        queries = [
+                            str(e["input"].get("query", e["input"].get("url", "")))
+                            for e in exchanges
+                            if e["name"] in {"web_search", "web_fetch"}
+                        ]
+                        measured["egress_hits"] = sum(
+                            bool(egress_reason(q, private_names)) for q in queries
+                        )
+                        measured["trace_truncated"] = (
+                            subject.deps.metrics.get("nora_tagtrace_truncations_total") > 0
+                        )
+                        measured.update(
+                            status="PASS",
+                            tokens=tokens if tokens > 0 else None,
+                            admitted=sum(bool(e["result"].get("admitted")) for e in proposals),
+                            refused=sum(bool(e["result"].get("refused")) for e in proposals),
+                            refused_consumed=len(consumed - admitted),
+                        )
+                        freeze(
+                            output / f"session-{len(results)}.json",
+                            {"wake": wake, "inspection": inspection, "exchanges": exchanges},
+                        )
+                        if not args.smoke:
+                            scored = await session_quality(judges, inspection, exchanges)
+                            for name, pair in scored.items():
+                                target = scores.setdefault(name, [[], []])
+                                for i, values in enumerate(pair):
+                                    target[i].extend(values)
+                            age_dir = output / f"age-{len(results)}"
+                            age_dir.mkdir(mode=0o700)
+                            age_results.append(
+                                await age_comparison(
+                                    sandbox_engine, args.age_url, judges, age_dir, args.minimum
+                                )
+                            )
+                    except Exception:  # noqa: BLE001 - private exceptions stay on host
+                        measured["status"] = "ERROR"
                     finally:
+                        measured["acts"] = check_acts(before_sandbox, await acts(sandbox_engine))
+                        await sandbox_engine.dispose()
                         from evals.backbone import _close
+
                         await _close(subject)
-        freeze(output / "sessions.json", results)
-        report = {"driver": "cognition_session", "replayed_wakes": len(results),
-                  "acts": {"status": "PASS", "count": 0},
-                  "measurement": {"status": "REPORTED",
-                      "note": "Integrated driver only; precision and cost spike follows in PR 6."}}
-        if await acts(engine) != before:
-            raise ValueError("source snapshot acts changed")
+            results.append(measured)
+        health = session_smoke(results)
+        report = {
+            "driver": "cognition_session",
+            "judges": [args.judge_a, args.judge_b],
+            "smoke": health,
+            "strata": {s: len(v) for s, v in sample.items()},
+            "acts": {
+                "status": "FAIL"
+                if check_acts(before, await acts(engine)) or health["acts"]
+                else "PASS"
+            },
+            "cost_per_batch": {
+                "status": "ERROR" if health["missing_usage"] else "REPORTED",
+                "token_median": percentile(
+                    [s["tokens"] for s in results if s["tokens"] is not None], 0.5
+                ),
+                "token_p95": percentile(
+                    [s["tokens"] for s in results if s["tokens"] is not None], 0.95
+                ),
+                "batches": results,
+                "budget_unit": "tokens per wake; billing split unavailable",
+            },
+            "retired": {
+                "step_1_step_2_cost_and_sessions": "One session per wake replaces both stages.",
+                "work_item_retry_and_lost": (
+                    "Per-item worker retired; measure completion and refused consumption."
+                ),
+            },
+        }
+        if not args.smoke:
+            report["monetary_cost"] = {"status": "ERROR", "reason": "billing split unavailable"}
+            thresholds = {
+                "reading_precision": 0.95,
+                "reading_recall": 0.8,
+                "relation_precision": 0.9,
+                "wrong_merges": 0.02,
+                "enrichment_support": 0.95,
+                "enrichment_entity": 0.9,
+            }
+            for name, threshold in thresholds.items():
+                pair = [
+                    rate(v, args.minimum, threshold, maximum=name == "wrong_merges")
+                    for v in scores.get(name, [[], []])
+                ]
+                status = next(
+                    s
+                    for s in ("ERROR", "INSUFFICIENT", "FAIL", "PASS")
+                    if any(r["status"] == s for r in pair)
+                )
+                report[name] = {"status": status, "judges": pair}
+            report["age"] = {
+                "status": "ERROR"
+                if not age_results or any(r["status"] != "PASS" for r in age_results)
+                else "REPORTED",
+                "decision": "adopt"
+                if age_results
+                and all(r.get("within_latency_and_more_correct") for r in age_results)
+                else "retain SQL",
+                "runs": age_results,
+                "cost": "custom image, duplicate link schema, Postgres upgrades wait on AGE",
+            }
+            latencies = [r["sql_p95_ms"] for r in age_results if r.get("sql_p95_ms") is not None]
+            report["query_depth_3"] = {
+                "status": "ERROR" if not latencies else "PASS" if max(latencies) < 200 else "FAIL",
+                "p95_ms_ceiling": max(latencies, default=None),
+            }
+            hits = sum(s.get("egress_hits", 0) for s in results)
+            report["egress"] = {
+                "status": "ERROR"
+                if any(s["status"] == "ERROR" or s.get("trace_truncated") for s in results)
+                else "FAIL"
+                if hits
+                else "PASS",
+                "count": hits,
+            }
         freeze(output / "report.json", report)
         return report
     finally:
@@ -820,6 +1128,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--compare", type=Path)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--policy", type=Path, required=True)
     parser.add_argument("--identity", type=Path, required=True)
@@ -829,10 +1138,10 @@ def main() -> int:
     parser.add_argument("--per-stratum", type=int, default=20)
     parser.add_argument("--minimum", type=int, default=20)
     parser.add_argument("--seed", type=int, default=20261029)
-    parser.add_argument("--judge-a", required=True)
-    parser.add_argument("--judge-b", required=True)
-    parser.add_argument("--judge-vendor-a", required=True)
-    parser.add_argument("--judge-vendor-b", required=True)
+    parser.add_argument("--judge-a", default="cx/gpt-6.1-sol")
+    parser.add_argument("--judge-b", default="kmc/k3-256k")
+    parser.add_argument("--judge-vendor-a", default="openai")
+    parser.add_argument("--judge-vendor-b", default="moonshot")
     parser.add_argument("--age-url")
     parser.add_argument("--projection-rate", type=float, default=100)
     parser.add_argument("--project-only", action="store_true")
@@ -841,22 +1150,39 @@ def main() -> int:
     args = parser.parse_args()
     if args.per_stratum <= 0 or args.minimum <= 0:
         parser.error("sample sizes must be positive")
-    if args.smoke:
-        parser.error("--smoke is not on the session yet; build step 6 re-scopes it")
+
     try:
         report = asyncio.run(run(args))
     except Exception:  # noqa: BLE001 - fail closed without private exception text
         print('{"status":"ERROR","reason":"spike failed; inspect private host state"}')
         return 2
-    print(json.dumps(report, sort_keys=True))
+    if args.compare:
+        print(compare_reports(json.loads(args.compare.read_text()), report))
+    else:
+        print(json.dumps(report, sort_keys=True))
+    return report_exit(report)
+
+
+def report_exit(report: Any) -> int:
+    statuses = []
+
+    def collect(value: Any) -> None:
+        if isinstance(value, dict):
+            if "status" in value:
+                statuses.append(value["status"])
+            for child in value.values():
+                collect(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect(child)
+
+    collect(report)
     return (
-        0
-        if all(
-            v.get("status") in ("PASS", "REPORTED")
-            for v in report.values()
-            if isinstance(v, dict) and "status" in v
-        )
+        2
+        if "ERROR" in statuses
         else 1
+        if any(s not in {"PASS", "REPORTED", "ok", "nothing_found"} for s in statuses)
+        else 0
     )
 
 

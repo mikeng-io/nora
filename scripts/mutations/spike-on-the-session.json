@@ -1,0 +1,23 @@
+[
+  {
+    "name": "smoke errors cannot pass",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "\"ERROR\"\n        if errors or missing or len(samples) < 5",
+    "new": "\"PASS\"\n        if errors or missing or len(samples) < 5",
+    "target": "tests/unit/test_memory_graph_spike.py::test_session_smoke_marks"
+  },
+  {
+    "name": "acts detect deletions",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "abs(after.get(k, 0) - before.get(k, 0))",
+    "new": "max(0, after.get(k, 0) - before.get(k, 0))",
+    "target": "tests/unit/test_memory_graph_spike.py::test_session_acts_invariant_counts_deletions_and_creations"
+  },
+  {
+    "name": "compare reports numeric deltas",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "delta = b - a",
+    "new": "delta = a - b",
+    "target": "tests/unit/test_memory_graph_spike.py::test_compare_reports_prints_each_row_and_delta"
+  }
+]
