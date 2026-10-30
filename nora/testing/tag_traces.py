@@ -1,5 +1,5 @@
 """In-memory `SqlTagTraceStore` mirror: the same `save`/`recent`/`get`/
-`recent_unit` contract, in-process and `await`-free like the other fakes."""
+`turn_facts` contract, in-process and `await`-free like the other fakes."""
 
 from __future__ import annotations
 
@@ -38,17 +38,6 @@ class FakeTagTraceStore:
             return ()
         rows = sorted(
             (t for t in self._rows if t.conversation_id == conversation_id),
-            key=lambda t: t.created_at, reverse=True,
-        )
-        return tuple(rows[:limit])
-
-    async def recent_unit(
-        self, *, unit: str, limit: int,
-    ) -> tuple[TagTrace, ...]:
-        if limit <= 0:
-            return ()
-        rows = sorted(
-            (t for t in self._rows if t.unit == unit),
             key=lambda t: t.created_at, reverse=True,
         )
         return tuple(rows[:limit])

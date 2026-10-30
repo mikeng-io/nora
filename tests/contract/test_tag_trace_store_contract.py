@@ -1,9 +1,9 @@
 """The tag-trace store contract, held against BOTH implementations: the SQL
 store and the in-memory fake (`port → two implementations`).
 
-What is pinned: `save`/`get`/`recent`/`recent_unit` scope, order and
-completeness — `recent` is one room, `recent_unit` is the whole unit
-newest-first, `get` is unit-filtered by `turn_id`."""
+What is pinned: `save`/`get`/`recent`/`turn_facts` scope, order and
+completeness — `recent` is one room, `turn_facts` reduces the unit's
+current identities, `get` is unit-filtered by `turn_id`."""
 
 import uuid
 
@@ -38,7 +38,7 @@ def _trace(tag_id=None, cid="room-a", unit="u1", turn_id=None, created=1000,
     )
 
 
-async def test_saved_traces_come_back_by_room_and_unit(store):
+async def test_saved_traces_come_back_by_room(store):
     a = _trace(cid="room-a", created=100)
     b = _trace(cid="room-b", created=200)
     other_unit = _trace(cid="room-a", unit="other", created=300)
@@ -48,14 +48,11 @@ async def test_saved_traces_come_back_by_room_and_unit(store):
     room = await store.recent(conversation_id="room-a", limit=10)
     assert {t.tag_id for t in room} == {a.tag_id, other_unit.tag_id}
 
-    unit = await store.recent_unit(unit="u1", limit=10)
-    assert [t.tag_id for t in unit] == [b.tag_id, a.tag_id]
 
-
-async def test_recent_unit_is_newest_first_and_bounded(store):
+async def test_recent_is_newest_first_and_bounded(store):
     for i in range(5):
         await store.save(_trace(cid="room-a", created=1000 + i))
-    unit = await store.recent_unit(unit="u1", limit=3)
+    unit = await store.recent(conversation_id="room-a", limit=3)
     assert len(unit) == 3
     createds = [t.created_at for t in unit]
     assert createds == sorted(createds, reverse=True)
@@ -64,7 +61,7 @@ async def test_recent_unit_is_newest_first_and_bounded(store):
 async def test_get_returns_the_turn_only_within_its_unit(store):
     saved = _trace(unit="u1")
     await store.save(saved)
-    stored = (await store.recent_unit(unit="u1", limit=1))[0]
+    stored = (await store.recent(conversation_id="room-a", limit=1))[0]
     got = await store.get(turn_id=stored.turn_id, unit="u1")
     assert got is not None and got.tag_id == saved.tag_id
     assert await store.get(turn_id=stored.turn_id, unit="other") is None
@@ -72,7 +69,6 @@ async def test_get_returns_the_turn_only_within_its_unit(store):
 
 async def test_a_zero_limit_reads_nothing(store):
     await store.save(_trace())
-    assert await store.recent_unit(unit="u1", limit=0) == ()
     assert await store.recent(conversation_id="room-a", limit=0) == ()
 
 
