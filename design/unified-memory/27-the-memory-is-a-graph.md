@@ -831,3 +831,133 @@ measured between them.
 Loose ends noted, not blocking: no `play` stimulus arrived in the 7 days to
 2026-10-28 (the producer may be idle), and `wake_at` was used once in those
 7 days (172 sessions).
+
+
+## 17. Implementation findings and longitudinal understanding (2026-10-30)
+
+Operator-requested design amendment and investigation handoff. The findings below
+are measured implementation gaps or explicit rollout boundaries, not a replacement
+for the ratified graph architecture. [29](29-one-cognition-session.md) still owns
+the unified session; [31](31-build-one-session.md) owns its build acceptance.
+[32](32-platform-observations.md) specifies the missing platform observation path.
+This section is the maintained home of the findings, independent of any issue.
+
+**Evidence boundary:** source audited at
+`a535a6960f98232455c80286c404cc181a19bf72`, checked again at
+`8b3c0e6f4aa4e2f125c815ac8014ea3997c68950`; only release metadata changed between
+those revisions. Seven generated local probes exercised production code using
+existing contract fakes. Focused tests passed: 128 passed, 66 deselected, exit 0
+(SQL cases excluded). No full gate, live-model evaluation or production error-rate
+measurement is claimed by that investigation. The configured host alias did not
+resolve before connection: live flags, rows and deployed inputs remain unverified.
+Re-check each finding against the receiving session's exact head before repairing it.
+
+
+### F1 — Wake graph context loses structural anchors
+
+**Five Cs: Correctness / Completeness. Reproduced input regression.**
+
+The existing `build_preview` seeds the source, author, mentions/faces, room, unit, reply parent and explicit references, and requests Record/Rollup/Notebook layers (`nora/domain/comprehend.py:77`). The unified wake's `WakeMemory.prepare` reconstructs `ComprehendItem` without author, mentions, reply parent, URLs, accounts or place; its rebuilt source rows reset mentions and discard reply structure and metadata (`nora/app/cognition_memory.py:92`).
+
+It then seeds only source keys and aliases literally found in source text (`:119`). Source persons are used as scope restrictions, not graph seeds. Its `Walk` does not specify layers, so the domain default is Rollup + Notebook (`nora/domain/memory_graph.py:314`). Knowing the sender's identity therefore does not ensure the sender's existing plans or the room's curated context are in the pre-model input.
+
+Generated probe: an actor already has a valid `plans` relation. A new reply contains no actor/event name. The wake preview omits the relation; a direct actor seed on the same graph retrieves it. The previous `build_preview` also retrieves it. The rebuilt wake item has an empty author and no reply parent. This is a concrete mechanism for failing to interpret an implicit acknowledgement using established context; it does not prove every such utterance will be misread, since tools may recover the missing context.
+
+Smallest direction: preserve structural input already available from the loader and reuse the established anchor construction under the existing scope/budget. Verify the actual assembled model input before changing instructions. Preserve intentional hub traversal limits; this finding does not call for unbounded traversal through people.
+
+### F2 — Automatic recall bypasses new semantic relations
+
+**Five Cs: Consistency / Completeness. Reproduced retrieval mismatch.**
+
+`TranscriptInjection._prefetch` calls `.search`, which uses the legacy index walk. The model's explicit graph tool calls `.read`, which invokes `SqlMemoryGraph.walk`. A new Notebook relation can therefore be readable through a tool but absent from automatic recall, even with the graph collaborator wired.
+
+Generated probe: a searchable breakfast reading has a valid new-graph `about` relation to an event whose name shares no query words. `.search` returns only the reading; `.read` reaches both the relation and the event. The tool result is correctly marked partial because this generated probe uses lexical retrieval; the event's presence is a positive control independent of that status.
+
+Impact: social context requiring connected knowledge can remain invisible until Nora decides to search for something she may not know she is missing. Existing prefetch tests can pass because their fixtures exercise index adjacency rather than this new-graph-only connection.
+
+Smallest direction: have automatic recall obtain a bounded view from the same scoped graph retrieval contract as the tools, retaining transcript deduplication and appropriate output rendering. Do not create a second graph or broaden read scope.
+
+### F3 — Register links are lexical, not the session's semantic association
+
+**Five Cs: Correctness / Completeness. Reproduced mechanism and ceiling.**
+
+`RegisterGraphLinks.project` chooses targets by `alias.casefold() in body.casefold()` (`nora/app/register_graph.py:29`). Notes use `concerns`, memos `settles`. Gatherings unconditionally obtain a Register-derived event entity (`:37`). This automatic linking cannot establish that a breakfast arrangement belongs to a differently named underlying activity merely from the session's understanding.
+
+Generated probe: a new note about breakfast and an existing event produce zero new links. Keeping the evidence and graph fixed but adding the event's exact name to the note produces one link. No model was used, and the test does not claim that every natural note lacks an appropriate alias. It proves that semantic context alone is not represented by this linking mechanism.
+
+Smallest direction: carry an evidence-grounded association selected in the existing Cognition session into the Register write/link step, with current admission and retry ownership. Alias matching can assist discovery, but should not be the only mechanism that serializes the understood association. Do not mandate a breakfast-specific rule or infer a new independent event from the literal poll topic.
+
+### F4 — Unified profile curation does not yet feed the live profile surface
+
+**Five Cs: Completeness. Intentional rollout boundary, not an accidental failing write.**
+
+The unified session's `profile_revise` calls `WakeMemory.profile`; it validates admitted relations and shown evidence, then calls `records.shadow` (`nora/app/cognition_memory.py:196`). SQL saves a `reshape` receipt containing `would_writes` (`nora/infra/sql/comprehend.py:619`). That path does not write live profile heads, room culture or Lessons.
+
+Generated probe: a valid proposal returns `ok` with the explicit shadow note and creates one shadow receipt. The code itself establishes the destination; the probe is not a claim about live profile content.
+
+Separate `ProfilePersonAdaptor` and collective adaptors still exist in composition and can write profile stores under their own configuration and evidence cycle (`nora/app/composition.py:4225`). Consequently it would be wrong to report that Nora has no long-term profile system. The precise gap is that new unified-session reshape output is not automatically the profile read by later turns. The ratified session design explicitly stages this as a later surface switch.
+
+Smallest direction: verify the intended phase/promotion and its acceptance before claiming a closed learning loop. No silent flag flip or deployment is authorized by this audit. A graph relation may remain useful even while a free-text behavioural account is still shadow-only; assess both separately.
+
+### F5 — Admission proves evidence custody, not the truth of social interpretation
+
+**Five Cs: Correctness evidence boundary. Reproduced, not a request for deterministic semantic validation.**
+
+`validate_relation` checks the closed vocabulary, endpoint kinds, layer, evidence availability, exact span presence and scope (`nora/domain/memory_graph.py:273`). It does not determine whether a source semantically entails a proposed relation.
+
+Generated probe: an `attended` judgement supported only by a literal assent is structurally admitted with no refusals. This demonstrates that a saved relation/evidence count cannot certify that Nora distinguished intent, teasing and actual attendance. The session instruction already says a plan does not establish attendance. The semantic property must be measured using the model's real input and trajectory, not patched with keyword/time-of-day/person-specific rules.
+
+The graph preserves source/judgement layers, attribution and corrections; these are valuable safeguards. They make a judgement auditable but do not by themselves make it correct. Prior Notebook conclusions can provide context, while original Record/Rollup evidence must remain the independent support.
+
+### F6 — Checked-in semantic acceptance is still parked
+
+**Five Cs: Correctness / Completeness of validation. Verified file census.**
+
+`evals/corpora/cognition_session.yaml` contains 11 cases, all 11 parked and zero active cases in this checked-in corpus. It includes useful distinctions such as a lone acknowledgement versus agreement in context, third-visit profile change, ticket purchase versus attendance, and group-local interests. Its header states that `expected_output` explains the property and is not a separate semantic scorer.
+
+The repository also contains private-anchor/replay and graph-spike tooling; unit tests exercise its fail-closed aggregation. Their existence is not a receipt that the current model passed longitudinal social-understanding evaluation. Private host-side artifacts could supply additional evidence, but were inaccessible here.
+
+The most relevant missing measurement for this discussion is an anchored longitudinal trajectory where identical current words have different interpretations because of prior relationships, conventions and outcomes, followed by new evidence that changes the earlier account. Model evaluation follows the recorded-wake ruling below; generated fixtures only test code guarantees. Evaluate the account and subsequent answer, not only whether a tool named `memory_propose` was called. Cases test the business property; they are not a list of production scenario rules.
+
+
+### Long-term social understanding is the acceptance property
+
+An utterance occurred; Nora interprets its social force; an outcome later occurs
+or remains unknown. These are separate claims with separate evidence. Assent is
+not automatically commitment or attendance, teasing is not automatically a trait,
+and a literal poll topic is not necessarily the underlying shared matter. Prior
+relationships, group conventions and observed outcomes can change the reading of
+identical current words. A quiet person's missing vote does not establish absence.
+
+Notebook curation owns these revisable accounts. The graph connects them to people,
+rooms, ongoing matters and independent Record/Rollup evidence; it is not itself the
+curator. Curated understanding guides bounded retrieval and attention, while new
+and contradictory observations remain discoverable. A repeated Notebook conclusion
+cannot become independent evidence for itself. Do not add phrase/time/person rules,
+a universal joke classifier or a global reliability score to ETL or admission.
+
+An arrangement can belong to an existing activity without creating a second event.
+The session must preserve that association through Register writes and later reads.
+Likewise, a source poll may show three explicit voters while an evidence-backed
+ongoing-matter account expects a larger party. Preserve both meanings and their
+uncertainty instead of changing poll counts to match Nora's expectation.
+
+### Repair and measurement order
+
+1. Preserve the available structural anchors and inspect the assembled input (F1).
+2. Use the same scoped graph semantics in automatic recall and explicit tools (F2).
+3. Carry understood associations through Register persistence/re-linking (F3).
+4. Verify the authorized profile-surface handoff at its planned phase (F4).
+5. Measure longitudinal interpretation, later answers and correction (F5/F6).
+
+[31](31-build-one-session.md)'s recorded-wake anchoring ruling stands. Generated
+code probes demonstrate wiring mechanisms, not model understanding; missing real
+model anchors remain parked/ERROR, not replaced by synthetic model inputs. Use
+held-out longitudinal evidence journeys and an independent semantic judgement,
+with the active/parked/held-out census and actual run receipts. Compare histories
+that change interpretation, then introduce counterevidence and inspect the revised
+account and a later turn. These are evaluation properties, not production rules.
+
+This order holds unless a same-head reproduction or an actual assembled/deployed
+input overturns a finding. Passing structural tests, a shadow receipt or a tool-call
+name alone cannot close the semantic requirement.
