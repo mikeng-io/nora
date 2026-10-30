@@ -104,7 +104,11 @@ the builder. Native Komodo `nora-releases` owns deployment, not checkout mode.
 The installed wrapper lives outside the fetched clone. Under its existing shared
 deployment lock, back up and replace the installed `komodo_deploy.py` together
 with sibling `secret_delivery.py`; retain `verify-deploy.py` and the wrapper's
-existing controls. Update the installed computer `nora-computer` from this tree.
+existing controls. Before updating the installed computer `deploy/computer/nora-computer`,
+install this tree's public `scripts/secret_delivery.py` at the runtime root's
+`scripts/secret_delivery.py` (relative to the caller: `../../scripts/secret_delivery.py`).
+The Komodo sibling copy alone does not install the host admin helper. Then update
+the installed computer script from this tree.
 Validate `python3 -c "import tomllib"` in Periphery and the host, then compile
 the candidate installed scripts before enabling them. Python 3.11+ is required;
 if the installed Periphery lacks it, update/rebuild its existing image first; source merge alone
@@ -125,6 +129,25 @@ of config, legacy env, previous secret and the entire
 state directory, then atomically writes mode-0600 secret.toml. It retains .env
 and leaves all OAuth state untouched. Unsupported dotenv interpolation/encoding
 fails for private reconciliation. This command is host-local, not a deployment.
+
+After credential assignments are retired from `.env`, use the installed helper
+for host DB reads and other Compose exec operations:
+
+```sh
+python3 "$HOME/workspace/nora/scripts/secret_delivery.py" \
+  --runtime-root "$HOME/workspace/nora" --compose-exec -T db \
+  psql -U nora -d nora -Atc 'select count(*) from computer_events'
+```
+
+`--compose-exec` consumes all remaining arguments and cannot be combined with
+`--apply`. It runs `docker compose exec` in the runtime directory, resolving process
+environment > `.env` > `secret.toml` (present-empty values win) into the child
+environment only. It preserves stdin and exit status, writes no delivery artifacts,
+and prints no credential values. The computer lifecycle sync uses the same mode;
+its timeout, SQL pipeline and successful-SQL-only offset marking remain intact.
+Install both files before retiring overrides, then prove `sync-events --all` and
+the DB read on the host. This mode does not validate or deploy configuration;
+the Komodo prepare/apply-release path remains the deployment path.
 
 Validate settings using the candidate image through the existing network-disabled
 wrapper validator. Generate private delivery with `secret_delivery.prepare` in an

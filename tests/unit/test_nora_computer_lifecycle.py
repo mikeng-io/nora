@@ -197,3 +197,29 @@ def test_a_corrupt_line_in_the_spool_does_not_stop_later_events_reaching_postgre
     assert result.returncode == 0, result.stdout + result.stderr
     assert "policy_log_read" in fresh.psql_sql()
     assert "skipping a line that is not an event" in result.stderr
+
+
+def test_sync_events_uses_secret_credentials_and_marks_only_success(fresh: Host) -> None:
+    fresh.run('serve', STUB_DB_FAIL='1')
+    assert len(fresh.events()) == 2
+    assert not (fresh.state_dir / 'lifecycle-events.synced').exists()
+    (fresh.root / 'secret.toml').write_text(
+        '[credentials]\nPOSTGRES_PASSWORD="synthetic-db"\n')
+    docker = fresh.bin / 'docker'
+    body = docker.read_text().replace(
+        '    cat >>',
+        '    [ "${POSTGRES_PASSWORD:-}" = synthetic-db ] || exit 14\n    cat >>',
+    ).replace('exit 1\n    exit 0', 'exit 23\n    exit 0')
+    docker.write_text(body)
+    (fresh.dir / 'psql.sql').unlink()
+    failed = fresh.run('sync-events', '--all', STUB_DB_FAIL='1')
+    assert failed.returncode == 1
+    assert not (fresh.state_dir / 'lifecycle-events.synced').exists()
+    assert fresh.psql_sql().count('INSERT INTO computer_events') == 2
+    (fresh.dir / 'psql.sql').unlink()
+    synced = fresh.run('sync-events', '--all')
+    assert synced.returncode == 0, synced.stdout + synced.stderr
+    assert all(event['id'] in fresh.psql_sql() for event in fresh.events())
+    assert int((fresh.state_dir / 'lifecycle-events.synced').read_text()) == \
+        fresh.spool_path.stat().st_size
+    assert 'synthetic-db' not in ''.join(fresh.calls()) + synced.stdout + synced.stderr
