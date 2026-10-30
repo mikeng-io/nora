@@ -131,7 +131,9 @@ and leaves all OAuth state untouched. Unsupported dotenv interpolation/encoding
 fails for private reconciliation. This command is host-local, not a deployment.
 
 After credential assignments are retired from `.env`, use the installed helper
-for host DB reads and other Compose exec operations:
+for host DB reads and other Compose exec operations. These examples require
+Python 3.11+ and the helper installed at the runtime root as described above;
+installing only the Komodo sibling copy is insufficient:
 
 ```sh
 python3 "$HOME/workspace/nora/scripts/secret_delivery.py" \
@@ -148,6 +150,13 @@ its timeout, SQL pipeline and successful-SQL-only offset marking remain intact.
 Install both files before retiring overrides, then prove `sync-events --all` and
 the DB read on the host. This mode does not validate or deploy configuration;
 the Komodo prepare/apply-release path remains the deployment path.
+
+Bare Compose commands (including `logs`, `ps`, and the Makefile
+`build`/`up`/`stop`/`logs`/`ps` recipes) are standalone `.env` workflows:
+the runtime `.env` must supply the variables required by Compose interpolation.
+They do not read `secret.toml`. The helper supports exec only; it is not a
+deployment, logs or status CLI. Native Komodo owns application deployment after
+cutover; use its installed procedure for recreation and rollback.
 
 Validate settings using the candidate image through the existing network-disabled
 wrapper validator. Generate private delivery with `secret_delivery.prepare` in an

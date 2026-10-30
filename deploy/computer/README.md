@@ -123,7 +123,7 @@ the way the tools do; it keeps a **host-side spool first** and replays it into
   line per event, written before anything else. It survives Postgres being down
   at boot, which is the ordinary case: the unit starts before the db is healthy.
 - Each event is then synced into `computer_events` through
-  `docker compose exec db psql` (`ON CONFLICT DO NOTHING` with no conflict target,
+  the installed helper’s `--compose-exec -T db psql` mode (`ON CONFLICT DO NOTHING` with no conflict target,
   so a row already there is skipped on whichever unique key it hits, and two
   syncs racing on the same event cannot fail each other). A sync sends only what
   is **after the offset the last good sync reached** (`lifecycle-events.synced`
@@ -146,10 +146,10 @@ the way the tools do; it keeps a **host-side spool first** and replays it into
 - `nora-computer policy-log [--json]` is the audited way to read `sbx policy log`:
   it records the read first and does not read if it could not record it.
 
-Read it back:
+Read it back using the [installed host helper](../../docs/configuration.md#host-migration-and-installed-files):
 
 ```bash
-cd ~/workspace/nora && docker compose exec -T db psql -U nora -d nora -Atc \
+cd ~/workspace/nora && python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T db psql -U nora -d nora -Atc \
   "select created_at, request->>'event', status, result::text from computer_events where tool = 'computer_vm' order by created_at desc limit 10" </dev/null
 tail -n 3 ~/.local/state/nora-computer/lifecycle-events.jsonl      # the spool
 ```

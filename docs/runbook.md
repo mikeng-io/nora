@@ -22,6 +22,11 @@ success receipt or pending attempt routes deployment and recovery through the
 recreate procedures below apply only before that cutover; read-only diagnostics
 still apply in either mode.
 
+Host exec examples require the [installed secret-delivery helper](configuration.md#host-migration-and-installed-files).
+Bare Compose commands below require a runtime `.env` sufficient for Compose
+interpolation; historical checkout procedures retain that prerequisite. Native
+Komodo owns application deployment after cutover.
+
 ## 1. "Nora is silent — is she broken or just quiet?"
 
 Silence is the default behavior. Tags, enabled participation/proactive paths and
@@ -167,7 +172,7 @@ To tell "quiet" from "broken":
    they are invisible in `/health`:
 
    ```bash
-   docker compose logs nora | grep nora.discord.roster   # JSON lines on stdout
+   docker logs nora | grep nora.discord.roster   # JSON lines on stdout
    ```
 
    - `roster read forbidden for guild …` → the **GUILD_MEMBERS privileged
@@ -278,7 +283,7 @@ frontmatter, missing required key, unparseable YAML) fails to parse.
 2. Confirm it in the logs:
 
    ```bash
-   docker compose logs nora | grep doctrine_reload_failed
+   docker logs nora | grep doctrine_reload_failed
    ```
 
    A failed reparse **keeps the last good doctrine** — Nora keeps replying with the
@@ -468,7 +473,7 @@ commands below are unchanged and still the right first moves.
 1. Check signal-cli first — it's the more common cause:
 
    ```bash
-   docker compose exec -T nora /app/.venv/bin/python -c \
+   python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T nora /app/.venv/bin/python -c \
      'import urllib.request; print(urllib.request.urlopen("http://signal-cli:18080/api/v1/check", timeout=5).status)'
    ```
 
@@ -478,7 +483,7 @@ commands below are unchanged and still the right first moves.
 2. If signal-cli looks fine, check Nora's own logs:
 
    ```bash
-   docker compose logs -n 100 -f nora
+   docker logs --tail 100 -f nora
    ```
 
    Look for reconnect-backoff messages, unhandled exceptions in the SSE listen loop, or a
@@ -635,7 +640,7 @@ Monitoring reload remains outside the Komodo application release path.
 `--web.enable-lifecycle`, so after the deploy checkout has the new file:
 
 ```bash
-docker compose exec -T prometheus promtool check rules /etc/prometheus/rules/nora.yml
+python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T prometheus promtool check rules /etc/prometheus/rules/nora.yml
 curl -fsS -X POST http://127.0.0.1:9190/-/reload
 curl -fsS http://127.0.0.1:9190/api/v1/rules | jq -r '[.data.groups[].rules[].name] | length'   # 16
 ```
@@ -651,7 +656,7 @@ active for that specific tag, computed at `DoctrineStore.get()` time. Find the t
 `tag_id` (or by time) and read the hash straight off that line:
 
 ```bash
-docker compose logs nora | grep doctrine_sha256 | tail -1
+docker logs nora | grep doctrine_sha256 | tail -1
 ```
 
 The same value is also reported live in `GET /health` (`doctrine_sha256` field) and as an
@@ -722,7 +727,7 @@ Four measures the rooms produce for free (`design/culture-tier/02-measurement`).
 No model, no behaviour change, read-only.
 
 ```bash
-docker compose exec -T nora uv run --no-sync nora measure participation --days 7
+python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T nora uv run --no-sync nora measure participation --days 7
 ```
 
 Why it exists: **today the verdict IS the measurement.** A model agreeing with
@@ -754,7 +759,7 @@ reachable, then hand it in:
 ```bash
 python3 scripts/gate_refusals.py --range 7d > /tmp/refusals.json
 docker cp /tmp/refusals.json nora:/tmp/refusals.json
-docker compose exec -T nora uv run --no-sync \
+python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T nora uv run --no-sync \
     nora measure participation --days 7 --refusals /tmp/refusals.json
 ```
 
@@ -1104,7 +1109,7 @@ Inspect both the job row and delivery counter when a promised result is missing.
 
 ```bash
 curl -s localhost:9100/metrics | grep nora_compute_jobs_delivered_total
-docker compose exec -T db psql -U nora -d nora -c \
+python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T db psql -U nora -d nora -c \
   'select id, state, created_at, completed_at, error from compute_jobs
    order by created_at desc limit 10;'
 ```
@@ -1172,6 +1177,8 @@ whole `./state` directory at `/app/state` in Nora. Signal session material is
 therefore within that mount too; do not assume the container cannot read it.
 PostgreSQL uses the `db-data` named volume; RustFS blobs use `rustfs-data`.
 OAuth refresh state and messaging sessions must be preserved as credentials.
+Back up private `secret.toml` as well as the deployment settings; retain its mode
+0600. See the [configuration contract](configuration.md) for credential lifetimes.
 Optional audio-controller state is in its own named volume.
 
 **Back up a coordinated set.** Stop writers, dump PostgreSQL and copy both bind
@@ -1186,9 +1193,11 @@ mkdir -p "$BACKUP"
 chmod 700 "$BACKUP"
 docker compose stop
 docker compose start db
-docker compose exec -T db pg_dump -U nora -d nora -Fc > "$BACKUP/postgres.dump"
+python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T db pg_dump -U nora -d nora -Fc > "$BACKUP/postgres.dump"
 docker compose stop db
-tar czf "$BACKUP/config-state-data.tar.gz" .env config.toml identity.toml policy.toml state data
+config_files=(.env config.toml identity.toml policy.toml)
+[ ! -f secret.toml ] || config_files+=(secret.toml)
+tar czf "$BACKUP/config-state-data.tar.gz" "${config_files[@]}" state data
 docker compose cp rustfs:/data "$BACKUP/rustfs"
 # If voice is installed, preserve its desired-state volume too:
 # docker compose cp voice-sidecar:/var/lib/audio-controller "$BACKUP/audio-controller"
@@ -1209,8 +1218,11 @@ tar xzf "$BACKUP/config-state-data.tar.gz"
 docker compose cp "$BACKUP/rustfs/." rustfs:/data
 # If saved: docker compose cp "$BACKUP/audio-controller/." voice-sidecar:/var/lib/audio-controller
 docker compose start db
-docker compose exec -T db pg_restore -U nora -d nora --clean --if-exists --no-owner < "$BACKUP/postgres.dump"
+python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T db pg_restore -U nora -d nora --clean --if-exists --no-owner < "$BACKUP/postgres.dump"
 ```
+
+For an ordinary config rollback, keep the current OAuth rotating state; restoring
+an older chain can replay a spent token. Follow [credential recovery](configuration.md#secret-free-functional-readback-and-recovery).
 
 Resume through the installed deployment mode, then verify health, account linkage
 and a permitted message. Preserve the complete `state/signal-cli/` directory;
