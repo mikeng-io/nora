@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.11.54](https://github.com/mikeng-io/nora/compare/v7.11.53...v7.11.54) (2026-10-30)
+
+
+### Bug Fixes
+
+* **evals:** check the replay subjects effective embedder configuration ([8fb273b](https://github.com/mikeng-io/nora/commit/8fb273bd6d0f63c4da980ae38bac37faced02580))
+* **scripts:** the memory-graph spike indexes each replay sandbox before inspect ([064d1a0](https://github.com/mikeng-io/nora/commit/064d1a0448f520ead952e888d843e45a176cdede))
+
 ## [7.11.53](https://github.com/mikeng-io/nora/compare/v7.11.52...v7.11.53) (2026-10-30)
 
 
