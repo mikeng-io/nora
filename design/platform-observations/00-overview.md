@@ -8,7 +8,8 @@ timestamp: '2026-10-30'
 # Platform observations: capture, memory and model exposure
 
 Status: **design amendment requested by the operator, 2026-10-30**. This document
-owns the proposed social-data contract and acceptance; no collector, wire version,
+summarizes the proposed social-data contract; [04](04-build-and-acceptance.md) owns
+the acceptance specification, and §7 below is orientation only. No collector, wire version,
 table, tool, model occasion or live flag is changed by this document. Exact new
 field/table/tool signatures are resolved against the implementation when built.
 
@@ -246,7 +247,7 @@ from unified-memory node 32 at the operator's request to expand it. The historic
 inventory above stays historical; [01](01-coverage.md) is the newer source-grounded
 coverage census. [02](02-observation-contract.md) specifies typed data and folds;
 [03](03-model-projections.md) specifies model exposure; [04](04-build-and-acceptance.md)
-specifies delivery and how findings accumulate. These extend the overview where
+owns acceptance, delivery and how findings accumulate. These extend the overview where
 it previously deferred exact contract details; all remain proposed, not built.
 
 The existing bridge bundle owns transport/recovery and telemetry; unified-memory
