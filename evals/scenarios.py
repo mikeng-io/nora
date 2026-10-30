@@ -184,7 +184,10 @@ def _check(name: str, row: dict[str, Any]) -> None:
         )
     snapshot = row.get("snapshot") or {}
     if snapshot:
-        missing = sorted(SNAPSHOT_KEYS - set(snapshot))
+        required = SNAPSHOT_KEYS
+        if name == "cognition_session" and (row.get("metadata") or {}).get("wake"):
+            required = SNAPSHOT_KEYS - {"before_ms"}
+        missing = sorted(required - set(snapshot))
         extra = sorted(set(snapshot) - SNAPSHOT_KEYS)
         if missing or extra:
             raise ValueError(
@@ -313,7 +316,7 @@ def _check_fold_case(name: str, row: dict[str, Any]) -> None:
         raise ValueError(f"{name}: case {row['name']!r}: {'; '.join(problems)}")
 
 
-def _case(row: dict[str, Any]) -> Case:
+def _case(row: dict[str, Any], corpus: str = "") -> Case:
     # Resolved ONCE, here, before anything reads the case: the anchor,
     # the person, the input, the expectation, every metadata string. The
     # `name` is not: it is how `--case` selects, and it names no one.
@@ -324,6 +327,7 @@ def _case(row: dict[str, Any]) -> Case:
         expected_output=str(row.get("expected_output", "")),
         metadata={
             **(row.get("metadata") or {}),
+            "corpus": corpus,
             "expect": row["expect"],
             "snapshot": dict(row.get("snapshot") or {}),
             "parked": dict(row.get("parked") or {}),
@@ -340,7 +344,7 @@ def load_all(name: str) -> list[Case]:
     rows = _rows(name)
     for row in rows:
         _check(name, row)
-    return [_case(row) for row in rows]
+    return [_case(row, name) for row in rows]
 
 
 def load_corpus(name: str) -> list[Case]:
@@ -422,7 +426,7 @@ CORPUS_ENTRY: dict[str, str] = {
 #: because the snapshot path seeds messages without `media_json` (she sees a
 #: bare `[image …]` handle and `media_objects` is empty) and holds no events,
 #: memos, presence or Rollup at all, which are exactly what recall rests on.
-FULL_RESTORE_CORPORA: frozenset[str] = frozenset({"conversational_recall"})
+FULL_RESTORE_CORPORA: frozenset[str] = frozenset({"conversational_recall", "cognition_session"})
 
 #: S2 — graded on WHICH TOOL ran, not on whether she replied. One grader only:
 #: `sample_read` groups every evaluator's labels under one case, so adding
@@ -565,7 +569,10 @@ def experiment_for(
         entry=CORPUS_ENTRY[name],
         judge=judge if name in JUDGED_CORPORA else None,
         full_restore=name in FULL_RESTORE_CORPORA,
-        overrides=dict(MEMORY_INDEX_OVERRIDES) if memory_index else None,
+        overrides=({**(dict(MEMORY_INDEX_OVERRIDES) if memory_index else {}),
+                   **({"cognition.enabled": True, "memory.graph.enabled": True,
+                       "memory.graph.comprehend.enabled": True}
+                      if name == "cognition_session" else {})} or None),
         memory_surface="graph" if memory_index else "honcho",
     )
     grader = ToolRouteGrader() if name in ROUTED_CORPORA else MeetsGrader()

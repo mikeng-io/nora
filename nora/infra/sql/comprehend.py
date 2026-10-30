@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.comprehend import ComprehendItem
-from nora.domain.memory_graph import Admission, Evidence, Key, Layer, Source, WorkItem
+from nora.domain.memory_graph import Admission, Key, Layer, Source, WorkItem
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.infra.sql.extraction import link_replies, source_rows
 from nora.infra.sql.schema import (
@@ -57,6 +57,33 @@ class SqlComprehendRecords:
         self.social_off_ids = social_off_ids
         self.model_id = model_id
 
+    async def act_result(self, key: str, session: int, result: Any = None) -> Any:
+        async with self.engine.begin() as conn:
+            if result is not None:
+                await conn.execute(sa.insert(RESULT).values(work_id=key, input_hash="",
+                    session_id=session, part="act_result", payload=result))
+            return (await conn.execute(sa.select(RESULT.c.payload).where(
+                RESULT.c.work_id == key, RESULT.c.part == "act_result")
+                .order_by(RESULT.c.id).limit(1))).scalar_one_or_none()
+
+    async def failures(self, unit: str, sid: int, *, reset: bool = False) -> int:
+        key = f"stimulus:{unit}:{sid}"
+        async with self.engine.begin() as conn:
+            if reset:
+                await conn.execute(sa.insert(RESULT).values(work_id=key, input_hash="",
+                    session_id=0, part="stimulus_requeue", payload={}))
+            reset_id = sa.select(sa.func.coalesce(sa.func.max(RESULT.c.id), 0)).where(
+                RESULT.c.work_id == key, RESULT.c.part == "stimulus_requeue").scalar_subquery()
+            return int((await conn.execute(sa.select(sa.func.count()).select_from(RESULT)
+                .where(RESULT.c.work_id == key, RESULT.c.part == "stimulus_failure",
+                       RESULT.c.id > reset_id))).scalar_one())
+
+    async def fail_stimulus(self, unit: str, sid: int, session: int | None) -> None:
+        async with self.engine.begin() as conn:
+            await conn.execute(sa.insert(RESULT).values(work_id=f"stimulus:{unit}:{sid}",
+                input_hash="", session_id=session or 0, part="stimulus_failure",
+                payload={"state": "failed"}))
+
     async def load(self, work: WorkItem) -> ComprehendItem:
         """A full source with its owned media, reply and cited Record rows.
 
@@ -64,6 +91,16 @@ class SqlComprehendRecords:
         truncated snippet. Query by exact source key AND unit before expanding.
         """
         kind, ref = work.source
+        if kind == "social_read":
+            async with self.engine.connect() as conn:
+                ids = (await conn.execute(sa.select(SOCIAL_ITEM.c.network, SOCIAL_ITEM.c.item_id)
+                    .where(SOCIAL_ITEM.c.read_id == ref))).all()
+            if not ids:
+                raise ValueError("social read has no recorded items")
+            items = [await self.load(replace(work, source=("social", f"{n}:{i}")))
+                     for n, i in ids]
+            return replace(items[0], work=work,
+                sources=tuple({s.key: s for item in items for s in item.sources}.values()))
         if kind == "message_batch":
             ids = json.loads(ref)
             if not isinstance(ids, list) or not ids or len(ids) > 20 or any(
@@ -453,7 +490,7 @@ class SqlComprehendRecords:
             base, work=work, sources=tuple(sources), snapshot=snapshot, response_closed=closed
         )
 
-    async def receipt(
+    async def _receipt(
         self, work: WorkItem, session: int, part: str, payload: dict[str, Any]
     ) -> None:
         async with self.engine.begin() as conn:
@@ -574,30 +611,10 @@ class SqlComprehendRecords:
 
     async def graph_write(self, work: WorkItem, session: int, admission: Admission) -> None:
         # Retain changed endpoints for reshape if its model fails after admission.
-        await self.receipt(
+        await self._receipt(
             work, session, "graph", json.loads(json.dumps(asdict(admission), default=str))
         )
 
-    async def changed_graph_keys(self, work: WorkItem) -> list[Key]:
-        async with self.engine.connect() as conn:
-            rows = (
-                await conn.execute(
-                    sa.select(RESULT.c.part, RESULT.c.payload).where(
-                        RESULT.c.work_id == work.id,
-                        RESULT.c.input_hash == work.input_hash,
-                        RESULT.c.part.in_(["graph", "corrected_entities"]),
-                    )
-                )
-            ).all()
-        keys = {
-            tuple(r[end])
-            for part, p in rows
-            if part == "graph"
-            for r in p["relations"]
-            for end in ("src", "dst")
-        }
-        keys.update(tuple(k) for part, p in rows if part == "corrected_entities" for k in p["keys"])
-        return [(k[0], k[1]) for k in keys]
 
     async def shadow(
         self,
@@ -607,28 +624,10 @@ class SqlComprehendRecords:
         proposals: list[dict[str, Any]],
         parent: int,
     ) -> None:
-        await self.receipt(
+        await self._receipt(
             work,
             session,
             "reshape",
             {"entity": list(entity), "would_writes": proposals, "parent_session": parent},
         )
 
-    async def prior_evidence(self, work: WorkItem) -> tuple[Evidence, ...]:
-        async with self.engine.connect() as conn:
-            payloads = (
-                (
-                    await conn.execute(
-                        sa.select(RESULT.c.payload).where(
-                            RESULT.c.work_id == work.id,
-                            RESULT.c.input_hash == work.input_hash,
-                            RESULT.c.part == "graph",
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-        return tuple(
-            Evidence(**{**e, "source": tuple(e["source"])}) for p in payloads for e in p["evidence"]
-        )

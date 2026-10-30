@@ -470,7 +470,7 @@ def upcoming_reader(
 def build_cognition_runner(
     *,
     cfg: Any,
-    tag_trace_store: Any = None,
+    tag_trace_store: Any = None, memory: Any = None,
     models: Any,
     retry: Any,
     metrics: Any,
@@ -559,7 +559,7 @@ def build_cognition_runner(
         return await standing_of(platform, conversation_id)
 
     return CognitionSessionRunner(
-        tag_trace_store=tag_trace_store,
+        tag_trace_store=tag_trace_store, memory=memory,
         store=store, stimulus_store=stimulus_store,
         notes=notes, events=events, standing=standing, reminders=reminders,
         ai_peer=ai_peer, memos=memos,

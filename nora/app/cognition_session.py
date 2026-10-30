@@ -57,6 +57,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import functools
+import inspect
 import logging
 import re
 import sys
@@ -69,7 +70,7 @@ from typing import Any, Literal, Protocol
 
 from nora.agent import cognition_pace as pace
 from nora.agent.dream_screen import offence
-from nora.agent.fetch_watch import Fetched, watch_reads
+from nora.agent.fetch_watch import Fetched, GraphFetched, watch_reads
 from nora.app.proactive_screen import CANCELLED_NOTE_RETIRED
 from nora.domain.cognition_ground import Grounding, RecordItem, rollup_status
 from nora.domain.cognition_pace import (
@@ -405,6 +406,13 @@ class _RunState:
     written: set[tuple[str, int | None]] = field(default_factory=set)
     closed_indices: set[int] = field(default_factory=set)
     closes: list[CloseOutcome] = field(default_factory=list)
+    admitted_indices: set[int] = field(default_factory=set)
+    memory_items: dict[int, Any] = field(default_factory=dict)
+    graph_fetched: Any = field(default_factory=GraphFetched)
+    admitted_relations: dict[str, Any] = field(default_factory=dict)
+    admitted_evidence: list[Any] = field(default_factory=list)
+    graph_text: str = ""
+    historical: bool = False
     #: A verb other than `close` was called in this session, whatever it
     #: answered: the loop then never ends at the last close (`_all_quiet`).
     acted: bool = False
@@ -609,7 +617,7 @@ class CognitionSessionRunner:
         notes: Any = None, events: Any = None, standing: Any = None,
         reminders: Any = None, ai_peer: str = "nora", memos: Any = None,
         content_checks: bool = True,
-        tag_trace_store: Any = None,
+        tag_trace_store: Any = None, memory: Any = None,
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -660,6 +668,7 @@ class CognitionSessionRunner:
         are what a context overflow is PROVEN against (DEC-244): without a
         known window no overflow is ever the agenda's, and every one is
         `infra`."""
+        self._memory = memory
         self._content_checks = content_checks
         self._tag_trace_store = tag_trace_store
         check_home_rooms(units, home_rooms)
@@ -782,6 +791,7 @@ class CognitionSessionRunner:
 
     async def on_wake(
         self, *, unit: str, view: UnitView, now_ms: int, wake_id: int,
+        replay: bool = False, historical: bool = False,
     ) -> CognitionSessionOutcome | None:
         """Called by the wake evaluator's hook on every wake it
         records (`WakeHook`). Returns `None` on every path that makes no model
@@ -836,6 +846,10 @@ class CognitionSessionRunner:
                     malformed.add(s.id)
                 elif status == "roster_miss":
                     retained.add(s.id)
+            if self._memory is not None and not replay:
+                retained.update(await self._memory.parked(unit, view.pending))
+                # Malformed input is still a stimulus: keep it pending until understood.
+                retained.update(malformed)
             skipped = frozenset(malformed | retained)
             pending = [s for s in view.pending if s.id not in skipped]
             if malformed:
@@ -902,7 +916,7 @@ class CognitionSessionRunner:
                 unit=unit, view=view, situation=situation, session_id=session_id,
                 wake_id=wake_id, now_ms=now_ms, doctrine_text=doctrine_text,
                 skill_text=skill_text, grounding=grounding, retained=sorted(retained),
-                spend=spend,
+                spend=spend, replay=replay, historical=historical,
             )
         except asyncio.CancelledError:
             # Only a process shutdown cancels a session (`shutdown`,
@@ -917,9 +931,13 @@ class CognitionSessionRunner:
         except SessionExpiredError:
             raise
         except SessionTimeoutError as exc:
+            if self._memory is not None and not replay:
+                await self._memory.failed(unit, [s.id for s in view.pending], session_id)
             await self._finish(wake_id, unit, session_id, "timeout", str(exc))
             raise
         except Exception as exc:
+            if self._memory is not None and not replay:
+                await self._memory.failed(unit, [s.id for s in view.pending], session_id)
             log.exception("cognition session failed (unit=%s wake=%s)", unit, wake_id)
             await self._finish(
                 wake_id, unit, session_id, "failed", f"{type(exc).__name__}: {exc}"[:500],
@@ -928,6 +946,11 @@ class CognitionSessionRunner:
             raise
         finally:
             self._tasks.pop(wake_id, None)
+
+    async def replay(self, *, view: UnitView, now_ms: int, historical: bool = False) -> Any:
+        """Run the recorded batch through live assembly, using sandbox collaborators."""
+        return await self.on_wake(unit=view.unit, view=view, now_ms=now_ms,
+                                  wake_id=0, replay=True, historical=historical)
 
     async def probe(
         self, *, unit: str, summary: str, now_ms: int, room: Room | None = None,
@@ -1028,6 +1051,8 @@ class CognitionSessionRunner:
         logged and left: the wake stays OPEN until it expires, which reads as
         failed, and it never advances the watermark. A `closed` write that
         fails RAISES (its caller records `failed` instead)."""
+        if wake_id == 0:  # A replay has a session record but no live wake claim.
+            return None
         ended_ms = self._now_ms()
         try:
             recorded = await self._stimuli.record_outcome(
@@ -1054,11 +1079,12 @@ class CognitionSessionRunner:
         self, *, unit: str, view: UnitView, situation: Situation, session_id: int,
         wake_id: int, now_ms: int, doctrine_text: str, skill_text: str,
         grounding: Grounding, spend: TokenSpend, retained: Sequence[int] = (),
+        replay: bool = False, historical: bool = False,
     ) -> CognitionSessionOutcome:
         items = situation.agenda.items
         state = _RunState(
             session_id=session_id, wake_id=wake_id, unit=unit, now_ms=now_ms,
-            items_by_index=dict(enumerate(items)),
+            items_by_index=dict(enumerate(items)), historical=historical,
             rooms={_room_key(i.room): (i.room.platform, i.room.conversation_id) for i in items},
             # Her own sends in an item's window are SHOWN too (DEC-245), marked
             # as hers, so a note citing one is refused `cites_nora`, not `unknown_id`.
@@ -1067,16 +1093,21 @@ class CognitionSessionRunner:
                 *(r for sends in grounding.own_sends.values() for r in sends),
             ),
         )
+        if self._memory is not None:
+            await self._memory.prepare(state, {s.id: s for s in view.pending}, grounding)
         tools = await self._build_tools(
             unit=unit, state=state, now_ms=now_ms, labels=grounding.room_labels,
         )
         kinds = sorted({item.kind for item in items})
+        from nora.language.comprehend_render import SESSION_INSTRUCTION
         system_prompt = doctrine_text + skill_text
+        if self._memory is not None:
+            system_prompt += SESSION_INSTRUCTION
         prompt = render_agenda(
             items, stimuli={s.id: s for s in view.pending}, grounding=grounding,
             reads_note=state.reads_note, now_ms=now_ms,
             last_session_ms=situation.last_session_ms, tz=self._tz,
-            budget=self._render_budget,
+            budget=self._render_budget, graph=state.graph_text,
         )
         token = SESSION_TOKENS.set(spend)
         result: CognitionRunResult | None = None
@@ -1139,6 +1170,12 @@ class CognitionSessionRunner:
             self._inc("nora_cognition_session_limit_total", limit=result.stop_reason)
             raise SessionLimitError(result.stop_reason or "")
 
+        if replay:
+            return CognitionSessionOutcome(session_id=session_id, items=len(items),
+                closed=tuple(state.closes), stop_reason=result.stop_reason)
+        if self._memory is not None:
+            await self._memory.failed(unit, [sid for i, item in state.items_by_index.items()
+                if i not in state.admitted_indices for sid in item.stimulus_ids], session_id)
         carries = await self._settle(state=state, situation=situation, view=view)
         # A Rollup stimulus the roster cannot read YET is retained, not consumed
         # (see `on_wake`): it waits, and returns as an item once it is readable.
@@ -1243,6 +1280,10 @@ class CognitionSessionRunner:
         by_index = {c.item_index: c for c in state.closes}
         for index, item in enumerate(items):
             close = by_index[index]
+            if self._memory is not None and index not in state.admitted_indices:
+                for sid in item.stimulus_ids:
+                    carry(sid, view.carry.get(sid, 0), "carried")
+                continue
             for sid in item.stimulus_ids:
                 if close.reason == "waiting":
                     carry(sid, close.strike, "carried", waits=True)
@@ -1253,7 +1294,9 @@ class CognitionSessionRunner:
 
         for sid in situation.agenda.deferred_stimulus_ids:
             strike = view.carry.get(sid, 0) + 1
-            carry(sid, strike, "struck" if strike >= self._max_strikes else "carried")
+            # Deferral counts remain diagnostic; uncomprehended items never strike out.
+            carry(sid, strike, "carried" if self._memory is not None else
+                  ("struck" if strike >= self._max_strikes else "carried"))
         return carries
 
     async def _record_fired(
@@ -1358,9 +1401,20 @@ class CognitionSessionRunner:
             + ". Each read resolves through the room you name and shows only what that "
             "room may be shown; a room that is not listed is refused."
         )
+        # Public reads use the same bounded, evidence-retaining egress wrapper.
+        if self._memory is not None:
+            from nora.agent.comprehend_tools import ComprehendRead, LookupState
+            lookups = LookupState(state.graph_fetched, unit, state.session_id,
+                self._memory.records, self._metrics, self._memory.private_names,
+                persons=tuple({p for v in state.memory_items.values()
+                               for source in v.sources for p in source.persons}))
         # The reads that hand out citable rows are watched: what they return is
         # what a note may cite besides the agenda's own rows.
         read_tools = watch_reads(self._guarded_read_tools(unit, rooms), state.fetched, keys)
+
+        if self._memory is not None:
+            read_tools = [ComprehendRead(t, lookups) if hasattr(t, "stream") else t
+                          for t in read_tools]
 
         async def shown_for(
             platform: str, conversation_id: str, body: str,
@@ -1440,6 +1494,8 @@ class CognitionSessionRunner:
                     needs to change, `waiting` when it cannot be settled yet,
                     `covered` when another item already handles it.
             """
+            if self._memory is not None and item_index not in state.admitted_indices:
+                return _refused("proposal_required", "admit understanding of this item first")
             if item_index in state.closed_indices:
                 return _refused("already_closed", "that item is already closed")
             item = state.items_by_index.get(item_index)
@@ -2552,14 +2608,77 @@ class CognitionSessionRunner:
             turn cannot order a close's stop after it."""
             @functools.wraps(verb)
             async def call(*args: Any, **kwargs: Any) -> dict[str, object]:
+                item = inspect.signature(verb).bind(*args, **kwargs).arguments.get("item")
+                covered = (item in state.admitted_indices if item is not None
+                           else set(state.items_by_index) <= state.admitted_indices)
+                if self._memory is not None and not covered:
+                    return _refused("proposal_required", "admit a proposal covering the item first")
+                key = None
+                if self._memory is not None and verb.__name__ in (
+                        "note_create", "memo_write", "event_propose"):
+                    key = await self._memory.act_key(state, verb.__name__,
+                        inspect.signature(verb).bind(*args, **kwargs).arguments)
+                    existing = await self._memory.records.act_result(key, state.session_id)
+                    if existing is not None:
+                        await self._memory.link_result(state,
+                            {**existing, **({"event_id": existing["id"]}
+                                if verb.__name__ == "event_propose" else {})})
+                        return dict(existing)
                 state.acted = True
                 unstop()
                 try:
                     result: dict[str, object] = await verb(*args, **kwargs)
                 finally:
                     unstop()
+                if key is not None and result.get("status") == "ok":
+                    # ponytail: a second transaction after the verb's commit; a crash
+                    # between them loses the key, so a retried event_propose could
+                    # write a second gathering. Write both in one transaction if seen.
+                    await self._memory.records.act_result(key, state.session_id, result)
+                    await self._memory.link_result(state,
+                        {**result, **({"event_id": result["id"]}
+                            if verb.__name__ == "event_propose" else {})})
                 return result
             return call
+
+        async def memory_propose(
+            readings: list[dict[str, Any]], entities: list[dict[str, Any]],
+            relations: list[dict[str, Any]], evidence: list[dict[str, Any]],
+            corrections: list[dict[str, Any]], items: list[int],
+        ) -> dict[str, Any]:
+            """Admit understanding. Call this when agenda items are understood.
+
+            Returns admitted items, refusals with reasons and the connected subgraph.
+            Empty lists explicitly record nothing to understand.
+
+            Args:
+                readings: Grounded readings of the shown sources.
+                entities: Proposed entities.
+                relations: Proposed relations.
+                evidence: Shown source keys and exact spans.
+                corrections: Changes to existing relations.
+                items: Agenda indices covered by this understanding.
+            """
+            if self._memory is None:
+                return {"status": "unavailable", "note": "Memory admission is unavailable."}
+            result: dict[str, Any] = await self._memory.propose(state, items=items, payload={
+                "readings": readings, "entities": entities, "relations": relations,
+                "evidence": evidence, "corrections": corrections})
+            return result
+
+        async def profile_revise(
+            entity: list[str], proposals: list[dict[str, Any]],
+        ) -> dict[str, Any]:
+            """Record profile changes in shadow. Call this when admitted evidence changes a profile.
+
+            Args:
+                entity: The profile subject kind and id.
+                proposals: Parts, text, relation ids and evidence keys.
+            """
+            if self._memory is None:
+                return {"status": "unavailable"}
+            result: dict[str, Any] = await self._memory.profile(state, entity, proposals)
+            return result
 
         verbs = (
             close, *(acting(v) for v in (
@@ -2569,6 +2688,15 @@ class CognitionSessionRunner:
                 remind_cancel,
             )),
         )
+        if self._memory is not None:
+            verbs = (memory_propose, profile_revise, *verbs)
+        if state.historical:
+            verbs = (memory_propose, profile_revise, close)
+        if self._memory is not None:
+            names = {"note_update": "note_revise", "note_retire": "note_set_status",
+                     "memo_write": "memo_create", "memo_withdraw": "memo_set_status"}
+            for verb in verbs:
+                verb.__name__ = names.get(verb.__name__, verb.__name__)
         return [*read_tools, *(self._counted(v.__name__, v) for v in verbs)]
 
     # `created_by_session_id=None` on every pace move and cancel above, on

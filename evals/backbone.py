@@ -1494,6 +1494,14 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             "the active set"
         )
     shot = dict(md.get("snapshot") or {})
+    if md.get("corpus") == "cognition_session":
+        from nora.subject.cognition import wake_from_snapshot
+        wake_id = md.get("wake")
+        if type(wake_id) is not int or wake_id <= 0:
+            raise ValueError("cognition_session requires metadata.wake")
+        wake_at, _ = await wake_from_snapshot(spec.source_url, wake_id)
+        shot["before_ms"] = wake_at
+
     if not shot:
         raise ValueError(
             f"case {case.name!r} is UNANCHORED: it names no `snapshot:` "

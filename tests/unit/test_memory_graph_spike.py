@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from nora.agent.comprehend_tools import egress_reason
+from nora.app.composition import search_provider
 from scripts import memory_graph_spike as spike
 
 
@@ -63,9 +65,9 @@ async def test_judge_malformed_is_error(monkeypatch):
 
 
 def test_egress_uses_existing_screen():
-    assert spike.egress_reason("Generated Private Person", ("Generated Private Person",))
+    assert egress_reason("Generated Private Person", ("Generated Private Person",))
     assert spike.invariants({}, {}, ["settled"], 1, 1)["egress"]["status"] == "FAIL"
-    assert spike.egress_reason("public venue programme", ()) is None
+    assert egress_reason("public venue programme", ()) is None
 
 
 def test_frozen_sample_is_deterministic_private_and_immutable(tmp_path):
@@ -200,7 +202,7 @@ def test_search_provider_builds_from_the_template(example_config, monkeypatch, p
     search = example_config.search.model_copy(update={"enabled": True, "provider": provider})
     cfg = example_config.model_copy(update={"search": search})
     monkeypatch.setenv(cfg.search.api_key_env, "generated-key")
-    assert spike.search_provider(cfg) is not None
+    assert search_provider(cfg) is not None
 
 
 async def test_an_item_with_a_media_source_is_in_the_attachment_stratum(monkeypatch):

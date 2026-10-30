@@ -118,6 +118,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # its own budget, so no number of memos can push an agenda room's events
     # out.
     ("memos", 55, "turn"),
+    ("graph", 60, "turn"),
 )
 
 #: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
@@ -681,7 +682,7 @@ def render_agenda(
     items: Sequence[AgendaItem], *, stimuli: Mapping[int, Stimulus] | None = None,
     grounding: Grounding | None = None, reads_note: str = "", now_ms: int | None = None,
     last_session_ms: int | None = None, tz: tzinfo = UTC,
-    budget: RenderBudget | None = None,
+    budget: RenderBudget | None = None, graph: str = "",
 ) -> str:
     """The session's prompt. `stimuli` is the claimed stimuli by id (an item
     names its own by id), `grounding` what code read for them.
@@ -725,6 +726,8 @@ def render_agenda(
         items, stimuli or {}, grounding or Grounding(), now_ms=now_ms, tz=tz,
         budget=budget or RenderBudget(),
     )
+    if graph:
+        blocks.append(restamp(ContextBlock(name="graph", body=escape(graph)), _ROW))
     return assemble(blocks, sep=_SEP)
 
 

@@ -21,9 +21,32 @@ class InMemoryComprehendRecords:
         self.receipts: list[dict[str, Any]] = []
         self.fail_on: set[str] = set()
 
+    async def act_result(self, key: str, session: int, result: Any = None) -> Any:
+        if not hasattr(self, "act_results"):
+            self.act_results = {}
+        if result is not None:
+            self.act_results.setdefault(key, result)
+        return self.act_results.get(key)
+
+    async def failures(self, unit: str, sid: int, *, reset: bool = False) -> int:
+        if not hasattr(self, "failed_stimuli"):
+            self.failed_stimuli = {}
+        if reset:
+            self.failed_stimuli.pop((unit, sid), None)
+        return self.failed_stimuli.get((unit, sid), 0)
+
+    async def fail_stimulus(self, unit: str, sid: int, session: int | None) -> None:
+        count = await self.failures(unit, sid)
+        self.failed_stimuli[unit, sid] = count + 1
+
     async def load(self, work: WorkItem) -> Any:
         if "load" in self.fail_on:
             raise RuntimeError("source unavailable")
+        if work.source not in self.items:
+            # The SQL store's exact-key read: an unprojected source has no row.
+            from sqlalchemy.exc import NoResultFound
+
+            raise NoResultFound("No row was found when one was required")
         return replace(self.items[work.source], work=work)
 
     async def record_refusal(self, session: int, part: str, reason: str) -> None:

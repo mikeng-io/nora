@@ -90,7 +90,7 @@ async def test_retained_page_is_exact_read_text_with_hash_and_tool_call(store):
     assert page["content_hash"] == hashlib.sha256(text.encode()).hexdigest()
 
 
-async def test_graph_receipt_recovers_changed_entities_and_shadow_is_a_would_write(store):
+async def test_graph_receipt_is_retained_and_shadow_is_a_would_write(store):
     records, engine = store
     relation = Relation(
         "generated-relation",
@@ -105,7 +105,6 @@ async def test_graph_receipt_recovers_changed_entities_and_shadow_is_a_would_wri
         relations=(relation,), evidence=(Evidence(SOURCE.key, relation_id=relation.id),)
     )
     await records.graph_write(WORK, 1, admission)
-    assert set(await records.changed_graph_keys(WORK)) == {PERSON.key, PLACE.key}
     await records.shadow(WORK, 2, PERSON.key, [{"part": "trait", "text": "Generated trait"}], 1)
     if engine:
         async with engine.connect() as conn:
@@ -237,3 +236,21 @@ async def test_historical_source_rows_do_not_read_a_future_edit(store):
     reply = {"id": 999, "ts": 3500, "quoted_ts": 1000}
     link_replies([reply], new)
     assert reply["reply_to"] == mid
+
+
+async def test_stimulus_failures_park_at_five_and_operator_requeue_resets(store):
+    records, _ = store
+    for n in range(5):
+        assert await records.failures(UNIT, 17) == n
+        await records.fail_stimulus(UNIT, 17, 0)
+    assert await records.failures(UNIT, 17) == 5
+    assert await records.failures(UNIT, 18) == 0
+    assert await records.failures(UNIT, 17, reset=True) == 0
+
+
+async def test_register_retry_retains_existing_row_id(store):
+    records, _ = store
+    assert await records.act_result("act:generated", 0) is None
+    result = {"status": "ok", "note_id": "generated-existing-note"}
+    await records.act_result("act:generated", 0, result)
+    assert await records.act_result("act:generated", 1) == result
