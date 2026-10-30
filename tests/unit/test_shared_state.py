@@ -572,10 +572,13 @@ async def test_decision_conclude_resolves_real_rows_and_refuses_the_rest():
     out = await tool.call(subject="d", decision="x", sources=["42"])
     assert out["status"] == "unavailable"
 
+    # The SDK contract adapter must preserve the unresolved candidate.
+    from nora.agent.ports import _validated
+
     # no sources -> source_required
     tool = next(
         s for s in _specs(FakeRecordStore()) if s.name == "decision_conclude")
-    out = await tool.call(subject="d", decision="x", sources=[])
+    out = await _validated(tool)(subject="d", decision="x", sources=[])
     assert out["status"] == "unresolved" and out["reason"] == "source_required"
 
     # missing row -> unresolved (the tool closes over THIS store)

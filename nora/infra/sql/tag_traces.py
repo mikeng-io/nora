@@ -53,27 +53,33 @@ TURN_FACTS_SQL = """
              ) WITH ORDINALITY c(block, b_idx)
         WHERE t.unit = :unit
           AND (c.block ? 'toolUse' OR c.block ? 'toolResult')
+    ), turns AS (
+        SELECT trace_row_id, turn_id, tag_id, occasion, created_at, requirements,
+               jsonb_agg(
+                   jsonb_build_object('use', block->'toolUse', 'm_idx', m_idx, 'b_idx', b_idx)
+                   ORDER BY m_idx, b_idx
+               ) FILTER (WHERE block ? 'toolUse'
+                         AND block->'toolUse'->>'name' = ANY(:names)) AS uses,
+               jsonb_object_agg(
+                   block->'toolResult'->>'toolUseId', block->'toolResult'
+                   ORDER BY m_idx, b_idx
+               ) FILTER (WHERE block->'toolResult'->>'toolUseId' IS NOT NULL) AS results
+        FROM blocks
+        GROUP BY trace_row_id, turn_id, tag_id, occasion, created_at, requirements
     ), uses AS (
-        SELECT b.*, b.block->'toolUse'->>'name' AS name,
-               b.block->'toolUse'->>'toolUseId' AS call_id,
-               CASE WHEN jsonb_typeof(b.block->'toolUse'->'input') = 'object'
-                    THEN b.block->'toolUse'->'input'
-                    ELSE '{}'::jsonb END AS arguments
-        FROM blocks b
-        WHERE b.block ? 'toolUse'
-          AND b.block->'toolUse'->>'name' = ANY(:names)
+        SELECT t.turn_id, t.tag_id, t.occasion, t.created_at, t.requirements,
+               c.call->'use'->>'name' AS name,
+               c.call->'use'->>'toolUseId' AS call_id,
+               CASE WHEN jsonb_typeof(c.call->'use'->'input') = 'object'
+                    THEN c.call->'use'->'input' ELSE '{}'::jsonb END AS arguments,
+               (c.call->>'m_idx')::bigint AS m_idx,
+               (c.call->>'b_idx')::bigint AS b_idx,
+               t.results->(c.call->'use'->>'toolUseId') AS result
+        FROM turns t,
+             LATERAL jsonb_array_elements(COALESCE(t.uses, '[]'::jsonb)) c(call)
     ), paired AS (
-        SELECT u.*, r.result,
-               COALESCE(p.result_status, 'unknown') AS raw_status
+        SELECT u.*, COALESCE(p.result_status, 'unknown') AS raw_status
         FROM uses u
-        LEFT JOIN LATERAL (
-            SELECT b.block->'toolResult' AS result
-            FROM blocks b
-            WHERE b.trace_row_id = u.trace_row_id
-              AND b.block->'toolResult'->>'toolUseId' = u.call_id
-            ORDER BY b.m_idx DESC, b.b_idx DESC
-            LIMIT 1
-        ) r ON true
         LEFT JOIN LATERAL (
             SELECT CASE
                 WHEN jsonb_typeof(c.block->'json') = 'object'
@@ -84,8 +90,8 @@ TURN_FACTS_SQL = """
                 ELSE 'unknown'
             END AS result_status
             FROM jsonb_array_elements(
-                CASE WHEN jsonb_typeof(r.result->'content') = 'array'
-                     THEN r.result->'content' ELSE '[]'::jsonb END
+                CASE WHEN jsonb_typeof(u.result->'content') = 'array'
+                     THEN u.result->'content' ELSE '[]'::jsonb END
             ) WITH ORDINALITY c(block, idx)
             WHERE jsonb_typeof(c.block->'json') = 'object'
                OR jsonb_typeof(c.block->'text') = 'string'

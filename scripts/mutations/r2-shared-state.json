@@ -75,5 +75,26 @@
     "old": "if room is not None and notes_permit is not None and not notes_permit(n):",
     "new": "if False:",
     "target": "tests/unit/test_shared_state.py::test_shared_notes_keep_the_existing_destination_exclusion"
+  },
+  {
+    "name": "cognition-write-scope-is-unit-not-agenda",
+    "file": "nora/app/cognition_session.py",
+    "old": "return self.rooms if self.unit_rooms is None else self.unit_rooms",
+    "new": "return self.rooms",
+    "target": "tests/unit/test_cognition_live_writes.py::test_one_room_agenda_can_schedule_an_explicit_two_room_unit_plan"
+  },
+  {
+    "name": "native-unresolved-survives-sdk-contract",
+    "file": "nora/agent/ports.py",
+    "old": "\"unresolved\": \"a proposed conclusion or action lacks a resolved evidence identity; \"",
+    "new": "\"unresolved_disabled\": \"a proposed conclusion or action lacks a resolved evidence identity; \"",
+    "target": "tests/unit/test_shared_state.py::test_decision_conclude_resolves_real_rows_and_refuses_the_rest"
+  },
+  {
+    "name": "sql-matching-result-uses-last-recorded-result",
+    "file": "nora/infra/sql/tag_traces.py",
+    "old": "block->'toolResult'->>'toolUseId', block->'toolResult'\n                   ORDER BY m_idx, b_idx",
+    "new": "block->'toolResult'->>'toolUseId', block->'toolResult'\n                   ORDER BY m_idx DESC, b_idx DESC",
+    "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_last_result_for_a_call_wins"
   }
 ]

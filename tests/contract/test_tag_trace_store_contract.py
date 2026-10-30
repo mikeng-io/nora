@@ -224,13 +224,15 @@ async def test_turn_facts_bounds_database_transfer_after_reduction(store):
         pytest.skip("sql-only transfer measurement")
     import sqlalchemy as sa
 
-    for i in range(30):
+    for i in range(1000):
         await store.save(_fact_trace(f"closed-{i}", subject=f"note:{i}", created=i))
     for i in range(3):
         await store.save(_fact_trace(f"open-{i}", subject=f"note:open-{i}",
                                      status="unresolved", created=100 + i))
         await store.save(_fact_trace(f"conclusion-{i}", name="decision_conclude",
                                      action="", subject="same subject", created=200 + i))
+    async with store._engine.connect() as conn:
+        await conn.execute(sa.text("ANALYZE tag_trace"))
     captured = []
 
     def observed(conn, cursor, statement, parameters, context, executemany):

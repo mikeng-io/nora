@@ -516,3 +516,56 @@ async def test_conclusion_keeps_named_source_exclusions_in_its_record():
     await session(behave, stores=stores)
     assert saved_requirements and all(r.known for r in saved_requirements)
     assert any("generated-listener" in r.exclude_persons for r in saved_requirements)
+
+
+async def test_cognition_can_revise_a_unit_room_without_adding_it_to_the_agenda():
+    from tests.unit.cognition_rig import B
+
+    answers = []
+
+    async def behave(by, tools):
+        answers.append(await by["standing_revise"](
+            where_it_stands="generated sibling position", room="signal:room-b"))
+        answers.append(await by["standing_revise"](
+            where_it_stands="generated foreign position", room="signal:foreign"))
+        answers.append(await by["standing_revise"](where_it_stands="generated default position"))
+
+    stores, _ = await session(behave, runner_kwargs={
+        "rooms_of_unit": lambda unit: ((A.platform, A.conversation_id),
+                                        (B.platform, B.conversation_id)),
+    })
+    assert [a["status"] for a in answers] == ["ok", "refused", "ok"]
+    assert (await stores.standing.read(platform="signal", conversation_id="room-b")).body == \
+        "generated sibling position"
+    assert (await stores.standing.read(platform="signal", conversation_id="room-a")).body == \
+        "generated default position"
+
+
+async def test_one_room_agenda_can_schedule_an_explicit_two_room_unit_plan():
+    from tests.unit.cognition_rig import B
+
+    stores, event_ids, answers = Stores(), [], []
+    def unit_rooms(unit):
+        return ((A.platform, A.conversation_id), (B.platform, B.conversation_id))
+
+    async def seed(by, tools):
+        made = await by["event_propose"](
+            title="generated gathering", reasoning="told", confidence="high",
+            cited_ids=["201"], when=iso(NOW + 86_400_000))
+        assert made["status"] == "ok"
+        event_ids.append(made["id"])
+
+    await session(seed, stores=stores, rooms=(B,), runner_kwargs={"rooms_of_unit": unit_rooms})
+
+    async def behave(by, tools):
+        answers.append(await by["remind"](
+            intent="ask", text="generated confirmation", subject=f"event:{event_ids[0]}",
+            action="generated-confirmation", subject_rows=["101"], at=iso(NOW + 300_000),
+            also_rooms=["signal:room-b"],
+        ))
+
+    await session(behave, stores=stores, rooms=(A,), runner_kwargs={"rooms_of_unit": unit_rooms})
+    assert answers[0]["status"] == "ok", answers
+    rows = await stores.reminders.pending_of("nora")
+    assert {r.conversation_id for r in rows} == {"room-a", "room-b"}
+    assert len({r.payload["plan_id"] for r in rows}) == 1

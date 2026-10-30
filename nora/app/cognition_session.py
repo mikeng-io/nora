@@ -437,6 +437,11 @@ class _RunState:
     #: The line of the prompt that says which room(s) the read tools resolve
     #: through (`_build_tools`).
     reads_note: str = ""
+    unit_rooms: dict[str, tuple[str, str]] | None = None
+
+    @property
+    def allowed_rooms(self) -> dict[str, tuple[str, str]]:
+        return self.rooms if self.unit_rooms is None else self.unit_rooms
 
 
 _room_key = room_key
@@ -459,25 +464,24 @@ def _all_quiet(state: _RunState) -> bool:
 
 
 def _room_of(room: str, state: _RunState) -> tuple[str, str] | dict[str, object]:
-    """The room a write is about. One room on the agenda: it is that room and
-    `room` may be left out. Several: the model MUST say which, and a room not
-    on the agenda is refused — never guessed from the first item, which would
-    file a write into a room its own agenda never named (R-21)."""
+    """Explicit destinations come from the canonical unit; the agenda chooses
+    the default destination and owns item attribution, not write scope."""
+    if not state.allowed_rooms:
+        return {"status": "unavailable", "reason": "unit_scope_unavailable",
+                "detail": "the unit's room set could not be established"}
     if room:
-        found = state.rooms.get(room)
+        found = state.allowed_rooms.get(room)
         if found is None:
-            return {
-                "status": "refused", "reason": "unknown_room",
-                "detail": f"{room!r} is not a room on this agenda: "
-                          f"{sorted(state.rooms)}",
-            }
+            return {"status": "refused", "reason": "unknown_room",
+                    "detail": f"{room!r} is not a room in this unit"}
         return found
     if len(state.rooms) == 1:
-        return next(iter(state.rooms.values()))
+        key = next(iter(state.rooms))
+        return _room_of(key, state)
     return {
         "status": "refused", "reason": "room_required",
         "detail": f"this agenda spans {len(state.rooms)} rooms; name the one this "
-                  f"write is about as `room`, one of {sorted(state.rooms)}",
+                  f"write is about as `room`, one of {sorted(state.allowed_rooms)}",
     }
 
 
@@ -499,15 +503,15 @@ def _write_target(
     if room and room != key:
         return {"status": "refused", "reason": "item_room_mismatch",
                 "detail": f"item {item} is in {key}, not {room}"}
-    return (found.room.platform, found.room.conversation_id), item
+    resolved = _room_of(key, state)
+    return resolved if isinstance(resolved, dict) else (resolved, item)
 
 
-def _off_agenda(state: _RunState) -> dict[str, object]:
-    """A reminder whose room is not on today's agenda is not this session's to
-    move or cancel: the same refusal a write to such a room gets (R-21)."""
+def _outside_unit(state: _RunState) -> dict[str, object]:
+    """A reminder outside the unit is not this session's to move or cancel."""
     return {
         "status": "refused", "reason": "unknown_room",
-        "detail": f"that reminder's room is not a room on this agenda: {sorted(state.rooms)}",
+        "detail": "that reminder's room is not in this unit",
     }
 
 
@@ -1452,6 +1456,10 @@ class CognitionSessionRunner:
         self, *, unit: str, state: _RunState, now_ms: int,
         labels: Mapping[str, str] | None = None,
     ) -> list[Any]:
+        if self._rooms_of_unit is not None:
+            state.unit_rooms = {
+                record_room_key(p, c): (p, c) for p, c in self._rooms_of_unit(unit)
+            }
         # EACH ITEM'S READS RESOLVE THROUGH ITS OWN ROOM (DEC-231, R-21). One
         # room on the agenda: that room's tools. Several: `read_tools_for`
         # returns ONE tool per name (a tool name is one tool: Strands keeps the
@@ -2854,8 +2862,8 @@ class CognitionSessionRunner:
             )
             if row is None:
                 return _refused("not_found", f"no pending reminder of yours {reminder_id!r}")
-            if _room_key(Room(row.platform, row.conversation_id)) not in state.rooms:
-                return _off_agenda(state)
+            if _room_key(Room(row.platform, row.conversation_id)) not in state.allowed_rooms:
+                return _outside_unit(state)
             return row
 
         async def remind_move(
@@ -3086,7 +3094,7 @@ class CognitionSessionRunner:
         if kind == "note":
             open_notes = {n.id for n in await self._notes.standing(unit=unit)}
             return ("note", wanted) if wanted in open_notes else None
-        rooms = [tuple(k.split(":", 1)) for k in state.rooms]
+        rooms = list(state.allowed_rooms.values())
         if kind in {"decision", "commitment", "thread"} and self._ledger is not None:
             for platform, conversation_id in rooms:
                 for entry in await self._ledger.read(
@@ -3110,7 +3118,7 @@ class CognitionSessionRunner:
         requirement entries a destination checks — the same lookups
         `_resolve_named_subject` ran, returning the gates this time.
         `None` = no gates to propagate = unresolved."""
-        rooms = [tuple(k.split(":", 1)) for k in state.rooms]
+        rooms = list(state.allowed_rooms.values())
         entry = None
         if kind == "note":
             entry = next(

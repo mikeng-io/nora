@@ -6946,8 +6946,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         itself IS the record, shown to the next turn and the next session.
         It writes no Notebook row.
 
-        Returns `status`: ok, refused or unavailable, with a `reason`
-        and `detail` when it is not ok.
+        Returns `status`: ok, refused, unresolved or unavailable, with
+        `reason`, `detail` and `note` when it is not ok.
 
         Args:
             subject: The `kind:id` of the open entry this conclusion is
@@ -6976,7 +6976,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return {"status": "unresolved",
                     "reason": "source_required",
                     "detail": "cite the transcript row id(s) this conclusion "
-                              "rests on"}
+                              "rests on",
+                    "note": "Cite the #n message handles shown in this turn."}
         if (sources or ()) and store is None:
             # Sources need RESOLUTION, not a digit check: with no Record the
             # citation cannot be verified and the call is honestly
@@ -6984,10 +6985,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return {"status": "unavailable",
                     "reason": "resolver_unavailable",
                     "detail": "cited rows cannot be resolved without the "
-                              "message store"}
+                              "message store",
+                    "note": "Source validation is unavailable; no conclusion was accepted."}
         if transcript is None:
             return {"status": "unavailable", "reason": "source_frame_unavailable",
-                    "detail": "this turn's bound transcript is unavailable"}
+                    "detail": "this turn's bound transcript is unavailable",
+                    "note": "Source validation is unavailable; no conclusion was accepted."}
         origin = room_key(room.platform, conversation_id)
         by_id = {str(row.id): row for row in transcript}
         resolved_sources = []
@@ -7002,7 +7005,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     row = by_id.get(source)
             if row is None:
                 return {"status": "unresolved", "reason": "source_unresolved",
-                        "detail": "cite a #n message shown in this turn"}
+                        "detail": "cite a #n message shown in this turn",
+                        "note": "That source is outside this turn's bound transcript."}
             record_requirement(
                 DisclosureRequirement(origin, (message_lineage(origin),)))
             resolved_sources.append(str(row.id))
