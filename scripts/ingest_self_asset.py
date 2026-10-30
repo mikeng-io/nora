@@ -30,7 +30,8 @@ container's own copy):
 
     docker cp scripts/ingest_self_asset.py nora:/tmp/ingest_self_asset.py
     docker cp assets/nora-canonical-self.png nora:/tmp/nora-canonical-self.png
-    docker compose exec -T nora uv run --no-sync python \\
+    python3 ~/workspace/nora/scripts/secret_delivery.py \\
+        --runtime-root ~/workspace/nora --compose-exec -T nora uv run --no-sync python \\
         /tmp/ingest_self_asset.py /tmp/nora-canonical-self.png
 
 The database URL, the media key and the blob backend are read exactly as the

@@ -151,6 +151,8 @@ eval-participation:
 # skill); there is no release target here.
 
 # --- build / deploy (README.md "Deployment") ---
+# Standalone .env recipes: Compose interpolation must already be satisfied.
+# Native Komodo owns application deploys; see docs/configuration.md.
 
 build:
 	scripts/build-image.sh
