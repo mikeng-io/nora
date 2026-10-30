@@ -1,4 +1,4 @@
-"""OTel plumbing: the R-76 sampler, the generic named-span helper, and context
+"""OTel plumbing: the sampler, the generic named-span helper, and context
 propagation — everything here is pure OpenTelemetry with no `strands` import,
 which is the point (`tests/test_boundaries.py::test_strands_import_boundary`
 allows `strands` only under `nora/agent/`).
@@ -20,11 +20,13 @@ import time
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Literal, TypeVar, get_args
+from typing import Any, Literal, TypeVar, get_args
 
 from opentelemetry import context as otel_context
 from opentelemetry import trace
 from opentelemetry.context import Context
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.sampling import (
     Decision,
     ParentBased,
@@ -40,23 +42,127 @@ from nora.secret import resolve
 
 log = logging.getLogger("nora.tracing")
 
-#: The attribute a ROOT span uses to say what kind of work is under it, and the
-#: only thing `build_sampler` reads. A CLOSED set as a `Literal` so the
-#: vocabulary is DERIVED from the code rather than hand-copied into the sampler.
+#: Langfuse drops a session id longer than this, or with a non-ASCII character,
+#: silently (langfuse.com/docs/observability/features/sessions).
+_SESSION_ID_MAX = 200
+
+#: The attribute a span carries its room under, WHEN IT IS STARTED WITH IT:
+#: the roots and stages that pass it to `nora.obs.tracing.span`. Strands spans
+#: never start with it: Strands opens a span and sets `trace_attributes` after,
+#: past `on_start`, so they take their session from the parent instead (see the
+#: installed `strands/telemetry/tracer.py`).
+#: A Dreamer unit has no room; its session is the tick that dispatched it
+#: (`nora.app.runtime.dream_loop`), so one pass's units read as one session.
+#: A Cognition session has no room either: `nora.cognition.session_id` is its
+#: own natural identity (one session's agent calls group as one conversation —
+#: a multi-room background session is not forced into one room). Extraction is
+#: not conversational, but a batch is the stable job/attempt identifier its
+#: spans group under (`nora.extraction.batch_id`).
+_CONVERSATION_KEYS = (
+    "nora.conversation_id",
+    "nora.dreamer.pass_id",
+    "nora.cognition.session_id",
+    "nora.extraction.batch_id",
+)
+
+#: First match wins. Langfuse's recognised `langfuse.observation.type` values;
+#: a span not in the table is left to Langfuse, which types the model calls,
+#: agents and tools from their GenAI attributes. What goes here is the plumbing
+#: UNDER a model call that R-76 keeps on purpose, so an operator can filter a
+#: trace to the LLM work without reading span names.
+_OBSERVATION_TYPES: tuple[tuple[str, str], ...] = (
+    ("engagement.admission", "guardrail"),
+    ("store.", "retriever"),
+    ("engagement.", "chain"),
+    ("agent.prefill", "chain"),
+    ("execute_event_loop_cycle", "chain"),
+)
+
+
+def _session_id_for(span: Any, parent_context: Any) -> str | None:
+    """The room a span belongs to: its own start attribute, else its parent's stamp.
+
+    A session id is valid when Langfuse will keep it. One it would drop is not
+    stamped, so the trace's absence from a session is in the data, not a
+    silent loss downstream."""
+    attrs = getattr(span, "attributes", None) or {}
+    for key in _CONVERSATION_KEYS:
+        value = attrs.get(key)
+        if value is not None:
+            return _valid_session_id(str(value))
+    parent = trace.get_current_span(parent_context)
+    parent_attrs = getattr(parent, "attributes", None) or {}
+    inherited = parent_attrs.get("session.id")
+    return _valid_session_id(str(inherited)) if inherited is not None else None
+
+
+def _valid_session_id(value: str) -> str | None:
+    if not value or len(value) > _SESSION_ID_MAX or not value.isascii():
+        return None
+    return value
+
+
+class TraceIdentityProcessor(SpanProcessor):
+    """Stamp every span with its conversation and its observation type.
+
+    **One seam, not a stamp at each call site.** Engagement roots carry
+    `nora.conversation_id`, but Langfuse groups sessions only by `session.id`.
+    OTel GenAI names the same thing `gen_ai.conversation.id` ("session, thread"); Langfuse reads
+    `session.id`, and asks for it on each span rather than only the root. A
+    child inherits from its parent at start, so the Strands spans and the
+    `store.*` reads, which never carry the id themselves, end up in the same
+    session.
+
+    **Never load-bearing**, the rule `nora.obs.tracing.span` and provider setup
+    hold: a failure here costs the stamp, never the span or the turn.
+    """
+
+    def on_start(self, span: Any, parent_context: Any = None) -> None:
+        try:
+            session = _session_id_for(span, parent_context)
+            if session is not None:
+                span.set_attribute("session.id", session)
+                span.set_attribute("gen_ai.conversation.id", session)
+            attrs = getattr(span, "attributes", None) or {}
+            # `nora.trace_kind` inherited from the parent: the collector's tail
+            # policy drops a whole trace only when a span carries `plumbing`,
+            # and a span missing the key reads as non-plumbing. The root
+            # declares it at start; children never set it themselves, so a
+            # plumbing trace whose root arrives late (ends after the tail
+            # window) would otherwise read as undeclared and be kept. Stamping
+            # the inheritance makes the drop order-independent.
+            if "nora.trace_kind" not in attrs:
+                parent = trace.get_current_span(parent_context)
+                inherited = (getattr(parent, "attributes", None) or {}).get(
+                    "nora.trace_kind")
+                if inherited is not None:
+                    span.set_attribute("nora.trace_kind", inherited)
+            if "langfuse.observation.type" not in attrs:
+                name = getattr(span, "name", "") or ""
+                for prefix, kind in _OBSERVATION_TYPES:
+                    if name.startswith(prefix):
+                        span.set_attribute("langfuse.observation.type", kind)
+                        break
+        except Exception:
+            log.debug("trace identity not stamped", exc_info=True)
+
+
+
+#: The attribute a ROOT span uses to say what kind of work is under it. A
+#: CLOSED set as a `Literal` so the vocabulary is DERIVED from the code rather
+#: than hand-copied into the collector's retention policy.
 #:
-#: * `generation` — a model call can happen under this root. The trace is what
-#:   the collector exists for; it is kept whether or not this particular run
-#:   reached the model (a tag refused at admission is still a tag, and DEC-141's
-#:   whole point is that it leaves a trace SAYING it was refused).
+#: Since the SigNoz cutover (ADR 0034) this is a RETENTION HINT that travels
+#: with the span, not an SDK drop: the collector's tail policy reads it after
+#: the outcome is known. A head sampler deciding at span START could never
+#: keep "a plumbing root that later failed" — the failure does not exist yet.
+#:
+#: * `generation` — a model call can happen under this root. Always retained.
 #: * `plumbing` — deterministic stage sequencing with no model call anywhere
-#:   under it. Never exported. Its signal belongs on a counter.
-#: * `queue` — a bounded platform-bridge queue operation (enqueue, claim,
-#:   attempt, deliver, ACK). The one operator-requested exception to the
-#:   deterministic-root rule (design/platform-bridges/04): each root is a
-#:   short single-operation span linked to its producer/previous attempt,
-#:   never held open over a queue wait or a deploy. Kept at 100% at this
-#:   installation's volume; the collector routes it to Jaeger and away from
-#:   Langfuse, so it must never carry a model call or message content.
+#:   under it. The collector drops it when the run ends well and keeps it on
+#:   error; its routine signal belongs on a counter either way.
+#: * `queue` — a bounded bridge operation linked to its producer/previous
+#:   attempt. Retained by the collector; never a model call or message body.
 TraceKind = Literal["generation", "plumbing", "queue"]
 
 #: The attribute name itself, `nora.` prefixed like every other attribute this
@@ -72,31 +178,30 @@ _TRACE_KINDS: frozenset[str] = frozenset(get_args(TraceKind))
 TraceCarrier = Context
 
 
-class _PlumbingIsNotATrace(Sampler):
-    """THE ROOT DECISION (R-76): a trace reaches the collector when the work
-    under it can contain a generation.
+class _EveryRootIsRecorded(Sampler):
+    """THE ROOT DECISION (R-76, amended for SigNoz): **every root is recorded
+    and exported** — retention is the collector's job, taken with the outcome
+    in hand.
 
-    Langfuse is an LLM-observability tool. Everything Nora does that is not a
-    model call — sequencing ingest stages, writing a row, resolving an
-    identity, counting a refusal — is plumbing, and plumbing's questions
-    («how many», «how often», «with what outcome») are Prometheus' questions.
-    `nora/ingest/pipeline.py` opens spans with no model call under any of
-    them, and it is the highest-volume entry point, so exporting it would bury
-    the turns that matter.
+    Before ADR 0034 the sampler dropped `plumbing` roots outright, because the
+    only destinations were Langfuse (an LLM-observability tool) and a Jaeger
+    that could not use them. Under SigNoz the plumbing drop moves to a tail
+    policy in the collector pipeline, where it is evaluated AFTER the trace's
+    spans — and therefore its errors — exist. A plumbing root that dies at a
+    named stage is a user-visible failure the backend must hold; a head
+    sampler deciding at span START cannot keep "this routine root later
+    failed" without keeping everything anyway, which is what this sampler now
+    does.
 
-    **This is a decision about ROOTS, not about every span.**
-    `engagement.admission` has no generation in it either, and it must keep
-    being exported: as a CHILD of a trace that has one, it is how a turn that
-    ended before the model call ends visibly at a named stage. Composed under
-    `ParentBased`, so a child never re-decides — it inherits whatever its root
-    was given, which also keeps a QUEUED tag's turn (re-attached to a captured
-    context whose root span has already ended) in the same trace as the root
-    that admitted it.
+    **`nora.trace_kind` is still validated and still stamped**: it is the hint
+    the collector's drop rule keys on, and an unrecognised value is LOGGED and
+    exported — the same "wrong towards export costs noise, wrong towards
+    silence costs an invisible gap" judgement as before, one seam down.
 
-    **DEFAULT: EXPORT.** An undeclared root is kept. Erring towards export
-    costs visible noise; erring towards silence costs an invisible missing
-    trace for a model call. Only an explicit `plumbing` drops. An undeclared
-    value is LOGGED and kept.
+    Composed under `ParentBased`, so a child never re-decides — it inherits
+    whatever its root was given, which also keeps a QUEUED tag's turn
+    (re-attached to a captured context whose root span has already ended) in
+    the same trace as the root that admitted it.
     """
 
     def should_sample(
@@ -116,12 +221,10 @@ class _PlumbingIsNotATrace(Sampler):
                 "— exporting it anyway; add it to TraceKind",
                 name, declared, sorted(_TRACE_KINDS),
             )
-            declared = None
-        decision = Decision.DROP if declared == "plumbing" else Decision.RECORD_AND_SAMPLE
-        return SamplingResult(decision, attributes, trace_state)
+        return SamplingResult(Decision.RECORD_AND_SAMPLE, attributes, trace_state)
 
     def get_description(self) -> str:
-        return "NoraPlumbingIsNotATrace"
+        return "NoraEveryRootIsRecorded"
 
 
 def build_sampler() -> Sampler:
@@ -132,7 +235,7 @@ def build_sampler() -> Sampler:
     provider would export spans production drops, and assertions about «what
     reaches the collector» would measure a provider no deployment has.
     """
-    return ParentBased(root=_PlumbingIsNotATrace())
+    return ParentBased(root=_EveryRootIsRecorded())
 
 
 #: Provider setup is not here: `nora.agent` sits ABOVE `nora.obs` in the
@@ -239,6 +342,63 @@ def _opened_span(name: str, *, links: Sequence[Link],
             # Same reason: a failing exporter on span end must not surface as a
             # tag failure. See the acquisition guard above.
             log.debug("span %s did not close cleanly", name, exc_info=True)
+
+
+def instrument_aiohttp_app(app: object) -> None:
+    """Attach the contrib aiohttp-server middleware to a `web.Application`,
+    skipping the routes that are only ever polled.
+
+    `/health` and `/metrics` are scraped on a timer — their spans are the same
+    "97% plumbing" noise R-76 was registered for, except here they can never
+    fail interestingly either (a dead endpoint produces no span to keep). The
+    rest of the app — portal, OTP, voice and API routes — gets a request span
+    per boundary, which is the application-HTTP coverage ADR 0034 asks for.
+
+    Never load-bearing, like everything in this module: a missing contrib
+    package or a middleware that will not install costs the spans, not the
+    app. The package's module state (`_excluded_urls`, meters, the default
+    tracer) exists only after `AioHttpServerInstrumentor.instrument()` runs —
+    calling its exported `middleware` bare raises AttributeError on the first
+    request — so this goes through the supported lifecycle on the shared
+    provider, then `create_aiohttp_middleware` for the per-app middleware.
+    Restore the application constructor after initialization so subsequent
+    apps also receive exactly one explicitly installed middleware.
+    The contrib exclusion mechanism is a process-wide env var and these paths
+    are per-app, so the path filter stays our thin wrapper.
+    """
+    excluded_paths = frozenset({"/health", "/metrics"})
+    try:
+
+        from aiohttp import web
+        from opentelemetry.instrumentation.aiohttp_server import (
+            AioHttpServerInstrumentor,
+            create_aiohttp_middleware,
+        )
+
+        instrumentor = AioHttpServerInstrumentor()
+        if not instrumentor.is_instrumented_by_opentelemetry:
+            instrumentor.instrument(
+                tracer_provider=trace.get_tracer_provider())
+            # Initialize contrib's state, then restore Application: this app
+            # already exists and gets its middleware below. Leaving the global
+            # constructor patched would also instrument every subsequent app,
+            # duplicating this middleware and tracing excluded poll routes.
+            instrumentor.uninstrument()
+        otel_middleware = create_aiohttp_middleware(
+            tracer_provider=trace.get_tracer_provider())
+
+        @web.middleware
+        async def _nora_middleware(
+            request: web.Request,
+            handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
+        ):
+            if request.path in excluded_paths:
+                return await handler(request)
+            return await otel_middleware(request, handler)
+
+        app.middlewares.append(_nora_middleware)  # type: ignore[attr-defined]
+    except Exception:
+        log.debug("aiohttp server tracing not installed", exc_info=True)
 
 
 def _safe_attributes(attributes: dict[str, object]) -> dict[str, str | bool | int | float]:
@@ -475,3 +635,59 @@ def trace_attributes(ctx, doctrine) -> dict:
         "doctrine_sha256": doctrine.sha256,
         "note_index_entries": len(ctx.notes),
     }
+
+
+def setup_process_tracing(
+    *, sampler: Sampler, service_name: str, exporter: str, endpoint: str,
+    headers_env: str, credentials: dict[str, str] | None = None,
+    service_version: str = "", environment: str = "",
+) -> None:
+    """Provider/exporter setup for a process with no Strands spans —
+    `presence` and `analytics`, which the layered contract keeps OFF
+    `nora.agent` (and so off `setup_agent_tracing` and `StrandsTelemetry`).
+
+    Same shape as the agent path minus the Strands exporter helpers: Nora's
+    R-76 sampler on the provider, `TraceIdentityProcessor` for the session /
+    `nora.trace_kind` / observation-type stamps, plain OTel exporters, then
+    `trace.set_tracer_provider` LAST — the registration, not the build, is
+    what makes the no-op `ProxyTracerProvider` global real.
+    """
+    if exporter not in ("console", "file", "otlp_http"):
+        raise ValueError(f"unknown tracing exporter: {exporter!r}")
+    from opentelemetry.sdk.trace.export import (
+        BatchSpanProcessor,
+        ConsoleSpanExporter,
+    )
+    resource_attrs: dict[str, str] = {"service.name": service_name}
+    if service_version:
+        resource_attrs["service.version"] = service_version
+    if environment:
+        resource_attrs["deployment.environment"] = environment
+    provider = TracerProvider(
+        resource=Resource.create(resource_attrs), sampler=sampler)
+    provider.add_span_processor(TraceIdentityProcessor())
+    # Same bridge as setup_agent_tracing: Sentry events carry THIS provider's
+    # trace/span ids. nora.obs sibling, optional dependency, never load-bearing.
+    from .errors import otel_span_processor
+
+    _sentry_bridge = otel_span_processor()
+    if _sentry_bridge is not None:
+        provider.add_span_processor(_sentry_bridge)
+    if exporter in ("console", "file"):
+        import sys as _sys
+        from typing import IO
+        from typing import Any as _Any
+
+        out: IO[_Any] = _sys.stdout
+        if exporter == "file":
+            out = open(endpoint, "a", encoding="utf-8")  # noqa: SIM115
+        provider.add_span_processor(
+            BatchSpanProcessor(ConsoleSpanExporter(out=out)))
+    else:
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+            OTLPSpanExporter,
+        )
+        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(
+            endpoint=endpoint,
+            headers=resolve_otlp_headers(headers_env, credentials))))
+    trace.set_tracer_provider(provider)

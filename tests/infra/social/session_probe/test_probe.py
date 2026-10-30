@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from nora.infra.social.session_probe import probe as probe_mod
-from nora.infra.social.session_probe.alerts import AlertBridgeSink, AlertMessage
+from nora.infra.social.session_probe.alerts import AlertMessage, LogSink
 from nora.infra.social.session_probe.cookies import ChromeCookie, CookieError, fingerprint
 from nora.infra.social.session_probe.probe import Probe, ProbeConfig
 from nora.infra.social.session_probe.runner import RunResult
@@ -742,26 +742,12 @@ def test_a_corrupt_last_state_line_is_skipped_not_fatal(world, bridge_dir, tmp_p
     assert len(world.whoami_sites()) == 2  # carry still recovered from the good line
 
 
-# ---- alert-bridge sink -----------------------------------------------------
+# ---- alert sink --------------------------------------------------------------
 
-def test_alert_bridge_sink_posts_an_alertmanager_shaped_payload_via_docker_exec():
-    seen: dict = {}
-
-    def run(argv, timeout, stdin):  # type: ignore[no-untyped-def]
-        seen.update(argv=list(argv), stdin=stdin)
-        return RunResult(0)
-
-    assert AlertBridgeSink(run).send(AlertMessage("x", "chrome_session_missing", "log in"))
-    assert seen["argv"][:4] == ["docker", "exec", "-i", "nora-alert-bridge"]
-    body = json.loads(seen["stdin"])
-    assert body["status"] == "firing"
-    assert body["alerts"][0]["labels"]["job"] == "x"
-    assert "chrome_session_missing" in body["alerts"][0]["annotations"]["summary"]
-
-
-def test_alert_bridge_sink_reports_failure_without_raising():
-    sink = AlertBridgeSink(lambda a, t, s: RunResult(1, "", "no such container"))
-    assert sink.send(AlertMessage("probe", "bridge_unreachable", "x")) is False
+def test_log_sink_reports_the_alert_line_and_never_raises():
+    # The retired alert-bridge sink posted to a container; the durable channel
+    # is now the warning line the SigNoz log pipeline collects.
+    assert LogSink().send(AlertMessage("x", "chrome_session_missing", "log in"))
 
 
 def test_failed_delivery_is_not_marked_sent_so_it_retries(world, bridge_dir, tmp_path):
@@ -798,41 +784,3 @@ def test_config_reads_the_opencli_profile_and_refuses_a_blank_one():
     assert config_from_env({"OPENCLI_PROFILE": "nora-alt"}).opencli_profile == "nora-alt"
     with pytest.raises(ValueError):
         config_from_env({"OPENCLI_PROFILE": "  "})
-
-
-def test_the_alert_post_script_sends_the_bridge_bearer_from_its_own_environment():
-    """The bridge answers 401 without the shared bearer. Run the real script against a local
-    listener, inside an environment that carries the token, and read what it sent."""
-    import http.server
-    import os
-    import subprocess
-    import sys
-    import threading
-
-    from nora.infra.social.session_probe import alerts
-
-    got: dict = {}
-
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_POST(self):
-            got["auth"] = self.headers.get("Authorization")
-            self.rfile.read(int(self.headers.get("Content-Length", 0)))
-            self.send_response(200)
-            self.end_headers()
-
-        def log_message(self, *args):  # type: ignore[no-untyped-def]
-            pass
-
-    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    try:
-        script = alerts._POST_SCRIPT.replace("9110", str(server.server_port))
-        done = subprocess.run(  # noqa: S603
-            [sys.executable, "-c", script], input=b"{}", timeout=20,
-            env={**os.environ, "NORA_BRIDGE_TOKEN": "probe-test-token"}, check=False,
-        )
-    finally:
-        server.shutdown()
-    assert done.returncode == 0
-    assert got["auth"] == "Bearer probe-test-token"
-    assert "probe-test-token" not in alerts._POST_SCRIPT

@@ -701,10 +701,10 @@ class TestLinkedLifecycle:
         assert _jaeger_trace(ack_trace)["spans"][0][
             "operationName"] == "queue.ack"
 
-    async def test_plumbing_roots_are_dropped_end_to_end(self, otlp):
-        """A `plumbing` root is dropped by build_sampler() before ANY
-        collector sees it — absent from Jaeger AND the sink. The positive
-        control is a queue span in the same flush landing fine."""
+    async def test_plumbing_roots_reach_the_transitional_collector(self, otlp):
+        """ADR 0034 exports every root; retention belongs to the collector.
+        This transitional Jaeger leg retains plumbing; Langfuse's model
+        policy still excludes it. SigNoz retention has its own fixture."""
         _http(f"{SINK}/reset", data=b"{}")
         from opentelemetry import trace as _trace
         from opentelemetry.context import Context
@@ -718,18 +718,10 @@ class TestLinkedLifecycle:
         with bt.operation_span("ack", platform=PLATFORM) as qsp:
             pass
         otlp.force_flush()
-        # control: the queue root DID export — the absence below is the
-        # sampler's decision, not a broken pipe
         assert _jaeger_trace(_trace_id_of(qsp))["spans"][0][
             "operationName"] == "queue.ack"
-        await asyncio.sleep(2)      # past the 200ms batch window
-        try:
-            data = json.loads(_http(f"{JAEGER}/api/traces/{tid}"))["data"]
-        except urllib.error.HTTPError as exc:
-            if exc.code != 404:
-                raise
-            data = []           # a 404 IS the absence we're asserting
-        assert data == []
+        assert _jaeger_trace(tid)["spans"][0]["operationName"] == "plumbing.probe"
+        await asyncio.sleep(2)
         assert all(s["name"] != "plumbing.probe" for s in _sink_spans())
 
     async def test_sanitized_error_exports_type_only_to_jaeger(self, otlp):

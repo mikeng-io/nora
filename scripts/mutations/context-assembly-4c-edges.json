@@ -198,8 +198,8 @@
   {
     "name": "4c review: client.complete swaps the question and the words",
     "file": "nora/infra/vision/client.py",
-    "old": "                    {\"role\": \"user\", \"content\": prompt},\n                    {\"role\": \"user\", \"content\": text},",
-    "new": "                    {\"role\": \"user\", \"content\": text},\n                    {\"role\": \"user\", \"content\": prompt},",
+    "old": "            {\"role\": \"user\", \"content\": prompt},\n            {\"role\": \"user\", \"content\": text},",
+    "new": "            {\"role\": \"user\", \"content\": text},\n            {\"role\": \"user\", \"content\": prompt},",
     "target": "tests/unit/test_step4c_edge_goldens.py::test_an_input_the_step_does_not_touch_is_byte_identical tests/unit/test_step4c_edge_goldens.py::test_a_summarize_call_sends_the_text_framed_and_nothing_else_differs"
   },
   {

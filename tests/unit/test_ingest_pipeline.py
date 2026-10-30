@@ -663,50 +663,37 @@ def _all_drivers(monkeypatch, metrics):
     }
 
 
-async def test_an_ingest_reaches_the_collector_with_nothing(exported_spans):
-    """R-76. THE RULE: a trace reaches Langfuse when the work under its root can
-    contain a generation. An ingest cannot — six deterministic stages, a row,
-    a feed, no model call anywhere — so none of its spans are exported.
+async def test_an_ingest_exports_complete_with_its_plumbing_hint(exported_spans):
+    """R-76, AMENDED for SigNoz (ADR 0034). The SDK no longer drops the ingest
+    tree: a head sampler at root-start cannot know whether this plumbing run
+    will fail at a named stage, and a failure the backend never sees is an
+    invisible gap. The `nora.trace_kind="plumbing"` hint travels WITH the root
+    so the collector's tail policy drops the routine successes and keeps the
+    errors — the noise intent survives, moved one seam down.
 
-    Langfuse is an LLM-observability tool, and ingest is the highest-volume
-    entry point in the system; a collector full of plumbing cannot be read for
-    the turns that matter.
-
-    TWO POSITIVE CONTROLS, because `== []` is also true of a harness that never
-    ran and of an exporter that was never live:
-
-    1. the ingest really happened — it returns a recorded message, and its
-       outcome is on the counter that replaced the trace;
-    2. the SAME fixture exports a root that does not declare itself plumbing,
-       so the drop is selective rather than total.
-
-    PROBE: delete `TRACE_KIND: "plumbing"` from the root `span(...)` call in
-    `run` and the six ingest spans come back.
+    POSITIVE CONTROLS: the ingest really ran (recorded outcome on the counter),
+    and every stage span exported under the one root carrying the hint.
     """
     metrics = Metrics()
     result = await _drive_recorded(metrics)
 
-    assert result.message is not None, "positive control 1: the ingest really ran"
+    assert result.message is not None, "positive control: the ingest really ran"
     assert metrics.get("nora_ingest_outcomes_total", outcome="recorded") == 1, \
-        "positive control 1: it reported itself, just not to the collector"
-    leaked = [s.name for s in exported_spans.get_finished_spans()]
-    assert leaked == [], f"an ingest reached the collector: {leaked}"
+        "positive control: it reported itself on the counter too"
+    exported = exported_spans.get_finished_spans()
+    assert exported, "the ingest tree must now reach the collector"
+    names = {s.name for s in exported}
+    assert "ingest" in names and len(names) > 1, \
+        f"incomplete tree exported: {names}"
+    root = next(s for s in exported if s.name == "ingest")
+    assert root.attributes["nora.trace_kind"] == "plumbing", \
+        "the collector's retention hint must ride on the root"
 
-    from nora.obs.tracing import span as _span
-    with _span("a-root-that-declares-nothing"):
-        pass
-    assert [s.name for s in exported_spans.get_finished_spans()] == [
-        "a-root-that-declares-nothing"
-    ], "positive control 2: the exporter is live and the drop is selective"
 
-
-async def test_no_ingest_exit_reaches_the_collector(exported_spans, monkeypatch):
-    """The same property over ALL FIVE exits, not just the ambient one. A
-    refusal, a failed audit write and a real tag are the exits most likely to be
-    argued back into the collector one at a time.
-
-    The positive control is the counter: every driver must be seen to have run,
-    so «nothing exported» can never pass as «nothing happened».
+async def test_every_ingest_exit_exports_with_its_hint(exported_spans, monkeypatch):
+    """The same property over ALL exits: a refusal, a failed audit write and a
+    real tag are exactly the exits whose outcome the tail policy needs to see
+    — exported whole, hint intact, counter still counted.
     """
     from nora.ingest.pipeline import _OUTCOMES
 
@@ -714,12 +701,41 @@ async def test_no_ingest_exit_reaches_the_collector(exported_spans, monkeypatch)
     for outcome, drive in _all_drivers(monkeypatch, metrics).items():
         exported_spans.clear()
         await drive()
-        leaked = [s.name for s in exported_spans.get_finished_spans()]
-        assert leaked == [], f"{outcome} reached the collector: {leaked}"
+        exported = exported_spans.get_finished_spans()
+        assert exported, f"{outcome}: no tree exported"
+        root = next((s for s in exported if s.name == "ingest"), None)
+        assert root is not None and root.attributes["nora.trace_kind"] == "plumbing", \
+            f"{outcome}: hint missing on root"
         assert metrics.get("nora_ingest_outcomes_total", outcome=outcome) == 1, \
             f"positive control: {outcome} did not actually run"
 
     assert set(_all_drivers(monkeypatch, metrics)) == _OUTCOMES
+
+
+async def test_the_root_declares_itself_plumbing_at_span_start(unfiltered_spans):
+    """The declaration has to be an argument to `span(...)`, not an `annotate`
+    afterwards: the collector's tail policy reads `nora.trace_kind` off the
+    root's own attributes, and a kind set one line later is a kind the
+    retention decision never saw.
+
+    AMENDED: the SDK sampler no longer drops on it — it records every root so
+    the outcome-aware policy downstream can keep a failing plumbing trace.
+    PROBE: delete `TRACE_KIND: "plumbing"` from the root `span(...)` call in
+    `run` and the exported root loses the hint this asserts.
+    """
+    await _drive_recorded()
+    root = _only_root(unfiltered_spans)
+
+    from opentelemetry.sdk.trace.sampling import Decision
+
+    from nora.obs.tracing import TRACE_KIND, _EveryRootIsRecorded
+
+    verdict = _EveryRootIsRecorded().should_sample(
+        None, 1, "ingest", attributes=dict(root.attributes),
+    )
+    assert verdict.decision is Decision.RECORD_AND_SAMPLE, \
+        "every root is recorded now — retention moved to the collector"
+    assert root.attributes[TRACE_KIND] == "plumbing"
 
 
 async def test_the_ingest_trace_is_opened_and_populated_before_it_is_dropped(
@@ -756,35 +772,6 @@ async def test_the_ingest_trace_is_opened_and_populated_before_it_is_dropped(
     assert root.attributes["nora.engage_reason"] == "trigger_text"
     assert root.attributes["nora.person_known"] is True
     assert root.attributes["nora.conversation_type"] == "group"
-
-
-async def test_the_root_declares_itself_plumbing_at_span_start(unfiltered_spans):
-    """The declaration has to be an argument to `span(...)`, not an `annotate`
-    afterwards: a `Sampler` is handed only the attributes the span was STARTED
-    with, so a kind set one line later is a kind the decision was already made
-    without.
-
-    This is the half a reader cannot see from the sampler alone — it would look
-    identical, and silently never fire.
-
-    PROBE: move `TRACE_KIND: "plumbing"` out of the `span(...)` call in `run`
-    into an `annotate(...)` on the next line. This test stays green and
-    `test_an_ingest_reaches_the_collector_with_nothing` reddens, which is the
-    pair that pins it.
-    """
-    await _drive_recorded()
-    root = _only_root(unfiltered_spans)
-
-    from opentelemetry.sdk.trace.sampling import Decision
-
-    from nora.obs.tracing import TRACE_KIND, _PlumbingIsNotATrace
-
-    verdict = _PlumbingIsNotATrace().should_sample(
-        None, 1, "ingest", attributes=dict(root.attributes),
-    )
-    assert verdict.decision is Decision.DROP, \
-        "the attributes the root STARTS with must be enough to decide against it"
-    assert TRACE_KIND in root.attributes
 
 
 async def test_every_exit_is_counted_with_its_outcome(monkeypatch):

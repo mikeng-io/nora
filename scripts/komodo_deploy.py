@@ -23,7 +23,7 @@ COHORT = {
     'voice-sidecar': 'voice-sidecar', 'signal-bridge': 'signal-bridge',
     'discord-bridge': 'discord-bridge',
     'whatsapp-bridge': 'whatsapp-bridge', 'instagram-bridge': 'instagram-bridge',
-    'alert-bridge': 'alert-bridge', 'bridge-projection': 'bridge-projection',
+    'bridge-projection': 'bridge-projection',
 }
 
 

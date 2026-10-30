@@ -5,17 +5,17 @@ platform-bridge queue work (design/platform-bridges/04, issue #422). It
 implements the routing the approved design REQUIRES (`docs/observability.md`
 «How a span reaches a collector» describes the deployed counterpart this
 proposal is derived from). The Jaeger/Langfuse legs are the TRANSITIONAL
-route pending the accepted SigNoz backend (`docs/observability.md` «Accepted
+route before deploying the implemented SigNoz backend (`docs/observability.md` «Accepted
 direction: self-hosted SigNoz» / ADR 0034); this fixture attests the
 transitional policy, not SigNoz, and nothing here implements it.
 
-- the app sampler (`build_sampler()`) drops `plumbing` roots and keeps
-  `queue` + `generation` at 100%;
+- the app sampler (`build_sampler()`) exports every root under ADR 0034;
+  retention belongs to the collector;
 - the Langfuse leg FIRST drops every `nora.trace_kind=queue` span
   (`filter/langfuse_queue`, explicit and ordered before the tail policy),
   then tail-samples: a whole surviving trace iff it carries a
   `gen_ai.operation.name` of `chat`/`invoke_agent`;
-- the Jaeger leg drops only `chat` spans.
+- the Jaeger leg drops only `chat` spans, retaining plumbing and queue roots.
 
 A queue-only trace therefore lands in Jaeger and never reaches Langfuse —
 and a queue span that somehow carries a `gen_ai` attribute still cannot,

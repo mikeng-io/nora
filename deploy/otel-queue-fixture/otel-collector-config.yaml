@@ -5,9 +5,9 @@
 #   app sampler            this collector                       stores
 #   ───────────            ──────────────                       ──────
 #   build_sampler() ──▶ OTLP/HTTP ──▶ filter/langfuse_queue ──▶ tail_sampling
-#   plumbing roots         :4318/     (every queue-kind span      ──▶ sink
-#   drop; queue and        v1/traces   gone FIRST), then the        (the
-#   generation keep                  generation tail policy       synthetic
+#   every root             :4318/     (every queue-kind span      ──▶ sink
+#   exports (ADR 0034)     v1/traces   gone FIRST), then the        (the
+#                                    generation tail policy       synthetic
 #                                    — whole trace iff a          Langfuse)
 #                                    gen_ai chat/invoke_agent
 #                                    span is in it)

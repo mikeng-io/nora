@@ -1,0 +1,362 @@
+# Declarative SigNoz alert rules — provisioned by scripts/signoz_provision.py.
+#
+# A 1:1 semantic port of deploy/prometheus/rules/nora.yml: 18 of its 19 rules
+# carry across unchanged; PrometheusNotIngesting (absent on the Prometheus
+# self-scrape) is replaced by IngestionSilent, which measures the SigNoz
+# ingestion path itself. The comments that explain WHY each rule exists live
+# in the original file — every `port` line names the original expression so
+# this file stays an index, not a second copy.
+#
+# How Prometheus semantics map onto the SigNoz v2alpha1 rule schema
+# (verified against signoz:v0.148.1, pkg/types/ruletypes +
+# pkg/query-service/rules/threshold.go):
+#   query    the PromQL expression, minus the outermost comparison when it is
+#            `expr OP constant` — SigNoz's threshold applies that comparison.
+#            A query that contains its own comparison (`>`, `==`, `and`,
+#            `unless`, `absent`) produces a FILTERED series: it emits points
+#            only while the condition holds, so one bad point fires
+#            immediately under all_the_times and the LAST bad point keeps
+#            firing after recovery — no hold at all. Those expressions are
+#            rewritten to emit an UNFILTERED 0/1 series instead (`bool`
+#            comparisons, `or vector(0)`, `a - b or a` for `unless`), and the
+#            threshold then checks "result > 0" at every point in the window.
+#   op/target  the comparison the Prometheus expr carried.
+#   match    `for: Nm` maps to matchType all_the_times over evalWindow Nm —
+#            every point in the window must hold — PLUS `min_points` so a
+#            series that has not existed for the whole window cannot fire
+#            early (the hold Prometheus's `for` enforces by time). `for: 0m`
+#            maps to `last` over a 1m window: only the CURRENT point counts,
+#            so recovery resolves at the next evaluation instead of lingering
+#            on a stale point inside the window.
+#   min_points  condition.requireMinPoints + requiredNumPoints in the API:
+#            points a series must carry in the window to be evaluated at all
+#            (window-seconds/60 + 1 — SigNoz evaluates on a 60s step).
+#   window   the rolling evalWindow; frequency is always 1m.
+#
+# NO `absentFor`: the SigNoz API accepts it but multiplies it by MINUTES
+# (pkg/query-service/rules/base_rule.go), which silently inflates a seconds-
+# based intent 60x. Absence is expressed as `absent(...)` inside the query
+# instead, where the unit is seconds-accurate by construction — and wrapped
+# `or vector(0)` so the series stays unfiltered (see `query` above).
+#
+# Channels carry the DISPLAY NAME of a /api/v1/channels receiver; the script
+# creates `nora-alerts` as a webhook receiver pointing at the configured sink.
+#
+# Label mapping (verified against the live v0.144.15 collector): the
+# prometheus receiver emits OTel semantics, so the classic `job`/`instance`
+# labels do not exist — scrape `job_name` lands on `service.name`, the target
+# address on `service.instance.id`/`server.address`/`server.port`. Queries and
+# `{{ $labels.* }}` annotations below use the OTel names; app-emitted labels
+# (platform, reason, circle, guild_id, status, stage, lane, verdict) pass
+# through unchanged.
+defaults:
+  channel: nora-alerts
+  frequency: "1m"
+rules:
+  # ---- nora-liveness (7) ----
+  - name: TargetDown
+    port: "up == 0 for 3m"
+    query: up
+    op: equal
+    target: 0
+    match: all_the_times
+    window: "3m"
+    min_points: 4
+    severity: critical
+    summary: '{{ index $labels "service.name" }} is not answering its metrics endpoint'
+    description: >-
+      The scrape target {{ index $labels "service.instance.id" }} has not answered for 3 minutes.
+      Either the process is down or its port is unreachable.
+  - name: HeartbeatStalled
+    port: "nora_heartbeat_last_tick_age_seconds > 300 for 2m"
+    query: nora_heartbeat_last_tick_age_seconds
+    op: above
+    target: 300
+    match: all_the_times
+    window: "2m"
+    min_points: 3
+    severity: critical
+    summary: "Nora's heartbeat has not ticked for {{ $value }}s"
+  - name: PlatformSilent
+    port: "nora_adapter_last_event_age_seconds > 900 for 5m"
+    query: nora_adapter_last_event_age_seconds
+    op: above
+    target: 900
+    match: all_the_times
+    window: "5m"
+    min_points: 6
+    severity: warning
+    summary: "no {{ $labels.platform }} event for {{ $value }}s"
+    description: >-
+      The listener may have died without the connection closing. Compare
+      against /health's per-platform last_event_age_seconds.
+  - name: PresenceCollectionStalled
+    port: "nora_presence_last_collection_age_seconds > 1800 for 10m"
+    query: nora_presence_last_collection_age_seconds
+    op: above
+    target: 1800
+    match: all_the_times
+    window: "10m"
+    min_points: 11
+    severity: critical
+    summary: "presence has not collected circle {{ $labels.circle }} for {{ $value }}s"
+    description: >-
+      Everything Nora says about where people are or have been stops at the
+      last successful read. Check the presence container log for
+      `life360 auth failed` / `banned/refused` before restarting it.
+  - name: PresenceNotRecording
+    port: "(sum(increase(nora_presence_fixes_total[2h])) or vector(0)) == 0 for 15m"
+    query: (sum(increase(nora_presence_fixes_total[2h])) or vector(0)) == bool 0
+    op: above
+    target: 0
+    match: all_the_times
+    window: "15m"
+    min_points: 16
+    severity: critical
+    summary: "presence has written no location fix for anyone in 2 hours"
+    description: >-
+      No new fix has been recorded for any member in 2h, including across
+      restarts. Every where_is / where_been answer stops at the last one.
+      Check the presence container log for `life360 auth failed`,
+      `banned/refused` or `access token rejected`, and its restart count.
+  - name: PresenceAuthRefused
+    port: "sum by (reason) (increase(nora_presence_auth_alarms_total{reason!=\"token_rejected\"}[15m])) > 0 for 5m"
+    query: 'sum by (reason) (increase(nora_presence_auth_alarms_total{reason!="token_rejected"}[15m]))'
+    op: above
+    target: 0
+    match: all_the_times
+    window: "5m"
+    min_points: 6
+    severity: warning
+    summary: "Life360 is refusing the presence collector ({{ $labels.reason }})"
+    description: >-
+      auth_403 means Life360 refused the password login. A verified phone
+      number on the account blocks the password grant for good, which is
+      what happened on 2026-09-24. It needs the operator, not a restart:
+      switch to token mode (LIFE360_AUTH_TOKEN, docs/runbook.md §4c).
+  - name: Life360TokenRejected
+    port: "sum by (job) (increase(nora_presence_auth_alarms_total{reason=\"token_rejected\"}[2h])) > 0 for 0m"
+    query: 'sum by ("service.name") (increase(nora_presence_auth_alarms_total{reason="token_rejected"}[2h]))'
+    op: above
+    target: 0
+    match: last
+    window: "1m"
+    severity: critical
+    summary: "Life360 rejected LIFE360_AUTH_TOKEN — no locations are being recorded"
+    description: >-
+      Every where_is / where_been answer stops at the last fix until this is
+      fixed. Sign in at https://life360.com/login as Nora's Life360 account,
+      open DevTools > Application > Cookies > life360.com, and copy the
+      LIFE360_AUTH_TOKEN value into secret.toml on the host. Then recreate
+      the presence container (a restart keeps the old environment). The full
+      steps are in docs/runbook.md §4c.
+  # ---- nora-r27 (2) ----
+  - name: UnavailableOutcomes
+    port: "sum by (job, __name__) (increase({__name__=~\".+_total\", __name__!=\"nora_computer_calls_total\", status=\"unavailable\"}[15m])) > 0 for 5m"
+    query: 'sum by ("service.name", __name__) (increase({__name__=~".+_total", __name__!="nora_computer_calls_total", status="unavailable"}[15m]))'
+    op: above
+    target: 0
+    match: all_the_times
+    window: "5m"
+    min_points: 6
+    severity: warning
+    summary: 'a counter is reporting unavailable ({{ index $labels "service.name" }})'
+    description: >-
+      Something could not be checked at all — a wiring gap or a dead
+      dependency, not an empty answer. This is the state that replaces an
+      exception in this codebase, so nothing else will report it. Which
+      counter: `{__name__=~".+_total", status="unavailable"}` in metrics.
+  - name: MediaCustodyNotConfigured
+    port: "increase(nora_media_custody_total{status=\"not_configured\"}[1h]) > 0 (no for)"
+    query: 'increase(nora_media_custody_total{status="not_configured"}[1h])'
+    op: above
+    target: 0
+    match: last
+    window: "1m"
+    severity: warning
+    summary: "attachments are arriving with media custody switched off"
+  # ---- music (3) ----
+  - name: MusicWedged
+    port: "(nora_music_expected_playing == 1) unless (nora_music_controller_playing == 1) for 2m"
+    # `a unless b` == `a - b or a`: (expected=1 AND controller=1) -> 0,
+    # (expected=1 AND controller=0/absent) -> 1, expected=0 -> 0. An
+    # unfiltered 0/1 per guild; bare `unless` would emit only the bad points.
+    query: >-
+      (nora_music_expected_playing == bool 1) - (nora_music_controller_playing == bool 1)
+      or (nora_music_expected_playing == bool 1)
+    op: above
+    target: 0
+    match: all_the_times
+    window: "2m"
+    min_points: 3
+    severity: critical
+    summary: "guild {{ $labels.guild_id }}: nora thinks music is playing, the controller disagrees"
+    description: >-
+      nora holds a current track and the audio controller reports no audio
+      moving (status not playing, position frozen, or autopaused).
+      CAPTURE THE SIDECAR LOG BEFORE RESTARTING ANYTHING — every previous
+      occurrence was diagnosed from nothing because the restart that
+      restored service destroyed the evidence.
+  - name: MusicControllerUnreadable
+    port: "increase(nora_music_liveness_total{verdict=\"unknown\"}[10m]) >= 5 for 0m"
+    query: 'increase(nora_music_liveness_total{verdict="unknown"}[10m])'
+    op: above_or_equal
+    target: 5
+    match: last
+    window: "1m"
+    severity: warning
+    summary: "guild {{ $labels.guild_id }}: the audio controller could not be read for 10 minutes"
+  - name: MusicStreamFailing
+    port: "increase(nora_music_stream_failed_total[15m]) >= 3 for 0m"
+    query: 'increase(nora_music_stream_failed_total[15m])'
+    op: above_or_equal
+    target: 3
+    match: last
+    window: "1m"
+    severity: warning
+    summary: "guild {{ $labels.guild_id }}: 3+ music streams failed in 15 minutes (reason {{ $labels.reason }})"
+  # ---- computer (3) ----
+  - name: ComputerDown
+    port: "nora_computer_up == 0 for 5m"
+    query: nora_computer_up
+    op: equal
+    target: 0
+    match: all_the_times
+    window: "5m"
+    min_points: 6
+    severity: critical
+    summary: "Nora's computer has not answered for 5 minutes"
+    description: >-
+      Every computer tool answers unavailable until this clears. On the host:
+      `deploy/computer/nora-computer status` (sandbox=, computerd=,
+      egress=), `systemctl --user status nora-computer`, `sbx ls`. A
+      computerd that is up but answers 401 is a token the container does
+      not hold; deploy/computer/README.md "Rotating the token" is the fix.
+  - name: ComputerCallsFailing
+    port: "sum by (job) (increase(nora_computer_calls_total{status=\"unavailable\"}[15m])) >= 5 for 0m"
+    query: 'sum by ("service.name") (increase(nora_computer_calls_total{status="unavailable"}[15m]))'
+    op: above_or_equal
+    target: 5
+    match: last
+    window: "1m"
+    severity: warning
+    summary: "{{ $value }} computer calls answered unavailable in 15 minutes"
+    description: >-
+      Compare by op: `nora_computer_calls_total{status="unavailable"}`.
+      When `nora_computer_up` is also 0 this is `ComputerDown`'s cause;
+      when it is 1 computerd is answering and failing, so read its unit
+      journal (`journalctl --user -u nora-computer -n 100`).
+  - name: ComputerAuditFailing
+    port: "sum by (job, stage) (increase(nora_computer_audit_failures_total[1h])) > 0 for 0m"
+    query: 'sum by ("service.name", stage) (increase(nora_computer_audit_failures_total[1h]))'
+    op: above
+    target: 0
+    match: last
+    window: "1m"
+    severity: warning
+    summary: "computer audit writes are failing (stage {{ $labels.stage }})"
+    description: >-
+      A computer call ran without its audit row (stage row), or its full
+      input/output was not kept (blob). The tool still answered. Check the
+      db and the blob store; the rows that failed are not recoverable.
+  # ---- oauth (3) ----
+  - name: OAuthRefreshStale
+    port: "time() - nora_oauth_last_refresh_timestamp_seconds > 2 * nora_oauth_refresh_interval_seconds for 15m"
+    # `> bool` keeps the series unfiltered: every eval point gets a 0/1, so
+    # all_the_times over 15m is a real hold, and a healthy refresh resolves
+    # instead of lingering on the last bad point.
+    query: (time() - nora_oauth_last_refresh_timestamp_seconds) > bool (2 * nora_oauth_refresh_interval_seconds)
+    op: above
+    target: 0
+    match: all_the_times
+    window: "15m"
+    min_points: 16
+    severity: critical
+    summary: "the {{ $labels.lane }} login has not refreshed for over twice its interval"
+    description: >-
+      Image generation on this lane fails once its access token expires.
+      Read why in the nora log (`oauth_lane` / `oauth keepalive` lines name
+      the lane and the reason). `auth` means the refresh token is dead: run
+      `nora xai-login` (lane xai) or `nora openai-codex-login` (lane
+      openai_codex), then recreate nora.
+  - name: OAuthAccessTokenExpired
+    port: "nora_oauth_access_expiry_timestamp_seconds > 0 and nora_oauth_access_expiry_timestamp_seconds < time() for 30m"
+    # `x > 0 and x < time()` filtered the series to bad-only points; the two
+    # `bool` comparisons multiplied keep one unfiltered 0/1 per point.
+    query: >-
+      (nora_oauth_access_expiry_timestamp_seconds > bool 0)
+      * (nora_oauth_access_expiry_timestamp_seconds < bool time())
+    op: above
+    target: 0
+    match: all_the_times
+    window: "30m"
+    min_points: 31
+    severity: critical
+    summary: "the {{ $labels.lane }} access token has expired and was not refreshed"
+    description: >-
+      Image generation on this lane fails until a refresh succeeds. The nora
+      log names the lane and the reason the keepalive is retrying (`oauth
+      keepalive` / `oauth_lane` lines). A transient reason heals on its own;
+      `auth` needs a new login (see OAuthRefreshRefused).
+  - name: OAuthRefreshRefused
+    port: "nora_oauth_refresh_refused == 1 for 0m"
+    query: nora_oauth_refresh_refused
+    op: equal
+    target: 1
+    match: last
+    window: "1m"
+    severity: critical
+    summary: "the {{ $labels.lane }} login was refused and needs the operator"
+    description: >-
+      The issuer refused the lane's refresh token (`invalid_grant`), or the
+      state dir is not writable. Log in again with `nora xai-login` (lane
+      xai) or `nora openai-codex-login` (lane openai_codex) and recreate
+      nora; the keepalive retries once per interval until then. No other
+      checkout may hold the same token: a second holder spending one
+      rotating token revokes the chain.
+  # ---- session probe (1, logs-based) ----
+  # The probe is a host systemd user unit, not a metric: its page is the
+  # LogSink JSON line {alert, network, summary} that the journald receiver
+  # carries under container.name=nora-session-probe (SyslogIdentifier in the
+  # unit). LOGS_BASED_ALERT on a clickhouse_sql count — any alert line in the
+  # window pages; 15m covers a 10-minute probe interval without re-paging
+  # forever (send_resolved gives the recovery).
+  - name: SessionProbeAlert
+    signal: logs
+    port: "replaces the retired alert-bridge webhook path (the probe's LogSink line)"
+    query: >-
+      SELECT toStartOfInterval(fromUnixTimestamp64Nano(timestamp), INTERVAL 1 MINUTE) AS ts, count(*) AS v
+      FROM signoz_logs.distributed_logs_v2
+      WHERE timestamp > toUnixTimestamp64Nano(now64() - INTERVAL 15 MINUTE)
+      AND attributes_string['container.name'] = 'nora-session-probe'
+      AND has(attributes_string, 'alert')
+      GROUP BY ts ORDER BY ts
+    op: above
+    target: 0
+    match: at_least_once
+    window: "15m"
+    severity: critical
+    summary: "session probe raised an alert ({{ $value }} lines in 15m)"
+    description: >-
+      A social session or its bridge follower needs a human — the probe's
+      alert line names the network and reason. Read the line in SigNoz logs:
+      attributes container.name = nora-session-probe.
+  # ---- monitoring-itself (1) ----
+  - name: IngestionSilent
+    port: "replaces absent(up{job=\"prometheus\"} == 1) for 5m"
+    # `absent()` alone emits a point only while the series is missing; the
+    # `or vector(0)` keeps one unfiltered 0/1 point per eval so all_the_times
+    # is a real 5-minute hold and recovery resolves on the next tick.
+    query: absent(up{"service.name"="/signoz-otel-collector"}) or vector(0)
+    op: above
+    target: 0
+    match: all_the_times
+    window: "5m"
+    min_points: 6
+    severity: critical
+    summary: "the SigNoz ingestion path is not reporting — the monitor may be dead"
+    description: >-
+      The ingester's own scrape target has produced no `up` series for 5
+      minutes: the collector is down, wedged, or cannot write. Replaces
+      PrometheusNotIngesting — an alert evaluated by a stopped backend
+      cannot report that backend's death, which remains a known ceiling.

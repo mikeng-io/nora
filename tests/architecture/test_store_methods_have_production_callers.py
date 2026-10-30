@@ -251,6 +251,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
     {
         "aclose", "append", "claim", "create", "delete", "fail",
         "describe", "enqueue", "get", "history", "lookup", "mark", "put", "read",
+        "finish",  # RawSpanRecorder and the store both declare this verb.
         "recent", "record", "resolve", "rsvps_for", "save", "search",
         "sweep_firing", "apply",
         # Computer session selection and audit reads both use the bound unit scope.

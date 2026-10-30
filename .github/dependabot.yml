@@ -29,8 +29,8 @@ updates:
   directories:
   - /
   - /app
-  - /deploy/alert-bridge
   - /deploy/bridge-projection
+  - /deploy/signoz/collector
   - /deploy/computer
   - /deploy/discord-bridge
   - /deploy/instagram-bridge

@@ -121,6 +121,40 @@ async def _run(config_path: Path, *, rebuild: bool = False) -> None:
         level=cfg.obs.logging.level,
         format=cfg.obs.logging.format, secrets=cfg.redaction_values(),
     )
+    # Same observability bootstrap as the main process (ADR 0034): this
+    # process's errors and traces were never wired. Never load-bearing.
+    from nora.obs.errors import setup_errors
+    from nora.obs.tracing import build_sampler
+
+    _entry = None
+    try:
+        from nora.infra.version import VersionManifest
+
+        _entry = VersionManifest().current().entry
+    except Exception:
+        log.debug("version manifest unreadable; release stamped as empty",
+                  exc_info=True)
+    _release = _entry.version if _entry is not None else ""
+    setup_errors(
+        enabled=cfg.obs.errors.enabled, dsn_env=cfg.obs.errors.dsn_env,
+        credentials=cfg.credentials, environment=cfg.obs.errors.environment,
+        release=_release,
+    )
+    if cfg.obs.tracing.enabled:
+        try:
+            from nora.obs.tracing import setup_process_tracing
+
+            setup_process_tracing(
+                sampler=build_sampler(), service_name="analytics",
+                exporter=cfg.obs.tracing.exporter,
+                endpoint=cfg.obs.tracing.endpoint,
+                headers_env=cfg.obs.tracing.headers_env,
+                credentials=cfg.credentials,
+                service_version=_release,
+                environment=cfg.obs.errors.environment,
+            )
+        except Exception:
+            log.warning("tracing setup failed; continuing without tracing", exc_info=True)
     deps = build_rollup(cfg)
     if rebuild:
         if deps.runner is None:

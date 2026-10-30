@@ -184,7 +184,7 @@ published: a notice line carrying the link, then the release notes in a fixed em
 stable or pre-release, body). It is a separate workflow from
 `.github/workflows/release-images.yml` on purpose — a notification that shares a failure
 domain with the build is silent exactly when the build is broken, the rule
-`deploy/alert-bridge/bridge.py` states for alerts.
+`docs/observability.md` states for alerts.
 
 It takes one secret and one variable, both set by an owner/admin:
 

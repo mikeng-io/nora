@@ -75,14 +75,18 @@ async def build_app(config_path: Path) -> App:
     # is to capture a startup crash, and a reporter wired after the code that
     # crashes reports nothing. It is wired AFTER `setup_logging` because it
     # rides that logger's records.
+    # The installed artifact's own version — `nora.infra.version` reads the
+    # baked `nora/version.json`; a dev checkout has none and reports nothing
+    # rather than a guessed SHA (R-27).
+    from .infra.version import VersionManifest
+
+    _manifest_entry = VersionManifest().current().entry
+    _release = _manifest_entry.version if _manifest_entry is not None else ""
     setup_errors(
         enabled=cfg.obs.errors.enabled,
         dsn_env=cfg.obs.errors.dsn_env, credentials=cfg.credentials,
         environment=cfg.obs.errors.environment,
-        # No release is passed, so Sentry groups by environment alone and "is this
-        # new since the last deploy" is not answerable from an issue. Wiring the
-        # running version through (`nora.infra.version`, which reads the
-        # build-time `nora/version.json`; absent in a dev checkout) would make it so.
+        release=_release,
     )
     if cfg.obs.tracing.enabled:
         try:
@@ -91,6 +95,8 @@ async def build_app(config_path: Path) -> App:
                 exporter=cfg.obs.tracing.exporter,
                 endpoint=cfg.obs.tracing.endpoint,
                 headers_env=cfg.obs.tracing.headers_env, credentials=cfg.credentials,
+                service_version=_release,
+                environment=cfg.obs.errors.environment,
             )
         except Exception:
             # Tracing is never load-bearing (nora.obs.tracing.span's own rule): a bad
