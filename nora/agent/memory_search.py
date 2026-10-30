@@ -904,17 +904,22 @@ class MemorySearch:
                 unit, scope.listed_here, depth=depth, scope=scope,
                 layers=("record", "rollup", "notebook"),
             )
-            if cache is None or "_subgraph" not in cache:
-                if cache is not None:
-                    # Reserve before awaiting: parallel tools share this turn's one walk.
-                    cache["_subgraph"] = (scope, None)
+            # Every search walks afresh: a retry with another person, span or
+            # query is a new question. A read re-reads only what some search of
+            # this turn captured, whatever that search narrowed to.
+            held_all: list[Any] = cache.setdefault("_subgraphs", []) if cache is not None else []
+            if seed is None or not held_all:
+                entry: list[Any] = [scope, None]
+                # Reserve before awaiting: a parallel read waits for no walk it cannot see.
+                held_all.append(entry)
                 graph = await self._graph.walk(seeds, walk_query)
-                if cache is not None:
-                    cache["_subgraph"] = (scope, graph)
+                entry[1] = graph
             else:
-                held_scope, held = cache["_subgraph"]
-                if (held_scope != scope or held is None or held.status == "unavailable"
-                        or not set(seeds) <= {n.key for n in held.nodes}):
+                held = next((g for s, g in held_all
+                             if g is not None and g.status != "unavailable"
+                             and replace(s, only=scope.only) == scope
+                             and set(seeds) <= {n.key for n in g.nodes}), None)
+                if held is None:
                     return {"status": "unavailable",
                             "note": "This turn's graph does not cover this read."}
                 from nora.domain.memory_admission import AdmissionState

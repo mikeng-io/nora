@@ -1,5 +1,42 @@
 # Changelog
 
+## [7.11.43](https://github.com/mikeng-io/nora/compare/v7.11.42...v7.11.43) (2026-10-30)
+
+
+### Bug Fixes
+
+* **evals:** dial named model providers on loopback from the host ([7f142af](https://github.com/mikeng-io/nora/commit/7f142afb0861dfc1d31d0615b197b6fe8536da96))
+* **evals:** give the judge's endpoint the same host rewrite ([1be6393](https://github.com/mikeng-io/nora/commit/1be63932ccc0ed068e684e88b9ea212ffe086b73))
+
+## [7.11.42](https://github.com/mikeng-io/nora/compare/v7.11.41...v7.11.42) (2026-10-30)
+
+
+### Features
+
+* **memory:** return scoped subgraphs from memory search and read ([d2c58e6](https://github.com/mikeng-io/nora/commit/d2c58e647f1236f5d88489a26253845cb1ff2438))
+
+
+### Bug Fixes
+
+* **memory:** declare memory_search's person statuses and note the narrowing gap ([87afd17](https://github.com/mikeng-io/nora/commit/87afd173cdc48301c4ec167d3977181ee88be258))
+* **memory:** let a narrowed memory_search walk again in the same turn ([b93e1b1](https://github.com/mikeng-io/nora/commit/b93e1b1c9ee9029a38fc86ecc51eca06ad55e9af))
+* **tools:** list memory_search's statuses as before ([dca8dd7](https://github.com/mikeng-io/nora/commit/dca8dd7e616731ce0dbd0166926a2d6dc9ec14bb))
+* **tools:** restore memory_search's argument guidance ([17d5e20](https://github.com/mikeng-io/nora/commit/17d5e20dba599fc78e35e7c370df66370a7a70b4))
+
+## [7.11.41](https://github.com/mikeng-io/nora/compare/v7.11.40...v7.11.41) (2026-10-30)
+
+
+### Bug Fixes
+
+* **ops:** keep host commands usable after secret migration ([f3c8eb2](https://github.com/mikeng-io/nora/commit/f3c8eb2b969ad97285950fc3fe2daaafce0e65be))
+
+## [7.11.40](https://github.com/mikeng-io/nora/compare/v7.11.39...v7.11.40) (2026-10-30)
+
+
+### Bug Fixes
+
+* **config:** resolve secrets for host Compose audit sync ([c80dcdd](https://github.com/mikeng-io/nora/commit/c80dcdd046a2e3476a681dfbc4e017a715842a30))
+
 ## [7.11.39](https://github.com/mikeng-io/nora/compare/v7.11.38...v7.11.39) (2026-10-30)
 
 

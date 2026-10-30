@@ -234,3 +234,67 @@ def test_migration_keeps_noncredential_deployment_values_in_env(tmp_path):
     migrate(tmp_path, apply=True)
     assert read(tmp_path / "secret.toml") == {"CUSTOM_KEY": "synthetic-key"}
     assert "AUTH_URL=" in (tmp_path / ".env").read_text()
+
+
+@pytest.mark.parametrize(('legacy', 'process', 'expected'), [
+    (None, None, 'synthetic-file$literal'),
+    ('synthetic-legacy', None, 'synthetic-legacy'),
+    ('', None, ''),
+    ('synthetic-legacy', 'synthetic-process', 'synthetic-process'),
+    ('synthetic-legacy', '', ''),
+])
+def test_compose_exec_inherits_sql_status_and_resolved_environment(
+    tmp_path, legacy, process, expected,
+):
+    import os
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parents[2]
+    runtime = tmp_path / 'runtime'
+    runtime.mkdir()
+    (runtime / 'secret.toml').write_text(
+        '[credentials]\nPOSTGRES_PASSWORD="synthetic-file$literal"\n')
+    if legacy is not None:
+        (runtime / '.env').write_text(f'POSTGRES_PASSWORD={legacy}\n')
+    before = {p.name: p.read_bytes() for p in runtime.iterdir()}
+    docker = tmp_path / 'docker'
+    docker.write_text(
+        f'#!{sys.executable}\n'
+        'import os, sys\n'
+        'assert sys.argv[1:] == ["compose", "exec", "-T", "db", "psql", "-c", '
+        '"select 1; select 2"]\n'
+        'assert os.getcwd() == os.environ["EXPECTED_CWD"]\n'
+        'assert os.environ["POSTGRES_PASSWORD"] == os.environ["EXPECTED_PASSWORD"]\n'
+        'assert sys.stdin.read() == "select 3;\\n"\n'
+        'sys.exit(int(os.environ["CHILD_RC"]))\n')
+    docker.chmod(0o755)
+    env = {'PATH': str(tmp_path), 'EXPECTED_CWD': str(runtime),
+           'EXPECTED_PASSWORD': expected, 'CHILD_RC': '23'}
+    if process is not None:
+        env['POSTGRES_PASSWORD'] = process
+    command = [sys.executable, str(root / 'scripts/secret_delivery.py'),
+               '--runtime-root', str(runtime), '--compose-exec',
+               '-T', 'db', 'psql', '-c', 'select 1; select 2']
+    result = subprocess.run(command, env=env, input='select 3;\n', text=True,  # noqa: S603
+                            capture_output=True, check=False)
+    assert result.returncode == 23, result.stdout + result.stderr
+    assert result.stdout + result.stderr == ''
+    env['CHILD_RC'] = '0'
+    assert subprocess.run(command, env=env, input='select 3;\n', text=True,  # noqa: S603
+                          capture_output=True, check=False).returncode == 0
+    assert {p.name: p.read_bytes() for p in runtime.iterdir()} == before
+    assert os.environ.get('POSTGRES_PASSWORD') != 'synthetic-file$literal'
+
+
+def test_compose_exec_rejects_apply_and_empty_command(tmp_path):
+    import subprocess
+    import sys
+
+    script = Path(__file__).resolve().parents[2] / 'scripts/secret_delivery.py'
+    for flags in (['--apply', '--compose-exec', '-T', 'db', 'true'], ['--compose-exec']):
+        result = subprocess.run(  # noqa: S603 -- fixed local CLI, synthetic empty runtime
+            [sys.executable, str(script), '--runtime-root', str(tmp_path), *flags],
+            capture_output=True, check=False)
+        assert result.returncode == 2
+    assert list(tmp_path.iterdir()) == []

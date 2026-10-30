@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import ValidationError
+from sqlalchemy.exc import NoResultFound
 
 from nora.app.comprehend import GraphWrite, MemoryProposalAdmission, ProfileProposal, _shape_errors
 from nora.domain.comprehend import ComprehendItem, Preview
@@ -63,11 +64,17 @@ class WakeMemory:
                 if row is not None and row.text is not None:
                     sources.append(Source(("message", str(row.message_id)), "record", state.unit,
                                           (row.person_id,) if row.person_id else (), row.text))
-                    loaded = await self.records.load(WorkItem(f"stimulus:{sid}",
-                        ("message", str(row.message_id)), state.unit, "", at,
-                        historical=state.historical))
-                    sources.extend(loaded.sources)
-                    rows.extend(loaded.snapshot.get("messages", []))
+                    try:
+                        loaded = await self.records.load(WorkItem(f"stimulus:{sid}",
+                            ("message", str(row.message_id)), state.unit, "", at,
+                            historical=state.historical))
+                    except NoResultFound:
+                        # Not projected yet: the message's own text above still stands.
+                        # ponytail: social and play stimuli still need their projection.
+                        loaded = None
+                    if loaded is not None:
+                        sources.extend(loaded.sources)
+                        rows.extend(loaded.snapshot.get("messages", []))
                     rows.append({"id": row.message_id, "body": row.text, "ts": row.at_ms,
                                  "person_id": row.person_id, "mentions": []})
                 elif stimulus.kind in ("social", "play"):

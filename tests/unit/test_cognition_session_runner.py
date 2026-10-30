@@ -85,7 +85,7 @@ def _runner(
     *, agent_runner: FakeCognitionAgentRunner | None = None,
     store: InMemoryCognitionStore | None = None,
     stimuli: InMemoryStimulusStore | None = None,
-    memory: Any = None,
+    memory: Any = None, grounder: Any = None,
 ) -> tuple[CognitionSessionRunner, InMemoryCognitionStore, FakeCognitionAgentRunner]:
     store = store or InMemoryCognitionStore()
     fake = agent_runner or FakeCognitionAgentRunner()
@@ -93,7 +93,8 @@ def _runner(
         store=store, stimulus_store=stimuli or _seeded(), memory=memory,
         agent_runner=fake, units=("unit-1",), session_timeout_seconds=900.0,
         home_rooms={"unit-1": HOME}, read_tools_for=lambda unit, rooms: [],
-        skill_text_for=lambda kinds: "", grounder=EmptyGrounder(), doctrine_text="DOCTRINE",
+        skill_text_for=lambda kinds: "", grounder=grounder or EmptyGrounder(),
+        doctrine_text="DOCTRINE",
         doctrine_sha256="sha", open_note_titles=_async_const(()),
         open_events=_async_const2(()), prior_standing=_async_const2(None),
         budget=BUDGET, cooldown_seconds=300.0, max_items=12,
@@ -254,6 +255,21 @@ async def test_cognition_01_act_refused_before_admitted_proposal():
     assert fake.results[0]["reason"] == "proposal_required"
     assert fake.results[1]["admitted"] == [0]
     assert len(store.paces) == 1
+
+
+async def test_an_unprojected_message_still_runs_its_wake_on_its_own_text():
+    from nora.domain.cognition_ground import Grounding, RecordItem
+    from nora.testing.cognition_grounding import StaticGrounder
+
+    stimulus = _pending("unit-1")[0]
+    record = RecordItem(ref=stimulus.ref, kind="message", message_id=1, room=HOME,
+                        author="Miles", at_ms=NOW, text="downstairs now")
+    fake = FakeCognitionAgentRunner(script=[("memory_propose", proposal())])
+    runner, _store, _ = _runner(agent_runner=fake, memory=wake_memory(),
+                                grounder=StaticGrounder(Grounding(records={stimulus.ref: record})))
+    await runner.replay(view=UnitView(unit="unit-1", pending=(stimulus,),
+        last_activity_ms=None, last_wake=None), now_ms=NOW)
+    assert fake.results[0]["admitted"] == [0]
 
 
 async def test_cognition_08_proposal_answer_lists_refusal_with_reason():

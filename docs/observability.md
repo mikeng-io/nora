@@ -34,7 +34,7 @@ matter.
 |---|---|---|---|
 | **metrics** | Prometheus (`:9100/metrics`) | how many, how often, with what outcome | *aggregate*, over the deployment |
 | **traces** | Langfuse (+ Jaeger) | what happened in THIS turn, in what order, at what cost | *one instance*, re-derivable |
-| **logs** | stdout, JSON lines (`docker compose logs nora`) | what a specific line of code saw | *forensic*, after the fact |
+| **logs** | stdout, JSON lines (`docker logs nora`) | what a specific line of code saw | *forensic*, after the fact |
 | **errors** | Sentry | which stack trace, how often, and is it new | *grouped*, per exception |
 
 **The rule that keeps them apart:** Langfuse is an LLM-observability tool, so a
@@ -408,7 +408,7 @@ measuring a provider no deployment runs.
 ## Logs
 
 `nora/obs/logging.py` — structlog in front of the root logger, rendering **JSON
-lines** to **stdout** (a `StreamHandler`; read them with `docker compose logs
+lines** to **stdout** (a `StreamHandler`; read them with `docker logs
 nora`, and `| jq` because they are JSON), with secret
 redaction (R-16) and `tag_id` bound through
 `structlog.contextvars` so every line emitted during a turn carries it without

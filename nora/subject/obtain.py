@@ -144,8 +144,10 @@ def resolve_credentials(path: Path) -> dict[str, str]:
 
 
 def model_endpoint(path: Path, purpose: str, model: str = "") -> tuple[str, str, str]:
-    """Resolve a measurement route through the application's configuration."""
-    return _load_config(path, require_secrets=False).endpoint(purpose, model)
+    """Resolve a measurement route through the application's configuration,
+    reachable from where the measurer runs (the subject's own rewrite)."""
+    url, key, name = _load_config(path, require_secrets=False).endpoint(purpose, model)
+    return (url if _resolves(_DOCKER_HOST) else _from_host(url)), key, name
 
 
 def config_default(key: str) -> object:
@@ -392,6 +394,11 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     if not _resolves(_DOCKER_HOST):
         cfg = _with(cfg, "llm.base_url", _from_host(cfg.llm.base_url))
         cfg = _with(cfg, "honcho.base_url", _from_host(cfg.honcho.base_url))
+        # Named model endpoints carry their own URL; a route through one would
+        # otherwise still dial the container-only name.
+        cfg = cfg.model_copy(update={"providers": {
+            name: p.model_copy(update={"base_url": _from_host(p.base_url)})
+            for name, p in cfg.providers.items()}})
     # `doctrine.dir` and `dreamer.dir` resolve RELATIVE TO THE CONFIG FILE, and
     # the copy lives in the caller's workdir, which has no such subdirectories.
     # The Dreamer's corpus is validated at startup — deliberately, so a

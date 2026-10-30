@@ -113,10 +113,12 @@ EOF
 ## 4. Postgres rows (what was written)
 
 ```bash
-ssh nora-host 'cd ~/workspace/nora && docker compose exec -T db psql -U nora -d nora -Atc "select count(*) from note"'
+ssh nora-host 'python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T db psql -U nora -d nora -Atc "select count(*) from note"'
 ```
 
-- Reach the db through `docker compose exec -T db` from the project directory,
+- Install the runtime `scripts/secret_delivery.py` as described in
+  [configuration](../../../docs/configuration.md#host-migration-and-installed-files)
+  before retiring `.env` credentials. Use its `--compose-exec -T db` mode,
   never by grepping `docker ps`: other stacks' databases on the host match.
 - A standing population ("how many duplicates exist") survives restarts; ask
   it instead of an arrival counter.
@@ -128,11 +130,12 @@ ssh nora-host 'cd ~/workspace/nora && docker compose exec -T db psql -U nora -d 
 ```bash
 ssh nora-host bash -s > log.txt 2>&1 <<'EOF'
 cd ~/workspace/nora || exit 1
-docker compose logs --no-log-prefix --since 1h nora | jq -c 'select(.severity_number >= 13) | {ts, level, logger, message}'
+docker logs --since 1h nora | jq -c 'select(.severity_number >= 13) | {ts, level, logger, message}'
 EOF
 ```
 
-- Without `--no-log-prefix` every line starts `nora  | ` and `jq` rejects it.
+- `docker logs` reads the installed `nora` container without Compose interpolation
+  or a Compose service-name prefix.
 - An idle process logs nothing at INFO, so the log alone does not separate
   idle from dead; read `/health` or a counter.
 - A recreate discards the old container's log: capture it before recreating.
@@ -141,7 +144,7 @@ EOF
 ## 6. Inside the container
 
 ```bash
-ssh nora-host 'cd ~/workspace/nora && docker compose exec -T nora /app/.venv/bin/python -c "from nora.config import load; ..."'
+ssh nora-host 'python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T nora /app/.venv/bin/python -c "from nora.config import load; ..."'
 ```
 
 - Plain `python` lacks the dependencies; `uv run` installed 33 dev packages

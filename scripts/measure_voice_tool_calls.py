@@ -23,7 +23,8 @@ turn's recorded model messages (Strands' own shape).
 Run on the deploy host, through the container's venv (the script need not be
 in the image; it is read from stdin):
 
-    ssh norty 'cd ~/workspace/nora && docker compose exec -T nora \
+    ssh norty 'cd ~/workspace/nora && python3 ~/workspace/nora/scripts/secret_delivery.py \
+        --runtime-root ~/workspace/nora --compose-exec -T nora \
         /app/.venv/bin/python - --days 30' < scripts/measure_voice_tool_calls.py
 
 Small samples lie. Every count is printed beside its n and the window it

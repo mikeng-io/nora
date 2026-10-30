@@ -54,6 +54,10 @@ The computer is managed separately via `nora-computer build` and the
 [computer lifecycle](computer/README.md): its Ubuntu digest, distro Python and
 Chrome pins stay independent, with official Node 24 copied from the Node stage.
 
+Bare Compose commands require a runtime `.env` sufficient for interpolation;
+they do not read `secret.toml`. Host exec uses the
+[installed helper](../docs/configuration.md#host-migration-and-installed-files).
+
 ## Legacy checkout bootstrap: first installation
 
 This is a configurable stack, not a preconfigured hosted service. Prerequisites:
