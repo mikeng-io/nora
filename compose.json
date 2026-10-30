@@ -1,7 +1,7 @@
 {
   "services": {
     "signal-cli": {
-      "image": "ghcr.io/mikeng-io/nora-signal-cli@sha256:0484ea0d14c2e7ae991bcbe29623c952e852f4ac13cc6071853e617311a769b6",
+      "image": "ghcr.io/mikeng-io/nora-signal-cli@sha256:aa71b9c1c11d2697d61d028c9e44c6db90cecc46b3be3c8299c0e696e3d73038",
       "container_name": "signal-cli",
       "restart": "unless-stopped",
       "networks": [
@@ -41,7 +41,7 @@
       }
     },
     "whatsapp-bridge": {
-      "image": "ghcr.io/mikeng-io/nora-whatsapp-bridge@sha256:ecce4f242e9ed7e9af13ccf32328e1c46a8c29776f702d65cadb8688af901403",
+      "image": "ghcr.io/mikeng-io/nora-whatsapp-bridge@sha256:93e0bbe38f50546af747bc40e51c395b703ea5a325439ad01d68da3bf45bba54",
       "container_name": "whatsapp-bridge",
       "restart": "unless-stopped",
       "networks": [
@@ -80,7 +80,7 @@
       }
     },
     "instagram-bridge": {
-      "image": "ghcr.io/mikeng-io/nora-instagram-bridge@sha256:5442deb70a942c8f8527ac8ad8ed81bbde9ac43513323d2b6ea4f5cff7a80012",
+      "image": "ghcr.io/mikeng-io/nora-instagram-bridge@sha256:409d883eaf2db7f4205ac8afd0ab2ffaf4f58f60806df7fde801f1f9e2437af9",
       "container_name": "instagram-bridge",
       "restart": "unless-stopped",
       "networks": [
@@ -128,14 +128,7 @@
       }
     },
     "nora": {
-      "logging": {
-        "driver": "json-file",
-        "options": {
-          "max-size": "10m",
-          "max-file": "3"
-        }
-      },
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:f23d7f2dcfdfd9d40287b18fa9cc6f1efaec04888138fedc0757f1172c6e14f3",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:4e2f086928f20c47b5874fb9bdb898d7557ad2843270088f458a392d2bf2fc61",
       "container_name": "nora",
       "restart": "unless-stopped",
       "stop_grace_period": "75s",
@@ -144,6 +137,13 @@
         "honcho",
         "embedder"
       ],
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      },
       "extra_hosts": [
         "host.docker.internal:host-gateway"
       ],
@@ -214,7 +214,7 @@
       }
     },
     "app": {
-      "image": "ghcr.io/mikeng-io/nora-app@sha256:9588d311c57c7d3de2648052728b221810e68de79da5ac0d5cbe73baaf53b0bb",
+      "image": "ghcr.io/mikeng-io/nora-app@sha256:f8d99bffd8d820382fc962f60c4b0ec87b625cec4c85da7a9f1ff1aaa03f5fc7",
       "container_name": "nora-app",
       "restart": "unless-stopped",
       "networks": [
@@ -243,7 +243,7 @@
       ]
     },
     "site": {
-      "image": "ghcr.io/mikeng-io/nora-site@sha256:52f8815893391fb656c5d6ea574ed32c98631637cd0af768c82aef620422a63c",
+      "image": "ghcr.io/mikeng-io/nora-site@sha256:456d674b383daedaab54986ef0d021b589be7001a175cb23e599613e1670330b",
       "container_name": "nora-site",
       "profiles": [
         "site"
@@ -254,7 +254,7 @@
       ]
     },
     "presence": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:f23d7f2dcfdfd9d40287b18fa9cc6f1efaec04888138fedc0757f1172c6e14f3",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:4e2f086928f20c47b5874fb9bdb898d7557ad2843270088f458a392d2bf2fc61",
       "container_name": "presence",
       "restart": "unless-stopped",
       "entrypoint": [
@@ -306,7 +306,7 @@
       }
     },
     "analytics": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:f23d7f2dcfdfd9d40287b18fa9cc6f1efaec04888138fedc0757f1172c6e14f3",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:4e2f086928f20c47b5874fb9bdb898d7557ad2843270088f458a392d2bf2fc61",
       "container_name": "analytics",
       "restart": "unless-stopped",
       "entrypoint": [
@@ -482,7 +482,7 @@
           "max-file": "3"
         }
       },
-      "image": "ghcr.io/mikeng-io/nora-stt@sha256:cbe0997e7c7dcfdd2819e4b00afab330431e44e12c4a1713ae3c0969add86401",
+      "image": "ghcr.io/mikeng-io/nora-stt@sha256:d2495d1d80ab8cb2b7f8244fbfbf20913e1d31da5a0ade12ffbba674e21a744a",
       "container_name": "stt",
       "restart": "unless-stopped",
       "networks": [
@@ -516,7 +516,7 @@
           "max-file": "3"
         }
       },
-      "image": "ghcr.io/mikeng-io/nora-voice-sidecar@sha256:66c8d2a974c7fef4099b4fb0c6cdc3efe326a70967cd625895d6384c379a072a",
+      "image": "ghcr.io/mikeng-io/nora-voice-sidecar@sha256:5514c1922c65ea380bb8421e49fa8690119bb35e22f77cb2038a34238de2927e",
       "container_name": "voice-sidecar",
       "restart": "unless-stopped",
       "networks": [
@@ -554,7 +554,7 @@
           "max-file": "3"
         }
       },
-      "image": "ghcr.io/mikeng-io/nora-voice-wake@sha256:dce04a5ae5a59da97ccba3f930810b615170ea584a75aad0ab919eb87330da9f",
+      "image": "ghcr.io/mikeng-io/nora-voice-wake@sha256:c97dfeabee31a73c292e65d309763832c2b404b3558449c930f9f6e6a593a6e2",
       "container_name": "voice-wake",
       "restart": "unless-stopped",
       "networks": [
@@ -581,106 +581,6 @@
         "start_period": "60s",
         "retries": 3
       }
-    },
-    "prometheus": {
-      "image": "prom/prometheus:v3.13.5",
-      "container_name": "nora-prometheus",
-      "restart": "unless-stopped",
-      "command": [
-        "--config.file=/etc/prometheus/prometheus.yml",
-        "--storage.tsdb.path=/prometheus",
-        "--storage.tsdb.retention.time=30d",
-        "--web.enable-lifecycle"
-      ],
-      "volumes": [
-        "${NORA_RUNTIME_ROOT:?}/deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro",
-        "${NORA_RUNTIME_ROOT:?}/deploy/prometheus/rules:/etc/prometheus/rules:ro",
-        "prometheus-data:/prometheus"
-      ],
-      "networks": [
-        "nora"
-      ],
-      "ports": [
-        "127.0.0.1:9190:9090"
-      ],
-      "healthcheck": {
-        "test": [
-          "CMD",
-          "wget",
-          "-qO-",
-          "http://localhost:9090/-/healthy"
-        ],
-        "interval": "30s",
-        "timeout": "5s",
-        "retries": 3
-      }
-    },
-    "alertmanager": {
-      "image": "prom/alertmanager:v0.28.1",
-      "container_name": "nora-alertmanager",
-      "restart": "unless-stopped",
-      "environment": [
-        "NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}"
-      ],
-      "entrypoint": [
-        "/bin/sh",
-        "-c",
-        "umask 077 && printf '%s' \"$$NORA_BRIDGE_TOKEN\" > /run/alertmanager/bridge-token && exec /bin/alertmanager \"$$@\"",
-        "alertmanager"
-      ],
-      "command": [
-        "--config.file=/etc/alertmanager/alertmanager.yml",
-        "--storage.path=/alertmanager"
-      ],
-      "tmpfs": [
-        "/run/alertmanager"
-      ],
-      "volumes": [
-        "${NORA_RUNTIME_ROOT:?}/deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro",
-        "alertmanager-data:/alertmanager"
-      ],
-      "networks": [
-        "nora"
-      ],
-      "ports": [
-        "127.0.0.1:9193:9093"
-      ],
-      "healthcheck": {
-        "test": [
-          "CMD",
-          "wget",
-          "-qO-",
-          "http://localhost:9093/-/healthy"
-        ],
-        "interval": "30s",
-        "timeout": "5s",
-        "retries": 3
-      }
-    },
-    "alert-bridge": {
-      "image": "ghcr.io/mikeng-io/nora-alert-bridge@sha256:bd4c496eccdf42b003dd63277435a8d7725d9fb9745142b89f875233897a0874",
-      "container_name": "nora-alert-bridge",
-      "restart": "unless-stopped",
-      "environment": [
-        "ALERT_DISCORD_CHANNEL=${ALERT_DISCORD_CHANNEL:-}",
-        "DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}",
-        "NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}"
-      ],
-      "networks": [
-        "nora",
-        "default"
-      ],
-      "healthcheck": {
-        "test": [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request;urllib.request.urlopen('http://localhost:9110/health',timeout=3)"
-        ],
-        "interval": "30s",
-        "timeout": "5s",
-        "retries": 3
-      }
     }
   },
   "networks": {
@@ -699,8 +599,6 @@
     }
   },
   "volumes": {
-    "prometheus-data": null,
-    "alertmanager-data": null,
     "db-data": null,
     "rustfs-data": null,
     "stt-modelscope-cache": null,
