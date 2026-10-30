@@ -100,7 +100,7 @@ async def test_turn_facts_pair_structurally_and_reduce_latest_per_key(store):
     never discharge it, and a different key's ok leaves it open."""
     await store.save(_fact_trace("old", subject="note:gone", action="ask-time",
                                  status="unresolved", turn=1))
-    await store.save(_fact_trace("wrong", subject="note:other", action="other",
+    await store.save(_fact_trace("wrong", subject="note:other", action="ask-time",
                                  status="ok", turn=2))
     facts = await store.turn_facts(unit="u1", tool_names=("remind",))
     assert [i.arguments["subject"] for i in facts.open_items] == ["note:gone"]
