@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import ValidationError
 from sqlalchemy.exc import NoResultFound
 
+from nora.agent.egress import scan_identifiers
 from nora.app.comprehend import GraphWrite, MemoryProposalAdmission, ProfileProposal, _shape_errors
 from nora.domain.comprehend import ComprehendItem, Preview, preview_seeds
 from nora.domain.extraction import partition_claims
@@ -22,7 +23,8 @@ READING_CLIP = 160
 
 class WakeMemory:
     def __init__(self, *, graph: Any, records: Any, metrics: Any,
-                 private_names: tuple[str, ...] = ()) -> None:
+                 private_names: tuple[str, ...] = (), content_checks: bool = True) -> None:
+        self.metrics, self.content_checks = metrics, content_checks
         self.private_names = private_names
         self.graph, self.records = graph, records
         self.admission = MemoryProposalAdmission(graph=graph, records=records, metrics=metrics)
@@ -127,7 +129,12 @@ class WakeMemory:
                                             "source_keys": source_keys})
             from dataclasses import replace
             if loaded_items:
-                item = replace(loaded_items[0], work=work, sources=tuple(sources),
+                item = replace(item, author=item.author or loaded_items[0].author,
+                    reply_parent=next((v.reply_parent for v in loaded_items
+                        if v.platform == item.platform and v.room == item.room), None),
+                    urls=tuple(dict.fromkeys(u for v in loaded_items for u in v.urls)),
+                    accounts=tuple(dict.fromkeys(a for v in loaded_items for a in v.accounts)),
+                    faces=tuple(dict.fromkeys(p for v in loaded_items for p in v.faces)),
                     mentions=tuple(dict.fromkeys(p for v in [item, *loaded_items]
                         for p in (v.author, *v.mentions, *v.faces) if p)), snapshot=item.snapshot)
             anchors.extend(preview_seeds(item, aliases))
@@ -152,6 +159,9 @@ class WakeMemory:
                 {**r, "body": str(r.get("body") or "")[:READING_CLIP]}
                 for r in v.snapshot["messages"]]}
              for i, v in state.memory_items.items()}, default=str)
+        if scan_identifiers(state.graph_text, content_checks=self.content_checks):
+            state.graph_text = ""
+            self.metrics.inc("nora_errors_total", stage="wake_prefetch")
 
     async def propose(
         self, state: Any, *, items: list[int], payload: dict[str, Any],

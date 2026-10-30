@@ -534,3 +534,74 @@ async def test_inspected_wake_injects_implicit_senders_plan():
     assert "message:99" not in inspection["agenda"]
     assert "generated-mention" in inspection["agenda"]
     assert agent.calls == 0
+
+
+async def test_mixed_agenda_keeps_message_room_and_author():
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from nora.agent.fetch_watch import GraphFetched
+    from nora.domain.cognition_ground import Grounding, RecordItem
+    from nora.domain.comprehend import ComprehendItem
+    from nora.domain.memory_graph import Entity, Relation, Source, WorkItem, pointer_entity
+
+    memory = wake_memory()
+    at = datetime.fromtimestamp(NOW / 1000, UTC)
+    social = replace(_pending("unit-1")[0], kind="social", ref="social:generated-post")
+    message = replace(social, id=2, kind="message", ref="messages:1")
+    for key, platform, room, author in (
+        (("social", "generated-post"), "instagram", "generated-feed", ""),
+        (("message", "1"), HOME.platform, HOME.conversation_id, "generated-author"),
+    ):
+        source = Source(key, "record", "unit-1", (), "Generated stimulus")
+        memory.records.items[key] = ComprehendItem(
+            WorkItem("generated", key, "unit-1", "", at), (source,), platform, room,
+            author=author, response_closed=True,
+            snapshot={"messages": [], "context": []})
+    room = pointer_entity("room", "unit-1", "signal:home-room", "Generated room")
+    event = Entity("room-event", "event", "unit-1", "Generated room plan")
+    for e in (room, event):
+        await memory.graph.upsert_entity(e)
+    memory.graph.relations["room-plan"] = Relation("room-plan", room.key, "plans", event.key,
+        "notebook", "unit-1", asserted_at=at)
+    state = SimpleNamespace(now_ms=NOW, unit="unit-1", historical=False,
+        items_by_index={0: SimpleNamespace(stimulus_ids=(1, 2), room=HOME)},
+        memory_items={}, graph_fetched=GraphFetched())
+    await memory.prepare(state, {1: social, 2: message}, Grounding(records={
+        "messages:1": RecordItem(ref="messages:1", kind="message", message_id=1,
+            room=HOME, author="Generated author", person_id="generated-author",
+            at_ms=NOW, text="Generated message")}))
+    item = state.memory_items[0]
+    assert (item.platform, item.room, item.author) == ("signal", "home-room", "generated-author")
+    assert not item.response_closed
+    assert "Generated room plan" in state.graph_text
+
+
+async def test_identifier_graph_node_is_dropped_from_wake_input():
+    from nora.domain.cognition_ground import Grounding, RecordItem
+    from nora.domain.memory_graph import Entity, Relation, pointer_entity
+    from nora.testing.cognition_grounding import StaticGrounder
+
+    memory = wake_memory()
+    at = datetime.fromtimestamp(NOW / 1000, UTC)
+    actor = pointer_entity("person", "unit-1", "generated-actor", "Generated actor")
+    identifier = "+" + "852" + "55550123"
+    unsafe = Entity("generated-contact", "event", "unit-1", "Contact " + identifier)
+    for e in (actor, unsafe):
+        await memory.graph.upsert_entity(e)
+    memory.graph.relations["contact"] = Relation("contact", actor.key, "plans", unsafe.key,
+        "notebook", "unit-1", ("generated-actor",), asserted_at=at)
+    grounding = Grounding(records={"messages:1": RecordItem(ref="messages:1", kind="message",
+        message_id=1, room=HOME, author="Generated actor", person_id="generated-actor",
+        at_ms=NOW, text="Generated safe message")})
+    runner, _, agent = _runner(memory=memory, grounder=StaticGrounder(grounding))
+    view = UnitView(unit="unit-1", pending=_pending("unit-1"),
+        last_activity_ms=None, last_wake=None)
+    inspection = await runner.inspect(view=view, now_ms=NOW)
+    assert "Generated safe message" in inspection["agenda"]
+    assert identifier not in inspection["agenda"]
+    assert memory.metrics.get("nora_errors_total", stage="wake_prefetch") == 1
+    assert agent.calls == 0
+    memory.content_checks = False
+    inspection = await runner.inspect(view=view, now_ms=NOW)
+    assert identifier in inspection["agenda"]

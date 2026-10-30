@@ -293,15 +293,21 @@ class TranscriptInjection:
         #
         # `<presence>` is on the front of the turn like the rest because adapter
         # health must be read now, not remembered.
+        async def transcript_and_prefetch() -> Any:
+            transcript, character, profiles = await self._recent_with_character(msg, ref)
+            prefetch = await self._prefetch(msg, ref, transcript)
+            return transcript, character, profiles, prefetch
+
         (
-            ((transcript, character, profiles), card, tagger_card, standing, notes, ledger),
+            ((transcript, character, profiles, prefetch),
+             card, tagger_card, standing, notes, ledger),
             presence,
             culture,
             (unit_culture, self_account, lessons),
             (computer, documents, subagents, memos),
         ) = await asyncio.gather(
             asyncio.gather(
-                self._recent_with_character(msg, ref),
+                transcript_and_prefetch(),
                 self._peer_card(ref, msg),
                 self._recall_tagger(ref, msg),
                 self._standing(msg),
@@ -342,7 +348,6 @@ class TranscriptInjection:
         # same as the shown ones. Empty when nothing was cut.
         shown = self._shown(transcript, msg)
         lookup = tuple(transcript) if len(shown) < len(transcript) else ()
-        prefetch = await self._prefetch(msg, ref, transcript)
         recalled = self._recalled(prefetch, msg, shown)
 
         return TagContext(
@@ -415,6 +420,8 @@ class TranscriptInjection:
                 author=ref.person_id if ref else "", mentions=tuple(mentioned),
                 reply_parent=next((("message", str(r.id)) for r in transcript
                     if msg.quote is not None and r.ts == msg.quote.quoted_ts), None))
+            # ponytail: prefetch cache is local; thread it through TagContext to
+            # the tools' graph_reads when sharing automatic and tool walks.
             cache: dict[str, Any] = {}
             found = await asyncio.wait_for(traced_read(
                 "memory_index", "prefetch", self._memory_search.read(

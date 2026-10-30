@@ -449,3 +449,30 @@ async def test_prefetch_injects_new_graph_about_without_shared_words() -> None:
     assert "Forbidden expedition" not in block
     assert "Forbidden room reading" not in block
     assert sum(estimate_tokens(json.dumps(i)) for i in ctx.recalled) <= PREFETCH_TOKENS
+
+
+async def test_slow_documents_do_not_delay_prefetch_start(monkeypatch: Any) -> None:
+    import asyncio
+    from contextlib import suppress
+
+    started = asyncio.Event()
+    order: list[str] = []
+    original = TranscriptInjection._prefetch
+
+    async def prefetch(self: Any, *args: Any) -> Any:
+        order.append("prefetch")
+        started.set()
+        return await original(self, *args)
+
+    async def documents(self: Any, *args: Any) -> Any:
+        # The timeout only bounds a regression; ordering is driven by the event.
+        with suppress(TimeoutError):
+            await asyncio.wait_for(started.wait(), timeout=1)
+        order.append("documents done")
+        return None
+
+    monkeypatch.setattr(TranscriptInjection, "_prefetch", prefetch)
+    monkeypatch.setattr(TranscriptInjection, "_documents", documents)
+    ctx = await _assemble(None, _msg())
+    assert ctx.message == _msg()
+    assert order == ["prefetch", "documents done"]
