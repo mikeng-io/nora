@@ -50,10 +50,10 @@ from nora.domain.profile import (
 from nora.infra.sql import memory_index
 from nora.infra.sql.schema import PROFILE, PROFILE_DISPUTE, PROFILE_LINE
 
-__all__ = ["SqlProfileStore", "chain_heads"]
+__all__ = ["SqlProfileStore", "chain_heads", "row_to_line"]
 
 
-def _line(row: sa.Row[Any]) -> ProfileLine:
+def row_to_line(row: sa.Row[Any]) -> ProfileLine:
     return ProfileLine(
         content=row.content, location=row.location,
         source_medium=tuple(row.source_medium), strength=row.strength,
@@ -158,7 +158,7 @@ class SqlProfileStore:
                 .order_by(PROFILE_LINE.c.written_at, PROFILE_LINE.c.id))
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return chain_heads([_line(r) for r in rows])[0]
+        return chain_heads([row_to_line(r) for r in rows])[0]
 
     async def room_context(self, *, key: str) -> CultureRevision | None:
         """Room-account evidence on the new surface, using the existing context shape.
@@ -251,7 +251,7 @@ class SqlProfileStore:
                         .where(PROFILE_LINE.c.profile_key == account.key)
                         .order_by(PROFILE_LINE.c.written_at, PROFILE_LINE.c.id)
                     )).all()
-                    heads = chain_heads([_line(r) for r in rows])[0]
+                    heads = chain_heads([row_to_line(r) for r in rows])[0]
                 matched = match_disputed_line(claim, heads)
                 effect: Literal["hidden", "disputed", "recorded"] = "recorded"
                 if matched is not None:
@@ -340,7 +340,7 @@ class SqlProfileStore:
                 .limit(limit))
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return tuple(_line(r) for r in rows)
+        return tuple(row_to_line(r) for r in rows)
 
     async def record_verdict(
         self, *, key: str, line_id: str, verdict: str, verdict_by: str, now_ms: int,
@@ -367,7 +367,7 @@ class SqlProfileStore:
                     sa.select(PROFILE_LINE).where(PROFILE_LINE.c.profile_key == key)
                     .order_by(PROFILE_LINE.c.written_at, PROFILE_LINE.c.id)
                 )).all()
-                heads, aliases = chain_heads([_line(r) for r in rows])
+                heads, aliases = chain_heads([row_to_line(r) for r in rows])
                 by_id = {h.id: h for h in heads}
                 head = by_id.get(aliases.get(line_id, ""))
                 if head is None or head.part != "guesses":
@@ -447,7 +447,7 @@ class SqlProfileStore:
                 sa.select(PROFILE_LINE).where(PROFILE_LINE.c.profile_key == account.key)
                 .order_by(PROFILE_LINE.c.written_at, PROFILE_LINE.c.id)
             )).all()
-            heads, aliases = chain_heads([_line(r) for r in rows])
+            heads, aliases = chain_heads([row_to_line(r) for r in rows])
             plan = plan_write(
                 account=account, heads=heads, ops=ops, citable=citable, now_ms=now_ms,
                 written_by_session=written_by_session, screen=self._screen,

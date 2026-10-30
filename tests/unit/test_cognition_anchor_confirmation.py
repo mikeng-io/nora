@@ -187,28 +187,101 @@ async def test_confirm_restores_once_per_wake(tmp_path, monkeypatch):
     assert [r["result"] for r in out] == ["match", "match", "match"]
 
 
+def _profile_row(**over):
+    """One `profile_line` row as the select returns it: every column
+    `row_to_line` reads, generated values only."""
+    from types import SimpleNamespace
+
+    fields = {
+        "id": "generated-line", "profile_key": "generated-account",
+        "part": "facts", "kind": "fact", "text": "generated", "mode": "told",
+        "citations": (), "state": "current", "unit": "generated-unit",
+        "written_at": 1, "written_by_session": "generated", "draws_on": (),
+        "told_by": None, "prediction": None, "prediction_observable": None,
+        "prediction_window_end": None, "verdict": None, "verdict_by": None,
+        "verdict_at": None, "supersedes": None, "support_count": 1,
+        "last_supported_at": None, "exclude_persons": (), "as_of": None,
+        "fact_key": None, "fact_value": None, "valid_from": None,
+        "valid_until": None, "content": {}, "location": False,
+        "source_medium": (), "strength": {},
+    }
+    fields.update(over)
+    return SimpleNamespace(**fields, _mapping=fields)
+
+
+def _conn_with_profile_rows(profile_rows):
+    """A conn answering `memory_state`'s three reads: the two text queries by
+    `.mappings()`, the `profile_line` select by `.all()`."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    async def execute(query, params=None):
+        sql = str(query)
+        if "FROM note n" in sql:
+            assert "r.id = n.head_revision_id" in sql and "retired_at IS NULL" in sql
+            return SimpleNamespace(mappings=lambda: [])
+        if "FROM events" in sql:
+            assert set(params["open_statuses"]) == {"staged", "proposed", "confirmed"}
+            return SimpleNamespace(mappings=lambda: [])
+        if "profile_line" in sql:
+            return SimpleNamespace(all=lambda: profile_rows)
+        raise AssertionError("unexpected private read")
+    return SimpleNamespace(execute=AsyncMock(side_effect=execute))
+
+
 async def test_memory_state_reads_open_plans_and_current_note_body_in_unit():
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
-    async def execute(query, params):
+    async def execute(query, params=None):
         sql = str(query)
-        assert params["unit"] == "generated-unit"
         if "FROM note n" in sql:
             assert "r.id = n.head_revision_id" in sql and "retired_at IS NULL" in sql
             rows = [{"body": "generated current open note"}]
-        elif "FROM events" in sql:
+            return SimpleNamespace(mappings=lambda: rows)
+        if "FROM events" in sql:
             assert "status = ANY(:open_statuses)" in sql
             assert set(params["open_statuses"]) == {"staged", "proposed", "confirmed"}
             rows = [{"title": "generated agreed dinner", "status": "confirmed"}]
-        elif "FROM profile_line" in sql:
-            assert "'current', 'disputed'" in sql
-            rows = [{"text": "generated relevant profile line"}]
-        else:
-            raise AssertionError("unexpected private read")
-        return SimpleNamespace(mappings=lambda: rows)
+            return SimpleNamespace(mappings=lambda: rows)
+        if "profile_line" in sql:
+            rows = [_profile_row(text="generated relevant profile line")]
+            return SimpleNamespace(all=lambda: rows)
+        raise AssertionError("unexpected private read")
     result = await confirm.memory_state(SimpleNamespace(execute=AsyncMock(side_effect=execute)),
                                         "generated-unit")
     assert result["open_events"][0]["status"] == "confirmed"
     assert result["open_notes"][0]["body"] == "generated current open note"
     assert result["profile_lines"][0]["text"] == "generated relevant profile line"
+
+
+async def test_memory_state_reduces_profile_lines_to_chain_heads_before_state():
+    """`profile_line` is append-only: a withdrawal inserts a successor and
+    leaves the predecessor's `state` untouched. A line withdrawn BEFORE the
+    wake is superseded in the restored sandbox and must be absent even though
+    its row still reads `current`; a line never superseded stands, and a
+    successor head is filtered by ITS own state."""
+    rows = [
+        # Withdrawn before the wake: `current` on its face, superseded by a
+        # retired successor. Raw-state filtering would still show it.
+        _profile_row(id="generated-withdrawn", state="current",
+                     text="generated withdrawn preference"),
+        _profile_row(id="generated-withdrawal", state="retired",
+                     supersedes="generated-withdrawn", text="generated withdrawal"),
+        # Replaced before the wake: same shape, the successor standing.
+        _profile_row(id="generated-old", state="current", text="generated old fact"),
+        _profile_row(id="generated-new", state="disputed",
+                     supersedes="generated-old", text="generated new fact"),
+        # Never superseded: a current head and a disputed head, both shown.
+        _profile_row(id="generated-standing", state="current",
+                     text="generated standing preference"),
+        _profile_row(id="generated-contested", state="disputed",
+                     text="generated contested line"),
+    ]
+    result = await confirm.memory_state(_conn_with_profile_rows(rows), "generated-unit")
+    texts = {row["text"] for row in result["profile_lines"]}
+    assert "generated withdrawn preference" not in texts
+    assert "generated withdrawal" not in texts
+    assert "generated old fact" not in texts
+    assert texts == {"generated standing preference", "generated contested line",
+                     "generated new fact"}
