@@ -806,18 +806,21 @@ async def test_a_prior_far_past_the_old_ceiling_is_still_shown():
 async def test_fold_count_increments_by_one_per_tag_fold_and_is_never_reset():
     """`fold_count` is a plain count: nothing resets it, and it crosses
     `_OLD_CEILING` like any other number."""
+    # Each fold lands a DISTINCT position: `standing_revise`'s semantic
+    # no-change check (content-identical → no write, `fold_count` untouched)
+    # is deliberate — an unchanged position does not count as a revision.
     store = InMemoryStandingStore()
     counts = []
-    for _ in range(3):
-        await _run(store=store)
+    for i in range(3):
+        await _run(store=store, client=_Client(_ok(f"folded position {i}")))
         counts.append((await store.read(
             platform="signal", conversation_id="g1")).fold_count)
     assert counts == [1, 2, 3]
 
     store = await _with_prior(_OLD_CEILING - 2)
     counts = []
-    for _ in range(5):
-        await _run(store=store)
+    for i in range(5):
+        await _run(store=store, client=_Client(_ok(f"new position {i}")))
         counts.append((await store.read(
             platform="signal", conversation_id="g1")).fold_count)
     assert counts == [19, 20, 21, 22, 23]
