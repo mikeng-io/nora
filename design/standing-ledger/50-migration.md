@@ -10,6 +10,19 @@ edges:
 
 # 50 · Migration
 
+> **Authoritative amendment, operator 2026-10-30:**
+> [Shared cognitive state](../notebook-memory-types/20-shared-cognitive-state.md)
+> supersedes the writer switch and retirement target in steps 3–4 below.
+> Standing names a shared view over the five Notebook kinds, Record and current
+> schedules; no new ledger/store is introduced. Engagement records conclusions;
+> Cognition authorizes Notebook decisions; an optional tools-less updater only
+> applies explicit conclusions/deltas. Working-set findings map to decision
+> Options with source, found time, expiry and disclosure, with unresolved
+> mappings retained. Remove duplicate renderings only after parity and preserve
+> legacy rows. The numbered plan below is historical where it conflicts;
+> the new node owns creation/fire conflict requirements and the unresolved
+> subject/action identity question. A note link alone is not the solution.
+
 Each step ships alone and leaves Nora working. Nothing is removed before its
 replacement has measured at least as well.
 

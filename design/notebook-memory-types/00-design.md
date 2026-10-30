@@ -1,7 +1,7 @@
 ---
 type: design
 title: "The Notebook by memory type: note, topic, lesson, profile, decision"
-description: "The operator's 2026-10-29 ruling. The Notebook stops being organised by tiers (Register, Character, Standing, Lessons) and is organised by memory type instead: one kind per type, one machinery for all of them. Layers stay defined by authority; audience (internal or external) is a property of a kind, never a layer. Memo becomes the kept phase of a note, standing splits across the types and retires as a word, threads become topic activity in the Rollup, and the conscious records a decision as a turn record while the subconscious writes the decision itself. Design only, not built."
+description: "The operator's 2026-10-29 ruling. The Notebook stops being organised by tiers (Register, Character, Standing, Lessons) and is organised by memory type instead: one kind per type, one machinery for all of them. Layers stay defined by authority; audience (internal or external) is a property of a kind, never a layer. Memo becomes the kept phase of a note, standing splits across the types (amended 2026-10-30: Standing remains shorthand for a shared view, not a kind), topic activity follows the amended graph design, and the conscious records a decision as a turn record while the subconscious writes the decision itself. Design only, not built."
 tags: [nora, notebook, memory-types, note, topic, lesson, profile, decision, vocabulary]
 timestamp: '2026-10-29'
 edges:
@@ -14,6 +14,13 @@ edges:
 ---
 
 # 00 · The Notebook by memory type
+
+> **Authoritative amendment, operator 2026-10-30:**
+> [20 · Shared cognitive state](20-shared-cognitive-state.md) owns the shared
+> view, producer/writer authority, immediate recent-action visibility and
+> migration requirements. It amends §§4–5 below: Standing may name the view,
+> never a sixth kind/store; Cognition alone authorizes Notebook decisions.
+> Subject/action identity is explicitly unresolved, not solved by shared input.
 
 ## 1. Why
 
@@ -61,7 +68,9 @@ on an intention). **Interests is ours**: no standard taxonomy has it, and it is
 here because personalisation reads it ([personalisation](../personalisation/00-intent.md)).
 
 **The vocabulary becomes Layer › Memory type › Kind › Entry.** "Tier" retires,
-and with it "Register", "Character" as a tier name and "Standing".
+and with it "Register", "Character" and "Standing" as tier names.
+Standing may still name the shared cognitive view ([20](20-shared-cognitive-state.md),
+operator amendment 2026-10-30).
 
 **"Notebook" stays the name.** What its entries share is that Nora wrote them,
 revises them and may be unsure: judgement, not data. "Episode" was considered
@@ -121,7 +130,7 @@ topic behind it stays internal.
 How these kinds connect to each other and to the profile (cite, about,
 link; the entity as the hub): [10](10-relations.md).
 
-## 4. Standing splits and retires
+## 4. Standing splits and retires as a kind
 
 Standing held what the Record cannot give back
 ([standing-ledger 00](../standing-ledger/00-intent.md) §3). It is not one
@@ -131,7 +140,7 @@ memory type, so it does not survive as a kind:
 |---|---|
 | decision (options, criteria, leaning, `Reopen if`) | **decision** |
 | commitment | **note**, owed by Nora |
-| thread | **topic activity** (Rollup) |
+| thread | **topic activity**, counted from judged graph-relation evidence (2026-10-29 amendment above) |
 | room `Where it stands` paragraph | splits into decisions and topic activity (already standing-ledger step 4) |
 | person `I owe them` | **note** |
 | person `How they take me` | **profile** of that person (it rests on the Rollup's responses to her) |
@@ -166,9 +175,12 @@ DEC-249's "the conscious never writes the Notebook" holds. This **amends
   writer. The same change supersedes the tag-path op tool in
   [standing-ledger 50](../standing-ledger/50-migration.md) step 3.
 
-This holds unless the next turn is measured needing the consolidated decision
-faster than Cognition's wake (about two minutes) delivers it; then the turn
-writes the entry (option B), under its own decision row.
+**Amended 2026-10-30:** the next turn reads recent conclusions and execution
+facts immediately from Record, without waiting for consolidation or making an
+extra synchronous Cognition call. [20](20-shared-cognitive-state.md) §2 keeps
+Cognition's Notebook authority: an optional materializer faithfully applies
+explicit authorized deltas and never decides. The earlier latency-based option-B
+fallback is superseded; visibility alone does not transfer writer authority.
 
 ## 6. External kinds: postings, and the one crossing
 
