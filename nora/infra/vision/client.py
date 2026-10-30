@@ -538,8 +538,8 @@ class VisionClient:
             content = _checked(response, what="the text-only vision call")
         except BaseException as exc:
             # BaseException, not Exception: `wait_for` cancels this await with
-            # CancelledError and a malformed `choices` raises IndexError —
-            # neither reaches `except Exception`, and the span would leak.
+            # CancelledError bypasses Exception; validate choices inside this
+            # boundary too so malformed responses also close the span.
             self._span_fail(span, exc)
             raise
         self._span_finish(
@@ -679,8 +679,8 @@ class VisionClient:
             content = _checked(response, what="the vision read")
         except BaseException as exc:
             # BaseException, not Exception: an outer `wait_for` cancellation is
-            # CancelledError and an empty/malformed `choices` is IndexError —
-            # both bypass `except Exception` and would leak the opened span.
+            # CancelledError bypasses Exception; validate choices inside this
+            # boundary too so malformed responses also close the span.
             self._span_fail(span, exc)
             raise
         self._span_finish(

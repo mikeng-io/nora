@@ -36,12 +36,20 @@ def spans(monkeypatch):
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
         InMemorySpanExporter,
     )
+    from opentelemetry.instrumentation.aiohttp_server import AioHttpServerInstrumentor
+
+    instrumentor = AioHttpServerInstrumentor()
+    if instrumentor.is_instrumented_by_opentelemetry:
+        instrumentor.uninstrument()
 
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     monkeypatch.setattr(trace_api, "get_tracer_provider", lambda: provider)
-    return exporter
+    yield exporter
+    if instrumentor.is_instrumented_by_opentelemetry:
+        instrumentor.uninstrument()
+    provider.shutdown()
 
 
 def _app() -> web.Application:
@@ -139,3 +147,22 @@ async def test_a_second_app_lifecycle_still_instruments(spans):
         await client2.close()
     assert app2["hits"] == ["/api/generated"]
     assert len(spans.get_finished_spans()) == 2
+
+
+async def test_a_later_app_still_excludes_polling_and_has_one_server_span(spans):
+    first = _app()
+    client = await _serve(first)
+    try:
+        assert (await client.get("/api/generated")).status == 200
+    finally:
+        await client.close()
+    second = _app()
+    client = await _serve(second)
+    try:
+        assert (await client.get("/health")).status == 200
+        assert (await client.get("/api/generated")).status == 200
+    finally:
+        await client.close()
+    spans = spans.get_finished_spans()
+    assert len(spans) == 2
+    assert all(s.attributes["http.route"] == "/api/generated" for s in spans)

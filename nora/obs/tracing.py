@@ -329,7 +329,8 @@ def instrument_aiohttp_app(app: object) -> None:
     calling its exported `middleware` bare raises AttributeError on the first
     request — so this goes through the supported lifecycle on the shared
     provider, then `create_aiohttp_middleware` for the per-app middleware.
-    `is_instrumented_by_opentelemetry` keeps repeated app lifecycles a no-op.
+    Restore the application constructor after initialization so subsequent
+    apps also receive exactly one explicitly installed middleware.
     The contrib exclusion mechanism is a process-wide env var and these paths
     are per-app, so the path filter stays our thin wrapper.
     """
@@ -346,6 +347,11 @@ def instrument_aiohttp_app(app: object) -> None:
         if not instrumentor.is_instrumented_by_opentelemetry:
             instrumentor.instrument(
                 tracer_provider=trace.get_tracer_provider())
+            # Initialize contrib's state, then restore Application: this app
+            # already exists and gets its middleware below. Leaving the global
+            # constructor patched would also instrument every subsequent app,
+            # duplicating this middleware and tracing excluded poll routes.
+            instrumentor.uninstrument()
         otel_middleware = create_aiohttp_middleware(
             tracer_provider=trace.get_tracer_provider())
 

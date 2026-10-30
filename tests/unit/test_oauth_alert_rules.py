@@ -28,11 +28,11 @@ def test_the_rules_read_series_the_keeper_declares_and_sets():
 def test_the_oauth_comparison_boundaries_are_preserved():
     rules = _rules()
     assert rules['OAuthRefreshStale']['query'] == (
-        'time() - nora_oauth_last_refresh_timestamp_seconds '
-        '> 2 * nora_oauth_refresh_interval_seconds')
+        '(time() - nora_oauth_last_refresh_timestamp_seconds) '
+        '> bool (2 * nora_oauth_refresh_interval_seconds)')
     assert rules['OAuthAccessTokenExpired']['query'] == (
-        'nora_oauth_access_expiry_timestamp_seconds > 0 and '
-        'nora_oauth_access_expiry_timestamp_seconds < time()')
+        '(nora_oauth_access_expiry_timestamp_seconds > bool 0) '
+        '* (nora_oauth_access_expiry_timestamp_seconds < bool time())')
     assert rules['OAuthRefreshRefused']['query'] == 'nora_oauth_refresh_refused'
     assert rules['OAuthRefreshRefused']['op'] == 'equal'
     assert rules['OAuthRefreshRefused']['target'] == 1
