@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.11.48](https://github.com/mikeng-io/nora/compare/v7.11.47...v7.11.48) (2026-10-30)
+
+
+### Bug Fixes
+
+* **cognition:** keep reading unclaimed ids written as a string or null ([c92816a](https://github.com/mikeng-io/nora/commit/c92816ac37ce3346cdbd420c30b993c4ac33a6ee))
+* **cognition:** read a recorded session agenda written as a string ([c76c264](https://github.com/mikeng-io/nora/commit/c76c2646d0f3ea8a3860a57121f3363c429aa22b))
+* **cognition:** replay a wake whose detail was stored as a string ([64eba21](https://github.com/mikeng-io/nora/commit/64eba21842c747f8f7367a329bb3a429489aa8b6))
+
 ## [7.11.47](https://github.com/mikeng-io/nora/compare/v7.11.46...v7.11.47) (2026-10-30)
 
 
