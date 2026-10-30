@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.11.41](https://github.com/mikeng-io/nora/compare/v7.11.40...v7.11.41) (2026-10-30)
+
+
+### Bug Fixes
+
+* **ops:** keep host commands usable after secret migration ([f3c8eb2](https://github.com/mikeng-io/nora/commit/f3c8eb2b969ad97285950fc3fe2daaafce0e65be))
+
 ## [7.11.40](https://github.com/mikeng-io/nora/compare/v7.11.39...v7.11.40) (2026-10-30)
 
 

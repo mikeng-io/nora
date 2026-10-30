@@ -43,14 +43,16 @@ own, so this edits the row the running process reads; `standing_edit.py` is
 baked into the image at `/app/scripts/`, same as `check_version_stamp.py`):
 
     # Preview only — no write:
-    docker compose exec -T nora uv run --no-sync python \\
+    python3 ~/workspace/nora/scripts/secret_delivery.py \\
+        --runtime-root ~/workspace/nora --compose-exec -T nora uv run --no-sync python \\
         scripts/standing_edit.py --platform signal --conversation-id g1 \\
         --body-file /tmp/new-standing-body.txt
 
     # Apply, body piped through stdin so the operator never has to get the
     # body FILE itself onto the container's filesystem (`docker cp` is still
     # how the SCRIPT reaches the image if it predates a rebuild):
-    cat /tmp/new-standing-body.txt | docker compose exec -T nora \\
+    cat /tmp/new-standing-body.txt | python3 ~/workspace/nora/scripts/secret_delivery.py \\
+        --runtime-root ~/workspace/nora --compose-exec -T nora \\
         uv run --no-sync python scripts/standing_edit.py --platform signal \\
         --conversation-id g1 --body-file - --apply
 """

@@ -145,7 +145,7 @@ on the host deploys nothing and reports nothing. Read it back:
 
 ```bash
 git fetch origin master && git show origin/master:nora/skills/<name>/SKILL.md | shasum -a 256
-ssh nora-host 'cd ~/workspace/nora && docker compose exec -T nora sha256sum /app/nora/skills/<name>/SKILL.md'
+ssh nora-host 'cd ~/workspace/nora && python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T nora sha256sum /app/nora/skills/<name>/SKILL.md'
 ```
 
 Check: the two hashes are equal. Different means the running image is not your
@@ -155,3 +155,5 @@ merge; an error means the container or path is wrong, which is not a pass.
 
 - **Claude Code with the rtk hook:** pytest and grep output can come back
   condensed. Read the log file as written above, or run through `rtk proxy`.
+
+Host exec requires the [installed secret-delivery helper](../../../docs/configuration.md#host-migration-and-installed-files).

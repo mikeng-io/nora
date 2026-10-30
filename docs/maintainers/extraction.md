@@ -97,7 +97,9 @@ root's `config.toml`. Copy it into the **running new-code container** at
 Run the existing config CLI on that candidate before copying it into the live file.
 
 The complete host-side candidate operation, after the new release is verified,
-is below. It creates a private backup and preserves the live bind-mount inode:
+is below. It requires the [installed host helper](../configuration.md#host-migration-and-installed-files)
+and a runtime `.env` sufficient for the bare Compose copy commands. It creates
+a private backup and preserves the live bind-mount inode:
 
 ```bash
 cd ~/workspace/nora
@@ -109,16 +111,16 @@ candidate=$(mktemp /tmp/nora-extraction.XXXXXX.toml)
 trap 'rm -f "$candidate"' EXIT
 cp config.toml "$backup"
 docker compose cp config.toml nora:/app/extraction.candidate.toml
-docker compose exec -T --user root nora chown nora:nora /app/extraction.candidate.toml
-docker compose exec -T nora /app/.venv/bin/nora config set memory.extraction.model \
+python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T --user root nora chown nora:nora /app/extraction.candidate.toml
+python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T nora /app/.venv/bin/nora config set memory.extraction.model \
   'ollamacloud/deepseek-v4.1-flash' --config /app/extraction.candidate.toml
-docker compose exec -T nora /app/.venv/bin/nora config set memory.extraction.enabled true \
+python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T nora /app/.venv/bin/nora config set memory.extraction.enabled true \
   --config /app/extraction.candidate.toml
-docker compose exec -T nora /app/.venv/bin/nora config validate \
+python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T nora /app/.venv/bin/nora config validate \
   --config /app/extraction.candidate.toml
 docker compose cp nora:/app/extraction.candidate.toml "$candidate"
 cp "$candidate" config.toml
-docker compose exec -T nora rm /app/extraction.candidate.toml
+python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T nora rm /app/extraction.candidate.toml
 printf 'Private config backup: %s\n' "$backup"
 SH
 ```
@@ -154,7 +156,7 @@ Prometheus still counts reported tokens if persisting that usage fails; the
 attempt remains unknown in the durable query and no claims are published.
 
 After one complete day, run this read-only query through
-`docker compose exec -T db psql -X -U nora -d nora` on the host. Pass `-v` values
+`python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T db psql -X -U nora -d nora` on the host. Pass `-v` values
 for `start`, `pi` and `po`: use an explicit timezone for the start of a 24-hour
 half-open window and the operator's verified route prices per million tokens. For
 example the synthetic window `2030-04-02T00:00:00+08:00` through
@@ -165,7 +167,7 @@ dates and prices; none are assumed here.
 : "${READING_DAY_START:?set the measured day start with timezone}"
 : "${READING_INPUT_PRICE:?set verified input price per million tokens}"
 : "${READING_OUTPUT_PRICE:?set verified output price per million tokens}"
-docker compose exec -T db psql -X -U nora -d nora \
+python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T db psql -X -U nora -d nora \
   -v start="$READING_DAY_START" -v pi="$READING_INPUT_PRICE" -v po="$READING_OUTPUT_PRICE" <<'SQL'
 BEGIN READ ONLY;
 WITH day AS (
