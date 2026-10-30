@@ -108,9 +108,6 @@ from nora.domain.gatherings import (
     field_mode,
 )
 from nora.domain.lineage import (
-    LineageEntry,
-)
-from nora.domain.lineage import (
     message as message_lineage,
 )
 from nora.domain.memo import (
@@ -2615,15 +2612,14 @@ class CognitionSessionRunner:
                             )}
                 # A named entry's own canonical lineage is the gate —
                 # carried on the Record, never re-derived downstream.
-                source_lineage = await self._named_source_lineage(
+                source_requirement = await self._named_source_requirement(
                     unit, state, *resolved_source)
-                if source_lineage is None:
+                if source_requirement is None or not source_requirement.known:
                     return {"status": "unresolved",
                             "reason": "source_unresolved",
                             "detail": f"the gates of {source!r} could not be "
                                       "resolved"}
-                record_requirement(DisclosureRequirement(
-                    None, source_lineage))
+                record_requirement(source_requirement)
             return {"status": "ok"}
 
         async def remind(
@@ -3107,9 +3103,9 @@ class CognitionSessionRunner:
                         return ("event", str(event.id))
         return None
 
-    async def _named_source_lineage(
+    async def _named_source_requirement(
         self, unit: str, state: Any, kind: str, wanted: str,
-    ) -> tuple[LineageEntry, ...] | None:
+    ) -> DisclosureRequirement | None:
         """The resolved entry's own canonical lineage, flattened to the
         requirement entries a destination checks — the same lookups
         `_resolve_named_subject` ran, returning the gates this time.
@@ -3142,7 +3138,9 @@ class CognitionSessionRunner:
         flat = tuple(
             le for _name, es in entry.lineage.sections for le in es
         )
-        return flat or None
+        return DisclosureRequirement(
+            None, flat, tuple(entry.exclude_persons),
+        ) if flat else None
 
     async def _remind_context(
         self, unit: str, platform: str, conversation_id: str, subject_rows: Sequence[str],

@@ -83,7 +83,7 @@ class TurnFacts:
     """The store's CURRENT-fact projection: items still open (their newest
     result is unresolved/refused/unavailable/unknown), capped AFTER the
     latest-per-key reduction, plus a separately bounded display read of the
-    newest accepted conclusions."""
+    newest accepted conclusions, retaining competing Record observations."""
 
     open_items: tuple[FactItem, ...] = ()
     recent_items: tuple[FactItem, ...] = ()
@@ -94,35 +94,44 @@ def tool_result_status(result: dict[str, Any] | None) -> str:
     """The status a recorded toolResult carries — `{json:{status}}` or a
     legitimate `{text: <json-string>}` payload; malformed/missing is
     `unknown`, never a guessed ok."""
-    if not result:
+    if not isinstance(result, dict):
         return "unknown"
-    for block in result.get("content") or ():
+    content = result.get("content")
+    if not isinstance(content, (list, tuple)):
+        return "unknown"
+    for block in content:
         if isinstance(block, dict):
             if isinstance(block.get("json"), dict):
-                return str(block["json"].get("status") or "unknown")
+                status = block["json"].get("status")
+                return status if isinstance(status, str) and status in _FACT_STATUSES else "unknown"
             if isinstance(block.get("text"), str):
                 try:
                     payload = json.loads(block["text"])
                 except (ValueError, TypeError):
                     return "unknown"
                 if isinstance(payload, dict):
-                    return str(payload.get("status") or "unknown")
+                    status = payload.get("status")
+                    return (
+                        status if isinstance(status, str) and status in _FACT_STATUSES
+                        else "unknown"
+                    )
                 return "unknown"
     return "unknown"
 
 
 _OPEN_STATUSES = frozenset({"unresolved", "refused", "unavailable", "unknown"})
+_FACT_STATUSES = _OPEN_STATUSES | {"ok"}
 
 
-def fact_key(item: FactItem) -> tuple[str, str, str]:
+def fact_key(item: FactItem) -> tuple[str, str, str, str]:
     """The identity a fact is reduced by — (name, subject, action); an
     unresolvable identity keeps its unique call identity so unrelated
     failures never coalesce."""
     subject = str(item.arguments.get("subject") or "")
     action = str(item.arguments.get("action") or "")
-    if not subject or not action:
-        return (item.name, "call", item.call_id)
-    return (item.name, subject, action)
+    if subject and (action or item.name == "decision_conclude"):
+        return (item.name, "subject", subject, action)
+    return (item.name, "call", item.tag_id, item.call_id)
 
 
 def reduce_turn_facts(
@@ -134,7 +143,7 @@ def reduce_turn_facts(
     different one; a same-trace later result wins by its block ordinal.
     `open_cap` bounds CURRENT open identities (history already closed does
     not count); `recent_cap` bounds the display-only accepted tail."""
-    latest: dict[tuple[str, str, str], FactItem] = {}
+    latest: dict[tuple[str, str, str, str], FactItem] = {}
     for item in items:
         key = fact_key(item)
         prior = latest.get(key)
@@ -147,7 +156,7 @@ def reduce_turn_facts(
     )
     capped = len(open_items) > open_cap
     recent = sorted(
-        (i for i in latest.values()
+        (i for i in items
          if i.name == conclude_name
          and tool_result_status(i.result) == "ok"),
         key=lambda i: i.ordinal, reverse=True,

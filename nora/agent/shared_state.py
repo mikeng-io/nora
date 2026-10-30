@@ -73,6 +73,7 @@ async def read_shared(
     permit: Callable[[Any], bool] | None = None,
     permit_req: Callable[[Any], bool] | None = None,
     standing_permits: Callable[[Any], dict[str, bool]] | None = None,
+    notes_permit: Callable[[Any], bool] | None = None,
     send_limit: int = 6,
     history_limit: int = 50,
 ) -> SharedView:
@@ -111,6 +112,8 @@ async def read_shared(
             open_notes = await notes.standing(unit=unit)
             sources.append(("notes", "ok" if open_notes else "nothing_found"))
             for n in open_notes:
+                if room is not None and notes_permit is not None and not notes_permit(n):
+                    continue
                 detail = " · ".join(
                     part for part in (
                         getattr(n, "description", "") or "",
@@ -468,7 +471,7 @@ async def read_shared(
         # Coverage comes before emptiness: a source that could not be fully
         # read is «unproven», never read as «nothing there».
         status = "partial"
-    elif not entries:
+    elif not entries and not unresolved_lines:
         status = "nothing_found"
     else:
         status = "ok"
@@ -501,6 +504,7 @@ def shared_reader(
         permit: Callable[[Any], bool] | None = None,
         permit_req: Callable[[Any], bool] | None = None,
         standing_permits: Callable[[Any], dict[str, bool]] | None = None,
+        notes_permit: Callable[[Any], bool] | None = None,
         wakes: Sequence[Any] | None = None,
     ) -> SharedView:
         return await read_shared(
@@ -509,7 +513,7 @@ def shared_reader(
             reminders=reminders, record_query=record_query,
             standing=standing, traces=traces, wakes=wakes,
             permit=permit, permit_req=permit_req,
-            standing_permits=standing_permits,
+            standing_permits=standing_permits, notes_permit=notes_permit,
         )
 
     return read

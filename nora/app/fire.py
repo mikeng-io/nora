@@ -125,6 +125,7 @@ from nora.domain.lineage import (
     BODY,
     HOLD_OPEN,
     I_OWE,
+    ROW,
     WORKING_SET,
     room_key,
 )
@@ -1626,8 +1627,13 @@ class FirePath:
             return None
         unit = self._unit_for(occasion)
         if unit is None:
-            return None
+            return SharedView(
+                unit="", status="unavailable", as_of_ms=int(time.time() * 1000),
+            )
         permit = None
+        permit_req = None
+        standing_permits = None
+        notes_permit = None
         if self._lineage is not None:
             room = Room(
                 platform=occasion.platform,
@@ -1670,6 +1676,12 @@ class FirePath:
                         for req in requirements
                     )
 
+                def notes_permit(note: Note) -> bool:
+                    return visible_sections(
+                        note.lineage, (ROW,), narrowed,
+                        origin=note.established_in, exclude_persons=note.exclude_persons,
+                    )[ROW]
+
                 def standing_permits(position: Standing) -> dict[str, bool]:
                     # The derived-view gate, run against the destination's
                     # RenderRoom: an excluded or unpermitted section is
@@ -1685,7 +1697,7 @@ class FirePath:
                 unit=unit,
                 room=(occasion.platform, occasion.conversation_id),
                 permit=permit, permit_req=permit_req,
-                standing_permits=standing_permits,
+                standing_permits=standing_permits, notes_permit=notes_permit,
                 now_ms=int(time.time() * 1000),
             )
         except Exception:

@@ -31,7 +31,6 @@ from nora.domain.tag_trace import (
     FactItem,
     TagTrace,
     TurnFacts,
-    reduce_turn_facts,
 )
 from nora.domain.turn_record import (
     DisclosureRequirement,
@@ -39,6 +38,93 @@ from nora.domain.turn_record import (
     turn_handles_in,
 )
 from nora.infra.sql.schema import TAG_TRACE
+
+TURN_FACTS_SQL = """
+    WITH blocks AS MATERIALIZED (
+        SELECT t.id AS trace_row_id, t.turn_id, t.tag_id,
+               t.occasion, t.created_at, t.requirements,
+               c.block, m.m_idx, c.b_idx
+        FROM tag_trace t,
+             LATERAL jsonb_array_elements(t.messages)
+                WITH ORDINALITY m(msg, m_idx),
+             LATERAL jsonb_array_elements(
+                CASE WHEN jsonb_typeof(m.msg->'content') = 'array'
+                     THEN m.msg->'content' ELSE '[]'::jsonb END
+             ) WITH ORDINALITY c(block, b_idx)
+        WHERE t.unit = :unit
+          AND (c.block ? 'toolUse' OR c.block ? 'toolResult')
+    ), uses AS (
+        SELECT b.*, b.block->'toolUse'->>'name' AS name,
+               b.block->'toolUse'->>'toolUseId' AS call_id,
+               CASE WHEN jsonb_typeof(b.block->'toolUse'->'input') = 'object'
+                    THEN b.block->'toolUse'->'input'
+                    ELSE '{}'::jsonb END AS arguments
+        FROM blocks b
+        WHERE b.block ? 'toolUse'
+          AND b.block->'toolUse'->>'name' = ANY(:names)
+    ), paired AS (
+        SELECT u.*, r.result,
+               COALESCE(p.result_status, 'unknown') AS raw_status
+        FROM uses u
+        LEFT JOIN LATERAL (
+            SELECT b.block->'toolResult' AS result
+            FROM blocks b
+            WHERE b.trace_row_id = u.trace_row_id
+              AND b.block->'toolResult'->>'toolUseId' = u.call_id
+            ORDER BY b.m_idx DESC, b.b_idx DESC
+            LIMIT 1
+        ) r ON true
+        LEFT JOIN LATERAL (
+            SELECT CASE
+                WHEN jsonb_typeof(c.block->'json') = 'object'
+                    THEN c.block->'json'->>'status'
+                WHEN jsonb_typeof(c.block->'text') = 'string'
+                    AND pg_input_is_valid(c.block->>'text', 'jsonb')
+                    THEN (c.block->>'text')::jsonb->>'status'
+                ELSE 'unknown'
+            END AS result_status
+            FROM jsonb_array_elements(
+                CASE WHEN jsonb_typeof(r.result->'content') = 'array'
+                     THEN r.result->'content' ELSE '[]'::jsonb END
+            ) WITH ORDINALITY c(block, idx)
+            WHERE jsonb_typeof(c.block->'json') = 'object'
+               OR jsonb_typeof(c.block->'text') = 'string'
+            ORDER BY c.idx
+            LIMIT 1
+        ) p ON true
+    ), identities AS (
+        SELECT p.*,
+               (COALESCE(arguments->>'subject', '') <> ''
+                AND (name = 'decision_conclude'
+                     OR COALESCE(arguments->>'action', '') <> '')) AS named
+        FROM paired p
+    ), keyed AS (
+        SELECT i.*,
+               CASE WHEN named THEN 'subject' ELSE 'call' END AS key_kind,
+               CASE WHEN named THEN arguments->>'subject' ELSE tag_id END AS key_subject,
+               CASE WHEN named THEN COALESCE(arguments->>'action', '')
+                    ELSE call_id END AS key_action,
+               CASE WHEN raw_status IN ('ok', 'unresolved', 'refused', 'unavailable')
+                    THEN raw_status ELSE 'unknown' END AS result_status
+        FROM identities i
+    ), latest AS (
+        SELECT DISTINCT ON (name, key_kind, key_subject, key_action) *
+        FROM keyed
+        ORDER BY name, key_kind, key_subject, key_action,
+                 created_at DESC, turn_id DESC NULLS LAST, m_idx DESC, b_idx DESC
+    ), open_facts AS (
+        SELECT *, 'open' AS bucket FROM latest
+        WHERE result_status <> 'ok'
+        ORDER BY created_at DESC, turn_id DESC NULLS LAST, m_idx DESC, b_idx DESC
+        LIMIT :open_limit
+    ), recent_facts AS (
+        SELECT *, 'recent' AS bucket FROM keyed
+        WHERE name = 'decision_conclude' AND result_status = 'ok'
+        ORDER BY created_at DESC, turn_id DESC NULLS LAST, m_idx DESC, b_idx DESC
+        LIMIT :recent_limit
+    )
+    SELECT * FROM open_facts UNION ALL SELECT * FROM recent_facts
+"""
 
 
 async def body_turn_lineage(
@@ -143,90 +229,39 @@ class SqlTagTraceStore:
         self, *, unit: str, tool_names: Sequence[str],
         open_cap: int = 200, recent_cap: int = 20,
     ) -> TurnFacts:
-        """The unit's CURRENT tool-fact projection, extracted structurally:
-        lateral JSONB expansion pairs each `toolUse` with the `toolResult`
-        sharing its `toolUseId` in the same trace, `DISTINCT ON` the
-        (name, subject, action) key keeps only the NEWEST pair per key (a
-        delivered `ok` closes its earlier unresolved, a different key's
-        never does), so the transfer is bounded by distinct facts, not by
-        the unit's history. The shared `reduce_turn_facts` then splits
-        current-open vs accepted tail."""
+        """Reduce current identities in SQL before bounding transferred items.
+
+        Recent accepted conclusions remain independent Record observations;
+        they do not replace competing conclusions about the same subject.
+        """
         if not tool_names:
             return TurnFacts()
-        stmt = sa.text("""
-            WITH uses AS (
-                SELECT t.id AS trace_row_id, t.turn_id, t.tag_id,
-                       t.occasion, t.created_at, t.requirements,
-                       c.block AS use_block, m.m_idx, c.b_idx
-                FROM tag_trace t,
-                     LATERAL jsonb_array_elements(t.messages)
-                        WITH ORDINALITY m(msg, m_idx),
-                     LATERAL jsonb_array_elements(m.msg->'content')
-                        WITH ORDINALITY c(block, b_idx)
-                WHERE t.unit = :unit AND c.block ? 'toolUse'
-                  AND c.block->'toolUse'->>'name' = ANY(:names)
-            ), paired AS (
-                SELECT u.*, r.res_block,
-                       CASE WHEN COALESCE(
-                                NULLIF(u.use_block->'input'->>'subject',''),'')
-                                 = ''
-                            AND COALESCE(
-                                NULLIF(u.use_block->'input'->>'action',''),'')
-                                 = ''
-                       THEN 'call:' ||
-                            (u.use_block->'toolUse'->>'toolUseId')
-                       ELSE COALESCE(u.use_block->'input'->>'subject','')
-                            || chr(31) ||
-                            COALESCE(u.use_block->'input'->>'action','')
-                       END AS fkey
-                FROM uses u
-                LEFT JOIN LATERAL (
-                    SELECT rb.block AS res_block
-                    FROM tag_trace t2,
-                         jsonb_array_elements(t2.messages) m2(msg),
-                         jsonb_array_elements(m2.msg->'content') rb(block)
-                    WHERE t2.id = u.trace_row_id
-                      AND rb.block ? 'toolResult'
-                      AND rb.block->'toolResult'->>'toolUseId'
-                          = u.use_block->'toolUse'->>'toolUseId'
-                    LIMIT 1
-                ) r ON true
-            )
-            SELECT DISTINCT ON (
-                use_block->'toolUse'->>'name', fkey
-            )
-                turn_id, tag_id, occasion, created_at, requirements,
-                use_block, res_block, m_idx, b_idx
-            FROM paired
-            ORDER BY use_block->'toolUse'->>'name', fkey,
-                     created_at DESC, turn_id DESC NULLS LAST,
-                     m_idx DESC, b_idx DESC
-        """)
+        open_cap, recent_cap = max(0, open_cap), max(0, recent_cap)
         async with self._engine.connect() as conn:
-            rows = (await conn.execute(
-                stmt, {"unit": unit, "names": tuple(tool_names)},
-            )).all()
-        items = [
-            FactItem(
-                name=r.use_block["toolUse"]["name"],
-                call_id=r.use_block["toolUse"]["toolUseId"],
-                arguments=r.use_block["toolUse"].get("input", {}),
-                result=r.res_block["toolResult"] if r.res_block else None,
+            rows = (await conn.execute(sa.text(TURN_FACTS_SQL), {
+                "unit": unit, "names": tuple(tool_names),
+                "open_limit": open_cap + 1, "recent_limit": recent_cap,
+            })).all()
+        buckets: dict[str, list[FactItem]] = {"open": [], "recent": []}
+        for r in rows:
+            buckets[r.bucket].append(FactItem(
+                name=r.name, call_id=r.call_id, arguments=r.arguments,
+                result=r.result,
                 requirements=tuple(
                     DisclosureRequirement.from_json(req)
-                    for req in (r.requirements or {}).get(
-                        r.use_block["toolUse"]["toolUseId"], ())
+                    for req in (r.requirements or {}).get(r.call_id, ())
                 ),
                 turn_id=r.turn_id,
                 handle=f"t{r.turn_id}" if r.turn_id is not None else None,
-                tag_id=r.tag_id, occasion=r.occasion,
-                created_at=r.created_at,
+                tag_id=r.tag_id, occasion=r.occasion, created_at=r.created_at,
                 ordinal=(r.created_at, r.turn_id or 0, r.m_idx, r.b_idx),
-            )
-            for r in rows
-        ]
-        return reduce_turn_facts(
-            items, open_cap=open_cap, recent_cap=recent_cap)
+            ))
+        return TurnFacts(
+            open_items=tuple(buckets["open"][:open_cap]),
+            recent_items=tuple(buckets["recent"]),
+            capped=len(buckets["open"]) > open_cap,
+        )
+
     @staticmethod
     def _trace(r: Any) -> TagTrace:
         return TagTrace(

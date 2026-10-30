@@ -54,6 +54,7 @@ from nora.domain.lineage import (
     BODY,
     HOLD_OPEN,
     I_OWE,
+    ROW,
     WORKING_SET,
     RenderRoom,
 )
@@ -981,10 +982,8 @@ class TranscriptInjection:
         Unit-scoped like `_notes`, with the ledger read's own destination
         predicate applied to each entry so a room sees every entry it may and
         `permitted=False` on the rest — never an absence that reads as
-        nothing there. Fail-soft like every sibling read; a reader that
-        raises returns `None`, which renders no block — the tag turn has no
-        premise to withhold on, unlike a proactive fire turn (which is why
-        `FirePath` holds the hard rule, not this read).
+        nothing there. A wired read failure returns an unavailable view;
+        `None` is reserved for a reader that was never wired.
         """
         if self._shared_reader is None:
             return None
@@ -1001,8 +1000,14 @@ class TranscriptInjection:
             )
             self._metrics.inc(
                 "nora_errors_total", stage="shared_state", platform=msg.platform)
-            return None
+            return SharedView(
+                unit="", status="unavailable",
+                as_of_ms=int(self._clock().timestamp() * 1000),
+            )
         permit = None
+        permit_req = None
+        standing_permits = None
+        notes_permit = None
         if self._lineage is not None:
             room = Room(
                 platform=msg.platform, conversation_id=msg.conversation_id,
@@ -1043,6 +1048,12 @@ class TranscriptInjection:
                         for req in requirements
                     )
 
+                def notes_permit(note: Note) -> bool:
+                    return visible_sections(
+                        note.lineage, (ROW,), narrowed,
+                        origin=note.established_in, exclude_persons=note.exclude_persons,
+                    )[ROW]
+
                 def standing_permits(position: Standing) -> dict[str, bool]:
                     # The derived-view gate, run against the destination's
                     # RenderRoom: an excluded or unpermitted section is
@@ -1059,7 +1070,7 @@ class TranscriptInjection:
                 room=(msg.platform, msg.conversation_id),
                 permit=permit,
                 permit_req=permit_req,
-                standing_permits=standing_permits,
+                standing_permits=standing_permits, notes_permit=notes_permit,
                 now_ms=int(self._clock().timestamp() * 1000),
             )
         except Exception:

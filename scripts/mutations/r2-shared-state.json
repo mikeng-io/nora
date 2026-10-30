@@ -9,8 +9,8 @@
   {
     "name": "r2-6-source-resolves-against-record",
     "file": "nora/agent/tools.py",
-    "old": "if not rows or rows[0].id != row_id:",
-    "new": "if False:",
+    "old": "row = by_id.get(source)",
+    "new": "row = by_id.get(source) or next(iter(by_id.values()), None)",
     "target": "tests/unit/test_shared_state.py::test_decision_conclude_resolves_real_rows_and_refuses_the_rest"
   },
   {
@@ -37,8 +37,43 @@
   {
     "name": "r2-2-wired-debrief-record-only",
     "file": "nora/engagement/stages/debrief.py",
-    "old": "            outcome = \"record_only\"",
-    "new": "            outcome = \"applied\"",
+    "old": "        if conclusions is not None:",
+    "new": "        if False:",
     "target": "tests/unit/test_debrief.py::test_wired_route_survives_a_broken_store"
+  },
+  {
+    "name": "sql-current-facts-preserve-subject-identity",
+    "file": "nora/infra/sql/tag_traces.py",
+    "old": "CASE WHEN named THEN arguments->>'subject' ELSE tag_id END AS key_subject,",
+    "new": "'lost' AS key_subject,",
+    "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_pair_structurally_and_reduce_latest_per_key"
+  },
+  {
+    "name": "unresolved-only-state-must-render",
+    "file": "nora/agent/shared_state.py",
+    "old": "elif not entries and not unresolved_lines:",
+    "new": "elif not entries:",
+    "target": "tests/unit/test_shared_state.py::test_an_unresolved_only_view_is_rendered"
+  },
+  {
+    "name": "named-conclusions-retain-source-exclusions",
+    "file": "nora/app/cognition_session.py",
+    "old": "None, flat, tuple(entry.exclude_persons),",
+    "new": "None, flat, (),",
+    "target": "tests/unit/test_cognition_live_writes.py::test_conclusion_keeps_named_source_exclusions_in_its_record"
+  },
+  {
+    "name": "sql-fact-transfer-bounded-after-reduction",
+    "file": "nora/infra/sql/tag_traces.py",
+    "old": "LIMIT :open_limit",
+    "new": "LIMIT ALL",
+    "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_bounds_database_transfer_after_reduction"
+  },
+  {
+    "name": "shared-note-destination-exclusion",
+    "file": "nora/agent/shared_state.py",
+    "old": "if room is not None and notes_permit is not None and not notes_permit(n):",
+    "new": "if False:",
+    "target": "tests/unit/test_shared_state.py::test_shared_notes_keep_the_existing_destination_exclusion"
   }
 ]

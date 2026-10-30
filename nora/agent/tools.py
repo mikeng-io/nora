@@ -6956,12 +6956,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             options: Optional. The options you weighed.
             leaning: Optional. Which way you lean, and why.
             conditions: Optional. What would settle or close this.
-            sources: Required. The transcript row id(s) this conclusion
-                rests on — each is resolved against the Record: a missing,
-                hidden or foreign row is `unresolved`, never accepted.
-                With no resolvable source the record stays `unresolved`
-                (`source_required`), visible to the next session to
-                address — cite real evidence or don't call this.
+            sources: Required. The #n message handles shown in this turn,
+                or their canonical row ids. Resolution uses the bound
+                transcript; missing, hidden or foreign sources are unresolved.
             standing_room: Optional. `platform:conversation_id`, set it
                 with `standing_body` when the conclusion is a position
                 update for that room.
@@ -6988,32 +6985,28 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     "reason": "resolver_unavailable",
                     "detail": "cited rows cannot be resolved without the "
                               "message store"}
+        if transcript is None:
+            return {"status": "unavailable", "reason": "source_frame_unavailable",
+                    "detail": "this turn's bound transcript is unavailable"}
         origin = room_key(room.platform, conversation_id)
+        by_id = {str(row.id): row for row in transcript}
+        resolved_sources = []
         for source in sources or ():
-            # A source must RESOLVE to a real transcript row — an `after_id`
-            # existence read against this room's Record, whose disclosure
-            # gate is the room it was said in — and each resolved citation's
-            # requirement is RECORDED so the destination projection and turn
-            # citations see it. A missing or foreign row is `unresolved`,
-            # never an ok on a guessed provenance.
-            if not isinstance(source, str) or not source.isdigit():
-                return {"status": "unresolved",
-                        "reason": "source_unresolved",
-                        "detail": (
-                            f"{source!r} is not a transcript row id this turn "
-                            "can cite: name the row, or leave `sources` out"
-                        )}
-            row_id = int(source)
-            rows = await store.since_including_nora(
-                conversation_id=conversation_id, after_id=row_id - 1,
-                limit=1)
-            if not rows or rows[0].id != row_id:
-                return {"status": "unresolved",
-                        "reason": "source_unresolved",
-                        "detail": f"no transcript row {source} in this room"}
+            row = None
+            if isinstance(source, str):
+                if source.startswith("#") and source[1:].isdigit():
+                    index = int(source[1:])
+                    if 1 <= index <= len(transcript):
+                        row = transcript[index - 1]
+                else:
+                    row = by_id.get(source)
+            if row is None:
+                return {"status": "unresolved", "reason": "source_unresolved",
+                        "detail": "cite a #n message shown in this turn"}
             record_requirement(
                 DisclosureRequirement(origin, (message_lineage(origin),)))
-        return {"status": "ok"}
+            resolved_sources.append(str(row.id))
+        return {"status": "ok", "sources": resolved_sources}
 
     async def now() -> str:
         """The current date and time, in this deployment's time zone. Call this

@@ -560,11 +560,12 @@ async def test_decision_conclude_resolves_real_rows_and_refuses_the_rest():
         def __init__(self, **kw):
             self.__dict__.update(kw)
 
-    def _specs(store):
+    def _specs(store, transcript=()):
         return build_tool_specs(
             store=store, conversation_id="room-a", conversation_type="group",
             persons=None, honcho=None, deliverer=None, metrics=Metrics(),
-            room=_NS(platform="signal", tagger=None), transit_source=None)
+            room=_NS(platform="signal", tagger=None), transit_source=None,
+            transcript=transcript)
 
     # store=None -> unavailable (can't check)
     tool = next(s for s in _specs(None) if s.name == "decision_conclude")
@@ -588,11 +589,81 @@ async def test_decision_conclude_resolves_real_rows_and_refuses_the_rest():
     await store.append(message=NormalizedMessage(
         "signal", "room-a", "group", "+10000000001", "Someone", 1,
         "hi", {}))
+    rows = tuple(await store.since_including_nora(
+        conversation_id="room-a", after_id=0, limit=40))
+    tool = next(s for s in _specs(store, rows) if s.name == "decision_conclude")
     rec = TurnRecording()
     rec.before(_NS(tool_use={"toolUseId": "c1"}))
-    out = await tool.call(subject="d", decision="x", sources=["1"])
+    out = await tool.call(subject="d", decision="x", sources=["#1"])
     rec.after(_NS())
     assert out["status"] == "ok"
     reqs = rec.requirements["c1"]
     # the spec's own in-room gate + the resolved row's gate, both resolved
     assert len(reqs) == 2 and all(r.known for r in reqs)
+    assert out["sources"] == ["1"]
+    missing = await tool.call(subject="d", decision="x", sources=["999999"])
+    assert missing["status"] == "unresolved"
+
+
+async def test_an_unresolved_only_view_is_rendered():
+    from nora.domain.tag_trace import TagTrace
+    from nora.testing.tag_traces import FakeTagTraceStore
+
+    traces = FakeTagTraceStore()
+    await traces.save(TagTrace(
+        tag_id="generated-open", conversation_id="room-a", unit="u1",
+        transcript=(), outcome="silent", created_at=T0_MS,
+        messages=(
+            {"role": "assistant", "content": [{"toolUse": {
+                "toolUseId": "generated-call", "name": "remind", "input": {
+                    "subject": "note:missing", "action": "ask", "text": "generated",
+                },
+            }}]},
+            {"role": "user", "content": [{"toolResult": {
+                "toolUseId": "generated-call", "content": [{"json": {"status": "unresolved"}}],
+            }}]},
+        ),
+    ))
+    view = await read_shared(unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS,
+                             traces=traces)
+    block = render_shared_state(view, now_ms=T0_MS)
+    assert view.status == "ok"
+    assert block is not None and "note:missing" in block.body
+
+
+async def test_shared_notes_keep_the_existing_destination_exclusion():
+    from dataclasses import replace
+
+    from nora.agent.lineage import visible_sections
+    from nora.domain.lineage import ROW, Lineage, LiveRoom, RenderRoom, RoomFacts, message
+    from nora.testing.note_store import InMemoryNoteStore
+
+    notes = InMemoryNoteStore()
+    note = await notes.create(
+        unit="u1", title="Generated private note", description="a generated choice",
+        uncertainty="the option", closing_condition="a confirmation",
+        body="## Open\n- choose [101]\n", established_in="signal:room-a",
+        established_by="generated", now_ms=T0_MS, anchor_date=20260701,
+    )
+    notes.notes[note.id] = replace(
+        note, lineage=Lineage.of({ROW: (message("signal:room-a"),)}),
+        exclude_persons=("generated-listener",),
+    )
+    target = RenderRoom(
+        room=RoomFacts("signal", frozenset({"room-a"}), "u1",
+                       frozenset({"generated-listener"}), primary_id="room-a"),
+        live=LiveRoom(frozenset({"generated-listener"})), mode="on", content_checks=True,
+    )
+
+    def permits(entry):
+        return visible_sections(entry.lineage, (ROW,), target,
+                                origin=entry.established_in,
+                                exclude_persons=entry.exclude_persons)[ROW]
+
+    hidden = await read_shared(unit="u1", rooms=ROOMS, room=ROOMS[0], ai_peer="nora",
+                               now_ms=T0_MS, notes=notes, notes_permit=permits)
+    assert not any(e.id == note.id for e in hidden.entries)
+    unit = await read_shared(unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS,
+                             notes=notes)
+    rendered = render_shared_state(unit, now_ms=T0_MS)
+    assert rendered is not None and note.title in rendered.body

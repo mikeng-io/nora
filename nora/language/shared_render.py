@@ -114,7 +114,7 @@ def render_shared_state(
             ago = f" · {age(e.at_ms, now)} ago" if e.at_ms else ""
             lines.append(f"- {e.scope}{ago} · {e.subject}")
     if concluded:
-        lines.append("## Concluded lately")
+        lines.append("## Record conclusions (not consolidated)")
         for e in concluded[:8]:
             if not e.permitted:
                 lines.append("- a conclusion in another room · withheld")

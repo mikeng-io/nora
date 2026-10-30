@@ -173,35 +173,80 @@ async def test_turn_facts_text_json_result_and_units_isolate(store):
     assert facts.open_items[0].tag_id != facts2.open_items[0].tag_id
 
 
-async def test_turn_facts_query_plan_is_bounded(store, capsys):
-    """EXPLAIN evidence: the structural projection reads unit rows with
-    lateral JSONB expansion — the plan and row counts are captured so the
-    bound is visible, not asserted on faith."""
-    if not hasattr(store, "_engine"):
-        pytest.skip("sql-only evidence")
-    for i in range(30):
-        await store.save(_fact_trace(f"p{i}", subject=f"note:s-{i}",
-                                     action="ask", status="ok", turn=i))
-    import sqlalchemy as sa
-    plan_sql = """
-        EXPLAIN (ANALYZE, BUFFERS)
-        WITH uses AS (
-            SELECT t.id AS trace_row_id, t.turn_id, t.tag_id,
-                   t.occasion, t.created_at, t.requirements,
-                   c.block AS use_block, m.m_idx, c.b_idx
-            FROM tag_trace t,
-                 LATERAL jsonb_array_elements(t.messages)
-                    WITH ORDINALITY m(msg, m_idx),
-                 LATERAL jsonb_array_elements(m.msg->'content')
-                    WITH ORDINALITY c(block, b_idx)
-            WHERE t.unit = 'u1' AND c.block ? 'toolUse'
+async def test_turn_facts_call_ids_are_scoped_to_their_trace(store):
+    from dataclasses import replace
+
+    old = _fact_trace("older", subject="note:still-open", status="unresolved", created=1)
+    new = _fact_trace("newer", subject="note:another", status="ok", created=2)
+    for trace in (old, new):
+        messages = tuple(
+            {**msg, "content": [
+                {key: {**value, "toolUseId": "reused"}}
+                for block in msg["content"] for key, value in block.items()
+            ]} for msg in trace.messages
         )
-        SELECT DISTINCT ON (use_block->'toolUse'->>'name',
-                            use_block->'input'->>'subject')
-            turn_id, tag_id, use_block FROM uses
-    """
+        await store.save(replace(trace, messages=messages))
+    facts = await store.turn_facts(unit="u1", tool_names=("remind",))
+    assert [i.arguments["subject"] for i in facts.open_items] == ["note:still-open"]
+
+
+async def test_turn_facts_keep_competing_accepted_conclusions(store):
+    await store.save(_fact_trace("first", name="decision_conclude", subject="dinner",
+                                 action="", status="ok", created=1))
+    await store.save(_fact_trace("second", name="decision_conclude", subject="dinner",
+                                 action="", status="ok", created=2))
+    facts = await store.turn_facts(unit="u1", tool_names=("decision_conclude",))
+    assert {i.tag_id for i in facts.recent_items} == {"first", "second"}
+
+
+async def test_turn_facts_last_result_for_a_call_wins(store):
+    from dataclasses import replace
+
+    trace = _fact_trace("retry", status="unresolved")
+    result = trace.messages[-1]["content"][0]["toolResult"]
+    await store.save(replace(trace, messages=(*trace.messages, {
+        "role": "user", "content": [{"toolResult": {
+            **result, "content": [{"json": {"status": "ok"}}],
+        }}],
+    })))
+    facts = await store.turn_facts(unit="u1", tool_names=("remind",))
+    assert facts.open_items == ()
+
+
+async def test_turn_facts_malformed_status_stays_unresolved(store):
+    await store.save(_fact_trace("malformed", status="not-a-status"))
+    facts = await store.turn_facts(unit="u1", tool_names=("remind",))
+    assert len(facts.open_items) == 1
+
+
+async def test_turn_facts_bounds_database_transfer_after_reduction(store):
+    if not hasattr(store, "_engine"):
+        pytest.skip("sql-only transfer measurement")
+    import sqlalchemy as sa
+
+    for i in range(30):
+        await store.save(_fact_trace(f"closed-{i}", subject=f"note:{i}", created=i))
+    for i in range(3):
+        await store.save(_fact_trace(f"open-{i}", subject=f"note:open-{i}",
+                                     status="unresolved", created=100 + i))
+        await store.save(_fact_trace(f"conclusion-{i}", name="decision_conclude",
+                                     action="", subject="same subject", created=200 + i))
+    captured = []
+
+    def observed(conn, cursor, statement, parameters, context, executemany):
+        captured.append((statement, parameters, cursor.rowcount))
+
+    engine = store._engine.sync_engine
+    sa.event.listen(engine, "after_cursor_execute", observed)
+    try:
+        facts = await store.turn_facts(unit="u1", tool_names=("remind", "decision_conclude"),
+                                       open_cap=1, recent_cap=2)
+    finally:
+        sa.event.remove(engine, "after_cursor_execute", observed)
+    assert facts.capped and len(facts.open_items) == 1 and len(facts.recent_items) == 2
+    assert len(captured) == 1
+    statement, parameters, transferred = captured[0]
+    assert transferred == 4  # one extra open row measures the remainder
     async with store._engine.connect() as conn:
-        plan = [r[0] for r in (await conn.execute(sa.text(plan_sql))).all()]
-    text = "\n".join(plan)
-    print("\n" + text)
-    assert "tag_trace" in text
+        plan = await conn.exec_driver_sql("EXPLAIN (ANALYZE, BUFFERS) " + statement, parameters)
+        print("\nPRODUCTION turn_facts plan:\n" + "\n".join(row[0] for row in plan))
