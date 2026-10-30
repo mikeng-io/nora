@@ -6968,14 +6968,22 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return {"status": "refused", "reason": "no_decision",
                     "detail": "say what you concluded",
                     "note": "No conclusion was accepted. State the decision before trying again."}
+        if (sources or ()) and store is None:
+            # Sources need RESOLUTION, not a digit check: with no Record the
+            # citation cannot be verified and the call is honestly
+            # «I couldn't check», never an ok on an ungrounded provenance.
+            return {"status": "unavailable",
+                    "reason": "resolver_unavailable",
+                    "detail": "cited rows cannot be resolved without the "
+                              "message store"}
         origin = room_key(room.platform, conversation_id)
         for source in sources or ():
-            # A source must be a resolvable evidence handle — a transcript
-            # row id, whose disclosure gate is the room it was said in —
-            # and each resolved citation's requirement is RECORDED so the
-            # destination projection and turn citations see it. Anything
-            # else is not accepted: the record stays `unresolved` evidence
-            # for the next session, never an ok on a guessed provenance.
+            # A source must RESOLVE to a real transcript row — an `after_id`
+            # existence read against this room's Record, whose disclosure
+            # gate is the room it was said in — and each resolved citation's
+            # requirement is RECORDED so the destination projection and turn
+            # citations see it. A missing or foreign row is `unresolved`,
+            # never an ok on a guessed provenance.
             if not isinstance(source, str) or not source.isdigit():
                 return {"status": "unresolved",
                         "reason": "source_unresolved",
@@ -6983,6 +6991,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             f"{source!r} is not a transcript row id this turn "
                             "can cite: name the row, or leave `sources` out"
                         )}
+            row_id = int(source)
+            rows = await store.since_including_nora(
+                conversation_id=conversation_id, after_id=row_id - 1,
+                limit=1)
+            if not rows or rows[0].id != row_id:
+                return {"status": "unresolved",
+                        "reason": "source_unresolved",
+                        "detail": f"no transcript row {source} in this room"}
             record_requirement(
                 DisclosureRequirement(origin, (message_lineage(origin),)))
         return {"status": "ok"}

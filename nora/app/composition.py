@@ -1104,6 +1104,20 @@ def social_person_rooms(allowlist: Any) -> dict[tuple[str, str], tuple[str, str]
     return out
 
 
+async def _row_room(
+    audit: Any, unit_rooms: Any, unit: str, row_id: int,
+) -> tuple[str, str] | None:
+    """The `(platform, conversation_id)` the transcript row lives in — the
+    bounded existence read `decision_conclude`'s source resolution runs over
+    the unit's canonical rooms. `None` = no such row."""
+    for platform, cid in unit_rooms.get(unit, ()):
+        rows = await audit.since_including_nora(
+            conversation_id=cid, after_id=row_id - 1, limit=1)
+        if rows and rows[0].id == row_id:
+            return (platform, cid)
+    return None
+
+
 def social_unit_rooms(allowlist: Any) -> dict[str, tuple[tuple[str, str], ...]]:
     """`unit -> every (platform, conversation_id)` of its rooms, sorted: the
     rooms the social poller may read an item through. `rooms()`, not
@@ -4808,6 +4822,8 @@ async def build_dependencies(
                     reminders=reminders, ai_peer=cfg.honcho.ai_peer,
                     ledger=ledger_store, shared=shared,
                     rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
+                    resolve_row=lambda unit, row_id: _row_room(
+                        audit, unit_rooms, unit, row_id),
                     reminder_caps=reminder_caps,
                     room_proactive=lambda platform, conversation_id: allowlist.proactive_allowed(
                         platform=platform, conversation_id=conversation_id,

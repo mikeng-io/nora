@@ -629,6 +629,7 @@ class CognitionSessionRunner:
         content_checks: bool = True,
         tag_trace_store: Any = None, memory: Any = None,
         rooms_of_unit: Callable[[str], Sequence[tuple[str, str]]] | None = None,
+        resolve_row: Callable[[str, int], Awaitable[tuple[str, str] | None]] | None = None,
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -693,6 +694,7 @@ class CognitionSessionRunner:
         self._ledger = ledger
         self._shared = shared
         self._rooms_of_unit = rooms_of_unit
+        self._resolve_row = resolve_row
         self._ai_peer = ai_peer
         self._stimuli = stimulus_store
         self._agent_runner = agent_runner
@@ -2568,6 +2570,20 @@ class CognitionSessionRunner:
                             "detail": f"{source!r} is not a citation this "
                                       "session can resolve"}
                 if source.isdigit():
+                    # Same existence check the engagement tool runs — a
+                    # transcript row id must RESOLVE against the unit's
+                    # Record, not merely parse.
+                    if self._resolve_row is None:
+                        return {"status": "unavailable",
+                                "reason": "resolver_unavailable",
+                                "detail": "cited rows cannot be resolved "
+                                          "without the message store"}
+                    hit = await self._resolve_row(unit, int(source))
+                    if hit is None:
+                        return {"status": "unresolved",
+                                "reason": "source_unresolved",
+                                "detail": f"no transcript row {source} in "
+                                          "this unit"}
                     continue
                 resolved_source = await self._resolve_named_subject(
                     unit, state, source)
