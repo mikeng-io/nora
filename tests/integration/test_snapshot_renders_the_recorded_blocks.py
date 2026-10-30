@@ -49,7 +49,7 @@ OVERRIDES = {"notes.enabled": True, "standing.enabled": True, "culture.enabled":
 
 #: Blocks that must be COMPARED, not merely allowed to match: a restore that
 #: rendered none of them would otherwise pass on an empty comparison.
-MUST_COMPARE = {"group_transcript", "notes", "standing", "culture"}
+MUST_COMPARE = {"group_transcript", "shared_cognitive_state", "culture"}
 
 
 def _spec(url: str, src: Source, workdir: Any) -> SubjectSpec:
@@ -135,6 +135,8 @@ async def test_a_restore_renders_the_blocks_the_turn_was_handed(
         )
         await live.deps.audit.append(message=tag, person_id="")
         recorded = await render_tag_blocks(live, message=tag, now=NOW)
+        assert "Friday ride" in recorded["shared_cognitive_state"]
+        assert "they are deciding whether friday still works" in recorded["shared_cognitive_state"]
         at = await _clock(engine)
 
         # THE SOURCE MOVES ON, in every tier the blocks read.

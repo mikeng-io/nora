@@ -6938,9 +6938,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         conditions: str = "", sources: list[str] | None = None,
         standing_room: str = "", standing_body: str = "",
         hold_open: str = "", i_owe: str = "",
-    ) -> dict[str, object]:
-        """Record what this turn concluded. Call this when you settled
-        something this turn.
+    ) -> dict:
+        """Record decisions. Call this when deciding.
 
         Say what you decided, what the options were, which way you lean,
         what would close it, and the rows or entries it rests on. The call
@@ -6967,7 +6966,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         """
         if not decision.strip():
             return {"status": "refused", "reason": "no_decision",
-                    "detail": "say what you concluded"}
+                    "detail": "say what you concluded",
+                    "note": "No conclusion was accepted. State the decision before trying again."}
         return {"status": "ok"}
 
     async def now() -> str:

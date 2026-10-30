@@ -380,3 +380,31 @@ async def test_trace_conclusions_and_unresolved_are_read_back():
         unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS, traces=store,
     )
     assert view2.unresolved == ()
+
+
+def test_render_preserves_positions_conclusions_and_withholds_their_content():
+    from nora.domain.shared_state import SharedEntry, SharedView
+
+    entries = (
+        SharedEntry(kind="standing", id="position", scope="room-a", status="open",
+                    subject="We await confirmation", detail="open: booking; owe: reply",
+                    at_ms=T0_MS),
+        SharedEntry(kind="conclusion", id="choice", scope="unit", status="recent",
+                    subject="Dinner", detail="Choose Friday; options: Thursday or Friday",
+                    refs=("note:n-1",), provenance="tag-1", at_ms=T0_MS),
+        SharedEntry(kind="conclusion", id="secret-choice", scope="unit", status="recent",
+                    subject="SECRET SUBJECT", detail="SECRET DETAIL", permitted=False),
+        SharedEntry(kind="act", id="secret-act", scope="room-b", status="done",
+                    subject="SECRET ACTION", destination="SECRET DEST", permitted=False),
+    )
+    rendered = render_shared_state(SharedView(
+        unit="u1", status="ok", as_of_ms=T0_MS, entries=entries,
+    ), now_ms=T0_MS)
+    assert rendered is not None
+    assert "We await confirmation" in rendered.body
+    assert "open: booking; owe: reply" in rendered.body
+    assert "Choose Friday; options: Thursday or Friday" in rendered.body
+    assert "note:n-1" in rendered.body
+    assert "tag-1" in rendered.body
+    assert "SECRET" not in rendered.body
+    assert "withheld" in rendered.body

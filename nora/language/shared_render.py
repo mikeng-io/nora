@@ -42,12 +42,23 @@ def render_shared_state(
     ]
     said = [e for e in view.entries if e.kind == "send"]
     findings = [e for e in view.entries if e.kind == "finding"]
+    positions = [e for e in view.entries if e.kind == "standing"]
     concluded = [e for e in view.entries if e.kind == "conclusion"]
     lines = [
         f"the unit's shared state as of {now.isoformat(timespec='seconds')} "
         f"— status={view.status}",
         f"coverage: {coverage}",
     ]
+    if positions:
+        lines.append("## Positions")
+        for e in positions:
+            if not e.permitted:
+                lines.append("- a position in another room · withheld")
+                continue
+            ago = f" · {age(e.at_ms, now)} ago" if e.at_ms else ""
+            lines.append(f"- {e.scope}{ago} · {e.subject}")
+            if e.detail:
+                lines.append(f"    {e.detail}")
     if open_entries:
         lines.append("## Open")
         for e in open_entries:
@@ -82,6 +93,9 @@ def render_shared_state(
     if recent:
         lines.append("## Recent")
         for e in recent[:12]:
+            if not e.permitted:
+                lines.append("- an act in another room · withheld")
+                continue
             ago = f" · {age(e.at_ms, now)} ago" if e.at_ms else ""
             delivery = (
                 "delivered" if e.delivery == "sent"
@@ -102,8 +116,16 @@ def render_shared_state(
     if concluded:
         lines.append("## Concluded lately")
         for e in concluded[:8]:
+            if not e.permitted:
+                lines.append("- a conclusion in another room · withheld")
+                continue
             ago = f" · {age(e.at_ms, now)} ago" if e.at_ms else ""
             lines.append(f"-{ago} · {e.subject}")
+            if e.detail:
+                lines.append(f"    {e.detail}")
+            evidence = " · ".join((*e.refs, e.provenance) if e.provenance else e.refs)
+            if evidence:
+                lines.append(f"    sources: {evidence}")
     for item in view.unresolved:
         lines.append(f"- unresolved · {item}")
     for e in findings[:8]:

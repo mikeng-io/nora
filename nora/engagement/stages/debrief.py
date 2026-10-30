@@ -553,7 +553,7 @@ async def run(
             # derives a position from narration.
             outcome = "no_conclusions"
             room_ref = f"{platform}:{trace.conversation_id}"
-            for item in conclusions:
+            for item in reversed(conclusions):
                 if item.name != "decision_conclude":
                     continue
                 delta = item.arguments
@@ -566,10 +566,13 @@ async def run(
                 at_room = delta.get("standing_room") or room_ref
                 if not body or at_room != room_ref:
                     continue
+                if len(str(body)) > max_chars:
+                    outcome = "unavailable"
+                    return
                 # One position per debrief: the newest recorded delta is the
                 # answer, and a bounded loop is the slot-hold contract.
                 try:
-                    await asyncio.wait_for(
+                    revision = await asyncio.wait_for(
                         standing_revise(
                             store=store, prior=prior,
                             platform=platform,
@@ -579,6 +582,7 @@ async def run(
                             if delta.get("hold_open") else None,
                             i_owe=str(delta["i_owe"])
                             if delta.get("i_owe") else None,
+                            working_set=prior.working_set if prior is not None else (),
                             last_folded_row_id=(
                                 prior.last_folded_row_id
                                 if prior is not None else None
@@ -587,7 +591,7 @@ async def run(
                         ),
                         timeout=store_timeout_seconds,
                     )
-                    outcome = "applied"
+                    outcome = "applied" if revision.committed else "unavailable"
                 except Exception:
                     log.exception(
                         "debrief: recorded standing delta failed (tag=%s)",

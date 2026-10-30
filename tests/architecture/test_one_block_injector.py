@@ -175,6 +175,7 @@ def test_a_module_that_writes_a_tag_by_hand_is_caught():
 #: `test_the_converted_list_is_not_quietly_shrinking` checks the list against the
 #: source, so a module that builds blocks and is missing here fails.
 CONVERTED = (
+    "nora/language/shared_render.py",
     "nora/language/comprehend_render.py",
     "nora/agent/standing_ledger.py",
     "nora/app/extraction.py",

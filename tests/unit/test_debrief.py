@@ -1595,3 +1595,28 @@ async def test_wired_route_without_results_keeps_prior_standing():
         ),
     )
     assert await store.read(platform="signal", conversation_id="g1") is None
+
+
+async def test_faithful_delta_preserves_findings_and_uses_the_latest_delta():
+    store = InMemoryStandingStore()
+    finding = WorkingSetItem(what="another option", source="web_search", found_at=1)
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="prior position",
+        fold_count=1, updated_at=1, working_set=(finding,),
+    ))
+    await _run(store=store, client=_NoSynthesis(), conclusions=(
+        _conclude_item({"decision": "first", "standing_body": "first position"}),
+        _conclude_item({"decision": "latest", "standing_body": "latest position"}),
+    ))
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row.body == "latest position"
+    assert row.working_set == (finding,)
+
+
+@pytest.mark.parametrize("body,max_chars", [(" ", 1200), ("x" * 20, 10)])
+async def test_faithful_delta_does_not_report_a_refused_write_as_applied(body, max_chars):
+    store, metrics = await _run(client=_NoSynthesis(), max_chars=max_chars, conclusions=(
+        _conclude_item({"decision": "recorded", "standing_body": body}),
+    ))
+    assert await store.read(platform="signal", conversation_id="g1") is None
+    assert _counter(metrics, "nora_debrief_total", outcome="applied") == 0
