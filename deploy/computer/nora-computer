@@ -98,8 +98,9 @@ sync_events() {
     offset=$(printf '%s\n' "$out" | tail -n 1 | sed -n 's/^-- offset=//p')
     [ -n "$offset" ] || return 1
     if printf '%s\n' "$out" | grep -q '^INSERT'; then
-        printf '%s\n' "$out" | (cd "$COMPOSE_DIR" && timeout 30 docker compose exec -T db \
-            psql -U nora -d nora -v ON_ERROR_STOP=1 -q) >/dev/null 2>&1 || return 1
+        printf '%s\n' "$out" | timeout 30 python3 "$HERE/../../scripts/secret_delivery.py" \
+            --runtime-root "$COMPOSE_DIR" --compose-exec -T db \
+            psql -U nora -d nora -v ON_ERROR_STOP=1 -q >/dev/null 2>&1 || return 1
     fi
     python3 "$HERE/lifecycle_event.py" mark --state "$SPOOL_STATE" --offset "$offset"
 }
