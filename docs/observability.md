@@ -61,6 +61,11 @@ Do not share Langfuse's existing ClickHouse data directory or schemas with SigNo
 No additional Loki, Grafana or Quickwit stack is part of this decision. No prompt
 management/evaluation platform or replacement for the eval runner is introduced.
 
+Related bundles keep their own responsibilities: [platform bridge operations](../design/platform-bridges/04-operations.md#short-linked-otel-operations-and-routing-amendment)
+carry queue lifetimes/links and the transitional route; [evaluation SDK compatibility](../design/evaluation/08-the-sdk-surface.md#7-observability-migration-compatibility--2026-10-30)
+requires populated Sessions after any span-format change. Neither duplicates the
+backend/cutover contract here.
+
 ### One instrumentation path
 
 Keep one `TracerProvider` per process. Application/domain spans use OTel; Strands

@@ -421,3 +421,22 @@ and check a populated `Session` reaches it.
 **If the 110 Agent-backed cases do not map either**, §1 and §4.2's surviving
 half both fall, and what is left is `OUTPUT_LEVEL`-shaped grading on a string,
 which is a materially smaller claim than this node makes.
+
+
+## 7. Observability migration compatibility — 2026-10-30
+
+The accepted [SigNoz target](../../docs/observability.md#accepted-direction-self-hosted-signoz)
+and [ADR 0034](../../docs/adr/0034-self-hosted-signoz-unifies-application-and-llm-observability.md)
+change the trace backend, not this bundle's SDK-native runner/Session ownership.
+Earlier measurements above remain evidence for the pinned SDK and configurations
+that produced them; they do not prove a different emitted message format maps.
+
+Before changing Strands' GenAI convention/content flags, replay generated
+Agent-backed and raw-model spans through the existing eval extractor and read the
+actual populated Session: input, output, tools and invocation boundaries. Token
+and message visibility in SigNoz is a separate backend acceptance; neither result
+proves the other. Preserve the existing redaction/content boundary. Do not replace
+the SDK mapper with a hand-built trajectory or treat an empty Session as PASS.
+Inventory Langfuse-specific result/readback consumers before retirement; changing
+the trace destination does not migrate their stored results or dataset history.
+The migration remains unbuilt; no eval was run by this documentation amendment.
