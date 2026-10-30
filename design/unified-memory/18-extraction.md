@@ -152,6 +152,10 @@ names only; this revision changes no existing code identifier.
 
 ## The switch gate
 
+> **2026-10-31 — historical acceptance below:** the switch gate and Q1 fixed
+> parity formula are superseded by [31 §6](31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31). Extraction and
+> source-preservation contracts remain; this is not a quality PASS.
+
 **Nora can answer what Honcho could.** Freeze a question set, have the new
 Views and Honcho's dialectic answer it, and judge the answers blind. This
 supersedes [45 §6 items 4–5](45-persona-adaptor.md#6-what-honcho-knew-is-re-derived-and-that-is-measured)

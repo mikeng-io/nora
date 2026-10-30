@@ -99,6 +99,9 @@ estimates were stale by three orders of magnitude, so these are `count(*)`.
 
 > 2026-10-21 (18 / ADR 0026): [18](18-extraction.md) and [§6](#6-honchos-architecture-mapped) amend the replacements below: source statements live in Record extraction, Character entries are the bounded card, and Views use `memory_search` + pre-fetch, with Nora’s own turn doing the reasoning Honcho’s dialectic agent does. The old `feed` and explicit-conclusion rows are historical: in the revised design every batch gets a reading; Q3 decides Honcho observations are measurement reference only for the first measure (Q1 gate and coverage comparisons), with nothing imported; decide any source-rechecked seed on that result. No unchecked conclusion becomes evidence.
 
+> **2026-10-31 — acceptance amendment:** the reply-replay switch threshold
+> quoted in the table below is historical, superseded by [31 §6](31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31).
+
 | Honcho output | replaced by | open |
 |---|---|---|
 | `search_memory`, `search_memory_workspace` (Cognition's main use) | the derived index, scoped per room or unit, lexical + vector ([00](00-intent.md) part 1) | the bake-off ([20](20-embedding-bakeoff.md)); parity with Honcho's search measured on the Cognition session's own recorded queries |

@@ -1,5 +1,13 @@
 # Unified memory: one memory of her own, searched in one way
 
+> **2026-10-31 — current acceptance:** [31 §6](31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31) supersedes the
+> fixed sample-size and parity switch gates quoted in this overview and its
+> historical sequence. It owns bounded validation and the delivery order;
+> [70](70-honcho-cutover.md) retains the separate switch/14-day observation/removal
+> procedure. Earlier ADR 0026 naming below is historical: its status is superseded
+> by ADR 0029; the current Notebook kinds are
+> [note, topic, lesson, profile, decision](../notebook-memory-types/00-design.md).
+
 Status: **proposed**, recorded 2026-10-14. Nothing here is built, and saving
 this bundle changes no runtime behaviour. No decision number is allocated.
 

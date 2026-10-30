@@ -579,7 +579,9 @@ unavailable results. Judge Coherence (one claim across slots), Consistency
 and evidence media considered). Keep raw evidence and classifications on
 norty; only sanitized aggregate counts leave it. This doc neither reads
 production nor measures the event share. Documentation tests prove links and
-structure, not semantic acceptance. The Q1 switch gate remains unchanged.
+structure, not semantic acceptance. The earlier Q1 switch formula is historical:
+[31 §6](31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31)
+supersedes its fixed sample/parity requirements (operator, 2026-10-31).
 
 ## 6. Where it lands in the phases
 
