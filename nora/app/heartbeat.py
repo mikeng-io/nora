@@ -63,7 +63,7 @@ from nora.domain.reminders import (
     Reminder,
     ReminderState,
     ReminderStore,
-    open_proactive_subject,
+    proactive_subject,
 )
 from nora.engagement.slots import ConversationSlots, Key
 from nora.obs.metrics import Metrics
@@ -415,19 +415,41 @@ class HeartbeatLoop:
         screen has no eyes for. `None` when nothing delivered it yet; a read
         that fails refuses — firing on an unchecked premise is the failure
         mode this boundary exists for."""
-        subject = open_proactive_subject(row)
+        subject = proactive_subject(row)
         if subject is None:
             return None
         try:
+            # The whole unit, not just this row's room: the incident was the
+            # same act landing in ANOTHER room, which a destination-scoped
+            # check can never see. A delivered same-act row with a DIFFERENT
+            # plan id supersedes this one; rows sharing the plan are the one
+            # deliberate multi-room act and do not supersede each other.
+            policy = getattr(self, "_policy", None)
+            convo = (
+                policy.conversation(row.platform, row.conversation_id)
+                if policy is not None else None
+            )
+            unit_rooms = [
+                (c.platform, c.primary_id)
+                for c in getattr(policy, "conversations", ()) or ()
+                if convo is not None and c.unit == convo.unit
+            ] or [(row.platform, row.conversation_id)]
+            plan = (row.payload or {}).get("plan_id")
+            hits = await self._store.recent_in(
+                unit_rooms,
+                requester_person_id=row.requester_person_id,
+                since=row.created_at, limit=50,
+            )
+            if len(hits) >= 50:
+                # The read cut off: an earlier delivered row could sit past
+                # the cap, so «no delivered act» is not established.
+                return ReminderState.FAILED, "failed_error"
             delivered = [
-                r for r in await self._store.recent_in(
-                    [(row.platform, row.conversation_id)],
-                    requester_person_id=row.requester_person_id,
-                    since=row.created_at, limit=50,
-                )
+                r for r in hits
                 if r.id != row.id
-                and open_proactive_subject(r) == subject
+                and proactive_subject(r) == subject
                 and r.outcome == "sent"
+                and (r.payload or {}).get("plan_id") != plan
             ]
         except Exception:
             log.exception(

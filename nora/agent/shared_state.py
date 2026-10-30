@@ -78,7 +78,6 @@ async def read_shared(
     sources: list[tuple[str, str]] = []
     partial = False
     room_set = set(rooms)
-    dest = f"{room[0]}:{room[1]}" if room else None
 
     def scoped(entry_scope: str, entry_room: tuple[str, str] | None = None,
                *, ledger_entry: Any = None) -> bool:
@@ -87,16 +86,13 @@ async def read_shared(
         entries, its own room's, and ledger entries the permit admits."""
         if room is None:
             return True
-        if entry_scope == "unit":
-            in_scope = True
-        elif entry_room is not None:
-            in_scope = entry_room == room
-        else:
-            in_scope = entry_scope == dest
-        if not in_scope:
-            return False
-        if ledger_entry is not None and permit is not None:
-            return permit(ledger_entry)
+        # DEC-231: the unit is the read boundary — a destination inside it
+        # sees the unit's whole internal state. The ONE kind with a narrower
+        # canonical rule is the ledger, whose `permit` (lineage's own
+        # `ledger_permits`) decides entry by entry; every other kind is unit
+        # knowledge the room already shares.
+        if ledger_entry is not None:
+            return True if permit is None else permit(ledger_entry)
         return True
 
     if notes is not None:
@@ -106,9 +102,12 @@ async def read_shared(
             for n in open_notes:
                 detail = " · ".join(
                     part for part in (
+                        getattr(n, "description", "") or "",
                         getattr(n, "uncertainty", "") or "",
                         f"closes when {n.closing_condition}"
                         if getattr(n, "closing_condition", "") else "",
+                        getattr(n, "review", "") and f"review: {n.review}",
+                        getattr(n, "reminds", "") and f"reminds: {n.reminds}",
                     ) if part
                 )
                 entries.append(SharedEntry(
@@ -186,7 +185,20 @@ async def read_shared(
                 position = await standing.read(
                     platform=platform, conversation_id=conversation_id)
                 scope = f"{platform}:{conversation_id}"
-                allowed = scoped(scope, (platform, conversation_id))
+                if position is not None:
+                    detail = " · ".join(
+                        part for part in (
+                            position.hold_open and f"open: {position.hold_open}",
+                            position.i_owe and f"owe: {position.i_owe}",
+                        ) if part
+                    )
+                    entries.append(SharedEntry(
+                        kind="standing", id=f"pos#{scope}", scope=scope,
+                        status="open", subject=position.body,
+                        detail=detail, at_ms=position.updated_at,
+                        provenance="fold",
+                        permitted=scoped(scope, (platform, conversation_id)),
+                    ))
                 for item in getattr(position, "working_set", ()) or ():
                     findings += 1
                     detail = item.what
@@ -197,7 +209,7 @@ async def read_shared(
                         scope=scope, status="open",
                         subject=detail, at_ms=item.found_at,
                         provenance=f"fold:{item.source}",
-                        permitted=allowed,
+                        permitted=scoped(scope, (platform, conversation_id)),
                     ))
             sources.append(("findings", "ok" if findings else "nothing_found"))
         except Exception:
@@ -283,9 +295,11 @@ async def read_shared(
                     "delivered_message_ids"
                 ):
                     delivery = "sent"
-                elif not fired_ms or (sends_read_ok and not any(
-                    h.row.ts >= created_ms for h in room_sends
-                )):
+                elif not fired_ms or (
+                    sends_read_ok
+                    and created_ms >= now_ms - _SEND_LOOKBACK_MS
+                    and not any(h.row.ts >= created_ms for h in room_sends)
+                ):
                     delivery = "none"
                 else:
                     delivery = "unknown"

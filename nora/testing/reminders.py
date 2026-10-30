@@ -33,6 +33,7 @@ from datetime import datetime
 from uuid import UUID
 
 from nora.domain.reminders import (
+    ConflictingProactiveActError,
     DuplicateProactiveNoteError,
     DuplicateProactiveSubjectError,
     DuplicateReminderError,
@@ -44,6 +45,7 @@ from nora.domain.reminders import (
     open_proactive_note,
     open_proactive_subject,
     plan_successor,
+    proactive_subject,
 )
 
 
@@ -92,12 +94,31 @@ class FakeReminderStore:
 
     async def create_many(
         self, reminders: Sequence[Reminder], *, arbitration_key: str | None = None,
+        arbitration_rooms: Sequence[tuple[str, str]] = (),
     ) -> None:
         """`create`'s contract for a batch, ATOMIC the way the SQL tx is:
         every check first, no `_put` until each row clears — a refusal leaves
         the store untouched, matching the rolled-back transaction. The
         advisory lock has no analogue in-process (each check+put pair is
-        already `await`-free), so `arbitration_key` is accepted and unused."""
+        already `await`-free), so `arbitration_key` is accepted and unused;
+        `arbitration_rooms` gets the same cross-room check the SQL tx makes."""
+        if arbitration_rooms:
+            room_set = set(arbitration_rooms)
+            dests = {(r.platform, r.conversation_id) for r in reminders}
+            subjects = {
+                s for r in reminders if (s := proactive_subject(r)) is not None
+            }
+            for r in self._rows.values():
+                key = proactive_subject(r)
+                if (
+                    key is not None and key in subjects
+                    and open_proactive_subject(r) is not None
+                    and (r.platform, r.conversation_id) in room_set
+                    and (r.platform, r.conversation_id) not in dests
+                ):
+                    raise ConflictingProactiveActError(
+                        key, r.platform, r.conversation_id,
+                    )
         pending: list[Reminder] = []
         for reminder in reminders:
             if reminder.id in self._rows:

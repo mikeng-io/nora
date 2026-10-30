@@ -933,3 +933,68 @@ async def test_a_note_the_rows_unit_cannot_reach_fails_closed():
     resolved = await store.get(row.id)
     assert resolved.state is ReminderState.FAILED
     assert resolved.outcome == "failed_error"
+
+
+async def test_superseded_refuses_a_claimed_act_already_delivered():
+    """The parent repro: a FIRING row whose (subject,action) already has a
+    DONE+sent row must resolve, not fire — `open_proactive_subject` gated on
+    open state made the delivered key unreadable."""
+    from dataclasses import replace
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from nora.app.heartbeat import HeartbeatLoop
+    from nora.domain.reminders import Reminder, ReminderState
+    from nora.testing.reminders import FakeReminderStore
+
+    now = datetime.now(UTC)
+    row = Reminder(
+        id=uuid4(), kind="proactive", requester_person_id="synthetic-ai",
+        platform="signal", conversation_id="generated-room",
+        conversation_type="group", text="what time",
+        created_at=now - timedelta(hours=2), due_at=now, fired_at=now,
+        state=ReminderState.FIRING, outcome=None,
+        payload={"subject_kind": "decision", "subject_id": "generated-decision",
+                 "action": "ask-time", "plan_id": "p1"},
+    )
+    sent = replace(
+        row, id=uuid4(), state=ReminderState.DONE, outcome="sent",
+        fired_at=now - timedelta(minutes=30), payload={**row.payload, "plan_id": "p2"},
+    )
+    store = FakeReminderStore()
+    await store.create(sent)
+    loop = SimpleNamespace(_store=store)
+    refusal = await HeartbeatLoop._superseded(loop, row)
+    assert refusal == (ReminderState.FAILED, "failed_superseded")
+
+
+async def test_superseded_lets_a_same_plan_row_fire():
+    """A deliberate multi-room act (same `plan_id`) is not superseded by its
+    sibling's delivery — the plan is one producer intent."""
+    from dataclasses import replace
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from nora.app.heartbeat import HeartbeatLoop
+    from nora.domain.reminders import Reminder, ReminderState
+    from nora.testing.reminders import FakeReminderStore
+
+    now = datetime.now(UTC)
+    row = Reminder(
+        id=uuid4(), kind="proactive", requester_person_id="synthetic-ai",
+        platform="signal", conversation_id="generated-room",
+        conversation_type="group", text="what time",
+        created_at=now - timedelta(hours=2), due_at=now, fired_at=now,
+        state=ReminderState.FIRING, outcome=None,
+        payload={"subject_kind": "decision", "subject_id": "generated-decision",
+                 "action": "ask-time", "plan_id": "p1"},
+    )
+    sibling = replace(
+        row, id=uuid4(), conversation_id="other-room",
+        state=ReminderState.DONE, outcome="sent",
+        fired_at=now - timedelta(minutes=30),
+    )
+    store = FakeReminderStore()
+    await store.create(sibling)
+    loop = SimpleNamespace(_store=store)
+    assert await HeartbeatLoop._superseded(loop, row) is None

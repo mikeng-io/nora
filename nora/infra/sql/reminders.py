@@ -54,6 +54,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora.domain.reminders import (
     OPEN_STATES,
     PROACTIVE_KIND,
+    ConflictingProactiveActError,
     DuplicateProactiveNoteError,
     DuplicateProactiveSubjectError,
     DuplicateReminderError,
@@ -68,6 +69,7 @@ from nora.domain.reminders import (
     open_proactive_note,
     open_proactive_subject,
     plan_successor,
+    proactive_subject,
 )
 from nora.infra.sql.schema import REMINDERS
 
@@ -209,15 +211,18 @@ class SqlReminderStore:
 
     async def create_many(
         self, reminders: Sequence[Reminder], *, arbitration_key: str | None = None,
+        arbitration_rooms: Sequence[tuple[str, str]] = (),
     ) -> None:
         """`create` for a batch, in ONE transaction: the advisory lock (when
         `arbitration_key` names a unit) serialises check-and-insert against
         every other writer keyed the same — across processes, which the
         per-destination unique index cannot cover — and any raised duplicate
-        aborts the transaction, so no partial batch can persist."""
+        or `ConflictingProactiveActError` aborts the transaction, so no
+        partial batch can persist."""
         rows = [normalise_reminder(r) for r in reminders]
         if not rows:
             return
+        dests = {(r.platform, r.conversation_id) for r in rows}
         try:
             async with self._engine.begin() as conn:
                 if arbitration_key is not None:
@@ -225,12 +230,53 @@ class SqlReminderStore:
                         sa.text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
                         {"k": arbitration_key},
                     )
+                if arbitration_rooms:
+                    await self._check_act_conflicts(
+                        conn, rows, dests, set(arbitration_rooms),
+                    )
                 for row in rows:
                     await self._insert_one(conn, row)
         except IntegrityError as exc:
             if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
                 raise
             raise DuplicateReminderError(rows[0].id) from exc
+
+    async def _check_act_conflicts(
+        self, conn: Any, rows: Sequence[Reminder],
+        dests: set[tuple[str, str]], rooms: set[tuple[str, str]],
+    ) -> None:
+        """The cross-room arbiter, run INSIDE the locked transaction: for
+        every subject the batch carries, an open row at a unit room the batch
+        does not cover is a conflict — whatever `check_remind` ruled a moment
+        ago, THIS read is what races a second process against."""
+        subjects = {
+            s for r in rows if (s := proactive_subject(r)) is not None
+        }
+        if not subjects:
+            return
+        in_rooms = sa.or_(*(
+            sa.and_(REMINDERS.c.platform == p, REMINDERS.c.conversation_id == c)
+            for p, c in rooms
+        ))
+        existing = (await conn.execute(
+            sa.select(
+                REMINDERS.c.platform, REMINDERS.c.conversation_id,
+                REMINDERS.c.payload["subject_kind"].astext.label("sk"),
+                REMINDERS.c.payload["subject_id"].astext.label("sid"),
+                sa.func.coalesce(
+                    REMINDERS.c.payload["action"].astext, "").label("act"),
+            ).where(
+                REMINDERS.c.kind == PROACTIVE_KIND,
+                REMINDERS.c.state.in_(OPEN_STATES),
+                in_rooms,
+            )
+        )).all()
+        for row in existing:
+            key = (row.sk, row.sid, row.act)
+            if key in subjects and (row.platform, row.conversation_id) not in dests:
+                raise ConflictingProactiveActError(
+                    key, row.platform, row.conversation_id,
+                )
 
     async def _insert_one(self, conn: Any, row: Reminder) -> None:
         """One INSERT of `create`'s contract, against an open connection:

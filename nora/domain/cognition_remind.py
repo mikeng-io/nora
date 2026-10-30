@@ -30,6 +30,10 @@ class PendingRemind:
     #: an unsubjected row can never conflict-match a resolved one.
     subject: tuple[str, str] | None = None
     action: str = ""
+    #: The row's `intent` (`tell`/`ask`) — same subject+intent under a
+    #: different action key is a renamed duplicate until the producer says
+    #: the second act is a new one on purpose.
+    intent: str = ""
 
 
 @dataclass(frozen=True, slots=True)

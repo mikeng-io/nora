@@ -245,23 +245,61 @@ def test_nothing_found_renders_no_block():
     assert render_shared_state(view, now_ms=T0_MS) is None
 
 
-async def test_a_destination_read_withholds_other_rooms_content():
-    """The disclosure boundary a destination read must hold: this room's
-    sends stay readable, another room's are entries that exist but carry no
-    content — existence visible, words withheld."""
-    room_b_send = _send(11, T0_MS - 60_000)
-    room_b_send = SimpleNamespace(
-        platform="signal", conversation_id="room-b", row=room_b_send.row,
+async def test_a_destination_read_applies_the_real_ledger_permit():
+    """The only narrower-than-unit rule is the ledger's own `ledger_permits`,
+    run against a real `RenderRoom` and `LedgerEntry`: an unnamed listener
+    in the destination room withholds a room-scoped ledger entry — existence,
+    never content, and no raw room ids — while other kinds stay unit-visible."""
+    from nora.agent.standing_ledger import ledger_permits
+    from nora.domain.lineage import LiveRoom, RenderRoom, RoomFacts
+    from nora.domain.standing_ledger import LedgerEntry
+
+    class _Ledger:
+        async def read(self, unit, platform, conversation_id):
+            return (entry,) if (platform, conversation_id) == ROOM_B else ()
+
+    entry = LedgerEntry(
+        id="d1", kind="decision", unit="u1", scope="room",
+        platform="signal", conversation_id="room-b",
+        revision=1, status="open", subject="pick the venue",
+        opened_at=T0_MS - 60_000, last_revised_at=T0_MS - 60_000,
+        body="we lean toward the pier",
     )
-    own_send = _send(10, T0_MS - 30_000)
+    target = RenderRoom(
+        RoomFacts(
+            "signal", frozenset({"room-a"}), "u1",
+            frozenset({"kit", "ana"}), primary_id="room-a", label="room-a",
+        ),
+        live=LiveRoom(frozenset({"kit", "ana"}), unnamed=1),
+        mode="off",
+    )
+
+    def permit(e):
+        return ledger_permits(e, target)
+
     view = await read_shared(
         unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS,
-        room=ROOM_A,
-        record_query=_Sends([own_send, room_b_send]),
+        room=ROOM_A, permit=permit,
+        ledger=_Ledger(),
+        record_query=_Sends([
+            _send(10, T0_MS - 30_000),
+            SimpleNamespace(platform="signal", conversation_id="room-b",
+                            row=_send(11, T0_MS - 60_000).row),
+        ]),
     )
-    by_room = {e.scope: e for e in view.entries if e.kind == "send"}
-    assert by_room["signal:room-a"].permitted is True
-    assert by_room["signal:room-b"].permitted is False
+    decision = next(e for e in view.entries if e.kind == "decision")
+    assert decision.permitted is False
+    # Unit-internal knowledge stays whole for the other kinds (DEC-231):
+    # the send in the other room is readable to this unit's destination.
+    send = next(e for e in view.entries if e.kind == "send")
+    assert send.permitted is True
+    block = render_shared_state(view, now_ms=T0_MS)
+    assert block is not None
+    assert "withheld" in block.body
+    # The withheld entry leaks neither its room nor its content; other rooms'
+    # unit-visible kinds still name their room honestly.
+    assert "pier" not in block.body
+    assert "venue" not in block.body
 
 
 async def test_a_unit_read_sees_every_room():

@@ -144,6 +144,17 @@ def open_proactive_subject(row: Reminder) -> tuple[str, str, str] | None:
     expected to have surfaced `unresolved` before reaching here."""
     if row.kind != PROACTIVE_KIND or row.state.value not in OPEN_STATES:
         return None
+    return proactive_subject(row)
+
+
+def proactive_subject(row: Reminder) -> tuple[str, str, str] | None:
+    """The resolved (subject_kind, subject_id, action) key on ANY proactive
+    row, whatever its state. `open_proactive_subject` adds the open-state
+    gate for the insert arbiter; reads that reason about a CLOSED row — a
+    delivered one the fire recheck is matching against — need the key
+    without it."""
+    if row.kind != PROACTIVE_KIND:
+        return None
     payload = row.payload or {}
     kind = payload.get("subject_kind")
     sid = payload.get("subject_id")
@@ -151,6 +162,23 @@ def open_proactive_subject(row: Reminder) -> tuple[str, str, str] | None:
         return None
     action = payload.get("action")
     return (kind, sid, action if isinstance(action, str) else "")
+
+
+class ConflictingProactiveActError(NoraError):
+    """The batch's (subject, action) already has an OPEN proactive row at a
+    destination the batch does not cover — the cross-room conflict the
+    create-time check surfaces, enforced inside the locked transaction so a
+    precheck cannot go stale between read and insert."""
+
+    def __init__(
+        self, subject: tuple[str, str, str], platform: str, conversation_id: str,
+    ) -> None:
+        super().__init__(
+            f"act {subject} already pending at {platform}:{conversation_id}"
+        )
+        self.subject = subject
+        self.platform = platform
+        self.conversation_id = conversation_id
 
 
 class DuplicateProactiveSubjectError(NoraError):
@@ -690,6 +718,7 @@ class ReminderStore(Protocol):
 
     async def create_many(
         self, reminders: Sequence[Reminder], *, arbitration_key: str | None = None,
+        arbitration_rooms: Sequence[tuple[str, str]] = (),
     ) -> None:
         """The batch variant of `create`, ATOMIC: every row lands or none
         does — a conflicting row refuses the whole insert, so a caller
@@ -700,8 +729,12 @@ class ReminderStore(Protocol):
         advisory lock that serialises the check-and-insert across processes
         for that key — the caller passes its unit so two writers on different
         processes cannot interleave a pending read between each other's
-        creates. `None` skips the lock: the in-memory double accepts and
-        ignores it. Duplicate errors are `create`'s own.
+        creates. `arbitration_rooms` names the unit's rooms: inside the lock,
+        an open proactive row carrying the same (subject, action) at a room
+        the batch does not cover raises `ConflictingProactiveActError` — the
+        cross-room check `check_remind` makes, enforced under the lock the
+        precheck cannot hold. `None` skips the lock. Duplicate errors are
+        `create`'s own.
         """
         ...
 

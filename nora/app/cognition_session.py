@@ -143,6 +143,7 @@ from nora.domain.ports import (
     StimulusStore,
 )
 from nora.domain.reminders import (
+    ConflictingProactiveActError,
     DuplicateProactiveNoteError,
     DuplicateProactiveSubjectError,
     DuplicateReminderError,
@@ -694,6 +695,10 @@ class CognitionSessionRunner:
         #: to see (`SharedView.unresolved`) — the turn-evidence retention for
         #: an act that could not be grounded. Bounded per unit.
         self._unresolved: dict[str, list[str]] = {}
+        #: Write-verb outcomes the session concluded this run, carried so the
+        #: NEXT session's shared view shows them as conclusions before any
+        #: Cognition consolidation exists.
+        self._concluded: dict[str, list[str]] = {}
         self._ai_peer = ai_peer
         self._stimuli = stimulus_store
         self._agent_runner = agent_runner
@@ -765,7 +770,13 @@ class CognitionSessionRunner:
         except Exception:
             log.exception("could not count %s", name)
 
-    def _counted(self, verb: str, call: Any) -> Any:
+    _WRITE_VERBS = frozenset({
+        "remind", "remind_move", "remind_cancel", "wake_after", "wake_cancel",
+        "note_create", "note_update", "note_merge", "note_set_status",
+        "decision", "commitment", "thread", "ledger_apply", "event", "memo",
+    })
+
+    def _counted(self, unit: str, verb: str, call: Any) -> Any:
         """A verb whose every refusal is counted by rule
         (`nora_cognition_refused_total{verb,rule}`): one place, so no verb and
         no early return can refuse without being counted. `unavailable` (a read
@@ -795,6 +806,15 @@ class CognitionSessionRunner:
                 )
                 if status == "refused" and verb in _PACE_VERBS:
                     self._inc("nora_self_wake_total", outcome="refused")
+            elif status == "ok" and verb in self._WRITE_VERBS:
+                # The turn's own concluded writes, immediately visible in the
+                # shared view the next session reads — before any Cognition
+                # consolidation has run, and distinct from Notebook judgments.
+                line = f"{verb} concluded"
+                carried = self._concluded.setdefault(unit, [])
+                if line not in carried:
+                    carried.append(line)
+                    del carried[:-8]
             return result
         return counted
 
@@ -1148,6 +1168,7 @@ class CognitionSessionRunner:
                 shared_view = await self._shared(
                     unit=unit, now_ms=now_ms,
                     wakes=await self._pending(unit, now_ms),
+                    conclusions=self._concluded.get(unit, ()),
                     unresolved=self._unresolved.get(unit, ()),
                 )
             except Exception:
@@ -2528,6 +2549,7 @@ class CognitionSessionRunner:
             intent: Literal["tell", "ask"], text: str, subject: str, action: str,
             subject_rows: list[str], at: str,
             room: str = "", also_rooms: list[str] | None = None,
+            new_action: bool = False,
         ) -> dict[str, object]:
             """Reach a room at a time: when the moment comes you get a turn in
             that room to say something to it or ask it something, and you may
@@ -2567,6 +2589,10 @@ class CognitionSessionRunner:
                     reach, each as `platform:conversation_id`. An act the unit
                     already has pending somewhere else is refused unless you
                     name that room here or in `room`.
+                new_action: Optional. True only when this is a DIFFERENT act
+                    on a subject an `intent` act already waits on: a pending
+                    act's action key is the stable name of what is pending, so
+                    a second act needs your say-so, not a fresh spelling.
             """
             resolved = _room_of(room, state)
             if isinstance(resolved, dict):
@@ -2627,6 +2653,19 @@ class CognitionSessionRunner:
                 )
                 if refusal is not None:
                     return _refused(refusal.reason, refusal.detail)
+                same_intent = {
+                    p.action for p in pending
+                    if p.subject == resolved_subject
+                    and p.intent == intent
+                } - {action_key}
+                if same_intent and not new_action:
+                    return _refused(
+                        "conflict_same_subject",
+                        f"an {intent!r} act is already pending on that subject "
+                        f"as {sorted(same_intent)[0]!r}: schedule under the same "
+                        "action if it is the same act, or pass new_action=True "
+                        "if this is a different question",
+                    )
                 # Every destination validated BEFORE a row exists: proactive
                 # policy and the requester cap apply per room, so a batch
                 # refused late is refused whole.
@@ -2639,7 +2678,7 @@ class CognitionSessionRunner:
                             f"you may not reach {dest_platform}:{dest_cid} "
                             "unasked",
                         )
-                link: dict[str, str] = {}
+                link: dict[str, str] = {"plan_id": str(uuid.uuid4())}
                 if subject_kind == "note":
                     shown_note = await self._notes.read(
                         unit=unit, note_id=subject_id)
@@ -2663,11 +2702,18 @@ class CognitionSessionRunner:
                 }
                 since = datetime.fromtimestamp(
                     (self._now_ms() - 7 * 24 * 3600_000) / 1000, UTC)
+                recent = await self._reminders.recent_in(
+                    destinations, requester_person_id=self._ai_peer,
+                    since=since, limit=50,
+                )
+                if len(recent) >= 50:
+                    # The read cut off: an earlier delivered act could sit
+                    # past the cap, so «not delivered» is not established.
+                    return {"status": "unavailable",
+                            "reason": "delivered_check_incomplete",
+                            "detail": "the delivered check could not be completed"}
                 delivered = [
-                    r for r in await self._reminders.recent_in(
-                        destinations, requester_person_id=self._ai_peer,
-                        since=since, limit=50,
-                    )
+                    r for r in recent
                     if open_proactive_subject(r) == (
                         subject_kind, subject_id, action_key,
                     ) and r.outcome == "sent"
@@ -2698,13 +2744,17 @@ class CognitionSessionRunner:
                         "the same act is already pending for the room(s) named",
                     )
                 try:
-                    # ONE transaction, advisory-locked on the unit: every
-                    # destination lands or none does, against any writer in
-                    # any process — a refused batch leaves no orphan act.
+                    # ONE transaction, advisory-locked on the unit with the
+                    # cross-room conflict check INSIDE it: every destination
+                    # lands or none does, against any writer in any process.
                     await self._reminders.create_many(
                         rows, arbitration_key=f"proactive:{unit}",
+                        arbitration_rooms=[
+                            tuple(k.split(":", 1)) for k in state.rooms
+                        ],
                     )
-                except (DuplicateProactiveNoteError,
+                except (ConflictingProactiveActError,
+                        DuplicateProactiveNoteError,
                         DuplicateProactiveSubjectError,
                         DuplicateReminderError):
                     return _refused(
@@ -2880,7 +2930,7 @@ class CognitionSessionRunner:
             verbs = (memory_propose, profile_revise, *verbs)
         if state.historical:
             verbs = (memory_propose, profile_revise, close)
-        return [*read_tools, *(self._counted(v.__name__, v) for v in verbs)]
+        return [*read_tools, *(self._counted(unit, v.__name__, v) for v in verbs)]
 
     # `created_by_session_id=None` on every pace move and cancel above, on
     # purpose: the pending seam returns only rows COGNITION wrote, so «own»
@@ -2926,6 +2976,7 @@ class CognitionSessionRunner:
                     else None
                 ),
                 action=action if isinstance(action, str) else "",
+                intent=str(payload.get("intent") or ""),
             ))
         return out
 
