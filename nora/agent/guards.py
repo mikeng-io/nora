@@ -838,7 +838,7 @@ class ReplyGuard(HookProvider):
         # not on an id: the injected index carries title + description and no id,
         # so the title is the only handle the model can name and the only one that
         # reaches this guard. `evaluate` sees the raw tool_use the model emitted;
-        # `note_update`'s own tool closure holds the id->head map the
+        # `note_revise`'s own tool closure holds the id->head map the
         # compare-and-swap needs, and refuses separately when the title resolved
         # to a note this turn never read. Two keys for one fact: this one is what
         # the model is told, that one is what the write is bound to, and they
@@ -1070,7 +1070,7 @@ class ReplyGuard(HookProvider):
         # ever entitled to call it at all".
         #
         # It is a veto and not advice because the injected index carries title and
-        # description only, nowhere near enough to revise a note. `note_update`
+        # description only, nowhere near enough to revise a note. `note_revise`
         # REPLACES the note's rendered body, so a revision written without the body
         # in front of her destroys the arrangement that is the value of the tier,
         # silently: the prior revision survives in the table, but nothing in the
@@ -1083,15 +1083,15 @@ class ReplyGuard(HookProvider):
         #
         # Costs no budget: `_after_tool` never `record`s a cancelled call (DEC-33),
         # so read-then-revise is still two calls against a budget of two.
-        if tool_name == "note_update":
+        if tool_name == "note_revise":
             title = (tool_input or {}).get("title") or ""
             if note_handle(title) not in self._notes_read:
                 # Beside `_veto`'s own `nora_guard_vetoes_total{rule="R-55"}`, not
                 # instead of it: that series answers "which rule fired" across every
-                # guard; this one answers "why did a note_update not land", whose
+                # guard; this one answers "why did a note_revise not land", whose
                 # other two reasons are in the TOOL and never reach a veto.
                 self._metrics.inc(
-                    "nora_note_update_refused_total", reason="not_read")
+                    "nora_note_revise_refused_total", reason="not_read")
                 return self._veto(
                     "R-55",
                     f"You have not read {title!r} this turn. Call note_read on it "

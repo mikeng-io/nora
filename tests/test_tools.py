@@ -214,7 +214,7 @@ def test_every_declared_tool_is_built(wiring):
         # Running build context plus public release metadata and notes.
         "version_list", "version_read",
         # The note tier's four verbs.
-        "note_read", "note_search", "note_create", "note_update",
+        "note_read", "note_search", "note_create", "note_revise",
         # DEC-306: one kept memo of the unit.
         "memo_read",
         # The remember verb — the conclusion write lane.
@@ -1840,13 +1840,13 @@ def test_the_note_schemas_do_not_teach_her_a_phrase_to_say_out_loud(wiring):
     def described(name: str) -> str:
         return " ".join(wiring["tools"][name].tool_spec["description"].split()).lower()
 
-    for name in ("note_read", "note_update", "note_create", "note_search"):
+    for name in ("note_read", "note_revise", "note_create", "note_search"):
         assert "open note" not in described(name), (
             f"{name}'s schema teaches «open note» — the tool layer's phrase, "
             "not the room's, and she says what her schemas call things."
         )
     # The latch and the three states are untouched by the rephrasing.
-    update = described("note_update")
+    update = described("note_revise")
     assert "you must call note_read on this note first, in this same turn" in update
     for state in ("`ok`", "`refused`", "`unavailable`"):
         assert state.strip("`") in update
@@ -1859,7 +1859,7 @@ def test_a_note_handle_round_trips_through_an_escaped_index():
     """The title IS the handle, and every index escapes what it renders (R-13):
     `note_render` and the proactive `<open_notes>` both put it through
     `escape`. So a note called «Dinner & drinks» must not reach the model as
-    «Dinner &amp;amp; drinks»: `note_read`/`note_update`/`remind` tell it to
+    «Dinner &amp;amp; drinks»: `note_read`/`note_revise`/`remind` tell it to
     type the title back "exactly as `<notes>` shows it", and the stored title
     has no entity in it.
 

@@ -112,6 +112,8 @@ _SNAPSHOT_SHA256 = (
 _RENAMED_SINCE: frozenset[str] = frozenset({
     # Replaced by the public release list/read pair.
     "version",
+    # One vocabulary: the tag and session paths both append revisions.
+    "note_update",
     # DEC-201: retired into `x_read` and `x_search`, which meet the pattern.
     "social_fetch",
     # DEC-237: renamed to the event verbs and `event_search`.
@@ -184,3 +186,54 @@ def test_the_shape_accepts_the_pattern_and_refuses_the_rest() -> None:
     for bad in ("read_instagram", "instagram", "instagramread", "instagram_get",
                 "my_rooms", "read_room"):
         assert not shape.match(bad), bad
+
+
+# Session control and pace are not Notebook kinds. note_merge is explicitly
+# retained by 29 section 4 pending its own routing measurement.
+_SESSION_CONTROLS = frozenset({
+    "close", "note_merge", "wake_at", "wake_move", "wake_cancel",
+    "remind", "remind_move", "remind_cancel",
+})
+
+
+async def _session_names() -> set[str]:
+    """Build the real closures, including WakeMemory's proposal/profile surface."""
+    from nora.domain.stimuli import UnitView
+    from tests.unit.test_cognition_session_runner import NOW, _pending, _runner, wake_memory
+
+    names: set[str] = set()
+    for memory in (None, wake_memory()):
+        runner, _, spy = _runner(memory=memory)
+        await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
+            last_activity_ms=None, last_wake=None), now_ms=NOW)
+        names.update(spy.last_tool_names)
+    assert {"memory_propose", "profile_revise", "note_revise", "memo_create"} <= names
+    return names
+
+
+def _check_session_names(names: set[str]) -> None:
+    bad = sorted(n for n in names if not _CHARSET.fullmatch(n)
+                 or (n not in _SESSION_CONTROLS and not _shape().fullmatch(n)))
+    assert not bad, f"misnamed session tools: {bad}"
+
+
+async def test_session_built_tools_use_domain_then_verb() -> None:
+    _check_session_names(await _session_names())
+
+
+async def test_a_seeded_misnamed_session_tool_fails_the_live_check(monkeypatch) -> None:
+    from nora.app.cognition_session import CognitionSessionRunner
+
+    original = CognitionSessionRunner._build_tools
+
+    async def seeded(self, **kwargs):
+        tools = await original(self, **kwargs)
+
+        async def read_notebook():
+            return {"status": "nothing_found"}
+
+        return [*tools, read_notebook]
+
+    monkeypatch.setattr(CognitionSessionRunner, "_build_tools", seeded)
+    with pytest.raises(AssertionError, match="read_notebook"):
+        await test_session_built_tools_use_domain_then_verb()

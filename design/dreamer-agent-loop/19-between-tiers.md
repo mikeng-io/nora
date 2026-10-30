@@ -152,7 +152,7 @@ read and holds its targeted one in reserve.
 
 | tier | tools exposed to her |
 |---|---|
-| notes | `note_read`, `note_search`, `note_create`, `note_update` |
+| notes | `note_read`, `note_search`, `note_create`, `note_revise` |
 | memory | `about`, `ask_memory`, `search_memory` |
 | **facts** | **none** |
 | **lexemes** | **none** |

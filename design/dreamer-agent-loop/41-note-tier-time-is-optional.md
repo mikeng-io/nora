@@ -440,7 +440,7 @@ re-read at `origin/master` `6f83d504` and on norty's live DB.*
   exact-title duplicate is an amplifier on both write paths: a candidate naming
   that title matches two notes and the gate CREATES a third (`ambiguous`,
   `note_candidates.py:1194`, `:1207-1210`), and the tag path's `note_read` /
-  `note_update` refuse it as ambiguous (`tools.py:8621-8643`).
+  `note_revise` refuse it as ambiguous (`tools.py:8621-8643`).
 - **A revision can land on a retired note.** `_append_on_conn`'s compare-and-swap
   (`nora/infra/sql/notes.py:420-428`) checks `id`, `unit` and `head_revision_id`
   only; `supersede` sets `retired_at` without touching the head
@@ -549,7 +549,7 @@ state.
 
 | writer | may create | may append a revision | may retire |
 |---|---|---|---|
-| tag path (`note_create`/`note_update`) | yes, not over an open title (§7.2) | yes (read-before-write, R-55) | no |
+| tag path (`note_create`/`note_revise`) | yes, not over an open title (§7.2) | yes (read-before-write, R-55) | no |
 | `note-candidates` | yes, not on `ambiguous` (§7.2) | yes (the title the model names) | no |
 | `note-merge` | **no** | yes, to the survivor only, inside a merge | yes, `retired-merged`, with `replaced_by` |
 | `note-curation` | no | no | yes, `retired-closed`/`retired-expired` |
@@ -561,7 +561,7 @@ state.
 title or id and lands on a note retired `retired-merged` follows `replaced_by` to
 the open survivor: `note-candidates`' `updates` resolution (an update aimed at
 the duplicate is counted `updated` on the survivor, not `unresolved` → create),
-the tag path's `_resolve` (so `note_read`/`note_update` on a title still in the
+the tag path's `_resolve` (so `note_read`/`note_revise` on a title still in the
 turn's `<notes>` reach the survivor), `remind`, the fire-time proactive screen
 (a pending row on the duplicate is re-pointed, not cancelled), and the per-note
 wake limit. This is what makes a merge safe against a pass that rendered its

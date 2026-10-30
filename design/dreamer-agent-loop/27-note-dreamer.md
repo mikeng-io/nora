@@ -242,7 +242,7 @@ life — enabled `ba661c9`, 2026-08-21 19:45 HKT — `/app/data/nora.log` holds
 {"tool": "note_search", "status": "nothing_found", "ts": "2026-08-21T13:22:37Z"}
 ```
 
-Zero `note_create`, zero `note_read`, zero `note_update`, ever. **The create path
+Zero `note_create`, zero `note_read`, zero `note_revise`, ever. **The create path
 is not broken. It has never been called**, so the failure is upstream of the
 store and no store-side counter could have found it.
 
@@ -354,7 +354,7 @@ all along:
 
 | declared | already carried by |
 |---|---|
-| `writes_total{kind}` | `nora_tool_calls_total{tool="note_create"\|"note_update",status="ok"}` — the tool name IS the kind |
+| `writes_total{kind}` | `nora_tool_calls_total{tool="note_create"\|"note_revise",status="ok"}` — the tool name IS the kind |
 | `reads_total{result}` | `nora_tool_calls_total{tool="note_read",status}` |
 | `searches_total{result}` | `nora_tool_calls_total{tool="note_search",status}` |
 | `update_refused{reason="not_read"}` | `nora_guard_vetoes_total{rule="R-55"}` |
@@ -364,7 +364,7 @@ both refuse in their own docstrings: a second series over the same calls
 silently doubles any dashboard summing tool volume. And the tier's own named
 diagnostic survives the omission — *a climbing candidate count against a flat
 write count* is `nora_note_candidates_total` against
-`nora_tool_calls_total{tool=~"note_create|note_update",status="ok"}`, in two
+`nora_tool_calls_total{tool=~"note_create|note_revise",status="ok"}`, in two
 series that both exist.
 
 **THREE more measure adaptors that do not exist** — `curator_total{action}`,
@@ -387,7 +387,7 @@ branches were appending to the same numbered list.)
 | metric | site |
 |---|---|
 | `nora_note_candidates_total{trigger}` | `nora.agent.tools`, inside `record_miss`'s `else` — it counts a miss that was **written**, so the series reconciles against `note_candidate`'s row count instead of attesting to itself |
-| `nora_note_update_refused_total{reason}` | `nora.agent.guards` (`not_read`) and `nora.agent.tools` (`title_moved`, `stale_head`) |
+| `nora_note_revise_refused_total{reason}` | `nora.agent.guards` (`not_read`) and `nora.agent.tools` (`title_moved`, `stale_head`) |
 | `nora_note_index_entries{unit}` | `nora.engagement.context::TranscriptInjection._notes` |
 
 **Two things the spec named but did not decide.**

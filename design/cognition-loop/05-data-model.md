@@ -370,7 +370,7 @@ MEMORY (Honcho, beside the flow): fed from the Record; `remember`; read into Vie
 
 Every table above keeps `row_history` (DEC-232), except the memo's two, which are
 append-only and need none (`nora.infra.sql.history.APPEND_ONLY`). Built writers other than the
-subconscious: the tag turn's `note_create`, `note_update` and event verbs,
+subconscious: the tag turn's `note_create`, `note_revise` and event verbs,
 the debrief through `standing_revise` (DEC-239), and the operator through
 `scripts/standing_edit.py`. The `reasoning` column holds [10](10-tiers.md)
 §4's six modes (a database CHECK; `standing_revise` takes `deduced`,
@@ -404,9 +404,9 @@ results unchanged byte for byte), measured after the fire-turn fix.
 | order | what | when |
 |---|---|---|
 | E1a | **the citation table widened**: events and every Notebook kind as citing stores, Rollup keys as cited, a `part` column (field or section) for per-field lineage; events brought into the cascade; event lineage written from its field citations | **gates step 4** |
-| E1b | **Register · memo**, written only by Cognition. **As built (DEC-306, 2026-10-09):** memo-specific tables in the lesson's shape, not a generic entry store, and no `about` or `links`; the verbs `memo_write`, `memo_revise`, `memo_withdraw`, the read `memo_read` and the `<memos>` index, in one integrated change with no shadow week (operator) | landed 2026-10-09 |
+| E1b | **Register · memo**, written only by Cognition. **As built (DEC-306, 2026-10-09):** memo-specific tables in the lesson's shape, not a generic entry store, and no `about` or `links`; the verbs `memo_create`, `memo_revise`, `memo_set_status`, the read `memo_read` and the `<memos>` index, in one integrated change with no shadow week (operator) | landed 2026-10-09 |
 | E1c | **her tool calls and results in the Record**: every call, every status, keyed to the turn; her Instagram comment replies too | **precondition of E2** |
-| E2 | **one writer per tier**: the tag turn's `note_create`, `note_update` and event verbs and the debrief's Standing write move behind Cognition, replaced by the `handoff` stimulus (§7); `remind` and `cancel_reminder` stay on the tag turn | at the cut-over, step 4, or right after it |
+| E2 | **one writer per tier**: the tag turn's `note_create`, `note_revise` and event verbs and the debrief's Standing write move behind Cognition, replaced by the `handoff` stimulus (§7); `remind` and `cancel_reminder` stay on the tag turn | at the cut-over, step 4, or right after it |
 | E3 | Character · person, unit, Nora, Lessons, and Standing · unit, person are born on the entry | step 8 |
 | E4 | Character · room (culture, re-keyed from `primary_id` to its unit and room), Standing · room, events and notes converge onto the entry as each is next touched; the note body's `## From memory` section retires then, rendered by the View from Memory instead | per kind (culture: Q1) |
 | E5 | Views converge on one builder, reader by reader, each with a parity test | alongside E1a to E4 |

@@ -21,7 +21,7 @@ compared by content words (stopwords removed).
 | tools compared | 47 (excluding `skills`, which is plugin-described) |
 | when-clause content words already in docstring | **85% average** |
 | tools at 100% overlap | `search_memory`, `weather`, `version`, `play_music`, `skip_music`, `top_music`, `stop_music`, `music_status`, `group_members`, `generate_image`, `who_said`, `lookup_person` |
-| tools at ≥87% | `calculate`, `transit`, `route`, `ask_memory`, `send_to`, `make_artifact`, `web_search`, `note_update` |
+| tools at ≥87% | `calculate`, `transit`, `route`, `ask_memory`, `send_to`, `make_artifact`, `web_search`, `note_revise` |
 | capability block total | 6,345 chars (~1.6k tokens), paid on every call |
 | docstrings total | 50,013 chars (~12.5k tokens), already in the request as schemas |
 

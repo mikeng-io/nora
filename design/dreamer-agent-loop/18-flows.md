@@ -197,7 +197,7 @@ genuinely different shapes.
    │        │                   │    │  SQL selects → bodies for those  │
    │  note_read ─(latch)─┐      │    │  merge · retire · promote        │
    │        │            ▼      │    ├──────────────────────────────────┤
-   │  note_search   note_update │    │ REVISITOR (content-addressed)    │
+   │  note_search   note_revise │    │ REVISITOR (content-addressed)    │
    │  note_create      │ CAS    │    │  one note due → research → revise│
    └───────────────────┼────────┘    └──────────────────────────────────┘
                        ▼                          │

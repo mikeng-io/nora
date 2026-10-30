@@ -215,7 +215,7 @@ class SocialLine:
 
 @dataclass(frozen=True, slots=True)
 class NoteLine:
-    """An open note's index line: its id (what `note_update` takes), title and
+    """An open note's index line: its id (what `note_revise` takes), title and
     one-line description, never its body. `review` and `may_duplicate` are
     code's facts for the notebook review a `time` item asks for: the anchor
     day has passed or the revisit date has come (`anchor_passed`,

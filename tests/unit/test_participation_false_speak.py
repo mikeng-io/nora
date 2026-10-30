@@ -327,7 +327,7 @@ def test_lookup_tools_is_the_reads_that_declare_the_three_states():
     """Both halves of the AND, pinned by the members that would move if either
     were dropped.
 
-    `load_transcript` is the `read_only`-without-a-status case and `note_update`
+    `load_transcript` is the `read_only`-without-a-status case and `note_revise`
     is the `three_state`-without-`read_only` case; a rule armed on either would
     refuse sends it has no business refusing. Non-empty is asserted because an
     armed-but-empty set is a rule that can never fire — DEC-42's inert feature,
@@ -337,7 +337,7 @@ def test_lookup_tools_is_the_reads_that_declare_the_three_states():
     assert lookups, "R-97 armed on an empty set could never fire"
     assert {"who_said", "search_memory", "weather", "note_read"} <= lookups
     assert "load_transcript" not in lookups          # read_only, no status axis
-    assert "note_update" not in lookups              # three_state, but a WRITE
+    assert "note_revise" not in lookups              # three_state, but a WRITE
     assert "send_reply" not in lookups
     # And the set really is derived from the table, not a copy of it: every
     # member declares both fields.

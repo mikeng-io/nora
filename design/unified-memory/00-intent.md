@@ -236,12 +236,12 @@ index and Honcho's exit are now listed in their order.
    `memory_search` reads them). **The recall acceptance measure is deferred**
    until the whole system is built (operator, 2026-10-17): no eval or replay
    has run on it; unit and integration tests are how it landed.
-4. **Note citations.** `note_create` / `note_update` gain citations like
+4. **Note citations.** `note_create` / `note_revise` gain citations like
    memos, lessons and events. `note_revision` had no citations column
    (`nora/infra/sql/schema.py`, the `note_revision` table), so this was a
    schema and verb change, not a projection.
    **Built 2026-10-17** (migration `0116_note_citations`): every note write
-   (`note_create`, `note_update`, `note_merge`, the tag path's) stores what its
+   (`note_create`, `note_revise`, `note_merge`, the tag path's) stores what its
    body cites in `note_revision.citations`, in `memo_revision.citations`' form,
    read off each line's trailing citation, the one the writer held to the
    note-body grammar (the grammar a memo body passes too); the index draws

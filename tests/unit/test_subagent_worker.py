@@ -226,7 +226,7 @@ def test_the_worker_holds_none_of_the_never_list(tmp_path):
             "web_search", "web_fetch", "media_fetch"} <= held
     assert held & NEVER == set()
     for name in ("send_reply", "send_to", "send_gif", "media_send", "remind", "note_create",
-                 "note_update", "remember", "event_propose"):
+                 "note_revise", "remember", "event_propose"):
         assert name not in held
 
 

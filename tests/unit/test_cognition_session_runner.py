@@ -203,7 +203,7 @@ async def test_the_tool_list_offers_every_write_pace_and_remind_verb():
     )
     await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
     assert set(fake.last_tool_names) >= {
-        "close", "note_create", "note_update", "event_propose", "event_revise",
+        "close", "note_create", "note_revise", "event_propose", "event_revise",
         "event_set_status", "standing_revise", "wake_at", "wake_move", "wake_cancel",
         "remind", "remind_move", "remind_cancel",
     }

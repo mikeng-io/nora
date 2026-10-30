@@ -61,7 +61,7 @@ bypass is the session setting the snapshot's seeding and test resets use.
 | 4 | **Cut over — BUILT 2026-10-03 in one change (DEC-277; the operator's ruling: all at once, no shadow week, undo is `[cognition] enabled = false` and a restart)** | the Cognition adaptor commits; the clocks, note-candidates, note-curation, note-merge, the proactive adaptor and the ingest Standing fold retired (with `rollup_max_folds` and its metric); the culture adaptor becomes the Character adaptor's room case, on its wake rule, with culture migrated to the sectioned account and written by `character_revise` | the re-pointed adaptor eval suites green, master vs branch; the room-Character corpus meets its gate; the latency falsifier ([00](00-intent.md) §6) |
 | 5 | **Social and play** | the story poller (members only, rate-capped, per-person off switch; source interface, adaptive cadence, Record tables and back-fill in [22](22-social-stream.md), built in its S0–S5), perceived through ingest comprehension under the per-unit cap; the story rule and its test rewritten; posts and reels as the bridge can list them; `social_items`; Steam polling and Discord rich presence and voice sampled; play session and play profile; daybook and tie rebuilt with the new inputs | poll outcomes and item counts read back; the login unharmed for a week; the dinner case with stories |
 | 6 | **Faces** | detector, embedder, templates keyed by workspace; labels by reference photos, the portal and `face_label`; face co-appearance; the custody and face checks | precision on the held-out labelled set ([60](60-faces.md) §6) |
-| 7 | **Memos** (moved: E1b, built right after step 3's shadow week as the first kind on the entry, gated on its corpus, written only by Cognition, DEC-249; the «記低» routing is a strong-cue hand-off, not a tag-path `memo_write`) | the memo table, `memo_write`/`memo_withdraw`/`memo_read`, `<memos>`, the «記低» routing, the key-shape exemption | the memo corpus meets its gates; `tool_selection` before and after; the dinner case whole |
+| 7 | **Memos** (moved: E1b, built right after step 3's shadow week as the first kind on the entry, gated on its corpus, written only by Cognition, DEC-249; the «記低» routing is a strong-cue hand-off, not a tag-path `memo_create`) | the memo table, `memo_create`/`memo_set_status`/`memo_read`, `<memos>`, the «記低» routing, the key-shape exemption | the memo corpus meets its gates; `tool_selection` before and after; the dinner case whole |
 | 8 | **Character, Lessons and Standing** (whole) | the Character adaptor generalised to the unit, persons and Nora; unit and person Standing, sectioned with per-section support and age; `character_read`, `standing_read`; the `self` block (her whole Character · Nora, capped, below the doctrine), and `self_card` out of the prompt; Honcho pushed as `explicit` plus the peer card; the correction portal and `character_dispute`; tension rows and their page; the rebuild-drift metric; **the Lessons adaptor**: `lesson_write`/`lesson_retire`, the `lessons` block, the size cap, the doctrine-conflict check, the portal page with rollback by id, Character · Nora's `What lands and what does not` moved into Lessons | a labelled set of accounts judged against the Record they cite; a labelled set of lessons (including ones that would loosen doctrine, which must become tension rows); the lesson drift and churn baselines |
 
 **After the cut-over, read back live (DEC-279, DEC-280, 2026-10-03).** The
@@ -91,7 +91,7 @@ builder serving `<memos>` and `memo_read`, written only by Cognition. **E1c is
 a precondition of E2**: every tool call and its result, every status, keyed to
 the turn, and her Instagram comment replies, recorded in the Record. **E2, one
 writer per tier**: at or right after the cut-over the tag path's `note_create`,
-`note_update` and event verbs and the debrief's Standing write move behind
+`note_revise` and event verbs and the debrief's Standing write move behind
 Cognition, replaced by the `handoff` stimulus ([20](20-observe.md) §3), with
 the tag tools' text and the «記低» doctrine changed under `tool_selection` and
 the eval; `remember`, `remind` and `cancel_reminder` stay on the tag turn.
@@ -426,7 +426,7 @@ Each measured with `tool_selection` before and after (ADR 0015), in its
 step's PR:
 
 - **new blocks**: `memos`, `events`, `self`, `lessons`;
-- **new tools**: `memo_write`, `memo_withdraw`, `memo_read`, `event_search`,
+- **new tools**: `memo_create`, `memo_set_status`, `memo_read`, `event_search`,
   `character_read`, `standing_read`, `face_label`, `character_dispute`;
 - **changed**: `remind` gains `brief` for cognition's acts; it is the tool the
   tag path already holds, so the change is measured like a new one;
@@ -620,7 +620,7 @@ recorded, not committed» in a verb's text are gone (objective version 5), and a
 no dry run and no number; a test scans every string the model can read (the instruction, the
 prompt, each verb's description, each result, each refusal detail). (2) Caps stay in code: `wake_at`
 no longer says «too many pending or too many today», the cooldown or seven days, and no refusal
-detail states a limit. (3) The dry-run verbs make the live store's own refusals: a `note_update`
+detail states a limit. (3) The dry-run verbs make the live store's own refusals: a `note_revise`
 against a moved head, a retired note or one the unit does not hold is refused in the ledger (`stale_base`,
 `note_retired`, `not_found`) and no longer recorded `would_commit`, and the model reads a moved head
 as the live verb says it (`unavailable`, with no head id); a session's own earlier writes count (a
@@ -654,7 +654,7 @@ Steps 4–8 remain design only.
 write verb runs its validator (`parse_note_body`, the event tier's modes and citations,
 `standing_revise`'s checks) and commits through the tier's own store, stamped
 `cognition:<unit>` (a Standing revision `source = 'cognition'`); `remind` writes the
-`kind="proactive"` reminder row the one fire path fires; two verbs, `note_retire` and
+`kind="proactive"` reminder row the one fire path fires; two verbs, `note_set_status` and
 `note_merge` (`NoteStore.supersede`, `NoteStore.merge_into`), take the curator's and
 note-merge's jobs, and the `time` floors are mapped, so a daily item asks for the notebook
 review the note index now marks (`review="anchor_passed|revisit_due"`, `may_duplicate`).

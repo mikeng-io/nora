@@ -279,7 +279,7 @@ put in front of the model; one of her existing verbs learns where it is.
 `search_memory_workspace`; `note_read`, `note_search`; `web_search`,
 `web_fetch`, `weather`, `now`. Not `send_reply` (the Dreamer does not speak),
 not `send_to` (no tagger to attribute a relay to), not `note_create` /
-`note_update` (D6), not `load_transcript` (§1).
+`note_revise` (D6), not `load_transcript` (§1).
 
 **What this changes in DEC-133.** DEC-133 (1) said a background process «that
 can speak to the group unprompted — or set a reminder, or write to the events
@@ -395,9 +395,9 @@ be a person and the flag could go.
 > of the build recorded, a `decline` charges no strike — the number is
 > «raised and nobody replied».
 
-The self-refine edge in §1 runs through `note_update`. The proactive
+The self-refine edge in §1 runs through `note_revise`. The proactive
 adaptor's declared tool set therefore holds `note_read` and `note_search` and
-not `note_create` / `note_update`. Notes are written from human rows
+not `note_create` / `note_revise`. Notes are written from human rows
 (`note-candidates`) and from tag-path note tools where a human is present.
 
 What proactive *does* write on a note is a wake: the store port's
