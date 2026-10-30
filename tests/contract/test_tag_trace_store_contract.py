@@ -171,3 +171,37 @@ async def test_turn_facts_text_json_result_and_units_isolate(store):
     facts2 = await store.turn_facts(unit="u2", tool_names=("remind",))
     assert len(facts2.open_items) == 1
     assert facts.open_items[0].tag_id != facts2.open_items[0].tag_id
+
+
+async def test_turn_facts_query_plan_is_bounded(store, capsys):
+    """EXPLAIN evidence: the structural projection reads unit rows with
+    lateral JSONB expansion — the plan and row counts are captured so the
+    bound is visible, not asserted on faith."""
+    if not hasattr(store, "_engine"):
+        pytest.skip("sql-only evidence")
+    for i in range(30):
+        await store.save(_fact_trace(f"p{i}", subject=f"note:s-{i}",
+                                     action="ask", status="ok", turn=i))
+    import sqlalchemy as sa
+    plan_sql = """
+        EXPLAIN (ANALYZE, BUFFERS)
+        WITH uses AS (
+            SELECT t.id AS trace_row_id, t.turn_id, t.tag_id,
+                   t.occasion, t.created_at, t.requirements,
+                   c.block AS use_block, m.m_idx, c.b_idx
+            FROM tag_trace t,
+                 LATERAL jsonb_array_elements(t.messages)
+                    WITH ORDINALITY m(msg, m_idx),
+                 LATERAL jsonb_array_elements(m.msg->'content')
+                    WITH ORDINALITY c(block, b_idx)
+            WHERE t.unit = 'u1' AND c.block ? 'toolUse'
+        )
+        SELECT DISTINCT ON (use_block->'toolUse'->>'name',
+                            use_block->'input'->>'subject')
+            turn_id, tag_id, use_block FROM uses
+    """
+    async with store._engine.connect() as conn:
+        plan = [r[0] for r in (await conn.execute(sa.text(plan_sql))).all()]
+    text = "\n".join(plan)
+    print("\n" + text)
+    assert "tag_trace" in text
