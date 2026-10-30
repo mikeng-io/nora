@@ -1,0 +1,16 @@
+[
+  {
+    "name": "judges dial the host-reaching measurement endpoint",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "        return model_endpoint(self.config, \"eval_judge\", model_id)",
+    "new": "        return self.cfg.endpoint(\"eval_judge\", model_id)",
+    "target": "tests/unit/test_memory_graph_spike.py::test_judges_dial_the_eval_route_where_the_measurer_runs"
+  },
+  {
+    "name": "AGE comparison reads the frozen source engine once",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "                await age_comparison(engine, args.age_url, judges, age_dir, args.minimum)",
+    "new": "                await age_comparison(sandbox_engine, args.age_url, judges, age_dir, args.minimum)",
+    "target": "tests/unit/test_memory_graph_spike.py::test_age_comparison_measures_the_source_once_outside_replay"
+  }
+]
