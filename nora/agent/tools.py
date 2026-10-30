@@ -6968,6 +6968,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return {"status": "refused", "reason": "no_decision",
                     "detail": "say what you concluded",
                     "note": "No conclusion was accepted. State the decision before trying again."}
+        if not (sources or ()):
+            # A conclusion cites what it rests on: no source, no accepted
+            # record — never a room-only whitelist.
+            return {"status": "unresolved",
+                    "reason": "source_required",
+                    "detail": "cite the transcript row id(s) this conclusion "
+                              "rests on"}
         if (sources or ()) and store is None:
             # Sources need RESOLUTION, not a digit check: with no Record the
             # citation cannot be verified and the call is honestly

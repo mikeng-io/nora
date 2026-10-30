@@ -71,6 +71,7 @@ from typing import Any, Literal, Protocol
 from nora.agent import cognition_pace as pace
 from nora.agent.dream_screen import offence
 from nora.agent.fetch_watch import Fetched, GraphFetched, watch_reads
+from nora.agent.turn_recording import record_requirement
 from nora.app.proactive_screen import CANCELLED_NOTE_RETIRED
 from nora.domain.cognition_ground import Grounding, RecordItem, rollup_status
 from nora.domain.cognition_pace import (
@@ -105,6 +106,12 @@ from nora.domain.gatherings import (
     InvalidEventFieldModeError,
     StaleEventRevisionError,
     field_mode,
+)
+from nora.domain.lineage import (
+    LineageEntry,
+)
+from nora.domain.lineage import (
+    message as message_lineage,
 )
 from nora.domain.memo import (
     MEMO_BODY_MAX_CHARS,
@@ -149,8 +156,8 @@ from nora.domain.reminders import (
     DuplicateReminderError,
     Reminder,
     ReminderState,
-    proactive_subject,
 )
+from nora.domain.rollup import room_key as record_room_key
 from nora.domain.shared_state import SharedView
 from nora.domain.standing import StandingHead
 from nora.domain.stimuli import (
@@ -167,7 +174,7 @@ from nora.domain.stimuli import (
     prove_overflow_is_the_agenda,
     restart_detail,
 )
-from nora.domain.turn_record import cited_turn_lineage, turn_handles_in
+from nora.domain.turn_record import DisclosureRequirement, cited_turn_lineage, turn_handles_in
 from nora.infra.sql.standing_revise import standing_revise as live_standing_revise
 from nora.language.cognition_render import (
     RenderBudget,
@@ -2563,6 +2570,11 @@ class CognitionSessionRunner:
             # must resolve — a transcript row id, or a `kind:id` open entry
             # the canonical stores can confirm — else the record stays
             # `unresolved`, never an ok on a guessed provenance.
+            if not (sources or ()):
+                return {"status": "unresolved",
+                        "reason": "source_required",
+                        "detail": "cite the transcript row id(s) this "
+                                  "conclusion rests on"}
             for source in sources or ():
                 if not isinstance(source, str):
                     return {"status": "unresolved",
@@ -2584,6 +2596,13 @@ class CognitionSessionRunner:
                                 "reason": "source_unresolved",
                                 "detail": f"no transcript row {source} in "
                                           "this unit"}
+                    # The resolved row's OWN room is the gate — recorded so
+                    # the destination projection sees the real source
+                    # requirement (TurnRecording is installed by the agent
+                    # runner).
+                    src_origin = record_room_key(hit[0], hit[1])
+                    record_requirement(DisclosureRequirement(
+                        src_origin, (message_lineage(src_origin),)))
                     continue
                 resolved_source = await self._resolve_named_subject(
                     unit, state, source)
@@ -2594,6 +2613,17 @@ class CognitionSessionRunner:
                                 f"{source!r} is not a transcript row id or an "
                                 "open entry this session can cite"
                             )}
+                # A named entry's own canonical lineage is the gate —
+                # carried on the Record, never re-derived downstream.
+                source_lineage = await self._named_source_lineage(
+                    unit, state, *resolved_source)
+                if source_lineage is None:
+                    return {"status": "unresolved",
+                            "reason": "source_unresolved",
+                            "detail": f"the gates of {source!r} could not be "
+                                      "resolved"}
+                record_requirement(DisclosureRequirement(
+                    None, source_lineage))
             return {"status": "ok"}
 
         async def remind(
@@ -2764,26 +2794,18 @@ class CognitionSessionRunner:
                     return {"status": "unavailable",
                             "reason": "unit_scope_unavailable",
                             "detail": "the unit's room set could not be read"}
-                recent = await self._reminders.recent_in(
+                delivered = await self._reminders.delivered_subject(
                     unit_rooms, requester_person_id=self._ai_peer,
-                    # Delivered evidence is not bounded by when THIS row was
-                    # created: the act it repeats may have been scheduled and
-                    # delivered long before. The unit-scope read is bounded by
-                    # the cap, which fails closed on an unproven remainder.
-                    since=datetime.fromtimestamp(0, UTC), limit=50,
+                    subject_kind=subject_kind, subject_id=subject_id,
+                    action=action_key, limit=5,
                 )
-                if len(recent) >= 50:
-                    # The read cut off: an earlier delivered act could sit
-                    # past the cap, so «not delivered» is not established.
+                if len(delivered) >= 5:
+                    # The keyed read cut off: an uncounted delivered act
+                    # could sit past the cap, so «not delivered» is not
+                    # established.
                     return {"status": "unavailable",
                             "reason": "delivered_check_incomplete",
                             "detail": "the delivered check could not be completed"}
-                delivered = [
-                    r for r in recent
-                    if proactive_subject(r) == (
-                        subject_kind, subject_id, action_key,
-                    ) and r.outcome == "sent"
-                ]
                 if delivered:
                     return _refused(
                         "duplicate_pending",
@@ -3084,6 +3106,43 @@ class CognitionSessionRunner:
                     if str(event.id) == wanted:
                         return ("event", str(event.id))
         return None
+
+    async def _named_source_lineage(
+        self, unit: str, state: Any, kind: str, wanted: str,
+    ) -> tuple[LineageEntry, ...] | None:
+        """The resolved entry's own canonical lineage, flattened to the
+        requirement entries a destination checks — the same lookups
+        `_resolve_named_subject` ran, returning the gates this time.
+        `None` = no gates to propagate = unresolved."""
+        rooms = [tuple(k.split(":", 1)) for k in state.rooms]
+        entry = None
+        if kind == "note":
+            entry = next(
+                (n for n in await self._notes.standing(unit=unit)
+                 if n.id == wanted), None)
+        elif (kind in {"decision", "commitment", "thread"}
+                and self._ledger is not None):
+            for platform, conversation_id in rooms:
+                for candidate in await self._ledger.read(
+                    unit=unit, platform=platform,
+                    conversation_id=conversation_id,
+                ):
+                    if (candidate.id == wanted and candidate.kind == kind
+                            and candidate.status == "open"):
+                        entry = candidate
+        elif kind == "event":
+            for platform, conversation_id in rooms:
+                for event in await self._open_events(
+                    unit, platform, conversation_id
+                ):
+                    if str(event.id) == wanted:
+                        entry = event
+        if entry is None or getattr(entry, "lineage", None) is None:
+            return None
+        flat = tuple(
+            le for _name, es in entry.lineage.sections for le in es
+        )
+        return flat or None
 
     async def _remind_context(
         self, unit: str, platform: str, conversation_id: str, subject_rows: Sequence[str],

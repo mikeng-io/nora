@@ -76,43 +76,98 @@ async def test_a_zero_limit_reads_nothing(store):
     assert await store.recent(conversation_id="room-a", limit=0) == ()
 
 
-def _turn_trace(tag_id, cid="room-a", unit="u1", created=1000, name=None):
-    """A trace whose messages carry a `toolUse` for `name` (or none)."""
+def _fact_trace(tag_id, cid="room-a", unit="u1", created=1000, name="remind",
+                subject="note:x", action="ask", status="ok", turn=1):
+    """One trace holding one named toolUse/toolResult exchange."""
     messages = (
-        ({"role": "assistant", "content": [
-            {"toolUse": {"toolUseId": "x", "name": name, "input": {}}}]},)
-        if name else ({"role": "user", "content": [{"text": "hi"}]},)
+        {"role": "assistant", "content": [
+            {"toolUse": {"toolUseId": f"c-{tag_id}", "name": name,
+                         "input": {"subject": subject, "action": action}}}]},
+        {"role": "user", "content": [
+            {"toolResult": {"toolUseId": f"c-{tag_id}", "status": "success",
+                            "content": [{"json": {"status": status}}]}}]},
     )
     return TagTrace(
         tag_id=tag_id, conversation_id=cid, messages=messages,
         transcript=(), outcome="send_reply", created_at=created,
-        unit=unit, occasion="tag",
+        unit=unit, occasion="tag", turn_id=turn,
     )
 
 
-async def test_recent_unit_turns_filters_and_pages(store):
-    """Only traces containing a named tool come back, newest-first, paged —
-    irrelevant turns cannot crowd the fact read."""
-    await store.save(_turn_trace("old-fact", created=1, name="remind"))
-    for i in range(2, 45):
-        await store.save(_turn_trace(f"noise-{i}", created=i))
-    await store.save(_turn_trace("new-fact", created=100, name="remind"))
-
-    page = await store.recent_unit_turns(
-        unit="u1", tool_names=("remind",), limit=1)
-    assert [t.tag_id for t in page] == ["new-fact"]
-    page2 = await store.recent_unit_turns(
-        unit="u1", tool_names=("remind",), limit=1, offset=1)
-    assert [t.tag_id for t in page2] == ["old-fact"]
-    page3 = await store.recent_unit_turns(
-        unit="u1", tool_names=("remind",), limit=10, offset=2)
-    assert page3 == ()
+async def test_turn_facts_pair_structurally_and_reduce_latest_per_key(store):
+    """The structural projection: pairing is by toolUseId, latest result per
+    (name,subject,action) decides — prose that merely MENTIONS a key can
+    never discharge it, and a different key's ok leaves it open."""
+    await store.save(_fact_trace("old", subject="note:gone", action="ask-time",
+                                 status="unresolved", turn=1))
+    await store.save(_fact_trace("wrong", subject="note:other", action="other",
+                                 status="ok", turn=2))
+    facts = await store.turn_facts(unit="u1", tool_names=("remind",))
+    assert [i.arguments["subject"] for i in facts.open_items] == ["note:gone"]
 
 
-async def test_recent_unit_turns_matches_any_of_the_names(store):
-    await store.save(_turn_trace("a", created=1, name="remind"))
-    await store.save(_turn_trace("b", created=2, name="decision_conclude"))
-    await store.save(_turn_trace("c", created=3))
-    rows = await store.recent_unit_turns(
-        unit="u1", tool_names=("remind", "decision_conclude"), limit=10)
-    assert [t.tag_id for t in rows] == ["b", "a"]
+async def test_turn_facts_same_trace_later_result_wins(store):
+    """Inside one trace, the later block's result is the latest — ordinal
+    ordering, not trace timestamp."""
+    messages = (
+        {"role": "assistant", "content": [
+            {"toolUse": {"toolUseId": "old", "name": "remind",
+                         "input": {"subject": "n", "action": "a"}},
+             "toolUse_2_unused": None}]},
+        {"role": "user", "content": [
+            {"toolResult": {"toolUseId": "old", "status": "success",
+                            "content": [{"json": {"status": "unresolved"}}]}}]},
+        {"role": "assistant", "content": [
+            {"toolUse": {"toolUseId": "new", "name": "remind",
+                         "input": {"subject": "n", "action": "a"}}}]},
+        {"role": "user", "content": [
+            {"toolResult": {"toolUseId": "new", "status": "success",
+                            "content": [{"json": {"status": "ok"}}]}}]},
+    )
+    await store.save(TagTrace(
+        tag_id="t", conversation_id="room-a", messages=messages,
+        transcript=(), outcome="send_reply", created_at=1000, unit="u1",
+        occasion="tag", turn_id=7))
+    facts = await store.turn_facts(unit="u1", tool_names=("remind",))
+    assert facts.open_items == ()
+
+
+async def test_turn_facts_closed_history_never_forces_the_cap(store):
+    """Two hundred CLOSED attempts — each unresolved then ok — leave the
+    read complete and empty; only CURRENT open identities count."""
+    for i in range(1, 202):
+        await store.save(_fact_trace(
+            f"u{i}", subject=f"note:s-{i}", action="ask",
+            status="unresolved", created=i, turn=i))
+        await store.save(_fact_trace(
+            f"k{i}", subject=f"note:s-{i}", action="ask",
+            status="ok", created=10_000 + i, turn=1000 + i))
+    await store.save(_fact_trace(
+        "open", subject="note:open", action="ask", status="unresolved",
+        created=99_999, turn=9999))
+    facts = await store.turn_facts(unit="u1", tool_names=("remind",))
+    assert not facts.capped
+    assert [i.arguments["subject"] for i in facts.open_items] == ["note:open"]
+
+
+async def test_turn_facts_text_json_result_and_units_isolate(store):
+    """A `{text: <json-string>}` result parses the same as `{json:...}`; a
+    second unit's facts never leak."""
+    messages = (
+        {"role": "assistant", "content": [
+            {"toolUse": {"toolUseId": "c", "name": "remind",
+                         "input": {"subject": "n", "action": "a"}}}]},
+        {"role": "user", "content": [
+            {"toolResult": {"toolUseId": "c", "status": "success",
+                            "content": [{"text": '{"status": "unresolved"}'}]}}]},
+    )
+    await store.save(TagTrace(
+        tag_id="t", conversation_id="room-a", messages=messages,
+        transcript=(), outcome="send_reply", created_at=1, unit="u1",
+        occasion="tag", turn_id=1))
+    await store.save(_fact_trace("other-unit", unit="u2", status="unresolved"))
+    facts = await store.turn_facts(unit="u1", tool_names=("remind",))
+    assert len(facts.open_items) == 1
+    facts2 = await store.turn_facts(unit="u2", tool_names=("remind",))
+    assert len(facts2.open_items) == 1
+    assert facts.open_items[0].tag_id != facts2.open_items[0].tag_id

@@ -746,6 +746,16 @@ class ReminderStore(Protocol):
         that distinction."""
         ...
 
+    async def delivered_subject(
+        self, rooms: Sequence[tuple[str, str]], *,
+        requester_person_id: str, subject_kind: str, subject_id: str,
+        action: str, limit: int = 5,
+    ) -> Sequence[Reminder]:
+        """Whether THIS (subject,action) was already delivered (`sent`
+        outcome on a closed row) in the named rooms — the keyed existence
+        read the create check and supersession run at canonical unit
+        scope. A full page means «unproven remainder», never absence."""
+        ...
     async def due(self, *, now: datetime, limit: int) -> Sequence[Reminder]:
         """PENDING rows whose `due_at` has passed, oldest first, `id`
         ASCENDING within an equal `due_at`.

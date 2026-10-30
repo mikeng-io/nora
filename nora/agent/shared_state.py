@@ -24,7 +24,6 @@ unavailable one — the coverage line names only the sources that ran.
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
@@ -33,7 +32,7 @@ from typing import Any
 from nora.domain.lineage import BODY, HOLD_OPEN, I_OWE, WORKING_SET
 from nora.domain.shared_state import SharedEntry, SharedView, ViewStatus
 from nora.domain.standing import WORKING_SET_TTL_HOURS
-from nora.domain.turn_record import turn_items
+from nora.domain.tag_trace import tool_result_status
 
 log = logging.getLogger("nora.agent.shared_state")
 
@@ -47,14 +46,6 @@ _HISTORY_LOOKBACK_MS = 7 * 24 * 3600_000
 #: The tool names whose toolUse/toolResult pairs the view reads as facts —
 #: producer conclusions and act attempts.
 _TURN_FACT_TOOLS = ("remind", "decision_conclude")
-#: Server-side status markers: only an OPEN result can still be a fact —
-#: «ok» history never competes for the walk's pages.
-_OPEN_RESULT_MARKERS = ('"unresolved"', '"refused"', '"unavailable"')
-_ACCEPTED_RESULT_MARKERS = ('"ok"',)
-#: How many OPEN-result turns the fact walk may read before coverage is
-#: honestly unproven. Bound by scarcity, not history: a unit with more than
-#: this many still-open act results is a pathology worth surfacing.
-_TURN_FACT_SCAN_LIMIT = 200
 
 
 def _ms(dt: datetime | None) -> int:
@@ -84,7 +75,6 @@ async def read_shared(
     standing_permits: Callable[[Any], dict[str, bool]] | None = None,
     send_limit: int = 6,
     history_limit: int = 50,
-    trace_limit: int = 40,
 ) -> SharedView:
     """One view, assembled per source so a failed read is named, not absent.
 
@@ -389,140 +379,83 @@ async def read_shared(
             # first. An unresolved act is discharged only by a NEWER `ok`
             # result for the same (subject, action): the record retains the
             # attempt until something valid resolved it.
-            # The FACT read is a RARE-FACT projection, not a lifetime scan:
-            # unresolved/refused results are the only rows that can still be
-            # open facts, they are prefILTERed server-side on the recorded
-            # status marker (so history volume is irrelevant), each paged
-            # walk is bounded, and every still-open key is discharged by a
-            # targeted «newer ok for this (subject,action)» probe — never by
-            # reading the unit's whole record.
-            unit_traces: list[Any] = []
-            incomplete = False
-            for marker in _OPEN_RESULT_MARKERS:
-                offset = 0
-                while len(unit_traces) < _TURN_FACT_SCAN_LIMIT:
-                    page = await traces.recent_unit_turns(
-                        unit=unit, tool_names=_TURN_FACT_TOOLS,
-                        limit=trace_limit, offset=offset,
-                        markers=(marker,),
-                    )
-                    unit_traces.extend(page)
-                    if len(page) < trace_limit:
-                        break
-                    offset += trace_limit
-                else:
-                    incomplete = True
-            if incomplete:
+            # The FACT read is the store's structural projection: toolUse/
+            # toolResult pairs extracted by `toolUseId`, latest result per
+            # (name, subject, action) decides — a newer `ok` closes only its
+            # own key, a same-trace later result wins by block ordinal, and
+            # the cap bounds CURRENT open identities, never closed history.
+            facts = await traces.turn_facts(
+                unit=unit, tool_names=_TURN_FACT_TOOLS)
+            if facts.capped:
                 partial = True
                 sources.append(("turns", "partial"))
             else:
                 sources.append(("turns", "ok"))
-            # A separately declared, display-only bound: the newest
-            # conclusions. Its remainder is fine — «recent» means recent.
-            conclusion_traces = await traces.recent_unit_turns(
-                unit=unit, tool_names=("decision_conclude",),
-                markers=_ACCEPTED_RESULT_MARKERS, limit=20,
-            )
-            seen_items: set[tuple[str, str]] = set()
-            for trace in tuple(unit_traces) + tuple(conclusion_traces):
-                provenance = f"{trace.occasion}:{trace.tag_id}"
-                for item in turn_items(trace.messages, trace.requirements):
-                    # A trace can match both the open-result walk and the
-                    # conclusion display — each item is processed once.
-                    item_key = (trace.tag_id, item.call_id)
-                    if item_key in seen_items:
-                        continue
-                    seen_items.add(item_key)
-                    allowed = (
-                        room is None
-                        or (permit_req is not None
-                            and permit_req(item.requirements))
+            for item in (*facts.open_items, *facts.recent_items):
+                allowed = (
+                    room is None
+                    or (permit_req is not None
+                        and permit_req(item.requirements))
+                )
+                if not allowed:
+                    continue
+                args = item.arguments
+                provenance = f"{item.occasion}:{item.tag_id}"
+                if item.name == "remind":
+                    unresolved_lines.append(
+                        f"remind {str(args.get('text'))[:80]!r} for "
+                        f"{args.get('room') or 'the room'}: "
+                        f"{str(args.get('subject') or '')[:80]!r} unresolved"
                     )
-                    if not allowed:
-                        continue
-                    if item.name == "remind":
-                        args = item.arguments
-                        key = (
-                            str(args.get("subject") or ""),
-                            str(args.get("action") or ""),
-                        )
-                        payload = _result_payload(item.result)
-                        if payload.get("status") == "unresolved" and key != ("", ""):
-                            # Discharged only by a NEWER `ok` for the same
-                            # (subject,action): a targeted probe, not a scan.
-                            discharged = await traces.recent_unit_turns(
-                                unit=unit, tool_names=("remind",),
-                                limit=1, after_ms=trace.created_at,
-                                markers=(
-                                    str(args.get("subject") or ""),
-                                    str(args.get("action") or ""),
-                                    '"ok"',
-                                ),
-                            )
-                            if not discharged:
-                                unresolved_lines.append(
-                                    f"remind {str(args.get('text'))[:80]!r} for "
-                                    f"{args.get('room') or 'the room'}: "
-                                    f"{key[0]!r} unresolved"
-                                )
-                        continue
-                    if item.name == "decision_conclude":
-                        args = item.arguments
-                        conclusion = _result_payload(item.result)
-                        if conclusion.get("status") != "ok":
-                            # A `conclude` whose result is not `ok` is not a
-                            # recorded conclusion — the toolUse alone proves
-                            # nothing. It stays visible as unresolved for the
-                            # next session to address — and only where its
-                            # own disclosure permits the read.
-                            if conclusion.get("status") != "unresolved":
-                                unresolved_lines.append(
-                                    f"decision_conclude "
-                                    f"{str(args.get('subject') or '?')[:80]!r}: "
-                                    f"{conclusion.get('status') or 'no result'}"
-                                )
-                            continue
-                        detail = " · ".join(
-                            part for part in (
-                                f"options: {args['options']}"
-                                if args.get("options") else "",
-                                f"leaning: {args['leaning']}"
-                                if args.get("leaning") else "",
-                                f"closes when: {args['conditions']}"
-                                if args.get("conditions") else "",
-                                # A recorded position proposal stays readable
-                                # as a Record — never applied, never dropped.
-                                f"proposes position for {args['standing_room']}"
-                                if args.get("standing_room") else "",
-                                f"position: {args['standing_body']}"
-                                if args.get("standing_body") else "",
-                                f"holds open: {args['hold_open']}"
-                                if args.get("hold_open") else "",
-                                f"owes: {args['i_owe']}"
-                                if args.get("i_owe") else "",
-                            ) if part
-                        )
-                        sources_part = tuple(
-                            str(s) for s in args.get("sources") or ()
-                        ) + (
-                            (f"turn({trace.turn_id})",)
-                            if trace.turn_id is not None else ()
-                        )
-                        entries.append(SharedEntry(
-                            kind="conclusion",
-                            id=f"{trace.tag_id}:{item.call_id}",
-                            scope="unit",
-                            status="recent",
-                            subject=str(args.get("subject") or "")[:140],
-                            detail=(
-                                f"{args.get('decision') or ''}"
-                                + (f" — {detail}" if detail else "")
-                            ),
-                            refs=sources_part,
-                            at_ms=trace.created_at,
-                            provenance=provenance,
-                            permitted=allowed,
-                        ))
+                    continue
+                result_status = tool_result_status(item.result)
+                if result_status != "ok":
+                    unresolved_lines.append(
+                        f"decision_conclude "
+                        f"{str(args.get('subject') or '?')[:80]!r}: "
+                        f"{result_status}"
+                    )
+                    continue
+                detail = " · ".join(
+                    part for part in (
+                        f"options: {args['options']}"
+                        if args.get("options") else "",
+                        f"leaning: {args['leaning']}"
+                        if args.get("leaning") else "",
+                        f"closes when: {args['conditions']}"
+                        if args.get("conditions") else "",
+                        # A recorded position proposal stays readable
+                        # as a Record — never applied, never dropped.
+                        f"proposes position for {args['standing_room']}"
+                        if args.get("standing_room") else "",
+                        f"position: {args['standing_body']}"
+                        if args.get("standing_body") else "",
+                        f"holds open: {args['hold_open']}"
+                        if args.get("hold_open") else "",
+                        f"owes: {args['i_owe']}"
+                        if args.get("i_owe") else "",
+                    ) if part
+                )
+                sources_part = tuple(
+                    str(s) for s in args.get("sources") or ()
+                ) + (
+                    (f"turn({item.handle})",) if item.handle else ()
+                )
+                entries.append(SharedEntry(
+                    kind="conclusion",
+                    id=f"{item.tag_id}:{item.call_id}",
+                    scope="unit",
+                    status="recent",
+                    subject=str(args.get("subject") or "")[:140],
+                    detail=(
+                        f"{args.get('decision') or ''}"
+                        + (f" — {detail}" if detail else "")
+                    ),
+                    refs=sources_part,
+                    at_ms=item.created_at,
+                    provenance=provenance,
+                    permitted=allowed,
+                ))
         except Exception:
             log.exception("shared view: turn records read failed for %s", unit)
             sources.append(("turns", "unavailable"))
@@ -544,28 +477,6 @@ async def read_shared(
         entries=tuple(entries), sources=tuple(sources),
         unresolved=tuple(unresolved_lines),
     )
-
-
-def _result_payload(result: Any) -> dict[str, Any]:
-    """The verb's own dict out of a Strands `toolResult`: `{content:
-    [{json: {...}}]}` for dict returns, `{text}` carrying JSON for older
-    shapes. `{}` when nothing parses — read as «not recorded», never a guess."""
-    if not isinstance(result, dict):
-        return {}
-    for block in result.get("content") or ():
-        if isinstance(block, dict):
-            payload = block.get("json")
-            if isinstance(payload, dict):
-                return payload
-            text = block.get("text")
-            if isinstance(text, str):
-                try:
-                    parsed = json.loads(text)
-                except (ValueError, TypeError):
-                    continue
-                if isinstance(parsed, dict):
-                    return parsed
-    return {}
 
 
 def shared_reader(

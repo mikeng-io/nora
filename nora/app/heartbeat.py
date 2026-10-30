@@ -55,7 +55,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Protocol
 
 from nora.app.proactive_screen import PROACTIVE_KIND, ProactiveScreen
@@ -440,27 +440,19 @@ class HeartbeatLoop:
                 if c.unit == convo.unit
             ]
             plan = (row.payload or {}).get("plan_id")
-            hits = await self._store.recent_in(
+            hits = await self._store.delivered_subject(
                 unit_rooms,
                 requester_person_id=row.requester_person_id,
-                # A delivered same-act row is often CREATED before this row
-                # was: the history must reach back from the act's own moment,
-                # never from this row's birth. Bounded, and the cap below
-                # fails closed on any unproven remainder.
-                since=(
-                    (row.fired_at or row.due_at or row.created_at)
-                    - timedelta(days=7)
-                ), limit=50,
+                subject_kind=subject[0], subject_id=subject[1],
+                action=subject[2], limit=5,
             )
-            if len(hits) >= 50:
-                # The read cut off: an earlier delivered row could sit past
-                # the cap, so «no delivered act» is not established.
+            if len(hits) >= 5:
+                # The keyed read cut off: a delivered act could sit past the
+                # cap, so «no delivered act» is not established.
                 return ReminderState.FAILED, "failed_error"
             delivered = [
                 r for r in hits
                 if r.id != row.id
-                and proactive_subject(r) == subject
-                and r.outcome == "sent"
                 and (r.payload or {}).get("plan_id") != plan
             ]
         except Exception:

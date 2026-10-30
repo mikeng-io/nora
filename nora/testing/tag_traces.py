@@ -4,10 +4,15 @@
 from __future__ import annotations
 
 import dataclasses
-import json
 from collections.abc import Sequence
 
-from nora.domain.tag_trace import TagTrace
+from nora.domain.tag_trace import (
+    FactItem,
+    TagTrace,
+    TurnFacts,
+    reduce_turn_facts,
+)
+from nora.domain.turn_record import turn_items
 
 
 class FakeTagTraceStore:
@@ -48,24 +53,34 @@ class FakeTagTraceStore:
         )
         return tuple(rows[:limit])
 
-    async def recent_unit_turns(
-        self, *, unit: str, tool_names: Sequence[str], limit: int,
-        offset: int = 0, markers: Sequence[str] = (), after_ms: int = 0,
-    ) -> tuple[TagTrace, ...]:
-        if limit <= 0 or not tool_names:
-            return ()
-        names = tuple(tool_names)
-        marks = tuple(markers)
-        rows = sorted(
-            (t for t in self._rows
-             if t.unit == unit
-             and (not after_ms or t.created_at > after_ms)
-             and any(f'"{name}"' in json.dumps(t.messages)
-                     for name in names)
-             and all(m in json.dumps(t.messages) for m in marks)),
-            key=lambda t: (t.created_at, t.tag_id), reverse=True,
-        )
-        return tuple(rows[offset:offset + limit])
+    async def turn_facts(
+        self, *, unit: str, tool_names: Sequence[str],
+        open_cap: int = 200, recent_cap: int = 20,
+    ) -> TurnFacts:
+        """The fake mirrors the structural projection: `turn_items` pairs
+        use/result by `toolUseId` in message order — the same semantics the
+        SQL's lateral expansion + `DISTINCT ON` computes."""
+        if not tool_names:
+            return TurnFacts()
+        names = set(tool_names)
+        items: list[FactItem] = []
+        for t in self._rows:
+            if t.unit != unit:
+                continue
+            for idx, item in enumerate(turn_items(t.messages, t.requirements)):
+                if item.name not in names:
+                    continue
+                items.append(FactItem(
+                    name=item.name, call_id=item.call_id,
+                    arguments=item.arguments, result=item.result,
+                    requirements=item.requirements,
+                    turn_id=t.turn_id, handle=t.handle,
+                    tag_id=t.tag_id, occasion=t.occasion,
+                    created_at=t.created_at,
+                    ordinal=(t.created_at, t.turn_id or 0, 0, idx),
+                ))
+        return reduce_turn_facts(
+            items, open_cap=open_cap, recent_cap=recent_cap)
 
     async def get(self, *, turn_id: int, unit: str) -> TagTrace | None:
         row = self._turn_ids.get(turn_id)

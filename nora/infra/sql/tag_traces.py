@@ -27,8 +27,17 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from nora.domain.lineage import ROW, Lineage, unresolved
 from nora.domain.models import DeliveryStatus, RowEdit, TranscriptRow
 from nora.domain.note_body import NoteBodyError
-from nora.domain.tag_trace import TagTrace
-from nora.domain.turn_record import cited_turn_lineage, turn_handles_in
+from nora.domain.tag_trace import (
+    FactItem,
+    TagTrace,
+    TurnFacts,
+    reduce_turn_facts,
+)
+from nora.domain.turn_record import (
+    DisclosureRequirement,
+    cited_turn_lineage,
+    turn_handles_in,
+)
 from nora.infra.sql.schema import TAG_TRACE
 
 
@@ -130,33 +139,94 @@ class SqlTagTraceStore:
             rows = (await conn.execute(stmt)).all()
         return tuple(self._trace(r) for r in rows)
 
-    async def recent_unit_turns(
-        self, *, unit: str, tool_names: Sequence[str], limit: int,
-        offset: int = 0,
-    ) -> tuple[TagTrace, ...]:
-        """Newest-first traces in the unit CONTAINING one of `tool_names` —
-        the fact read (`remind`, `decision_conclude`), so a long tail of
-        irrelevant turns cannot crowd the relevant rows past a bounded page.
-        The LIKE is on the JSONB serialised messages; a false positive costs
-        a scanned row, never a missed one. `offset` pages the same
-        deterministic order (`created_at`, `tag_id` desc)."""
-        if limit <= 0 or not tool_names:
-            return ()
-        messages = sa.cast(TAG_TRACE.c.messages, sa.Text)
-        stmt = (
-            sa.select(TAG_TRACE)
-            .where(
-                TAG_TRACE.c.unit == unit,
-                sa.or_(*(messages.like(f'%"{name}"%') for name in tool_names)),
+    async def turn_facts(
+        self, *, unit: str, tool_names: Sequence[str],
+        open_cap: int = 200, recent_cap: int = 20,
+    ) -> TurnFacts:
+        """The unit's CURRENT tool-fact projection, extracted structurally:
+        lateral JSONB expansion pairs each `toolUse` with the `toolResult`
+        sharing its `toolUseId` in the same trace, `DISTINCT ON` the
+        (name, subject, action) key keeps only the NEWEST pair per key (a
+        delivered `ok` closes its earlier unresolved, a different key's
+        never does), so the transfer is bounded by distinct facts, not by
+        the unit's history. The shared `reduce_turn_facts` then splits
+        current-open vs accepted tail."""
+        if not tool_names:
+            return TurnFacts()
+        stmt = sa.text("""
+            WITH uses AS (
+                SELECT t.id AS trace_row_id, t.turn_id, t.tag_id,
+                       t.occasion, t.created_at, t.requirements,
+                       c.block AS use_block, m.m_idx, c.b_idx
+                FROM tag_trace t,
+                     LATERAL jsonb_array_elements(t.messages)
+                        WITH ORDINALITY m(msg, m_idx),
+                     LATERAL jsonb_array_elements(m.msg->'content')
+                        WITH ORDINALITY c(block, b_idx)
+                WHERE t.unit = :unit AND c.block ? 'toolUse'
+                  AND c.block->'toolUse'->>'name' = ANY(:names)
+            ), paired AS (
+                SELECT u.*, r.res_block,
+                       CASE WHEN COALESCE(
+                                NULLIF(u.use_block->'input'->>'subject',''),'')
+                                 = ''
+                            AND COALESCE(
+                                NULLIF(u.use_block->'input'->>'action',''),'')
+                                 = ''
+                       THEN 'call:' ||
+                            (u.use_block->'toolUse'->>'toolUseId')
+                       ELSE COALESCE(u.use_block->'input'->>'subject','')
+                            || chr(31) ||
+                            COALESCE(u.use_block->'input'->>'action','')
+                       END AS fkey
+                FROM uses u
+                LEFT JOIN LATERAL (
+                    SELECT rb.block AS res_block
+                    FROM tag_trace t2,
+                         jsonb_array_elements(t2.messages) m2(msg),
+                         jsonb_array_elements(m2.msg->'content') rb(block)
+                    WHERE t2.id = u.trace_row_id
+                      AND rb.block ? 'toolResult'
+                      AND rb.block->'toolResult'->>'toolUseId'
+                          = u.use_block->'toolUse'->>'toolUseId'
+                    LIMIT 1
+                ) r ON true
             )
-            .order_by(TAG_TRACE.c.created_at.desc(), TAG_TRACE.c.tag_id.desc())
-            .offset(offset)
-            .limit(limit)
-        )
+            SELECT DISTINCT ON (
+                use_block->'toolUse'->>'name', fkey
+            )
+                turn_id, tag_id, occasion, created_at, requirements,
+                use_block, res_block, m_idx, b_idx
+            FROM paired
+            ORDER BY use_block->'toolUse'->>'name', fkey,
+                     created_at DESC, turn_id DESC NULLS LAST,
+                     m_idx DESC, b_idx DESC
+        """)
         async with self._engine.connect() as conn:
-            rows = (await conn.execute(stmt)).all()
-        return tuple(self._trace(r) for r in rows)
-
+            rows = (await conn.execute(
+                stmt, {"unit": unit, "names": tuple(tool_names)},
+            )).all()
+        items = [
+            FactItem(
+                name=r.use_block["toolUse"]["name"],
+                call_id=r.use_block["toolUse"]["toolUseId"],
+                arguments=r.use_block["toolUse"].get("input", {}),
+                result=r.res_block["toolResult"] if r.res_block else None,
+                requirements=tuple(
+                    DisclosureRequirement.from_json(req)
+                    for req in (r.requirements or {}).get(
+                        r.use_block["toolUse"]["toolUseId"], ())
+                ),
+                turn_id=r.turn_id,
+                handle=f"t{r.turn_id}" if r.turn_id is not None else None,
+                tag_id=r.tag_id, occasion=r.occasion,
+                created_at=r.created_at,
+                ordinal=(r.created_at, r.turn_id or 0, r.m_idx, r.b_idx),
+            )
+            for r in rows
+        ]
+        return reduce_turn_facts(
+            items, open_cap=open_cap, recent_cap=recent_cap)
     @staticmethod
     def _trace(r: Any) -> TagTrace:
         return TagTrace(

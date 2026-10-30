@@ -1033,7 +1033,9 @@ class TranscriptInjection:
                 def permit_req(requirements: tuple[DisclosureRequirement, ...]) -> bool:
                     # Turn-record items carry their own per-item disclosure;
                     # the same lineage predicates decide it for this room.
-                    return all(
+                    # An item carrying NO requirements has no gate to
+                    # check — withhold, never vacuously permit.
+                    return bool(requirements) and all(
                         req.known
                         and not excluded(req.exclude_persons, narrowed)
                         and section_permits(

@@ -271,3 +271,21 @@ class FakeReminderStore:
 
     async def aclose(self) -> None:
         return None
+
+    async def delivered_subject(
+        self, rooms: Sequence[tuple[str, str]], *,
+        requester_person_id: str, subject_kind: str, subject_id: str,
+        action: str, limit: int = 5,
+    ) -> Sequence[Reminder]:
+        room_set = set(rooms)
+        rows = [
+            r for r in self._rows.values()
+            if r.kind == "proactive"
+            and r.requester_person_id == requester_person_id
+            and r.outcome == "sent"
+            and r.state == ReminderState.DONE
+            and proactive_subject(r) == (subject_kind, subject_id, action)
+            and (r.platform, r.conversation_id) in room_set
+        ]
+        return sorted(rows, key=lambda r: (-r.created_at.timestamp(), r.id)
+                      )[:limit]

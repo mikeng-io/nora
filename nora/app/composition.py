@@ -1105,17 +1105,23 @@ def social_person_rooms(allowlist: Any) -> dict[tuple[str, str], tuple[str, str]
 
 
 async def _row_room(
-    audit: Any, unit_rooms: Any, unit: str, row_id: int,
+    records: Any, unit_rooms: Any, unit: str, row_id: int,
 ) -> tuple[str, str] | None:
-    """The `(platform, conversation_id)` the transcript row lives in — the
-    bounded existence read `decision_conclude`'s source resolution runs over
-    the unit's canonical rooms. `None` = no such row."""
-    for platform, cid in unit_rooms.get(unit, ()):
-        rows = await audit.since_including_nora(
-            conversation_id=cid, after_id=row_id - 1, limit=1)
-        if rows and rows[0].id == row_id:
-            return (platform, cid)
-    return None
+    """The `(platform, conversation_id)` the cited transcript row lives in —
+    the canonical `by_refs` read: hidden/withdrawn rows and rooms outside
+    the unit simply have no hit, so a phantom or foreign citation resolves
+    to `None`, never a guessed room."""
+    hits = await records.by_refs(
+        (("messages", row_id),),
+        tuple(unit_rooms.get(unit, ())),
+    )
+    hit = next(
+        (h for h in hits
+         if h.table == "messages" and h.row_id == row_id
+         and not h.hit.deleted),
+        None,
+    )
+    return (hit.hit.platform, hit.hit.conversation_id) if hit else None
 
 
 def social_unit_rooms(allowlist: Any) -> dict[str, tuple[tuple[str, str], ...]]:
@@ -2391,9 +2397,9 @@ async def build_dependencies(
     # the second store the design rules out. `unit → rooms` comes from the
     # same `allowlist` `home_rooms` is derived from, live-reloaded with it.
     unit_rooms = LiveMapping(lambda: {
-        unit: [(c.platform, c.primary_id) for c in allowlist.conversations
+        unit: [(c.platform, c.primary_id) for c in allowlist.rooms()
                if c.unit == unit]
-        for unit in {c.unit for c in allowlist.conversations if c.unit}
+        for unit in {c.unit for c in allowlist.rooms() if c.unit}
     })
     shared = shared_reader(
         notes=note_store, ledger=ledger_store, reminders=reminders,
@@ -4823,7 +4829,7 @@ async def build_dependencies(
                     ledger=ledger_store, shared=shared,
                     rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
                     resolve_row=lambda unit, row_id: _row_room(
-                        audit, unit_rooms, unit, row_id),
+                        SqlRecordQuery(engine), unit_rooms, unit, row_id),
                     reminder_caps=reminder_caps,
                     room_proactive=lambda platform, conversation_id: allowlist.proactive_allowed(
                         platform=platform, conversation_id=conversation_id,

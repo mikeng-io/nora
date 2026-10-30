@@ -611,3 +611,39 @@ class SqlReminderStore:
 
     async def aclose(self) -> None:
         await self._engine.dispose()
+
+    async def delivered_subject(
+        self, rooms: Sequence[tuple[str, str]], *,
+        requester_person_id: str, subject_kind: str, subject_id: str,
+        action: str, limit: int = 5,
+    ) -> Sequence[Reminder]:
+        """Whether THIS (subject,action) was already DELIVERED in the named
+        rooms — a payload-keyed existence read, not a history scan: `sent`
+        outcome on a CLOSED row, regardless of when the row was created.
+        Bounded by `limit`; the caller treats a full page as "unproven
+        remainder", never as absence."""
+        if not rooms:
+            return ()
+        in_rooms = sa.or_(*(
+            sa.and_(REMINDERS.c.platform == p, REMINDERS.c.conversation_id == c)
+            for p, c in rooms
+        ))
+        stmt = (
+            sa.select(REMINDERS)
+            .where(
+                REMINDERS.c.kind == PROACTIVE_KIND,
+                REMINDERS.c.requester_person_id == requester_person_id,
+                REMINDERS.c.outcome == "sent",
+                REMINDERS.c.state == ReminderState.DONE.value,
+                REMINDERS.c.payload["subject_kind"].astext == subject_kind,
+                REMINDERS.c.payload["subject_id"].astext == subject_id,
+                sa.func.coalesce(
+                    REMINDERS.c.payload["action"].astext, "") == action,
+                in_rooms,
+            )
+            .order_by(REMINDERS.c.created_at.desc(), REMINDERS.c.id.asc())
+            .limit(check_limit(limit))
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return self._decode_due(rows)
