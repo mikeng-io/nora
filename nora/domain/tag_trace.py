@@ -86,7 +86,6 @@ class TurnFacts:
     newest accepted conclusions, retaining competing Record observations."""
 
     open_items: tuple[FactItem, ...] = ()
-    recent_items: tuple[FactItem, ...] = ()
     capped: bool = False
 
 
@@ -129,20 +128,19 @@ def fact_key(item: FactItem) -> tuple[str, str, str, str]:
     failures never coalesce."""
     subject = str(item.arguments.get("subject") or "")
     action = str(item.arguments.get("action") or "")
-    if subject and (action or item.name == "decision_conclude"):
+    if subject and action:
         return (item.name, "subject", subject, action)
     return (item.name, "call", item.tag_id, item.call_id)
 
 
 def reduce_turn_facts(
-    items: Sequence[FactItem], *, open_cap: int, recent_cap: int,
-    conclude_name: str = "decision_conclude",
+    items: Sequence[FactItem], *, open_cap: int,
 ) -> TurnFacts:
     """Latest-result-per-key over structurally extracted pairs: the newest
     item of each key decides — a later `ok` closes that key only, never a
     different one; a same-trace later result wins by its block ordinal.
     `open_cap` bounds CURRENT open identities (history already closed does
-    not count); `recent_cap` bounds the display-only accepted tail."""
+    not count)."""
     latest: dict[tuple[str, str, str, str], FactItem] = {}
     for item in items:
         key = fact_key(item)
@@ -154,15 +152,7 @@ def reduce_turn_facts(
          if tool_result_status(i.result) in _OPEN_STATUSES),
         key=lambda i: i.ordinal, reverse=True,
     )
-    capped = len(open_items) > open_cap
-    recent = sorted(
-        (i for i in items
-         if i.name == conclude_name
-         and tool_result_status(i.result) == "ok"),
-        key=lambda i: i.ordinal, reverse=True,
-    )[:recent_cap]
     return TurnFacts(
         open_items=tuple(open_items[:open_cap]),
-        recent_items=tuple(recent),
-        capped=capped,
+        capped=len(open_items) > open_cap,
     )

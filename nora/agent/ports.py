@@ -38,8 +38,6 @@ R27_CORE_STATES: frozenset[str] = frozenset({"ok", "nothing_found", "unavailable
 #: `unavailable` would turn «I may not say» into «I couldn't check», which is
 #: the exact conflation R-27 exists to prevent.
 DECLARED_STATUS_EXTENSIONS: Mapping[str, str] = {
-    "unresolved": "a proposed conclusion or action lacks a resolved evidence identity; "
-                  "retained as a candidate, never accepted or scheduled",
     "refused": "disclosure veto (R-31) — may not say, not couldn't check",
     "withheld": "disclosure veto on the memory axis (R-31)",
     "ambiguous": "the subject did not resolve to ONE thing because there "

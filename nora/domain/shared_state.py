@@ -28,7 +28,7 @@ ViewStatus = Literal["ok", "nothing_found", "partial", "unavailable"]
 #: `wake` a self-wake, `send` a delivered own message; the rest are open
 #: Notebook/ledger kinds.
 ENTRY_KINDS: tuple[str, ...] = (
-    "note", "decision", "commitment", "thread",
+    "decision", "commitment", "thread", "standing", "finding",
     "act", "wake", "send",
 )
 

@@ -101,8 +101,7 @@ TURN_FACTS_SQL = """
     ), identities AS (
         SELECT p.*,
                (COALESCE(arguments->>'subject', '') <> ''
-                AND (name = 'decision_conclude'
-                     OR COALESCE(arguments->>'action', '') <> '')) AS named
+                AND COALESCE(arguments->>'action', '') <> '') AS named
         FROM paired p
     ), keyed AS (
         SELECT i.*,
@@ -123,13 +122,8 @@ TURN_FACTS_SQL = """
         WHERE result_status <> 'ok'
         ORDER BY created_at DESC, turn_id DESC NULLS LAST, m_idx DESC, b_idx DESC
         LIMIT :open_limit
-    ), recent_facts AS (
-        SELECT *, 'recent' AS bucket FROM keyed
-        WHERE name = 'decision_conclude' AND result_status = 'ok'
-        ORDER BY created_at DESC, turn_id DESC NULLS LAST, m_idx DESC, b_idx DESC
-        LIMIT :recent_limit
     )
-    SELECT * FROM open_facts UNION ALL SELECT * FROM recent_facts
+    SELECT * FROM open_facts
 """
 
 
@@ -214,22 +208,18 @@ class SqlTagTraceStore:
 
     async def turn_facts(
         self, *, unit: str, tool_names: Sequence[str],
-        open_cap: int = 200, recent_cap: int = 20,
+        open_cap: int = 200,
     ) -> TurnFacts:
-        """Reduce current identities in SQL before bounding transferred items.
-
-        Recent accepted conclusions remain independent Record observations;
-        they do not replace competing conclusions about the same subject.
-        """
+        """Reduce current identities in SQL before bounding transferred items."""
         if not tool_names:
             return TurnFacts()
-        open_cap, recent_cap = max(0, open_cap), max(0, recent_cap)
+        open_cap = max(0, open_cap)
         async with self._engine.connect() as conn:
             rows = (await conn.execute(sa.text(TURN_FACTS_SQL), {
                 "unit": unit, "names": tuple(tool_names),
-                "open_limit": open_cap + 1, "recent_limit": recent_cap,
+                "open_limit": open_cap + 1,
             })).all()
-        buckets: dict[str, list[FactItem]] = {"open": [], "recent": []}
+        buckets: dict[str, list[FactItem]] = {"open": []}
         for r in rows:
             buckets[r.bucket].append(FactItem(
                 name=r.name, call_id=r.call_id, arguments=r.arguments,
@@ -245,7 +235,6 @@ class SqlTagTraceStore:
             ))
         return TurnFacts(
             open_items=tuple(buckets["open"][:open_cap]),
-            recent_items=tuple(buckets["recent"]),
             capped=len(buckets["open"]) > open_cap,
         )
 

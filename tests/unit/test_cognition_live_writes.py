@@ -483,41 +483,6 @@ async def test_remind_refuses_a_same_act_already_delivered():
     assert result[0]["reason"] == "duplicate_pending"
 
 
-async def test_conclusion_keeps_named_source_exclusions_in_its_record():
-    from dataclasses import replace
-    from types import SimpleNamespace
-
-    from nora.agent.turn_recording import TurnRecording
-    from nora.domain.lineage import ROW, Lineage, message
-
-    stores = Stores()
-    saved_requirements = []
-
-    async def behave(by, tools):
-        answer = await by["note_create"](body=GOOD_BODY, **NOTE)
-        note_id = answer["note_id"]
-        stores.notes.notes[note_id] = replace(
-            stores.notes.notes[note_id],
-            lineage=Lineage.of({ROW: (message("signal:room-a"),)}),
-            exclude_persons=("generated-listener",),
-        )
-        capture = TurnRecording()
-        capture.before(SimpleNamespace(tool_use={"toolUseId": "generated-conclusion"}))
-        try:
-            result = await by["decision_conclude"](
-                subject="generated-choice", decision="generated decision",
-                sources=[f"note:{note_id}"],
-            )
-        finally:
-            capture.after(None)
-        assert result["status"] == "ok"
-        saved_requirements.extend(capture.requirements["generated-conclusion"])
-
-    await session(behave, stores=stores)
-    assert saved_requirements and all(r.known for r in saved_requirements)
-    assert any("generated-listener" in r.exclude_persons for r in saved_requirements)
-
-
 async def test_cognition_can_revise_a_unit_room_without_adding_it_to_the_agenda():
     from tests.unit.cognition_rig import B
 

@@ -3592,7 +3592,7 @@ class AssessConfig(BaseModel):
 
 class LineageConfig(BaseModel):
     """Lineage at assembly: whether the pushed blocks that render derived rows
-    (`<notes>`, `<standing>`, `<standing_working_set>`, `<culture>`) show each row or
+    (`<notes>`, `<standing>`, `<culture>`) show each row or
     section only in the rooms its lineage passes for.
 
     **Ships OFF.** `off`: blocks render as they always have and nothing is

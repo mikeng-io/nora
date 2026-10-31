@@ -231,7 +231,7 @@ def test_the_renderer_names_withheld_entries_and_coverage():
         entries=(entry,), sources=(("ledger", "partial"),),
     )
     block = render_shared_state(view, now_ms=T0_MS)
-    assert block is not None and block.name == "shared_cognitive_state"
+    assert block is not None and block.name == "standing"
     # Withheld entries name the room only as «another» — the raw
     # platform/conversation_id of a room this read cannot see never renders.
     assert "open in another room · withheld" in block.body
@@ -316,24 +316,15 @@ async def test_a_unit_read_sees_every_room():
     assert all(e.permitted for e in view.entries)
 
 
-async def test_trace_conclusions_and_unresolved_are_read_back():
-    """The Record is the carrier: a `conclude` toolUse shows its options,
-    leaning and sources to the next read; an `unresolved` remind result
-    persists until a NEWER `ok` for the same (subject, action) discharges
-    it — across processes, because the trace store is the authority."""
+async def test_an_unresolved_remind_persists_until_a_newer_ok_discharges_it():
+    """The Record is the carrier: an `unresolved` remind result persists
+    until a NEWER `ok` for the same (subject, action) discharges it —
+    across processes, because the trace store is the authority."""
     from nora.domain.tag_trace import TagTrace
     from nora.testing.tag_traces import FakeTagTraceStore
 
     store = FakeTagTraceStore()
     messages = (
-        {"role": "assistant", "content": [
-            {"toolUse": {"toolUseId": "c1", "name": "decision_conclude", "input": {
-                "subject": "decision:d1", "decision": "the pier wins",
-                "options": "pier, cove", "leaning": "pier",
-                "sources": ["d1", "101"]}}}]},
-        {"role": "user", "content": [
-            {"toolResult": {"toolUseId": "c1", "status": "success",
-                            "content": [{"json": {"status": "ok"}}]}}]},
         {"role": "assistant", "content": [
             {"toolUse": {"toolUseId": "r1", "name": "remind", "input": {
                 "intent": "ask", "text": "ask when it is",
@@ -353,12 +344,6 @@ async def test_trace_conclusions_and_unresolved_are_read_back():
     view = await read_shared(
         unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS, traces=store,
     )
-    concl = [e for e in view.entries if e.kind == "conclusion"]
-    assert len(concl) == 1
-    assert "pier" in concl[0].detail and "leaning" in concl[0].detail
-    assert concl[0].refs[:2] == ("d1", "101")
-    assert concl[0].refs[-1].startswith("turn(")
-    assert concl[0].provenance == "cognition:t1"
     assert len(view.unresolved) == 1 and "note:not-there" in view.unresolved[0]
 
     resolved_messages = (
@@ -390,10 +375,10 @@ def test_render_preserves_positions_conclusions_and_withholds_their_content():
         SharedEntry(kind="standing", id="position", scope="room-a", status="open",
                     subject="We await confirmation", detail="open: booking; owe: reply",
                     at_ms=T0_MS),
-        SharedEntry(kind="conclusion", id="choice", scope="unit", status="recent",
+        SharedEntry(kind="decision", id="choice", scope="unit", status="open",
                     subject="Dinner", detail="Choose Friday; options: Thursday or Friday",
                     refs=("note:n-1",), provenance="tag-1", at_ms=T0_MS),
-        SharedEntry(kind="conclusion", id="secret-choice", scope="unit", status="recent",
+        SharedEntry(kind="decision", id="secret-choice", scope="unit", status="open",
                     subject="SECRET SUBJECT", detail="SECRET DETAIL", permitted=False),
         SharedEntry(kind="act", id="secret-act", scope="room-b", status="done",
                     subject="SECRET ACTION", destination="SECRET DEST", permitted=False),
@@ -546,68 +531,6 @@ async def test_an_expired_finding_and_an_excluded_position_stay_out():
     assert "EXCLUDED FINDING" not in bodies
 
 
-async def test_decision_conclude_resolves_real_rows_and_refuses_the_rest():
-    """R2-6: the native producer's `sources` RESOLVE against the Record —
-    a missing or foreign row is `unresolved`, a storeless turn is
-    `unavailable`, an empty list is `source_required`; a resolved row's
-    room gate lands in the call's recorded requirements."""
-    from nora.agent.tools import build_tool_specs
-    from nora.agent.turn_recording import TurnRecording
-    from nora.testing.fakes import FakeRecordStore
-    from tests.unit.test_clock_agreement import Metrics
-
-    class _NS:
-        def __init__(self, **kw):
-            self.__dict__.update(kw)
-
-    def _specs(store, transcript=()):
-        return build_tool_specs(
-            store=store, conversation_id="room-a", conversation_type="group",
-            persons=None, honcho=None, deliverer=None, metrics=Metrics(),
-            room=_NS(platform="signal", tagger=None), transit_source=None,
-            transcript=transcript)
-
-    # store=None -> unavailable (can't check)
-    tool = next(s for s in _specs(None) if s.name == "decision_conclude")
-    out = await tool.call(subject="d", decision="x", sources=["42"])
-    assert out["status"] == "unavailable"
-
-    # The SDK contract adapter must preserve the unresolved candidate.
-    from nora.agent.ports import _validated
-
-    # no sources -> source_required
-    tool = next(
-        s for s in _specs(FakeRecordStore()) if s.name == "decision_conclude")
-    out = await _validated(tool)(subject="d", decision="x", sources=[])
-    assert out["status"] == "unresolved" and out["reason"] == "source_required"
-
-    # missing row -> unresolved (the tool closes over THIS store)
-    store = FakeRecordStore()
-    tool = next(s for s in _specs(store) if s.name == "decision_conclude")
-    out = await tool.call(subject="d", decision="x", sources=["999999"])
-    assert out["status"] == "unresolved" and out["reason"] == "source_unresolved"
-
-    # real row -> ok, and the resolved room's gate is recorded on the call
-    from nora.domain.models import NormalizedMessage
-    await store.append(message=NormalizedMessage(
-        "signal", "room-a", "group", "+10000000001", "Someone", 1,
-        "hi", {}))
-    rows = tuple(await store.since_including_nora(
-        conversation_id="room-a", after_id=0, limit=40))
-    tool = next(s for s in _specs(store, rows) if s.name == "decision_conclude")
-    rec = TurnRecording()
-    rec.before(_NS(tool_use={"toolUseId": "c1"}))
-    out = await tool.call(subject="d", decision="x", sources=["#1"])
-    rec.after(_NS())
-    assert out["status"] == "ok"
-    reqs = rec.requirements["c1"]
-    # the spec's own in-room gate + the resolved row's gate, both resolved
-    assert len(reqs) == 2 and all(r.known for r in reqs)
-    assert out["sources"] == ["1"]
-    missing = await tool.call(subject="d", decision="x", sources=["999999"])
-    assert missing["status"] == "unresolved"
-
-
 async def test_an_unresolved_only_view_is_rendered():
     from nora.domain.tag_trace import TagTrace
     from nora.testing.tag_traces import FakeTagTraceStore
@@ -637,44 +560,6 @@ async def test_an_unresolved_only_view_is_rendered():
     assert datetime.fromtimestamp((T0_MS - 3_600_000) / 1000, UTC).isoformat() in block.body
 
 
-async def test_shared_notes_keep_the_existing_destination_exclusion():
-    from dataclasses import replace
-
-    from nora.agent.lineage import visible_sections
-    from nora.domain.lineage import ROW, Lineage, LiveRoom, RenderRoom, RoomFacts, message
-    from nora.testing.note_store import InMemoryNoteStore
-
-    notes = InMemoryNoteStore()
-    note = await notes.create(
-        unit="u1", title="Generated private note", description="a generated choice",
-        uncertainty="the option", closing_condition="a confirmation",
-        body="## Open\n- choose [101]\n", established_in="signal:room-a",
-        established_by="generated", now_ms=T0_MS, anchor_date=20260701,
-    )
-    notes.notes[note.id] = replace(
-        note, lineage=Lineage.of({ROW: (message("signal:room-a"),)}),
-        exclude_persons=("generated-listener",),
-    )
-    target = RenderRoom(
-        room=RoomFacts("signal", frozenset({"room-a"}), "u1",
-                       frozenset({"generated-listener"}), primary_id="room-a"),
-        live=LiveRoom(frozenset({"generated-listener"})), mode="on", content_checks=True,
-    )
-
-    def permits(entry):
-        return visible_sections(entry.lineage, (ROW,), target,
-                                origin=entry.established_in,
-                                exclude_persons=entry.exclude_persons)[ROW]
-
-    hidden = await read_shared(unit="u1", rooms=ROOMS, room=ROOMS[0], ai_peer="nora",
-                               now_ms=T0_MS, notes=notes, notes_permit=permits)
-    assert not any(e.id == note.id for e in hidden.entries)
-    unit = await read_shared(unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS,
-                             notes=notes)
-    rendered = render_shared_state(unit, now_ms=T0_MS)
-    assert rendered is not None and note.title in rendered.body
-
-
 def test_delivery_facts_expose_action_identity_and_legacy_uncertainty():
     from nora.domain.shared_state import SharedEntry, SharedView
 
@@ -698,7 +583,7 @@ def test_renderer_keeps_all_facts_selected_by_the_bounded_reader():
     from nora.domain.shared_state import SharedEntry, SharedView
 
     entries = []
-    for kind, count in (("act", 13), ("send", 9), ("finding", 9), ("conclusion", 9)):
+    for kind, count in (("act", 13), ("send", 9), ("finding", 9), ("decision", 9)):
         entries.extend(SharedEntry(
             kind=kind, id=f"generated-{kind}-{i}", subject=f"generated-{kind}-{i}",
             scope="unit", status="sent" if kind == "act" else "open",
@@ -708,7 +593,7 @@ def test_renderer_keeps_all_facts_selected_by_the_bounded_reader():
     ), now_ms=T0_MS)
     assert block is not None
     for subject in ("generated-act-12", "generated-send-8", "generated-finding-8",
-                    "generated-conclusion-8"):
+                    "generated-decision-8"):
         assert subject in block.body
 
 

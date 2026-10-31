@@ -397,13 +397,13 @@ def _fire_path(
     gate_shadow_platform: str = "discord",
     timeout_seconds: float = 5.0,
     event_registry: dict | None = None,
-    standing=None,
+    shared=None,
     standing_store_timeout_seconds: float = 5.0,
     decisions=None,
     policy=None,
     defer_tools: bool = False,
 ) -> FirePath:
-    extra = {"standing": standing,
+    extra = {"shared": shared,
              "standing_store_timeout_seconds": standing_store_timeout_seconds,
              "decisions": decisions}
     if policy is not None:
@@ -1081,7 +1081,9 @@ async def _fire_path_with_standing(
         canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40, limits={},
         timeout_seconds=120.0, clock=lambda: T0,
-        standing=standing, standing_store_timeout_seconds=store_timeout,
+        shared=_shared_reader(standing, rooms=[("signal", "conv-1")]),
+        standing_store_timeout_seconds=store_timeout,
+        policy=permissive_policy(),
     )
 
 
@@ -1113,8 +1115,8 @@ async def test_the_fire_path_renders_the_conversations_position(
 
     ctx = await fire.build_context(occasion)
 
-    assert ctx.standing is not None
-    assert "Grant is travelling" in ctx.standing.body
+    pos = next((e for e in ctx.shared.entries if e.kind == "standing"), None)
+    assert pos is not None and "Grant is travelling" in pos.subject
 
 
 async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
@@ -1127,8 +1129,8 @@ async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
     `command_timeout`, so an unbounded standing read would hold the slot
     indefinitely.
 
-    Falsification: drop the `asyncio.wait_for` in `_read_standing` and this
-    hangs instead of failing.
+    Falsification: drop the `asyncio.wait_for` around `_read_shared`'s
+    reader call and this hangs instead of failing.
     """
     class _Hangs:
         async def read(self, **kw):
@@ -1142,8 +1144,8 @@ async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
     ctx = await asyncio.wait_for(
         fire.build_context(reminder_occasion([_reminder()])), timeout=5)
 
-    assert ctx.standing is None
-    assert metrics.get("nora_errors_total", stage="fire_standing") == 1
+    assert ctx.shared is not None and ctx.shared.status == "unavailable"
+    assert metrics.get("nora_errors_total", stage="shared_state") == 1
 
 
 # ---------------------------------------------------------------------------
@@ -1154,7 +1156,7 @@ async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
 
 async def _fire_path_with_tiers(
     persons, record_store, memory_store, doctrine_store, metrics, *,
-    notes=None, policy="permissive", culture=None, standing=None, memos=None,
+    notes=None, policy="permissive", culture=None, shared=None, memos=None,
 ) -> FirePath:
     """`fire_path`'s own builder plus the tier collaborators — same
     model-side-collaborators-are-None shape, for the same reason: these tests
@@ -1167,9 +1169,19 @@ async def _fire_path_with_tiers(
         canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40, limits={},
         timeout_seconds=120.0, clock=lambda: T0,
-        notes=notes, culture=culture, standing=standing, memos=memos,
+        notes=notes, culture=culture, shared=shared, memos=memos,
         policy=permissive_policy() if policy == "permissive" else None,
     )
+
+
+def _shared_reader(standing, rooms=()):
+    """A real `shared_reader` over the given standing store — the position
+    paragraph reaches the fire context as a `standing` entry in the ONE
+    `standing` view (design/notebook-memory-types/20-standing.md)."""
+    from nora.agent.shared_state import shared_reader
+    return shared_reader(
+        standing=standing, ai_peer="nora",
+        rooms_of_unit=lambda unit: tuple(rooms))
 
 
 def _seeded_note_store() -> InMemoryNoteStore:
@@ -1229,10 +1241,11 @@ async def test_a_standing_and_culture_head_render_in_a_fire_turn(
     )
     fire = await _fire_path_with_tiers(
         persons, record_store, memory_store, doctrine_store, metrics,
-        culture=culture, standing=standing,
+        culture=culture, shared=_shared_reader(standing, rooms=[("signal", "conv-1")]),
     )
     ctx = await fire.build_context(occasion)
-    assert ctx.standing is not None and ctx.standing.body == "a position"
+    pos = next((e for e in ctx.shared.entries if e.kind == "standing"), None)
+    assert pos is not None and pos.subject == "a position"
     assert ctx.culture is not None and ctx.culture.body == "an account"
 
 
@@ -3044,14 +3057,14 @@ async def test_the_fire_context_reads_run_concurrently_not_one_after_another(
         canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40, limits={},
         timeout_seconds=120.0, clock=lambda: T0,
-        standing=_Standing(),                                   # type: ignore[arg-type]
+        shared=_shared_reader(_Standing()),                   # type: ignore[arg-type]
         standing_store_timeout_seconds=0.5,
         presence=_Reader(),                                     # type: ignore[arg-type]
     )
 
     ctx = await path.build_context(reminder_occasion([_reminder()]))
 
-    assert ctx.standing is not None and ctx.standing.body == "dinner is still open"
+    assert ctx.shared is not None and ctx.shared.status == "unavailable"
     assert ctx.presence is not None
 
 async def test_a_deferred_participation_turn_gets_the_same_surface_as_a_tag(

@@ -115,10 +115,10 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("reads", 20, "turn"),
     ("agenda", 30, "turn"),
     ("note_index", 40, "turn"),
-    # The unit's shared cognitive state (design/notebook-memory-types/20):
-    # open judgements, pending acts, delivered results — read by code from
-    # the canonical stores, right after the note index it generalises.
-    ("shared_cognitive_state", 45, "turn"),
+    # The one `standing` block (design/notebook-memory-types/20-standing.md):
+    # positions, open judgements, pending acts, delivered results — read by
+    # code from the canonical stores, right after the note index.
+    ("standing", 45, "turn"),
     ("events", 50, "turn"),
     # What the unit settled and keeps (DEC-306), LAST of the Register and on
     # its own budget, so no number of memos can push an agenda room's events

@@ -69,7 +69,7 @@ def test_every_declared_extension_is_named_and_documented() -> None:
     reason this is a mapping rather than a set.
     """
     assert set(DECLARED_STATUS_EXTENSIONS) == {
-        "refused", "withheld", "ambiguous", "not_found", "unresolved",
+        "refused", "withheld", "ambiguous", "not_found",
         "nothing_known", "not_an_image", "already_present", "no_route",
         # A HOLD is not a refusal and not a fault: nothing vetoed the send and nothing was
         # broken. What separates it from both is that calling again cannot help, because

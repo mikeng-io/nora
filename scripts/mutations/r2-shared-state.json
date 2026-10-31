@@ -7,13 +7,6 @@
     "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_same_trace_later_result_wins"
   },
   {
-    "name": "r2-6-source-resolves-against-record",
-    "file": "nora/agent/tools.py",
-    "old": "row = by_id.get(source)",
-    "new": "row = by_id.get(source) or next(iter(by_id.values()), None)",
-    "target": "tests/unit/test_shared_state.py::test_decision_conclude_resolves_real_rows_and_refuses_the_rest"
-  },
-  {
     "name": "r2-3-canonical-unit-arbitration",
     "file": "nora/app/cognition_session.py",
     "old": "arbitration_rooms=[tuple(r) for r in unit_rooms],",
@@ -35,13 +28,6 @@
     "target": "tests/unit/test_shared_state.py::test_an_expired_finding_and_an_excluded_position_stay_out"
   },
   {
-    "name": "r2-2-wired-debrief-record-only",
-    "file": "nora/engagement/stages/debrief.py",
-    "old": "        if conclusions is not None:",
-    "new": "        if False:",
-    "target": "tests/unit/test_debrief.py::test_wired_route_survives_a_broken_store"
-  },
-  {
     "name": "sql-current-facts-preserve-subject-identity",
     "file": "nora/infra/sql/tag_traces.py",
     "old": "CASE WHEN named THEN arguments->>'subject' ELSE tag_id END AS key_subject,",
@@ -56,13 +42,6 @@
     "target": "tests/unit/test_shared_state.py::test_an_unresolved_only_view_is_rendered"
   },
   {
-    "name": "named-conclusions-retain-source-exclusions",
-    "file": "nora/app/cognition_session.py",
-    "old": "None, flat, tuple(entry.exclude_persons),",
-    "new": "None, flat, (),",
-    "target": "tests/unit/test_cognition_live_writes.py::test_conclusion_keeps_named_source_exclusions_in_its_record"
-  },
-  {
     "name": "sql-fact-transfer-bounded-after-reduction",
     "file": "nora/infra/sql/tag_traces.py",
     "old": "LIMIT :open_limit",
@@ -70,25 +49,11 @@
     "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_bounds_database_transfer_after_reduction"
   },
   {
-    "name": "shared-note-destination-exclusion",
-    "file": "nora/agent/shared_state.py",
-    "old": "if room is not None and notes_permit is not None and not notes_permit(n):",
-    "new": "if False:",
-    "target": "tests/unit/test_shared_state.py::test_shared_notes_keep_the_existing_destination_exclusion"
-  },
-  {
     "name": "cognition-write-scope-is-unit-not-agenda",
     "file": "nora/app/cognition_session.py",
     "old": "return self.rooms if self.unit_rooms is None else self.unit_rooms",
     "new": "return self.rooms",
     "target": "tests/unit/test_cognition_live_writes.py::test_one_room_agenda_can_schedule_an_explicit_two_room_unit_plan"
-  },
-  {
-    "name": "native-unresolved-survives-sdk-contract",
-    "file": "nora/agent/ports.py",
-    "old": "\"unresolved\": \"a proposed conclusion or action lacks a resolved evidence identity; \"",
-    "new": "\"unresolved_disabled\": \"a proposed conclusion or action lacks a resolved evidence identity; \"",
-    "target": "tests/unit/test_shared_state.py::test_decision_conclude_resolves_real_rows_and_refuses_the_rest"
   },
   {
     "name": "sql-matching-result-uses-last-recorded-result",
@@ -100,7 +65,7 @@
   {
     "name": "delivered-act-retains-canonical-identity",
     "file": "nora/language/shared_render.py",
-    "old": "identity = f\"{e.subject_ref or 'subject unresolved'} · {e.action or 'remind'}\"",
+    "old": "identity = f\"{e.subject_ref or 'subject unresolved'} \u00b7 {e.action or 'remind'}\"",
     "new": "identity = \"identity omitted\"",
     "target": "tests/unit/test_shared_state.py::test_delivery_facts_expose_action_identity_and_legacy_uncertainty"
   },

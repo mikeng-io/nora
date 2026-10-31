@@ -509,4 +509,4 @@ async def test_graph_prefetch_and_shared_state_reach_the_same_turn() -> None:
     body = build_prefill(ctx, display_name="Nora", context_window=10)[1]["content"][0]["text"]
     assert "ramen crawl graph evidence" in body
     assert "generated pending follow-up" in body
-    assert "<recalled" in body and "<shared_cognitive_state" in body
+    assert "<recalled" in body and "<standing" in body

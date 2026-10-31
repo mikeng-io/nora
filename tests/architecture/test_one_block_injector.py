@@ -177,7 +177,6 @@ def test_a_module_that_writes_a_tag_by_hand_is_caught():
 CONVERTED = (
     "nora/language/shared_render.py",
     "nora/language/comprehend_render.py",
-    "nora/agent/standing_ledger.py",
     "nora/app/extraction.py",
     "nora/app/profile_spike.py",
     "nora/agent/prefill.py",
@@ -193,7 +192,6 @@ CONVERTED = (
     "nora/language/note_render.py",
     "nora/language/memo_render.py",
     "nora/language/presence_render.py",
-    "nora/language/standing_render.py",
     "nora/engagement/debrief_render.py",
     "nora/infra/transit/arrivals.py",
     "nora/language/cognition_render.py",

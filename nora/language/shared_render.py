@@ -1,8 +1,8 @@
-"""Renders the unit's shared cognitive state, ONCE, for every audience.
+"""Renders the one `standing` block, ONCE, for every audience.
 
-`design/notebook-memory-types/20-shared-cognitive-state.md`: the tag path's
-prefill and the Cognition session's agenda both draw from this — two
-renderers over one `SharedView` would be two answers to «what stands».
+`design/notebook-memory-types/20-standing.md`: the tag path's prefill, the
+Cognition session's agenda and the proactive fire path all draw from this —
+two renderers over one `SharedView` would be two answers to «what stands».
 `nora.agent.shared_state` reads the stores; this module only formats.
 """
 
@@ -18,7 +18,7 @@ from nora.domain.shared_state import SharedView
 def render_shared_state(
     view: SharedView | None, *, now_ms: int, tz: tzinfo = UTC,
 ) -> ContextBlock | None:
-    """The `<shared_cognitive_state>` block, or `None` for `nothing_found`.
+    """The `<standing>` block, or `None` for `nothing_found`.
 
     `unavailable` still renders — the coverage line is exactly what a model
     needs to not conclude «nothing is pending» from a failed read.
@@ -43,9 +43,8 @@ def render_shared_state(
     said = [e for e in view.entries if e.kind == "send"]
     findings = [e for e in view.entries if e.kind == "finding"]
     positions = [e for e in view.entries if e.kind == "standing"]
-    concluded = [e for e in view.entries if e.kind == "conclusion"]
     lines = [
-        f"the unit's shared state as of {now.isoformat(timespec='seconds')} "
+        f"the unit's standing as of {now.isoformat(timespec='seconds')} "
         f"— status={view.status}",
         f"coverage: {coverage}",
     ]
@@ -67,7 +66,14 @@ def render_shared_state(
                 continue
             rev = f" rev{e.revision}" if e.revision else ""
             head = f"- {e.kind} {e.id}{rev} · {e.scope} · {e.subject}"
-            lines.append(f"{head}\n    {e.detail}" if e.detail else head)
+            tail = (
+                f" — sources: {', '.join(e.refs)}"
+                + (f"; produced by {e.provenance}" if e.provenance else "")
+            ) if e.refs else (
+                f" — produced by {e.provenance}" if e.provenance else ""
+            )
+            body = f"{head}{tail}"
+            lines.append(f"{body}\n    {e.detail}" if e.detail else body)
     if waiting:
         lines.append("## Waiting")
         for e in waiting:
@@ -113,19 +119,6 @@ def render_shared_state(
                 continue
             ago = f" · {age(e.at_ms, now)} ago" if e.at_ms else ""
             lines.append(f"- send {e.id} · {e.scope}{ago} · excerpt: {e.subject}")
-    if concluded:
-        lines.append("## Record conclusions (not consolidated)")
-        for e in concluded:
-            if not e.permitted:
-                lines.append("- a conclusion in another room · withheld")
-                continue
-            ago = f" · {age(e.at_ms, now)} ago" if e.at_ms else ""
-            lines.append(f"-{ago} · {e.subject}")
-            if e.detail:
-                lines.append(f"    {e.detail}")
-            evidence = " · ".join((*e.refs, e.provenance) if e.provenance else e.refs)
-            if evidence:
-                lines.append(f"    sources: {evidence}")
     for item in view.unresolved:
         lines.append(f"- unresolved · {item}")
     for e in findings:
@@ -137,5 +130,5 @@ def render_shared_state(
         if e.detail:
             lines.append(f"    {e.detail}")
     return ContextBlock(
-        name="shared_cognitive_state", body=escape("\n".join(lines)),
+        name="standing", body=escape("\n".join(lines)),
     )

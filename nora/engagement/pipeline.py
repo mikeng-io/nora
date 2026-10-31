@@ -105,7 +105,6 @@ from nora.domain.ports import (
 from nora.domain.profile import ProfileView
 from nora.domain.tag_trace import VALID_OUTCOMES, TagTrace
 from nora.domain.tool_call_log import ToolCallLogStore
-from nora.domain.turn_record import TurnItem, turn_items
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.obs.tracing import TRACE_KIND, TraceCarrier, annotate, attached, capture_context, span
 from nora.persons import Persons
@@ -479,7 +478,6 @@ class EngagementPipeline:
         self, *, trace: TagTrace | None, platform: str,
         culture: CultureRevision | None = None,
         profile_room: ProfileView | None = None,
-        conclusions: tuple[TurnItem, ...] | None = None,
     ) -> None:
         """Hand this finished turn to the debrief stage, or do nothing at all.
 
@@ -542,7 +540,6 @@ class EngagementPipeline:
                 culture=culture,
                 profile_room=profile_room,
                 profile_name_of=self._profile_name_of,
-                conclusions=conclusions,
             )
 
     async def _run_admitted(
@@ -602,7 +599,6 @@ class EngagementPipeline:
         # `agent.messages` and no `ctx.transcript` window to attribute a
         # trace to, so nothing is saved for it.
         trace: TagTrace | None = None
-        shared_state = False
         # The room's account the turn read at its start (DEC-207), handed to
         # the debrief so the fold reads the SAME account the reply did rather
         # than a second read that could land either side of a fold. Bound
@@ -622,7 +618,6 @@ class EngagementPipeline:
         # `indicate.resolve` treats as "nothing to replace".
         try:
             ctx = await self._context.assemble(request=request)
-            shared_state = ctx.shared is not None
             culture = ctx.culture
             profiles = ctx.profiles
             # An @-mention is a placeholder plus a parallel array; left alone,
@@ -1218,8 +1213,6 @@ class EngagementPipeline:
                     trace=trace, platform=msg.platform, culture=culture,
                     profile_room=next(
                         (v for v in profiles if v.entity == "room"), None),
-                    conclusions=turn_items(trace.messages, trace.requirements)
-                    if shared_state and trace is not None else None,
                 )
             except BaseException:
                 # ABSORBED, not re-raised, and `BaseException` rather than

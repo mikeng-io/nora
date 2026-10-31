@@ -582,8 +582,18 @@ def permissive_policy() -> Policy:
 
 @dataclass(frozen=True)
 class _PermissivePolicy(Policy):
+    # The rooms `conversation()` has synthesized, so an enumerating consumer
+    # (`rooms_of_unit` for the `standing` view's room loop) sees the rooms a
+    # harness has actually driven — a real policy's rooms are declared; this
+    # one's exist only once admitted. Frozen, so the registry lives in a
+    # mutable member.
+    _seen: dict = field(default_factory=dict)
+
     def conversation(self, platform: str, conversation_id: str) -> Conversation:
-        return Conversation(
+        key = (platform, conversation_id)
+        if key in self._seen:
+            return self._seen[key]
+        convo = Conversation(
             platform=platform, ids=frozenset({conversation_id}), persons=None,
             primary_id=conversation_id,
             # Opted IN to the Relevance Gate:
@@ -596,6 +606,8 @@ class _PermissivePolicy(Policy):
             # by default.
             relevance_gate=True,
         )
+        self._seen[key] = convo
+        return convo
 
     def is_allowed(self, *, platform: str, conversation_id: str, person_id: str | None) -> bool:
         return True
@@ -613,6 +625,11 @@ class _PermissivePolicy(Policy):
     # the session started), not its refusal. Inventing a channel here would
     # route a harness's announcements at an id nothing can send to —
     # `voice_room` overrides precisely because `None` there WOULD refuse.
+
+    def rooms(self) -> tuple[Conversation, ...]:
+        """The rooms admitted so far — the only ones a synthesized policy
+        can honestly name."""
+        return tuple(self._seen.values())
 
     def proactive_allowed(self, *, platform: str, conversation_id: str) -> bool:
         """Every room, for the harnesses' reason: the act suite drives

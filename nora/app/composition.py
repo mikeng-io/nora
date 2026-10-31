@@ -1105,24 +1105,6 @@ def social_person_rooms(allowlist: Any) -> dict[tuple[str, str], tuple[str, str]
     return out
 
 
-async def _row_room(
-    records: Any, unit_rooms: Any, unit: str, row_id: int,
-) -> tuple[str, str] | None:
-    """The `(platform, conversation_id)` the cited transcript row lives in —
-    the canonical `by_refs` read: hidden/withdrawn rows and rooms outside
-    the unit simply have no hit, so a phantom or foreign citation resolves
-    to `None`, never a guessed room."""
-    hits = await records.by_refs(
-        (("messages", row_id),),
-        tuple(unit_rooms.get(unit, ())),
-    )
-    hit = next(
-        (h for h in hits
-         if h.table == "messages" and h.row_id == row_id
-         and not h.hit.deleted),
-        None,
-    )
-    return (hit.hit.platform, hit.hit.conversation_id) if hit else None
 
 
 def social_unit_rooms(allowlist: Any) -> dict[str, tuple[tuple[str, str], ...]]:
@@ -2392,7 +2374,7 @@ async def build_dependencies(
         )
         if cfg.memory.index.read else None
     )
-    # The unit's shared cognitive state (design/notebook-memory-types/20):
+    # The one Standing view (design/notebook-memory-types/20-standing.md):
     # ONE reader over the canonical stores, held by the tag assembler, the
     # fire path and the cognition session — a second copy per path would be
     # the second store the design rules out. `unit → rooms` comes from the
@@ -2403,7 +2385,7 @@ async def build_dependencies(
         for unit in {c.unit for c in allowlist.rooms() if c.unit}
     })
     shared = shared_reader(
-        notes=note_store, ledger=ledger_store, reminders=reminders,
+        ledger=ledger_store, reminders=reminders,
         record_query=SqlRecordQuery(engine),
         standing=standing_store if cfg.standing.enabled else None,
         traces=tag_trace_store,
@@ -2434,8 +2416,6 @@ async def build_dependencies(
         # instance the debrief's `Wiring` gets below: the fold's non-negotiable
         # is that the read and the write are the same row seen twice, and two
         # objects for one row is how that stops being structurally true.
-        standing=standing_store if cfg.standing.enabled else None,
-        ledger=ledger_store,
         shared=shared,
         # The media join. The same instance every other
         # transcript builder holds — the comprehension a spawned job wrote is
@@ -3484,6 +3464,34 @@ async def build_dependencies(
             working_set_max_chars=cfg.standing.working_set_max_chars,
             content_checks=content_checks,
         )
+    # The Cognition session's completion hook (design/notebook-memory-types/
+    # 20-standing.md §3): the SAME tools-less Standing fold the tag path runs
+    # after every admitted turn, run once per room the finished session
+    # actually bound, with the session's whole retained Record as its input.
+    # `None` when `[standing] enabled = false`, exactly like `debrief_wiring`
+    # it reuses — the same wiring absence, the same inert state.
+    standing_fold = None
+    if debrief_wiring is not None:
+        async def standing_fold(*, trace, platform, conversation_id):
+            from nora.engagement.stages import debrief as _debrief_stage
+            await _debrief_stage.run(
+                trace=trace, platform=platform, conversation_id=conversation_id,
+                source="cognition",
+                store=debrief_wiring.store, client=debrief_wiring.client,
+                objective=debrief_wiring.objective,
+                record_store=debrief_wiring.record_store,
+                max_chars=debrief_wiring.max_chars,
+                fold_batch=debrief_wiring.fold_batch,
+                timeout_seconds=debrief_wiring.timeout_seconds,
+                store_timeout_seconds=debrief_wiring.store_timeout_seconds,
+                media_join=debrief_wiring.media_join,
+                content_checks=debrief_wiring.content_checks,
+                working_set_max_items=debrief_wiring.working_set_max_items,
+                working_set_max_chars=debrief_wiring.working_set_max_chars,
+                metrics=metrics, display_name=cfg.doctrine.display_name,
+                now_ms=int(clock().timestamp() * 1000),
+            )
+
     engagement = EngagementPipeline(
         # EVERY built adapter, not just Signal's: a tag is answered on the
         # platform it arrived from, and `registry.adapters` is exactly the set
@@ -3618,8 +3626,6 @@ async def build_dependencies(
             # got to» is the context she is least likely to have any other
             # way: there is no tagging message to infer it from. Reads only;
             # the fire path writes no position (see `FirePath.__init__`).
-            standing=standing_store if cfg.standing.enabled else None,
-            ledger=ledger_store,
             # THE CULTURE HEAD (DEC-207) — the SAME reader
             # the tag assembler holds. Keyed on `primary_id`, which is why this
             # path resolves the occasion through the policy it already holds
@@ -4833,9 +4839,8 @@ async def build_dependencies(
                     memos=memo_store,
                     reminders=reminders, ai_peer=cfg.honcho.ai_peer,
                     ledger=ledger_store, shared=shared,
+                    standing_fold=standing_fold,
                     rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
-                    resolve_row=lambda unit, row_id: _row_room(
-                        SqlRecordQuery(engine), unit_rooms, unit, row_id),
                     reminder_caps=reminder_caps,
                     room_proactive=lambda platform, conversation_id: allowlist.proactive_allowed(
                         platform=platform, conversation_id=conversation_id,

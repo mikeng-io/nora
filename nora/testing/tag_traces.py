@@ -44,7 +44,7 @@ class FakeTagTraceStore:
 
     async def turn_facts(
         self, *, unit: str, tool_names: Sequence[str],
-        open_cap: int = 200, recent_cap: int = 20,
+        open_cap: int = 200,
     ) -> TurnFacts:
         """The fake mirrors the structural projection: `turn_items` pairs
         use/result by `toolUseId` in message order — the same semantics the
@@ -68,8 +68,7 @@ class FakeTagTraceStore:
                     created_at=t.created_at,
                     ordinal=(t.created_at, t.turn_id or 0, 0, idx),
                 ))
-        return reduce_turn_facts(
-            items, open_cap=open_cap, recent_cap=recent_cap)
+        return reduce_turn_facts(items, open_cap=open_cap)
 
     async def get(self, *, turn_id: int, unit: str) -> TagTrace | None:
         row = self._turn_ids.get(turn_id)

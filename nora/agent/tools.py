@@ -1579,14 +1579,6 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                            side_effect_state="confirmed", idempotency="non_idempotent",
                            retry="never",
                            output_contract="three_state", level=2),
-    # The shared-state producer's explicit conclusion (design 20): the call
-    # itself is the record — it lands in this turn's trace as a toolUse the
-    # shared view and the debrief read back — so nothing here writes a
-    # store, and the same shape the Cognition `conclude` verb produces.
-    "decision_conclude": NativeTool(1,
-                                    side_effect_state="confirmed", idempotency="non_idempotent",
-                                    retry="never",
-                                    output_contract="three_state", level=2),
     # The dispute door beside `remember_told` (35 §2): «that's wrong» or
     # «forget that» about a remembered fact, on the graph surface only (the
     # Profile account it rules on exists there). One write, confirmed, never
@@ -6932,85 +6924,6 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             partial_view=view.degraded,
             content_checks=content_checks,
         )
-
-    async def decision_conclude(
-        subject: str, decision: str, options: str = "", leaning: str = "",
-        conditions: str = "", sources: list[str] | None = None,
-        standing_room: str = "", standing_body: str = "",
-        hold_open: str = "", i_owe: str = "",
-    ) -> dict:
-        """Record decisions. Call this when deciding.
-
-        Say what you decided, what the options were, which way you lean,
-        what would close it, and the rows or entries it rests on. The call
-        itself IS the record, shown to the next turn and the next session.
-        It writes no Notebook row.
-
-        Returns `status`: ok, refused, unresolved or unavailable, with
-        `reason`, `detail` and `note` when it is not ok.
-
-        Args:
-            subject: The `kind:id` of the open entry this conclusion is
-                about, or a short name when none applies.
-            decision: The conclusion in one sentence.
-            options: Optional. The options you weighed.
-            leaning: Optional. Which way you lean, and why.
-            conditions: Optional. What would settle or close this.
-            sources: Required. The #n message handles shown in this turn,
-                or their canonical row ids. Resolution uses the bound
-                transcript; missing, hidden or foreign sources are unresolved.
-            standing_room: Optional. `platform:conversation_id`, set it
-                with `standing_body` when the conclusion is a position
-                update for that room.
-            standing_body: Optional. The new position, verbatim.
-            hold_open: Optional. What you are deliberately keeping open.
-            i_owe: Optional. What you owe that room.
-        """
-        if not decision.strip():
-            return {"status": "refused", "reason": "no_decision",
-                    "detail": "say what you concluded",
-                    "note": "No conclusion was accepted. State the decision before trying again."}
-        if not (sources or ()):
-            # A conclusion cites what it rests on: no source, no accepted
-            # record — never a room-only whitelist.
-            return {"status": "unresolved",
-                    "reason": "source_required",
-                    "detail": "cite the transcript row id(s) this conclusion "
-                              "rests on",
-                    "note": "Cite the #n message handles shown in this turn."}
-        if (sources or ()) and store is None:
-            # Sources need RESOLUTION, not a digit check: with no Record the
-            # citation cannot be verified and the call is honestly
-            # «I couldn't check», never an ok on an ungrounded provenance.
-            return {"status": "unavailable",
-                    "reason": "resolver_unavailable",
-                    "detail": "cited rows cannot be resolved without the "
-                              "message store",
-                    "note": "Source validation is unavailable; no conclusion was accepted."}
-        if transcript is None:
-            return {"status": "unavailable", "reason": "source_frame_unavailable",
-                    "detail": "this turn's bound transcript is unavailable",
-                    "note": "Source validation is unavailable; no conclusion was accepted."}
-        origin = room_key(room.platform, conversation_id)
-        by_id = {str(row.id): row for row in transcript}
-        resolved_sources = []
-        for source in sources or ():
-            row = None
-            if isinstance(source, str):
-                if source.startswith("#") and source[1:].isdigit():
-                    index = int(source[1:])
-                    if 1 <= index <= len(transcript):
-                        row = transcript[index - 1]
-                else:
-                    row = by_id.get(source)
-            if row is None:
-                return {"status": "unresolved", "reason": "source_unresolved",
-                        "detail": "cite a #n message shown in this turn",
-                        "note": "That source is outside this turn's bound transcript."}
-            record_requirement(
-                DisclosureRequirement(origin, (message_lineage(origin),)))
-            resolved_sources.append(str(row.id))
-        return {"status": "ok", "sources": resolved_sources}
 
     async def now() -> str:
         """The current date and time, in this deployment's time zone. Call this
@@ -17065,7 +16978,6 @@ Args:
 
     specs = (
         _spec("now", now),
-        _spec("decision_conclude", decision_conclude),
         _spec("calculate", calculate),
         _spec("transit", transit),
         _spec("route", route),

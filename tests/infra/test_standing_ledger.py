@@ -594,11 +594,9 @@ async def test_thread_paging_keeps_a_same_second_group_together(ledger, ledger_d
     assert "note" not in oldest
 
 
-async def test_standing_read_keeps_all_entries_and_history_outside_render_budget(ledger, ledger_db):
-    from datetime import UTC, datetime
-
-    from nora.agent.standing_ledger import render_ledger
-
+async def test_standing_read_returns_all_entries_and_full_history(ledger, ledger_db):
+    """`standing_read` is unabridged: display budgets live in the one
+    `standing` block, never in the stored entries."""
     entry, id = await plant(ledger, ledger_db)
     changed = await ledger.apply(
         LedgerOp("close", "decision", id=entry.id, base=entry.revision, outcome=f"Settled [{id}]"),
@@ -606,10 +604,6 @@ async def test_standing_read_keeps_all_entries_and_history_outside_render_budget
         shown=frame(id),
         now_ms=2000,
     )
-    rendered = render_ledger(
-        (changed.entry,), now=datetime(2026, 10, 1, tzinfo=UTC), section_tokens=1
-    )
-    assert "+1 older decisions" in rendered.body
     got = await (await toolset(ledger, ledger_db))["standing_read"]()
     assert got["status"] == "ok"
     assert got["entries"][0]["revision"] == 2
@@ -617,7 +611,7 @@ async def test_standing_read_keeps_all_entries_and_history_outside_render_budget
     assert got["entries"][0]["body"] == changed.entry.body
 
 
-async def test_context_assembly_renders_ledger_beside_legacy_paragraph(
+async def test_context_assembly_renders_one_standing_block(
     ledger, ledger_db, example_config
 ):
     from nora.agent.prefill import build_prefill
@@ -630,6 +624,8 @@ async def test_context_assembly_renders_ledger_beside_legacy_paragraph(
     entry, _ = await plant(ledger, ledger_db)
     legacy = SqlStandingStore(ledger_db)
     await legacy.write(standing=Standing("signal", "room-b", "A legacy paragraph", 1, 1000))
+    from nora.agent.shared_state import shared_reader
+
     persons, policy, roster, _ = collaborators()
     assembler = build_assembler(
         example_config,
@@ -638,9 +634,12 @@ async def test_context_assembly_renders_ledger_beside_legacy_paragraph(
         persons=persons,
         policy=policy,
         metrics=Metrics(),
-        ledger=ledger,
-        standing=legacy,
         rosters={"signal": roster},
+        shared=shared_reader(
+            ledger=ledger, standing=legacy,
+            ai_peer="nora",
+            rooms_of_unit=lambda unit: (("signal", "room-a"), ("signal", "room-b")),
+        ),
     )
     msg = NormalizedMessage(
         "signal", "room-b", "group", "generated-account", "Kit", 9000, "Continue", {}
@@ -650,8 +649,11 @@ async def test_context_assembly_renders_ledger_beside_legacy_paragraph(
 
     ctx = await assembler.assemble(request=_request(msg))
     text = str(build_prefill(ctx, display_name="Nora", context_window=20))
-    assert "A legacy paragraph" in text and entry.id in text and "## Decisions" in text
-    assert "r1" in text and "Options:" in text
+    # The one `standing` block carries the legacy paragraph as a position and
+    # the ledger entry as an open decision — no second block beside it.
+    assert "<standing " in text or "<standing>" in text
+    assert "A legacy paragraph" in text and entry.id in text
+    assert "standing_ledger" not in text and "shared_cognitive_state" not in text
 
 
 async def test_thread_has_no_body_and_whole_standing_writes_are_refused(ledger, ledger_db):
@@ -687,6 +689,7 @@ async def test_fire_and_participation_render_unit_ledger_in_other_room(
     kind,
 ):
     from nora.agent.prefill import build_prefill
+    from nora.agent.shared_state import shared_reader
     from nora.app.fire import FirePath
     from nora.domain.events import Event
     from nora.testing import FakeMemoryStore
@@ -714,7 +717,10 @@ async def test_fire_and_participation_render_unit_ledger_in_other_room(
         policy=policy,
         rosters={"signal": roster},
         lineage=lineage,
-        ledger=ledger,
+        shared=shared_reader(
+            ledger=ledger, ai_peer="nora",
+            rooms_of_unit=lambda unit: (("signal", "room-a"), ("signal", "room-b")),
+        ),
     )
     occasion = Event(
         platform="signal",

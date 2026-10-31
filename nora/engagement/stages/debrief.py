@@ -108,7 +108,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import tzinfo
 from typing import Any, Protocol
@@ -309,7 +309,7 @@ def _working_set(
     `found_at` becomes `now_ms`.
 
     **A carry-forward past its OWN TTL is dropped here, deterministically,
-    whatever the model does.** The render side (`render_standing_working_set`)
+    whatever the model does.** The shared reader's finding TTL
     already filters an expired item out of what a downstream reader sees, but
     that is a READ-time filter over what the row still HOLDS — nothing before
     this stopped the model from re-stating a stale item every turn (its
@@ -484,7 +484,8 @@ async def run(
     working_set_max_items: int = DEFAULT_WORKING_SET_MAX_ITEMS,
     working_set_max_chars: int = DEFAULT_WORKING_SET_MAX_CHARS,
     content_checks: bool = True,
-    conclusions: Sequence[Any] | None = None,
+    conversation_id: str | None = None,
+    source: str = "fold",
 ) -> None:
     """Fold this finished turn into the conversation's position. **Never
     raises, and never returns anything** — a stage that runs after delivery has
@@ -499,26 +500,15 @@ async def run(
     """
     started = time.perf_counter()
     outcome = "error"
+    cid = trace.conversation_id if conversation_id is None else conversation_id
     try:
-        if conclusions is not None:
-            # THE WIRED ROUTE WRITES NOTHING. Producer conclusions are
-            # already durable in this turn's Record — the shared view
-            # projects them to every later read — and applying one to the
-            # persistent position is Cognition's call (`standing_revise`,
-            # with base revision and citations), not a stage running after
-            # delivery. A wired debrief that synthesized a position anyway
-            # would be an unauthorized writer; one that applied a raw
-            # proposal would be worse. The prior stands, untouched, on
-            # every exit of this branch — including an unreadable store.
-            outcome = "record_only"
-            return
         # The prior is read first: a store that cannot be read is
         # `unavailable`, and a fold against a guessed-empty prior is the
         # two-contradictory-rows failure. An ERROR is never a PASS.
         try:
             prior: Standing | None = await asyncio.wait_for(
                 store.read(
-                    platform=platform, conversation_id=trace.conversation_id,
+                    platform=platform, conversation_id=cid,
                 ),
                 timeout=store_timeout_seconds,
             )
@@ -546,7 +536,7 @@ async def run(
             batch: tuple[TranscriptRow, ...] = tuple(
                 await asyncio.wait_for(
                     record_store.since_including_nora(
-                        conversation_id=trace.conversation_id,
+                        conversation_id=cid,
                         after_id=(
                             prior.last_folded_row_id
                             if prior is not None
@@ -723,14 +713,14 @@ async def run(
             revision = await asyncio.wait_for(
                 standing_revise(
                     store=store, prior=prior,
-                    platform=platform, conversation_id=trace.conversation_id,
+                    platform=platform, conversation_id=cid,
                     where_it_stands=body,
                     last_folded_row_id=(
                         batch[-1].id if batch else (
                             prior.last_folded_row_id if prior is not None else None)
                     ),
                     working_set=working_set,
-                    now_ms=now_ms,
+                    now_ms=now_ms, source=source,
                 ),
                 timeout=store_timeout_seconds,
             )

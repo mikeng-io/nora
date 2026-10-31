@@ -32,7 +32,6 @@ from typing import Any
 from nora.domain.lineage import BODY, HOLD_OPEN, I_OWE, WORKING_SET
 from nora.domain.shared_state import SharedEntry, SharedView, ViewStatus
 from nora.domain.standing import WORKING_SET_TTL_HOURS
-from nora.domain.tag_trace import tool_result_status
 
 log = logging.getLogger("nora.agent.shared_state")
 
@@ -45,7 +44,7 @@ _HISTORY_LOOKBACK_MS = 7 * 24 * 3600_000
 
 #: The tool names whose toolUse/toolResult pairs the view reads as facts —
 #: producer conclusions and act attempts.
-_TURN_FACT_TOOLS = ("remind", "decision_conclude")
+_TURN_FACT_TOOLS = ("remind",)
 
 
 def _ms(dt: datetime | None) -> int:
@@ -63,7 +62,6 @@ async def read_shared(
     ai_peer: str,
     now_ms: int,
     room: tuple[str, str] | None = None,
-    notes: Any = None,
     ledger: Any = None,
     reminders: Any = None,
     record_query: Any = None,
@@ -73,7 +71,6 @@ async def read_shared(
     permit: Callable[[Any], bool] | None = None,
     permit_req: Callable[[Any], bool] | None = None,
     standing_permits: Callable[[Any], dict[str, bool]] | None = None,
-    notes_permit: Callable[[Any], bool] | None = None,
     send_limit: int = 6,
     history_limit: int = 50,
 ) -> SharedView:
@@ -106,32 +103,6 @@ async def read_shared(
         if ledger_entry is not None:
             return True if permit is None else permit(ledger_entry)
         return True
-
-    if notes is not None:
-        try:
-            open_notes = await notes.standing(unit=unit)
-            sources.append(("notes", "ok" if open_notes else "nothing_found"))
-            for n in open_notes:
-                if room is not None and notes_permit is not None and not notes_permit(n):
-                    continue
-                detail = " · ".join(
-                    part for part in (
-                        getattr(n, "description", "") or "",
-                        getattr(n, "uncertainty", "") or "",
-                        f"closes when {n.closing_condition}"
-                        if getattr(n, "closing_condition", "") else "",
-                        getattr(n, "review", "") and f"review: {n.review}",
-                        getattr(n, "reminds", "") and f"reminds: {n.reminds}",
-                    ) if part
-                )
-                entries.append(SharedEntry(
-                    kind="note", id=n.id, scope="unit", status="open",
-                    subject=n.title, detail=detail,
-                    refs=(f"note:{n.id}",),
-                ))
-        except Exception:
-            log.exception("shared view: notes read failed for %s", unit)
-            sources.append(("notes", "unavailable"))
 
     if ledger is not None:
         try:
@@ -395,7 +366,7 @@ async def read_shared(
                 sources.append(("turns", "partial"))
             else:
                 sources.append(("turns", "ok"))
-            for item in (*facts.open_items, *facts.recent_items):
+            for item in facts.open_items:
                 allowed = (
                     room is None
                     or (permit_req is not None
@@ -417,54 +388,6 @@ async def read_shared(
                         f"requested_at={args.get('at') or '?'}; {evidence}"
                     )
                     continue
-                result_status = tool_result_status(item.result)
-                if result_status != "ok":
-                    unresolved_lines.append(
-                        f"decision_conclude "
-                        f"{str(args.get('subject') or '?')[:80]!r}: "
-                        f"{result_status}; {evidence}"
-                    )
-                    continue
-                detail = " · ".join(
-                    part for part in (
-                        f"options: {args['options']}"
-                        if args.get("options") else "",
-                        f"leaning: {args['leaning']}"
-                        if args.get("leaning") else "",
-                        f"closes when: {args['conditions']}"
-                        if args.get("conditions") else "",
-                        # A recorded position proposal stays readable
-                        # as a Record — never applied, never dropped.
-                        f"proposes position for {args['standing_room']}"
-                        if args.get("standing_room") else "",
-                        f"position: {args['standing_body']}"
-                        if args.get("standing_body") else "",
-                        f"holds open: {args['hold_open']}"
-                        if args.get("hold_open") else "",
-                        f"owes: {args['i_owe']}"
-                        if args.get("i_owe") else "",
-                    ) if part
-                )
-                sources_part = tuple(
-                    str(s) for s in args.get("sources") or ()
-                ) + (
-                    (f"turn({item.handle})",) if item.handle else ()
-                )
-                entries.append(SharedEntry(
-                    kind="conclusion",
-                    id=f"{item.tag_id}:{item.call_id}",
-                    scope="unit",
-                    status="recent",
-                    subject=str(args.get("subject") or "")[:140],
-                    detail=(
-                        f"{args.get('decision') or ''}"
-                        + (f" — {detail}" if detail else "")
-                    ),
-                    refs=sources_part,
-                    at_ms=item.created_at,
-                    provenance=provenance,
-                    permitted=allowed,
-                ))
         except Exception:
             log.exception("shared view: turn records read failed for %s", unit)
             sources.append(("turns", "unavailable"))
@@ -490,7 +413,6 @@ async def read_shared(
 
 def shared_reader(
     *,
-    notes: Any = None,
     ledger: Any = None,
     reminders: Any = None,
     record_query: Any = None,
@@ -510,16 +432,15 @@ def shared_reader(
         permit: Callable[[Any], bool] | None = None,
         permit_req: Callable[[Any], bool] | None = None,
         standing_permits: Callable[[Any], dict[str, bool]] | None = None,
-        notes_permit: Callable[[Any], bool] | None = None,
         wakes: Sequence[Any] | None = None,
     ) -> SharedView:
         return await read_shared(
             unit=unit, rooms=rooms_of_unit(unit), ai_peer=ai_peer,
-            now_ms=now_ms, room=room, notes=notes, ledger=ledger,
+            now_ms=now_ms, room=room, ledger=ledger,
             reminders=reminders, record_query=record_query,
             standing=standing, traces=traces, wakes=wakes,
             permit=permit, permit_req=permit_req,
-            standing_permits=standing_permits, notes_permit=notes_permit,
+            standing_permits=standing_permits,
         )
 
     return read

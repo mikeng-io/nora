@@ -86,7 +86,7 @@ from nora.agent.prefill import (
 )
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.standing_ledger import ledger_permits, ledger_target, read_ledger
+from nora.agent.standing_ledger import ledger_permits, ledger_target
 from nora.agent.tools import turn_occasion
 from nora.doctrine.loader import DoctrineStore
 from nora.domain import audience as audience_names
@@ -125,7 +125,6 @@ from nora.domain.lineage import (
     BODY,
     HOLD_OPEN,
     I_OWE,
-    ROW,
     WORKING_SET,
     room_key,
 )
@@ -151,7 +150,6 @@ from nora.domain.ports import (
     PlatformAdapter,
     RecordStore,
     RosterSource,
-    StandingStore,
 )
 from nora.domain.profile import ProfileView
 from nora.domain.prompt import one_line
@@ -163,7 +161,7 @@ from nora.domain.standing import (
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
     Standing,
 )
-from nora.domain.standing_ledger import LedgerEntry, StandingLedger
+from nora.domain.standing_ledger import LedgerEntry
 from nora.domain.subagent import written_title
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.domain.turn_deadline import turn_deadline
@@ -598,8 +596,6 @@ class FirePath:
         tool_call_log_store: ToolCallLogStore | None = None,
         reasoning_strip_store: Any = None,
         event_registry: Mapping[str, EventFactory] | None = None,
-        standing: StandingStore | None = None,
-        ledger: StandingLedger | None = None,
         culture: CultureReader | None = None,
         lessons: ActiveLessons | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -656,8 +652,6 @@ class FirePath:
         # This path READS the position and never writes one: `speak` discards
         # the `TagTrace` that `AgentRunner.invoke` hands back, so there is
         # nothing to fold.
-        self._standing = standing
-        self._ledger_store = ledger
         self._tag_trace_store = tag_trace_store
         self._shared_reader = shared
         # THE CULTURE HEAD, read on EVERY fire occasion (DEC-207) — see
@@ -967,15 +961,15 @@ class FirePath:
         # Nested: `asyncio.gather` types at most six awaitables, and a seventh makes every
         # result a union (the tag path's assembler nests its reads for the same reason).
         (
-            (standing, culture, notes, decisions, presence, computer),
+            (culture, notes, decisions, presence, computer),
             documents,
             character,
             unit_culture,
             self_account,
-            (lessons, memos, ledger, shared),
+            (lessons, memos, shared),
         ) = await asyncio.gather(
             asyncio.gather(
-                self._read_standing(occasion),
+
                 self._read_culture(occasion),
                 self._read_notes(occasion, unit),
                 self._read_decisions(occasion, unit),
@@ -987,7 +981,7 @@ class FirePath:
             self._read_unit_culture(occasion),
             self._read_self_account(occasion),
             asyncio.gather(self._read_lessons(occasion), self._read_memos(occasion, unit),
-                           self._read_ledger(occasion, ref),
+
                            self._read_shared(occasion, ref)),
         )
         return TagContext(
@@ -999,7 +993,7 @@ class FirePath:
             started_at=time.perf_counter(),
             people_in_window=people,
             profiles=profiles,
-            standing=standing, ledger=ledger,
+
             shared=shared,
             culture=culture,
             character=character,
@@ -1595,23 +1589,6 @@ class FirePath:
                 views.append(view)
         return tuple(views)
 
-    async def _read_ledger(self, occasion: Event, ref: PersonRef | None) -> tuple[LedgerEntry, ...]:
-        if self._ledger_store is None or self._lineage is None:
-            return ()
-        room = Room(platform=occasion.platform, conversation_id=occasion.conversation_id,
-                    roster_source=self._rosters.get(occasion.platform), persons=self._persons,
-                    tagger=ref, self_ids=self._profile_self_ids)
-        target = self._lineage.render_room(platform=occasion.platform,
-                                           conversation_id=occasion.conversation_id)
-        try:
-            return await asyncio.wait_for(read_ledger(self._ledger_store, target, room),
-                                          timeout=self._standing_store_timeout_seconds)
-        except Exception:
-            log.exception("fire ledger context read failed")
-            self._metrics.inc(
-                "nora_errors_total", stage="standing_ledger", platform=occasion.platform)
-            return ()
-
     async def _read_shared(
         self, occasion: Event, ref: PersonRef | None,
     ) -> SharedView | None:
@@ -1633,7 +1610,6 @@ class FirePath:
         permit = None
         permit_req = None
         standing_permits = None
-        notes_permit = None
         if self._lineage is not None:
             room = Room(
                 platform=occasion.platform,
@@ -1676,12 +1652,6 @@ class FirePath:
                         for req in requirements
                     )
 
-                def notes_permit(note: Note) -> bool:
-                    return visible_sections(
-                        note.lineage, (ROW,), narrowed,
-                        origin=note.established_in, exclude_persons=note.exclude_persons,
-                    )[ROW]
-
                 def standing_permits(position: Standing) -> dict[str, bool]:
                     # The derived-view gate, run against the destination's
                     # RenderRoom: an excluded or unpermitted section is
@@ -1693,13 +1663,13 @@ class FirePath:
                         exclude_persons=position.exclude_persons,
                     )
         try:
-            return await self._shared_reader(
+            return await asyncio.wait_for(self._shared_reader(
                 unit=unit,
                 room=(occasion.platform, occasion.conversation_id),
                 permit=permit, permit_req=permit_req,
-                standing_permits=standing_permits, notes_permit=notes_permit,
+                standing_permits=standing_permits,
                 now_ms=int(time.time() * 1000),
-            )
+            ), timeout=self._standing_store_timeout_seconds)
         except Exception:
             log.exception("fire shared-state read failed")
             self._metrics.inc(
@@ -1709,37 +1679,6 @@ class FirePath:
                 unit=unit, status="unavailable",
                 as_of_ms=int(time.time() * 1000),
             )
-
-    async def _read_standing(self, occasion: Event) -> Standing | None:
-        """This conversation's position, or `None`.
-
-        Fail-SOFT and COUNTED, the same three states
-        `TranscriptInjection._standing` distinguishes: no store is the dormant
-        default and is not an error; no row is a conversation never folded; a
-        FAILED read is neither, and is counted, because a position that exists
-        and could not be fetched reported as «there is none» is the
-        `unavailable`-as-`nothing_found` substitution R-27 exists to prevent.
-
-        A thinner prompt beats a reminder that does not fire.
-        """
-        if self._standing is None:
-            return None
-        try:
-            found = await asyncio.wait_for(
-                self._standing.read(
-                    platform=occasion.platform,
-                    conversation_id=occasion.conversation_id,
-                ),
-                timeout=self._standing_store_timeout_seconds,
-            )
-        except Exception:
-            log.exception("fire standing read failed; continuing without it")
-            self._metrics.inc(
-                "nora_errors_total", stage="fire_standing",
-                platform=occasion.platform,
-            )
-            return None
-        return found
 
     async def run(self, rows: Sequence[Reminder]) -> str:
         """The heartbeat's `fire` collaborator: due rows in, outcome out.

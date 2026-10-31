@@ -49,7 +49,7 @@ OVERRIDES = {"notes.enabled": True, "standing.enabled": True, "culture.enabled":
 
 #: Blocks that must be COMPARED, not merely allowed to match: a restore that
 #: rendered none of them would otherwise pass on an empty comparison.
-MUST_COMPARE = {"group_transcript", "shared_cognitive_state", "culture"}
+MUST_COMPARE = {"group_transcript", "standing", "culture"}
 
 
 def _spec(url: str, src: Source, workdir: Any) -> SubjectSpec:
@@ -135,8 +135,11 @@ async def test_a_restore_renders_the_blocks_the_turn_was_handed(
         )
         await live.deps.audit.append(message=tag, person_id="")
         recorded = await render_tag_blocks(live, message=tag, now=NOW)
-        assert "Friday ride" in recorded["shared_cognitive_state"]
-        assert "they are deciding whether friday still works" in recorded["shared_cognitive_state"]
+        # The open note stays in `<notes>` — its own block retains that role;
+        # `standing` carries the folded position, never an all-memory
+        # aggregation (design/notebook-memory-types/20-standing.md).
+        assert "Friday ride" in recorded["notes"]
+        assert "they are deciding whether friday still works" in recorded["standing"]
         at = await _clock(engine)
 
         # THE SOURCE MOVES ON, in every tier the blocks read.

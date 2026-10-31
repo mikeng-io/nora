@@ -186,15 +186,6 @@ async def test_turn_facts_call_ids_are_scoped_to_their_trace(store):
     assert [i.arguments["subject"] for i in facts.open_items] == ["note:still-open"]
 
 
-async def test_turn_facts_keep_competing_accepted_conclusions(store):
-    await store.save(_fact_trace("first", name="decision_conclude", subject="dinner",
-                                 action="", status="ok", created=1))
-    await store.save(_fact_trace("second", name="decision_conclude", subject="dinner",
-                                 action="", status="ok", created=2))
-    facts = await store.turn_facts(unit="u1", tool_names=("decision_conclude",))
-    assert {i.tag_id for i in facts.recent_items} == {"first", "second"}
-
-
 async def test_turn_facts_last_result_for_a_call_wins(store):
     from dataclasses import replace
 
@@ -225,8 +216,8 @@ async def test_turn_facts_bounds_database_transfer_after_reduction(store):
     for i in range(3):
         await store.save(_fact_trace(f"open-{i}", subject=f"note:open-{i}",
                                      status="unresolved", created=100 + i))
-        await store.save(_fact_trace(f"conclusion-{i}", name="decision_conclude",
-                                     action="", subject="same subject", created=200 + i))
+        await store.save(_fact_trace(f"extra-{i}", subject=f"note:extra-{i}",
+                                     status="ok", created=200 + i))
     async with store._engine.connect() as conn:
         await conn.execute(sa.text("ANALYZE tag_trace"))
     captured = []
@@ -237,14 +228,14 @@ async def test_turn_facts_bounds_database_transfer_after_reduction(store):
     engine = store._engine.sync_engine
     sa.event.listen(engine, "after_cursor_execute", observed)
     try:
-        facts = await store.turn_facts(unit="u1", tool_names=("remind", "decision_conclude"),
-                                       open_cap=1, recent_cap=2)
+        facts = await store.turn_facts(unit="u1", tool_names=("remind",),
+                                       open_cap=1)
     finally:
         sa.event.remove(engine, "after_cursor_execute", observed)
-    assert facts.capped and len(facts.open_items) == 1 and len(facts.recent_items) == 2
+    assert facts.capped and len(facts.open_items) == 1
     assert len(captured) == 1
     statement, parameters, transferred = captured[0]
-    assert transferred == 4  # one extra open row measures the remainder
+    assert transferred == 2  # open_cap+1 rows: one extra measures the remainder
     async with store._engine.connect() as conn:
         plan = await conn.exec_driver_sql("EXPLAIN (ANALYZE, BUFFERS) " + statement, parameters)
         print("\nPRODUCTION turn_facts plan:\n" + "\n".join(row[0] for row in plan))

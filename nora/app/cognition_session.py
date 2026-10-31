@@ -71,7 +71,6 @@ from typing import Any, Literal, Protocol
 from nora.agent import cognition_pace as pace
 from nora.agent.dream_screen import offence
 from nora.agent.fetch_watch import Fetched, GraphFetched, watch_reads
-from nora.agent.turn_recording import record_requirement
 from nora.app.proactive_screen import CANCELLED_NOTE_RETIRED
 from nora.domain.cognition_ground import Grounding, RecordItem, rollup_status
 from nora.domain.cognition_pace import (
@@ -106,9 +105,6 @@ from nora.domain.gatherings import (
     InvalidEventFieldModeError,
     StaleEventRevisionError,
     field_mode,
-)
-from nora.domain.lineage import (
-    message as message_lineage,
 )
 from nora.domain.memo import (
     MEMO_BODY_MAX_CHARS,
@@ -171,7 +167,7 @@ from nora.domain.stimuli import (
     prove_overflow_is_the_agenda,
     restart_detail,
 )
-from nora.domain.turn_record import DisclosureRequirement, cited_turn_lineage, turn_handles_in
+from nora.domain.turn_record import cited_turn_lineage, turn_handles_in
 from nora.infra.sql.standing_revise import standing_revise as live_standing_revise
 from nora.language.cognition_render import (
     RenderBudget,
@@ -634,10 +630,10 @@ class CognitionSessionRunner:
         notes: Any = None, events: Any = None, standing: Any = None,
         reminders: Any = None, ai_peer: str = "nora", memos: Any = None,
         ledger: Any = None, shared: Any = None,
+        standing_fold: Any = None,
         content_checks: bool = True,
         tag_trace_store: Any = None, memory: Any = None,
         rooms_of_unit: Callable[[str], Sequence[tuple[str, str]]] | None = None,
-        resolve_row: Callable[[str, int], Awaitable[tuple[str, str] | None]] | None = None,
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -701,8 +697,8 @@ class CognitionSessionRunner:
         self._reminders = reminders
         self._ledger = ledger
         self._shared = shared
+        self._standing_fold = standing_fold
         self._rooms_of_unit = rooms_of_unit
-        self._resolve_row = resolve_row
         self._ai_peer = ai_peer
         self._stimuli = stimulus_store
         self._agent_runner = agent_runner
@@ -774,7 +770,7 @@ class CognitionSessionRunner:
         except Exception:
             log.exception("could not count %s", name)
 
-    def _counted(self, unit: str, verb: str, call: Any) -> Any:
+    def _counted(self, verb: str, call: Any) -> Any:
         """A verb whose every refusal is counted by rule
         (`nora_cognition_refused_total{verb,rule}`): one place, so no verb and
         no early return can refuse without being counted. `unavailable` (a read
@@ -1214,18 +1210,36 @@ class CognitionSessionRunner:
             ) from exc
         finally:
             SESSION_TOKENS.reset(token)
+            from nora.domain.tag_trace import TagTrace
+            trace = TagTrace(
+                tag_id=f"cognition:{session_id}", conversation_id="",
+                messages=result.messages if result is not None else spend.messages,
+                requirements=result.requirements if result is not None else spend.requirements,
+                transcript=(), outcome=("timeout" if isinstance(
+                    sys.exception(), SessionTimeoutError) else trace_outcome),
+                created_at=int(self._clock() * 1000), started_at=now_ms,
+                occasion="cognition", unit=unit,
+                bound_rooms=tuple(sorted(state.rooms)),
+            )
             if self._tag_trace_store is not None:
-                from nora.domain.tag_trace import TagTrace
-                await asyncio.wait_for(self._tag_trace_store.save(TagTrace(
-                    tag_id=f"cognition:{session_id}", conversation_id="",
-                    messages=result.messages if result is not None else spend.messages,
-                    requirements=result.requirements if result is not None else spend.requirements,
-                    transcript=(), outcome=("timeout" if isinstance(
-                        sys.exception(), SessionTimeoutError) else trace_outcome),
-                    created_at=int(self._clock() * 1000), started_at=now_ms,
-                    occasion="cognition", unit=unit,
-                    bound_rooms=tuple(sorted(state.rooms)),
-                )), timeout=5.0)
+                await asyncio.wait_for(self._tag_trace_store.save(trace), timeout=5.0)
+            # The SAME automatic completion hook the tag path holds (design
+            # 20): the tools-less Standing fold runs on this session's
+            # complete retained Record — including a silent or failed
+            # session whose Record exists — once per room the session
+            # actually bound. Each write lands under the room's own real
+            # scope key; nothing is stored under a fabricated unit room.
+            # Replay and historical (backfill) sessions are skipped: an old
+            # session must not fold stale state over a live position.
+            if (
+                self._standing_fold is not None and trace.messages
+                and not replay and not historical
+            ):
+                for platform, conversation_id in state.rooms.values():
+                    await self._standing_fold(
+                        trace=trace, platform=platform,
+                        conversation_id=conversation_id,
+                    )
             # What the loop spent counts whether it returned, failed, timed out or was
             # cut off: a session that raised is the costliest kind, and its usage is
             # in the agent (`spend`, left by the runner), not in a result that never
@@ -2536,100 +2550,6 @@ class CognitionSessionRunner:
                 self._inc("nora_self_wake_total", outcome="cancelled")
             return _answer(answer)
 
-        async def decision_conclude(
-            subject: str, decision: str, options: str = "", leaning: str = "",
-            conditions: str = "", sources: list[str] | None = None,
-            standing_room: str = "", standing_body: str = "",
-            hold_open: str = "", i_owe: str = "",
-        ) -> dict[str, object]:
-            """Record what this turn concluded, explicitly. Call this when you
-            settled something this turn: what you decided, what the options
-            were, which way you lean, what would close it, and the rows or
-            entries it rests on. The call itself IS the record: it lands in
-            this turn's trace as a toolUse, and the shared view shows it to
-            the next turn and the next session before any consolidation runs.
-            It writes no Notebook row: a conclusion here is recorded, not a
-            judged entry; Cognition still authorizes what becomes one.
-
-            Returns `status`: ok, refused or unavailable, with a `reason`
-            and `detail` when it is not ok.
-
-            Args:
-                subject: The `kind:id` of the open entry this conclusion is
-                    about, or a short name when none applies.
-                decision: The conclusion in one sentence.
-                options: Optional. The options you weighed.
-                leaning: Optional. Which way you lean, and why.
-                conditions: Optional. What would settle or close this.
-                sources: Optional. The row/entry ids this rests on.
-                standing_room: Optional. `platform:conversation_id` — set it
-                    with `standing_body` when the conclusion is a position
-                    update for that room; the Record keeps it; Cognition authorizes.
-                standing_body: Optional. The new position, verbatim.
-                hold_open: Optional. What you are deliberately keeping open.
-                i_owe: Optional. What you owe that room.
-            """
-            if not decision.strip():
-                return _refused("no_decision", "say what you concluded")
-            # Same source contract as the engagement tool: every citation
-            # must resolve — a transcript row id, or a `kind:id` open entry
-            # the canonical stores can confirm — else the record stays
-            # `unresolved`, never an ok on a guessed provenance.
-            if not (sources or ()):
-                return {"status": "unresolved",
-                        "reason": "source_required",
-                        "detail": "cite the transcript row id(s) this "
-                                  "conclusion rests on"}
-            for source in sources or ():
-                if not isinstance(source, str):
-                    return {"status": "unresolved",
-                            "reason": "source_unresolved",
-                            "detail": f"{source!r} is not a citation this "
-                                      "session can resolve"}
-                if source.isdigit():
-                    # Same existence check the engagement tool runs — a
-                    # transcript row id must RESOLVE against the unit's
-                    # Record, not merely parse.
-                    if self._resolve_row is None:
-                        return {"status": "unavailable",
-                                "reason": "resolver_unavailable",
-                                "detail": "cited rows cannot be resolved "
-                                          "without the message store"}
-                    hit = await self._resolve_row(unit, int(source))
-                    if hit is None:
-                        return {"status": "unresolved",
-                                "reason": "source_unresolved",
-                                "detail": f"no transcript row {source} in "
-                                          "this unit"}
-                    # The resolved row's OWN room is the gate — recorded so
-                    # the destination projection sees the real source
-                    # requirement (TurnRecording is installed by the agent
-                    # runner).
-                    src_origin = record_room_key(hit[0], hit[1])
-                    record_requirement(DisclosureRequirement(
-                        src_origin, (message_lineage(src_origin),)))
-                    continue
-                resolved_source = await self._resolve_named_subject(
-                    unit, state, source)
-                if resolved_source is None:
-                    return {"status": "unresolved",
-                            "reason": "source_unresolved",
-                            "detail": (
-                                f"{source!r} is not a transcript row id or an "
-                                "open entry this session can cite"
-                            )}
-                # A named entry's own canonical lineage is the gate —
-                # carried on the Record, never re-derived downstream.
-                source_requirement = await self._named_source_requirement(
-                    unit, state, *resolved_source)
-                if source_requirement is None or not source_requirement.known:
-                    return {"status": "unresolved",
-                            "reason": "source_unresolved",
-                            "detail": f"the gates of {source!r} could not be "
-                                      "resolved"}
-                record_requirement(source_requirement)
-            return {"status": "ok"}
-
         async def remind(
             intent: Literal["tell", "ask"], text: str, subject: str, action: str,
             subject_rows: list[str], at: str,
@@ -3013,14 +2933,14 @@ class CognitionSessionRunner:
                 note_create, note_revise, note_set_status, note_merge, memo_create,
                 memo_revise, memo_set_status, event_propose, event_revise, event_set_status,
                 standing_revise, wake_at, wake_move, wake_cancel, remind, remind_move,
-                remind_cancel, decision_conclude,
+                remind_cancel,
             )),
         )
         if self._memory is not None:
             verbs = (memory_propose, profile_revise, *verbs)
         if state.historical:
             verbs = (memory_propose, profile_revise, close)
-        return [*read_tools, *(self._counted(unit, v.__name__, v) for v in verbs)]
+        return [*read_tools, *(self._counted(v.__name__, v) for v in verbs)]
 
     # `created_by_session_id=None` on every pace move and cancel above, on
     # purpose: the pending seam returns only rows COGNITION wrote, so «own»
@@ -3110,45 +3030,6 @@ class CognitionSessionRunner:
                     if str(event.id) == wanted:
                         return ("event", str(event.id))
         return None
-
-    async def _named_source_requirement(
-        self, unit: str, state: Any, kind: str, wanted: str,
-    ) -> DisclosureRequirement | None:
-        """The resolved entry's own canonical lineage, flattened to the
-        requirement entries a destination checks — the same lookups
-        `_resolve_named_subject` ran, returning the gates this time.
-        `None` = no gates to propagate = unresolved."""
-        rooms = list(state.allowed_rooms.values())
-        entry = None
-        if kind == "note":
-            entry = next(
-                (n for n in await self._notes.standing(unit=unit)
-                 if n.id == wanted), None)
-        elif (kind in {"decision", "commitment", "thread"}
-                and self._ledger is not None):
-            for platform, conversation_id in rooms:
-                for candidate in await self._ledger.read(
-                    unit=unit, platform=platform,
-                    conversation_id=conversation_id,
-                ):
-                    if (candidate.id == wanted and candidate.kind == kind
-                            and candidate.status == "open"):
-                        entry = candidate
-        elif kind == "event":
-            for platform, conversation_id in rooms:
-                for event in await self._open_events(
-                    unit, platform, conversation_id
-                ):
-                    if str(event.id) == wanted:
-                        entry = event
-        if entry is None or getattr(entry, "lineage", None) is None:
-            return None
-        flat = tuple(
-            le for _name, es in entry.lineage.sections for le in es
-        )
-        return DisclosureRequirement(
-            None, flat, tuple(entry.exclude_persons),
-        ) if flat else None
 
     async def _remind_context(
         self, unit: str, platform: str, conversation_id: str, subject_rows: Sequence[str],
