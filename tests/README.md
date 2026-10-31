@@ -65,8 +65,10 @@ Disposable PostgreSQL reuse:
   workers, followed by a serial phase for the three timing modules declared in
   that runner. Explicit files/node selectors keep their selection. `TEST_WORKERS`
   defaults to two; use zero or one to reduce concurrency. Full-gate stays serial.
-- The runner and direct pytest share one per-user host lease across updated
-  worktrees. A competing job is refused before workers start. Workers retain
+- The runner and direct pytest collecting under `tests/` share one per-user host
+  lease across updated worktrees. Other component/ad-hoc suites must use the runner
+  or explicitly load the plugin. A competing job is refused before workers start.
+  Workers retain
   shares after controller exit; generation checks refuse late stale workers.
   The runner retains its share across both phases. Direct parallel pytest must
   exclude timing modules; use the runner to select and execute them correctly.
@@ -78,3 +80,41 @@ Disposable PostgreSQL reuse:
   with Testcontainers/Ryuk cleanup. No cross-run state, shared server, tmpfs,
   altered durability settings or FILE_COPY default is introduced. Pure tests
   need no Docker. A killed worker still relies on the existing Ryuk lifecycle.
+
+Local gate receipts:
+
+- `make gate` uses the canonical runner: code/mixed changes run static checks plus
+  affected tests; ordinary docs run their reader tests. Unknown paths/selection
+  errors remain broad. README guides under `tests/` are docs; other test/fixture Markdown
+  and non-collectible Python helpers remain broad. Only byte-exact regular Git LFS
+  post-hooks are excluded from untracked noise; edits, symlinks and tracked hooks
+  still count. No arbitrary executable hook is ignored.
+- A local successful receipt lives in this worktree's Git directory, outside the
+  source tree, with its command, completion time, rc and candidate/context key.
+  Only an identical clean HEAD/tree/base, worktree, environment, installed Python
+  distributions/files, tools/Git configuration, private input hashes and Docker
+  daemon/images/container configuration/state can reuse it. Context must remain
+  unchanged during the successful run. Secrets are hashed in memory, never stored
+  in the receipt or printed. This is cooperative source acceptance as of the
+  recorded run, not a tamper-proof attestation or fresh external-service health.
+- Environment directories, PATH entries (including relative/empty entries), and
+  the explicit or default tiktoken cache use a private recursive content manifest.
+  The total is bounded to 4,096 entries, 64 MiB of file contents and a checked
+  two-second traversal/read budget. Enumeration and sizing precede content reads.
+  Symlinks, special files, unreadable/changing inputs and exceeded limits reject
+  reuse. Filesystem calls can block beyond the checked time budget. Large HOME,
+  working or temp directories and ordinary tool paths may therefore always MISS;
+  no standard environment directory is silently exempted. Use `gate-reuse` to
+  inspect eligibility without accidentally starting another cold gate.
+- Dirty trees, unknown untracked files, hidden index flags, external editable
+  dependencies, PYTHONPATH overrides, Make command overrides, unavailable context
+  and CI do not reuse receipts. Go bridge changes also remain fresh; Go cache
+  dependency internals are outside this first Python-acceptance cache.
+- `make gate-reuse` checks for a matching receipt only; a miss exits nonzero and
+  runs no checks. Use it for a bounded warm readback without accidental cold I/O.
+- `make gate-fresh` bypasses reuse. `make full-gate` is always fresh and serial.
+  Either invalidates the prior receipt before execution, as does any actual gate
+  attempt; failures/interruption never leave the old green receipt reusable.
+  Host admission applies before cache lookup and remains held through publication.
+- A `REUSED` line means the earlier matched receipt was used, not new passing tests
+  or new performance measurements. PR/issue/report updates do not rerun validation.

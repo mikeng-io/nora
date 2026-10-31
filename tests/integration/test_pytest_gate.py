@@ -47,6 +47,7 @@ def _holder(path: Path, generation: str) -> subprocess.Popen[str]:
                 sys.stdin.read()
         """), str(path), generation],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+        env={**os.environ, "PYTHONPATH": str(ROOT)},
     )
 
 
@@ -153,6 +154,7 @@ def test_interrupt_stops_the_actual_child_and_releases_admission(tmp_path):
             sys.exit(rc)
         """), str(lock), child],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        env={**os.environ, "PYTHONPATH": str(ROOT)},
     )
     child_pid = None
     try:
@@ -268,3 +270,9 @@ def test_phase_failures_propagate_and_the_lease_spans_both_phases(
     assert len(seen) == calls
     with gate.host_lease(gate.LOCK_PATH):
         pass
+
+
+def test_helper_subprocesses_do_not_depend_on_caller_cwd(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    test_workers_retain_admission_after_controller_exit_and_reject_stale_generation(tmp_path)
+    test_interrupt_stops_the_actual_child_and_releases_admission(tmp_path)

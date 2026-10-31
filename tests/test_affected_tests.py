@@ -337,7 +337,7 @@ def test_a_new_test_file_selects_itself(tmp_path):
 
 def test_a_test_fixture_selects_all():
     assert select(["tests/fixtures/context_assembly_step1_goldens.json"]) == ALL
-    assert select(["tests/README.md"]) == ALL
+    assert select(["tests/fixtures/runtime.md"]) == ALL
 
 
 def test_a_rename_reports_both_sides_so_the_old_path_is_judged(tiny_repo):
@@ -995,7 +995,8 @@ def _first(lines: list[str], needle: str) -> int:
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="needs make")
 def test_gate_runs_its_static_steps_then_the_selector_against_origin_master():
-    lines = _dry_run("gate")
+    assert _dry_run("gate") == ["uv run python -m scripts.gate"]
+    lines = _dry_run("_gate")
     ruff = _first(lines, "uv run ruff check")
     mypy = _first(lines, "uv run mypy")
     imports = _first(lines, "uv run lint-imports")
@@ -1010,7 +1011,7 @@ def test_gate_runs_its_static_steps_then_the_selector_against_origin_master():
 def test_gate_cannot_be_redirected_from_the_environment():
     """An exported SELECTOR / PYTEST / BASE / INCLUDE_WORKTREE in a shell must
     not change what the gate runs (only `make X=...` may)."""
-    lines = _dry_run("gate", env={
+    lines = _dry_run("_gate", env={
         "SELECTOR": "echo NONE", "PYTEST": "true",
         "BASE": "HEAD~1", "INCLUDE_WORKTREE": "",
     })
@@ -1022,7 +1023,8 @@ def test_gate_cannot_be_redirected_from_the_environment():
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="needs make")
 def test_full_gate_and_the_loop_default_are_unchanged():
-    full = _dry_run("full-gate")
+    assert _dry_run("full-gate") == ["uv run python -m scripts.gate --full"]
+    full = _dry_run("_full-gate")
     assert [line.split()[:3] for line in full[:3]] == [
         ["uv", "run", "ruff"], ["uv", "run", "mypy"], ["uv", "run", "lint-imports"],
     ]
@@ -1033,3 +1035,60 @@ def test_full_gate_and_the_loop_default_are_unchanged():
     loop = _dry_run("test-affected")
     selector = loop[_first(loop, "affected_tests.py")]
     assert "--base HEAD~1" in selector and "--include-worktree" not in selector
+
+
+def test_tests_readme_uses_readers_but_helpers_and_fixture_markdown_stay_broad(tmp_path):
+    repo = _synthetic(
+        tmp_path,
+        **{
+            "test_reader.py": 'from pathlib import Path\ndef test_read():\n'
+            '    Path("tests/README.md").read_text()\n'
+        },
+    )
+    assert select(["tests/README.md"], repo) == [UNIVERSAL_DOC_READER, "tests/test_reader.py"]
+    assert select(["tests/README.md", "tests/conftest.py"], repo) == ALL
+    assert select(["tests/fixtures/input.md"], repo) == ALL
+    assert select(["tests/contract/generated_input.md"], repo) == ALL
+
+
+def _lfs_post_hook(name):
+    return (
+        "#!/bin/sh\n"
+        'command -v git-lfs >/dev/null 2>&1 || { printf >&2 "\\n%s\\n\\n" '
+        "\"This repository is configured for Git LFS but 'git-lfs' was not found on your path. "
+        f"If you no longer wish to use Git LFS, remove this hook by deleting the '{name}' "
+        "file in the hooks directory (set by 'core.hookspath'; "
+        "usually '.git/hooks').\"; exit 2; }\n"
+        f'git lfs {name} "$@"\n'
+    )
+
+
+@pytest.mark.parametrize("name", ["post-checkout", "post-commit", "post-merge"])
+def test_only_exact_untracked_regular_lfs_post_hooks_are_selection_noise(tiny_repo, name):
+    hook = tiny_repo / ".githooks" / name
+    hook.parent.mkdir()
+    hook.write_text(_lfs_post_hook(name))
+    doc = tiny_repo / "docs/readme.md"
+    doc.write_text("changed")
+    assert git_changed_paths(tiny_repo, "base-ref", include_worktree=True) == ["docs/readme.md"]
+    hook.write_text(_lfs_post_hook(name) + "echo changed\n")
+    assert git_changed_paths(tiny_repo, "base-ref", include_worktree=True) == [
+        f".githooks/{name}",
+        "docs/readme.md",
+    ]
+    hook.write_text(_lfs_post_hook(name))
+    _run_git(tiny_repo, "add", str(hook))
+    assert f".githooks/{name}" in git_changed_paths(tiny_repo, "base-ref", include_worktree=True)
+
+
+def test_lfs_hook_symlink_or_unknown_hook_is_not_ignored(tiny_repo):
+    folder = tiny_repo / ".githooks"
+    folder.mkdir()
+    target = tiny_repo.parent / "generated-hook"
+    target.write_text(_lfs_post_hook("post-commit"))
+    (folder / "post-commit").symlink_to(target)
+    (folder / "unknown").write_text("#!/bin/sh\ntrue\n")
+    assert git_changed_paths(tiny_repo, "base-ref", include_worktree=True) == [
+        ".githooks/post-commit",
+        ".githooks/unknown",
+    ]

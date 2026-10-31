@@ -141,20 +141,31 @@ def phases(targets: Sequence[str], workers: int) -> list[list[str]]:
     return commands
 
 
-def _run(command: list[str], env: dict[str, str]) -> int:
-    with subprocess.Popen(command, env=env) as process:  # noqa: S603 — fixed Python/pytest argv
+def _run(command: list[str], env: dict[str, str], *, group: bool = False) -> int:
+    with subprocess.Popen(  # noqa: S603 — fixed local command argv
+        command, env=env, start_new_session=group,
+    ) as process:
+        def send(sig: int) -> None:
+            try:
+                if group:
+                    os.killpg(process.pid, sig)
+                else:
+                    process.send_signal(sig)
+            except ProcessLookupError:
+                pass
+
         try:
             return process.wait()
         except KeyboardInterrupt:
-            process.send_signal(signal.SIGINT)
+            send(signal.SIGINT)
             try:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                process.terminate()
+                send(signal.SIGTERM)
                 try:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    process.kill()
+                    send(signal.SIGKILL)
                     process.wait()
             return 130
 
