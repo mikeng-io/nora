@@ -12,6 +12,59 @@ from nora.app.composition import search_provider
 from scripts import memory_graph_spike as spike
 
 
+@pytest.mark.parametrize("read,embed", [(True, True), (False, True), (True, False)])
+async def test_replay_embedder_check_uses_effective_subject_config(
+    tmp_path, monkeypatch, read, embed,
+):
+    from nora.subject.obtain import build_config
+    from tests.unit.test_subject_obtain import _spec
+
+    source = build_config(_spec(tmp_path / "source", overrides={
+        "memory.index.read": not read, "memory.index.embed": not embed,
+        "memory.index.embedder_model": "generated-source.gguf@0000feedbeef",
+    }))
+    effective = build_config(_spec(tmp_path / "subject", overrides={
+        "memory.index.read": read, "memory.index.embed": embed,
+        "memory.index.embedder_url": "http://127.0.0.1:8092",
+        "memory.index.embedder_model": "generated-subject.gguf@0000feedbeef",
+    }))
+    assert source.memory.index.read != effective.memory.index.read
+    checked, indexed = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(spike, "check_served_model", checked)
+    monkeypatch.setattr(spike, "index_sandbox", indexed)
+    await spike.index_replay_sandbox(
+        SimpleNamespace(database_url="generated-sandbox", cfg=effective),
+        source_url="generated-source",
+    )
+    if read and embed:
+        checked.assert_awaited_once_with(
+            effective.memory.index.embedder_url, "generated-subject.gguf@0000feedbeef")
+    else:
+        checked.assert_not_awaited()
+    indexed.assert_awaited_once_with(
+        "generated-sandbox", source_url="generated-source",
+        model_id="generated-subject.gguf@0000feedbeef")
+
+
+async def test_effective_embedder_refusal_prevents_index_preparation(tmp_path, monkeypatch):
+    from nora.subject.obtain import build_config
+    from nora.subject.sandbox_index import GraphIndexRefusedError
+    from tests.unit.test_subject_obtain import _spec
+
+    effective = build_config(_spec(tmp_path, overrides={
+        "memory.index.read": True, "memory.index.embed": True,
+    }))
+    indexed = AsyncMock()
+    monkeypatch.setattr(spike, "index_sandbox", indexed)
+    monkeypatch.setattr(spike, "check_served_model", AsyncMock(
+        side_effect=GraphIndexRefusedError("generated unavailable embedder")))
+    with pytest.raises(GraphIndexRefusedError, match="generated unavailable"):
+        await spike.index_replay_sandbox(
+            SimpleNamespace(database_url="generated-sandbox", cfg=effective),
+            source_url="generated-source")
+    indexed.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     "ack,url",
     [
@@ -36,10 +89,14 @@ def test_judge_error_never_passes():
     assert spike.rate(["supported"], 1, 0.95)["status"] == "PASS"
 
 
-async def test_judge_malformed_is_error(monkeypatch):
+async def test_judge_malformed_is_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        spike, "model_endpoint", lambda path, purpose, model="": ("", "", model)
+    )
     judges = spike.Judges(
-        SimpleNamespace(endpoint=lambda purpose, model: ("", "", model)),
+        SimpleNamespace(llm=SimpleNamespace(model="", timeout_seconds=1)),
         ["generated-a", "generated-b"],
+        tmp_path / "config.toml",
     )
     monkeypatch.setattr(
         judges,
@@ -104,6 +161,54 @@ def test_age_scope_and_query_grammar_cannot_read_foreign_unit():
     assert spike.scoped_cypher("(a)-[:concerns*0..3]-(b)").startswith("MATCH ")
     with pytest.raises(ValueError):
         spike.scoped_cypher("MATCH (n) RETURN n; CREATE (n)")
+
+
+async def test_cypher_embedded_labels_are_not_binds():
+    """Cypher's ':label' inside the dollar-quoted literal must not read as a
+    bind, and the agtype JSON result must decode.
+
+    The conn fake stands in for the REAL asyncpg boundary: it compiles the
+    clause cypher() built with the asyncpg dialect — construct_params is what
+    raises 'A value is required for bind parameter N' in production — and
+    answers with the agtype wire serialization the driver delivers.
+    """
+    from sqlalchemy.dialects import postgresql
+
+    dialect = postgresql.asyncpg.dialect()
+    sent = []
+
+    class Conn:
+        async def execute(self, clause):
+            compiled = clause.compile(dialect=dialect)
+            sent.append(str(compiled))
+            assert compiled.construct_params() == {}
+            wire = ['"person:p1"', '"event:e1"'] if "RETURN DISTINCT b.key" in str(compiled) else []
+            return SimpleNamespace(scalars=lambda: iter(wire))
+
+    cases = [
+        ('CREATE (:N {key: "generated:key"})', "$$"),
+        (
+            'MATCH (a:N), (b:N) WHERE a.key="person:p1" AND b.key="event:e1" '
+            "CREATE (a)-[:attended]->(b)",
+            "$$",
+        ),
+        (
+            'MATCH (a:N)-[:attended|concerns*0..3]-(b:N) WHERE a.key="person:p1" '
+            "RETURN DISTINCT b.key",
+            "$$",
+        ),
+        ("CREATE (:N {key: \"it's:quoted\"})", "$$"),
+        ('CREATE (:N {key: "pct%50\\\\:backslash"})', "$$"),
+        # A '$$' inside the value forces a tag the value cannot close.
+        ('CREATE (:N {key: "has$$tag:1"})', "$aa$"),
+    ]
+    for query, _ in cases:
+        expected = ["person:p1", "event:e1"] if query.startswith("MATCH (a:N)-[") else []
+        assert await spike.cypher(Conn(), "generated_graph", query) == expected
+    for (query, tag), compiled in zip(cases, sent, strict=True):
+        assert compiled.startswith("SELECT value FROM ag_catalog.cypher($$generated_graph$$, ")
+        assert f"{tag}{query}{tag})" in compiled
+        assert query in compiled
 
 
 def test_operator_script_is_a_declared_assembled_occasion():
@@ -222,30 +327,80 @@ def test_tool_exchanges_pairs_admission_and_refusal():
 
 
 async def test_session_quality_uses_shown_input_and_only_committed_relations():
-    judge = SimpleNamespace(score=AsyncMock(return_value=["supported", "unsupported"]))
+    """Score the serialized Relation nested in each committed GraphEdge."""
+    from dataclasses import asdict
+    from datetime import UTC, datetime
+
+    from nora.domain.memory_graph import GraphEdge, Relation, Subgraph
+
+    def relation(relation_id: str, rel: str) -> Relation:
+        return Relation(
+            id=relation_id,
+            src=("event", "generated-source"),
+            rel=rel,
+            dst=("topic", "generated-topic"),
+            layer="notebook",
+            unit="generated-unit",
+            asserted_at=datetime(2026, 10, 1, tzinfo=UTC),
+        )
+
+    def serialized(value):
+        # The exact expression memory_propose returns as `connected`.
+        return json.loads(json.dumps(asdict(value), default=str))
+
+    committed, merge, existing = (
+        relation("generated-committed", "concerns"),
+        relation("generated-merge", "same_as"),
+        relation("generated-existing", "concerns"),
+    )
+    connected = serialized(
+        Subgraph(
+            status="ok",
+            relations=tuple(
+                GraphEdge(relation=r, evidence_count=1) for r in (committed, merge, existing)
+            ),
+        )
+    )
+    seen = []
+
+    async def judge(payload):
+        proposition = payload["proposition"]
+        seen.append((proposition, payload["evidence"]))
+        verdict = "supported" if proposition.get("rel") == "concerns" else "unsupported"
+        return [verdict, verdict]
+
+    read = {"name": "memory_read", "input": {"key": "generated"}, "result": {"status": "ok"}}
     result = await spike.session_quality(
-        judge,
+        SimpleNamespace(score=judge),
         {"prompt": "Generated source"},
         [
+            read,
+            {"name": "profile_revise", "input": {}, "result": {"status": "ok"}},
             {
                 "name": "memory_propose",
                 "input": {"readings": [{"text": "Generated claim"}]},
                 "result": {
                     "admitted": [0],
-                    "committed": ["generated-committed"],
-                    "connected": {
-                        "relations": [
-                            {"id": "generated-committed", "rel": "concerns"},
-                            {"id": "generated-existing", "rel": "concerns"},
-                        ]
-                    },
+                    "committed": ["generated-committed", "generated-merge"],
+                    "connected": connected,
                 },
-            }
+            },
         ],
     )
-    assert result["relation_precision"] == [["supported"], ["unsupported"]]
-    assert result["reading_precision"] == [["supported"], ["unsupported"]]
-    assert judge.score.call_args.args[0]["evidence"]["input"] == {"prompt": "Generated source"}
+    # The judge scored the nested serialized Relations, never the GraphEdge
+    # wrappers, and only committed ids — `generated-existing` stays unscored.
+    relations = [
+        p for p, _ in seen if isinstance(p, dict) and str(p.get("id", "")).startswith("generated-")
+    ]
+    assert relations == [serialized(committed), serialized(merge)]
+    assert result["relation_precision"] == [["supported", "unsupported"]] * 2
+    assert [p for p, _ in seen if "different_entities" in p] == [
+        {"different_entities": serialized(merge)}
+    ]
+    assert result["wrong_merges"] == [["unsupported"]] * 2
+    assert result["reading_precision"] == [["unsupported"]] * 2
+    expected_evidence = {"input": {"prompt": "Generated source"}, "reads": [read]}
+    assert seen and all(e == expected_evidence for _, e in seen)
 
 
 def test_report_error_exit_is_distinct_from_fail():
@@ -285,9 +440,13 @@ def test_every_act_table_exists():
     } <= set(spike.ACT_TABLES)
 
 
-async def test_judge_refuses_effective_model_override(monkeypatch):
-    cfg = SimpleNamespace(endpoint=lambda purpose, model: ("generated-url", "", "pinned"))
-    judges = spike.Judges(cfg, ["requested-a", "requested-b"])
+async def test_judge_refuses_effective_model_override(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        spike, "model_endpoint",
+        lambda path, purpose, model="": ("generated-url", "", "pinned"),
+    )
+    cfg = SimpleNamespace(llm=SimpleNamespace(model="", timeout_seconds=1))
+    judges = spike.Judges(cfg, ["requested-a", "requested-b"], tmp_path / "config.toml")
     assert judges.effective_models == ["pinned", "pinned"]
     build = AsyncMock(side_effect=AssertionError("must refuse before model call"))
     monkeypatch.setattr(spike, "build_structured_model", build)
@@ -295,3 +454,239 @@ async def test_judge_refuses_effective_model_override(monkeypatch):
     with pytest.raises(ValueError, match="effective judge"):
         await judges.call("requested-a", "generated", {})
     build.assert_not_called()
+
+
+@pytest.mark.parametrize("container", [False, True])
+async def test_judges_dial_the_eval_route_where_the_measurer_runs(
+    tmp_path, monkeypatch, example_config_path, container
+):
+    """Every judge call resolves `eval_judge` through `model_endpoint`: the
+    route's container-only provider name is rewritten for a host measurer and
+    kept inside the compose network — `cfg.endpoint` alone dials the
+    container name on the host, which is an NXDOMAIN, not a verdict."""
+    import importlib
+
+    text = example_config_path.read_text()
+    text = text.replace(
+        'base_url = "http://localhost:20128/v1"',
+        'provider = "generated-gateway"\nbase_url = "http://localhost:20128/v1"',
+        1,
+    )
+    example_config_path.write_text(
+        text
+        + '\n[providers.generated-gateway]\n'
+        + 'base_url = "http://host.docker.internal:20128/v1"\n'
+        + 'api_key_env = "OMNIROUTE_API_KEY"\n'
+        + '\n[model_routes.eval_judge]\n'
+        + 'provider = "generated-gateway"\n'
+    )
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-key")
+    obtain = importlib.import_module("nora.subject.obtain")
+    monkeypatch.setattr(obtain, "_resolves", lambda host: container)
+    dialed = []
+
+    def record(**kwargs):
+        dialed.append(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(spike, "build_structured_model", record)
+    monkeypatch.setattr(
+        spike,
+        "ask_text",
+        AsyncMock(return_value=SimpleNamespace(finish_reason="stop", content="[]")),
+    )
+    cfg = SimpleNamespace(
+        llm=SimpleNamespace(model="generated-session", timeout_seconds=1),
+        endpoint=lambda purpose, model: (
+            "http://host.docker.internal:20128/v1",
+            "generated-key",
+            model,
+        ),
+    )
+    judges = spike.Judges(cfg, ["cx/gpt-6.1-sol", "kmc/k3-256k"], example_config_path)
+    assert judges.effective_models == ["cx/gpt-6.1-sol", "kmc/k3-256k"]
+    for model_id in ("cx/gpt-6.1-sol", "kmc/k3-256k", "generated-session"):
+        await judges.call(model_id, "generated", {})
+    expected = (
+        "http://host.docker.internal:20128/v1"
+        if container
+        else "http://127.0.0.1:20128/v1"
+    )
+    assert [d["base_url"] for d in dialed] == [expected] * 3
+    assert [d["model_id"] for d in dialed] == [
+        "cx/gpt-6.1-sol",
+        "kmc/k3-256k",
+        "generated-session",
+    ]
+    assert all(d["api_key"] == "generated-key" for d in dialed)
+
+
+async def test_age_comparison_measures_the_source_once_outside_replay(
+    tmp_path, monkeypatch
+):
+    """The engine comparison binds the frozen projected source once per run;
+    the as-of sandbox — correctly holding no graph rows at the wake instant —
+    serves the session replay and is never asked for the graph population."""
+    import contextlib
+
+    import evals.backbone
+    import nora.subject
+    from nora.infra.sql import cognition_replay
+
+    source_url = "postgresql+asyncpg://127.0.0.1:9/generated-source"
+    sandbox_url = "postgresql+asyncpg://127.0.0.1:9/generated-sandbox"
+    calls = []
+
+    class FakeEngine:
+        def __init__(self, url):
+            self.url = url
+
+        async def dispose(self):
+            pass
+
+    def create(url):
+        return FakeEngine(url)
+
+    async def generated_rows(engine, sql, params=None):
+        calls.append((engine.url, sql))
+        if "FROM cognition_wake" in sql:
+            return [{"id": 1, "at_ms": 1}, {"id": 2, "at_ms": 2}]
+        if "SELECT body FROM messages" in sql:
+            body = "[image generated]" if params["id"] == 2 else "generated text"
+            return [{"body": body}]
+        if "is_nora" in sql:
+            return [{"n": 0}]
+        if "string_agg" in sql:
+            return [{"digest": "generated-" + engine.url}]
+        if "FROM tag_trace" in sql:
+            return [{"messages": []}]
+        if "FROM relation" in sql:
+            # The projected source holds the relation population; the restored
+            # sandbox holds none at the wake instant.
+            return [
+                {
+                    "unit": "generated-unit",
+                    "persons": ["generated-person"],
+                    "src_kind": "event",
+                    "src_id": "generated-edge",
+                    "dst_kind": "topic",
+                    "dst_id": "generated-topic",
+                    "rel": "concerns",
+                }
+            ] if engine.url == source_url else []
+        raise AssertionError(f"unexpected SQL on {engine.url}: {sql}")
+
+    async def fake_wake(engine, wake_id):
+        return (
+            1_700_000_000_000 + wake_id,
+            SimpleNamespace(
+                unit="generated-unit",
+                pending=[
+                    SimpleNamespace(kind="message", ref=f"messages:{wake_id}")
+                ],
+            ),
+        )
+
+    @contextlib.asynccontextmanager
+    async def fake_sandbox(database_url, at):
+        yield sandbox_url, SimpleNamespace()
+
+    class FakeMetrics:
+        def __init__(self):
+            self.values = iter([0, 7, 0])
+
+        def get(self, name):
+            return next(self.values, 0)
+
+    runner = SimpleNamespace(
+        inspect=AsyncMock(return_value={"prompt": "generated"}),
+        replay=AsyncMock(
+            return_value=SimpleNamespace(session_id="generated-session", closed=[])
+        ),
+    )
+
+    async def fake_obtain(spec):
+        return SimpleNamespace(
+            database_url=spec.database_url,
+            cfg=SimpleNamespace(),
+            deps=SimpleNamespace(cognition_runner=runner, metrics=FakeMetrics()),
+        )
+
+    cfg = SimpleNamespace(
+        store=SimpleNamespace(database_url_env="GENERATED_DB"),
+        llm=SimpleNamespace(
+            model="generated-session", timeout_seconds=1, model_dump=dict
+        ),
+        providers={},
+        model_routes={},
+        cognition=SimpleNamespace(model_dump=dict),
+    )
+    policy_file = tmp_path / "policy.toml"
+    policy_file.write_text("generated")
+    identity_file = tmp_path / "identity.toml"
+    identity_file.write_text("generated")
+    bound = []
+    real_age = spike.age_comparison
+
+    async def spy(engine, age_url, judges, output_dir, minimum):
+        bound.append(engine.url)
+        return await real_age(engine, age_url, judges, output_dir, minimum)
+
+    quality = AsyncMock(return_value={})
+    monkeypatch.setattr(spike, "age_comparison", spy)
+    monkeypatch.setattr(spike, "session_quality", quality)
+    monkeypatch.setattr(spike, "index_replay_sandbox", AsyncMock(
+        return_value=SimpleNamespace(line=lambda: "generated-index")))
+    monkeypatch.setattr(spike, "sql_answer", AsyncMock(return_value=["event:generated-edge"]))
+    monkeypatch.setattr(spike, "model_endpoint",
+                        lambda path, purpose, model="": ("generated-url", "", model))
+    monkeypatch.setattr(spike, "load", lambda path: cfg)
+    monkeypatch.setattr(spike, "credentials", lambda: {
+        "GENERATED_DB": "postgresql+asyncpg://127.0.0.1:9/generated-production"})
+    monkeypatch.setattr(spike, "create_sql_engine", create)
+    monkeypatch.setattr(spike, "rows", generated_rows)
+    monkeypatch.setattr(spike, "load_policy", lambda path: SimpleNamespace(
+        rooms=lambda: [SimpleNamespace(
+            unit="generated-unit", platform="signal", primary_id="generated-room")]))
+    monkeypatch.setattr(spike, "load_persons", lambda path: SimpleNamespace(by_person={}))
+    monkeypatch.setattr(spike, "projection_context", lambda *a, **k: SimpleNamespace())
+    monkeypatch.setattr(cognition_replay, "recorded_wake", fake_wake)
+    monkeypatch.setattr(nora.subject, "sandbox_as_of", fake_sandbox)
+    monkeypatch.setattr(nora.subject, "obtain", fake_obtain)
+    monkeypatch.setattr(evals.backbone, "_close", AsyncMock())
+
+    args = SimpleNamespace(
+        config=tmp_path / "config.toml",
+        policy=policy_file,
+        identity=identity_file,
+        database_url=source_url,
+        snapshot=True,
+        age_url=None,
+        judge_a="generated-judge-a",
+        judge_b="generated-judge-b",
+        judge_vendor_a="generated-vendor-a",
+        judge_vendor_b="generated-vendor-b",
+        output=tmp_path / "out",
+        per_stratum=1,
+        minimum=1,
+        seed=17,
+        projection_rate=100,
+        project_only=False,
+        skip_projection=True,
+        smoke=False,
+    )
+    report = await spike.run(args)
+
+    # The comparison ran once, against the populated source — never the
+    # empty-at-the-instant sandbox the session runner replayed in.
+    assert bound == [source_url]
+    assert [u for u, sql in calls if "FROM relation" in sql] == [source_url]
+    assert [u for u, sql in calls if "FROM tag_trace" in sql] == [sandbox_url] * 2
+    assert runner.inspect.await_count == 2
+    assert all(c.kwargs["historical"] for c in runner.replay.await_args_list)
+    assert quality.await_count == 2
+    runs = report["age"]["runs"]
+    assert len(runs) == 1 and runs[0]["questions"] == 1
+    frozen = json.loads((tmp_path / "out" / "age" / "questions.json").read_text())
+    assert frozen[0]["seed"] == ["event", "generated-edge"]
+    assert frozen[0]["gold"] == ["event:generated-edge"]

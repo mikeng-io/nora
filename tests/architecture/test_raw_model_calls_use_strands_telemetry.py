@@ -43,6 +43,11 @@ _HOME = ROOT / "nora" / "agent" / "telemetry.py"
 #: retired `GENERATION_ATTRIBUTES`-derivation avoided.
 _FAMILIES = ("gen_ai.", "langfuse.observation.")
 
+# The shared processor also runs in processes without Strands. These identify
+# conversations and domain stages; neither declares a model invocation.
+_IDENTITY_ATTRIBUTES = {"gen_ai.conversation.id", "langfuse.observation.type"}
+_IDENTITY_HOME = ROOT / "nora" / "obs" / "tracing.py"
+
 
 def _production_modules() -> list[Path]:
     return sorted(
@@ -69,6 +74,8 @@ def test_no_module_spells_a_generation_attribute_by_hand() -> None:
             if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
                 continue
             if node.value.startswith(_FAMILIES):
+                if path == _IDENTITY_HOME and node.value in _IDENTITY_ATTRIBUTES:
+                    continue
                 offenders.append(
                     f"{path.relative_to(ROOT)}:{node.lineno}: {node.value!r}"
                 )

@@ -35,6 +35,13 @@ from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy
 from nora.secret import credentials
+from nora.subject.obtain import model_endpoint
+from nora.subject.sandbox_index import (
+    EMBEDDER_FROM_HOST,
+    SandboxIndex,
+    check_served_model,
+    index_sandbox,
+)
 
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (("cited_sources", 10, "turn"),)
 _ROW = {n: (o, k) for n, o, k in _BLOCKS}
@@ -168,12 +175,18 @@ async def acts(engine: Any) -> dict[str, Any]:
 
 
 class Judges:
-    def __init__(self, cfg: Any, models: list[str]) -> None:
-        self.cfg, self.models = cfg, models
-        self.effective_models = [cfg.endpoint("eval_judge", m)[2] for m in models]
+    def __init__(self, cfg: Any, models: list[str], config: Path) -> None:
+        self.cfg, self.models, self.config = cfg, models, config
+        self.effective_models = [self._endpoint(m)[2] for m in models]
+
+    def _endpoint(self, model_id: str) -> tuple[str, str, str]:
+        # The measurer dials the route the deployment configured, rewritten for
+        # where it runs — `cfg.endpoint` names a container-only host on the host
+        # OS, which reads as an NXDOMAIN, never as a judge verdict.
+        return model_endpoint(self.config, "eval_judge", model_id)
 
     async def call(self, model_id: str, instruction: str, payload: Any) -> str:
-        url, key, selected_model = self.cfg.endpoint("eval_judge", model_id)
+        url, key, selected_model = self._endpoint(model_id)
         if selected_model != model_id:
             raise ValueError("effective judge model differs from requested judge")
         model = build_structured_model(
@@ -239,17 +252,23 @@ def scoped_cypher(query: str) -> str:
     return "MATCH " + query + " WHERE a.key=$seed RETURN DISTINCT b.key"
 
 
-def literal(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
+def dollar_quoted(value: str) -> str:
+    # ag_catalog.cypher() takes its arguments as dollar-quoted constants; choose
+    # a tag the value cannot close. sa.text still scans inside $tag$: ':' reads
+    # as a bind, so it is masked as '\:', which compiles back to ':'.
+    tag = "$$"
+    while tag in value:
+        tag = f"${'a' * len(tag)}$"
+    return tag + value.replace(":", "\\:") + tag
 
 
 async def cypher(conn: Any, graph: str, query: str) -> list[Any]:
     result = await conn.execute(
         sa.text(
-            "SELECT value::text FROM ag_catalog.cypher("  # noqa: S608 - quoted literals below
-            + literal(graph)
+            "SELECT value FROM ag_catalog.cypher("  # noqa: S608 - quoted literals below
+            + dollar_quoted(graph)
             + ", "
-            + literal(query)
+            + dollar_quoted(query)
             + ") AS (value ag_catalog.agtype)"
         )
     )
@@ -572,7 +591,8 @@ async def session_quality(
             for reading in proposal.get("readings", []):
                 await score("reading_precision", reading)
         committed = set(result.get("committed", []))
-        for relation in result.get("connected", {}).get("relations", []):
+        for edge in result.get("connected", {}).get("relations", []):
+            relation = edge["relation"]
             if relation["id"] in committed:
                 await score("relation_precision", relation)
                 if relation["rel"] == "same_as":
@@ -593,6 +613,27 @@ async def session_quality(
                 )
     await score("reading_recall", {"all_storable_statements_covered": True, "readings": readings})
     return scored
+
+
+async def index_replay_sandbox(subject: Any, *, source_url: str) -> SandboxIndex:
+    """The replay sandbox's memory index, built before inspect or replay:
+    `sandbox_as_of` restores no `memory_*` table
+    (`nora.infra.sql.history.NOT_RESTORED`), and a `social` or `play`
+    stimulus's `records.load` reads a `memory_node` row that does not exist
+    until the index is projected. The same preparation a graph-surface eval
+    draw gets between seeding and the drive (`evals.backbone`,
+    `nora.subject.sandbox_index`): production's `rebuild` on the restored
+    rows, the source's vectors adopted where the input is identical, and the
+    coverage read back fail-closed — never an empty index, never a model
+    call to fill it."""
+    index = subject.cfg.memory.index
+    if index.read and index.embed:
+        await check_served_model(index.embedder_url, index.embedder_model)
+    return await index_sandbox(
+        subject.database_url,
+        source_url=source_url,
+        model_id=subject.cfg.memory.index.embedder_model,
+    )
 
 
 async def project(engine: Any, scope: Any, rate: float) -> None:
@@ -689,10 +730,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         results: list[dict[str, Any]] = []
         scores: dict[str, list[list[str]]] = {}
         age_results = []
-        judges = Judges(cfg, [args.judge_a, args.judge_b])
+        judges = Judges(cfg, [args.judge_a, args.judge_b], args.config)
         for wake in selected.values():
-            at = datetime.fromtimestamp(wake["at_ms"] / 1000, UTC)
-            _, view = await recorded_wake(engine, wake["id"])
+            replay_ms, view = await recorded_wake(engine, wake["id"])
+            at = datetime.fromtimestamp(replay_ms / 1000, UTC)
             room = next((c for c in policy.rooms() if c.unit == view.unit), None)
             if room is None:
                 raise ValueError("wake has no policy room")
@@ -713,7 +754,13 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                                 "cognition.enabled": True,
                                 "memory.graph.enabled": True,
                                 "memory.graph.comprehend.enabled": True,
+                                # The deployment's embedder name resolves only
+                                # on the compose network; the spike runs on the
+                                # host, where compose publishes it on loopback
+                                # (`evals.scenarios.MEMORY_INDEX_OVERRIDES`).
+                                "memory.index.embedder_url": EMBEDDER_FROM_HOST,
                                 "llm": cfg.llm.model_dump(),
+                                "providers": {k: v.model_dump() for k, v in cfg.providers.items()},
                                 "model_routes": {
                                     k: v.model_dump() for k, v in cfg.model_routes.items()
                                 },
@@ -727,10 +774,15 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                         runner = subject.deps.cognition_runner
                         if runner is None:
                             raise ValueError("snapshot session unavailable")
-                        inspection = await runner.inspect(view=view, now_ms=wake["at_ms"])
+                        measured["index"] = (
+                            await index_replay_sandbox(
+                                subject, source_url=args.database_url
+                            )
+                        ).line()
+                        inspection = await runner.inspect(view=view, now_ms=replay_ms)
                         tokens_before = subject.deps.metrics.get("nora_cognition_unit_tokens_total")
                         outcome = await runner.replay(
-                            view=view, now_ms=wake["at_ms"], historical=True
+                            view=view, now_ms=replay_ms, historical=True
                         )
                         if outcome is None:
                             raise ValueError("empty session")
@@ -790,13 +842,6 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                                 target = scores.setdefault(name, [[], []])
                                 for i, values in enumerate(pair):
                                     target[i].extend(values)
-                            age_dir = output / f"age-{len(results)}"
-                            age_dir.mkdir(mode=0o700)
-                            age_results.append(
-                                await age_comparison(
-                                    sandbox_engine, args.age_url, judges, age_dir, args.minimum
-                                )
-                            )
                     except Exception:  # noqa: BLE001 - private exceptions stay on host
                         measured["status"] = "ERROR"
                     finally:
@@ -806,6 +851,15 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
 
                         await _close(subject)
             results.append(measured)
+        # ponytail: one engine comparison per run, on the frozen projected
+        # source. An as-of sandbox correctly holds no graph rows at its wake
+        # instant, so a per-wake comparison there measures emptiness N times.
+        if not args.smoke:
+            age_dir = output / "age"
+            age_dir.mkdir(mode=0o700)
+            age_results.append(
+                await age_comparison(engine, args.age_url, judges, age_dir, args.minimum)
+            )
         health = session_smoke(results)
         report = {
             "driver": "cognition_session",

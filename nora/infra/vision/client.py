@@ -38,6 +38,7 @@ import logging
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any, Protocol, cast
 
 import httpx
 from openai import AsyncOpenAI, DefaultAsyncHttpxClient
@@ -46,6 +47,29 @@ from nora.domain.media import parse_media_type
 from nora.domain.turn_deadline import seconds_left
 
 log = logging.getLogger("nora.vision")
+
+
+class VisionSpanRecorder(Protocol):
+    """The model-span seam (ADR 0034): this module is below `nora.obs` and
+    `nora.agent` in the layered contract, so it cannot reach
+    `nora.agent.telemetry` itself. The composition root injects the concrete
+    half (`nora.agent.telemetry.RawSpanRecorder`); `None` means untraced, the
+    shape every test and every caller already lived with.
+
+    A span opened by `start` is OPAQUE here — this module only passes it back
+    to `finish`/`fail`, which is what keeps a strands-owned span out of a
+    strands-free layer.
+    """
+
+    def start(
+        self, *, messages: list[dict[str, object]],
+        model_id: str, provider: str,
+    ) -> object: ...
+    def finish(self, span: object, *, content: str, finish_reason: str,
+               input_tokens: int | None = None, output_tokens: int | None = None,
+               total_tokens: int | None = None, latency_seconds: float | None = None,
+               response_model: str = "", provider: str = "") -> None: ...
+    def fail(self, span: object, *, error: BaseException) -> None: ...
 
 # How much of the loop's own timeout one vision call may spend. A fraction < 1
 # is what MAKES the derived ceiling provably shorter than the loop's
@@ -325,8 +349,10 @@ class VisionClient:
         timeout_seconds: float,
         loop_timeout_seconds: float,
         direct_clients: Mapping[str, AsyncOpenAI] | None = None,
+        span_recorder: VisionSpanRecorder | None = None,
     ) -> None:
         self._client = client
+        self._span_recorder = span_recorder
         # Provider name → its DIRECT client (`"kimi"`, `"opencode-go"`). Only
         # the lanes some describer selects AND whose key resolved are here —
         # an absent provider is the wiring gap `_create` refuses on.
@@ -489,19 +515,92 @@ class VisionClient:
         second never-raises result type for one call site would be a port for
         an audience of one.
         """
-        response = await asyncio.wait_for(
-            self._client.chat.completions.create(
-                model=model or self._model,
-                max_tokens=self._max_tokens,
-                messages=[
-                    {"role": "user", "content": prompt},
-                    {"role": "user", "content": text},
-                ],
-                extra_body={"reasoning_effort": self._reasoning_effort},
-            ),
-            timeout=self._call_timeout(None),
+        request_model = model or self._model
+        request_messages = [
+            {"role": "user", "content": prompt},
+            {"role": "user", "content": text},
+        ]
+        span = self._span_start(messages=[
+            {"role": "user", "content": [{"text": prompt}]},
+            {"role": "user", "content": [{"text": text}]},
+        ], model_id=request_model, provider="omniroute")
+        started = asyncio.get_running_loop().time()
+        try:
+            response = await asyncio.wait_for(
+                self._client.chat.completions.create(
+                    model=request_model,
+                    max_tokens=self._max_tokens,
+                    messages=cast(Any, request_messages),
+                    extra_body={"reasoning_effort": self._reasoning_effort},
+                ),
+                timeout=self._call_timeout(None),
+            )
+            content = _checked(response, what="the text-only vision call")
+        except BaseException as exc:
+            # BaseException, not Exception: `wait_for` cancels this await with
+            # CancelledError bypasses Exception; validate choices inside this
+            # boundary too so malformed responses also close the span.
+            self._span_fail(span, exc)
+            raise
+        self._span_finish(
+            span, response=response,
+            content=content,
+            provider="omniroute",
+            latency_seconds=asyncio.get_running_loop().time() - started,
         )
-        return _checked(response, what="the text-only vision call")
+        return content
+
+    def _span_start(
+        self, *, messages: list[dict[str, object]], model_id: str, provider: str,
+    ) -> object | None:
+        """Open the model-invoke span for one request, or `None` untraced.
+
+        Never load-bearing — the same rule every instrument in this codebase
+        holds: a broken recorder must not break a describe.
+        """
+        if self._span_recorder is None:
+            return None
+        try:
+            return self._span_recorder.start(
+                messages=messages, model_id=model_id, provider=provider,
+            )
+        except Exception:
+            log.debug("vision span not opened; continuing untraced", exc_info=True)
+            return None
+
+    def _span_finish(
+        self, span: object | None, *, response: object, content: str,
+        provider: str, latency_seconds: float,
+    ) -> None:
+        """Close the span with what the response actually said: finish_reason,
+        usage (absent stays absent — never a zero, per `end_raw_model_span`),
+        and the SERVED model beside the requested alias.
+        """
+        if span is None or self._span_recorder is None:
+            return
+        try:
+            usage = getattr(response, "usage", None)
+            choices = getattr(response, "choices", None) or []
+            self._span_recorder.finish(
+                span, content=content,
+                finish_reason=str(getattr(choices[0], "finish_reason", "") or ""),
+                input_tokens=getattr(usage, "prompt_tokens", None),
+                output_tokens=getattr(usage, "completion_tokens", None),
+                total_tokens=getattr(usage, "total_tokens", None),
+                latency_seconds=latency_seconds,
+                response_model=str(getattr(response, "model", "") or ""),
+                provider=provider,
+            )
+        except Exception:
+            log.debug("vision span not closed; call already answered", exc_info=True)
+
+    def _span_fail(self, span: object | None, exc: BaseException) -> None:
+        if span is None or self._span_recorder is None:
+            return
+        try:
+            self._span_recorder.fail(span, error=exc)
+        except Exception:
+            log.debug("vision span error not recorded", exc_info=True)
 
     async def _describe_with_retry(
         self, *, block: dict[str, object], prompt: str, model: str = "",
@@ -540,27 +639,54 @@ class VisionClient:
                     f"provider {provider!r} requested but no direct client injected"
                 )
             client = direct
-        response = await client.chat.completions.create(
-            model=model or self._model,
-            max_tokens=self._max_tokens,
-            # `type: ignore[list-item]` — the content block is built per
-            # modality by `_content_block`, so its shape is a union the SDK's
-            # TypedDicts cannot narrow from a plain dict. The gateway reads
-            # the JSON; the stub is not the contract (same argument as
-            # `extra_body` below).
-            messages=[
-                {  # type: ignore[list-item,misc]
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        block,
-                    ],
-                }
+        request_model = model or self._model
+        # The span's input records the prompt and the fact that a media payload
+        # was sent — never the payload itself: a base64 data URI is exactly the
+        # "huge repeated body" the content policy omits, and the omission is
+        # recorded rather than silent.
+        span = self._span_start(messages=[{
+            "role": "user",
+            "content": [
+                {"text": prompt},
+                {"text": "[media payload omitted from trace — bytes not exported]"},
             ],
-            # MiMo reads reasoning effort as a top-level body field. Passed via
-            # extra_body rather than a typed kwarg so this call does not depend
-            # on the installed openai SDK carrying `reasoning_effort` in its
-            # signature — the gateway reads the JSON, not the Python stub.
-            extra_body={"reasoning_effort": self._reasoning_effort},
+        }], model_id=request_model, provider=provider)
+        started = asyncio.get_running_loop().time()
+        try:
+            response = await client.chat.completions.create(
+                model=request_model,
+                max_tokens=self._max_tokens,
+                # `type: ignore[list-item]` — the content block is built per
+                # modality by `_content_block`, so its shape is a union the SDK's
+                # TypedDicts cannot narrow from a plain dict. The gateway reads
+                # the JSON; the stub is not the contract (same argument as
+                # `extra_body` below).
+                messages=[
+                    {  # type: ignore[list-item,misc]
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            block,
+                        ],
+                    }
+                ],
+                # MiMo reads reasoning effort as a top-level body field. Passed via
+                # extra_body rather than a typed kwarg so this call does not depend
+                # on the installed openai SDK carrying `reasoning_effort` in its
+                # signature — the gateway reads the JSON, not the Python stub.
+                extra_body={"reasoning_effort": self._reasoning_effort},
+            )
+            content = _checked(response, what="the vision read")
+        except BaseException as exc:
+            # BaseException, not Exception: an outer `wait_for` cancellation is
+            # CancelledError bypasses Exception; validate choices inside this
+            # boundary too so malformed responses also close the span.
+            self._span_fail(span, exc)
+            raise
+        self._span_finish(
+            span, response=response,
+            content=content,
+            provider=provider,
+            latency_seconds=asyncio.get_running_loop().time() - started,
         )
-        return _checked(response, what="the vision read")
+        return content

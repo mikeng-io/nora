@@ -54,6 +54,11 @@ def build_health_app(
     index_state=None, config_reload=None,
 ) -> web.Application:
     app = web.Application()
+    # Application-HTTP coverage (ADR 0034): request spans for the portal/API
+    # routes; the /health + /metrics polls are excluded inside the helper.
+    from nora.obs.tracing import instrument_aiohttp_app
+
+    instrument_aiohttp_app(app)
     app["adapter"] = adapter
     # Every platform's adapter, keyed by name, beside `adapter`, which is the
     # Signal one because `sse` is a pinned top-level contract

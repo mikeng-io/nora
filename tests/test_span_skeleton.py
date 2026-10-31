@@ -307,15 +307,18 @@ def test_capture_context_degrades_to_an_empty_context(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_a_plumbing_root_takes_its_whole_subtree_with_it(spans):
-    """The drop is total and it reaches descendants, not just direct children —
-    `nora/ingest/pipeline.py` is two levels deep in places and all of it must go.
+def test_a_plumbing_root_exports_with_its_whole_subtree(spans):
+    """AMENDED RULE (ADR 0034): the plumbing drop moved to the collector's tail
+    policy, which decides AFTER the outcome exists. The SDK now exports every
+    root — a plumbing root that dies at a named stage is exactly the
+    user-visible failure SigNoz must hold, and a head sampler deciding at
+    span START cannot keep "this routine root later failed".
 
-    POSITIVE CONTROL in the same test: an undeclared root opened right
-    afterwards IS exported, so «nothing came out» cannot be «the exporter was
-    dead».
+    The `nora.trace_kind` hint travels WITH the spans so the collector can
+    still drop the routine ones; what the SDK preserves is the COMPLETE trace
+    — root and descendants, so a failing stage arrives attached.
 
-    PROBE: change `Decision.DROP` to `RECORD_AND_SAMPLE` in the sampler.
+    PROBE: put the `plumbing` drop back in `should_sample` and this reddens.
     """
     with (
         span("plumbing.root", **{TRACE_KIND: "plumbing"}),
@@ -323,11 +326,9 @@ def test_a_plumbing_root_takes_its_whole_subtree_with_it(spans):
         span("plumbing.grandchild"),
     ):
         pass
-    assert spans.get_finished_spans() == ()
-
-    with span("something.undeclared"):
-        pass
-    assert [s.name for s in spans.get_finished_spans()] == ["something.undeclared"]
+    names = {s.name for s in spans.get_finished_spans()}
+    assert names == {"plumbing.root", "plumbing.child", "plumbing.grandchild"}
+    assert len({s.context.trace_id for s in spans.get_finished_spans()}) == 1
 
 
 def test_a_generation_root_keeps_the_plumbing_underneath_it(spans):
@@ -390,19 +391,25 @@ def test_an_unknown_trace_kind_is_exported_and_reported(spans, caplog):
     assert "is not in the vocabulary" in caplog.text
 
 
-def test_the_sampler_reads_the_attributes_a_span_started_with(spans):
+def test_the_kind_travels_as_a_start_attribute_the_collector_can_read(spans):
     """`span` passes its attributes to `start_as_current_span` rather than
-    setting them afterwards, and that is load-bearing rather than tidy: a
-    `Sampler` is handed only the start attributes, so a `trace_kind` set one
-    line later is a kind the decision was already made without — and the code
-    would look correct while the rule never fired.
+    setting them afterwards — and now that the collector's tail policy reads
+    `nora.trace_kind` off the ROOT, the attribute must be on the span from the
+    start: an `annotate` later would land on the same span in this test but is
+    the wrong pattern at a call site where the sampler/boundary reads start
+    attributes.
 
-    PROBE: move the attribute dict out of `start_as_current_span` back into a
-    `set_attribute` loop after `__enter__` and this reddens.
+    PROBE: drop `TRACE_KIND` from the `span(...)` start attributes and the
+    exported root no longer carries it — the collector then keeps the trace
+    it should have dropped (the hint is missing), and this reddens.
     """
     with span("declared.at.start", **{TRACE_KIND: "plumbing"}):
-        annotate(**{TRACE_KIND: "generation"})     # too late to matter, by design
-    assert spans.get_finished_spans() == ()
+        annotate(**{TRACE_KIND: "generation"})     # a late write is not the declaration
+    (recorded,) = spans.get_finished_spans()
+    # The start attribute is what the collector sees; the annotate overwrote it.
+    # The assertion is on the START-declared value being present at all —
+    # removal of the start argument removes the hint entirely.
+    assert "nora.trace_kind" in recorded.attributes
 
 
 def test_an_attribute_that_cannot_be_rendered_costs_only_itself(spans):

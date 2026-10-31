@@ -113,7 +113,9 @@ It has no heuristic for scenarios 8 and 10; those stay parked unless the
 operator supplies a real wake candidate privately in the same JSONL shape.
 An empty result means no heuristic candidate, never proof of no instance.
 
-The confirmer restores every store at the wake's `at_ms` — once per wake, with
+The confirmer restores every store at the session's recorded execution time
+(`started_at_ms`, or the wake's write time without a session), not the wake's
+pending watermark `at_ms` — once per wake, with
 every candidate on the same wake sharing the restore — composes the same
 subject a `cognition_session` draw runs (the corpus's own overrides, the
 full-restore set and the eval workspace), and stops after its normal context

@@ -700,7 +700,7 @@ def test_complete_image_build_uses_selected_source_version_and_channel(
         assert built[-1][built[-1].index('-t') + 1] == f'{bundle.REGISTRY}{name}:{identity}'
         assert f'org.opencontainers.image.revision={selected["commit"]}' in built[-1]
         assert f'org.opencontainers.image.version={selected["version"]}' in built[-1]
-    assert prepared == ['signal-cli'] and len(built) == 10
+    assert prepared == ['signal-cli'] and len(built) == 9
     stamp = json.loads(Path('nora/version.json').read_text())
     assert (stamp['version'], stamp['commit']) == (selected['version'], selected['commit'])
     monkeypatch.setattr(sys, 'argv', ['release_bundle.py', 'bundle', *args])
@@ -979,7 +979,7 @@ def test_reuse_preserves_original_provenance_and_checks_current_inputs(
     assert manifest['artifacts']['app'] == old_app  # no relabel/restamp of reused bytes
     assert manifest['artifacts']['app']['commit'] == old_commit != commit
     assert generated['services']['app']['image'] == old_app['image']
-    assert len(manifest['services']) == 12 and len(manifest['artifacts']) == 10
+    assert len(manifest['services']) == 11 and len(manifest['artifacts']) == 9
     assert commands == [('docker', 'buildx', 'imagetools', 'inspect', old_app['image'])]
     # Same context is insufficient without the exact previous provenance receipt.
     forged = json.loads((directory / 'app.json').read_text())
@@ -1122,6 +1122,10 @@ def test_selection_pins_previous_manifest_by_immutable_commit(publisher_source, 
 
     bundle, state, _ = publisher_source
     _, previous = bundle.render(source(), images(bundle), 'v7.11.0', state['released'])
+    previous['services']['alert-bridge'] = (
+        'ghcr.io/mikeng-io/nora-alert-bridge@sha256:' + 'c' * 64)
+    with pytest.raises(ValueError, match='service set'):
+        bundle.validate_manifest(previous)
     real_api = bundle.api
     reads = []
     deployment_commit = 'd' * 40
@@ -1140,3 +1144,29 @@ def test_selection_pins_previous_manifest_by_immutable_commit(publisher_source, 
     assert selected['previous'] == deployment_commit
     assert reads == ['contents/release.json?ref=' + deployment_commit]
     assert bundle.previous_manifest('mikeng-io/nora', selected['previous']) == previous
+
+
+def test_promotion_retires_the_previous_alert_bridge(publication):
+    bundle, state, directory = publication
+    state['previous']['services']['alert-bridge'] = (
+        'ghcr.io/mikeng-io/nora-alert-bridge@sha256:' + 'c' * 64)
+    state['comparison'] = 'ahead'
+    bundle.promote('mikeng-io/nora', directory)
+    assert state['writes'] == ['tree', 'commit', 'ref']
+    assert 'alert-bridge' not in state['previous']['services']
+
+
+@pytest.mark.parametrize('fault', ['foreign', 'mutable', 'extra'])
+def test_previous_manifest_compatibility_keeps_image_and_cohort_checks(fault):
+    bundle = load('release_bundle')
+    _, previous = bundle.render(source(), images(bundle), 'v7.11.0', 'b' * 40)
+    previous['services']['alert-bridge'] = (
+        'ghcr.io/mikeng-io/nora-alert-bridge@sha256:' + 'c' * 64)
+    if fault == 'foreign':
+        previous['services']['alert-bridge'] = previous['services']['nora']
+    elif fault == 'mutable':
+        previous['services']['alert-bridge'] = 'ghcr.io/mikeng-io/nora-alert-bridge:latest'
+    else:
+        previous['services']['unknown'] = previous['services']['nora']
+    with pytest.raises(ValueError):
+        bundle.validate_manifest(previous, previous=True)

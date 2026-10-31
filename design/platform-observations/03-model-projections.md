@@ -73,13 +73,10 @@ Reuse existing verbs for transcript/Record evidence, graph understanding, room
 membership and media/social content. Add only capabilities they cannot express.
 No platform-specific model workflow and no universal SQL/query/execute tool.
 
-| Task | Surface and bounded arguments | Result |
-|---|---|---|
-| Connected account/evidence | Existing memory_search/read | Scoped graph preview/full fields and supporting/contradicting evidence |
-| Conversation/observation history | Existing Record/transcript reads extended with typed target refs/time/cursor | Actual source observations, not guessed transitions |
-| Room/member state | Existing room/member reads | Supported current scope/roles/coverage, not inferred channel audience |
-| Collective-choice discovery | Proposed poll_list(scope=server-bound current room, state, limit, cursor) | Poll handles, questions, state/as_of/coverage |
-| Collective-choice detail | Proposed poll_read(handle, view=state or history, limit, cursor) | Definition/options, supported counts/voters or bounded source history |
+The canonical per-tool **Engagement/Cognition allowlist** and the existing
+record_query capability boundary are in [05](05-occasion-map.md). It also owns
+per-object injection maps, generated examples and the proposed stimulus extension.
+Do not treat the shared projection contract as automatic exposure on every occasion.
 
 These signatures specify intent, not registered tools. At implementation follow the
 existing tool skill, naming conventions and measured routing. Do not add another

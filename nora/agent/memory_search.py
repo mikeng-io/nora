@@ -833,6 +833,7 @@ class MemorySearch:
         query: str = "",
         seed: tuple[str, str] | None = None,
         depth: int = 2,
+        anchors: Sequence[tuple[str, str]] = (),
         target: RenderRoom,
         now_ms: int,
         people: Sequence[PersonRef] = (),
@@ -862,7 +863,7 @@ class MemorySearch:
             )
             unit = target.room.unit
             cache_key = repr((query, seed, depth, scope, tuple(kinds), tuple(people),
-                              tuple(media), tuple(about), content_checks))
+                              tuple(media), tuple(about), tuple(anchors), content_checks))
             if cache is not None and cache_key in cache:
                 return cache[cache_key]
             partial = False
@@ -899,7 +900,7 @@ class MemorySearch:
                 )
             else:
                 seeds = (seed,)
-            seeds = tuple(dict.fromkeys(seeds))
+            seeds = tuple(dict.fromkeys((*seeds, *anchors)))
             walk_query = Walk(
                 unit, scope.listed_here, depth=depth, scope=scope,
                 layers=("record", "rollup", "notebook"),
