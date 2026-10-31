@@ -108,7 +108,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import tzinfo
 from typing import Any, Protocol
@@ -484,6 +484,7 @@ async def run(
     working_set_max_items: int = DEFAULT_WORKING_SET_MAX_ITEMS,
     working_set_max_chars: int = DEFAULT_WORKING_SET_MAX_CHARS,
     content_checks: bool = True,
+    conclusions: Sequence[Any] | None = None,
 ) -> None:
     """Fold this finished turn into the conversation's position. **Never
     raises, and never returns anything** — a stage that runs after delivery has
@@ -499,6 +500,18 @@ async def run(
     started = time.perf_counter()
     outcome = "error"
     try:
+        if conclusions is not None:
+            # THE WIRED ROUTE WRITES NOTHING. Producer conclusions are
+            # already durable in this turn's Record — the shared view
+            # projects them to every later read — and applying one to the
+            # persistent position is Cognition's call (`standing_revise`,
+            # with base revision and citations), not a stage running after
+            # delivery. A wired debrief that synthesized a position anyway
+            # would be an unauthorized writer; one that applied a raw
+            # proposal would be worse. The prior stands, untouched, on
+            # every exit of this branch — including an unreadable store.
+            outcome = "record_only"
+            return
         # The prior is read first: a store that cannot be read is
         # `unavailable`, and a fold against a guessed-empty prior is the
         # two-contradictory-rows failure. An ERROR is never a PASS.
@@ -520,6 +533,7 @@ async def run(
             "nora_debrief_prior_total",
             prior="read" if prior is not None else "absent",
         )
+
 
         # THE WATERMARK BATCH READ. The fold reads the NEXT `fold_batch` rows
         # since the last fold's row-id watermark — including Nora's own rows,

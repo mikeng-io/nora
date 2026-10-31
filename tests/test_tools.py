@@ -135,7 +135,7 @@ def test_every_declared_tool_is_built(wiring):
         # DEC-146: the window-scoped rung of the recall ladder, below
         # `load_transcript`. Exercised in tests/test_who_said.py.
         "who_said",
-        "now", "load_transcript", "send_reply", "search_gifs", "send_gif",
+        "now", "decision_conclude", "load_transcript", "send_reply", "search_gifs", "send_gif",
         "send_to",
         # The room tools.
         "room_list", "room_read",

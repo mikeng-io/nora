@@ -66,13 +66,19 @@ import logging
 import mimetypes
 import time
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
 from nora.agent.guards import ReplyGuard
-from nora.agent.lineage import LineagePolicy, profile_lines_for
+from nora.agent.lineage import (
+    LineagePolicy,
+    excluded,
+    profile_lines_for,
+    section_permits,
+    visible_sections,
+)
 from nora.agent.outbound import OutboundComposer
 from nora.agent.prefill import (
     build_prefill,
@@ -80,7 +86,7 @@ from nora.agent.prefill import (
 )
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.standing_ledger import read_ledger
+from nora.agent.standing_ledger import ledger_permits, ledger_target, read_ledger
 from nora.agent.tools import turn_occasion
 from nora.doctrine.loader import DoctrineStore
 from nora.domain import audience as audience_names
@@ -115,6 +121,14 @@ from nora.domain.framing import (
     ReminderHeader,
     RequestBody,
 )
+from nora.domain.lineage import (
+    BODY,
+    HOLD_OPEN,
+    I_OWE,
+    ROW,
+    WORKING_SET,
+    room_key,
+)
 from nora.domain.media import MediaBlob
 from nora.domain.media_join import MediaJoin
 from nora.domain.memo import Memo, MemoStore
@@ -144,6 +158,7 @@ from nora.domain.prompt import one_line
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.reminders import Reminder
 from nora.domain.self_presence import Presence, platform_name
+from nora.domain.shared_state import SharedView
 from nora.domain.standing import (
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
     Standing,
@@ -152,7 +167,11 @@ from nora.domain.standing_ledger import LedgerEntry, StandingLedger
 from nora.domain.subagent import written_title
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.domain.turn_deadline import turn_deadline
-from nora.domain.turn_record import TurnCapture, capture_turn
+from nora.domain.turn_record import (
+    DisclosureRequirement,
+    TurnCapture,
+    capture_turn,
+)
 from nora.engagement.character_who import fire_character_people
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import StandingNotesReader
@@ -616,6 +635,13 @@ class FirePath:
         # character heads — is made at all.
         profile: ProfileHeads | None = None,
         tag_trace_store: Any = None,
+        # The unit's shared cognitive state reader (design/notebook-memory-
+        # types/20-shared-cognitive-state.md): bound at the composition root
+        # over the canonical stores, `None` in every harness that wires none.
+        # A PROACTIVE occasion withholds on an `unavailable` view — a claimed
+        # due row is not proof the act is still needed, and an unread premise
+        # is no check at all.
+        shared: Callable[..., Awaitable[SharedView]] | None = None,
     ) -> None:
         # `<standing>` renders on the fire path too. `build_prefill` is shared
         # and parameterised only by `header=`, so SUPPRESSING the block here
@@ -633,6 +659,7 @@ class FirePath:
         self._standing = standing
         self._ledger_store = ledger
         self._tag_trace_store = tag_trace_store
+        self._shared_reader = shared
         # THE CULTURE HEAD, read on EVERY fire occasion (DEC-207) — see
         # `_read_culture`.
         #
@@ -914,7 +941,8 @@ class FirePath:
         # decisions. Skipped entirely when none is wired (the dormant default
         # must not count a gap it does not have).
         unit: str | None = None
-        if self._notes is not None or self._decisions is not None or self._memos is not None:
+        if (self._notes is not None or self._decisions is not None
+                or self._memos is not None or self._shared_reader is not None):
             unit = self._unit_for(occasion)
 
         # Read AFTER the transcript, because both reads are
@@ -944,7 +972,7 @@ class FirePath:
             character,
             unit_culture,
             self_account,
-            (lessons, memos, ledger),
+            (lessons, memos, ledger, shared),
         ) = await asyncio.gather(
             asyncio.gather(
                 self._read_standing(occasion),
@@ -959,7 +987,8 @@ class FirePath:
             self._read_unit_culture(occasion),
             self._read_self_account(occasion),
             asyncio.gather(self._read_lessons(occasion), self._read_memos(occasion, unit),
-                           self._read_ledger(occasion, ref)),
+                           self._read_ledger(occasion, ref),
+                           self._read_shared(occasion, ref)),
         )
         return TagContext(
             tag_id=uuid.uuid4().hex,
@@ -971,6 +1000,7 @@ class FirePath:
             people_in_window=people,
             profiles=profiles,
             standing=standing, ledger=ledger,
+            shared=shared,
             culture=culture,
             character=character,
             unit_culture=unit_culture,
@@ -1582,6 +1612,104 @@ class FirePath:
                 "nora_errors_total", stage="standing_ledger", platform=occasion.platform)
             return ()
 
+    async def _read_shared(
+        self, occasion: Event, ref: PersonRef | None,
+    ) -> SharedView | None:
+        """The unit's shared cognitive state for this occasion's destination.
+
+        Unlike every sibling read this one is NOT fail-soft in what it
+        returns: a failed reader comes back as a `SharedView` whose `status`
+        is `unavailable`, because the proactive occasion's gate reads it —
+        an unread premise must withhold the autonomous act, not degrade to
+        «nothing pending». The gate itself is in `speak`.
+        """
+        if self._shared_reader is None:
+            return None
+        unit = self._unit_for(occasion)
+        if unit is None:
+            return SharedView(
+                unit="", status="unavailable", as_of_ms=int(time.time() * 1000),
+            )
+        permit = None
+        permit_req = None
+        standing_permits = None
+        notes_permit = None
+        if self._lineage is not None:
+            room = Room(
+                platform=occasion.platform,
+                conversation_id=occasion.conversation_id,
+                roster_source=self._rosters.get(occasion.platform),
+                persons=self._persons, tagger=ref,
+                self_ids=self._profile_self_ids,
+            )
+            target = self._lineage.render_room(
+                platform=occasion.platform,
+                conversation_id=occasion.conversation_id)
+            try:
+                narrowed = await ledger_target(target, room)
+            except Exception:
+                # Fail closed: the unfiltered unit read into this room is the
+                # disclosure failure, so the view is `unavailable` — which on
+                # a proactive occasion withholds the act in `speak`.
+                log.exception(
+                    "fire shared-state permit build failed for %s",
+                    occasion.conversation_id,
+                )
+                return SharedView(
+                    unit=unit, status="unavailable",
+                    as_of_ms=int(time.time() * 1000),
+                )
+            if narrowed is not None:
+                def permit(entry: LedgerEntry) -> bool:
+                    return ledger_permits(entry, narrowed)
+
+                def permit_req(requirements: tuple[DisclosureRequirement, ...]) -> bool:
+                    # Turn-record items carry their own per-item disclosure;
+                    # the same lineage predicates decide it for this room.
+                    # An item carrying NO requirements has no gate to
+                    # check — withhold, never vacuously permit.
+                    return bool(requirements) and all(
+                        req.known
+                        and not excluded(req.exclude_persons, narrowed)
+                        and section_permits(
+                            req.entries, narrowed, origin=req.origin)
+                        for req in requirements
+                    )
+
+                def notes_permit(note: Note) -> bool:
+                    return visible_sections(
+                        note.lineage, (ROW,), narrowed,
+                        origin=note.established_in, exclude_persons=note.exclude_persons,
+                    )[ROW]
+
+                def standing_permits(position: Standing) -> dict[str, bool]:
+                    # The derived-view gate, run against the destination's
+                    # RenderRoom: an excluded or unpermitted section is
+                    # withheld exactly as the retired standing blocks did.
+                    return visible_sections(
+                        position.lineage,
+                        (BODY, HOLD_OPEN, I_OWE, WORKING_SET), narrowed,
+                        origin=room_key(position.platform, position.conversation_id),
+                        exclude_persons=position.exclude_persons,
+                    )
+        try:
+            return await self._shared_reader(
+                unit=unit,
+                room=(occasion.platform, occasion.conversation_id),
+                permit=permit, permit_req=permit_req,
+                standing_permits=standing_permits, notes_permit=notes_permit,
+                now_ms=int(time.time() * 1000),
+            )
+        except Exception:
+            log.exception("fire shared-state read failed")
+            self._metrics.inc(
+                "nora_errors_total", stage="shared_state",
+                platform=occasion.platform)
+            return SharedView(
+                unit=unit, status="unavailable",
+                as_of_ms=int(time.time() * 1000),
+            )
+
     async def _read_standing(self, occasion: Event) -> Standing | None:
         """This conversation's position, or `None`.
 
@@ -1687,6 +1815,23 @@ class FirePath:
         # into — carries the tag id without naming it (nora.obs.logging's
         # contextvar bridge), so a fire turn is greppable exactly like a tag.
         bind_tag_id(ctx.tag_id)
+        # A PROACTIVE act withholds when its fresh-fact check could not run:
+        # the claimed due row is not proof the act is still needed, and a
+        # shared view that failed to read is «could not check», never
+        # «nothing pending». `failed_error` is the honest resolution for a
+        # turn that never ran; the heartbeat resolves the row on it and the
+        # crash-sweep does not mistake it for a delivery.
+        if (occasion.kind == "proactive" and ctx.shared is not None
+                and ctx.shared.status in ("unavailable", "partial")):
+            log.warning(
+                "proactive turn withheld: shared-state read unavailable in %s",
+                occasion.conversation_id,
+            )
+            self._metrics.inc(
+                "nora_errors_total", stage="shared_state",
+                platform=occasion.platform,
+            )
+            return "failed_error"
         # TRUE SHADOW: while the mirror is wired, a participation turn NEVER
         # live-sends — `send_permitted` is forced False so the Deliverer holds
         # the message at the last inch and `_turn` mirrors the draft instead.

@@ -1,5 +1,6 @@
 import inspect
 import re
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from nora.agent.prefill import (
@@ -25,6 +26,7 @@ from nora.domain.models import (
 )
 from nora.domain.notes import Note
 from nora.domain.prompt import escape_attr
+from nora.domain.shared_state import SharedEntry, SharedView
 from nora.domain.standing import Standing, WorkingSetItem
 from nora.domain.standing_ledger import LedgerEntry
 from nora.domain.subagents_context import SubagentLine, SubagentsView
@@ -284,12 +286,25 @@ def _full_prefill_body() -> str:
         # `<spoken_turn>` renders only on a spoken message.
         voice=True,
     )
-    return build_prefill(
+    legacy = build_prefill(
         ctx, display_name="Nora", context_window=40,
         # Rendered only when tools are deferred, so the fixture passes one or
         # the block could never be checked.
         catalogue="* now — the current time, here.\n- weather — the forecast.",
     )[1]["content"][0]["text"]
+    # The shared and legacy forms are mutually exclusive in a real prompt.
+    # Exercise both actual assembly branches for this declaration census.
+    shared = SharedView(
+        unit="generated-unit", status="ok", as_of_ms=1,
+        entries=(SharedEntry(kind="decision", id="generated-decision",
+                             scope="unit", status="open", subject="Generated choice"),),
+        sources=(("ledger", "ok"),),
+    )
+    current = build_prefill(replace(ctx, shared=shared), display_name="Nora",
+                            context_window=40)[1]["content"][0]["text"]
+    block = re.search(r"<shared_cognitive_state\b.*?</shared_cognitive_state>", current, re.S)
+    assert block is not None
+    return legacy + "\n" + block.group(0)
 
 
 def test_the_working_set_block_renders_adjacent_to_standing_in_the_prefill():

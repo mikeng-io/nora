@@ -20,6 +20,7 @@ import pytest
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.domain.standing import STANDING_BODY_CEILING_CHARS, Standing, WorkingSetItem
 from nora.domain.tag_trace import TagTrace
+from nora.domain.turn_record import TurnItem
 from nora.engagement.stages import debrief
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import span
@@ -93,7 +94,7 @@ def _trace(outcome: str = "send_reply", messages: tuple = ()) -> TagTrace:
 async def _run(*, store=None, client=None, metrics=None,
                max_chars=1200, timeout_seconds=5.0, store_timeout_seconds=5.0,
                now_ms_override=None, trace=None, record_store=None,
-               fold_batch=200, culture=None,
+               fold_batch=200, culture=None, conclusions=None,
                working_set_max_items=5, working_set_max_chars=600) -> tuple:
     store = store if store is not None else InMemoryStandingStore()
     metrics = metrics if metrics is not None else Metrics()
@@ -110,6 +111,7 @@ async def _run(*, store=None, client=None, metrics=None,
         culture=culture,
         working_set_max_items=working_set_max_items,
         working_set_max_chars=working_set_max_chars,
+        conclusions=conclusions,
     )
     return store, metrics
 
@@ -804,18 +806,21 @@ async def test_a_prior_far_past_the_old_ceiling_is_still_shown():
 async def test_fold_count_increments_by_one_per_tag_fold_and_is_never_reset():
     """`fold_count` is a plain count: nothing resets it, and it crosses
     `_OLD_CEILING` like any other number."""
+    # Each fold lands a DISTINCT position: `standing_revise`'s semantic
+    # no-change check (content-identical → no write, `fold_count` untouched)
+    # is deliberate — an unchanged position does not count as a revision.
     store = InMemoryStandingStore()
     counts = []
-    for _ in range(3):
-        await _run(store=store)
+    for i in range(3):
+        await _run(store=store, client=_Client(_ok(f"folded position {i}")))
         counts.append((await store.read(
             platform="signal", conversation_id="g1")).fold_count)
     assert counts == [1, 2, 3]
 
     store = await _with_prior(_OLD_CEILING - 2)
     counts = []
-    for _ in range(5):
-        await _run(store=store)
+    for i in range(5):
+        await _run(store=store, client=_Client(_ok(f"new position {i}")))
         counts.append((await store.read(
             platform="signal", conversation_id="g1")).fold_count)
     assert counts == [19, 20, 21, 22, 23]
@@ -1517,3 +1522,86 @@ async def test_the_working_set_rule_names_both_caps_in_the_system_prompt():
         client=client, working_set_max_items=5, working_set_max_chars=600)
     assert "at most 5 items" in client.prompts[0]
     assert "600 characters combined" in client.prompts[0]
+
+
+class _NoSynthesis:
+    """The wired route never calls the model: `complete` is an ERROR."""
+
+    async def complete(self, *a, **kw):
+        raise AssertionError("the wired route must never synthesize")
+
+
+def _conclude_item(args: dict, result_status: str = "ok") -> TurnItem:
+    result = (
+        {"content": [{"json": {"status": result_status}}]}
+        if result_status else None
+    )
+    return TurnItem(
+        call_id="c1", name="decision_conclude", arguments=args,
+        result=result, requirements=(),
+    )
+
+
+async def test_wired_route_leaves_the_prior_untouched():
+    """A wired debrief applies NOTHING to persistent Standing — an
+    Engagement `decision_conclude` is a Record conclusion, not authority;
+    Cognition writes positions through `standing_revise`. The record
+    carries the proposal; the row is unchanged, open/owe included."""
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="generated prior",
+        fold_count=4, updated_at=1, hold_open="generated open",
+        i_owe="generated obligation"))
+    await _run(
+        store=store, client=_NoSynthesis(),
+        conclusions=(
+            _conclude_item({
+                "subject": "decision:d1", "decision": "the pier wins",
+                "standing_body": "generated unauthorized replacement",
+                "standing_room": "signal:g1",
+            }),
+        ),
+    )
+    after = await store.read(platform="signal", conversation_id="g1")
+    assert after is not None and after.body == "generated prior"
+    assert after.hold_open == "generated open"
+    assert after.i_owe == "generated obligation"
+    assert after.fold_count == 4
+
+
+async def test_wired_route_counts_record_only_and_never_folds():
+    """The wired outcome is `record_only` — no version, no fold_count, no
+    synthesis."""
+    store, metrics = await _run(
+        client=_NoSynthesis(),
+        conclusions=(
+            _conclude_item({"decision": "x", "standing_body": "y"}),
+        ),
+    )
+    assert _counter(metrics, "nora_debrief_total", outcome="record_only") == 1
+    assert await store.read(platform="signal", conversation_id="g1") is None
+
+
+async def test_an_unwired_debrief_still_folds():
+    """`conclusions=None` is the legacy harness: the fold runs as before."""
+    store, _metrics = await _run(client=_Client(_ok("a folded position")))
+    prior = await store.read(platform="signal", conversation_id="g1")
+    assert prior is not None and prior.body == "a folded position"
+
+
+async def test_wired_route_survives_a_broken_store():
+    """The record-only branch does not read the store at all: a store that
+    raises cannot produce `unavailable` or switch the route into folding."""
+
+    class _Down:
+        async def read(self, **kw):
+            raise RuntimeError("down")
+
+        async def write(self, **kw):
+            raise AssertionError("no writes on the wired route")
+
+    _store, metrics = await _run(
+        store=_Down(), client=_NoSynthesis(),
+        conclusions=(_conclude_item({"decision": "x"}),),
+    )
+    assert _counter(metrics, "nora_debrief_total", outcome="record_only") == 1

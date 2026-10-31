@@ -1,0 +1,135 @@
+[
+  {
+    "name": "r2-5-fact-projection-latest-per-key",
+    "file": "nora/domain/tag_trace.py",
+    "old": "if prior is None or item.ordinal > prior.ordinal:",
+    "new": "if prior is None or item.ordinal < prior.ordinal:",
+    "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_same_trace_later_result_wins"
+  },
+  {
+    "name": "r2-6-source-resolves-against-record",
+    "file": "nora/agent/tools.py",
+    "old": "row = by_id.get(source)",
+    "new": "row = by_id.get(source) or next(iter(by_id.values()), None)",
+    "target": "tests/unit/test_shared_state.py::test_decision_conclude_resolves_real_rows_and_refuses_the_rest"
+  },
+  {
+    "name": "r2-3-canonical-unit-arbitration",
+    "file": "nora/app/cognition_session.py",
+    "old": "arbitration_rooms=[tuple(r) for r in unit_rooms],",
+    "new": "arbitration_rooms=list(destinations),",
+    "target": "tests/unit/test_cognition_live_writes.py::test_remind_refuses_when_a_same_act_is_firing_in_a_unit_room_off_agenda"
+  },
+  {
+    "name": "r2-4-delivered-fact-dedupe",
+    "file": "nora/app/cognition_session.py",
+    "old": "                    subject_kind=subject_kind, subject_id=subject_id,",
+    "new": "                    subject_kind=subject_kind + '-x', subject_id=subject_id,",
+    "target": "tests/unit/test_cognition_live_writes.py::test_remind_refuses_a_same_act_already_delivered"
+  },
+  {
+    "name": "r2-1-working-set-ttl",
+    "file": "nora/agent/shared_state.py",
+    "old": "if now_ms - item.found_at > ttl_ms:",
+    "new": "if False:",
+    "target": "tests/unit/test_shared_state.py::test_an_expired_finding_and_an_excluded_position_stay_out"
+  },
+  {
+    "name": "r2-2-wired-debrief-record-only",
+    "file": "nora/engagement/stages/debrief.py",
+    "old": "        if conclusions is not None:",
+    "new": "        if False:",
+    "target": "tests/unit/test_debrief.py::test_wired_route_survives_a_broken_store"
+  },
+  {
+    "name": "sql-current-facts-preserve-subject-identity",
+    "file": "nora/infra/sql/tag_traces.py",
+    "old": "CASE WHEN named THEN arguments->>'subject' ELSE tag_id END AS key_subject,",
+    "new": "'lost' AS key_subject,",
+    "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_pair_structurally_and_reduce_latest_per_key"
+  },
+  {
+    "name": "unresolved-only-state-must-render",
+    "file": "nora/agent/shared_state.py",
+    "old": "elif not entries and not unresolved_lines:",
+    "new": "elif not entries:",
+    "target": "tests/unit/test_shared_state.py::test_an_unresolved_only_view_is_rendered"
+  },
+  {
+    "name": "named-conclusions-retain-source-exclusions",
+    "file": "nora/app/cognition_session.py",
+    "old": "None, flat, tuple(entry.exclude_persons),",
+    "new": "None, flat, (),",
+    "target": "tests/unit/test_cognition_live_writes.py::test_conclusion_keeps_named_source_exclusions_in_its_record"
+  },
+  {
+    "name": "sql-fact-transfer-bounded-after-reduction",
+    "file": "nora/infra/sql/tag_traces.py",
+    "old": "LIMIT :open_limit",
+    "new": "LIMIT ALL",
+    "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_bounds_database_transfer_after_reduction"
+  },
+  {
+    "name": "shared-note-destination-exclusion",
+    "file": "nora/agent/shared_state.py",
+    "old": "if room is not None and notes_permit is not None and not notes_permit(n):",
+    "new": "if False:",
+    "target": "tests/unit/test_shared_state.py::test_shared_notes_keep_the_existing_destination_exclusion"
+  },
+  {
+    "name": "cognition-write-scope-is-unit-not-agenda",
+    "file": "nora/app/cognition_session.py",
+    "old": "return self.rooms if self.unit_rooms is None else self.unit_rooms",
+    "new": "return self.rooms",
+    "target": "tests/unit/test_cognition_live_writes.py::test_one_room_agenda_can_schedule_an_explicit_two_room_unit_plan"
+  },
+  {
+    "name": "native-unresolved-survives-sdk-contract",
+    "file": "nora/agent/ports.py",
+    "old": "\"unresolved\": \"a proposed conclusion or action lacks a resolved evidence identity; \"",
+    "new": "\"unresolved_disabled\": \"a proposed conclusion or action lacks a resolved evidence identity; \"",
+    "target": "tests/unit/test_shared_state.py::test_decision_conclude_resolves_real_rows_and_refuses_the_rest"
+  },
+  {
+    "name": "sql-matching-result-uses-last-recorded-result",
+    "file": "nora/infra/sql/tag_traces.py",
+    "old": "block->'toolResult'->>'toolUseId', block->'toolResult'\n                   ORDER BY m_idx, b_idx",
+    "new": "block->'toolResult'->>'toolUseId', block->'toolResult'\n                   ORDER BY m_idx DESC, b_idx DESC",
+    "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_last_result_for_a_call_wins"
+  },
+  {
+    "name": "delivered-act-retains-canonical-identity",
+    "file": "nora/language/shared_render.py",
+    "old": "identity = f\"{e.subject_ref or 'subject unresolved'} · {e.action or 'remind'}\"",
+    "new": "identity = \"identity omitted\"",
+    "target": "tests/unit/test_shared_state.py::test_delivery_facts_expose_action_identity_and_legacy_uncertainty"
+  },
+  {
+    "name": "renderer-keeps-reader-selected-facts",
+    "file": "nora/language/shared_render.py",
+    "old": "for e in recent:",
+    "new": "for e in recent[:12]:",
+    "target": "tests/unit/test_shared_state.py::test_renderer_keeps_all_facts_selected_by_the_bounded_reader"
+  },
+  {
+    "name": "nontext-send-is-a-delivery-fact",
+    "file": "nora/agent/shared_state.py",
+    "old": "subject=\" \".join(str(h.row.body or \"\").split())[:140]\n                        or \"message without text\",",
+    "new": "subject=str(h.row.body or \"\").splitlines()[0][:140],",
+    "target": "tests/unit/test_shared_state.py::test_a_delivered_message_without_text_is_still_a_delivery_fact"
+  },
+  {
+    "name": "unresolved-facts-retain-record-provenance",
+    "file": "nora/agent/shared_state.py",
+    "old": "evidence = f\"source={record_ref}; recorded={recorded_at}\"",
+    "new": "evidence = \"provenance omitted\"",
+    "target": "tests/unit/test_shared_state.py::test_an_unresolved_only_view_is_rendered"
+  },
+  {
+    "name": "merged-context-retains-shared-state",
+    "file": "nora/engagement/context.py",
+    "old": "            shared=shared,",
+    "new": "            shared=None,",
+    "target": "tests/unit/test_memory_prefetch.py::test_graph_prefetch_and_shared_state_reach_the_same_turn"
+  }
+]

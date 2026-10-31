@@ -134,9 +134,21 @@ EXPECTED: dict[str, tuple[dict[str, tuple[str, Any]], set[str]]] = {
     ),
     "remind": (
         {"intent": ("string", ["tell", "ask"]), "text": ("string", None),
+         "subject": ("string", None), "action": ("string", None),
          "subject_rows": ("array", {"type": "string"}), "at": ("string", None),
-         "room": ("string", None)},
-        {"intent", "text", "subject_rows", "at"},
+         "room": ("string", None),
+         "also_rooms": ("array", {"type": "string"}),
+         "new_action": ("string", None)},
+        {"intent", "text", "subject", "action", "subject_rows", "at"},
+    ),
+    "decision_conclude": (
+        {"subject": ("string", None), "decision": ("string", None),
+         "options": ("string", None), "leaning": ("string", None),
+         "conditions": ("string", None),
+         "sources": ("array", {"type": "string"}),
+         "standing_room": ("string", None), "standing_body": ("string", None),
+         "hold_open": ("string", None), "i_owe": ("string", None)},
+        {"subject", "decision"},
     ),
     "remind_move": (
         {"reminder_id": ("string", None), "at": ("string", None),

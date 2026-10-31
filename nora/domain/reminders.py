@@ -130,6 +130,75 @@ class DuplicateProactiveNoteError(NoraError):
         self.note_id = note_id
 
 
+def open_proactive_subject(row: Reminder) -> tuple[str, str, str] | None:
+    """The resolved (subject_kind, subject_id, action) an open proactive row
+    holds, or `None`.
+
+    ONE OPEN PROACTIVE ROW PER (SUBJECT, ACTION, DESTINATION) — the resolved
+    shared-object reference, never a citation set or a prose match (DEC
+    pending; `design/notebook-memory-types/20-shared-cognitive-state.md`).
+    Same shape `open_proactive_note` established: both stores hold it at
+    insert (`uq_reminders_proactive_open_subject`,
+    `DuplicateProactiveSubjectError`). A row carrying no resolved subject has
+    no subject key at all — it cannot be conflict-matched, and the writer is
+    expected to have surfaced `unresolved` before reaching here."""
+    if row.kind != PROACTIVE_KIND or row.state.value not in OPEN_STATES:
+        return None
+    return proactive_subject(row)
+
+
+def proactive_subject(row: Reminder) -> tuple[str, str, str] | None:
+    """The resolved (subject_kind, subject_id, action) key on ANY proactive
+    row, whatever its state. `open_proactive_subject` adds the open-state
+    gate for the insert arbiter; reads that reason about a CLOSED row — a
+    delivered one the fire recheck is matching against — need the key
+    without it."""
+    if row.kind != PROACTIVE_KIND:
+        return None
+    payload = row.payload or {}
+    kind = payload.get("subject_kind")
+    sid = payload.get("subject_id")
+    if not isinstance(kind, str) or not kind or not isinstance(sid, str) or not sid:
+        return None
+    action = payload.get("action")
+    return (kind, sid, action if isinstance(action, str) else "")
+
+
+class ConflictingProactiveActError(NoraError):
+    """The batch's (subject, action) already has an OPEN proactive row at a
+    destination the batch does not cover — the cross-room conflict the
+    create-time check surfaces, enforced inside the locked transaction so a
+    precheck cannot go stale between read and insert."""
+
+    def __init__(
+        self, subject: tuple[str, str, str], platform: str, conversation_id: str,
+    ) -> None:
+        super().__init__(
+            f"act {subject} already pending at {platform}:{conversation_id}"
+        )
+        self.subject = subject
+        self.platform = platform
+        self.conversation_id = conversation_id
+
+
+class DuplicateProactiveSubjectError(NoraError):
+    """`create()` was handed a proactive row for a (subject, action,
+    destination) that already has an open one (`open_proactive_subject`).
+    Postgres enforces it with `uq_reminders_proactive_open_subject`; the
+    in-memory store with the same check, no `await` between it and the
+    write."""
+
+    def __init__(
+        self, subject: tuple[str, str, str], platform: str, conversation_id: str
+    ) -> None:
+        kind, sid, action = subject
+        super().__init__(
+            f"{kind}:{sid} already has an open proactive "
+            f"{action or 'act'} for {platform}:{conversation_id}"
+        )
+        self.subject = subject
+
+
 class UnknownRecurrenceZoneError(ValueError):
     """A recurrence names a timezone this host's tz database does not have.
 
@@ -647,6 +716,28 @@ class ReminderStore(Protocol):
         ones are stored normalised to UTC."""
         ...
 
+    async def create_many(
+        self, reminders: Sequence[Reminder], *, arbitration_key: str | None = None,
+        arbitration_rooms: Sequence[tuple[str, str]] = (),
+    ) -> None:
+        """The batch variant of `create`, ATOMIC: every row lands or none
+        does — a conflicting row refuses the whole insert, so a caller
+        scheduling one act into several rooms can never leave an orphan row
+        behind a refusal.
+
+        `arbitration_key`, when given, is hashed into a transaction-scoped
+        advisory lock that serialises the check-and-insert across processes
+        for that key — the caller passes its unit so two writers on different
+        processes cannot interleave a pending read between each other's
+        creates. `arbitration_rooms` names the unit's rooms: inside the lock,
+        an open proactive row carrying the same (subject, action) at a room
+        the batch does not cover raises `ConflictingProactiveActError` — the
+        cross-room check `check_remind` makes, enforced under the lock the
+        precheck cannot hold. `None` skips the lock. Duplicate errors are
+        `create`'s own.
+        """
+        ...
+
     async def get(self, reminder_id: UUID) -> Reminder | None:
         """Read one row by id. Exists so the contract suite can assert the
         TERMINAL STATE of a swept or cancelled row — without it no test can
@@ -655,6 +746,16 @@ class ReminderStore(Protocol):
         that distinction."""
         ...
 
+    async def delivered_subject(
+        self, rooms: Sequence[tuple[str, str]], *,
+        requester_person_id: str, subject_kind: str, subject_id: str,
+        action: str, limit: int = 5,
+    ) -> Sequence[Reminder]:
+        """Whether THIS (subject,action) was already delivered (`sent`
+        outcome on a closed row) in the named rooms — the keyed existence
+        read the create check and supersession run at canonical unit
+        scope. A full page means «unproven remainder», never absence."""
+        ...
     async def due(self, *, now: datetime, limit: int) -> Sequence[Reminder]:
         """PENDING rows whose `due_at` has passed, oldest first, `id`
         ASCENDING within an equal `due_at`.
@@ -716,6 +817,18 @@ class ReminderStore(Protocol):
         `since` must be timezone-aware; `limit` obeys `check_limit`, for the
         reason `due()` does.
         """
+        ...
+
+    async def recent_in(
+        self, rooms: Sequence[tuple[str, str]], *, requester_person_id: str,
+        since: datetime, limit: int,
+    ) -> Sequence[Reminder]:
+        """`history`, scoped to `rooms` IN THE QUERY: one requester's rows in
+        these `(platform, conversation_id)`s created at or after `since`,
+        oldest first, at most `limit`. The unit-scoped read `history` cannot
+        stand in for — `history`'s global `limit` runs BEFORE a caller's room
+        filter, so a unit whose rows sit beyond the cut is silently complete.
+        `since` timezone-aware; `limit` obeys `check_limit`."""
         ...
 
     async def claim(self, reminder_id: UUID, *, now: datetime) -> bool:

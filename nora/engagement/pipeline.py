@@ -74,6 +74,7 @@ each guarded on acquisition AND on exit for exactly this call site.
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import logging
 import time
@@ -104,6 +105,7 @@ from nora.domain.ports import (
 from nora.domain.profile import ProfileView
 from nora.domain.tag_trace import VALID_OUTCOMES, TagTrace
 from nora.domain.tool_call_log import ToolCallLogStore
+from nora.domain.turn_record import TurnItem, turn_items
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.obs.tracing import TRACE_KIND, TraceCarrier, annotate, attached, capture_context, span
 from nora.persons import Persons
@@ -477,6 +479,7 @@ class EngagementPipeline:
         self, *, trace: TagTrace | None, platform: str,
         culture: CultureRevision | None = None,
         profile_room: ProfileView | None = None,
+        conclusions: tuple[TurnItem, ...] | None = None,
     ) -> None:
         """Hand this finished turn to the debrief stage, or do nothing at all.
 
@@ -539,6 +542,7 @@ class EngagementPipeline:
                 culture=culture,
                 profile_room=profile_room,
                 profile_name_of=self._profile_name_of,
+                conclusions=conclusions,
             )
 
     async def _run_admitted(
@@ -598,6 +602,7 @@ class EngagementPipeline:
         # `agent.messages` and no `ctx.transcript` window to attribute a
         # trace to, so nothing is saved for it.
         trace: TagTrace | None = None
+        shared_state = False
         # The room's account the turn read at its start (DEC-207), handed to
         # the debrief so the fold reads the SAME account the reply did rather
         # than a second read that could land either side of a fold. Bound
@@ -617,6 +622,7 @@ class EngagementPipeline:
         # `indicate.resolve` treats as "nothing to replace".
         try:
             ctx = await self._context.assemble(request=request)
+            shared_state = ctx.shared is not None
             culture = ctx.culture
             profiles = ctx.profiles
             # An @-mention is a placeholder plus a parallel array; left alone,
@@ -1211,7 +1217,10 @@ class EngagementPipeline:
                 await self._debrief(
                     trace=trace, platform=msg.platform, culture=culture,
                     profile_room=next(
-                        (v for v in profiles if v.entity == "room"), None))
+                        (v for v in profiles if v.entity == "room"), None),
+                    conclusions=turn_items(trace.messages, trace.requirements)
+                    if shared_state and trace is not None else None,
+                )
             except BaseException:
                 # ABSORBED, not re-raised, and `BaseException` rather than
                 # `Exception` for `debrief.run`'s own reason one level down:
@@ -1238,46 +1247,33 @@ class EngagementPipeline:
                 # tag arrived. This runs on EVERY exit path, so a turn that
                 # timed out or faulted still lets the people queued behind it
                 # be answered.
-                self._slots.release_and_dispatch(key)
-            # Retain the raw `TagTrace`, unconditionally — deliberately NOT
-            # gated on `if sent and ctx.tagger is not None` the way
-            # `feedback.run`'s spawn below is. That gate is `feedback.run`'s
-            # own reason (an unmapped sender's self-model); a silent, vetoed
-            # or timed-out turn still produces reasoning worth retaining, and
-            # inheriting the gate here would lose exactly those turns.
-            # `trace` is `None` only when `invoke.run` itself never returned
-            # (a fault before the model was ever invoked — the outer
-            # `except BaseException` case, with no `agent.messages` and no
-            # transcript window to attribute a trace to). `self._tag_trace_
-            # store` is `None` in every offline/eval composition and any
-            # deployment that has not wired one — see `__init__`'s docstring.
-            # SPAWNED, never awaited: `BackgroundTasks._on_done` logs (and
-            # swallows) a save failure exactly the way it already does for
-            # `feedback.run`'s Honcho write earlier in this method, so a
-            # DB-down retention store can never take down an
-            # otherwise-successful tag turn, and the write never delays
-            # `release_and_dispatch` (already run, above) or this turn's own
-            # latency observation (right below).
-            if trace is not None and self._tag_trace_store is not None:
-                source = msg.platform + ":" + msg.conversation_id
-                trace = dataclasses.replace(
-                    trace, platform=msg.platform, unit=convo.unit if convo else None,
-                    bound_rooms=(source,),
-                    sent_message_ids=handle.deliverer.sent_message_ids if handle else (),
-                )
-                self._spawn(self._tag_trace_store.save(trace))
-                # Counted HERE — beside the spawn, not inside the store —
-                # for the same reason the spawn itself is not awaited: what
-                # this series answers is «did the recording layer get handed a
-                # trace for this turn», whose denominator is
-                # `nora_tag_latency_seconds`' own count (one per admitted tag),
-                # so the expected ratio is 1.0. A counter inside the store
-                # would answer a different question (did the INSERT succeed),
-                # which is worth having and is not this one — a store that
-                # silently stopped being called would leave both at zero and
-                # look identical to a quiet week.
-                self._metrics.inc(
-                    "nora_tagtrace_writes_total", outcome=trace.outcome)
+                # Retain the raw `TagTrace` BEFORE the release hands the slot
+                # to the next waiting tag: that turn's context build reads the
+                # shared state this turn's record belongs to, so persistence
+                # must complete (or boundedly fail) first. The write is
+                # bounded so a slow or down store can still not strand the
+                # queue — a failed save is logged and the release below runs
+                # regardless, exactly as the spawned write did before.
+                try:
+                    if trace is not None and self._tag_trace_store is not None:
+                        source = msg.platform + ":" + msg.conversation_id
+                        trace = dataclasses.replace(
+                            trace, platform=msg.platform, unit=convo.unit if convo else None,
+                            bound_rooms=(source,),
+                            sent_message_ids=handle.deliverer.sent_message_ids if handle else (),
+                        )
+                        self._metrics.inc(
+                            "nora_tagtrace_writes_total", outcome=trace.outcome)
+                        try:
+                            await asyncio.wait_for(
+                                self._tag_trace_store.save(trace), timeout=10,
+                            )
+                        except Exception:
+                            log.exception(
+                                "tag trace save failed (tag=%s)", request.tag_id,
+                            )
+                finally:
+                    self._slots.release_and_dispatch(key)
             # `total` was read BEFORE the debrief, above — see the comment
             # there. Observed here so the two histograms below stay adjacent
             # and keep reading off one number.

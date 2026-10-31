@@ -111,7 +111,7 @@ def _search(index: FakeMemoryIndex, metrics: Metrics) -> MemorySearch:
 async def _assemble(
     index: FakeMemoryIndex | None, msg: NormalizedMessage, *,
     audit: FakeRecordStore | None = None, metrics: Metrics | None = None,
-    persons: Persons = _PERSONS, clock: Any = None,
+    persons: Persons = _PERSONS, clock: Any = None, shared: Any = None,
 ) -> TagContext:
     metrics = metrics or Metrics()
     policy = _policy()
@@ -120,7 +120,7 @@ async def _assemble(
         persons=persons, context_window=10, metrics=metrics, policy=policy,
         lineage=LineagePolicy.from_policy(policy),
         memory_search=_search(index, metrics) if index is not None else None,
-        clock=clock,
+        clock=clock, shared=shared,
     )
     return await assembler.assemble(request=_request(msg))
 
@@ -476,3 +476,37 @@ async def test_slow_documents_do_not_delay_prefetch_start(monkeypatch: Any) -> N
     ctx = await _assemble(None, _msg())
     assert ctx.message == _msg()
     assert order == ["prefetch", "documents done"]
+
+
+async def test_graph_prefetch_and_shared_state_reach_the_same_turn() -> None:
+    from uuid import uuid4
+
+    from nora.agent.shared_state import shared_reader
+    from nora.domain.reminders import Reminder, ReminderState
+    from nora.testing.reminders import FakeReminderStore
+
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    reminders = FakeReminderStore()
+    await reminders.create(Reminder(
+        id=uuid4(), requester_person_id="nora", platform="signal",
+        conversation_id="g1", conversation_type="group",
+        text="generated pending follow-up", created_at=now,
+        due_at=now + timedelta(hours=1), state=ReminderState.PENDING,
+        fired_at=None, outcome=None,
+        kind="proactive", payload={
+            "subject_kind": "note", "subject_id": "generated-plan",
+            "action": "ask-time"},
+    ))
+    index = FakeMemoryIndex([
+        IndexedNode("message", "1", "ramen crawl graph evidence", OLD,
+                    origin_room=ROOM)], embed_model=MODEL)
+    ctx = await _assemble(index, _msg(), clock=lambda: now, shared=shared_reader(
+        ai_peer="nora", reminders=reminders,
+        rooms_of_unit=lambda unit: [("signal", "g1"), ("signal", "g2")]
+        if unit == "u1" else [],
+    ))
+    assert ctx.shared is not None and ctx.shared.status == "ok"
+    body = build_prefill(ctx, display_name="Nora", context_window=10)[1]["content"][0]["text"]
+    assert "ramen crawl graph evidence" in body
+    assert "generated pending follow-up" in body
+    assert "<recalled" in body and "<shared_cognitive_state" in body

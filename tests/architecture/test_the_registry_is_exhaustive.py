@@ -61,6 +61,7 @@ def test_the_census_finds_the_five_occasions_it_used_to_list():
 #: `nora.domain.decision_log`, `nora.language.culture_render`) and is
 #: shared across occasions precisely because it is not parametrised on name.
 _SHARED_BUILDER_NAMES = {
+    "render_shared_state": "shared_cognitive_state",
     "render_notes": "notes",
     "render_standing": "standing",
     "render_decisions": "loop_decisions",

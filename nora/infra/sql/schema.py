@@ -1098,6 +1098,27 @@ UQ_REMINDERS_PROACTIVE_OPEN_NOTE = sa.Index(
     postgresql_where=UQ_REMINDERS_PROACTIVE_OPEN_NOTE_WHERE,
 )
 
+#: ONE OPEN PROACTIVE ROW PER (SUBJECT, ACTION, DESTINATION) — migration 0141.
+#: The resolved shared-object reference, never a citation set or a prose match:
+#: `nora.domain.reminders.open_proactive_subject` is the rule, this is Postgres
+#: holding it while the unit lock handles the in-process read-check-write.
+#: Same partial/expression shape as the note index above — `action` carries a
+#: `COALESCE` because a stamped subject without a named action must still
+#: collide on the same destination. Both invisible to `alembic check`; the
+#: Postgres half of `tests/contract/test_reminder_store_contract.py` ties this
+#: to migration 0141 exactly as it does the note index to 0064.
+UQ_REMINDERS_PROACTIVE_OPEN_SUBJECT_WHERE = UQ_REMINDERS_PROACTIVE_OPEN_NOTE_WHERE
+UQ_REMINDERS_PROACTIVE_OPEN_SUBJECT = sa.Index(
+    "uq_reminders_proactive_open_subject",
+    REMINDERS.c.payload["subject_kind"].astext,
+    REMINDERS.c.payload["subject_id"].astext,
+    sa.text("COALESCE(payload ->> 'action', '')"),
+    REMINDERS.c.platform,
+    REMINDERS.c.conversation_id,
+    unique=True,
+    postgresql_where=UQ_REMINDERS_PROACTIVE_OPEN_SUBJECT_WHERE,
+)
+
 
 # RETIRED (DEC-314): nothing reads or writes `version_announcements`. The table
 # and its rows stay in place, unread, until someone chooses the irreversible

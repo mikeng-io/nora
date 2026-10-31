@@ -21,19 +21,25 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, NamedTuple, Protocol
 
 from nora.agent.clock import local_now
 from nora.agent.egress import scan_identifiers
-from nora.agent.lineage import LineagePolicy, profile_lines_for
+from nora.agent.lineage import (
+    LineagePolicy,
+    excluded,
+    profile_lines_for,
+    section_permits,
+    visible_sections,
+)
 from nora.agent.memory_search import (
     PREFETCH_TOKENS,
     MemorySearch,
 )
 from nora.agent.room import Room
-from nora.agent.standing_ledger import read_ledger
+from nora.agent.standing_ledger import ledger_permits, ledger_target, read_ledger
 from nora.domain.comprehend import ComprehendItem, Preview, preview_seeds
 from nora.domain.computer_context import ComputerView
 from nora.domain.culture import (
@@ -44,7 +50,14 @@ from nora.domain.culture import (
 )
 from nora.domain.documents_context import DocumentsView
 from nora.domain.external_files import render_file_links
-from nora.domain.lineage import RenderRoom
+from nora.domain.lineage import (
+    BODY,
+    HOLD_OPEN,
+    I_OWE,
+    ROW,
+    WORKING_SET,
+    RenderRoom,
+)
 from nora.domain.media_join import MediaJoin
 from nora.domain.memo import Memo, MemoStore
 from nora.domain.memory_graph import Subgraph, WorkItem
@@ -67,9 +80,11 @@ from nora.domain.profile import ProfileView
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.rollup import room_key
 from nora.domain.self_presence import Presence, platform_name
+from nora.domain.shared_state import SharedView
 from nora.domain.standing import Standing
 from nora.domain.standing_ledger import LedgerEntry, StandingLedger
 from nora.domain.subagents_context import SubagentsView
+from nora.domain.turn_record import DisclosureRequirement
 from nora.engagement.character_who import tag_character_people
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.documents_context import DocumentsContextReader
@@ -165,6 +180,7 @@ class TranscriptInjection:
         subagents: SubagentsContextReader | None = None,
         memos: MemoStore | None = None,
         memory_search: MemorySearch | None = None,
+        shared: Callable[..., Awaitable[SharedView]] | None = None,
         clock: Callable[[], datetime] | None = None,
         profile: ProfileHeads | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
@@ -185,6 +201,11 @@ class TranscriptInjection:
         # `<memos>` (DEC-306): the unit's kept memos, unit-wide like `notes`.
         # `None` renders no block.
         self._memos_store = memos
+        # The unit's shared cognitive state reader (design/notebook-memory-types/
+        # 20-shared-cognitive-state.md): one callable bound at the composition
+        # root over the canonical stores, `None` in every harness that wires
+        # none — which renders no `<shared_cognitive_state>` block.
+        self._shared_reader = shared
         self._memory = memory
         self._persons = persons
         self._context_window = context_window
@@ -305,6 +326,7 @@ class TranscriptInjection:
             culture,
             (unit_culture, self_account, lessons),
             (computer, documents, subagents, memos),
+            shared,
         ) = await asyncio.gather(
             asyncio.gather(
                 transcript_and_prefetch(),
@@ -325,6 +347,7 @@ class TranscriptInjection:
                 self._subagents(msg, ref),
                 self._memos(msg),
             ),
+            self._shared(msg, ref),
         )
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
@@ -363,6 +386,7 @@ class TranscriptInjection:
             memos=memos,
             standing=standing,
             ledger=ledger,
+            shared=shared,
             presence=presence,
             culture=culture,
             character=character,
@@ -950,6 +974,118 @@ class TranscriptInjection:
             log.exception("ledger context read failed")
             self._metrics.inc("nora_errors_total", stage="standing_ledger", platform=msg.platform)
             return ()
+
+    async def _shared(
+        self, msg: NormalizedMessage, ref: PersonRef | None,
+    ) -> SharedView | None:
+        """The unit's shared cognitive state, projected for THIS destination.
+
+        Unit-scoped like `_notes`, with the ledger read's own destination
+        predicate applied to each entry so a room sees every entry it may and
+        `permitted=False` on the rest — never an absence that reads as
+        nothing there. A wired read failure returns an unavailable view;
+        `None` is reserved for a reader that was never wired.
+        """
+        if self._shared_reader is None:
+            return None
+        convo = (
+            self._policy.conversation(msg.platform, msg.conversation_id)
+            if self._policy is not None
+            else None
+        )
+        if convo is None:
+            log.warning(
+                "no policy conversation for %s/%s — the shared state cannot "
+                "be scoped to a unit; continuing without it",
+                msg.platform, msg.conversation_id,
+            )
+            self._metrics.inc(
+                "nora_errors_total", stage="shared_state", platform=msg.platform)
+            return SharedView(
+                unit="", status="unavailable",
+                as_of_ms=int(self._clock().timestamp() * 1000),
+            )
+        permit = None
+        permit_req = None
+        standing_permits = None
+        notes_permit = None
+        if self._lineage is not None:
+            room = Room(
+                platform=msg.platform, conversation_id=msg.conversation_id,
+                roster_source=self._rosters.get(msg.platform),
+                persons=self._persons, tagger=ref, self_ids=self._self_ids,
+            )
+            target = self._lineage.render_room(
+                platform=msg.platform, conversation_id=msg.conversation_id)
+            try:
+                narrowed = await ledger_target(target, room)
+            except Exception:
+                # A permit that cannot be built withholds EVERYTHING: an
+                # unfiltered unit read into one room is the disclosure
+                # failure, so the read itself is reported unavailable —
+                # the failure the renderer can show.
+                log.exception(
+                    "shared-state permit build failed for %s:%s",
+                    msg.platform, msg.conversation_id,
+                )
+                return SharedView(
+                    unit=convo.unit, status="unavailable",
+                    as_of_ms=int(self._clock().timestamp() * 1000),
+                )
+            if narrowed is not None:
+                def permit(entry: LedgerEntry) -> bool:
+                    return ledger_permits(entry, narrowed)
+
+                def permit_req(requirements: tuple[DisclosureRequirement, ...]) -> bool:
+                    # Turn-record items carry their own per-item disclosure;
+                    # the same lineage predicates decide it for this room.
+                    # An item carrying NO requirements has no gate to
+                    # check — withhold, never vacuously permit.
+                    return bool(requirements) and all(
+                        req.known
+                        and not excluded(req.exclude_persons, narrowed)
+                        and section_permits(
+                            req.entries, narrowed, origin=req.origin)
+                        for req in requirements
+                    )
+
+                def notes_permit(note: Note) -> bool:
+                    return visible_sections(
+                        note.lineage, (ROW,), narrowed,
+                        origin=note.established_in, exclude_persons=note.exclude_persons,
+                    )[ROW]
+
+                def standing_permits(position: Standing) -> dict[str, bool]:
+                    # The derived-view gate, run against the destination's
+                    # RenderRoom: an excluded or unpermitted section is
+                    # withheld exactly as the retired standing blocks did.
+                    return visible_sections(
+                        position.lineage,
+                        (BODY, HOLD_OPEN, I_OWE, WORKING_SET), narrowed,
+                        origin=room_key(position.platform, position.conversation_id),
+                        exclude_persons=position.exclude_persons,
+                    )
+        try:
+            return await self._shared_reader(
+                unit=convo.unit,
+                room=(msg.platform, msg.conversation_id),
+                permit=permit,
+                permit_req=permit_req,
+                standing_permits=standing_permits, notes_permit=notes_permit,
+                now_ms=int(self._clock().timestamp() * 1000),
+            )
+        except Exception:
+            # A wired reader that fails is NOT an unwired one: `None` would
+            # re-enable the legacy fold in `_debrief` — the independent
+            # thinker the wired route retired. `unavailable` keeps the
+            # record-only route and says why.
+            log.exception("shared-state read failed; continuing without it")
+            self._metrics.inc(
+                "nora_errors_total", stage="shared_state", platform=msg.platform)
+            return SharedView(
+                unit=convo.unit, status="unavailable",
+                as_of_ms=int(self._clock().timestamp() * 1000),
+            )
 
     async def _standing(self, msg: NormalizedMessage) -> Standing | None:
         """Her own position in THIS conversation, or `None`

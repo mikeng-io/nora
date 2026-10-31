@@ -18,6 +18,7 @@ from .memo import Memo
 from .notes import Note
 from .profile import ProfileView
 from .self_presence import Presence
+from .shared_state import SharedView
 from .standing import Standing
 from .standing_ledger import LedgerEntry
 from .subagents_context import SubagentsView
@@ -647,6 +648,12 @@ class TagContext:
     # this room. `None` (an offline harness, a caller with no policy) is
     # `mode = "off"`: every block renders.
     lineage_room: RenderRoom | None = None
+    # The unit's shared cognitive state — open judgements, pending acts, and
+    # what she already did, read from the canonical stores by the shared
+    # reader (`design/notebook-memory-types/20-shared-cognitive-state.md`).
+    # `None` when no reader is wired; a `SharedView` whose `status` is
+    # `unavailable` means the read failed, not that the unit is empty.
+    shared: SharedView | None = None
     # `<computer>`: what is on her computer
     # for this room, read fresh at turn start from the machine and the
     # audit by `ComputerContextReader`, never a fold. `None` while

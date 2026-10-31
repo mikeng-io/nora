@@ -83,6 +83,7 @@ from nora.domain.cognition_ground import (
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.external_files import render_file_links
 from nora.domain.prompt import ago, clip, escape, legal, one_line
+from nora.domain.shared_state import SharedView
 from nora.domain.social_stream import describe_read
 from nora.domain.stimuli import Stimulus
 from nora.language.culture_render import render_self
@@ -90,6 +91,7 @@ from nora.language.event_render import render_event_rows
 from nora.language.memo_render import memo_rows
 from nora.language.note_render import render_note_rows
 from nora.language.profile_render import render_profile
+from nora.language.shared_render import render_shared_state
 
 #: What this prompt carries, declared as data. `render_agenda` builds its
 #: blocks from this table and walks it with `assemble`, so `order` IS the order
@@ -113,6 +115,10 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("reads", 20, "turn"),
     ("agenda", 30, "turn"),
     ("note_index", 40, "turn"),
+    # The unit's shared cognitive state (design/notebook-memory-types/20):
+    # open judgements, pending acts, delivered results — read by code from
+    # the canonical stores, right after the note index it generalises.
+    ("shared_cognitive_state", 45, "turn"),
     ("events", 50, "turn"),
     # What the unit settled and keeps (DEC-306), LAST of the Register and on
     # its own budget, so no number of memos can push an agenda room's events
@@ -683,6 +689,7 @@ def render_agenda(
     grounding: Grounding | None = None, reads_note: str = "", now_ms: int | None = None,
     last_session_ms: int | None = None, tz: tzinfo = UTC,
     budget: RenderBudget | None = None, graph: str = "",
+    shared: SharedView | None = None,
 ) -> str:
     """The session's prompt. `stimuli` is the claimed stimuli by id (an item
     names its own by id), `grounding` what code read for them.
@@ -722,10 +729,20 @@ def render_agenda(
         ), _ROW))
     if reads_note:
         blocks.append(restamp(ContextBlock(name="reads", body=escape(reads_note)), _ROW))
-    blocks += _item_blocks(
+    item_blocks = _item_blocks(
         items, stimuli or {}, grounding or Grounding(), now_ms=now_ms, tz=tz,
         budget=budget or RenderBudget(),
     )
+    if shared is not None:
+        # `note_index` retires when the shared view renders: its rows and
+        # the shared block's Open section are the same facts shown twice.
+        item_blocks = [b for b in item_blocks if b.name != "note_index"]
+    blocks += item_blocks
+    if shared is not None and now_ms is not None:
+        shared_block = restamp(
+            render_shared_state(shared, now_ms=now_ms, tz=tz), _ROW)
+        if shared_block is not None:
+            blocks.append(shared_block)
     if graph:
         blocks.append(restamp(ContextBlock(name="graph", body=escape(graph)), _ROW))
     return assemble(blocks, sep=_SEP)
