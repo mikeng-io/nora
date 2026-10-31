@@ -762,8 +762,7 @@ def _unit_ops(
                 ops.append(LedgerOp(
                     "open", kind=kind, scope="unit",
                     subject=subject,
-                    sections={k: f"{v.rstrip()} turn({handle})"
-                              for k, v in sections.items()},
+                    sections=_cite_sections(sections, handle),
                 ))
                 ops.append(LedgerOp(
                     "close", kind=kind, id=None, outcome=grounded,
@@ -772,8 +771,7 @@ def _unit_ops(
         if not all(sections.get(name, "").strip()
                    for name in _REQUIRED_OPEN_SECTIONS[kind]):
             continue  # the Record did not ground the required sections
-        sections = {k: f"{v.rstrip()} turn({handle})"
-                    for k, v in sections.items()}
+        sections = _cite_sections(sections, handle)
         if match is not None:
             if _unchanged(match, subject, sections):
                 continue  # replay/no-change writes no revision
@@ -789,6 +787,16 @@ def _unit_ops(
                 subject=subject, sections=sections,
             ))
     return ops
+
+
+def _cite_sections(sections: dict[str, str], handle: str) -> dict[str, str]:
+    return {
+        name: "\n".join(
+            f"{line.rstrip()} turn({handle})"
+            for line in body.splitlines() if line.strip()
+        )
+        for name, body in sections.items()
+    }
 
 
 def _uncited(text: str) -> str:

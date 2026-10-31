@@ -1780,7 +1780,7 @@ async def test_a_failed_open_cannot_close_an_earlier_batch_entry():
              "sections": {"Options": "amber or blue", "Leaning": "amber"}},
             {"kind": "decision", "subject": "generated separate choice",
              "status": "closed", "outcome": "chose generated blue",
-             "sections": {"Options": "uncited first line\nsecond line",
+             "sections": {"Options": "x" * (STANDING_BODY_CEILING_CHARS + 1),
                           "Leaning": "blue"}},
         ],
     )
