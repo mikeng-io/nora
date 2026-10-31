@@ -162,17 +162,15 @@ def test_setup_agent_tracing_registers_the_provider_globally(monkeypatch):
         f"registered {type(provider).__name__}, want the SDK TracerProvider"
     )
     # It must be the one carrying Nora's sampler, not a bare default: a
-    # provider registered without `build_sampler()` would export every
-    # ingest-plumbing span R-76 exists to drop, which is the opposite failure
-    # and just as invisible.
-    # `ParentBased{root:NoraPlumbingIsNotATrace,…}`, not the bare rule: the
-    # wrapper is the point, because a child must never re-decide what its root
-    # was given (`_PlumbingIsNotATrace`'s own docstring). Matching on the ROOT
-    # inside it asserts Nora's rule is the one in force while leaving the
-    # wrapper's exact spelling to OTel.
+    # provider registered without `build_sampler()` would drop the ParentBased
+    # contract — a child could re-decide what its root was given, which is the
+    # queue-detached failure the sampler exists to prevent.
+    # `ParentBased{root:NoraEveryRootIsRecorded,…}`, not the bare rule: since
+    # the SigNoz amendment the root records everything and the collector's
+    # tail policy drops routine plumbing after the outcome exists.
     description = provider.sampler.get_description()
-    assert "NoraPlumbingIsNotATrace" in description, (
+    assert "NoraEveryRootIsRecorded" in description, (
         f"registered a provider sampling with {description!r} — a default "
-        f"sampler would export every ingest-plumbing span R-76 exists to drop, "
-        f"which is the opposite failure and just as invisible"
+        f"sampler would export a differently-shaped tree than the one the "
+        f"collector retention policy reads"
     )

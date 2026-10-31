@@ -106,6 +106,13 @@ def _metrics_app(
     app.router.add_get("/metrics", metrics_endpoint)
     app.router.add_get("/health", health)
     app.router.add_post("/refresh", refresh)
+    # Application-HTTP coverage (ADR 0034); /health + /metrics polls excluded.
+    try:
+        from nora.obs.tracing import instrument_aiohttp_app
+
+        instrument_aiohttp_app(app)
+    except Exception:
+        log.debug("aiohttp server tracing not installed", exc_info=True)
     return app
 
 
@@ -133,6 +140,42 @@ async def _run(config_path: Path) -> None:
             if value
         ],
     )
+    # Same observability bootstrap as the main process (ADR 0034): errors and
+    # traces were never wired here, so this process's failures were invisible
+    # outside its own log. Never load-bearing — a bad endpoint degrades, it
+    # does not stop the collector.
+    from nora.obs.errors import setup_errors
+    from nora.obs.tracing import build_sampler
+
+    _entry = None
+    try:
+        from nora.infra.version import VersionManifest
+
+        _entry = VersionManifest().current().entry
+    except Exception:
+        log.debug("version manifest unreadable; release stamped as empty",
+                  exc_info=True)
+    _release = _entry.version if _entry is not None else ""
+    setup_errors(
+        enabled=cfg.obs.errors.enabled, dsn_env=cfg.obs.errors.dsn_env,
+        credentials=cfg.credentials, environment=cfg.obs.errors.environment,
+        release=_release,
+    )
+    if cfg.obs.tracing.enabled:
+        try:
+            from nora.obs.tracing import setup_process_tracing
+
+            setup_process_tracing(
+                sampler=build_sampler(), service_name="presence",
+                exporter=cfg.obs.tracing.exporter,
+                endpoint=cfg.obs.tracing.endpoint,
+                headers_env=cfg.obs.tracing.headers_env,
+                credentials=cfg.credentials,
+                service_version=_release,
+                environment=cfg.obs.errors.environment,
+            )
+        except Exception:
+            log.warning("tracing setup failed; continuing without tracing", exc_info=True)
     deps = build_collector(cfg)
     runner = await serve(
         _metrics_app(

@@ -56,6 +56,7 @@ from nora.agent.shared_state import shared_reader
 from nora.agent.structured import ask_text, build_structured_model
 from nora.agent.subagent_desk import SubagentDesk
 from nora.agent.telemetry import (
+    RawSpanRecorder,
     end_raw_model_span,
     end_raw_model_span_with_error,
     start_raw_model_span,
@@ -2725,6 +2726,10 @@ async def build_dependencies(
         # it does not bound elapsed time.
         timeout_seconds=cfg.media.vision_timeout_seconds,
         loop_timeout_seconds=tier.timeout_seconds,
+        # The model-span seam (ADR 0034): the raw vision call gets its own
+        # per-call span with usage, served model and provider — injected
+        # because `nora.infra` may not reach `nora.agent`.
+        span_recorder=RawSpanRecorder(),
     )
     # The sticker IDENTITY ladder — custody, not description. Its
     # model rung is the spawned comprehension job below, so this needs no

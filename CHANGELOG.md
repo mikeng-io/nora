@@ -1,5 +1,33 @@
 # Changelog
 
+## [7.12.1](https://github.com/mikeng-io/nora/compare/v7.12.0...v7.12.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **spike:** route judges through the host-reaching endpoint and AGE at the source ([cb7a248](https://github.com/mikeng-io/nora/commit/cb7a24812b0de9f57a1a7d2d2db2f0bb9023ef25))
+
+## [7.12.0](https://github.com/mikeng-io/nora/compare/v7.11.57...v7.12.0) (2026-10-30)
+
+
+### Features
+
+* **obs:** route every root to SigNoz with model, identity and log correlation ([775b853](https://github.com/mikeng-io/nora/commit/775b8533a71296742e846f3fde6bd3794e4e832f))
+* **signoz:** integrated self-hosted SigNoz observability (ADR 0034, #440) ([8c011bb](https://github.com/mikeng-io/nora/commit/8c011bb6aa6eca4e2608eaa1753871ed89204bae))
+* **signoz:** repo-owned stack declaration, ingester config and alert provisioning ([40d5f50](https://github.com/mikeng-io/nora/commit/40d5f50f4783faaa77f37cd60a7c935c31832f72))
+
+
+### Bug Fixes
+
+* **ci:** install Sentry SDK in the development environment ([3482983](https://github.com/mikeng-io/nora/commit/348298339bf865035c41fddb8f6a416fc5d00ba0))
+* **observability:** close five verified SigNoz review blockers ([631c03e](https://github.com/mikeng-io/nora/commit/631c03ef9703f91e1402e8f589943a027bd6eba0))
+* **observability:** isolate HTTP instrumentation across app lifecycles ([20950ae](https://github.com/mikeng-io/nora/commit/20950ae3eed1515c3b1455d1cb6d513f4a87ddd3))
+* **observability:** preserve correlation and retirement acceptance checks ([b2cc14b](https://github.com/mikeng-io/nora/commit/b2cc14b30570a837c9b9a006b85006ed7202be34))
+* **observability:** require private SigNoz database passwords ([6b52974](https://github.com/mikeng-io/nora/commit/6b5297419e2d43b33d22e8fc284b27e82ed17cc7))
+* **observability:** retain the cutover overlay across automated releases ([ecc85f2](https://github.com/mikeng-io/nora/commit/ecc85f29b30ccbaeac5b1ecfe523ef5998f972df))
+* **release:** accept retired alert bridge only in previous manifests ([84882c7](https://github.com/mikeng-io/nora/commit/84882c7d83731785527b19a55a1355e6d9cb3787))
+* **signoz:** close deployment defects and prove the stack end-to-end ([dd1363d](https://github.com/mikeng-io/nora/commit/dd1363d88d9bf646589fb3866052d2dfb3b5aa01))
+
 ## [7.11.57](https://github.com/mikeng-io/nora/compare/v7.11.56...v7.11.57) (2026-10-30)
 
 

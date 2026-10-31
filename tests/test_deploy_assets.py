@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[1]
 DEPLOY = ROOT / "deploy"
 
@@ -152,40 +150,18 @@ def test_the_life360_token_alert_matches_the_reason_the_client_emits():
     client = (ROOT / "nora" / "infra" / "life360" / "client.py").read_text()
     assert "token_rejected" in set(re.findall(r'_alarm\("([a-z_0-9]+)"\)', client))
     rules = {
-        r["alert"]: r
-        for g in yaml.safe_load(
-            (DEPLOY / "prometheus" / "rules" / "nora.yml").read_text()
-        )["groups"]
-        for r in g["rules"]
+        r["name"]: r
+        for r in yaml.safe_load(
+            (DEPLOY / "signoz" / "alerts" / "rules.yaml").read_text()
+        )["rules"]
     }
     token = rules["Life360TokenRejected"]
-    assert 'reason="token_rejected"' in token["expr"]
-    assert 'reason!="token_rejected"' in rules["PresenceAuthRefused"]["expr"]
+    assert 'reason="token_rejected"' in token["query"]
+    assert 'reason!="token_rejected"' in rules["PresenceAuthRefused"]["query"]
     # The annotation is the operator's whole recovery path at 3am.
-    assert "LIFE360_AUTH_TOKEN" in token["annotations"]["description"]
-    assert "--force-recreate" in token["annotations"]["description"]
+    assert "LIFE360_AUTH_TOKEN" in token["description"]
+    assert "recreate" in token["description"]
 
-
-def test_the_presence_alert_rules_pass_their_promtool_tests():
-    """`deploy/prometheus/tests/presence.test.yml` drives PresenceNotRecording
-    through a restart with no fixes (fires), a sparse 30-min night with a
-    restart (never fires) and a series that never existed (fires). promtool is
-    not a Python dependency, so this runs wherever it is installed and skips
-    elsewhere. Without it: `docker run --rm --entrypoint promtool -v
-    "$PWD/deploy/prometheus:/p:ro" -w /p/tests prom/prometheus:v3.7.3 test rules
-    presence.test.yml`."""
-    import shutil
-    import subprocess
-
-    promtool = shutil.which("promtool")
-    if promtool is None:
-        pytest.skip("promtool not installed")
-    result = subprocess.run(  # noqa: S603 — a fixed local binary, fixed args
-        [promtool, "test", "rules", "presence.test.yml"],
-        cwd=DEPLOY / "prometheus" / "tests",
-        capture_output=True, text=True, check=False,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_the_subagent_doctrine_is_data_declared_as_package_data():

@@ -166,7 +166,7 @@ def test_a_broken_attribute_read_never_costs_the_span(rig, monkeypatch):
     def boom(*_a, **_k):
         raise RuntimeError("tracer exploded")
 
-    monkeypatch.setattr(telemetry, "_session_id_for", boom)
+    monkeypatch.setattr("nora.obs.tracing._session_id_for", boom)
     with tracer.start_as_current_span("engagement", attributes={"nora.conversation_id": "a"}):
         pass
     assert "engagement" in _attrs(exporter)
