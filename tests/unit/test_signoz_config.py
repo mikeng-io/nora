@@ -164,7 +164,7 @@ def test_structured_levels_promote_to_native_severity():
     """The journald chain json-parses `level` into an attribute but only a
     severity_parser promotes it to the FIRST-CLASS fields native filters
     read — without one every row lands as Unspecified(0) and severity
-    filters hide real records (issue #440 readback). The operator must run
+    filters hide real records (collector readback). The operator must run
     after the JSON parse, be confined to records that declared a level, and
     never drop a record it cannot map."""
     ops = INGESTER["receivers"]["journald/nora"]["operators"]
