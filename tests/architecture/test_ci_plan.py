@@ -208,7 +208,8 @@ def test_timing_contracts_run_without_competing_pytest_workers(monkeypatch, targ
     serial = ["tests/integration/test_latency.py",
               "tests/unit/test_engagement_pipeline.py",
               "tests/integration/test_bridge_queue_telemetry.py"]
-    expected = ([["pytest", "-q", "-n", "8", *(f"--ignore={p}" for p in serial)],
+    expected = ([["pytest", "-q", "-n", "8", "--dist", "loadfile",
+                  *(f"--ignore={p}" for p in serial)],
                  ["pytest", "-q", *serial]] if targets == "ALL"
                 else [["pytest", "-q", *targets]] if targets else [])
     calls = []

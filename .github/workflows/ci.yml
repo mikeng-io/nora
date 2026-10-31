@@ -103,7 +103,7 @@ jobs:
               serial = ['tests/integration/test_latency.py',
                         'tests/unit/test_engagement_pipeline.py',
                         'tests/integration/test_bridge_queue_telemetry.py']
-              subprocess.run(['pytest', '-q', '-n', '8',
+              subprocess.run(['pytest', '-q', '-n', '8', '--dist', 'loadfile',
                               *(f'--ignore={path}' for path in serial)], check=True)
               subprocess.run(['pytest', '-q', *serial], check=True)
           elif targets:
