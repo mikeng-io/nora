@@ -10,6 +10,20 @@ edges:
 
 # 50 · Migration
 
+> **Authoritative clarification, operator 2026-10-31:**
+> [One Standing](../notebook-memory-types/20-standing.md) supersedes the writer
+> switch and retirement target in steps 3–4. Consolidate paragraph, working set,
+> scoped ledger entries and current arrangements/outcomes into one `standing`
+> block and common model. The existing tools-less updater runs automatically
+> after completed Engagement/Cognition Records; no tag-path conclusion tool,
+> separate shared-state block, new store or independent agent. Existing scoped
+> writers preserve sources and revisions; actual execution stays canonical.
+> Keep legacy rows, content, source gates and finding TTL through cut-over.
+> Cognition retains substantive Notebook judgment authority. The numbered plan
+> below is historical where it conflicts; the new node owns flow, acceptance
+> and unit-wide create/fire conflict requirements. A note link alone is not
+> identity resolution, and one rendered block alone is not deduplication.
+
 Each step ships alone and leaves Nora working. Nothing is removed before its
 replacement has measured at least as well.
 
