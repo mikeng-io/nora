@@ -312,6 +312,7 @@ class SqlRecordStore:
         is_nora: bool = False,
         delivery_status: DeliveryStatus = DeliveryStatus.PENDING,
         person_id: str | None = None,
+        tx_hook: Any = None,
     ) -> int:
         stmt = sa.insert(MESSAGES).values(
             platform=message.platform,
@@ -349,6 +350,11 @@ class SqlRecordStore:
         # one row came back, which a bare INSERT always produces.
         async with self._engine.begin() as conn:
             row_id = int((await conn.execute(stmt)).scalar_one())
+            # `tx_hook(conn, row_id)` runs INSIDE this transaction — the
+            # platform-bridge seam that makes source mapping + message +
+            # extraction + projection one atomic commit (design 03).
+            if tx_hook is not None:
+                await tx_hook(conn, row_id)
             if self._extraction_unit is not None:
                 from nora.infra.sql.extraction import admission, enqueue
 

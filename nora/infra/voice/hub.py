@@ -212,6 +212,12 @@ class VoiceControllerHub:
             return False
         return True
 
+    def channel_for(self, guild_id: str) -> str | None:
+        """The channel this guild's cached session is connected to, or
+        `None` — the read the bridge's `/v1/voice/{guild}` state route needs
+        (`_channels` is what `join` maintains for exactly this)."""
+        return self._channels.get(guild_id)
+
     def session_for(self, guild_id: str) -> HttpVoiceSession | None:
         return self._sessions.get(guild_id)
 

@@ -46,7 +46,12 @@ from typing import Any, Protocol
 from nora.domain.ports import MediaSource, PlatformAdapter, PlatformIdentity
 from nora.domain.summons import SummonsSink
 from nora.infra.voice.hub import VoiceControllerHub
+from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint
 from nora.platform.discord.adapter import DiscordAdapter
+from nora.platform.discord.bridge_control import (
+    BridgeControlClient,
+    BridgeDiscordAdapter,
+)
 from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.discord.music_notify import ResolveMusicChannel, no_music_channel
 from nora.platform.instagram.adapter import InstagramAdapter
@@ -77,6 +82,8 @@ class _DiscordPlatformConfig(Protocol):
     def enabled(self) -> bool: ...
     @property
     def token_env(self) -> str: ...
+    @property
+    def base_url(self) -> str: ...
 
 
 class _WhatsAppPlatformConfig(Protocol):
@@ -157,6 +164,7 @@ class AdapterRegistry:
         resolve_music_channel: ResolveMusicChannel = no_music_channel,
         instagram_summons: SummonsSink | None = None,
         dm_recipients: Mapping[str, Set[str]] | None = None,
+        bridge_token: str = "",
     ) -> AdapterRegistry:
         """Build+resolve every enabled platform — Signal, Discord, WhatsApp,
         Instagram; each one more `if platforms.<x>.enabled:` block, not a
@@ -210,7 +218,22 @@ class AdapterRegistry:
         identities: dict[str, PlatformIdentity] = {}
 
         signal_cfg = platforms.signal
-        if signal_cfg.enabled:
+        if signal_cfg.enabled and getattr(signal_cfg, "mode", "direct") == "bridge":
+            # Bridge mode: the standalone signal-bridge holds the daemon; the
+            # app is a client of its action API + Redis consumer. `account` is
+            # the wire's account_key — no derive_account against signal-cli.
+            adapter: PlatformAdapter = BridgeAdapter(
+                "signal", BridgeEndpoint(signal_cfg.base_url, bridge_token),
+                dm_recipients=dms.get("signal", frozenset()))
+            try:
+                identity = await adapter.resolve_identity()
+            except Exception as exc:
+                raise AdapterRegistryError(
+                    f"signal bridge could not resolve its own identity: {exc}"
+                ) from exc
+            adapters["signal"] = adapter
+            identities["signal"] = identity
+        elif signal_cfg.enabled:
             try:
                 account = await derive_account(
                     signal_cfg.base_url, override=signal_cfg.account,
@@ -233,7 +256,27 @@ class AdapterRegistry:
             identities["signal"] = identity
 
         discord_cfg = platforms.discord
-        if discord_cfg.enabled:
+        if discord_cfg.enabled and getattr(discord_cfg, "mode", "direct") == "bridge":
+            # Bridge mode: the standalone discord-bridge owns the Gateway,
+            # the music manager and the voice-controller hub. The app holds
+            # ONLY proxies — `BridgeAdapter` for identity/stream/text +
+            # `BridgeDiscordAdapter`'s control client for the voice send
+            # path — never a `discord.Client`, `MusicPlayerManager` or
+            # `VoiceControllerHub` of its own.
+            endpoint = BridgeEndpoint(discord_cfg.base_url, bridge_token)
+            discord_adapter: PlatformAdapter = BridgeDiscordAdapter(
+                delegate=BridgeAdapter("discord", endpoint),
+                control=BridgeControlClient(endpoint),
+                speaker=discord_speaker)
+            try:
+                discord_identity = await discord_adapter.resolve_identity()
+            except Exception as exc:
+                raise AdapterRegistryError(
+                    f"discord bridge could not resolve its own identity: {exc}"
+                ) from exc
+            adapters["discord"] = discord_adapter
+            identities["discord"] = discord_identity
+        elif discord_cfg.enabled:
             if not discord_token:
                 raise AdapterRegistryError(
                     f"discord is enabled but no token was resolved from "
@@ -258,7 +301,19 @@ class AdapterRegistry:
             identities["discord"] = discord_identity
 
         whatsapp_cfg = platforms.whatsapp
-        if whatsapp_cfg.enabled:
+        if whatsapp_cfg.enabled and getattr(whatsapp_cfg, "mode", "direct") == "bridge":
+            whatsapp_adapter: PlatformAdapter = BridgeAdapter(
+                "whatsapp", BridgeEndpoint(whatsapp_cfg.base_url, bridge_token),
+                dm_recipients=dms.get("whatsapp", frozenset()))
+            try:
+                whatsapp_identity = await whatsapp_adapter.resolve_identity()
+            except Exception as exc:
+                raise AdapterRegistryError(
+                    f"whatsapp bridge could not resolve its own identity: {exc}"
+                ) from exc
+            adapters["whatsapp"] = whatsapp_adapter
+            identities["whatsapp"] = whatsapp_identity
+        elif whatsapp_cfg.enabled:
             # Same shape as Discord's block, one platform later: no token to
             # resolve (the bridge holds the session), so the ONLY failure mode
             # here is identity — an unpaired or unreachable bridge must fail
@@ -278,7 +333,18 @@ class AdapterRegistry:
             identities["whatsapp"] = whatsapp_identity
 
         instagram_cfg = platforms.instagram
-        if instagram_cfg.enabled:
+        if instagram_cfg.enabled and getattr(instagram_cfg, "mode", "direct") == "bridge":
+            instagram_adapter: BridgeAdapter | InstagramAdapter = BridgeAdapter(
+                "instagram", BridgeEndpoint(instagram_cfg.base_url, bridge_token))
+            try:
+                instagram_identity = await instagram_adapter.resolve_identity()
+            except Exception as exc:  # noqa: BLE001 — degrade, never refuse to start
+                instagram_adapter.degrade(f"{type(exc).__name__}: {exc}")
+                adapters["instagram"] = instagram_adapter
+            else:
+                adapters["instagram"] = instagram_adapter
+                identities["instagram"] = instagram_identity
+        elif instagram_cfg.enabled:
             # THE ONE BLOCK THAT DOES NOT FAIL FAST. See this module's
             # docstring for why, and `nora.platform.instagram.adapter` for what
             # "degraded" is defined to mean.

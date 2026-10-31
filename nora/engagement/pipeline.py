@@ -77,7 +77,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import time
-from collections.abc import Callable, Coroutine, Mapping
+from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from datetime import datetime
 from typing import Any
 
@@ -105,8 +105,17 @@ from nora.domain.profile import ProfileView
 from nora.domain.tag_trace import VALID_OUTCOMES, TagTrace
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.obs.logging import bind_tag_id, clear_tag_id
-from nora.obs.tracing import TRACE_KIND, TraceCarrier, annotate, attached, capture_context, span
+from nora.obs.tracing import (
+    TRACE_KIND,
+    TraceCarrier,
+    annotate,
+    attached,
+    capture_context,
+    root_span,
+    span,
+)
 from nora.persons import Persons
+from nora.platform.bridge import telemetry as _bridge_telemetry
 from nora.policy import Policy
 from nora.tag import Debounce
 
@@ -425,7 +434,76 @@ class EngagementPipeline:
             # an ACI there.
             await self._run_admitted(request, identity, indicator)
 
-    def _begin_indicator(self, request: EngagementRequest) -> Indicator | None:
+    async def run_durable(
+        self, request: EngagementRequest, *, bound_adapter: Any = None,
+        persisted_admission: dict[str, Any] | None = None,
+        admission_sink: Callable[[str], Awaitable[None]] | None = None,
+        queue_link: dict[str, Any] | None = None,
+    ) -> str:
+        """The bridge-work path (design/platform-bridges).
+
+        Differences from `run`, all at the durability seams and none in the
+        turn itself: the speaking slot is already held by the caller's DB
+        claim (so a QUEUED verdict runs now — the work row IS the queue), the
+        adapter may carry a fenced `ActionOwner`, and the admission verdict is
+        persisted via `admission_sink` so a reclaimed attempt reuses it — a
+        recovered accepted tag never debounces itself, and a persisted
+        rejection completes the work as an intentional skip. The sink is
+        AWAITED before any effect or spawn: a verdict that is not durable yet
+        must not be acted on by a turn a crash could force to re-run.
+
+        `queue_link` is the queue attempt's persisted telemetry record —
+        `{attempt, event_id, attempt_id, queue_wait_ms}` — carried as plain
+        call metadata rather than on `EngagementRequest` (the domain type
+        stays queue-agnostic). The generation root opens as a SEPARATE
+        empty-parent trace linked to that attempt (design 04: "linked to the
+        relevant consumer attempt … not a child of a queue trace").
+
+        Returns the turn's disposition for the work claim ("rejected",
+        "queue_full", or the turn outcome), never None.
+        """
+        message = request.message
+        adapter = bound_adapter or self._adapter_for(message.platform)
+        identity = await adapter.resolve_identity()
+        link_fields = (
+            _bridge_telemetry.generation_link_fields(**queue_link)
+            if queue_link else {"links": [], "attributes": {}})
+        with root_span(
+            "engagement",
+            links=link_fields["links"],
+            **{TRACE_KIND: "generation",
+               "nora.tag_id": request.tag_id, "nora.platform": message.platform,
+               "nora.conversation_id": message.conversation_id,
+               **link_fields["attributes"]},
+        ):
+            if persisted_admission is None:
+                with span("engagement.admission"):
+                    verdict = admission.run(
+                        message=message, identity=identity,
+                        debounce=self._debounce, slots=self._slots,
+                        metrics=self._metrics,
+                    )
+                annotate(**{"nora.admission": verdict.name})
+                if admission_sink is not None:
+                    await admission_sink(verdict.name)
+            else:
+                verdict = Admission[persisted_admission["verdict"]]
+                annotate(**{"nora.admission": f"{verdict.name} (persisted)"})
+            if verdict is Admission.REJECTED:
+                return "rejected"
+            if verdict is Admission.QUEUE_FULL:
+                return "queue_full"
+            indicator = self._begin_indicator(request, adapter=adapter)
+            # Under the DB slot the caller already holds the room: QUEUED and
+            # RUN_NOW both run now — a bridge work row left "queued" has no
+            # dispatcher to free it.
+            disposition: dict[str, str] = {}
+            await self._run_admitted(request, identity, indicator,
+                                     adapter=adapter, disposition=disposition)
+            return disposition.get("value", "handler_error")
+
+    def _begin_indicator(self, request: EngagementRequest,
+                         adapter: Any = None) -> Indicator | None:
         """Spawn the 👀 on the tagging message, or None when reactions are off.
 
         `engagement.reactions.enabled = false` leaves this None, which
@@ -437,7 +515,7 @@ class EngagementPipeline:
         if not self._reactions:
             return None
         return indicate.begin(
-            adapter=self._adapter_for(request.message.platform),
+            adapter=adapter or self._adapter_for(request.message.platform),
             message=request.message, tag_id=request.tag_id,
             metrics=self._metrics, spawn=self._spawn,
         )
@@ -543,6 +621,7 @@ class EngagementPipeline:
 
     async def _run_admitted(
         self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
+        adapter: Any = None, disposition: dict[str, str] | None = None,
     ) -> None:
         """The turn's own span, wrapping the body — the same `run`/`_run` split
         `nora.ingest.pipeline` uses, and for a reason this path has and ingest
@@ -564,10 +643,12 @@ class EngagementPipeline:
                "nora.platform": request.message.platform,
                "nora.conversation_id": request.message.conversation_id},
         ):
-            await self._run_turn(request, identity, indicator)
+            await self._run_turn(request, identity, indicator, adapter=adapter,
+                                 disposition=disposition)
 
     async def _run_turn(
         self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
+        adapter: Any = None, disposition: dict[str, str] | None = None,
     ) -> None:
         msg = request.message
         key = (msg.platform, msg.conversation_id)
@@ -663,7 +744,7 @@ class EngagementPipeline:
             # relaxes it for that room only.
             location_trusted = convo.location if convo is not None else False
             handle = deliver.build(
-                store=self._audit, adapter=self._adapter_for(msg.platform),
+                store=self._audit, adapter=adapter or self._adapter_for(msg.platform),
                 target=msg.target(),
                 doctrine=doctrine, canary=self._canary, tag_id=request.tag_id,
                 # Her own id on THIS platform, resolved from the platform
@@ -873,11 +954,15 @@ class EngagementPipeline:
                     else:
                         # Delivery refused (R-2/R-4/R-6/R-18) — nothing went
                         # out, stay silent exactly like the generic paths.
+                        if disposition is not None:
+                            disposition["value"] = "vetoed"
                         return
                 else:
                     # Timeout, generic `llm_error`, or a partial with no
                     # usable prose (only Strands' canned recovery notice).
                     # Stay silent (R-5) — this path never delivered anything.
+                    if disposition is not None:
+                        disposition["value"] = "llm_error"
                     return
 
             # NEVER-SILENT FALLBACK: the loop was cut off by
@@ -1077,6 +1162,8 @@ class EngagementPipeline:
                     ),
                     reason=real_outcome,
                 )
+            if disposition is not None:
+                disposition["value"] = real_outcome
             if not delivered:
                 return                       # `finally` still resolves the indicator
 
@@ -1098,6 +1185,8 @@ class EngagementPipeline:
                 ))
             completed = True
         except BaseException:
+            if disposition is not None:
+                disposition["value"] = "handler_error"
             log.exception("tag pipeline failed (tag=%s); staying silent", request.tag_id)
             # `audience="tag"` as a literal: this pipeline IS the tag path, and
             # the heartbeat's fire turn never enters it. It matters most here of

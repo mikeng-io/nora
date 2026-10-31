@@ -22,6 +22,7 @@ from strands.hooks import (
 )
 
 from ..doctrine.loader import Doctrine
+from ..domain.actions import ActionOwner
 from ..domain.media import MediaBlob
 from ..domain.models import (
     ConversationTarget,
@@ -506,8 +507,20 @@ class Deliverer:
             self._last_outcome = "audit_write_failed"
             return False
 
+        # Durable-owner binding for bridge adapters: the committed pending
+        # audit row above IS the live_invocation authority — its id is bound
+        # HERE, the only place the row exists yet (bind_owner before
+        # `deliver.build` would bind an id that does not exist). An adapter
+        # already carrying a work/otp_challenge owner is never rebound; an
+        # adapter without bind_owner is not a bridge adapter at all.
+        adapter = self._adapter
+        bind_owner = getattr(adapter, "bind_owner", None)
+        if (bind_owner is not None
+                and getattr(adapter, "action_owner", None) is None):
+            adapter = bind_owner(
+                ActionOwner(kind="live_invocation", id=str(row_id)))
         try:
-            result = await self._adapter.send(
+            result = await adapter.send(
                 target=self._target, text=outbound.text,
                 mentions=outbound.mentions, styles=outbound.styles,
                 preview=outbound.preview,
@@ -525,7 +538,10 @@ class Deliverer:
         try:
             await self._store.set_delivery_outcome(
                 row_id=row_id,
-                status=DeliveryStatus.SENT if result.ok else DeliveryStatus.FAILED,
+                status=(DeliveryStatus.SENT if result.ok
+                        else DeliveryStatus.UNCERTAIN
+                        if getattr(result, "uncertain", False)
+                        else DeliveryStatus.FAILED),
                 ts=result.timestamp,          # the platform's stamp, not ours
             )
         except Exception:
@@ -550,6 +566,16 @@ class Deliverer:
             # fallback is delivered, and leaving the 👀 up through a fallback turn
             # would misreport the case where a human is most likely watching.
             self._on_delivered.settle()
+        elif getattr(result, "uncertain", False):
+            # Not a proven non-send: its own status and reason, never folded
+            # into `failed` — and still a possible silent failure, so the
+            # counter keeps it visible under the honest reason.
+            self._metrics.inc("nora_replies_total", status="uncertain",
+                              platform=self._target.platform)
+            self._metrics.inc(
+                "nora_silent_failures_total", reason="send_uncertain",
+                platform=self._target.platform, audience=self._audience,
+            )
         else:
             self._metrics.inc("nora_replies_total", status="failed", platform=self._target.platform)
             self._metrics.inc(
@@ -563,7 +589,15 @@ class Deliverer:
             if carried_media:
                 self._links.media_sent()
                 self._metrics.inc("nora_reply_links_carried_total", outcome="media_attached")
-        self._last_outcome = "sent" if result.ok else "send_failed"
+        # The row still RESOLVES on an uncertain send — as `uncertain`, not
+        # `failed` (a pending row would keep the live_invocation owner valid
+        # and invite a blind second send; calling it failed misreports an
+        # outcome nobody disproved). The durable truth is the action row's,
+        # and the outcome name keeps the in-process view equally honest.
+        self._last_outcome = (
+            "sent" if result.ok
+            else "send_uncertain" if getattr(result, "uncertain", False)
+            else "send_failed")
         return result.ok
 
 

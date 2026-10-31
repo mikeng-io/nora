@@ -34,6 +34,15 @@ func (b *Bridge) Snapshot() domain.Session {
 // Supervise owns the Instagram connection for the life of the process.
 func (b *Bridge) Supervise(ctx context.Context, libLog zerolog.Logger) { b.supervise(ctx, libLog) }
 
+// UpstreamGate gates upstream receive on durable capture being ready: the
+// supervisor consults it before every (re)connect pass and polls while it
+// says no. Nil means ungated (the compatibility path with no durable wiring).
+func (b *Bridge) UpstreamGate(gate func() bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.upstreamGate = gate
+}
+
 // Heartbeat emits the SSE heartbeat while a consumer is attached.
 func (b *Bridge) Heartbeat(ctx context.Context) { b.heartbeat(ctx) }
 

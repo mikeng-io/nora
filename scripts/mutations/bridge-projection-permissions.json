@@ -1,0 +1,16 @@
+[
+  {
+    "name": "atomic projection retains private tempfile permissions",
+    "file": "nora/platform/bridge/projection.py",
+    "old": "        os.replace(tmp, path)",
+    "new": "        os.chmod(tmp, 0o644)\n        os.replace(tmp, path)",
+    "target": "tests/unit/test_bridge_projection.py::test_projection_permissions_are_private_and_legacy_files_heal"
+  },
+  {
+    "name": "unchanged permissive projection is healed",
+    "file": "nora/platform/bridge/projection.py",
+    "old": "            if stat.S_IMODE(self.target.stat().st_mode) != 0o600:\n                return True\n",
+    "new": "",
+    "target": "tests/unit/test_bridge_projection.py::test_projection_permissions_are_private_and_legacy_files_heal"
+  }
+]

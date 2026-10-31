@@ -2,8 +2,8 @@
   {
     "name": "stimulus stage: Nora's own item is no longer refused",
     "file": "nora/ingest/stages/stimulus.py",
-    "old": "    if _authored_by_nora(message, target, wiring.self_ids):\n        return None",
-    "new": "    if False:\n        return None",
+    "old": "    if _authored_by_nora(message, target, wiring.self_ids):\n        return (None, \"self_authored\")",
+    "new": "    if False:\n        return (None, \"self_authored\")",
     "target": "tests/unit/test_ingest_stimuli.py::test_nora_s_own_item_raises_no_stimulus tests/unit/test_ingest_stimuli.py::test_the_stage_refuses_nora_s_item_directly"
   },
   {
@@ -100,8 +100,8 @@
   {
     "name": "stimulus stage guards only OSError: a raising cue stops the turn",
     "file": "nora/ingest/stages/stimulus.py",
-    "old": "    except Exception:\n        log.exception(\"stimulus stage failed",
-    "new": "    except OSError:\n        log.exception(\"stimulus stage failed",
+    "old": "    except Exception:\n        log.exception(\"stimulus stage failed; the item is recorded, its stimulus is not\")\n        metrics.inc(\"nora_errors_total\", stage=\"stimulus\", platform=message.platform)\n        return None",
+    "new": "    except OSError:\n        log.exception(\"stimulus stage failed; the item is recorded, its stimulus is not\")\n        metrics.inc(\"nora_errors_total\", stage=\"stimulus\", platform=message.platform)\n        return None",
     "target": "tests/unit/test_ingest_stimuli.py::test_a_stimulus_stage_that_raises_never_stops_the_turn"
   },
   {

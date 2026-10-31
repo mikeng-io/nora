@@ -72,6 +72,14 @@ def cfg(tmp_path, monkeypatch, pg_url, example_config_path):
     # immediately, with no network call, so build_dependencies() never needs a real
     # (or faked) signal-cli daemon reachable at the example config's placeholder URL.
     #
+    # The template now defaults signal to mode = "bridge" (base_url names the
+    # standalone bridge, which build_dependencies() dials for /v1/self). These
+    # tests' subject is the DIRECT graph — the app holds the signal-cli
+    # connection itself — so the fixture pins direct mode and a loopback
+    # daemon address explicitly rather than inheriting a default that changed.
+    # Bridge-mode composition has its own suite
+    # (tests/integration/test_composition_bridge.py).
+    #
     # doctrine.dir ("nora/doctrine", config.example.toml) resolves relative to the
     # copied config file's directory (tmp_path here), which has no such subdirectory
     # — point it at the real, already-valid doctrine files instead of copying them.
@@ -83,6 +91,8 @@ def cfg(tmp_path, monkeypatch, pg_url, example_config_path):
     # than on the thing it is testing.
     return override_config(load(dst), {
         "store.data_dir": tmp_path,
+        "platforms.signal.mode": "direct",
+        "platforms.signal.base_url": "http://127.0.0.1:18080",
         "platforms.signal.account": "+85290000100",
         "doctrine.dir": ROOT / "nora" / "doctrine",
         "dreamer.dir": ROOT / "nora" / "dreamer",

@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -10,6 +11,15 @@ import pytest
 from nora.agent.comprehend_tools import egress_reason
 from nora.app.composition import search_provider
 from scripts import memory_graph_spike as spike
+
+
+@pytest.fixture(autouse=True)
+def restore_logging_suppression():
+    previous = logging.root.manager.disable
+    try:
+        yield
+    finally:
+        logging.disable(previous)
 
 
 @pytest.mark.parametrize("read,embed", [(True, True), (False, True), (True, False)])
@@ -617,9 +627,10 @@ async def test_age_comparison_measures_the_source_once_outside_replay(
             self.url = url
 
         async def dispose(self):
-            pass
+            assert logging.root.manager.disable == logging.CRITICAL
 
     def create(url):
+        assert logging.root.manager.disable == logging.CRITICAL
         return FakeEngine(url)
 
     async def generated_rows(engine, sql, params=None):

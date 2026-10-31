@@ -13,21 +13,54 @@ x = "@noraexample"
 threads = "@noraexample"
 
 [platforms.signal]
-base_url = "http://127.0.0.1:18080"
+# mode = "direct": base_url is the signal-cli daemon's JSON-RPC/HTTP API and
+#   inbound arrives over its SSE. mode = "bridge": base_url is the standalone
+#   signal-bridge's /v1 action API and inbound arrives over Redis Streams —
+#   the deployed shape (design/platform-bridges). Never run a direct adapter
+#   AND a bridge on the same account: that is two sessions on one
+#   registration.
+base_url = "http://signal-bridge:18090"
+mode = "bridge"
+# account_key names the stream's account leg — an explicit opaque key shared
+# by the bridge's NORA_BRIDGE_ACCOUNT_KEY and the bridge-projection
+# publisher's SIGNAL_BRIDGE_ACCOUNT_KEY, never derived from the number.
+account_key = "signal-acct-1"
 account = ""                     # empty = derive from the signal-cli daemon
 enabled = true                   # false with no other platform enabled refuses to start
 
 [platforms.discord]
 enabled = false                  # off by default
 token_env = "DISCORD_BOT_TOKEN"  # env var holding the bot token; never the value itself
+# mode = "direct": the app holds the Gateway connection itself. mode =
+# "bridge": discord-bridge holds Gateway+voice+music; the app consumes Redis
+# and calls its action API at base_url. account_key = the stream leg the
+# bridge and publisher both carry (DISCORD_BRIDGE_ACCOUNT_KEY).
+# mode = "bridge"
+base_url = "http://discord-bridge:18093"
+# account_key = "default"
 
 [platforms.whatsapp]
 enabled = false                  # off by default; requires pairing first
 base_url = "http://whatsapp-bridge:18081"  # bridge holds the paired session; no token or account here
+# mode = "bridge"                 # inbound over Redis Streams; "direct" uses SSE
+# account_key = "default"
 
 [platforms.instagram]
 enabled = false                  # off by default; requires a session first
 base_url = "http://instagram-bridge:18082"  # bridge holds the cookie session; no token or account here
+# mode = "bridge"
+# account_key = "default"
+
+# [bridges] — the durable inbound handoff (design/platform-bridges). Any
+# platform with mode = "bridge" requires redis_url_env to resolve at boot.
+# redis_url_env names the env var carrying the Redis URL (a credential —
+# named reference only, never a value here); token_env names the shared /v1
+# bearer; lease_seconds bounds a claimed work item's visibility before
+# reclaim.
+# [bridges]
+# redis_url_env = "NORA_REDIS_URL"
+# token_env = "NORA_BRIDGE_TOKEN"
+# lease_seconds = 300
 
 [honcho]
 base_url = "http://127.0.0.1:8000"
