@@ -72,6 +72,8 @@ Disposable PostgreSQL reuse:
   exclude timing modules; use the runner to select and execute them correctly.
   The lock bounds concurrent jobs, not total writes. Older checkouts without the
   plugin remain stopped until reconciled; an advisory lock cannot govern them.
+- Collection-only reads do not acquire the execution lease or start xdist workers;
+  the rule-to-test catalogue check can collect during an admitted test job.
 - Servers remain lazy, disk-backed, owned by each requesting worker/session,
   with Testcontainers/Ryuk cleanup. No cross-run state, shared server, tmpfs,
   altered durability settings or FILE_COPY default is introduced. Pure tests

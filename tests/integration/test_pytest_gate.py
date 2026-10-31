@@ -125,6 +125,21 @@ def test_raw_pytest_refuses_second_job_before_starting_workers_then_runs_normall
         pass  # actual worker/controller shutdown released every share
 
 
+@pytest.mark.parametrize("workers", [None, "2", "3"])
+def test_collection_can_read_the_catalogue_during_a_job_without_running_tests(tmp_path, workers):
+    root, lock = _project(tmp_path)
+    args = [] if workers is None else ["-n", workers]
+    with gate.host_lease(lock):
+        collected = _pytest(root, *args, "--collect-only")
+        assert collected.returncode == 0, collected.stdout + collected.stderr
+        assert "2 tests collected" in collected.stdout
+        assert "bringing up nodes" not in collected.stdout
+        assert not list(root.glob("ran-*"))
+        refused = _pytest(root)
+        assert refused.returncode == 4 and "host busy" in refused.stderr
+        assert not list(root.glob("ran-*"))
+
+
 def test_interrupt_stops_the_actual_child_and_releases_admission(tmp_path):
     lock = tmp_path / "host.lock"
     child = "import os, signal; print(os.getpid(), flush=True); signal.pause()"

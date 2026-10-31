@@ -68,6 +68,9 @@ def host_lease(path: Path, generation: str | None = None) -> Iterator[str]:
 @pytest.hookimpl(tryfirst=True)
 def pytest_sessionstart(session: pytest.Session) -> None:
     config = session.config
+    if config.option.collectonly:
+        os.environ.pop(_GENERATION_ENV, None)
+        return  # Collection runs no fixtures; xdist also disables workers for it.
     worker = getattr(config, "workerinput", None)
     if worker is None:
         tx = getattr(config.option, "tx", []) or []

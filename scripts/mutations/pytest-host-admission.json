@@ -40,5 +40,12 @@
     "old": "(PROJECT_ROOT / path).resolve(): path",
     "new": "Path(path).resolve(): path",
     "target": "tests/integration/test_pytest_gate.py::test_timing_admission_and_default_targets_are_independent_of_caller_cwd"
+  },
+  {
+    "name": "collection remains a read without running another job",
+    "file": "scripts/pytest_gate.py",
+    "old": "if config.option.collectonly:",
+    "new": "if False:",
+    "target": "tests/integration/test_pytest_gate.py::test_collection_can_read_the_catalogue_during_a_job_without_running_tests"
   }
 ]
