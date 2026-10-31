@@ -136,6 +136,31 @@ def percentile(values: list[float], fraction: float) -> float | None:
     return sorted(values)[max(0, math.ceil(len(values) * fraction) - 1)]
 
 
+def age_status(age_results: list[dict[str, Any]]) -> str:
+    """ERROR only on a broken instrument or no run at all; an insufficient or
+    failed run keeps its own name."""
+    if not age_results or any(r["status"] == "ERROR" for r in age_results):
+        return "ERROR"
+    if any(r["status"] == "INSUFFICIENT" for r in age_results):
+        return "INSUFFICIENT"
+    if any(r["status"] == "FAIL" for r in age_results):
+        return "FAIL"
+    return "REPORTED"
+
+
+def depth3_verdict(run: Mapping[str, Any], minimum: int) -> str:
+    """The depth-3 latency verdict one engine-comparison run supports: ERROR on
+    a broken run or an absent reading over a sufficient population,
+    INSUFFICIENT below the question `minimum`, else the ceiling check."""
+    if run["status"] == "ERROR":
+        return "ERROR"
+    if run.get("questions", 0) < minimum:
+        return "INSUFFICIENT"
+    if run.get("sql_p95_ms") is None:
+        return "ERROR"
+    return "PASS" if run["sql_p95_ms"] < 200 else "FAIL"
+
+
 async def rows(engine: Any, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     async with engine.begin() as conn:
         return [dict(r) for r in (await conn.execute(sa.text(sql), params or {})).mappings()]
@@ -556,7 +581,14 @@ def tool_exchanges(messages: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
 async def session_quality(
     judges: Judges, inspection: Any, exchanges: list[dict[str, Any]]
 ) -> dict[str, Any]:
-    """Judge committed understanding against exactly the shown input and reads."""
+    """Judge committed understanding against exactly the shown input and reads.
+
+    The recorded `memory_propose` result names committed relation ids; the
+    depth-1 `connected` preview does not always carry their relation rows, so
+    the scored population is committed ∩ preview. Committed relations with no
+    preview row are missing measurements — recorded as ERROR verdicts, never
+    silently dropped from the denominator or judged unsupported.
+    """
     evidence = {
         "input": inspection,
         "reads": [
@@ -574,6 +606,9 @@ async def session_quality(
             "enrichment_entity",
         )
     }
+    committed_ids: set[str] = set()
+    preview_ids: set[str] = set()
+    scored_ids: set[str] = set()
 
     async def score(name: str, proposition: Any) -> None:
         for i, verdict in enumerate(
@@ -591,9 +626,12 @@ async def session_quality(
             for reading in proposal.get("readings", []):
                 await score("reading_precision", reading)
         committed = set(result.get("committed", []))
+        committed_ids |= committed
         for edge in result.get("connected", {}).get("relations", []):
             relation = edge["relation"]
-            if relation["id"] in committed:
+            preview_ids.add(relation["id"])
+            if relation["id"] in committed and relation["id"] not in scored_ids:
+                scored_ids.add(relation["id"])
                 await score("relation_precision", relation)
                 if relation["rel"] == "same_as":
                     await score("wrong_merges", {"different_entities": relation})
@@ -611,8 +649,23 @@ async def session_quality(
                     "enrichment_entity",
                     {"entity": entity, "requirement": "cited fetched page is about this entity"},
                 )
+    # A committed relation with no preview row cannot be judged from the
+    # recorded result; a missing one cannot be ruled out as a merge either.
+    missing = committed_ids - scored_ids
+    for _ in missing:
+        for name in ("relation_precision", "wrong_merges"):
+            for verdicts in scored[name]:
+                verdicts.append("ERROR")
     await score("reading_recall", {"all_storable_statements_covered": True, "readings": readings})
-    return scored
+    return {
+        "verdicts": scored,
+        "population": {
+            "committed": len(committed_ids),
+            "preview": len(preview_ids),
+            "scored": len(scored_ids),
+            "missing": len(missing),
+        },
+    }
 
 
 async def index_replay_sandbox(subject: Any, *, source_url: str) -> SandboxIndex:
@@ -729,6 +782,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         sample_sha256 = freeze(output / "sample.json", list(selected.values()))
         results: list[dict[str, Any]] = []
         scores: dict[str, list[list[str]]] = {}
+        population: dict[str, int] = {}
         age_results = []
         judges = Judges(cfg, [args.judge_a, args.judge_b], args.config)
         for wake in selected.values():
@@ -837,11 +891,13 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                             {"wake": wake, "inspection": inspection, "exchanges": exchanges},
                         )
                         if not args.smoke:
-                            scored = await session_quality(judges, inspection, exchanges)
-                            for name, pair in scored.items():
+                            quality = await session_quality(judges, inspection, exchanges)
+                            for name, pair in quality["verdicts"].items():
                                 target = scores.setdefault(name, [[], []])
                                 for i, values in enumerate(pair):
                                     target[i].extend(values)
+                            for key, count in quality["population"].items():
+                                population[key] = population.get(key, 0) + count
                     except Exception:  # noqa: BLE001 - private exceptions stay on host
                         measured["status"] = "ERROR"
                     finally:
@@ -918,11 +974,12 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                     for s in ("ERROR", "INSUFFICIENT", "FAIL", "PASS")
                     if any(r["status"] == s for r in pair)
                 )
-                report[name] = {"status": status, "judges": pair}
+                row: dict[str, Any] = {"status": status, "judges": pair}
+                if name in {"relation_precision", "wrong_merges"}:
+                    row["population"] = population
+                report[name] = row
             report["age"] = {
-                "status": "ERROR"
-                if not age_results or any(r["status"] != "PASS" for r in age_results)
-                else "REPORTED",
+                "status": age_status(age_results),
                 "decision": "adopt"
                 if age_results
                 and all(r.get("within_latency_and_more_correct") for r in age_results)
@@ -930,10 +987,29 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                 "runs": age_results,
                 "cost": "custom image, duplicate link schema, Postgres upgrades wait on AGE",
             }
-            latencies = [r["sql_p95_ms"] for r in age_results if r.get("sql_p95_ms") is not None]
+            verdicts = [depth3_verdict(r, args.minimum) for r in age_results]
             report["query_depth_3"] = {
-                "status": "ERROR" if not latencies else "PASS" if max(latencies) < 200 else "FAIL",
-                "p95_ms_ceiling": max(latencies, default=None),
+                "status": next(
+                    (
+                        s
+                        for s in ("ERROR", "INSUFFICIENT", "FAIL", "PASS")
+                        if s in verdicts
+                    ),
+                    "ERROR",
+                ),
+                "p95_ms_ceiling": max(
+                    (r["sql_p95_ms"] for r in age_results if r.get("sql_p95_ms") is not None),
+                    default=None,
+                ),
+                "minimum": args.minimum,
+                "runs": [
+                    {
+                        "questions": r.get("questions", 0),
+                        "sql_p95_ms": r.get("sql_p95_ms"),
+                        "status": v,
+                    }
+                    for r, v in zip(age_results, verdicts, strict=True)
+                ],
             }
             hits = sum(s.get("egress_hits", 0) for s in results)
             report["egress"] = {

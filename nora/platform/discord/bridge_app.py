@@ -65,6 +65,7 @@ from nora.domain.ports import (
 )
 from nora.infra.voice.http_controller import VoiceControllerError
 from nora.infra.voice.hub import VoiceControllerHub
+from nora.obs.metrics import Metrics
 from nora.platform.bridge import telemetry as bt
 from nora.platform.bridge.envelope import (
     Envelope,
@@ -250,10 +251,12 @@ class DiscordBridge:
         capture: CaptureSink | None = None,
         publisher: JournalPublisher | None = None,
         journal: Journal | None = None,
+        metrics: Metrics | None = None,
     ) -> None:
         if client is None and client_factory is None:
             raise ValueError("a client or a client_factory is required")
         self._api_token = api_token
+        self._metrics = metrics
         self._account_key = account_key
         self._client = client
         self._client_factory = client_factory
@@ -837,6 +840,7 @@ class DiscordBridge:
             return await handler(request)
 
         app = web.Application(middlewares=[_auth])
+        app.router.add_get("/metrics", self.get_metrics)
         app.router.add_post("/v1/actions", self.post_action)
         app.router.add_get("/v1/actions/{aid}", self.get_action)
         app.router.add_get("/v1/self", self.get_self)
@@ -863,6 +867,12 @@ class DiscordBridge:
         # Controller → nora lifecycle events (was /app/v1/voice/event).
         app.router.add_post("/v1/voice/event", self.post_voice_event)
         return app
+
+    async def get_metrics(self, request: web.Request) -> web.Response:
+        if self._metrics is None:
+            return web.Response(status=503, text="metrics unavailable")
+        return web.Response(text=self._metrics.render(),
+                            headers={"Content-Type": "text/plain; version=0.0.4"})
 
     def _guild(self, guild_id: str) -> Any:
         client = self.current_client()

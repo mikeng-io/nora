@@ -192,6 +192,7 @@ class Bridge:
     ) -> None:
         _valid_account_key(cfg)
         self.cfg = cfg
+        self._metrics = metrics
         self.redis = redis_client or aioredis.from_url(cfg.redis_url)
         self.producer = StreamProducer(self.redis, cfg.stream)
         self.store = store or SqlBridgeStore(
@@ -453,6 +454,7 @@ class Bridge:
 
     def routes(self) -> web.Application:
         app = web.Application(middlewares=[self._auth])
+        app.router.add_get("/metrics", self.get_metrics)
         app.router.add_post("/v1/actions", self.post_action)
         app.router.add_get("/v1/actions/{aid}", self.get_action)
         app.router.add_get("/v1/self", self.get_self)
@@ -461,6 +463,12 @@ class Bridge:
         app.router.add_put("/v1/attachments/{key}", self.put_attachment)
         app.router.add_get("/v1/attachments/{key}", self.get_attachment)
         return app
+
+    async def get_metrics(self, req: web.Request) -> web.Response:
+        if self._metrics is None:
+            return web.Response(status=503, text="metrics unavailable")
+        return web.Response(text=self._metrics.render(),
+                            headers={"Content-Type": "text/plain; version=0.0.4"})
 
     @web.middleware
     async def _auth(self, req: web.Request, handler: Any) -> web.Response:

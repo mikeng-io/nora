@@ -886,6 +886,16 @@ Sentry rather than instead of it — see "what counts as an error" below.
 
 ### The admission-projection surfaces
 
+The four platform bridges expose bearer-protected `/metrics` on their existing
+private API ports (Signal 18090, Discord 18093, WhatsApp 18081, Instagram
+18082). The ingester scrapes those counters alongside the application's queue
+inspector metrics. Its `NORA_BRIDGE_API_TOKEN` projection uses the same non-empty
+API-token override, then legacy `NORA_BRIDGE_TOKEN` fallback as the bridges;
+`scripts/signoz_compose.py` obtains both through the existing private `source()`.
+No additional credential is introduced. Missing scrape credentials produce a
+failed target, never an authenticated zero. The publisher's existing 8091 metrics
+endpoint is also scraped over `signoz-network`.
+
 `bridge-projection` answers three endpoints on `8091` (private `nora`
 network, no published port): `/live` is process liveness — the Compose
 healthcheck uses it, so a stale projection never causes a restart loop.
