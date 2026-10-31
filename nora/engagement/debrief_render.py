@@ -711,6 +711,7 @@ def render_debrief_input(
     culture: CultureRevision | None = None,
     profile_room: ProfileView | None = None,
     profile_name_of: Callable[[str], str] | None = None,
+    ledger_prior: tuple | None = None,
 ) -> str:
     """The whole of what the STANDING call sees — the prior plus the turn.
 
@@ -755,7 +756,12 @@ def render_debrief_input(
                 None if profile_room is not None else culture,
                 now_ms=trace.created_at,
             ),
-            prior_block, working_set_prior_block, turn,
+            prior_block, working_set_prior_block,
+            # The unit fold's scoped prior rides the same declared walk —
+            # `None` means this caller has no ledger prior to re-judge.
+            *([_standing_ledger_prior(ledger_prior, now_ms=trace.created_at)]
+              if ledger_prior is not None else []),
+            turn,
         ],
         sep=_SEP,
     )

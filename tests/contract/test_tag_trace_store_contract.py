@@ -239,3 +239,25 @@ async def test_turn_facts_bounds_database_transfer_after_reduction(store):
     async with store._engine.connect() as conn:
         plan = await conn.exec_driver_sql("EXPLAIN (ANALYZE, BUFFERS) " + statement, parameters)
         print("\nPRODUCTION turn_facts plan:\n" + "\n".join(row[0] for row in plan))
+
+
+async def test_by_tag_returns_the_saved_trace_with_its_assigned_id(store):
+    t = _trace(created=100)
+    await store.save(t)
+    got = await store.by_tag(tag_id=t.tag_id)
+    assert got is not None
+    assert got.tag_id == t.tag_id
+    assert got.turn_id is not None and got.handle == f"t{got.turn_id}"
+
+
+async def test_by_tag_returns_none_for_an_unknown_tag(store):
+    assert await store.by_tag(tag_id="never-saved") is None
+
+
+async def test_by_tag_returns_the_newest_when_a_tag_was_saved_twice(store):
+    a = _trace(tag_id="same-tag", created=100)
+    b = _trace(tag_id="same-tag", created=200)
+    await store.save(a)
+    await store.save(b)
+    got = await store.by_tag(tag_id="same-tag")
+    assert got is not None and got.created_at == 200

@@ -109,7 +109,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import tzinfo
 from typing import Any, Protocol
 
@@ -135,9 +135,8 @@ from nora.domain.standing import (
 )
 from nora.domain.standing_ledger import LedgerOp, StandingLedger
 from nora.domain.tag_trace import TagTrace
-from nora.domain.turn_record import DisclosureRequirement
+from nora.domain.turn_record import DisclosureRequirement, turn_handles_in
 from nora.engagement.debrief_render import (
-    _standing_ledger_prior,
     consolidate_prompt,
     fold_prompt,
     render_debrief_input,
@@ -470,25 +469,39 @@ class Wiring:
 
 def _fold_lineage(prior: Standing | None, requirements: dict[str, Any]) -> Any:
     """The lineage a fold's write carries: the prior's, UNION the entries
-    the retained Record's own `DisclosureRequirement`s produce (`entry()`,
-    perception reads with their exclusions attached), on `body` — the
-    section the fold actually rewrites. Requirements `dict[toolUseId,
-    list[to_json()]]` parse back through the canonical `from_json`; an
-    unresolved one contributes nothing rather than a fake entry."""
-    from nora.domain.lineage import BODY, Lineage
+    the retained Record's own `DisclosureRequirement`s produce, on EVERY
+    section the write touches — `body`/`hold_open`/`i_owe`/`working_set`
+    all derive from the same Record, so the same source requirements gate
+    them all (a withheld body cannot leak through an updated sibling).
 
-    req_entries = tuple(
-        DisclosureRequirement.from_json(r).entry()
-        for reqs in requirements.values() for r in reqs
-        if DisclosureRequirement.from_json(r).entries
+    Requirements `dict[toolUseId, list[to_json()]]` parse back through the
+    canonical `from_json`; a requirement with no resolvable entries still
+    contributes its `unresolved(origin)` marker — an unknown source is
+    recorded as unknown, never silently skipped."""
+    from nora.domain.lineage import (
+        BODY,
+        HOLD_OPEN,
+        I_OWE,
+        WORKING_SET,
+        Lineage,
+        unresolved,
     )
+
+    reqs = [
+        DisclosureRequirement.from_json(r)
+        for rs in requirements.values() for r in rs
+    ]
+    req_entries = tuple(
+        req.entry() if req.entries else unresolved(req.origin)
+        for req in reqs
+    )
+    sections = (BODY, HOLD_OPEN, I_OWE, WORKING_SET)
     if prior is None or not prior.lineage.to_json():
-        return Lineage.of({BODY: req_entries}) if req_entries else None
+        return (Lineage.of(dict.fromkeys(sections, req_entries))
+                if req_entries else None)
     return Lineage.of({
-        s: tuple(dict.fromkeys(
-            (*prior.lineage.section(s),
-             *(req_entries if s == BODY else ()))))
-        for s in (BODY, "hold_open", "i_owe", "working_set")
+        s: tuple(dict.fromkeys((*prior.lineage.section(s), *req_entries)))
+        for s in sections
     })
 
 
@@ -581,10 +594,10 @@ async def fold_unit(
         rendered = render_debrief_input(
             trace=trace, prior=None,
             display_name=display_name, metrics=metrics, since_rows=(), tz=tz,
+            # The scoped prior rides the declared assemble walk — escaped,
+            # with every entry's id/kind/scope/revision/status and full body.
+            ledger_prior=prior,
         )
-        # The scoped prior rides the declared render path — escaped, with
-        # every entry's id/kind/scope/revision/status and full body.
-        rendered += _standing_ledger_prior(prior, now_ms=now_ms).render()
 
         reply = await asyncio.wait_for(
             _complete(
@@ -617,7 +630,18 @@ async def fold_unit(
 
         async def _write() -> tuple[int, int]:
             nonlocal wrote, refused
+            last_created = None
             for op in ops:
+                if op.id is None and op.op != "open":
+                    # A `close`/`revise` on an entry this batch just opened:
+                    # its id and base are the store's own, not the fold's.
+                    if last_created is None:
+                        refused += 1
+                        continue
+                    op = replace(
+                        op, id=last_created.id,
+                        base=last_created.revision,
+                    )
                 got = await asyncio.wait_for(
                     ledger.apply(op, target=target, shown=shown,
                                  now_ms=now_ms),
@@ -625,6 +649,8 @@ async def fold_unit(
                 )
                 if got.refusal is None:
                     wrote += 1
+                    if op.op == "open":
+                        last_created = got.entry
                 else:
                     refused += 1
             return wrote, refused
@@ -667,10 +693,19 @@ def _unit_ops(
 
     Every written line cites the session's saved Record as `turn(<handle>)`
     so `_evidence` derives the entry's lineage and exclusions from the
-    Record's own requirements rather than trusting the fold's say-so. An
-    `id` names the entry it revises — a subject match is NEVER a match
-    (two entries may share a subject), and an id the prior does not hold is
-    left unresolved rather than merged onto a guess.
+    Record's own requirements rather than trusting the fold's say-so.
+
+    IDENTITY: an `id` names the entry it revises — a subject match is never
+    a match. An item without `id` matches a prior entry ONLY by the saved
+    Record's own provenance: the same `turn(<handle>)` already cited in
+    that entry's body plus the same subject — i.e., this exact Record was
+    already folded. Anything else is a new expression and opens fresh; an
+    `id` the prior does not hold is left unresolved, never a guessed merge.
+
+    A decision FIRST made during this session (`status` closed, no `id`)
+    writes its lifecycle in order: a grounded `open`, then `close` against
+    the id/revision the store actually returned — the `id=None` marker
+    `_write` substitutes.
     """
     ops: list[LedgerOp] = []
     for item in items:
@@ -682,6 +717,7 @@ def _unit_ops(
                 or not isinstance(subject, str) or not subject.strip()
                 or "\n" in subject):
             continue
+        subject = subject.strip()
         raw_sections = item.get("sections")
         sections = {
             k: v for k, v in (raw_sections or {}).items()
@@ -690,16 +726,46 @@ def _unit_ops(
         }
         match = prior.get(item.get("id")) if isinstance(
             item.get("id"), str) else None
+        if match is None and not isinstance(item.get("id"), str):
+            # Provenance, not paraphrase: this exact Record already folded
+            # into a prior entry — re-folding must not open a duplicate.
+            match = next(
+                (e for e in prior.values()
+                 if e.subject == subject
+                 and handle in turn_handles_in(e.body or "")),
+                None,
+            )
         if item.get("status") in ("closed", "done", "resolved"):
             outcome_text = item.get("outcome")
-            if (match is None
-                    or not isinstance(outcome_text, str)
+            if (not isinstance(outcome_text, str)
                     or not outcome_text.strip()):
-                continue  # closing needs the entry AND cited grounds
-            ops.append(LedgerOp(
-                "close", kind=kind, id=match.id, base=match.revision,
-                outcome=f"{outcome_text.strip()} turn({handle})",
-            ))
+                continue  # closing needs cited grounds
+            grounded = f"{outcome_text.strip()} turn({handle})"
+            if match is not None:
+                if match.status in ("closed", "done"):
+                    continue  # already recorded — no churned revision
+                ops.append(LedgerOp(
+                    "close", kind=kind, id=match.id, base=match.revision,
+                    outcome=grounded,
+                ))
+            elif isinstance(item.get("id"), str):
+                continue  # cites an entry the unit does not hold — unresolved
+            else:
+                # Settled within THIS session: ground the open, then close
+                # it under the id the store actually issues (`id=None`
+                # marks "the entry just created" for `_write` to fill).
+                if not all(sections.get(name, "").strip()
+                           for name in _REQUIRED_OPEN_SECTIONS[kind]):
+                    continue
+                ops.append(LedgerOp(
+                    "open", kind=kind, scope="unit",
+                    subject=subject,
+                    sections={k: f"{v.rstrip()} turn({handle})"
+                              for k, v in sections.items()},
+                ))
+                ops.append(LedgerOp(
+                    "close", kind=kind, id=None, outcome=grounded,
+                ))
             continue
         if not all(sections.get(name, "").strip()
                    for name in _REQUIRED_OPEN_SECTIONS[kind]):
@@ -707,25 +773,36 @@ def _unit_ops(
         sections = {k: f"{v.rstrip()} turn({handle})"
                     for k, v in sections.items()}
         if match is not None:
-            if _unchanged(match, subject.strip(), sections):
+            if _unchanged(match, subject, sections):
                 continue  # replay/no-change writes no revision
             ops.append(LedgerOp(
                 "revise", kind=kind, id=match.id, base=match.revision,
-                subject=subject.strip(), sections=sections,
+                subject=subject, sections=sections,
             ))
         elif isinstance(item.get("id"), str):
             continue  # cites an entry the unit does not hold — unresolved
         else:
             ops.append(LedgerOp(
                 "open", kind=kind, scope="unit",
-                subject=subject.strip(), sections=sections,
+                subject=subject, sections=sections,
             ))
     return ops
 
 
+def _uncited(text: str) -> str:
+    """A section's content minus its `turn(...)` citation tokens — what a
+    no-change comparison must see: two folds of the same expressed content
+    cite DIFFERENT saved Records, and provenance bookkeeping alone must
+    never force a fresh revision."""
+    import re
+    return re.sub(r"turn\([^)]*\)", "", text).strip()
+
+
 def _unchanged(entry: Any, subject: str, sections: dict[str, str]) -> bool:
-    """Whether a revise would write what the entry already says — the
-    no-change idempotence the real store has no reason to special-case."""
+    """Whether a revise would write what the entry already says, compared
+    on CONTENT: the entry's recorded provenance is preserved exactly
+    because nothing is written, while the candidate's current-Record
+    citations are compared out, not carried."""
     from nora.domain.note_body import split_sections
     if entry.subject != subject:
         return False
@@ -734,9 +811,10 @@ def _unchanged(entry: Any, subject: str, sections: dict[str, str]) -> bool:
         split_sections(entry.body or "", schema=_ALLOWED_SECTIONS[entry.kind])
     } if entry.body else {}
     return all(
-        prior_sections.get(name, "").strip() == value.strip()
+        _uncited(prior_sections.get(name, "")) == _uncited(value)
         for name, value in sections.items()
     )
+
 
 
 async def run(

@@ -1052,3 +1052,36 @@ async def test_the_unit_fold_writes_nothing_without_a_saved_record(
     assert await ledger.read(
         unit="u", platform="signal", conversation_id="room-a") == ()
     assert metrics.get("nora_debrief_total", outcome="unavailable") == 1
+
+
+async def test_the_unit_fold_writes_a_new_settled_decision(ledger, ledger_db):
+    """A decision FIRST settled in this session writes its whole lifecycle:
+    grounded open then close under the store's own id/revision — it does
+    not vanish for lacking a prior entry."""
+    traces = SqlTagTraceStore(ledger_db)
+    trace = TagTrace(
+        tag_id="generated-session-2", conversation_id="",
+        messages=({"role": "assistant",
+                   "content": [{"text": "generated session content"}]},),
+        transcript=(), outcome="silent", created_at=1000,
+        occasion="cognition", unit="u",
+        bound_rooms=("signal:room-a",), requirements={},
+    )
+    await traces.save(trace)
+    await debrief.fold_unit(
+        trace=trace, unit="u", rooms=(("signal", "room-a"),),
+        ledger=ledger, target=target(), tag_traces=traces,
+        client=_FoldClient(json.dumps({"items": [{
+            "kind": "decision", "subject": "generated venue choice",
+            "status": "closed", "outcome": "chose generated amber",
+            "sections": {"Options": "generated amber or blue",
+                         "Leaning": "generated amber"}}]})),
+        objective=_FoldObjective(), metrics=Metrics(), display_name="Nora",
+        timeout_seconds=5.0, store_timeout_seconds=5.0, now_ms=2000,
+    )
+    entries = await ledger.read(
+        unit="u", platform="signal", conversation_id="room-a")
+    unit_entries = [e for e in entries if e.scope == "unit"]
+    assert len(unit_entries) == 1
+    assert unit_entries[0].status == "closed"
+    assert "chose generated amber" in unit_entries[0].body
