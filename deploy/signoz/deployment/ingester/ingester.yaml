@@ -266,6 +266,31 @@ receivers:
         parse_from: attributes.span_id
       trace_flags:
         parse_from: attributes.trace_flags
+    # Native severity promotion (issue #440): JSON bodies carry `level`
+    # (nora/obs/logging.py uppercases it; bridges emit it too), but nothing
+    # else fills the first-class severity fields, so native severity_text
+    # stayed empty and severity_number 0 — UI/MCP "at least a warning"
+    # filters hid real records. `if` confines the parse to records that
+    # declared a level: unstructured lines and level-less JSON keep
+    # UNSPECIFIED rather than a guessed band, `send` keeps any record whose
+    # level is unmapped, and the parser leaves `attributes.level` and the
+    # app's own `severity_number` attribute untouched (verified on the
+    # pinned v0.144.15 build). The map is the declared set — the app's five
+    # stdlib levels plus the WARN/FATAL spellings, at each band's base.
+    - type: severity_parser
+      parse_from: attributes.level
+      if: attributes.level != nil
+      on_error: send
+      mapping:
+        debug: DEBUG
+        info: INFO
+        warn:
+        - WARNING
+        - WARN
+        error: ERROR
+        fatal:
+        - CRITICAL
+        - FATAL
 service:
   extensions:
   - signoz_health_check
