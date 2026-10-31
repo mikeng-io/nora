@@ -53,32 +53,31 @@ final check, not the loop (2026-08-21: eight gate runs in one session).
 
 ```bash
 make gate > "$LOG/gate.log" 2>&1; GATE_RC=$?; echo "GATE_RC=$GATE_RC" > "$LOG/gate.rc"
-grep -cE '^uv run (ruff|mypy|lint-imports)' "$LOG/gate.log"   # 3 = every static step ran
+grep -E 'gate receipt:|^uv run (ruff|mypy|lint-imports)' "$LOG/gate.log"
 grep -E '^affected_tests:|passed|failed|error' "$LOG/gate.log" | tail -n 5
 ```
 
-`make gate`: static steps in full, then the tests the diff against `origin/master`
-reaches (all when unmapped or the selector fails; only `NONE` runs nothing).
-PASS: `GATE_RC=0`, 3 steps, no `failed`. ONCE per candidate — after the last
-commit and any `origin/master` merge; a push or review fix that changes the
-tree makes a new candidate and it runs again. `make full-gate` = whole suite.
+`make gate`: code/mixed changes run static steps and affected tests against
+`origin/master`; docs-only changes run reader tests without static steps. Unknown
+paths/errors remain broad. Local exact-candidate/context success receipts can be
+reused; a `REUSED` result is prior acceptance, never a newly executed test count.
+Read the worktree Git directory's `nora-gate-receipt.json` (key, command, completion
+and rc), alongside the matching original evidence. Dirty/context changes cannot
+reuse it. Use `make gate-fresh` for an actual run even if a receipt matches.
+CI and `make full-gate` are always fresh; full-gate remains serial/unconditional.
+
+PASS: `GATE_RC=0`, then either fresh checks/reader results (three static steps for
+code), or the runner's validated matching success receipt. A changed candidate,
+base or execution context reruns acceptance. Receipt refreshes rerun nothing.
 
 - Never `make gate | tail`: the rc is tail's (2026-09-22, merged a red master).
 - In the background read `$LOG/gate.rc`, not the notice (last command's rc).
   Kill only a PID you recorded, never `pkill -f`: it kills other sessions' gates.
 
-**Docs-only** (every path a `.md` outside `nora/`, `evals/`, `scripts/`, or data under
-`docs/`, `design/`): the gate's selector, without the static steps:
-
-```bash
-git add <paths>    # the doc gate scans `git ls-files`: an unstaged new doc is never read (#391)
-make test-affected BASE=origin/master INCLUDE_WORKTREE=--include-worktree \
-  > "$LOG/docs.log" 2>&1; echo "GATE_RC=$?" > "$LOG/gate.rc"
-```
-
-The selector scans `tests/` for each doc's readers and runs everything for an
-unmapped path — never hand-pick readers (a picked list omitted real ones until
-2026-10-02). PASS is `GATE_RC=0` with a `passed` count, or `NONE`. Other paths: `make gate`.
+**Docs-only:** stage new docs so tracked-reference readers see them, then use
+`make gate` as above. It selects document readers and omits static steps. Runtime
+Markdown under `nora/`, `evals/`, `scripts/` and test fixtures is not ordinary docs.
+Never hand-pick readers; an unmapped/shared-helper path remains broad.
 
 ## 4. Commit
 

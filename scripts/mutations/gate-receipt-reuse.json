@@ -1,0 +1,65 @@
+[
+  {
+    "name": "tests Markdown guides use readers",
+    "file": "scripts/affected_tests.py",
+    "old": "return path.endswith(\".md\") and not path.startswith(\"tests/fixtures/\")",
+    "new": "return False",
+    "target": "tests/test_affected_tests.py::test_tests_readme_uses_readers_but_helpers_and_fixture_markdown_stay_broad"
+  },
+  {
+    "name": "only exact generated untracked hooks are noise",
+    "file": "scripts/affected_tests.py",
+    "old": "return not file.is_symlink() and file.is_file() and file.read_bytes() == expected.encode()",
+    "new": "return file.is_file()",
+    "target": "tests/test_affected_tests.py::test_only_exact_untracked_regular_lfs_post_hooks_are_selection_noise"
+  },
+  {
+    "name": "candidate and context identity bind cache hits",
+    "file": "scripts/gate.py",
+    "old": "and saved[\"key\"] == key",
+    "new": "and True",
+    "target": "tests/integration/test_gate_receipt.py::test_real_make_runs_once_then_reuses_only_the_identical_success"
+  },
+  {
+    "name": "failed checks never publish success receipts",
+    "file": "scripts/gate.py",
+    "old": "if rc == 0 and key is not None and fingerprint(repo) == key:",
+    "new": "if key is not None and fingerprint(repo) == key:",
+    "target": "tests/integration/test_gate_receipt.py::test_non_reusable_receipts_execute_and_failure_destroys_the_old_green[fresh]"
+  },
+  {
+    "name": "prior green is invalidated before a real attempt",
+    "file": "scripts/gate.py",
+    "old": "            receipt.unlink(missing_ok=True)\n            print(",
+    "new": "            print(",
+    "target": "tests/integration/test_gate_receipt.py::test_non_reusable_receipts_execute_and_failure_destroys_the_old_green[fresh]"
+  },
+  {
+    "name": "cache hits cannot bypass host admission",
+    "file": "scripts/gate.py",
+    "old": "with host_lease(LOCK_PATH, os.environ.pop(_GENERATION_ENV, None)) as generation:",
+    "new": "with host_lease(LOCK_PATH.with_suffix(\".bypass\"), os.environ.pop(_GENERATION_ENV, None)) as generation:",
+    "target": "tests/integration/test_gate_receipt.py::test_a_cached_success_still_requires_host_admission"
+  },
+  {
+    "name": "source changes during context lookup invalidate old receipts",
+    "file": "scripts/gate.py",
+    "old": "if candidate(repo) != source:",
+    "new": "if False:",
+    "target": "tests/integration/test_gate_receipt.py::test_source_change_during_context_lookup_cannot_hit_an_old_receipt"
+  },
+  {
+    "name": "full gate still selects the unconditional serial target",
+    "file": "scripts/gate.py",
+    "old": "[\"_full-gate\"]",
+    "new": "[\"_gate\"]",
+    "target": "tests/integration/test_gate_receipt.py::test_full_gate_is_always_fresh_and_invalidates_narrower_receipts"
+  },
+  {
+    "name": "interrupted gate kills resistant make descendants",
+    "file": "scripts/gate.py",
+    "old": "rc = _run(run, env, group=True)",
+    "new": "rc = _run(run, env, group=False)",
+    "target": "tests/integration/test_gate_receipt.py::test_interrupting_gate_stops_make_descendants_and_removes_old_success"
+  }
+]

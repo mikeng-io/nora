@@ -34,7 +34,8 @@ wrong one. The classes, in order:
   `nora/dreamer`, `nora/skills` and `nora/documents/catalog-prompt.md` at
   runtime, and every `.py` is imported by dozens of tests. A hand-kept reader
   list for these goes stale.
-* `tests/**`: a collectible `test_*.py` that still exists selects itself, the
+* Markdown guides under `tests/` (excluding fixtures) use doc readers below.
+* Other `tests/**`: a collectible `test_*.py` that still exists selects itself, the
   whole of `tests/architecture/` (the meta tests: they read `tests/` itself, so
   an added, edited or deleted test can redden them — a new `tests/test_zz.py`
   reddens `test_tests_root_takes_no_new_files`, a new test that reads
@@ -49,7 +50,8 @@ wrong one. The classes, in order:
   `nora/`, `evals/`, `scripts/`; any `.md/.txt/.json/.toml/.yaml/.yml` under
   `docs/`, `design/`): the tests that READ them, found by scanning `tests/` at
   select time (`_readers`), plus the universal doc-reference scan for a `.md`.
-  A file read by a shared test helper is `ALL`.
+  A file read by a shared test helper is `ALL`. Byte-exact untracked Git LFS post-hooks
+  are ignored as generated installation noise; modified/symlink/tracked hooks are not.
 * ANY path named in the `file` field of a `scripts/mutations/*.json` entry also
   selects `tests/architecture/test_mutation_tables_anchor_to_their_source.py`
   (read from the tables at select time, so a new table is covered with no edit
@@ -144,6 +146,24 @@ _MUTATION_ANCHOR_TEST = (
 _META_TESTS = "tests/architecture"
 
 
+def generated_lfs_hook(repo: Path, path: str) -> bool:
+    """Recognise only byte-exact, regular Git LFS post-hook installations."""
+    name = path.removeprefix(".githooks/")
+    if path != f".githooks/{name}" or name not in {"post-checkout", "post-commit", "post-merge"}:
+        return False
+    file = repo / path
+    expected = (
+        "#!/bin/sh\n"
+        'command -v git-lfs >/dev/null 2>&1 || { printf >&2 "\\n%s\\n\\n" '
+        f'"This repository is configured for Git LFS but \'git-lfs\' was not found on your path. '
+        f"If you no longer wish to use Git LFS, remove this hook by deleting the '{name}' "
+        "file in the hooks directory (set by 'core.hookspath'; "
+        "usually '.git/hooks').\"; exit 2; }\n"
+        f'git lfs {name} "$@"\n'
+    )
+    return not file.is_symlink() and file.is_file() and file.read_bytes() == expected.encode()
+
+
 def _git(repo: Path, *args: str, nul: bool = False) -> list[str]:
     result = subprocess.run(  # noqa: S603 - fixed argv, repo-local git only
         ["git", *args],  # noqa: S607
@@ -181,7 +201,9 @@ def git_changed_paths(
                        merge_base, nul=True)
         untracked = _git(repo, "ls-files", "-z", "--others",
                          "--exclude-standard", nul=True)
-        return sorted(set(tracked) | set(untracked))
+        return sorted(set(tracked) | {
+            path for path in untracked if not generated_lfs_hook(repo, path)
+        })
     return _git(repo, "diff", "-z", "--name-only", "--no-renames",
                 f"{merge_base}...HEAD", nul=True)
 
@@ -386,8 +408,10 @@ def _is_collectible_test_file(path: str) -> bool:
 def _is_doc_or_data(path: str) -> bool:
     """A documentation or data file outside the code trees, so one that the
     reader scan can answer for."""
-    if path.startswith("tests/") or path.startswith(_CODE_TREE_PREFIXES):
+    if path.startswith(_CODE_TREE_PREFIXES):
         return False
+    if path.startswith("tests/"):
+        return path.endswith(".md") and not path.startswith("tests/fixtures/")
     if path.endswith(".md"):
         return True
     ext = "." + path.rsplit(".", 1)[-1] if "." in path.rsplit("/", 1)[-1] else ""
@@ -412,7 +436,7 @@ def select(changed: list[str], repo: Path = ROOT) -> list[str] | str:
     for path in changed:
         if path in mutated:
             targets.add(_MUTATION_ANCHOR_TEST)
-        if path.startswith("tests/"):
+        if path.startswith("tests/") and not _is_doc_or_data(path):
             # Not every path under tests/ is collectible (conftest.py,
             # builders.py, fixtures, ...) and a deleted or renamed-away test
             # cannot be run: both are ALL, never a target that collects nothing.
