@@ -61,10 +61,17 @@ Disposable PostgreSQL reuse:
   history outside those tables and non-row state are not globally reset.
 - Schema parity uses a module clone for catalogue reads and CHECK probes whose
   SAVEPOINT always rolls back. Deliberate drift still uses scratch databases.
-- Parallel Make targets use `--dist loadfile` to avoid rebuilding module
-  fixtures on several workers. `TEST_WORKERS` defaults to eight; override with
-  `make test-affected TEST_WORKERS=2` when sharing a host. File grouping can leave
-  a long tail; validate the final full gate before claiming a suite speedup.
+- Make targets use `python -m scripts.pytest_gate`: up to two file-grouped
+  workers, followed by a serial phase for the three timing modules declared in
+  that runner. Explicit files/node selectors keep their selection. `TEST_WORKERS`
+  defaults to two; use zero or one to reduce concurrency. Full-gate stays serial.
+- The runner and direct pytest share one per-user host lease across updated
+  worktrees. A competing job is refused before workers start. Workers retain
+  shares after controller exit; generation checks refuse late stale workers.
+  The runner retains its share across both phases. Direct parallel pytest must
+  exclude timing modules; use the runner to select and execute them correctly.
+  The lock bounds concurrent jobs, not total writes. Older checkouts without the
+  plugin remain stopped until reconciled; an advisory lock cannot govern them.
 - Servers remain lazy, disk-backed, owned by each requesting worker/session,
   with Testcontainers/Ryuk cleanup. No cross-run state, shared server, tmpfs,
   altered durability settings or FILE_COPY default is introduced. Pure tests

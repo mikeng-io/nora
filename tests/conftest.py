@@ -2,10 +2,9 @@
 
 The record store is PostgreSQL, so DB-touching tests run against a
 REAL Postgres in a testcontainer — never a mock, never an in-memory shim that
-would answer every query the same way (CLAUDE.md). One container is shared for
-the whole session; **each test that asks for `pg_url` gets its own freshly
-CREATEd database**, dropped on teardown, so isolation is a real separate catalog
-rather than a shared mutable one.
+would answer every query the same way (CLAUDE.md). Each requesting xdist worker
+shares one container; `pg_url` clones a fresh database per test, dropped at
+teardown. Eligible modules opt into `pg_module_url` and own their row resets.
 
 The container starts lazily on the first `pg_url` request, so the pure-unit
 majority of the suite (which uses `FakeRecordStore`) pays nothing for it.
@@ -36,6 +35,8 @@ from nora.config import load as load_config
 from nora.doctrine.loader import DoctrineStore
 from nora.obs.metrics import Metrics
 from tests.builders import copy_example_config
+
+pytest_plugins = ["scripts.pytest_gate"]
 
 # MUST track `docker-compose.yml`'s `db` image, and
 # `test_the_test_container_tracks_the_deployment` is what pins the two
