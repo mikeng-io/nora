@@ -623,24 +623,25 @@ async def test_a_failed_read_leaves_the_gauge_absent_rather_than_zero():
 
 # --- Standing's read half ---------------------------------------------------
 
-async def test_no_standing_store_is_the_dormant_default_and_costs_no_query():
-    """`[standing] enabled = false` — not an error, not counted, the same
-    "not yet wired" shape `notes` uses."""
+async def test_no_shared_reader_is_the_dormant_default():
+    """`[standing] enabled = false` — no shared reader wired, no view, the
+    same "not yet wired" shape `notes` uses."""
     metrics = Metrics()
     assembler = TranscriptInjection(
         audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=metrics, standing=None,
+        context_window=10, metrics=metrics, shared=None,
     )
     ctx = await assembler.assemble(request=_request())
-    assert ctx.standing is None
+    assert ctx.shared is None
     assert metrics.get("nora_errors_total", stage="standing") == 0
 
 
 async def test_the_position_is_read_by_platform_and_conversation():
-    """Asserted on the ARGUMENTS rather than on the value: this is the one
-    read in the assembler keyed on `(platform, conversation_id)` rather than on
-    a unit or a scope, and a store called with the wrong key would return
-    a plausible position belonging to another room."""
+    """The room's Standing paragraph is a READ ADAPTER in the shared view
+    (design 20): the store is still keyed `(platform, conversation_id)`, and
+    a store called with the wrong key would return a plausible position
+    belonging to another room."""
+    from nora.agent.shared_state import shared_reader
     from nora.domain.standing import Standing
     from nora.testing import InMemoryStandingStore
 
@@ -661,14 +662,18 @@ async def test_the_position_is_read_by_platform_and_conversation():
     ))
     assembler = TranscriptInjection(
         audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=Metrics(), standing=store,
+        context_window=10, metrics=Metrics(), policy=_policy(),
+        shared=shared_reader(
+            standing=store, ai_peer="nora",
+            rooms_of_unit=lambda unit: (("signal", "g1"),)),
     )
     ctx = await assembler.assemble(request=_request())
     assert store.reads == [("signal", "g1")]
-    assert ctx.standing.body == "a position"
+    pos = next(e for e in ctx.shared.entries if e.kind == "standing")
+    assert pos.subject == "a position"
 
 
-async def test_a_failed_standing_read_is_counted_rather_than_swallowed():
+async def test_a_failed_standing_read_is_unavailable_never_nothing_found():
     """The THIRD state, and it is not the same as the other two. A position
     that exists and could not be fetched is `unavailable`; folding it in with
     "no store" and "no row" reports it as `nothing_found`, which is exactly the
@@ -678,15 +683,21 @@ async def test_a_failed_standing_read_is_counted_rather_than_swallowed():
         async def read(self, *, platform: str, conversation_id: str):
             raise RuntimeError("db down")
 
+    from nora.agent.shared_state import shared_reader
+
     metrics = Metrics()
     assembler = TranscriptInjection(
         audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=metrics, standing=_Broken(),
+        context_window=10, metrics=metrics, policy=_policy(),
+        shared=shared_reader(
+            standing=_Broken(), ai_peer="nora",
+            rooms_of_unit=lambda unit: (("signal", "g1"),)),
     )
     ctx = await assembler.assemble(request=_request())
-    assert ctx.standing is None
-    assert metrics.get(
-        "nora_errors_total", stage="standing", platform="signal") == 1
+    assert ctx.shared is not None and ctx.shared.status == "unavailable"
+    # The standing store's source in the view is `findings` — the read
+    # adapter that also carries the position paragraph.
+    assert ("findings", "unavailable") in ctx.shared.sources
 
 
 async def test_the_tag_path_reads_presence_at_turn_start():
@@ -735,21 +746,11 @@ async def test_assemble_emits_a_span_per_store_read(exported_spans):
     with a bare `await` and its name drops out of this list."""
     notes = _note("n1", "ridgeline", "9 Sept dinner")
     memory = FakeMemory()
-    from nora.testing import InMemoryStandingStore
-
-    standing_store = InMemoryStandingStore()
-    from nora.domain.standing import Standing
-
-    await standing_store.write(standing=Standing(
-        platform="signal", conversation_id="g1", body="a position",
-        fold_count=1, updated_at=1,
-    ))
     assembler = TranscriptInjection(
         audit=FakeRecordStore(), memory=memory, persons=_MILES,
         context_window=10, metrics=Metrics(),
         ai_peer="nora", tagger_card_conclusions=3,
         notes=FakeNoteStore({"ridgeline": (notes,)}), policy=_policy(),
-        standing=standing_store,
     )
 
     await assembler.assemble(request=_request())
@@ -759,7 +760,6 @@ async def test_assemble_emits_a_span_per_store_read(exported_spans):
     assert names.count("store.memory.peer_card") == 1
     # `_recall_tagger` calls `MemoryStore.representation`: one read, one span.
     assert names.count("store.memory.representation") == 1
-    assert names.count("store.standing.read") == 1
     assert names.count("store.notes.standing") == 1
 
 

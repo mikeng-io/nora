@@ -33,7 +33,9 @@ from datetime import datetime
 from uuid import UUID
 
 from nora.domain.reminders import (
+    ConflictingProactiveActError,
     DuplicateProactiveNoteError,
+    DuplicateProactiveSubjectError,
     DuplicateReminderError,
     Reminder,
     ReminderState,
@@ -41,7 +43,9 @@ from nora.domain.reminders import (
     ensure_utc,
     normalise_reminder,
     open_proactive_note,
+    open_proactive_subject,
     plan_successor,
+    proactive_subject,
 )
 
 
@@ -74,7 +78,85 @@ class FakeReminderStore:
             open_proactive_note(r) == note_id for r in self._rows.values()
         ):
             raise DuplicateProactiveNoteError(note_id)
+        # `uq_reminders_proactive_open_subject`, spelled out the same way:
+        # one open row per (subject, action, destination).
+        subject = open_proactive_subject(reminder)
+        if subject is not None and any(
+            open_proactive_subject(r) == subject
+            and r.platform == reminder.platform
+            and r.conversation_id == reminder.conversation_id
+            for r in self._rows.values()
+        ):
+            raise DuplicateProactiveSubjectError(
+                subject, reminder.platform, reminder.conversation_id,
+            )
         self._put(reminder)
+
+    async def create_many(
+        self, reminders: Sequence[Reminder], *, arbitration_key: str | None = None,
+        arbitration_rooms: Sequence[tuple[str, str]] = (),
+    ) -> None:
+        """`create`'s contract for a batch, ATOMIC the way the SQL tx is:
+        every check first, no `_put` until each row clears — a refusal leaves
+        the store untouched, matching the rolled-back transaction. The
+        advisory lock has no analogue in-process (each check+put pair is
+        already `await`-free), so `arbitration_key` is accepted and unused;
+        `arbitration_rooms` gets the same cross-room check the SQL tx makes."""
+        if arbitration_rooms:
+            room_set = set(arbitration_rooms)
+            dests = {(r.platform, r.conversation_id) for r in reminders}
+            subjects = {
+                s for r in reminders if (s := proactive_subject(r)) is not None
+            }
+            for r in self._rows.values():
+                key = proactive_subject(r)
+                if (
+                    key is not None and key in subjects
+                    and open_proactive_subject(r) is not None
+                    and (r.platform, r.conversation_id) in room_set
+                    and (r.platform, r.conversation_id) not in dests
+                ):
+                    raise ConflictingProactiveActError(
+                        key, r.platform, r.conversation_id,
+                    )
+        pending: list[Reminder] = []
+        for reminder in reminders:
+            if reminder.id in self._rows:
+                raise DuplicateReminderError(reminder.id)
+            note_id = open_proactive_note(reminder)
+            if note_id is not None and any(
+                open_proactive_note(r) == note_id
+                for r in (*self._rows.values(), *pending)
+            ):
+                raise DuplicateProactiveNoteError(note_id)
+            subject = open_proactive_subject(reminder)
+            if subject is not None and any(
+                open_proactive_subject(r) == subject
+                and r.platform == reminder.platform
+                and r.conversation_id == reminder.conversation_id
+                for r in (*self._rows.values(), *pending)
+            ):
+                raise DuplicateProactiveSubjectError(
+                    subject, reminder.platform, reminder.conversation_id,
+                )
+            pending.append(reminder)
+        for reminder in pending:
+            self._put(reminder)
+
+    async def recent_in(
+        self, rooms: Sequence[tuple[str, str]], *, requester_person_id: str,
+        since: datetime, limit: int,
+    ) -> Sequence[Reminder]:
+        cutoff = ensure_utc(since, field="since")
+        size = check_limit(limit)
+        room_set = set(rooms)
+        rows = [
+            r for r in self._rows.values()
+            if r.requester_person_id == requester_person_id
+            and r.created_at >= cutoff
+            and (r.platform, r.conversation_id) in room_set
+        ]
+        return sorted(rows, key=lambda r: (r.created_at, r.id))[:size]
 
     async def get(self, reminder_id: UUID) -> Reminder | None:
         return self._rows.get(reminder_id)
@@ -189,3 +271,21 @@ class FakeReminderStore:
 
     async def aclose(self) -> None:
         return None
+
+    async def delivered_subject(
+        self, rooms: Sequence[tuple[str, str]], *,
+        requester_person_id: str, subject_kind: str, subject_id: str,
+        action: str, limit: int = 5,
+    ) -> Sequence[Reminder]:
+        room_set = set(rooms)
+        rows = [
+            r for r in self._rows.values()
+            if r.kind == "proactive"
+            and r.requester_person_id == requester_person_id
+            and r.outcome == "sent"
+            and r.state == ReminderState.DONE
+            and proactive_subject(r) == (subject_kind, subject_id, action)
+            and (r.platform, r.conversation_id) in room_set
+        ]
+        return sorted(rows, key=lambda r: (-r.created_at.timestamp(), r.id)
+                      )[:limit]

@@ -138,10 +138,26 @@ def build_offline_pipeline(
         policy=permissive_policy(), adapters=adapters,
         handles=cfg.agent.handles,
     )
+    from nora.agent.shared_state import shared_reader
+
+    harness_policy = permissive_policy()
+    # The one `standing` view (design/notebook-memory-types/20-standing.md):
+    # a reader over the same store doubles a caller passes in — `None` only
+    # when none were given, exactly like `notes` here.
+    shared = (
+        shared_reader(
+            standing=standing, ledger=ledger, ai_peer="nora",
+            rooms_of_unit=lambda unit: tuple(
+                (c.platform, c.primary_id)
+                for c in harness_policy.rooms() if c.unit == unit),
+        )
+        if standing is not None or ledger is not None else None
+    )
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
-        policy=permissive_policy(),
-        notes=notes, standing=standing, ledger=ledger,
+        policy=harness_policy,
+        notes=notes,
+        shared=shared,
         # The media join. `None` renders the bare handles a row actually carries; an eval
         # that wants `[image a3f2c1: …]` in its prompt builds a `MediaJoin` over
         # `nora.testing.FakeMediaObjectStore`, exactly as it passes its own doubles for
@@ -260,6 +276,11 @@ def build_offline_pipeline(
         fire_path = FirePath(
             tag_trace_store=None,
             persons=persons, records=audit, memory=memory,
+            # The shared-state reader (design/notebook-memory-types/20):
+            # `None` in the harness, the assembler's reason above — which
+            # also means an eval's proactive occasion never withholds on an
+            # `unavailable` view it never had.
+            shared=None,
             # The SAME join the tag assembler above is given, so an eval's fire
             # prompt shows what an eval's tag prompt shows (the parity gate
             # `tests/architecture/test_assembler_parity.py` enforces).
@@ -303,7 +324,6 @@ def build_offline_pipeline(
                 # The proactive act turn, registered as production registers it.
                 "proactive": proactive_occasion,
             },
-            standing=standing, ledger=ledger,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
             # The participation turn's memory reads. ONE knob set, read at the composition
             # root exactly as the tag assembler reads `tagger_card_conclusions`: two

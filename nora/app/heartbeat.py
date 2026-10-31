@@ -59,7 +59,12 @@ from datetime import datetime
 from typing import Protocol
 
 from nora.app.proactive_screen import PROACTIVE_KIND, ProactiveScreen
-from nora.domain.reminders import Reminder, ReminderState, ReminderStore
+from nora.domain.reminders import (
+    Reminder,
+    ReminderState,
+    ReminderStore,
+    proactive_subject,
+)
 from nora.engagement.slots import ConversationSlots, Key
 from nora.obs.metrics import Metrics
 
@@ -356,6 +361,38 @@ class HeartbeatLoop:
             raise
         if not firing:
             return
+        # The screen ran before `claim`; those rows are OWNED now and a claimed
+        # due row is not proof the act is still needed — the room's flag or the
+        # note it named may have moved while this coroutine awaited its turn.
+        # Rechecking here is the fire-time boundary a screen seconds ago cannot
+        # be. A screen that cannot check is `failed_error`, never a send on an
+        # unverified premise.
+        if self._proactive is not None:
+            still: list[Reminder] = []
+            for row in firing:
+                if row.kind != PROACTIVE_KIND:
+                    still.append(row)
+                    continue
+                try:
+                    refusal = await self._proactive.refusal(row)
+                except Exception:
+                    log.exception(
+                        "proactive screen recheck failed for %s", row.id,
+                    )
+                    refusal = (ReminderState.FAILED, "failed_error")
+                if refusal is None:
+                    refusal = await self._superseded(row)
+                if refusal is None:
+                    still.append(row)
+                    continue
+                state, outcome = refusal
+                log.info(
+                    "proactive reminder %s resolved after claim: %s", row.id, outcome,
+                )
+                await self._resolve_all([row], state, outcome=outcome, now=now)
+            firing = still
+        if not firing:
+            return
         try:
             outcome = await self._fire(firing)
         except Exception:
@@ -368,6 +405,64 @@ class HeartbeatLoop:
         # timed out or reported its own error answers without raising, and
         # writing those `done` records a delivery that never happened.
         await self._resolve_all(firing, _state_for(outcome), outcome=outcome, now=now)
+
+    async def _superseded(
+        self, row: Reminder,
+    ) -> tuple[ReminderState, str] | None:
+        """The delivered-fact recheck the screen cannot make: a claimed act
+        whose (subject, action, destination) already shows a DELIVERED row
+        does not fire — the code-level duplicate refusal the check-seconds-ago
+        screen has no eyes for. `None` when nothing delivered it yet; a read
+        that fails refuses — firing on an unchecked premise is the failure
+        mode this boundary exists for."""
+        subject = proactive_subject(row)
+        if subject is None:
+            return None
+        try:
+            # The whole unit, not just this row's room: the incident was the
+            # same act landing in ANOTHER room, which a destination-scoped
+            # check can never see. A delivered same-act row with a DIFFERENT
+            # plan id supersedes this one; rows sharing the plan are the one
+            # deliberate multi-room act and do not supersede each other.
+            policy = getattr(self, "_policy", None)
+            convo = (
+                policy.conversation(row.platform, row.conversation_id)
+                if policy is not None else None
+            )
+            if convo is None:
+                # The unit's room set cannot be established, so the whole-
+                # unit delivered check cannot run: a same-room-only read
+                # would masquerade as the unit check it is not.
+                return ReminderState.FAILED, "failed_error"
+            unit_rooms = [
+                (c.platform, c.primary_id)
+                for c in getattr(policy, "conversations", ()) or ()
+                if c.unit == convo.unit
+            ]
+            plan = (row.payload or {}).get("plan_id")
+            hits = await self._store.delivered_subject(
+                unit_rooms,
+                requester_person_id=row.requester_person_id,
+                subject_kind=subject[0], subject_id=subject[1],
+                action=subject[2], limit=5,
+            )
+            if len(hits) >= 5:
+                # The keyed read cut off: a delivered act could sit past the
+                # cap, so «no delivered act» is not established.
+                return ReminderState.FAILED, "failed_error"
+            delivered = [
+                r for r in hits
+                if r.id != row.id
+                and (r.payload or {}).get("plan_id") != plan
+            ]
+        except Exception:
+            log.exception(
+                "delivered-act recheck failed for %s", row.id,
+            )
+            return ReminderState.FAILED, "failed_error"
+        if delivered:
+            return ReminderState.FAILED, "failed_superseded"
+        return None
 
     async def _resolve_all(
         self, rows: Sequence[Reminder], state: ReminderState, *,

@@ -51,12 +51,11 @@ from ..language.memo_render import render_memos
 from ..language.note_render import render_notes
 from ..language.presence_render import render_presence
 from ..language.profile_render import render_profile, render_profile_people
-from ..language.standing_render import render_standing, render_standing_working_set
+from ..language.shared_render import render_shared_state
 from ..language.subagents_render import render_subagents
 from ..obs.tracing import annotate, span
 from .clock import local_now, state_time
 from .lineage import DerivedView, derived_view, memo_permits
-from .standing_ledger import render_ledger
 
 # `TAG_HEADER`, `CLOSING_LINE` and the text of the clock line and of the
 # `<context_header>` message live in `nora.domain.framing` with every other
@@ -198,14 +197,13 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # move every turn. Tag turn only, and only under `[subagent] enabled` with
     # a job in the window.
     ("subagents", 59, "turn"),
-    ("standing", 60, "room"),
-    ("standing_ledger", 62, "room"),
-    # The Standing working set. Immediately after `standing` and before the
-    # transcript, on purpose: the read order stays "here is my position, here
-    # is what I have not told you, here is what has been said since". `room`,
-    # `standing`'s own key: this block is keyed off the same
-    # `(platform, conversation_id)` row.
-    ("standing_working_set", 65, "room"),
+    # THE ONE STANDING BLOCK (design/notebook-memory-types/20): her
+    # position, open judgements, pending acts and what she already did —
+    # projected per destination from the canonical stores, unit-wide like
+    # `notes`, and last of the state blocks so the transcript follows
+    # «where everything stands». It replaces the room paragraph, the
+    # working set, the ledger index and the interim shared-state block.
+    ("standing", 66, "unit"),
     ("group_transcript", 70, "room"),
     # HOW THIS TURN REACHED HER, AND HOW HER REPLY WILL. Renders only when the
     # message she is answering was spoken in a voice channel
@@ -262,7 +260,7 @@ def _restamp(block: ContextBlock | None) -> ContextBlock | None:
     """A block built OUTSIDE this module, stamped with this prompt's `order`
     and `key` and with nothing else.
 
-    `render_notes`, `render_standing` and `render_decisions` live in their own
+    `render_notes`, `render_shared_state` and `render_decisions` live in their own
     packages and have callers that assemble nothing (the note-candidate pass
     and the proactive prompt both render a block and use it directly). So the
     block's identity and content are theirs, and where it sits in THIS prompt
@@ -761,8 +759,8 @@ def _lineage(ctx: TagContext) -> DerivedView | None:
     for this context (no target, or `[lineage] mode = "off"`): every block
     renders unfiltered.
 
-    The blocks this view GATES are four: `<notes>` (a row each), `<standing>`
-    and `<standing_working_set>` (Standing's two sections) and `<culture>`
+    The blocks this view GATES are three: `<notes>` (a row each), `<standing>`
+    (the position's sections and findings) and `<culture>`
     (its one section). `<unit_culture>` and `<character>` render derived rows
     too but carry no lineage and pass through no view: their guard is their
     unit key, and no Character session reads presence (R-31, DEC-290). Every
@@ -774,7 +772,7 @@ def _lineage(ctx: TagContext) -> DerivedView | None:
     if target is None or target.mode == "off":
         return None
     return derived_view(
-        notes=ctx.notes, standing=ctx.standing, culture=ctx.culture,
+        notes=ctx.notes, standing=None, culture=ctx.culture,
         target=target,
     )
 
@@ -854,53 +852,6 @@ def _spoken_turn_block(ctx: TagContext) -> ContextBlock | None:
     if not ctx.message.voice:
         return None
     return _block("spoken_turn", body=SPOKEN_TURN)
-
-
-def _standing_block(
-    ctx: TagContext, view: DerivedView | None = None,
-) -> ContextBlock | None:
-    """Her own position in THIS conversation, as the debrief left it last turn.
-    Same volatile-tier placement and trailing-newline convention as its five
-    siblings above, `""` when there is no position yet.
-
-    **It sits LAST, immediately before the transcript, and that breaks the
-    widening-scope order the blocks above it follow, on purpose.** Every block
-    from `<self>` to `<notes>` widens: her own account, then theirs, then the
-    room's slang, then the unit's settled claims, then its open questions.
-    Standing is the narrowest thing in the prompt (one conversation, not even
-    a unit), so on scope alone it would sit at the front. It sits at the back
-    because it is not on that axis: it is «where you had got to», and the
-    thing it is about is the transcript directly underneath it. Read in order
-    the pair says *here is where you were, here is what has been said since*.
-    Put at the front it reads as one more thing she has been told about, next
-    to five blocks that genuinely are.
-
-    It is also the only block here that is HER OWN OUTPUT, and it still
-    hedges itself; see `render_standing`'s docstring for why that is not a
-    contradiction.
-    """
-    if not _shown(ctx, view, "standing"):
-        return None
-    return render_standing(ctx.standing)
-
-
-def _standing_working_set_block(
-    ctx: TagContext, *, now: datetime, view: DerivedView | None = None,
-) -> ContextBlock | None:
-    """Options she found and has not given this room, as
-    `<standing_working_set>`. Sits immediately after `_standing_block` in
-    `_BLOCKS` (order 65 beside `standing`'s 60); `_standing_block`'s reasoning
-    applies unchanged: read as a pair, «here is my position, here is what I
-    have not told you», before the transcript underneath both of them.
-
-    `ctx.standing` already carries `working_set`: no second context field or
-    store read, the same way `Standing.body` reaches `_standing_block`.
-    """
-    if not _shown(ctx, view, "standing_working_set"):
-        return None
-    return render_standing_working_set(
-        ctx.standing.working_set if ctx.standing is not None else (), now=now,
-    )
 
 
 def _culture_block(
@@ -1015,7 +966,7 @@ def build_prefill(
         # now.
         clock = now or local_now()
         # Lineage, decided ONCE for the whole prefill: the four blocks it
-        # gates (notes, culture, standing, standing_working_set) all read this
+        # gates (notes, culture, standing) all read this
         # one view; `<unit_culture>` and `<character>` read none (`_lineage`).
         view = _lineage(ctx)
         # RENDER first, DECLARE second, ASSEMBLE third. The order the blocks
@@ -1050,10 +1001,7 @@ def build_prefill(
             _restamp(render_computer(ctx.computer)),
             _restamp(render_documents(ctx.documents)),
             _restamp(render_subagents(ctx.subagents)),
-            _restamp(render_ledger(ctx.ledger, now=clock,
-                                   rooms=ctx.lineage_room.rooms if ctx.lineage_room else ())),
-            _restamp(_standing_block(ctx, view)),
-            _restamp(_standing_working_set_block(ctx, now=clock, view=view)),
+            _restamp(render_shared_state(ctx.shared, now_ms=int(clock.timestamp() * 1000))),
             _transcript_block(ctx, display_name, clock, context_window),
             _spoken_turn_block(ctx),
             _recalled_block(ctx),

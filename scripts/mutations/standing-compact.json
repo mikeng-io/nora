@@ -352,8 +352,8 @@
  {
   "name": "working-set #445 fix: the working-set block is served in build_prefill, adjacent to standing",
   "file": "nora/agent/prefill.py",
-  "old": "            _restamp(_standing_block(ctx, view)),\n            _restamp(_standing_working_set_block(ctx, now=clock, view=view)),\n            _transcript_block(ctx, display_name, clock, context_window),",
-  "new": "            _restamp(_standing_block(ctx, view)),\n            _transcript_block(ctx, display_name, clock, context_window),",
+  "old": "            _restamp(_standing_working_set_block(ctx, now=clock, view=view))\n            if ctx.shared is None else None,",
+  "new": "            None,",
   "target": "tests/test_prefill.py -k test_the_working_set_block_renders_adjacent_to_standing_in_the_prefill"
  },
  {

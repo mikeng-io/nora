@@ -14,7 +14,7 @@ so a shared helper in the same package needs no new edge in the import graph.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 
 from nora.agent.lineage import LineagePolicy
@@ -29,10 +29,9 @@ from nora.domain.ports import (
     MemoryStore,
     RecordStore,
     RosterSource,
-    StandingStore,
 )
 from nora.domain.quote_window import QuoteWindow
-from nora.domain.standing_ledger import StandingLedger
+from nora.domain.shared_state import SharedView
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import (
     StandingNotesReader,
@@ -69,8 +68,7 @@ def build_assembler(
     metrics: Metrics,
     policy: Policy,
     notes: StandingNotesReader | None = None,
-    standing: StandingStore | None = None,
-    ledger: StandingLedger | None = None,
+
     media_join: MediaJoin | None = None,
     quote_window: QuoteWindow | None = None,
     presence: PresenceReader | None = None,
@@ -81,6 +79,7 @@ def build_assembler(
     subagents: SubagentsContextReader | None = None,
     memos: MemoStore | None = None,
     memory_search: MemorySearch | None = None,
+    shared: Callable[..., Awaitable[SharedView]] | None = None,
     clock: Callable[[], datetime] | None = None,
     profile: ProfileHeads | None = None,
     rosters: Mapping[str, RosterSource] | None = None,
@@ -101,7 +100,10 @@ def build_assembler(
         tagger_card_conclusions=cfg.honcho.tagger_card_conclusions,
         notes=notes, policy=policy,
         memos=memos,
-        standing=standing, ledger=ledger,
+
+        # The unit's shared cognitive state (design/notebook-memory-types/20):
+        # ONE reader bound at the composition root; `None` renders no block.
+        shared=shared,
         # The media join: the transcript's `[image a3f2c1]`
         # placeholders gain their stored comprehension here, in the assembler,
         # so `nora/agent/prefill.py` stays a pure renderer over `TagContext`.

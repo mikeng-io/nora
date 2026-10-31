@@ -116,19 +116,6 @@ _NOT_A_LINE = {
         "The same body cut to its first `excerpt` characters, for the same "
         "reason as the whole one above."
     ),
-    (
-        "nora/language/standing_render.py", "render_standing", "body",
-    ): (
-        "`<standing>`: her whole position, between its own tags, exactly like "
-        "`<open_note>` above — not one line of a line-oriented block, so "
-        "nothing beside it for a newline to forge a row of. `body` starts as "
-        "`escape(standing.body)` (design/cognition-loop step 3 row 3b keeps "
-        "this unescaped-once rule the same as before this step) and the two "
-        "new, optional sections (`I hold open`, `I owe`) are appended as "
-        "further paragraphs, each independently escaped before being joined "
-        "in — the block is one prose position with up to three paragraphs, "
-        "never a set of rows sharing the block."
-    ),
 }
 
 

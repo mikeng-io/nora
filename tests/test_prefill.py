@@ -1,5 +1,6 @@
 import inspect
 import re
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from nora.agent.prefill import (
@@ -25,22 +26,21 @@ from nora.domain.models import (
 )
 from nora.domain.notes import Note
 from nora.domain.prompt import escape_attr
-from nora.domain.standing import Standing, WorkingSetItem
-from nora.domain.standing_ledger import LedgerEntry
+from nora.domain.shared_state import SharedEntry, SharedView
 from nora.domain.subagents_context import SubagentLine, SubagentsView
 
 
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None,
          quote=None, platform="signal", tagger_card=(), notes=(),
-         standing=None, decisions=(), people_in_window=(), culture=None,
+         decisions=(), people_in_window=(), culture=None,
          room_members=(), computer=None, documents=None, character=(),
          subagents=None, unit_culture=None, self_account=None,
          lessons=(), memos=(), voice=False, recalled=(),
-         recalled_partial=False, ledger=()) -> TagContext:
+         recalled_partial=False, shared=None) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote, voice=voice)
     kwargs = {"tagger_card": tuple(tagger_card),
-              "notes": tuple(notes), "standing": standing, "culture": culture,
+              "notes": tuple(notes), "culture": culture,
               "decisions": tuple(decisions),
               "people_in_window": tuple(people_in_window),
               "room_members": tuple(room_members), "computer": computer,
@@ -48,7 +48,7 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None,
               "subagents": subagents, "unit_culture": unit_culture,
               "self_account": self_account, "lessons": tuple(lessons),
               "memos": tuple(memos), "recalled": tuple(recalled),
-              "recalled_partial": recalled_partial, "ledger": tuple(ledger)}
+              "recalled_partial": recalled_partial, "shared": shared}
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
                       **kwargs)
 
@@ -93,28 +93,6 @@ def _decisions() -> tuple[tuple[str, tuple[DecisionRow, ...]], ...]:
         verdict="spoke", reason="answered the dinner question",
         ts=1_757_000_000_000,
     ),)),)
-
-
-def _standing(body="They are deciding where to eat; nobody has picked yet.",
-              working_set: tuple[WorkingSetItem, ...] = ()) -> Standing:
-    return Standing(platform="signal", conversation_id="g1", body=body,
-                    fold_count=3, updated_at=1, working_set=working_set)
-
-
-def _working_set_item(
-    what="a second restaurant the search returned", source="web_search",
-    bears_on="where to eat",
-) -> WorkingSetItem:
-    """A live one — `found_at` is NOW, not a fixed fixture constant, because
-    `render_standing_working_set`'s TTL is measured against the real clock
-    (`build_prefill` here takes no `now=`) and a fixed epoch-1 timestamp
-    would age out of every render, silently emptying the
-    one fixture `test_every_declared_block_actually_renders_in_the_full_fixture`
-    needs populated."""
-    return WorkingSetItem(
-        what=what, source=source,
-        found_at=int(datetime.now(UTC).timestamp() * 1000), bears_on=bears_on,
-    )
 
 
 def _culture(body=(
@@ -266,13 +244,6 @@ def _full_prefill_body() -> str:
         lessons=("Name one place, not five.",),
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles", "miles"),
         notes=(_note(),), memos=(_memo(),),
-        standing=_standing(working_set=(_working_set_item(),)),
-        ledger=(LedgerEntry(
-            id="generated-decision", kind="decision", unit="u", scope="room",
-            platform="signal", conversation_id="g1", revision=1, status="open",
-            subject="Generated choice", opened_at=1, last_revised_at=1,
-            body="## Options\n- Generated option [1]\n## Leaning\n- none yet",
-        ),),
         culture=_culture(), decisions=_decisions(),
         people_in_window=(("Grant", ("asked about dinner",)),),
         room_members=(PersonRef("p_ann", "Ann Lee", "p_ann", aliases=("Annie", "阿Ann")),),
@@ -284,29 +255,49 @@ def _full_prefill_body() -> str:
         # `<spoken_turn>` renders only on a spoken message.
         voice=True,
     )
-    return build_prefill(
-        ctx, display_name="Nora", context_window=40,
+    shared = SharedView(
+        unit="generated-unit", status="ok", as_of_ms=1,
+        entries=(
+            SharedEntry(kind="decision", id="generated-decision",
+                        scope="unit", status="open", subject="Generated choice"),
+            SharedEntry(kind="standing", id="position", scope="signal:g1",
+                        status="open",
+                        subject="They are deciding where to eat; nobody has picked yet."),
+            SharedEntry(kind="finding", id="finding-1", scope="signal:g1",
+                        status="open",
+                        subject="a second restaurant the search returned",
+                        detail="web_search", at_ms=1),
+        ),
+        sources=(("ledger", "ok"),),
+    )
+    body = build_prefill(
+        replace(ctx, shared=shared), display_name="Nora", context_window=40,
         # Rendered only when tools are deferred, so the fixture passes one or
         # the block could never be checked.
         catalogue="* now — the current time, here.\n- weather — the forecast.",
     )[1]["content"][0]["text"]
+    block = re.search(r"<standing\b.*?</standing>", body, re.S)
+    assert block is not None
+    return body
 
 
-def test_the_working_set_block_renders_adjacent_to_standing_in_the_prefill():
-    """`<standing_working_set>` reaches the model on BOTH the tag turn and the
-    participation turn through this ONE function — `nora.app.fire`'s
-    participation occasion calls the exact same `build_prefill` this test
-    calls, so proving it here proves both, the way `_standing_block`'s own
-    read-order argument already covers both callers of `render_standing`.
-
-    Adjacent, not merely present: the read order is "here is my position,
-    here is what I have not told you, here is what has been said since".
+def test_the_standing_block_carries_position_findings_and_decisions():
+    """The ONE `standing` block (design/notebook-memory-types/20) reaches the
+    model on BOTH the tag turn and the participation turn through this ONE
+    function — `nora.app.fire`'s participation occasion calls the exact same
+    `build_prefill` this test calls. The position, the not-yet-given
+    findings and the open decisions all render inside it, before the
+    transcript: "here is where everything stands, here is what was said
+    since".
     """
     body = _full_prefill_body()
-    assert "<standing_working_set " in body
+    assert "<standing " in body
+    assert "They are deciding where to eat; nobody has picked yet." in body
     assert "a second restaurant the search returned" in body
-    assert body.index("<standing") < body.index("<standing_working_set")
-    assert body.index("<standing_working_set") < body.index("<group_transcript")
+    assert "Generated choice" in body
+    assert "<standing_ledger" not in body and "<standing_working_set" not in body
+    assert "<shared_cognitive_state" not in body
+    assert body.index("<standing") < body.index("<group_transcript")
 
 
 def _opening_tag(body: str, name: str) -> str:
@@ -1173,7 +1164,7 @@ def test_the_header_is_byte_identical_whatever_blocks_this_turn_has():
     bare = _ctx(_rows("hi"))
     full = _ctx(_rows("hi"), peer_card=("likes espresso",), self_account=_culture("a thing"),
                 tagger=PersonRef("miles", "Miles", "miles"), notes=(_note(),),
-                standing=_standing(), decisions=_decisions())
+                decisions=_decisions())
     head = [build_prefill(c, display_name="Nora", context_window=40)[0]["content"][0]["text"]
             for c in (bare, full)]
     assert head[0] == head[1]
@@ -1195,7 +1186,7 @@ def test_the_order_she_meets_the_blocks_is_the_order_the_table_declares():
     msgs = build_prefill(
         _ctx(_rows("hi"), peer_card=("c",), self_account=_culture("s"),
              tagger=PersonRef("miles", "Miles", "miles"), notes=(_note(),),
-             standing=_standing(), culture=_culture(), decisions=_decisions(),
+             culture=_culture(), decisions=_decisions(),
              people_in_window=(("Grant", ("asked about dinner",)),)),
         display_name="Nora", context_window=40,
     )
@@ -1370,9 +1361,15 @@ def test_the_prefill_span_names_which_blocks_were_built_and_at_what_size(
     ctx = _ctx(
         _rows("hello"), peer_card=("likes espresso",), self_account=_culture("she is brief"),
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles", "miles"),
-        notes=(_note(),), standing=_standing(), culture=_culture(), decisions=_decisions(),
+        notes=(_note(),), culture=_culture(), decisions=_decisions(),
         people_in_window=(("Grant", ("asked about dinner",)),),
     )
+    ctx = replace(ctx, shared=SharedView(
+        unit="generated-unit", status="ok", as_of_ms=1,
+        entries=(SharedEntry(kind="decision", id="generated-decision",
+                             scope="unit", status="open", subject="Generated choice"),),
+        sources=(("ledger", "ok"),),
+    ))
     build_prefill(ctx, display_name="Nora", context_window=40)
 
     (recorded,) = exported_spans.get_finished_spans()
@@ -1421,7 +1418,7 @@ def _whole_turn() -> tuple[tuple[str, str], ...]:
         peer_card=("likes espresso",), self_account=_culture("she is brief"),
         tagger_card=("asked about dinner",),
         tagger=PersonRef("miles", "Miles", "miles"), notes=(_note(),),
-        standing=_standing(), culture=_culture(), decisions=_decisions(),
+        culture=_culture(), decisions=_decisions(),
         people_in_window=(("Grant", ("asked about dinner",)),),
         # A RESOLVABLE quote, so `<replying_to>` actually renders — an
         # unresolvable one omits the block and the gate would pass by rendering
@@ -1552,9 +1549,15 @@ def test_eval_context_filter_withholds_only_selected_optional_blocks(tmp_path):
                tagger=PersonRef("ada", "Ada", "ada"),
                transcript=(TranscriptRow(1, "sender", "Profile", 1, "Hello", False,
                                          DeliveryStatus.SENT, None),),
-               peer_card=("Identity stays",), tagger_card=("History may go",),
-               standing=_standing(), culture=_culture(),
-               self_account=_culture("Past episode stays"))
+               peer_card=("Identity stays",), tagger_card=("History may go",), culture=_culture(),
+               self_account=_culture("Past episode stays"),
+               shared=SharedView(
+                   unit="generated-unit", status="ok", as_of_ms=1,
+                   entries=(SharedEntry(kind="decision", id="generated-decision",
+                                        scope="unit", status="open",
+                                        subject="Generated choice"),),
+                   sources=(("ledger", "ok"),),
+               ))
     now = datetime(2026, 10, 7, tzinfo=UTC)
     kwargs = {"display_name": "Nora", "context_window": 40, "now": now}
     before = build_prefill(ctx, **kwargs)

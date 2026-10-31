@@ -1483,3 +1483,11 @@ cases:
       tools: [room_read]
       not_tools: [standing_read, record_read]
       args_include: {room_read: [thread, th7]}
+
+  - name: route_reported_choice_is_not_nora_conclusion
+    entry: tag
+    expect: reply
+    mention: true
+    input: 搞掂晒，我哋自己決定咗星期六去碼頭嗰間食午飯。只係通知你，唔使幫我哋揀或者記低。
+    metadata: {tools: [send_reply], not_tools: [remember]}
+    snapshot: *room_a

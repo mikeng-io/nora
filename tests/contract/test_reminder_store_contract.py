@@ -3,13 +3,16 @@ gains a second implementation — including a test fake — without a shared
 contract suite both pass."""
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
 from nora.domain.reminders import (
+    ConflictingProactiveActError,
     DuplicateProactiveNoteError,
+    DuplicateProactiveSubjectError,
     DuplicateReminderError,
     NaiveDatetimeError,
     Recurrence,
@@ -845,6 +848,77 @@ async def test_a_claimed_row_still_holds_its_note(store):
         await store.create(_proactive())
 
 
+# -- one open proactive row per (subject, action, destination) -------------
+
+
+def _subject(
+    subject_id: str = "dec-1", action: str = "tell", **kw,
+) -> Reminder:
+    payload = {
+        "subject_kind": "decision", "subject_id": subject_id,
+        "action": action, "intent": action,
+    }
+    return _row(
+        requester_person_id="nora", kind="proactive", payload=payload, **kw,
+    )
+
+
+async def test_a_second_open_proactive_row_on_a_subject_is_refused(store):
+    """Same resolved subject, same action, same destination: whichever store
+    holds it, the second create is refused and writes nothing — the row the
+    unit lock could not see is exactly what the index exists for."""
+    first = _subject()
+    await store.create(first)
+
+    with pytest.raises(DuplicateProactiveSubjectError) as caught:
+        await store.create(_subject())
+
+    assert caught.value.subject == ("decision", "dec-1", "tell")
+    assert len(await store.pending_of("nora")) == 1
+
+
+async def test_the_same_subject_in_another_room_is_writable(store):
+    """The destination is part of the key: one act per ROOM, never per unit —
+    the cross-room conflict is `check_remind`'s to surface, not the index's."""
+    await store.create(_subject())
+
+    again = _subject(conversation_id="conv-2")
+    await store.create(again)
+
+    assert await store.get(again.id) is not None
+
+
+async def test_a_different_action_on_a_subject_is_writable(store):
+    """An ask and a tell on the same subject are two acts, not one."""
+    await store.create(_subject(action="tell"))
+
+    await store.create(_subject(action="ask"))
+
+    assert len(await store.pending_of("nora")) == 2
+
+
+async def test_a_row_that_went_off_holds_its_subject_no_longer(store):
+    """Only an OPEN row holds the subject — a delivered or failed one frees
+    the act to be raised again."""
+    await store.create(_subject(state=ReminderState.DONE))
+
+    again = _subject()
+    await store.create(again)
+
+    assert await store.get(again.id) is not None
+
+
+async def test_an_unsubjected_row_never_conflicts_on_subject(store):
+    """A row written before subject stamping carries no key at all and can
+    neither block nor be blocked by a resolved one."""
+    await store.create(_proactive("note-1"))
+    await store.create(_proactive(None))
+
+    await store.create(_subject())
+
+    assert len(await store.pending_of("nora")) == 3
+
+
 async def test_pending_of_is_one_requesters_pending_rows_in_due_order(store):
     late = _proactive("note-1", due_at=T0 + timedelta(hours=2))
     early = _proactive("note-2", due_at=T0 + timedelta(hours=1))
@@ -856,3 +930,133 @@ async def test_pending_of_is_one_requesters_pending_rows_in_due_order(store):
     rows = await store.pending_of("nora")
 
     assert [r.id for r in rows] == [early.id, late.id]
+
+
+async def test_a_deliberate_two_room_batch_lands(store):
+    """One plan, two destinations, explicitly covered: `create_many` takes
+    both under the same advisory scope — the legitimate multi-room act the
+    cross-room arbiter must NOT refuse."""
+    a = _subject(platform="signal", conversation_id="room-a",
+                 subject_id="dec-1", action="ask-time")
+    b = _subject(platform="signal", conversation_id="room-b",
+                 subject_id="dec-1", action="ask-time")
+    await store.create_many(
+        [a, b], arbitration_key="proactive:u1",
+        arbitration_rooms=[("signal", "room-a"), ("signal", "room-b")],
+    )
+    rows = await store.pending_of("nora")
+    assert {(r.platform, r.conversation_id) for r in rows} == {
+        ("signal", "room-a"), ("signal", "room-b")}
+
+
+@pytest.mark.parametrize("_unused", [0])
+async def test_concurrent_two_process_creates_cannot_split_the_act(
+    pg_url, _unused,
+):
+    """Two writers, two processes' worth of connections, each prechecking an
+    empty store: the advisory lock serialises them and the SECOND writer's
+    in-lock conflict check must see the first's committed row — the act can
+    never be silently split across rooms by a race."""
+    run_migrations(pg_url)
+    store_a = SqlReminderStore(create_sql_engine(pg_url))
+    store_b = SqlReminderStore(create_sql_engine(pg_url))
+    rooms = [("signal", "room-a"), ("signal", "room-b")]
+    row_a = _subject(platform="signal", conversation_id="room-a",
+                     subject_id="dec-1", action="ask-time")
+    row_b = _subject(platform="signal", conversation_id="room-b",
+                     subject_id="dec-1", action="ask-time")
+    outcomes = await asyncio.gather(
+        store_a.create_many(
+            [row_a], arbitration_key="proactive:u1", arbitration_rooms=rooms,
+        ),
+        store_b.create_many(
+            [row_b], arbitration_key="proactive:u1", arbitration_rooms=rooms,
+        ),
+        return_exceptions=True,
+    )
+    errors = [o for o in outcomes if isinstance(o, Exception)]
+    oks = [o for o in outcomes if o is None]
+    assert len(oks) == 1 and len(errors) == 1
+    assert isinstance(errors[0], ConflictingProactiveActError)
+    rows = await store_a.pending_of("nora")
+    assert len(list(rows)) == 1
+
+
+async def test_0143_index_downgrade_and_upgrade_preserve_populated_rows(pg_url):
+    """A POPULATED table, not an index-only assertion: synthetic proactive
+    rows with subject payloads survive `downgrade` (index dropped, data
+    untouched) and `upgrade` (the unique index builds over populated data
+    and still arbitrates)."""
+    import sqlalchemy as sa
+    from alembic import command
+
+    from nora.infra.sql.migrations_runner import _migration_lock, alembic_config
+
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    store = SqlReminderStore(engine)
+    row = _subject(subject_id="dec-9", action="ask-time",
+                   conversation_id="conv-mig")
+    await store.create(row)
+
+    with _migration_lock(pg_url):
+        command.downgrade(alembic_config(pg_url), "-1")
+    async with engine.connect() as conn:
+        rows = (await conn.execute(
+            sa.text("SELECT id FROM reminders WHERE id = :i"), {"i": row.id}
+        )).all()
+        idx = (await conn.execute(sa.text(
+            "SELECT to_regclass('uq_reminders_proactive_open_subject')"))
+        ).scalar()
+    assert len(rows) == 1 and idx is None
+
+    with _migration_lock(pg_url):
+        command.upgrade(alembic_config(pg_url), "+1")
+    async with engine.connect() as conn:
+        idx = (await conn.execute(sa.text(
+            "SELECT to_regclass('uq_reminders_proactive_open_subject')"))
+        ).scalar()
+        kept = (await conn.execute(
+            sa.text("SELECT payload FROM reminders WHERE id = :i"),
+            {"i": row.id})).scalar_one()
+    assert idx == "uq_reminders_proactive_open_subject"
+    assert kept["subject_id"] == "dec-9" and kept["action"] == "ask-time"
+    with pytest.raises(DuplicateProactiveSubjectError):
+        await store.create(
+            _subject(subject_id="dec-9", action="ask-time",
+                     conversation_id="conv-mig"))
+    await engine.dispose()
+
+
+async def test_delivered_subject_finds_the_closed_sent_act(store):
+    """The keyed delivered read finds a DONE+sent row for the exact
+    (subject,action) — older-created rows, other rooms of the same scope —
+    while open, unsent, and different-key rows are not returned."""
+    from nora.domain.reminders import ReminderState
+    t = datetime(2026, 1, 1, tzinfo=UTC)
+    old = _subject(
+        subject_id="dec-1", action="ask",
+        platform="signal", conversation_id="room-b",
+        state=ReminderState.DONE, outcome="sent",
+        created_at=t, due_at=t, fired_at=t)
+    await store.create(old)
+    await store.create(_subject(
+        subject_id="dec-1", action="ask",
+        platform="signal", conversation_id="room-b",
+        state=ReminderState.DONE, outcome=None))
+    await store.create(_subject(
+        subject_id="dec-9", action="ask",
+        platform="signal", conversation_id="room-b",
+        state=ReminderState.DONE, outcome="sent",
+        created_at=t, due_at=t, fired_at=t))
+
+    hits = await store.delivered_subject(
+        (("signal", "room-a"), ("signal", "room-b")),
+        requester_person_id="nora",
+        subject_kind="decision", subject_id="dec-1", action="ask",
+    )
+    assert [r.id for r in hits] == [old.id]
+    out = await store.delivered_subject(
+        (("signal", "room-a"),), requester_person_id="nora",
+        subject_kind="decision", subject_id="dec-1", action="ask")
+    assert not out
