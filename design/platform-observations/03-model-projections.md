@@ -94,7 +94,7 @@ Reuse existing verbs for transcript/Record evidence, graph understanding, room
 membership and media/social content. Add only capabilities they cannot express.
 No platform-specific model workflow and no universal SQL/query/execute tool.
 
-The canonical per-tool **Engagement/Cognition allowlist** and the existing
+The planned per-tool **Engagement/Cognition allowlist** and the existing
 record_query capability boundary are in [05](05-occasion-map.md). It also owns
 per-object injection maps, generated examples and the proposed stimulus extension.
 Do not treat the shared projection contract as automatic exposure on every occasion.

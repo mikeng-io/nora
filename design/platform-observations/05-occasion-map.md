@@ -79,6 +79,16 @@ upstream set; no clear/snapshot capture, no per-target transition identity or
 source_revision ordering is claimed; first slice covers admitted room modes
 only — Signal and Discord drop DM input at parse today, so no DM widening.
 
+The reaction read derives counts, event time and completeness from one SQL
+statement snapshot. Concurrent appends cannot mix newer counts with older
+provenance. The standing-set transfer is bounded; a target cut short carries
+`partial` coverage and no counts. Prompt and agenda annotations budget their
+details and mark omissions; transcript tools retain coverage/time and report
+omitted details. Existing block field descriptions and tool result notes explain
+that recorded transitions do not establish upstream completeness. Custom emoji
+identities stay in storage; model surfaces use bounded display labels. Reaction
+agenda items distinguish a removal from an addition beside the stimulus time.
+
 **Cognition:** extend grounding for typed observation refs/state before
 `CognitionSessionRunner._session_input` assembles the session. Agenda identifies
 what changed. Register `social_context` in `nora/language/cognition_render.py`'s

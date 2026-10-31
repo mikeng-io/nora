@@ -1027,9 +1027,11 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         freeze(output / "report.json", report)
         return report
     finally:
-        if engine is not None:
-            await engine.dispose()
-        logging.disable(previous_disable)
+        try:
+            if engine is not None:
+                await engine.dispose()
+        finally:
+            logging.disable(previous_disable)
 
 
 def main() -> int:

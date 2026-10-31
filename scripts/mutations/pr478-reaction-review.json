@@ -9,7 +9,7 @@
  {
   "name": "the standing read is uncapped",
   "file": "nora/infra/sql/audit.py",
-  "old": "        .limit(REACTION_STATES_MAX + 1)",
+  "old": "        .limit(REACTION_STATES_MAX)",
   "new": "        .limit(None)",
   "target": "tests/unit/test_reaction_annotations.py::test_the_reaction_read_reduces_in_sql_and_bounds_what_it_transfers"
  },
@@ -65,15 +65,22 @@
  {
   "name": "the spike leaves the caller's logging muted",
   "file": "scripts/memory_graph_spike.py",
-  "old": "        logging.disable(previous_disable)",
-  "new": "        pass",
+  "old": "            logging.disable(previous_disable)",
+  "new": "            pass",
   "target": "tests/unit/test_memory_graph_spike.py::test_run_restores_the_prior_logging_threshold"
  },
  {
   "name": "engine failure skips the logging restore",
   "file": "scripts/memory_graph_spike.py",
-  "old": "        if engine is not None:\n            await engine.dispose()\n        logging.disable(previous_disable)",
-  "new": "        if engine is not None:\n            await engine.dispose()",
+  "old": "            logging.disable(previous_disable)",
+  "new": "            if engine is not None:\n                logging.disable(previous_disable)",
   "target": "tests/unit/test_memory_graph_spike.py::test_run_restores_the_prior_logging_threshold_when_engine_creation_fails"
+ },
+ {
+  "name": "cleanup cancellation skips the logging restore",
+  "file": "scripts/memory_graph_spike.py",
+  "old": "        try:\n            if engine is not None:\n                await engine.dispose()\n        finally:\n            logging.disable(previous_disable)",
+  "new": "        if engine is not None:\n            await engine.dispose()\n        logging.disable(previous_disable)",
+  "target": "tests/unit/test_memory_graph_spike.py::test_run_restores_the_prior_logging_threshold[cancel]"
  }
 ]

@@ -1,5 +1,6 @@
 """Generated snapshot experiment boundaries and fail-closed aggregation."""
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -807,7 +808,8 @@ def _run_args(tmp_path, **overrides):
     )
 
 
-async def test_run_restores_the_prior_logging_threshold(tmp_path, monkeypatch):
+@pytest.mark.parametrize("cleanup", ["ok", "error", "cancel"])
+async def test_run_restores_the_prior_logging_threshold(tmp_path, monkeypatch, cleanup):
     """`run` mutes logging so a library cannot echo private data — and hands
     the caller's threshold back, on the SUCCESS path too, not just on
     failure. A prior non-default threshold (a caller's own silence) is
@@ -825,7 +827,10 @@ async def test_run_restores_the_prior_logging_threshold(tmp_path, monkeypatch):
             self.url = url
 
         async def dispose(self):
-            pass
+            if cleanup == "error":
+                raise RuntimeError("generated cleanup failure")
+            if cleanup == "cancel":
+                raise asyncio.CancelledError
 
     async def generated_rows(engine, sql, params=None):
         # The mute must be ACTIVE while the run reads (its whole purpose);
@@ -843,8 +848,13 @@ async def test_run_restores_the_prior_logging_threshold(tmp_path, monkeypatch):
 
     logging.disable(logging.WARNING)
     try:
-        report = await spike.run(_run_args(tmp_path))
-        assert report["status"] == "REPORTED"
+        if cleanup == "ok":
+            report = await spike.run(_run_args(tmp_path))
+            assert report["status"] == "REPORTED"
+        else:
+            error = RuntimeError if cleanup == "error" else asyncio.CancelledError
+            with pytest.raises(error):
+                await spike.run(_run_args(tmp_path))
         assert during and all(d == logging.CRITICAL for d in during)
         assert logging.root.manager.disable == logging.WARNING
     finally:

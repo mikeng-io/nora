@@ -297,17 +297,17 @@ async def test_the_reaction_read_reduces_in_sql_and_bounds_what_it_transfers(
     import nora.infra.sql.audit as audit
 
     monkeypatch.setattr(audit, "REACTION_STATES_MAX", 3)
-    standing = [
-        SimpleNamespace(message_id=1, sender_id="a", emoji="👍", removed=0),
-        SimpleNamespace(message_id=1, sender_id="b", emoji="👍", removed=0),
-        SimpleNamespace(message_id=1, sender_id="a", emoji="❤️", removed=0),
-        SimpleNamespace(message_id=2, sender_id="a", emoji="👍", removed=0),
-    ]
-    conn = _Conn([
-        [(1, 4, 30), (2, 2, 20)],      # meta: message_id, recorded, max ts
-        [(1, 3), (2, 1)],              # expected standing tuples per target
-        standing,                      # the capped standing read (+1 over)
-    ])
+    conn = _Conn([[
+        SimpleNamespace(message_id=1, recorded=4, observed_at=30, expected=3,
+                        emoji="👍", removed=0),
+        SimpleNamespace(message_id=1, recorded=4, observed_at=30, expected=3,
+                        emoji="👍", removed=0),
+        SimpleNamespace(message_id=1, recorded=4, observed_at=30, expected=3,
+                        emoji="❤️", removed=0),
+        # The outer join preserves metadata for a target beyond the cap.
+        SimpleNamespace(message_id=2, recorded=2, observed_at=20, expected=1,
+                        emoji=None, removed=None),
+    ]])
     states = await reaction_states(conn, [1, 2])
     assert states[1].counts == (("❤️", 1), ("👍", 2))
     assert states[1].recorded == 4 and states[1].observed_at == 30
@@ -315,10 +315,10 @@ async def test_the_reaction_read_reduces_in_sql_and_bounds_what_it_transfers(
     assert states[2].coverage == "partial"
     assert states[2].counts == ()
     assert states[2].recorded == 2 and states[2].observed_at == 20
-    assert len(conn.seen) == 3
+    assert len(conn.seen) == 1
     assert "count" in conn.seen[0] and "max" in conn.seen[0]
-    assert "DISTINCT ON" in conn.seen[1]
-    assert "DISTINCT ON" in conn.seen[2] and "LIMIT" in conn.seen[2]
+    assert "DISTINCT ON" in conn.seen[0] and "LIMIT" in conn.seen[0]
+    assert "LEFT OUTER JOIN" in conn.seen[0]
 
 
 async def test_a_target_with_no_rows_stays_absent():

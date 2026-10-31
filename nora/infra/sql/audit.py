@@ -141,36 +141,34 @@ async def reaction_states(
     conn: Any, message_ids: Sequence[int],
 ) -> dict[int, RowReactions]:
     """The reactions recorded against these messages, folded to each
-    target's current state — batched, bounded reads for the whole window,
+    target's current state — one bounded statement for the whole window,
     never a per-row query. `idx_message_reaction_message` serves the `IN`.
 
     The reduction runs WHERE THE ROWS ARE: `latest` is the database's
     distinct-on of the same fold `record_query` established (newest by
     arrival `id` per target+actor+emoji, `removed` wins), so the transition
     history — one hot target can hold thousands of rows — is never
-    transferred. `meta` and `expected` are grouped reads bounded by the
+    transferred. `meta` and `expected` are grouped CTEs bounded by the
     TARGET count; the standing rows themselves are capped at
     `REACTION_STATES_MAX`, and a target the cap reached is returned
     `partial`: its `recorded`/`observed_at` are real, its counts are withheld
     rather than folded from a truncated set. `states_from_standing` is the
     one assembly `fold_reactions` and `FakeRecordStore` share, so a prompt
     line, a tool result and a Record read cannot disagree about a target.
-    A message id with no recorded rows is absent from the result.
+    All three inputs share the statement's snapshot, so a concurrent append
+    cannot pair newer counts with older provenance or invalidate the cap's
+    completeness check. A target with no recorded rows stays absent.
     """
     if not message_ids:
         return {}
     in_targets = MESSAGE_REACTION.c.message_id.in_(message_ids)
-    meta = (await conn.execute(
+    meta = (
         sa.select(
             MESSAGE_REACTION.c.message_id,
-            sa.func.count(),
-            sa.func.max(MESSAGE_REACTION.c.ts),
+            sa.func.count().label("recorded"),
+            sa.func.max(MESSAGE_REACTION.c.ts).label("observed_at"),
         ).where(in_targets).group_by(MESSAGE_REACTION.c.message_id)
-    )).all()
-    if not meta:
-        return {}
-    recorded = {int(m): int(n) for m, n, _ in meta}
-    observed = {int(m): int(t) for m, _, t in meta}
+    ).cte("reaction_meta")
     latest = (
         sa.select(
             MESSAGE_REACTION.c.message_id, MESSAGE_REACTION.c.sender_id,
@@ -185,29 +183,38 @@ async def reaction_states(
             MESSAGE_REACTION.c.message_id, MESSAGE_REACTION.c.sender_id,
             MESSAGE_REACTION.c.emoji, MESSAGE_REACTION.c.id.desc(),
         )
-        .subquery()
+        .cte("latest_reactions")
     )
     # Each target's standing-tuple count, the yardstick the cap below is
-    # measured against: a target short of it folded from a truncated set.
-    expected = {
-        int(m): int(n)
-        for m, n in (await conn.execute(
-            sa.select(latest.c.message_id, sa.func.count())
-            .group_by(latest.c.message_id)
-        )).all()
-    }
-    rows = (await conn.execute(
+    # measured against: a target short of it would fold a truncated set.
+    expected = (
+        sa.select(latest.c.message_id, sa.func.count().label("expected"))
+        .group_by(latest.c.message_id)
+    ).cte("reaction_expected")
+    bounded = (
         sa.select(latest)
         .order_by(latest.c.message_id, latest.c.sender_id, latest.c.emoji)
-        .limit(REACTION_STATES_MAX + 1)
+        .limit(REACTION_STATES_MAX)
+    ).cte("bounded_reactions")
+    rows = (await conn.execute(
+        sa.select(
+            meta.c.message_id, meta.c.recorded, meta.c.observed_at,
+            expected.c.expected, bounded.c.emoji, bounded.c.removed,
+        ).select_from(
+            meta.join(expected, meta.c.message_id == expected.c.message_id)
+            .outerjoin(bounded, meta.c.message_id == bounded.c.message_id)
+        ).order_by(meta.c.message_id, bounded.c.sender_id, bounded.c.emoji)
     )).all()
-    standing = rows[:REACTION_STATES_MAX]
+    recorded = {int(r.message_id): int(r.recorded) for r in rows}
+    observed = {int(r.message_id): int(r.observed_at) for r in rows}
+    wanted = {int(r.message_id): int(r.expected) for r in rows}
+    standing = [r for r in rows if r.emoji is not None]
     received: dict[int, int] = {}
     for r in standing:
         mid = int(r.message_id)
         received[mid] = received.get(mid, 0) + 1
     partial = frozenset(
-        m for m, want in expected.items() if received.get(m, 0) < want
+        m for m, want in wanted.items() if received.get(m, 0) < want
     )
     return states_from_standing(
         ((int(r.message_id), str(r.emoji), bool(r.removed)) for r in standing),
