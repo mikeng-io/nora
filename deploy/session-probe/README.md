@@ -133,8 +133,11 @@ unreadable, bridge unreachable, an x/linkedin opencli error or 429). It is never
 
 ## What an ALERT means
 
-Alerts go to the Discord review channel through `deploy/alert-bridge`
-(Alertmanager-shaped payload, posted from inside its container), and each
+Alerts go to the Discord review channel through the SigNoz `SessionProbeAlert`
+rule (`deploy/signoz/alerts/rules.yaml`): the `LogSink` line lands in the host
+journal under `SyslogIdentifier=nora-session-probe`, the ingester's journald
+match list picks it up, and the LOGS_BASED_ALERT notifies the slack-format
+channel — the retired `deploy/alert-bridge` path's replacement. Each
 `network:reason` is repeated at most every 12 hours.
 
 | reason | meaning |

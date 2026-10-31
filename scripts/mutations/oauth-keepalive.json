@@ -113,10 +113,10 @@
   },
   {
     "name": "staleness fires at twice the interval, not once",
-    "file": "deploy/prometheus/rules/nora.yml",
-    "old": "          > 2 * nora_oauth_refresh_interval_seconds\n",
-    "new": "          > 1 * nora_oauth_refresh_interval_seconds\n",
-    "target": "tests/unit/test_oauth_alert_rules.py::test_the_oauth_rules_pass_their_promtool_cases"
+    "file": "deploy/signoz/alerts/rules.yaml",
+    "old": "    query: (time() - nora_oauth_last_refresh_timestamp_seconds) > bool (2 * nora_oauth_refresh_interval_seconds)\n",
+    "new": "    query: (time() - nora_oauth_last_refresh_timestamp_seconds) > bool (1 * nora_oauth_refresh_interval_seconds)\n",
+    "target": "tests/unit/test_oauth_alert_rules.py::test_the_oauth_comparison_boundaries_are_preserved"
   },
   {
     "name": "only a dead-token code retires a pre-fingerprint chain (no bootstrap replay on invalid_client)",
@@ -162,9 +162,9 @@
   },
   {
     "name": "an unknown access-token expiry (0) is not an expired one",
-    "file": "deploy/prometheus/rules/nora.yml",
-    "old": "          nora_oauth_access_expiry_timestamp_seconds > 0\n",
-    "new": "          nora_oauth_access_expiry_timestamp_seconds >= 0\n",
-    "target": "tests/unit/test_oauth_alert_rules.py::test_the_oauth_rules_pass_their_promtool_cases"
+    "file": "deploy/signoz/alerts/rules.yaml",
+    "old": "      (nora_oauth_access_expiry_timestamp_seconds > bool 0)\n",
+    "new": "      (nora_oauth_access_expiry_timestamp_seconds >= bool 0)\n",
+    "target": "tests/unit/test_oauth_alert_rules.py::test_the_oauth_comparison_boundaries_are_preserved"
   }
 ]

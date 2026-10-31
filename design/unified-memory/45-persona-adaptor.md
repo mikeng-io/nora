@@ -553,6 +553,11 @@ every room of the unit for the unit's account.
 
 ## 6. What Honcho knew is re-derived, and that is measured
 
+> **2026-10-31 — historical acceptance below:** the coverage/reply thresholds
+> and their implementation clarifier are retained as history. Current cutover
+> acceptance is [31 §6](31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31); no fixed sample quota blocks it.
+> Known correctness failures and instrument errors still require repair.
+
 > 2026-10-21 (switch gate, superseded-in-part): §6 items 4–5 no longer require Character lines to cover Honcho's facts. The gate is **Nora can answer what Honcho could**: a frozen question set answered by the new Views over readings, Rollup and entries and by Honcho's dialectic, judged blind. Q1 in [18](18-extraction.md) decides the set is built and frozen before any run, with no editing after the first answer is seen; pass requires blind judgement that the new Views are at least as good as Honcho’s dialectic on ≥80% of questions AND an error rate <5% (answers asserting something their sources do not support). Both must hold. Item 6, the ≥80-pair reply replay and its ≥55% preference bar, stays. The earlier coverage text and implementation clarifier below are retained as history, not the new switch criterion.
 
 1. **Shadow first, and shadow changes no prompt** (amended 2026-10-15). The

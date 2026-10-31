@@ -73,7 +73,7 @@ open_questions:
   - id: Q1
     question: "Answerability thresholds and question-set construction"
     status: decided
-    decision: "The question set is built and frozen before any run; it is not edited after the first answer is seen. Pass requires the new Views' answer to be judged blind as at least as good as Honcho's dialectic on ≥80% of questions, AND the new Views' error rate <5%. An error is an answer asserting something its sources do not support. Both must hold."
+    decision: "2026-10-31: the fixed switch formula below is historical, superseded by 31-build-one-session.md §6 (bounded cutover acceptance); frozen comparisons and grounded answers remain required. Historical decision: the question set is built and frozen before any run; it is not edited after the first answer is seen. Pass requires the new Views' answer to be judged blind as at least as good as Honcho's dialectic on ≥80% of questions, AND the new Views' error rate <5%. An error is an answer asserting something its sources do not support. Both must hold."
   - id: Q2
     question: "Character session shape: pushed bundle or bounded tool-using session?"
     status: decided
@@ -81,7 +81,7 @@ open_questions:
   - id: Q3
     question: "Source-rechecked Honcho explicit observations as seed readings, or measurement reference only?"
     status: decided
-    decision: "Honcho's observations are used only as the measurement reference for the first measure (the Q1 gate and coverage comparisons). Nothing is imported. Whether to seed, only with each observation re-checked against its source message, is decided on that first measure's result."
+    decision: "2026-10-31: Q1's fixed gate reference below is historical, superseded by 31-build-one-session.md §6; source-rechecking and the no-import boundary remain unchanged. Historical decision: Honcho's observations are used only as the measurement reference for the first measure (the Q1 gate and coverage comparisons). Nothing is imported. Whether to seed, only with each observation re-checked against its source message, is decided on that first measure's result."
   - id: Q4
     question: "Reading model and budget"
     status: decided

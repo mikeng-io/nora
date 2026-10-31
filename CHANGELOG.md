@@ -1,5 +1,90 @@
 # Changelog
 
+## [7.12.1](https://github.com/mikeng-io/nora/compare/v7.12.0...v7.12.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **spike:** route judges through the host-reaching endpoint and AGE at the source ([cb7a248](https://github.com/mikeng-io/nora/commit/cb7a24812b0de9f57a1a7d2d2db2f0bb9023ef25))
+
+## [7.12.0](https://github.com/mikeng-io/nora/compare/v7.11.57...v7.12.0) (2026-10-30)
+
+
+### Features
+
+* **obs:** route every root to SigNoz with model, identity and log correlation ([775b853](https://github.com/mikeng-io/nora/commit/775b8533a71296742e846f3fde6bd3794e4e832f))
+* **signoz:** integrated self-hosted SigNoz observability (ADR 0034, #440) ([8c011bb](https://github.com/mikeng-io/nora/commit/8c011bb6aa6eca4e2608eaa1753871ed89204bae))
+* **signoz:** repo-owned stack declaration, ingester config and alert provisioning ([40d5f50](https://github.com/mikeng-io/nora/commit/40d5f50f4783faaa77f37cd60a7c935c31832f72))
+
+
+### Bug Fixes
+
+* **ci:** install Sentry SDK in the development environment ([3482983](https://github.com/mikeng-io/nora/commit/348298339bf865035c41fddb8f6a416fc5d00ba0))
+* **observability:** close five verified SigNoz review blockers ([631c03e](https://github.com/mikeng-io/nora/commit/631c03ef9703f91e1402e8f589943a027bd6eba0))
+* **observability:** isolate HTTP instrumentation across app lifecycles ([20950ae](https://github.com/mikeng-io/nora/commit/20950ae3eed1515c3b1455d1cb6d513f4a87ddd3))
+* **observability:** preserve correlation and retirement acceptance checks ([b2cc14b](https://github.com/mikeng-io/nora/commit/b2cc14b30570a837c9b9a006b85006ed7202be34))
+* **observability:** require private SigNoz database passwords ([6b52974](https://github.com/mikeng-io/nora/commit/6b5297419e2d43b33d22e8fc284b27e82ed17cc7))
+* **observability:** retain the cutover overlay across automated releases ([ecc85f2](https://github.com/mikeng-io/nora/commit/ecc85f29b30ccbaeac5b1ecfe523ef5998f972df))
+* **release:** accept retired alert bridge only in previous manifests ([84882c7](https://github.com/mikeng-io/nora/commit/84882c7d83731785527b19a55a1355e6d9cb3787))
+* **signoz:** close deployment defects and prove the stack end-to-end ([dd1363d](https://github.com/mikeng-io/nora/commit/dd1363d88d9bf646589fb3866052d2dfb3b5aa01))
+
+## [7.11.57](https://github.com/mikeng-io/nora/compare/v7.11.56...v7.11.57) (2026-10-30)
+
+
+### Bug Fixes
+
+* **memory:** inject graph context before automatic decisions ([6bec06d](https://github.com/mikeng-io/nora/commit/6bec06d5addd17d34aca3e8cd4f4053d05923964))
+* **memory:** preserve agenda scope and overlap safe graph prefetch ([5c32748](https://github.com/mikeng-io/nora/commit/5c327485d630787a11f3566ef4058b1edc2beb47))
+
+## [7.11.56](https://github.com/mikeng-io/nora/compare/v7.11.55...v7.11.56) (2026-10-30)
+
+
+### Bug Fixes
+
+* **spike:** quote AGE cypher arguments so sa.text can execute them ([9dcae2e](https://github.com/mikeng-io/nora/commit/9dcae2e78b2d58333c765521788969ffc2c5653f))
+
+## [7.11.55](https://github.com/mikeng-io/nora/compare/v7.11.54...v7.11.55) (2026-10-30)
+
+
+### Bug Fixes
+
+* **evals:** resolve the default source URL from the deployment's credential source ([9eb45b1](https://github.com/mikeng-io/nora/commit/9eb45b1542cb3d665f782aa0fb2025bf888e2b73))
+* **scripts:** exit nonzero when character synthesis draws error or go unstable ([8e66726](https://github.com/mikeng-io/nora/commit/8e667265c42ca88ca1e1b6a1d5f798169e4fa0e8))
+* **skills:** include every declared location-routing negative ([495f35d](https://github.com/mikeng-io/nora/commit/495f35da68a7a9cc8473aa082c384ab7a31c99c6))
+* **skills:** stop failed trace reads and clarify builder routing ([afa6213](https://github.com/mikeng-io/nora/commit/afa62138e29530d997642125b50fa1cd3d03ef53))
+* **spike:** score the nested Relation inside each connected GraphEdge ([c9c192d](https://github.com/mikeng-io/nora/commit/c9c192da08aa8546f304f86f8361ede8ac559e94))
+
+## [7.11.54](https://github.com/mikeng-io/nora/compare/v7.11.53...v7.11.54) (2026-10-30)
+
+
+### Bug Fixes
+
+* **evals:** check the replay subjects effective embedder configuration ([8fb273b](https://github.com/mikeng-io/nora/commit/8fb273bd6d0f63c4da980ae38bac37faced02580))
+* **scripts:** the memory-graph spike indexes each replay sandbox before inspect ([064d1a0](https://github.com/mikeng-io/nora/commit/064d1a0448f520ead952e888d843e45a176cdede))
+
+## [7.11.53](https://github.com/mikeng-io/nora/compare/v7.11.52...v7.11.53) (2026-10-30)
+
+
+### Bug Fixes
+
+* **replay:** restore recorded session clocks and typed subject overrides ([e7dcd15](https://github.com/mikeng-io/nora/commit/e7dcd157b03d3150cbca337f7ce03b91b97244c9))
+
+## [7.11.52](https://github.com/mikeng-io/nora/compare/v7.11.51...v7.11.52) (2026-10-30)
+
+
+### Maintenance
+
+* **memory:** bound Honcho cutover acceptance to available evidence ([242e295](https://github.com/mikeng-io/nora/commit/242e29598fc1e30ef7f0ecf58c8cad97b4473670))
+* **memory:** qualify remaining historical cutover formulas ([8d32ab7](https://github.com/mikeng-io/nora/commit/8d32ab7ac2a41338b07d8ae562bc94025c31623e))
+
+## [7.11.51](https://github.com/mikeng-io/nora/compare/v7.11.50...v7.11.51) (2026-10-30)
+
+
+### Maintenance
+
+* **observability:** align dependent design bundles with SigNoz ([590e5b1](https://github.com/mikeng-io/nora/commit/590e5b1fd7e806e62b262a8daf21aa1eab6bad72))
+* **observability:** record the SigNoz migration design ([396c7a6](https://github.com/mikeng-io/nora/commit/396c7a68ed317fca400946de5e1373f0e28c5cd9))
+
 ## [7.11.50](https://github.com/mikeng-io/nora/compare/v7.11.49...v7.11.50) (2026-10-30)
 
 

@@ -195,9 +195,6 @@ services:
       options: {max-size: "10m", max-file: "3"}
 
   nora:
-    logging:
-      driver: json-file
-      options: {max-size: "10m", max-file: "3"}
     build:
       context: .
       # network: host is REQUIRED, not a preference — BuildKit's default bridge
@@ -260,6 +257,9 @@ services:
     # `embedder` (design/unified-memory/65-build-step-3-vectors.md V1): the
     # internal network that holds the embedding server and this one service.
     networks: [nora, honcho, embedder]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
     extra_hosts: ["host.docker.internal:host-gateway"]
     # :9100 on loopback so deploy/watchdog.sh (host) still reads /health; the
     # in-container healthcheck below hits the container's own 127.0.0.1:9100.
@@ -994,93 +994,6 @@ services:
       start_period: 60s
       retries: 3
 
-  # --- the metrics reader, and the path an alert takes to a human -----------
-  #
-  # Added 2026-09-09. Until then NOTHING scraped the 94 `nora_*` series: they
-  # were exposed on :9100 and read only when a human curled them, while
-  # `nora-egress.service` sat in `failed` for sixteen days with nothing to say
-  # so. Three stores and no reader — `docs/observability.md`.
-  prometheus:
-    image: prom/prometheus:v3.13.5
-    container_name: nora-prometheus
-    restart: unless-stopped
-    command:
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.path=/prometheus
-      # 30 days. At this deployment's volume (94 series, 30s scrape) that is
-      # well under a gigabyte, and it is the window in which "when did this
-      # start" is still a useful question.
-      - --storage.tsdb.retention.time=30d
-      - --web.enable-lifecycle
-    volumes:
-      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./deploy/prometheus/rules:/etc/prometheus/rules:ro
-      - prometheus-data:/prometheus
-    networks: [nora]
-    ports:
-      # 127.0.0.1 like every other admin surface here: reachable over the
-      # Tailscale host, never published to the LAN.
-      - "127.0.0.1:9190:9090"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
-  alertmanager:
-    image: prom/alertmanager:v0.28.1
-    container_name: nora-alertmanager
-    restart: unless-stopped
-    # Alertmanager reads a bearer from a FILE (http_config credentials_file), not
-    # the environment, and the config is a read-only mount. So the shared bridge
-    # token is written to tmpfs before the real binary starts: it never lands in
-    # the config, the image or a volume. Same token the alert-bridge checks.
-    environment:
-      - NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}
-    entrypoint: ["/bin/sh", "-c", "umask 077 && printf '%s' \"$$NORA_BRIDGE_TOKEN\" > /run/alertmanager/bridge-token && exec /bin/alertmanager \"$$@\"", "alertmanager"]
-    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager"]
-    tmpfs:
-      - /run/alertmanager
-    volumes:
-      - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      - alertmanager-data:/alertmanager
-    networks: [nora]
-    ports:
-      - "127.0.0.1:9193:9093"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/healthy"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
-  alert-bridge:
-    build: ./deploy/alert-bridge
-    image: nora-alert-bridge:latest
-    container_name: nora-alert-bridge
-    restart: unless-stopped
-    environment:
-      # WHERE alerts go: the same Discord channel the participation mirror uses
-      # for operator review. Empty means alerts are rendered, logged and
-      # dropped — the bridge says so at ERROR rather than pretending.
-      - ALERT_DISCORD_CHANNEL=${ALERT_DISCORD_CHANNEL:-}
-      # The SAME bot credential Nora holds. Reused rather than a second
-      # webhook: a webhook would have to be created by hand in the Discord UI,
-      # while this variable is already in `.env`. The REST call does not care
-      # whether Nora's Gateway session is alive, which is the whole point of
-      # this container being separate.
-      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
-      # The shared bridge bearer. Required: the bridge refuses to start without
-      # it, and Alertmanager sends it on every POST (deploy/alertmanager).
-      - NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}
-    # NOT on the `nora` network only: this one needs the public internet to
-    # reach discord.com, and it no longer needs to reach signal-cli at all.
-    networks: [nora, default]
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:9110/health',timeout=3)"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
 networks:
   nora:
   # Honcho's API and nora, and nothing else (#633). Owned by NEITHER compose
@@ -1104,13 +1017,15 @@ networks:
   embedder_host:
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: "false"
+  # The SigNoz wiring (journald logging, the external signoz-network, the
+  # bridge's OTLP endpoint) lives in deploy/signoz/docker-compose.signoz.yaml
+  # and is applied AT CUTOVER, after the backend exists — this file stays
+  # deployable alone so a release never depends on an optional stack.
   # SearXNG + Firecrawl network joins REMOVED (DEC-73, 2026-08-08): web_search is
   # Tavily (a public API reached over the default network), web_fetch is gone, so
   # Nora no longer calls the co-located SearXNG/Firecrawl containers.
 
 volumes:
-  prometheus-data:
-  alertmanager-data:
   db-data:
   rustfs-data:
   # ModelScope weights cache for the `stt` service (~/.cache/modelscope inside

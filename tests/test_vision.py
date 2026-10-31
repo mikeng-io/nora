@@ -68,6 +68,12 @@ class FakeMimo:
                                          # one, the way OpenCode Go does
         self.fail_times = 0          # how many leading calls answer 500
         self.stall_seconds = 0.0     # how long each call sleeps before answering
+        self.empty_choices = False   # answer a well-formed 200 with `choices: []` —
+                                     # the malformed-body case: real gateways do
+                                     # answer this on some upstream failures
+        self.text_only = False       # accept requests with no media block — the
+                                     # real gateway answers text-only calls too;
+                                     # `complete` is that lane
         self.reply = "A red square."
 
     async def completions(self, request: web.Request) -> web.Response:
@@ -111,12 +117,20 @@ class FakeMimo:
                 if not str(part.get("video_url", {}).get("url", "")).startswith("data:video/"):
                     return web.json_response(
                         {"error": {"message": "not a video"}}, status=400)
-        if not any(p.get("type") in {"image_url", "input_audio", "video_url"} for p in parts):
+        if not self.text_only and not any(
+                p.get("type") in {"image_url", "input_audio", "video_url"} for p in parts
+        ):
             return web.json_response({"error": {"message": "no media"}}, status=400)
         if self.stall_seconds:
             await asyncio.sleep(self.stall_seconds)
         if len(self.requests) <= self.fail_times:
             return web.json_response({"error": {"message": "upstream boom"}}, status=500)
+        if self.empty_choices:
+            return web.json_response({
+                "id": "cmpl-1", "object": "chat.completion", "created": 0,
+                "model": body.get("model", "opencode-go/mimo-v2.5"),
+                "choices": [],
+            })
         return web.json_response({
             "id": "cmpl-1", "object": "chat.completion", "created": 0,
             "model": body.get("model", "opencode-go/mimo-v2.5"),
@@ -854,3 +868,157 @@ async def test_a_direct_lane_with_no_key_sends_nothing_anywhere(mimo, monkeypatc
     )
     assert result.available is False
     assert mimo.requests == []
+
+
+# ---- the model-call span closes exactly once on every path --------------------
+#
+# `describe` wraps its retry loop in ONE `asyncio.wait_for`: a timeout arrives
+# inside `_create` as CancelledError (a BaseException), and a malformed body
+# raises IndexError when `choices[0]` is indexed — both bypassed the old
+# `except Exception`, and each left its span open forever. The recorder is the
+# injected `VisionSpanRecorder` seam; the events ARE the assertion.
+
+
+class _RecordingSpans:
+    """A `VisionSpanRecorder` that logs lifecycle events instead of spans."""
+
+    def __init__(self) -> None:
+        self.events: list[str] = []
+        self.errors: list[str] = []
+        self.broken = False  # a recorder that raises on every method — the
+                             # call must still answer, never inherit telemetry's
+                             # failure
+
+    def start(self, *, messages, model_id, provider):
+        if self.broken:
+            raise RuntimeError("recorder down")
+        self.events.append("start")
+        return {"token": len(self.events)}  # opaque to the client, like a Span
+
+    def finish(self, span, **kwargs):
+        if self.broken:
+            raise RuntimeError("recorder down")
+        self.events.append("finish")
+
+    def fail(self, span, *, error):
+        if self.broken:
+            raise RuntimeError("recorder down")
+        self.events.append("fail")
+        self.errors.append(type(error).__name__)
+
+
+def _client_spans(
+    fake: FakeMimo, recorder: _RecordingSpans, *,
+    timeout_seconds: float = 5.0, max_bytes: int = 8 * 1024 * 1024,
+) -> VisionClient:
+    return VisionClient(
+        client=AsyncOpenAI(base_url=fake.url, api_key="test-key", max_retries=0),  # type: ignore[attr-defined]
+        model="opencode-go/mimo-v2.5",
+        max_tokens=1024,
+        reasoning_effort="low",
+        max_bytes=max_bytes,
+        timeout_seconds=timeout_seconds,
+        loop_timeout_seconds=300.0,
+        span_recorder=recorder,
+    )
+
+
+async def test_a_successful_describe_closes_its_span_exactly_once(mimo):
+    rec = _RecordingSpans()
+    result = await _client_spans(mimo, rec).describe(
+        data=RED_PNG, media_type="image/png")
+    assert result.available is True
+    assert rec.events == ["start", "finish"]
+
+
+async def test_a_timed_out_describe_fails_its_span_it_never_leaks(mimo):
+    """wait_for's cancellation is CancelledError — a BaseException the old
+    `except Exception` let through, leaving the span open forever."""
+    mimo.stall_seconds = 2.0
+    rec = _RecordingSpans()
+    result = await _client_spans(mimo, rec, timeout_seconds=0.3).describe(
+        data=RED_PNG, media_type="image/png")
+    assert result.available is False
+    assert result.reason == "timeout"
+    assert rec.events == ["start", "fail"]
+    assert rec.errors == ["CancelledError"]
+
+
+async def test_a_transport_failure_fails_each_attempts_span(mimo):
+    """Both the first call and the one bounded retry open AND fail a span —
+    a persistent failure is not one span leaked per attempt."""
+    mimo.fail_times = 99
+    rec = _RecordingSpans()
+    result = await _client_spans(mimo, rec).describe(
+        data=RED_PNG, media_type="image/png")
+    assert result.available is False
+    assert result.reason == "error"
+    assert rec.events == ["start", "fail", "start", "fail"]
+
+
+async def test_an_empty_choices_answer_fails_each_span(mimo):
+    """`choices[0]` on a malformed body raises IndexError — outside the old
+    guarded block, so each attempt leaked its span while still retrying."""
+    mimo.empty_choices = True
+    rec = _RecordingSpans()
+    result = await _client_spans(mimo, rec).describe(
+        data=RED_PNG, media_type="image/png")
+    assert result.available is False
+    assert result.reason == "error"
+    assert rec.events == ["start", "fail", "start", "fail"]
+    assert rec.errors == ["IndexError", "IndexError"]
+
+
+async def test_a_refused_or_oversized_read_opens_no_span(mimo):
+    """No model call, no span: the byte ceiling and the missing-direct-client
+    wiring gap return before `start` is ever reached."""
+    rec = _RecordingSpans()
+    oversized = _client_spans(mimo, rec, max_bytes=len(RED_PNG) - 1)
+    result = await oversized.describe(data=RED_PNG, media_type="image/png")
+    assert result.reason == "too_large"
+    no_lane = _client_spans(mimo, rec)
+    result = await no_lane.describe(
+        data=RED_PNG, media_type="image/png", provider="kimi")
+    assert result.available is False
+    assert rec.events == []
+
+
+async def test_a_broken_recorder_never_costs_the_answer(mimo):
+    """Telemetry is never load-bearing: a recorder that raises on every call
+    must not turn a good read into `unavailable`."""
+    rec = _RecordingSpans()
+    rec.broken = True
+    result = await _client_spans(mimo, rec).describe(
+        data=RED_PNG, media_type="image/png")
+    assert result.available is True
+    assert result.description == mimo.reply
+
+
+async def test_a_successful_complete_closes_its_span_exactly_once(mimo):
+    """`complete` is the text-only sibling path — same one-span contract."""
+    mimo.text_only = True
+    rec = _RecordingSpans()
+    text = await _client_spans(mimo, rec).complete(
+        prompt="Describe this transcript.", text="a synthetic transcript")
+    assert text == mimo.reply
+    assert rec.events == ["start", "finish"]
+
+
+async def test_an_externally_cancelled_complete_fails_its_span(mimo):
+    """`complete` under an OUTER cancellation — a caller's own wait_for or a
+    cancelled task — gets CancelledError at its await: a BaseException the
+    old `except Exception` let escape with the span left open. Its own inner
+    wait_for raises TimeoutError (an Exception), which the old code already
+    caught — only the external path was leaking."""
+    mimo.text_only = True
+    mimo.stall_seconds = 2.0
+    rec = _RecordingSpans()
+    client = _client_spans(mimo, rec, timeout_seconds=5.0)
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(
+            client.complete(
+                prompt="Describe.", text="a synthetic transcript"),
+            timeout=0.3,
+        )
+    assert rec.events == ["start", "fail"]
+    assert rec.errors == ["CancelledError"]

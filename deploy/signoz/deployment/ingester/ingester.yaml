@@ -1,0 +1,336 @@
+connectors:
+  signozmeter:
+    dimensions:
+    - name: service.name
+    - name: deployment.environment
+    - name: host.name
+    metrics_flush_interval: 1h
+extensions:
+  pprof:
+    endpoint: 0.0.0.0:1777
+  signoz_health_check:
+    endpoint: 0.0.0.0:13133
+  file_storage/collector:
+    directory: /var/lib/otelcol/storage
+    create_directory: true
+    timeout: 5s
+exporters:
+  clickhouselogsexporter:
+    dsn: tcp://default:${env:SIGNOZ_CLICKHOUSE_PASSWORD}@signoz-telemetrystore-clickhouse-0-0:9000/signoz_logs
+    timeout: 45s
+    use_new_schema: true
+    sending_queue:
+      enabled: true
+      queue_size: 1000
+      storage: file_storage/collector
+    retry_on_failure:
+      enabled: true
+  clickhousetraces:
+    datasource: tcp://default:${env:SIGNOZ_CLICKHOUSE_PASSWORD}@signoz-telemetrystore-clickhouse-0-0:9000/signoz_traces
+    low_cardinal_exception_grouping: ${env:LOW_CARDINAL_EXCEPTION_GROUPING}
+    timeout: 45s
+    use_new_schema: true
+    sending_queue:
+      enabled: true
+      queue_size: 2000
+      storage: file_storage/collector
+    retry_on_failure:
+      enabled: true
+  metadataexporter:
+    cache:
+      provider: in_memory
+    dsn: tcp://default:${env:SIGNOZ_CLICKHOUSE_PASSWORD}@signoz-telemetrystore-clickhouse-0-0:9000/signoz_metadata
+    enabled: true
+    timeout: 45s
+  signozclickhousemeter:
+    dsn: tcp://default:${env:SIGNOZ_CLICKHOUSE_PASSWORD}@signoz-telemetrystore-clickhouse-0-0:9000/signoz_meter
+    timeout: 45s
+  signozclickhousemetrics:
+    dsn: tcp://default:${env:SIGNOZ_CLICKHOUSE_PASSWORD}@signoz-telemetrystore-clickhouse-0-0:9000/signoz_metrics
+    timeout: 45s
+    sending_queue:
+      enabled: true
+      queue_size: 1000
+      storage: file_storage/collector
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_percentage: 70
+    spike_limit_percentage: 20
+  batch:
+    send_batch_max_size: 55000
+    send_batch_size: 50000
+    timeout: 5s
+  batch/meter:
+    send_batch_max_size: 25000
+    send_batch_size: 20000
+    timeout: 5s
+  signozllmpricing:
+    attrs:
+      cache_read: gen_ai.usage.cache_read.input_tokens
+      cache_write: gen_ai.usage.cache_creation.input_tokens
+      in: gen_ai.usage.input_tokens
+      model: gen_ai.request.model
+      out: gen_ai.usage.output_tokens
+    default_pricing:
+      rules: []
+    output_attrs:
+      cache_read: signoz.gen_ai.usage.cache_read.input_tokens.cost
+      cache_write: signoz.gen_ai.usage.cache_write.input_tokens.cost
+      in: signoz.gen_ai.usage.input_tokens.cost
+      out: signoz.gen_ai.usage.output_tokens.cost
+      total: signoz.gen_ai.usage.tokens.cost
+  signozspanmapper:
+    groups: []
+  transform/normalize_llm:
+    error_mode: ignore
+    trace_statements:
+    - context: span
+      statements:
+      - set(attributes["gen_ai.agent.usage.input_tokens"], attributes["gen_ai.usage.input_tokens"])
+        where attributes["gen_ai.operation.name"] == "invoke_agent"
+      - set(attributes["gen_ai.agent.usage.output_tokens"], attributes["gen_ai.usage.output_tokens"])
+        where attributes["gen_ai.operation.name"] == "invoke_agent"
+      - set(attributes["gen_ai.agent.usage.total_tokens"], attributes["gen_ai.usage.total_tokens"])
+        where attributes["gen_ai.operation.name"] == "invoke_agent"
+      - set(attributes["gen_ai.agent.usage.cache_read_input_tokens"], attributes["gen_ai.usage.cache_read_input_tokens"])
+        where attributes["gen_ai.operation.name"] == "invoke_agent"
+      - set(attributes["gen_ai.agent.usage.cache_creation_input_tokens"], attributes["gen_ai.usage.cache_creation_input_tokens"])
+        where attributes["gen_ai.operation.name"] == "invoke_agent"
+      - set(attributes["gen_ai.agent.usage.cache_write_input_tokens"], attributes["gen_ai.usage.cache_write_input_tokens"])
+        where attributes["gen_ai.operation.name"] == "invoke_agent"
+      - delete_key(attributes, "gen_ai.usage.input_tokens") where attributes["gen_ai.operation.name"]
+        == "invoke_agent"
+      - delete_key(attributes, "gen_ai.usage.output_tokens") where attributes["gen_ai.operation.name"]
+        == "invoke_agent"
+      - delete_key(attributes, "gen_ai.usage.total_tokens") where attributes["gen_ai.operation.name"]
+        == "invoke_agent"
+      - delete_key(attributes, "gen_ai.usage.prompt_tokens") where attributes["gen_ai.operation.name"]
+        == "invoke_agent"
+      - delete_key(attributes, "gen_ai.usage.completion_tokens") where attributes["gen_ai.operation.name"]
+        == "invoke_agent"
+      - delete_key(attributes, "gen_ai.usage.cache_read_input_tokens") where attributes["gen_ai.operation.name"]
+        == "invoke_agent"
+      - delete_key(attributes, "gen_ai.usage.cache_creation_input_tokens") where attributes["gen_ai.operation.name"]
+        == "invoke_agent"
+      - delete_key(attributes, "gen_ai.usage.cache_write_input_tokens") where attributes["gen_ai.operation.name"]
+        == "invoke_agent"
+      # Model-leaf normalization: the SDK spells cache usage FLAT
+      # (`gen_ai.usage.cache_read_input_tokens` / `...cache_write_input_tokens`)
+      # while the SigNoz UI and `signozllmpricing` read the DOTTED keys
+      # (`cache_read.input_tokens` / `cache_creation.input_tokens`,
+      # `aiobservabilitytypes` in the pinned backend). Aliasing preserves the
+      # raw SDK keys beside the normalized ones — absent stays absent (an
+      # unset key is never a fabricated zero). The invoke_agent guard keeps
+      # the agent parent's aggregate OUT of model usage/cost totals: the leaf
+      # is the charge, the parent is the summary.
+      - set(attributes["gen_ai.usage.cache_read.input_tokens"], attributes["gen_ai.usage.cache_read_input_tokens"])
+        where attributes["gen_ai.operation.name"] != "invoke_agent" and attributes["gen_ai.usage.cache_read_input_tokens"]
+          != nil
+      - set(attributes["gen_ai.usage.cache_creation.input_tokens"], attributes["gen_ai.usage.cache_write_input_tokens"])
+        where attributes["gen_ai.operation.name"] != "invoke_agent" and attributes["gen_ai.usage.cache_write_input_tokens"]
+          != nil
+  signozspanmetrics/delta:
+    aggregation_temporality: AGGREGATION_TEMPORALITY_DELTA
+    dimensions:
+    - name: service.namespace
+      default: default
+    - name: deployment.environment
+      default: default
+    - name: signoz.collector.id
+    - name: service.version
+    dimensions_cache_size: 100000
+    enable_exp_histogram: true
+    latency_histogram_buckets:
+    - 100us
+    - 1ms
+    - 2ms
+    - 6ms
+    - 10ms
+    - 50ms
+    - 100ms
+    - 250ms
+    - 500ms
+    - 1000ms
+    - 1400ms
+    - 2000ms
+    - 5s
+    - 10s
+    - 20s
+    - 40s
+    - 60s
+    metrics_exporter: signozclickhousemetrics
+    metrics_flush_interval: 60s
+  tail_sampling:
+    decision_wait: 450s
+    num_traces: 50000
+    expected_new_traces_per_sec: 50
+    policies:
+    - name: keep-generations
+      type: string_attribute
+      string_attribute:
+        key: gen_ai.operation.name
+        values:
+        - chat
+        - invoke_agent
+    - name: keep-errors
+      type: status_code
+      status_code:
+        status_codes:
+        - ERROR
+    - name: keep-non-plumbing
+      type: string_attribute
+      string_attribute:
+        key: nora.trace_kind
+        values:
+        - plumbing
+        invert_match: true
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  prometheus/nora:
+    config:
+      scrape_configs:
+      - job_name: nora
+        scrape_interval: 30s
+        static_configs:
+        - targets:
+          - nora:9100
+      - job_name: presence
+        scrape_interval: 30s
+        static_configs:
+        - targets:
+          - presence:9101
+      - job_name: analytics
+        scrape_interval: 30s
+        static_configs:
+        - targets:
+          - analytics:9103
+      - job_name: signoz-ingester
+        scrape_interval: 30s
+        static_configs:
+        - targets:
+          - localhost:8888
+  # No filelog receiver: Docker's json-file records carry no container NAME —
+  # only `<id>/<id>-json.log` paths — so a glob could never scope collection
+  # to Nora's services without ingesting every co-hosted project's logs, and
+  # the flat glob it had could not even match the native nested layout. The
+  # journald receiver below is the one canonical log source: the journald
+  # driver stamps CONTAINER_TAG from the compose `logging.options.tag`, and
+  # `matches` selects exactly the owned producers.
+  journald/nora:
+    directory: /var/log/journal
+    start_at: end
+    storage: file_storage/collector
+    # Selection at the journalctl level, not a stanza `filter` operator:
+    # `filter` DROPS entries its expression is true for, so the previous
+    # "match our containers" expression dropped exactly the wanted logs.
+    # Each list item is OR'd (journalctl `+` semantics). CONTAINER_TAG is the
+    # compose `logging.options.tag` the app services declare (the journald
+    # driver writes it as CONTAINER_TAG/SYSLOG_IDENTIFIER, not CONTAINER_NAME);
+    # the session probe is a systemd user unit, matched on the
+    # SyslogIdentifier= its unit file declares. `journalctl -D` recurses the
+    # host's /var/log/journal/<machine-id>/ layout, user journals included
+    # (verified on journalctl 252, the image's build).
+    matches:
+    - CONTAINER_TAG: nora
+    - CONTAINER_TAG: presence
+    - CONTAINER_TAG: analytics
+    - CONTAINER_TAG: signal-cli
+    - CONTAINER_TAG: whatsapp-bridge
+    - CONTAINER_TAG: instagram-bridge
+    - SYSLOG_IDENTIFIER: nora-session-probe
+    operators:
+    - type: add
+      field: attributes["container.name"]
+      value: EXPR(body.CONTAINER_TAG)
+      if: body.CONTAINER_TAG != nil
+    - type: add
+      field: attributes["container.name"]
+      value: EXPR(body.SYSLOG_IDENTIFIER)
+      if: body.SYSLOG_IDENTIFIER != nil and body.CONTAINER_TAG == nil
+    - type: move
+      from: body.MESSAGE
+      to: body
+    - type: json_parser
+      parse_to: attributes
+      if: body matches "^{"
+    - type: trace_parser
+      trace_id:
+        parse_from: attributes.trace_id
+      span_id:
+        parse_from: attributes.span_id
+      trace_flags:
+        parse_from: attributes.trace_flags
+service:
+  extensions:
+  - signoz_health_check
+  - pprof
+  - file_storage/collector
+  telemetry:
+    logs:
+      encoding: json
+    metrics:
+      readers:
+      - pull:
+          exporter:
+            prometheus:
+              host: 0.0.0.0
+              port: 8888
+  pipelines:
+    logs:
+      exporters:
+      - clickhouselogsexporter
+      - signozmeter
+      - metadataexporter
+      processors:
+      - memory_limiter
+      - batch
+      receivers:
+      - otlp
+    logs/containers:
+      exporters:
+      - clickhouselogsexporter
+      - metadataexporter
+      processors:
+      - memory_limiter
+      - batch
+      receivers:
+      - journald/nora
+    metrics:
+      exporters:
+      - signozclickhousemetrics
+      - signozmeter
+      - metadataexporter
+      processors:
+      - memory_limiter
+      - batch
+      receivers:
+      - otlp
+      - prometheus/nora
+    metrics/meter:
+      exporters:
+      - signozclickhousemeter
+      processors:
+      - batch/meter
+      receivers:
+      - signozmeter
+    traces:
+      exporters:
+      - clickhousetraces
+      - signozmeter
+      - metadataexporter
+      processors:
+      - memory_limiter
+      - signozspanmetrics/delta
+      - tail_sampling
+      - transform/normalize_llm
+      - signozspanmapper
+      - signozllmpricing
+      - batch
+      receivers:
+      - otlp

@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import tomlkit
+from pydantic import TypeAdapter
 
 from nora.app.composition import Dependencies, build_dependencies, wall_clock
 from nora.app.memory_routing import build_workspace_router
@@ -332,6 +333,8 @@ def _with(obj: Any, path: str, value: Any) -> Any:
     head, _, rest = path.partition(".")
     if rest:
         value = _with(getattr(obj, head), rest, value)
+    if isinstance(value, dict):
+        value = TypeAdapter(type(obj).model_fields[head].annotation).validate_python(value)
     return obj.model_copy(update={head: value})
 
 
@@ -380,25 +383,6 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # one deployment differs from another by, which is what `overrides` is
     # for, and `build_config` refuses any value outside the eval namespace.
     cfg = _with(cfg, "honcho.workspace_id", shared_eval_workspace(cfg.honcho.workspace_id))
-    # THE HOST, FROM THE HOST. The deployment's config reaches OmniRoute at
-    # `host.docker.internal`, the name docker gives a container for the machine
-    # it runs on, and Honcho at `honcho`, a name on a private docker network
-    # (DEC-259). The suite runs on that machine, outside a
-    # container, where the name does not resolve at all — so the model call
-    # would fail before the turn and read as "the model was unreachable" for
-    # every case. The same services, reached from the host, are on loopback;
-    # rewriting the HOSTNAME alone is the same endpoint at the address the
-    # caller can use, the shape `SKIP_PREFIX` already gives every other
-    # endpoint. Only when the name does not resolve here: inside a container
-    # it does, and nothing is touched.
-    if not _resolves(_DOCKER_HOST):
-        cfg = _with(cfg, "llm.base_url", _from_host(cfg.llm.base_url))
-        cfg = _with(cfg, "honcho.base_url", _from_host(cfg.honcho.base_url))
-        # Named model endpoints carry their own URL; a route through one would
-        # otherwise still dial the container-only name.
-        cfg = cfg.model_copy(update={"providers": {
-            name: p.model_copy(update={"base_url": _from_host(p.base_url)})
-            for name, p in cfg.providers.items()}})
     # `doctrine.dir` and `dreamer.dir` resolve RELATIVE TO THE CONFIG FILE, and
     # the copy lives in the caller's workdir, which has no such subdirectories.
     # The Dreamer's corpus is validated at startup — deliberately, so a
@@ -474,6 +458,16 @@ def build_config(spec: SubjectSpec) -> Config:
     cfg = _baseline(loaded, spec.workdir)
     for path, value in (spec.overrides or {}).items():
         cfg = _with(cfg, path, value)
+    # Rewrite after overrides, including deployment routes, so host-only callers
+    # cannot restore container addresses over the sandbox configuration.
+    if not _resolves(_DOCKER_HOST):
+        cfg = _with(cfg, "llm.base_url", _from_host(cfg.llm.base_url))
+        cfg = _with(cfg, "honcho.base_url", _from_host(cfg.honcho.base_url))
+        # Named model endpoints carry their own URL; a route through one would
+        # otherwise still dial the container-only name.
+        cfg = cfg.model_copy(update={"providers": {
+            name: p.model_copy(update={"base_url": _from_host(p.base_url)})
+            for name, p in cfg.providers.items()}})
     _refuse_a_workspace_outside_the_eval_namespace(cfg.honcho.workspace_id, deployment)
     policy = spec.policy or default_policy(spec.room)
     (spec.workdir / "policy.toml").write_text(policy, encoding="utf-8")

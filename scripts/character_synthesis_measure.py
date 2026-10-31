@@ -98,9 +98,11 @@ async def main() -> int:
                          for _ in range(args.samples)]
 
     by_kind: dict[str, list[float]] = defaultdict(list)
+    failed = False
     for acc, draws in await asyncio.gather(*(one(a) for a in accounts)):
         if any(d is None for d in draws):
             print(f"{acc['kind']:7} {acc['key'][:18]:18} ERROR")
+            failed = True
             continue
         shares = sorted(d[0] for d in draws if d is not None)
         pats = sorted(d[1] for d in draws if d is not None)
@@ -111,10 +113,16 @@ async def main() -> int:
               f"patterns={pats[len(pats) // 2]} {state}")
         if state == "ok":
             by_kind[acc["kind"]].append(median)
+        else:
+            failed = True
     for kind, vals in sorted(by_kind.items()):
         print(f"KIND {kind}: n={len(vals)} median_instance_share="
               f"{sorted(vals)[len(vals) // 2]:.2f} mean={sum(vals) / len(vals):.2f}")
-    return 0
+    # The eval suite's contract: 2 refuses before spending (the credential
+    # check above), 1 is a run whose measured population is incomplete, 0 is
+    # clean. An ERROR or UNSTABLE draw was never a reading, and a run with no
+    # usable account measured nothing.
+    return 1 if failed or not by_kind else 0
 
 
 if __name__ == "__main__":
