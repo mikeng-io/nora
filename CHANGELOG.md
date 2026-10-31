@@ -1,5 +1,15 @@
 # Changelog
 
+## [7.13.2](https://github.com/mikeng-io/nora/compare/v7.13.1...v7.13.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* **gate:** bound directory and PATH inputs before reusing acceptance ([6819150](https://github.com/mikeng-io/nora/commit/6819150400a62a2dad05cf7d7e3b2f795528d84e))
+* **gate:** canonicalize Docker mounts in receipt context ([dda3239](https://github.com/mikeng-io/nora/commit/dda3239bb4218cebf2c57a349569856fdaeadb40))
+* **gate:** preserve path identity and bound receipt lookups ([1705796](https://github.com/mikeng-io/nora/commit/1705796f5091633f4739b3ebcc2a1c0c54a119a7))
+* **gate:** reuse exact local acceptance and narrow document selection ([f9ce8ff](https://github.com/mikeng-io/nora/commit/f9ce8ffee97b67d6caeed19d384397d1f9ff8063))
+
 ## [7.13.1](https://github.com/mikeng-io/nora/compare/v7.13.0...v7.13.1) (2026-10-31)
 
 
