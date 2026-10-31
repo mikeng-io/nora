@@ -1,58 +1,44 @@
-"""The OAuth keepalive's alert rules (DEC-308) read series the code declares and
-publishes, and fire as `deploy/prometheus/tests/oauth.test.yml` says they do.
-
-A rule on a series nobody publishes is silent forever and looks exactly like a
-healthy one, so the names are read off the metric specs AND off the keeper that
-sets them; the behaviour runs through promtool (binary, pinned image, or skip),
-the computer rules' posture.
-"""
-
-from __future__ import annotations
-
-import re
+"""OAuth alert inputs and boundaries survive the move to native SigNoz rules."""
 from pathlib import Path
 
 import yaml
 
 from nora.app import oauth_keepalive
 from nora.obs.metrics import DECLARED_NAMES
-from tests.unit.test_computer_alert_rules import _promtool
+from scripts.signoz_provision import _rule_payload
 
 ROOT = Path(__file__).resolve().parents[2]
-RULES = ROOT / "deploy" / "prometheus" / "rules" / "nora.yml"
 
 
-def _rules() -> dict[str, dict]:
-    doc = yaml.safe_load(RULES.read_text(encoding="utf-8"))
-    return {r["alert"]: r for g in doc["groups"] for r in g["rules"]}
+def _rules():
+    doc = yaml.safe_load((ROOT / 'deploy/signoz/alerts/rules.yaml').read_text())
+    return {r['name']: r for r in doc['rules']}
 
 
-def test_the_rules_read_series_the_keeper_declares_and_sets() -> None:
-    keeper_source = Path(oauth_keepalive.__file__).read_text(encoding="utf-8")
+def test_the_rules_read_series_the_keeper_declares_and_sets():
+    import re
+
+    source = Path(oauth_keepalive.__file__).read_text()
+    for name in ('OAuthRefreshStale', 'OAuthRefreshRefused', 'OAuthAccessTokenExpired'):
+        for metric in re.findall(r'nora_[a-z_]+', _rules()[name]['query']):
+            assert metric in DECLARED_NAMES
+            assert f'"{metric}"' in source
+
+
+def test_the_oauth_comparison_boundaries_are_preserved():
     rules = _rules()
-    for alert in ("OAuthRefreshStale", "OAuthRefreshRefused", "OAuthAccessTokenExpired"):
-        for series in re.findall(r"nora_[a-z_]+", rules[alert]["expr"]):
-            assert series in DECLARED_NAMES, (alert, series)
-            assert f'"{series}"' in keeper_source, (alert, series)
-
-
-def test_staleness_is_on_the_timestamp_not_a_counter() -> None:
-    """Prometheus loses a rare counter across this process's daily restarts;
-    the stale rule must read the timestamp the boot republishes."""
-    expr = _rules()["OAuthRefreshStale"]["expr"]
-    assert "nora_oauth_last_refresh_timestamp_seconds" in expr
-    assert "_total" not in expr and "absent" not in expr
-
-
-def test_the_alerts_reach_the_channel_through_the_existing_route() -> None:
-    rules = _rules()
-    assert rules["OAuthRefreshStale"]["labels"]["severity"] == "critical"
-    assert rules["OAuthRefreshRefused"]["labels"]["severity"] == "critical"
-    assert rules["OAuthAccessTokenExpired"]["labels"]["severity"] == "critical"
-    routes = yaml.safe_load((ROOT / "deploy" / "alertmanager" / "alertmanager.yml").read_text())
-    assert routes["route"]["receiver"] == "discord"
-
-
-def test_the_oauth_rules_pass_their_promtool_cases() -> None:
-    result = _promtool("test", "rules", "oauth.test.yml")
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert rules['OAuthRefreshStale']['query'] == (
+        '(time() - nora_oauth_last_refresh_timestamp_seconds) '
+        '> bool (2 * nora_oauth_refresh_interval_seconds)')
+    assert rules['OAuthAccessTokenExpired']['query'] == (
+        '(nora_oauth_access_expiry_timestamp_seconds > bool 0) '
+        '* (nora_oauth_access_expiry_timestamp_seconds < bool time())')
+    assert rules['OAuthRefreshRefused']['query'] == 'nora_oauth_refresh_refused'
+    assert rules['OAuthRefreshRefused']['op'] == 'equal'
+    assert rules['OAuthRefreshRefused']['target'] == 1
+    for name, window in (('OAuthRefreshStale', '15m'), ('OAuthAccessTokenExpired', '30m')):
+        payload = _rule_payload(name, rules[name], {}, 'nora-alerts')
+        assert payload['evaluation']['spec']['evalWindow'] == window
+        threshold = payload['condition']['thresholds']['spec'][0]
+        assert threshold['matchType'] == 'all_the_times'
+        assert threshold['channels'] == ['nora-alerts']

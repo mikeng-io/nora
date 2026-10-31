@@ -29,7 +29,7 @@ updates:
   directories:
   - /
   - /app
-  - /deploy/alert-bridge
+  - /deploy/signoz/collector
   - /deploy/computer
   - /deploy/instagram-bridge
   - /deploy/komodo

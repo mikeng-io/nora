@@ -16,4 +16,8 @@ Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/u
 # `systemctl --user --failed` shows an unmeasured probe.
 SuccessExitStatus=1
 TimeoutStartSec=600
+# Names the unit's stdout in the journal: the SigNoz ingester's journald
+# receiver selects probe entries on SYSLOG_IDENTIFIER=nora-session-probe
+# (journald match list in deploy/signoz/deployment/ingester/ingester.yaml).
+SyslogIdentifier=nora-session-probe
 ExecStart=%h/.local/bin/uv run --project %h/workspace/nora python -m nora.infra.social.session_probe
