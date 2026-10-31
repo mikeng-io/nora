@@ -3570,7 +3570,9 @@ async def build_dependencies(
     # it reuses — the same wiring absence, the same inert state.
     standing_fold = None
     if debrief_wiring is not None:
-        async def standing_fold(*, trace, unit, rooms):
+        async def standing_fold(
+            *, trace: Any, unit: str, rooms: tuple[tuple[str, str], ...],
+        ) -> None:
             from nora.engagement.stages import debrief as _debrief_stage
             if not rooms:
                 return

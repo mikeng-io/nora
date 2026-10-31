@@ -1768,3 +1768,34 @@ async def test_a_unit_fold_replay_writes_no_new_revision():
                 "sections": {"Options": "amber", "Leaning": "amber"}}],
     )
     assert ledger.applied == []
+
+
+async def test_a_failed_open_cannot_close_an_earlier_batch_entry():
+    from nora.testing.standing_ledger import InMemoryStandingLedger
+
+    ledger, _ = await _unit_fold(
+        ledger=InMemoryStandingLedger(),
+        items=[
+            {"kind": "decision", "subject": "generated ongoing choice",
+             "sections": {"Options": "amber or blue", "Leaning": "amber"}},
+            {"kind": "decision", "subject": "generated separate choice",
+             "status": "closed", "outcome": "chose generated blue",
+             "sections": {"Options": "uncited first line\nsecond line",
+                          "Leaning": "blue"}},
+        ],
+    )
+    assert len(ledger.entries) == 1
+    assert ledger.entries[0].subject == "generated ongoing choice"
+    assert ledger.entries[0].status == "open"
+
+
+async def test_an_unresolved_requirement_stays_unknown_even_with_entries():
+    from nora.domain.lineage import BODY, message
+    from nora.domain.turn_record import DisclosureRequirement
+
+    req = DisclosureRequirement(
+        "signal:generated-source", (message("signal:generated-source"),),
+        resolved=False,
+    )
+    lineage = debrief._fold_lineage(None, {"generated-call": [req.to_json()]})
+    assert any(entry.kind == "unresolved" for entry in lineage.section(BODY))

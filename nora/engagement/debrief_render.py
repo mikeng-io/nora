@@ -74,6 +74,7 @@ from nora.domain.profile import ProfileView
 from nora.domain.prompt import age, escape
 from nora.domain.quote_window import first_by_ts
 from nora.domain.standing import Standing, WorkingSetItem
+from nora.domain.standing_ledger import LedgerEntry
 from nora.domain.tag_trace import TagTrace
 from nora.language.culture_render import render_culture
 from nora.language.profile_render import render_profile
@@ -711,7 +712,7 @@ def render_debrief_input(
     culture: CultureRevision | None = None,
     profile_room: ProfileView | None = None,
     profile_name_of: Callable[[str], str] | None = None,
-    ledger_prior: tuple | None = None,
+    ledger_prior: tuple[LedgerEntry, ...] | None = None,
 ) -> str:
     """The whole of what the STANDING call sees — the prior plus the turn.
 

@@ -492,7 +492,7 @@ def _fold_lineage(prior: Standing | None, requirements: dict[str, Any]) -> Any:
         for rs in requirements.values() for r in rs
     ]
     req_entries = tuple(
-        req.entry() if req.entries else unresolved(req.origin)
+        req.entry() if req.known else unresolved(req.origin)
         for req in reqs
     )
     sections = (BODY, HOLD_OPEN, I_OWE, WORKING_SET)
@@ -632,6 +632,8 @@ async def fold_unit(
             nonlocal wrote, refused
             last_created = None
             for op in ops:
+                if op.op == "open":
+                    last_created = None
                 if op.id is None and op.op != "open":
                     # A `close`/`revise` on an entry this batch just opened:
                     # its id and base are the store's own, not the fold's.
@@ -724,8 +726,8 @@ def _unit_ops(
             if k in _ALLOWED_SECTIONS[kind] and isinstance(v, str)
             and v.strip()
         }
-        match = prior.get(item.get("id")) if isinstance(
-            item.get("id"), str) else None
+        item_id = item.get("id")
+        match = prior.get(item_id) if isinstance(item_id, str) else None
         if match is None and not isinstance(item.get("id"), str):
             # Provenance, not paraphrase: this exact Record already folded
             # into a prior entry — re-folding must not open a duplicate.
@@ -1228,8 +1230,8 @@ def _truncated(completion: Completion, tag_id: str, *, what: str) -> bool:
 
 def _check(
     completion: Completion, tag_id: str,
-) -> tuple[str | None, list[Any] | None, str]:
-    """`(body, working_set_raw, refusal_label)` for the STANDING call —
+) -> tuple[str | None, list[Any] | None, dict[str, Any], str]:
+    """`(body, working_set_raw, sections, refusal_label)` for the STANDING call —
     `finish_reason` first.
 
     **The two failures carry DIFFERENT labels and that is the point**, even
