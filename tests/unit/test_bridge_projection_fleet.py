@@ -18,7 +18,7 @@ import os
 from pathlib import Path
 
 import pytest
-from aiohttp import ClientSession
+from aiohttp import ClientConnectorError, ClientSession, web
 
 from nora import config
 from nora.platform.bridge.projection import (
@@ -122,9 +122,45 @@ async def _ready(path: Path, limit: float = 10.0) -> dict:
     raise AssertionError(f'publisher never wrote {path}')
 
 
+async def _health(session: ClientSession, port: int) -> tuple[int, dict]:
+    async with asyncio.timeout(10):
+        while True:
+            try:
+                async with session.get(f'http://127.0.0.1:{port}/health') as resp:
+                    return resp.status, await resp.json()
+            except ClientConnectorError:
+                await asyncio.sleep(0.05)
+
+
+@pytest.fixture(params=[False, True], ids=['normal-listen', 'delayed-listen'])
+def listener_start(request, monkeypatch, unused_tcp_port):
+    state = {'delayed': request.param, 'refusals': 0}
+    if request.param:
+        release = asyncio.Event()
+        original_start = web.TCPSite.start
+        original_request = ClientSession._request
+
+        async def start(site):
+            await release.wait()
+            await original_start(site)
+
+        async def get(session, method, str_or_url, *args, **kwargs):
+            try:
+                return await original_request(session, method, str_or_url, *args, **kwargs)
+            except ClientConnectorError:
+                if str(str_or_url) == f'http://127.0.0.1:{unused_tcp_port}/health':
+                    state['refusals'] += 1
+                    release.set()
+                raise
+
+        monkeypatch.setattr(web.TCPSite, 'start', start)
+        monkeypatch.setattr(ClientSession, '_request', get)
+    return state
+
+
 @pytest.mark.asyncio
 async def test_fleet_health_aggregates_per_platform_and_live_never_stales(
-        tmp_path, unused_tcp_port, example_config_path):
+        tmp_path, unused_tcp_port, example_config_path, listener_start):
     """One stale platform keeps /health 503 while the rest keep publishing."""
     good = _publisher(tmp_path / 'sig', 'signal', key='leg-7',
                       config_template=example_config_path)
@@ -141,11 +177,9 @@ async def test_fleet_health_aggregates_per_platform_and_live_never_stales(
         async with ClientSession() as session:
             deadline = asyncio.get_event_loop().time() + 10
             while True:
-                async with session.get(
-                        f'http://127.0.0.1:{port}/health') as resp:
-                    body = await resp.json()
-                    if resp.status == 503 and 'signal' in body['platforms']:
-                        break
+                status, body = await _health(session, port)
+                if status == 503 and 'signal' in body['platforms']:
+                    break
                 assert asyncio.get_event_loop().time() < deadline
                 await asyncio.sleep(0.1)
             assert not body['ok']
@@ -153,6 +187,8 @@ async def test_fleet_health_aggregates_per_platform_and_live_never_stales(
             assert not body['platforms']['whatsapp']['ok']
             async with session.get(f'http://127.0.0.1:{port}/live') as resp:
                 assert resp.status == 200 and (await resp.json())['live']
+            if listener_start['delayed']:
+                assert listener_start['refusals'] >= 1
     finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -161,7 +197,7 @@ async def test_fleet_health_aggregates_per_platform_and_live_never_stales(
 
 @pytest.mark.asyncio
 async def test_fleet_health_200_only_when_every_publisher_is_fresh(
-        tmp_path, unused_tcp_port, example_config_path):
+        tmp_path, unused_tcp_port, example_config_path, listener_start):
     good = _publisher(tmp_path / 'sig', 'signal', key='leg-7',
                       config_template=example_config_path)
     also = _publisher(tmp_path / 'ig', 'instagram', key='leg-7',
@@ -174,14 +210,14 @@ async def test_fleet_health_200_only_when_every_publisher_is_fresh(
         async with ClientSession() as session:
             deadline = asyncio.get_event_loop().time() + 10
             while True:
-                async with session.get(
-                        f'http://127.0.0.1:{port}/health') as resp:
-                    body = await resp.json()
-                    if resp.status == 200:
-                        break
+                status, body = await _health(session, port)
+                if status == 200:
+                    break
                 assert asyncio.get_event_loop().time() < deadline
                 await asyncio.sleep(0.1)
             assert body['ok'] and set(body['platforms']) == {'signal', 'instagram'}
+            if listener_start['delayed']:
+                assert listener_start['refusals'] >= 1
     finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
