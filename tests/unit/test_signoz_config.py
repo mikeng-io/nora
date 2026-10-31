@@ -9,8 +9,9 @@ invisible tests cannot see but a typo silently breaks:
   name rather than by shape alone.
 * `deploy/signoz/deployment/ingester/ingester.yaml` — the collector-side
   cache-key normalization (SDK flat keys → UI dotted keys on model leaves
-  only, agent aggregates excluded) and the one canonical log source
-  (journald CONTAINER_TAG matches, no unscoped filelog).
+  only, agent aggregates excluded), the one canonical log source
+  (journald CONTAINER_TAG matches, no unscoped filelog) and the native
+  severity promotion for declared structured `level`s.
 * `deploy/signoz/docker-compose.signoz.yaml` — the owned bridge producers
   carry journald tags matching the receiver's match list.
 """
@@ -178,6 +179,39 @@ def test_cache_keys_are_normalized_only_on_model_leaves():
         'delete_key(attributes, "gen_ai.usage.cache_write_input_tokens")' in s
         and agent in s
         for s in statements)
+
+
+def test_structured_levels_promote_to_native_severity():
+    """The journald chain json-parses `level` into an attribute but only a
+    severity_parser promotes it to the FIRST-CLASS fields native filters
+    read — without one every row lands as Unspecified(0) and severity
+    filters hide real records (collector readback). The operator must run
+    after the JSON parse, be confined to records that declared a level, and
+    never drop a record it cannot map."""
+    ops = INGESTER["receivers"]["journald/nora"]["operators"]
+    types = [op["type"] for op in ops]
+    sev = next(op for op in ops if op["type"] == "severity_parser")
+    assert types.index("severity_parser") > types.index("json_parser")
+    assert sev["parse_from"] == "attributes.level"
+    # Missing level (unstructured lines, level-less JSON) skips the parse
+    # rather than erroring — absent stays absent, never a guessed band.
+    assert sev["if"] == "attributes.level != nil"
+    # An unmapped level keeps its record; `drop` would lose log lines.
+    assert sev.get("on_error", "send") != "drop"
+    # The declared set is the app's five stdlib levels (band bases, as
+    # nora/obs/logging.py's SEVERITY_NUMBERS emits) plus WARN/FATAL spellings.
+    mapping = sev["mapping"]
+    assert set(mapping) == {"debug", "info", "warn", "error", "fatal"}
+
+    def words(band: str) -> set[str]:
+        declared = mapping[band]
+        return {declared} if isinstance(declared, str) else set(declared)
+
+    assert words("debug") == {"DEBUG"}
+    assert words("info") == {"INFO"}
+    assert words("warn") == {"WARNING", "WARN"}
+    assert words("error") == {"ERROR"}
+    assert words("fatal") == {"CRITICAL", "FATAL"}
 
 
 def test_journald_is_the_one_log_source_scoped_to_owned_producers():
