@@ -1,0 +1,23 @@
+[
+  {
+    "name": "insufficient AGE populations are not instrument errors",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "    if any(r[\"status\"] == \"INSUFFICIENT\" for r in age_results):\n        return \"INSUFFICIENT\"\n    if any(r[\"status\"] == \"FAIL\" for r in age_results):\n        return \"FAIL\"\n    return \"REPORTED\"",
+    "new": "    return \"ERROR\" if any(r[\"status\"] != \"PASS\" for r in age_results) else \"REPORTED\"",
+    "target": "tests/unit/test_memory_graph_spike.py::test_age_summary_preserves_insufficient_population"
+  },
+  {
+    "name": "depth-3 latency cannot pass below the question minimum",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "    if run.get(\"questions\", 0) < minimum:\n        return \"INSUFFICIENT\"\n    if run.get(\"sql_p95_ms\") is None:",
+    "new": "    if run.get(\"sql_p95_ms\") is None:",
+    "target": "tests/unit/test_memory_graph_spike.py::test_depth3_latency_verdict_binds_question_population"
+  },
+  {
+    "name": "unscored committed relations are missing measurements",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "    missing = committed_ids - scored_ids\n    for _ in missing:\n        for name in (\"relation_precision\", \"wrong_merges\"):\n            for verdicts in scored[name]:\n                verdicts.append(\"ERROR\")",
+    "new": "    missing = committed_ids - scored_ids",
+    "target": "tests/unit/test_memory_graph_spike.py::test_session_quality_marks_unscored_committed_as_missing"
+  }
+]
