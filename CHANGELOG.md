@@ -1,5 +1,26 @@
 # Changelog
 
+## [7.13.0](https://github.com/mikeng-io/nora/compare/v7.12.3...v7.13.0) (2026-10-31)
+
+
+### Features
+
+* **bridges:** preserve platform handoff across application releases ([c711aca](https://github.com/mikeng-io/nora/commit/c711aca3c644f86b8125bf32d959bc15686f5ce6))
+
+
+### Bug Fixes
+
+* **bridges:** confine custody reads and bound error surfaces ([f29189a](https://github.com/mikeng-io/nora/commit/f29189a375f8f56333108bd1dfee6ff5ee2c8fa1))
+* **bridges:** expose producer counters to the active collector ([4268017](https://github.com/mikeng-io/nora/commit/426801725ac1f9e347ce9628d5f19067a22df73f))
+* **bridges:** keep admission projections owner-only ([9c040ce](https://github.com/mikeng-io/nora/commit/9c040ce726a008ba2537e5eb339e5edf4f1bd2ac))
+* **bridges:** preserve adapter fake behavior and validation contracts ([146ca50](https://github.com/mikeng-io/nora/commit/146ca50ec36d381c4195c035b1cb6a2491bae040))
+* **bridges:** preserve deferred ownership and capture provenance ([b7dacff](https://github.com/mikeng-io/nora/commit/b7dacff600a1f155b7c5ffe7f6d3e10441927515))
+* **bridges:** preserve transport images across app version stamps ([6180413](https://github.com/mikeng-io/nora/commit/6180413face4e34f4f2566adee503c148356a018))
+* **bridges:** resolve the host collector from every transport ([2910bdd](https://github.com/mikeng-io/nora/commit/2910bdd8cd00b6e7295adedcebb88552cc3596e1))
+* **bridges:** retain failed participation turns without replay ([1084b87](https://github.com/mikeng-io/nora/commit/1084b8707af7fbe3165384eb4e94aa6e2ca74ee6))
+* **ci:** isolate reaction and lease timing contracts ([7fffa40](https://github.com/mikeng-io/nora/commit/7fffa409c5a3c5e25f26f9cb7a324352d34c7f9b))
+* **ci:** run wall-clock latency guards without pytest worker contention ([ca08b35](https://github.com/mikeng-io/nora/commit/ca08b353e82bf929f8ba11860ddf2a51b6b1c298))
+
 ## [7.12.3](https://github.com/mikeng-io/nora/compare/v7.12.2...v7.12.3) (2026-10-31)
 
 
