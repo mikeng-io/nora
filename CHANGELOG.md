@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.12.1](https://github.com/mikeng-io/nora/compare/v7.12.0...v7.12.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **spike:** route judges through the host-reaching endpoint and AGE at the source ([cb7a248](https://github.com/mikeng-io/nora/commit/cb7a24812b0de9f57a1a7d2d2db2f0bb9023ef25))
+
 ## [7.12.0](https://github.com/mikeng-io/nora/compare/v7.11.57...v7.12.0) (2026-10-30)
 
 
