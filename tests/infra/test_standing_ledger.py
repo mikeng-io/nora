@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import replace
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
@@ -11,13 +13,19 @@ from alembic import command
 
 from nora.agent.standing_ledger import ledger_permits
 from nora.domain.lineage import LiveRoom, RenderRoom, RoomFacts
+from nora.domain.lineage import message as origin_message
 from nora.domain.models import NormalizedMessage
 from nora.domain.note_body import Shown, ShownMessage
 from nora.domain.standing_ledger import LedgerOp
+from nora.domain.tag_trace import TagTrace
+from nora.domain.turn_record import DisclosureRequirement
+from nora.engagement.stages import debrief
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import alembic_config
+from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.standing_ledger import SqlStandingLedger
+from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.obs.metrics import Metrics
 
 
@@ -883,3 +891,164 @@ async def test_room_list_never_calls_an_unreadable_ledger_empty(
     assert "Withheld topic" not in str(result)
     if blocked in {"withheld", "failed"}:
         assert previews["room-a"]["status"] == "nothing_found"
+
+
+# --- the integrated unit fold ------------------------------------------------
+# `debrief.fold_unit` against the REAL stores: the saved Record's own handle
+# is read back, its requirements become the entries' lineage/exclusions, and
+# `check_ledger_op`'s own refusals apply — a fake ledger would hide every one
+# of them.
+
+
+class _FoldClient:
+    """One canned answer, through the `ModelClient` seam `fold_unit` calls."""
+
+    def __init__(self, content: str, finish: str = "stop"):
+        self.completion = debrief.Completion(content, finish)
+        self.prompts: list = []
+
+    async def complete(self, *, system: str, prompt: str, **kwargs) -> Any:
+        self.prompts.append((system, prompt))
+        return self.completion
+
+
+class _FoldObjective:
+    def objective_body(self, name: str) -> str:
+        return "fold the retained Record faithfully"
+
+
+async def test_the_unit_fold_writes_scope_unit_entries_from_the_saved_record(
+    ledger, ledger_db,
+):
+    """A completed Cognition loop materializes expressed decisions through
+    `fold_unit` at `scope="unit"` under the existing validated writer: the
+    saved Record's requirements reach the entry's lineage and exclusions,
+    and the fold never touches room Standing."""
+    traces = SqlTagTraceStore(ledger_db)
+    req = DisclosureRequirement(
+        "signal:room-a", (origin_message("signal:room-a"),),
+        exclude_persons=("ana",),
+    )
+    trace = TagTrace(
+        tag_id="generated-session", conversation_id="",
+        messages=({
+            "role": "assistant",
+            "content": [
+                {"text": "generated session content"},
+                {"toolUse": {"toolUseId": "call",
+                             "name": "generated_tool", "input": {}}},
+            ],
+        },),
+        transcript=(), outcome="silent", created_at=1000,
+        occasion="cognition", unit="u",
+        bound_rooms=("signal:room-a",),
+        requirements={"call": [req.to_json()]},
+    )
+    await traces.save(trace)
+
+    client = _FoldClient(json.dumps({"items": [{
+        "kind": "decision",
+        "subject": "which venue",
+        "status": "open",
+        "sections": {"Options": "amber, blue", "Leaning": "amber"},
+    }]}))
+    await debrief.fold_unit(
+        trace=trace, unit="u",
+        rooms=(("signal", "room-a"),),
+        ledger=ledger, target=target(), tag_traces=traces,
+        client=client, objective=_FoldObjective(), metrics=Metrics(),
+        display_name="Nora", timeout_seconds=5.0,
+        store_timeout_seconds=5.0, now_ms=2000,
+    )
+    entries = await ledger.read(
+        unit="u", platform="signal", conversation_id="room-a")
+    unit_entries = [e for e in entries if e.scope == "unit"]
+    assert len(unit_entries) == 1
+    entry = unit_entries[0]
+    assert entry.kind == "decision" and entry.status == "open"
+    assert entry.subject == "which venue"
+    assert "amber" in entry.body
+    # The Record's own exclusions reach the entry — derived by code from
+    # the cited `turn(...)` requirement, never asserted by the fold: the
+    # excluded person cannot read it, everyone else can.
+    assert not ledger_permits(
+        entry, target("room-b", people=frozenset({"ana"})))
+    assert ledger_permits(entry, target("room-b"))
+    # Room Standing was never touched.
+    standing = SqlStandingStore(ledger_db)
+    assert await standing.read(
+        platform="signal", conversation_id="room-a") is None
+
+
+async def test_the_unit_fold_revises_and_closes_under_cas(ledger, ledger_db):
+    traces = SqlTagTraceStore(ledger_db)
+    trace = TagTrace(
+        tag_id="generated-session", conversation_id="",
+        messages=({"role": "assistant",
+                   "content": [{"text": "generated session content"}]},),
+        transcript=(), outcome="silent", created_at=1000,
+        occasion="cognition", unit="u",
+        bound_rooms=("signal:room-a",), requirements={},
+    )
+    await traces.save(trace)
+
+    open_client = _FoldClient(json.dumps({"items": [{
+        "kind": "decision", "subject": "which venue", "status": "open",
+        "sections": {"Options": "amber, blue", "Leaning": "none yet"},
+    }]}))
+    await debrief.fold_unit(
+        trace=trace, unit="u", rooms=(("signal", "room-a"),),
+        ledger=ledger, target=target(), tag_traces=traces,
+        client=open_client, objective=_FoldObjective(),
+        metrics=Metrics(), display_name="Nora",
+        timeout_seconds=5.0, store_timeout_seconds=5.0, now_ms=2000,
+    )
+    entries = await ledger.read(
+        unit="u", platform="signal", conversation_id="room-a")
+    entry = next(e for e in entries if e.scope == "unit")
+
+    close_client = _FoldClient(json.dumps({"items": [{
+        "kind": "decision", "subject": "which venue", "status": "closed",
+        "outcome": "chose amber", "id": entry.id,
+    }]}))
+    await debrief.fold_unit(
+        trace=trace, unit="u", rooms=(("signal", "room-a"),),
+        ledger=ledger, target=target(), tag_traces=traces,
+        client=close_client, objective=_FoldObjective(),
+        metrics=Metrics(), display_name="Nora",
+        timeout_seconds=5.0, store_timeout_seconds=5.0, now_ms=2000,
+    )
+    entries = await ledger.read(
+        unit="u", platform="signal", conversation_id="room-a")
+    closed = next(e for e in entries if e.id == entry.id)
+    assert closed.status == "closed" and closed.revision == entry.revision + 1
+    assert "Closed as" in closed.body and "chose amber" in closed.body
+
+
+async def test_the_unit_fold_writes_nothing_without_a_saved_record(
+    ledger, ledger_db,
+):
+    """No persisted Record → the citations the entries would carry rest on
+    nothing, so the whole fold is «could not check», never a write."""
+    trace = TagTrace(
+        tag_id="never-saved", conversation_id="",
+        messages=({"role": "assistant",
+                   "content": [{"text": "generated content"}]},),
+        transcript=(), outcome="silent", created_at=1000,
+        occasion="cognition", unit="u",
+        bound_rooms=("signal:room-a",), requirements={},
+    )
+    metrics = Metrics()
+    await debrief.fold_unit(
+        trace=trace, unit="u", rooms=(("signal", "room-a"),),
+        ledger=ledger, target=target(),
+        tag_traces=SqlTagTraceStore(ledger_db),
+        client=_FoldClient(json.dumps({"items": [{
+            "kind": "decision", "subject": "x", "status": "open",
+            "sections": {"Options": "a", "Leaning": "b"}}]})),
+        objective=_FoldObjective(), metrics=metrics, display_name="Nora",
+        timeout_seconds=5.0, store_timeout_seconds=5.0, now_ms=2000,
+    )
+    assert await ledger.read(
+        unit="u", platform="signal", conversation_id="room-a") == ()
+    assert metrics.get("nora_debrief_total", outcome="unavailable") == 1

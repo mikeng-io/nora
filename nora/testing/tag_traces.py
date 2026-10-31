@@ -73,3 +73,10 @@ class FakeTagTraceStore:
     async def get(self, *, turn_id: int, unit: str) -> TagTrace | None:
         row = self._turn_ids.get(turn_id)
         return row if row is not None and row.unit == unit else None
+
+    async def by_tag(self, *, tag_id: str) -> TagTrace | None:
+        rows = sorted(
+            (t for t in self._rows if t.tag_id == tag_id),
+            key=lambda t: (t.created_at, t.turn_id or 0), reverse=True,
+        )
+        return rows[0] if rows else None

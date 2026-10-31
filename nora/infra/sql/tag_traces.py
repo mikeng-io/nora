@@ -259,3 +259,21 @@ class SqlTagTraceStore:
                 TAG_TRACE.c.turn_id == turn_id, TAG_TRACE.c.unit == unit,
             ))).first()
         return self._trace(row) if row is not None else None
+
+    async def by_tag(self, *, tag_id: str) -> TagTrace | None:
+        """The newest saved Record carrying `tag_id`, or `None`.
+
+        `save` is fire-and-forget (`None`, and the frozen trace never learns
+        its `turn_id`); anything that must cite the saved Record's identity —
+        `turn(t<turn_id>)` — reads it back here rather than trusting the
+        in-memory object it just handed `save`.
+        """
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(
+                sa.select(TAG_TRACE)
+                .where(TAG_TRACE.c.tag_id == tag_id)
+                .order_by(TAG_TRACE.c.created_at.desc(),
+                          TAG_TRACE.c.turn_id.desc())
+                .limit(1)
+            )).first()
+        return self._trace(row) if row is not None else None

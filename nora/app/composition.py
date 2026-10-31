@@ -3481,13 +3481,12 @@ async def build_dependencies(
             await _debrief_stage.fold_unit(
                 trace=trace, unit=unit, rooms=rooms,
                 ledger=ledger_store, target=target,
+                tag_traces=tag_trace_store,
                 client=debrief_wiring.client,
                 objective=debrief_wiring.objective,
                 metrics=metrics, display_name=cfg.doctrine.display_name,
-                fold_batch=debrief_wiring.fold_batch,
                 timeout_seconds=debrief_wiring.timeout_seconds,
                 store_timeout_seconds=debrief_wiring.store_timeout_seconds,
-                media_join=debrief_wiring.media_join,
                 now_ms=int(clock().timestamp() * 1000),
             )
 

@@ -57,7 +57,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, tzinfo
-from typing import Any, Literal, get_args
+from typing import Any
 from urllib.parse import unquote
 
 from nora.domain.blocks import (
@@ -105,6 +105,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("profile", 10, "turn"),
     ("standing_prior", 20, "turn"),
     ("standing_working_set_prior", 30, "turn"),
+    ("standing_ledger_prior", 35, "turn"),
     ("turn", 40, "turn"),
     ("what_happened", 50, "turn"),
     ("transcript", 60, "turn"),
@@ -183,38 +184,6 @@ _OUTCOME_GLOSS: Mapping[str, str] = {
 #: search that found eight restaurants and sent two would leave no trace of
 #: the other six. 4000 carries most `web_fetch` and `ask_memory` results
 #: whole. Her own narration and her tool
-#: CALLS keep 600: what she wrote is in the transcript when it was sent, and a
-#: call's arguments are hers and short.
-_BLOCK_CHARS = 2400
-_CARRIED_CHARS = 4000
-
-#: WHICH block `_clip` cut, grounded on `_block`'s own four branches: `text`
-#: and `reasoningContent` are both the MODEL'S OWN output (what it said, what
-#: it thought) and share the `reasoning` label; `toolUse` is the model's own
-#: request to a tool and gets its own label because a clipped CALL and a
-#: clipped RESULT are different failures for a grounding judge — one hides what
-#: she asked, the other hides what she was told. `transcript` is deliberately
-#: NOT a value here: nothing in this module clips a `TranscriptRow.body`
-#: (`_transcript` renders it whole), so a `transcript` label would be a
-#: declared value with no call site ever incrementing it.
-ClipKind = Literal["reasoning", "tool_call", "tool_result", "thinking"]
-CLIP_KINDS: tuple[str, ...] = get_args(ClipKind)
-
-#: The clip metric: one clip, one increment, labelled by
-#: `ClipKind`. Declared in `nora.obs.metric_specs`; this is
-#: the name the two modules must agree on.
-_CLIPS_METRIC = "nora_debrief_clips_total"
-
-#: The mark a clipped block carries, and the legend that explains it.
-#: **Telling the model what it is READING beats telling it what it can do.**
-#: A block cut at
-#: its bound and handed to a model with no mark reads as a complete account
-#: that simply doesn't support the claim; the reader cannot
-#: tell "the support isn't there" from "I was shown a fragment" unless the
-#: fragment says so itself.
-_CLIP_MARK = "clipped"
-
-
 #: The mark on one of Nora's OWN rows, and the LEGEND that says what it means.
 #: Without it, a row of hers that had actually reached the room looks exactly
 #: like one that had not, and a turn-scoped «nothing was sent» header is free
@@ -405,24 +374,45 @@ def _standing_working_set_prior(
     return _stamp(ContextBlock(name="standing_working_set_prior", body=body))
 
 
-def _clip(
-    text: str, *, kind: ClipKind, metrics: Metrics, limit: int = _BLOCK_CHARS,
-) -> str:
-    """Cut at `limit`, COUNTED and MARKED.
 
-    The increment fires only on an actual cut, never on every call: a series
-    often the ceiling is hit. The mark is
-    appended to the TEXT itself, ahead of the element render's escape, so it
-    travels with the block through whichever prefix wraps it
-    (`(called … with …)`, `(tool result: …)`) and reaches the model as part of what
-    it is reading, not as a side channel it has no reason to trust more than
-    the content.
+
+def _standing_ledger_prior(
+    entries: tuple[Any, ...], *, now_ms: int,
+) -> ContextBlock:
+    """The unit's scoped decisions, commitments and open work, as the unit
+    fold's own re-judgment input — the same always-rendered contract as
+    `_standing_prior`: an absent block and a failed read look identical from
+    inside the prompt, and "no entries yet" is the ordinary cold-start state.
+
+    Each entry renders its canonical identity and FULL current content —
+    `id`, `kind`, `scope`, `revision` and `status` ride as attributes so a
+    revise names the entry it means by the id it was shown, never by a
+    paraphrased subject line — followed by the entry's subject and authored
+    body (options, criteria, leaning, conditions and sources), escaped by
+    `render_elements` like every other block this file produces.
     """
-    text = text.strip()
-    if len(text) <= limit:
-        return text
-    metrics.inc(_CLIPS_METRIC, block=kind)
-    return f"{text[:limit]} …[{_CLIP_MARK}]"
+    if not entries:
+        return _stamp(ContextBlock(
+            name="standing_ledger_prior",
+            body="(no scoped unit entries yet — nothing to re-judge)",
+        ))
+    rows = [
+        (
+            f"entry-{i}",
+            e.subject + ("\n" + e.body if e.body else ""),
+            e,
+        )
+        for i, e in enumerate(entries)
+    ]
+    body = render_elements(
+        rows, tag="entry",
+        attrs=lambda r, _i: (
+            ("id", r[2].id), ("kind", r[2].kind), ("scope", r[2].scope),
+            ("revision", str(r[2].revision)), ("status", r[2].status),
+        ),
+        body=lambda r: r[1],
+    )
+    return _stamp(ContextBlock(name="standing_ledger_prior", body=body))
 
 
 def shown_step_tool_names(messages: Sequence[Mapping[str, Any]]) -> frozenset[str]:
@@ -600,26 +590,20 @@ def _block(
     come out mangled."""
     text = block.get("text")
     if isinstance(text, str) and text.strip():
-        return _clip(text, kind="reasoning", metrics=metrics), None
+        return text, None
     reasoning = block.get("reasoningContent")
     if isinstance(reasoning, Mapping):
         inner = reasoning.get("reasoningText")
         raw = inner.get("text") if isinstance(inner, Mapping) else None
         if isinstance(raw, str) and raw.strip():
-            return _clip(
-                raw, kind="thinking", metrics=metrics, limit=_CARRIED_CHARS,
-            ), "thinking"
+            return raw, "thinking"
     use = block.get("toolUse")
     if isinstance(use, Mapping):
         name = str(use.get("name") or "?")
-        clipped = _clip(str(use.get("input")), kind="tool_call", metrics=metrics)
-        return f"(called {name} with {clipped})", None
+        return f"(called {name} with {use.get('input')})", None
     result = block.get("toolResult")
     if isinstance(result, Mapping):
-        clipped = _clip(
-            _tool_result_text(result.get("content")), kind="tool_result",
-            metrics=metrics, limit=_CARRIED_CHARS,
-        )
+        body = _tool_result_text(result.get("content"))
         status = result.get("status")
         call = result.get("toolUseId")
         head = "tool result"
@@ -627,7 +611,7 @@ def _block(
             head += f" for {call}"
         if isinstance(status, str) and status:
             head += f" status={status}"
-        return f"({head}: {clipped})", None
+        return f"({head}: {body})", None
     return "", None
 
 

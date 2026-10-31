@@ -135,7 +135,9 @@ from nora.domain.standing import (
 )
 from nora.domain.standing_ledger import LedgerOp, StandingLedger
 from nora.domain.tag_trace import TagTrace
+from nora.domain.turn_record import DisclosureRequirement
 from nora.engagement.debrief_render import (
+    _standing_ledger_prior,
     consolidate_prompt,
     fold_prompt,
     render_debrief_input,
@@ -464,6 +466,32 @@ class Wiring:
 
 
 
+
+
+def _fold_lineage(prior: Standing | None, requirements: dict[str, Any]) -> Any:
+    """The lineage a fold's write carries: the prior's, UNION the entries
+    the retained Record's own `DisclosureRequirement`s produce (`entry()`,
+    perception reads with their exclusions attached), on `body` — the
+    section the fold actually rewrites. Requirements `dict[toolUseId,
+    list[to_json()]]` parse back through the canonical `from_json`; an
+    unresolved one contributes nothing rather than a fake entry."""
+    from nora.domain.lineage import BODY, Lineage
+
+    req_entries = tuple(
+        DisclosureRequirement.from_json(r).entry()
+        for reqs in requirements.values() for r in reqs
+        if DisclosureRequirement.from_json(r).entries
+    )
+    if prior is None or not prior.lineage.to_json():
+        return Lineage.of({BODY: req_entries}) if req_entries else None
+    return Lineage.of({
+        s: tuple(dict.fromkeys(
+            (*prior.lineage.section(s),
+             *(req_entries if s == BODY else ()))))
+        for s in (BODY, "hold_open", "i_owe", "working_set")
+    })
+
+
 async def fold_unit(
     *,
     trace: TagTrace,
@@ -471,33 +499,63 @@ async def fold_unit(
     rooms: tuple[tuple[str, str], ...],
     ledger: StandingLedger,
     target: RenderRoom,
+    tag_traces: Any,
     client: ModelClient,
     objective: ObjectiveSource,
     metrics: Metrics,
     display_name: str,
-    fold_batch: int,
     timeout_seconds: float,
     store_timeout_seconds: float,
     now_ms: int,
-    media_join: MediaJoin | None = None,
     tz: tzinfo | None = None,
 ) -> None:
     """The ONE unit-scoped materialization after a completed Cognition loop
     (design/notebook-memory-types/20-standing.md §3-4): the same tools-less
     updater contract as `run`, writing into the scoped Standing Ledger at
-    `scope="unit"` rather than into any room's Standing row.
+    `scope="unit"` — never into a room Standing row, never a copy of the
+    whole session Record into every bound room.
 
-    The whole retained session Record goes in once — decisions, commitments
-    and open work the session expressed or produced, each as a ledger entry
-    revised under its own `base` (expected revision) or opened fresh.
-    A failed read or a malformed answer preserves the prior entries, exactly
-    as a failed room fold preserves the prior position.
+    The write goes through `check_ledger_op` semantics end to end: prior
+    unit-scope entries are READ first, a revise/close names the entry by the
+    `id` it was shown (never a subject paraphrase), `base` is the revision
+    it was read at (CAS), status changes only through `close` with cited
+    grounds, and every written section cites the session's OWN saved Record
+    (`turn(<handle>)`, resolved from the store, not guessed) so `_evidence`
+    derives the entry's lineage and exclusions by code. An item the Record
+    does not ground is skipped, a no-change item writes no revision, and a
+    cut-off or malformed answer preserves the prior exactly as a failed
+    room fold does.
 
     Never raises: this runs after the session's outcome is already recorded.
     """
     started = time.perf_counter()
     outcome = "error"
     try:
+        # The saved Record's own identity — `save` is fire-and-forget and the
+        # frozen trace never learns its `turn_id`, so the handle the entries
+        # cite is the store's readback, never the in-memory object's guess.
+        try:
+            saved = await asyncio.wait_for(
+                tag_traces.by_tag(tag_id=trace.tag_id),
+                timeout=store_timeout_seconds,
+            )
+        except Exception:
+            log.exception(
+                "fold_unit: saved-Record readback failed (tag=%s)",
+                trace.tag_id,
+            )
+            outcome = "unavailable"
+            return
+        if saved is None or saved.handle is None:
+            # The session's Record is not persisted — «could not check»,
+            # never a write resting on an unverifiable source.
+            log.warning(
+                "fold_unit: no saved Record for %s; not folding",
+                trace.tag_id,
+            )
+            outcome = "unavailable"
+            return
+
         try:
             seen: dict[str, Any] = {}
             for platform, conversation_id in rooms:
@@ -512,7 +570,6 @@ async def fold_unit(
                         seen[entry.id] = entry
             prior = tuple(seen.values())
         except Exception:
-            # «I could not check» — never a fold against a guessed-empty prior.
             log.exception(
                 "fold_unit: could not read the prior scoped entries "
                 "(tag=%s); not folding", trace.tag_id,
@@ -525,12 +582,10 @@ async def fold_unit(
             trace=trace, prior=None,
             display_name=display_name, metrics=metrics, since_rows=(), tz=tz,
         )
-        if prior:
-            rendered += "\nPrior unit decisions and open work:\n" + "\n".join(
-                f"- {e.id} · {e.kind} · {e.status} · revision {e.revision} · "
-                f"{e.subject}"
-                for e in prior
-            )
+        # The scoped prior rides the declared render path — escaped, with
+        # every entry's id/kind/scope/revision/status and full body.
+        rendered += _standing_ledger_prior(prior, now_ms=now_ms).render()
+
         reply = await asyncio.wait_for(
             _complete(
                 client, call="fold_unit",
@@ -543,55 +598,40 @@ async def fold_unit(
             ),
             timeout=timeout_seconds,
         )
+        # finish_reason BEFORE any parse or write: a truncated items list is
+        # not an items list.
+        if _truncated(reply, trace.tag_id, what="the unit fold"):
+            outcome = "unavailable"
+            return
         parsed = _parsed(reply.content)
         items = parsed.get("items") if parsed is not None else None
         if not isinstance(items, list):
-            outcome = "malformed" if not _truncated(reply, trace.tag_id,
-                                                  what="the unit fold") else "unavailable"
+            outcome = "malformed"
             return
 
-        # Cited Record material rides `shown`: the session's own saved
-        # turn handle makes `_evidence` derive the entry's lineage and
-        # exclusions from the Record's own requirements — code-derived,
-        # never asserted by the fold (design 20 §4).
-        shown = Shown(
-            turn_handles=frozenset({trace.handle}) if trace.handle else frozenset(),
-        )
-        by_id = {e.id: e for e in prior}
-        by_subject = {e.subject: e for e in prior}
-        wrote = 0
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            kind = item.get("kind")
-            subject = item.get("subject")
-            if (kind not in ("decision", "commitment", "thread")
-                    or not isinstance(subject, str) or not subject.strip()):
-                continue
-            match = by_id.get(item.get("id")) or by_subject.get(subject.strip())
-            sections = {
-                k: v for k, v in (item.get("sections") or {}).items()
-                if isinstance(v, str)
-            }
-            op = LedgerOp(
-                "revise" if match else "open", kind=kind,
-                id=match.id if match else None,
-                base=match.revision if match else None,
-                scope="unit",
-                subject=subject.strip(),
-                sections=sections,
-                status=item.get("status")
-                if isinstance(item.get("status"), str) else None,
-                outcome=item.get("outcome")
-                if isinstance(item.get("outcome"), str) else None,
-            )
-            got = await asyncio.wait_for(
-                ledger.apply(op, target=target, shown=shown, now_ms=now_ms),
-                timeout=store_timeout_seconds,
-            )
-            if got.refusal is None:
-                wrote += 1
-        outcome = "written" if wrote else "no_change"
+        shown = Shown(turn_handles=frozenset({saved.handle}))
+        ops = _unit_ops(items, prior={e.id: e for e in prior},
+                        handle=saved.handle)
+
+        wrote = refused = 0
+
+        async def _write() -> tuple[int, int]:
+            nonlocal wrote, refused
+            for op in ops:
+                got = await asyncio.wait_for(
+                    ledger.apply(op, target=target, shown=shown,
+                                 now_ms=now_ms),
+                    timeout=store_timeout_seconds,
+                )
+                if got.refusal is None:
+                    wrote += 1
+                else:
+                    refused += 1
+            return wrote, refused
+
+        await asyncio.wait_for(_write(), timeout=timeout_seconds)
+        outcome = ("written" if wrote
+                   else "refused" if refused else "no_change")
     except TimeoutError:
         outcome = "timeout"
     except asyncio.CancelledError:
@@ -606,8 +646,98 @@ async def fold_unit(
             "nora_debrief_seconds", time.perf_counter() - started)
 
 
-# `DEFAULT_BODY_CHARS` is the same per-fold body ceiling `run` enforces: the
-# unit fold keeps it rather than growing a second budget.
+#: Sections an item's write may name, by kind — `check_ledger_op`'s own
+#: vocabulary, mirrored so an unwritable item is dropped BEFORE the apply,
+#: with the same refusal the store would return never reaching it.
+_ALLOWED_SECTIONS = {
+    "decision": ("Options", "Criteria", "Leaning", "Blocked on", "Reopen if",
+                 "Closed as"),
+    "commitment": ("Owed", "Done as"),
+}
+_REQUIRED_OPEN_SECTIONS = {
+    "decision": ("Options", "Leaning"),
+    "commitment": ("Owed",),
+}
+
+
+def _unit_ops(
+    items: list[Any], *, prior: dict[str, Any], handle: str,
+) -> list[LedgerOp]:
+    """The `LedgerOp`s a fold's `items` produce — grounded or nothing.
+
+    Every written line cites the session's saved Record as `turn(<handle>)`
+    so `_evidence` derives the entry's lineage and exclusions from the
+    Record's own requirements rather than trusting the fold's say-so. An
+    `id` names the entry it revises — a subject match is NEVER a match
+    (two entries may share a subject), and an id the prior does not hold is
+    left unresolved rather than merged onto a guess.
+    """
+    ops: list[LedgerOp] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        kind = item.get("kind")
+        subject = item.get("subject")
+        if (kind not in _ALLOWED_SECTIONS
+                or not isinstance(subject, str) or not subject.strip()
+                or "\n" in subject):
+            continue
+        raw_sections = item.get("sections")
+        sections = {
+            k: v for k, v in (raw_sections or {}).items()
+            if k in _ALLOWED_SECTIONS[kind] and isinstance(v, str)
+            and v.strip()
+        }
+        match = prior.get(item.get("id")) if isinstance(
+            item.get("id"), str) else None
+        if item.get("status") in ("closed", "done", "resolved"):
+            outcome_text = item.get("outcome")
+            if (match is None
+                    or not isinstance(outcome_text, str)
+                    or not outcome_text.strip()):
+                continue  # closing needs the entry AND cited grounds
+            ops.append(LedgerOp(
+                "close", kind=kind, id=match.id, base=match.revision,
+                outcome=f"{outcome_text.strip()} turn({handle})",
+            ))
+            continue
+        if not all(sections.get(name, "").strip()
+                   for name in _REQUIRED_OPEN_SECTIONS[kind]):
+            continue  # the Record did not ground the required sections
+        sections = {k: f"{v.rstrip()} turn({handle})"
+                    for k, v in sections.items()}
+        if match is not None:
+            if _unchanged(match, subject.strip(), sections):
+                continue  # replay/no-change writes no revision
+            ops.append(LedgerOp(
+                "revise", kind=kind, id=match.id, base=match.revision,
+                subject=subject.strip(), sections=sections,
+            ))
+        elif isinstance(item.get("id"), str):
+            continue  # cites an entry the unit does not hold — unresolved
+        else:
+            ops.append(LedgerOp(
+                "open", kind=kind, scope="unit",
+                subject=subject.strip(), sections=sections,
+            ))
+    return ops
+
+
+def _unchanged(entry: Any, subject: str, sections: dict[str, str]) -> bool:
+    """Whether a revise would write what the entry already says — the
+    no-change idempotence the real store has no reason to special-case."""
+    from nora.domain.note_body import split_sections
+    if entry.subject != subject:
+        return False
+    prior_sections = {
+        h: "\n".join(lines) for h, lines in
+        split_sections(entry.body or "", schema=_ALLOWED_SECTIONS[entry.kind])
+    } if entry.body else {}
+    return all(
+        prior_sections.get(name, "").strip() == value.strip()
+        for name, value in sections.items()
+    )
+
 
 async def run(
     *,
@@ -876,13 +1006,29 @@ async def run(
                     # Record itself carries (design 20 §4, updater source
                     # requirements derived by code), plus any the output
                     # names — unioned, never narrowed.
+                    # Exclusions are code-derived, never model-asserted:
+                    # the prior's gate, plus every exclusion the retained
+                    # Record itself carries — `requirements` is the saved
+                    # `dict[toolUseId, list[DisclosureRequirement.to_json()]]`
+                    # (TurnRecording.to_json), parsed back through the
+                    # canonical `from_json` — plus any the output names.
+                    # Unioned, never narrowed.
                     exclude_persons=tuple(dict.fromkeys(
                         [*(prior.exclude_persons if prior is not None else ()),
                          *(sections.get("exclude_persons") or ()),
-                         *(p for req in trace.requirements
-                           for p in req.exclude_persons)],
+                         *(p for reqs in trace.requirements.values()
+                           for req in reqs
+                           for p in DisclosureRequirement.from_json(req)
+                           .exclude_persons)],
                     )),
-                    lineage=prior.lineage if prior is not None else None,
+                    # Source lineage, code-derived like the exclusions
+                    # above: the prior's carried gates UNION every consumed
+                    # Record requirement's `entry()` on the section this
+                    # write revises (`body`). `SqlStandingStore._derived`
+                    # merges this over the room's own defaults; without it
+                    # the new content's sources never reach the row.
+                    lineage=_fold_lineage(
+                        prior, trace.requirements),
                     last_folded_row_id=(
                         batch[-1].id if batch else (
                             prior.last_folded_row_id if prior is not None else None)
