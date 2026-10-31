@@ -87,6 +87,7 @@ services:
     container_name: signal-bridge
     restart: unless-stopped
     networks: [nora]
+    extra_hosts: ["host.docker.internal:host-gateway"]
     volumes:
       - ./state/signal-cli:/data/signal-cli
       - ./state/bridge/signal:/data/bridge
@@ -141,6 +142,7 @@ services:
     container_name: discord-bridge
     restart: unless-stopped
     networks: [nora]
+    extra_hosts: ["host.docker.internal:host-gateway"]
     volumes:
       - ./state/bridge/discord:/data/bridge
       - bridge-projection:/bridge-projection:ro
@@ -207,6 +209,7 @@ services:
     container_name: whatsapp-bridge
     restart: unless-stopped
     networks: [nora]
+    extra_hosts: ["host.docker.internal:host-gateway"]
     volumes:
       # Baileys multi-file auth state (encryption keys, device creds,
       # lid-mapping-*.json). Losing this loses the pairing — not just

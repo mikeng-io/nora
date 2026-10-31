@@ -873,6 +873,14 @@ async def _unused_execute(action: dict[str, Any]) -> ActionReply:
 # ---------------------------------------------------------------------------
 
 class TestComposeTracingContract:
+    @pytest.mark.parametrize("platform", ["signal", "discord", "whatsapp", "instagram"])
+    def test_bridge_resolves_the_host_collector(self, platform):
+        import yaml
+
+        compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+        hosts = compose["services"][f"{platform}-bridge"].get("extra_hosts", [])
+        assert "host.docker.internal:host-gateway" in hosts, platform
+
     def _env(self, service: str) -> set[str]:
         import yaml
         compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
