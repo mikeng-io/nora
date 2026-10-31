@@ -209,7 +209,7 @@ async def main() -> None:
         journal=JOURNAL, producer=StreamProducer(redis, STREAM),
         metrics=metrics)
     bridge = DiscordBridge(
-        api_token=TOKEN, account_key=ACCOUNT_KEY,
+        api_token=TOKEN, account_key=ACCOUNT_KEY, metrics=metrics,
         client_factory=_client,
         bot_token=BOT_TOKEN,
         api_base=API_BASE,

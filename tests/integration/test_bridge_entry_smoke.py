@@ -43,6 +43,7 @@ _DOTENV = {
     "INSTAGRAM_BRIDGE_ACCOUNT_KEY": "ig-1",
     "NORA_BRIDGE_CORRELATION_KEY": CORRELATION_KEY,
     "NORA_BRIDGE_TOKEN": "test-bridge-token",
+    "NORA_BRIDGE_API_TOKEN": "test-api-override",
     "NORA_REDIS_CONSUMER_PASSWORD": "consumer-pw",
     "NORA_REDIS_INSPECTOR_PASSWORD": "inspector-pw",
     "NORA_REDIS_PRODUCER_PASSWORD": "producer-pw",
@@ -250,6 +251,18 @@ def test_discord_entry_serves_v1_before_connecting(
         assert served, (
             "entry never served /v1 — config or import failed first: "
             f"rc={proc.poll()}")
+        assert env["NORA_BRIDGE_API_TOKEN"] != _DOTENV["NORA_BRIDGE_TOKEN"]
+        for bearer, expected in ((env["NORA_BRIDGE_API_TOKEN"], 200),
+                                 (_DOTENV["NORA_BRIDGE_TOKEN"], 401)):
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+            conn.request("GET", "/metrics", headers={
+                "Authorization": f"Bearer {bearer}"})
+            response = conn.getresponse()
+            body = response.read()
+            assert response.status == expected
+            if expected == 200:
+                assert b"# HELP" in body
+            conn.close()
     finally:
         if proc.poll() is None:
             proc.send_signal(signal.SIGTERM)

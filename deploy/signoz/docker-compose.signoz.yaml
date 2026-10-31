@@ -98,6 +98,8 @@ services:
       options:
         tag: discord-bridge
   bridge-projection:
+    networks:
+    - signoz
     logging:
       driver: journald
       options:

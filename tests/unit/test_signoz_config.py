@@ -34,6 +34,23 @@ _OWNED_LOG_PRODUCERS = {
     "signal-bridge", "discord-bridge", "whatsapp-bridge", "instagram-bridge",
 }
 
+
+def test_bridge_producer_scrapes_use_the_effective_api_bearer():
+    jobs = {job["job_name"]: job for job in
+            INGESTER["receivers"]["prometheus/nora"]["config"]["scrape_configs"]}
+    for platform, port in (("signal", 18090), ("discord", 18093),
+                           ("whatsapp", 18081), ("instagram", 18082)):
+        job = jobs[platform + "-bridge"]
+        assert job["metrics_path"] == "/metrics"
+        assert job["authorization"] == {
+            "type": "Bearer", "credentials": "${env:NORA_BRIDGE_API_TOKEN}"}
+        assert job["static_configs"] == [{"targets": [f"{platform}-bridge:{port}"]}]
+    assert "NORA_BRIDGE_API_TOKEN=${NORA_BRIDGE_API_TOKEN:-${NORA_BRIDGE_TOKEN:-}}" in (
+        COMPOSE["services"]["ingester"]["environment"])
+    assert jobs["bridge-projection"]["static_configs"] == [
+        {"targets": ["bridge-projection:8091"]}]
+    assert "signoz" in OVERLAY["services"]["bridge-projection"]["networks"]
+
 _FOR = re.compile(r"for (\d+)m")
 def _comparisons_without_bool(query: str) -> list[str]:
     """PromQL comparisons OUTSIDE label selectors — `{x!="y"}` is a matcher,
