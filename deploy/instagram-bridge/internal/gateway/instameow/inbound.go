@@ -586,9 +586,14 @@ type reactionEvent struct {
 	Removed     bool   `json:"removed"`
 	FromMe      *bool  `json:"from_me"`
 	TimestampMS int64  `json:"timestamp_ms,omitempty"`
+	// UpstreamSeq is the delta's own iris uq_seq_id — the upstream's
+	// monotonic revision for THIS delta. Reaction deltas carry no
+	// meaningful timestamp; this is the only honest ordering/identity
+	// anchor a redelivery check can use (a replayed delta keeps its seq).
+	UpstreamSeq int64 `json:"upstream_seq,omitempty"`
 }
 
-func normalizeReaction(room string, r slidetypes.Reaction, messageID string, removed bool, ownFBID int64) *reactionEvent {
+func normalizeReaction(room string, r slidetypes.Reaction, messageID string, removed bool, ownFBID int64, upstreamSeq int64) *reactionEvent {
 	ev := &reactionEvent{
 		Kind:      kindReaction,
 		RoomID:    room,
@@ -602,6 +607,9 @@ func normalizeReaction(room string, r slidetypes.Reaction, messageID string, rem
 	}
 	if !r.ReactionTimestampMS.IsZero() {
 		ev.TimestampMS = r.ReactionTimestampMS.UnixMilli()
+	}
+	if upstreamSeq != 0 {
+		ev.UpstreamSeq = upstreamSeq
 	}
 	return ev
 }

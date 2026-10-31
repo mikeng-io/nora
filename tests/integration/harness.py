@@ -88,6 +88,7 @@ class _FailingAppendStore(_StoreProxy):
         is_nora=False,
         delivery_status=DeliveryStatus.PENDING,
         person_id=None,
+        tx_hook=None,
     ):
         if is_nora:
             raise RuntimeError("disk full")
@@ -96,6 +97,7 @@ class _FailingAppendStore(_StoreProxy):
             is_nora=is_nora,
             delivery_status=delivery_status,
             person_id=person_id,
+            tx_hook=tx_hook,
         )
 
 

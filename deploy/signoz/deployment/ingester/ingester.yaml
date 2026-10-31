@@ -210,6 +210,47 @@ receivers:
         static_configs:
         - targets:
           - analytics:9103
+      - job_name: signal-bridge
+        scrape_interval: 30s
+        metrics_path: /metrics
+        authorization:
+          type: Bearer
+          credentials: ${env:NORA_BRIDGE_API_TOKEN}
+        static_configs:
+        - targets:
+          - signal-bridge:18090
+      - job_name: discord-bridge
+        scrape_interval: 30s
+        metrics_path: /metrics
+        authorization:
+          type: Bearer
+          credentials: ${env:NORA_BRIDGE_API_TOKEN}
+        static_configs:
+        - targets:
+          - discord-bridge:18093
+      - job_name: whatsapp-bridge
+        scrape_interval: 30s
+        metrics_path: /metrics
+        authorization:
+          type: Bearer
+          credentials: ${env:NORA_BRIDGE_API_TOKEN}
+        static_configs:
+        - targets:
+          - whatsapp-bridge:18081
+      - job_name: instagram-bridge
+        scrape_interval: 30s
+        metrics_path: /metrics
+        authorization:
+          type: Bearer
+          credentials: ${env:NORA_BRIDGE_API_TOKEN}
+        static_configs:
+        - targets:
+          - instagram-bridge:18082
+      - job_name: bridge-projection
+        scrape_interval: 30s
+        static_configs:
+        - targets:
+          - bridge-projection:8091
       - job_name: signoz-ingester
         scrape_interval: 30s
         static_configs:
@@ -240,7 +281,9 @@ receivers:
     - CONTAINER_TAG: nora
     - CONTAINER_TAG: presence
     - CONTAINER_TAG: analytics
-    - CONTAINER_TAG: signal-cli
+    - CONTAINER_TAG: signal-bridge
+    - CONTAINER_TAG: discord-bridge
+    - CONTAINER_TAG: bridge-projection
     - CONTAINER_TAG: whatsapp-bridge
     - CONTAINER_TAG: instagram-bridge
     - SYSLOG_IDENTIFIER: nora-session-probe

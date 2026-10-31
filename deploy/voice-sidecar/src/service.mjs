@@ -46,7 +46,10 @@ const HOST = process.env.HOST ?? '127.0.0.1';
 const PORT = Number(process.env.PORT ?? 4600);
 const PUMP_HOST = process.env.PUMP_HOST ?? '127.0.0.1';
 const PUMP_PORT = Number(process.env.PUMP_PORT ?? 4599);
-const NORA_EVENT_URL = process.env.NORA_EVENT_URL ?? 'http://nora:9100/app/v1/voice/event';
+// In bridge mode the discord-bridge owns the VoiceEventConsumer
+// (/v1/voice/event, bearer-authed like every /v1 route there) — the app
+// relinquished it, so the shipped default targets the bridge.
+const NORA_EVENT_URL = process.env.NORA_EVENT_URL ?? 'http://discord-bridge:18093/v1/voice/event';
 // A DIRECTORY now, one `<guild_id>.json` inside it (multi-guild 2026-09-17).
 // Configured guilds come from Nora's existing [speech.tts].sidecars list,
 // mounted read-only at /app/config.toml. State records desired connections,

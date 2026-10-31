@@ -15,6 +15,7 @@
 import { createDecipheriv, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { lidForm, phoneForm } from './wa_jid.js';
 
 // -- JID parsing and LID<->phone resolution --------------------------------
 
@@ -163,6 +164,9 @@ export function createRecentMessageCache(limit = 1000) {
       // other JID form, which the key derivation may have used instead.
       message_secret: messageSecretOf(msg),
       sender_alt: msg.key.participantAlt || msg.key.remoteJidAlt || null,
+      // The full stanza rides along so a `/v1 send` with `quote` can thread
+      // onto the real parent, not a hollow synthesized key.
+      raw: msg,
       key: {
         id,
         remoteJid: msg.key.remoteJid,
@@ -576,7 +580,7 @@ function ownText(messageContent, media) {
  * protocolMessage MESSAGE_EDIT surfaces as a normal event with `edit_of`
  * set to the target stanza id; text/media then describe the NEW content.
  */
-export function extractMessageEvent(msg, { lidToPhone = {}, phoneToLid = {}, recentCache = null } = {}) {
+export function extractMessageEvent(msg, { lidToPhone = {}, phoneToLid = {}, recentCache = null, self = null } = {}) {
   if (!msg?.key?.remoteJid || !msg.message) return null;
 
   const chatJid = normalizeJid(msg.key.remoteJid) || msg.key.remoteJid;
@@ -587,6 +591,25 @@ export function extractMessageEvent(msg, { lidToPhone = {}, phoneToLid = {}, rec
 
   let content = getMessageContent(msg);
   let editOf = null;
+
+  /**
+   * The author of the message a reaction/delete TARGETS, in sender_form:
+   * `self` forms when the touch lands on Nora's own message, else the
+   * participant the platform names. `''` when the platform says nothing.
+   */
+  const targetAuthor = (key) => {
+    if (key?.fromMe) {
+      if (self?.phone) return phoneForm(self.phone);
+      if (self?.lid) return lidForm(self.lid);
+      return '';
+    }
+    const jid = normalizeJid(key?.participant || '');
+    if (!jid) return '';
+    const id = resolveIdentity(jid, lidToPhone, phoneToLid);
+    if (id.phone) return phoneForm(id.phone);
+    if (id.lid) return lidForm(id.lid);
+    return jid;
+  };
 
   // A REACTION or a REVOKE (delete for everyone) is not a message: it names
   // the message it touches and says nothing itself. Emitted as its own event
@@ -612,6 +635,7 @@ export function extractMessageEvent(msg, { lidToPhone = {}, phoneToLid = {}, rec
       type: 'reaction',
       ...who,
       target_id: target,
+      target_author: targetAuthor(reaction.key),
       // An EMPTY text is WhatsApp's «reaction removed».
       emoji,
       removed: emoji === '',
@@ -628,6 +652,7 @@ export function extractMessageEvent(msg, { lidToPhone = {}, phoneToLid = {}, rec
       type: 'delete',
       ...who,
       target_id: target,
+      target_author: targetAuthor(proto.key),
       timestamp_ms: timestampMs(msg.messageTimestamp),
     };
   }

@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -493,7 +494,23 @@ def publisher_source(tmp_path, monkeypatch):
     bundle = load('release_bundle')
     repo = tmp_path / 'source'
     (repo / 'scripts').mkdir(parents=True)
-    (repo / 'nora').mkdir()
+    # The Python bridge images fingerprint their import closure, so the fixture
+    # needs the real trees those entrypoints resolve through — not stubs a
+    # second grant parser would accept. `git ls-files` is the index boundary:
+    # staged-but-uncommitted source comes along with its working-tree bytes
+    # while installed node_modules and other ignored build trees never do.
+    # generated.txt stays as the tracked non-code input probe.
+    tracked = subprocess.check_output(
+        ['git', 'ls-files', '-z', '--', 'nora', 'deploy'],
+        cwd=ROOT, text=True,
+    ).split('\0')
+    for rel in tracked:
+        source = ROOT / rel
+        if not rel or not source.is_file():
+            continue
+        target = repo / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
     (repo / 'nora/generated.txt').write_text('generated tracked image input')
     (repo / '.github/workflows').mkdir(parents=True)
     shutil.copy(ROOT / '.github/workflows/release-images.yml', repo / '.github/workflows')
@@ -502,6 +519,8 @@ def publisher_source(tmp_path, monkeypatch):
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(ROOT / dockerfile, target)
     (repo / 'app/package-lock.json').write_text('{"generated": true}')
+    for name in ('pyproject.toml', 'uv.lock'):
+        shutil.copy(ROOT / name, repo / name)
     shutil.copy(ROOT / 'docker-compose.yml', repo)
     shutil.copy(ROOT / 'scripts/gen_version_manifest.py', repo / 'scripts')
 
@@ -669,6 +688,10 @@ def test_complete_image_build_uses_selected_source_version_and_channel(
     def run(*command):
         if command == ('bash', 'deploy/signal-cli/fetch.sh'):
             prepared.append('signal-cli')
+            # fetch.sh replaces any previous archives; the directory must end
+            # holding exactly the freshly verified tarball+signature pair.
+            for stale in Path('deploy/signal-cli').glob('signal-cli-*.tar.gz*'):
+                stale.unlink()
             for suffix in ('', '.asc'):
                 Path('deploy/signal-cli/signal-cli-0.0.0.tar.gz' + suffix).write_bytes(b'generated')
             return ''
@@ -700,7 +723,7 @@ def test_complete_image_build_uses_selected_source_version_and_channel(
         assert built[-1][built[-1].index('-t') + 1] == f'{bundle.REGISTRY}{name}:{identity}'
         assert f'org.opencontainers.image.revision={selected["commit"]}' in built[-1]
         assert f'org.opencontainers.image.version={selected["version"]}' in built[-1]
-    assert prepared == ['signal-cli'] and len(built) == 9
+    assert prepared == ['signal-cli'] and len(built) == len(bundle.BUILDS)
     stamp = json.loads(Path('nora/version.json').read_text())
     assert (stamp['version'], stamp['commit']) == (selected['version'], selected['commit'])
     monkeypatch.setattr(sys, 'argv', ['release_bundle.py', 'bundle', *args])
@@ -716,9 +739,9 @@ def write_image_receipts(bundle, directory, version, commit, channel):
     for name, image in images(bundle).items():
         artifact = {**selected, 'name': name, 'image': image,
                     'inputs': bundle.build_inputs(name, commit,
-                        {'signal-cli-0.0.0.tar.gz': 'a' * 64,
-                         'signal-cli-0.0.0.tar.gz.asc': 'b' * 64}
-                        if name == 'signal-cli' else None)}
+                        {'deploy/signal-cli/signal-cli-0.0.0.tar.gz': 'a' * 64,
+                         'deploy/signal-cli/signal-cli-0.0.0.tar.gz.asc': 'b' * 64}
+                        if name == 'signal-bridge' else None)}
         (directory / f'{name}.json').write_text(json.dumps({
             'selection': selected, 'artifact': artifact}))
 
@@ -979,7 +1002,8 @@ def test_reuse_preserves_original_provenance_and_checks_current_inputs(
     assert manifest['artifacts']['app'] == old_app  # no relabel/restamp of reused bytes
     assert manifest['artifacts']['app']['commit'] == old_commit != commit
     assert generated['services']['app']['image'] == old_app['image']
-    assert len(manifest['services']) == 11 and len(manifest['artifacts']) == 9
+    assert len(manifest['services']) == len(bundle.BUILDS) + 2
+    assert len(manifest['artifacts']) == len(bundle.BUILDS)
     assert commands == [('docker', 'buildx', 'imagetools', 'inspect', old_app['image'])]
     # Same context is insufficient without the exact previous provenance receipt.
     forged = json.loads((directory / 'app.json').read_text())
@@ -996,7 +1020,7 @@ def test_reuse_invalidates_changed_effective_inputs(publisher_source, monkeypatc
     bundle, state, git = publisher_source
     name = 'site' if change == 'shared-copy' else 'app'
     if change in ('signal-recipe', 'whatsapp-recipe'):
-        name = 'signal-cli' if change == 'signal-recipe' else 'whatsapp-bridge'
+        name = 'signal-bridge' if change == 'signal-recipe' else 'whatsapp-bridge'
     old = bundle.build_inputs(name, state['current'])
     assert old['reusable']  # positive control: actual reviewed recipe is admitted
     paths = {'lockfile': 'app/package-lock.json', 'dockerfile': 'app/Dockerfile',
@@ -1004,7 +1028,7 @@ def test_reuse_invalidates_changed_effective_inputs(publisher_source, monkeypatc
              'specific-ignore': 'app/Dockerfile.dockerignore',
              'workflow': '.github/workflows/release-images.yml',
              'shared-copy': 'assets/generated.txt',
-             'signal-recipe': 'deploy/signal-cli/Dockerfile',
+             'signal-recipe': 'deploy/signal-bridge/Dockerfile',
              'whatsapp-recipe': 'deploy/whatsapp-bridge/Dockerfile'}
     if change == 'publisher':
         altered = Path('publisher.py')
@@ -1052,11 +1076,11 @@ def test_unknown_reuse_evidence_bootstraps_and_unavailable_registry_refuses(
 def test_nora_stamp_is_never_reused_and_signal_fetched_bytes_invalidate(publisher_source):
     bundle, state, _ = publisher_source
     assert not bundle.build_inputs('nora', state['current'])['reusable']
-    one = bundle.build_inputs('signal-cli', state['current'], {'signed-archive': 'a' * 64})
-    two = bundle.build_inputs('signal-cli', state['current'], {'signed-archive': 'b' * 64})
+    one = bundle.build_inputs('signal-bridge', state['current'], {'signed-archive': 'a' * 64})
+    two = bundle.build_inputs('signal-bridge', state['current'], {'signed-archive': 'b' * 64})
     assert one['reusable'] and one != two
-    assert bundle.reusable_artifact('signal-cli', two, {
-        'artifacts': {'signal-cli': {'inputs': one}}}) is None
+    assert bundle.reusable_artifact('signal-bridge', two, {
+        'artifacts': {'signal-bridge': {'inputs': one}}}) is None
 
 
 def test_native_reconcile_forces_only_explicit_file_readers(tmp_path, monkeypatch):
@@ -1066,14 +1090,14 @@ def test_native_reconcile_forces_only_explicit_file_readers(tmp_path, monkeypatc
         'nora': {'volumes': [{'target': '/app/policy.toml'}, {'target': '/app/config.toml'}]},
         'presence': {'volumes': [{'target': '/app/config.toml'}]},
         'app': {'volumes': [{'target': '/app/identity.toml'}]},
-        'signal-cli': {}}}
+        'signal-bridge': {}}}
     pins = dict.fromkeys(resolved['services'], 'synthetic-image')
     commands = []
     monkeypatch.setattr(wrapper, 'run', lambda cmd, **kw: commands.append(cmd))
     wrapper.reconcile_services(['docker', 'compose'], pins,
                                wrapper.reload_services(resolved, pins, request))
     assert len(commands) == 1 and '--force-recreate' not in commands[0]
-    assert commands[0][-4:] == ['nora', 'presence', 'app', 'signal-cli']
+    assert commands[0][-4:] == ['nora', 'presence', 'app', 'signal-bridge']
     request.write_text(json.dumps({'files': ['policy.toml']}))
     readers = wrapper.reload_services(resolved, pins, request)
     wrapper.reconcile_services(['docker', 'compose'], pins, readers)
@@ -1144,6 +1168,116 @@ def test_selection_pins_previous_manifest_by_immutable_commit(publisher_source, 
     assert selected['previous'] == deployment_commit
     assert reads == ['contents/release.json?ref=' + deployment_commit]
     assert bundle.previous_manifest('mikeng-io/nora', selected['previous']) == previous
+
+
+def test_python_bridge_inputs_ignore_app_version_stamps(publisher_source):
+    bundle, state, git = publisher_source
+    before = {name: bundle.build_inputs(name, state['current'])
+              for name in bundle.PYTHON_ENTRIES}
+    app_before = bundle.build_inputs('nora', state['current'])
+    for name, pattern in (
+        ('nora/__init__.py', r'(?m)^(__version__ = ")[^"]+"'),
+        ('pyproject.toml', r'(?m)^(version = ")[^"]+"'),
+        ('uv.lock', r'(\[\[package\]\]\nname = "nora"\nversion = ")[^"]+"'),
+    ):
+        path = Path(name)
+        text = path.read_text()
+        changed, count = re.subn(pattern, lambda m: m[1] + '99.0.0' + '"', text, count=1)
+        assert count == 1 and changed != text
+        path.write_text(changed)
+    git('add', '.')
+    git('commit', '-qm', 'chore: generated app release stamps')
+    commit = git('rev-parse', 'HEAD')
+    assert bundle.build_inputs('nora', commit) != app_before
+    assert all(bundle.build_inputs(name, commit) == inputs
+               for name, inputs in before.items())
+
+    lock = Path('uv.lock')
+    changed, count = re.subn(
+        r'(\[\[package\]\]\nname = "aiohttp"\nversion = ")[^"]+"',
+        lambda m: m[1] + '0.0.0"', lock.read_text(), count=1)
+    assert count == 1
+    lock.write_text(changed)
+    git('add', '.')
+    git('commit', '-qm', 'fix: generated dependency lock change')
+    dependency_commit = git('rev-parse', 'HEAD')
+    assert all(bundle.build_inputs(name, dependency_commit) != inputs
+               for name, inputs in before.items())
+
+
+def test_python_bridge_inputs_follow_the_import_closure(publisher_source):
+    """App-only source keeps bridge/publisher digests; reached code moves them."""
+    bundle, state, git = publisher_source
+    before = {name: bundle.build_inputs(name, state['current'])
+              for name in bundle.PYTHON_ENTRIES}
+    assert all(inputs['context'].startswith('closure:') for inputs in before.values())
+
+    # An app-side change nothing imports must not move any bridge fingerprint.
+    Path('nora/app/composition.py').write_text(
+        Path('nora/app/composition.py').read_text() + '\n# generated app-only change\n')
+    Path('nora/doctrine/public/voice.md').write_text('generated doctrine change')
+    Path('unrelated.txt').write_text('generated unrelated change')
+    git('add', '.')
+    git('commit', '-qm', 'fix: generated app-only change')
+    commit = git('rev-parse', 'HEAD')
+    assert all(bundle.build_inputs(name, commit) == inputs
+               for name, inputs in before.items())
+
+    # A change inside each closure — the modules the entrypoints actually
+    # execute — must move exactly that image's fingerprint.
+    for name, target in [('signal-bridge', 'nora/infra/sql/bridge_store.py'),
+                         ('discord-bridge', 'nora/platform/discord/bridge_app.py'),
+                         ('bridge-projection', 'nora/platform/bridge/projection.py')]:
+        Path(target).write_text(Path(target).read_text() + '\n# generated closure change\n')
+        git('add', '.')
+        git('commit', '-qm', 'fix: generated closure change')
+        commit = git('rev-parse', 'HEAD')
+        changed = bundle.build_inputs(name, commit)
+        assert changed != before[name]
+        others = {n: bundle.build_inputs(n, commit) for n in bundle.PYTHON_ENTRIES
+                  if n != name}
+        assert all(v == before[n]
+                   or (before[n] != changed
+                       and v['context'] != changed['context'])
+                   for n, v in others.items())
+        before[name] = changed
+
+    # A __file__-bound data input the reached modules actually read — the
+    # alembic dir migrations_runner resolves beside itself — moves the
+    # closures that can execute it (both bridge stores), not the publisher
+    # which never reaches SQL.
+    mako = 'nora/infra/sql/migrations/script.py.mako'
+    Path(mako).write_text(Path(mako).read_text() + '\n# generated migration change\n')
+    git('add', '.')
+    git('commit', '-qm', 'fix: generated migration template change')
+    commit = git('rev-parse', 'HEAD')
+    assert bundle.build_inputs('signal-bridge', commit) != before['signal-bridge']
+    assert bundle.build_inputs('discord-bridge', commit) != before['discord-bridge']
+    assert bundle.build_inputs('bridge-projection', commit) == before['bridge-projection']
+
+
+def test_python_bridge_inputs_refuse_a_missing_local_import(publisher_source):
+    """Deleting a file the closure reaches fails the fingerprint, never shrinks it."""
+    bundle, state, git = publisher_source
+    inputs = bundle.build_inputs('bridge-projection', state['current'])
+    assert inputs['reusable']
+    git('rm', '-q', 'nora/persons.py')
+    git('commit', '-qm', 'chore: generated missing dependency')
+    with pytest.raises((ValueError, subprocess.CalledProcessError)):
+        bundle.build_inputs('bridge-projection', git('rev-parse', 'HEAD'))
+
+
+def test_manifest_cohort_includes_the_projection_publisher(publisher_source):
+    bundle, state, _ = publisher_source
+    assert 'bridge-projection' in bundle.BUILDS and 'bridge-projection' in (
+        bundle.REUSE_RECIPES)
+    generated, manifest = bundle.render(source(), images(bundle), 'v7.11.0',
+                                        state['released'])
+    assert manifest['services']['bridge-projection'].startswith(
+        'ghcr.io/mikeng-io/nora-bridge-projection@sha256:')
+    svc = generated['services']['bridge-projection']
+    assert svc['image'] == manifest['services']['bridge-projection']
+    assert 'build' not in svc
 
 
 def test_promotion_retires_the_previous_alert_bridge(publication):

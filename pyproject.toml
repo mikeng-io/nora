@@ -45,6 +45,7 @@ dependencies = [
     # Pure Python with no dependencies of its own; the stdlib has no PDF
     # parser, and docx/xlsx/pptx are read with zipfile + ElementTree instead.
     "pypdf>=6.21.1",
+    "redis>=5.0",
     "opentelemetry-instrumentation-aiohttp-server>=0.66b2",
 ]
 
@@ -120,6 +121,7 @@ testpaths = ["tests"]
 addopts = "-m 'not network'"
 markers = [
     "network: requires a live external service (OmniRoute, signal-cli, Honcho); excluded by default",
+    "integration: spins disposable containers (Postgres/Redis) via testcontainers",
 ]
 
 [tool.mypy]

@@ -148,6 +148,14 @@ def not_in_allowed_guild_note() -> str:
     return "This server isn't one I'm allowed to join voice in."
 
 
+def room_not_admitted_line() -> str:
+    """The projection admission refusal: this channel isn't one Nora is
+    admitted to (or the caller holds no sender grant for it). Distinct
+    from the guild allow-list line — the guild may be allowed while the
+    channel/caller pair is not."""
+    return "I can't do that here — this isn't a channel I'm admitted to."
+
+
 def joined_voice_line() -> str:
     return "Joined the voice channel."
 

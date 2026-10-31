@@ -2216,6 +2216,40 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Identity/policy reloads by outcome: " + ", ".join(RELOAD_OUTCOMES),
         ("file", "outcome"),
     ),
+    # Durable platform-bridge queue (design/platform-bridges/04 §aggregates).
+    # Every label vocabulary is the closed Literal set the call
+    # sites in `nora/platform/bridge/telemetry.py` and `inspection.py`
+    # enforce at runtime — the names are not restated here because
+    # `nora.obs` must not import `nora.platform` (this file is the lower
+    # layer); the help text names the owning Literal instead.
+    _CounterSpec(
+        "nora_bridge_queue_events_total",
+        "Bridge queue lifecycle transitions, one per allowlisted JSON line. "
+        "`event` is the telemetry.LifecycleEvent vocabulary.",
+        ("platform", "event"),
+    ),
+    _CounterSpec(
+        "nora_bridge_work_attempts_total",
+        "Bridge work attempts by terminal/non-terminal result. `outcome` is "
+        "the telemetry.WorkOutcome vocabulary (bridge_work.state minus the "
+        "non-results pending/running).",
+        ("platform", "kind", "outcome"),
+    ),
+    _CounterSpec(
+        "nora_bridge_actions_total",
+        "Bridge outbound actions counted at the DURABLE bridge_action result "
+        "boundary, never at HTTP acceptance. `outcome` is the "
+        "telemetry.ActionOutcome vocabulary.",
+        ("platform", "op", "outcome"),
+    ),
+    _CounterSpec(
+        "nora_bridge_inspections_total",
+        "Bridge queue inspections that RAN, by R-27 result. `result` is the "
+        "telemetry.InspectionResult vocabulary — `unavailable` here means "
+        "the read failed, and every gauge above is then ABSENT rather than "
+        "a fabricated zero.",
+        ("platform", "result"),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
@@ -2424,6 +2458,58 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "never 0.",
         ("target",),
     ),
+    # Durable bridge queue depth (design/platform-bridges/04 §aggregates).
+    # All of these are ABSENT while the inspection that publishes them cannot
+    # run — a declared-but-never-set labelled gauge has no sample, which is
+    # exactly what "a failed read must not report zero" requires.
+    _GaugeSpec(
+        "nora_bridge_queue_waiting_entries",
+        "Stream entries the consumer group has NEVER delivered — counted "
+        "strictly after the group's last-delivered-id by "
+        "nora/platform/bridge/inspection.py. NOT XLEN: stream length keeps "
+        "ACKed and retained entries.",
+        ("platform",),
+    ),
+    _GaugeSpec(
+        "nora_bridge_queue_waiting_oldest_seconds",
+        "Age of the oldest never-delivered entry. ABSENT when none wait.",
+        ("platform",),
+    ),
+    _GaugeSpec(
+        "nora_bridge_queue_pending_entries",
+        "Entries delivered but not ACKed — the consumer-group PEL, a "
+        "disjoint set from _waiting_entries, never summed into one backlog "
+        "number.",
+        ("platform",),
+    ),
+    _GaugeSpec(
+        "nora_bridge_queue_pending_oldest_seconds",
+        "Idle time of the longest-idle PEL entry — milliseconds since its "
+        "last DELIVERY, from XPENDING's own time_since_delivered evidence; "
+        "never the entry's enqueue age (an entry enqueued yesterday and "
+        "delivered now is a fresh pending). ABSENT when none are pending.",
+        ("platform",),
+    ),
+    _GaugeSpec(
+        "nora_bridge_deferred_work_entries",
+        "bridge_work rows still owning unfinished obligations, per "
+        "non-terminal state (pending/running/retryable_failure). Redis empty "
+        "does not mean all work finished — an ACKed event's transferred "
+        "obligations live here.",
+        ("platform", "state"),
+    ),
+    _GaugeSpec(
+        "nora_bridge_retained_work_entries",
+        "Terminal-but-retained bridge_work rows (failed_retained/uncertain) "
+        "— the visible, requeueable record of what did not complete.",
+        ("platform", "state"),
+    ),
+    _GaugeSpec(
+        "nora_bridge_retained_actions",
+        "bridge_action rows in a retained state (uncertain) — effects that "
+        "may have happened and need an operator.",
+        ("platform", "state"),
+    ),
 )
 
 _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
@@ -2555,6 +2641,23 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         "RIGHT-CENSORED at [relevance_gate] timeout_seconds — a timed-out call "
         "is recorded at the ceiling, so read the top bucket against "
         "nora_relevance_gate_errors_total{kind=\"timeout\"}.",
+    ),
+    # Bridge queue durations (design/platform-bridges/04): queue wait is
+    # measured enqueue→attempt-start from persisted timestamps — never a span
+    # held open — and stage duration is one attempt or operation's bounded
+    # runtime, labelled by the telemetry QueueStage/WorkOutcome vocabularies.
+    _HistogramSpec(
+        "nora_bridge_queue_wait_seconds",
+        "Source-independent enqueue→claim time per work item, measured from "
+        "the envelope's queued_ms. Labels: platform.",
+        labelnames=("platform",),
+    ),
+    _HistogramSpec(
+        "nora_bridge_stage_seconds",
+        "One bridge stage's duration (a work attempt per kind, or the "
+        "deliver/claim/ack operations). `stage` is the telemetry.QueueStage "
+        "vocabulary; `outcome` the WorkOutcome/ActionOutcome sets.",
+        labelnames=("platform", "stage", "outcome"),
     ),
 )
 

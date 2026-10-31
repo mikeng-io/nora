@@ -267,6 +267,16 @@ NOT_RESTORED: dict[str, str] = {
     "memory_edge": "derived; nora memory rebuild",
     "memory_projection_queue": "derived; nora memory rebuild",
     "memory_index_state": "derived; nora memory rebuild",
+    # The platform-bridge queue: live handoff state shared with bridge
+    # processes, bound to the Redis stream ids and leases of the RUNNING
+    # deployment. A restore does not replay in-flight obligations, and the
+    # durable dispositions (done, failed_retained, uncertain) live in the
+    # rows themselves; copying them as of T would fabricate claims and
+    # reservations no live bridge owns.
+    "bridge_event": "live queue journal; restored with the deployment, not as of T",
+    "bridge_event_alias": "dedupe legs of the live queue journal",
+    "bridge_work": "live queue obligations; leasing rows no restore replays",
+    "bridge_action": "live action ledger; reservations belong to the running deployment",
 }
 
 
