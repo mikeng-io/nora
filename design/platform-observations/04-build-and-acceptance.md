@@ -68,3 +68,24 @@ by reference; semantic changes update unified-memory without duplicating that sp
 This bundle is sufficient to brief an integrated first family; it does not claim
 complete platform coverage. Exact DDL, registered tool text, token allocation,
 installed collector changes and deployment evidence belong to implementation.
+
+
+## Occasion-map acceptance amendment (2026-10-30)
+
+[05](05-occasion-map.md) owns the injection/tool/stimulus map. Add these properties
+to the integrated implementation's controls; they are not new tests in this change:
+
+- Inspect actual Engagement and Cognition assembled inputs: visible target
+  annotations, relevant off-window state, source time/coverage and existing graph
+  account are present once in their declared blocks. Unavailable required state
+  is explicit; no operational traces are interpreted as social evidence.
+- The same object is enriched consistently in prompt and transcript tools.
+  A later tool read labels its newer revision; historical replay cannot see future state.
+- Test record_query's existing message calls/result compatibility and disabled-reader
+  withholding, including existing ambiguous name resolution. Test new typed history
+  separately, not by claiming current message search already reads every observation.
+- Check each tool against both occasion allowlists; adding a registry entry alone
+  cannot expose it to Cognition. Read tools bind a multi-room wake's actual item room.
+- Admit/consume every observation family through the same durable wake/proposal
+  contract. A co-delivered message cannot silently consume unseen poll/room evidence;
+  replay creates no duplicate source obligations, and failure retains pending work.
