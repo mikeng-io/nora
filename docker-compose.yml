@@ -1,72 +1,185 @@
 services:
-  # signal-cli — Nora's Signal transport. Merged into this compose project on
-  # 2026-08-05 after confirming Nora is its ONLY consumer (the sole holder of
-  # :18080 was `python3 -m nora` itself; hermes-agent runs profiles attest /
-  # bento / default and has no nora profile). CLAUDE.md's operational
-  # constraint 3 called this daemon "neutral and shared" — that was true once
-  # and is not any more.
-  #
-  # It ran as a bare JVM on the host for 61 days with nothing supervising it.
-  signal-cli:
-    build:
-      context: ./deploy/signal-cli
-      # network: host is REQUIRED, not a preference — BuildKit's default bridge
-      # cannot resolve deb.debian.org on this host (systemd-resolved stub
-      # 127.0.0.53), so `apt-get update` fails with exit 100. This is standing
-      # operational constraint 1, expressed so `docker compose build` obeys it
-      # without anyone remembering to pass --network=host.
-      network: host
-      # Run deploy/signal-cli/fetch.sh first: it downloads the release tarball
-      # and its .asc. Upstream ships no official image, so the Dockerfile
-      # re-verifies the signature at build time.
-    image: signal-cli:0.14.7
-    container_name: signal-cli
+  # redis — the durable inbound handoff (design/platform-bridges). AOF everysec
+  # + named volume + noeviction; survives app-only releases and ordinary
+  # restarts. Honest limit: `everysec` can lose the last second on host power
+  # failure, and no AOF survives destroyed storage — the journal covers bridge
+  # restarts, not bare-metal loss.
+  redis:
+    image: redis:7.4-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f
+    container_name: nora-redis
     restart: unless-stopped
-    # On the private `nora` network (cutover 2026-08-07, Option 2). It binds
-    # 0.0.0.0:18080 (see command) so co-networked containers (nora, presence)
-    # reach it as `signal-cli:18080`, and it publishes NOTHING — a netns
-    # reachable only on that network, a STRICTER trust set than the old host
-    # loopback (any host process could hit that). The no-auth / host-header
-    # concern only bites behind a host port-map or a browser (DNS-rebinding);
-    # neither can reach an internal-only network with no published port.
-    # --receive-mode=on-start stays load-bearing (CLAUDE.md #3).
     networks: [nora]
-    volumes:
-      # Identity keys, group state, contacts. Losing this loses the device
-      # registration itself — not just message history.
-      # Lives INSIDE the repo tree so there is exactly one place to look, back
-      # up, and restore. Deliberately NOT under ./data — Nora bind-mounts that
-      # as /app/data, and she has no business reading Signal identity keys.
-      - ./state/signal-cli:/data/signal-cli
     environment:
-      - XDG_DATA_HOME=/data
-    # --receive-mode=on-start is load-bearing, not decoration. Without it the
-    # HTTP server comes up and every RPC works while signal-cli never opens its
-    # websocket to Signal — so not one message is delivered. The host daemon
-    # ran that way for two months, and under R-5 it looked like a quiet group.
-    # The account is the deployment's own phone number, so it lives in `.env`
-    # (`SIGNAL_ACCOUNT`), never in git: the identifier scrub (#767) replaced the
-    # literal here with a pseudonym and signal-cli came up unregistered.
-    command: ["--account", "${SIGNAL_ACCOUNT:?set SIGNAL_ACCOUNT in .env}", "daemon", "--http", "0.0.0.0:18080", "--receive-mode", "on-start"]
-    healthcheck:
-      # Probes the RUNNING daemon over JSON-RPC. The previous check was
-      # `signal-cli --version`, which forks a fresh JVM, prints a string and
-      # exits WITHOUT touching the daemon — it would have reported healthy
-      # throughout the 61-day outage. This at least proves the process is
-      # serving.
-      #
-      # It still CANNOT prove the websocket to Signal is alive; no RPC exposes
-      # that. The real detector for that lives one layer up: Nora's /health
-      # publishes sse.last_event_age_seconds and deploy/watchdog.sh alerts on
-      # it. Do not mistake this check for websocket liveness.
-      test: ["CMD-SHELL", "curl -fsS -m 5 -X POST http://127.0.0.1:18080/api/v1/rpc -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":\"hc\",\"method\":\"version\",\"params\":{}}' | grep -q '\"version\"' || exit 1"]
-      interval: 60s
-      timeout: 10s
-      start_period: 60s
-      retries: 3
+      # Role passwords arrive via env and are expanded by the shell BELOW —
+      # they never sit in this container's argv (the old --requirepass flag
+      # printed the shared password into `docker inspect`). `:?` keeps an
+      # unset password a compose-time failure, never a running open server.
+      - NORA_REDIS_PRODUCER_PASSWORD=${NORA_REDIS_PRODUCER_PASSWORD:?set NORA_REDIS_PRODUCER_PASSWORD in .env}
+      - NORA_REDIS_CONSUMER_PASSWORD=${NORA_REDIS_CONSUMER_PASSWORD:?set NORA_REDIS_CONSUMER_PASSWORD in .env}
+      - NORA_REDIS_INSPECTOR_PASSWORD=${NORA_REDIS_INSPECTOR_PASSWORD:?set NORA_REDIS_INSPECTOR_PASSWORD in .env}
+    # Scoped ACLs (design/platform-bridges §04): one user per role, all held
+    # to the `nq:*` queue namespace — producers may only enqueue/dedupe, the
+    # consumer claims/acks/inspects, the inspector reads for telemetry and
+    # ops. `default` is OFF: nothing authenticates into the unrestricted user
+    # anymore, and the acl file lives on tmpfs (same pattern as
+    # alertmanager's bearer file below), chowned to the `redis` user the
+    # image entrypoint drops to. Rebuild the file from env on every boot;
+    # there is no runtime ACL persistence to drift.
+    # Command grants are the minimum each role calls: producers run the
+    # dedupe Lua (EVALSHA, then SCRIPT LOAD on NOSCRIPT for redis-py and EVAL
+    # for node-redis/go-redis; GET/SET/XADD inside it) and the IG bridge's
+    # startup XGROUP CREATE MKSTREAM; the app's StreamReader creates the
+    # same group if it wins the race, then XREADGROUP/XACK/XAUTOCLAIM plus
+    # the inspector reads (XINFO/XRANGE/XPENDING both forms — `xpending` is
+    # the command name; there is no `xpending_range` command). Passwords
+    # must stay URL-safe (the generated token_urlsafe charset): they land in
+    # `user:pass@host` URLs and after `>` in these ACL lines.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        umask 077 &&
+        case "$NORA_REDIS_PRODUCER_PASSWORD" in *[!A-Za-z0-9_-]*|'') echo
+        'nora-redis: NORA_REDIS_PRODUCER_PASSWORD must match [A-Za-z0-9_-]+
+        (the generated secrets.token_urlsafe charset): it lands in a
+        redis://user:pass@ URL and an ACL >-field' >&2; exit 1 ;; esac &&
+        case "$NORA_REDIS_CONSUMER_PASSWORD" in *[!A-Za-z0-9_-]*|'') echo
+        'nora-redis: NORA_REDIS_CONSUMER_PASSWORD must match [A-Za-z0-9_-]+
+        (the generated secrets.token_urlsafe charset): it lands in a
+        redis://user:pass@ URL and an ACL >-field' >&2; exit 1 ;; esac &&
+        case "$NORA_REDIS_INSPECTOR_PASSWORD" in *[!A-Za-z0-9_-]*|'') echo
+        'nora-redis: NORA_REDIS_INSPECTOR_PASSWORD must match [A-Za-z0-9_-]+
+        (the generated secrets.token_urlsafe charset): it lands in a
+        redis://user:pass@ URL and an ACL >-field' >&2; exit 1 ;; esac &&
+        printf '%s\n'
+        'user default off'
+        "user nq-producer on >$$NORA_REDIS_PRODUCER_PASSWORD ~nq:* +xadd +set +get +eval +evalsha +script|load +xgroup|create +ping"
+        "user nq-consumer on >$$NORA_REDIS_CONSUMER_PASSWORD ~nq:* +xreadgroup +xack +xautoclaim +xpending +xinfo +xrange +xgroup|create +time +ping"
+        "user nq-inspector on >$$NORA_REDIS_INSPECTOR_PASSWORD ~nq:* +xinfo +xlen +xpending +xrange +xread +get +time +info +ping"
+        > /run/acl/users.acl &&
+        chown redis:redis /run/acl/users.acl &&
+        exec docker-entrypoint.sh redis-server
+        --aclfile /run/acl/users.acl
+        --appendonly yes --appendfsync everysec
+        --maxmemory-policy noeviction --no-appendfsync-on-rewrite no
+        --dir /data
+    tmpfs:
+      - /run/acl
+    volumes:
+      - redis-data:/data
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
+
+  # signal-bridge — the durable Signal boundary. The signal-cli inside is the
+  # unchanged, signed 0.14.7 distribution; the wrapper owns journal preflight,
+  # SSE capture, dedupe enqueue and the /v1 action API. Renamed from the old
+  # `signal-cli` service: the executable is still `signal-cli`, the SERVICE is
+  # now a bridge.
+  signal-bridge:
+    build:
+      # repo-root context: the image installs the nora package AND the
+      # verified signal-cli stage — one context, two sources.
+      context: .
+      dockerfile: deploy/signal-bridge/Dockerfile
+      network: host  # operational constraint 1 (see app build below)
+    image: signal-bridge:1
+    container_name: signal-bridge
+    restart: unless-stopped
+    networks: [nora]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ./state/signal-cli:/data/signal-cli
+      - ./state/bridge/signal:/data/bridge
+      - bridge-projection:/bridge-projection:ro
+    environment:
+      - XDG_DATA_HOME=/data
+      - SIGNAL_ACCOUNT=${SIGNAL_ACCOUNT:?set SIGNAL_ACCOUNT in .env}
+      - NORA_REDIS_URL=redis://nq-producer:${NORA_REDIS_PRODUCER_PASSWORD:?}@redis:6379/0
+      - NORA_BRIDGE_API_TOKEN=${NORA_BRIDGE_API_TOKEN:-${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_API_TOKEN in .env}}
+      - NORA_BRIDGE_CORRELATION_KEY=${NORA_BRIDGE_CORRELATION_KEY:?}
+      - NORA_BRIDGE_CORRELATION_KEY_VERSION=${NORA_BRIDGE_CORRELATION_KEY_VERSION:-1}
+      # Opaque stream leg — must equal [platforms.signal] account_key in
+      # config.toml. Never the registered number: the stream name is not an
+      # account identity.
+      - NORA_BRIDGE_ACCOUNT_KEY=${SIGNAL_BRIDGE_ACCOUNT_KEY:?set SIGNAL_BRIDGE_ACCOUNT_KEY in .env}
+      - NORA_BRIDGE_JOURNAL=/data/bridge/journal/signal.jsonl
+      - DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?}@db:5432/nora
+      - NORA_BRIDGE_ATTACH_DIR=/data/bridge/attachments
+      - NORA_BRIDGE_PORT=18090
+      # Tracing — the wrapper's env contract (deploy/signal-bridge/wrapper.py
+      # `_setup_tracing`): the bridge has no config.toml, so the same knobs
+      # the app's [obs.tracing] exposes ride the process env. Every value
+      # optional: unset exports nothing rather than refusing to boot.
+      # ENDPOINT is the same collector the app's [obs.tracing] writes to;
+      # HEADERS_ENV NAMES the env var carrying OTLP auth headers — the
+      # secret itself stays in .env, never in compose (DEC-8).
+      - NORA_TRACING_ENABLED=${NORA_TRACING_ENABLED:-}
+      - NORA_TRACING_ENDPOINT=${NORA_TRACING_ENDPOINT:-}
+      - NORA_TRACING_EXPORTER=${NORA_TRACING_EXPORTER:-otlp_http}
+      - NORA_TRACING_HEADERS_ENV=${NORA_TRACING_HEADERS_ENV:-}
+      - LANGFUSE_OTLP_HEADERS=${LANGFUSE_OTLP_HEADERS:-}
+    healthcheck:
+      # /v1/health reports gateway-side readiness; the app's depends_on waits on it.
+      test: ["CMD-SHELL", "printf 'Authorization: Bearer %s\\n' \"$$NORA_BRIDGE_API_TOKEN\" | curl -fsS -m 5 -H @- http://127.0.0.1:18090/v1/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    depends_on: [redis]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+  # discord-bridge — owns the Gateway client and the shared action API so an
+  # app-only release leaves Discord continuity running.
+  discord-bridge:
+    build:
+      context: .
+      dockerfile: deploy/discord-bridge/Dockerfile
+      network: host
+    image: discord-bridge:1
+    container_name: discord-bridge
+    restart: unless-stopped
+    networks: [nora]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ./state/bridge/discord:/data/bridge
+      - bridge-projection:/bridge-projection:ro
+      # The deployment's own config.toml — the bridge reads [platforms.discord]
+      # mode, [speech.tts] sidecars and [music] through the same
+      # config.load(require_secrets=False) the app uses; there is no second
+      # bridge-only config truth.
+      - ./config.toml:/app/config.toml:ro
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:?set in .env}
+      - NORA_REDIS_URL=redis://nq-producer:${NORA_REDIS_PRODUCER_PASSWORD:?}@redis:6379/0
+      - NORA_BRIDGE_API_TOKEN=${NORA_BRIDGE_API_TOKEN:-${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_API_TOKEN in .env}}
+      - NORA_BRIDGE_CORRELATION_KEY=${NORA_BRIDGE_CORRELATION_KEY:?}
+      - NORA_BRIDGE_CORRELATION_KEY_VERSION=${NORA_BRIDGE_CORRELATION_KEY_VERSION:-1}
+      - NORA_BRIDGE_ACCOUNT_KEY=${DISCORD_BRIDGE_ACCOUNT_KEY:?set DISCORD_BRIDGE_ACCOUNT_KEY in .env}
+      - NORA_BRIDGE_JOURNAL=/data/bridge/journal/discord.jsonl
+      # The music queue/session stores AND the fenced action ledger are real
+      # SQL — same DSN shape every consumer gets.
+      - DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?}@db:5432/nora
+      - NORA_BRIDGE_ATTACH_DIR=/data/bridge/attachments
+      - NORA_BRIDGE_PORT=18093
+    command: ["--config", "/app/config.toml"]
+    healthcheck:
+      test: ["CMD-SHELL", "printf 'Authorization: Bearer %s\\n' \"$$NORA_BRIDGE_API_TOKEN\" | curl -fsS -m 5 -H @- http://127.0.0.1:18093/v1/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 45s
+    depends_on:
+      redis: {condition: service_started}
+      # The durable ledger + music stores are Postgres; the entry opens its
+      # engine at boot, so start after the same readiness the app waits on.
+      db: {condition: service_healthy}
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
 
   # whatsapp-bridge — Nora's WhatsApp transport (design/whatsapp-adoption/).
   # A containerized Baileys (Node) daemon, the transport TWIN of signal-cli
@@ -96,6 +209,7 @@ services:
     container_name: whatsapp-bridge
     restart: unless-stopped
     networks: [nora]
+    extra_hosts: ["host.docker.internal:host-gateway"]
     volumes:
       # Baileys multi-file auth state (encryption keys, device creds,
       # lid-mapping-*.json). Losing this loses the pairing — not just
@@ -103,11 +217,30 @@ services:
       # ./data (Nora must not read transport credentials). chmod 700; never
       # commit.
       - ./state/whatsapp:/app/session
+      - ./state/bridge/whatsapp:/data/bridge
+      - bridge-projection:/bridge-projection:ro
     environment:
       # Shared bearer for Nora's calls to this bridge. Network membership is
       # not authentication: any co-networked container can reach the account
       # routes, so the bridge refuses to start without this.
       - NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}
+      # Durable-handoff wiring (design/platform-bridges): the stream the app
+      # consumes, its opaque account leg (must equal [platforms.whatsapp]
+      # account_key), and the shared event-id correlation key.
+      - NORA_REDIS_URL=redis://nq-producer:${NORA_REDIS_PRODUCER_PASSWORD:?}@redis:6379/0
+      - NORA_BRIDGE_API_TOKEN=${NORA_BRIDGE_API_TOKEN:-${NORA_BRIDGE_TOKEN}}
+      - NORA_BRIDGE_CORRELATION_KEY=${NORA_BRIDGE_CORRELATION_KEY:?}
+      - NORA_BRIDGE_CORRELATION_KEY_VERSION=${NORA_BRIDGE_CORRELATION_KEY_VERSION:-1}
+      - NORA_BRIDGE_ACCOUNT_KEY=${WHATSAPP_BRIDGE_ACCOUNT_KEY:?set WHATSAPP_BRIDGE_ACCOUNT_KEY in .env}
+      - NORA_BRIDGE_JOURNAL=/data/bridge/journal/whatsapp.jsonl
+      - NORA_BRIDGE_PROJECTION_DIR=/bridge-projection
+      - DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?}@db:5432/nora
+      # Tracing (deploy/whatsapp-bridge/tracing.js `otlpEndpoint`): the same
+      # collector the app's [obs.tracing] writes to. Unset traces nothing —
+      # initTracing returns the null surface and capture never notices.
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}
+      - OTEL_SERVICE_NAME=whatsapp-bridge
+    depends_on: [redis]
     command: ["node", "bridge.js", "--port", "18081", "--session", "/app/session"]
     healthcheck:
       # Proves the bridge's HTTP layer serves. It CANNOT prove the WhatsApp
@@ -125,7 +258,7 @@ services:
       options: {max-size: "10m", max-file: "3"}
 
   # instagram-bridge — the Instagram wire, the fourth transport daemon after
-  # signal-cli, whatsapp-bridge and Discord's in-process client.
+  # signal-bridge, whatsapp-bridge and discord-bridge.
   # Full reasoning for every line below lives in
   # deploy/instagram-bridge/compose.fragment.yml, which this is lifted from.
   instagram-bridge:
@@ -153,12 +286,25 @@ services:
       # bind-mounts that, and she has no business reading transport
       # credentials. chmod 700; never commit.
       - ./state/instagram:/session
+      - ./state/bridge/instagram:/data/bridge
+      - bridge-projection:/bridge-projection:ro
     # host.docker.internal reaches the collector on the host (4318). Egress
     # only: the service still publishes nothing.
     extra_hosts: ["host.docker.internal:host-gateway"]
     environment:
       - IG_SESSION_DIR=/session
       - NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}
+      # Durable-handoff wiring (design/platform-bridges) — same contract as
+      # signal-bridge/discord-bridge: stream leg, correlation key, journal,
+      # projection, Redis, action-store DSN.
+      - NORA_REDIS_URL=redis://nq-producer:${NORA_REDIS_PRODUCER_PASSWORD:?}@redis:6379/0
+      - NORA_BRIDGE_API_TOKEN=${NORA_BRIDGE_API_TOKEN:-${NORA_BRIDGE_TOKEN}}
+      - NORA_BRIDGE_CORRELATION_KEY=${NORA_BRIDGE_CORRELATION_KEY:?}
+      - NORA_BRIDGE_CORRELATION_KEY_VERSION=${NORA_BRIDGE_CORRELATION_KEY_VERSION:-1}
+      - NORA_BRIDGE_ACCOUNT_KEY=${INSTAGRAM_BRIDGE_ACCOUNT_KEY:?set INSTAGRAM_BRIDGE_ACCOUNT_KEY in .env}
+      - NORA_BRIDGE_JOURNAL=/data/bridge/journal/instagram.jsonl
+      - NORA_BRIDGE_PROJECTION_DIR=/bridge-projection
+      - DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?}@db:5432/nora
       # Tracing (design/instagram-adoption/16 §Tracing): OTLP to the host's
       # collector, the same endpoint Nora exports to. The collector routes the
       # spans to Jaeger (and to Langfuse when a trace carries a model call).
@@ -176,6 +322,7 @@ services:
       # Instagram's web builds and are never in the repo. Unset is a 501.
       - INSTAGRAM_STORY_DOC_ID=${INSTAGRAM_STORY_DOC_ID:-}
       - INSTAGRAM_TIMELINE_DOC_ID=${INSTAGRAM_TIMELINE_DOC_ID:-}
+    depends_on: [redis]
     command: ["--port", "18082", "--session", "/session"]
     healthcheck:
       # Proves the bridge's HTTP layer serves. It CANNOT prove the Instagram
@@ -189,6 +336,62 @@ services:
       interval: 60s
       timeout: 10s
       start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+  # bridge-projection — the standalone admission-projection publisher
+  # (design/platform-bridges §02). ONE process hosts all four platforms'
+  # publishers (`entry.py --all`), each writing `{platform}.json` atomically
+  # into the shared named volume every bridge above mounts READ-ONLY. It
+  # reads config/policy/identity through the same loaders the app composes
+  # — never a second authorization parser — and keeps publishing while the
+  # `nora` container is stopped: files in, bridge `/v1/self` + `/v1/reads`
+  # opportunistically, no app anywhere in the loop. The same /app mount
+  # targets nora carries so komodo's scoped config-reload reader detection
+  # already sees it.
+  bridge-projection:
+    build:
+      context: .
+      dockerfile: deploy/bridge-projection/Dockerfile
+      network: host  # operational constraint 1, same as every build here
+    image: bridge-projection:1
+    container_name: bridge-projection
+    restart: unless-stopped
+    networks: [nora]
+    command:
+      - "--config"
+      - "/app/config.toml"
+      - "--all"
+      - "--projection-dir"
+      - "/bridge-projection"
+      - "--health-port"
+      - "8091"
+    environment:
+      - NORA_BRIDGE_API_TOKEN=${NORA_BRIDGE_API_TOKEN:-${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_API_TOKEN in .env}}
+      # Per-platform opaque legs — each must equal [platforms.<p>]
+      # account_key in config.toml or that platform alone denies itself
+      # (key_mismatch → enabled:false file + stale health); the fleet keeps
+      # publishing the rest. A disabled platform needs no leg.
+      - SIGNAL_BRIDGE_ACCOUNT_KEY=${SIGNAL_BRIDGE_ACCOUNT_KEY:?set SIGNAL_BRIDGE_ACCOUNT_KEY in .env}
+      - DISCORD_BRIDGE_ACCOUNT_KEY=${DISCORD_BRIDGE_ACCOUNT_KEY:-default}
+      - WHATSAPP_BRIDGE_ACCOUNT_KEY=${WHATSAPP_BRIDGE_ACCOUNT_KEY:-default}
+      - INSTAGRAM_BRIDGE_ACCOUNT_KEY=${INSTAGRAM_BRIDGE_ACCOUNT_KEY:-default}
+      - NORA_BRIDGE_PROJECTION_DIR=/bridge-projection
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - ./policy.toml:/app/policy.toml:ro
+      - ./identity.toml:/app/identity.toml:ro
+      - bridge-projection:/bridge-projection
+    healthcheck:
+      # /live is process liveness — /health is authorization truth (503 while
+      # any platform's file may be stale). Docker must never restart on
+      # staleness: a stale grant already denies, a restart fixes nothing.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8091/live"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
       retries: 3
     logging:
       driver: json-file
@@ -265,10 +468,10 @@ services:
     # in-container healthcheck below hits the container's own 127.0.0.1:9100.
     ports: ["127.0.0.1:9100:9100"]
     depends_on:
-      signal-cli:
+      signal-bridge:
         # service_started only waits for the process to exist. Nora's first
-        # act is to attach an SSE listener, so she must wait for the daemon
-        # to be SERVING, not merely spawned.
+        # act is to call the bridge's action API, so she must wait for the
+        # daemon to be SERVING, not merely spawned.
         condition: service_healthy
       db:
         condition: service_healthy
@@ -280,6 +483,11 @@ services:
       # it, so an upgrade that forgets it fails loudly rather than serving
       # account routes unauthenticated.
       - NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}
+      # The durable inbox the bridge reader claims from ([bridges]
+      # redis_url_env — nora.platform.bridge.inspection shares the client for
+      # backlog/heartbeat telemetry). Scoped to the consumer role: claim/ack/
+      # inspect inside the `nq:*` namespace, never a producer's enqueue.
+      - NORA_REDIS_URL=redis://nq-consumer:${NORA_REDIS_CONSUMER_PASSWORD:?}@redis:6379/0
       # The Postgres record store (cutover 2026-08-07, DEC-51). asyncpg-shaped;
       # the sync/Alembic driver is derived from it; Nora runs migrations at
       # startup. Password from .env (DEC-8), never inlined.
@@ -911,7 +1119,10 @@ services:
       # with its own file, and this directory is also the process's only
       # memory of which guilds to restore on boot.
       - STATE_DIR=/var/lib/audio-controller
-      - NORA_EVENT_URL=http://nora:9100/app/v1/voice/event
+      # Controller lifecycle events (generation/playback advancement) go to
+      # the bridge's /v1/voice/event — the bridge owns the VoiceEventConsumer
+      # when [platforms.discord] mode = "bridge"; the app relinquished it.
+      - NORA_EVENT_URL=http://discord-bridge:18093/v1/voice/event
     volumes:
       # Desired-state durability (§12.1): /discord exit writes idle, a join
       # writes connected, and the boot decision reads this file — it must
@@ -1026,6 +1237,9 @@ networks:
   # Nora no longer calls the co-located SearXNG/Firecrawl containers.
 
 volumes:
+  # Redis Streams and bridge admission projections survive app replacement.
+  redis-data:
+  bridge-projection:
   db-data:
   rustfs-data:
   # ModelScope weights cache for the `stt` service (~/.cache/modelscope inside

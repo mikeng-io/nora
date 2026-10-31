@@ -29,6 +29,27 @@ OVERLAY = yaml.safe_load(
     (ROOT / "deploy/signoz/docker-compose.signoz.yaml").read_text())
 COMPOSE = yaml.safe_load(
     (ROOT / "deploy/signoz/deployment/compose.yaml").read_text())
+_OWNED_LOG_PRODUCERS = {
+    "nora", "presence", "analytics", "bridge-projection",
+    "signal-bridge", "discord-bridge", "whatsapp-bridge", "instagram-bridge",
+}
+
+
+def test_bridge_producer_scrapes_use_the_effective_api_bearer():
+    jobs = {job["job_name"]: job for job in
+            INGESTER["receivers"]["prometheus/nora"]["config"]["scrape_configs"]}
+    for platform, port in (("signal", 18090), ("discord", 18093),
+                           ("whatsapp", 18081), ("instagram", 18082)):
+        job = jobs[platform + "-bridge"]
+        assert job["metrics_path"] == "/metrics"
+        assert job["authorization"] == {
+            "type": "Bearer", "credentials": "${env:NORA_BRIDGE_API_TOKEN}"}
+        assert job["static_configs"] == [{"targets": [f"{platform}-bridge:{port}"]}]
+    assert "NORA_BRIDGE_API_TOKEN=${NORA_BRIDGE_API_TOKEN:-${NORA_BRIDGE_TOKEN:-}}" in (
+        COMPOSE["services"]["ingester"]["environment"])
+    assert jobs["bridge-projection"]["static_configs"] == [
+        {"targets": ["bridge-projection:8091"]}]
+    assert "signoz" in OVERLAY["services"]["bridge-projection"]["networks"]
 
 _FOR = re.compile(r"for (\d+)m")
 def _comparisons_without_bool(query: str) -> list[str]:
@@ -169,10 +190,7 @@ def test_journald_is_the_one_log_source_scoped_to_owned_producers():
     assert logs == ["journald/nora"]
     tags = [m["CONTAINER_TAG"] for m in receivers["journald/nora"]["matches"]
             if "CONTAINER_TAG" in m]
-    assert set(tags) == {
-        "nora", "presence", "analytics",
-        "signal-cli", "whatsapp-bridge", "instagram-bridge",
-    }
+    assert set(tags) == _OWNED_LOG_PRODUCERS
     assert any(m.get("SYSLOG_IDENTIFIER") == "nora-session-probe"
                for m in receivers["journald/nora"]["matches"])
 
@@ -187,12 +205,24 @@ def test_the_compose_mount_and_overlay_match_the_journald_source():
         name for name, svc in OVERLAY["services"].items()
         if (svc.get("logging") or {}).get("driver") == "journald"
     }
-    assert tagged == {
-        "nora", "presence", "analytics",
-        "instagram-bridge", "whatsapp-bridge", "signal-cli",
-    }
+    assert tagged == _OWNED_LOG_PRODUCERS
     for name in tagged:
         assert OVERLAY["services"][name]["logging"]["options"]["tag"] == name
+
+
+def test_bridge_cutover_overlay_uses_existing_services_and_reachable_otlp():
+    base = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    assert set(OVERLAY["services"]) <= set(base["services"])
+    endpoint = "http://signoz-ingester:4318/v1/traces"
+    for name in ("signal-bridge", "discord-bridge", "whatsapp-bridge", "instagram-bridge"):
+        service = OVERLAY["services"][name]
+        assert "signoz" in service["networks"]
+        env = dict(entry.split("=", 1) for entry in service.get("environment", []))
+        if name == "signal-bridge":
+            assert env["NORA_TRACING_ENABLED"] == "true"
+            assert env["NORA_TRACING_ENDPOINT"] == endpoint
+        elif name != "discord-bridge":
+            assert env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] == endpoint
 
 
 def test_clickhouse_authentication_requires_the_private_password():

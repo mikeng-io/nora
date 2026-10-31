@@ -1,0 +1,35 @@
+# Disposable queue-observability fixture (design/platform-bridges/04,
+# issue #422). Three containers, no volumes, no credentials — `docker compose
+# -f deploy/otel-queue-fixture/docker-compose.yml up -d --build`, and down
+# when done. It is disposable BY CONSTRUCTION: the sink forgets on restart
+# and Jaeger's all-in-one store is in-memory.
+#
+#   test/app ──OTLP/HTTP──▶ collector:4318 ──┬─▶ jaeger (16686 UI/API)
+#                                          └─▶ langfuse-sink (host :5318,
+#                                              in-compose :4318)
+
+name: nora-otel-queue-fixture
+
+services:
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.139.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "127.0.0.1:4318:4318"
+    depends_on:
+      - jaeger
+      - langfuse-sink
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.74.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:16686:16686"
+
+  langfuse-sink:
+    build: ./langfuse-sink
+    ports:
+      - "127.0.0.1:5318:4318"

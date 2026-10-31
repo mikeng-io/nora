@@ -22,10 +22,9 @@ from __future__ import annotations
 
 import logging
 
-import discord
-
 from nora.domain.ports import VoiceChannelRef
 from nora.platform.discord.adapter import DiscordAdapter
+from nora.platform.discord.channels import is_voice_channel
 
 log = logging.getLogger("nora.voice")
 
@@ -67,7 +66,7 @@ class DiscordVoicePresence:
                 channel = member.voice.channel
                 # Voice channels only — a stage channel is not "in voice"
                 # for this tool's purposes.
-                if isinstance(channel, discord.VoiceChannel):
+                if is_voice_channel(channel):
                     out[member_id] = VoiceChannelRef(
                         channel_id=str(channel.id),
                         channel_name=channel.name,

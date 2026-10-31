@@ -161,7 +161,9 @@ class TraceIdentityProcessor(SpanProcessor):
 #: * `plumbing` — deterministic stage sequencing with no model call anywhere
 #:   under it. The collector drops it when the run ends well and keeps it on
 #:   error; its routine signal belongs on a counter either way.
-TraceKind = Literal["generation", "plumbing"]
+#: * `queue` — a bounded bridge operation linked to its producer/previous
+#:   attempt. Retained by the collector; never a model call or message body.
+TraceKind = Literal["generation", "plumbing", "queue"]
 
 #: The attribute name itself, `nora.` prefixed like every other attribute this
 #: module's callers set.
@@ -277,9 +279,39 @@ def span(name: str, **attributes: object) -> Iterator[None]:
     render rather than raising) so that a broken attribute still costs only
     that attribute — never the span, and never the body.
     """
+    with _opened_span(name, links=(), parent=None, attributes=attributes):
+        yield
+
+
+@contextmanager
+def root_span(name: str, *, links: Sequence[Link] = (),
+              parent: Context | None = None,
+              **attributes: object) -> Iterator[None]:
+    """A fresh trace root — the same guards as `span`, with the parent and
+    links a root needs spelled out because ambient context is WRONG here.
+
+    The queue/generation seam is why this exists: a `queue.attempt` or the
+    `engagement` generation root must NOT inherit whichever span happens to be
+    current in the consumer's task (a claim span parenting a model trace is
+    exactly the nesting design 04 forbids). `parent=None` means an EMPTY
+    context — a true root — not ambient; a caller that wants ambient context
+    uses `span`. `links` are the W3C `Link`s stamped at start, the only
+    relationship a fresh root can hold to a context that is not its parent.
+    """
+    with _opened_span(name, links=links,
+                      parent=parent if parent is not None else Context(),
+                      attributes=attributes):
+        yield
+
+
+@contextmanager
+def _opened_span(name: str, *, links: Sequence[Link],
+                 parent: Context | None,
+                 attributes: dict[str, object]) -> Iterator[None]:
     try:
         cm = trace.get_tracer("nora").start_as_current_span(
-            name, attributes=_safe_attributes(attributes),
+            name, context=parent, links=list(links),
+            attributes=_safe_attributes(attributes),
         )
         sp = cm.__enter__()
     except Exception:

@@ -65,7 +65,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from typing import Protocol
+from typing import Any, Protocol
 
 from nora.domain.models import NormalizedMessage
 from nora.domain.participation import ParticipationCursor
@@ -94,6 +94,27 @@ class ParticipationStateStore(Protocol):
     async def record_send(
         self, *, platform: str, conversation_id: str, at_ms: int
     ) -> None: ...
+
+    async def unfolded_candidates(self) -> list[dict[str, Any]]:
+        """Every durable candidate noted but not yet folded into a window —
+        the bridge WorkRunner's `bridge_work` rows, read at hydration so a
+        restarted process sees the membership the dead process built. Empty
+        under direct mode: there are no durable candidates to restore."""
+        ...
+
+    async def noted_rooms(self) -> list[tuple[str, str]]:
+        """Every room that ever held a committed candidate mark — the
+        durable-close set hydration restores. Folded rooms stay in it: their
+        windows remain ledger-owned, so all-message cursors may not re-time
+        them. Empty under direct mode."""
+        ...
+
+    async def last_send_at(
+        self, *, platform: str, conversation_id: str
+    ) -> int | None:
+        """One room's durable send cursor for a caller outside the live tick
+        (the participation_fire work) — None when she has never sent there."""
+        ...
 
 
 class ParticipationTrigger:
@@ -134,6 +155,7 @@ class ParticipationTrigger:
         gate_shadow: Callable[..., Awaitable[None]] | None = None,
         clock: Callable[[], float] = time.time,
         store: ParticipationStateStore | None = None,
+        close_handoff: Callable[[str, str, int, str], Awaitable[None]] | None = None,
     ) -> None:
         self._speak = speak
         self._slots = slots
@@ -156,6 +178,11 @@ class ParticipationTrigger:
         self._max_window_messages = max_window_messages
         self._clock = clock
         self._store = store
+        # The durable window close. `None` (direct mode, the default) keeps
+        # the inline evaluate-and-speak path below; wired, a due window's
+        # watermark, candidate folds and fire obligation commit atomically and
+        # the claimed `participation_fire` work runs slot/gate/speak instead.
+        self._close_handoff = close_handoff
         # Hydration is ONCE per process and happens on the first
         # `close_due_windows`, not in `__init__`: this constructor is
         # synchronous and the read is not, and the runtime loop's own
@@ -174,6 +201,19 @@ class ParticipationTrigger:
         # from the candidate message rather than re-derived from policy, which
         # this class deliberately does not hold.
         self._conversation_type: dict[Key, str] = {}
+        # Candidate ids this process has already counted (`_noted_ids`) or
+        # restored at hydration (`_hydrated_ids`): the dedupe that makes a
+        # replayed durable note a no-op. # ponytail: folded ids are retained —
+        # a folded candidate never replays, so stale entries are bounded by
+        # the room's own traffic and clearing them would only risk a re-count.
+        self._noted_ids: set[str] = set()
+        self._hydrated_ids: set[str] = set()
+        # Rooms whose membership lives in the work ledger (`note_candidate`
+        # or a hydrated candidate): only these take the durable close when a
+        # handoff is wired. In MIXED mode one trigger serves bridge and live
+        # platforms — a live room must keep the live close, never fabricate
+        # a ledger window from notes that were never ledger candidates.
+        self._durable_keys: set[Key] = set()
 
     def note_message(self, message: NormalizedMessage) -> None:
         """Record one participation-eligible message. Cheap and synchronous:
@@ -183,6 +223,56 @@ class ParticipationTrigger:
         self._last_message_at[key] = self._clock()
         self._unjudged[key] = self._unjudged.get(key, 0) + 1
         self._conversation_type[key] = message.conversation_type
+
+    def note_candidate(self, work_id: int | str, message: NormalizedMessage) -> None:
+        """`note_message` for a DURABLE candidate: same cursor updates, but the
+        unjudged count rises only for a candidate this process has not already
+        counted — the durable mark (`mark_candidate` on the work row) plus
+        these id sets are what make a killed-then-reclaimed note idempotent."""
+        key = (message.platform, message.conversation_id)
+        self._durable_keys.add(key)
+        self._last_message_at[key] = self._clock()
+        self._conversation_type[key] = message.conversation_type
+        ident = str(work_id)
+        if ident in self._noted_ids or ident in self._hydrated_ids:
+            return
+        self._noted_ids.add(ident)
+        self._unjudged[key] = self._unjudged.get(key, 0) + 1
+
+    async def admitted(
+        self, platform: str, conversation_id: str,
+    ) -> tuple[bool, float | None, str | None]:
+        """The canonical gate seam for a claimed fire work: `_admitted`,
+        unchanged — the durable path must not grow a second judgement."""
+        return await self._admitted(platform, conversation_id)
+
+    async def shadow_verdict(
+        self, *, platform: str, conversation_id: str, score: float | None
+    ) -> bool:
+        """Post the gate-shadow review verdict when wired; True when it did."""
+        if self._gate_shadow is None:
+            return False
+        await self._gate_shadow(
+            platform=platform, conversation_id=conversation_id, score=score,
+        )
+        return True
+
+    def mark_sent(self, key: Key) -> None:
+        """Mirror a delivered send in the live cursor — the durable caller
+        already committed `last_send_at` inside its own finish transaction."""
+        self._last_send_at[key] = self._clock()
+
+    @property
+    def cooldown_seconds(self) -> float:
+        return self._cooldown_seconds
+
+    def set_close_handoff(
+        self, handoff: Callable[[str, str, int, str], Awaitable[None]] | None
+    ) -> None:
+        """Wire the durable window close after construction — the bridge work
+        store is built later than the trigger in composition, so the seam is
+        attached where the ledger exists rather than carried as a ctor dep."""
+        self._close_handoff = handoff
 
     async def close_due_windows(self) -> int:
         """Run the ONE evaluation for every window that has closed since the
@@ -234,10 +324,25 @@ class ParticipationTrigger:
             )
         ]
         for key in due:
+            platform, conversation_id = key
+            if key in self._durable_keys and self._close_handoff is not None:
+                # The DURABLE close: ONE commit writes the watermark, folds
+                # every noted candidate into this window's identity and
+                # enqueues the fire obligation — never a persisted "judged"
+                # with the turn unowned. Marks move only after the commit, so
+                # a rolled-back handoff leaves the window genuinely open.
+                # Live-only rooms fall through to the live close even when a
+                # handoff is wired: their membership was never a ledger fact.
+                await self._close_handoff(
+                    platform, conversation_id, int(now * 1000),
+                    self._conversation_type.get(key, "group"),
+                )
+                self._last_window_end[key] = now
+                self._unjudged[key] = 0
+                continue
             self._last_window_end[key] = now
             self._unjudged[key] = 0
             await self._record_window_end(key, now)
-            platform, conversation_id = key
             # Take the slot only if free. A tag holding it skips the
             # window ENTIRELY (the watermark above already closed it) — never
             # queued, never waited on.
@@ -317,12 +422,42 @@ class ParticipationTrigger:
         """
         if self._hydrated or self._store is None:
             return
+        # Every room that ever carried a committed mark keeps its ledger
+        # discipline — folded rooms included, so ambient transcript rows can
+        # never re-time or re-open their windows.
+        for room in await self._store.noted_rooms():
+            self._durable_keys.add((room[0], room[1]))
+        # Durable candidates the dead process noted but never folded: their
+        # membership is committed truth, so the volume arm must see it — the
+        # setdefault keeps any live note's newer count, never under it. They
+        # are read FIRST because they also decide which rooms take the
+        # durable close and what `_last_message_at` may mean for them.
+        durable_last: dict[Key, float] = {}
+        for row in await self._store.unfolded_candidates():
+            key = (row["platform"], row["conversation_id"])
+            self._durable_keys.add(key)
+            noted = float(row["noted_ms"] or 0) / 1000.0
+            durable_last[key] = max(durable_last.get(key, 0.0), noted)
+            ident = str(row["id"])
+            if ident in self._hydrated_ids:
+                continue
+            self._hydrated_ids.add(ident)
+            self._unjudged[key] = self._unjudged.get(key, 0) + 1
+        for key, noted in durable_last.items():
+            # A live note's clock() is newer truth than any committed mark —
+            # and the only one in this process's clock domain. The committed
+            # `noted_ms` seeds the cursor only where no live note exists.
+            self._last_message_at.setdefault(key, noted)
         for cursor in await self._store.read_cursors():
             key = (cursor.platform, cursor.conversation_id)
             self._last_window_end.setdefault(key, cursor.last_window_end_at / 1000.0)
             if cursor.last_send_at is not None:
                 self._last_send_at.setdefault(key, cursor.last_send_at / 1000.0)
-            if cursor.last_message_at is not None:
+            if key not in self._durable_keys and cursor.last_message_at is not None:
+                # Live rooms keep the all-messages cursor — the live note
+                # path IS every eligible message. For ledger rooms the same
+                # read would let ambient non-candidate traffic reopen or
+                # re-time a window: their quiet is candidate truth only.
                 self._last_message_at.setdefault(key, cursor.last_message_at / 1000.0)
             if cursor.conversation_type is not None:
                 self._conversation_type.setdefault(key, cursor.conversation_type)

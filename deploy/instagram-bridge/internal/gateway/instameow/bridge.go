@@ -218,6 +218,24 @@ type Bridge struct {
 	summonsSeen     *seenSet
 	summonsRate     *windowLimiter
 	summonsInflight sync.WaitGroup
+	// upstreamGate is the durable-capture readiness gate (UpstreamGate).
+	upstreamGate func() bool
+}
+
+// currentGate reads the upstream gate under the bridge mutex.
+func (b *Bridge) currentGate() func() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.upstreamGate
+}
+
+// HaltUpstream disconnects the socket without touching the session files:
+// durable capture broke mid-flight, so receive stops while HTTP keeps
+// serving. The gate keeps the supervisor from rebuilding it.
+func (b *Bridge) HaltUpstream() {
+	if cli := b.currentClient(); cli != nil {
+		go cli.Disconnect()
+	}
 }
 
 // --- session supervisor -------------------------------------------------------
@@ -246,6 +264,16 @@ func (b *Bridge) supervise(ctx context.Context, libLog zerolog.Logger) {
 	}()
 
 	for ctx.Err() == nil {
+		if gate := b.currentGate(); gate != nil && !gate() {
+			// Durable capture is broken or has never seen a valid projection:
+			// upstream receive must not drain events into a void. Poll on the
+			// session cadence; capture's own preflight/journal recovery is
+			// what flips this back.
+			if !sleepOrDone(ctx, sessionPoll) {
+				return
+			}
+			continue
+		}
 		if err := b.ensureSession(ctx, libLog); err != nil {
 			wait := backoff
 			if errors.Is(err, errNoSession) {
@@ -577,9 +605,9 @@ func (b *Bridge) emitDelta(d *slidetypes.Delta) {
 			b.sink.Emit(ev)
 		}
 	case *slidetypes.CreateReactionEvent:
-		b.sink.Emit(normalizeReaction(room, data.Reaction, data.MessageID, false, own))
+		b.sink.Emit(normalizeReaction(room, data.Reaction, data.MessageID, false, own, d.UQSeqID))
 	case *slidetypes.DeleteReactionEvent:
-		b.sink.Emit(normalizeReaction(room, data.Reaction, data.MessageID, true, own))
+		b.sink.Emit(normalizeReaction(room, data.Reaction, data.MessageID, true, own, d.UQSeqID))
 	case *slidetypes.EditMessageEvent:
 		// from_me is left nil: the delta carries no sender. See editEvent.
 		ev := &editEvent{Kind: kindEdit, RoomID: room, MessageID: data.MessageID, Text: data.TextBody}

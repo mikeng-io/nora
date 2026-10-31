@@ -354,6 +354,14 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # reaches the world unless told otherwise. It does not cover a
     # send: `landed_signal_sends` below does.
     cfg = _with(cfg, "platforms.signal.account", _PLACEHOLDER_ACCOUNT)
+    # `platforms.*.mode` — a deployment on `mode = "bridge"` needs Redis and
+    # live bridges; a sandbox has neither, so composition would refuse to boot.
+    # The direct adapter stays PRESENT (the registry's `self_aliases()` still
+    # feeds `self_ids`) with its network neutralised by the placeholder
+    # account/token above — the same seam `mode` itself names, taken the other
+    # way.
+    for platform in ("signal", "discord", "whatsapp", "instagram"):
+        cfg = _with(cfg, f"platforms.{platform}.mode", "direct")
     # `platforms.discord.token_env` — the SAME neutralisation, for the reason
     # above. The adapters stay ENABLED as the deployment has them, because the
     # registry's `self_aliases()` feeds `self_ids` and `self_ids` is what

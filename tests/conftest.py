@@ -28,6 +28,7 @@ import psycopg
 import pytest
 from testcontainers.core.container import DockerContainer
 from testcontainers.postgres import PostgresContainer
+from testcontainers.redis import RedisContainer
 
 from nora.agent.registry import ToolRegistry
 from nora.config import Config
@@ -436,3 +437,25 @@ def evaluation_config(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(importlib.import_module("nora.subject.obtain"), "_TEMPLATE", target)
         yield target
+
+
+# The platform-bridge durable handoff's other half: a REAL Redis for the
+# consumer-group/dedupe Lua the queue contract is built on. Session-scoped like
+# `_pg_container`; each test flushes the keyspace so orderings never leak.
+@pytest.fixture(scope="session")
+def _redis_container() -> Iterator[RedisContainer]:
+    with RedisContainer("redis:7.4-alpine") as r:
+        yield r
+
+
+@pytest.fixture
+async def redis_client(_redis_container: RedisContainer):
+    import redis.asyncio as aioredis
+
+    client = aioredis.Redis(
+        host=_redis_container.get_container_host_ip(),
+        port=int(_redis_container.get_exposed_port(6379)),
+    )
+    await client.flushall()
+    yield client
+    await client.aclose()

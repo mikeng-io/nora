@@ -37,6 +37,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from typing import Any
 
+from nora.domain.actions import ActionOwner
 from nora.domain.audience import ONE_TIME_CODE
 from nora.domain.otp import PURPOSES
 from nora.engagement.stages import deliver
@@ -150,6 +151,15 @@ class OtpService:
         text = _MESSAGES[purpose].format(code=code, lifetime=self._lifetime())
         try:
             identity = await adapter.resolve_identity()
+            # The challenge row was committed BEFORE `_send` (see `issue`
+            # above): it is the durable authority this send's actions carry.
+            # The bridge re-validates it + the pending outbound audit row
+            # (`tag otp-{challenge_id}`, same conversation) under the
+            # reservation CAS — a non-bridge adapter has no `bind_owner` and
+            # is used unchanged.
+            if hasattr(adapter, "bind_owner"):
+                adapter = adapter.bind_owner(ActionOwner(
+                    kind="otp_challenge", id=str(challenge_id)))
             handle = deliver.build(
                 store=self._records, adapter=adapter, target=target,
                 doctrine=self._doctrine_store.get(), canary=self._canary,

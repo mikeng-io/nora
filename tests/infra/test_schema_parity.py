@@ -438,10 +438,13 @@ def test_the_check_constraint_comparison_reports_drift_in_both_directions(migrat
             ) == []
 
             # 1. A CHECK deleted from `schema.py`. The database keeps it;
-            #    nothing declares it.
+            #    nothing declares it. `messages` carries more than one live
+            #    CHECK (`conversation_type`, `delivery_status`), so an empty
+            #    `declared` must report every one of them as unclaimed.
             deleted = _check_constraint_problems(conn, "messages", [])
-            assert len(deleted) == 1, deleted
-            assert "schema.py does not declare" in deleted[0], deleted
+            live = _actual_check_defs(conn, "messages")
+            assert len(deleted) == len(live) and len(live) > 0, deleted
+            assert all("schema.py does not declare" in d for d in deleted), deleted
 
             # 2. A CHECK added to `schema.py` that no migration ever built.
             invented = _check_constraint_problems(
@@ -678,7 +681,8 @@ def test_a_deliberate_drift_is_caught(pg_url, pg_admin):
             with engine.begin() as conn:
                 name = conn.execute(sa.text(
                     "SELECT conname FROM pg_constraint "
-                    "WHERE conrelid = 'messages'::regclass AND contype = 'c'"
+                    "WHERE conrelid = 'messages'::regclass AND contype = 'c' "
+                    "AND pg_get_constraintdef(oid) LIKE '%conversation_type%'"
                 )).scalar_one()
                 conn.execute(sa.text(f'ALTER TABLE messages DROP CONSTRAINT "{name}"'))
                 conn.execute(sa.text("DROP INDEX idx_messages_conv_ts"))
