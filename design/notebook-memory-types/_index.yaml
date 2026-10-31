@@ -8,14 +8,14 @@ description: >
   Episodic memory stays in the Record and Rollup. Layers stay defined by
   authority; audience (internal or external) is a property of a kind, and
   events and documents are postings, Nora's published acts. Standing splits
-  across the types; Standing remains operator shorthand for the shared cognitive
-  view, not a kind or store. Topic activity follows the amended graph design;
-  conscious turns record conclusions, Cognition authorizes Notebook decisions.
-  Shared rendering, immediate action visibility and conflict requirements are
-  specified; subject/action identity remains open. Design only, not built.
+  across the types; one Standing presentation organizes the existing state.
+  The automatic tools-less updater reads completed loop Records and actual
+  results; no conclusion tool, new store or separate shared-state block.
+  Cognition retains substantive Notebook judgment authority. Unit-wide action
+  visibility and code-level deduplication remain required. Design target.
 status: proposal
 governance: operator-directed
-timestamp: '2026-10-30'
+timestamp: '2026-10-31'
 origin: >
   Operator, 2026-10-29: «convert the notebook layer into a proper abstract that
   becomes a typed kind of value, instead of setting up a separate note module,
@@ -25,18 +25,20 @@ origin: >
   anchoring the entire direction»; `Between us` dropped (option A); decisions
   recorded by the conscious and written by the subconscious (option A); a
   person's interest is a graph edge, not a profile line (option A). Amendment,
-  operator 2026-10-30: shared cognitive state across Engagement, Cognition and
-  Proactive; tools-less faithful materialization adds no cognitive authority.
+  operator 2026-10-30, clarified 2026-10-31: consolidate the three Standing
+  presentations and open arrangements into one Standing block; the existing
+  updater automatically organizes complete loop Records without a self-report
+  tool or independent cognitive authority.
 members:
   - 00-design.md
   - 10-relations.md
-  - 20-shared-cognitive-state.md
+  - 20-standing.md
 edges:
-  - {src: 20-shared-cognitive-state, dst: 00-design, rel: amends, provenance: asserted}
-  - {src: 20-shared-cognitive-state, dst: 10-relations, rel: depends_on, provenance: asserted}
-  - {src: 20-shared-cognitive-state, dst: ../standing-ledger/50-migration.md, rel: amends, provenance: asserted}
-  - {src: 20-shared-cognitive-state, dst: ../cognition-loop/30-cognition.md, rel: amends, provenance: asserted}
-  - {src: 20-shared-cognitive-state, dst: ../unified-memory/29-one-cognition-session.md, rel: details, provenance: asserted}
+  - {src: 20-standing, dst: 00-design, rel: amends, provenance: asserted}
+  - {src: 20-standing, dst: 10-relations, rel: depends_on, provenance: asserted}
+  - {src: 20-standing, dst: ../standing-ledger/50-migration.md, rel: amends, provenance: asserted}
+  - {src: 20-standing, dst: ../cognition-loop/30-cognition.md, rel: amends, provenance: asserted}
+  - {src: 20-standing, dst: ../unified-memory/29-one-cognition-session.md, rel: details, provenance: asserted}
   - {src: 10-relations, dst: 00-design, rel: details, provenance: asserted}
   - {src: 10-relations, dst: ../cognition-loop/05-data-model.md, rel: amends, provenance: asserted}
   - {src: 00-design, dst: ../cognition-loop/05-data-model.md, rel: amends, provenance: asserted}

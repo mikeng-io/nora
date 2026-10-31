@@ -15,18 +15,18 @@ edges:
 
 > **Authoritative amendments:** the operator's 2026-10-29
 > [one-session ruling](../unified-memory/29-one-cognition-session.md) supersedes
-> the three-session topology below. The 2026-10-30
-> [shared cognitive state](../notebook-memory-types/20-shared-cognitive-state.md)
-> node amends input and authority: Cognition reads/thinks/decides at unit scope;
-> origin room is provenance/destination, not an agenda read/edit boundary.
-> Do not intersect all unit input with every agenda audience. Destination
-> projections preserve scope and current operator disclosure rulings.
-> Engagement/fire conclusions remain Record and are immediately readable;
-> Cognition authorizes Notebook decisions. An optional faithful materializer
-> adds no judgment or independent wake. The tag-debrief writer wording in §7
-> and destination/exact-citation dedupe description below are historical;
-> the new node owns migration and creation/fire requirements, with identity
-> resolution explicitly open. Design targets are not claims of built behavior.
+> the three-session topology below. [One Standing](../notebook-memory-types/20-standing.md),
+> clarified 2026-10-31, owns input and completion: Cognition reads/thinks/decides
+> across the unit, then the existing Standing updater automatically organizes
+> its full retained Record and actual results. No `decision_conclude` verb or
+> extra self-report obligation. Room and unit state keep separate scope keys
+> under the common model; room is source/delivery context, not an agenda-based
+> read/edit boundary. Each consumer gets one `standing` block with appropriate
+> source/disclosure rules. Cognition retains substantive Notebook authority;
+> the updater adds no new judgment or independent wake. The tag-debrief writer
+> wording in §7 and destination/exact-citation dedupe description below are
+> historical where they conflict. The new node owns migration, automatic update
+> flow and unit-wide action arbitration. Design targets are not runtime claims.
 
 > 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
 

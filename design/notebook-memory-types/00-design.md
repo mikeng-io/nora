@@ -1,7 +1,7 @@
 ---
 type: design
 title: "The Notebook by memory type: note, topic, lesson, profile, decision"
-description: "The operator's 2026-10-29 ruling. The Notebook stops being organised by tiers (Register, Character, Standing, Lessons) and is organised by memory type instead: one kind per type, one machinery for all of them. Layers stay defined by authority; audience (internal or external) is a property of a kind, never a layer. Memo becomes the kept phase of a note, standing splits across the types (amended 2026-10-30: Standing remains shorthand for a shared view, not a kind), topic activity follows the amended graph design, and the conscious records a decision as a turn record while the subconscious writes the decision itself. Design only, not built."
+description: "Notebook taxonomy: note, topic, lesson, profile and decision. Operator clarification 2026-10-31 keeps one Standing presentation and automatic faithful updater over completed Records; no self-report tool or new store. Cognition retains substantive Notebook judgment authority. Design target, not a claim of deployed behavior."
 tags: [nora, notebook, memory-types, note, topic, lesson, profile, decision, vocabulary]
 timestamp: '2026-10-29'
 edges:
@@ -15,12 +15,13 @@ edges:
 
 # 00 · The Notebook by memory type
 
-> **Authoritative amendment, operator 2026-10-30:**
-> [20 · Shared cognitive state](20-shared-cognitive-state.md) owns the shared
-> view, producer/writer authority, immediate recent-action visibility and
-> migration requirements. It amends §§4–5 below: Standing may name the view,
-> never a sixth kind/store; Cognition alone authorizes Notebook decisions.
-> Subject/action identity is explicitly unresolved, not solved by shared input.
+> **Authoritative clarification, operator 2026-10-31:**
+> [20 · One Standing](20-standing.md) amends §§4–5: one existing Standing
+> block across Engagement, Cognition and Proactive; the existing tools-less
+> updater automatically organizes each completed loop's full retained Record
+> and actual results. No producer self-report tool, separate shared-state block
+> or new store. Cognition retains substantive Notebook judgment authority;
+> Standing faithfully records expressed decisions and canonical execution facts.
 
 ## 1. Why
 
@@ -69,8 +70,8 @@ here because personalisation reads it ([personalisation](../personalisation/00-i
 
 **The vocabulary becomes Layer › Memory type › Kind › Entry.** "Tier" retires,
 and with it "Register", "Character" and "Standing" as tier names.
-Standing may still name the shared cognitive view ([20](20-shared-cognitive-state.md),
-operator amendment 2026-10-30).
+Standing remains the common derived presentation and block ([20](20-standing.md),
+operator clarification 2026-10-31), rather than a parallel memory kind.
 
 **"Notebook" stays the name.** What its entries share is that Nora wrote them,
 revises them and may be unsure: judgement, not data. "Episode" was considered
@@ -130,11 +131,13 @@ topic behind it stays internal.
 How these kinds connect to each other and to the profile (cite, about,
 link; the entity as the hub): [10](10-relations.md).
 
-## 4. Standing splits and retires as a kind
+## 4. Standing is the presentation; memory kinds remain distinct
 
 Standing held what the Record cannot give back
-([standing-ledger 00](../standing-ledger/00-intent.md) §3). It is not one
-memory type, so it does not survive as a kind:
+([standing-ledger 00](../standing-ledger/00-intent.md) §3). The taxonomy maps
+its content as below. The 2026-10-31 clarification keeps one Standing updater
+and presentation over the existing stores; this build does not require a
+storage-kind migration before consolidating the three renderings:
 
 | standing today | goes to |
 |---|---|
@@ -149,38 +152,29 @@ memory type, so it does not survive as a kind:
 Folding standing into profile was considered and refused: a profile is
 third-person and re-derivable, standing first-person and by definition not.
 
-## 5. A decision: the conscious records, the subconscious decides
+## 5. Loops decide; Standing organizes their completed Records
 
-Operator, option A. The conscious (明意識: the tag and fire turns) and the
-subconscious (潛意識: Cognition) both write a decision, each into the layer it
-owns:
+**Amended by the operator, 2026-10-31.** Engagement and Cognition make their
+ordinary decisions and retain their full exchanges and actual execution results.
+The existing Standing updater automatically reads that Record after completion
+and organizes what was decided, done, remains open or was not done. No separate
+`decision_conclude` or tag-path self-report tool is required. A tool-only slice
+of the Record is insufficient to retain an ordinary expressed decision.
 
-- **The turn** writes what it decided into its **turn record**: the options
-  it weighed, their scores and its leaning, in her own words, through a
-  tag-path tool, at the moment she decides. That is Record, her own act, and
-  the next turn reads it at once.
-- **Cognition** writes and revises the **decision** entry, citing the turn
-  records (`turn(...)`), consolidating across turns.
+The updater is a faithful tools-less summarizer, not another thinker. It can
+materialize an expressed decision into derived Standing, using validated scoped
+writers and source requirements; it cannot invent a commitment, choose an option,
+create a reminder or turn an attempted action into a success. Cognition remains
+the substantive Notebook judgment writer. Record-derived Standing is attributed
+to its source and does not silently become a new Notebook judgment.
 
-DEC-249's "the conscious never writes the Notebook" holds. This **amends
-[standing-ledger 30](../standing-ledger/30-turn-records.md)** in two places:
-
-- §2: the turn record is no longer code-built only. It gains one
-  model-written part, **what this turn decided**. "No reasoning" still holds
-  for everything else: an abandoned path is not kept, only the conclusion.
-- §4: route 1 (the ledger ops as a tag-path tool) becomes that tag-path tool
-  writing the turn record's decided part, never the ledger; route 2 (the
-  debrief emitting ops) becomes a **check** for a turn whose trace shows it
-  decided something it did not record. Cognition is the decision entry's one
-  writer. The same change supersedes the tag-path op tool in
-  [standing-ledger 50](../standing-ledger/50-migration.md) step 3.
-
-**Amended 2026-10-30:** the next turn reads recent conclusions and execution
-facts immediately from Record, without waiting for consolidation or making an
-extra synchronous Cognition call. [20](20-shared-cognitive-state.md) §2 keeps
-Cognition's Notebook authority: an optional materializer faithfully applies
-explicit authorized deltas and never decides. The earlier latency-based option-B
-fallback is superseded; visibility alone does not transfer writer authority.
+This supersedes the previous tag-path conclusion tool and optional-delta-only
+updater contract, including the proposed writer switch in
+[standing-ledger 30](../standing-ledger/30-turn-records.md) and
+[standing-ledger 50](../standing-ledger/50-migration.md). The target is the
+common model, automatic completion hooks and single `standing` block in
+[20](20-standing.md). Canonical pending and execution facts are projected
+immediately; they do not wait for a summary or a synchronous Cognition session.
 
 ## 6. External kinds: postings, and the one crossing
 
