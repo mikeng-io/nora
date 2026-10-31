@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.12.2](https://github.com/mikeng-io/nora/compare/v7.12.1...v7.12.2) (2026-10-31)
+
+
+### Maintenance
+
+* **platforms:** specify observation occasion and tool exposure ([f2cb446](https://github.com/mikeng-io/nora/commit/f2cb446a208050bda485de43f30155af7cae063b))
+
 ## [7.12.1](https://github.com/mikeng-io/nora/compare/v7.12.0...v7.12.1) (2026-10-31)
 
 
