@@ -35,6 +35,7 @@ from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy
 from nora.secret import credentials
+from nora.subject.obtain import model_endpoint
 from nora.subject.sandbox_index import (
     EMBEDDER_FROM_HOST,
     SandboxIndex,
@@ -174,12 +175,18 @@ async def acts(engine: Any) -> dict[str, Any]:
 
 
 class Judges:
-    def __init__(self, cfg: Any, models: list[str]) -> None:
-        self.cfg, self.models = cfg, models
-        self.effective_models = [cfg.endpoint("eval_judge", m)[2] for m in models]
+    def __init__(self, cfg: Any, models: list[str], config: Path) -> None:
+        self.cfg, self.models, self.config = cfg, models, config
+        self.effective_models = [self._endpoint(m)[2] for m in models]
+
+    def _endpoint(self, model_id: str) -> tuple[str, str, str]:
+        # The measurer dials the route the deployment configured, rewritten for
+        # where it runs — `cfg.endpoint` names a container-only host on the host
+        # OS, which reads as an NXDOMAIN, never as a judge verdict.
+        return model_endpoint(self.config, "eval_judge", model_id)
 
     async def call(self, model_id: str, instruction: str, payload: Any) -> str:
-        url, key, selected_model = self.cfg.endpoint("eval_judge", model_id)
+        url, key, selected_model = self._endpoint(model_id)
         if selected_model != model_id:
             raise ValueError("effective judge model differs from requested judge")
         model = build_structured_model(
@@ -723,7 +730,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         results: list[dict[str, Any]] = []
         scores: dict[str, list[list[str]]] = {}
         age_results = []
-        judges = Judges(cfg, [args.judge_a, args.judge_b])
+        judges = Judges(cfg, [args.judge_a, args.judge_b], args.config)
         for wake in selected.values():
             replay_ms, view = await recorded_wake(engine, wake["id"])
             at = datetime.fromtimestamp(replay_ms / 1000, UTC)
@@ -835,13 +842,6 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                                 target = scores.setdefault(name, [[], []])
                                 for i, values in enumerate(pair):
                                     target[i].extend(values)
-                            age_dir = output / f"age-{len(results)}"
-                            age_dir.mkdir(mode=0o700)
-                            age_results.append(
-                                await age_comparison(
-                                    sandbox_engine, args.age_url, judges, age_dir, args.minimum
-                                )
-                            )
                     except Exception:  # noqa: BLE001 - private exceptions stay on host
                         measured["status"] = "ERROR"
                     finally:
@@ -851,6 +851,15 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
 
                         await _close(subject)
             results.append(measured)
+        # ponytail: one engine comparison per run, on the frozen projected
+        # source. An as-of sandbox correctly holds no graph rows at its wake
+        # instant, so a per-wake comparison there measures emptiness N times.
+        if not args.smoke:
+            age_dir = output / "age"
+            age_dir.mkdir(mode=0o700)
+            age_results.append(
+                await age_comparison(engine, args.age_url, judges, age_dir, args.minimum)
+            )
         health = session_smoke(results)
         report = {
             "driver": "cognition_session",
