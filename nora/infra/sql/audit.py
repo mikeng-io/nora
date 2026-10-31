@@ -31,14 +31,13 @@ from nora.domain.models import (
     EditedMessage,
     EditTarget,
     NormalizedMessage,
-    ReactionRow,
     RowEdit,
     RowReactions,
     TranscriptRow,
     UnattributedRow,
-    fold_reactions,
     mentions_json,
     parse_mentions_json,
+    states_from_standing,
 )
 from nora.domain.ports import RoomActivity
 from nora.infra.sql import memory_index
@@ -129,34 +128,90 @@ def _edit_mentions_json(message: NormalizedMessage) -> str | None:
     return mentions_json(message.mentions)
 
 
+#: The most (target, actor, emoji) STANDING tuples one batched read hands
+#: back. `reaction_states` reduces each target's transition history in the
+#: database to its latest standing tuples — the history itself never crosses
+#: the wire — and this caps how many of THOSE a call transfers. A batch that
+#: hits the cap keeps the bound; the targets the cut reached read `partial`,
+#: never a folded prefix wearing a complete count.
+REACTION_STATES_MAX = 512
+
+
 async def reaction_states(
     conn: Any, message_ids: Sequence[int],
 ) -> dict[int, RowReactions]:
     """The reactions recorded against these messages, folded to each
-    target's current state — ONE batched read for the whole window, never a
-    per-row query. `idx_message_reaction_message` serves the `IN`.
+    target's current state — batched, bounded reads for the whole window,
+    never a per-row query. `idx_message_reaction_message` serves the `IN`.
 
-    The fold is `nora.domain.models.fold_reactions` — the same definition
-    `record_query` returns and `FakeRecordStore` mirrors, so a prompt line,
-    a tool result and a Record read cannot disagree about the same target.
+    The reduction runs WHERE THE ROWS ARE: `latest` is the database's
+    distinct-on of the same fold `record_query` established (newest by
+    arrival `id` per target+actor+emoji, `removed` wins), so the transition
+    history — one hot target can hold thousands of rows — is never
+    transferred. `meta` and `expected` are grouped reads bounded by the
+    TARGET count; the standing rows themselves are capped at
+    `REACTION_STATES_MAX`, and a target the cap reached is returned
+    `partial`: its `recorded`/`observed_at` are real, its counts are withheld
+    rather than folded from a truncated set. `states_from_standing` is the
+    one assembly `fold_reactions` and `FakeRecordStore` share, so a prompt
+    line, a tool result and a Record read cannot disagree about a target.
     A message id with no recorded rows is absent from the result.
     """
     if not message_ids:
         return {}
-    rows = await conn.execute(
+    in_targets = MESSAGE_REACTION.c.message_id.in_(message_ids)
+    meta = (await conn.execute(
         sa.select(
-            MESSAGE_REACTION.c.id, MESSAGE_REACTION.c.message_id,
-            MESSAGE_REACTION.c.sender_id, MESSAGE_REACTION.c.emoji,
-            MESSAGE_REACTION.c.removed, MESSAGE_REACTION.c.ts,
-        ).where(MESSAGE_REACTION.c.message_id.in_(message_ids))
-    )
-    return fold_reactions(
-        ReactionRow(
-            id=int(r.id), message_id=int(r.message_id),
-            sender_id=str(r.sender_id), emoji=str(r.emoji),
-            removed=bool(r.removed), ts=int(r.ts),
+            MESSAGE_REACTION.c.message_id,
+            sa.func.count(),
+            sa.func.max(MESSAGE_REACTION.c.ts),
+        ).where(in_targets).group_by(MESSAGE_REACTION.c.message_id)
+    )).all()
+    if not meta:
+        return {}
+    recorded = {int(m): int(n) for m, n, _ in meta}
+    observed = {int(m): int(t) for m, _, t in meta}
+    latest = (
+        sa.select(
+            MESSAGE_REACTION.c.message_id, MESSAGE_REACTION.c.sender_id,
+            MESSAGE_REACTION.c.emoji, MESSAGE_REACTION.c.removed,
         )
-        for r in rows
+        .where(in_targets)
+        .distinct(
+            MESSAGE_REACTION.c.message_id, MESSAGE_REACTION.c.sender_id,
+            MESSAGE_REACTION.c.emoji,
+        )
+        .order_by(
+            MESSAGE_REACTION.c.message_id, MESSAGE_REACTION.c.sender_id,
+            MESSAGE_REACTION.c.emoji, MESSAGE_REACTION.c.id.desc(),
+        )
+        .subquery()
+    )
+    # Each target's standing-tuple count, the yardstick the cap below is
+    # measured against: a target short of it folded from a truncated set.
+    expected = {
+        int(m): int(n)
+        for m, n in (await conn.execute(
+            sa.select(latest.c.message_id, sa.func.count())
+            .group_by(latest.c.message_id)
+        )).all()
+    }
+    rows = (await conn.execute(
+        sa.select(latest)
+        .order_by(latest.c.message_id, latest.c.sender_id, latest.c.emoji)
+        .limit(REACTION_STATES_MAX + 1)
+    )).all()
+    standing = rows[:REACTION_STATES_MAX]
+    received: dict[int, int] = {}
+    for r in standing:
+        mid = int(r.message_id)
+        received[mid] = received.get(mid, 0) + 1
+    partial = frozenset(
+        m for m, want in expected.items() if received.get(m, 0) < want
+    )
+    return states_from_standing(
+        ((int(r.message_id), str(r.emoji), bool(r.removed)) for r in standing),
+        recorded=recorded, observed=observed, partial=partial,
     )
 
 

@@ -767,3 +767,101 @@ async def test_age_comparison_measures_the_source_once_outside_replay(
     frozen = json.loads((tmp_path / "out" / "age" / "questions.json").read_text())
     assert frozen[0]["seed"] == ["event", "generated-edge"]
     assert frozen[0]["gold"] == ["event:generated-edge"]
+
+
+def _run_args(tmp_path, **overrides):
+    """The smallest `run` inputs that reach the logging-disable line: a
+    project-only run over a snapshot that skips the projection itself."""
+    import logging  # noqa: F401 — the attribute under test lives on the manager
+
+    return SimpleNamespace(
+        config=tmp_path / "config.toml",
+        policy=tmp_path / "policy.toml",
+        identity=tmp_path / "identity.toml",
+        database_url="postgresql+asyncpg://127.0.0.1:9/generated-snapshot",
+        snapshot=True,
+        age_url=None,
+        judge_a="generated-a",
+        judge_b="generated-b",
+        judge_vendor_a="generated-va",
+        judge_vendor_b="generated-vb",
+        output=tmp_path / "out",
+        per_stratum=1,
+        minimum=1,
+        seed=17,
+        projection_rate=100,
+        project_only=True,
+        skip_projection=True,
+        smoke=False,
+    )
+
+
+async def test_run_restores_the_prior_logging_threshold(tmp_path, monkeypatch):
+    """`run` mutes logging so a library cannot echo private data — and hands
+    the caller's threshold back, on the SUCCESS path too, not just on
+    failure. A prior non-default threshold (a caller's own silence) is
+    restored, not flattened to zero."""
+    import logging
+
+    cfg = SimpleNamespace(store=SimpleNamespace(database_url_env="GENERATED_DB"))
+    monkeypatch.setattr(spike, "load", lambda path: cfg)
+    monkeypatch.setattr(spike, "credentials", lambda: {
+        "GENERATED_DB": "postgresql+asyncpg://127.0.0.1:9/generated-production"})
+    during = []
+
+    class FakeEngine:
+        def __init__(self, url):
+            self.url = url
+
+        async def dispose(self):
+            pass
+
+    async def generated_rows(engine, sql, params=None):
+        # The mute must be ACTIVE while the run reads (its whole purpose);
+        # recording it here measures it during, not just before and after.
+        during.append(logging.root.manager.disable)
+        if "is_nora" in sql:
+            return [{"n": 0}]
+        return [{"digest": "generated"}]
+
+    monkeypatch.setattr(spike, "create_sql_engine", lambda url: FakeEngine(url))
+    monkeypatch.setattr(spike, "load_policy", lambda path: SimpleNamespace())
+    monkeypatch.setattr(spike, "load_persons", lambda path: SimpleNamespace())
+    monkeypatch.setattr(spike, "projection_context", lambda *a, **k: SimpleNamespace())
+    monkeypatch.setattr(spike, "rows", generated_rows)
+
+    logging.disable(logging.WARNING)
+    try:
+        report = await spike.run(_run_args(tmp_path))
+        assert report["status"] == "REPORTED"
+        assert during and all(d == logging.CRITICAL for d in during)
+        assert logging.root.manager.disable == logging.WARNING
+    finally:
+        logging.disable(logging.NOTSET)
+
+
+async def test_run_restores_the_prior_logging_threshold_when_engine_creation_fails(
+    tmp_path, monkeypatch,
+):
+    """The same restore must hold when `create_sql_engine` itself raises —
+    the disable is already active by then, so a bare failure would leave the
+    caller's logging muted."""
+    import logging
+
+    cfg = SimpleNamespace(store=SimpleNamespace(database_url_env="GENERATED_DB"))
+    monkeypatch.setattr(spike, "load", lambda path: cfg)
+    monkeypatch.setattr(spike, "credentials", lambda: {
+        "GENERATED_DB": "postgresql+asyncpg://127.0.0.1:9/generated-production"})
+
+    def boom(url):
+        raise RuntimeError("generated: engine refused")
+
+    monkeypatch.setattr(spike, "create_sql_engine", boom)
+
+    logging.disable(logging.ERROR)
+    try:
+        with pytest.raises(RuntimeError):
+            await spike.run(_run_args(tmp_path))
+        assert logging.root.manager.disable == logging.ERROR
+    finally:
+        logging.disable(logging.NOTSET)

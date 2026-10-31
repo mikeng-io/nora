@@ -173,15 +173,17 @@ class SqlRecordQuery:
             if table in wanted:
                 wanted[table].add(row_id)
         async with self._engine.connect() as conn:
-            emoji: dict[int, tuple[int, str]] = {}
+            emoji: dict[int, tuple[int, str, bool]] = {}
             if wanted["message_reaction"]:
                 for r in (await conn.execute(
                     sa.select(
                         MESSAGE_REACTION.c.id, MESSAGE_REACTION.c.message_id,
-                        MESSAGE_REACTION.c.emoji,
+                        MESSAGE_REACTION.c.emoji, MESSAGE_REACTION.c.removed,
                     ).where(MESSAGE_REACTION.c.id.in_(wanted["message_reaction"]))
                 )).all():
-                    emoji[int(r.id)] = (int(r.message_id), str(r.emoji))
+                    emoji[int(r.id)] = (
+                        int(r.message_id), str(r.emoji), bool(r.removed)
+                    )
             deleted_of: dict[int, int] = {}
             if wanted["message_delete"]:
                 for r in (await conn.execute(
@@ -191,7 +193,7 @@ class SqlRecordQuery:
                     deleted_of[int(r.id)] = int(r.message_id)
             message_ids = (
                 wanted["messages"]
-                | {m for m, _ in emoji.values()} | set(deleted_of.values())
+                | {m for m, _, _ in emoji.values()} | set(deleted_of.values())
             )
             if not message_ids:
                 return ()
@@ -218,9 +220,11 @@ class SqlRecordQuery:
         for mid in sorted(wanted["messages"]):
             if mid in hits:
                 out.append(RecordRefHit("messages", mid, hits[mid]))
-        for rid, (mid, mark) in sorted(emoji.items()):
+        for rid, (mid, mark, rem) in sorted(emoji.items()):
             if mid in hits:
-                out.append(RecordRefHit("message_reaction", rid, hits[mid], emoji=mark))
+                out.append(RecordRefHit(
+                    "message_reaction", rid, hits[mid], emoji=mark, removed=rem,
+                ))
         for rid, mid in sorted(deleted_of.items()):
             if mid in hits:
                 out.append(RecordRefHit("message_delete", rid, hits[mid]))

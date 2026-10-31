@@ -186,9 +186,11 @@ from ..domain.mobility_forecast import (
     trip_patterns,
 )
 from ..domain.models import (
+    REACTION_PAIRS_MAX,
     PersonRef,
     TranscriptRow,
     WeatherObservation,
+    display_reactions,
     strip_mention_placeholders,
 )
 from ..domain.note_body import (
@@ -2955,12 +2957,24 @@ def _transcript_messages(
         if r.reactions is not None and r.reactions.recorded:
             # Additive provenance (platform-observations, first reactions
             # slice): the same fold the prompt annotates with. `reactions`
-            # carries the standing counts `record_query` defined;
-            # `reactions_at` is the newest recorded SOURCE event, distinct
-            # from `when`; `reactions_source` is the coverage — recorded
-            # transitions only, never the complete upstream set.
-            if r.reactions.counts:
-                item["reactions"] = dict(r.reactions.counts)
+            # carries the standing counts `record_query` defined, each stored
+            # emoji projected to its bounded display handle (a custom emoji's
+            # platform id never reaches a tool result), merged when handles
+            # collide and capped at REACTION_PAIRS_MAX pairs with the rest in
+            # `reactions_more`; `reactions_at` is the newest recorded SOURCE
+            # event, distinct from `when`; `reactions_source` is the
+            # coverage — recorded transitions only, never the complete
+            # upstream set — and `partial` marks a state the read's own bound
+            # cut short.
+            pairs = r.reactions.display_counts
+            if r.reactions.coverage == "partial":
+                item["reactions_partial"] = True
+            elif pairs:
+                item["reactions"] = dict(pairs[:REACTION_PAIRS_MAX])
+                if len(pairs) > REACTION_PAIRS_MAX:
+                    item["reactions_more"] = sum(
+                        n for _, n in pairs[REACTION_PAIRS_MAX:]
+                    )
             else:
                 item["reactions_removed"] = True
             if r.reactions.observed_at is not None:
@@ -3070,6 +3084,20 @@ _RECORD_QUERY_DELETED = (
 _RECORD_QUERY_NEAR = (
     "A message marked near has words close to these but not these words; do "
     "not quote it as saying them."
+)
+
+
+#: The reaction annotation's interpretation (ADR 0015 §3: interpretation
+#: lives in the result, paid only when the keys appear) — shared by the three
+#: tools `_transcript_messages` annotates.
+_REACTIONS_NOTE = (
+    "A message's reaction counts come from recorded transitions only: a "
+    "count is what was recorded, not the whole upstream set (an upstream "
+    "clear, a snapshot or a reaction the capture missed is absent). "
+    "`reactions_removed` means every recorded reaction was taken back, "
+    "`reactions_partial` that the state could not be fully read, "
+    "`reactions_more` how many standing reactions were left out, and "
+    "`reactions_at` the newest recorded reaction event's time."
 )
 
 
@@ -5376,6 +5404,8 @@ def build_tool_specs(
                 "A message with `was` was edited after sending: `body` is what it "
                 "says now, `was` what it first said, and `edited` when it changed."
             )
+        if any("reactions_source" in m for m in out):
+            notes.append(_REACTIONS_NOTE)
         if older:
             notes.append(_older_note(rows))
         if not out and before_ts is not None:
@@ -5672,8 +5702,13 @@ def build_tool_specs(
             "network": platform_name(target.platform),
             "messages": out,
         }
+        notes = []
+        if any("reactions_source" in m for m in out):
+            notes.append(_REACTIONS_NOTE)
         if older:
-            result["note"] = _older_note(rows)
+            notes.append(_older_note(rows))
+        if notes:
+            result["note"] = " ".join(notes)
         return _memory_result(result)
 
     async def record_query(
@@ -5789,6 +5824,11 @@ def build_tool_specs(
             notes.append(_RECORD_QUERY_MORE)
         if any(h.deleted for h in hits):
             notes.append(_RECORD_QUERY_DELETED)
+        if any(
+            h.row.reactions is not None and h.row.reactions.recorded
+            for h in hits
+        ):
+            notes.append(_REACTIONS_NOTE)
         if near:
             notes.append(_RECORD_QUERY_NEAR)
         if withheld:
@@ -5825,7 +5865,12 @@ def build_tool_specs(
             )[0][0]
             item = {"room": names.get((hit.platform, hit.conversation_id), ""), **item}
             if hit.reactions:
-                item["reactions"] = dict(hit.reactions)
+                item["reactions"] = dict(
+                    itertools.islice(
+                        display_reactions(hit.reactions).items(),
+                        REACTION_PAIRS_MAX,
+                    )
+                )
             if hit.deleted:
                 item["body"] = None
                 item.pop("was", None)

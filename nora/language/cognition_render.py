@@ -82,6 +82,7 @@ from nora.domain.cognition_ground import (
 )
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.external_files import render_file_links
+from nora.domain.models import REACTION_LABEL_MAX, emoji_display
 from nora.domain.prompt import ago, clip, escape, legal, one_line
 from nora.domain.social_stream import describe_read
 from nora.domain.stimuli import Stimulus
@@ -271,13 +272,25 @@ def _message_row(
 
     def show(limit: int | None) -> str:
         cap = message_chars if limit is None else min(limit, message_chars)
+        # The reaction annotation is budgeted ALONGSIDE the words: the same
+        # cut shrinks it, pairs that do not fit fold into a `+N` marker, and
+        # `reactions_observed` always stays — the coverage and its time are
+        # the part of the state a cut may not spend.
+        label_cap = (
+            REACTION_LABEL_MAX if limit is None
+            else min(limit, REACTION_LABEL_MAX)
+        )
         words = "" if deleted or rec.text is None else _words(rec.text, cap)
         return render_row_window(
             [rec], row_id=lambda r: r.message_id,
             attrs=lambda r: (
                 ("at", when), ("from", speaker_of(r.author)),
-                ("reaction", (r.emoji or "?") if reacted else None),
-                ("reactions", r.reactions.label if r.reactions else None),
+                ("reaction", emoji_display(r.emoji or "?") if reacted else None),
+                ("reaction_removed", "yes" if reacted and r.removed else None),
+                (
+                    "reactions",
+                    r.reactions.bounded_label(label_cap) if r.reactions else None,
+                ),
                 (
                     "reactions_observed",
                     (
@@ -306,12 +319,19 @@ def _own_row(rec: RecordItem, *, now_ms: int, tz: tzinfo, message_chars: int) ->
 
     def show(limit: int | None) -> str:
         cap = message_chars if limit is None else min(limit, message_chars)
+        label_cap = (
+            REACTION_LABEL_MAX if limit is None
+            else min(limit, REACTION_LABEL_MAX)
+        )
         words = "" if rec.text is None else _words(rec.text, cap)
         return render_row_window(
             [rec], row_id=lambda r: r.message_id,
             attrs=lambda r: (
                 ("at", when), ("from", speaker_of(r.author)), ("own", "yes"),
-                ("reactions", r.reactions.label if r.reactions else None),
+                (
+                    "reactions",
+                    r.reactions.bounded_label(label_cap) if r.reactions else None,
+                ),
                 (
                     "reactions_observed",
                     (

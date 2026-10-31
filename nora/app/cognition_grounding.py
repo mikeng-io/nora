@@ -132,6 +132,7 @@ def _record_item(
         person_id=stimulus.person_id,
         at_ms=stimulus.at_ms if kind != "message" else hit.row.ts,
         text=None if withheld else body, emoji=found.emoji,
+        removed=found.removed,
         edited=hit.row.edit is not None,
         reactions=hit.row.reactions,
     )

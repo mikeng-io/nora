@@ -82,6 +82,10 @@ class RecordItem:
     at_ms: int
     text: str | None
     emoji: str = ""
+    #: For a `reaction` item, whether the stimulus TOOK the reaction back —
+    #: the stimulus's own change at `at_ms`, distinct from the target's
+    #: `reactions`, which folds it.
+    removed: bool = False
     edited: bool = False
     #: The target's CURRENT recorded reaction state, folded to now — None when
     #: the Record holds no reaction rows for it (never rendered as a zero).

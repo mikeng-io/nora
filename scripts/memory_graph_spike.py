@@ -719,9 +719,13 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("judges must be from different vendors")
     output = private_directory(args.output)
     # Prevent libraries from echoing private prompts, queries, URLs or SQL parameters.
+    # The PRIOR threshold is restored on every exit — engine creation failure
+    # included: a bare disable() would leave the caller's logging muted.
+    previous_disable = logging.root.manager.disable
     logging.disable(logging.CRITICAL)
-    engine = create_sql_engine(args.database_url)
+    engine: Any | None = None
     try:
+        engine = create_sql_engine(args.database_url)
         policy, persons = load_policy(args.policy), load_persons(args.identity)
         metrics = Metrics()
         scope = projection_context(policy, persons, nora_name="Nora", metrics=metrics)
@@ -1023,7 +1027,9 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         freeze(output / "report.json", report)
         return report
     finally:
-        await engine.dispose()
+        if engine is not None:
+            await engine.dispose()
+        logging.disable(previous_disable)
 
 
 def main() -> int:
