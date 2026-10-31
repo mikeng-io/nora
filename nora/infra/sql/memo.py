@@ -113,6 +113,9 @@ class SqlMemoStore:
         self, *, unit: str, platform: str, conversation_id: str, title: str, body: str,
         citations: Sequence[str], mode: str, established_by: str, model: str | None,
         now_ms: int,
+        # Called with (conn, memo) inside this write's transaction: the
+        # Cognition session binds its idempotency receipt to the row's commit.
+        receipt: Any = None,
     ) -> Memo:
         async with self._engine.begin() as conn:
             lineage = await body_turn_lineage(conn, body=body, unit=unit)
@@ -130,10 +133,14 @@ class SqlMemoStore:
                 ).returning(*MEMO_REVISION.c)
             )).one()
             await memory_index.project(conn, "memo", str(memo_id))
-        return Memo(
-            id=memo_id, unit=unit, platform=platform, conversation_id=conversation_id,
-            created_at=now_ms, head=replace(_revision(row), lineage=lineage),
-        )
+            memo = Memo(
+                id=memo_id, unit=unit, platform=platform,
+                conversation_id=conversation_id, created_at=now_ms,
+                head=replace(_revision(row), lineage=lineage),
+            )
+            if receipt is not None:
+                await receipt(conn, memo)
+        return memo
 
     async def append(
         self, *, unit: str, memo_id: str, base_revision_id: str, title: str, body: str,

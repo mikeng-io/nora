@@ -34,7 +34,7 @@ class WakeMemory:
                               name, arguments], sort_keys=True, default=str)
         return "act:" + hashlib.sha256(payload.encode()).hexdigest()
 
-    async def link_result(self, state: Any, result: Any) -> None:
+    async def link_result(self, state: Any, result: Any, *, targets: Any = ()) -> None:
         from nora.app.register_graph import RegisterGraphLinks
         for field, kind in (("note_id", "note"), ("memo_id", "memo"), ("event_id", "event_entry")):
             if field not in result:
@@ -45,7 +45,7 @@ class WakeMemory:
                            source=(kind, str(result[field])))
             item = await self.records.load(work)
             await RegisterGraphLinks(graph=self.graph, records=self.records).project(
-                item, state.session_id)
+                item, state.session_id, selected=tuple(targets))
 
     async def parked(self, unit: str, pending: Any) -> set[int]:
         return {s.id for s in pending if await self.records.failures(unit, s.id) >= 5}
@@ -150,6 +150,9 @@ class WakeMemory:
                                                 valid_at=at))
         if graph.status == "unavailable":
             raise RuntimeError("wake graph unavailable")
+        state.shown_keys.update(n.key for n in graph.nodes)
+        state.shown_keys.update(
+            k for e in graph.relations for k in (e.relation.src, e.relation.dst))
         state.graph_text = preview_text(Preview(seeds, graph, (), (at, at)))
         # The slot map the model cites by row id. The agenda already renders the
         # text, so each body is clipped to identify the row, never repeat it.
@@ -205,6 +208,10 @@ class WakeMemory:
             valid_at=combined.work.as_of))
         if graph.status == "unavailable":
             raise RuntimeError("connected graph unavailable")
+        state.shown_keys.update(n.key for n in graph.nodes)
+        state.shown_keys.update(
+            k for e in graph.relations for k in (e.relation.src, e.relation.dst))
+        state.shown_keys.update(k for r in result.relations for k in (r.src, r.dst))
         state.admitted_indices.update(admitted)
         state.admitted_relations.update({r.id: r for r in result.relations})
         state.admitted_evidence.extend(result.evidence)

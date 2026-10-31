@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import replace
+from typing import Any
 from uuid import UUID, uuid4
 
 from nora.domain.gatherings import (
@@ -82,6 +83,7 @@ class FakeGatheringStore:
 
     async def create(
         self, event: Gathering, *, evidence: EventEvidence | None = None,
+        receipt: Any = None,
     ) -> Gathering:
         row = normalise_gathering(event)
         if row.id in self._events:
@@ -91,6 +93,8 @@ class FakeGatheringStore:
         stored = replace(row, head_revision_id=revision.id)
         self._events[row.id] = stored
         self._revisions[row.id] = [revision]
+        if receipt is not None:
+            await receipt(None, stored)
         return stored
 
     async def get(self, event_id: UUID) -> Gathering | None:

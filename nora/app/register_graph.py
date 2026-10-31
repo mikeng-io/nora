@@ -9,6 +9,7 @@ from nora.domain.memory_graph import (
     Correction,
     Entity,
     Evidence,
+    Key,
     MemoryGraph,
     Relation,
     Walk,
@@ -21,7 +22,15 @@ class RegisterGraphLinks:
         self.graph, self.records = graph, records
         self.metrics = metrics if metrics is not None else Metrics()
 
-    async def project(self, item: Any, session_id: int) -> None:
+    async def project(
+        self, item: Any, session_id: int, *, selected: tuple[Key, ...] = ()
+    ) -> None:
+        """Link one Register row to its matters, per its own link verb.
+
+        `selected` is the association the session admitted and named on the
+        write: an evidence-grounded target the body need not spell out. Alias
+        text remains only a discovery aid beside it.
+        """
         work = item.work
         source, unit, at = work.source, work.unit, work.as_of
         kind, ref = source
@@ -34,9 +43,11 @@ class RegisterGraphLinks:
         )
         entities: tuple[Entity, ...] = ()
         verb = "settles" if kind == "memo" else "concerns"
+        wanted: dict[Key, str] = dict.fromkeys(dict.fromkeys([*targets, *selected]), verb)
         if kind == "event_entry":
             entity = Entity(f"{unit}:event:{ref}", "event", unit, body)
-            targets, entities, verb = [entity.key], (entity,), "records"
+            entities = (entity,)
+            wanted = {entity.key: "records", **dict.fromkeys(selected, "concerns")}
         sources = {s.key: s for s in item.sources if s.layer in ("record", "rollup")}
         current = await self.graph.walk(
             (source,),
@@ -46,26 +57,26 @@ class RegisterGraphLinks:
                 depth=1,
                 nodes=100,
                 fan_out=20,
-                relations=(verb,),
+                relations=tuple(dict.fromkeys(wanted.values())),
                 valid_at=at,
             ),
         )
         if current.status != "ok":
             raise RuntimeError("Register links unavailable")
         existing = {
-            e.relation.dst: e.relation
+            (e.relation.rel, e.relation.dst): e.relation
             for e in current.relations
-            if e.relation.src == source and e.relation.rel == verb
+            if e.relation.src == source and e.relation.rel in wanted.values()
         }
         corrections = tuple(
             Correction(r.id, "close", at, evidence=tuple(sources))
-            for target, r in existing.items()
-            if target not in targets
+            for (rel, target), r in existing.items()
+            if wanted.get(target) != rel
         )
         relations: list[Relation] = []
         evidence: list[Evidence] = []
-        for target in targets:
-            if target in existing:
+        for target, verb in wanted.items():
+            if (verb, target) in existing:
                 continue
             rid = str(uuid5(NAMESPACE_URL, f"{work.id}:{verb}:{target}"))
             relations.append(

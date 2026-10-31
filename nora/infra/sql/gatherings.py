@@ -219,6 +219,7 @@ class SqlGatheringStore:
 
     async def create(
         self, event: Gathering, *, evidence: EventEvidence | None = None,
+        receipt: Any = None,
     ) -> Gathering:
         row = normalise_gathering(event)
         try:
@@ -237,6 +238,10 @@ class SqlGatheringStore:
                     sa.insert(EVENT_REVISION).values(**_revision_values(revision)),
                 )
                 await memory_index.project(conn, "event", str(row.id))
+                # Called with (conn, row) inside this write's transaction: the
+                # Cognition session binds its idempotency receipt to the commit.
+                if receipt is not None:
+                    await receipt(conn, row_with_head)
         except IntegrityError as exc:
             if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
                 raise

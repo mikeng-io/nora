@@ -117,6 +117,7 @@ from nora.domain.memo import (
     screened_parts,
     title_carries_value,
 )
+from nora.domain.memory_graph import ENTITY_KINDS, ENTRY
 from nora.domain.note_body import (
     NORA_NAMES,
     NoteBodyError,
@@ -381,6 +382,14 @@ SESSION_TOKENS: contextvars.ContextVar[TokenSpend | None] = contextvars.ContextV
     "cognition_session_tokens", default=None,
 )
 
+#: The idempotency key `acting` computed for the call it is running, read by the
+#: create verbs so their idempotency receipt can commit inside the register
+#: row's own transaction. A ContextVar, not state: same-turn tool calls run
+#: concurrently and each must see its own key.
+_ACT_KEY: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "cognition_act_key", default=None,
+)
+
 
 @dataclass
 class _RunState:
@@ -411,6 +420,10 @@ class _RunState:
     graph_fetched: Any = field(default_factory=GraphFetched)
     admitted_relations: dict[str, Any] = field(default_factory=dict)
     admitted_evidence: list[Any] = field(default_factory=list)
+    #: Graph node keys this session was actually shown (the wake preview and
+    #: every proposal's connected subgraph, plus admitted relation endpoints):
+    #: the only targets a Register `associations` argument may name.
+    shown_keys: set[Any] = field(default_factory=set)
     graph_text: str = ""
     historical: bool = False
     #: A verb other than `close` was called in this session, whatever it
@@ -1510,6 +1523,37 @@ class CognitionSessionRunner:
             state.written.add((_room_key(Room(platform, conversation_id)), item))
             return {"status": "ok", **ok}
 
+        def _associations(raw: Any) -> list[tuple[str, str]] | dict[str, object]:
+            """The existing matters a Register write names, held to the graph
+            this session was actually shown: each entry is `[kind, id]` — a
+            node key as the preview and `memory_propose`'s `connected` render
+            it. An unseen key is refused, never silently written: the unit is
+            the read boundary, so anything shown was in scope."""
+            targets: list[tuple[str, str]] = []
+            for pair in raw or ():
+                if (
+                    not isinstance(pair, (list, tuple)) or len(pair) != 2
+                    or not all(isinstance(x, str) for x in pair)
+                ):
+                    return _refused(
+                        "bad_association",
+                        "each association is [kind, id], a graph node key you were shown",
+                    )
+                key = (pair[0], pair[1])
+                if key not in state.shown_keys:
+                    return _refused(
+                        "unseen_association",
+                        f"{pair[0]}:{pair[1]} is not in the graph this session was shown; "
+                        "admit the association in memory_propose or read it first",
+                    )
+                if key[0] not in (*ENTITY_KINDS, *ENTRY):
+                    return _refused(
+                        "bad_association",
+                        f"an entry cannot link to a {pair[0]!r} node",
+                    )
+                targets.append(key)
+            return targets
+
         established_by = f"{COGNITION_PATH_PREFIX}{unit}"
 
         async def close(
@@ -1571,6 +1615,7 @@ class CognitionSessionRunner:
             title: str, description: str, uncertainty: str, closing_condition: str,
             body: str, anchor_date: str | None = None,
             anchor_entities: list[str] | None = None, room: str = "", item: int | None = None,
+            associations: list[list[str]] | None = None,
         ) -> dict[str, object]:
             """Start carrying an open question that nothing here settles yet.
             Call this when a room is chewing on something that outlives this
@@ -1611,11 +1656,16 @@ class CognitionSessionRunner:
                 item: Optional. The agenda item this write is for, by its
                     number. A `written` close of that item is backed by a write
                     that names it.
+                associations: Optional. Existing matters this note concerns, as
+                    [kind, id] node keys from the graph you were shown.
             """
             resolved = _write_target(room, item, state)
             if isinstance(resolved, dict):
                 return resolved
             (platform, conversation_id), item = resolved
+            targets = _associations(associations)
+            if isinstance(targets, dict):
+                return targets
             anchor_day: int | None = None
             if anchor_date:
                 anchor_day = _day_number(anchor_date)
@@ -1646,6 +1696,8 @@ class CognitionSessionRunner:
                         established_by=established_by, now_ms=self._now_ms(),
                         anchor_date=anchor_day,
                         anchor_entity_ids=tuple(anchor_entities or ()),
+                        receipt=_act_receipt(
+                            lambda row: {"status": "ok", "note_id": row.id}),
                     )
                 except ValueError as exc:
                     return _refused("invalid_note", str(exc))
@@ -1654,6 +1706,7 @@ class CognitionSessionRunner:
         async def note_revise(
             note_id: str, body: str, parent_revision_id: str,
             room: str = "", item: int | None = None,
+            associations: list[list[str]] | None = None,
         ) -> dict[str, object]:
             """Revise a note. Call this when a note's content changes: a detail
             settles, a plan moves. Give back the WHOLE note with your change
@@ -1678,11 +1731,17 @@ class CognitionSessionRunner:
                 item: Optional. The agenda item this write is for, by its
                     number. A `written` close of that item is backed by a write
                     that names it.
+                associations: Optional. The matters this note now concerns, as
+                    [kind, id] node keys from the graph you were shown; they
+                    replace the note's current semantic links.
             """
             resolved = _write_target(room, item, state)
             if isinstance(resolved, dict):
                 return resolved
             (platform, conversation_id), item = resolved
+            targets = _associations(associations)
+            if isinstance(targets, dict):
+                return targets
             shown = await shown_for(platform, conversation_id, body)
             if isinstance(shown, dict):
                 return shown
@@ -1894,6 +1953,7 @@ class CognitionSessionRunner:
         async def memo_create(
             title: str, body: str, mode: Literal["told", "deduced", "abduced"] = "told",
             room: str = "", item: int | None = None,
+            associations: list[list[str]] | None = None,
         ) -> dict[str, object]:
             """Keep something the group has settled and will need again. Call
             this when a room settles a fact about the group, someone else or the
@@ -1927,6 +1987,8 @@ class CognitionSessionRunner:
                     `platform:conversation_id`.
                 item: Optional. The agenda item this write is for, by its
                     number. A `written` close of that item is backed by it.
+                associations: Optional. Existing matters this memo settles, as
+                    [kind, id] node keys from the graph you were shown.
             """
             if self._memos is None:
                 return _memos_off()
@@ -1934,6 +1996,9 @@ class CognitionSessionRunner:
             if isinstance(resolved, dict):
                 return resolved
             (platform, conversation_id), item = resolved
+            targets = _associations(associations)
+            if isinstance(targets, dict):
+                return targets
             checked = await _memo_body("memo_create", title, body, platform, conversation_id)
             if isinstance(checked, dict):
                 return checked
@@ -1951,6 +2016,9 @@ class CognitionSessionRunner:
                     title=title, body=parsed.text, citations=citations, mode=mode,
                     established_by=established_by, model=self._model_id,
                     now_ms=self._now_ms(),
+                    receipt=_act_receipt(
+                        lambda row: {"status": "ok", "memo_id": row.id,
+                                     "revision_id": row.head.id}),
                 )
             return wrote(platform, conversation_id, item, memo_id=memo.id,
                          revision_id=memo.head.id)
@@ -1967,6 +2035,7 @@ class CognitionSessionRunner:
             memo_id: str, base_revision_id: str, body: str, title: str = "",
             mode: Literal["told", "deduced", "abduced"] = "told",
             room: str = "", item: int | None = None,
+            associations: list[list[str]] | None = None,
         ) -> dict[str, object]:
             """Revise a kept memo. Call this when what the group settled has
             changed or gained a detail. Give back the WHOLE memo with your change
@@ -1986,6 +2055,9 @@ class CognitionSessionRunner:
                 room: Optional when the agenda is one room, required when it
                     spans several, as for memo_create.
                 item: Optional. The agenda item this write is for, by its number.
+                associations: Optional. The matters this memo now settles, as
+                    [kind, id] node keys from the graph you were shown; they
+                    replace the memo's current semantic links.
             """
             if self._memos is None:
                 return _memos_off()
@@ -1993,6 +2065,9 @@ class CognitionSessionRunner:
             if isinstance(resolved, dict):
                 return resolved
             (platform, conversation_id), item = resolved
+            targets = _associations(associations)
+            if isinstance(targets, dict):
+                return targets
             head = await _memo_head(memo_id)
             if isinstance(head, dict):
                 return head
@@ -2106,7 +2181,7 @@ class CognitionSessionRunner:
             confidence: Literal["low", "medium", "high"], cited_ids: list[str],
             when: str = "", venue_text: str = "",
             status: Literal["staged", "proposed"] = "proposed", room: str = "",
-            item: int | None = None,
+            item: int | None = None, associations: list[list[str]] | None = None,
         ) -> dict[str, object]:
             """Propose a NEW gathering in a room, returning its id. Call this
             when a room wants to arrange something that is not open yet. If an
@@ -2142,11 +2217,16 @@ class CognitionSessionRunner:
                 item: Optional. The agenda item this write is for, by its
                     number. A `written` close of that item is backed by a write
                     that names it.
+                associations: Optional. Existing matters this entry concerns, as
+                    [kind, id] node keys from the graph you were shown.
             """
             resolved = _write_target(room, item, state)
             if isinstance(resolved, dict):
                 return resolved
             (platform, conversation_id), item = resolved
+            targets = _associations(associations)
+            if isinstance(targets, dict):
+                return targets
             due = _parse_when(when) if when else None
             if when and due is None:
                 return _refused("bad_when", "when must be ISO 8601 with an offset")
@@ -2170,6 +2250,8 @@ class CognitionSessionRunner:
                     platform=platform, unit_id=unit, message_ids=ids,
                     status=GatheringStatus(status), reasoning=reasoning,
                     confidence=confidence, field_meta=meta,
+                    receipt=_act_receipt(
+                        lambda row: {"status": "ok", "id": str(row.id)}),
                 )
             except AmbiguousOpenGatheringsError:
                 return _refused(
@@ -2215,6 +2297,7 @@ class CognitionSessionRunner:
             confidence: Literal["low", "medium", "high"], cited_ids: list[str],
             when: str = "", venue_text: str = "",
             base_revision_id: str = "", room: str = "", item: int | None = None,
+            associations: list[list[str]] | None = None,
         ) -> dict[str, object]:
             """Change the time or venue of an event that is still open in a
             room (staged, proposed or confirmed). Call this when an open
@@ -2248,11 +2331,17 @@ class CognitionSessionRunner:
                 item: Optional. The agenda item this write is for, by its
                     number. A `written` close of that item is backed by a write
                     that names it.
+                associations: Optional. The matters this entry now concerns, as
+                    [kind, id] node keys from the graph you were shown; they
+                    replace its current semantic links.
             """
             resolved = _write_target(room, item, state)
             if isinstance(resolved, dict):
                 return resolved
             (platform, conversation_id), item = resolved
+            targets = _associations(associations)
+            if isinstance(targets, dict):
+                return targets
             due = _parse_when(when) if when else None
             if when and due is None:
                 return _refused("bad_when", "when must be ISO 8601 with an offset")
@@ -2638,6 +2727,35 @@ class CognitionSessionRunner:
             if state.request_state is not None:
                 state.request_state.pop("stop_event_loop", None)
 
+        def _act_receipt(payload_for: Callable[[Any], dict[str, object]]) -> Any:
+            """The idempotency receipt bound into a create verb's own
+            transaction (`receipt=` on the register store): the row and its
+            receipt commit or roll back together, so a crash between them can
+            no longer lose the key and let a retried call write a second row.
+            None when this call is not a receipted create."""
+            key = _ACT_KEY.get()
+            if key is None or self._memory is None:
+                return None
+
+            async def write(conn: Any, row: Any) -> None:
+                await self._memory.records.act_result_on(
+                    conn, key, state.session_id, payload_for(row))
+
+            return write
+
+        receipted = ("note_create", "memo_create", "event_propose")
+        linked = (*receipted, "note_revise", "memo_revise", "event_revise")
+        #: The revise verbs' row id lives in their ARGUMENTS, not their result.
+        row_arg = {"note_revise": "note_id", "memo_revise": "memo_id",
+                   "event_revise": "event_id"}
+
+        def _assoc_targets(bound: Mapping[str, Any]) -> list[Any]:
+            return [
+                (a[0], a[1])
+                for a in bound.get("associations") or ()
+                if isinstance(a, (list, tuple)) and len(a) == 2
+            ]
+
         def acting(verb: Any) -> Any:
             """Every verb but `close` marks the session as having acted, before
             it runs and whatever it answers (`_all_quiet`), and takes back a
@@ -2647,36 +2765,39 @@ class CognitionSessionRunner:
             turn cannot order a close's stop after it."""
             @functools.wraps(verb)
             async def call(*args: Any, **kwargs: Any) -> dict[str, object]:
-                item = inspect.signature(verb).bind(*args, **kwargs).arguments.get("item")
+                bound = inspect.signature(verb).bind(*args, **kwargs).arguments
+                item = bound.get("item")
                 covered = (item in state.admitted_indices if item is not None
                            else set(state.items_by_index) <= state.admitted_indices)
                 if self._memory is not None and not covered:
                     return _refused("proposal_required", "admit a proposal covering the item first")
                 key = None
-                if self._memory is not None and verb.__name__ in (
-                        "note_create", "memo_create", "event_propose"):
-                    key = await self._memory.act_key(state, verb.__name__,
-                        inspect.signature(verb).bind(*args, **kwargs).arguments)
+                if self._memory is not None and verb.__name__ in receipted:
+                    key = await self._memory.act_key(state, verb.__name__, bound)
                     existing = await self._memory.records.act_result(key, state.session_id)
                     if existing is not None:
                         await self._memory.link_result(state,
                             {**existing, **({"event_id": existing["id"]}
-                                if verb.__name__ == "event_propose" else {})})
+                                if verb.__name__ == "event_propose" else {})},
+                            targets=_assoc_targets(bound))
                         return dict(existing)
                 state.acted = True
                 unstop()
+                token = _ACT_KEY.set(key)
                 try:
                     result: dict[str, object] = await verb(*args, **kwargs)
                 finally:
+                    _ACT_KEY.reset(token)
                     unstop()
-                if key is not None and result.get("status") == "ok":
-                    # ponytail: a second transaction after the verb's commit; a crash
-                    # between them loses the key, so a retried event_propose could
-                    # write a second gathering. Write both in one transaction if seen.
-                    await self._memory.records.act_result(key, state.session_id, result)
-                    await self._memory.link_result(state,
-                        {**result, **({"event_id": result["id"]}
-                            if verb.__name__ == "event_propose" else {})})
+                if (self._memory is not None and verb.__name__ in linked
+                        and result.get("status") == "ok"):
+                    if verb.__name__ in row_arg:
+                        result = {**result,
+                                  row_arg[verb.__name__]: bound[row_arg[verb.__name__]]}
+                    elif verb.__name__ == "event_propose":
+                        result = {**result, "event_id": result["id"]}
+                    await self._memory.link_result(
+                        state, result, targets=_assoc_targets(bound))
                 return result
             return call
 

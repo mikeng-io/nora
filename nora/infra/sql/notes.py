@@ -390,6 +390,9 @@ class SqlNoteStore:
         # are nullable.
         instruction_sha256: str | None = None,
         model: str | None = None,
+        # Called with (conn, note) inside this write's transaction: the
+        # Cognition session binds its idempotency receipt to the row's commit.
+        receipt: Any = None,
     ) -> Note:
         """The note row and its first revision, in ONE transaction (see the
         module docstring's (1)).
@@ -418,6 +421,8 @@ class SqlNoteStore:
         )
         async with self._engine.begin() as conn:
             await self._create_on_conn(conn, note=note, revision=revision)
+            if receipt is not None:
+                await receipt(conn, note)
         return note
 
     @staticmethod

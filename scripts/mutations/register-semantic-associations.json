@@ -1,0 +1,30 @@
+[
+ {
+  "name": "receipt (sql): the act receipt must commit inside the register transaction",
+  "file": "nora/infra/sql/comprehend.py",
+  "old": "        await conn.execute(sa.insert(RESULT).values(work_id=key, input_hash=\"\",\n            session_id=session, part=\"act_result\", payload=result))",
+  "new": "        return",
+  "target": "tests/integration/test_register_receipt_boundary.py::test_receipt_boundary_crash_restart_retry_does_not_duplicate"
+ },
+ {
+  "name": "session: an association the session was never shown must be refused",
+  "file": "nora/app/cognition_session.py",
+  "old": "                if key not in state.shown_keys:",
+  "new": "                if False:",
+  "target": "tests/unit/test_cognition_session_runner.py::test_unshown_or_out_of_unit_association_cannot_persist"
+ },
+ {
+  "name": "session: a Register revision must re-link the row's associations",
+  "file": "nora/app/cognition_session.py",
+  "old": "                if (self._memory is not None and verb.__name__ in linked",
+  "new": "                if (self._memory is not None and verb.__name__ in receipted",
+  "target": "tests/unit/test_cognition_session_runner.py::test_note_revise_replaces_the_semantic_association"
+ },
+ {
+  "name": "register graph: the session's selected association must reach the projection",
+  "file": "nora/app/register_graph.py",
+  "old": "        wanted: dict[Key, str] = dict.fromkeys(dict.fromkeys([*targets, *selected]), verb)",
+  "new": "        wanted: dict[Key, str] = dict.fromkeys(dict.fromkeys(targets), verb)",
+  "target": "tests/unit/test_cognition_session_runner.py::test_alias_free_admitted_association_survives_create_and_later_read"
+ }
+]

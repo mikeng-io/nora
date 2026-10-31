@@ -400,7 +400,7 @@ async def test_retried_link_write_relinks_existing_register_row_by_id(monkeypatc
             snapshot={"messages": [], "context": []})
     links = []
 
-    async def link(state, result):
+    async def link(state, result, *, targets=()):
         links.append(result["note_id"])
         if len(links) == 1:
             raise RuntimeError("generated link outage after Register commit")
@@ -418,6 +418,167 @@ async def test_retried_link_write_relinks_existing_register_row_by_id(monkeypatc
     assert [a["status"] for a in answers] == ["unavailable", "ok"]
     assert links[0] == links[1] == answers[1]["note_id"]
     assert len(stores.notes.notes) == 1
+
+
+from tests.unit.cognition_rig import GOOD_BODY, NOTE, Stores, session  # noqa: E402
+
+
+def _register_load(stores):
+    """A `records.load` that serves a register row the way the SQL store
+    does — the row's own text as its notebook source plus the record source
+    it cites — and refuses anything else, like an unprojected row."""
+    from sqlalchemy.exc import NoResultFound
+
+    from nora.domain.comprehend import ComprehendItem
+    from nora.domain.memory_graph import Source
+
+    async def load(work):
+        kind, ref = work.source
+        body = None
+        if kind == "note" and ref in stores.notes.notes:
+            body = stores.notes.revisions[stores.notes.notes[ref].head_revision_id].body
+        if kind == "event_entry" and any(
+                str(e.id) == ref for e in stores.gatherings._events.values()):
+            body = next(e.title for e in stores.gatherings._events.values()
+                        if str(e.id) == ref)
+        if body is None:
+            raise NoResultFound("generated unprojected register row")
+        return ComprehendItem(work, (
+            Source(work.source, "notebook", "u", (), body),
+            Source(("message", "101"), "record", "u", ("p_ada",), "generated cite"),
+        ), "signal", "room-a", snapshot={"messages": [], "context": []})
+
+    return load
+
+
+def _about_proposal(entity_id: str, relation_id: str = "r-about"):
+    payload = proposal()
+    payload["relations"] = [{"id": relation_id, "src": ["reading", "generated-r"],
+        "rel": "about", "dst": ["event", entity_id], "persons": ["p_ada"]}]
+    payload["evidence"] = [{"source": ["message", "101"], "relation_id": relation_id}]
+    return payload
+
+
+def _seed_event(memory, entity_id: str, name: str = "generated gala"):
+    from nora.domain.memory_graph import Entity
+    entity = Entity(entity_id, "event", "u", name)
+    memory.graph.entities[entity.id] = entity
+    return entity
+
+
+async def test_alias_free_admitted_association_survives_create_and_later_read():
+    from nora.domain.memory_graph import Walk
+    memory = wake_memory()
+    stores = Stores()
+    memory.records.load = _register_load(stores)
+    event = _seed_event(memory, "u:event:generated-gala")
+    answers = []
+
+    async def behave(by, tools):
+        await by["memory_propose"](**_about_proposal(event.id))
+        answers.append(await by["note_create"](
+            body=GOOD_BODY, associations=[["event", event.id]], **NOTE))
+
+    await session(behave, stores=stores, runner_kwargs={"memory": memory})
+    assert answers[0]["status"] == "ok"
+    note_id = answers[0]["note_id"]
+    assert not any("generated gala" in r.body.casefold()
+                   for r in stores.notes.revisions.values())
+    edge = next(r for r in memory.graph.relations.values()
+                if r.src == ("note", note_id))
+    assert (edge.rel, edge.dst, edge.unit) == ("concerns", event.key, "u")
+    # A later read through the same scoped walk still reaches the association.
+    seen = await memory.graph.walk(
+        (("note", note_id),),
+        Walk(unit="u", persons=frozenset({"p_ada"}), depth=1,
+             relations=("concerns",)))
+    assert seen.status == "ok"
+    assert [e.relation.dst for e in seen.relations] == [event.key]
+
+
+async def test_note_revise_replaces_the_semantic_association():
+    from nora.domain.memory_graph import Walk
+    memory = wake_memory()
+    stores = Stores()
+    memory.records.load = _register_load(stores)
+    first = _seed_event(memory, "u:event:generated-gala")
+    second = _seed_event(memory, "u:event:generated-regatta")
+    answers = []
+
+    async def behave(by, tools):
+        await by["memory_propose"](**_about_proposal(first.id, "r1"))
+        await by["memory_propose"](**_about_proposal(second.id, "r2"))
+        created = await by["note_create"](
+            body=GOOD_BODY, associations=[["event", first.id]], **NOTE)
+        answers.append(created)
+        got = await stores.notes.read(unit="u", note_id=created["note_id"])
+        answers.append(await by["note_revise"](
+            note_id=created["note_id"], parent_revision_id=got[0].head_revision_id,
+            body=GOOD_BODY, associations=[["event", second.id]]))
+
+    await session(behave, stores=stores, runner_kwargs={"memory": memory})
+    assert [a["status"] for a in answers] == ["ok", "ok"]
+    note_id = answers[0]["note_id"]
+    later = datetime.fromtimestamp(NOW / 1000 + 3600, UTC)
+    seen = await memory.graph.walk(
+        (("note", note_id),),
+        Walk(unit="u", persons=frozenset({"p_ada"}), depth=1,
+             relations=("concerns",), valid_at=later))
+    assert [e.relation.dst for e in seen.relations] == [second.key]
+    stale = next(r for r in memory.graph.relations.values()
+                 if r.src == ("note", note_id) and r.dst == first.key)
+    assert stale.valid_to is not None
+
+
+async def test_unshown_or_out_of_unit_association_cannot_persist():
+    memory = wake_memory()
+    stores = Stores()
+    memory.records.load = _register_load(stores)
+    answers = []
+
+    async def behave(by, tools):
+        await by["memory_propose"](**proposal())
+        answers.append(await by["note_create"](
+            body=GOOD_BODY, associations=[["event", "u:event:never-shown"]], **NOTE))
+        answers.append(await by["note_create"](
+            body=GOOD_BODY, associations=[["event", "other-unit:event:x"]], **NOTE))
+
+    await session(behave, stores=stores, runner_kwargs={"memory": memory})
+    assert [a["reason"] for a in answers] == ["unseen_association", "unseen_association"]
+    assert not stores.notes.notes
+    assert not memory.graph.relations
+
+
+async def test_projection_outage_keeps_created_row_and_retry_relinks_same_association():
+    memory = wake_memory()
+    stores = Stores()
+    memory.records.load = _register_load(stores)
+    event = _seed_event(memory, "u:event:generated-gala")
+    answers = []
+
+    async def behave(by, tools):
+        await by["memory_propose"](**_about_proposal(event.id))
+        answers.append(await by["note_create"](
+            body=GOOD_BODY, associations=[["event", event.id]], **NOTE))
+
+    from nora.app import register_graph
+    real_project = register_graph.RegisterGraphLinks.project
+
+    async def outage(self, item, session_id, *, selected=()):
+        raise RuntimeError("generated projection outage")
+
+    register_graph.RegisterGraphLinks.project = outage
+    await session(behave, stores=stores, runner_kwargs={"memory": memory})
+    register_graph.RegisterGraphLinks.project = real_project
+    assert answers[-1]["status"] == "unavailable"
+    assert len(stores.notes.notes) == 1
+    assert not [r for r in memory.graph.relations.values() if r.src[0] == "note"]
+    await session(behave, stores=stores, runner_kwargs={"memory": memory})
+    assert answers[-1]["status"] == "ok"
+    assert answers[-1]["note_id"] == next(iter(stores.notes.notes))
+    assert len(stores.notes.notes) == 1
+    assert any(r.src == ("note", answers[-1]["note_id"]) and r.dst == event.key
+               for r in memory.graph.relations.values())
 
 
 async def test_stays_and_plays_join_the_same_proposal_coverage():
@@ -438,7 +599,7 @@ async def test_stays_and_plays_join_the_same_proposal_coverage():
     state = SimpleNamespace(now_ms=NOW, unit="unit-1", session_id=1, historical=False,
         items_by_index={0: SimpleNamespace(stimulus_ids=(1, 2), room=HOME)}, memory_items={},
         graph_fetched=GraphFetched(), admitted_indices=set(), admitted_relations={},
-        admitted_evidence=[])
+        admitted_evidence=[], shown_keys=set())
     await memory.prepare(state, {1: play, 2: stay}, Grounding())
     assert {s.key[0] for s in state.memory_items[0].sources} == {"play", "rollup"}
     assert "Generated track" in state.graph_text
@@ -566,7 +727,7 @@ async def test_mixed_agenda_keeps_message_room_and_author():
         "notebook", "unit-1", asserted_at=at)
     state = SimpleNamespace(now_ms=NOW, unit="unit-1", historical=False,
         items_by_index={0: SimpleNamespace(stimulus_ids=(1, 2), room=HOME)},
-        memory_items={}, graph_fetched=GraphFetched())
+        memory_items={}, graph_fetched=GraphFetched(), shown_keys=set())
     await memory.prepare(state, {1: social, 2: message}, Grounding(records={
         "messages:1": RecordItem(ref="messages:1", kind="message", message_id=1,
             room=HOME, author="Generated author", person_id="generated-author",

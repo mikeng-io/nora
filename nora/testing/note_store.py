@@ -57,6 +57,7 @@ import itertools
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from typing import Any
 
 from nora.domain.notes import (
     MERGE_FORWARD_HOPS,
@@ -196,6 +197,7 @@ class InMemoryNoteStore:
         # `0036_note_revision_provenance` for why the columns are nullable.
         instruction_sha256: str | None = None,
         model: str | None = None,
+        receipt: Any = None,
     ) -> Note:
         """See the module docstring's (3): both objects are built before either
         is stored, so a refused note leaves no half-written revision behind."""
@@ -215,6 +217,8 @@ class InMemoryNoteStore:
         )
         self.notes[note_id] = note
         self.revisions[revision_id] = revision
+        if receipt is not None:
+            await receipt(None, note)
         return note
 
     async def standing(self, *, unit: str) -> tuple[Note, ...]:
