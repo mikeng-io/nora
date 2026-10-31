@@ -240,7 +240,9 @@ receivers:
     - CONTAINER_TAG: nora
     - CONTAINER_TAG: presence
     - CONTAINER_TAG: analytics
-    - CONTAINER_TAG: signal-cli
+    - CONTAINER_TAG: signal-bridge
+    - CONTAINER_TAG: discord-bridge
+    - CONTAINER_TAG: bridge-projection
     - CONTAINER_TAG: whatsapp-bridge
     - CONTAINER_TAG: instagram-bridge
     - SYSLOG_IDENTIFIER: nora-session-probe

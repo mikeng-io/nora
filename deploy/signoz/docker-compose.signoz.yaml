@@ -14,7 +14,8 @@
 #        docker compose -f docker-compose.yml \
 #                       -f deploy/signoz/docker-compose.signoz.yaml \
 #                       up -d nora presence analytics instagram-bridge \
-#                           whatsapp-bridge signal-cli
+#                           whatsapp-bridge signal-bridge discord-bridge \
+#                           bridge-projection
 #
 # What the overlay does, per service:
 #
@@ -23,7 +24,7 @@
 #   `tag` option and journald rejects max-size/max-file, so the driver cannot
 #   be an env var on the base file; the overlay IS the switch. Tag-less
 #   journald configs would land as CONTAINER_TAG=<container_id>: keep the tag.
-#   The three platform bridges join this set because they are the owned
+#   The four platform bridges and projection publisher are the owned
 #   producers the retired json-file reader was for; sidecars (embedder, stt,
 #   voice-*) stay on json-file — their failures surface through nora's own
 #   logs and metrics.
@@ -69,15 +70,38 @@ services:
       options:
         tag: instagram-bridge
   whatsapp-bridge:
+    networks:
+    - signoz
+    environment:
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://signoz-ingester:4318/v1/traces
     logging:
       driver: journald
       options:
         tag: whatsapp-bridge
-  signal-cli:
+  signal-bridge:
+    networks:
+    - signoz
+    environment:
+      - NORA_TRACING_ENABLED=true
+      - NORA_TRACING_EXPORTER=otlp_http
+      - NORA_TRACING_ENDPOINT=http://signoz-ingester:4318/v1/traces
+      - NORA_TRACING_HEADERS_ENV=
     logging:
       driver: journald
       options:
-        tag: signal-cli
+        tag: signal-bridge
+  discord-bridge:
+    networks:
+    - signoz
+    logging:
+      driver: journald
+      options:
+        tag: discord-bridge
+  bridge-projection:
+    logging:
+      driver: journald
+      options:
+        tag: bridge-projection
 networks:
   # Created by the SigNoz stack's own compose project; external here so
   # either stack can come down without taking the other.

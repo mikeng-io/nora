@@ -532,19 +532,19 @@ func TestEveryoneMentionIsLabelledNotDisguisedAsAPerson(t *testing.T) {
 // so it is a claim that can be wrong.
 func TestFromMeIsAnsweredOrExplicitlyUnknownOnEveryEvent(t *testing.T) {
 	mine := normalizeReaction(roomShort, slidetypes.Reaction{
-		Reaction: "👍", SenderFBID: noraFBID}, "mid.$m", false, noraFBID)
+		Reaction: "👍", SenderFBID: noraFBID}, "mid.$m", false, noraFBID, 0)
 	if mine.FromMe == nil || !*mine.FromMe {
 		t.Fatalf("our own reaction reported from_me = %v", mine.FromMe)
 	}
 	theirs := normalizeReaction(roomShort, slidetypes.Reaction{
-		Reaction: "👍", SenderFBID: mikengFBID}, "mid.$m", false, noraFBID)
+		Reaction: "👍", SenderFBID: mikengFBID}, "mid.$m", false, noraFBID, 0)
 	if theirs.FromMe == nil || *theirs.FromMe {
 		t.Fatalf("another member's reaction reported from_me = %v", theirs.FromMe)
 	}
 	// Own fbid unknown: "I cannot tell", not "no". A false here is how a bot
 	// answers its own echo.
 	unknown := normalizeReaction(roomShort, slidetypes.Reaction{
-		Reaction: "👍", SenderFBID: mikengFBID}, "mid.$m", false, 0)
+		Reaction: "👍", SenderFBID: mikengFBID}, "mid.$m", false, 0, 0)
 	if unknown.FromMe != nil {
 		t.Fatalf("from_me = %v with no own fbid, want null", *unknown.FromMe)
 	}

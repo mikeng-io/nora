@@ -34,6 +34,11 @@ async def env(tmp_path, monkeypatch, aiohttp_server, pg_url, example_config_path
         cfg = tomllib.load(f)
     base = str(daemon.make_url("")).rstrip("/")
     cfg["platforms"]["signal"]["base_url"] = base
+    # This fixture's aiohttp server fakes a DIRECT signal-cli (/api/v1/accounts
+    # + a working catch-all). The example ships `mode = "bridge"`, which would
+    # make the registry build a BridgeAdapter and call `/v1/self` — a route the
+    # fake does not serve and these tests do not exercise.
+    cfg["platforms"]["signal"]["mode"] = "direct"
     cfg["honcho"]["base_url"] = base
     cfg["store"]["data_dir"] = str(tmp_path)
     cfg["doctrine"]["dir"] = str(ROOT / "nora" / "doctrine")

@@ -1,0 +1,9 @@
+[
+  {
+    "name": "fleet health probes wait for the HTTP listener",
+    "file": "tests/unit/test_bridge_projection_fleet.py",
+    "old": "            except ClientConnectorError:\n                await asyncio.sleep(0.05)",
+    "new": "            except ClientConnectorError:\n                raise",
+    "target": "tests/unit/test_bridge_projection_fleet.py -k fleet_health"
+  }
+]
