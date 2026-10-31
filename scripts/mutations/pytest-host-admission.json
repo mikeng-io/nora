@@ -33,5 +33,12 @@
     "new": "return 0",
     "target": "tests/integration/test_pytest_gate.py::test_phase_failures_propagate_and_the_lease_spans_both_phases",
     "file": "scripts/pytest_gate.py"
+  },
+  {
+    "name": "timing classification is independent of caller cwd",
+    "file": "scripts/pytest_gate.py",
+    "old": "(PROJECT_ROOT / path).resolve(): path",
+    "new": "Path(path).resolve(): path",
+    "target": "tests/integration/test_pytest_gate.py::test_timing_admission_and_default_targets_are_independent_of_caller_cwd"
   }
 ]

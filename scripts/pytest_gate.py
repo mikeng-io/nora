@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 
 MAX_WORKERS = 2
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # ponytail: one advisory per-user/host lease, including pure tests; no cross-host scheduler.
 LOCK_PATH = Path.home() / ".cache/nora/pytest.lock"
 _GENERATION_ENV = "_NORA_PYTEST_GENERATION"
@@ -107,7 +108,7 @@ def partition(targets: Sequence[str]) -> tuple[list[str], list[str]]:
     """Keep selectors intact, moving only the selected timing files/nodes to serial."""
     serial: list[str] = []
     parallel: list[str] = []
-    timing = {Path(path).resolve(): path for path in TIMING_TESTS}
+    timing = {(PROJECT_ROOT / path).resolve(): path for path in TIMING_TESTS}
     for target in targets:
         path = Path(target.split("::", 1)[0]).resolve()
         if path in timing:
@@ -116,10 +117,10 @@ def partition(targets: Sequence[str]) -> tuple[list[str], list[str]]:
             parallel.append(target)
             if path.is_dir():
                 serial.extend(
-                    name for file, name in timing.items() if path in file.parents and file.is_file()
+                    str(file) for file in timing if path in file.parents and file.is_file()
                 )
     if not targets:
-        serial.extend(TIMING_TESTS)
+        serial.extend(str(file) for file in timing)
     return parallel, list(dict.fromkeys(serial))
 
 
@@ -129,7 +130,8 @@ def phases(targets: Sequence[str], workers: int) -> list[list[str]]:
     if parallel or not targets:
         commands.append([
             sys.executable, "-m", "pytest", "-q", "-n", str(workers), "--dist", "loadfile",
-            *(f"--ignore={path}" for path in TIMING_TESTS), *parallel,
+            *(f"--ignore={PROJECT_ROOT / path}" for path in TIMING_TESTS),
+            *(parallel or [str(PROJECT_ROOT / "tests")]),
         ])
     if serial:
         commands.append([sys.executable, "-m", "pytest", "-q", *serial])

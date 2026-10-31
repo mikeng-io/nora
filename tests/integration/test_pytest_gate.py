@@ -74,11 +74,13 @@ def test_workers_retain_admission_after_controller_exit_and_reject_stale_generat
 
 
 def _project(tmp_path: Path) -> tuple[Path, Path]:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     lock = tmp_path / "shared-host.lock"
     (tmp_path / "pytest.ini").write_text("[pytest]\n")
     (tmp_path / "conftest.py").write_text(
         "from pathlib import Path\nfrom scripts import pytest_gate\n"
         f"pytest_gate.LOCK_PATH = Path({str(lock)!r})\n"
+        f"pytest_gate.PROJECT_ROOT = Path({str(tmp_path)!r})\n"
         "pytest_plugins = ['scripts.pytest_gate']\n"
     )
     (tmp_path / "test_generated.py").write_text(
@@ -92,13 +94,13 @@ def _project(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def _pytest(
-    root: Path, *args: str, generation: str | None = None,
+    root: Path, *args: str, generation: str | None = None, cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     env = {**os.environ, "PYTHONPATH": str(ROOT), "PYTEST_ADDOPTS": ""}
     if generation is not None:
         env["_NORA_PYTEST_GENERATION"] = generation
     return subprocess.run(  # noqa: S603 — this interpreter, generated pytest project
-        [sys.executable, "-m", "pytest", "-q", *args], cwd=root,
+        [sys.executable, "-m", "pytest", "-q", *args], cwd=cwd or root,
         env=env,
         capture_output=True, text=True, timeout=30,
     )
@@ -173,6 +175,25 @@ def test_raw_pytest_cannot_bypass_worker_cap_or_parallelize_timing_contracts(tmp
     assert allowed.returncode == 0 and "1 passed" in allowed.stdout
 
 
+def test_timing_admission_and_default_targets_are_independent_of_caller_cwd(tmp_path, monkeypatch):
+    root, _ = _project(tmp_path / "checkout")
+    outside = tmp_path / "caller"
+    outside.mkdir()
+    timing = root / gate.TIMING_TESTS[0]
+    timing.parent.mkdir(parents=True)
+    timing.write_text("def test_timing():\n    assert True\n")
+    refused = _pytest(root, "-n", "2", str(timing), cwd=outside)
+    assert refused.returncode == 4 and "serial phase" in refused.stderr
+    assert "bringing up nodes" not in refused.stdout
+    allowed = _pytest(root, str(timing), cwd=outside)
+    assert allowed.returncode == 0 and "1 passed" in allowed.stdout
+    monkeypatch.setattr(gate, "PROJECT_ROOT", root)
+    monkeypatch.chdir(outside)
+    commands = gate.phases([], 2)
+    assert str(root / "tests") in commands[0]
+    assert str(timing) in commands[1]
+
+
 @pytest.mark.parametrize("targets", [
     [], ["tests"], ["tests/integration"],
     ["tests/integration/test_latency.py::test_specific"],
@@ -183,6 +204,7 @@ def test_phases_preserve_selected_targets_and_keep_timing_out_of_parallel(
     tmp_path, monkeypatch, targets,
 ):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(gate, "PROJECT_ROOT", tmp_path)
     for name in (*gate.TIMING_TESTS, "tests/test_plain.py"):
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -191,12 +213,12 @@ def test_phases_preserve_selected_targets_and_keep_timing_out_of_parallel(
     parallel = [c for c in commands if "-n" in c]
     serial = [c for c in commands if "-n" not in c]
     for command in parallel:
-        assert all(f"--ignore={name}" in command for name in gate.TIMING_TESTS)
+        assert all(f"--ignore={tmp_path / name}" in command for name in gate.TIMING_TESTS)
         assert command[command.index("-n") + 1] == "2"
     expected_serial = {
-        (): list(gate.TIMING_TESTS),
-        ("tests",): list(gate.TIMING_TESTS),
-        ("tests/integration",): [gate.TIMING_TESTS[0], gate.TIMING_TESTS[2]],
+        (): [str(tmp_path / name) for name in gate.TIMING_TESTS],
+        ("tests",): [str(tmp_path / name) for name in gate.TIMING_TESTS],
+        ("tests/integration",): [str(tmp_path / gate.TIMING_TESTS[i]) for i in (0, 2)],
         ("tests/integration/test_latency.py::test_specific",): [
             "tests/integration/test_latency.py::test_specific"],
         ("tests/unit/test_engagement_pipeline.py", "tests/test_plain.py"): [
