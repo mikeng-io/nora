@@ -46,8 +46,9 @@ typecheck:
 imports:
 	uv run lint-imports
 
-# `gate` checks what the BRANCH changed: ruff, mypy and lint-imports in full
-# (fast), then only the tests scripts/affected_tests.py maps from the diff
+# `gate` checks what the BRANCH changed: code/mixed changes run ruff, mypy
+# and lint-imports, then the tests scripts/affected_tests.py maps from the diff.
+# Ordinary docs run only their readers. The diff is
 # against origin/master, INCLUDING uncommitted edits and untracked files (the
 # gate must judge the tree as it stands, not just the tree at HEAD — an
 # uncommitted fix is still untested if the gate skips it). It fails closed: an

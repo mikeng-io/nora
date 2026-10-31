@@ -86,7 +86,10 @@ def test_real_make_runs_once_then_reuses_only_the_identical_success(job):
 
 
 @pytest.mark.parametrize(
-    "mode", ["fresh", "CI", "override", "corrupt", "false-rc", "unknown", "error-context"]
+    "mode", [
+        "fresh", "CI", "override", "corrupt", "false-rc", "unknown", "error-context",
+        "PYTHONPATH", "invalid-time",
+    ]
 )
 def test_non_reusable_receipts_execute_and_failure_destroys_the_old_green(job, monkeypatch, mode):
     repo, calls, control, _, receipt = job
