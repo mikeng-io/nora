@@ -163,7 +163,8 @@ def test_a_cached_success_still_requires_host_admission(job):
 def test_actual_context_digest_tracks_private_environment_dependencies_tools_and_docker(
     tmp_path, monkeypatch
 ):
-    monkeypatch.setattr(gate.os, "environ", {})
+    monkeypatch.setattr(gate.os, "environ", {"PATH": str(tmp_path / "bin")})
+    monkeypatch.setattr(gate.tempfile, "gettempdir", lambda: str(tmp_path / "tmp"))
     repo = tmp_path / "repo"
     repo.mkdir()
     dep = tmp_path / "dependency.py"
@@ -399,3 +400,128 @@ def test_reuse_only_never_falls_back_to_running_an_expensive_gate(job):
     assert gate.main(["--reuse-only"]) == 0 and count(calls) == ["code"]
     context.write_text("changed context")
     assert gate.main(["--reuse-only"]) == 2 and count(calls) == ["code"]
+
+
+def test_directory_and_path_inputs_invalidate_real_receipt_reuse(job, monkeypatch):
+    _repo, calls, control, _, _ = job
+    cache = control.parent / 'cache'
+    tools = control.parent / 'bin'
+    cache.mkdir()
+    tools.mkdir()
+    data = cache / 'vocabulary'
+    helper = tools / 'unlisted-helper'
+    data.write_bytes(b'generated-one')
+    helper.write_bytes(b'helper-one')
+    env = {'PATH': str(tools), 'TIKTOKEN_CACHE_DIR': str(cache)}
+    monkeypatch.setattr(gate, 'context', lambda path: gate.digest(gate.input_manifest(path, env)))
+    assert gate.main([]) == 0 and gate.main(['--reuse-only']) == 0
+    for file in (data, helper):
+        before = file.stat()
+        file.write_bytes(file.read_bytes().replace(b'one', b'two'))
+        os.utime(file, ns=(before.st_atime_ns, before.st_mtime_ns))
+        assert gate.main(['--reuse-only']) == 2  # Same size/mtime still cannot hide changed bytes.
+        assert gate.main([]) == 0
+    added = cache / 'new-input'
+    added.write_text('generated')
+    assert gate.main(['--reuse-only']) == 2
+    assert gate.main([]) == 0
+    added.unlink()
+    assert gate.main(['--reuse-only']) == 2
+    assert len(count(calls)) == 4  # Miss lookups never execute checks.
+
+
+def test_default_tokenizer_cache_and_relative_path_are_bound(tmp_path, monkeypatch):
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    temp = tmp_path / 'tmp'
+    temp.mkdir()
+    cache = temp / 'data-gym-cache'
+    cache.mkdir()
+    (repo / 'bin').mkdir()
+    helper = repo / 'bin' / 'generated-helper'
+    helper.write_text('before')
+    monkeypatch.setattr(gate.tempfile, 'gettempdir', lambda: str(temp))
+    env = {'PATH': 'bin'}
+    before = gate.input_manifest(repo, env)
+    (cache / 'vocabulary').write_text('generated')
+    assert gate.input_manifest(repo, env) != before
+    before = gate.input_manifest(repo, env)
+    helper.write_text('after!')
+    assert gate.input_manifest(repo, env) != before
+
+
+@pytest.mark.parametrize(
+    'failure', ['bytes', 'entries', 'time', 'symlink', 'special', 'unreadable']
+)
+def test_unsupported_directory_inputs_refuse_reuse_without_checks(job, monkeypatch, failure):
+    _repo, calls, control, _, receipt = job
+    folder = control.parent / 'inputs'
+    folder.mkdir()
+    file = folder / 'generated'
+    file.write_bytes(b'generated')
+    env = {'PATH': str(folder), 'TIKTOKEN_CACHE_DIR': str(folder)}
+    monkeypatch.setattr(gate, 'context', lambda path: gate.digest(gate.input_manifest(path, env)))
+    assert gate.main([]) == 0 and receipt.exists()
+    if failure == 'bytes':
+        monkeypatch.setattr(gate, 'MAX_INPUT_BYTES', 2)
+    elif failure == 'entries':
+        monkeypatch.setattr(gate, 'MAX_INPUT_ENTRIES', 1)
+    elif failure == 'time':
+        import itertools
+
+        ticks = itertools.count()
+        monkeypatch.setattr(gate.time, 'monotonic', lambda: float(next(ticks)))
+    elif failure == 'symlink':
+        (folder / 'alias').symlink_to(file)
+    elif failure == 'special':
+        os.mkfifo(folder / 'pipe')
+    else:
+        original = gate.os.scandir
+
+        def unreadable(path):
+            if Path(path) == folder:
+                raise PermissionError('generated unreadable input')
+            return original(path)
+
+        monkeypatch.setattr(gate.os, 'scandir', unreadable)
+    assert gate.main(['--reuse-only']) == 2
+    assert count(calls) == ['code']
+
+
+@pytest.mark.parametrize('mode', ['empty', 'default'])
+def test_implicit_path_search_directories_are_bound(tmp_path, monkeypatch, mode):
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    env = {'TIKTOKEN_CACHE_DIR': str(cache)}
+    if mode == 'empty':
+        env['PATH'] = ''
+    else:
+        monkeypatch.setattr(gate.os, 'defpath', str(repo))
+    helper = repo / 'unlisted-helper'
+    helper.write_text('before')
+    before = gate.input_manifest(repo, env)
+    helper.write_text('after!')
+    assert gate.input_manifest(repo, env) != before
+
+
+def test_directory_changes_during_measurement_are_unavailable(tmp_path, monkeypatch):
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    file = repo / 'generated'
+    file.write_text('before')
+    original = gate.os.open
+    changed = False
+
+    def changing(path, flags):
+        nonlocal changed
+        if Path(path) == file and not changed:
+            changed = True
+            (repo / 'new-input').write_text('added during measurement')
+        return original(path, flags)
+
+    monkeypatch.setattr(gate.os, 'open', changing)
+    with pytest.raises(ValueError, match='Input changed during measurement'):
+        gate.input_manifest(repo, {'PATH': str(repo), 'TIKTOKEN_CACHE_DIR': str(repo)})
+    assert changed

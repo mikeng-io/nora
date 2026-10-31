@@ -8,14 +8,117 @@ import importlib.metadata
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from scripts import affected_tests
 from scripts.pytest_gate import _GENERATION_ENV, LOCK_PATH, PROJECT_ROOT, _run, host_lease
+
+MAX_INPUT_ENTRIES = 4096
+MAX_INPUT_BYTES = 64 * 1024 * 1024
+INPUT_SECONDS = 2.0
+
+
+def input_manifest(repo: Path, env: dict[str, str]) -> dict:
+    """Bound private filesystem inputs; unsupported/oversized trees cannot reuse."""
+    deadline = time.monotonic() + INPUT_SECONDS
+    roots = set(repo.glob("*.toml")) | set(repo.glob(".env*"))
+    for value in env.values():
+        if "://" in value:
+            continue
+        for part in value.split(os.pathsep):
+            path = repo / part
+            if part and (Path(part).is_absolute() or path.exists() or path.is_symlink()):
+                roots.add(path)
+            elif not part and os.pathsep in value:
+                roots.add(repo)
+    roots.update(repo / p for p in env.get("PATH", os.defpath).split(os.pathsep))
+    cache = env.get("TIKTOKEN_CACHE_DIR", env.get("DATA_GYM_CACHE_DIR"))
+    if cache == "":
+        raise ValueError("Uncached tokenizer network input needs fresh validation")
+    roots.add(repo / cache if cache is not None else Path(tempfile.gettempdir()) / "data-gym-cache")
+    manifest = {}
+    observed = {}
+    files = []
+    size = 0
+    pending = list(roots)
+    while pending:
+        if time.monotonic() > deadline or len(manifest) >= MAX_INPUT_ENTRIES:
+            raise ValueError("Input manifest traversal budget exceeded")
+        path = pending.pop()
+        name = str(path.absolute())
+        if name in manifest:
+            continue
+        try:
+            before = path.lstat()
+        except FileNotFoundError:
+            manifest[name] = ["missing"]
+            observed[path] = None
+            continue
+        observed[path] = before
+        if stat.S_ISLNK(before.st_mode):
+            raise ValueError("Symlinked input needs fresh validation")
+        if stat.S_ISDIR(before.st_mode):
+            manifest[name] = ["directory", before.st_mode]
+            with os.scandir(path) as entries:
+                for entry in entries:
+                    if (len(manifest) + len(pending) >= MAX_INPUT_ENTRIES
+                            or time.monotonic() > deadline):
+                        raise ValueError("Input manifest traversal budget exceeded")
+                    pending.append(Path(entry.path))
+        elif stat.S_ISREG(before.st_mode):
+            size += before.st_size
+            if size > MAX_INPUT_BYTES:
+                raise ValueError("Input manifest byte budget exceeded")
+            manifest[name] = ["file", before.st_mode]
+            files.append((path, before))
+        else:
+            raise ValueError("Special input needs fresh validation")
+    # Enumerate/size-check first: a large HOME/PATH is rejected before file reads.
+    def identity(value):
+        return (value.st_dev, value.st_ino, value.st_mode, value.st_size,
+                value.st_mtime_ns, value.st_ctime_ns)
+
+    for path, before in files:
+        hashed = hashlib.sha256()
+        consumed = 0
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as stream:
+            opened = os.fstat(stream.fileno())
+            if identity(opened) != identity(before) or not stat.S_ISREG(opened.st_mode):
+                raise ValueError("Input changed before reading")
+            while True:
+                if time.monotonic() > deadline:
+                    raise ValueError("Input manifest read budget exceeded")
+                block = stream.read(min(65536, before.st_size - consumed + 1))
+                if not block:
+                    break
+                consumed += len(block)
+                if consumed > before.st_size:
+                    raise ValueError("Input grew during reading")
+                hashed.update(block)
+            if (consumed != before.st_size
+                    or identity(os.fstat(stream.fileno())) != identity(before)):
+                raise ValueError("Input changed during reading")
+        manifest[str(path.absolute())].append(hashed.hexdigest())
+    for path, before in observed.items():
+        if time.monotonic() > deadline:
+            raise ValueError("Input manifest verification budget exceeded")
+        try:
+            after = path.lstat()
+        except FileNotFoundError:
+            if before is not None:
+                raise ValueError("Input disappeared during measurement") from None
+        else:
+            if before is None or identity(after) != identity(before):
+                raise ValueError("Input changed during measurement")
+    return manifest
 
 
 def command(*args: str, repo: Path) -> str:
@@ -94,12 +197,7 @@ def context(repo: Path) -> str:
             file = Path(executable).resolve()
             st = file.stat()
             tools[name] = (str(file), st.st_size, st.st_mtime_ns)
-    private = {}
-    files = set(repo.glob("*.toml")) | set(repo.glob(".env*"))
-    files.update(Path(v) for v in os.environ.values() if v.startswith("/"))
-    for file in sorted(files):
-        if file.is_file():
-            private[str(file)] = hashlib.sha256(file.read_bytes()).hexdigest()
+    private = input_manifest(repo, dict(os.environ))
     docker = {
         "context": command("docker", "context", "show", repo=repo),
         "daemon": command("docker", "info", "--format", "{{.ID}}", repo=repo),

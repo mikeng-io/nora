@@ -75,5 +75,26 @@
     "old": "\"Mounts\": sorted(c[\"Mounts\"], key=lambda mount: mount[\"Destination\"]),",
     "new": "\"Mounts\": c[\"Mounts\"],",
     "target": "tests/integration/test_gate_receipt.py::test_actual_context_digest_tracks_private_environment_dependencies_tools_and_docker"
+  },
+  {
+    "name": "directory and unlisted PATH helper bytes bind reuse",
+    "file": "scripts/gate.py",
+    "old": "manifest[str(path.absolute())].append(hashed.hexdigest())",
+    "new": "manifest[str(path.absolute())].append(\"ignored\")",
+    "target": "tests/integration/test_gate_receipt.py::test_directory_and_path_inputs_invalidate_real_receipt_reuse"
+  },
+  {
+    "name": "empty and default PATH search directories are inputs",
+    "file": "scripts/gate.py",
+    "old": "roots.update(repo / p for p in env.get(\"PATH\", os.defpath).split(os.pathsep))",
+    "new": "roots.update([])",
+    "target": "tests/integration/test_gate_receipt.py::test_implicit_path_search_directories_are_bound"
+  },
+  {
+    "name": "oversized directory input cannot reuse green",
+    "file": "scripts/gate.py",
+    "old": "if size > MAX_INPUT_BYTES:",
+    "new": "if False:",
+    "target": "tests/integration/test_gate_receipt.py::test_unsupported_directory_inputs_refuse_reuse_without_checks[bytes]"
   }
 ]

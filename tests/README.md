@@ -97,6 +97,15 @@ Local gate receipts:
   unchanged during the successful run. Secrets are hashed in memory, never stored
   in the receipt or printed. This is cooperative source acceptance as of the
   recorded run, not a tamper-proof attestation or fresh external-service health.
+- Environment directories, PATH entries (including relative/empty entries), and
+  the explicit or default tiktoken cache use a private recursive content manifest.
+  The total is bounded to 4,096 entries, 64 MiB of file contents and a checked
+  two-second traversal/read budget. Enumeration and sizing precede content reads.
+  Symlinks, special files, unreadable/changing inputs and exceeded limits reject
+  reuse. Filesystem calls can block beyond the checked time budget. Large HOME,
+  working or temp directories and ordinary tool paths may therefore always MISS;
+  no standard environment directory is silently exempted. Use `gate-reuse` to
+  inspect eligibility without accidentally starting another cold gate.
 - Dirty trees, unknown untracked files, hidden index flags, external editable
   dependencies, PYTHONPATH overrides, Make command overrides, unavailable context
   and CI do not reuse receipts. Go bridge changes also remain fresh; Go cache
