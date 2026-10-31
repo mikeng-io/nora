@@ -1,16 +1,16 @@
 [
   {
     "name": "timing guards excluded from competing pytest workers",
-    "file": ".github/workflows/ci.yml",
-    "old": "              subprocess.run(['pytest', '-q', '-n', '8',\n                              *(f'--ignore={path}' for path in serial)], check=True)",
-    "new": "              subprocess.run(['pytest', '-q', '-n', '8'], check=True)",
-    "target": "tests/architecture/test_ci_plan.py::test_timing_contracts_run_without_competing_pytest_workers"
+    "file": "scripts/pytest_gate.py",
+    "old": "*(f\"--ignore={PROJECT_ROOT / path}\" for path in TIMING_TESTS),",
+    "new": "",
+    "target": "tests/integration/test_pytest_gate.py::test_phases_preserve_selected_targets_and_keep_timing_out_of_parallel"
   },
   {
     "name": "timing guards still execute and failures fail CI",
-    "file": ".github/workflows/ci.yml",
-    "old": "              subprocess.run(['pytest', '-q', *serial], check=True)\n",
-    "new": "",
-    "target": "tests/architecture/test_ci_plan.py::test_timing_contracts_run_without_competing_pytest_workers"
+    "file": "scripts/pytest_gate.py",
+    "old": "commands.append([sys.executable, \"-m\", \"pytest\", \"-q\", *serial])",
+    "new": "pass",
+    "target": "tests/integration/test_pytest_gate.py::test_phases_preserve_selected_targets_and_keep_timing_out_of_parallel"
   }
 ]

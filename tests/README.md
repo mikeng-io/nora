@@ -48,3 +48,33 @@ Run `make test-affected` (or the tests you touched) while iterating, and
 `make gate` once, on the final head, before claiming a PR is done — never a
 gate per fix round. `make full-gate` runs the whole suite serially and
 unconditionally (`AGENTS.md`, *Gate commands*).
+
+Disposable PostgreSQL reuse:
+
+- `pg_url` remains a fresh migrated database per test, with `DATABASE_URL`
+  exported. Integration restarts and migration/destructive tests keep it.
+- `pg_module_url` opts into one migrated clone per module **per worker**.
+  It does not export `DATABASE_URL`. The caller must reset its own tables and
+  dispose every engine; it is not a universal rollback or flush fixture.
+  Culture, entries and memory-graph contracts retain their existing TRUNCATE
+  resets (including the history-capture settings). Migration seeds, sequences,
+  history outside those tables and non-row state are not globally reset.
+- Schema parity uses a module clone for catalogue reads and CHECK probes whose
+  SAVEPOINT always rolls back. Deliberate drift still uses scratch databases.
+- Make targets use `python -m scripts.pytest_gate`: up to two file-grouped
+  workers, followed by a serial phase for the three timing modules declared in
+  that runner. Explicit files/node selectors keep their selection. `TEST_WORKERS`
+  defaults to two; use zero or one to reduce concurrency. Full-gate stays serial.
+- The runner and direct pytest share one per-user host lease across updated
+  worktrees. A competing job is refused before workers start. Workers retain
+  shares after controller exit; generation checks refuse late stale workers.
+  The runner retains its share across both phases. Direct parallel pytest must
+  exclude timing modules; use the runner to select and execute them correctly.
+  The lock bounds concurrent jobs, not total writes. Older checkouts without the
+  plugin remain stopped until reconciled; an advisory lock cannot govern them.
+- Collection-only reads do not acquire the execution lease or start xdist workers;
+  the rule-to-test catalogue check can collect during an admitted test job.
+- Servers remain lazy, disk-backed, owned by each requesting worker/session,
+  with Testcontainers/Ryuk cleanup. No cross-run state, shared server, tmpfs,
+  altered durability settings or FILE_COPY default is introduced. Pure tests
+  need no Docker. A killed worker still relies on the existing Ryuk lifecycle.

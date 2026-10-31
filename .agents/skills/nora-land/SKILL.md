@@ -41,7 +41,7 @@ Check: `## <type>/<slug>...origin/master`, no ahead/behind; hooksPath ends `.git
 ## 2. Iterate
 
 ```bash
-uv run pytest -q -n 8 <test paths>   # uncommitted edits: name the tests
+uv run python -m scripts.pytest_gate <test paths>   # uncommitted edits: name the tests
 make test-affected                   # judges the LAST COMMIT only (HEAD~1...HEAD)
 make test-fast                       # whole suite, parallel
 ```
