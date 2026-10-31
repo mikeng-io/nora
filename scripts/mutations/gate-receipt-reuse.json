@@ -2,7 +2,7 @@
   {
     "name": "tests Markdown guides use readers",
     "file": "scripts/affected_tests.py",
-    "old": "return path.endswith(\".md\") and not path.startswith(\"tests/fixtures/\")",
+    "old": "return Path(path).name == \"README.md\" and not path.startswith(\"tests/fixtures/\")",
     "new": "return False",
     "target": "tests/test_affected_tests.py::test_tests_readme_uses_readers_but_helpers_and_fixture_markdown_stay_broad"
   },
@@ -61,5 +61,12 @@
     "old": "rc = _run(run, env, group=True)",
     "new": "rc = _run(run, env, group=False)",
     "target": "tests/integration/test_gate_receipt.py::test_interrupting_gate_stops_make_descendants_and_removes_old_success"
+  },
+  {
+    "name": "reuse-only cannot fall back to another expensive gate",
+    "file": "scripts/gate.py",
+    "old": "if args.reuse_only:\n                print(",
+    "new": "if False:\n                print(",
+    "target": "tests/integration/test_gate_receipt.py::test_reuse_only_never_falls_back_to_running_an_expensive_gate"
   }
 ]

@@ -143,6 +143,7 @@ against `origin/master`; ordinary documentation uses its reader tests without
 static steps. Unknown changes or selector failures broaden to the full suite.
 Local `make gate` can reuse a successful receipt for an identical clean candidate
 and verified execution context; it prints `REUSED` when no checks were rerun.
+`make gate-reuse` only checks for reuse and fails without executing on a miss.
 `make gate-fresh` forces a real validation. CI and `make full-gate` always run fresh.
 The full receipt contract and exclusions are in `tests/README.md`. For a fork, fetch
 upstream master into `origin/master` before running it (keep `origin` as your fork):

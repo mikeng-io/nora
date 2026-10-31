@@ -85,7 +85,7 @@ Local gate receipts:
 
 - `make gate` uses the canonical runner: code/mixed changes run static checks plus
   affected tests; ordinary docs run their reader tests. Unknown paths/selection
-  errors remain broad. Markdown guides under `tests/` are docs; fixture Markdown
+  errors remain broad. README guides under `tests/` are docs; other test/fixture Markdown
   and non-collectible Python helpers remain broad. Only byte-exact regular Git LFS
   post-hooks are excluded from untracked noise; edits, symlinks and tracked hooks
   still count. No arbitrary executable hook is ignored.
@@ -101,6 +101,8 @@ Local gate receipts:
   dependencies, PYTHONPATH overrides, Make command overrides, unavailable context
   and CI do not reuse receipts. Go bridge changes also remain fresh; Go cache
   dependency internals are outside this first Python-acceptance cache.
+- `make gate-reuse` checks for a matching receipt only; a miss exits nonzero and
+  runs no checks. Use it for a bounded warm readback without accidental cold I/O.
 - `make gate-fresh` bypasses reuse. `make full-gate` is always fresh and serial.
   Either invalidates the prior receipt before execution, as does any actual gate
   attempt; failures/interruption never leave the old green receipt reusable.

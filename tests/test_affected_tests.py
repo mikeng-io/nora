@@ -1048,6 +1048,7 @@ def test_tests_readme_uses_readers_but_helpers_and_fixture_markdown_stay_broad(t
     assert select(["tests/README.md"], repo) == [UNIVERSAL_DOC_READER, "tests/test_reader.py"]
     assert select(["tests/README.md", "tests/conftest.py"], repo) == ALL
     assert select(["tests/fixtures/input.md"], repo) == ALL
+    assert select(["tests/contract/generated_input.md"], repo) == ALL
 
 
 def _lfs_post_hook(name):

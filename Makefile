@@ -6,7 +6,7 @@
 # so it does not have to be retyped. Edit the docs first if the underlying
 # command changes; this file follows them, not the other way round.
 
-.PHONY: bridge test test-fast test-affected lint typecheck imports gate gate-fresh _gate full-gate _full-gate mutate \
+.PHONY: bridge test test-fast test-affected lint typecheck imports gate gate-fresh gate-reuse _gate full-gate _full-gate mutate \
         setup hooks schema-parity heads decision-numbers \
         eval-participation eval-adversarial-corpora eval-gate \
         build up stop logs ps \
@@ -59,6 +59,9 @@ gate:
 
 gate-fresh:
 	uv run python -m scripts.gate --fresh
+
+gate-reuse:
+	uv run python -m scripts.gate --reuse-only
 
 _gate: lint typecheck imports
 	@if ! git diff --quiet origin/master -- deploy/instagram-bridge 2>/dev/null \

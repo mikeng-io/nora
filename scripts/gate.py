@@ -36,7 +36,7 @@ def candidate(repo: Path) -> dict | None:
     """Uncommitted/unclassified inputs never receive or reuse an acceptance receipt."""
     if command("git", "diff", "--name-only", "HEAD", repo=repo):
         return None
-    for entry in command("git", "ls-files", "--stage", repo=repo).splitlines():
+    for entry in affected_tests._git(repo, "ls-files", "--stage", "-z", nul=True):
         mode, name = entry.split("\t", 1)
         if mode.startswith("120000 ") and not (repo / name).resolve().is_relative_to(
             repo.resolve()
@@ -52,7 +52,14 @@ def candidate(repo: Path) -> dict | None:
         for p in affected_tests.git_changed_paths(repo, "origin/master")
     ):
         return None  # ponytail: local Python acceptance only; Go cache inputs remain out of scope.
-    untracked = command("git", "ls-files", "--others", "--exclude-standard", repo=repo).splitlines()
+    untracked = affected_tests._git(
+        repo,
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+        nul=True,
+    )
     if any(not affected_tests.generated_lfs_hook(repo, p) for p in untracked):
         return None
     return {
@@ -89,7 +96,7 @@ def context(repo: Path) -> str:
             tools[name] = (str(file), st.st_size, st.st_mtime_ns)
     private = {}
     files = set(repo.glob("*.toml")) | set(repo.glob(".env*"))
-    files.update(Path(v) for v in os.environ.values() if v.startswith("/") and ":" not in v)
+    files.update(Path(v) for v in os.environ.values() if v.startswith("/"))
     for file in sorted(files):
         if file.is_file():
             private[str(file)] = hashlib.sha256(file.read_bytes()).hexdigest()
@@ -177,7 +184,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fresh", action="store_true", help="force a real validation")
     parser.add_argument("--full", action="store_true", help="always run the full serial gate")
+    parser.add_argument(
+        "--reuse-only", action="store_true", help="verify reuse without running checks"
+    )
     args = parser.parse_args(argv)
+    if args.reuse_only and (args.fresh or args.full):
+        parser.error("--reuse-only cannot request fresh execution")
     repo = PROJECT_ROOT
     receipt = None
     try:
@@ -237,6 +249,9 @@ def main(argv: list[str] | None = None) -> int:
                     flush=True,
                 )
                 return 0
+            if args.reuse_only:
+                print("gate receipt: MISS; no checks run (--reuse-only)", flush=True)
+                return 2
             # Invalidate BEFORE execution: a later failure/interrupt cannot leave an old green hit.
             receipt.unlink(missing_ok=True)
             print(

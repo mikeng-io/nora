@@ -34,7 +34,7 @@ wrong one. The classes, in order:
   `nora/dreamer`, `nora/skills` and `nora/documents/catalog-prompt.md` at
   runtime, and every `.py` is imported by dozens of tests. A hand-kept reader
   list for these goes stale.
-* Markdown guides under `tests/` (excluding fixtures) use doc readers below.
+* README guides under `tests/` (excluding fixtures) use doc readers below.
 * Other `tests/**`: a collectible `test_*.py` that still exists selects itself, the
   whole of `tests/architecture/` (the meta tests: they read `tests/` itself, so
   an added, edited or deleted test can redden them — a new `tests/test_zz.py`
@@ -411,7 +411,7 @@ def _is_doc_or_data(path: str) -> bool:
     if path.startswith(_CODE_TREE_PREFIXES):
         return False
     if path.startswith("tests/"):
-        return path.endswith(".md") and not path.startswith("tests/fixtures/")
+        return Path(path).name == "README.md" and not path.startswith("tests/fixtures/")
     if path.endswith(".md"):
         return True
     ext = "." + path.rsplit(".", 1)[-1] if "." in path.rsplit("/", 1)[-1] else ""

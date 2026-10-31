@@ -356,3 +356,24 @@ def test_interrupt_during_context_lookup_removes_previous_success(job, monkeypat
     except KeyboardInterrupt:
         pytest.fail("gate interrupted without invalidating its receipt")
     assert rc == 130 and not receipt.exists()
+
+
+def test_external_symlink_with_a_non_ascii_name_cannot_publish_a_receipt(job):
+    repo, calls, control, _, receipt = job
+    external = control.parent / "external-input"
+    external.write_text("generated input")
+    (repo / "外部輸入.py").symlink_to(external)
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "external symlink")
+    assert gate.main([]) == 0 and not receipt.exists()
+    external.write_text("changed without modifying the symlink")
+    assert gate.main([]) == 0 and count(calls) == ["code", "code"] and not receipt.exists()
+
+
+def test_reuse_only_never_falls_back_to_running_an_expensive_gate(job):
+    _, calls, _, context, _ = job
+    assert gate.main(["--reuse-only"]) == 2 and count(calls) == []
+    assert gate.main([]) == 0 and count(calls) == ["code"]
+    assert gate.main(["--reuse-only"]) == 0 and count(calls) == ["code"]
+    context.write_text("changed context")
+    assert gate.main(["--reuse-only"]) == 2 and count(calls) == ["code"]

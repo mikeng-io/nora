@@ -61,10 +61,11 @@ grep -E '^affected_tests:|passed|failed|error' "$LOG/gate.log" | tail -n 5
 `origin/master`; docs-only changes run reader tests without static steps. Unknown
 paths/errors remain broad. Local exact-candidate/context success receipts can be
 reused; a `REUSED` result is prior acceptance, never a newly executed test count.
-Read the worktree Git directory's `nora-gate-receipt.json` (key, command, completion
-and rc), alongside the matching original evidence. Dirty/context changes cannot
-reuse it. Use `make gate-fresh` for an actual run even if a receipt matches.
-CI and `make full-gate` are always fresh; full-gate remains serial/unconditional.
+Read the worktree Git directory's `nora-gate-receipt.json` (key, command, completion and rc),
+alongside the matching original evidence. Dirty/context changes cannot
+reuse it. `make gate-reuse` only checks reuse (nonzero miss, no checks), so a
+readback cannot accidentally start a cold suite. `make gate-fresh` forces a run;
+CI and `make full-gate` are always fresh, full-gate serial/unconditional.
 
 PASS: `GATE_RC=0`, then either fresh checks/reader results (three static steps for
 code), or the runner's validated matching success receipt. A changed candidate,
@@ -76,7 +77,8 @@ base or execution context reruns acceptance. Receipt refreshes rerun nothing.
 
 **Docs-only:** stage new docs so tracked-reference readers see them, then use
 `make gate` as above. It selects document readers and omits static steps. Runtime
-Markdown under `nora/`, `evals/`, `scripts/` and test fixtures is not ordinary docs.
+Markdown under `nora/`, `evals/`, `scripts/` and test data is not ordinary docs;
+under `tests/` only README guides outside fixtures use doc readers.
 Never hand-pick readers; an unmapped/shared-helper path remains broad.
 
 ## 4. Commit
@@ -197,7 +199,6 @@ No more edits here: the next change is step 1, a new worktree. Cleanup:
 `docs/maintainers/conventions.md` Cleanup. Deploying: nora-deploy.
 
 ## Tool notes
-
 Claude Code's rtk hook refuses every `git` call in a worktree-isolated
 subagent; the measured `vcs` workaround is in `nora-land/reference.md`.
 Claude Code commits end with a `Claude-Session:` footer.
