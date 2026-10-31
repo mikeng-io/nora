@@ -1,0 +1,79 @@
+[
+ {
+  "name": "a cut target folds from truncated standing rows",
+  "file": "nora/infra/sql/audit.py",
+  "old": "        recorded=recorded, observed=observed, partial=partial,",
+  "new": "        recorded=recorded, observed=observed, partial=(),",
+  "target": "tests/unit/test_reaction_annotations.py::test_the_reaction_read_reduces_in_sql_and_bounds_what_it_transfers"
+ },
+ {
+  "name": "the standing read is uncapped",
+  "file": "nora/infra/sql/audit.py",
+  "old": "        .limit(REACTION_STATES_MAX + 1)",
+  "new": "        .limit(None)",
+  "target": "tests/unit/test_reaction_annotations.py::test_the_reaction_read_reduces_in_sql_and_bounds_what_it_transfers"
+ },
+ {
+  "name": "a custom emoji id reaches the model raw",
+  "file": "nora/domain/models.py",
+  "old": "        return f\":{custom.group(1)[:32]}:\"",
+  "new": "        return emoji",
+  "target": "tests/unit/test_reaction_annotations.py::test_a_custom_emoji_projects_to_its_scoped_name_never_its_id"
+ },
+ {
+  "name": "the label never marks omitted detail",
+  "file": "nora/domain/models.py",
+  "old": "                dropped += n",
+  "new": "                dropped += 0",
+  "target": "tests/unit/test_reaction_annotations.py::test_the_annotation_is_budgeted_beside_the_words_and_marks_omission"
+ },
+ {
+  "name": "the stimulus removal bit is dropped",
+  "file": "nora/app/cognition_grounding.py",
+  "old": "        removed=found.removed,",
+  "new": "        removed=False,",
+  "target": "tests/unit/test_reaction_annotations.py::test_a_reaction_removal_is_marked_distinct_from_an_add"
+ },
+ {
+  "name": "the removal never reaches the rendered row",
+  "file": "nora/language/cognition_render.py",
+  "old": "                (\"reaction_removed\", \"yes\" if reacted and r.removed else None),",
+  "new": "                (\"reaction_removed\", \"yes\" if reacted and False else None),",
+  "target": "tests/unit/test_reaction_annotations.py::test_a_reaction_removal_is_marked_distinct_from_an_add"
+ },
+ {
+  "name": "partial coverage renders as a complete state",
+  "file": "nora/agent/tools.py",
+  "old": "            if r.reactions.coverage == \"partial\":",
+  "new": "            if False:",
+  "target": "tests/unit/test_reaction_annotations.py::test_a_partial_state_is_marked_never_read_as_complete"
+ },
+ {
+  "name": "the transcript block stops explaining the counts",
+  "file": "nora/domain/block_types.py",
+  "old": "       reactions=(\n           \"the emoji reactions standing on it now",
+  "new": "       reactions_lost=(\n           \"the emoji reactions standing on it now",
+  "target": "tests/unit/test_reaction_annotations.py::test_the_reaction_fields_are_glossed_where_the_model_reads_them"
+ },
+ {
+  "name": "the result note stops explaining the counts",
+  "file": "nora/agent/tools.py",
+  "old": "        if any(\"reactions_source\" in m for m in out):\n            notes.append(_REACTIONS_NOTE)\n        if older:\n            notes.append(_older_note(rows))\n        if not out and before_ts is not None:",
+  "new": "        if older:\n            notes.append(_older_note(rows))\n        if not out and before_ts is not None:",
+  "target": "tests/unit/test_reaction_annotations.py::test_the_tool_result_note_explains_the_counts_are_recorded_only"
+ },
+ {
+  "name": "the spike leaves the caller's logging muted",
+  "file": "scripts/memory_graph_spike.py",
+  "old": "        logging.disable(previous_disable)",
+  "new": "        pass",
+  "target": "tests/unit/test_memory_graph_spike.py::test_run_restores_the_prior_logging_threshold"
+ },
+ {
+  "name": "engine failure skips the logging restore",
+  "file": "scripts/memory_graph_spike.py",
+  "old": "        if engine is not None:\n            await engine.dispose()\n        logging.disable(previous_disable)",
+  "new": "        if engine is not None:\n            await engine.dispose()",
+  "target": "tests/unit/test_memory_graph_spike.py::test_run_restores_the_prior_logging_threshold_when_engine_creation_fails"
+ }
+]
