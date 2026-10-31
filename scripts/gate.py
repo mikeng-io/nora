@@ -134,7 +134,7 @@ def context(repo: Path) -> str:
                 "Id": c["Id"],
                 "Image": c["Image"],
                 "Config": c["Config"],
-                "Mounts": c["Mounts"],
+                "Mounts": sorted(c["Mounts"], key=lambda mount: mount["Destination"]),
                 "State": {
                     k: c["State"].get(k)
                     for k in (

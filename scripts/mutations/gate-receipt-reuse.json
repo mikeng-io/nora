@@ -68,5 +68,12 @@
     "old": "if args.reuse_only:\n                print(",
     "new": "if False:\n                print(",
     "target": "tests/integration/test_gate_receipt.py::test_reuse_only_never_falls_back_to_running_an_expensive_gate"
+  },
+  {
+    "name": "Docker mount ordering is stable but real mount changes invalidate reuse",
+    "file": "scripts/gate.py",
+    "old": "\"Mounts\": sorted(c[\"Mounts\"], key=lambda mount: mount[\"Destination\"]),",
+    "new": "\"Mounts\": c[\"Mounts\"],",
+    "target": "tests/integration/test_gate_receipt.py::test_actual_context_digest_tracks_private_environment_dependencies_tools_and_docker"
   }
 ]

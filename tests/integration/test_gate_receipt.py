@@ -202,7 +202,16 @@ def test_actual_context_digest_tracks_private_environment_dependencies_tools_and
                 {
                     "Id": "container-one",
                     "Image": "image-one",
-                    "Mounts": [],
+                    "Mounts": [
+                        {
+                            "Type": "bind", "Source": "/generated/a",
+                            "Destination": "/a", "RW": True,
+                        },
+                        {
+                            "Type": "bind", "Source": "/generated/b",
+                            "Destination": "/b", "RW": False,
+                        },
+                    ],
                     "Config": {"Env": ["GENERATED=fixture"]},
                     "State": {"Running": True, "StartedAt": "generated-start"},
                 }
@@ -219,6 +228,15 @@ def test_actual_context_digest_tracks_private_environment_dependencies_tools_and
 
     monkeypatch.setattr(gate, "command", docker)
     previous = gate.context(repo)
+    containers = json.loads(values[("inspect", "container-one")])
+    containers[0]["Mounts"].reverse()
+    values[("inspect", "container-one")] = json.dumps(containers)
+    assert gate.context(repo) == previous  # Docker inspect does not preserve mount ordering.
+    containers[0]["Mounts"][0]["RW"] = True
+    values[("inspect", "container-one")] = json.dumps(containers)
+    mounted = gate.context(repo)
+    assert mounted != previous  # Actual mount changes must still invalidate acceptance.
+    previous = mounted
     changes = [
         lambda: monkeypatch.setenv("NORA_GENERATED_CONTEXT", "changed"),
         lambda: (repo / "secret.toml").write_text("generated-private-input"),
