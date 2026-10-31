@@ -160,6 +160,7 @@ def test_a_cached_success_still_requires_host_admission(job):
 def test_actual_context_digest_tracks_private_environment_dependencies_tools_and_docker(
     tmp_path, monkeypatch
 ):
+    monkeypatch.setattr(gate.os, "environ", {})
     repo = tmp_path / "repo"
     repo.mkdir()
     dep = tmp_path / "dependency.py"
