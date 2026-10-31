@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.13.3](https://github.com/mikeng-io/nora/compare/v7.13.2...v7.13.3) (2026-10-31)
+
+
+### Maintenance
+
+* **db:** reuse isolated record databases in media and tool tests ([2ebd5f3](https://github.com/mikeng-io/nora/commit/2ebd5f37313ab8c15cca93894d9b9e11b77a25d5))
+
 ## [7.13.2](https://github.com/mikeng-io/nora/compare/v7.13.1...v7.13.2) (2026-10-31)
 
 
