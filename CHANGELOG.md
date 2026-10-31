@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.12.3](https://github.com/mikeng-io/nora/compare/v7.12.2...v7.12.3) (2026-10-31)
+
+
+### Bug Fixes
+
+* **spike:** preserve population strength in AGE and session-quality summaries ([986a9a3](https://github.com/mikeng-io/nora/commit/986a9a37def786ccdd12c6baf6a7d3b429f19b42))
+
 ## [7.12.2](https://github.com/mikeng-io/nora/compare/v7.12.1...v7.12.2) (2026-10-31)
 
 
