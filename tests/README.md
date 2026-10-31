@@ -59,6 +59,12 @@ Disposable PostgreSQL reuse:
   Culture, entries and memory-graph contracts retain their existing TRUNCATE
   resets (including the history-capture settings). Migration seeds, sequences,
   history outside those tables and non-row state are not globally reset.
+- `record_pg_url` opts media-fetch and tool-registry tests into a module clone.
+  Each requesting test resets messages (with dependent tables), memory nodes,
+  edges, projection retries and row history, including their owned sequences.
+  History capture is disabled only inside the reset transaction. Migration seeds
+  remain intact. This fixture is only for record-only consumers without schema
+  changes, extraction or graph-projection context; engines must be disposed.
 - Schema parity uses a module clone for catalogue reads and CHECK probes whose
   SAVEPOINT always rolls back. Deliberate drift still uses scratch databases.
 - Make targets use `python -m scripts.pytest_gate`: up to two file-grouped

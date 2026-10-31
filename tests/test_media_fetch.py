@@ -42,7 +42,6 @@ from nora.infra.blobs import FilesystemBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.vision import MediaComprehender, VisionCache, VisionResult
 from nora.infra.vision.comprehend import _SUMMARIZE_SOURCE
 from nora.obs.metrics import Metrics
@@ -105,9 +104,8 @@ async def _append_image(store, *, conversation_id: str, sha256: str,
 
 
 @pytest.fixture
-async def wiring(tmp_path, pg_url):
-    run_migrations(pg_url)
-    store = SqlRecordStore(create_sql_engine(pg_url))
+async def wiring(tmp_path, record_pg_url):
+    store = SqlRecordStore(create_sql_engine(record_pg_url))
 
     blobs = FilesystemBlobStore(tmp_path / "media", cipher=BlobCipher.from_base64(KEY_A))
     stored_sha = await blobs.put(data=RED_PNG)
@@ -188,6 +186,10 @@ async def wiring(tmp_path, pg_url):
 
 async def _call(tool, **kw):
     return await tool._tool_func(**kw)
+
+
+async def test_wiring_reuses_the_module_database(wiring, pg_module_url):
+    assert wiring["store"]._engine.url.database == pg_module_url.rsplit('/', 1)[1]
 
 
 # ---- the ok path -------------------------------------------------------------
