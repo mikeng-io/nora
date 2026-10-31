@@ -250,11 +250,11 @@ def _rig(
 # Record after a completed loop, once per room the session actually bound
 # ---------------------------------------------------------------------------
 
-async def test_a_completed_session_folds_standing_for_each_bound_room():
+async def test_a_completed_session_folds_the_units_standing_once():
     folds: list[dict] = []
 
-    async def fold(*, trace, platform, conversation_id):
-        folds.append({"platform": platform, "conversation_id": conversation_id,
+    async def fold(*, trace, unit, rooms):
+        folds.append({"unit": unit, "rooms": rooms,
                       "messages": len(trace.messages)})
 
     async def spoke(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
@@ -269,10 +269,12 @@ async def test_a_completed_session_folds_standing_for_each_bound_room():
     await rig.tick()
     await rig.settle()
 
-    assert [f["platform"] for f in folds] == ["signal"]
-    # The stimulus's own room — the room the session actually bound, not a
-    # fabricated unit room.
-    assert [f["conversation_id"] for f in folds] == ["room-a"]
+    # ONE unit-scoped fold for the whole session — the unit's own key, with
+    # the rooms the session actually bound as its source set; never a fold
+    # per room, never a fabricated unit room.
+    assert len(folds) == 1
+    assert folds[0]["unit"] == "u1"
+    assert folds[0]["rooms"] == (("signal", "room-a"),)
     assert folds[0]["messages"] > 0  # the retained Record, not a tool report
 
 
@@ -281,8 +283,8 @@ async def test_a_session_with_an_empty_record_folds_nothing():
     folding that would write a position from nothing."""
     folds: list[dict] = []
 
-    async def fold(*, trace, platform, conversation_id):
-        folds.append({"platform": platform, "conversation_id": conversation_id})
+    async def fold(*, trace, unit, rooms):
+        folds.append({"unit": unit, "rooms": rooms})
 
     rig = _rig()  # the `ok` script leaves `result.messages` empty
     rig.runner._standing_fold = fold

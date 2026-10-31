@@ -3248,3 +3248,98 @@ async def test_a_shadow_held_participation_turn_stays_strict_in_a_location_room(
     await path.speak(_participation())
 
     assert seen == [False]
+
+
+async def test_a_proactive_act_is_withheld_when_a_required_check_fails(
+    persons: Persons, doctrine_store, metrics: Metrics,
+    record_store, memory_store,
+):
+    """A proactive act's own checks — pending/FIRING arbitration (`reminders`),
+    delivery facts (`turns`), authored sends (`sends`) — are fail-closed:
+    any of them unread is «could not check», never «nothing pending»."""
+    from nora.domain.shared_state import SharedView
+
+    async def shared(**_):
+        return SharedView(
+            unit="u1", status="partial", as_of_ms=1,
+            sources=(("reminders", "unavailable"), ("turns", "ok"),
+                     ("sends", "ok"), ("findings", "ok")),
+        )
+    path = FirePath(
+        persons=persons, records=record_store, memory=memory_store,
+        doctrine_store=doctrine_store, metrics=metrics,
+        runner=None, registry=ToolRegistry(),                   # type: ignore[arg-type]
+        canary="test-canary", display_name="Nora",
+        ai_peer="nora", context_window=40, limits={},
+        timeout_seconds=120.0, clock=lambda: T0,
+        shared=shared,                                        # type: ignore[arg-type]
+        standing_store_timeout_seconds=0.5,
+        event_registry={"proactive": fire_module.proactive_occasion},
+        proactive_runner=FakeAgentRunner(
+            [ScriptedTurn(final_text="nothing to add")]),
+        policy=permissive_policy(),
+        adapters={"signal": _FireAdapter()},
+    )
+    assert await path.run([_proactive_row()]) == "failed_error"
+
+
+async def test_a_proactive_act_runs_when_only_optional_display_coverage_fails(
+    persons: Persons, doctrine_store, metrics: Metrics,
+    record_store, memory_store,
+):
+    """Optional display coverage — positions/findings and ledger readbacks —
+    degrades the prompt without withholding the act itself (design 20 §5:
+    "a display-only cap must not permanently prevent all proactive
+    activity")."""
+    from nora.domain.shared_state import SharedView
+
+    async def shared(**_):
+        return SharedView(
+            unit="u1", status="partial", as_of_ms=1,
+            sources=(("reminders", "ok"), ("turns", "ok"), ("sends", "ok"),
+                     ("findings", "unavailable"), ("ledger", "unavailable")),
+        )
+    path = FirePath(
+        persons=persons, records=record_store, memory=memory_store,
+        doctrine_store=doctrine_store, metrics=metrics,
+        runner=None, registry=ToolRegistry(),                   # type: ignore[arg-type]
+        canary="test-canary", display_name="Nora",
+        ai_peer="nora", context_window=40, limits={},
+        timeout_seconds=120.0, clock=lambda: T0,
+        shared=shared,                                        # type: ignore[arg-type]
+        standing_store_timeout_seconds=0.5,
+        event_registry={"proactive": fire_module.proactive_occasion},
+        proactive_runner=FakeAgentRunner(
+            [ScriptedTurn(final_text="nothing to add")]),
+        policy=permissive_policy(),
+        adapters={"signal": _FireAdapter()},
+    )
+    assert await path.run([_proactive_row()]) != "failed_error"
+
+
+async def test_a_proactive_act_is_withheld_when_the_whole_read_failed(
+    persons: Persons, doctrine_store, metrics: Metrics,
+    record_store, memory_store,
+):
+    """A whole-view failure — no per-source coverage at all — is still
+    «could not check»: nothing read means none of the act's required checks
+    ran."""
+    from nora.domain.shared_state import SharedView
+
+    async def shared(**_):
+        return SharedView(
+            unit="u1", status="unavailable", as_of_ms=1, sources=(),
+        )
+    path = FirePath(
+        persons=persons, records=record_store, memory=memory_store,
+        doctrine_store=doctrine_store, metrics=metrics,
+        runner=None, adapters={}, registry=None,                # type: ignore[arg-type]
+        canary="test-canary", display_name="Nora",
+        ai_peer="nora", context_window=40, limits={},
+        timeout_seconds=120.0, clock=lambda: T0,
+        shared=shared,                                        # type: ignore[arg-type]
+        standing_store_timeout_seconds=0.5,
+        event_registry={"proactive": fire_module.proactive_occasion},
+        policy=permissive_policy(),
+    )
+    assert await path.run([_proactive_row()]) == "failed_error"

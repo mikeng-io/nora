@@ -39,5 +39,3 @@ async def ledger_target(target: RenderRoom, room: Room) -> RenderRoom:
             degraded=view.degraded,
         )
     )
-
-

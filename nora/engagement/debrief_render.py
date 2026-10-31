@@ -185,7 +185,7 @@ _OUTCOME_GLOSS: Mapping[str, str] = {
 #: whole. Her own narration and her tool
 #: CALLS keep 600: what she wrote is in the transcript when it was sent, and a
 #: call's arguments are hers and short.
-_BLOCK_CHARS = 600
+_BLOCK_CHARS = 2400
 _CARRIED_CHARS = 4000
 
 #: WHICH block `_clip` cut, grounded on `_block`'s own four branches: `text`
@@ -620,7 +620,14 @@ def _block(
             _tool_result_text(result.get("content")), kind="tool_result",
             metrics=metrics, limit=_CARRIED_CHARS,
         )
-        return f"(tool result: {clipped})", None
+        status = result.get("status")
+        call = result.get("toolUseId")
+        head = "tool result"
+        if call:
+            head += f" for {call}"
+        if isinstance(status, str) and status:
+            head += f" status={status}"
+        return f"({head}: {clipped})", None
     return "", None
 
 

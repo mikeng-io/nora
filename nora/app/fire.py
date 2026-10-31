@@ -256,6 +256,13 @@ FAILED_ERROR = "failed_error"
 PARTICIPATION_AUDIENCE = audience_names.PARTICIPATION
 SILENT = "silent"
 
+#: The shared-view sources a proactive act's OWN checks rest on — pending and
+#: FIRING arbitration (`reminders`), recorded delivery/turn facts (`turns`)
+#: and authored sends (`sends`). Any of them unread withholds the act; the
+#: rest of the view — positions, findings, ledger readbacks — is display
+#: coverage that may degrade the prompt but never starves proactive work.
+_REQUIRED_ACTION_SOURCES = ("reminders", "turns", "sends")
+
 # The proactive occasion's audience (DEC-162): a `kind="proactive"` reminder
 # row — written by Nora's own Cognition session, owed to nobody — coming due.
 # Its doctrine is read at this audience (`ProactiveHeader`'s may-speak rule
@@ -1760,17 +1767,37 @@ class FirePath:
         # «nothing pending». `failed_error` is the honest resolution for a
         # turn that never ran; the heartbeat resolves the row on it and the
         # crash-sweep does not mistake it for a delivery.
-        if (occasion.kind == "proactive" and ctx.shared is not None
-                and ctx.shared.status in ("unavailable", "partial")):
-            log.warning(
-                "proactive turn withheld: shared-state read unavailable in %s",
-                occasion.conversation_id,
+        # A proactive act's own REQUIRED checks are fail-closed: pending
+        # and FIRING arbitration (`reminders`), the delivery/turn facts
+        # (`turns`) and authored sends (`sends`) — any of those unread is
+        # «could not check» for THIS act, never «nothing pending». Optional
+        # display coverage (positions/findings/ledger readbacks) may degrade
+        # the prompt without starving every proactive act forever (design
+        # 20 §5, "unrelated old history or a display-only cap must not
+        # permanently prevent all proactive activity").
+        if occasion.kind == "proactive" and ctx.shared is not None:
+            failed = {
+                name for name, state in ctx.shared.sources
+                if state in ("unavailable", "partial")
+            }
+            missing_required = (
+                {name for name in _REQUIRED_ACTION_SOURCES
+                 if name not in {n for n, _ in ctx.shared.sources}}
+                | (failed & set(_REQUIRED_ACTION_SOURCES))
             )
-            self._metrics.inc(
-                "nora_errors_total", stage="shared_state",
-                platform=occasion.platform,
-            )
-            return "failed_error"
+            if ctx.shared.status == "unavailable" and not ctx.shared.sources:
+                missing_required = set(_REQUIRED_ACTION_SOURCES)
+            if missing_required:
+                log.warning(
+                    "proactive turn withheld: required shared-state checks "
+                    "unreadable (%s) in %s",
+                    sorted(missing_required), occasion.conversation_id,
+                )
+                self._metrics.inc(
+                    "nora_errors_total", stage="shared_state",
+                    platform=occasion.platform,
+                )
+                return "failed_error"
         # TRUE SHADOW: while the mirror is wired, a participation turn NEVER
         # live-sends — `send_permitted` is forced False so the Deliverer holds
         # the message at the last inch and `_turn` mirrors the draft instead.

@@ -17,9 +17,11 @@ import json
 
 import pytest
 
+from nora.domain.lineage import message
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.domain.standing import STANDING_BODY_CEILING_CHARS, Standing, WorkingSetItem
 from nora.domain.tag_trace import TagTrace
+from nora.domain.turn_record import DisclosureRequirement
 from nora.engagement.stages import debrief
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import span
@@ -348,9 +350,11 @@ def test_the_objective_gives_a_concrete_recap_vs_position_contrast():
     from tests.objectives import shipped_objectives
 
     body = shipped_objectives().objective_body("standing-debrief")
-    # The derivability test — the sentence-level rule that makes "recap"
-    # decidable rather than a vibe.
-    assert "could someone who read the transcript write this sentence too" in body
+    # The faithfulness test — the sentence-level rule that makes "recap"
+    # decidable rather than a vibe, and keeps the expressed decision's actual
+    # content rather than erasing it as "settled".
+    assert "does it organize a decision already expressed" in body
+    assert "the choice made" in body
     # The concrete contrast: both shapes present, labelled, and the recap
     # shape is explicitly wrong.
     assert "RECAP — wrong" in body
@@ -381,12 +385,12 @@ def test_the_derivability_test_and_closing_line_require_usefulness_for_a_finding
     body = shipped_objectives().objective_body("standing-debrief")
     clause = "found, have not yet given the room, and is still useful to someone here"
     assert (
-        "it is what YOU concluded, committed to, are still holding open, "
-        f"or {clause}."
-    ) in body, "the derivability test dropped the usefulness condition"
+        "does it organize a decision already expressed, work actually done "
+        "or attempted, pending work, a commitment, or an uncertainty"
+    ) in body, "the faithfulness test dropped the organize rule"
     assert (
         'The position answers "what I am holding open, committed to, '
-        f'concluding, or {clause}". Write the second.'
+        f'concluding, decided, or {clause}"'
     ) in body, "the closing line dropped the usefulness condition"
 
 
@@ -1527,3 +1531,202 @@ class _NoSynthesis:
 
     async def complete(self, *a, **kw):
         raise AssertionError("the wired route must never synthesize")
+
+
+async def test_an_ordinary_fold_preserves_the_prior_sections_and_exclusions():
+    """A fold that revises only the paragraph must not cancel `hold_open`,
+    `i_owe`, or the room's exclusions (design/notebook-memory-types/20 §5:
+    "a missing output section does not cancel an obligation"). The stored
+    exclusions are the prior's UNION the Record's own requirements — derived
+    by code, never asserted by the model."""
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="prior",
+        hold_open="who is bringing the cake?",
+        i_owe="confirm the venue",
+        exclude_persons=("person-x",),
+        fold_count=3, updated_at=1,
+    ))
+    trace = _trace()
+    store, _ = await _run(
+        store=store, client=_Client(_ok("a revised position")),
+        trace=dataclasses.replace(
+            trace,
+            requirements=(
+                DisclosureRequirement(
+                    "signal:g1", (message("signal:g1"),), ("person-y",)),
+            ),
+        ),
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row.body == "a revised position"
+    assert row.hold_open == "who is bringing the cake?"
+    assert row.i_owe == "confirm the venue"
+    assert set(row.exclude_persons) == {"person-x", "person-y"}
+
+
+async def test_a_fold_can_explicitly_revise_the_open_sections():
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="prior",
+        hold_open="old question", i_owe="old owe",
+        fold_count=3, updated_at=1,
+    ))
+    await _run(store=store, client=_Client(
+        debrief.Completion(json.dumps({
+            "standing": "a revised position",
+            "hold_open": "a new open question",
+            "i_owe": "a new owed thing",
+        }), "stop")))
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row.hold_open == "a new open question"
+    assert row.i_owe == "a new owed thing"
+
+
+async def test_a_fold_rewriting_identical_content_keeps_the_prior_revision():
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="same position",
+        fold_count=3, updated_at=1,
+    ))
+    await _run(store=store, client=_Client(_ok("same position")))
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row.fold_count == 3  # no churned revision on an identical fold
+
+
+# --- the unit-scoped Cognition fold ------------------------------------------
+
+
+class _Ledger:
+    """An in-memory `StandingLedger`: applies `LedgerOp`s the way the real
+    store's contract reads — open creates, revise needs the live `base`."""
+
+    def __init__(self, entries=()):
+        self.entries = list(entries)
+        self.applied = []
+
+    async def read(self, *, unit, platform, conversation_id):
+        return tuple(
+            e for e in self.entries
+            if e.unit == unit and (
+                e.scope == "unit" or
+                (e.platform == platform and e.conversation_id == conversation_id)
+            ))
+
+    async def span_rows(self, span, *, limit, before_ts=None):
+        return []
+
+    async def history(self, *, unit, kind, id):
+        return tuple(e for e in self.entries if e.id == id)
+
+    async def apply(self, op, *, target, shown, now_ms):
+        from nora.domain.standing_ledger import LedgerResult
+        prior = next((e for e in self.entries if e.id == op.id), None) if op.id else None
+        if (op.op in ("revise", "close", "touch")
+                and (prior is None or op.base != prior.revision)):
+            return LedgerResult(refusal=debrief.Refusal(
+                "stale_base", "the entry changed; read it again"))
+        from dataclasses import replace as _replace
+        rev = (prior.revision + 1) if prior else 1
+        entry = prior if prior is not None else None
+        if entry is None:
+            from nora.domain.standing_ledger import LedgerEntry
+            entry = LedgerEntry(
+                id=op.id or "d-new", kind=op.kind, unit=target.room.unit,
+                scope=op.scope or "room", platform=target.room.platform,
+                conversation_id=target.room.primary_id,
+                revision=rev, status=op.status or "open",
+                subject=op.subject or "", opened_at=now_ms,
+                last_revised_at=now_ms,
+            )
+            self.entries.append(entry)
+        else:
+            idx = self.entries.index(prior)
+            self.entries[idx] = _replace(
+                prior, revision=rev, subject=op.subject or prior.subject,
+                status=op.status or prior.status,
+                last_revised_at=now_ms,
+            )
+        self.applied.append(op)
+        return LedgerResult(entry=self.entries[-1] if entry is None else self.entries[idx])
+
+
+def _unit_target():
+    from nora.domain.lineage import RenderRoom, RoomFacts
+    return RenderRoom(
+        room=RoomFacts(
+            platform="signal", ids=frozenset({"room-a"}), unit="u1",
+            persons=frozenset(), primary_id="room-a",
+        ),
+    )
+
+
+async def test_the_cognition_fold_materializes_unit_scope_entries_under_cas():
+    """fold_unit writes each organized item ONCE at scope="unit" through the
+    validated ledger verb — revisions carry the read `base`, never a copy of
+    the whole session into every bound room."""
+    from nora.domain.standing_ledger import LedgerEntry
+    prior = LedgerEntry(
+        id="d1", kind="decision", unit="u1", scope="unit",
+        platform="signal", conversation_id="", revision=2, status="open",
+        subject="which venue", opened_at=1, last_revised_at=1,
+    )
+    ledger = _Ledger((prior,))
+    client = _Client(debrief.Completion(json.dumps({
+        "items": [
+            {"kind": "decision", "subject": "which venue",
+             "status": "closed", "outcome": "chose amber",
+             "id": "d1"},
+            {"kind": "decision", "subject": "whether friday works",
+             "status": "open"},
+        ],
+    }), "stop"))
+    trace = dataclasses.replace(_trace(), unit="u1")
+    await debrief.fold_unit(
+        trace=trace, unit="u1",
+        rooms=(("signal", "room-a"), ("signal", "room-b")),
+        ledger=ledger, target=_unit_target(),
+        client=client, objective=_Objective(), metrics=Metrics(),
+        display_name="Nora", fold_batch=200, timeout_seconds=5.0,
+        store_timeout_seconds=5.0, now_ms=2000,
+    )
+    ops = {op.subject: op for op in ledger.applied}
+    # The known entry is REVISED under its read revision (CAS), the new one
+    # OPENED — both at unit scope.
+    assert ops["which venue"].op == "revise"
+    assert ops["which venue"].base == 2
+    assert ops["which venue"].scope == "unit"
+    assert ops["whether friday works"].op == "open"
+    assert ops["whether friday works"].scope == "unit"
+    # Room Standing was never touched — there is none on a unit fold.
+    assert all(op.scope == "unit" for op in ledger.applied)
+
+
+async def test_a_malformed_unit_fold_preserves_the_prior_entries():
+    ledger = _Ledger()
+    client = _Client(debrief.Completion("not json", "stop"))
+    trace = dataclasses.replace(_trace(), unit="u1")
+    await debrief.fold_unit(
+        trace=trace, unit="u1",
+        rooms=(("signal", "room-a"),),
+        ledger=ledger, target=_unit_target(),
+        client=client, objective=_Objective(), metrics=Metrics(),
+        display_name="Nora", fold_batch=200, timeout_seconds=5.0,
+        store_timeout_seconds=5.0, now_ms=2000,
+    )
+    assert ledger.applied == []
+
+
+async def test_a_unit_fold_writes_nothing_when_the_session_expressed_nothing():
+    ledger = _Ledger()
+    client = _Client(debrief.Completion(json.dumps({"items": []}), "stop"))
+    trace = dataclasses.replace(_trace(), unit="u1")
+    await debrief.fold_unit(
+        trace=trace, unit="u1",
+        rooms=(("signal", "room-a"),),
+        ledger=ledger, target=_unit_target(),
+        client=client, objective=_Objective(), metrics=Metrics(),
+        display_name="Nora", fold_batch=200, timeout_seconds=5.0,
+        store_timeout_seconds=5.0, now_ms=2000,
+    )
+    assert ledger.applied == []

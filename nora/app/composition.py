@@ -3472,23 +3472,22 @@ async def build_dependencies(
     # it reuses — the same wiring absence, the same inert state.
     standing_fold = None
     if debrief_wiring is not None:
-        async def standing_fold(*, trace, platform, conversation_id):
+        async def standing_fold(*, trace, unit, rooms):
             from nora.engagement.stages import debrief as _debrief_stage
-            await _debrief_stage.run(
-                trace=trace, platform=platform, conversation_id=conversation_id,
-                source="cognition",
-                store=debrief_wiring.store, client=debrief_wiring.client,
+            if not rooms:
+                return
+            target = lineage.render_room(
+                platform=rooms[0][0], conversation_id=rooms[0][1])
+            await _debrief_stage.fold_unit(
+                trace=trace, unit=unit, rooms=rooms,
+                ledger=ledger_store, target=target,
+                client=debrief_wiring.client,
                 objective=debrief_wiring.objective,
-                record_store=debrief_wiring.record_store,
-                max_chars=debrief_wiring.max_chars,
+                metrics=metrics, display_name=cfg.doctrine.display_name,
                 fold_batch=debrief_wiring.fold_batch,
                 timeout_seconds=debrief_wiring.timeout_seconds,
                 store_timeout_seconds=debrief_wiring.store_timeout_seconds,
                 media_join=debrief_wiring.media_join,
-                content_checks=debrief_wiring.content_checks,
-                working_set_max_items=debrief_wiring.working_set_max_items,
-                working_set_max_chars=debrief_wiring.working_set_max_chars,
-                metrics=metrics, display_name=cfg.doctrine.display_name,
                 now_ms=int(clock().timestamp() * 1000),
             )
 

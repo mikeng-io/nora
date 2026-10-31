@@ -117,11 +117,14 @@ from opentelemetry.util.types import AttributeValue
 
 from nora.agent.dream_screen import screen
 from nora.domain.culture import CultureRevision
+from nora.domain.lineage import RenderRoom
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
+from nora.domain.note_body import Shown
 from nora.domain.ports import RecordStore, StandingStore
 from nora.domain.profile import ProfileView
 from nora.domain.standing import (
+    DEFAULT_STANDING_MAX_CHARS,
     DEFAULT_WORKING_SET_MAX_CHARS,
     DEFAULT_WORKING_SET_MAX_ITEMS,
     STANDING_STORE_CALLS_PER_FOLD,
@@ -130,6 +133,7 @@ from nora.domain.standing import (
     WorkingSetItem,
     working_set_to_json,
 )
+from nora.domain.standing_ledger import LedgerOp, StandingLedger
 from nora.domain.tag_trace import TagTrace
 from nora.engagement.debrief_render import (
     consolidate_prompt,
@@ -458,6 +462,153 @@ class Wiring:
     working_set_max_chars: int = DEFAULT_WORKING_SET_MAX_CHARS
 
 
+
+
+async def fold_unit(
+    *,
+    trace: TagTrace,
+    unit: str,
+    rooms: tuple[tuple[str, str], ...],
+    ledger: StandingLedger,
+    target: RenderRoom,
+    client: ModelClient,
+    objective: ObjectiveSource,
+    metrics: Metrics,
+    display_name: str,
+    fold_batch: int,
+    timeout_seconds: float,
+    store_timeout_seconds: float,
+    now_ms: int,
+    media_join: MediaJoin | None = None,
+    tz: tzinfo | None = None,
+) -> None:
+    """The ONE unit-scoped materialization after a completed Cognition loop
+    (design/notebook-memory-types/20-standing.md §3-4): the same tools-less
+    updater contract as `run`, writing into the scoped Standing Ledger at
+    `scope="unit"` rather than into any room's Standing row.
+
+    The whole retained session Record goes in once — decisions, commitments
+    and open work the session expressed or produced, each as a ledger entry
+    revised under its own `base` (expected revision) or opened fresh.
+    A failed read or a malformed answer preserves the prior entries, exactly
+    as a failed room fold preserves the prior position.
+
+    Never raises: this runs after the session's outcome is already recorded.
+    """
+    started = time.perf_counter()
+    outcome = "error"
+    try:
+        try:
+            seen: dict[str, Any] = {}
+            for platform, conversation_id in rooms:
+                for entry in await asyncio.wait_for(
+                    ledger.read(
+                        unit=unit, platform=platform,
+                        conversation_id=conversation_id,
+                    ),
+                    timeout=store_timeout_seconds,
+                ):
+                    if entry.scope == "unit":
+                        seen[entry.id] = entry
+            prior = tuple(seen.values())
+        except Exception:
+            # «I could not check» — never a fold against a guessed-empty prior.
+            log.exception(
+                "fold_unit: could not read the prior scoped entries "
+                "(tag=%s); not folding", trace.tag_id,
+            )
+            outcome = "unavailable"
+            return
+
+        instructions = objective.objective_body(OBJECTIVE)
+        rendered = render_debrief_input(
+            trace=trace, prior=None,
+            display_name=display_name, metrics=metrics, since_rows=(), tz=tz,
+        )
+        if prior:
+            rendered += "\nPrior unit decisions and open work:\n" + "\n".join(
+                f"- {e.id} · {e.kind} · {e.status} · revision {e.revision} · "
+                f"{e.subject}"
+                for e in prior
+            )
+        reply = await asyncio.wait_for(
+            _complete(
+                client, call="fold_unit",
+                tag_id=trace.tag_id, conversation_id="",
+                prompt=fold_prompt(
+                    instructions=instructions, rendered=rendered,
+                    max_chars=DEFAULT_STANDING_MAX_CHARS,
+                    working_set_max_items=0, working_set_max_chars=0,
+                ),
+            ),
+            timeout=timeout_seconds,
+        )
+        parsed = _parsed(reply.content)
+        items = parsed.get("items") if parsed is not None else None
+        if not isinstance(items, list):
+            outcome = "malformed" if not _truncated(reply, trace.tag_id,
+                                                  what="the unit fold") else "unavailable"
+            return
+
+        # Cited Record material rides `shown`: the session's own saved
+        # turn handle makes `_evidence` derive the entry's lineage and
+        # exclusions from the Record's own requirements — code-derived,
+        # never asserted by the fold (design 20 §4).
+        shown = Shown(
+            turn_handles=frozenset({trace.handle}) if trace.handle else frozenset(),
+        )
+        by_id = {e.id: e for e in prior}
+        by_subject = {e.subject: e for e in prior}
+        wrote = 0
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            kind = item.get("kind")
+            subject = item.get("subject")
+            if (kind not in ("decision", "commitment", "thread")
+                    or not isinstance(subject, str) or not subject.strip()):
+                continue
+            match = by_id.get(item.get("id")) or by_subject.get(subject.strip())
+            sections = {
+                k: v for k, v in (item.get("sections") or {}).items()
+                if isinstance(v, str)
+            }
+            op = LedgerOp(
+                "revise" if match else "open", kind=kind,
+                id=match.id if match else None,
+                base=match.revision if match else None,
+                scope="unit",
+                subject=subject.strip(),
+                sections=sections,
+                status=item.get("status")
+                if isinstance(item.get("status"), str) else None,
+                outcome=item.get("outcome")
+                if isinstance(item.get("outcome"), str) else None,
+            )
+            got = await asyncio.wait_for(
+                ledger.apply(op, target=target, shown=shown, now_ms=now_ms),
+                timeout=store_timeout_seconds,
+            )
+            if got.refusal is None:
+                wrote += 1
+        outcome = "written" if wrote else "no_change"
+    except TimeoutError:
+        outcome = "timeout"
+    except asyncio.CancelledError:
+        outcome = "cancelled"
+    except BaseException:
+        log.exception("fold_unit failed (tag=%s); keeping prior entries",
+                      trace.tag_id)
+        outcome = "error"
+    finally:
+        metrics.inc("nora_debrief_total", outcome=outcome, source="cognition")
+        metrics.observe(
+            "nora_debrief_seconds", time.perf_counter() - started)
+
+
+# `DEFAULT_BODY_CHARS` is the same per-fold body ceiling `run` enforces: the
+# unit fold keeps it rather than growing a second budget.
+
 async def run(
     *,
     trace: TagTrace,
@@ -594,9 +745,10 @@ async def run(
         # included: the budget the slot can afford is a total, and a retry
         # bounded on its own would add up to twice it on exactly the turn that
         # was already slow.
-        async def _fold() -> tuple[str | None, list[Any] | None, str]:
+        async def _fold() -> tuple[str | None, list[Any] | None, dict[str, Any], str]:
             """The standing call, and its consolidate retry when the first
-            answer does not fit, as `(body, working_set_raw, refusal_label)`."""
+            answer does not fit, as `(body, working_set_raw, sections,
+            refusal_label)`."""
             reply = await _complete(
                 client, call="fold",
                 tag_id=trace.tag_id, conversation_id=trace.conversation_id,
@@ -628,7 +780,7 @@ async def run(
             )
             return _check(retry, trace.tag_id)
 
-        body, working_set_raw, refusal = await asyncio.wait_for(
+        body, working_set_raw, sections, refusal = await asyncio.wait_for(
             _fold(), timeout=timeout_seconds)
         if body is None:
             outcome = refusal
@@ -715,6 +867,22 @@ async def run(
                     store=store, prior=prior,
                     platform=platform, conversation_id=cid,
                     where_it_stands=body,
+                    hold_open=sections.get("hold_open") or (
+                        prior.hold_open if prior is not None else None),
+                    i_owe=sections.get("i_owe") or (
+                        prior.i_owe if prior is not None else None),
+                    # Exclusions are code-derived, never model-asserted:
+                    # the prior's gate, plus every exclusion the retained
+                    # Record itself carries (design 20 §4, updater source
+                    # requirements derived by code), plus any the output
+                    # names — unioned, never narrowed.
+                    exclude_persons=tuple(dict.fromkeys(
+                        [*(prior.exclude_persons if prior is not None else ()),
+                         *(sections.get("exclude_persons") or ()),
+                         *(p for req in trace.requirements
+                           for p in req.exclude_persons)],
+                    )),
+                    lineage=prior.lineage if prior is not None else None,
                     last_folded_row_id=(
                         batch[-1].id if batch else (
                             prior.last_folded_row_id if prior is not None else None)
@@ -856,11 +1024,23 @@ def _check(
     rejected and an unvalidated working set is written anyway.
     """
     if _truncated(completion, tag_id, what="the fold"):
-        return None, None, "unavailable"
+        return None, None, {}, "unavailable"
     parsed = _parsed(completion.content)
     if parsed is None:
-        return None, None, "malformed"
+        return None, None, {}, "malformed"
     body = _body(parsed)
     if body is None:
-        return None, None, "malformed"
-    return body, _working_set_raw(parsed), ""
+        return None, None, {}, "malformed"
+    sections: dict[str, Any] = {}
+    for key in ("hold_open", "i_owe"):
+        value = parsed.get(key)
+        if isinstance(value, str) and value.strip():
+            sections[key] = value.strip()
+    excludes = parsed.get("exclude_persons")
+    if isinstance(excludes, list):
+        sections["exclude_persons"] = tuple(
+            str(e) for e in excludes if isinstance(e, str) and e.strip())
+    items = parsed.get("items")
+    if isinstance(items, list):
+        sections["items"] = items
+    return body, _working_set_raw(parsed), sections, ""

@@ -181,11 +181,3 @@ def test_a_working_set_at_the_item_ceiling_is_accepted():
         platform="signal", conversation_id="g1", body="x",
         fold_count=1, updated_at=1, working_set=at,
     ).working_set) == WORKING_SET_CEILING_ITEMS
-
-
-
-
-
-
-
-

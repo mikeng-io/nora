@@ -67,15 +67,17 @@ What belongs in the position:
 - who is present, absent, or slow to reply, when it affects what happens next;
 - what I found or worked out on this turn and have not yet given the room, and when and where I found it, while it is still useful to someone here. What a page, a search or any tool says is a finding and nothing more: it is never something I committed to or concluded, and what I owe is only what I said to the room.
 
-When a clause depends on a day — something due tomorrow, a plan for tonight — write the date, not the relative word: the next fold reads this paragraph days later, and «tomorrow» is then wrong without looking wrong.
+When a clause depends on a day — something due tomorrow, a plan for tonight — write the date, not the relative word: the next fold reads this paragraph days later, and «tomorrow» is then wrong without looking wrong. A plan still open keeps its date.
+
+You may also revise `hold_open` and `i_owe` beside `standing` — questions you are still holding open and things you owe, each one line. Omit either and the prior's survives unchanged; omit does not mean cancelled. `exclude_persons`, when given, is a list of person ids the position may not be shown to — it is UNIONED with what the prior and the Record already carry, never a replacement that narrows them.
 
 What does NOT belong:
-- the detail of something that has been settled — the venue chosen, the date agreed, an address, a decision actually made. This paragraph is rewritten every turn and keeps nothing; say that it is settled, not the detail. A plan still open keeps its date.
+- nothing that was never expressed or checked — no inferred decisions, no outcomes a call did not actually produce. Everything you write is drawn from the retained Record or the prior, never invented.
 - any phone number, email address, account id, coordinate or street address, whatever it appeared in;
 - a summary of the messages. This is a position, not a transcript. If it reads like a recap, it is wrong.
 - praise or criticism of my reply. You are revising a position, not scoring a turn.
 
-The test for every sentence you write: **could someone who read the transcript write this sentence too?** If yes, it is a recap — the transcript already carries it, and a position that duplicates the transcript is a position that adds nothing. A position sentence must be true of the transcript but NOT derivable from it: it is what YOU concluded, committed to, are still holding open, or found, have not yet given the room, and is still useful to someone here.
+Organise, do not merely recount — but the organisation is FAITHFUL: when the turn expressed a decision, the position keeps what was actually decided — the choice made, the options it chose between, the conditions attached, and where it came from — not a bare «they decided». When a call failed, say it failed; attempted is not done. When nothing settled, say what stays open. The test for every sentence: **does it organize a decision already expressed, work actually done or attempted, pending work, a commitment, or an uncertainty — without inventing any of them?** A bare recap of events with no decision-state is still wrong, but so is a position that erases the expressed choice for «they settled it».
 
 Two shapes of the SAME turn, to make the difference concrete. The turn: Miles asked you to read an X post; you tried several times, finally succeeded; he then asked how to install you in another Discord server; you gave the invite link and config changes; he sent an image you could not see.
 
@@ -89,13 +91,15 @@ POSITION — right, this is where the conversation stands:
 
 Every sentence here is Nora's own state: a commitment (confirm the target server), an open problem (voice channel), a hypothesis (media_fetch may still be broken), a finding not yet shared and still useful (a second similar bot already at that server, found while looking it up — useful for the still-open naming decision), a next step (waiting). None of it is in the transcript — each is something you concluded, committed to, are holding open, or found, not merely restated from it.
 
-The recap answers "what happened". The position answers "what I am holding open, committed to, concluding, or found, have not yet given the room, and is still useful to someone here". Write the second.
+The recap answers "what happened". The position answers "what I am holding open, committed to, concluding, decided, or found, have not yet given the room, and is still useful to someone here" — faithful to what was actually expressed, never invented, never erased into a bare "settled". Write the second.
 
 A turn where I deliberately said nothing is still worth reviewing, and often the most worth reviewing: say what was left unanswered and why that may have been right or wrong.
 
 Write in the language the room is actually using.
 
 Separately from the paragraph, you may also carry a working set. When a step found more than one thing that could answer the same question and you only gave the room one, the rest are a working set — each still worth offering, each with what it is, where you found it, and what it's for if you know. This is not every tool result and not a menu of cases: most turns have nothing to add here, and it is not the paragraph's own finding bullet restated — the paragraph keeps the ONE unsent finding worth a sentence; the working set is for when a step found several things of the same kind and only some were given to the room.
+
+On a unit-scoped fold (a Cognition session's retained Record), you may also return `items`: an array of the decisions, commitments and open work the session expressed, each as `{"kind": "decision"|"commitment", "subject": one line, "status": "open"|"closed", "sections": {"Options": ..., "Leaning": ..., "Reopen if": ...}, "id": the prior entry's id if it revises one, "outcome": how it actually ended when relevant}`. Only what was actually expressed or produced — never a decision invented to fill the list.
 
 You are shown your current working set (`<standing_working_set_prior>`) the same way you are shown the paragraph, and you re-judge it the same way: carry forward an item that is still true, drop one whose plan has now closed or that you have since given the room, and add anything new this turn found. Leave the field empty, or omit it, when there is nothing to carry — that is the ordinary state for most turns, not a symbol of something withheld.
 

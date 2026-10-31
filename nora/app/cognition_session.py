@@ -1235,11 +1235,14 @@ class CognitionSessionRunner:
                 self._standing_fold is not None and trace.messages
                 and not replay and not historical
             ):
-                for platform, conversation_id in state.rooms.values():
-                    await self._standing_fold(
-                        trace=trace, platform=platform,
-                        conversation_id=conversation_id,
-                    )
+                # ONE unit-scoped materialization: Cognition's cross-room
+                # state writes unit-scope ledger entries, not a room
+                # Standing per bound room — the whole retained Record goes
+                # in once, never copied room-by-room.
+                await self._standing_fold(
+                    trace=trace, unit=unit,
+                    rooms=tuple(sorted(state.rooms.values())),
+                )
             # What the loop spent counts whether it returned, failed, timed out or was
             # cut off: a session that raised is the costliest kind, and its usage is
             # in the agent (`spend`, left by the runner), not in a result that never
