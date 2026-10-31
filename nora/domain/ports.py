@@ -223,12 +223,18 @@ class SendResult:
 
     `timestamp` is the PLATFORM's own sent-timestamp, and it is what a later
     reply's quote points at. `None` = the platform supplied none.
+
+    `uncertain` marks a send whose upstream effect is UNKNOWN — the request
+    may have landed. Callers must never treat it as an ordinary failure and
+    retry or fall back to a second send: the durable action row holds the
+    `uncertain` truth; this flag keeps the in-process view equally honest.
     """
 
     ok: bool
     retryable: bool = False
     retry_after: float | None = None
     timestamp: int | None = None
+    uncertain: bool = False
 
 
 @dataclass(frozen=True)
@@ -748,6 +754,7 @@ class RecordStore(Protocol):
         is_nora: bool = False,
         delivery_status: DeliveryStatus = DeliveryStatus.PENDING,
         person_id: str | None = None,
+        tx_hook: Any = None,
     ) -> int: ...
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]: ...
@@ -930,6 +937,14 @@ class StimulusStore(Protocol):
         co-location start on every run it is still starting (or a rebuild
         recompute it), and the social stream announce a read once however
         often it finds it, without counting any of them twice."""
+        ...
+
+    async def existing_id(self, *, unit: str, kind: str, ref: str) -> int | None:
+        """The id of a stimulus already on record for `(unit, kind, ref)`, or
+        None. `kind='message'` stimuli carry no unique index, so a durable
+        caller whose append attempt may already have committed uses this to
+        prove whether the effect exists instead of blind-retrying a second
+        row in."""
         ...
 
     async def view(

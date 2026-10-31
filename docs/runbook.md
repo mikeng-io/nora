@@ -651,6 +651,48 @@ uv run python scripts/signoz_provision.py --api http://localhost:8080
 pipeline cannot say»): nothing says so if the SigNoz backend itself stops —
 `IngestionSilent` is evaluated BY the backend and cannot report its own death.
 
+## 4e. The platform bridges and the admission projection
+
+`bridge-projection` is the independent publisher every bridge reads before
+capturing a message body or attachment. It is one container (`entry.py --all`)
+writing `/bridge-projection/{platform}.json` into the named volume all four
+bridges mount read-only. It has no `depends_on` on `nora` — it keeps
+publishing while the app is stopped, by design.
+
+App-only releases reuse the bridge and publisher image digests. Their build
+fingerprints exclude generated application version stamps in `nora/__init__.py`,
+`pyproject.toml` and the editable Nora package in `uv.lock`; code, dependencies
+and build recipes still invalidate them. Reused images retain their original
+build version and provenance.
+
+**Two health surfaces, deliberately split.** `/live` (what the Compose
+healthcheck polls) only says the process is up; `/health` says the
+published files reflect current authorization truth — it reports 503 while
+any platform is stale (unloaded config/policy, refused reload, unreachable
+`/v1/self`, unavailable guild directory, failed write, env/config leg
+mismatch). A stale `/health` with a live `/live` is information, not a
+restart candidate — the last-good or deny file is what bridges act on.
+`/metrics` on the same port exposes the shared registry.
+
+```bash
+docker compose exec nora curl -fsS http://bridge-projection:8091/health | jq .
+docker compose exec nora cat /bridge-projection/signal.json | jq '{enabled, revision, rooms}'
+```
+
+**Reading the artifacts.** `enabled:false` with populated scopes is a
+disabled platform's honest deny — consumers gate on `enabled` first.
+`rooms` absent a room id means denied: no capture. A `revision` that stops
+moving while `/health` says ok means policy stopped changing, not that the
+publisher died — `generated_ms` is the write-time check.
+
+| Failure | Symptom | Action |
+|---|---|---|
+| Publisher down | `/live` unreachable; bridges act on last-good files | restart `bridge-projection`; bridges keep enforcing the last published scope |
+| Stale `/health` | `stale: true` + per-file detail in `/health` | read `files`/`self_stale`/`directory.stale`/`key_mismatch` in the JSON — each names its cause |
+| Leg mismatch | `key_mismatch` + `enabled:false` for one platform | align `<PLATFORM>_BRIDGE_ACCOUNT_KEY` with `platforms.<p>.account_key` |
+| Redis ACL refusal | bridge or app `NOPERM` on `nq:*` | the role passwords in `.env`/`secret.toml` must match the redis container's generated ACL — rotate together |
+| Whole-fleet deny at first boot | all files `enabled:false` after fixing sources | none needed — the next tick republishes; a restart is never required |
+
 ## 5. "Which doctrine produced this reply?"
 
 Every reply's log line and trace carry `doctrine_sha256` — the sha256 of the doctrine version

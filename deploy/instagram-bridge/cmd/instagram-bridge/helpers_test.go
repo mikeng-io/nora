@@ -104,7 +104,7 @@ func newTestBridgeWithComments(t *testing.T, f *fakeIG, commentPolicy app.Commen
 		opt(&o)
 	}
 	hub := stream.NewHub()
-	gw, h := wire(o, hub, time.Now(), commentPolicy)
+	gw, h, _ := wire(o, hub, time.Now(), commentPolicy, nil)
 	return &testBridge{gw: gw, hub: hub, h: h}
 }
 

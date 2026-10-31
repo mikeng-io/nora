@@ -22,6 +22,7 @@ from nora.domain.ports import MusicToolOutcome
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.discord import music_messages as m
 from nora.platform.discord.adapter import DiscordAdapter
+from nora.platform.discord.channels import is_voice_channel
 from nora.platform.discord.music_commands import _connect_factory
 from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.discord.music_notify import (
@@ -106,7 +107,7 @@ class DiscordMusicToolBridge:
             if member is None or member.voice is None:
                 continue
             channel = member.voice.channel
-            if isinstance(channel, discord.VoiceChannel):
+            if is_voice_channel(channel):
                 return channel
         return None
 

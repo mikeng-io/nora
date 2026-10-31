@@ -102,6 +102,14 @@ class SignalPlatformConfig(BaseModel):
 
     base_url: str
     account: str
+    # "direct" (default): base_url is signal-cli's JSON-RPC/HTTP daemon.
+    # "bridge": base_url is the standalone signal-bridge's action API —
+    # inbound then arrives over Redis Streams, not SSE (design/platform-bridges).
+    mode: str = "direct"
+    # The stream's account leg: an explicit opaque key, NOT derived from the
+    # registered number — it must equal signal-bridge's NORA_BRIDGE_ACCOUNT_KEY
+    # or the reader and producer name different streams.
+    account_key: str = "default"
     # No `nora_sender_id` (DEC-102): her own id comes from the PLATFORM
     # (`PlatformAdapter.resolve_identity().primary`), never from operator-typed config,
     # which would be wrong for every platform but one. `is_nora` is a column of its own and
@@ -123,6 +131,13 @@ class DiscordPlatformConfig(BaseModel):
 
     enabled: bool = False
     token_env: str = "DISCORD_BOT_TOKEN"  # noqa: S105 — names an env var, not a secret
+    # "direct" (default): the app holds the Gateway connection itself.
+    # "bridge": a standalone discord-bridge holds Gateway+voice+music; the app
+    # consumes Redis and calls its action API at `base_url`. `account_key`
+    # names the stream's account leg (one bot per bridge).
+    mode: str = "direct"
+    base_url: str = "http://discord-bridge:18093"
+    account_key: str = "default"
 
 
 class WhatsAppPlatformConfig(BaseModel):
@@ -141,6 +156,11 @@ class WhatsAppPlatformConfig(BaseModel):
 
     enabled: bool = False
     base_url: str = "http://whatsapp-bridge:18081"
+    # "direct" (default): inbound over the bridge's SSE and sends over its
+    # REST API. "bridge": inbound over Redis Streams (the durable handoff),
+    # sends via the shared action API.
+    mode: str = "direct"
+    account_key: str = "default"
 
 
 class InstagramPlatformConfig(BaseModel):
@@ -168,6 +188,22 @@ class InstagramPlatformConfig(BaseModel):
 
     enabled: bool = False
     base_url: str = "http://instagram-bridge:18082"
+    mode: str = "direct"
+    account_key: str = "default"
+
+
+class BridgesConfig(BaseModel):
+    """The durable inbound handoff's shared settings (design/platform-bridges).
+    `redis_url_env` names the env var carrying the Redis URL — the URL holds a
+    password, so it is a secret ref like every `*_env` here, never a value in
+    config.toml. Any platform with `mode = "bridge"` requires it.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    redis_url_env: str = "NORA_REDIS_URL"
+    token_env: str = "NORA_BRIDGE_TOKEN"   # noqa: S105 — bearer for every /v1 call
+    lease_seconds: int = 300
 
 
 class PlatformsConfig(BaseModel):
@@ -4071,6 +4107,9 @@ class Config(BaseModel):
     agent: AgentConfig = AgentConfig()
     content_checks: ContentChecksConfig = ContentChecksConfig()
     platforms: PlatformsConfig
+    # `[bridges]`: the durable inbound handoff (design/platform-bridges).
+    # Platforms with `mode = "bridge"` read `redis_url_env`.
+    bridges: BridgesConfig = Field(default_factory=BridgesConfig)
     llm: LLMConfig
     honcho: HonchoConfig
     memory: MemoryConfig = MemoryConfig()

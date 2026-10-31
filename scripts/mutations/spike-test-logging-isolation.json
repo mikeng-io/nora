@@ -1,0 +1,9 @@
+[
+  {
+    "name": "spike tests restore the caller logging threshold",
+    "file": "tests/unit/test_memory_graph_spike.py",
+    "old": "        logging.disable(previous)",
+    "new": "        pass",
+    "target": "tests/unit/test_memory_graph_spike.py tests/unit/test_secret_config.py::test_named_media_missing_key_degrades_without_losing_other_clients tests/unit/test_sentry_otel_correlation.py::test_error_event_carries_the_live_spans_ids"
+  }
+]

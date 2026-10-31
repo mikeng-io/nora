@@ -19,6 +19,8 @@ from __future__ import annotations
 import contextlib
 import logging
 import math
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 import discord
 from discord import app_commands
@@ -30,6 +32,7 @@ from nora.infra.voice.http_controller import (
 )
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.discord import music_messages as m
+from nora.platform.discord.channels import is_voice_channel
 from nora.platform.discord.discord_commands import DiscordCommands
 from nora.platform.discord.music_manager import Connect, MusicPlayerManager
 from nora.platform.discord.music_notify import (
@@ -470,6 +473,8 @@ async def register(
     voice_guild_ids: frozenset[str] = frozenset(),
     resolve_music_channel: ResolveMusicChannel = no_music_channel,
     client_getter: ClientGetter | None = None,
+    admission: Callable[
+        [discord.Interaction], Coroutine[Any, Any, bool]] | None = None,
 ) -> None:
     """Built and synced fresh inside `DiscordAdapter.listen()`, same lifecycle
     as `client` itself — a fresh `discord.Client` per connection attempt
@@ -481,8 +486,19 @@ async def register(
     Registers `/music` AND the `/discord` voice-control group. There is NO
     `on_voice_state_update` empty-channel handler here: the
     audio-controller observes the channel itself and POSTs `channel-emptied`
-    to `/app/v1/voice/event` — nora holds no voice client to watch."""
+    to `/app/v1/voice/event` — nora holds no voice client to watch.
+
+    `admission` is the ONE `CommandTree.interaction_check` — the tree's own
+    seam, so it gates every command on it (`/music play` through
+    `/music volume` and `/discord join|exit`) rather than a parallel check
+    per handler. `None` keeps discord.py's default (admit-all), which is
+    what the app's direct mode registers with; the bridge passes its
+    projection-derived admission."""
     tree = app_commands.CommandTree(client)
+    if admission is not None:
+        # The tree's documented global-check seam — an instance assignment,
+        # so typeshed reads it as writing over a method.
+        tree.interaction_check = admission  # type: ignore[method-assign]
     tree.add_command(MusicCommands(
         manager, hub=hub, voice_guild_ids=voice_guild_ids,
         resolve_music_channel=resolve_music_channel,
@@ -523,7 +539,7 @@ async def resume_persisted_sessions(
                 channel = await client.fetch_channel(int(session.voice_channel_id))
             except discord.HTTPException:
                 channel = None
-        if not isinstance(channel, discord.VoiceChannel) or not any(
+        if not is_voice_channel(channel) or not any(
             not member.bot for member in channel.members
         ):
             log.info(

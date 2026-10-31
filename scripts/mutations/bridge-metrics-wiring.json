@@ -1,0 +1,44 @@
+[
+  {
+    "name": "Signal exposes its capture registry over authenticated HTTP",
+    "file": "deploy/signal-bridge/wrapper.py",
+    "old": "        app.router.add_get(\"/metrics\", self.get_metrics)\n",
+    "new": "",
+    "target": "tests/integration/test_bridge_metrics.py"
+  },
+  {
+    "name": "Discord exposes its capture registry over authenticated HTTP",
+    "file": "nora/platform/discord/bridge_app.py",
+    "old": "        app.router.add_get(\"/metrics\", self.get_metrics)\n",
+    "new": "",
+    "target": "tests/integration/test_bridge_metrics.py"
+  },
+  {
+    "name": "Discord entry passes the actual producer registry",
+    "file": "deploy/discord-bridge/entry.py",
+    "old": "        api_token=TOKEN, account_key=ACCOUNT_KEY, metrics=metrics,",
+    "new": "        api_token=TOKEN, account_key=ACCOUNT_KEY,",
+    "target": "tests/integration/test_bridge_entry_smoke.py::test_discord_entry_serves_v1_before_connecting"
+  },
+  {
+    "name": "collector scrape configuration uses the effective API bearer",
+    "file": "deploy/signoz/deployment/ingester/ingester.yaml",
+    "old": "      - job_name: signal-bridge\n        scrape_interval: 30s\n        metrics_path: /metrics\n        authorization:\n          type: Bearer\n          credentials: ${env:NORA_BRIDGE_API_TOKEN}\n        static_configs:\n        - targets:\n          - signal-bridge:18090\n",
+    "new": "      - job_name: signal-bridge\n        scrape_interval: 30s\n        metrics_path: /metrics\n        authorization:\n          type: Bearer\n          credentials: ${env:NORA_BRIDGE_TOKEN}\n        static_configs:\n        - targets:\n          - signal-bridge:18090\n",
+    "target": "tests/unit/test_signoz_config.py::test_bridge_producer_scrapes_use_the_effective_api_bearer"
+  },
+  {
+    "name": "API override wins over legacy bearer in actual HTTP scrape",
+    "file": "deploy/signoz/deployment/compose.yaml",
+    "old": "    - NORA_BRIDGE_API_TOKEN=${NORA_BRIDGE_API_TOKEN:-${NORA_BRIDGE_TOKEN:-}}",
+    "new": "    - NORA_BRIDGE_API_TOKEN=${NORA_BRIDGE_TOKEN:-}",
+    "target": "tests/integration/test_bridge_metrics.py"
+  },
+  {
+    "name": "publisher metrics target is reachable on the collector network",
+    "file": "deploy/signoz/docker-compose.signoz.yaml",
+    "old": "  bridge-projection:\n    networks:\n    - signoz\n    logging:",
+    "new": "  bridge-projection:\n    logging:",
+    "target": "tests/unit/test_signoz_config.py::test_bridge_producer_scrapes_use_the_effective_api_bearer"
+  }
+]

@@ -606,6 +606,15 @@ class _FakeStore:
         row = self.rows.setdefault((platform, conversation_id), [at_ms, None])
         row[1] = at_ms
 
+    async def unfolded_candidates(self) -> list[dict]:
+        # No bridge_work table backs this fake: a unit store never noted a
+        # durable candidate, so hydration always finds the set empty.
+        return []
+
+    async def noted_rooms(self) -> list[tuple[str, str]]:
+        # Same reason as above: no ledger membership ever existed here.
+        return []
+
 
 def _stored(speak: _Speak, clock: _Clock, store) -> ParticipationTrigger:
     """A trigger over a store — the production shape. `_trigger` (no store) is

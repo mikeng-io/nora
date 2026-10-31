@@ -260,6 +260,10 @@ class DeliveryStatus(Enum):
     PENDING = "pending"
     SENT = "sent"
     FAILED = "failed"
+    # The send may have landed and its answer is lost — terminal (a pending
+    # row would keep the owner valid and invite a blind resend), never
+    # folded into `failed`: an unknown outcome is not a proven non-send.
+    UNCERTAIN = "uncertain"
 
 
 @dataclass(frozen=True)

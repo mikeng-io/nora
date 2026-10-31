@@ -1723,6 +1723,7 @@ class FirePath:
     async def speak(
         self, occasion: Event, *, send_permitted: bool = True,
         gate_verdict: str | None = None, gate_score: float | None = None,
+        adapter: PlatformAdapter | None = None,
     ) -> str:
         """One turn, and the outcome its caller records.
 
@@ -1855,6 +1856,7 @@ class FirePath:
             ):
                 outcome = await self._turn(
                     occasion, ctx, send_permitted=send_permitted,
+                    adapter=adapter,
                 )
                 annotate(**{"nora.outcome": outcome})
                 return outcome
@@ -1882,6 +1884,7 @@ class FirePath:
 
     async def _turn(
         self, occasion: Event, ctx: TagContext, *, send_permitted: bool = True,
+        adapter: PlatformAdapter | None = None,
     ) -> str:
         """One turn's stages, its last-resort guard, and DEC-42's observable.
 
@@ -1952,7 +1955,14 @@ class FirePath:
                 )
                 return FAILED_POLICY
 
-            identity = await self._adapter_for(occasion.platform).resolve_identity()
+            # A durable caller hands its owner-bound adapter in: the occasion's
+            # sends then fence under that work's identity, exactly like
+            # `run_durable`'s `bound_adapter`. Absent, the registry's is used.
+            bound_adapter = (
+                adapter if adapter is not None
+                else self._adapter_for(occasion.platform)
+            )
+            identity = await bound_adapter.resolve_identity()
             self_ids = frozenset(getattr(identity, "aliases", ()))
             # Without this every @-mention in the transcript — including mentions
             # of Nora herself — reaches the model as U+FFFC. Same placement as the
@@ -1974,7 +1984,7 @@ class FirePath:
             )
 
             handle = deliver.build(
-                store=self._records, adapter=self._adapter_for(occasion.platform),
+                store=self._records, adapter=bound_adapter,
                 target=ctx.message.target(),
                 doctrine=doctrine, canary=self._canary, tag_id=ctx.tag_id,
                 # Nora's own id ON THIS PLATFORM, from the platform itself
