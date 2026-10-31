@@ -335,6 +335,22 @@ def pg_module_url(pg_admin: _PgAdmin, pg_template: str) -> Iterator[str]:
 
 
 @pytest.fixture
+def record_pg_url(pg_admin: _PgAdmin, pg_module_url: str) -> str:
+    """Opt-in record-only database, with committed rows reset between tests.
+
+    Consumers dispose their engines. No environment export, schema changes,
+    extraction or graph-projection context: those tests keep fresh pg_url.
+    """
+    with psycopg.connect(pg_admin.dsn(pg_module_url.rsplit('/', 1)[1])) as conn:
+        conn.execute("SET LOCAL nora.row_history = 'off'")
+        conn.execute(
+            "TRUNCATE messages, memory_node, memory_edge, memory_projection_queue, "
+            "row_history RESTART IDENTITY CASCADE"
+        )
+    return pg_module_url
+
+
+@pytest.fixture
 def pg_url(pg_admin: _PgAdmin, pg_template: str, monkeypatch) -> Iterator[str]:
     """Fresh migrated database per test, exported for independent composition engines."""
     with _pg_database(pg_admin, pg_template) as url:
