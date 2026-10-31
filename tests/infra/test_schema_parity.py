@@ -317,10 +317,9 @@ def _dbname_of(pg_url: str) -> str:
 
 # ── the gate ─────────────────────────────────────────────────────────────────
 
-@pytest.fixture
-def migrated(pg_url) -> str:
-    run_migrations(pg_url)
-    return pg_url
+@pytest.fixture(scope="module")
+def migrated(pg_module_url: str) -> str:
+    return pg_module_url
 
 
 def test_the_test_container_tracks_the_deployment():
@@ -704,3 +703,21 @@ def test_a_deliberate_drift_is_caught(pg_url, pg_admin):
                 (dbname,),
             )
             conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
+
+
+@pytest.fixture(scope="module")
+def catalogue_database_names() -> list[str]:
+    return []
+
+
+@pytest.mark.parametrize("attempt", [0, 1])
+def test_catalogue_checks_reuse_the_same_database(migrated, catalogue_database_names, attempt):
+    engine = sa.create_engine(sync_url_for(migrated))
+    try:
+        with engine.connect() as conn:
+            name = conn.execute(sa.text("SELECT current_database()")).scalar_one()
+    finally:
+        engine.dispose()
+    if not catalogue_database_names:
+        catalogue_database_names.append(name)
+    assert catalogue_database_names == [name]

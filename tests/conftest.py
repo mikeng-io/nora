@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 import uuid
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -291,22 +292,9 @@ def pg_template(pg_admin: _PgAdmin) -> str:
     return dbname
 
 
-@pytest.fixture
-def pg_url(pg_admin: _PgAdmin, pg_template: str, monkeypatch) -> Iterator[str]:
-    """A fresh PostgreSQL database at the migration head, and the asyncpg URL
-    that reaches it.
-
-    Also exported to the environment as `DATABASE_URL`, so any test that builds a
-    full `Config` and runs the composition root (which reads
-    `store.database_url_env`) is pointed at this same fresh database with no
-    per-call-site threading. The database is dropped on teardown; open
-    connections are terminated first so the DROP cannot hang on a pooled handle.
-
-    **Cloned from `pg_template`, not created empty** — see that fixture. Callers
-    that call `run_migrations(url)` are correct and cheap: the chain is already
-    at head, so it costs one connection and a version check. Callers that never
-    migrate get a migrated database.
-    """
+@contextmanager
+def _pg_database(pg_admin: _PgAdmin, pg_template: str) -> Iterator[str]:
+    """Own one migrated clone, including cleanup when its consumer raises."""
     dbname = "t_" + uuid.uuid4().hex
     with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
         # Terminate stragglers on the TEMPLATE first: Postgres refuses to copy a
@@ -319,7 +307,6 @@ def pg_url(pg_admin: _PgAdmin, pg_template: str, monkeypatch) -> Iterator[str]:
         )
         conn.execute(f'CREATE DATABASE "{dbname}" TEMPLATE "{pg_template}"')
     url = _async_url(pg_admin, dbname)
-    monkeypatch.setenv("DATABASE_URL", url)
     try:
         yield url
     finally:
@@ -332,6 +319,25 @@ def pg_url(pg_admin: _PgAdmin, pg_template: str, monkeypatch) -> Iterator[str]:
                 (dbname,),
             )
             conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
+
+
+@pytest.fixture(scope="module")
+def pg_module_url(pg_admin: _PgAdmin, pg_template: str) -> Iterator[str]:
+    """Opt-in module database; consumers own their table reset and engine disposal.
+
+    No environment export: composition/restart tests keep function-scoped pg_url.
+    Never use this for committed schema changes or migration/bootstrap tests.
+    """
+    with _pg_database(pg_admin, pg_template) as url:
+        yield url
+
+
+@pytest.fixture
+def pg_url(pg_admin: _PgAdmin, pg_template: str, monkeypatch) -> Iterator[str]:
+    """Fresh migrated database per test, exported for independent composition engines."""
+    with _pg_database(pg_admin, pg_template) as url:
+        monkeypatch.setenv("DATABASE_URL", url)
+        yield url
 
 
 @pytest.fixture

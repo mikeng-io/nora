@@ -84,8 +84,10 @@ mutate:
 # --- fast pass (for the edit-run-edit loop) ---
 # For the edit-run-edit loop only. `make full-gate` above stays serial.
 
+TEST_WORKERS ?= 8
+
 test-fast:
-	uv run pytest -q -n 8
+	uv run pytest -q -n $(TEST_WORKERS) --dist loadfile
 
 # Selects pytest targets from what actually changed (scripts/affected_tests.py,
 # spec §3). BASE is the diff base: HEAD~1 (the last commit) by default,
@@ -106,7 +108,7 @@ test-fast:
 BASE ?= HEAD~1
 INCLUDE_WORKTREE ?=
 SELECTOR := uv run python scripts/affected_tests.py
-PYTEST := uv run pytest -q -n 8
+PYTEST := uv run pytest -q -n $(TEST_WORKERS) --dist loadfile
 test-affected:
 	@targets="$$($(SELECTOR) --base $(BASE) $(INCLUDE_WORKTREE))"; rc=$$?; \
 	if [ "$$rc" -ne 0 ] || [ -z "$$targets" ]; then \
