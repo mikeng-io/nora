@@ -41,7 +41,7 @@ and budget. Collection does not imply that every object is shown on every turn.
 
 | Object | Engagement transcript | Engagement social_context | Cognition agenda / context |
 |---|---|---|---|
-| Reaction | Annotate visible target with current supported responses, as-of and coverage | Relevant off-window target/change; no duplicate full annotation | Agenda identifies change/target; social_context supplies state; graph supplies existing account |
+| Reaction | Annotate visible target with current supported responses, as-of and coverage — SHIPPED as `reactions`/`reactions_observed` attributes | Relevant off-window target/change; no duplicate full annotation | Agenda identifies change/target with the same current-state annotation; social_context supplies state; graph supplies existing account |
 | Shared post/reel | Keep the actual share, sharer's words, artifact ref and available reading | Relevant off-window artifact/reading update; cover-only labelled | Existing message/social arrival in agenda; saved artifact content in context; graph connections |
 | Poll | Creation message anchors question/options and bounded source state | Relevant off-window poll, closing/change and state; limited voter coverage explicit | Agenda identifies create/vote/close observation; context provides definition/state; interpretation stays Notebook |
 | Group event: topic/title, membership/role, pin, thread lifecycle | Retain an actual platform service message as a labelled system event if present; never invent human speech | Relevant room changes/current state with subject, as-of and coverage | Agenda identifies new room observation; context provides relevant state, graph prior understanding |
@@ -58,10 +58,26 @@ semantics. Unknown historic metadata stays unknown; never backfill guessed zeros
 **Engagement:** `nora/engagement/context.py`, `TranscriptInjection.assemble`,
 reads a scoped typed observation view while constructing TagContext. Add typed
 observation/context fields there; do not let a pure renderer query stores.
-The existing transcript enrichment path attaches target annotations. Register
+Register
 `social_context` in `nora/agent/prefill.py`'s `_BLOCKS` and render through assemble.
 Perform shared object-read/dedup before rendering. Existing transcript tools use
 that same enrichment/annotation contract, not a separate reaction formatter.
+
+Correction recorded 2026-10-31 (independent audit at `3fe09ac7`): an earlier
+draft described target annotation as already wired. At that head the only
+target annotations anywhere were `replying_to`/`reply_to` and `edited`/`was`;
+reaction-on-target annotation is NEW work extending that existing annotation
+contract in BOTH renderers (`render_transcript` for the prompt and
+`_transcript_messages` for `load_transcript`/`room_read`/`record_query`), not
+a baseline to reuse. The first reactions slice shipped it on that contract:
+the `message_reaction` rows fold once (`fold_reactions`, the definition
+`record_query` established), `TranscriptRow.reactions` carries counts plus
+newest recorded source-event time and `recorded` coverage, and the same
+annotation reaches the prompt, the transcript tools and the Cognition agenda.
+Ceilings kept: counts are recorded transitions only, never the complete
+upstream set; no clear/snapshot capture, no per-target transition identity or
+source_revision ordering is claimed; first slice covers admitted room modes
+only — Signal and Discord drop DM input at parse today, so no DM widening.
 
 **Cognition:** extend grounding for typed observation refs/state before
 `CognitionSessionRunner._session_input` assembles the session. Agenda identifies

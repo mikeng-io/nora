@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Literal
@@ -320,6 +321,12 @@ class TranscriptRow:
     # platform handle from. What it first said and the latest envelope ride
     # here.
     edit: RowEdit | None = None
+    # The reactions recorded against this row, folded to now by the ONE fold
+    # (`fold_reactions`, the definition `record_query` established). None
+    # means the read carried none — nothing recorded, or a read that does
+    # not populate it — and renderers show NOTHING either way: «reaction
+    # state unknown» and «no reactions» are never collapsed into a zero.
+    reactions: RowReactions | None = None
     turn_id: int | None = None
 
     @property
@@ -342,6 +349,103 @@ class RowEdit:
     ts: int
     was: str | None
     raw_json: str | None = None
+
+
+@dataclass(frozen=True)
+class ReactionRow:
+    """One `message_reaction` row as the fold reads it.
+
+    `sender_id` is the actor the platform named — the fold's per-actor key is
+    this id, exactly as `SqlRecordQuery`'s distinct-on grouped it, so one
+    person reacting from two accounts counts twice (the same definition
+    `record_query` has always returned). `ts` is the platform's time for the
+    event (arrival when it gives none); `id` is arrival order, the tie-break
+    the append-only table resolves latest by.
+    """
+
+    id: int
+    message_id: int
+    sender_id: str
+    emoji: str
+    removed: bool
+    ts: int
+
+
+@dataclass(frozen=True)
+class RowReactions:
+    """The reactions recorded against a message, folded to its current state.
+
+    `counts` is `(emoji, how many actors)` standing now: each actor's NEWEST
+    recorded row per emoji, counted unless it took the reaction back. Ordered
+    by emoji so every reader renders the same line. `observed_at` is the
+    newest SOURCE-EVENT `ts` among the rows the fold read — a removal is an
+    event too — never the read's as-of time. `recorded` is how many
+    transition rows the fold read.
+
+    **Coverage is recorded transitions only**, which is what `coverage` says.
+    The Record holds what the transports delivered: an upstream clear, a
+    snapshot, or any reaction the capture path never saw is absent, so a
+    count is what was recorded, not a claim of the whole upstream set. An
+    empty `counts` with `recorded > 0` means every recorded reaction was
+    taken back — a fact, not a zero.
+    """
+
+    counts: tuple[tuple[str, int], ...] = ()
+    observed_at: int | None = None
+    recorded: int = 0
+    coverage: str = "recorded"
+
+    @property
+    def label(self) -> str | None:
+        """The annotation text: `👍x3 ❤️x1`, `removed` when every recorded
+        reaction was taken back, None when nothing was recorded — an
+        annotation never renders an empty set or a zero."""
+        if self.counts:
+            return " ".join(f"{emoji}x{n}" for emoji, n in self.counts)
+        return "removed" if self.recorded else None
+
+
+def fold_reactions(rows: Iterable[ReactionRow]) -> dict[int, RowReactions]:
+    """The `message_reaction` rows of a batch of messages, folded to each
+    target's current state. THE ONE FOLD: `record_query` established it
+    (latest per actor+emoji, `removed` wins, counts by emoji), and every
+    read that annotates a target uses it — a second implementation would
+    produce a second count for the same record.
+
+    Latest is by `id` (arrival order), not `ts`: ingest appends source
+    events, and a skewed platform clock cannot let an older event's row
+    outrank the one appended after it — the same reason the edit fold is
+    newest-by-arrival. Replay of the same recorded row folds identically;
+    it cannot inflate a count.
+
+    Returns only message ids that HAVE recorded rows: a message with none
+    stays absent, so its `TranscriptRow.reactions` stays None and reads
+    «nothing recorded», never a fabricated empty set.
+    """
+    latest: dict[tuple[int, str, str], ReactionRow] = {}
+    recorded: dict[int, int] = {}
+    observed: dict[int, int] = {}
+    for r in rows:
+        recorded[r.message_id] = recorded.get(r.message_id, 0) + 1
+        observed[r.message_id] = max(observed.get(r.message_id, 0), r.ts)
+        key = (r.message_id, r.sender_id, r.emoji)
+        prev = latest.get(key)
+        if prev is None or r.id > prev.id:
+            latest[key] = r
+    standing: dict[int, dict[str, int]] = {}
+    for (message_id, _sender, emoji), r in latest.items():
+        if r.removed:
+            continue
+        counts = standing.setdefault(message_id, {})
+        counts[emoji] = counts.get(emoji, 0) + 1
+    return {
+        message_id: RowReactions(
+            counts=tuple(sorted(standing.get(message_id, {}).items())),
+            observed_at=observed[message_id],
+            recorded=recorded[message_id],
+        )
+        for message_id in recorded
+    }
 
 
 @dataclass(frozen=True)

@@ -5,6 +5,15 @@ block and detail tools. Existing context assembly owns all rendering. The graph
 retrieval repairs in unified-memory 27 §17 remain prerequisites for consistent
 connected understanding; this bundle does not create another retrieval service.
 
+Recorded 2026-10-31: an independent source audit (head `3fe09ac7`) verified the
+F1/F2 MECHANISMS are repaired at that head — `WakeMemory.prepare` restores the
+structural anchors and seeds via `preview_seeds`, and automatic prefetch calls
+the same `MemorySearch.read`/`graph.walk` retrieval as the tools. That is
+source-mechanism evidence, not a live probe or model-quality receipt. One
+limitation stands: automatic prefetch and tool reads share the retrieval
+mechanism, but the per-turn prefetch cache in `context.py` is local — a shared
+cache between automatic and tool reads is not proven at that head.
+
 ## Shared read model
 
 Every object result carries a model-safe handle, kind, source scope label, source
@@ -44,6 +53,18 @@ current room and existing open matters within scope. New admitted observations
 remain discoverable even if no existing matter references them. Curated graph
 context informs Cognition's attention; an ETL keyword classifier must not decide
 which unknown patterns can ever be discovered.
+
+**Dedup against `recalled` and `graph`, by object identity.** `social_context`
+owns SOURCE state (tally, current state, coverage); `recalled` and the graph
+preview own curated interpretation and evidence handles. The same object (a
+poll, a target message, a room) is keyed identically in both, so a
+`social_context` summary and a `recalled` hit on the same object identity are
+one object, not two claims: the block states the source fact once and carries
+the graph handle, it does not repeat Notebook prose, and a `recalled` row
+naming that object is not suppressed — the two answers are labelled by layer,
+never merged into a third. A new block is added only if the existing surfaces
+cannot carry the source-state layer; annotation of visible targets already
+lives in the transcript, not in `social_context`.
 
 Preserve existing prompt budgets. Share a per-assembly rendered-object set across
 transcript/context renderers: annotate visible targets once, then use references

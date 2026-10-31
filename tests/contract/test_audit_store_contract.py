@@ -915,6 +915,34 @@ async def test_a_reaction_and_its_removal_are_two_rows_beside_the_message(store)
     assert deletes == []
     rows = await store.recent(conversation_id="g1", limit=10)
     assert [r.body for r in rows] == ["dinner at 8"]
+    # The whole removal folded: a real recorded state, never a zero.
+    assert rows[0].reactions is not None
+    assert rows[0].reactions.counts == ()
+    assert rows[0].reactions.recorded == 2
+    assert rows[0].reactions.observed_at == 9
+
+
+async def test_recent_carries_the_folded_reaction_state(store):
+    """The target annotation both renderers read: standing counts, the newest
+    recorded source event's `ts` and how many transition rows folded —
+    identical on both stores."""
+    target = await store.append(message=_msg(body="dinner at 8", ts=1))
+    other = await store.append(message=_msg(body="unrelated", ts=2))
+    await store.append_reaction(
+        message_id=target, message=_touch("reaction", ts=5, emoji="👍"), person_id="p2")
+    await store.append_reaction(
+        message_id=target, message=_touch("reaction", ts=7, emoji="👍", sender="+852333"),
+        person_id="p3")
+    await store.append_reaction(
+        message_id=other, message=_touch("reaction", ts=9, emoji="❤️"), person_id="p2")
+    rows = await store.recent(conversation_id="g1", limit=10)
+    first, second = rows
+    assert first.reactions is not None
+    assert first.reactions.counts == (("👍", 2),)
+    assert first.reactions.observed_at == 7
+    assert first.reactions.recorded == 2
+    assert second.reactions is not None
+    assert second.reactions.counts == (("❤️", 1),)
 
 
 async def test_hide_message_hides_once_and_find_edited_says_so(store):

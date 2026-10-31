@@ -1,7 +1,12 @@
 # Typed observation and persistence contract — proposed
 
 This specifies domain semantics for implementation, not shipped classes or DDL.
-Extend the existing bridge versioned union at its owner. Keep NormalizedMessage
+The versioned bridge union this extends is **proposed, not built**
+(`design/platform-bridges/00-contract.md`). Until it lands, the observation
+payload rides the existing in-process seam: per-platform parsers emit
+`NormalizedMessage`/`Touch` beside the utterance (reactions already do), and
+the proposed inbound v1 union inherits those payloads at its owner — it does
+not replace this contract. Keep NormalizedMessage
 for utterances; add a sibling non-message observation payload. A shared event
 header does not mean every payload is a message or every object shares one table.
 

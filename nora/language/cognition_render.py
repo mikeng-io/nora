@@ -277,6 +277,17 @@ def _message_row(
             attrs=lambda r: (
                 ("at", when), ("from", speaker_of(r.author)),
                 ("reaction", (r.emoji or "?") if reacted else None),
+                ("reactions", r.reactions.label if r.reactions else None),
+                (
+                    "reactions_observed",
+                    (
+                        f"{r.reactions.coverage} "
+                        f"{_when(r.reactions.observed_at, now_ms, tz)}"
+                    )
+                    if r.reactions is not None
+                    and r.reactions.observed_at is not None
+                    else None,
+                ),
                 ("edited", "yes" if edited else None),
                 ("withdrawn", "yes" if withdrawn else None),
                 ("deleted", "yes" if deleted else None),
@@ -300,6 +311,17 @@ def _own_row(rec: RecordItem, *, now_ms: int, tz: tzinfo, message_chars: int) ->
             [rec], row_id=lambda r: r.message_id,
             attrs=lambda r: (
                 ("at", when), ("from", speaker_of(r.author)), ("own", "yes"),
+                ("reactions", r.reactions.label if r.reactions else None),
+                (
+                    "reactions_observed",
+                    (
+                        f"{r.reactions.coverage} "
+                        f"{_when(r.reactions.observed_at, now_ms, tz)}"
+                    )
+                    if r.reactions is not None
+                    and r.reactions.observed_at is not None
+                    else None,
+                ),
                 ("turn", r.turn_handle),
                 ("withdrawn", "yes" if r.text is None else None),
             ),

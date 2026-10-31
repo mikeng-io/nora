@@ -2952,6 +2952,20 @@ def _transcript_messages(
         if r.edit is not None:
             item["edited"] = stamp(r.edit.ts, now)
             item["was"] = _file_handles(r.edit.was)
+        if r.reactions is not None and r.reactions.recorded:
+            # Additive provenance (platform-observations, first reactions
+            # slice): the same fold the prompt annotates with. `reactions`
+            # carries the standing counts `record_query` defined;
+            # `reactions_at` is the newest recorded SOURCE event, distinct
+            # from `when`; `reactions_source` is the coverage — recorded
+            # transitions only, never the complete upstream set.
+            if r.reactions.counts:
+                item["reactions"] = dict(r.reactions.counts)
+            else:
+                item["reactions_removed"] = True
+            if r.reactions.observed_at is not None:
+                item["reactions_at"] = stamp(r.reactions.observed_at, now)
+            item["reactions_source"] = r.reactions.coverage
         parent = by_ts.get(r.quoted_ts) if r.quoted_ts is not None else None
         if parent is not None and parent.id != r.id:
             item["reply_to"] = _speaker(parent)

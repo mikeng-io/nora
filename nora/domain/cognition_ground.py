@@ -35,6 +35,7 @@ from typing import Literal
 from nora.domain.cognition_session import Room
 from nora.domain.culture import CultureRevision
 from nora.domain.memo import Memo
+from nora.domain.models import RowReactions
 from nora.domain.profile import ProfileView
 from nora.domain.stimuli import Stimulus
 
@@ -82,6 +83,11 @@ class RecordItem:
     text: str | None
     emoji: str = ""
     edited: bool = False
+    #: The target's CURRENT recorded reaction state, folded to now — None when
+    #: the Record holds no reaction rows for it (never rendered as a zero).
+    #: For a `reaction` item this is the state the stimulus's own change is
+    #: now part of; `at_ms` stays the stimulus's event time.
+    reactions: RowReactions | None = None
     #: The stimulus's person id (or None), what the session row keeps in the
     #: NAME's place: `cognition_session.situation` is append-only and
     #: `nora person forget` (removed) cannot rewrite it, so a canonical name written

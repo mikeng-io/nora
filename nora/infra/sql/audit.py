@@ -15,7 +15,9 @@ so `append` gets the new id back via `RETURNING`.
 
 from __future__ import annotations
 
+import dataclasses
 import json
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import sqlalchemy as sa
@@ -29,9 +31,12 @@ from nora.domain.models import (
     EditedMessage,
     EditTarget,
     NormalizedMessage,
+    ReactionRow,
     RowEdit,
+    RowReactions,
     TranscriptRow,
     UnattributedRow,
+    fold_reactions,
     mentions_json,
     parse_mentions_json,
 )
@@ -122,6 +127,50 @@ def _edit_mentions_json(message: NormalizedMessage) -> str | None:
     if message.edit_of is not None and not message.edit_of.mentions_known:
         return None
     return mentions_json(message.mentions)
+
+
+async def reaction_states(
+    conn: Any, message_ids: Sequence[int],
+) -> dict[int, RowReactions]:
+    """The reactions recorded against these messages, folded to each
+    target's current state — ONE batched read for the whole window, never a
+    per-row query. `idx_message_reaction_message` serves the `IN`.
+
+    The fold is `nora.domain.models.fold_reactions` — the same definition
+    `record_query` returns and `FakeRecordStore` mirrors, so a prompt line,
+    a tool result and a Record read cannot disagree about the same target.
+    A message id with no recorded rows is absent from the result.
+    """
+    if not message_ids:
+        return {}
+    rows = await conn.execute(
+        sa.select(
+            MESSAGE_REACTION.c.id, MESSAGE_REACTION.c.message_id,
+            MESSAGE_REACTION.c.sender_id, MESSAGE_REACTION.c.emoji,
+            MESSAGE_REACTION.c.removed, MESSAGE_REACTION.c.ts,
+        ).where(MESSAGE_REACTION.c.message_id.in_(message_ids))
+    )
+    return fold_reactions(
+        ReactionRow(
+            id=int(r.id), message_id=int(r.message_id),
+            sender_id=str(r.sender_id), emoji=str(r.emoji),
+            removed=bool(r.removed), ts=int(r.ts),
+        )
+        for r in rows
+    )
+
+
+def with_reactions(
+    rows: Sequence[TranscriptRow], states: Mapping[int, RowReactions],
+) -> list[TranscriptRow]:
+    """`rows` with each one's recorded reaction state attached — the part of
+    the target annotation `transcript_select` cannot join (the fold is a
+    grouped read, not a per-row column). A row absent from `states` keeps
+    `reactions=None`: nothing recorded, never a fabricated empty set."""
+    return [
+        dataclasses.replace(r, reactions=states.get(r.id)) if r.id in states else r
+        for r in rows
+    ]
 
 
 def transcript_row(r: Any) -> TranscriptRow:
@@ -298,7 +347,8 @@ class SqlRecordStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [self._row(r) for r in rows]
+            states = await reaction_states(conn, [r.id for r in rows])
+        return with_reactions([self._row(r) for r in rows], states)
 
     async def external_file_rows(
         self, *, conversation_id: str, since_ts: int, limit: int,
@@ -320,7 +370,8 @@ class SqlRecordStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [self._row(r) for r in rows]
+            states = await reaction_states(conn, [r.id for r in rows])
+        return with_reactions([self._row(r) for r in rows], states)
 
     async def recent_before(
         self, *, conversation_id: str, before_ts: int, limit: int,
@@ -355,13 +406,15 @@ class SqlRecordStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        # Cut BEFORE reversing: the query is newest-first, so the rows to keep
-        # are the leading `limit`. Cutting after the reverse would drop the
-        # newest rows and keep the oldest — the opposite of what this reads.
-        kept = cut(
-            rows, limit=limit, site="audit.recent", metrics=self._metrics,
-        )
-        return [self._row(r) for r in reversed(kept)]
+            # Cut BEFORE reversing: the query is newest-first, so the rows to
+            # keep are the leading `limit`. Cutting after the reverse would
+            # drop the newest rows and keep the oldest — the opposite of what
+            # this reads.
+            kept = cut(
+                rows, limit=limit, site="audit.recent", metrics=self._metrics,
+            )
+            states = await reaction_states(conn, [r.id for r in kept])
+        return with_reactions([self._row(r) for r in reversed(kept)], states)
 
     async def depth_to(self, *, conversation_id: str, ts: int) -> int | None:
         """See `nora.domain.ports.RecordStore.depth_to`.
@@ -412,7 +465,8 @@ class SqlRecordStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [self._row(r) for r in rows]
+            states = await reaction_states(conn, [r.id for r in rows])
+        return with_reactions([self._row(r) for r in rows], states)
 
     async def since_including_nora(
         self, *, conversation_id: str, after_id: int, limit: int
@@ -439,7 +493,8 @@ class SqlRecordStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [self._row(r) for r in rows]
+            states = await reaction_states(conn, [r.id for r in rows])
+        return with_reactions([self._row(r) for r in rows], states)
 
     @staticmethod
     def _row(r: Any) -> TranscriptRow:

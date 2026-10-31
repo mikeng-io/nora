@@ -133,6 +133,7 @@ def _record_item(
         at_ms=stimulus.at_ms if kind != "message" else hit.row.ts,
         text=None if withheld else body, emoji=found.emoji,
         edited=hit.row.edit is not None,
+        reactions=hit.row.reactions,
     )
 
 
@@ -347,7 +348,7 @@ async def _own_sends(
                 ref=f"messages:{h.row.id}", kind="message", message_id=h.row.id,
                 room=Room(h.platform, h.conversation_id), author=ai_name, at_ms=h.row.ts,
                 text=None if h.deleted else (h.row.body or ""), own=True,
-                turn_id=h.row.turn_id,
+                turn_id=h.row.turn_id, reactions=h.row.reactions,
             )
             for h in mine
         )
