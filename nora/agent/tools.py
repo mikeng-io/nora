@@ -6939,7 +6939,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         standing_room: str = "", standing_body: str = "",
         hold_open: str = "", i_owe: str = "",
     ) -> dict:
-        """Record decisions. Call this when deciding.
+        """Record your settled choice before replying. Call this when you
+        weigh options or change your position.
 
         Say what you decided, what the options were, which way you lean,
         what would close it, and the rows or entries it rests on. The call
