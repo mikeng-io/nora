@@ -77,12 +77,14 @@ COUNTERFACTUAL_KEYS = frozenset({"varies", "why"})
 #: words, as the live lesson reads), which no other case may state.
 COUNTERFACTUAL_TIERS = frozenset({
     "culture", "transport", "prior", "lessons", "profile_sources",
+    "unit_record",
 })
 #: Tiers that mean something in one corpus only. `prior` is the standing
 #: fold's; that corpus varies nothing else. `lessons` is the lessons corpus's.
 _TIER_CORPORA = {
     "prior": frozenset({"standing"}), "lessons": frozenset({"lessons"}),
     "profile_sources": frozenset({"profile_identity"}),
+    "unit_record": frozenset({"standing_unit"}),
 }
 
 
@@ -267,7 +269,7 @@ def _check(name: str, row: dict[str, Any]) -> None:
             f"of {sorted(MEMORY_SURFACES)}, or absent for a case that routes on "
             f"both; got {surface!r}"
         )
-    if CORPUS_ENTRY.get(name) == "standing":
+    if CORPUS_ENTRY.get(name) in {"standing", "standing_unit"}:
         _check_fold_case(name, row)
     evidence = evidence_problems(row.get("metadata") or {})
     if evidence:
@@ -312,6 +314,11 @@ def _check_fold_case(name: str, row: dict[str, Any]) -> None:
         problems.append("metadata.tag_id must name the turn")
     if not str(row.get("expected_output") or "").strip():
         problems.append("expected_output must state the ONE property graded")
+    if (row.get("counterfactual") or {}).get("varies") == "unit_record":
+        if not isinstance(meta.get("record_text"), str) or not meta["record_text"].strip():
+            problems.append("unit_record requires generated metadata.record_text")
+    elif "record_text" in meta:
+        problems.append("record_text requires a declared unit_record counterfactual")
     if problems:
         raise ValueError(f"{name}: case {row['name']!r}: {'; '.join(problems)}")
 
@@ -396,6 +403,7 @@ CORPUS_ENTRY: dict[str, str] = {
     # them unasked.
     "presence": "tag",
     "standing": "standing",
+    "standing_unit": "standing_unit",
     "profile_identity": "profile_identity",
     "profile_coverage": "profile_coverage",
     "tool_reporting": "tag",
@@ -426,7 +434,9 @@ CORPUS_ENTRY: dict[str, str] = {
 #: because the snapshot path seeds messages without `media_json` (she sees a
 #: bare `[image …]` handle and `media_objects` is empty) and holds no events,
 #: memos, presence or Rollup at all, which are exactly what recall rests on.
-FULL_RESTORE_CORPORA: frozenset[str] = frozenset({"conversational_recall", "cognition_session"})
+FULL_RESTORE_CORPORA: frozenset[str] = frozenset({
+    "conversational_recall", "cognition_session", "standing_unit",
+})
 
 #: S2 — graded on WHICH TOOL ran, not on whether she replied. One grader only:
 #: `sample_read` groups every evaluator's labels under one case, so adding
@@ -442,7 +452,7 @@ ROUTED_CORPORA = frozenset({
 JUDGED_CORPORA = frozenset({
     "profile_coverage", "profile_identity",
     "being_contradicted", "identity_grounding", "source_scope",
-    "injections", "transcript_injection", "standing", "presence",
+    "injections", "transcript_injection", "standing", "standing_unit", "presence",
     # ADR 0015 §4: what she SAYS after a tool returns a status. Its opted-in
     # `tool_status_reported` binds with safety (`Judge.grade`).
     "tool_reporting",
@@ -466,7 +476,7 @@ JUDGED_CORPORA = frozenset({
 #: which any reply meets, including one that invents a place, and its evidence
 #: is read (fail-closed, `evals.recall.recall_facts`) only inside the judge
 #: branch. Run without a judge, every case would PASS on having spoken.
-JUDGE_REQUIRED = frozenset({"standing", "conversational_recall"})
+JUDGE_REQUIRED = frozenset({"standing", "standing_unit", "conversational_recall"})
 
 
 #: `metadata.memory_surface` (DEC-316): a case whose expected route exists on

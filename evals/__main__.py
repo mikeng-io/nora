@@ -103,13 +103,14 @@ CORPUS_CLASS: dict[str, str] = {
     # not touch, the nearest class the map has. Its `stale`
     # cases are S5-shaped (time misread) — approximate, as this map says.
     "standing": "S6",
+    "standing_unit": "S6",
     "profile_identity": "S6",
     "profile_coverage": "S6",
 }
 
 #: The entry points that honour `metadata.print_input` — render the model
 #: call's input, record it as `shown`, and call no model.
-_PRINTS_INPUT = frozenset({"standing", "profile_identity", "profile_coverage"})
+_PRINTS_INPUT = frozenset({"standing", "standing_unit", "profile_identity", "profile_coverage"})
 
 
 #: What one draw costs, in seconds, for the run budget below. Unjudged is

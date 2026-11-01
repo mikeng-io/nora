@@ -783,7 +783,7 @@ class CognitionSessionRunner:
         except Exception:
             log.exception("could not count %s", name)
 
-    def _counted(self, verb: str, call: Any) -> Any:
+    def _counted(self, verb: str, call: Any, *, state: _RunState) -> Any:
         """A verb whose every refusal is counted by rule
         (`nora_cognition_refused_total{verb,rule}`): one place, so no verb and
         no early return can refuse without being counted. `unavailable` (a read
@@ -804,6 +804,15 @@ class CognitionSessionRunner:
                 log.exception("cognition verb %s failed", verb)
                 self._inc("nora_errors_total", stage="cognition_session")
                 result = {"status": "unavailable", "reason": "error", "detail": _UNFINISHED}
+            # Native verbs report this session's own unit activity. Keep any
+            # source-specific requirements already recorded in the same call.
+            from nora.agent.turn_recording import record_requirement
+            from nora.domain.lineage import message
+            from nora.domain.turn_record import DisclosureRequirement
+
+            record_requirement(DisclosureRequirement(
+                None, tuple(message(record_room_key(*room)) for room in state.rooms.values()),
+            ))
             status = result.get("status")
             if status in ("refused", "unavailable", "unresolved"):
                 reason = str(result.get("reason") or "unspecified")
@@ -3089,7 +3098,7 @@ class CognitionSessionRunner:
             verbs = (memory_propose, profile_revise, *verbs)
         if state.historical:
             verbs = (memory_propose, profile_revise, close)
-        return [*read_tools, *(self._counted(v.__name__, v) for v in verbs)]
+        return [*read_tools, *(self._counted(v.__name__, v, state=state) for v in verbs)]
 
     # `created_by_session_id=None` on every pace move and cancel above, on
     # purpose: the pending seam returns only rows COGNITION wrote, so «own»

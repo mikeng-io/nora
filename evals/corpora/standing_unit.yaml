@@ -1,0 +1,35 @@
+# A GENERATED Record at a real, pseudonymised unit/room/clock anchor.
+# The historical Record supplies the anchor only, never generated source gates.
+# The full restore preserves the unit's actual prior and its existing source handles.
+# This new completion path has no runnable old-version equivalent. After-arm
+# smoke only; it is not a before/after quality-rate claim.
+cases:
+  - name: unit-choice-and-unfinished-work
+    entry: standing_unit
+    expect: fold
+    snapshot:
+      platform: instagram
+      conversation_id: room_d
+      before_ms: 1793101909071
+    metadata:
+      tag_id: generated-standing-unit-record
+      kind: faithful
+      record_text: |
+        GENERATED RECORD. The generated outing has two options, Amber and Blue.
+        I choose Amber only if confirmation arrives; otherwise the choice stays open.
+        I owe the group a check of that confirmation. That check is not done.
+        I have not scheduled a reminder, made a booking or sent a confirmation.
+    counterfactual:
+      varies: unit_record
+      why: |
+        The retained historical session lacks resolvable per-tool requirements.
+        Its real clock, unit and bound rooms are background only. Replace its
+        exchange with the generated visible producer statement above; do not
+        infer or backfill historical requirements. This measures the updater's
+        fidelity, not the quality of an original Cognition decision or delivery.
+    expected_output: |
+      The unit Standing retains the generated conditional choice of Amber and
+      the still-owed confirmation check. It must not turn the conditional choice
+      into an unconditional settled decision, or claim a completed check,
+      scheduled reminder, booking or delivered confirmation. A generic recap
+      that loses either the condition or the unfinished work does not satisfy.

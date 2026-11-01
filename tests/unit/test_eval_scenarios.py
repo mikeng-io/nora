@@ -243,7 +243,7 @@ def test_a_case_missing_its_identity_is_refused(tmp_path, monkeypatch, key):
 def test_every_corpus_has_a_declared_entry_point_and_judged_is_a_subset():
     assert set(CORPUS_ENTRY) >= JUDGED_CORPORA
     entries = {"tag", "participation", "gate", "dreamer", "proactive_act", "standing",
-               "profile_identity", "profile_coverage"}
+               "profile_identity", "profile_coverage", "standing_unit"}
     assert set(CORPUS_ENTRY.values()) <= entries
 
 
@@ -439,7 +439,7 @@ def test_a_counterfactual_varying_an_unlisted_tier_is_refused(tmp_path, monkeypa
     with pytest.raises(
         ValueError, match=(
             "only \\['culture', 'lessons', 'prior', "
-            "'profile_sources', 'transport'\\] may be varied"
+            "'profile_sources', 'transport', 'unit_record'\\] may be varied"
         ),
     ):
         load_all(_corpus(tmp_path, monkeypatch, body, "participation"))
