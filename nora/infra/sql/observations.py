@@ -39,6 +39,7 @@ from nora.domain.observations import (
     SourceScope,
     StoredObservation,
     fold_observation,
+    parse_handle,
     payload_from_dict,
     rebuild_head,
     target_from_key,
@@ -148,7 +149,24 @@ def _row_to_head(row: sa.RowMapping) -> ObservationHead:
         position=row["source_position"],
         scope=row["revision_scope"] or "",
         observed_ms=row["observed_ms"], ordering=row["ordering"],
-        coverage=dict(row["coverage"]))
+        coverage=dict(row["coverage"]),
+        account_key=row["account_key"] or "",
+        thread=row["thread"] or "")
+
+
+#: `object_handle`'s digest in SQL: sha256 of
+#: `account_key|thread|kind:object_ref`, first 12 hex chars —
+#: PostgreSQL's builtin `sha256(bytea)` (v11+), the same bytes Python's
+#: `hashlib.sha256` digests, so a handle resolves exactly, never by
+#: scanning a bounded head page.
+_HANDLE_DIGEST = sa.func.substr(
+    sa.func.encode(
+        sa.func.sha256(sa.func.convert_to(
+            sa.func.concat(
+                sa.func.coalesce(ST.c.account_key, ""), sa.literal("|"),
+                sa.func.coalesce(ST.c.thread, ""), sa.literal("|"),
+                ST.c.kind, sa.literal(":"), ST.c.object_ref),
+            "UTF8")), "hex"), 1, 12)
 
 
 class SqlObservationStore:
@@ -255,6 +273,20 @@ class SqlObservationStore:
                 sa.select(ST).where(where).order_by(ST.c.id)
                 .limit(max(limit, 0)))).mappings().all()
         return [_row_to_head(r) for r in rows]
+
+    async def head_for_handle(
+        self, *, scope: SourceScope, handle: str,
+    ) -> ObservationHead | None:
+        kind, digest = parse_handle(handle)
+        if not kind:
+            return None
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(
+                sa.select(ST).where(
+                    _st_scope_where(scope), ST.c.kind == kind,
+                    _HANDLE_DIGEST == digest))
+            ).mappings().one_or_none()
+        return None if row is None else _row_to_head(row)
 
     async def history(
         self, *, scope: SourceScope, kind: str, object_ref: str,

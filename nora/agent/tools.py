@@ -211,10 +211,15 @@ from ..domain.notes import (
     note_handle,
 )
 from ..domain.observations import (
+    SourceEvent,
     SourceScope,
+    coverage_label,
+    handle_of,
+    head_detail,
     head_summary,
     object_handle,
     observation_summary,
+    parse_handle,
 )
 from ..domain.ports import (
     BrowserRunner,
@@ -917,6 +922,28 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                source_tier="remembered", read_only=True,
                                side_effect_state="none", idempotency="idempotent",
                                retry="safe", output_contract="three_state", level=2),
+    # The task-shaped source-object reads (design/platform-observations 05):
+    # each is ONE bounded SELECT over the observation Record's scoped heads —
+    # `poll_list` this room's polls, `poll_read` one poll by its handle,
+    # `room_state_read` the room/member/pin heads. Withheld when the store
+    # is unwired, so an offered one can answer. `remembered`: recorded
+    # source evidence, like `record_query`. ADR 0015 level 1: what, returns.
+    "poll_list": NativeTool(1,
+                            source_tier="remembered", read_only=True,
+                            side_effect_state="none", idempotency="idempotent",
+                            retry="safe", output_contract="three_state",
+                            level=1),
+    "poll_read": NativeTool(2,
+                            source_tier="remembered", read_only=True,
+                            side_effect_state="none", idempotency="idempotent",
+                            retry="safe", output_contract="three_state",
+                            level=1),
+    "room_state_read": NativeTool(1,
+                                  source_tier="remembered", read_only=True,
+                                  side_effect_state="none",
+                                  idempotency="idempotent",
+                                  retry="safe", output_contract="three_state",
+                                  level=1),
     # `rollup_read`: the Rollup's typed rows over an interval, for the Cognition session and
     # a person's tag turn (`nora.agent.surface.TAG_READABLE_LOOP_TOOLS`), never
     # a fire turn or an adaptor. 4, the same currency as `where_been`:
@@ -2916,8 +2943,38 @@ def _file_handles(text: str | None) -> str | None:
     return render_file_links(text) if text else text
 
 
+def _source_event_item(e: Any, *, now: datetime) -> dict:
+    """One typed source event as a tool result item, interleaved into a
+    transcript by its own time — the SAME projection the prompt's
+    `<source_event>` elements carry: kind, op, which clock, the actor the
+    source names (a roster name or nothing), the object's opaque handle,
+    coverage and revision. Never a speaker line, never a raw ref."""
+    item: dict[str, Any] = {
+        "source_event": {
+            "kind": e.kind, "op": e.operation,
+            "object": e.handle, "summary": e.summary,
+        },
+    }
+    if e.at_ms > 0:
+        item["source_event"]["when"] = stamp(e.at_ms, now)
+    if e.time_quality != "upstream":
+        item["source_event"]["time"] = e.time_quality or "unknown"
+    if e.received_ms and e.time_quality != "upstream":
+        item["source_event"]["received"] = stamp(e.received_ms, now)
+    if e.actor:
+        item["source_event"]["actor"] = e.actor
+    elif e.actor_status == "anonymous":
+        item["source_event"]["actor"] = "anonymous"
+    if e.revision:
+        item["source_event"]["rev"] = e.revision
+    if e.coverage:
+        item["source_event"]["coverage"] = e.coverage
+    return item
+
+
 def _transcript_messages(
     rows: Sequence[TranscriptRow], *, now: datetime, with_ids: bool = False,
+    source_events: Sequence[Any] | None = None,
 ) -> tuple[list[dict], int]:
     """Stored rows as the model reads them in a tool result, and how many were
     threaded. ONE renderer for `load_transcript` and `room_read`: two tools
@@ -2991,6 +3048,18 @@ def _transcript_messages(
             item["reply_to"] = _speaker(parent)
             threaded += 1
         out.append(item)
+    # Typed source events of the same window, interleaved at their own
+    # time — the same chronological merge the prompt's transcript does.
+    if source_events:
+        merged: list[dict] = []
+        i = 0
+        for e in sorted(source_events, key=lambda e: e.at_ms):
+            while i < len(rows) and rows[i].ts <= e.at_ms:
+                merged.append(out[i])
+                i += 1
+            merged.append(_source_event_item(e, now=now))
+        merged.extend(out[i:])
+        out = merged
     return out, threaded
 
 
@@ -3066,6 +3135,10 @@ def _before_bound(before: str | None, now: datetime) -> int | None:
 #: folds a head for, and nothing else — a poll, the room itself, its
 #: member set, the pin set, a shared artifact.
 _OBSERVATION_KINDS = ("poll", "room", "membership", "pin", "artifact")
+#: Bounds on every observation-branch read — discovery page, retained
+#: history page. `more`/`note` carry the cut; nothing here is unbounded.
+_DISCOVERY_LIMIT = 20
+_HISTORY_LIMIT = 50
 
 _RECORD_QUERY_OFF = (
     "I can't search what was said right now. Say so; do not guess what was said."
@@ -5400,8 +5473,15 @@ def build_tool_specs(
         # `_speaker` (shared with `who_said`), `reply_to` and the edit keys in
         # ONE renderer, because a second tool handing back transcript lines is
         # exactly how DEC-80's three-disagreeing-renderers bug gets a fourth.
+        this_events = None
+        if observations is not None and rows:
+            this_events = await _room_source_events(
+                SourceScope(platform=room.platform, account_key="",
+                            conversation_id=bound_conversation_id),
+                since_ms=min(r.ts for r in rows))
         out, threaded = _transcript_messages(
             rows, now=now, with_ids=on_rows is not None,
+            source_events=this_events,
         )
         if on_rows is not None:
             on_rows(rows)
@@ -5415,6 +5495,9 @@ def build_tool_specs(
         # `before` read means left the description and ride here, each only
         # when it applies to THIS answer.
         notes = []
+        if observations is not None and rows and this_events is None:
+            notes.append("The room's recorded source events could not be "
+                         "read; the messages below are complete.")
         if any("was" in m for m in out):
             notes.append(
                 "A message with `was` was edited after sending: `body` is what it "
@@ -5702,8 +5785,18 @@ def build_tool_specs(
             # `LOAD_TRANSCRIPT_MAX` rows), and this is the same class, read by
             # the same renderer. A second label would split one class in two.
             rows = list(await media_join.enrich(rows, path="load_transcript"))
+        # The TARGET room's typed source events of the same window, same
+        # projection — a read of a room carries what the source did there,
+        # not only what was said.
+        target_events = None
+        if observations is not None:
+            target_events = await _room_source_events(
+                SourceScope(platform=target.platform, account_key="",
+                            conversation_id=target.conversation_id),
+                since_ms=min(r.ts for r in rows))
         out, threaded = _transcript_messages(
             rows, now=now, with_ids=on_rows is not None,
+            source_events=target_events,
         )
         if on_rows is not None:
             on_rows(rows)
@@ -5719,6 +5812,9 @@ def build_tool_specs(
             "messages": out,
         }
         notes = []
+        if observations is not None and target_events is None:
+            notes.append("The room's recorded source events could not be "
+                         "read; the messages below are complete.")
         if any("reactions_source" in m for m in out):
             notes.append(_REACTIONS_NOTE)
         if older:
@@ -5726,6 +5822,64 @@ def build_tool_specs(
         if notes:
             result["note"] = " ".join(notes)
         return _memory_result(result)
+
+    def _source_name_of(platform: str, ref: str) -> str | None:
+        """A subject's roster name, or None — a raw ref never reaches a
+        tool result (R-18)."""
+        found = persons.resolve(platform, ref) if persons is not None else None
+        return found.name if found is not None else None
+
+    async def _room_source_events(
+        scope: SourceScope, *, since_ms: int, limit: int = 24,
+    ) -> tuple[SourceEvent, ...] | None:
+        """The room's typed source events at/after `since_ms`, projected —
+        or None when the read failed (the caller says so in its result:
+        a failed read is `unavailable`, never an empty list)."""
+        try:
+            rows = await observations.recent(
+                scope=scope, since_ms=since_ms, limit=limit)
+            poll_heads = {
+                (h.object_ref, h.account_key, h.thread): h
+                for h in await observations.heads(
+                    scope=scope, kind="poll", limit=32)}
+        except Exception:
+            return None
+
+        def option_label(r: Any, ref: str) -> str | None:
+            h = poll_heads.get((
+                r.observation.object_ref, r.observation.scope.account_key,
+                r.observation.scope.thread))
+            entry = (h.state.get("options") or {}).get(ref) if h else None
+            return (entry or {}).get("label")
+
+        def event_of(r: Any) -> SourceEvent:
+            o = r.observation
+            actor = None
+            if o.actor_id and o.actor_status == "known":
+                actor = _source_name_of(o.scope.platform, o.actor_id)
+            return SourceEvent(
+                ref=f"platform_observation:{r.id}",
+                kind=o.object_kind, operation=o.operation,
+                at_ms=(o.occurred_ms if o.occurred_ms is not None
+                       else o.received_ms),
+                time_quality=o.time_quality,
+                actor=actor, actor_status=o.actor_status,
+                handle=object_handle(
+                    o.object_kind, o.object_ref,
+                    account_key=o.scope.account_key,
+                    thread=o.scope.thread),
+                summary=observation_summary(
+                    o,
+                    name_of=lambda ref, o=o: _source_name_of(
+                        o.scope.platform, ref),
+                    option_label=lambda ref, r=r: option_label(r, ref)),
+                target_message_id=r.target_message_id,
+                received_ms=o.received_ms,
+                revision=(f"{o.revision_scope or 'rev'}:{o.source_position}"
+                          if o.source_position is not None else ""),
+                coverage=coverage_label(o.coverage),
+            )
+        return tuple(event_of(r) for r in rows)
 
     async def _observation_query(
         kind: str, object: str | None, history: bool, at_id: int | None,
@@ -5740,20 +5894,22 @@ def build_tool_specs(
             platform=room.platform, account_key="",
             conversation_id=bound_conversation_id)
         try:
-            heads = await observations.heads(
-                scope=scope, kind=kind, limit=20)
             if object is None and not history and at_id is None:
                 # DISCOVERY: this room's objects of the kind (its polls,
-                # its pin set) — model-safe handles + folded state.
-                if not heads:
-                    _record(metrics, "record_query", "nothing_found",
-                            kind=kind)
-                    return {"status": "nothing_found",
-                            "note": f"No {kind} objects are recorded "
-                                    f"for this room."}
-                out = [{"object": object_handle(h.kind, h.object_ref),
-                        "state": head_summary(h), "ordering": h.ordering}
-                       for h in heads if h.applied > 0]
+                # its pin set) — model-safe handles + folded state, the
+                # most recently observed first, `more` counted when the
+                # page cut the scope's head set.
+                heads = await observations.heads(
+                    scope=scope, kind=kind, limit=_DISCOVERY_LIMIT + 1)
+                heads = sorted(
+                    (h for h in heads if h.applied > 0),
+                    key=lambda h: h.observed_ms or 0, reverse=True)
+                more = len(heads) > _DISCOVERY_LIMIT
+                out = [{"object": handle_of(h),
+                        "state": head_summary(h), "ordering": h.ordering,
+                        **({"coverage": coverage_label(h.coverage)}
+                           if coverage_label(h.coverage) else {})}
+                       for h in heads[: _DISCOVERY_LIMIT]]
                 if not out:
                     _record(metrics, "record_query", "nothing_found",
                             kind=kind)
@@ -5761,17 +5917,18 @@ def build_tool_specs(
                             "note": f"No {kind} objects are recorded "
                                     f"for this room."}
                 _record(metrics, "record_query", "ok", kind=kind,
-                        objects=len(out))
+                        objects=len(out), more=more)
                 return _memory_result(
                     {"status": "ok", "kind": kind, "objects": out,
+                     **({"more": True} if more else {}),
                      "note": "Objects are named by opaque handles; pass one "
                              "back as `object` for its detail."})
-            # DETAIL: resolve the handle the model handed back against the
-            # bounded head set — a digest it invented resolves to nothing.
-            head = next(
-                (h for h in heads
-                 if object_handle(h.kind, h.object_ref) == object), None)
-            if head is None:
+            # DETAIL: resolve the handle EXACTLY — `head_for_handle` digs
+            # the digest against the whole scoped head set, so an object
+            # older than any page still resolves; a digest it invented is
+            # a real `nothing_found`, never an accidental first-page miss.
+            head = await observations.head_for_handle(scope=scope, handle=object)
+            if head is None or head.kind != kind:
                 _record(metrics, "record_query", "nothing_found",
                         kind=kind, handle=bool(object))
                 return {"status": "nothing_found",
@@ -5793,24 +5950,33 @@ def build_tool_specs(
             if history:
                 rows = await observations.history(
                     scope=scope, kind=kind, object_ref=head.object_ref,
-                    limit=50)
+                    limit=_HISTORY_LIMIT)
                 out = [{"event": f"platform_observation:{r.id}",
                         "op": r.observation.operation,
                         "at_ms": (r.observation.occurred_ms
                                   if r.observation.occurred_ms is not None
                                   else r.observation.received_ms),
                         "time": r.observation.time_quality,
-                        "summary": observation_summary(r.observation)}
+                        "coverage": coverage_label(r.observation.coverage),
+                        "summary": observation_summary(
+                            r.observation,
+                            name_of=lambda ref, o=r.observation:
+                                _source_name_of(o.scope.platform, ref))}
                        for r in rows]
                 _record(metrics, "record_query", "ok", kind=kind,
                         events=len(out))
                 return _memory_result(
                     {"status": "ok", "kind": kind, "object": object,
-                     "events": out})
+                     "events": out,
+                     **({"more": True} if len(rows) == _HISTORY_LIMIT
+                        else {})})
             _record(metrics, "record_query", "ok", kind=kind, detail=True)
             return _memory_result(
                 {"status": "ok", "kind": kind, "object": object,
-                 "state": head_summary(head), "ordering": head.ordering})
+                 "detail": head_detail(
+                     head,
+                     name_of=lambda ref: _source_name_of(
+                         room.platform, ref))})
         except Exception:
             log.exception("record_query observation branch failed")
             _record(metrics, "record_query", "unavailable", kind=kind)
@@ -5863,8 +6029,18 @@ def build_tool_specs(
                 return {"status": "unavailable",
                         "note": _RECORD_QUERY_OFF if observations is None else
                         f"`kind` must be one of {', '.join(_OBSERVATION_KINDS)}."}
+            # `object` without `kind`: the handle NAMES its kind — an
+            # opaque `<kind>:<digest>` parses, anything else is a real
+            # `nothing_found`, never a defaulted `poll` that could
+            # misroute a pin's handle.
+            parsed = parse_handle(object) if object else ("", "")
+            if object is not None and kind is None and not parsed[0]:
+                _record(metrics, "record_query", "nothing_found",
+                        reason="handle")
+                return {"status": "nothing_found",
+                        "note": "No recorded object has that handle here."}
             return await _observation_query(
-                kind or "poll", object, history, at_id)
+                kind or parsed[0], object, history, at_id)
         # LINEAGE FIRST, before any read: the rooms this call may touch are the ones
         # whose `message` lineage passes for THIS room (DEC-225), so
         # another room's words never reach the process for a room that may
@@ -5965,6 +6141,22 @@ def build_tool_specs(
         _record(metrics, "record_query", "ok", rows=len(out), more=more,
                 rooms=len(rooms), withheld=withheld, near=len(near))
         result: dict = {"status": "ok", "messages": out}
+        # The bound room's typed source events of the SAME interval, same
+        # projection — the query reads what was said AND what the source
+        # did here. `all_rooms` keeps them out: source events carry no
+        # `room` key yet, so a cross-room list would misattribute them.
+        if observations is not None and scope != "all_rooms":
+            src = await _room_source_events(
+                SourceScope(platform=room.platform, account_key="",
+                            conversation_id=bound_conversation_id),
+                since_ms=start_ms)
+            if src is None:
+                notes.append("The room's recorded source events could not "
+                             "be read; the messages are complete.")
+            elif src:
+                result["source_events"] = [
+                    _source_event_item(e, now=now)["source_event"]
+                    for e in src if e.at_ms <= end_ms]
         if notes:
             result["note"] = " ".join(notes)
         return _memory_result(result)
@@ -6008,6 +6200,154 @@ def build_tool_specs(
                 item["near"] = True
             out.append(item)
         return out
+
+    # ---- poll_list / poll_read / room_state_read ----
+    #
+    # The task-shaped source-object reads (design/platform-observations 05):
+    # `record_query`'s `kind` branch carries history and as-of reads, but a
+    # model asking «what polls are open» or «is this room's name what it was»
+    # should not have to know a kind name. These three wrap the same scoped,
+    # bounded reads the observation Record already owns; `record_query` stays
+    # the compatible history/as-of path. All three answer `unavailable` on
+    # an unwired store (R-27), never an empty list read as «none».
+
+    _OBS_OFF = "I can't read what the source recorded right now. Say so."
+
+    async def poll_list() -> dict:
+        """List this room's recorded polls and how each stands.
+
+        Returns `polls`, each with an `object` handle (for `poll_read`),
+        `question`, `status`, `options` (label plus counted votes), and
+        `ordering` when the source gave one.
+        """
+        if observations is None:
+            _record(metrics, "poll_list", "unavailable", reason="unwired")
+            return {"status": "unavailable", "note": _OBS_OFF}
+        scope = SourceScope(
+            platform=room.platform, account_key="",
+            conversation_id=bound_conversation_id)
+        try:
+            heads = await observations.heads(
+                scope=scope, kind="poll", limit=_DISCOVERY_LIMIT + 1)
+            heads = sorted(
+                (h for h in heads if h.applied > 0),
+                key=lambda h: h.observed_ms or 0, reverse=True)
+            more = len(heads) > _DISCOVERY_LIMIT
+            polls = []
+            for h in heads[: _DISCOVERY_LIMIT]:
+                detail = head_detail(
+                    h, name_of=lambda ref: _source_name_of(
+                        room.platform, ref))
+                entry: dict[str, Any] = {
+                    "object": handle_of(h),
+                    "question": detail.get("question"),
+                    "status": detail.get("state") or "unknown",
+                }
+                if detail.get("options"):
+                    entry["options"] = [
+                        {"label": o.get("label")} for o in detail["options"]]
+                if detail.get("tally"):
+                    entry["tally"] = detail["tally"]
+                if h.ordering:
+                    entry["ordering"] = h.ordering
+                cov = coverage_label(h.coverage)
+                if cov:
+                    entry["coverage"] = cov
+                polls.append(entry)
+        except Exception:
+            log.exception("poll_list failed")
+            _record(metrics, "poll_list", "unavailable")
+            return {"status": "unavailable", "note": _OBS_OFF}
+        if not polls:
+            _record(metrics, "poll_list", "nothing_found")
+            return {"status": "nothing_found",
+                    "note": "No polls are recorded for this room."}
+        _record(metrics, "poll_list", "ok", polls=len(polls))
+        return _memory_result(
+            {"status": "ok", "polls": polls,
+             **({"more": True} if more else {})})
+
+    async def poll_read(object: str) -> dict:
+        """Read one recorded poll's full state by its `object` handle.
+
+        `object` is a handle `poll_list` or the transcript returned —
+        `poll:` followed by letters and digits. Returns the question,
+        options with counted votes, the voters who could be named, the
+        closing state, retained history length and the poll's ordering.
+        """
+        if observations is None:
+            _record(metrics, "poll_read", "unavailable", reason="unwired")
+            return {"status": "unavailable", "note": _OBS_OFF}
+        kind, _digest = parse_handle(object)
+        if kind != "poll":
+            _record(metrics, "poll_read", "nothing_found", reason="kind")
+            return {"status": "nothing_found",
+                    "note": "That is not a poll handle. `poll_list` gives "
+                            "this room's poll handles."}
+        scope = SourceScope(
+            platform=room.platform, account_key="",
+            conversation_id=bound_conversation_id)
+        try:
+            head = await observations.head_for_handle(
+                scope=scope, handle=object)
+            if head is None:
+                _record(metrics, "poll_read", "nothing_found")
+                return {"status": "nothing_found",
+                        "note": "No recorded poll has that handle here."}
+            detail = head_detail(
+                head, name_of=lambda ref: _source_name_of(
+                    room.platform, ref))
+            _record(metrics, "poll_read", "ok")
+            return _memory_result(
+                {"status": "ok", "poll": detail})
+        except Exception:
+            log.exception("poll_read failed")
+            _record(metrics, "poll_read", "unavailable")
+            return {"status": "unavailable", "note": _OBS_OFF}
+
+    async def room_state_read() -> dict:
+        """Read what the source recorded about this room itself.
+
+        Returns the room's folded `room` head — title, topic, who may post
+        — plus its member-set head's counted state (member count when the
+        source said one), each with `ordering` and `coverage` so a partial
+        snapshot reads as partial.
+        """
+        if observations is None:
+            _record(metrics, "room_state_read", "unavailable",
+                    reason="unwired")
+            return {"status": "unavailable", "note": _OBS_OFF}
+        scope = SourceScope(
+            platform=room.platform, account_key="",
+            conversation_id=bound_conversation_id)
+        try:
+            out: dict[str, Any] = {}
+            for kind in ("room", "membership", "pin"):
+                heads = await observations.heads(
+                    scope=scope, kind=kind, limit=4)
+                for h in heads:
+                    if h.applied <= 0:
+                        continue
+                    entry = {"object": handle_of(h),
+                             "detail": head_detail(
+                                 h, name_of=lambda ref: _source_name_of(
+                                     room.platform, ref))}
+                    if h.ordering:
+                        entry["ordering"] = h.ordering
+                    cov = coverage_label(h.coverage)
+                    if cov:
+                        entry["coverage"] = cov
+                    out.setdefault(kind + "s", []).append(entry)
+        except Exception:
+            log.exception("room_state_read failed")
+            _record(metrics, "room_state_read", "unavailable")
+            return {"status": "unavailable", "note": _OBS_OFF}
+        if not out:
+            _record(metrics, "room_state_read", "nothing_found")
+            return {"status": "nothing_found",
+                    "note": "Nothing about the room itself is recorded."}
+        _record(metrics, "room_state_read", "ok")
+        return _memory_result({"status": "ok", **out})
 
     # ---- rollup_read and standing_read ----
     #
@@ -17181,6 +17521,9 @@ Args:
         _spec("room_list", room_list),
         _spec("room_read", room_read),
         _spec("record_query", record_query),
+        _spec("poll_list", poll_list),
+        _spec("poll_read", poll_read),
+        _spec("room_state_read", room_state_read),
         _spec("rollup_read", rollup_read),
         _spec("standing_read", standing_read),
         _spec("character_read", character_read),
@@ -17475,6 +17818,10 @@ def build_tools(
     standing_head: StandingHeadSource | None = None,
     ledger: StandingLedger | None = None,
     culture: CultureReader | None = None,
+    # The typed platform-observation Record: `record_query`'s `kind` branch,
+    # `poll_list`/`poll_read`/`room_state_read` and the source events a
+    # transcript read carries. `None` answers those `unavailable`.
+    observations: Any = None,
     # `social_read`'s read of the social stream's Record. `None` answers
     # `unavailable`; the registry withholds the tool before that matters.
     social_items: SocialItemsSource | None = None,
@@ -17539,6 +17886,7 @@ def build_tools(
         rollup=rollup,
         standing_head=standing_head, ledger=ledger,
         culture=culture,
+        observations=observations,
         social_items=social_items,
         subagent=subagent,
         video=video, video_ref_kinds=video_ref_kinds,

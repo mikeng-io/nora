@@ -1168,6 +1168,16 @@ class ObservationStore(Protocol):
         discovery read (a room's polls, its pin set)."""
         ...
 
+    async def head_for_handle(
+        self, *, scope: SourceScope, handle: str,
+    ) -> ObservationHead | None:
+        """The one head `handle` names, or None — the EXACT resolution of
+        the handle a discovery read handed out (`kind:<digest>`), scope
+        and all. Never a scan of a bounded head page: an object older
+        than the page is a hit, not a `nothing_found`. A handle whose
+        digest matches nothing in `scope` resolves to None."""
+        ...
+
     async def history(
         self, *, scope: SourceScope, kind: str, object_ref: str,
         after_id: int = 0, limit: int = 1000,

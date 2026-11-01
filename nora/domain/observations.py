@@ -677,6 +677,12 @@ class ObservationHead:
     observed_ms: int | None = None        # newest source time applied
     ordering: str = "arrival"             # ordered | arrival | gap
     coverage: dict[str, Any] = field(default_factory=dict)
+    #: The object's account and thread, carried from its scope so a
+    #: room-wide read (empty `account_key`) can still give each head its
+    #: own scoped handle: two accounts' same-named `p1` never merge under
+    #: one `poll:<digest>`.
+    account_key: str = ""
+    thread: str = ""
 
 
 def _compare(head: ObservationHead, obs: Observation) -> int:
@@ -710,8 +716,10 @@ def fold_observation(
     """
     obs = row.observation
     if head is None:
-        head = ObservationHead(kind=obs.object_kind, object_ref=obs.object_ref,
-                               state=_initial_state(obs.object_kind))
+        head = ObservationHead(
+            kind=obs.object_kind, object_ref=obs.object_ref,
+            state=_initial_state(obs.object_kind),
+            account_key=obs.scope.account_key, thread=obs.scope.thread)
     cmp = _compare(head, obs)
     coverage = dict(head.coverage)
     ordering = head.ordering
@@ -765,7 +773,8 @@ def fold_observation(
         applied=head.applied + (1 if applied else 0),
         head_id=row.id if applied else head.head_id,
         position=position, scope=scope, observed_ms=observed,
-        ordering=ordering, coverage=coverage)
+        ordering=ordering, coverage=coverage,
+        account_key=head.account_key, thread=head.thread)
 
 
 def rebuild_head(
@@ -1035,17 +1044,24 @@ def _apply_pin(
     p = cast(PinPayload, obs.payload)
     pins = dict(state["pins"])
     op = obs.operation
+    # Timestamp-addressed targets need their author too: two authors can
+    # share a sent timestamp, and `target_key` is the ONE typed addressing
+    # — the same key an observation stores, so add and remove meet on it.
+    key = target_key(p.message, author_id=obs.target_author_id)
     if op == "add" and p.message is not None:
-        pins[_target_key(p.message)] = {
+        pins[key] = {
             "actor": obs.actor_id or None,
             "pinned_ms": obs.occurred_ms,
             "time_quality": obs.time_quality}
     elif op == "remove" and p.message is not None:
-        pins.pop(_target_key(p.message), None)
+        pins.pop(key, None)
     elif op == "snapshot":
         if obs.coverage.complete:
             pins = {}
         for t in p.pins:
+            # Snapshot targets carry no author pair of their own; a
+            # timestamp-addressed pin without one keeps the bare `ts:` key,
+            # honestly unresolvable rather than co-claimed by an author.
             pins.setdefault(_target_key(t), {"actor": None,
                                              "pinned_ms": None,
                                              "time_quality": "unknown"})
@@ -1125,16 +1141,77 @@ class SourceEvent:
     target_message_id: int | None = None
     state: str = ""                 # head summary when a detail read asks
     ordering: str = ""              # head's ordered|arrival|gap, when shown
+    #: The bridge's own receive clock for this row — shown beside `at_ms`
+    #: when the source's time is unknown or bridge-local, never silently
+    #: substituted for it. 0 means no received time was recorded.
+    received_ms: int = 0
+    #: The source's own revision label (`revision_scope:position`), when
+    #: the source supplies one — ordering evidence, never parsed.
+    revision: str = ""
+    #: The source header's coverage, labelled (`coverage_label`): the
+    #: covered grain ("guild", "pin_set"), its gaps and its partiality —
+    #: never smoothed into a complete-looking fact.
+    coverage: str = ""
 
 
-def object_handle(kind: str, object_ref: str) -> str:
+def coverage_label(coverage: Coverage | dict[str, Any] | None) -> str:
+    """A coverage header/dict as one compact label, or "" for the default
+    full-event coverage. The covered grain is always named first when it
+    is not the plain event (`guild`, `pin_set`): a guild-scoped read must
+    not read as the room's membership."""
+    if coverage is None:
+        return ""
+    get = coverage.get if isinstance(coverage, dict) else (
+        lambda k, d=None: getattr(coverage, k, d))
+    covered = get("covered") or ""
+    gaps = get("gaps") or ()
+    complete = bool(get("complete", True))
+    reason = get("reason") or ""
+    parts: list[str] = []
+    if covered and covered != "event":
+        parts.append(str(covered))
+    if not complete:
+        parts.append("partial")
+    if gaps:
+        parts.append("gaps:" + "+".join(str(g) for g in gaps))
+    if reason and (not complete or gaps):
+        parts.append(f"reason:{reason}")
+    return ";".join(parts)
+
+
+def object_handle(
+    kind: str, object_ref: str, *, account_key: str = "", thread: str = "",
+) -> str:
     """The model-safe name of an object: `<kind>:<12 hex of its ref>`.
     Deterministic, so a handle a tool handed out resolves on the next read
     of the same scope — and an opaque digest, so a platform's own object id
-    never reaches a prompt or a tool result (R-18)."""
+    never reaches a prompt or a tool result (R-18).
+
+    The object's scope (`account_key`, `thread`) joins the digest: a
+    room-wide read that spans accounts or threads must never merge two
+    scopes' same-named objects under one handle."""
     import hashlib
-    digest = hashlib.sha256(f"{kind}:{object_ref}".encode()).hexdigest()[:12]
+    digest = hashlib.sha256(
+        f"{account_key}|{thread}|{kind}:{object_ref}".encode()
+    ).hexdigest()[:12]
     return f"{kind}:{digest}"
+
+
+def handle_of(head: ObservationHead) -> str:
+    """A folded head's model-safe handle, scoped as `object_handle` is."""
+    return object_handle(head.kind, head.object_ref,
+                         account_key=head.account_key, thread=head.thread)
+
+
+def parse_handle(handle: str) -> tuple[str, str]:
+    """`(kind, digest)` of a handle, or `("", "")` when it is not one.
+
+    A handle is `<kind>:<digest>`; the kind prefix is what lets a bare
+    `object` argument name its own kind rather than guessing one."""
+    kind, sep, digest = str(handle or "").partition(":")
+    if not sep or not kind or not digest:
+        return "", ""
+    return kind, digest
 
 
 _SUMMARY_MAX = 160
@@ -1145,6 +1222,20 @@ def _clip(text: str, limit: int = _SUMMARY_MAX) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def _field_value(value: Any) -> str:
+    """One room field's rendered value: scalars only, bounded. A dict,
+    list or tuple (a permission set, a participant map) is a structured
+    value that can carry member ids — it reports `changed`, never its
+    contents, so no platform identifier reaches a summary."""
+    if isinstance(value, bool):
+        return "on" if value else "off"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return f"“{_clip(value, 60)}”"
+    return "changed"
+
+
 def _fields_summary(fields: dict[str, Any]) -> str:
     out = []
     for name in sorted(fields):
@@ -1152,13 +1243,30 @@ def _fields_summary(fields: dict[str, Any]) -> str:
         if value is None:
             out.append(f"{name} cleared")
         else:
-            out.append(f"{name} set to {_clip(value, 60)}")
+            out.append(f"{name} {_field_value(value)}")
     return "; ".join(out)
 
 
-def observation_summary(obs: Observation) -> str:
+def _who(ref: str, name_of: Any) -> str:
+    """A subject's display name: the caller's resolved roster name, or an
+    anonymous placeholder — never the raw platform `ref` itself (R-18)."""
+    if not ref:
+        return ""
+    name = name_of(ref) if name_of is not None else None
+    return name or "a member"
+
+
+def observation_summary(
+    obs: Observation, *, name_of: Any = None, option_label: Any = None,
+) -> str:
     """The change one observation reports, as one bounded fact line — pure
-    (a summary of the payload, never a conclusion about it)."""
+    (a summary of the payload, never a conclusion about it).
+
+    `name_of` resolves a person ref to a display name; `option_label`
+    resolves a poll option ref to its label. Neither is guessed: an
+    unresolved person is `a member`/`a voter`, an unresolved option an
+    opaque `option` handle — a raw voter, subject or option ref never
+    reaches a prompt or a tool result."""
     p = obs.payload
     op = obs.operation
     if isinstance(p, PollPayload):
@@ -1167,9 +1275,20 @@ def observation_summary(obs: Observation) -> str:
             opts = f" with {len(p.options)} options" if p.options else ""
             return _clip(f"poll {op}: {tail}{opts}")
         if p.voter_ref or p.option_ref or p.selected is not None:
-            choice = ", ".join(p.selected) if p.selected else (p.option_ref or "")
-            who = "a voter" if p.anonymous else (p.voter_ref or "a voter")
-            return _clip(f"poll vote {op}: {who} on {choice or 'an option'}")
+            if p.selected:
+                choice = ", ".join(
+                    option_label(o) if option_label is not None and
+                    option_label(o) else f"option {o[-4:] or '?'}"
+                    for o in p.selected) or "an option"
+            elif p.option_ref:
+                choice = (option_label(p.option_ref)
+                          if option_label is not None else None) or \
+                    f"option {p.option_ref[-4:] or '?'}"
+            else:
+                choice = "an option"
+            who = ("an anonymous voter" if p.anonymous
+                   else (_who(p.voter_ref, name_of) or "a voter"))
+            return _clip(f"poll vote {op}: {who} on {choice}")
         if p.state:
             return _clip(f"poll {op}: state {p.state}"
                          + (f", {p.voter_count} votes"
@@ -1186,7 +1305,7 @@ def observation_summary(obs: Observation) -> str:
                          f"reported ({p.covered or 'set'})")
         role = f" as {p.role}" if p.role else ""
         state = f" ({p.state})" if p.state else ""
-        return _clip(f"membership {op}: {obs.subject_ref or 'a member'}"
+        return _clip(f"membership {op}: {_who(obs.subject_ref, name_of) or 'a member'}"
                      f"{role}{state}")
     if isinstance(p, PinPayload):
         if p.pins:
@@ -1252,3 +1371,87 @@ def head_summary(head: ObservationHead) -> str:
                      + ", ".join(f"{k}={v}" for k, v in counts.items())
                      or "none recorded")
     return _clip(f"{head.kind}: {head.applied} observation(s) applied")
+
+
+def head_detail(head: ObservationHead, *, name_of: Any = None) -> dict[str, Any]:
+    """The object's folded state as a tool result's structured fields —
+    the readable detail `head_summary`'s one line cannot carry: a poll's
+    question and option labels, its lifecycle state and its recorded
+    tally; a room's named fields; the member, pin and artifact counts.
+
+    Person refs resolve through `name_of` the same way
+    `observation_summary`'s do — a roster name or nothing, never a raw
+    platform id. `coverage`/`ordering`/`observed_ms` ride beside it so a
+    partial or gapped head never reads as settled truth."""
+    s = head.state
+    out: dict[str, Any] = {
+        "kind": head.kind,
+        "handle": handle_of(head),
+        "ordering": head.ordering,
+        "applied": head.applied,
+        "summary": head_summary(head),
+    }
+    if head.observed_ms is not None:
+        out["observed_ms"] = head.observed_ms
+    if head.coverage:
+        out["coverage"] = dict(head.coverage)
+    if head.kind == "poll":
+        out["state"] = s.get("state") or "unknown"
+        if s.get("question"):
+            out["question"] = s["question"]
+        options = s.get("options") or {}
+        if options:
+            # Option refs stay opaque handles (`option <tail>`); labels
+            # are the model-facing name.
+            out["options"] = [
+                {"option": f"option {ref[-4:] or '?'}",
+                 "label": (e or {}).get("label") or ""}
+                for ref, e in options.items()
+            ]
+        counts = s.get("option_counts") or {}
+        if counts:
+            out["tally"] = {
+                f"option {ref[-4:] or '?'}": n for ref, n in counts.items()}
+        if s.get("voter_count") is not None:
+            out["voter_count"] = s["voter_count"]
+        votes = s.get("votes") or {}
+        if votes:
+            out["recorded_votes"] = sum(len(v) for v in votes.values())
+            out["voters_named"] = sum(
+                1 for v in votes if name_of is not None and name_of(v))
+            out["voters_unnamed"] = len(votes) - out["voters_named"]
+        if s.get("anonymous") is not None:
+            out["anonymous"] = s["anonymous"]
+        if s.get("counts_complete") is not None:
+            out["counts_complete"] = bool(s.get("counts_complete"))
+        return out
+    if head.kind == "room":
+        fields = s.get("fields") or {}
+        out["fields"] = {
+            k: v for k, v in fields.items()
+            if isinstance(v, (str, int, float, bool)) or v is None
+        }
+        # Structured field values (permission sets, participant maps) are
+        # reported by name only — their contents can carry member ids.
+        complex_fields = [k for k, v in fields.items()
+                          if not isinstance(v, (str, int, float, bool, type(None)))]
+        if complex_fields:
+            out["fields_structured"] = sorted(complex_fields)
+        return out
+    if head.kind == "membership":
+        members = s.get("members") or {}
+        out["member_count"] = len(members)
+        named = [m for m in members if name_of is not None and name_of(m)]
+        if named:
+            out["members_named"] = [name_of(m) for m in named]
+        out["members_unnamed"] = len(members) - len(named)
+        if s.get("covered"):
+            out["covered"] = s["covered"]
+        return out
+    if head.kind == "pin":
+        out["pin_count"] = len(s.get("pins") or {})
+        return out
+    if head.kind == "artifact":
+        out["artifact_count"] = len(s.get("artifacts") or {})
+        return out
+    return out

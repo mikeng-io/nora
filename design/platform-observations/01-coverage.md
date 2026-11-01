@@ -58,3 +58,42 @@ its name. Inspect its actual fields/consumers before considering reuse.
 Upstream pages are research evidence as of this date, not frozen protocol fixtures.
 No public API research was substituted for Instagram's actual private transport.
 No live accounts were queried. Re-check revision and fill unknown cells during build.
+
+## Pinned native-source evidence (implementation cluster addendum)
+
+Consolidated from `/tmp/nora-po/platform-observation-python-sources-receipt.md`
+(Python lane) and `platform-observation-native-sources-findings.md` (native
+lane), labels preserved. This addendum supersedes no cell above; it pins the
+revisions the capture lanes landed against.
+
+- **[W] WhatsApp transport pinned at `@whiskeysockets/baileys 7.0.0-rc13`.**
+  Capture subscribes `messages.upsert` (type `notify`), `connection.update`,
+  `creds.update` only; poll definitions, poll votes, poll snapshots, pin
+  transitions, room changes, membership events and shared artifacts are
+  upstream-supported but reach the typed path only through the capture lane's
+  explicit bindings. Poll votes require creation-message secret material: a
+  vote whose creation predates capture is permanently unavailable — recorded
+  as a coverage gap, never a guessed tally. WhatsApp has no global ordering
+  token; per-field clocks plus arrival order are the honest ordering
+  evidence. Snapshot payloads are covered sets — an omitted member is
+  `unknown`, never a deletion. The conditional WhatsApp stanza reuse noted
+  in the generated fixtures is a fixture property, not a live incident.
+- **[IG] Instagram transport pinned at `go.mau.fi/mautrix-meta v0.2609.0`.**
+  `uq_seq_id` orders deltas within a stream; clockless deltas are ambiguous
+  and journaled, not ordered by guess. Polls are explicitly unavailable at
+  this version — an `unavailable` answer, never a confident `nothing_found`.
+  The hypothetical `UnknownEvent` shape in the findings is a placeholder
+  sketch, not an observed upstream poll payload.
+- **[S] Signal (post-addendum source lane).** Poll `object_ref` now carries
+  target creator + timestamp; an unknown creator is an explicitly unresolved
+  ref with a `target_author` coverage gap. Pin add/remove addressing is
+  `(timestamp, target_author_id)` so two authors' pins on the same timestamp
+  cannot collapse.
+- **[D] Discord (post-addendum source lane).** Guild membership/role events
+  retain their guild `object_ref` and guild-grained coverage; the bridge
+  binds scoped copies only to configured guild/channel conversations — guild
+  grain is labelled source grain, not channel audience, and a new member is
+  the SUBJECT, never the invented actor.
+- Typing notifications remain excluded by decision.
+- The native lane made no production edits, no SQL, no eval and no PR; its
+  findings are evidence for this cluster, not shipped capture.

@@ -68,6 +68,8 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     # the warehouse queries
     "record_query", "rollup_read", "event_search", "memo_read", "character_read",
     "standing_read", "social_read",
+    # the typed source-object reads (platform-observations 05)
+    "poll_list", "poll_read", "room_state_read",
     # the tiers' reads that already exist
     "where_been", "routine_read", "note_read", "note_search",
     # memory
@@ -92,6 +94,13 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
 READ_TOOL_AUDIT: Mapping[str, str] = {
     "record_query": "SQL read of messages, edits, reactions, deletes and the media "
                     "index (`MediaJoin.enrich`); counters only. No write.",
+    "poll_list": "SQL SELECT of `platform_object_state` heads of this room's "
+                 "scope, kind poll; counters only. No write.",
+    "poll_read": "SQL SELECT of one `platform_object_state` head by its scoped "
+                 "digest; counters only. No write.",
+    "room_state_read": "SQL SELECT of `platform_object_state` heads of this "
+                       "room's scope, kinds room/membership/pin; counters only. "
+                       "No write.",
     "rollup_read": "SQL SELECT of the CURRENT rollup build's rows (`rollup_build` "
                    "status=current) and derived places; counters only. It starts, "
                    "advances and switches no build, and folds nothing. No write.",

@@ -9,9 +9,11 @@ for its own injected XML, with the label replaced by the sentence.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
+from typing import Any
 
 from ..domain.blocks import (
     BlockKey,
@@ -528,25 +530,54 @@ def _transcript_block(
     """
     rows = render_transcript(ctx.transcript, display_name=display_name, now=now)
     # The typed source events of the same window (design/platform-
-    # observations 04): `<source_event>` elements AFTER the `<m>` list —
-    # they are not messages and take no `#n` handle (a reply cannot name
-    # one). Each says its kind, the operation, the source's own time (and
-    # WHICH clock, when it is not the upstream's), the actor the source
+    # observations 04): `<source_event>` elements INTERLEAVED into the
+    # transcript at their own time — a vote between two messages reads
+    # between them, not as an appendix after the last word. They are not
+    # messages and take no `#n` handle (a reply cannot name one). Each
+    # says its kind, the operation, the source's own time (and WHICH
+    # clock, when it is not the upstream's), the actor the source
     # names — a roster name or nothing, never a speaker line.
-    events = render_elements(
-        sorted(ctx.source_events, key=lambda e: e.at_ms), tag="source_event",
-        attrs=lambda e, _i: (
-            ("kind", e.kind), ("op", e.operation),
-            ("at", age(e.at_ms, now)),
-            ("actor", e.actor or (
-                "anonymous" if e.actor_status == "anonymous" else None)),
-            ("time", e.time_quality if e.time_quality != "upstream" else None),
-            ("object", e.handle),
-        ),
-        body=lambda e: e.summary,
-    )
+    def _event(e: Any) -> str:
+        return render_elements(
+            [e], tag="source_event",
+            attrs=lambda ev, _i: (
+                ("kind", ev.kind), ("op", ev.operation),
+                ("at", age(ev.at_ms, now) if ev.at_ms > 0 else None),
+                ("actor", ev.actor or (
+                    "anonymous" if ev.actor_status == "anonymous" else None)),
+                ("time", ev.time_quality if ev.time_quality != "upstream"
+                        else None),
+                ("received", age(ev.received_ms, now)
+                        if ev.received_ms and ev.time_quality != "upstream"
+                        else None),
+                ("rev", ev.revision or None),
+                ("coverage", ev.coverage or None),
+                ("object", ev.handle),
+            ),
+            body=lambda ev: ev.summary,
+        )
+
+    events = sorted(ctx.source_events, key=lambda e: e.at_ms)
     if events:
-        rows = f"{rows}\n{events}" if rows else events
+        # The `<m>` elements correspond 1:1 to `ctx.transcript` in order;
+        # split at element boundaries — an element body cannot contain
+        # `\n<m ` (escape keeps `<` out of every body and attribute).
+        chunks = re.split(r"(?=\n<m )", rows) if rows else []
+        merged: list[str] = []
+        pending = iter(zip(ctx.transcript, chunks))
+        row, chunk = next(pending, (None, ""))
+        for e in events:
+            while row is not None and row.ts <= e.at_ms:
+                merged.append(chunk)
+                row, chunk = next(pending, (None, ""))
+            merged.append(_event(e))
+        while row is not None:
+            merged.append(chunk)
+            row, chunk = next(pending, (None, ""))
+        rows = "\n".join(c for c in merged if c)
+    if ctx.source_reads_failed:
+        rows = f"{rows}\n<source_reads unavailable/>" if rows else \
+            "<source_reads unavailable/>"
     # `window` is R-15, on the block it is about. A model that does not know
     # how far back it can see cannot tell «nobody said that» from «not in what
     # you were shown», and «further back than you were shown» means nothing
@@ -561,7 +592,9 @@ def _transcript_block(
     # parameter for the caller's own bookkeeping; this block does not read it.
     return _block(
         "group_transcript",
-        attrs=(("window", str(len(ctx.transcript))),),
+        attrs=(("window", str(len(ctx.transcript))),)
+        + (("source_more", str(ctx.source_events_more)),)
+        if ctx.source_events_more else (("window", str(len(ctx.transcript))),),
         body=rows,
     )
 
@@ -885,6 +918,7 @@ def _spoken_turn_block(ctx: TagContext) -> ContextBlock | None:
 
 def _standing_block(
     ctx: TagContext, view: DerivedView | None = None,
+    *, now: datetime | None = None,
 ) -> ContextBlock | None:
     """Her own position in THIS conversation, as the debrief left it last turn.
     Same volatile-tier placement and trailing-newline convention as its five
@@ -919,9 +953,16 @@ def _standing_block(
             attrs=lambda e, _i: (
                 ("kind", e.kind), ("object", e.handle),
                 ("ordering", e.ordering or None),
+                ("coverage", e.coverage or None),
+                ("observed",
+                 age(e.at_ms, now) if now is not None and e.at_ms > 0
+                 else None),
             ),
             body=lambda e: e.state or e.summary,
         )
+        if ctx.source_objects_more:
+            objects = (f"{objects}\n<source_objects_more "
+                       f"count=\"{ctx.source_objects_more}\"/>")
         if block is None:
             block = ContextBlock(name="standing", body=objects)
         else:
@@ -1097,7 +1138,7 @@ def build_prefill(
             _restamp(render_subagents(ctx.subagents)),
             _restamp(render_ledger(ctx.ledger, now=clock,
                                    rooms=ctx.lineage_room.rooms if ctx.lineage_room else ())),
-            _restamp(_standing_block(ctx, view)),
+            _restamp(_standing_block(ctx, view, now=clock)),
             _restamp(_standing_working_set_block(ctx, now=clock, view=view)),
             _transcript_block(ctx, display_name, clock, context_window),
             _spoken_turn_block(ctx),

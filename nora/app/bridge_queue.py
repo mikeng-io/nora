@@ -943,7 +943,13 @@ class WorkRunner:
                     conn, envelope.event_id, "done",
                     admission={"engage": decision.engage,
                                "reason": decision.reason,
-                               "relevance_gate": decision.relevance_gate})
+                               "relevance_gate": decision.relevance_gate,
+                               # The sidecar's own fate, durable on the
+                               # event: a refused/unsupported observation
+                               # is a RETAINED failure marker, never a
+                               # silent successful consumption — the
+                               # utterance still delivered.
+                               "observation": observation_status})
                 ordinal = 1
                 if decision.engage:
                     tag_id = uuid.uuid4().hex[:12]
@@ -1074,7 +1080,10 @@ class WorkRunner:
                 envelope.observation,
                 expect_scope=self._observation_scope(work))
         except (ValueError, KeyError, TypeError) as exc:
-            await finish("intentional_skip",
+            # A malformed wire contract is a RETAINED FAILURE (design 02),
+            # never a silent successful consumption: the event says what
+            # it could not record, durably, for an operator to read.
+            await finish("failed_retained",
                          {"reason": "malformed_observation"},
                          reason=f"malformed observation: {exc}")
             return
@@ -1083,7 +1092,10 @@ class WorkRunner:
         if status is None:
             return  # append failed; the work was finished inside
         if status != "ok":
-            await finish("intentional_skip", {"reason": status},
+            # A deterministic refusal (unsupported kind, kind/scope
+            # mismatch) is likewise a retained failure — the source
+            # event stays inspectable instead of reading as consumed.
+            await finish("failed_retained", {"reason": status},
                          reason=status)
             return
         await finish("done", {"outcome": "recorded"})

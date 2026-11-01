@@ -772,6 +772,13 @@ class TagContext:
     # ObservationStore is wired.
     source_events: tuple[Any, ...] = ()
     source_objects: tuple[Any, ...] = ()
+    # `source_reads_failed` marks a FAILED observation read so the prompt
+    # can say «could not read» rather than presenting an empty list as
+    # «nothing recorded» (R-27); the `*_more` counts say how many events/
+    # heads the bounds left out, so a slice is never read as the whole.
+    source_reads_failed: bool = False
+    source_events_more: int = 0
+    source_objects_more: int = 0
     # The room's CULTURE head — an account of what this room is and why it
     # became so. Beside `standing` because both are
     # room-scoped and both are her own output, and apart from it on the one

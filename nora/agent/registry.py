@@ -397,6 +397,8 @@ class ToolRegistry:
                else frozenset({"character_read"}))
             | (frozenset() if social_items is not None else frozenset({"social_read"}))
             | (frozenset() if memos is not None else frozenset({"memo_read"}))
+            | (frozenset() if observations is not None
+               else frozenset({"poll_list", "poll_read", "room_state_read"}))
             | (frozenset() if computer is not None else COMPUTER_TOOLS)
             | (frozenset() if browser is not None else frozenset({"computer_browse"}))
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)

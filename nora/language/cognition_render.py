@@ -525,7 +525,10 @@ def _observation_row(
     the source did to an object, never a line somebody said. `at` is the
     source's own time only when `time_quality` says so; `bridge_local` and
     `unknown` say which clock it is not."""
-    when = _when(event.at_ms, now_ms, tz)
+    # `at` is the source's own time only when `time_quality` says so and a
+    # time exists — at_ms<=0 is "no source time", never 1970-01-01; a
+    # bridge-local or unknown clock says WHICH clock `received` is.
+    when = _when(event.at_ms, now_ms, tz) if event.at_ms > 0 else ""
 
     def show(limit: int | None) -> str:
         who = event.actor or (
@@ -533,10 +536,16 @@ def _observation_row(
         return render_elements(
             [event], tag="observation",
             attrs=lambda e, _i: (
-                ("kind", e.kind), ("op", e.operation), ("at", when),
+                ("kind", e.kind), ("op", e.operation),
+                ("at", when or None),
                 ("actor", who),
                 ("time", e.time_quality if e.time_quality != "upstream"
                         else None),
+                ("received", _when(e.received_ms, now_ms, tz)
+                        if e.received_ms and e.time_quality != "upstream"
+                        else None),
+                ("rev", e.revision or None),
+                ("coverage", e.coverage or None),
                 ("object", e.handle),
             ),
             body=lambda _e: (
@@ -715,7 +724,10 @@ def _register(
                 attrs=lambda e, _i: (
                     ("kind", e.kind), ("object", e.handle),
                     ("ordering", e.ordering or None),
+                    ("coverage", e.coverage or None),
                     ("state", e.state or None),
+                    ("observed", _when(e.at_ms, now_ms, tz)
+                            if e.at_ms > 0 else None),
                 ),
                 body=lambda _e: "",
             )

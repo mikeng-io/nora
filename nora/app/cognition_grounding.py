@@ -89,6 +89,8 @@ from nora.domain.notes import Note, likely_duplicates
 from nora.domain.observations import (
     SourceEvent,
     SourceScope,
+    coverage_label,
+    handle_of,
     head_summary,
     object_handle,
     observation_summary,
@@ -472,17 +474,36 @@ async def _observation_lines(
         if obs.actor_id and obs.actor_status == "known":
             ref = persons.resolve(obs.scope.platform, obs.actor_id)
             actor = ref.name if ref is not None else None
+
+        def name_of(subject: str, *, platform: str = obs.scope.platform,
+                    _p=persons) -> str | None:
+            r = _p.resolve(platform, subject)
+            return r.name if r is not None else None
+
         out[s.ref] = SourceEvent(
             ref=s.ref, kind=obs.object_kind, operation=obs.operation,
             at_ms=(obs.occurred_ms if obs.occurred_ms is not None
                    else obs.received_ms),
             time_quality=obs.time_quality,
             actor=actor, actor_status=obs.actor_status,
-            handle=object_handle(obs.object_kind, obs.object_ref),
-            summary=observation_summary(obs),
+            handle=object_handle(
+                obs.object_kind, obs.object_ref,
+                account_key=obs.scope.account_key, thread=obs.scope.thread),
+            summary=observation_summary(obs, name_of=name_of),
             target_message_id=row.target_message_id,
+            received_ms=obs.received_ms,
+            revision=_revision_label(obs),
+            coverage=coverage_label(obs.coverage),
         )
     return out
+
+
+def _revision_label(obs: Any) -> str:
+    """`scope:position` of the source revision, or "" when none was
+    supplied — ordering evidence, never coerced from arrival."""
+    if obs.source_position is None:
+        return ""
+    return f"{obs.revision_scope or 'rev'}:{obs.source_position}"
 
 
 async def _source_objects(
@@ -504,17 +525,17 @@ async def _source_objects(
                               conversation_id=room.conversation_id),
             limit=limit)
         events: list[SourceEvent] = []
-        for h in heads:
-            if h.applied == 0:
-                continue
+        for h in sorted((h for h in heads if h.applied > 0),
+                        key=lambda h: h.observed_ms or 0, reverse=True):
             events.append(SourceEvent(
                 ref=f"{h.kind}:{h.object_ref}", kind=h.kind,
                 operation="state", at_ms=h.observed_ms or 0,
                 time_quality=("upstream" if h.observed_ms is not None
                               else "unknown"),
                 actor=None, actor_status="not_applicable",
-                handle=object_handle(h.kind, h.object_ref),
-                summary="", state=head_summary(h), ordering=h.ordering))
+                handle=handle_of(h),
+                summary="", state=head_summary(h), ordering=h.ordering,
+                coverage=coverage_label(h.coverage)))
         if events:
             out[f"{room.platform}:{room.conversation_id}"] = tuple(events)
     return out

@@ -56,8 +56,11 @@ from nora.domain.models import (
 )
 from nora.domain.notes import Note
 from nora.domain.observations import (
+    Observation,
     SourceEvent,
     SourceScope,
+    coverage_label,
+    handle_of,
     head_summary,
     object_handle,
     observation_summary,
@@ -92,6 +95,21 @@ from nora.persons import Persons
 from nora.policy import Policy
 
 log = logging.getLogger(__name__)
+
+#: The folded object heads the Standing presentation shows at most — a
+#: bound on the most recently observed objects, not "every open poll
+#: forever" and not an arbitrary first-N of the scope.
+_SOURCE_OBJECT_MAX = 12
+
+
+def _revision_label(obs: Observation) -> str:
+    """The source revision as one label (`scope:position`), or "" when the
+    source supplied no ordered position — ordering evidence, never
+    coerced from arrival."""
+    if obs.source_position is None:
+        return ""
+    scope = obs.revision_scope or "rev"
+    return f"{scope}:{obs.source_position}"
 
 
 class StandingNotesReader(Protocol):
@@ -314,7 +332,8 @@ class TranscriptInjection:
         (
             ((transcript, character, profiles, prefetch),
              card, tagger_card, standing, notes, ledger,
-             (source_events, source_objects)),
+             (source_events, source_objects, source_failed,
+              source_events_more, source_objects_more)),
             presence,
             culture,
             (unit_culture, self_account, lessons),
@@ -380,6 +399,9 @@ class TranscriptInjection:
             ledger=ledger,
             source_events=source_events,
             source_objects=source_objects,
+            source_reads_failed=source_failed,
+            source_events_more=source_events_more,
+            source_objects_more=source_objects_more,
             presence=presence,
             culture=culture,
             character=character,
@@ -1009,17 +1031,24 @@ class TranscriptInjection:
 
     async def _observation_reads(
         self, msg: NormalizedMessage,
-    ) -> tuple[tuple[SourceEvent, ...], tuple[SourceEvent, ...]]:
-        """`(source events, source objects)` of THIS room — the scoped
-        source read of design/platform-observations 04. `recent` is bounded
-        by the prompt window, `heads` by 16 objects; both read through the
-        room's boundary (`account_key=""` — the turn already passed the
-        allowlist for this room, and a row of another room never resolves).
-        Fail-soft and counted (`stage="observations"`), like `_standing`:
-        a thinner prompt beats no reply; an unwired store renders nothing
-        rather than a guess."""
+    ) -> tuple[
+        tuple[SourceEvent, ...], tuple[SourceEvent, ...], bool, int, int,
+    ]:
+        """`(events, objects, failed, events_more, objects_more)` of THIS
+        room — the scoped source read of design/platform-observations 04.
+
+        `recent` is bounded by the prompt window; `heads` by
+        `_SOURCE_OBJECT_MAX` of the objects OBSERVED NEWEST first (an old
+        object's state is not pinned forever; a poll the room just voted
+        on outranks a stale one). Both read through the room's boundary
+        (`account_key=""` — the turn already passed the allowlist for
+        this room, and a row of another room never resolves). Fail-soft
+        and counted (`stage="observations"`), like `_standing`: a thinner
+        prompt beats no reply — but a failed read SAYS it failed
+        (`failed`), never an empty list dressed as "nothing recorded";
+        an unwired store is `unavailable`, not nothing."""
         if self._observations is None:
-            return (), ()
+            return (), (), False, 0, 0
         scope = SourceScope(platform=msg.platform, account_key="",
                             conversation_id=msg.conversation_id)
         limit = self._prompt_window or self._context_window
@@ -1030,19 +1059,37 @@ class TranscriptInjection:
                     self._observations.recent(scope=scope, limit=limit)),
                 traced_read(
                     "observations", "heads",
-                    self._observations.heads(scope=scope, limit=16)),
+                    self._observations.heads(scope=scope, limit=64)),
             )
         except Exception:
             log.exception("observation reads failed; continuing without them")
             self._metrics.inc(
                 "nora_errors_total", stage="observations", platform=msg.platform)
-            return (), ()
+            return (), (), True, 0, 0
 
         def actor_of(obs: Any) -> str | None:
             if not obs.actor_id or obs.actor_status != "known":
                 return None
             ref = self._persons.resolve(obs.scope.platform, obs.actor_id)
             return ref.name if ref is not None else None
+
+        def name_of(platform: str, ref: str) -> str | None:
+            found = self._persons.resolve(platform, ref)
+            return found.name if found is not None else None
+
+        # A vote's option ref resolves to the definition's label through
+        # the object's OWN head (matched on ref + its account/thread —
+        # two accounts' same-named polls never lend each other labels).
+        poll_heads = {
+            (h.object_ref, h.account_key, h.thread): h
+            for h in heads if h.kind == "poll"}
+
+        def option_label(r: Any, ref: str) -> str | None:
+            h = poll_heads.get((
+                r.observation.object_ref, r.observation.scope.account_key,
+                r.observation.scope.thread))
+            entry = (h.state.get("options") or {}).get(ref) if h else None
+            return (entry or {}).get("label")
 
         events = tuple(
             SourceEvent(
@@ -1055,12 +1102,28 @@ class TranscriptInjection:
                 actor=actor_of(r.observation),
                 actor_status=r.observation.actor_status,
                 handle=object_handle(
-                    r.observation.object_kind, r.observation.object_ref),
-                summary=observation_summary(r.observation),
+                    r.observation.object_kind, r.observation.object_ref,
+                    account_key=r.observation.scope.account_key,
+                    thread=r.observation.scope.thread),
+                summary=observation_summary(
+                    r.observation,
+                    name_of=lambda ref, o=r.observation: name_of(
+                        o.scope.platform, ref),
+                    option_label=lambda ref, r=r: option_label(r, ref)),
                 target_message_id=r.target_message_id,
+                received_ms=r.observation.received_ms,
+                revision=_revision_label(r.observation),
+                coverage=coverage_label(r.observation.coverage),
             )
             for r in rows
         )
+        # Current state, most-recently-observed first — relevance is
+        # recency, not all-open-polls-forever: an object the room has not
+        # touched in a while yields its slot to one it just did, and the
+        # bound says how many older heads were not shown.
+        heads = sorted(
+            (h for h in heads if h.applied > 0),
+            key=lambda h: h.observed_ms or 0, reverse=True)
         objects = tuple(
             SourceEvent(
                 ref=f"{h.kind}:{h.object_ref}", kind=h.kind, operation="state",
@@ -1068,12 +1131,17 @@ class TranscriptInjection:
                 time_quality=("upstream" if h.observed_ms is not None
                               else "unknown"),
                 actor=None, actor_status="not_applicable",
-                handle=object_handle(h.kind, h.object_ref),
+                handle=handle_of(h),
                 summary="", state=head_summary(h), ordering=h.ordering,
+                coverage=coverage_label(h.coverage),
             )
-            for h in heads if h.applied > 0
+            for h in heads[: _SOURCE_OBJECT_MAX]
         )
-        return events, objects
+        return (
+            events, objects, False,
+            max(0, len(rows) - len(events)),
+            max(0, len(heads) - len(objects)),
+        )
 
     async def _memos(self, msg: NormalizedMessage) -> tuple[Memo, ...]:
         """The unit's kept memos for `<memos>` (DEC-306), keyed on the UNIT as

@@ -20,6 +20,8 @@ from nora.domain.observations import (
     SourceScope,
     StoredObservation,
     fold_observation,
+    object_handle,
+    parse_handle,
     rebuild_head,
     target_key,
 )
@@ -94,6 +96,22 @@ class FakeObservationStore:
                                thread=t), scope)
                and (kind is None or k == kind)]
         return out[: max(limit, 0)]
+
+    async def head_for_handle(
+        self, *, scope: SourceScope, handle: str,
+    ) -> ObservationHead | None:
+        kind, _digest = parse_handle(handle)
+        if not kind:
+            return None
+        for (p, a, c, t, k, _r), h in self._heads.items():
+            if (self._in_scope(
+                    SourceScope(platform=p, account_key=a, conversation_id=c,
+                                thread=t), scope)
+                    and k == kind
+                    and object_handle(k, h.object_ref, account_key=a,
+                                      thread=t) == handle):
+                return h
+        return None
 
     async def history(
         self, *, scope: SourceScope, kind: str, object_ref: str,
