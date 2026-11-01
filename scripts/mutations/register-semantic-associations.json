@@ -23,8 +23,8 @@
  {
   "name": "register graph: the session's selected association must reach the projection",
   "file": "nora/app/register_graph.py",
-  "old": "        wanted: dict[Key, str] = dict.fromkeys(dict.fromkeys([*targets, *selected]), verb)",
-  "new": "        wanted: dict[Key, str] = dict.fromkeys(dict.fromkeys(targets), verb)",
+  "old": "        wanted: dict[Key, str] = dict.fromkeys(\n            targets if selected is None else selected, verb)",
+  "new": "        wanted: dict[Key, str] = dict.fromkeys(targets, verb)",
   "target": "tests/unit/test_cognition_session_runner.py::test_alias_free_admitted_association_survives_create_and_later_read"
  },
  {
@@ -44,8 +44,8 @@
  {
   "name": "session: a revise that names no associations must leave the row's links alone",
   "file": "nora/app/cognition_session.py",
-  "old": "                    if targets is not None or verb.__name__ not in row_arg:\n                        await self._memory.link_result(\n                            state, result, targets=targets or ())",
-  "new": "                    if True:\n                        await self._memory.link_result(\n                            state, result, targets=targets or ())",
+  "old": "                    if targets is not None or verb.__name__ not in row_arg:\n                        await self._memory.link_result(\n                            state, result, targets=targets)",
+  "new": "                    if True:\n                        await self._memory.link_result(\n                            state, result, targets=targets)",
   "target": "tests/unit/test_cognition_session_runner.py::test_revise_without_associations_keeps_the_semantic_link"
  },
  {
@@ -82,5 +82,12 @@
   "old": "        # `shown_keys` is the renderer's own emitted-rows provenance: a row the\n        # budget omits was never shown, whatever the walk returned.\n        state.graph_text = preview_text(Preview(seeds, graph, (), (at, at)),\n                                        shown_keys=state.shown_keys)",
   "new": "        state.shown_keys.update(n.key for n in graph.nodes)\n        state.shown_keys.update(\n            k for e in graph.relations for k in (e.relation.src, e.relation.dst))\n        state.graph_text = preview_text(Preview(seeds, graph, (), (at, at)))",
   "target": "tests/unit/test_cognition_session_runner.py::test_wake_preview_admits_only_the_keys_the_renderer_emitted"
+ },
+ {
+  "name": "register graph: explicit selections override body aliases, including empty",
+  "file": "nora/app/register_graph.py",
+  "old": "        wanted: dict[Key, str] = dict.fromkeys(\n            targets if selected is None else selected, verb)",
+  "new": "        wanted: dict[Key, str] = dict.fromkeys(\n            [*targets, *(selected or ())], verb)",
+  "target": "tests/unit/test_cognition_session_runner.py::test_revise_with_empty_associations_clears_the_link tests/unit/test_cognition_session_runner.py::test_explicit_association_excludes_unshown_body_alias"
  }
 ]

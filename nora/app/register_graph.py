@@ -23,13 +23,13 @@ class RegisterGraphLinks:
         self.metrics = metrics if metrics is not None else Metrics()
 
     async def project(
-        self, item: Any, session_id: int, *, selected: tuple[Key, ...] = ()
+        self, item: Any, session_id: int, *, selected: tuple[Key, ...] | None = None
     ) -> None:
         """Link one Register row to its matters, per its own link verb.
 
         `selected` is the association the session admitted and named on the
         write: an evidence-grounded target the body need not spell out. Alias
-        text remains only a discovery aid beside it.
+        text is a discovery aid only when no selection was supplied.
         """
         work = item.work
         source, unit, at = work.source, work.unit, work.as_of
@@ -43,12 +43,13 @@ class RegisterGraphLinks:
         )
         entities: tuple[Entity, ...] = ()
         verb = "settles" if kind == "memo" else "concerns"
-        wanted: dict[Key, str] = dict.fromkeys(dict.fromkeys([*targets, *selected]), verb)
+        wanted: dict[Key, str] = dict.fromkeys(
+            targets if selected is None else selected, verb)
         managed = {verb}
         if kind == "event_entry":
             entity = Entity(f"{unit}:event:{ref}", "event", unit, body)
             entities = (entity,)
-            wanted = {entity.key: "records", **dict.fromkeys(selected, "concerns")}
+            wanted = {entity.key: "records", **dict.fromkeys(selected or (), "concerns")}
             managed = {"records", "concerns"}
         sources = {s.key: s for s in item.sources if s.layer in ("record", "rollup")}
         current = await self.graph.walk(

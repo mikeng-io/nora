@@ -496,6 +496,28 @@ async def test_alias_free_admitted_association_survives_create_and_later_read():
     assert [e.relation.dst for e in seen.relations] == [event.key]
 
 
+async def test_explicit_association_excludes_unshown_body_alias():
+    memory = wake_memory()
+    stores = Stores()
+    memory.records.load = _register_load(stores)
+    chosen = _seed_event(memory, "u:event:chosen", "chosen gathering")
+    unshown = _seed_event(memory, "u:event:unshown", "which place")
+    answers = []
+
+    async def behave(by, tools):
+        await by["memory_propose"](**_about_proposal(chosen.id))
+        answers.append(await by["note_create"](
+            body=GOOD_BODY,
+            associations=[["event", chosen.id]], **NOTE))
+
+    await session(behave, stores=stores, runner_kwargs={"memory": memory})
+    assert answers[0]["status"] == "ok"
+    links = [r for r in memory.graph.relations.values()
+             if r.src == ("note", answers[0]["note_id"])]
+    assert [r.dst for r in links] == [chosen.key]
+    assert not any(r.dst == unshown.key for r in links)
+
+
 async def test_note_revise_replaces_the_semantic_association():
     from nora.domain.memory_graph import Walk
     memory = wake_memory()
@@ -652,7 +674,7 @@ async def test_revise_with_empty_associations_clears_the_link():
     memory = wake_memory()
     stores = Stores()
     memory.records.load = _register_load(stores)
-    event = _seed_event(memory, "u:event:generated-gala")
+    event = _seed_event(memory, "u:event:generated-gala", "going ahead")
     answers = []
     note_id = None
 

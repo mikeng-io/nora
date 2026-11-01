@@ -34,7 +34,7 @@ class WakeMemory:
                               name, arguments], sort_keys=True, default=str)
         return "act:" + hashlib.sha256(payload.encode()).hexdigest()
 
-    async def link_result(self, state: Any, result: Any, *, targets: Any = ()) -> None:
+    async def link_result(self, state: Any, result: Any, *, targets: Any = None) -> None:
         from nora.app.register_graph import RegisterGraphLinks
         for field, kind in (("note_id", "note"), ("memo_id", "memo"), ("event_id", "event_entry")):
             if field not in result:
@@ -45,7 +45,7 @@ class WakeMemory:
                            source=(kind, str(result[field])))
             item = await self.records.load(work)
             await RegisterGraphLinks(graph=self.graph, records=self.records).project(
-                item, state.session_id, selected=tuple(targets))
+                item, state.session_id, selected=None if targets is None else tuple(targets))
 
     async def parked(self, unit: str, pending: Any) -> set[int]:
         return {s.id for s in pending if await self.records.failures(unit, s.id) >= 5}

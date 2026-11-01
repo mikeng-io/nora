@@ -2802,7 +2802,7 @@ class CognitionSessionRunner:
                             merged = existing
                         if targets is not None or verb.__name__ not in row_arg:
                             await self._memory.link_result(
-                                state, merged, targets=targets or ())
+                                state, merged, targets=targets)
                         return dict(existing)
                 state.acted = True
                 unstop()
@@ -2822,7 +2822,7 @@ class CognitionSessionRunner:
                     targets = _assoc_targets(bound)
                     if targets is not None or verb.__name__ not in row_arg:
                         await self._memory.link_result(
-                            state, result, targets=targets or ())
+                            state, result, targets=targets)
                 return result
             return call
 
