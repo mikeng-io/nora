@@ -4194,8 +4194,28 @@ async def build_dependencies(
                     roster_source=rosters.get(platform), persons=persons,
                     self_ids=registry.self_aliases()).members(),
                 circles=presence_circles, content_checks=content_checks))
+        # THE PROMOTED PROFILE WRITER (27 §9, 31 §5): the same
+        # `[memory.profile] write && read` switch (`profile_index`) as the
+        # read surface and index projection; `None` under every other flag
+        # combination, where `profile_revise` keeps recording shadow
+        # receipts and the Dreamer profile adaptors stay the account writers.
+        wake_profile_store = (
+            SqlProfileStore(
+                engine, screen=functools.partial(text_offence, content_checks=content_checks),
+                index=profile_index)
+            if profile_index else None)
+        wake_listed_rooms = LiveMapping(lambda: {
+            (u, p): tuple(c.primary_id for c in allowlist.rooms()
+                          if c.unit == u and c.primary_id
+                          and c.persons and p in c.persons)
+            for u in unit_scopes()
+            for p in {x for c in allowlist.rooms()
+                      if c.unit == u for x in (c.persons or ())}
+        })
         cognition_memory = WakeMemory(graph=memory_graph, records=graph_records, metrics=metrics,
             content_checks=content_checks,
+            profile=wake_profile_store,
+            listed_rooms=(lambda u, p: wake_listed_rooms.get((u, p))),
             private_names=tuple({name for p in persons.by_person.values()
                 for name in (p.person_id, p.name, p.first_name, p.last_name, *p.aliases) if name}
                 | {value for (_, value) in persons.index}
@@ -4542,6 +4562,16 @@ async def build_dependencies(
         if profile_index or not cfg.culture.enabled:
             retired = {CULTURE_ADAPTOR_NAME, CHARACTER_PERSON_ADAPTOR_NAME,
                        CHARACTER_UNIT_ADAPTOR_NAME, CHARACTER_NORA_ADAPTOR_NAME}
+            # The unified Cognition session owns the typed accounts only where
+            # it is actually wired (write && read AND graph comprehension); the
+            # Dreamer profile writers retire atomically at that same condition.
+            # The verdict judge never retires — a guess is not graded by its
+            # writer (45 §3) — and the tag path's told/dispute writes are
+            # untouched.
+            if (profile_index and cfg.memory.graph.enabled
+                    and cfg.memory.graph.comprehend.enabled):
+                retired |= {PROFILE_PERSON_ADAPTOR_NAME, PROFILE_ROOM_ADAPTOR_NAME,
+                            PROFILE_UNIT_ADAPTOR_NAME, PROFILE_NORA_ADAPTOR_NAME}
             dream_adaptors = tuple(a for a in dream_adaptors if a.name not in retired)
             dream_schedules = {k: v for k, v in dream_schedules.items() if k not in retired}
 

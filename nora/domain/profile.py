@@ -179,6 +179,7 @@ PROFILE_REFUSALS = frozenset(
     {
         "malformed",
         "unknown_line",
+        "unknown_premise",
         "line_twice",
         "part_kind",
         "mode_part",
@@ -280,6 +281,13 @@ class ProfileCitable:
     interpretation_only: frozenset[int] = frozenset()
     sources: Mapping[str, Said] = field(default_factory=dict)
     social_subjects: frozenset[str] = frozenset()
+    #: Admitted memory-graph relation ids this writer may rest a line on
+    #: (27 §9: a line `draws_on` the relations it generalises, spelled
+    #: `relation:<id>` in `draws_on`). Declared by the caller; an undeclared
+    #: ref is `unknown_premise`. A graph relation is a PREMISE like a held
+    #: line, never independent evidence — the line still cites Record/Rollup
+    #: sources for its own support.
+    relations: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -832,6 +840,7 @@ def _check_line(
     shown_ids: frozenset[int],
     shown_items: frozenset[str],
     now_ms: int,
+    relation_premises: int = 0,
 ) -> ProfileRefusal | None:
     """Every rule a whole line must meet, whatever op produced it."""
     collective = account.entity_kind in COLLECTIVE_ENTITY_KINDS
@@ -925,7 +934,8 @@ def _check_line(
             return ProfileRefusal("premise_abduced", "a guess is not a premise")
         if any(p.state != "current" for p in premises):
             return ProfileRefusal("premise_not_current", "every premise line must be current")
-        count = len(evidence.said) + evidence.unrooted_rollups + len(premises)
+        count = (len(evidence.said) + evidence.unrooted_rollups
+                 + len(premises) + relation_premises)
         if count < DEDUCED_MIN_PREMISES:
             return ProfileRefusal("deduced_premises", f"a deduction rests on at least "
                                   f"{DEDUCED_MIN_PREMISES} premises; it has {count}")
@@ -1005,9 +1015,23 @@ def plan_write(
             return ProfileRefusal("line_twice", f"{handle} is acted on twice in one call", i)
         return by_id[line_id]
 
-    def premises_of(draws: Sequence[str], i: int) -> list[ProfileLine] | ProfileRefusal:
-        out = []
+    def premises_of(
+        draws: Sequence[str], i: int,
+    ) -> tuple[list[ProfileLine], list[str]] | ProfileRefusal:
+        """Resolve `draws_on` handles to held lines, and `relation:<id>` refs
+        to the writer's declared admitted relations. Returns the held lines
+        and the relation ids."""
+        lines = []
+        rels = []
         for handle in dict.fromkeys(draws):
+            if handle.startswith("relation:"):
+                relation_id = handle[len("relation:"):]
+                if relation_id not in citable.relations:
+                    return ProfileRefusal(
+                        "unknown_premise", f"{handle!r} is not a relation you "
+                        "were shown and admitted", i)
+                rels.append(relation_id)
+                continue
             line_id = handles.get(handle)
             if line_id is None:
                 return ProfileRefusal("unknown_line", f"{handle!r} in `draws_on` is not a "
@@ -1015,8 +1039,8 @@ def plan_write(
             if line_id in touched and line_id not in after:
                 return ProfileRefusal("premise_not_current", f"{handle} changes in this "
                                       "call; rest on it in a later one", i)
-            out.append(by_id[line_id])
-        return out
+            lines.append(by_id[line_id])
+        return lines, rels
 
     def successor(old: ProfileLine, **changes: object) -> ProfileLine:
         return replace(
@@ -1153,6 +1177,7 @@ def plan_write(
                 op.draws_on
                 if op.draws_on is not None
                 else tuple(h for h, lid in handles.items() if lid in carried)
+                + tuple(c for c in carried if c.startswith("relation:"))
             )
             cites = op.citations
             candidate_fields = {
@@ -1168,10 +1193,11 @@ def plan_write(
         else:
             draws_handles = op.draws_on
             cites = op.citations
-        prem = premises_of(draws_handles, i)
-        if isinstance(prem, ProfileRefusal):
-            refusals.append(prem)
+        resolved = premises_of(draws_handles, i)
+        if isinstance(resolved, ProfileRefusal):
+            refusals.append(resolved)
             continue
+        prem, prem_rels = resolved
         ev = _resolve(cites, citable, handles, subject=account.subject)
         if isinstance(ev, ProfileRefusal):
             refusals.append(replace(ev, op_index=i))
@@ -1180,7 +1206,8 @@ def plan_write(
         if old is not None:
             candidate = successor(
                 old,
-                draws_on=tuple(p.id for p in prem),
+                draws_on=tuple(p.id for p in prem)
+                + tuple(f"relation:{r}" for r in prem_rels),
                 state="current",
                 as_of=max((x.ts for x in ev.said), default=None),
                 support_count=count,
@@ -1207,7 +1234,8 @@ def plan_write(
                 unit=account.unit,
                 written_at=now_ms,
                 written_by_session=written_by_session,
-                draws_on=tuple(p.id for p in prem),
+                draws_on=tuple(p.id for p in prem)
+                + tuple(f"relation:{r}" for r in prem_rels),
                 told_by=op.told_by,
                 prediction=op.prediction,
                 prediction_observable=op.prediction_observable,
@@ -1263,6 +1291,7 @@ def plan_write(
             account=account,
             evidence=ev,
             premises=prem,
+            relation_premises=len(prem_rels),
             screen=screen,
             shown_ids=shown_ids,
             shown_items=shown_items,
