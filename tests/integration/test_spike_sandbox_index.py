@@ -236,7 +236,7 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(pg_url, pg_te
                     },
                     memory_items={}, graph_fetched=GraphFetched(),
                     admitted_indices=set(), admitted_relations={},
-                    admitted_evidence=[])
+                    admitted_evidence=[], shown_keys=set())
                 grounding = Grounding(records={
                     "messages:1000": RecordItem(
                         ref="messages:1000", kind="message", message_id=1000,
