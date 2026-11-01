@@ -245,6 +245,41 @@ def _synthetic(tmp_path: Path, **files: str) -> Path:
     return tmp_path
 
 
+@pytest.mark.parametrize("kind", ["canonical", "wrong-target", "dangling", "regular", "escape"])
+def test_agent_skill_links_select_document_readers_only_for_the_canonical_copy(tmp_path, kind):
+    repo = _synthetic(tmp_path)
+    skill = repo / ".agents/skills/nora-generated/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# Generated skill\n")
+    link = repo / ".claude/skills/nora-generated"
+    link.parent.mkdir(parents=True)
+    if kind == "regular":
+        link.mkdir()
+    else:
+        target = "../../.agents/skills/nora-generated"
+        if kind == "wrong-target":
+            target = "../../.agents/skills/other"
+        elif kind == "dangling":
+            skill.unlink()
+        elif kind == "escape":
+            outside = repo.parent / (repo.name + "-outside")
+            outside.mkdir()
+            (outside / "SKILL.md").write_text("# Outside\n")
+            skill.unlink()
+            skill.parent.rmdir()
+            skill.parent.symlink_to(outside, target_is_directory=True)
+        link.symlink_to(target, target_is_directory=True)
+    changed = [".agents/skills/nora-generated/SKILL.md", ".claude/skills/nora-generated"]
+    selected = select(changed, repo)
+    if kind == "canonical":
+        assert selected == [
+            "tests/architecture/test_agent_skills.py", UNIVERSAL_DOC_READER,
+        ]
+        assert select([*changed, "nora/doctrine/core.md"], repo) == ALL
+    else:
+        assert selected == ALL
+
+
 def test_a_new_test_that_reads_a_new_doc_is_selected_for_that_doc(tmp_path):
     """The check a hand-kept table cannot make: add a test that opens a doc and
     the doc selects that test, with no edit to the selector."""
