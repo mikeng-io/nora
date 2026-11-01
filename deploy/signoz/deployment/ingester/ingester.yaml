@@ -309,6 +309,22 @@ receivers:
         parse_from: attributes.span_id
       trace_flags:
         parse_from: attributes.trace_flags
+    # Promote declared levels; retain unknown records without guessing severity.
+    # Contract: docs/observability.md, numeric severity fields.
+    - type: severity_parser
+      parse_from: attributes.level
+      if: attributes.level != nil
+      on_error: send
+      mapping:
+        debug: DEBUG
+        info: INFO
+        warn:
+        - WARNING
+        - WARN
+        error: ERROR
+        fatal:
+        - CRITICAL
+        - FATAL
 service:
   extensions:
   - signoz_health_check
