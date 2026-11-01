@@ -180,6 +180,7 @@ async def run_observation(
     observation_row_id: int, object_kind: str,
     platform: str, conversation_id: str, unit: str | None,
     at_ms: int, actor_person_id: str | None,
+    actor_id: str | None = None,
     wiring: Wiring, metrics: Any,
     recorded_at_ms: int | None = None,
 ) -> tuple[str, int | None, str | None]:
@@ -202,9 +203,12 @@ async def run_observation(
     `unit` is the room's unit resolved at ingest, denormalized into the
     obligation the way the message stimulus's payload denormalizes its own;
     `None` (or an empty one) skips — an observation a unit never owned never
-    reaches an agenda."""
+    reaches an agenda. `actor_id` is the PLATFORM-level actor (the domain
+    `self_ids` covers — the echo rule checks it, never the resolved
+    `actor_person_id`, which names a different identity space and rides the
+    row instead)."""
     try:
-        if actor_person_id and actor_person_id in wiring.self_ids:
+        if actor_id and actor_id in wiring.self_ids:
             return ("skipped", None, "self_authored")
         if not unit:
             return ("skipped", None, "no_unit")

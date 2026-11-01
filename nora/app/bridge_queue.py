@@ -858,6 +858,20 @@ class WorkRunner:
                 absorbed = bool(handoff.get("absorbed", True))
                 unit = handoff.get("unit")
                 row_id = handoff["row_id"]
+            elif payload.get("ingest_ended") is not None:
+                # Silent-branch replay: the sibling's terminal outcome
+                # committed on an earlier attempt (`ingest_ended`), so the
+                # ingest itself NEVER re-runs — a recorded touch has no
+                # dedupe and an admitted refusal cannot be re-decided.
+                ended = payload["ingest_ended"]
+                reason = str(ended.get("outcome") or "unrecorded")
+                await self._finish_silent(
+                    work, envelope, reason=reason,
+                    state=("intentional_skip" if reason in SILENT_OUTCOMES
+                           else "failed_retained"),
+                    unit=ended.get("unit"),
+                    absorbed=bool(ended.get("absorbed")))
+                return
             else:
                 message = message_from_dict(envelope.message)
 
@@ -883,6 +897,19 @@ class WorkRunner:
                         {"patch": json.dumps(
                             {"message_row_id": row_id, "handoff": handoff}),
                          "eid": envelope.event_id})
+                    # Observations retained BEFORE their target existed
+                    # re-link inside the row's own commit — the link lands
+                    # with the arrival that made it possible, never as a
+                    # detached later write a crash could lose (the port's
+                    # "resolve_targets re-links the rest when the target
+                    # arrives").
+                    from nora.infra.sql.observations import relink_arriving_targets
+                    arrived = context["message"]
+                    await relink_arriving_targets(
+                        conn, scope=self._observation_scope(work),
+                        platform_message_id=arrived.message_id or None,
+                        sent_ts=arrived.timestamp or None,
+                        sender_id=arrived.sender_id or None)
                 result = await self._ingest.run(message=message, tx_hook=hook,
                                                 durable=True)
                 if result.outcome in FAILURE_OUTCOMES:
@@ -900,18 +927,21 @@ class WorkRunner:
                     reason = result.outcome or "unrecorded"
                     state = ("intentional_skip"
                              if reason in SILENT_OUTCOMES else "failed_retained")
-                    async with self._store._engine.begin() as conn:
-                        await self._store.set_event_state(
-                            conn, envelope.event_id,
-                            "intentional_skip" if state == "intentional_skip"
-                            else "failed_retained", reason=reason)
-                        ok = await self._store.finish_work(
-                            conn, work.id, generation=work.generation,
-                            state=state, result=self._attempt_patch(
-                                work, state, {"outcome": reason}))
-                    if ok:
-                        self._emit_terminal(work, state)
-                        await self._ack(work)
+                    room = (self._allowlist.conversation(
+                                work.platform, work.conversation_id)
+                            if self._allowlist is not None else None)
+                    absorbed_silent = room is not None and room.absorbed
+                    unit_silent = room.unit if room is not None else None
+                    # Commit the sibling's terminal outcome BEFORE the
+                    # sidecar's own transaction and the finish: `ingest_ended`
+                    # is what a kill between those commits resumes from —
+                    # a recorded touch has no replay-safe second ingest.
+                    await self._stamp_ingest_ended(
+                        envelope.event_id, outcome=reason,
+                        unit=unit_silent, absorbed=absorbed_silent)
+                    await self._finish_silent(
+                        work, envelope, reason=reason, state=state,
+                        unit=unit_silent, absorbed=absorbed_silent)
                     return
                 decision = result.decision
                 result_message = result.message
@@ -929,11 +959,20 @@ class WorkRunner:
                 # facts and never two independent wakes of the same thing.
                 # A refused observation is recorded, never allowed to kill
                 # the already-ingested utterance's obligations.
-                status = await self._append_observation(
-                    work, envelope, unit=unit)
-                if status is None:
-                    return
-                observation_status = status
+                if not absorbed:
+                    # The observation-only lane's own admission rule: a
+                    # room that is not absorbed never persists evidence —
+                    # a legitimate non-admission, not a retained failure.
+                    observation_status = "refused:scope_refused"
+                else:
+                    status = await self._append_observation(
+                        work, envelope, unit=unit)
+                    if status is None:
+                        return
+                    observation_status = status
+            retained_observation = (
+                observation_status is not None
+                and observation_status not in ("ok", "refused:scope_refused"))
             # Obligations commit in ONE transaction, then XACK — durable
             # downstream ownership precedes the ACK, per the approved baseline.
             handed_on = _now_ms()
@@ -950,6 +989,20 @@ class WorkRunner:
                                # silent successful consumption — the
                                # utterance still delivered.
                                "observation": observation_status})
+                if retained_observation:
+                    # The sidecar's deterministic refusal gets its OWN
+                    # durable owner — a terminal `failed_retained`
+                    # obligation — rather than surviving only as a string
+                    # on the done event: the utterance delivered, the
+                    # observation did not, and both facts stay inspectable.
+                    await self._store.retain_obligation(
+                        conn, event_id=envelope.event_id, kind="ingest",
+                        ordinal=91, platform=work.platform,
+                        account_key=work.account_key,
+                        conversation_id=work.conversation_id,
+                        payload=self._obligation_payload(
+                            work, envelope, part="observation"),
+                        result={"reason": observation_status})
                 ordinal = 1
                 if decision.engage:
                     tag_id = uuid.uuid4().hex[:12]
@@ -1030,6 +1083,99 @@ class WorkRunner:
                         "observation": observation_status}))
         if ok:
             self._emit_terminal(work, "done")
+            if retained_observation:
+                # The refusal's durable commit happened above; the bounded
+                # lifecycle line follows it, never precedes it.
+                bt.lifecycle(self._metrics, "failed_retained",
+                             platform=work.platform,
+                             event_id=envelope.event_id,
+                             outcome="observation_refused")
+            await self._ack(work)
+
+    async def _stamp_ingest_ended(
+        self, event_id: str, *, outcome: str,
+        unit: str | None, absorbed: bool,
+    ) -> None:
+        """Commit the utterance sibling's terminal outcome as the replay
+        marker BEFORE the observation append and the terminal finish that
+        follow it — three separate commits whose middle crash window
+        otherwise re-runs a touch that cannot be safely ingested twice
+        (`append_reaction`/`append_delete` carry no dedupe). On replay the
+        marker's own values — not a re-read of current policy — drive the
+        finish, so the scope facts pinned at admission cannot move under
+        a retry."""
+        async with self._store._engine.begin() as conn:
+            await conn.execute(sa.text(
+                "UPDATE bridge_event SET payload = payload || :patch,"
+                " updated_at = now() WHERE id = :eid"),
+                {"patch": json.dumps({"ingest_ended": {
+                    "outcome": outcome, "unit": unit,
+                    "absorbed": absorbed}}),
+                 "eid": event_id})
+
+    def _obligation_payload(
+        self, work: Any, envelope: Envelope, *, part: str,
+    ) -> dict[str, Any]:
+        """The ingest-row payload shape for a retained sibling obligation —
+        the same envelope/stream identity the ordinal-0 row carries, plus
+        `part` naming which of the event's evidence paths the row owns."""
+        return {"envelope": envelope.to_fields(),
+                "stream": work.payload.get("stream"),
+                "stream_id": work.payload.get("stream_id"),
+                "part": part}
+
+    async def _finish_silent(
+        self, work: Any, envelope: Envelope, *, reason: str, state: str,
+        unit: str | None, absorbed: bool,
+    ) -> None:
+        """Terminal for the utterance-free outcomes — a recorded touch, an
+        admitted refusal, an orphaned edit. `ingest_ended` has already
+        committed the sibling's answer; a message sibling's silence does
+        NOT consume a co-delivered observation — the sidecar is appended
+        or durably refused here exactly as the observation-only lane would,
+        and a deterministic refusal gets its own retained obligation rather
+        than riding the sibling's disposition alone."""
+        observation_status: str | None = None
+        if envelope.observation is not None:
+            if not absorbed:
+                # A room that is not absorbed never persists evidence —
+                # the observation-only lane's own admission rule. A
+                # legitimate non-admission, not a retained failure.
+                observation_status = "refused:scope_refused"
+            else:
+                status = await self._append_observation(
+                    work, envelope, unit=unit)
+                if status is None:
+                    return  # the append's failure already finished the work
+                observation_status = status
+        retained_observation = (
+            observation_status is not None
+            and observation_status not in ("ok", "refused:scope_refused"))
+        async with self._store._engine.begin() as conn:
+            await self._store.set_event_state(
+                conn, envelope.event_id, state, reason=reason,
+                admission=({"observation": observation_status}
+                           if envelope.observation is not None else None))
+            if retained_observation:
+                await self._store.retain_obligation(
+                    conn, event_id=envelope.event_id, kind="ingest",
+                    ordinal=91, platform=work.platform,
+                    account_key=work.account_key,
+                    conversation_id=work.conversation_id,
+                    payload=self._obligation_payload(
+                        work, envelope, part="observation"),
+                    result={"reason": observation_status})
+            ok = await self._store.finish_work(
+                conn, work.id, generation=work.generation, state=state,
+                result=self._attempt_patch(work, state, {
+                    "outcome": reason, "observation": observation_status}))
+        if ok:
+            self._emit_terminal(work, state)
+            if retained_observation:
+                bt.lifecycle(self._metrics, "failed_retained",
+                             platform=work.platform,
+                             event_id=envelope.event_id,
+                             outcome="observation_refused")
             await self._ack(work)
 
     async def _run_observation_ingest(
@@ -1117,22 +1263,23 @@ class WorkRunner:
         """Append the envelope's observation and its durable obligations in
         the append's own transaction.
 
-        Returns `"ok"` on append or replay, a `"refused:..."` string on a
-        deterministic refusal, `None` on a write failure — for `None` the
-        work is already finished retryable/retained here. The caller owns
-        what a refusal means: the observation-only lane skips from it; a
-        message's sidecar proceeds on it (a malformed sidecar never kills
-        the utterance's own obligations)."""
+        Returns `"ok"` on append or replay, a `"refused:..."` /
+        `"unavailable:..."` string on a deterministic refusal, `None` on a
+        write failure — for `None` the work is already finished
+        retryable/retained here. The caller owns what a refusal means: the
+        observation-only lane skips from it; a message's sidecar proceeds
+        on it (a malformed sidecar never kills the utterance's own
+        obligations, and a deterministic refusal gets its own retained
+        obligation)."""
         from nora.infra.sql.observations import resolve_target_message_id
 
         if self._observations is None:
-            state = ("retryable_failure" if work.attempts < 5
-                     else "failed_retained")
-            ok = await self._finish(work, state,
-                                    {"reason": "observation store unwired"})
-            if ok and state == "failed_retained":
-                await self._ack(work)
-            return None
+            # A store the deployment never wired cannot persist the
+            # sidecar — an `unavailable` wiring verdict (R-27), never
+            # `nothing_found`. The caller owns what it means: obs-only
+            # retains the whole event; a message sibling still delivers
+            # with the refusal durably owned by its own obligation.
+            return "unavailable:observation store unwired"
         try:
             obs = observation or observation_from_dict(
                 envelope.observation,
@@ -1176,7 +1323,10 @@ class WorkRunner:
                         "observation_row_id": obs_id,
                         "object_kind": obs.object_kind,
                         "unit": unit, "at_ms": at_ms,
+                        "actor_id": obs.actor_id or None,
                         "actor_person_id": actor_pid,
+                        # Reaching the append at all means the admission was
+                        # absorbed — every caller refuses otherwise.
                         "absorbed": True,
                         "trace": envelope.trace,
                         "enqueued_ms": enqueued_ms,
@@ -1424,6 +1574,7 @@ class WorkRunner:
                 unit=work.payload.get("unit"),
                 at_ms=int(work.payload.get("at_ms") or 0),
                 actor_person_id=work.payload.get("actor_person_id"),
+                actor_id=work.payload.get("actor_id"),
                 wiring=self._stimulus, metrics=self._metrics,
                 recorded_at_ms=work.payload.get("enqueued_ms"))
             if outcome == "written":

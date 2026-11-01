@@ -372,6 +372,46 @@ class SqlObservationStore:
         await self._engine.dispose()
 
 
+async def _resolve_target_row(
+    conn: AsyncConnection, *, platform: str, conversation_id: str,
+    target: EditTarget, target_author_id: str = "",
+) -> int | None:
+    """The ONE target→row rule, callable inside an open transaction: the row
+    the target PROVABLY names, or None. Zero matches is an unresolved target;
+    several is an ambiguous one — an arbitrary same-timestamp pick would bind
+    evidence to a row it may not name (design 02: ambiguity stays unresolved).
+    The author's identity is preserved separately from the actor's (commit
+    `38b4a157f`): an author-qualified target resolves only a row that author
+    sent, and only when that author sent exactly one."""
+    if target.message_id:
+        row = (await conn.execute(
+            sa.select(MESSAGES.c.id).where(
+                MESSAGES.c.platform == platform,
+                MESSAGES.c.conversation_id == conversation_id,
+                MESSAGES.c.platform_message_id == target.message_id)
+            .order_by(MESSAGES.c.id).limit(1))).first()
+        return int(row[0]) if row is not None else None
+    if target.sent_ts is None:
+        return None
+    # `SqlRecordStore`'s edit-target rule: a second edit can name the first
+    # edit's timestamp, so a timestamp target matches the message OR one of
+    # its edits.
+    edited_at = sa.exists().where(
+        MESSAGE_EDIT.c.message_id == MESSAGES.c.id,
+        MESSAGE_EDIT.c.ts == target.sent_ts)
+    rows = (await conn.execute(
+        sa.select(MESSAGES.c.id, MESSAGES.c.sender_id).where(
+            MESSAGES.c.platform == platform,
+            MESSAGES.c.conversation_id == conversation_id,
+            sa.or_(MESSAGES.c.ts == target.sent_ts, edited_at))
+        .order_by(MESSAGES.c.id).limit(20))).all()
+    if target_author_id:
+        rows = [r for r in rows if r.sender_id == target_author_id]
+    if len(rows) != 1:
+        return None
+    return int(rows[0].id)
+
+
 async def resolve_target_message_id(
     engine: AsyncEngine, *, platform: str, conversation_id: str,
     target: EditTarget | None, target_author_id: str = "",
@@ -383,30 +423,59 @@ async def resolve_target_message_id(
 
     `message_id` targets match `platform_message_id`. Timestamp targets match
     `messages.ts` OR one of its edits (`SqlRecordStore`'s edit-target rule:
-    a second edit can name the first edit's timestamp) and prefer the row
-    authored by `target_author_id` when several match — the author's identity
-    is preserved separately from the actor's (commit `38b4a157f`)."""
+    a second edit can name the first edit's timestamp) and require a UNIQUE
+    match under `target_author_id` when one is supplied — an ambiguous
+    same-timestamp answer stays NULL rather than naming whichever row
+    happened to sort first."""
     if target is None or (not target.message_id and target.sent_ts is None):
         return None
-    if target.message_id:
-        match = MESSAGES.c.platform_message_id == target.message_id
-        prefer = sa.literal(0)
-    elif target.sent_ts is not None:
-        edited_at = sa.exists().where(
-            MESSAGE_EDIT.c.message_id == MESSAGES.c.id,
-            MESSAGE_EDIT.c.ts == target.sent_ts,
-        )
-        match = sa.or_(MESSAGES.c.ts == target.sent_ts, edited_at)
-        prefer = (
-            sa.case((MESSAGES.c.sender_id == target_author_id, 0), else_=1)
-            if target_author_id else sa.literal(0))
-    else:
-        return None
-    stmt = (
-        sa.select(MESSAGES.c.id)
-        .where(MESSAGES.c.platform == platform,
-               MESSAGES.c.conversation_id == conversation_id, match)
-        .order_by(prefer, MESSAGES.c.id.asc()).limit(1))
     async with engine.connect() as conn:
-        row = (await conn.execute(stmt)).first()
-    return int(row[0]) if row is not None else None
+        return await _resolve_target_row(
+            conn, platform=platform, conversation_id=conversation_id,
+            target=target, target_author_id=target_author_id)
+
+
+async def relink_arriving_targets(
+    conn: AsyncConnection, *, scope: SourceScope,
+    platform_message_id: str | None, sent_ts: int | None,
+    sender_id: str | None,
+) -> int:
+    """Re-link retained observations whose target can name the message that
+    just committed — called INSIDE the message row's own transaction so the
+    link lands with the row, never after it (the port's "resolve_targets
+    re-links the rest when the target arrives").
+
+    The arriving message generates every target key it could answer — `id:`
+    its platform handle, `ts:` its timestamp plain and author-qualified —
+    and each unresolved row carrying one is re-resolved through the SAME
+    fail-closed rule `_resolve_target_row` uses: an ambiguous same-timestamp
+    target stays unresolved rather than binding to whichever row happened to
+    arrive. Returns how many rows gained a link this call."""
+    keys: list[str] = []
+    if platform_message_id:
+        keys.append(f"id:{platform_message_id}")
+    if sent_ts is not None:
+        keys.append(f"ts:{sent_ts}")
+        if sender_id:
+            keys.append(f"ts:{sent_ts}:author:{sender_id}")
+    if not keys:
+        return 0
+    rows = (await conn.execute(
+        sa.select(OBS.c.id, OBS.c.target_key, OBS.c.target_author_id).where(
+            _scope_where(scope), OBS.c.target_key.in_(keys),
+            OBS.c.target_message_id.is_(None)))).mappings().all()
+    linked = 0
+    for row in rows:
+        resolved = await _resolve_target_row(
+            conn, platform=scope.platform,
+            conversation_id=scope.conversation_id,
+            target=target_from_key(row["target_key"]),
+            target_author_id=row["target_author_id"] or "")
+        if resolved is None:
+            continue
+        await conn.execute(
+            sa.update(OBS).where(
+                OBS.c.id == row["id"], OBS.c.target_message_id.is_(None))
+            .values(target_message_id=resolved))
+        linked += 1
+    return linked
