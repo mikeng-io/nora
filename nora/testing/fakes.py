@@ -186,6 +186,7 @@ class FakeRecordStore:
         is_nora: bool = False,
         delivery_status: DeliveryStatus = DeliveryStatus.PENDING,
         person_id: str | None = None,
+        tx_hook: Any = None,
     ) -> int:
         # Deliberately does NOT raise when closed. `SqlRecordStore.aclose`
         # delegates to `AsyncEngine.dispose()`, which releases the pool but
@@ -233,6 +234,16 @@ class FakeRecordStore:
             "platform_message_id": message.message_id or None,
             "mentions_json": mentions_json(message.mentions),
         })
+        # `tx_hook(conn, row_id)` commits atomically with the row in
+        # `SqlRecordStore.append`. The fake has no transaction to hand over,
+        # so the hook runs against `None` and an explosion takes the staged
+        # row back — the same all-or-nothing a real rollback gives.
+        if tx_hook is not None:
+            try:
+                await tx_hook(None, row_id)
+            except Exception:
+                self.rows.pop()
+                raise
         return row_id
 
     def _latest_edit(self, row_id: int) -> dict[str, Any] | None:

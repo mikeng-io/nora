@@ -97,12 +97,12 @@ jobs:
           READERS: ${{ needs.classify.outputs.readers }}
         run: |
           uv run python - <<'PYTEST'
-          import json, os, subprocess
+          import json, os, subprocess, sys
           targets = json.loads(os.environ['READERS'])
           if targets == 'ALL':
-              subprocess.run(['pytest', '-q', '-n', '8'], check=True)
+              subprocess.run([sys.executable, '-m', 'scripts.pytest_gate'], check=True)
           elif targets:
-              subprocess.run(['pytest', '-q', *targets], check=True)
+              subprocess.run([sys.executable, '-m', 'scripts.pytest_gate', *targets], check=True)
           PYTEST
 
   portal:

@@ -65,8 +65,8 @@
   {
     "name": "stimulus skips non-absorbed rooms",
     "file": "nora/ingest/pipeline.py",
-    "old": "        if self._stimulus_wiring is not None and absorbed:\n            with span(\"ingest.stimulus\"):\n                await stimulus_stage.run(\n                    message=message, item=\"message\", row_id=row_id,",
-    "new": "        if self._stimulus_wiring is not None:\n            with span(\"ingest.stimulus\"):\n                await stimulus_stage.run(\n                    message=message, item=\"message\", row_id=row_id,",
+    "old": "            if self._stimulus_wiring is not None and absorbed:\n                with span(\"ingest.stimulus\"):\n                    await stimulus_stage.run(\n                        message=message, item=\"message\", row_id=row_id,",
+    "new": "            if self._stimulus_wiring is not None:\n                with span(\"ingest.stimulus\"):\n                    await stimulus_stage.run(\n                        message=message, item=\"message\", row_id=row_id,",
     "target": "tests/unit/test_discord_guild_entry.py::test_a_mention_only_channel_records_but_is_never_absorbed"
   },
   {

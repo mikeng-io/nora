@@ -29,10 +29,14 @@ updates:
   directories:
   - /
   - /app
+  - /deploy/bridge-projection
   - /deploy/signoz/collector
   - /deploy/computer
+  - /deploy/discord-bridge
   - /deploy/instagram-bridge
   - /deploy/komodo
+  - /deploy/otel-queue-fixture/langfuse-sink
+  - /deploy/signal-bridge
   - /deploy/signal-cli
   - /deploy/stt
   - /deploy/voice-sidecar

@@ -216,6 +216,13 @@ MESSAGES = sa.Table(
     # never a delete, and a snapshot before the hide restores the row.
     sa.Column("hidden_at", sa.BigInteger, nullable=True),
     sa.CheckConstraint("conversation_type IN ('group','dm')"),
+    # The closed send-outcome vocabulary — `uncertain` since 0142: a send
+    # that may have landed and lost its answer is terminal ambiguity, never
+    # `failed` (nothing disproved it) and never left `pending` (a live
+    # owner would invite a blind resend).
+    sa.CheckConstraint(
+        "delivery_status IN ('pending','sent','failed','uncertain')",
+        name="ck_messages_delivery_status"),
 )
 
 #: An edit names its target by the platform's handle, within one room.
@@ -5419,3 +5426,123 @@ sa.Index(
     NOTEBOOK_ENTRY_REVISION.c.seq,
     unique=True,
 )
+
+# ---- platform bridges (design/platform-bridges) --------------------------
+# Durable inbound handoff: event mapping, work obligations and outbound
+# action intents/results. App workers own event/work state; bridge processes
+# own action reservation/result writes.
+
+BRIDGE_EVENT = sa.Table(
+    "bridge_event", METADATA,
+    # PK is the first-seen event_id alias; later HMAC versions land in
+    # bridge_event_alias and resolve to this row.
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("account_key", sa.Text, nullable=False),
+    # Canonical un-keyed source tuple (private) and its digest; uniqueness is
+    # on the digest so rotating HMAC key versions cannot duplicate an event.
+    sa.Column("source_key", sa.Text, nullable=False),
+    sa.Column("source_digest", sa.Text, nullable=False),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("stream", sa.Text, nullable=False),
+    sa.Column("stream_id", sa.Text, nullable=False),
+    sa.Column("seq", sa.BigInteger, sa.Identity(always=False), nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("conversation_type", sa.Text, nullable=False),
+    sa.Column("sender_id", sa.Text, nullable=False),
+    sa.Column("received_ms", sa.BigInteger, nullable=False),
+    sa.Column("queued_ms", sa.BigInteger, nullable=False),
+    sa.Column("time_quality", sa.Text, nullable=False),
+    # message snapshot + attachments + trace; the audit/ingest snapshot.
+    sa.Column("payload", pg.JSONB, nullable=False),
+    sa.Column("admission_rev", sa.Integer),
+    sa.Column("admission", pg.JSONB),
+    sa.Column("tag_id", sa.Text),
+    sa.Column("state", sa.Text, nullable=False, server_default="open"),
+    sa.Column("outcome_reason", sa.Text),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.UniqueConstraint("platform", "account_key", "source_digest",
+                        name="uq_bridge_event_source"),
+    sa.CheckConstraint(
+        "state IN ('open','done','intentional_skip','failed_retained','uncertain')",
+        name="ck_bridge_event_state"),
+)
+BRIDGE_EVENT_ALIAS = sa.Table(
+    "bridge_event_alias", METADATA,
+    sa.Column("event_id", sa.Text, primary_key=True),
+    sa.Column("event_ref", sa.Text, sa.ForeignKey("bridge_event.id"), nullable=False),
+)
+sa.Index("idx_bridge_event_conv", BRIDGE_EVENT.c.platform,
+         BRIDGE_EVENT.c.account_key, BRIDGE_EVENT.c.conversation_id,
+         BRIDGE_EVENT.c.seq)
+sa.Index("idx_bridge_event_stream", BRIDGE_EVENT.c.stream, BRIDGE_EVENT.c.stream_id,
+         unique=True)
+
+BRIDGE_WORK = sa.Table(
+    "bridge_work", METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    # NULL for room-scoped obligations not born of one event (participation
+    # window evaluation); event-scoped kinds always carry it.
+    sa.Column("event_id", sa.Text, sa.ForeignKey("bridge_event.id")),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("ordinal", sa.Integer, nullable=False),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("account_key", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("due_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.Column("state", sa.Text, nullable=False, server_default="pending"),
+    sa.Column("generation", sa.Integer, nullable=False, server_default="0"),
+    sa.Column("attempts", sa.Integer, nullable=False, server_default="0"),
+    sa.Column("payload", pg.JSONB, nullable=False),
+    sa.Column("result", pg.JSONB),
+    sa.Column("lease_owner", sa.Text),
+    sa.Column("leased_until", sa.DateTime(timezone=True)),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.Column("completed_at", sa.DateTime(timezone=True)),
+    sa.UniqueConstraint("event_id", "kind", "ordinal", name="uq_bridge_work_obligation"),
+    sa.CheckConstraint(
+        "state IN ('pending','running','done','intentional_skip',"
+        "'retryable_failure','failed_retained','uncertain','cancelled')",
+        name="ck_bridge_work_state"),
+)
+sa.Index("idx_bridge_work_claim", BRIDGE_WORK.c.state, BRIDGE_WORK.c.due_at)
+sa.Index("idx_bridge_work_conv", BRIDGE_WORK.c.platform, BRIDGE_WORK.c.account_key,
+         BRIDGE_WORK.c.conversation_id, BRIDGE_WORK.c.ordinal)
+
+BRIDGE_ACTION = sa.Table(
+    "bridge_action", METADATA,
+    sa.Column("action_id", sa.Text, primary_key=True),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("account_key", sa.Text, nullable=False),
+    sa.Column("owner_kind", sa.Text, nullable=False),
+    sa.Column("owner_id", sa.Text, nullable=False),
+    sa.Column("owner_generation", sa.Integer),
+    sa.Column("op", sa.Text, nullable=False),
+    sa.Column("request", pg.JSONB, nullable=False),
+    sa.Column("request_hash", sa.Text, nullable=False),
+    sa.Column("state", sa.Text, nullable=False, server_default="prepared"),
+    sa.Column("platform_ref", sa.Text),
+    sa.Column("platform_ms", sa.BigInteger),
+    sa.Column("error", pg.JSONB),
+    # The pending outbound `messages` row a live invocation links against.
+    sa.Column("message_id", sa.BigInteger, sa.ForeignKey("messages.id")),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.Column("started_at", sa.DateTime(timezone=True)),
+    sa.Column("completed_at", sa.DateTime(timezone=True)),
+    sa.CheckConstraint(
+        "state IN ('prepared','started','confirmed','rejected','uncertain')",
+        name="ck_bridge_action_state"),
+    sa.CheckConstraint(
+        "owner_kind IN ('work','event_receipt','otp_challenge','live_invocation')",
+        name="ck_bridge_action_owner"),
+)
+sa.Index("idx_bridge_action_owner", BRIDGE_ACTION.c.owner_kind,
+         BRIDGE_ACTION.c.owner_id)

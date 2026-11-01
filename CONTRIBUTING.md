@@ -138,8 +138,14 @@ lands an indexed decision, and these headings in order:
   `issue #N` in the prose. Omit when there is no issue.
 
 Run **`make gate` once on the final head**, including the latest target branch.
-It runs full static checks and tests affected by the diff against `origin/master`;
-unknown changes or selector failures run the whole suite. For a fork, fetch
+For code/mixed changes it runs full static checks and tests affected by the diff
+against `origin/master`; ordinary documentation uses its reader tests without
+static steps. Unknown changes or selector failures broaden to the full suite.
+Local `make gate` can reuse a successful receipt for an identical clean candidate
+and verified execution context; it prints `REUSED` when no checks were rerun.
+`make gate-reuse` only checks for reuse and fails without executing on a miss.
+`make gate-fresh` forces a real validation. CI and `make full-gate` always run fresh.
+The full receipt contract and exclusions are in `tests/README.md`. For a fork, fetch
 upstream master into `origin/master` before running it (keep `origin` as your fork):
 `git fetch upstream master:refs/remotes/origin/master`.
 During iteration, run the tests you touched. `make full-gate` is the unconditional

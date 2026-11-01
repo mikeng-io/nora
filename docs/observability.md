@@ -306,7 +306,8 @@ backend must never block an app release — so the SigNoz wiring is an OVERLAY,
 3. Recreate the instrumented services WITH the overlay:
    `docker compose -f docker-compose.yml -f
    deploy/signoz/docker-compose.signoz.yaml up -d nora presence analytics
-   signal-cli whatsapp-bridge instagram-bridge` — journald logging with the service `tag`, the `signoz`
+   signal-bridge discord-bridge whatsapp-bridge instagram-bridge
+   bridge-projection` — journald logging with the service `tag`, the `signoz`
    network join, and the bridge's OTLP endpoint move off the host-gateway
    (which otherwise still reaches the LEGACY collector's port).
 4. Only after acceptance below: retire the old collector/alert stack and
@@ -873,6 +874,38 @@ Sentry rather than instead of it — see "what counts as an error" below.
 | `OAuthRefreshRefused` | a lane's refresh token was refused, or its state dir is unwritable | neither heals by retrying: it needs a new login, so it fires at once instead of waiting for the staleness window |
 | `IngestionSilent` | the ingester's own scrape produces no `up` for 5m | a monitoring stack's own failure mode is to go quiet and leave everything green |
 | `SessionProbeAlert` | a probe alert line (`container.name=nora-session-probe`, `alert` attr set) in 15m | the probe's page path survives the alert-bridge retirement: the unit's `SyslogIdentifier` puts the line in the journal, the rule counts it |
+
+### The admission-projection surfaces
+
+The four platform bridges expose bearer-protected `/metrics` on their existing
+private API ports (Signal 18090, Discord 18093, WhatsApp 18081, Instagram
+18082). The ingester scrapes those counters alongside the application's queue
+inspector metrics. Its `NORA_BRIDGE_API_TOKEN` projection uses the same non-empty
+API-token override, then legacy `NORA_BRIDGE_TOKEN` fallback as the bridges;
+`scripts/signoz_compose.py` obtains both through the existing private `source()`.
+No additional credential is introduced. Missing scrape credentials produce a
+failed target, never an authenticated zero. The publisher's existing 8091 metrics
+endpoint is also scraped over `signoz-network`.
+
+`bridge-projection` answers three endpoints on `8091` (private `nora`
+network, no published port): `/live` is process liveness — the Compose
+healthcheck uses it, so a stale projection never causes a restart loop.
+`/health` is authorization truth: 200 only when every publisher's file is
+fresh, 503 with a per-platform body (`stale`, `files`, `self_stale`,
+`write_stale`, `key_mismatch`, `directory`) naming the cause. `/metrics`
+renders the shared registry — the same one the `ReloadFiles` watchers
+write to, so policy/identity reload outcomes are visible in one place.
+
+The alert-relevant signals are the same two absences as everywhere else in
+this section: `up` for the 8091 scrape (publisher dead — bridges are
+enforcing stale or deny state) and a `stale`/`ok:false` `/health` body
+persisting past a tick (sources fixed but not landing, a failed write, a
+mismatched account leg, or a bridge directory that stopped answering).
+Both are absence conditions, not error rates — a publisher that keeps
+serving while its sources rot is exactly the silent case this alerting
+exists for. The artifacts themselves carry `generated_ms` (write time)
+and `revision` (content hash), so "file says X, is it current?" reads off
+the JSON, never off the process's word.
 
 **What this pipeline cannot say, stated rather than discovered.** There is **no
 dead-man switch**: `IngestionSilent` is evaluated BY the SigNoz backend, so a

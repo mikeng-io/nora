@@ -75,7 +75,9 @@ legacy endpoint flags remain available without that option.
 | POSTGRES_PASSWORD | credentials | db native POSTGRES_PASSWORD | native DB readiness and read-only query |
 | RUSTFS_ROOT_USER/PASSWORD | credentials | RustFS native env; Nora custody refs | generated synthetic blob write/read/remove under operator scope |
 | DISCORD_CLIENT_ID/SECRET, AUTH_SECRET | credentials | portal AUTH_DISCORD_ID/SECRET, AUTH_SECRET | portal authentication using authorized operator session |
-| NORA_BRIDGE_TOKEN | credentials | transport, alert, social and voice bridges; explicit Compose env | authenticated non-send bridge read |
+| NORA_BRIDGE_TOKEN / NORA_BRIDGE_API_TOKEN | credentials | transport, alert, social and voice bridges; the platform bridges' /v1 bearer (API_TOKEN is the canonical name, TOKEN is the fallback) | authenticated non-send bridge read |
+| NORA_REDIS_{PRODUCER,CONSUMER,INSPECTOR}_PASSWORD | credentials | the platform-bridge Redis ACL roles — producer enqueue/dedupe, consumer claim/ack/inspect, inspector read-only telemetry | scoped redis-cli probes per role |
+| *_BRIDGE_ACCOUNT_KEY | deployment env (opaque id, not a credential) | per-platform stream legs shared by each bridge's NORA_BRIDGE_ACCOUNT_KEY and the projection publisher's <PLATFORM>_BRIDGE_ACCOUNT_KEY | artifact account_key equals the configured leg |
 | LIFE360_* and maps refs | credentials | presence and configured Nora geocoding; scoped aliases | collector authenticated refresh/readback |
 | GOOGLE_OAUTH_*, Tavily/Exa, Steam, Giphy, Pulse, MiniMax | credentials | Nora integration constructors / explicit native env | enabled integration's read-only functional operation |
 | NORA_OTP_*, MEDIA_ENCRYPTION_KEY | credentials | Nora; portal receives only OTP API bearer | OTP round trip / synthetic media round trip |
@@ -96,6 +98,35 @@ calls default to `<runtime>/.secret-delivery/` and may select an explicit
 mode 0600. Do not publish Compose config,
 Docker inspect environments, generated files or diagnostics. Native infra remains
 outside the release-owned image cohort. No shared secret-file mounts are added.
+
+## Platform bridges and the admission projection
+
+Each `[platforms.<p>]` section carries `mode`, `account_key`, `base_url` and
+`enabled`. `mode = "bridge"` selects the durable deployment shape — the
+standalone `<p>-bridge` process owns the platform session, inbound arrives
+over Redis Streams (`nq:in:<platform>:<account_key>`), and the app consumes
+through `[bridges]` (`redis_url_env`, `token_env`, `lease_seconds`). Any
+platform with `mode = "bridge"` needs the Redis env resolved at boot.
+`mode = "direct"` keeps the in-process adapter. Never run a direct adapter
+and a bridge on the same account — that is two sessions on one registration.
+
+`account_key` is the explicit opaque stream leg. It is configured per
+platform AND delivered by env — `<PLATFORM>_BRIDGE_ACCOUNT_KEY` on the
+`bridge-projection` publisher and on each bridge — and the env leg must
+equal the configured leg when the platform is enabled; a mismatch publishes
+a deny artifact instead of a guessed grant. It is an identifier, not a
+credential: it lives in `.env`, never in `secret.toml`.
+
+`bridge-projection` is one long-lived process (`entry.py --all`) mounting
+`config.toml`, `policy.toml` and `identity.toml` read-only — never
+`secret.toml` — and writing `{platform}.json` into the named
+`bridge-projection` volume every bridge mounts read-only. It has no
+`depends_on` on the app: it keeps publishing while Nora is stopped.
+Per-platform bridge endpoints resolve from `<PLATFORM>_BRIDGE_{SELF,READS,
+BASE}_URL`, then the shared `NORA_BRIDGE_*` envs, then the configured
+`base_url`. Redis runs with scoped ACLs (default user off), AOF everysec and
+`noeviction` on the named `redis-data` volume; the three role passwords are
+credentials delivered through `secret.toml`/`.env`.
 
 ## Host migration and installed files
 

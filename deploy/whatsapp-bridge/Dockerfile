@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
-COPY bridge.js bridge_helpers.js ./
+COPY *.js ./
 # Non-root, matching every other container in this compose project (M-1).
 USER node
 EXPOSE 18081

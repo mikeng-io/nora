@@ -1,0 +1,527 @@
+"""Gate receipt admission/invalidation through real git and make; no Docker writes."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+from contextlib import suppress
+from pathlib import Path
+
+import pytest
+
+from scripts import gate
+
+
+def git(root, *args):
+    return subprocess.check_output(  # noqa: S603 — fixed git argv in a generated repo
+        ["git", "-c", "core.hooksPath=/dev/null", *args],
+        cwd=root,
+        text=True,
+    ).strip()
+
+
+@pytest.fixture
+def job(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    git(repo, "config", "user.name", "Generated")
+    git(repo, "config", "user.email", "generated")
+    control = tmp_path / "control.json"
+    control.write_text(json.dumps({"rc": 0}))
+    calls = tmp_path / "calls"
+    driver = tmp_path / "driver.py"
+    driver.write_text(
+        "import json,sys\nfrom pathlib import Path\n"
+        f"control=Path({str(control)!r});calls=Path({str(calls)!r})\n"
+        "with calls.open('a') as f:f.write(sys.argv[1]+'\\n')\n"
+        "sys.exit(json.loads(control.read_text())['rc'])\n"
+    )
+    (repo / "Makefile").write_text(
+        f"_gate:\n\t{gate.sys.executable} {driver} code\n"
+        f"_full-gate:\n\t{gate.sys.executable} {driver} full\n"
+        f"test-affected:\n\t{gate.sys.executable} {driver} docs\n"
+    )
+    (repo / "source.py").write_text("VALUE = 1\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "base")
+    git(repo, "update-ref", "refs/remotes/origin/master", "HEAD")
+    context_file = tmp_path / "context"
+    context_file.write_text("environment-one")
+
+    def measured_context(path):
+        assert path == repo
+        return context_file.read_text()
+
+    monkeypatch.setattr(gate, "PROJECT_ROOT", repo)
+    monkeypatch.setattr(gate, "LOCK_PATH", tmp_path / "pytest.lock")
+    monkeypatch.setattr(gate, "context", measured_context)
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("MAKEOVERRIDES", raising=False)
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    receipt = repo / ".git/nora-gate-receipt.json"
+    return repo, calls, control, context_file, receipt
+
+
+def count(calls):
+    return calls.read_text().splitlines() if calls.exists() else []
+
+
+def test_real_make_runs_once_then_reuses_only_the_identical_success(job):
+    repo, calls, _, context, receipt = job
+    assert gate.main([]) == 0
+    assert count(calls) == ["code"] and receipt.exists()
+    assert gate.main([]) == 0 and count(calls) == ["code"]
+    context.write_text("environment-two")
+    assert gate.main([]) == 0 and count(calls) == ["code", "code"]
+    (repo / "source.py").write_text("VALUE = 2\n")
+    assert gate.main([]) == 0 and len(count(calls)) == 3 and not receipt.exists()
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "changed candidate")
+    assert gate.main([]) == 0 and len(count(calls)) == 4
+    assert gate.main([]) == 0 and len(count(calls)) == 4
+    git(repo, "update-ref", "refs/remotes/origin/master", "HEAD")
+    assert gate.main([]) == 0 and len(count(calls)) == 5
+
+
+@pytest.mark.parametrize(
+    "mode", [
+        "fresh", "CI", "override", "corrupt", "false-rc", "unknown", "error-context",
+        "PYTHONPATH", "invalid-time",
+    ]
+)
+def test_non_reusable_receipts_execute_and_failure_destroys_the_old_green(job, monkeypatch, mode):
+    repo, calls, control, _, receipt = job
+    assert gate.main([]) == 0 and receipt.exists()
+    args = []
+    if mode == "fresh":
+        args = ["--fresh"]
+    elif mode == "CI":
+        monkeypatch.setenv("CI", "true")
+    elif mode == "override":
+        monkeypatch.setenv("MAKEOVERRIDES", "PYTEST=true")
+    elif mode == "corrupt":
+        receipt.write_text("{bad json")
+    elif mode == "false-rc":
+        value = json.loads(receipt.read_text())
+        value["rc"] = False
+        receipt.write_text(json.dumps(value))
+    elif mode == "PYTHONPATH":
+        monkeypatch.setenv("PYTHONPATH", str(repo))
+    elif mode == "invalid-time":
+        value = json.loads(receipt.read_text())
+        value["completed_at"] = "not a timestamp"
+        receipt.write_text(json.dumps(value))
+    elif mode == "unknown":
+        (repo / "unknown.py").write_text("x = 1")
+    else:
+
+        def unavailable(path):
+            raise OSError("context unavailable")
+
+        monkeypatch.setattr(gate, "context", unavailable)
+    control.write_text(json.dumps({"rc": 1}))
+    assert gate.main(args) != 0
+    assert count(calls) == ["code", "code"] and not receipt.exists()
+    control.write_text(json.dumps({"rc": 0}))
+    assert gate.main(args) == 0 and len(count(calls)) == 3
+
+
+def test_doc_only_candidate_runs_the_reader_path_and_mixed_code_keeps_static_checks(job):
+    repo, calls, _, _, _ = job
+    (repo / "README.md").write_text("generated documentation\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "docs")
+    assert gate.main([]) == 0 and count(calls) == ["docs"]
+    (repo / "source.py").write_text("VALUE = 2\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "code")
+    assert gate.main([]) == 0 and count(calls) == ["docs", "code"]
+
+
+def test_changed_context_during_success_is_not_recorded(job):
+    _, calls, control, context, receipt = job
+    # The child really changes an external context input while checks execute.
+    driver = control.parent / "driver.py"
+    driver.write_text(driver.read_text() + f"\nPath({str(context)!r}).write_text('changed')\n")
+    # Insert before sys.exit, which ends the generated check process.
+    driver.write_text(
+        driver.read_text().replace("sys.exit(json.loads(control.read_text())['rc'])\n", "")
+    )
+    assert gate.main([]) == 0 and count(calls) == ["code"] and not receipt.exists()
+
+
+def test_a_cached_success_still_requires_host_admission(job):
+    _, calls, _, _, _ = job
+    assert gate.main([]) == 0
+    with gate.host_lease(gate.LOCK_PATH):
+        assert gate.main([]) == 2
+    assert gate.main([]) == 0 and count(calls) == ["code"]
+
+
+def test_actual_context_digest_tracks_private_environment_dependencies_tools_and_docker(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(gate.os, "environ", {"PATH": str(tmp_path / "bin")})
+    monkeypatch.setattr(gate.tempfile, "gettempdir", lambda: str(tmp_path / "tmp"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    dep = tmp_path / "dependency.py"
+    dep.write_text("v1")
+    tool = tmp_path / "tool"
+    tool.write_text("tool-v1")
+    monkeypatch.setattr(gate.shutil, "which", lambda name: str(tool) if name == "uv" else None)
+
+    class Installed:
+        def __init__(self):
+            self.metadata = {"Name": "generated-dependency"}
+
+        def read_text(self, name):
+            assert name == "direct_url.json"
+            return None
+
+        version = "1"
+        files = ("dependency.py",)
+
+        def locate_file(self, name):
+            assert name == "dependency.py"
+            return dep
+
+    monkeypatch.setattr(gate.importlib.metadata, "distributions", lambda: [Installed()])
+    values = {
+        ("context", "show"): "local",
+        ("info", "--format", "{{.ID}}"): "daemon-one",
+        ("version", "--format", "{{json .}}"): '{"Server":{"Version":"generated-v1"}}',
+        (
+            "image",
+            "ls",
+            "--no-trunc",
+            "--digests",
+            "--format",
+            "{{.ID}} {{.Digest}}",
+        ): "image-one digest-one",
+        ("ps", "-aq", "--no-trunc"): "container-one",
+        ("inspect", "container-one"): json.dumps(
+            [
+                {
+                    "Id": "container-one",
+                    "Image": "image-one",
+                    "Mounts": [
+                        {
+                            "Type": "bind", "Source": "/generated/a",
+                            "Destination": "/a", "RW": True,
+                        },
+                        {
+                            "Type": "bind", "Source": "/generated/b",
+                            "Destination": "/b", "RW": False,
+                        },
+                    ],
+                    "Config": {"Env": ["GENERATED=fixture"]},
+                    "State": {"Running": True, "StartedAt": "generated-start"},
+                }
+            ]
+        ),
+    }
+
+    def docker(*args, repo):
+        assert repo == tmp_path / "repo"
+        if args == ("git", "config", "--null", "--list", "--show-origin"):
+            return "generated git config"
+        assert args[0] == "docker"
+        return values[args[1:]]  # wrong operations fail, never one response for every request
+
+    monkeypatch.setattr(gate, "command", docker)
+    previous = gate.context(repo)
+    containers = json.loads(values[("inspect", "container-one")])
+    containers[0]["Mounts"].reverse()
+    values[("inspect", "container-one")] = json.dumps(containers)
+    assert gate.context(repo) == previous  # Docker inspect does not preserve mount ordering.
+    containers[0]["Mounts"][0]["RW"] = True
+    values[("inspect", "container-one")] = json.dumps(containers)
+    mounted = gate.context(repo)
+    assert mounted != previous  # Actual mount changes must still invalidate acceptance.
+    previous = mounted
+    changes = [
+        lambda: monkeypatch.setenv("NORA_GENERATED_CONTEXT", "changed"),
+        lambda: (repo / "secret.toml").write_text("generated-private-input"),
+        lambda: dep.write_text("dependency-v2"),
+        lambda: tool.write_text("tool-v2-changed"),
+        lambda: values.__setitem__(("info", "--format", "{{.ID}}"), "daemon-two"),
+        lambda: values.__setitem__(
+            ("inspect", "container-one"),
+            values[("inspect", "container-one")].replace("true", "false"),
+        ),
+        lambda: values.__setitem__(
+            ("image", "ls", "--no-trunc", "--digests", "--format", "{{.ID}} {{.Digest}}"),
+            "image-two digest-two",
+        ),
+    ]
+    for change in changes:
+        change()
+        current = gate.context(repo)
+        assert current != previous
+        assert "generated-private-input" not in current and len(current) == 64
+        previous = current
+
+
+def test_full_gate_is_always_fresh_and_invalidates_narrower_receipts(job):
+    _, calls, _, _, receipt = job
+    assert gate.main([]) == 0 and receipt.exists()
+    assert gate.main(["--full"]) == 0 and not receipt.exists()
+    assert gate.main(["--full"]) == 0 and count(calls) == ["code", "full", "full"]
+    assert gate.main([]) == 0 and count(calls) == ["code", "full", "full", "code"]
+
+
+@pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+def test_hidden_index_changes_cannot_reuse_receipts(job, flag):
+    repo, calls, _, _, receipt = job
+    assert gate.main([]) == 0 and receipt.exists()
+    git(repo, "update-index", flag, "source.py")
+    (repo / "source.py").write_text("hidden change")
+    assert gate.main([]) == 0 and count(calls) == ["code", "code"] and not receipt.exists()
+
+
+def test_interrupting_gate_stops_make_descendants_and_removes_old_success(job):
+    import signal
+    import sys
+    import time
+
+    repo, _calls, control, _, receipt = job
+    assert gate.main([]) == 0 and receipt.exists()
+    pidfile = control.parent / "child.pid"
+    driver = control.parent / "driver.py"
+    driver.write_text(
+        "import os,signal\nfrom pathlib import Path\n"
+        f"Path({str(pidfile)!r}).write_text(str(os.getpid()))\n"
+        "signal.signal(signal.SIGINT, signal.SIG_IGN)\n"
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        "print('READY', flush=True)\nsignal.pause()\n"
+    )
+    code = (
+        "import sys\nfrom pathlib import Path\nfrom scripts import gate\n"
+        f"gate.PROJECT_ROOT=Path({str(repo)!r})\n"
+        f"gate.LOCK_PATH=Path({str(gate.LOCK_PATH)!r})\n"
+        "sys.exit(gate.main(['--fresh']))\n"
+    )
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[2])}
+    process = subprocess.Popen(  # noqa: S603 — generated no-Docker gate probe
+        [sys.executable, "-c", code],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    child = None
+    try:
+        assert process.stdout is not None
+        for _ in range(5):
+            if process.stdout.readline().strip() == "READY":
+                break
+        else:
+            pytest.fail("generated check did not start")
+        child = int(pidfile.read_text())
+        os.kill(child, 0)
+        process.send_signal(signal.SIGINT)
+        process.communicate(timeout=20)
+        assert process.returncode == 130 and not receipt.exists()
+        for _ in range(40):
+            try:
+                os.kill(child, 0)
+            except ProcessLookupError:
+                child = None
+                break
+            state = subprocess.run(  # noqa: S603 — fixed ps lookup of owned child
+                ["ps", "-p", str(child), "-o", "stat="],
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            if state.startswith("Z"):
+                child = None
+                break
+            time.sleep(0.05)
+        assert child is None
+        with gate.host_lease(gate.LOCK_PATH):
+            pass
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate(timeout=5)
+        if child is not None:
+            with suppress(ProcessLookupError):
+                os.kill(child, signal.SIGKILL)
+
+
+def test_source_change_during_context_lookup_cannot_hit_an_old_receipt(job, monkeypatch):
+    repo, calls, _, context, receipt = job
+    assert gate.main([]) == 0
+
+    def changing(path):
+        assert path == repo
+        (repo / "source.py").write_text("changed while context was sampled")
+        return context.read_text()
+
+    monkeypatch.setattr(gate, "context", changing)
+    assert gate.main([]) == 0 and count(calls) == ["code", "code"] and not receipt.exists()
+
+
+def test_interrupt_during_context_lookup_removes_previous_success(job, monkeypatch):
+    repo, _, _, _, receipt = job
+    assert gate.main([]) == 0 and receipt.exists()
+
+    def interrupted(path):
+        assert path == repo
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(gate, "context", interrupted)
+    try:
+        rc = gate.main([])
+    except KeyboardInterrupt:
+        pytest.fail("gate interrupted without invalidating its receipt")
+    assert rc == 130 and not receipt.exists()
+
+
+def test_external_symlink_with_a_non_ascii_name_cannot_publish_a_receipt(job):
+    repo, calls, control, _, receipt = job
+    external = control.parent / "external-input"
+    external.write_text("generated input")
+    (repo / "外部輸入.py").symlink_to(external)
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "external symlink")
+    assert gate.main([]) == 0 and not receipt.exists()
+    external.write_text("changed without modifying the symlink")
+    assert gate.main([]) == 0 and count(calls) == ["code", "code"] and not receipt.exists()
+
+
+def test_reuse_only_never_falls_back_to_running_an_expensive_gate(job):
+    _, calls, _, context, _ = job
+    assert gate.main(["--reuse-only"]) == 2 and count(calls) == []
+    assert gate.main([]) == 0 and count(calls) == ["code"]
+    assert gate.main(["--reuse-only"]) == 0 and count(calls) == ["code"]
+    context.write_text("changed context")
+    assert gate.main(["--reuse-only"]) == 2 and count(calls) == ["code"]
+
+
+def test_directory_and_path_inputs_invalidate_real_receipt_reuse(job, monkeypatch):
+    _repo, calls, control, _, _ = job
+    cache = control.parent / 'cache'
+    tools = control.parent / 'bin'
+    cache.mkdir()
+    tools.mkdir()
+    data = cache / 'vocabulary'
+    helper = tools / 'unlisted-helper'
+    data.write_bytes(b'generated-one')
+    helper.write_bytes(b'helper-one')
+    env = {'PATH': str(tools), 'TIKTOKEN_CACHE_DIR': str(cache)}
+    monkeypatch.setattr(gate, 'context', lambda path: gate.digest(gate.input_manifest(path, env)))
+    assert gate.main([]) == 0 and gate.main(['--reuse-only']) == 0
+    for file in (data, helper):
+        before = file.stat()
+        file.write_bytes(file.read_bytes().replace(b'one', b'two'))
+        os.utime(file, ns=(before.st_atime_ns, before.st_mtime_ns))
+        assert gate.main(['--reuse-only']) == 2  # Same size/mtime still cannot hide changed bytes.
+        assert gate.main([]) == 0
+    added = cache / 'new-input'
+    added.write_text('generated')
+    assert gate.main(['--reuse-only']) == 2
+    assert gate.main([]) == 0
+    added.unlink()
+    assert gate.main(['--reuse-only']) == 2
+    assert len(count(calls)) == 4  # Miss lookups never execute checks.
+
+
+def test_default_tokenizer_cache_and_relative_path_are_bound(tmp_path, monkeypatch):
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    temp = tmp_path / 'tmp'
+    temp.mkdir()
+    cache = temp / 'data-gym-cache'
+    cache.mkdir()
+    (repo / 'bin').mkdir()
+    helper = repo / 'bin' / 'generated-helper'
+    helper.write_text('before')
+    monkeypatch.setattr(gate.tempfile, 'gettempdir', lambda: str(temp))
+    env = {'PATH': 'bin'}
+    before = gate.input_manifest(repo, env)
+    (cache / 'vocabulary').write_text('generated')
+    assert gate.input_manifest(repo, env) != before
+    before = gate.input_manifest(repo, env)
+    helper.write_text('after!')
+    assert gate.input_manifest(repo, env) != before
+
+
+@pytest.mark.parametrize(
+    'failure', ['bytes', 'entries', 'time', 'symlink', 'special', 'unreadable']
+)
+def test_unsupported_directory_inputs_refuse_reuse_without_checks(job, monkeypatch, failure):
+    _repo, calls, control, _, receipt = job
+    folder = control.parent / 'inputs'
+    folder.mkdir()
+    file = folder / 'generated'
+    file.write_bytes(b'generated')
+    env = {'PATH': str(folder), 'TIKTOKEN_CACHE_DIR': str(folder)}
+    monkeypatch.setattr(gate, 'context', lambda path: gate.digest(gate.input_manifest(path, env)))
+    assert gate.main([]) == 0 and receipt.exists()
+    if failure == 'bytes':
+        monkeypatch.setattr(gate, 'MAX_INPUT_BYTES', 2)
+    elif failure == 'entries':
+        monkeypatch.setattr(gate, 'MAX_INPUT_ENTRIES', 1)
+    elif failure == 'time':
+        import itertools
+
+        ticks = itertools.count()
+        monkeypatch.setattr(gate.time, 'monotonic', lambda: float(next(ticks)))
+    elif failure == 'symlink':
+        (folder / 'alias').symlink_to(file)
+    elif failure == 'special':
+        os.mkfifo(folder / 'pipe')
+    else:
+        original = gate.os.scandir
+
+        def unreadable(path):
+            if Path(path) == folder:
+                raise PermissionError('generated unreadable input')
+            return original(path)
+
+        monkeypatch.setattr(gate.os, 'scandir', unreadable)
+    assert gate.main(['--reuse-only']) == 2
+    assert count(calls) == ['code']
+
+
+@pytest.mark.parametrize('mode', ['empty', 'default'])
+def test_implicit_path_search_directories_are_bound(tmp_path, monkeypatch, mode):
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    env = {'TIKTOKEN_CACHE_DIR': str(cache)}
+    if mode == 'empty':
+        env['PATH'] = ''
+    else:
+        monkeypatch.setattr(gate.os, 'defpath', str(repo))
+    helper = repo / 'unlisted-helper'
+    helper.write_text('before')
+    before = gate.input_manifest(repo, env)
+    helper.write_text('after!')
+    assert gate.input_manifest(repo, env) != before
+
+
+def test_directory_changes_during_measurement_are_unavailable(tmp_path, monkeypatch):
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    file = repo / 'generated'
+    file.write_text('before')
+    original = gate.os.open
+    changed = False
+
+    def changing(path, flags):
+        nonlocal changed
+        if Path(path) == file and not changed:
+            changed = True
+            (repo / 'new-input').write_text('added during measurement')
+        return original(path, flags)
+
+    monkeypatch.setattr(gate.os, 'open', changing)
+    with pytest.raises(ValueError, match='Input changed during measurement'):
+        gate.input_manifest(repo, {'PATH': str(repo), 'TIKTOKEN_CACHE_DIR': str(repo)})
+    assert changed

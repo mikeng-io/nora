@@ -101,7 +101,8 @@ async def test_when_the_audit_write_fails_the_pipeline_stops_before_identity_and
 
     result = await pipeline.run(message=msg)
 
-    assert result == IngestResult(message=None, decision=None)
+    assert result == IngestResult(
+        message=None, decision=None, outcome="audit_refused")
     assert spawned == []
     assert memory.calls == []
 

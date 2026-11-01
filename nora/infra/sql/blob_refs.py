@@ -95,6 +95,26 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
     ),
     ("row_history", "row_key"): "a history row's key, never a blob",
     ("stimulus", "ref"): "a stimulus's source row (`social_read:<read id>`), never a blob",
+    ("bridge_event", "payload"): (
+        "the retained inbound journal: media refs name bridge custody keys "
+        "(truncated content handles) and may carry a content `sha256` for "
+        "provenance — but the event's bytes are held by attachment custody "
+        "for the volume's life, and any media_objects row under the same sha "
+        "is re-derived content-addressed at ingest, so no blob obligation "
+        "rides here"
+    ),
+    ("bridge_event", "admission"): "the engage verdict (engage/reason/relevance_gate)",
+    ("bridge_work", "payload"): (
+        "queued obligation arguments; the ingest kind carries the same "
+        "envelope snapshot — custody keys and a provenance content hash, "
+        "never blob custody"
+    ),
+    ("bridge_work", "result"): "outcome verdicts, tag/message ids and attempt records",
+    ("bridge_action", "request"): (
+        "the outbound op body; `attachments[].key` are `out-*` custody keys "
+        "the bridge serves under /v1/attachments, never a blob_store address"
+    ),
+    ("bridge_action", "error"): "failure kind and message",
     ("tool_call_log", "tool_input"): _TRACE,
     ("tool_call_log", "tool_result"): _TRACE,
     ("tag_trace", "messages"): _TRACE,

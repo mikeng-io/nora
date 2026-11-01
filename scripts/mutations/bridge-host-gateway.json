@@ -1,0 +1,23 @@
+[
+  {
+    "name": "signal bridge reaches the host OTLP collector",
+    "file": "docker-compose.yml",
+    "old": "    image: signal-bridge:1\n    container_name: signal-bridge\n    restart: unless-stopped\n    networks: [nora]\n    extra_hosts: [\"host.docker.internal:host-gateway\"]",
+    "new": "    image: signal-bridge:1\n    container_name: signal-bridge\n    restart: unless-stopped\n    networks: [nora]",
+    "target": "tests/unit/test_bridge_capture_review.py::TestComposeTracingContract::test_bridge_resolves_the_host_collector[signal]"
+  },
+  {
+    "name": "discord bridge reaches the host OTLP collector",
+    "file": "docker-compose.yml",
+    "old": "    image: discord-bridge:1\n    container_name: discord-bridge\n    restart: unless-stopped\n    networks: [nora]\n    extra_hosts: [\"host.docker.internal:host-gateway\"]",
+    "new": "    image: discord-bridge:1\n    container_name: discord-bridge\n    restart: unless-stopped\n    networks: [nora]",
+    "target": "tests/unit/test_bridge_capture_review.py::TestComposeTracingContract::test_bridge_resolves_the_host_collector[discord]"
+  },
+  {
+    "name": "whatsapp bridge reaches the host OTLP collector",
+    "file": "docker-compose.yml",
+    "old": "    image: whatsapp-bridge:0.1.0\n    container_name: whatsapp-bridge\n    restart: unless-stopped\n    networks: [nora]\n    extra_hosts: [\"host.docker.internal:host-gateway\"]",
+    "new": "    image: whatsapp-bridge:0.1.0\n    container_name: whatsapp-bridge\n    restart: unless-stopped\n    networks: [nora]",
+    "target": "tests/unit/test_bridge_capture_review.py::TestComposeTracingContract::test_bridge_resolves_the_host_collector[whatsapp]"
+  }
+]

@@ -30,6 +30,8 @@ be 0.
 
 from __future__ import annotations
 
+from typing import Any
+
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -152,3 +154,55 @@ class SqlParticipationStateStore:
                     "updated_at": sa.func.now(),
                 },
             ))
+
+    async def last_send_at(
+        self, *, platform: str, conversation_id: str
+    ) -> int | None:
+        """The durable send cursor for one room, read by the claimed
+        `participation_fire` work — it must not trust the live tick's
+        in-memory mirror across a restart. Absence is None, never 0."""
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(
+                sa.select(PARTICIPATION_WINDOW_STATE.c.last_send_at).where(
+                    PARTICIPATION_WINDOW_STATE.c.platform == platform,
+                    PARTICIPATION_WINDOW_STATE.c.conversation_id
+                    == conversation_id,
+                )
+            )).first()
+        return None if row is None or row.last_send_at is None else int(row.last_send_at)
+
+    async def unfolded_candidates(self) -> list[dict[str, Any]]:
+        """The durable candidate set: `bridge_work` participation rows whose
+        note committed (`result.candidate.noted_ms`) but which no window has
+        folded yet (`folded_ms` absent) — membership is the mark, whatever
+        the bookkeeping row's state. A cross-table read is deliberate —
+        the WorkRunner's work ledger IS the membership record, and reading
+        `messages` would invent membership from traffic that was never a
+        candidate."""
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(sa.text(
+                "SELECT id, platform, conversation_id,"
+                " result->'candidate'->>'noted_ms' AS noted_ms"
+                " FROM bridge_work"
+                " WHERE kind = 'participation'"
+                " AND COALESCE(jsonb_exists("
+                "   result->'candidate', 'noted_ms'), false)"
+                " AND NOT COALESCE(jsonb_exists("
+                "   result->'candidate', 'folded_ms'), false)"
+            ))).mappings().all()
+        return [dict(r) for r in rows]
+
+    async def noted_rooms(self) -> list[tuple[str, str]]:
+        """Every `(platform, conversation_id)` that has EVER carried a
+        committed candidate mark — folded or not. A room whose membership was
+        already judged keeps its ledger discipline: ambient transcript rows
+        must never re-time or re-open its windows, so hydration has to know
+        the room is ledger-owned even when no candidate is outstanding."""
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(sa.text(
+                "SELECT DISTINCT platform, conversation_id FROM bridge_work"
+                " WHERE kind = 'participation'"
+                " AND COALESCE(jsonb_exists("
+                "   result->'candidate', 'noted_ms'), false)"
+            ))).mappings().all()
+        return [(r["platform"], r["conversation_id"]) for r in rows]

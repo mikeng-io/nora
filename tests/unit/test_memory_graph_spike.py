@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -10,6 +11,15 @@ import pytest
 from nora.agent.comprehend_tools import egress_reason
 from nora.app.composition import search_provider
 from scripts import memory_graph_spike as spike
+
+
+@pytest.fixture(autouse=True)
+def restore_logging_suppression():
+    previous = logging.root.manager.disable
+    try:
+        yield
+    finally:
+        logging.disable(previous)
 
 
 @pytest.mark.parametrize("read,embed", [(True, True), (False, True), (True, False)])
@@ -87,6 +97,34 @@ def test_judge_error_never_passes():
     assert spike.rate(["supported", "ERROR"], 1, 0.5)["status"] == "ERROR"
     assert spike.rate([], 1, 0.5)["status"] == "INSUFFICIENT"
     assert spike.rate(["supported"], 1, 0.95)["status"] == "PASS"
+
+
+def test_age_summary_preserves_insufficient_population():
+    """ERROR names a broken instrument only; INSUFFICIENT and FAIL keep theirs."""
+    assert spike.age_status([]) == "ERROR"
+    assert spike.age_status([{"status": "ERROR"}]) == "ERROR"
+    assert spike.age_status([{"status": "INSUFFICIENT"}]) == "INSUFFICIENT"
+    assert spike.age_status([{"status": "PASS"}, {"status": "INSUFFICIENT"}]) == "INSUFFICIENT"
+    assert spike.age_status([{"status": "PASS"}, {"status": "FAIL"}]) == "FAIL"
+    assert spike.age_status([{"status": "PASS"}, {"status": "PASS"}]) == "REPORTED"
+
+
+def test_depth3_latency_verdict_binds_question_population():
+    """A finite p95 under the ceiling is PASS only over a sufficient, unbroken
+    population — small-n and absent readings never pass."""
+
+    def verdict(status, questions, p95, minimum=20):
+        run = {"status": status, "questions": questions, "sql_p95_ms": p95}
+        return spike.depth3_verdict(run, minimum)
+
+    assert verdict("INSUFFICIENT", 4, 50.0) == "INSUFFICIENT"
+    assert verdict("ERROR", 4, 50.0) == "ERROR"
+    assert verdict("PASS", 20, 50.0) == "PASS"
+    assert verdict("PASS", 20, 250.0) == "FAIL"
+    # A declared measured population with no reading is an instrument gap, and
+    # a correctness-FAILED run still yields its honestly measured latency.
+    assert verdict("PASS", 20, None) == "ERROR"
+    assert verdict("FAIL", 20, 50.0) == "PASS"
 
 
 async def test_judge_malformed_is_error(monkeypatch, tmp_path):
@@ -393,14 +431,61 @@ async def test_session_quality_uses_shown_input_and_only_committed_relations():
         p for p, _ in seen if isinstance(p, dict) and str(p.get("id", "")).startswith("generated-")
     ]
     assert relations == [serialized(committed), serialized(merge)]
-    assert result["relation_precision"] == [["supported", "unsupported"]] * 2
+    assert result["verdicts"]["relation_precision"] == [["supported", "unsupported"]] * 2
     assert [p for p, _ in seen if "different_entities" in p] == [
         {"different_entities": serialized(merge)}
     ]
-    assert result["wrong_merges"] == [["unsupported"]] * 2
-    assert result["reading_precision"] == [["unsupported"]] * 2
+    assert result["verdicts"]["wrong_merges"] == [["unsupported"]] * 2
+    assert result["verdicts"]["reading_precision"] == [["unsupported"]] * 2
+    assert result["population"] == {"committed": 2, "preview": 3, "scored": 2, "missing": 0}
     expected_evidence = {"input": {"prompt": "Generated source"}, "reads": [read]}
     assert seen and all(e == expected_evidence for _, e in seen)
+
+
+async def test_session_quality_marks_unscored_committed_as_missing():
+    """A committed id absent from the connected preview is never judged from the
+    proposal: it is an unavailable measurement (ERROR per judge), counted in the
+    population, so relation rows cannot silently PASS on a dropped denominator."""
+    seen = []
+
+    async def judge(payload):
+        seen.append(payload["proposition"])
+        return ["supported", "supported"]
+
+    result = await spike.session_quality(
+        SimpleNamespace(score=judge),
+        {"prompt": "Generated source"},
+        [
+            {
+                "name": "memory_propose",
+                "input": {},
+                "result": {
+                    "admitted": [],
+                    "committed": ["generated-committed"],
+                    "connected": {"status": "ok", "nodes": [], "relations": []},
+                },
+            },
+            {
+                "name": "memory_propose",
+                "input": {},
+                "result": {
+                    "admitted": [],
+                    "committed": ["generated-scored"],
+                    "connected": {
+                        "status": "ok",
+                        "relations": [
+                            {"relation": {"id": "generated-scored", "rel": "concerns"}}
+                        ],
+                    },
+                },
+            },
+        ],
+    )
+    assert result["verdicts"]["relation_precision"] == [["supported", "ERROR"]] * 2
+    assert result["verdicts"]["wrong_merges"] == [["ERROR"]] * 2
+    assert result["population"] == {"committed": 2, "preview": 1, "scored": 1, "missing": 1}
+    # The missing relation was measured as unavailable, never sent to a judge.
+    assert seen and all(p.get("id") != "generated-committed" for p in seen if isinstance(p, dict))
 
 
 def test_report_error_exit_is_distinct_from_fail():
@@ -542,9 +627,10 @@ async def test_age_comparison_measures_the_source_once_outside_replay(
             self.url = url
 
         async def dispose(self):
-            pass
+            assert logging.root.manager.disable == logging.CRITICAL
 
     def create(url):
+        assert logging.root.manager.disable == logging.CRITICAL
         return FakeEngine(url)
 
     async def generated_rows(engine, sql, params=None):
@@ -632,7 +718,9 @@ async def test_age_comparison_measures_the_source_once_outside_replay(
         bound.append(engine.url)
         return await real_age(engine, age_url, judges, output_dir, minimum)
 
-    quality = AsyncMock(return_value={})
+    quality = AsyncMock(
+        return_value={"verdicts": {}, "population": {"committed": 0, "missing": 0}}
+    )
     monkeypatch.setattr(spike, "age_comparison", spy)
     monkeypatch.setattr(spike, "session_quality", quality)
     monkeypatch.setattr(spike, "index_replay_sandbox", AsyncMock(
