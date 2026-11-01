@@ -256,6 +256,6 @@
   "file": "nora/engagement/debrief_render.py",
   "old": "    text = block.get(\"text\")\n    if isinstance(text, str) and text.strip():\n        return text, None",
   "new": "    text = block.get(\"text\")\n    if isinstance(text, str) and text.strip():\n        return text[:2400], None",
-  "target": "tests/unit/test_debrief_render.py -k \"long_blocks_end or renders_whole\""
+  "target": "tests/unit/test_debrief_render.py::test_a_decision_at_a_long_blocks_end_reaches_the_fold"
  }
 ]

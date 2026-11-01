@@ -982,7 +982,7 @@ async def test_concurrent_two_process_creates_cannot_split_the_act(
     assert len(list(rows)) == 1
 
 
-async def test_0143_index_downgrade_and_upgrade_preserve_populated_rows(pg_url):
+async def test_0144_index_downgrade_and_upgrade_preserve_populated_rows(pg_url):
     """A POPULATED table, not an index-only assertion: synthetic proactive
     rows with subject payloads survive `downgrade` (index dropped, data
     untouched) and `upgrade` (the unique index builds over populated data
