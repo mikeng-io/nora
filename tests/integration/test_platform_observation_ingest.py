@@ -45,7 +45,7 @@ from nora.infra.sql.schema import (
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.ingest.stages.stimulus import Wiring as StimulusWiring
 from nora.platform.bridge.envelope import Envelope, canonical_source_key, event_id
-from nora.platform.bridge.queue import StreamProducer, ensure_group
+from nora.platform.bridge.queue import CONSUMER_GROUP, StreamProducer, ensure_group
 from nora.platform.bridge.rehydrate import observation_from_dict
 from nora.policy import Policy, permissive_policy
 from tests.integration.test_bridge_queue import (
@@ -148,6 +148,7 @@ def _obs_runner(store, redis_client, harness, **kw) -> WorkRunner:
     (`stimulus`, `persons`)."""
     kw.setdefault("allowlist", permissive_policy())
     kw.setdefault("observations", SqlObservationStore(store._engine))
+    kw.setdefault("stimulus", _wiring(store))
     return _runner(store, redis_client, harness, **kw)
 
 
@@ -171,14 +172,16 @@ async def _work_rows(store, event_id: str):
             .order_by(BRIDGE_WORK.c.id))).mappings().all()
 
 
-async def _claim_run(store, runner, owner="w-test"):
-    work = await store.claim_next(owner=owner, lease_seconds=60)
+async def _claim_run(store, runner, owner="w-test", *, kind="ingest"):
+    work = await store.claim_next(owner=owner, lease_seconds=60, kinds=(kind,))
     assert work is not None, "expected a claimable obligation"
     await runner._execute(work)
     return work
 
 
 async def _register(reader: StreamReader, env: Envelope, sid: str) -> None:
+    await reader._redis.xreadgroup(
+        CONSUMER_GROUP, reader._consumer, {reader.stream: ">"}, count=1)
     await reader._register(sid, {"e": json.dumps(env.to_fields())})
 
 
@@ -224,7 +227,7 @@ async def test_observation_only_records_row_head_and_one_stimulus_then_acks(
 
     # The deferred observation stimulus consumes only grounded evidence:
     # the row it names exists, and its own run is idempotent-safe.
-    stim_work = await _claim_run(store, runner)
+    stim_work = await _claim_run(store, runner, kind="stimulus")
     assert stim_work.kind == "stimulus"
     work = await _work_rows(store, env.event_id)
     assert next(w for w in work if w["kind"] == "stimulus")["state"] == "done"
@@ -574,7 +577,7 @@ async def test_kill_after_append_before_finish_recovers_from_marker(
     event = await store.event(env.event_id)
     assert event["state"] == "done"
     assert len(await _obs_rows(store)) == 1
-    work = await _claim_run(store, runner)
+    work = await _claim_run(store, runner, kind="stimulus")
     assert work.kind == "stimulus"
     work = await _work_rows(store, env.event_id)
     assert all(w["state"] in ("done", "intentional_skip") for w in work)
@@ -614,7 +617,7 @@ async def test_ack_failure_leaves_entry_pending_until_reclaim(
     # The remaining obligation still runs — its own commit is durable
     # even though the stream entry it never owned stays pending.
     monkeypatch.undo()
-    stim = await _claim_run(store, runner)
+    stim = await _claim_run(store, runner, kind="stimulus")
     assert stim.kind == "stimulus"
     assert await _pending(redis_client, stream) == 1  # entry still waits
 
@@ -797,7 +800,7 @@ async def test_self_authored_observation_raises_no_stimulus(
     work = await _work_rows(store, env.event_id)
     stim = next(w for w in work if w["kind"] == "stimulus")
     assert stim["payload"]["actor_id"] == ACCOUNT
-    work = await _claim_run(store, runner)
+    work = await _claim_run(store, runner, kind="stimulus")
     assert work.kind == "stimulus"
     work = await _work_rows(store, env.event_id)
     stim = next(w for w in work if w["kind"] == "stimulus")

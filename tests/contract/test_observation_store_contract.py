@@ -19,7 +19,7 @@ import psycopg
 import pytest
 import sqlalchemy as sa
 
-from nora.domain.models import EditTarget
+from nora.domain.models import EditTarget, NormalizedMessage
 from nora.domain.observations import (
     Coverage,
     MembershipEntry,
@@ -29,6 +29,7 @@ from nora.domain.observations import (
     ReactionPayload,
     SourceScope,
 )
+from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.observations import SqlObservationStore
@@ -70,6 +71,7 @@ async def store(request: Any) -> AsyncIterator[Any]:
         yield SqlObservationStore(engine)
     finally:
         async with engine.begin() as conn:
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(sa.text(
                 "truncate platform_observation, platform_object_state, "
                 "messages restart identity cascade"
@@ -242,18 +244,18 @@ async def test_unresolved_target_is_retained_and_relinks_once(store, request):
     assert await store.unresolved_targets(scope=SCOPE) == []
 
 
-async def _insert_message(store: Any, *, platform_message_id: str) -> int:
-    """A messages row for the FK — minimal required columns only."""
+async def _insert_message(
+    store: Any, *, platform_message_id: str, scope: SourceScope = SCOPE,
+    sender_id: str = "u1",
+) -> int:
+    """A valid target row under the same scope as its observation."""
     engine = getattr(store, "_engine", None)
     if engine is None:
         return 77  # fake: any id
-    async with engine.begin() as conn:
-        row = (await conn.execute(sa.text(
-            "INSERT INTO messages (platform, conversation_id, "
-            "conversation_type, sender_id, ts, platform_message_id) "
-            "VALUES ('discord', 'room1', 'channel', 'u1', :ts, :mid) "
-            "RETURNING id"), {"ts": NOW, "mid": platform_message_id}))
-        return int(row.scalar_one())
+    return await SqlRecordStore(engine).append(message=NormalizedMessage(
+        platform=scope.platform, conversation_id=scope.conversation_id,
+        conversation_type="group", sender_id=sender_id, sender_name=None,
+        timestamp=NOW, body="generated target", raw={}, message_id=platform_message_id))
 
 
 async def test_tx_hook_runs_inside_the_write(store):
@@ -302,9 +304,11 @@ async def test_timestamp_target_resolution_keeps_authors_separate(store):
             _obs(scope=scope, object_ref="poll-" + suffix, target=target, target_author_id=author),
             suffix,
         )
+    message_id = await _insert_message(
+        store, platform_message_id="target-a", scope=scope, sender_id="author-a")
     resolved = await store.resolve_targets(
-        scope=scope, target_key=target_key(target, author_id="author-a"), message_id=42
-    )
+        scope=scope, target_key=target_key(target, author_id="author-a"),
+        message_id=message_id)
     assert resolved == 1
     remaining = await store.unresolved_targets(scope=scope)
     assert [r.observation.object_ref for r in remaining] == ["poll-b"]
