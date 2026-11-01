@@ -84,9 +84,9 @@ WHAT IT CANNOT FREEZE, stated rather than left to be discovered:
       the normal path and `sweep_firing` on the swept one. So a resolution
       AFTER the instant is removable: `_reminders` reports the row `PENDING`
       with both blanked, because that is what it was.
-    - a CANCELLATION is NOT. `cancel()` writes `state` and nothing else:
-      `fired_at` is NULL until the row fires, and NULL forever on one that is
-      cancelled. A row cancelled one minute after the instant and one cancelled
+    - a legacy CANCELLATION without a handling stamp is NOT. Older `cancel()`
+      writes recorded only `state`, leaving `fired_at` NULL forever on one that
+      was cancelled. A row cancelled one minute after the instant and one cancelled
       a month before are the same row today.
 
   **So a cancelled row is OMITTED rather than guessed.** Reporting it `PENDING`
@@ -623,7 +623,8 @@ async def _reminders(
 
     **CANCELLED rows are excluded entirely**, and that is the module
     docstring's named limitation rather than a filter with a reason of its
-    own: `cancel()` records no instant, so «cancelled» carries no when. The
+    own: legacy cancellations lack an instant; this reconstruction still omits
+    all cancelled rows rather than guessing across that legacy gap. The
     exclusion is expressed in SQL rather than by dropping rows afterwards so
     that a reader of the query sees the whole visibility rule in one place.
 

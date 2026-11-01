@@ -508,7 +508,7 @@ async def test_a_fetch_that_must_wait_leaves_the_row_unclaimed_for_the_next_tick
     assert (await store.get(job.id)).state is ComputeJobState.DONE
 
 
-def test_the_signed_link_never_reaches_the_log(tmp_path):
+def test_the_signed_link_never_reaches_the_log(tmp_path, caplog):
     """httpx logs `HTTP Request: GET <url>` at INFO on every request, and
     the clip's URL is a signed link. Through the real `setup_logging`: the line is still
     written (host and path), on the retry and the success, with no query string."""
@@ -521,7 +521,8 @@ def test_the_signed_link_never_reaches_the_log(tmp_path):
         assert (await _ready(backend)).status is JobStatus.RUNNING     # the retry path
         assert (await _ready(backend)).media == MP4
 
-    asyncio.run(run())
+    with caplog.at_level(logging.INFO, logger="httpx"):
+        asyncio.run(run())
     logging.shutdown()
     text = buffer.getvalue()
     lines = [json.loads(line)["message"] for line in text.splitlines() if line.strip()]

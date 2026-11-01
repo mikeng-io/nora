@@ -348,7 +348,13 @@ def _build_position_prompt(
             "with one object, in this exact shape (a ```json fenced block is "
             "tolerated):\n"
         )
-    return (
+    framing = (
+        "You are grading the UNIT STANDING Nora retained after a completed Cognition "
+        "session spanning its bound rooms. It organizes expressed decisions, open work "
+        "and actual results from that session's Record. Scheduling is not delivery; "
+        "do not infer unstated choices or completed obligations. The output is the "
+        "same structured Standing projection consumed by her loops.\n\n"
+    ) if kind == "faithful" else (
         "You are grading one STANDING POSITION that Nora — an AI member of a "
         "Hong Kong group chat — wrote about one room, right after one of her "
         "turns there. Standing is the compact of her work in that room: what "
@@ -357,6 +363,9 @@ def _build_position_prompt(
         "position before it plus the turn, and it is the ONLY thing that "
         "carries her working state to her next turn — the next turn sees the "
         "transcript and this, nothing else. It is Cantonese prose.\n\n"
+    )
+    return (
+        f"{framing}"
         "Below is the record of the turn: her position before it (with when it "
         "was written), the room's messages around the turn, and her steps on "
         "the turn — every tool she called and what came back, in full. "

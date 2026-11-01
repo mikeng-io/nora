@@ -143,7 +143,16 @@ from nora.domain.ports import (
     RecordedOutcome,
     StimulusStore,
 )
-from nora.domain.reminders import DuplicateProactiveNoteError, Reminder, ReminderState
+from nora.domain.reminders import (
+    ConflictingProactiveActError,
+    DuplicateProactiveNoteError,
+    DuplicateProactiveSubjectError,
+    DuplicateReminderError,
+    Reminder,
+    ReminderState,
+)
+from nora.domain.rollup import room_key as record_room_key
+from nora.domain.shared_state import SharedView
 from nora.domain.standing import StandingHead
 from nora.domain.stimuli import (
     LIMIT_STOP_REASONS,
@@ -442,6 +451,11 @@ class _RunState:
     #: The line of the prompt that says which room(s) the read tools resolve
     #: through (`_build_tools`).
     reads_note: str = ""
+    unit_rooms: dict[str, tuple[str, str]] | None = None
+
+    @property
+    def allowed_rooms(self) -> dict[str, tuple[str, str]]:
+        return self.rooms if self.unit_rooms is None else self.unit_rooms
 
 
 _room_key = room_key
@@ -464,25 +478,24 @@ def _all_quiet(state: _RunState) -> bool:
 
 
 def _room_of(room: str, state: _RunState) -> tuple[str, str] | dict[str, object]:
-    """The room a write is about. One room on the agenda: it is that room and
-    `room` may be left out. Several: the model MUST say which, and a room not
-    on the agenda is refused — never guessed from the first item, which would
-    file a write into a room its own agenda never named (R-21)."""
+    """Explicit destinations come from the canonical unit; the agenda chooses
+    the default destination and owns item attribution, not write scope."""
+    if not state.allowed_rooms:
+        return {"status": "unavailable", "reason": "unit_scope_unavailable",
+                "detail": "the unit's room set could not be established"}
     if room:
-        found = state.rooms.get(room)
+        found = state.allowed_rooms.get(room)
         if found is None:
-            return {
-                "status": "refused", "reason": "unknown_room",
-                "detail": f"{room!r} is not a room on this agenda: "
-                          f"{sorted(state.rooms)}",
-            }
+            return {"status": "refused", "reason": "unknown_room",
+                    "detail": f"{room!r} is not a room in this unit"}
         return found
     if len(state.rooms) == 1:
-        return next(iter(state.rooms.values()))
+        key = next(iter(state.rooms))
+        return _room_of(key, state)
     return {
         "status": "refused", "reason": "room_required",
         "detail": f"this agenda spans {len(state.rooms)} rooms; name the one this "
-                  f"write is about as `room`, one of {sorted(state.rooms)}",
+                  f"write is about as `room`, one of {sorted(state.allowed_rooms)}",
     }
 
 
@@ -504,15 +517,15 @@ def _write_target(
     if room and room != key:
         return {"status": "refused", "reason": "item_room_mismatch",
                 "detail": f"item {item} is in {key}, not {room}"}
-    return (found.room.platform, found.room.conversation_id), item
+    resolved = _room_of(key, state)
+    return resolved if isinstance(resolved, dict) else (resolved, item)
 
 
-def _off_agenda(state: _RunState) -> dict[str, object]:
-    """A reminder whose room is not on today's agenda is not this session's to
-    move or cancel: the same refusal a write to such a room gets (R-21)."""
+def _outside_unit(state: _RunState) -> dict[str, object]:
+    """A reminder outside the unit is not this session's to move or cancel."""
     return {
         "status": "refused", "reason": "unknown_room",
-        "detail": f"that reminder's room is not a room on this agenda: {sorted(state.rooms)}",
+        "detail": "that reminder's room is not in this unit",
     }
 
 
@@ -634,8 +647,11 @@ class CognitionSessionRunner:
         remind_max_horizon_days: int | None = None,
         notes: Any = None, events: Any = None, standing: Any = None,
         reminders: Any = None, ai_peer: str = "nora", memos: Any = None,
+        ledger: Any = None, shared: Any = None,
+        standing_fold: Any = None,
         content_checks: bool = True,
         tag_trace_store: Any = None, memory: Any = None,
+        rooms_of_unit: Callable[[str], Sequence[tuple[str, str]]] | None = None,
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -697,6 +713,10 @@ class CognitionSessionRunner:
         self._events = events
         self._standing = standing
         self._reminders = reminders
+        self._ledger = ledger
+        self._shared = shared
+        self._standing_fold = standing_fold
+        self._rooms_of_unit = rooms_of_unit
         self._ai_peer = ai_peer
         self._stimuli = stimulus_store
         self._agent_runner = agent_runner
@@ -768,7 +788,7 @@ class CognitionSessionRunner:
         except Exception:
             log.exception("could not count %s", name)
 
-    def _counted(self, verb: str, call: Any) -> Any:
+    def _counted(self, verb: str, call: Any, *, state: _RunState) -> Any:
         """A verb whose every refusal is counted by rule
         (`nora_cognition_refused_total{verb,rule}`): one place, so no verb and
         no early return can refuse without being counted. `unavailable` (a read
@@ -789,12 +809,21 @@ class CognitionSessionRunner:
                 log.exception("cognition verb %s failed", verb)
                 self._inc("nora_errors_total", stage="cognition_session")
                 result = {"status": "unavailable", "reason": "error", "detail": _UNFINISHED}
+            # Native verbs operate on this unit's canonical state. Keep any
+            # more-specific requirements already recorded by their reads.
+            from nora.agent.turn_recording import record_requirement
+            from nora.domain.lineage import message
+            from nora.domain.turn_record import DisclosureRequirement
+
+            record_requirement(DisclosureRequirement(
+                None, tuple(message(record_room_key(*room)) for room in state.rooms.values()),
+            ))
             status = result.get("status")
-            if status in ("refused", "unavailable"):
+            if status in ("refused", "unavailable", "unresolved"):
                 reason = str(result.get("reason") or "unspecified")
                 self._inc(
                     "nora_cognition_refused_total", verb=verb,
-                    rule=reason if status == "refused" else f"unavailable_{reason}",
+                    rule=reason if status == "refused" else f"{status}_{reason}",
                 )
                 if status == "refused" and verb in _PACE_VERBS:
                     self._inc("nora_self_wake_total", outcome="refused")
@@ -1145,11 +1174,29 @@ class CognitionSessionRunner:
         system_prompt = doctrine_text + skill_text
         if self._memory is not None:
             system_prompt += SESSION_INSTRUCTION
+        shared_view = None
+        if self._shared is not None:
+            try:
+                shared_view = await self._shared(
+                    unit=unit, now_ms=now_ms,
+                    wakes=await self._pending(unit, now_ms),
+                )
+            except Exception:
+                # A shared read that fails must not take the session down —
+                # but it MUST not read as an empty unit either. The view's own
+                # `unavailable` status is what the block renders; swallowing
+                # to None would silently drop the coverage line.
+                log.exception("shared-state read failed for %s", unit)
+                self._inc("nora_errors_total", stage="shared_state")
+                shared_view = SharedView(
+                    unit=unit, status="unavailable", as_of_ms=now_ms,
+                )
         prompt = render_agenda(
             items, stimuli={s.id: s for s in view.pending}, grounding=grounding,
             reads_note=state.reads_note, now_ms=now_ms,
             last_session_ms=situation.last_session_ms, tz=self._tz,
             budget=self._render_budget, graph=state.graph_text,
+            shared=shared_view,
         )
         return state, tools, system_prompt, prompt
 
@@ -1190,18 +1237,39 @@ class CognitionSessionRunner:
             ) from exc
         finally:
             SESSION_TOKENS.reset(token)
+            from nora.domain.tag_trace import TagTrace
+            trace = TagTrace(
+                tag_id=f"cognition:{session_id}", conversation_id="",
+                messages=result.messages if result is not None else spend.messages,
+                requirements=result.requirements if result is not None else spend.requirements,
+                transcript=(), outcome=("timeout" if isinstance(
+                    sys.exception(), SessionTimeoutError) else trace_outcome),
+                created_at=int(self._clock() * 1000), started_at=now_ms,
+                occasion="cognition", unit=unit,
+                bound_rooms=tuple(sorted(state.rooms)),
+            )
             if self._tag_trace_store is not None:
-                from nora.domain.tag_trace import TagTrace
-                await asyncio.wait_for(self._tag_trace_store.save(TagTrace(
-                    tag_id=f"cognition:{session_id}", conversation_id="",
-                    messages=result.messages if result is not None else spend.messages,
-                    requirements=result.requirements if result is not None else spend.requirements,
-                    transcript=(), outcome=("timeout" if isinstance(
-                        sys.exception(), SessionTimeoutError) else trace_outcome),
-                    created_at=int(self._clock() * 1000), started_at=now_ms,
-                    occasion="cognition", unit=unit,
-                    bound_rooms=tuple(sorted(state.rooms)),
-                )), timeout=5.0)
+                await asyncio.wait_for(self._tag_trace_store.save(trace), timeout=5.0)
+            # The SAME automatic completion hook the tag path holds (design
+            # 20): the tools-less Standing fold runs on this session's
+            # complete retained Record — including a silent or failed
+            # session whose Record exists — once per room the session
+            # actually bound. Each write lands under the room's own real
+            # scope key; nothing is stored under a fabricated unit room.
+            # Replay and historical (backfill) sessions are skipped: an old
+            # session must not fold stale state over a live position.
+            if (
+                self._standing_fold is not None and trace.messages
+                and not replay and not historical
+            ):
+                # ONE unit-scoped materialization: Cognition's cross-room
+                # state writes unit-scope ledger entries, not a room
+                # Standing per bound room — the whole retained Record goes
+                # in once, never copied room-by-room.
+                await self._standing_fold(
+                    trace=trace, unit=unit,
+                    rooms=tuple(sorted(state.rooms.values())),
+                )
             # What the loop spent counts whether it returned, failed, timed out or was
             # cut off: a session that raised is the costliest kind, and its usage is
             # in the agent (`spend`, left by the runner), not in a result that never
@@ -1432,6 +1500,10 @@ class CognitionSessionRunner:
         self, *, unit: str, state: _RunState, now_ms: int,
         labels: Mapping[str, str] | None = None,
     ) -> list[Any]:
+        if self._rooms_of_unit is not None:
+            state.unit_rooms = {
+                record_room_key(p, c): (p, c) for p, c in self._rooms_of_unit(unit)
+            }
         # EACH ITEM'S READS RESOLVE THROUGH ITS OWN ROOM (DEC-231, R-21). One
         # room on the agenda: that room's tools. Several: `read_tools_for`
         # returns ONE tool per name (a tool name is one tool: Strands keeps the
@@ -2593,27 +2665,54 @@ class CognitionSessionRunner:
             return _answer(answer)
 
         async def remind(
-            intent: Literal["tell", "ask"], text: str, subject_rows: list[str], at: str,
-            room: str = "",
+            intent: Literal["tell", "ask"], text: str, subject: str, action: str,
+            subject_rows: list[str], at: str,
+            room: str = "", also_rooms: list[str] | None = None,
+            new_action: str = "",
         ) -> dict[str, object]:
             """Reach a room at a time: when the moment comes you get a turn in
             that room to say something to it or ask it something, and you may
             still stay silent then. Call this when a room should hear from you
             and not before.
 
-            Returns `status`: ok (with the `reminder_id`), refused or
-            unavailable, with a `reason` and `detail` when it is not ok.
+            `subject` names the open entry the act is about, as `kind:id`
+            (`note:`, `decision:`, `commitment:`, `thread:` or `event:` plus the
+            id the note index and ledger read show). It must resolve to an
+            open entry or the call is `unresolved`, never scheduled on a
+            citation alone. `action` is YOUR short key for the act
+            (`confirm-dinner-date`, `ask-vote-deadline`): two questions about
+            the same subject are different actions, and the same
+            subject+action already pending somewhere you did not name is
+            refused `conflict_other_room`. `also_rooms` is how you mean the
+            same act in several rooms at once.
+
+            Returns `status`: ok (with `reminder_ids`), refused or
+            unavailable, plus `unresolved` when `subject` does not resolve to
+            the open entry the act is about, each with a `reason` and `detail`
+            when it is not ok.
 
             Args:
                 intent: `tell` to say something, `ask` to ask something.
                 text: What to raise, in a sentence, as you will read it when it
                     comes due.
-                subject_rows: The rows it rests on, at least one.
+                subject: The open entry the act is about, as `kind:id`.
+                action: Your key for this act on this subject: same act again
+                    is the same key, a different question is a different one.
+                subject_rows: The evidence rows it rests on, at least one.
                 at: When to reach the room, ISO 8601 with an offset.
                 room: Optional when the agenda is one room, required when it
                     spans several. The room to reach, as
                     `platform:conversation_id`, which the reads block
                     shows beside each room's label.
+                also_rooms: Optional. Every other room this same act should
+                    reach, each as `platform:conversation_id`. An act the unit
+                    already has pending somewhere else is refused unless you
+                    name that room here or in `room`.
+                new_action: Optional. Required, a short why, only when this is
+                    a DIFFERENT act on a subject an `intent` act already
+                    waits on: a pending act's action key is the stable name
+                    of what is pending, so a second act needs a recorded
+                    reason, not a fresh spelling. The why is kept on the row.
             """
             resolved = _room_of(room, state)
             if isinstance(resolved, dict):
@@ -2624,49 +2723,171 @@ class CognitionSessionRunner:
                 return _bad_time("at")
             if not text.strip():
                 return _refused("no_text", "say what to raise when it comes due")
+            action_key = action.strip().lower()
+            if not action_key:
+                return _refused(
+                    "no_action", "name this act: same act again is the same key",
+                )
+            destinations = [(platform, conversation_id)]
+            for extra in also_rooms or []:
+                r = _room_of(extra, state)
+                if isinstance(r, dict):
+                    return r
+                if r not in destinations:
+                    destinations.append(r)
             async with self._lock(unit):
+                resolved_subject = await self._resolve_named_subject(
+                    unit, state, subject,
+                )
+                if resolved_subject is None:
+                    # The `unresolved` toolResult in this session's trace is
+                    # the durable evidence — the shared view reads it back
+                    # through the turn Record, across restarts and processes.
+                    return {
+                        "status": "unresolved",
+                        "reason": "subject_unresolved",
+                        "detail": (
+                            f"{subject!r} does not resolve to an open note, "
+                            "decision, commitment, thread or event this act is "
+                            "about: name the open entry's `kind:id`, or do not "
+                            "schedule it"
+                        ),
+                    }
+                subject_id, subject_kind = resolved_subject[1], resolved_subject[0]
                 pending = await self._pending_reminds()
                 context = await self._remind_context(
                     unit, platform, conversation_id, subject_rows, at_ms,
                 )
                 refusal = check_remind(
-                    subject_rows=subject_rows, intent=intent, platform=platform,
-                    conversation_id=conversation_id, pending=pending, context=context,
+                    subject_rows=subject_rows, intent=intent,
+                    platform=platform,
+                    conversation_id=conversation_id, pending=pending,
+                    context=context,
+                    subject=resolved_subject, action=action_key,
+                    extra_destinations=destinations[1:],
                 )
                 if refusal is not None:
                     return _refused(refusal.reason, refusal.detail)
-                link: dict[str, str] = {}
-                note_row = next((r for r in subject_rows if r.startswith("note:")), None)
-                if note_row is None:
-                    # The agenda shows a note as `<note n="<id>">`, so the model
-                    # cites the bare id. Unlinked, the row survives the note's
-                    # retire and fires on a settled premise.
-                    open_ids = {n.id for n in await self._notes.standing(unit=unit)}
-                    note_row = next(
-                        (r for r in subject_rows if r.strip().strip("[]") in open_ids), None,
-                    )
-                if note_row is not None:
-                    shown_note = await self._notes.read(
-                        unit=unit, note_id=_bare_row(note_row.strip().strip("[]")),
-                    )
-                    if shown_note is None:
-                        return _refused("not_found", f"no open note {note_row!r}")
-                    link = {
-                        "note_id": shown_note[0].id, "revision_id": shown_note[1].id,
-                        "note_title": shown_note[0].title,
-                    }
-                row = self._reminder_row(
-                    platform=platform, conversation_id=conversation_id, text=text,
-                    intent=intent, subject_rows=subject_rows, at_ms=at_ms, unit=unit,
-                    link=link,
-                )
-                try:
-                    await self._reminders.create(row)
-                except DuplicateProactiveNoteError:
+                same_intent = {
+                    p.action for p in pending
+                    if p.subject == resolved_subject
+                    and p.intent == intent
+                } - {action_key}
+                if same_intent and not new_action.strip():
                     return _refused(
-                        "duplicate_pending", "a reminder is already waiting on that note",
+                        "conflict_same_subject",
+                        f"an {intent!r} act is already pending on that subject "
+                        f"as {sorted(same_intent)[0]!r}: schedule under the same "
+                        "action if it is the same act, or pass new_action with "
+                        "why this is a different question",
                     )
-            return {"status": "ok", "reminder_id": str(row.id)}
+                # Every destination validated BEFORE a row exists: proactive
+                # policy and the requester cap apply per room, so a batch
+                # refused late is refused whole.
+                for dest_platform, dest_cid in destinations[1:]:
+                    if self._room_proactive is not None and not self._room_proactive(
+                        dest_platform, dest_cid,
+                    ):
+                        return _refused(
+                            "room_not_proactive",
+                            f"you may not reach {dest_platform}:{dest_cid} "
+                            "unasked",
+                        )
+                link: dict[str, str] = {"plan_id": str(uuid.uuid4())}
+                if new_action.strip():
+                    link["new_action_reason"] = new_action.strip()[:200]
+                if subject_kind == "note":
+                    shown_note = await self._notes.read(
+                        unit=unit, note_id=subject_id)
+                    if shown_note is None:
+                        return _refused(
+                            "not_found", f"no open note {subject_id!r}")
+                    # The note link machinery (merge repoint, retire-cancel,
+                    # the moved-note screen and its global one-open-row-per-
+                    # note arbiter) all key on these payload fields — the
+                    # deliberate stronger invariant: a note-subject act is
+                    # single-destination, while `also_rooms` covers acts on
+                    # decisions, commitments, threads and events.
+                    link["note_id"] = shown_note[0].id
+                    link["revision_id"] = shown_note[1].id
+                    link["note_title"] = shown_note[0].title
+                pending_dests = {
+                    (p.platform, p.conversation_id) for p in pending
+                    if p.subject == resolved_subject and p.action == action_key
+                }
+                unit_rooms = (
+                    list(self._rooms_of_unit(unit))
+                    if self._rooms_of_unit is not None
+                    # Unwired harnesses have no canonical scope: the agenda's
+                    # own rooms are all the scope there is (the same parity
+                    # the unwired debrief keeps).
+                    else [tuple(k.split(":", 1)) for k in state.rooms]
+                )
+                if not unit_rooms:
+                    # The conflict arbiter needs the CANONICAL unit, not this
+                    # agenda's room list: an act pending in a unit room the
+                    # agenda did not name is exactly the race the lock exists
+                    # to stop, so a scope we cannot establish refuses the
+                    # write rather than narrowing it.
+                    return {"status": "unavailable",
+                            "reason": "unit_scope_unavailable",
+                            "detail": "the unit's room set could not be read"}
+                delivered = await self._reminders.delivered_subject(
+                    unit_rooms, requester_person_id=self._ai_peer,
+                    subject_kind=subject_kind, subject_id=subject_id,
+                    action=action_key, limit=5,
+                )
+                if len(delivered) >= 5:
+                    # The keyed read cut off: an uncounted delivered act
+                    # could sit past the cap, so «not delivered» is not
+                    # established.
+                    return {"status": "unavailable",
+                            "reason": "delivered_check_incomplete",
+                            "detail": "the delivered check could not be completed"}
+                if delivered:
+                    return _refused(
+                        "duplicate_pending",
+                        "that act was already delivered for the room(s) named",
+                    )
+                rows = [
+                    self._reminder_row(
+                        platform=dest_platform, conversation_id=dest_cid,
+                        text=text, intent=intent, subject_rows=subject_rows,
+                        at_ms=at_ms, unit=unit,
+                        link={
+                            **link,
+                            "subject_kind": subject_kind,
+                            "subject_id": subject_id,
+                            "action": action_key,
+                        },
+                    )
+                    for dest_platform, dest_cid in destinations
+                    if (dest_platform, dest_cid) not in pending_dests
+                ]
+                if not rows:
+                    return _refused(
+                        "duplicate_pending",
+                        "the same act is already pending for the room(s) named",
+                    )
+                try:
+                    # ONE transaction, advisory-locked on the unit with the
+                    # cross-room conflict check INSIDE it: every destination
+                    # lands or none does, against any writer in any process.
+                    await self._reminders.create_many(
+                        rows, arbitration_key=f"proactive:{unit}",
+                        arbitration_rooms=[tuple(r) for r in unit_rooms],
+                    )
+                except (ConflictingProactiveActError,
+                        DuplicateProactiveNoteError,
+                        DuplicateProactiveSubjectError,
+                        DuplicateReminderError):
+                    return _refused(
+                        "duplicate_pending",
+                        "the same act is already pending for the room(s) named",
+                    )
+                reminder_ids = [str(r.id) for r in rows]
+            return {"status": "ok", "reminder_id": reminder_ids[0],
+                    "reminder_ids": reminder_ids}
 
         async def _own_reminder(reminder_id: str) -> Reminder | dict[str, object]:
             row: Reminder | None = next(
@@ -2675,8 +2896,8 @@ class CognitionSessionRunner:
             )
             if row is None:
                 return _refused("not_found", f"no pending reminder of yours {reminder_id!r}")
-            if _room_key(Room(row.platform, row.conversation_id)) not in state.rooms:
-                return _off_agenda(state)
+            if _room_key(Room(row.platform, row.conversation_id)) not in state.allowed_rooms:
+                return _outside_unit(state)
             return row
 
         async def remind_move(
@@ -2910,7 +3131,7 @@ class CognitionSessionRunner:
             verbs = (memory_propose, profile_read, profile_revise, *verbs)
         if state.historical:
             verbs = (memory_propose, profile_read, profile_revise, close)
-        return [*read_tools, *(self._counted(v.__name__, v) for v in verbs)]
+        return [*read_tools, *(self._counted(v.__name__, v, state=state) for v in verbs)]
 
     # `created_by_session_id=None` on every pace move and cancel above, on
     # purpose: the pending seam returns only rows COGNITION wrote, so «own»
@@ -2939,14 +3160,67 @@ class CognitionSessionRunner:
 
     async def _pending_reminds(self) -> list[PendingRemind]:
         """Nora's own pending reminders, as the dedupe rule reads them."""
-        return [
-            PendingRemind(
+        out: list[PendingRemind] = []
+        for r in await self._reminders.pending_of(self._ai_peer):
+            payload = r.payload or {}
+            kind = payload.get("subject_kind")
+            sid = payload.get("subject_id")
+            action = payload.get("action")
+            out.append(PendingRemind(
                 reminder_ref=str(r.id), platform=r.platform,
                 conversation_id=r.conversation_id,
-                subject_rows=tuple((r.payload or {}).get("subject_rows", "").split()),
-            )
-            for r in await self._reminders.pending_of(self._ai_peer)
-        ]
+                subject_rows=tuple(str(payload.get("subject_rows") or "").split()),
+                subject=(
+                    (kind, sid)
+                    if isinstance(kind, str) and kind
+                    and isinstance(sid, str) and sid
+                    else None
+                ),
+                action=action if isinstance(action, str) else "",
+                intent=str(payload.get("intent") or ""),
+            ))
+        return out
+
+    _SUBJECT_KINDS = frozenset({"note", "decision", "commitment", "thread", "event"})
+
+    async def _resolve_named_subject(
+        self, unit: str, state: Any, subject: str,
+    ) -> tuple[str, str] | None:
+        """The shared-object key the act is about, resolved from the EXPLICIT
+        `kind:id` the producer named — never from cited evidence rows, whose
+        set can match several open entries and silently choose wrong (the
+        reviewer's finding: citation-set matching is ambiguity selection, not
+        resolution).
+
+        The named kind+id must be an OPEN entry in this unit's canonical
+        stores: an open note id, an open ledger entry (decision, commitment
+        or thread), or an open event id — each checked against its store's
+        open set, not pattern-matched. `None` means `unresolved`: the act is
+        carried in session evidence for the next session to address, never
+        scheduled on a guess."""
+        kind, _, wanted = (subject or "").strip().partition(":")
+        if kind not in self._SUBJECT_KINDS or not wanted.strip():
+            return None
+        wanted = wanted.strip()
+        if kind == "note":
+            open_notes = {n.id for n in await self._notes.standing(unit=unit)}
+            return ("note", wanted) if wanted in open_notes else None
+        rooms = list(state.allowed_rooms.values())
+        if kind in {"decision", "commitment", "thread"} and self._ledger is not None:
+            for platform, conversation_id in rooms:
+                for entry in await self._ledger.read(
+                    unit=unit, platform=platform, conversation_id=conversation_id,
+                ):
+                    if entry.id == wanted and entry.kind == kind \
+                            and entry.status == "open":
+                        return (entry.kind, entry.id)
+            return None
+        if kind == "event":
+            for platform, conversation_id in rooms:
+                for event in await self._open_events(unit, platform, conversation_id):
+                    if str(event.id) == wanted:
+                        return ("event", str(event.id))
+        return None
 
     async def _remind_context(
         self, unit: str, platform: str, conversation_id: str, subject_rows: Sequence[str],

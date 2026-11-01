@@ -20,8 +20,7 @@ from .memo import Memo
 from .notes import Note
 from .profile import ProfileView
 from .self_presence import Presence
-from .standing import Standing
-from .standing_ledger import LedgerEntry
+from .shared_state import SharedView
 from .subagents_context import SubagentsView
 
 
@@ -750,19 +749,6 @@ class TagContext:
     # somewhere else. It is the only one that is Nora's own output rather than a
     # distillation of other people's (a position, not a record). It is the only one
     # keyed on the CONVERSATION where `notes` is keyed on the unit, and unlike it
-    # is not shared across a unit's rooms at all: a position held in one room is
-    # not a position held in another. And it is the only block in the prompt that
-    # is REVISED IN PLACE rather than rebuilt from the store each turn, which is
-    # why `nora.language.standing_render` makes it hedge itself despite it being
-    # hers — an injection reaching any other block lives one turn, and one
-    # reaching this row persists until a later fold drops it.
-    #
-    # `None` rather than a defaulted empty `Standing`: a conversation with no
-    # position yet is not a conversation she has an empty opinion about, and
-    # `render_standing(None)` emits no block for exactly that reason. With
-    # `[standing] enabled = false` it stays `None` on every turn.
-    standing: Standing | None = None
-    ledger: tuple[LedgerEntry, ...] = ()
     # The room's CULTURE head — an account of what this room is and why it
     # became so. Beside `standing` because both are
     # room-scoped and both are her own output, and apart from it on the one
@@ -873,6 +859,13 @@ class TagContext:
     # this room. `None` (an offline harness, a caller with no policy) is
     # `mode = "off"`: every block renders.
     lineage_room: RenderRoom | None = None
+    # The one Standing view (design/notebook-memory-types/20-standing.md):
+    # positions, open judgements, pending acts and what she already did,
+    # read from the canonical stores by the scoped reader and rendered as
+    # the single `standing` block every occasion shares. `None` when no
+    # reader is wired; a `SharedView` whose `status` is `unavailable` means
+    # the read failed, not that the unit is empty.
+    shared: SharedView | None = None
     # `<computer>`: what is on her computer
     # for this room, read fresh at turn start from the machine and the
     # audit by `ComputerContextReader`, never a fold. `None` while

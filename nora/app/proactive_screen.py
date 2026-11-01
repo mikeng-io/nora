@@ -113,7 +113,13 @@ class ProactiveScreen:
         ):
             return ReminderState.FAILED, FAILED_POLICY
         payload: Mapping[str, str] = row.payload if isinstance(row.payload, Mapping) else {}
-        note_id = payload.get("note_id")
+        # New-shape rows name their subject, not a note link: `note:`-subject
+        # rows carry the note's id as `subject_id`, which is what the moved-
+        # note screen below keys on.
+        note_id = payload.get("note_id") or (
+            payload.get("subject_id")
+            if payload.get("subject_kind") == "note" else None
+        )
         if not note_id:
             return None
         linked_at = payload.get("revision_id") or None

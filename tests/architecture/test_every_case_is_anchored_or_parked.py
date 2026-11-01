@@ -33,6 +33,7 @@ CORPORA = sorted(CORPUS_ENTRY)
 #: anchor there; a `mention: true` case may not (the adapters are off in the
 #: sandbox), and that is pinned below.
 KNOWN_ROOMS = {
+    ("instagram", "room_d"),
     ("signal", "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="),
     ("signal", "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="),
     ("signal", "x5hcBMQITtdUfSC0o9AHsqJKU7ywYMrOG5hcBMQITtc="),
@@ -170,5 +171,5 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     `census()`, never summed by hand.
     """
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 353
-    assert sum(c.active + c.parked for c in totals) == 353
+    assert sum(c.total for c in totals) == 355
+    assert sum(c.active + c.parked for c in totals) == 355

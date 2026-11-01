@@ -142,9 +142,9 @@
  {
   "name": "an identical pending reminder is no longer refused on the re-run",
   "file": "nora/domain/cognition_remind.py",
-  "old": "    if duplicate:\n        return RemindRefusal(",
-  "new": "    if False:\n        return RemindRefusal(",
-  "target": "tests/unit/test_cognition_live_writes.py::test_remind_writes_the_proactive_row_the_fire_path_fires_and_can_move_and_cancel_it"
+  "old": "        if pending_dests and covered <= pending_dests:\n",
+  "new": "        if False:\n",
+  "target": "tests/unit/test_shared_state.py::test_an_act_pending_everywhere_asked_is_a_duplicate"
  },
  {
   "name": "a re-run self-wake no longer retracts the one it supersedes",

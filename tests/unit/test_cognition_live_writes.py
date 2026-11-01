@@ -5,14 +5,18 @@ over in-memory stores, with a scripted agent (`tests/unit/cognition_rig.py`)."""
 
 from __future__ import annotations
 
+import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
+
+import pytest
 
 from nora.app.cognition_session import now_utc
 from nora.domain.cognition_ground import Grounding, NoteLine
 from nora.domain.cognition_session import AgendaItem, Room, build_agenda
 from nora.domain.gatherings import GatheringStatus
 from nora.domain.notes import Note, NoteSupersedeReason, likely_duplicates
-from nora.domain.reminders import ReminderState
+from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import StandingHead
 from nora.domain.stimuli import Stimulus
 from nora.language.cognition_render import render_agenda
@@ -192,12 +196,19 @@ async def test_remind_writes_the_proactive_row_the_fire_path_fires_and_can_move_
     answers: list[Any] = []
 
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        # The act's subject must resolve to an open entry: `remind` refuses
+        # bare message ids now (unresolved), so the fixture names a real note.
+        note = await by["note_create"](body=GOOD_BODY, **NOTE)
         answers.append(await by["remind"](
-            intent="ask", text="ask where dinner is", subject_rows=["101"],
+            intent="ask", text="ask where dinner is",
+            subject=f"note:{note['note_id']}", action="ask-dinner-place",
+            subject_rows=["101"],
             at=iso(NOW + 3_600_000),
         ))
         answers.append(await by["remind"](
-            intent="ask", text="again", subject_rows=["101"], at=iso(NOW + 3_600_000),
+            intent="ask", text="again",
+            subject=f"note:{note['note_id']}", action="ask-dinner-place",
+            subject_rows=["101"], at=iso(NOW + 3_600_000),
         ))
         answers.append(await by["remind_move"](
             reminder_id=answers[0]["reminder_id"], at=iso(NOW + 7_200_000), why="later",
@@ -228,6 +239,7 @@ async def test_a_note_linked_remind_carries_the_note_and_follows_a_merge_and_a_r
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
         answers.append(await by["remind"](
             intent="ask", text="ask where dinner is",
+            subject=f"note:{duplicate.id}", action="ask-dinner-place",
             subject_rows=[f"note:{duplicate.id}", "101"], at=iso(NOW + 3_600_000),
         ))
         row = next(iter(stores.reminders._rows.values()))
@@ -259,10 +271,12 @@ async def test_a_remind_citing_a_note_by_its_bare_shown_id_links_it_and_dies_wit
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
         answers.append(await by["remind"](
             intent="ask", text="ask how many are coming",
+            subject=f"note:{note.id}", action="ask-headcount",
             subject_rows=["101", note.id], at=iso(NOW + 3_600_000),
         ))
         answers.append(await by["remind"](
             intent="ask", text="ask the headcount again",
+            subject=f"note:{note.id}", action="ask-headcount",
             subject_rows=[note.id, "102"], at=iso(NOW + 7_200_000),
         ))
         answers.append(await by["note_set_status"](note_id=note.id, reason="settled"))
@@ -284,6 +298,7 @@ async def test_a_bracketed_note_id_links_too():
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
         answers.append(await by["remind"](
             intent="ask", text="ask how many are coming",
+            subject=f"note:{note.id}", action="ask-headcount",
             subject_rows=["101", f" [{note.id}]"], at=iso(NOW + 3_600_000),
         ))
 
@@ -310,6 +325,7 @@ async def test_a_move_that_loses_the_race_to_the_heartbeat_is_refused_and_writes
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
         answers.append(await by["remind"](
             intent="ask", text="ask how many are coming",
+            subject=f"note:{note.id}", action="ask-headcount",
             subject_rows=[note.id], at=iso(NOW + 3_600_000),
         ))
         stores.reminders.cancel = claimed_first  # type: ignore[method-assign]
@@ -340,7 +356,10 @@ def test_two_titles_sharing_most_of_their_words_are_likely_duplicates():
     assert twins == {"n1": "n2", "n2": "n1"}
 
 
-def test_the_daily_floor_is_a_notebook_review_and_the_index_marks_what_code_noticed():
+@pytest.mark.parametrize("shared_status", [None, "ok", "nothing_found", "unavailable"])
+def test_the_daily_floor_is_a_notebook_review_and_the_index_marks_what_code_noticed(shared_status):
+    from nora.domain.shared_state import SharedView
+
     floor = Stimulus(
         id=7, unit="u", kind="time", item="floor", ref="floor:07:00@2026-10-03",
         at_ms=NOW, recorded_at_ms=NOW,
@@ -356,8 +375,11 @@ def test_the_daily_floor_is_a_notebook_review_and_the_index_marks_what_code_noti
         [AgendaItem(kind="time", room=Room("signal", "room-a"), summary=item.summary,
                     stimulus_ids=(7,), cues=(), surprise=0.0)],
         stimuli={7: floor}, grounding=grounding, now_ms=NOW,
+        shared=(SharedView(unit="u", status=shared_status, as_of_ms=NOW)
+                if shared_status is not None else None),
     )
     assert 'review="anchor_passed"' in text and 'may_duplicate="n2"' in text
+    assert 'n="n1"' in text and "dinner" in text
 
 
 async def test_the_upcoming_reader_names_each_room_once_inside_the_horizon():
@@ -399,3 +421,148 @@ async def test_the_upcoming_reader_names_each_room_once_inside_the_horizon():
         room_proactive=lambda platform, cid: cid != "room-c",
     )
     assert list(await read("unit-1", NOW)) == [("signal", "room-a"), ("signal", "room-d")]
+
+
+async def test_remind_refuses_when_a_same_act_is_firing_in_a_unit_room_off_agenda():
+    """R2-3: a one-room agenda does not narrow the conflict arbiter — a same
+    (subject,action) row FIRING in ANOTHER unit room refuses the write, via
+    the canonical unit scope inside the advisory lock."""
+    stores = Stores()
+    result = []
+
+    async def behave(by, tools):
+        event = await by["event_propose"](
+            title="generated-event", reasoning="told", confidence="high",
+            cited_ids=["101"], when=iso(NOW + 86_400_000))
+        assert event["status"] == "ok", event
+        t = datetime.fromtimestamp(NOW / 1000, UTC)
+        existing = Reminder(
+            id=uuid.uuid4(), kind="proactive", requester_person_id="nora",
+            platform="signal", conversation_id="room-b",
+            conversation_type="group", text="generated active act",
+            created_at=t - timedelta(hours=1), due_at=t, fired_at=t,
+            state=ReminderState.FIRING, outcome=None,
+            payload={
+                "unit": "u", "subject_kind": "event",
+                "subject_id": event["id"], "action": "generated-ask",
+                "plan_id": "generated-existing-plan"})
+        await stores.reminders.create(existing)
+        result.append(await by["remind"](
+            intent="ask", text="generated duplicate act",
+            subject=f"event:{event['id']}", action="generated-ask",
+            subject_rows=["101"], at=iso(NOW + 300_000)))
+
+    await session(
+        behave, stores=stores, rooms=(A,),
+        runner_kwargs={
+            "rooms_of_unit": lambda unit: (
+                ("signal", "room-a"), ("signal", "room-b"))})
+    assert result[0]["status"] in ("refused", "unavailable"), result
+
+
+async def test_remind_refuses_a_same_act_already_delivered():
+    """R2-4: a DONE+sent row for the same (subject,action,destination) is
+    delivered evidence, not an open act — `proactive_subject` reads it."""
+    stores = Stores()
+    result = []
+
+    async def behave(by, tools):
+        note = await by["note_create"](body=GOOD_BODY, **NOTE)
+        old = Reminder(
+            id=uuid.uuid4(), kind="proactive", requester_person_id="nora",
+            platform="signal", conversation_id="room-a",
+            conversation_type="group", text="generated old ask",
+            created_at=datetime.fromtimestamp((NOW - 3_600_000) / 1000, UTC),
+            due_at=datetime.fromtimestamp((NOW - 600_000) / 1000, UTC),
+            fired_at=datetime.fromtimestamp((NOW - 300_000) / 1000, UTC),
+            state=ReminderState.DONE, outcome="sent",
+            payload={
+                "subject_kind": "note", "subject_id": note["note_id"],
+                "action": "generated-ask", "plan_id": "generated-old-plan"})
+        await stores.reminders.create(old)
+        result.append(await by["remind"](
+            intent="ask", text="generated new ask",
+            subject=f"note:{note['note_id']}", action="generated-ask",
+            subject_rows=["101"], at=iso(NOW + 300_000)))
+
+    await session(behave, stores=stores, runner_kwargs={
+        "rooms_of_unit": lambda unit: (("signal", "room-a"),)})
+    assert result[0]["status"] == "refused", result
+    assert result[0]["reason"] == "duplicate_pending"
+
+
+async def test_cognition_can_revise_a_unit_room_without_adding_it_to_the_agenda():
+    from tests.unit.cognition_rig import B
+
+    answers = []
+
+    async def behave(by, tools):
+        answers.append(await by["standing_revise"](
+            where_it_stands="generated sibling position", room="signal:room-b"))
+        answers.append(await by["standing_revise"](
+            where_it_stands="generated foreign position", room="signal:foreign"))
+        answers.append(await by["standing_revise"](where_it_stands="generated default position"))
+
+    stores, _ = await session(behave, runner_kwargs={
+        "rooms_of_unit": lambda unit: ((A.platform, A.conversation_id),
+                                        (B.platform, B.conversation_id)),
+    })
+    assert [a["status"] for a in answers] == ["ok", "refused", "ok"]
+    assert (await stores.standing.read(platform="signal", conversation_id="room-b")).body == \
+        "generated sibling position"
+    assert (await stores.standing.read(platform="signal", conversation_id="room-a")).body == \
+        "generated default position"
+
+
+async def test_one_room_agenda_can_schedule_an_explicit_two_room_unit_plan():
+    from tests.unit.cognition_rig import B
+
+    stores, event_ids, answers = Stores(), [], []
+    def unit_rooms(unit):
+        return ((A.platform, A.conversation_id), (B.platform, B.conversation_id))
+
+    async def seed(by, tools):
+        made = await by["event_propose"](
+            title="generated gathering", reasoning="told", confidence="high",
+            cited_ids=["201"], when=iso(NOW + 86_400_000))
+        assert made["status"] == "ok"
+        event_ids.append(made["id"])
+
+    await session(seed, stores=stores, rooms=(B,), runner_kwargs={"rooms_of_unit": unit_rooms})
+
+    async def behave(by, tools):
+        answers.append(await by["remind"](
+            intent="ask", text="generated confirmation", subject=f"event:{event_ids[0]}",
+            action="generated-confirmation", subject_rows=["101"], at=iso(NOW + 300_000),
+            also_rooms=["signal:room-b"],
+        ))
+
+    await session(behave, stores=stores, rooms=(A,), runner_kwargs={"rooms_of_unit": unit_rooms})
+    assert answers[0]["status"] == "ok", answers
+    rows = await stores.reminders.pending_of("nora")
+    assert {r.conversation_id for r in rows} == {"room-a", "room-b"}
+    assert len({r.payload["plan_id"] for r in rows}) == 1
+
+
+async def test_multi_room_agenda_keeps_explicit_destination_and_unit_boundary():
+    from tests.unit.cognition_rig import B
+
+    answers = []
+
+    async def behave(by, tools):
+        answers.append(await by["standing_revise"](where_it_stands="generated ambiguous target"))
+        answers.append(await by["standing_revise"](
+            where_it_stands="generated foreign target", room="signal:foreign"))
+        answers.append(await by["standing_revise"](
+            where_it_stands="generated explicit target", room="signal:room-b"))
+
+    stores, _ = await session(behave, rooms=(A, B), runner_kwargs={
+        "rooms_of_unit": lambda unit: ((A.platform, A.conversation_id),
+                                        (B.platform, B.conversation_id)),
+    })
+    assert answers[0]["status"] == "refused" and answers[0]["reason"] == "room_required"
+    assert answers[1]["status"] == "refused" and answers[1]["reason"] == "unknown_room"
+    assert answers[2]["status"] == "ok"
+    assert await stores.standing.read(platform="signal", conversation_id="room-a") is None
+    assert (await stores.standing.read(platform="signal", conversation_id="room-b")).body == \
+        "generated explicit target"

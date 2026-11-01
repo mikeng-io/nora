@@ -263,6 +263,36 @@ def _reply_turns(text: str = "今晚七點半得") -> list[ScriptedTurn]:
     return [ScriptedTurn(tool_calls=[("send_reply", {"text": text})], final_text=text)]
 
 
+@pytest.mark.parametrize("cancel_save", [False, True])
+async def test_trace_retention_precedes_dispatch_and_cancel_releases(cancel_save):
+    entered, finish = asyncio.Event(), asyncio.Event()
+
+    class BlockingStore(_FakeTagTraceStore):
+        async def save(self, trace):
+            if not entered.is_set():
+                entered.set()
+                await finish.wait()
+            await super().save(trace)
+
+    store = BlockingStore()
+    pipeline, _, _, _, background = _build_pipeline(tag_trace_store=store)
+    first = asyncio.create_task(pipeline.run(_request(tag_id="first")))
+    await asyncio.wait_for(entered.wait(), timeout=5)
+    await pipeline.run(_request(tag_id="queued"))
+    assert _held(pipeline) and _depth(pipeline) == 1
+    if cancel_save:
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+    else:
+        finish.set()
+        await first
+        assert store.saved[0].tag_id == "first"
+    await _drain(background)
+    assert not _held(pipeline) and _depth(pipeline) == 0
+    assert store.saved[-1].tag_id == "queued"
+
+
 def _build_pipeline(
     *,
     runner=None,

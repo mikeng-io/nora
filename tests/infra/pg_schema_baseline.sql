@@ -1347,6 +1347,7 @@ CREATE UNIQUE INDEX uq_memo_revision_seq ON public.memo_revision USING btree (me
 CREATE UNIQUE INDEX uq_otp_attempt_ok ON public.otp_attempt USING btree (challenge_id) WHERE ok;
 CREATE UNIQUE INDEX uq_profile_line_supersedes ON public.profile_line USING btree (supersedes) WHERE (supersedes IS NOT NULL);
 CREATE UNIQUE INDEX uq_reminders_proactive_open_note ON public.reminders USING btree (((payload ->> 'note_id'::text))) WHERE ((kind = 'proactive'::text) AND (state = ANY (ARRAY['pending'::text, 'firing'::text])));
+CREATE UNIQUE INDEX uq_reminders_proactive_open_subject ON public.reminders USING btree (((payload ->> 'subject_kind'::text)), ((payload ->> 'subject_id'::text)), COALESCE((payload ->> 'action'::text), ''::text), platform, conversation_id) WHERE ((kind = 'proactive'::text) AND (state = ANY (ARRAY['pending'::text, 'firing'::text])));
 CREATE UNIQUE INDEX uq_rollup_build_current ON public.rollup_build USING btree (status) WHERE (status = 'current'::text);
 CREATE UNIQUE INDEX uq_row_history_open ON public.row_history USING btree (table_name, row_key) WHERE (superseded_at IS NULL);
 CREATE UNIQUE INDEX uq_social_item_key ON public.social_item USING btree (network, item_id);

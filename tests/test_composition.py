@@ -1035,28 +1035,41 @@ async def test_unit_scopes_are_the_allowlists_units_deduplicated(cfg):
 
 # --- Standing / the debrief stage ---------------------------------------
 
-async def test_standing_disabled_wires_no_debrief_and_no_block(cfg):
-    """`[standing] enabled = false` is the shipped default, and OFF has to mean
-    two things at once — no fold and no block. Wiring one without the other is
-    the failure this asserts against: a store wired into the assembler with no
-    `Wiring` renders an empty block forever (harmless), and a `Wiring` with no
-    reader folds a position nothing ever shows her (invisible work)."""
+async def test_standing_disabled_wires_no_debrief_or_room_position_source(cfg):
+    """Disabling the room fold leaves canonical action facts readable, without
+    asking the shared reader to read a dormant room position store."""
     deps = await build_dependencies(cfg)
     assert deps.engagement._debrief_wiring is None
-    assert deps.engagement._context._standing_store is None
+    reader = deps.engagement._context._shared_reader
+    assert reader is not None
+    view = await reader(unit="friends", now_ms=1000)
+    assert "findings" not in dict(view.sources)
 
 
-async def test_standing_enabled_wires_the_same_store_to_both_halves(cfg):
+async def test_standing_enabled_wires_the_same_store_to_both_halves(cfg, tmp_path):
     """**One instance, two callers**, and this is the structural half of a
     non-negotiable: the fold must read the position it is about to overwrite.
     Two separate store objects would still satisfy every type here and still be
     the same row, but it is the kind of wiring that invites a later change to
     give the reader a cache — at which point the fold corrects a stale position
     and the contradiction is back."""
+    from unittest.mock import patch
+
+    from nora.domain.standing import Standing
+
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, {"standing.enabled": True}))
     wiring = deps.engagement._debrief_wiring
     assert wiring is not None
-    assert wiring.store is deps.engagement._context._standing_store
+    await wiring.store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="generated open decision",
+        fold_count=1, updated_at=1000,
+    ))
+    with patch.object(wiring.store, "read", wraps=wiring.store.read) as read:
+        view = await deps.engagement._context._shared_reader(unit="friends", now_ms=2000)
+    read.assert_any_await(platform="signal", conversation_id="g1")
+    assert any(e.kind == "standing" and e.subject == "generated open decision"
+               for e in view.entries)
     assert wiring.max_chars == 1200
     # Read the value from the config under test, not a hardcoded literal: the operator
     # owns fold_batch, and a literal breaks when it is changed.
@@ -1083,7 +1096,8 @@ async def test_the_debrief_reads_its_objective_from_the_instruction_substrate(cf
 
     deps = await build_dependencies(override_config(cfg, {"standing.enabled": True}))
     body = deps.engagement._debrief_wiring.objective.objective_body(OBJECTIVE)
-    assert "revise ONE short paragraph" in body
+    assert "ONE short paragraph for a room fold" in body
+    assert "<standing_ledger_prior>" in body
 
 
 def _effort_of(client: object) -> str:

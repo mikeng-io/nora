@@ -21,62 +21,6 @@
   "target": "tests/unit/test_debrief_render.py -k the_prior_carries_when_it_was_written_against_the_turns_time"
  },
  {
-  "name": "standing-compact §3: a reasoningContent step is kind=thinking, not a (thinking) prefix",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "            return _clip(\n                raw, kind=\"thinking\", metrics=metrics, limit=_CARRIED_CHARS,\n            ), \"thinking\"",
-  "new": "            return f\"(thinking) {_clip(raw, kind='thinking', metrics=metrics, limit=_CARRIED_CHARS)}\", None",
-  "target": "tests/unit/test_debrief_render.py -k the_steps_block_replaces_reasoning_and_marks_a_thinking_step"
- },
- {
-  "name": "standing-compact §3: a turn with no reasoning carries no kind attribute",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "        return _clip(text, kind=\"reasoning\", metrics=metrics), None",
-  "new": "        return _clip(text, kind=\"reasoning\", metrics=metrics), \"text\"",
-  "target": "tests/unit/test_debrief_render.py -k a_turn_with_no_reasoning_renders_no_kind_attribute_anywhere"
- },
- {
-  "name": "standing-compact §3: a tool result carries at 4000, not 600",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "_tool_result_text(result.get(\"content\")), kind=\"tool_result\",\n            metrics=metrics, limit=_CARRIED_CHARS,",
-  "new": "_tool_result_text(result.get(\"content\")), kind=\"tool_result\",\n            metrics=metrics,",
-  "target": "tests/unit/test_debrief_render.py -k a_tool_result_at_the_carried_bound_renders_whole"
- },
- {
-  "name": "standing-compact §3: the bound is inclusive",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "    if len(text) <= limit:",
-  "new": "    if len(text) < limit:",
-  "target": "tests/unit/test_debrief_render.py -k a_tool_result_at_the_carried_bound_renders_whole"
- },
- {
-  "name": "#189 on the carried bound: a clip past 4000 is counted",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "    metrics.inc(_CLIPS_METRIC, block=kind)\n",
-  "new": "",
-  "target": "tests/unit/test_debrief_render.py -k a_tool_result_one_past_the_carried_bound_is_clipped_marked_and_counted"
- },
- {
-  "name": "standing-compact §3: a tool result past 4000 is still cut",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "_tool_result_text(result.get(\"content\")), kind=\"tool_result\",\n            metrics=metrics, limit=_CARRIED_CHARS,",
-  "new": "_tool_result_text(result.get(\"content\")), kind=\"tool_result\",\n            metrics=metrics, limit=_CARRIED_CHARS + 1,",
-  "target": "tests/unit/test_debrief_render.py -k a_tool_result_one_past_the_carried_bound_is_clipped_marked_and_counted"
- },
- {
-  "name": "standing-compact §3: narration keeps 600",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "        return _clip(text, kind=\"reasoning\", metrics=metrics), None",
-  "new": "        return _clip(\n            text, kind=\"reasoning\", metrics=metrics, limit=_CARRIED_CHARS), None",
-  "target": "tests/unit/test_debrief_render.py -k narration_and_tool_calls_still_clip_at_the_block_bound"
- },
- {
-  "name": "standing-compact §3: tool calls keep 600",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "        clipped = _clip(str(use.get(\"input\")), kind=\"tool_call\", metrics=metrics)",
-  "new": "        clipped = _clip(\n            str(use.get(\"input\")), kind=\"tool_call\", metrics=metrics,\n            limit=_CARRIED_CHARS)",
-  "target": "tests/unit/test_debrief_render.py -k narration_and_tool_calls_still_clip_at_the_block_bound"
- },
- {
   "name": "standing-compact §1: the tag fold is shown its prior past the old ceiling",
   "file": "nora/engagement/stages/debrief.py",
   "old": "            trace=trace, prior=prior,",
@@ -138,41 +82,6 @@
   "old": "    return datetime.fromtimestamp(ts_ms / 1000, tz=tz).strftime(\"%Y-%m-%d %H:%M\")",
   "new": "    return datetime.fromtimestamp(ts_ms / 1000, tz=tz).strftime(\"%H:%M\")",
   "target": "tests/unit/test_debrief_render.py::test_a_timestamp_renders_as_a_clock_and_never_as_the_raw_bigint"
- },
- {
-  "name": "standing-compact §5: a thinking clip is counted on its own label",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "                raw, kind=\"thinking\", metrics=metrics, limit=_CARRIED_CHARS,",
-  "new": "                raw, kind=\"reasoning\", metrics=metrics, limit=_CARRIED_CHARS,",
-  "target": "tests/unit/test_debrief_render.py -k test_a_thinking_clip_is_counted_on_its_own_label_and_narration_on_reasoning"
- },
- {
-  "name": "standing-compact M1: a thinking step between 600 and 4000 renders whole",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "                raw, kind=\"thinking\", metrics=metrics, limit=_CARRIED_CHARS,",
-  "new": "                raw, kind=\"thinking\", metrics=metrics,",
-  "target": "tests/unit/test_debrief_render.py -k test_a_thinking_step_between_the_two_bounds_renders_whole"
- },
- {
-  "name": "standing-compact §5: a tool result is escaped once",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "        return f\"(tool result: {clipped})\", None",
-  "new": "        return f\"(tool result: {escape(clipped)})\", None",
-  "target": "tests/unit/test_debrief_render.py -k test_step_text_is_escaped_exactly_once"
- },
- {
-  "name": "standing-compact §5: a tool call is escaped once",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "        return f\"(called {name} with {clipped})\", None",
-  "new": "        return f\"(called {escape(name)} with {escape(clipped)})\", None",
-  "target": "tests/unit/test_debrief_render.py -k test_step_text_is_escaped_exactly_once"
- },
- {
-  "name": "standing-compact §5: narration is escaped once",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "        return _clip(text, kind=\"reasoning\", metrics=metrics), None",
-  "new": "        return escape(_clip(text, kind=\"reasoning\", metrics=metrics)), None",
-  "target": "tests/unit/test_debrief_render.py -k test_step_text_is_escaped_exactly_once"
  },
  {
   "name": "standing-compact §5: the one escape left is render_elements', and it stops a forged step",
@@ -273,20 +182,6 @@
   "target": "tests/architecture/test_doc_references_resolve.py -k test_a_deprecated_table_row_does_not_exempt_the_live_row_beside_it"
  },
  {
-  "name": "standing-compact objective v8 (#445): the derivability test requires usefulness for a finding",
-  "file": "nora/dreamer/objectives/standing-debrief.md",
-  "old": "it is what YOU concluded, committed to, are still holding open, or found, have not yet given the room, and is still useful to someone here.",
-  "new": "it is what YOU concluded, committed to, are still holding open, or found and have not yet given the room.",
-  "target": "tests/unit/test_debrief.py -k test_the_derivability_test_and_closing_line_require_usefulness_for_a_finding"
- },
- {
-  "name": "standing-compact objective v8 (#445): the closing line requires usefulness for a finding",
-  "file": "nora/dreamer/objectives/standing-debrief.md",
-  "old": "The recap answers \"what happened\". The position answers \"what I am holding open, committed to, concluding, or found, have not yet given the room, and is still useful to someone here\". Write the second.",
-  "new": "The recap answers \"what happened\". The position answers \"what I am holding open, committed to, concluding, or found and have not yet given the room\". Write the second.",
-  "target": "tests/unit/test_debrief.py -k test_the_derivability_test_and_closing_line_require_usefulness_for_a_finding"
- },
- {
   "name": "standing-compact objective/render #445 fix 2(a): a tool result's JSON is compacted, not python-repr'd",
   "file": "nora/engagement/debrief_render.py",
   "old": "    if isinstance(content, Sequence) and not isinstance(content, str | bytes):\n        parts = [\n            _compact_json_or_text(item[\"text\"])\n            if isinstance(item, Mapping) and isinstance(item.get(\"text\"), str)\n            else str(item)\n            for item in content\n        ]\n        text = \"\\n\".join(parts)\n    else:\n        text = str(content)",
@@ -343,27 +238,6 @@
   "target": "tests/unit/test_debrief.py -k test_an_over_budget_working_set_is_refused_and_the_prior_is_kept"
  },
  {
-  "name": "working-set #445 fix: an item past its TTL renders absent, not stale",
-  "file": "nora/language/standing_render.py",
-  "old": "    live = tuple(\n        item for item in working_set if now_ms - item.found_at <= ttl_ms\n    )\n",
-  "new": "    live = tuple(working_set)\n",
-  "target": "tests/unit/test_standing.py -k test_the_working_sets_own_ttl_expiry_renders_absent"
- },
- {
-  "name": "working-set #445 fix: the working-set block is served in build_prefill, adjacent to standing",
-  "file": "nora/agent/prefill.py",
-  "old": "            _restamp(_standing_block(ctx, view)),\n            _restamp(_standing_working_set_block(ctx, now=clock, view=view)),\n            _transcript_block(ctx, display_name, clock, context_window),",
-  "new": "            _restamp(_standing_block(ctx, view)),\n            _transcript_block(ctx, display_name, clock, context_window),",
-  "target": "tests/test_prefill.py -k test_the_working_set_block_renders_adjacent_to_standing_in_the_prefill"
- },
- {
-  "name": "working-set #445 fix: the tag fold's own input is shown its working-set prior",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "            prior_block, working_set_prior_block, turn,",
-  "new": "            prior_block, turn,",
-  "target": "tests/unit/test_debrief.py -k test_the_fold_is_shown_its_own_working_set_prior"
- },
- {
   "name": "working-set #541 review fix: a carried item past its own TTL is dropped at the write path, not just at render",
   "file": "nora/engagement/stages/debrief.py",
   "old": "        carried = prior_found_at.get((what, source))\n        if carried is None:\n            # A NEW item: its source must be a shown step's tool name,\n            # EXACTLY — equality, never a substring match, so a description\n            # that merely mentions the tool cannot pass as sourced.\n            if not any(name.lower() == source.lower() for name in shown_steps):\n                metrics.inc(\"nora_standing_working_set_unsourced_dropped_total\")\n                continue\n        elif now_ms - carried > ttl_ms:\n            # A CARRY-FORWARD past its own TTL: dropped here, deterministically\n            # — never kept merely because the model re-stated it.\n            metrics.inc(\"nora_standing_working_set_expired_dropped_total\")\n            continue\n",
@@ -376,5 +250,12 @@
   "old": "            if not any(name.lower() == source.lower() for name in shown_steps):\n",
   "new": "            if not any(name.lower() in source.lower() for name in shown_steps):\n",
   "target": "tests/unit/test_debrief.py -k test_a_source_that_merely_mentions_a_shown_tool_is_dropped"
+ },
+ {
+  "name": "standing-compact §3: the fold reads the complete retained Record — a decision at a block's end survives",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "    text = block.get(\"text\")\n    if isinstance(text, str) and text.strip():\n        return text, None",
+  "new": "    text = block.get(\"text\")\n    if isinstance(text, str) and text.strip():\n        return text[:2400], None",
+  "target": "tests/unit/test_debrief_render.py::test_a_decision_at_a_long_blocks_end_reaches_the_fold"
  }
 ]

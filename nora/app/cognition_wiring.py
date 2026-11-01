@@ -503,6 +503,10 @@ def build_cognition_runner(
     budget: Any,
     result_caps: Mapping[str, int],
     memos: Any = None,
+    ledger: Any = None,
+    shared: Any = None,
+    standing_fold: Any = None,
+    rooms_of_unit: Callable[[str], Sequence[tuple[str, str]]] | None = None,
 ) -> Any:
     """The session runner. Imported lazily: `LiveCognitionAgentRunner` (and
     with it Strands) is loaded only when a session will actually run."""
@@ -562,6 +566,7 @@ def build_cognition_runner(
         tag_trace_store=tag_trace_store, memory=memory,
         store=store, stimulus_store=stimulus_store,
         notes=notes, events=events, standing=standing, reminders=reminders,
+        ledger=ledger, shared=shared,
         ai_peer=ai_peer, memos=memos,
         agent_runner=agent_runner, home_rooms=home_rooms,
         read_tools_for=read_tools_for(tools, names=surface.wired),
@@ -572,6 +577,8 @@ def build_cognition_runner(
         doctrine_text=text, doctrine_sha256=sha, doctrine_source=doctrine,
         open_note_titles=note_titles, open_events=open_events,
         prior_standing=prior,
+        rooms_of_unit=rooms_of_unit,
+        standing_fold=standing_fold,
         budget=budget, cooldown_seconds=cfg.cognition.cooldown_seconds,
         units=list(units), session_timeout_seconds=cfg.cognition.session_timeout_seconds,
         max_items=cfg.cognition.max_items, max_strikes=cfg.cognition.max_strikes,

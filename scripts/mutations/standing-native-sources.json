@@ -1,0 +1,9 @@
+[
+  {
+    "name": "native-cognition-activity-is-a-citable-unit-fact",
+    "file": "nora/app/cognition_session.py",
+    "old": "            record_requirement(DisclosureRequirement(\n                None, tuple(message(record_room_key(*room)) for room in state.rooms.values()),\n            ))",
+    "new": "            pass",
+    "target": "tests/unit/test_eval_standing_unit.py::test_native_activity_is_citable_without_erasing_unknown_sources"
+  }
+]

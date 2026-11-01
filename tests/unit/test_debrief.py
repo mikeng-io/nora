@@ -17,13 +17,16 @@ import json
 
 import pytest
 
+from nora.domain.lineage import message
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.domain.standing import STANDING_BODY_CEILING_CHARS, Standing, WorkingSetItem
 from nora.domain.tag_trace import TagTrace
+from nora.domain.turn_record import DisclosureRequirement
 from nora.engagement.stages import debrief
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import span
 from nora.testing import FakeRecordStore, InMemoryStandingStore
+from nora.testing.tag_traces import FakeTagTraceStore
 
 pytestmark = pytest.mark.asyncio
 
@@ -348,18 +351,22 @@ def test_the_objective_gives_a_concrete_recap_vs_position_contrast():
     from tests.objectives import shipped_objectives
 
     body = shipped_objectives().objective_body("standing-debrief")
-    # The derivability test — the sentence-level rule that makes "recap"
-    # decidable rather than a vibe.
-    assert "could someone who read the transcript write this sentence too" in body
+    # The faithfulness test — the sentence-level rule that makes "recap"
+    # decidable rather than a vibe, and keeps the expressed decision's actual
+    # content rather than erasing it as "settled".
+    assert "does it organize a decision already expressed" in body
+    assert "the choice made" in body
     # The concrete contrast: both shapes present, labelled, and the recap
     # shape is explicitly wrong.
     assert "RECAP — wrong" in body
     assert "POSITION — right" in body
-    # The recap example must not be the only shape the model sees — the
-    # position example carries the state vocabulary (commitment, open
-    # problem, hypothesis, next step) that the recap lacks.
-    assert "commit 咗" in body
-    assert "root cause" in body
+    # The position records completed/unconfirmed/open work without inventing
+    # the commitment and failure hypothesis the old example added.
+    position = body.split("POSITION — right", 1)[1].split("The recap answers", 1)[0]
+    assert "要求已完成" in position
+    assert "未確認裝好" in position
+    assert "仍未睇到" in position
+    assert "adds no hypothesis" in position
     # The closing line states the axis: what happened vs what I hold open.
     assert 'The recap answers "what happened"' in body
     assert 'The position answers "what I am holding open' in body
@@ -381,12 +388,12 @@ def test_the_derivability_test_and_closing_line_require_usefulness_for_a_finding
     body = shipped_objectives().objective_body("standing-debrief")
     clause = "found, have not yet given the room, and is still useful to someone here"
     assert (
-        "it is what YOU concluded, committed to, are still holding open, "
-        f"or {clause}."
-    ) in body, "the derivability test dropped the usefulness condition"
+        "does it organize a decision already expressed, work actually done "
+        "or attempted, pending work, a commitment, or an uncertainty"
+    ) in body, "the faithfulness test dropped the organize rule"
     assert (
         'The position answers "what I am holding open, committed to, '
-        f'concluding, or {clause}". Write the second.'
+        f'concluding, decided, or {clause}"'
     ) in body, "the closing line dropped the usefulness condition"
 
 
@@ -804,18 +811,21 @@ async def test_a_prior_far_past_the_old_ceiling_is_still_shown():
 async def test_fold_count_increments_by_one_per_tag_fold_and_is_never_reset():
     """`fold_count` is a plain count: nothing resets it, and it crosses
     `_OLD_CEILING` like any other number."""
+    # Each fold lands a DISTINCT position: `standing_revise`'s semantic
+    # no-change check (content-identical → no write, `fold_count` untouched)
+    # is deliberate — an unchanged position does not count as a revision.
     store = InMemoryStandingStore()
     counts = []
-    for _ in range(3):
-        await _run(store=store)
+    for i in range(3):
+        await _run(store=store, client=_Client(_ok(f"folded position {i}")))
         counts.append((await store.read(
             platform="signal", conversation_id="g1")).fold_count)
     assert counts == [1, 2, 3]
 
     store = await _with_prior(_OLD_CEILING - 2)
     counts = []
-    for _ in range(5):
-        await _run(store=store)
+    for i in range(5):
+        await _run(store=store, client=_Client(_ok(f"new position {i}")))
         counts.append((await store.read(
             platform="signal", conversation_id="g1")).fold_count)
     assert counts == [19, 20, 21, 22, 23]
@@ -1517,3 +1527,277 @@ async def test_the_working_set_rule_names_both_caps_in_the_system_prompt():
         client=client, working_set_max_items=5, working_set_max_chars=600)
     assert "at most 5 items" in client.prompts[0]
     assert "600 characters combined" in client.prompts[0]
+
+
+class _NoSynthesis:
+    """The wired route never calls the model: `complete` is an ERROR."""
+
+    async def complete(self, *a, **kw):
+        raise AssertionError("the wired route must never synthesize")
+
+
+async def test_an_ordinary_fold_preserves_the_prior_sections_and_exclusions():
+    """A fold that revises only the paragraph must not cancel `hold_open`,
+    `i_owe`, or the room's exclusions (design/notebook-memory-types/20 §5:
+    "a missing output section does not cancel an obligation"). The stored
+    exclusions are the prior's UNION the Record's own requirements — derived
+    by code, never asserted by the model."""
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="prior",
+        hold_open="who is bringing the cake?",
+        i_owe="confirm the venue",
+        exclude_persons=("person-x",),
+        fold_count=3, updated_at=1,
+    ))
+    trace = _trace()
+    store, _ = await _run(
+        store=store, client=_Client(_ok("a revised position")),
+        trace=dataclasses.replace(
+            trace,
+            requirements={
+                "call-1": [DisclosureRequirement(
+                    "signal:g1", (message("signal:g1"),), ("person-y",),
+                ).to_json()],
+            },
+        ),
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row.body == "a revised position"
+    assert row.hold_open == "who is bringing the cake?"
+    assert row.i_owe == "confirm the venue"
+    assert set(row.exclude_persons) == {"person-x", "person-y"}
+
+
+async def test_a_fold_can_explicitly_revise_the_open_sections():
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="prior",
+        hold_open="old question", i_owe="old owe",
+        fold_count=3, updated_at=1,
+    ))
+    await _run(store=store, client=_Client(
+        debrief.Completion(json.dumps({
+            "standing": "a revised position",
+            "hold_open": "a new open question",
+            "i_owe": "a new owed thing",
+        }), "stop")))
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row.hold_open == "a new open question"
+    assert row.i_owe == "a new owed thing"
+
+
+async def test_a_fold_rewriting_identical_content_keeps_the_prior_revision():
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="same position",
+        fold_count=3, updated_at=1,
+    ))
+    await _run(store=store, client=_Client(_ok("same position")))
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row.fold_count == 3  # no churned revision on an identical fold
+
+
+# --- the unit-scoped Cognition fold ------------------------------------------
+
+
+def _unit_target():
+    from nora.domain.lineage import RenderRoom, RoomFacts
+    return RenderRoom(
+        room=RoomFacts(
+            platform="signal", ids=frozenset({"room-a"}), unit="u1",
+            persons=frozenset(), primary_id="room-a",
+        ),
+    )
+
+
+async def _unit_fold(*, ledger, trace=None, items=(), status="stop",
+                     sessions=1):
+    """One `fold_unit` call over the real-fake ledger and a SAVED session
+    Record — `by_tag` must find the session's own `turn(<id>)` handle for
+    the entries to cite; a trace `save` never wrote is «could not check»."""
+    from nora.testing.standing_ledger import InMemoryStandingLedger
+    from nora.testing.tag_traces import FakeTagTraceStore
+
+    traces = FakeTagTraceStore()
+    trace = trace if trace is not None else dataclasses.replace(
+        _trace(), unit="u1", tag_id="session-1")
+    for _ in range(sessions):
+        await traces.save(trace)
+    if not isinstance(ledger, InMemoryStandingLedger):
+        ledger = InMemoryStandingLedger()
+    client = _Client(debrief.Completion(
+        json.dumps({"items": list(items)}), status))
+    metrics = Metrics()
+    await debrief.fold_unit(
+        trace=trace, unit="u1", rooms=(("signal", "room-a"),),
+        ledger=ledger, target=_unit_target(), tag_traces=traces,
+        client=client, objective=_Objective(), metrics=metrics,
+        display_name="Nora", timeout_seconds=5.0,
+        store_timeout_seconds=5.0, now_ms=2000,
+    )
+    return ledger, metrics
+
+
+async def test_the_cognition_fold_materializes_unit_scope_entries_under_cas():
+    """fold_unit writes each organized item ONCE at scope="unit" through the
+    validated ledger verb — a revise/close carries the read `base`, an open
+    gets the unit scope, and the saved Record's own `turn(t<id>)` is what
+    the sections cite."""
+    from nora.domain.standing_ledger import LedgerEntry
+    from nora.testing.standing_ledger import InMemoryStandingLedger
+
+    prior = LedgerEntry(
+        id="d1", kind="decision", unit="u1", scope="unit",
+        platform="signal", conversation_id="", revision=2, status="open",
+        subject="which venue",
+        body="## Options\n- amber\n- blue\n## Leaning\n- none yet",
+        opened_at=1, last_revised_at=1,
+    )
+    ledger, _ = await _unit_fold(
+        ledger=InMemoryStandingLedger((prior,)),
+        items=[
+            {"kind": "decision", "subject": "which venue",
+             "status": "closed", "outcome": "chose amber", "id": "d1"},
+            {"kind": "decision", "subject": "whether friday works",
+             "status": "open",
+             "sections": {"Options": "ride, stay", "Leaning": "ride"}},
+        ],
+    )
+    close = next(op for op in ledger.applied if op.op == "close")
+    open_ = next(op for op in ledger.applied if op.op == "open")
+    assert close.id == "d1" and close.base == 2
+    assert "turn(t" in close.outcome  # cites the saved Record's own handle
+    assert open_.scope == "unit"
+    assert open_.sections["Options"] and "turn(t" in open_.sections["Options"]
+    assert all(op.status is None and (op.op != "open" or op.outcome is None)
+               for op in ledger.applied)
+
+
+async def test_a_unit_fold_close_needs_cited_grounds_and_a_known_entry():
+    from nora.testing.standing_ledger import InMemoryStandingLedger
+    ledger, _ = await _unit_fold(
+        ledger=InMemoryStandingLedger(),
+        items=[
+            # no id -> nothing to close
+            {"kind": "decision", "subject": "x", "status": "closed",
+             "outcome": "done"},
+            # id the unit does not hold -> unresolved, never a guessed merge
+            {"kind": "decision", "subject": "y", "status": "closed",
+             "outcome": "done", "id": "d-missing"},
+        ],
+    )
+    assert ledger.applied == []
+
+
+async def test_a_malformed_unit_fold_preserves_the_prior_entries():
+    from nora.testing.standing_ledger import InMemoryStandingLedger
+    ledger = InMemoryStandingLedger()
+    client = _Client(debrief.Completion("not json", "stop"))
+    traces = FakeTagTraceStore()
+    trace = dataclasses.replace(_trace(), unit="u1", tag_id="session-1")
+    await traces.save(trace)
+    await debrief.fold_unit(
+        trace=trace, unit="u1", rooms=(("signal", "room-a"),),
+        ledger=ledger, target=_unit_target(), tag_traces=traces,
+        client=client, objective=_Objective(), metrics=Metrics(),
+        display_name="Nora", timeout_seconds=5.0,
+        store_timeout_seconds=5.0, now_ms=2000,
+    )
+    assert ledger.applied == []
+
+
+async def test_a_unit_fold_writes_nothing_when_the_session_expressed_nothing():
+    from nora.testing.standing_ledger import InMemoryStandingLedger
+    ledger, _ = await _unit_fold(
+        ledger=InMemoryStandingLedger(), items=[],
+    )
+    assert ledger.applied == []
+
+
+async def test_a_unit_fold_refuses_when_no_saved_record_exists():
+    """No saved Record, no fold: `turn(...)` citations would rest on a
+    handle nothing persisted, so the whole call is «could not check»."""
+    from nora.testing.standing_ledger import InMemoryStandingLedger
+    from nora.testing.tag_traces import FakeTagTraceStore
+
+    ledger = InMemoryStandingLedger()
+    client = _Client(debrief.Completion(
+        json.dumps({"items": [{"kind": "decision", "subject": "x",
+                               "sections": {"Options": "a", "Leaning": "b"}}]}),
+        "stop"))
+    metrics = Metrics()
+    trace = dataclasses.replace(_trace(), unit="u1", tag_id="never-saved")
+    await debrief.fold_unit(
+        trace=trace, unit="u1", rooms=(("signal", "room-a"),),
+        ledger=ledger, target=_unit_target(), tag_traces=FakeTagTraceStore(),
+        client=client, objective=_Objective(), metrics=metrics,
+        display_name="Nora", timeout_seconds=5.0,
+        store_timeout_seconds=5.0, now_ms=2000,
+    )
+    assert ledger.applied == []
+    assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 1
+
+
+async def test_a_truncated_unit_fold_writes_nothing():
+    from nora.testing.standing_ledger import InMemoryStandingLedger
+    ledger, _ = await _unit_fold(
+        ledger=InMemoryStandingLedger(),
+        items=[{"kind": "decision", "subject": "x",
+                "sections": {"Options": "a", "Leaning": "b"}}],
+        status="length",
+    )
+    assert ledger.applied == []
+
+
+async def test_a_unit_fold_replay_writes_no_new_revision():
+    """Re-folding the same session items against the same prior is
+    idempotent: identical content never opens a revision."""
+    from nora.domain.standing_ledger import LedgerEntry
+    from nora.testing.standing_ledger import InMemoryStandingLedger
+
+    prior = LedgerEntry(
+        id="d1", kind="decision", unit="u1", scope="unit",
+        platform="signal", conversation_id="", revision=2, status="open",
+        subject="which venue",
+        body="## Options\n- amber turn(t1)\n## Leaning\n- amber turn(t1)",
+        opened_at=1, last_revised_at=1,
+    )
+    ledger, _ = await _unit_fold(
+        ledger=InMemoryStandingLedger((prior,)),
+        items=[{"kind": "decision", "subject": "which venue",
+                "id": "d1", "status": "open",
+                "sections": {"Options": "amber", "Leaning": "amber"}}],
+    )
+    assert ledger.applied == []
+
+
+async def test_a_failed_open_cannot_close_an_earlier_batch_entry():
+    from nora.testing.standing_ledger import InMemoryStandingLedger
+
+    ledger, _ = await _unit_fold(
+        ledger=InMemoryStandingLedger(),
+        items=[
+            {"kind": "decision", "subject": "generated ongoing choice",
+             "sections": {"Options": "amber or blue", "Leaning": "amber"}},
+            {"kind": "decision", "subject": "generated separate choice",
+             "status": "closed", "outcome": "chose generated blue",
+             "sections": {"Options": "x" * (STANDING_BODY_CEILING_CHARS + 1),
+                          "Leaning": "blue"}},
+        ],
+    )
+    assert len(ledger.entries) == 1
+    assert ledger.entries[0].subject == "generated ongoing choice"
+    assert ledger.entries[0].status == "open"
+
+
+async def test_an_unresolved_requirement_stays_unknown_even_with_entries():
+    from nora.domain.lineage import BODY, message
+    from nora.domain.turn_record import DisclosureRequirement
+
+    req = DisclosureRequirement(
+        "signal:generated-source", (message("signal:generated-source"),),
+        resolved=False,
+    )
+    lineage = debrief._fold_lineage(None, {"generated-call": [req.to_json()]})
+    assert any(entry.kind == "unresolved" for entry in lineage.section(BODY))

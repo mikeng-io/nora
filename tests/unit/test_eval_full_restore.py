@@ -381,15 +381,16 @@ def test_the_registry_names_the_recall_corpus_and_experiment_for_threads_it(monk
     from evals import scenarios
 
     assert frozenset({
-        "conversational_recall", "cognition_session",
+        "conversational_recall", "cognition_session", "standing_unit",
     }) == scenarios.FULL_RESTORE_CORPORA
     assert set(scenarios.CORPUS_ENTRY) >= scenarios.FULL_RESTORE_CORPORA
     assert "conversational_recall" in scenarios.JUDGED_CORPORA
     captured: list[Spec] = []
     monkeypatch.setattr(scenarios, "nora_task", lambda spec: captured.append(spec))
     scenarios.experiment_for("conversational_recall", source_url=_SOURCE)
+    scenarios.experiment_for("standing_unit", source_url=_SOURCE)
     scenarios.experiment_for("presence", source_url=_SOURCE)
-    assert [s.full_restore for s in captured] == [True, False]
+    assert [s.full_restore for s in captured] == [True, True, False]
 
 
 def test_the_criterion_is_registered_and_selectable() -> None:

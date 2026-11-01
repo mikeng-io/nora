@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -52,7 +52,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.reminders import (
+    OPEN_STATES,
+    PROACTIVE_KIND,
+    ConflictingProactiveActError,
     DuplicateProactiveNoteError,
+    DuplicateProactiveSubjectError,
     DuplicateReminderError,
     Recurrence,
     RecurrenceRule,
@@ -63,25 +67,17 @@ from nora.domain.reminders import (
     ensure_utc,
     normalise_reminder,
     open_proactive_note,
+    open_proactive_subject,
     plan_successor,
+    proactive_subject,
 )
-from nora.infra.sql.schema import REMINDERS, UQ_REMINDERS_PROACTIVE_OPEN_NOTE_WHERE
+from nora.infra.sql.schema import REMINDERS
 
 # PostgreSQL SQLSTATE 23505, unique_violation. Matched EXACTLY rather than
 # treating every `IntegrityError` as a duplicate: this table also carries
 # `ck_reminders_state`, and a bad state value arrives as an `IntegrityError`
 # too — reporting that as "duplicate id" would name the wrong defect.
 _PG_UNIQUE_VIOLATION = "23505"
-
-# The conflict target of a proactive insert: `uq_reminders_proactive_open_note`'s
-# expression and predicate, so the inferred arbiter is that index and nothing
-# wider. The expression is TEXT, not `schema.py`'s column expression: that one
-# compiles `->>` with a BOUND `'note_id'`, and a parameter in an ON CONFLICT
-# target does not match the index's constant, so Postgres refuses to infer
-# (42P10) — the reason `SqlNoteStore`'s candidate upsert spells its key the
-# same way.
-_OPEN_NOTE_KEY = sa.text("(payload ->> 'note_id')")
-_OPEN_NOTE_WHERE = UQ_REMINDERS_PROACTIVE_OPEN_NOTE_WHERE
 
 
 log = logging.getLogger("nora.infra.sql.reminders")
@@ -192,42 +188,147 @@ class SqlReminderStore:
         to `DuplicateReminderError` so the in-memory store can be held to the
         same observable behaviour.
 
-        A proactive row on a note is inserted `ON CONFLICT DO NOTHING` against
-        `uq_reminders_proactive_open_note`: the statement decides,
+        A proactive row on a note or a resolved (subject, action, destination)
+        is inserted `ON CONFLICT DO NOTHING`: the statement decides,
         so two decisions racing for one note cannot both land, and a row that
-        did not land is `DuplicateProactiveNoteError`, never a silent no-op.
-        The conflict target names that index alone, so a primary-key collision
-        still raises and translates as a duplicate id."""
+        did not land is `DuplicateProactiveNoteError` or
+        `DuplicateProactiveSubjectError`, never a silent no-op.
+
+        The clause is UNTARGETED: Postgres admits one `ON CONFLICT` per INSERT
+        and a row may carry a note AND a subject, so neither partial index can
+        be the sole named arbiter. Skipping on ANY unique conflict is what the
+        bare clause does; the post-checks below name which constraint held the
+        row out — the id first (the more basic fault, and the one the in-memory
+        store names), then the note, then the subject."""
         row = normalise_reminder(reminder)
-        note_id = open_proactive_note(row)
-        stmt = pg_insert(REMINDERS).values(**_insert_values(row))
-        if note_id is not None:
-            stmt = stmt.on_conflict_do_nothing(
-                index_elements=[_OPEN_NOTE_KEY], index_where=_OPEN_NOTE_WHERE,
-            )
         try:
             async with self._engine.begin() as conn:
-                result = await conn.execute(stmt)
-                if result.rowcount:
-                    from nora.infra.sql.graph_projection import register_arrival
-                    await register_arrival(conn,"reminder",row.id)
-                # Nothing landed. Postgres checks the ARBITER first, so a row
-                # whose id AND note both collide is skipped here rather than
-                # raising on the primary key; the id is the more basic fault
-                # and the one the in-memory store names, so it is asked first.
-                taken = note_id is not None and not result.rowcount and (
-                    await conn.execute(
-                        sa.select(REMINDERS.c.id).where(REMINDERS.c.id == row.id),
-                    )
-                ).first() is not None
+                await self._insert_one(conn, row)
         except IntegrityError as exc:
             if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
                 raise
             raise DuplicateReminderError(row.id) from exc
-        if taken:
+
+    async def create_many(
+        self, reminders: Sequence[Reminder], *, arbitration_key: str | None = None,
+        arbitration_rooms: Sequence[tuple[str, str]] = (),
+    ) -> None:
+        """`create` for a batch, in ONE transaction: the advisory lock (when
+        `arbitration_key` names a unit) serialises check-and-insert against
+        every other writer keyed the same — across processes, which the
+        per-destination unique index cannot cover — and any raised duplicate
+        or `ConflictingProactiveActError` aborts the transaction, so no
+        partial batch can persist."""
+        rows = [normalise_reminder(r) for r in reminders]
+        if not rows:
+            return
+        dests = {(r.platform, r.conversation_id) for r in rows}
+        try:
+            async with self._engine.begin() as conn:
+                if arbitration_key is not None:
+                    await conn.execute(
+                        sa.text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+                        {"k": arbitration_key},
+                    )
+                if arbitration_rooms:
+                    await self._check_act_conflicts(
+                        conn, rows, dests, set(arbitration_rooms),
+                    )
+                for row in rows:
+                    await self._insert_one(conn, row)
+        except IntegrityError as exc:
+            if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
+                raise
+            raise DuplicateReminderError(rows[0].id) from exc
+
+    async def _check_act_conflicts(
+        self, conn: Any, rows: Sequence[Reminder],
+        dests: set[tuple[str, str]], rooms: set[tuple[str, str]],
+    ) -> None:
+        """The cross-room arbiter, run INSIDE the locked transaction: for
+        every subject the batch carries, an open row at a unit room the batch
+        does not cover is a conflict — whatever `check_remind` ruled a moment
+        ago, THIS read is what races a second process against."""
+        subjects = {
+            s for r in rows if (s := proactive_subject(r)) is not None
+        }
+        if not subjects:
+            return
+        in_rooms = sa.or_(*(
+            sa.and_(REMINDERS.c.platform == p, REMINDERS.c.conversation_id == c)
+            for p, c in rooms
+        ))
+        existing = (await conn.execute(
+            sa.select(
+                REMINDERS.c.platform, REMINDERS.c.conversation_id,
+                REMINDERS.c.payload["subject_kind"].astext.label("sk"),
+                REMINDERS.c.payload["subject_id"].astext.label("sid"),
+                sa.func.coalesce(
+                    REMINDERS.c.payload["action"].astext, "").label("act"),
+            ).where(
+                REMINDERS.c.kind == PROACTIVE_KIND,
+                REMINDERS.c.state.in_(OPEN_STATES),
+                in_rooms,
+            )
+        )).all()
+        for row in existing:
+            key = (row.sk, row.sid, row.act)
+            if key in subjects and (row.platform, row.conversation_id) not in dests:
+                raise ConflictingProactiveActError(
+                    key, row.platform, row.conversation_id,
+                )
+
+    async def _insert_one(self, conn: Any, row: Reminder) -> None:
+        """One INSERT of `create`'s contract, against an open connection:
+        untargeted `ON CONFLICT DO NOTHING` for a keyed proactive row, then
+        the blocker-naming post-checks in `create`'s order — id, note,
+        subject. Shared by `create` and `create_many` so the batch cannot
+        arbitrate less than the single write."""
+        note_id = open_proactive_note(row)
+        subject = open_proactive_subject(row)
+        stmt = pg_insert(REMINDERS).values(**_insert_values(row))
+        if note_id is not None or subject is not None:
+            stmt = stmt.on_conflict_do_nothing()
+        result = await conn.execute(stmt)
+        if result.rowcount:
+            from nora.infra.sql.graph_projection import register_arrival
+            await register_arrival(conn,"reminder",row.id)
+            return
+        if (
+            await conn.execute(
+                sa.select(REMINDERS.c.id).where(REMINDERS.c.id == row.id),
+            )
+        ).first() is not None:
             raise DuplicateReminderError(row.id)
-        if note_id is not None and not result.rowcount:
+        if note_id is not None and (
+            await conn.execute(
+                sa.select(REMINDERS.c.id).where(
+                    REMINDERS.c.kind == PROACTIVE_KIND,
+                    REMINDERS.c.state.in_(OPEN_STATES),
+                    REMINDERS.c.payload["note_id"].astext == note_id,
+                )
+            )
+        ).first() is not None:
             raise DuplicateProactiveNoteError(note_id)
+        if subject is not None and (
+            await conn.execute(
+                sa.select(REMINDERS.c.id).where(
+                    REMINDERS.c.kind == PROACTIVE_KIND,
+                    REMINDERS.c.state.in_(OPEN_STATES),
+                    REMINDERS.c.payload["subject_kind"].astext == subject[0],
+                    REMINDERS.c.payload["subject_id"].astext == subject[1],
+                    sa.func.coalesce(
+                        REMINDERS.c.payload["action"].astext, ""
+                    ) == subject[2],
+                    REMINDERS.c.platform == row.platform,
+                    REMINDERS.c.conversation_id == row.conversation_id,
+                )
+            )
+        ).first() is not None:
+            raise DuplicateProactiveSubjectError(
+                subject, row.platform, row.conversation_id,
+            )
+        raise DuplicateReminderError(row.id)
 
     async def get(self, reminder_id: UUID) -> Reminder | None:
         stmt = sa.select(REMINDERS).where(REMINDERS.c.id == reminder_id)
@@ -368,6 +469,34 @@ class SqlReminderStore:
             rows = (await conn.execute(stmt)).all()
         return self._decode_due(rows)
 
+    async def recent_in(
+        self, rooms: Sequence[tuple[str, str]], *, requester_person_id: str,
+        since: datetime, limit: int,
+    ) -> Sequence[Reminder]:
+        """Current executions and recent handled/created rows, scoped before
+        the bound; a long-scheduled act must survive its claim."""
+        if not rooms:
+            return ()
+        in_rooms = sa.or_(*(
+            sa.and_(REMINDERS.c.platform == p, REMINDERS.c.conversation_id == c)
+            for p, c in rooms
+        ))
+        handled_at = sa.func.coalesce(REMINDERS.c.fired_at, REMINDERS.c.created_at)
+        firing = REMINDERS.c.state == ReminderState.FIRING.value
+        stmt = (
+            sa.select(REMINDERS)
+            .where(
+                REMINDERS.c.requester_person_id == requester_person_id,
+                sa.or_(firing, handled_at >= ensure_utc(since, field="since")),
+                in_rooms,
+            )
+            .order_by(firing.desc(), handled_at.desc(), REMINDERS.c.id.desc())
+            .limit(check_limit(limit))
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return self._decode_due(rows)
+
     async def claim(self, reminder_id: UUID, *, now: datetime) -> bool:
         """`PENDING -> FIRING`, decided by the statement itself — and, for a
         recurring row, the successor written in the SAME TRANSACTION.
@@ -454,7 +583,7 @@ class SqlReminderStore:
                 REMINDERS.c.conversation_id == conversation_id,
                 REMINDERS.c.state == ReminderState.PENDING.value,
             )
-            .values(state=ReminderState.CANCELLED.value)
+            .values(state=ReminderState.CANCELLED.value, fired_at=datetime.now(UTC))
         )
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
@@ -484,3 +613,39 @@ class SqlReminderStore:
 
     async def aclose(self) -> None:
         await self._engine.dispose()
+
+    async def delivered_subject(
+        self, rooms: Sequence[tuple[str, str]], *,
+        requester_person_id: str, subject_kind: str, subject_id: str,
+        action: str, limit: int = 5,
+    ) -> Sequence[Reminder]:
+        """Whether THIS (subject,action) was already DELIVERED in the named
+        rooms — a payload-keyed existence read, not a history scan: `sent`
+        outcome on a CLOSED row, regardless of when the row was created.
+        Bounded by `limit`; the caller treats a full page as "unproven
+        remainder", never as absence."""
+        if not rooms:
+            return ()
+        in_rooms = sa.or_(*(
+            sa.and_(REMINDERS.c.platform == p, REMINDERS.c.conversation_id == c)
+            for p, c in rooms
+        ))
+        stmt = (
+            sa.select(REMINDERS)
+            .where(
+                REMINDERS.c.kind == PROACTIVE_KIND,
+                REMINDERS.c.requester_person_id == requester_person_id,
+                REMINDERS.c.outcome == "sent",
+                REMINDERS.c.state == ReminderState.DONE.value,
+                REMINDERS.c.payload["subject_kind"].astext == subject_kind,
+                REMINDERS.c.payload["subject_id"].astext == subject_id,
+                sa.func.coalesce(
+                    REMINDERS.c.payload["action"].astext, "") == action,
+                in_rooms,
+            )
+            .order_by(REMINDERS.c.created_at.desc(), REMINDERS.c.id.asc())
+            .limit(check_limit(limit))
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return self._decode_due(rows)

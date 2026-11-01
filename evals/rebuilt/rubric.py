@@ -361,6 +361,12 @@ PARTICIPATION_RUBRIC: tuple[Criterion, ...] = (
 #: standing IS rides in the prompt beside it: the definitions only make sense against
 #: «the compact of her work in one room», not a summary.
 FOLD_KINDS: dict[str, str] = {
+    "faithful": (
+        "The retained state accurately records decisions and unfinished work explicitly "
+        "grounded in the completed Record. Accepted scheduling is still only scheduling; "
+        "a failed attempt is not success, and no unstated decision or obligation may "
+        "be invented. Preserve the case's named expressed decision and its actual status."
+    ),
     "carry": (
         "Something her earlier position held — a question she is waiting on, "
         "something she owes, a finding she kept — that nothing in this turn "

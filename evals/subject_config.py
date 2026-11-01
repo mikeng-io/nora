@@ -203,6 +203,9 @@ def adopted(deployment_toml: str) -> dict[str, object]:
         k: v for k, v in values.items()
         if not any(k.startswith(prefix) for prefix in SKIP_PREFIX)
     }
+    # The bridge example differs from the implicit legacy deployment default.
+    # Preserve the effective deployment value rather than changing transports.
+    taken.setdefault("platforms.signal.mode", config_default("platforms.signal.mode"))
     taken.update(dict.fromkeys(forced_off(values), False))
     return taken
 
