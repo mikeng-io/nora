@@ -286,25 +286,28 @@ func TestTypingClaimsARoomOnlyWhenTheCacheCanVouchForIt(t *testing.T) {
 func TestEveryMeaningfulDeltaIsForwardedAndTheRestAreNot(t *testing.T) {
 	msg := &slidetypes.Message{MessageID: "mid.$m", SenderFBID: 186217604552756, TextBody: "hi"}
 	cases := []struct {
-		name string
-		data slidetypes.DeltaEvent
-		kind string
+		name  string
+		data  slidetypes.DeltaEvent
+		kinds []string // expected emitted kinds, in order
 	}{
-		{"message", &slidetypes.NewMessageEvent{Message: msg}, kindMessage},
-		{"admin message", &slidetypes.AdminMessageEvent{Message: msg}, kindMessage},
-		{"join", &slidetypes.ParticipantJoinEvent{Message: msg}, kindMessage},
-		{"leave", &slidetypes.ParticipantLeaveEvent{Message: msg}, kindMessage},
+		{"message", &slidetypes.NewMessageEvent{Message: msg}, []string{kindMessage}},
+		{"admin message", &slidetypes.AdminMessageEvent{Message: msg}, []string{kindMessage}},
+		// Join/leave co-deliver the embedded admin message AND the typed
+		// membership observation: the room fact rides its own event beside
+		// the service text.
+		{"join", &slidetypes.ParticipantJoinEvent{Message: msg}, []string{kindMessage, "observation"}},
+		{"leave", &slidetypes.ParticipantLeaveEvent{Message: msg}, []string{kindMessage, "observation"}},
 		{"reaction", &slidetypes.CreateReactionEvent{MessageID: "mid.$m",
-			Reaction: slidetypes.Reaction{Reaction: "👍", SenderFBID: 186217604552756}}, kindReaction},
+			Reaction: slidetypes.Reaction{Reaction: "👍", SenderFBID: 186217604552756}}, []string{kindReaction}},
 		{"reaction removed", &slidetypes.DeleteReactionEvent{MessageID: "mid.$m",
-			Reaction: slidetypes.Reaction{Reaction: "👍", SenderFBID: 186217604552756}}, kindReaction},
-		{"edit", &slidetypes.EditMessageEvent{MessageID: "mid.$m", TextBody: "fixed"}, kindEdit},
-		{"unsend", &slidetypes.DeleteMessageEvent{MessageID: "mid.$m"}, kindUnsend},
+			Reaction: slidetypes.Reaction{Reaction: "👍", SenderFBID: 186217604552756}}, []string{kindReaction}},
+		{"edit", &slidetypes.EditMessageEvent{MessageID: "mid.$m", TextBody: "fixed"}, []string{kindEdit}},
+		{"unsend", &slidetypes.DeleteMessageEvent{MessageID: "mid.$m"}, []string{kindUnsend}},
 		// Not conversation. Forwarding these would age the socket-death
 		// detector on traffic nobody said.
-		{"read receipt", &slidetypes.MarkReadEvent{}, ""},
-		{"thread pinned", &slidetypes.PinThreadEvent{}, ""},
-		{"muted", &slidetypes.MuteThreadEvent{}, ""},
+		{"read receipt", &slidetypes.MarkReadEvent{}, nil},
+		{"thread pinned", &slidetypes.PinThreadEvent{}, nil},
+		{"muted", &slidetypes.MuteThreadEvent{}, nil},
 	}
 	for _, c := range cases {
 		b := eventBridge(t)
@@ -315,32 +318,72 @@ func TestEveryMeaningfulDeltaIsForwardedAndTheRestAreNot(t *testing.T) {
 		if dropped != 0 {
 			t.Errorf("%s: %d events were dropped", c.name, dropped)
 		}
-		if c.kind == "" {
+		if len(c.kinds) == 0 {
 			if buffered != 0 {
 				t.Errorf("%s: emitted %d events, want none", c.name, buffered)
 			}
 			continue
 		}
-		if buffered != 1 {
-			t.Fatalf("%s: emitted %d events, want 1", c.name, buffered)
+		if buffered != len(c.kinds) {
+			t.Fatalf("%s: emitted %d events, want %d", c.name, buffered, len(c.kinds))
 		}
 		_, replay, _, _ := hubOf(b).Subscribe()
-		var got map[string]any
-		if err := json.Unmarshal(replay[0], &got); err != nil {
-			t.Fatal(err)
+		events := make([]map[string]any, 0, len(replay))
+		for _, raw := range replay {
+			var got map[string]any
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatal(err)
+			}
+			events = append(events, got)
 		}
-		if got["kind"] != c.kind {
-			t.Errorf("%s: kind = %v, want %q", c.name, got["kind"], c.kind)
-		}
-		if got["room_id"] != threadShort {
-			t.Errorf("%s: room_id = %v", c.name, got["room_id"])
+		for i, want := range c.kinds {
+			if events[i]["kind"] != want {
+				t.Errorf("%s: kind = %v, want %q", c.name, events[i]["kind"], want)
+			}
+			if events[i]["room_id"] != threadShort {
+				t.Errorf("%s: room_id = %v", c.name, events[i]["room_id"])
+			}
 		}
 		// The contract says every event carries from_me. On edit and unsend
 		// the delta names no sender, so the value is an explicit null: "the
 		// bridge does not know" is a thing an adapter can branch on, a
 		// confident `false` is not.
-		if _, ok := got["from_me"]; !ok {
+		if _, ok := events[0]["from_me"]; !ok {
 			t.Errorf("%s: from_me is missing from the event", c.name)
+		}
+		if len(c.kinds) == 2 {
+			// The co-delivered utterance must be the delta's own embedded
+			// admin text — never an invented speech event — and the typed
+			// observation names only the actor the source supplies.
+			if events[0]["message_id"] != "mid.$m" {
+				t.Errorf("%s: co-delivered speech is not the embedded message: %v",
+					c.name, events[0]["message_id"])
+			}
+			obs, _ := events[1]["observation"].(map[string]any)
+			if obs["kind"] != "membership" {
+				t.Errorf("%s: co-delivered observation kind = %v, want membership",
+					c.name, obs["kind"])
+			}
+			switch c.name {
+			case "join":
+				// The join delta carries no typed joiner; the actor is the
+				// embedded message's sender — the real one, not a guess.
+				if obs["actor_id"] != "186217604552756" || obs["actor_status"] != "known" {
+					t.Errorf("join: actor = %v/%v, want the embedded sender",
+						obs["actor_id"], obs["actor_status"])
+				}
+			case "leave":
+				// This fixture names neither actor nor subject: both must
+				// stay honestly unsupplied.
+				if obs["actor_status"] != "not_supplied" {
+					t.Errorf("leave: actor_status = %v — an actor was invented",
+						obs["actor_status"])
+				}
+				if obs["subject_ref"] != "" {
+					t.Errorf("leave: subject_ref = %v — a subject was invented",
+						obs["subject_ref"])
+				}
+			}
 		}
 	}
 }

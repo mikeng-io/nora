@@ -23,29 +23,32 @@
     },
     "thread": {
       "id": "1234567890123456",
-      "thread_title": "Saturday planning",
-      "users": [
-        {
-          "id": "63123456700000011",
-          "interop_messaging_user_fbid": "63123456700000011",
-          "username": "member_a"
-        },
-        {
-          "id": "63987654300000022",
-          "interop_messaging_user_fbid": "63987654300000022",
-          "username": "member_b"
-        },
-        {
-          "id": "60123456700000033",
-          "interop_messaging_user_fbid": "60123456700000033",
-          "username": "member_c"
-        },
-        {
-          "id": "61000000000000044",
-          "interop_messaging_user_fbid": "61000000000000044",
-          "username": "member_d"
-        }
-      ]
+      "as_ig_direct_thread": {
+        "id": "1234567890123456",
+        "thread_title": "Saturday planning",
+        "users": [
+          {
+            "id": "63123456700000011",
+            "interop_messaging_user_fbid": "63123456700000011",
+            "username": "member_a"
+          },
+          {
+            "id": "63987654300000022",
+            "interop_messaging_user_fbid": "63987654300000022",
+            "username": "member_b"
+          },
+          {
+            "id": "60123456700000033",
+            "interop_messaging_user_fbid": "60123456700000033",
+            "username": "member_c"
+          },
+          {
+            "id": "61000000000000044",
+            "interop_messaging_user_fbid": "61000000000000044",
+            "username": "member_d"
+          }
+        ]
+      }
     }
   }
 }

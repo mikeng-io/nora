@@ -1215,7 +1215,7 @@ func TestCustodyReusedAcrossKill(t *testing.T) {
 		ConversationType: "group", Attachments: []Attachment{}, Trace: map[string]any{},
 		Message: map[string]any{
 			"raw": map[string]any{"media": map[string]any{
-				"url": "https://cdn.invalid/expired.png", "media_type": "image/png"}},
+				"kind": "image", "url": "https://cdn.invalid/expired.png"}},
 			"media": []any{map[string]any{"url": "https://cdn.invalid/expired.png"}},
 		}}
 	s.enqueue(context.Background(), &captureItem{env: env})
@@ -2077,7 +2077,7 @@ func TestMultiMediaTwoAttachmentsSpoolInOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	one, two := "http://cdn.example/one.jpg", "http://cdn.example/two.mp4"
+	one, two := "https://cdn.example/one.jpg", "https://cdn.example/two.mp4"
 	var fetches []string
 	q, compat := &fakeQueue{}, &fakeCompat{}
 	s := newTestSink(t, q, compat, dir)
@@ -2161,7 +2161,7 @@ func TestMultiMediaPartialCustodyFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	one, two := "http://cdn.example/one.jpg", "http://cdn.example/two.mp4"
+	one, two := "https://cdn.example/one.jpg", "https://cdn.example/two.mp4"
 	q, compat := &fakeQueue{}, &fakeCompat{}
 	s := newTestSink(t, q, compat, dir)
 	s.custody = cust

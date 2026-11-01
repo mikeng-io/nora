@@ -402,8 +402,9 @@ func TestJoinEmitsMessageAndMemberSnapshot(t *testing.T) {
 	}
 }
 
-// An empty users[] still emits a snapshot — covered-set semantics mean the
-// source reported an empty member set, not a missing one.
+// An empty users[] still emits a snapshot — but a PARTIAL one: it covers
+// nothing, so the fold can never read it as "the room is empty" and erase
+// the roster.
 func TestJoinEmptyUsersEmitsEmptySnapshot(t *testing.T) {
 	emitted := emitFixture(t, "participant-join-empty-users.json")
 	obs := observationsOf(emitted)
@@ -414,6 +415,13 @@ func TestJoinEmptyUsersEmitsEmptySnapshot(t *testing.T) {
 	members, _ := payload["members"].([]any)
 	if len(members) != 0 {
 		t.Fatalf("expected empty covered set, got %d", len(members))
+	}
+	cov, _ := obs[0].Observation["coverage"].(map[string]any)
+	if cov["complete"] != false {
+		t.Fatalf("an empty member listing must be partial — complete=true would erase the roster: %v", cov)
+	}
+	if gaps, _ := cov["gaps"].([]any); len(gaps) == 0 {
+		t.Fatalf("an unsupplied member set must name its gap: %v", cov)
 	}
 }
 

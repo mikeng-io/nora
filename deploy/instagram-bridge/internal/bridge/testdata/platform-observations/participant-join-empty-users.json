@@ -23,8 +23,11 @@
     },
     "thread": {
       "id": "1234567890123456",
-      "thread_title": "Saturday planning",
-      "users": []
+      "as_ig_direct_thread": {
+        "id": "1234567890123456",
+        "thread_title": "Saturday planning",
+        "users": []
+      }
     }
   }
 }

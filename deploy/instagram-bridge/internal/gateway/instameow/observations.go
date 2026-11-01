@@ -249,11 +249,13 @@ func joinSnapshot(room string, e *slidetypes.ParticipantJoinEvent, seq int64) *o
 	}
 	var members []any
 	missingFBID := 0
+	memberSetListed := false
 	if t := e.Thread.AsIGDirectThread; t != nil {
 		for _, u := range t.Users {
 			if u == nil {
 				continue
 			}
+			memberSetListed = true
 			fbid := fbidOf(u.InteropMessagingUserFBID)
 			if fbid == "" {
 				missingFBID++
@@ -264,11 +266,17 @@ func joinSnapshot(room string, e *slidetypes.ParticipantJoinEvent, seq int64) *o
 			})
 		}
 	}
+	// A delta carrying no usable member list is a PARTIAL snapshot: an
+	// empty-but-complete covered set would fold as "the room has nobody"
+	// and erase the roster downstream.
 	coverage := map[string]any{
-		"complete": missingFBID == 0, "covered": "members",
+		"complete": memberSetListed && missingFBID == 0, "covered": "members",
 		"gaps": []any{}, "reason": "",
 	}
-	if missingFBID > 0 {
+	if !memberSetListed {
+		coverage["gaps"] = []any{"member_set"}
+		coverage["reason"] = "the delta carried no member list — no member is covered"
+	} else if missingFBID > 0 {
 		coverage["gaps"] = []any{"member_fbids"}
 		coverage["reason"] = fmt.Sprintf(
 			"%d member(s) carried no interop_messaging_user_fbid and are not keyed", missingFBID)

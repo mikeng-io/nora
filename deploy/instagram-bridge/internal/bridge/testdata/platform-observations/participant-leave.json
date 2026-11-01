@@ -15,8 +15,11 @@
     "viewer_fbid": "60987654321000000",
     "thread": {
       "id": "1234567890123456",
-      "thread_title": "Saturday planning",
-      "input_mode": 1
+      "as_ig_direct_thread": {
+        "id": "1234567890123456",
+        "thread_title": "Saturday planning",
+        "input_mode": 1
+      }
     },
     "message": {
       "thread_fbid": "1234567890123456",

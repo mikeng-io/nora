@@ -317,10 +317,28 @@ func TestObservationDurablePath(t *testing.T) {
 	if _, ok := env["observation"].(map[string]any); !ok {
 		t.Fatal("observation missing from enqueued envelope")
 	}
-	// The journaled record holds the same v2 envelope.
+	// The journaled records: exactly one `event` record carrying the same
+	// v2 envelope (the `enqueued` confirmation record sits beside it).
 	recs, _, err := s.journal.Recover()
-	if err != nil || len(recs) != 1 {
-		t.Fatalf("journal = %d records, want 1: %v", len(recs), err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var eventRecs int
+	for _, raw := range recs {
+		var rec struct {
+			Type     string         `json:"type"`
+			Envelope map[string]any `json:"envelope"`
+		}
+		if json.Unmarshal(raw, &rec) != nil || rec.Type != "event" {
+			continue
+		}
+		eventRecs++
+		if rec.Envelope["v"] != float64(2) || rec.Envelope["kind"] != "pin" {
+			t.Fatalf("journaled envelope = %v/%v", rec.Envelope["v"], rec.Envelope["kind"])
+		}
+	}
+	if eventRecs != 1 {
+		t.Fatalf("journal event records = %d, want 1 (records: %d)", eventRecs, len(recs))
 	}
 	// Replay: identical source → suppressed, nothing re-enqueued.
 	s.Emit(pinEvent("room-1", "mid.$a1", "add", 214))
