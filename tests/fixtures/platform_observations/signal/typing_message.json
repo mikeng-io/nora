@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "native": "signal-cli",
+    "native_version": "0.14.7",
+    "transport": "sse",
+    "upstream": "JsonDataMessage (absent) / envelope.typingMessage",
+    "upstream_source": "https://github.com/AsamK/signal-cli/blob/v0.14.7/src/main/java/org/asamk/signal/json/JsonDataMessage.java",
+    "case": "a typing notification — the explicitly excluded ephemeral family",
+    "generated": true
+  },
+  "payload": {
+    "envelope": {
+      "source": "+85212345678",
+      "sourceName": "Fixture Sender",
+      "timestamp": 1760,
+      "typingMessage": {
+        "action": "STARTED",
+        "timestamp": 1760,
+        "groupId": "Z3JvdXA="
+      }
+    },
+    "account": "+85290000100"
+  },
+  "semantics": {
+    "object": "ephemeral",
+    "operation": "ignore",
+    "room_ref": "payload.envelope.typingMessage.groupId",
+    "object_ref": null,
+    "target_ref": null,
+    "actor": "envelope.source",
+    "source_time_ms": "envelope.timestamp",
+    "native_fields": {
+      "action": "'STARTED'|'STOPPED'",
+      "timestamp": "long",
+      "groupId": "string"
+    },
+    "notes": "Operator exclusion: no Record, no context, no wake. Kept as the negative control so a capture lane cannot mistake an ephemeral envelope for missing evidence.",
+    "today": "parse_event returns None — correct and permanent"
+  }
+}

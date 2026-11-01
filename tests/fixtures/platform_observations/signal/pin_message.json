@@ -1,0 +1,53 @@
+{
+  "meta": {
+    "native": "signal-cli",
+    "native_version": "0.14.7",
+    "transport": "sse",
+    "upstream": "JsonDataMessage.pinMessage",
+    "upstream_source": "https://github.com/AsamK/signal-cli/blob/v0.14.7/src/main/java/org/asamk/signal/json/JsonPinMessage.java",
+    "case": "a member pins an earlier group message",
+    "generated": true
+  },
+  "payload": {
+    "envelope": {
+      "source": "+85212345678",
+      "sourceName": "Fixture Sender",
+      "timestamp": 1710,
+      "dataMessage": {
+        "pinMessage": {
+          "targetAuthor": "+85212345679",
+          "targetAuthorNumber": "+85212345679",
+          "targetAuthorUuid": "a2000000-0000-4000-8000-000000000000",
+          "targetSentTimestamp": 1600,
+          "pinDurationSeconds": 604800
+        },
+        "groupInfo": {
+          "groupId": "Z3JvdXA=",
+          "groupName": "Example Group",
+          "revision": 3,
+          "type": "DELIVER"
+        },
+        "timestamp": 1710
+      }
+    },
+    "account": "+85290000100"
+  },
+  "semantics": {
+    "object": "pin",
+    "operation": "add",
+    "room_ref": "payload.envelope.dataMessage.groupInfo.groupId",
+    "object_ref": "the pin transition itself",
+    "target_ref": "(pinMessage.targetAuthor*/authorNumber/authorUuid, pinMessage.targetSentTimestamp) — Signal's author+sent-time message address",
+    "actor": "envelope.source",
+    "source_time_ms": "envelope.timestamp",
+    "native_fields": {
+      "targetAuthor": "string, deprecated",
+      "targetAuthorNumber": "string|null",
+      "targetAuthorUuid": "string|null",
+      "targetSentTimestamp": "long",
+      "pinDurationSeconds": "long — pin expiry"
+    },
+    "notes": "Pins carry an explicit expiry. A pin is per-message evidence with actor and time — richer than Discord's CHANNEL_PINS_UPDATE which names no message.",
+    "today": "parse_event returns None — no pin branch and no message text"
+  }
+}

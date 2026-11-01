@@ -1,0 +1,50 @@
+{
+  "meta": {
+    "native": "signal-cli",
+    "native_version": "0.14.7",
+    "transport": "sse",
+    "upstream": "JsonDataMessage.reaction",
+    "upstream_source": "https://github.com/AsamK/signal-cli/blob/v0.14.7/src/main/java/org/asamk/signal/json/JsonReaction.java",
+    "case": "a reaction naming a message Nora never received (unresolved-target shape)",
+    "generated": true
+  },
+  "payload": {
+    "envelope": {
+      "source": "+85212345678",
+      "sourceName": "Fixture Reactor",
+      "timestamp": 1651,
+      "dataMessage": {
+        "reaction": {
+          "emoji": "👍",
+          "targetAuthor": "+85212345679",
+          "targetAuthorNumber": "+85212345679",
+          "targetAuthorUuid": "a2000000-0000-4000-8000-000000000000",
+          "targetSentTimestamp": 9999,
+          "isRemove": false
+        },
+        "groupInfo": {
+          "groupId": "Z3JvdXA=",
+          "groupName": "Example Group",
+          "revision": 3,
+          "type": "DELIVER"
+        },
+        "timestamp": 1651
+      }
+    },
+    "account": "+85290000100"
+  },
+  "semantics": {
+    "object": "reaction",
+    "operation": "add",
+    "room_ref": "payload.envelope.dataMessage.groupInfo.groupId",
+    "object_ref": "the reaction transition",
+    "target_ref": "(reaction.targetAuthor*, reaction.targetSentTimestamp) — valid form, no recorded target",
+    "actor": "envelope.source",
+    "source_time_ms": "envelope.timestamp",
+    "native_fields": {
+      "targetSentTimestamp": "long — no row will match"
+    },
+    "notes": "Parse still produces a Touch; ingest drops it as reaction_orphaned. The observation contract wants a scoped unresolved reference that can link later — not fabrication of the target message.",
+    "today": "parses as a Touch, then orphaned at ingest"
+  }
+}

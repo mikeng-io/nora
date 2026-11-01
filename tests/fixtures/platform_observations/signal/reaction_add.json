@@ -1,0 +1,54 @@
+{
+  "meta": {
+    "native": "signal-cli",
+    "native_version": "0.14.7",
+    "transport": "sse",
+    "upstream": "JsonDataMessage.reaction",
+    "upstream_source": "https://github.com/AsamK/signal-cli/blob/v0.14.7/src/main/java/org/asamk/signal/json/JsonReaction.java",
+    "case": "a member reacts to a group message (supported baseline family)",
+    "generated": true
+  },
+  "payload": {
+    "envelope": {
+      "source": "+85212345678",
+      "sourceName": "Fixture Reactor",
+      "timestamp": 1650,
+      "dataMessage": {
+        "reaction": {
+          "emoji": "👍",
+          "targetAuthor": "+85212345679",
+          "targetAuthorNumber": "+85212345679",
+          "targetAuthorUuid": "a2000000-0000-4000-8000-000000000000",
+          "targetSentTimestamp": 1600,
+          "isRemove": false
+        },
+        "groupInfo": {
+          "groupId": "Z3JvdXA=",
+          "groupName": "Example Group",
+          "revision": 3,
+          "type": "DELIVER"
+        },
+        "timestamp": 1650
+      }
+    },
+    "account": "+85290000100"
+  },
+  "semantics": {
+    "object": "reaction",
+    "operation": "add",
+    "room_ref": "payload.envelope.dataMessage.groupInfo.groupId",
+    "object_ref": "the reaction transition",
+    "target_ref": "(reaction.targetAuthor*, reaction.targetSentTimestamp)",
+    "actor": "envelope.source",
+    "source_time_ms": "envelope.timestamp",
+    "native_fields": {
+      "emoji": "string",
+      "targetAuthorNumber": "string|null",
+      "targetAuthorUuid": "string|null",
+      "targetSentTimestamp": "long",
+      "isRemove": "bool"
+    },
+    "notes": "Reference vector for the already-captured family: parse_event produces Touch(kind='reaction') recorded beside the target.",
+    "today": "parse_event produces a Touch — the shipped reaction baseline"
+  }
+}

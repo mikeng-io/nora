@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "native": "signal-cli",
+    "native_version": "0.14.7",
+    "transport": "sse",
+    "upstream": "JsonDataMessage.pollCreate",
+    "upstream_source": "https://github.com/AsamK/signal-cli/blob/v0.14.7/src/main/java/org/asamk/signal/json/JsonPollCreate.java",
+    "case": "a pollCreate dataMessage with no groupInfo — the DM admission boundary",
+    "generated": true
+  },
+  "payload": {
+    "envelope": {
+      "source": "+85212345678",
+      "sourceName": "Fixture Sender",
+      "timestamp": 1750,
+      "dataMessage": {
+        "pollCreate": {
+          "question": "Coffee?",
+          "allowMultiple": false,
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        "timestamp": 1750
+      }
+    },
+    "account": "+85290000100"
+  },
+  "semantics": {
+    "object": "poll",
+    "operation": "create",
+    "room_ref": "absent — no groupInfo, so no conversation ref",
+    "object_ref": "the creating dataMessage",
+    "target_ref": null,
+    "actor": "envelope.source",
+    "source_time_ms": "envelope.timestamp",
+    "native_fields": {
+      "question": "string",
+      "allowMultiple": "bool",
+      "options": "string[]"
+    },
+    "notes": "Documented admission limit: parse_event requires groupInfo, so all DM evidence — polls included — is dropped at parse. A DM-capable cell needs an explicit admission decision, not a parser accident.",
+    "today": "parse_event returns None — group-less input is out of admitted scope"
+  }
+}

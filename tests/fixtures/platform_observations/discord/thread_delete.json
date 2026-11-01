@@ -1,0 +1,41 @@
+{
+  "meta": {
+    "native": "discord-gateway",
+    "native_version": "discord.py 2.7.1",
+    "transport": "gateway",
+    "dispatch": "THREAD_DELETE",
+    "discord_py_parse": "parse_thread_delete",
+    "discord_py_event": "raw_thread_delete",
+    "upstream_source": "https://docs.discord.com/developers/events/gateway-events#thread-delete",
+    "case": "the thread is deleted",
+    "generated": true
+  },
+  "payload": {
+    "op": 0,
+    "t": "THREAD_DELETE",
+    "s": 25,
+    "d": {
+      "id": "123456789012345610",
+      "guild_id": "123456789012345600",
+      "parent_id": "123456789012345601",
+      "type": 11,
+      "last_message_id": "123456789012345701"
+    }
+  },
+  "semantics": {
+    "object": "thread",
+    "operation": "withdraw",
+    "room_ref": "d.guild_id/d.parent_id",
+    "object_ref": "d.id",
+    "target_ref": "d.parent_id",
+    "actor": "none — deletion does not name who deleted",
+    "source_time": "none carried — receipt time only",
+    "native_fields": {
+      "id": "snowflake",
+      "parent_id": "snowflake",
+      "type": "int"
+    },
+    "notes": "RawThreadDeleteEvent carries thread_count and parent_id but no actor. Prior messages keep their thread tag; the room's transcript must not lose them with the thread.",
+    "today": "no listener subscription — dropped"
+  }
+}
