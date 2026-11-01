@@ -5,8 +5,9 @@ description: Proves a Nora code fix is guarded by reverting it and watching a na
 
 # nora-prove-fix
 
-A fix is done when reverting the exact production line turns a named test red,
-and restoring it turns that test green. `make gate` green is not that claim. The
+Regression protection is proved when reverting the exact production line turns
+a named test red, and restoring it turns that test green. This proves the guard,
+not every task acceptance obligation; `make gate` green is not that claim. The
 rule and its history are `docs/maintainers/conventions.md` "Proving a fix: mutation"; the runner is
 `scripts/mutate.py` and the table format is `scripts/mutations/README.md`.
 
@@ -71,7 +72,7 @@ rule and its history are `docs/maintainers/conventions.md` "Proving a fix: mutat
    did not run) is a finding about your evidence, not noise to route around. It is
    not part of `make gate`: run it yourself.
 
-8. **Run every table that names a file you touched**, not just yours. Anchors are
+8. **Inspect tables that name a file you touched**, not just yours. Anchors are
    literal source, so a later edit silently breaks an older table's entries
    (#443 broke two of another table's; #457 re-pointed nine).
    ```bash
@@ -79,8 +80,13 @@ rule and its history are `docs/maintainers/conventions.md` "Proving a fix: mutat
      grep -l "\"file\": \"$f\"" scripts/mutations/*.json
    done | sort -u
    ```
-   Check: each listed table prints `ALL MUTATIONS CAUGHT` with 0 `BROKEN ENTRY`,
-   or each broken entry is re-pointed in this branch.
+   Run the entries needed for this change's proof and those whose behavior,
+   anchors or selectors it changes. Repair breakage this diff introduces.
+   Compare other failures with the base before assigning ownership; unrelated
+   pre-existing broken entries go to their existing issue/design or PR limitation,
+   not automatic repair in this branch. If they prevent the required proof,
+   report that obligation unavailable until resolved. Never claim an entire table
+   passed when only selected entries ran or any failure remains.
 
 ## When a mutant survives
 
