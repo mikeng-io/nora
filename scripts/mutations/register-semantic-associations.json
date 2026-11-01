@@ -51,8 +51,15 @@
  {
   "name": "session reads: a graph key the session was shown must become admissible",
   "file": "nora/agent/comprehend_tools.py",
-  "old": "                    state.shown_keys.update(_shown_keys(json.dumps(answer)))",
-  "new": "                    pass",
+  "old": "                    state.shown_keys.update(\n                        tuple(k) for k in answer.get(\"keys\") or ()",
+  "new": "                    state.shown_keys.update(\n                        ()",
   "target": "tests/unit/test_cognition_session_runner.py::test_association_shown_only_by_a_memory_search_is_admissible"
+ },
+ {
+  "name": "register graph: clearing all associations must still see the edges it closes",
+  "file": "nora/app/register_graph.py",
+  "old": "                relations=tuple(dict.fromkeys((*wanted.values(), *managed)))",
+  "new": "                relations=tuple(dict.fromkeys(wanted.values()))",
+  "target": "tests/unit/test_cognition_session_runner.py::test_revise_with_empty_associations_clears_the_link"
  }
 ]

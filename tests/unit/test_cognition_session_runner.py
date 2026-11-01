@@ -647,6 +647,36 @@ async def test_reselecting_a_closed_association_relinks_with_a_new_relation():
     assert len(ids) == 2  # the re-added link is a new generation, not a duplicate
 
 
+async def test_revise_with_empty_associations_clears_the_link():
+    from nora.domain.memory_graph import Walk
+    memory = wake_memory()
+    stores = Stores()
+    memory.records.load = _register_load(stores)
+    event = _seed_event(memory, "u:event:generated-gala")
+    answers = []
+    note_id = None
+
+    async def behave(by, tools):
+        nonlocal note_id
+        await by["memory_propose"](**_about_proposal(event.id))
+        created = await by["note_create"](
+            body=GOOD_BODY, associations=[["event", event.id]], **NOTE)
+        note_id = created["note_id"]
+        got = await stores.notes.read(unit="u", note_id=note_id)
+        answers.append(await by["note_revise"](
+            note_id=note_id, parent_revision_id=got[0].head_revision_id,
+            body=GOOD_BODY, associations=[]))
+
+    await session(behave, stores=stores, runner_kwargs={"memory": memory})
+    assert answers[0]["status"] == "ok"
+    seen = await memory.graph.walk(
+        (("note", note_id),),
+        Walk(unit="u", persons=frozenset({"p_ada"}), depth=1,
+             relations=("concerns",), valid_at=datetime.fromtimestamp(
+                 NOW / 1000 + 3600, UTC)))
+    assert seen.relations == ()
+
+
 async def test_revise_commit_then_projection_crash_retries_and_relinks():
     from nora.app import register_graph
     memory = wake_memory()
@@ -709,12 +739,17 @@ async def test_association_shown_only_by_a_memory_search_is_admissible():
         async def stream(self, tool_use, invocation_state, **kwargs):
             yield ToolResultEvent({"toolUseId": tool_use["toolUseId"],
                 "content": [{"json": {"status": "ok",
-                    "text": "event:u:event:search-gala Generated gala"}}]})
+                    # A returned node's body may MENTION a key it never
+                    # returned: prose is not shown-ness; `keys` is.
+                    "preview": "event:u:event:search-gala · prose says event:not-returned",
+                    "keys": [["event", "u:event:search-gala"]]}}]})
 
     async def behave(by, tools):
         async for _ in by["memory_search"].stream({"toolUseId": "t1", "input": {}}, {}):
             pass
         await by["memory_propose"](**proposal())
+        answers.append(await by["note_create"](
+            body=GOOD_BODY, associations=[["event", "u:event:not-returned"]], **NOTE))
         answers.append(await by["note_create"](
             body=GOOD_BODY, associations=[["event", event.id]], **NOTE))
 
@@ -722,7 +757,8 @@ async def test_association_shown_only_by_a_memory_search_is_admissible():
         "memory": memory,
         "read_tools_for": lambda unit, rooms: [SearchTool()],
         "read_only_tools": frozenset({"memory_search"})})
-    assert answers[0]["status"] == "ok"
+    assert answers[0]["status"] == "refused" and answers[0]["reason"] == "unseen_association"
+    assert answers[1]["status"] == "ok"
     assert any(r.src[0] == "note" and r.dst == event.key
                for r in memory.graph.relations.values())
 

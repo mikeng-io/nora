@@ -955,8 +955,10 @@ class MemorySearch:
                 graph = replace(graph, nodes=nodes, relations=edges)
             now = datetime.fromtimestamp(now_ms / 1000, UTC)
             overhead = estimate_tokens(memory_result_text("more=none\n", query=query, depth=depth))
+            emitted: set[tuple[str, str]] = set()
             text = preview_text(Preview(seeds, graph, (), (now, now)),
-                                tokens=max(0, PREFETCH_TOKENS - overhead + 100))
+                                tokens=max(0, PREFETCH_TOKENS - overhead + 100),
+                                shown_keys=emitted)
             partial = partial or graph.status == "partial" or text.startswith("more=available")
             if partial:
                 text = text.replace("more=none", "more=available", 1)
@@ -970,10 +972,12 @@ class MemorySearch:
                 else "Scoped graph with labelled evidence."
                 if graph.nodes
                 else "No memory matched in this scope.",
+                "keys": sorted(emitted),
             }
             if partial:
                 result = {"status": "partial", "preview": text,
-                          "note": "More memory is available."}
+                          "note": "More memory is available.",
+                          "keys": sorted(emitted)}
             if seed is not None and depth == 0:
                 result["nodes"] = [asdict(n) for n in graph.nodes]
                 result["evidence"] = [asdict(e) for e in graph.relations]

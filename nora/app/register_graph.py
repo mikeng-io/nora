@@ -44,10 +44,12 @@ class RegisterGraphLinks:
         entities: tuple[Entity, ...] = ()
         verb = "settles" if kind == "memo" else "concerns"
         wanted: dict[Key, str] = dict.fromkeys(dict.fromkeys([*targets, *selected]), verb)
+        managed = {verb}
         if kind == "event_entry":
             entity = Entity(f"{unit}:event:{ref}", "event", unit, body)
             entities = (entity,)
             wanted = {entity.key: "records", **dict.fromkeys(selected, "concerns")}
+            managed = {"records", "concerns"}
         sources = {s.key: s for s in item.sources if s.layer in ("record", "rollup")}
         current = await self.graph.walk(
             (source,),
@@ -57,7 +59,9 @@ class RegisterGraphLinks:
                 depth=1,
                 nodes=100,
                 fan_out=20,
-                relations=tuple(dict.fromkeys(wanted.values())),
+                # `managed`, not `wanted`: an empty wanted must still see the
+                # edges it is here to close.
+                relations=tuple(dict.fromkeys((*wanted.values(), *managed))),
             ),
         )
         if current.status != "ok":
@@ -67,7 +71,7 @@ class RegisterGraphLinks:
         # the closed row keeps the bare one.
         mine = [
             e.relation for e in current.relations
-            if e.relation.src == source and e.relation.rel in wanted.values()
+            if e.relation.src == source and e.relation.rel in managed
         ]
         existing = {
             (r.rel, r.dst): r
