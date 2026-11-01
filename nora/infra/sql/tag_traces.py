@@ -24,7 +24,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.lineage import ROW, Lineage, unresolved
-from nora.domain.models import DeliveryStatus, RowEdit, TranscriptRow
+from nora.domain.models import DeliveryStatus, RowEdit, RowReactions, TranscriptRow
 from nora.domain.note_body import NoteBodyError
 from nora.domain.tag_trace import TagTrace
 from nora.domain.turn_record import cited_turn_lineage, turn_handles_in
@@ -59,6 +59,10 @@ def _row_to_json(row: TranscriptRow) -> dict[str, Any]:
     # for every tag whose window held an edited message, and the save is
     # spawned, so the trace would vanish with only a log line.
     d["edit"] = dataclasses.asdict(row.edit) if row.edit is not None else None
+    # `RowReactions` is a dataclass too — same JSONB reason as `edit`.
+    d["reactions"] = (
+        dataclasses.asdict(row.reactions) if row.reactions is not None else None
+    )
     return d
 
 
@@ -67,6 +71,14 @@ def _json_to_row(d: dict[str, Any]) -> TranscriptRow:
     d["delivery_status"] = DeliveryStatus(d["delivery_status"])
     edit = d.get("edit")
     d["edit"] = RowEdit(**edit) if isinstance(edit, dict) else None
+    reactions = d.get("reactions")
+    if isinstance(reactions, dict):
+        reactions["counts"] = tuple(
+            (str(emoji), int(n)) for emoji, n in reactions.get("counts", ())
+        )
+        d["reactions"] = RowReactions(**reactions)
+    else:
+        d["reactions"] = None
     return TranscriptRow(**d)
 
 

@@ -88,6 +88,8 @@ def validate_manifest(manifest: dict, *, previous: bool = False) -> None:
     validate_identity(manifest['version'], manifest['commit'], manifest.get('channel', 'release'))
     services = manifest['services']
     builds = set(BUILDS)
+    if previous and 'signal-cli' in services:
+        builds = builds - {'signal-bridge', 'discord-bridge', 'bridge-projection'} | {'signal-cli'}
     if previous and 'alert-bridge' in services:
         builds.add('alert-bridge')
     if set(services) != builds | {'presence', 'analytics'}:
@@ -424,12 +426,13 @@ def validate_artifact(name: str, artifact: dict, image: str) -> None:
     if not isinstance(inputs, dict):
         raise ValueError('artifact has no build input evidence')
     external = inputs['external']
-    if not isinstance(external, dict) or (external and name != 'signal-bridge'):
+    if not isinstance(external, dict) or (external and name not in ('signal-bridge', 'signal-cli')):
         raise ValueError('unexpected external build inputs')
     archives = [f for f in external if f.endswith('.tar.gz')]
-    if name == 'signal-bridge' and (len(archives) != 1 or set(external) != {
+    signal_path = 'deploy/signal-cli/' if name == 'signal-bridge' else ''
+    if name in ('signal-bridge', 'signal-cli') and (len(archives) != 1 or set(external) != {
             archives[0], archives[0] + '.asc'} or not all(
-            re.fullmatch(r'deploy/signal-cli/signal-cli-[0-9.]+\.tar\.gz(?:\.asc)?', f)
+            re.fullmatch(signal_path + r'signal-cli-[0-9.]+\.tar\.gz(?:\.asc)?', f)
             and re.fullmatch(r'[0-9a-f]{64}', digest) for f, digest in external.items())):
         raise ValueError('missing verified Signal input evidence')
 

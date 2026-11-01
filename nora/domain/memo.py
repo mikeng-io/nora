@@ -38,7 +38,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from nora.domain.lineage import Lineage
 from nora.domain.note_body import (
@@ -157,7 +157,7 @@ class MemoStore(Protocol):
     async def create(
         self, *, unit: str, platform: str, conversation_id: str, title: str, body: str,
         citations: Sequence[str], mode: str, established_by: str, model: str | None,
-        now_ms: int,
+        now_ms: int, receipt: Any = None,
     ) -> Memo:
         """A new kept memo and its first revision, in one transaction."""
         ...
@@ -165,7 +165,7 @@ class MemoStore(Protocol):
     async def append(
         self, *, unit: str, memo_id: str, base_revision_id: str, title: str, body: str,
         citations: Sequence[str], mode: str, state: str, established_by: str,
-        model: str | None, now_ms: int,
+        model: str | None, now_ms: int, receipt: Any = None,
     ) -> MemoRevision:
         """The next revision, compare-and-set on the head: `LookupError` when
         `unit` has no such memo, `StaleMemoError` when its head is not

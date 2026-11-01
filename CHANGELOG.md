@@ -1,5 +1,53 @@
 # Changelog
 
+## [7.13.8](https://github.com/mikeng-io/nora/compare/v7.13.7...v7.13.8) (2026-11-01)
+
+
+### Bug Fixes
+
+* **cognition:** carry shown associations through the Register boundary, receipt revisions ([7321ba4](https://github.com/mikeng-io/nora/commit/7321ba41f15b0c654faac8792b231c0f7c3abf28))
+* **cognition:** shown keys from emitted rows, not prose; empty associations clear links ([2d0951c](https://github.com/mikeng-io/nora/commit/2d0951c8e7f38e9b66d393aac9668b89b74d423c))
+* **cognition:** the wake preview admits only keys the renderer emitted ([4473499](https://github.com/mikeng-io/nora/commit/4473499bee891db5173de5be8b79ac7c491386bb))
+* **memory:** avoid orphan entity staging during event relinking ([581c381](https://github.com/mikeng-io/nora/commit/581c381636a4b91a5feea700326dfda03e5afe10))
+* **memory:** make explicit Register associations authoritative ([8d68e49](https://github.com/mikeng-io/nora/commit/8d68e49219c052e4032e2d136fd14af07dc61ada))
+* **register:** carry the session's admitted association through Register writes ([164005c](https://github.com/mikeng-io/nora/commit/164005c94968a3c51bc52bd9449e6fef0108501d))
+
+## [7.13.7](https://github.com/mikeng-io/nora/compare/v7.13.6...v7.13.7) (2026-11-01)
+
+
+### Bug Fixes
+
+* **bridges:** preserve projection revision width during durable handoff ([9ce8f42](https://github.com/mikeng-io/nora/commit/9ce8f42d9bd4f17ba207ed73ba36f20b4610c1e3))
+* **whatsapp:** stop handled bridge responses falling through to 404 ([74d1560](https://github.com/mikeng-io/nora/commit/74d1560f08965e406f359a0f25b57ac6fd8314f0))
+
+## [7.13.6](https://github.com/mikeng-io/nora/compare/v7.13.5...v7.13.6) (2026-11-01)
+
+
+### Bug Fixes
+
+* **signoz:** promote declared log levels to native severity in the ingester ([45ba63a](https://github.com/mikeng-io/nora/commit/45ba63a24d65602eb8f6c21ead7684caf20f0004))
+* **signoz:** promote declared log levels to native severity in the ingester ([667fd93](https://github.com/mikeng-io/nora/commit/667fd938350174a976b34a3ff3cfd741a252a2e8))
+
+## [7.13.5](https://github.com/mikeng-io/nora/compare/v7.13.4...v7.13.5) (2026-11-01)
+
+
+### Features
+
+* **record:** show recorded reaction state on transcript targets ([1714914](https://github.com/mikeng-io/nora/commit/17149148630e76bae6a587bda3b6d0f4237304af))
+
+
+### Bug Fixes
+
+* **record:** bound reaction reads, budget their annotation, mark coverage ([8f2b09f](https://github.com/mikeng-io/nora/commit/8f2b09f13ebdc2cd4bbd121062f8b1f4a35d9485))
+* **record:** read reaction state from one database snapshot ([55b3f16](https://github.com/mikeng-io/nora/commit/55b3f1659f58af38ee060f7f1b83925895296852))
+
+## [7.13.4](https://github.com/mikeng-io/nora/compare/v7.13.3...v7.13.4) (2026-11-01)
+
+
+### Bug Fixes
+
+* **release:** accept the complete pre-bridge predecessor bundle ([efe8525](https://github.com/mikeng-io/nora/commit/efe85250e41082a1d87eefc31ad834b7c09d17e6))
+
 ## [7.13.3](https://github.com/mikeng-io/nora/compare/v7.13.2...v7.13.3) (2026-10-31)
 
 

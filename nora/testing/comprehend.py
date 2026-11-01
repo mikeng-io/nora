@@ -28,6 +28,13 @@ class InMemoryComprehendRecords:
             self.act_results.setdefault(key, result)
         return self.act_results.get(key)
 
+    async def act_result_on(self, conn: Any, key: str, session: int, result: Any) -> None:
+        # `conn` is the SQL store's register transaction; first write wins,
+        # matching `act_result`'s earliest-row read.
+        if not hasattr(self, "act_results"):
+            self.act_results = {}
+        self.act_results.setdefault(key, result)
+
     async def failures(self, unit: str, sid: int, *, reset: bool = False) -> int:
         if not hasattr(self, "failed_stimuli"):
             self.failed_stimuli = {}
