@@ -6051,8 +6051,8 @@ def build_tool_specs(
         history: bool = False,
         at_id: int | None = None,
     ) -> dict:
-        """Search recorded messages or source objects. Call this when somebody
-        asks what was said or how a recorded poll or room object stands.
+        """Search recorded messages and source objects when somebody asks what
+        was said.
 
         SHOULD: give `text` as the words were written.
         Message queries return `messages` oldest first with room, sender,
@@ -6298,11 +6298,11 @@ def build_tool_specs(
     _obs_off = "I can't read what the source recorded right now. Say so."
 
     async def poll_list() -> dict:
-        """List this room's recorded polls. Call this when somebody asks which
-        polls exist or needs a handle for poll_read.
+        """List this room's recorded polls when somebody asks.
 
-        Returns poll handles, questions, lifecycle state, choices, recorded
-        tallies and coverage. Statuses: ok, nothing_found, unavailable."""
+        Returns poll handles (for `poll_read`), questions, lifecycle state,
+        choices, recorded tallies and coverage.
+        Statuses: ok, nothing_found, unavailable."""
         if observations is None:
             _record(metrics, "poll_list", "unavailable", reason="unwired")
             return {"status": "unavailable", "note": _obs_off}
@@ -6360,8 +6360,7 @@ def build_tool_specs(
              **({"more": True} if more else {})})
 
     async def poll_read(object: str) -> dict:
-        """Read a recorded poll by its handle. Call this when you have a poll
-        handle and need its question, choices or recorded tally.
+        """Read a poll by its handle when you have one.
 
         Returns poll state, supported voters, times and coverage.
         Statuses: ok, nothing_found, unavailable.
@@ -6403,8 +6402,7 @@ def build_tool_specs(
             return {"status": "unavailable", "note": _obs_off}
 
     async def room_state_read() -> dict:
-        """Read recorded room, membership and pin state. Call this when
-        somebody asks about the room's name, settings, members or pins.
+        """Read recorded room, member and pin state when somebody asks.
 
         Returns scoped source state with times and coverage.
         Statuses: ok, nothing_found, unavailable."""
@@ -6934,12 +6932,13 @@ def build_tool_specs(
     # already placed in this room.
 
     async def group_members() -> dict:
-        """Who is in this conversation right now. Call this when somebody asks
-who is here, how many are in it, or whether a particular person is around.
+        """Who is in this conversation. Call this when somebody asks who is
+here.
 
 SHOULD: call it rather than guess from the transcript. People who have not
-spoken lately are still here, and people named in a message may not be. It
-covers only THIS conversation.
+spoken lately are still here, and people named in a message may not be. `scope`
+says what the platform's roster actually covers — on Discord the member list is
+the whole server's, which can exceed this channel's audience.
 
 Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         view = await room.members()
@@ -6961,6 +6960,17 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # accounts is a phone number or an ACI, and those are what R-18
             # exists to keep off the wire.
             "members_i_have_no_name_for": view.unnamed,
+            # What the platform's roster actually IS. Discord has no
+            # "who is in this channel" endpoint — `nora.platform.discord.
+            # roster` reads the GUILD's member list, which may exceed this
+            # channel's audience (the safe direction: it can only over-report,
+            # never drop somebody a disclosure would have excluded). The model
+            # must not read "in this conversation" as exactly this channel.
+            "scope": (
+                "this Discord server's member list, which can exceed this "
+                "channel's audience"
+                if room.platform == "discord" else "this conversation"
+            ),
         }
 
     async def lookup_person(name: str) -> dict:

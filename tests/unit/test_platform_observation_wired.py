@@ -866,15 +866,21 @@ async def test_old_target_reaction_union_reaches_standing_and_real_tools(outside
     ctx = await _assembler(audit, store).assemble(request=_request())
     assert (mid not in {row.id for row in ctx.transcript}) == outside_window
     prompt = _prompt(ctx)
+    line = next(line for line in prompt.splitlines()
+                if line.startswith("<source_object") and 'kind="reaction"' in line)
+    # The pointer is the typed `on` attribute — the SAME row numbering
+    # `replying_to="n"` uses — present only while the target is visible, so no
+    # pointer invents a target the transcript does not show.
+    assert ('on="#' in line) != outside_window
     if outside_window:
-        assert "Recorded reaction state on transcript" not in prompt
+        # Off-window the row keeps the plain source state in Standing.
+        assert "on=" not in line
     else:
-        assert "Recorded reaction state on transcript #" in prompt
+        # In-window the tally annotates the target row ONCE: the row it is on
+        # repeats no `reactions: …` text of its own.
         assert "reactions: 👍=1" not in prompt
     head = next(obj for obj in ctx.source_objects if obj.kind == "reaction")
     assert "👍=1" in head.state
-    line = next(line for line in _prompt(ctx).splitlines()
-                if line.startswith("<source_object") and 'kind="reaction"' in line)
     assert ("👍=1" in line) == outside_window
     detail = await _call(_tools(audit, store), "record_query", object=head.handle)
     assert detail["status"] == "ok" and detail["detail"]["counts"] == {"👍": 1}

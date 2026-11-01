@@ -57,6 +57,7 @@ from nora.testing import (
     FakeAdapter,
     FakeAgentRunner,
     FakeMemoryStore,
+    FakeObservationStore,
     FakeRecordStore,
     FakeRosterSource,
     InMemoryNoteStore,
@@ -589,8 +590,16 @@ async def run_case(
         # the note tools are registered against a `None` store and say
         # `unavailable`, so a seeded note reaches the prompt only as a
         # title-and-description index line and knowledge-cut twins cannot flip.
+        # The typed observation Record, as production always wires it: an
+        # eval room has no typed source evidence seeded (nothing in
+        # `seed_from_dict` writes one — ProductionSeed never carries
+        # production rows), so every read lands `nothing_found` over a REAL
+        # store rather than `unavailable` for a missing one, which is the
+        # shape production answers in an unpolled room.
+        obs_store = FakeObservationStore()
         tool_registry = (
-            build_eval_tool_registry(notes=notes_store) if live else None
+            build_eval_tool_registry(notes=notes_store, observations=obs_store)
+            if live else None
         )
         # Live mode also names the room so `saved_places`/`where_is` clear the R-31
         # subset gate (the room {miles} ⊆ the eval circle {miles}); scripted mode
@@ -605,6 +614,10 @@ async def run_case(
                 doctrine_store=doctrine_store, runner=runner, metrics=metrics,
                 tool_registry=tool_registry, roster_source=roster,
                 notes=notes_store, standing=standing_store,
+                # The SAME store the registry above holds: production wires
+                # one observation Record into both the assembler and the
+                # tools, so the prompt and the tool answers never disagree.
+                observations=obs_store,
                 participation_runner=participation_runner,
                 participation_clock=participation_clock,
                 participation_opt_in=participation,

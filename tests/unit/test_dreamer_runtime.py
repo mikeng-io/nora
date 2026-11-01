@@ -866,6 +866,13 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # policy, so every call there is `unavailable`. Cognition's per-item
         # bound room (DEC-223) is what admits it.
         "record_query",
+        # `poll_list`, `poll_read` and
+        # `room_state_read` read the observation Record through
+        # `SourceScope(platform, conversation_id)` — the room pair a
+        # unit-keyed tick's synthetic room does not carry, so every call
+        # there is honestly `unavailable`. Cognition's per-item bound room
+        # (DEC-223) is what admits them, exactly like `record_query`.
+        "poll_list", "poll_read", "room_state_read",
         # `instagram_read` resolves the name it
         # is given against the ROOM's live roster (`room.scope().find`, the
         # lookup `about` uses) — the input a unit-keyed tick does not have,

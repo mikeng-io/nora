@@ -976,6 +976,14 @@ def _standing_block(
                 ("ordering", e.ordering or None),
                 ("coverage", e.coverage or None),
                 ("rev", e.revision or None),
+                # `on` is the numbered transcript row this reaction's tally
+                # annotates — the SAME numbering `replying_to="n"` uses, so a
+                # pointer and the transcript name one message. Absent while the
+                # target is off-window: the row then keeps its plain source
+                # state in Standing and no pointer invents a visible target.
+                ("on", f"#{reaction_targets[e.handle]}"
+                 if e.kind == "reaction" and e.handle in reaction_targets
+                 else None),
                 # `observed` is the newest SOURCE time applied — absent
                 # when the source's clock is unknown, with `time` naming
                 # the non-upstream clock and `received` stating the
@@ -992,9 +1000,12 @@ def _standing_block(
                  and e.time_quality != "upstream"
                  else None),
             ),
+            # The tally rides once, on the visible target row — `on` naming
+            # it is the pointer, so the row's own body then repeats nothing.
+            # Off-window there is nowhere else the state shows, and the row
+            # keeps its plain `state`/`summary` in Standing.
             body=lambda e: (
-                f"Recorded reaction state on transcript #{reaction_targets[e.handle]}"
-                if e.kind == "reaction" and e.handle in reaction_targets
+                None if e.kind == "reaction" and e.handle in reaction_targets
                 else e.state or e.summary),
         )
         if ctx.source_objects_more:
@@ -1003,7 +1014,7 @@ def _standing_block(
         if block is None:
             block = ContextBlock(name="standing", body=objects)
         else:
-            block = replace(block, body=f"{block.body}\n{objects}")
+            block = replace(block, body="\n".join((block.body, objects)))
     return block
 
 
