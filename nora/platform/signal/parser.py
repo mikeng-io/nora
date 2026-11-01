@@ -601,13 +601,18 @@ def parse_observations(
                 actor_status="known" if source else "not_supplied",
                 occurred_ms=occurred, time_quality=time_quality, **kwargs))
 
+        def _poll_ref(author: str, target_ts: int) -> str:
+            if author:
+                return f"poll:{author}:{target_ts}"
+            return f"poll:unresolved:{source}:{sent_ts}:{target_ts}"
+
         poll = data.get("pollCreate")
         if isinstance(poll, dict):
             options = tuple((str(i), str(label) or "")
                             for i, label in enumerate(
                                 poll.get("options") or ()))
             if options and sent_ts:
-                _obs(object_kind="poll", object_ref=f"poll:{sent_ts}",
+                _obs(object_kind="poll", object_ref=_poll_ref(source, sent_ts),
                      operation="create",
                      payload=PollPayload(
                          question=str(poll.get("question") or ""),
@@ -626,20 +631,25 @@ def parse_observations(
             # identity is not a vote, whatever its target names.
             if (target_ts is not None and isinstance(indexes, list)
                     and source):
-                _obs(object_kind="poll", object_ref=f"poll:{target_ts}",
+                author = _target_author(
+                    vote, "authorNumber", "authorUuid", "author")
+                _obs(object_kind="poll", object_ref=_poll_ref(author, target_ts),
                      operation="revise",
                      payload=PollPayload(
                          voter_ref=source,
                          selected=tuple(str(i) for i in indexes)),
                      target=EditTarget(sent_ts=target_ts),
-                     target_author_id=_target_author(
-                         vote, "authorNumber", "authorUuid", "author"))
+                     target_author_id=author,
+                     coverage=Coverage(
+                         complete=bool(author),
+                         gaps=() if author else ("target_author",),
+                         reason="" if author else "poll author not supplied"))
 
         term = data.get("pollTerminate")
         if isinstance(term, dict):
             target_ts = _ts(term.get("targetSentTimestamp"))
             if target_ts is not None:
-                _obs(object_kind="poll", object_ref=f"poll:{target_ts}",
+                _obs(object_kind="poll", object_ref=_poll_ref(source, target_ts),
                      operation="revise",
                      payload=PollPayload(state="closed", close_ms=occurred),
                      target=EditTarget(sent_ts=target_ts),
@@ -708,7 +718,7 @@ def parse_observations(
                     ("organization", contact.get("organization")))
                 if isinstance(v, str) and v}
             _obs(object_kind="artifact",
-                 object_ref=f"contact:{sent_ts}:{i}", operation="create",
+                 object_ref=f"contact:{source}:{sent_ts}:{i}", operation="create",
                  payload=ArtifactPayload(
                      artifact_kind="contact", metadata=metadata,
                      custody="declared"),
@@ -723,7 +733,7 @@ def parse_observations(
                                   ("title", preview.get("title")))
                 if isinstance(v, str) and v}
             _obs(object_kind="artifact",
-                 object_ref=f"preview:{sent_ts}:{i}", operation="create",
+                 object_ref=f"preview:{source}:{sent_ts}:{i}", operation="create",
                  payload=ArtifactPayload(
                      artifact_kind="link_preview", metadata=metadata,
                      custody="declared", preview=True),

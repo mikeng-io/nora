@@ -882,7 +882,7 @@ def parse_discord_member_add(
         object_ref=f"guild:{guild.id}", operation="add",
         payload=MembershipPayload(role=roles, state="member"),
         subject_ref=user_id,
-        actor_id=user_id, actor_status="known",
+        actor_status="not_supplied",
         occurred_ms=occurred,
         time_quality="upstream" if occurred is not None else "unknown")
 

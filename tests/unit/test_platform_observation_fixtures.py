@@ -240,7 +240,7 @@ def test_signal_poll_create_is_a_typed_definition() -> None:
     assert p.state == "open"
     # The poll's own identity is the creating message's (author, sent_ts) —
     # the same pair a pollVote names it by.
-    assert obs.object_ref == "poll:1700"
+    assert obs.object_ref == "poll:+85212345678:1700"
     assert obs.target == EditTarget(sent_ts=1700)
     assert obs.target_author_id == "+85212345678"
 
@@ -255,7 +255,7 @@ def test_signal_poll_vote_is_a_complete_voter_selection() -> None:
     # from the poll's author under `target_author_id`.
     assert p.voter_ref == "+85212345679"
     assert p.selected == ("1",)
-    assert obs.object_ref == "poll:1700"
+    assert obs.object_ref == "poll:+85212345679:1700"
     assert obs.target == EditTarget(sent_ts=1700)
     assert obs.target_author_id == "+85212345679"
 
@@ -774,7 +774,8 @@ def test_guild_member_events_are_guild_scope() -> None:
     assert obs.object_ref == f"guild:{d['guild_id']}"
     assert obs.scope.conversation_id == d["guild_id"]
     assert obs.subject_ref == d["user"]["id"]
-    assert obs.actor_id == d["user"]["id"]
+    assert obs.actor_id == ""
+    assert obs.actor_status == "not_supplied"
 
     d = _load(FIXTURES / "discord" / "guild_member_remove.json")["payload"]["d"]
     raw = RawMemberRemoveEvent(d, SimpleNamespace(id=int(d["user"]["id"])))
@@ -811,3 +812,41 @@ def test_guild_role_update_is_a_guild_snapshot() -> None:
     fields = obs.payload.fields  # type: ignore[attr-defined]
     assert fields["name"] == "fixture-role"
     assert fields["permissions"] == 1043200
+
+
+def test_signal_same_timestamp_polls_keep_their_creators_separate() -> None:
+    first = _load(FIXTURES / "signal" / "poll_create.json")["payload"]
+    second = _load(FIXTURES / "signal" / "poll_create.json")["payload"]
+    first["envelope"]["source"] = "creator-a"
+    second["envelope"]["source"] = "creator-b"
+    left = parse_observations(first, own_account=SIGNAL_OWN, account_key=_ACCOUNT)
+    right = parse_observations(second, own_account=SIGNAL_OWN, account_key=_ACCOUNT)
+    assert left is not None and right is not None
+    assert left.observations[0].object_ref != right.observations[0].object_ref
+
+
+def test_signal_vote_links_creator_poll_without_using_the_voter_as_creator() -> None:
+    definition = _load(FIXTURES / "signal" / "poll_create.json")["payload"]
+    vote = _load(FIXTURES / "signal" / "poll_vote.json")["payload"]
+    creator = definition["envelope"]["source"]
+    vote["envelope"]["dataMessage"]["pollVote"]["authorNumber"] = creator
+    created = parse_observations(definition, own_account=SIGNAL_OWN, account_key=_ACCOUNT)
+    voted = parse_observations(vote, own_account=SIGNAL_OWN, account_key=_ACCOUNT)
+    assert created is not None and voted is not None
+    assert voted.observations[0].object_ref == created.observations[0].object_ref
+    assert voted.observations[0].target_author_id == creator
+    assert voted.observations[0].actor_id != creator
+
+
+def test_signal_vote_without_poll_author_keeps_an_explicit_unresolved_object() -> None:
+    vote = _load(FIXTURES / "signal" / "poll_vote.json")["payload"]
+    payload = vote["envelope"]["dataMessage"]["pollVote"]
+    for key in ("author", "authorNumber", "authorUuid"):
+        payload.pop(key, None)
+    parsed = parse_observations(vote, own_account=SIGNAL_OWN, account_key=_ACCOUNT)
+    assert parsed is not None
+    obs = parsed.observations[0]
+    assert obs.target_author_id == ""
+    assert "target_author" in obs.coverage.gaps
+    assert not obs.coverage.complete
+    assert obs.object_ref.startswith("poll:unresolved:")

@@ -976,21 +976,33 @@ class DiscordBridge:
         """One typed observation → an obs-only v2 envelope → the capture
         sink — the SAME admission → journal → ACK pipeline a message takes.
         Admission binds to the observation's own scope: a `guild/channel`
-        conv must be an admitted room; a bare `guild` conv (member/role
-        objects) is in scope when any room of that guild is — a guild
-        object is never a channel's audience."""
+        conv must be an admitted room. Native guild facts are bound to the
+        configured rooms of that guild with their guild source grain intact;
+        the guild object is never presented as a channel's audience."""
         if proj is None:
             proj = self._projection()
         if not proj.get("enabled") or self._capture_sink is None:
             return False
         conv = str(obs.scope.conversation_id)
-        if "/" in conv:
-            admitted = conv in set(proj.get("rooms") or ())
-        else:
-            admitted = any(
-                str(r).startswith(f"{conv}/")
-                for r in (proj.get("rooms") or ()))
-        if not admitted:
+        rooms = {str(r) for r in (proj.get("rooms") or ())}
+        if "/" not in conv:
+            # The app admits configured conversations, not a new bare-guild
+            # room. Bind the native guild fact to each permitted room while
+            # preserving its guild object identity and declared source grain.
+            accepted = False
+            for room in sorted(r for r in rooms if r.startswith(f"{conv}/")):
+                scoped = dataclasses.replace(
+                    obs,
+                    scope=dataclasses.replace(obs.scope, conversation_id=room),
+                    coverage=dataclasses.replace(
+                        obs.coverage, covered=f"guild:{obs.coverage.covered}"),
+                )
+                sent = await self._emit_observation(
+                    scoped, upstream=upstream, transition=transition,
+                    trace=trace, proj=proj)
+                accepted = accepted or sent
+            return accepted
+        if conv not in rooms:
             return False
         now = int(time.time() * 1000)
         o = dataclasses.replace(obs, received_ms=now)
