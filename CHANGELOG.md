@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.13.6](https://github.com/mikeng-io/nora/compare/v7.13.5...v7.13.6) (2026-11-01)
+
+
+### Bug Fixes
+
+* **signoz:** promote declared log levels to native severity in the ingester ([45ba63a](https://github.com/mikeng-io/nora/commit/45ba63a24d65602eb8f6c21ead7684caf20f0004))
+* **signoz:** promote declared log levels to native severity in the ingester ([667fd93](https://github.com/mikeng-io/nora/commit/667fd938350174a976b34a3ff3cfd741a252a2e8))
+
 ## [7.13.5](https://github.com/mikeng-io/nora/compare/v7.13.4...v7.13.5) (2026-11-01)
 
 
