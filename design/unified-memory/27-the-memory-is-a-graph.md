@@ -953,6 +953,22 @@ Likewise, a source poll may show three explicit voters while an evidence-backed
 ongoing-matter account expects a larger party. Preserve both meanings and their
 uncertainty instead of changing poll counts to match Nora's expectation.
 
+### Status recorded 2026-10-31
+
+An independent source audit at `3fe09ac7` re-derived each finding against
+that head. **F1 and F2's mechanisms are repaired there** (source-confirmed,
+not a live probe or a model-quality receipt): `WakeMemory.prepare` restores
+the structural anchors and seeds via `preview_seeds`, and automatic prefetch
+calls the same `MemorySearch.read`/`graph.walk` retrieval as the tools. One
+limitation stands: the prefetch cache in `context.py` is per-turn local —
+automatic and tool reads share the retrieval mechanism but a shared cache is
+not proven at that head. **F3 remains open, smaller than first described:**
+`RegisterGraphLinks.project` still links by literal alias, but `concerns`/
+`settles`/`records` are now admitted proposal vocabulary on the notebook
+layer, so a semantic association is serializable through `memory_propose`,
+just not carried automatically. F4 stays intentionally staged; F5 is the
+documented evidence boundary; F6 stays parked by ruling.
+
 ### Repair and measurement order
 
 1. Preserve the available structural anchors and inspect the assembled input (F1).

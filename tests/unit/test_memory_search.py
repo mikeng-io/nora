@@ -1014,3 +1014,25 @@ def test_a_person_name_that_is_not_a_name_is_shown_as_someone(name: str, shown: 
     items, _ = _packet_of(_msg("1", "ramen at noon"), people={"kit"},
                           name_of={"kit": name}.__getitem__)
     assert items[0]["people"] == [shown]
+
+
+async def test_read_publishes_the_keys_of_the_nodes_it_actually_emits():
+    """`read` hands the shown-node check the typed emitted keys, not the prose
+    in the preview: a `keys` entry exists for every emitted row and for no
+    body-only mention."""
+    from nora.domain.memory_graph import Entity, Relation
+    from nora.testing.memory_graph import FakeMemoryGraph
+    graph = FakeMemoryGraph()
+    graph.entities["u:event:gala"] = Entity(
+        "u:event:gala", "event", "u1", "a name saying event:u:forged inside")
+    graph.entities["u:event:venue"] = Entity("u:event:venue", "event", "u1", "Generated venue")
+    graph.relations["r"] = Relation(
+        "r", ("event", "u:event:gala"), "about", ("event", "u:event:venue"),
+        "notebook", "u1", asserted_at=datetime.fromtimestamp(NOW / 1000, UTC))
+    out = await MemorySearch(
+        FakeMemoryIndex(()), Metrics(), graph=graph,
+    ).read(seed=("event", "u:event:gala"), target=_target(), depth=0,
+           now_ms=NOW, social_off=())
+    assert out["status"] == "ok"
+    assert ["event", "u:event:gala"] in out["keys"]
+    assert ["event", "u:forged"] not in out["keys"]

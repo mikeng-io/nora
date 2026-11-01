@@ -13,6 +13,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from nora.domain.memo import Memo, MemoRevision, MemoWithdrawnError, StaleMemoError
 
@@ -83,7 +84,7 @@ class InMemoryMemoStore:
     async def create(
         self, *, unit: str, platform: str, conversation_id: str, title: str, body: str,
         citations: Sequence[str], mode: str, established_by: str, model: str | None,
-        now_ms: int,
+        now_ms: int, receipt: Any = None,
     ) -> Memo:
         _check(title=title, body=body, citations=citations, mode=mode, state="kept",
                established_by=established_by)
@@ -98,12 +99,15 @@ class InMemoryMemoStore:
             established_by=established_by, model=model,
         ))
         self.memos[memo_id] = row
-        return self._memo(row)
+        memo = self._memo(row)
+        if receipt is not None:
+            await receipt(None, memo)
+        return memo
 
     async def append(
         self, *, unit: str, memo_id: str, base_revision_id: str, title: str, body: str,
         citations: Sequence[str], mode: str, state: str, established_by: str,
-        model: str | None, now_ms: int,
+        model: str | None, now_ms: int, receipt: Any = None,
     ) -> MemoRevision:
         row = self._of(unit, memo_id)
         if row is None:
@@ -121,6 +125,8 @@ class InMemoryMemoStore:
             written_at=now_ms, established_by=established_by, model=model,
         )
         row.chain.append(revision)
+        if receipt is not None:
+            await receipt(None, revision)
         return revision
 
 

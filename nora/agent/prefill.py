@@ -35,7 +35,7 @@ from ..domain.framing import (
 )
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.profile import ProfileView
-from ..domain.prompt import escape
+from ..domain.prompt import age, escape
 from ..domain.quote_window import first_by_ts
 from ..domain.self_presence import Presence
 from ..language.computer_render import render_computer
@@ -471,6 +471,12 @@ def render_transcript(
         edited=lambda row: row.edit.ts if row.edit else None,
         was=lambda row: row.edit.was if row.edit else None,
         turn=lambda row: row.turn_handle,
+        reactions=lambda row: row.reactions.label if row.reactions else None,
+        reactions_observed=lambda row: (
+            f"{row.reactions.coverage} {age(row.reactions.observed_at, now)}"
+            if row.reactions is not None and row.reactions.observed_at is not None
+            else None
+        ),
     )
 
 

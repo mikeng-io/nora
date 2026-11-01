@@ -5476,7 +5476,7 @@ BRIDGE_EVENT = sa.Table(
     sa.Column("time_quality", sa.Text, nullable=False),
     # message snapshot + attachments + trace; the audit/ingest snapshot.
     sa.Column("payload", pg.JSONB, nullable=False),
-    sa.Column("admission_rev", sa.Integer),
+    sa.Column("admission_rev", sa.BigInteger),
     sa.Column("admission", pg.JSONB),
     sa.Column("tag_id", sa.Text),
     sa.Column("state", sa.Text, nullable=False, server_default="open"),

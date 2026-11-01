@@ -9,6 +9,7 @@ from nora.domain.memory_graph import (
     Correction,
     Entity,
     Evidence,
+    Key,
     MemoryGraph,
     Relation,
     Walk,
@@ -21,7 +22,15 @@ class RegisterGraphLinks:
         self.graph, self.records = graph, records
         self.metrics = metrics if metrics is not None else Metrics()
 
-    async def project(self, item: Any, session_id: int) -> None:
+    async def project(
+        self, item: Any, session_id: int, *, selected: tuple[Key, ...] | None = None
+    ) -> None:
+        """Link one Register row to its matters, per its own link verb.
+
+        `selected` is the association the session admitted and named on the
+        write: an evidence-grounded target the body need not spell out. Alias
+        text is a discovery aid only when no selection was supplied.
+        """
         work = item.work
         source, unit, at = work.source, work.unit, work.as_of
         kind, ref = source
@@ -34,9 +43,14 @@ class RegisterGraphLinks:
         )
         entities: tuple[Entity, ...] = ()
         verb = "settles" if kind == "memo" else "concerns"
+        wanted: dict[Key, str] = dict.fromkeys(
+            targets if selected is None else selected, verb)
+        managed = {verb}
         if kind == "event_entry":
             entity = Entity(f"{unit}:event:{ref}", "event", unit, body)
-            targets, entities, verb = [entity.key], (entity,), "records"
+            entities = (entity,)
+            wanted = {entity.key: "records", **dict.fromkeys(selected or (), "concerns")}
+            managed = {"records", "concerns"}
         sources = {s.key: s for s in item.sources if s.layer in ("record", "rollup")}
         current = await self.graph.walk(
             (source,),
@@ -46,28 +60,44 @@ class RegisterGraphLinks:
                 depth=1,
                 nodes=100,
                 fan_out=20,
-                relations=(verb,),
-                valid_at=at,
+                # `managed`, not `wanted`: an empty wanted must still see the
+                # edges it is here to close.
+                relations=tuple(dict.fromkeys((*wanted.values(), *managed))),
             ),
         )
         if current.status != "ok":
             raise RuntimeError("Register links unavailable")
+        # A valid_at-less walk reaches closed edges too: a target re-selected
+        # after a close gets a new deterministic id for its generation, since
+        # the closed row keeps the bare one.
+        mine = [
+            e.relation for e in current.relations
+            if e.relation.src == source and e.relation.rel in managed
+        ]
         existing = {
-            e.relation.dst: e.relation
-            for e in current.relations
-            if e.relation.src == source and e.relation.rel == verb
+            (r.rel, r.dst): r
+            for r in mine
+            if (r.valid_from is None or r.valid_from <= at)
+            and (r.valid_to is None or at < r.valid_to)
         }
+        closed_counts: dict[tuple[str, Any], int] = {}
+        for r in mine:
+            if r.valid_to is not None:
+                key = (r.rel, r.dst)
+                closed_counts[key] = closed_counts.get(key, 0) + 1
         corrections = tuple(
             Correction(r.id, "close", at, evidence=tuple(sources))
-            for target, r in existing.items()
-            if target not in targets
+            for (rel, target), r in existing.items()
+            if wanted.get(target) != rel
         )
         relations: list[Relation] = []
         evidence: list[Evidence] = []
-        for target in targets:
-            if target in existing:
+        for target, verb in wanted.items():
+            if (verb, target) in existing:
                 continue
-            rid = str(uuid5(NAMESPACE_URL, f"{work.id}:{verb}:{target}"))
+            base = f"{work.id}:{verb}:{target}"
+            prior = closed_counts.get((verb, target), 0)
+            rid = str(uuid5(NAMESPACE_URL, base if prior == 0 else f"{base}:{prior}"))
             relations.append(
                 Relation(
                     rid,
@@ -82,7 +112,9 @@ class RegisterGraphLinks:
                 )
             )
             evidence.extend(Evidence(s.key, relation_id=rid) for s in sources.values())
-        if entities and not relations:
+        if entities and not any(
+            e.key in (r.src, r.dst) for e in entities for r in relations
+        ):
             for entity in entities:
                 await self.graph.upsert_entity(entity)
             entities = ()

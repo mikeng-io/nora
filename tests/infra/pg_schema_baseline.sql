@@ -1685,7 +1685,7 @@ address text
 address text NOT NULL,
 address text,
 admission jsonb,
-admission_rev integer,
+admission_rev bigint,
 advanced_counts boolean DEFAULT false NOT NULL,
 advanced_marker boolean DEFAULT false NOT NULL,
 agenda jsonb NOT NULL,
