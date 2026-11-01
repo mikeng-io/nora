@@ -41,18 +41,13 @@ Check: `## <type>/<slug>...origin/master`, no ahead/behind; hooksPath ends `.git
 ## 2. Iterate
 
 ```bash
-make test                           # current work; clean tree: last commit
-make test-fast                      # incremental alias (same as test-affected)
+make test                           # incremental; aliases: test-fast, test-affected
 uv run python -m scripts.pytest_gate tests/unit/test_example.py::test_named
 make test-all                       # explicit full serial suite, when needed
 ```
 
-The three incremental entries compare meaningful staged/unstaged/untracked work
-against HEAD; when clean they compare the last commit (HEAD~1). Only exact
-generated untracked LFS post-hooks are ignored. `BASE=<ref>` overrides auto.
-Unknown/shared-helper changes and selection errors run ALL; read the reported
-base and selected/full scope. Workers default to two; timing contracts stay serial.
-The gate is the final branch check, not the iteration loop.
+Incremental entries compare staged/unstaged/untracked work to HEAD, or HEAD~1 when clean; `BASE=<ref>` overrides auto. Only exact generated untracked LFS post-hooks are ignored.
+Unknown/shared-helper changes or errors run ALL; read base/scope. Workers default to two; timing contracts stay serial. Gate is final, not the loop.
 
 ## 3. Gate — once per candidate tree
 
