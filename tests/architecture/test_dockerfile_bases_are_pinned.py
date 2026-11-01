@@ -139,7 +139,7 @@ def test_workflow_installer_inputs_have_the_emsign_patch_floor():
 def test_periphery_upgrades_the_system_ca_used_by_git():
     recipe = (ROOT / "deploy/komodo/Periphery.Dockerfile").read_text(encoding="utf-8")
     image = next(FROM.finditer(recipe))["image"]
-    assert image.startswith("ghcr.io/moghtech/komodo-periphery:2.3.3@sha256:")
+    assert image.startswith("ghcr.io/moghtech/komodo-periphery:2.3.4@sha256:")
     active = "\n".join(line for line in recipe.splitlines() if not line.lstrip().startswith("#"))
     install = re.search(r"apt-get install ([^&]+)", active)
     assert install and "ca-certificates" in install[1].split(), "Git uses Periphery's system CA"
