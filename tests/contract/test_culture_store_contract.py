@@ -17,18 +17,15 @@ The database is built ONCE for this module and truncated between tests, per
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from typing import Any, Protocol
-from uuid import uuid4
 
-import psycopg
 import pytest
 import sqlalchemy as sa
 
 from nora.domain.culture import CultureRevision
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.schema import CULTURE_BODY_CEILING_CHARS
 from nora.testing import InMemoryCultureStore
 from nora.testing.culture_store import (
@@ -52,27 +49,8 @@ class _CultureStore(Protocol):
 
 
 @pytest.fixture(scope="module")
-def _culture_db(pg_admin: Any) -> Iterator[str]:
-    dbname = "t_culture_" + uuid4().hex
-    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
-        conn.execute(f'CREATE DATABASE "{dbname}"')
-    url = (
-        f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
-        f"@{pg_admin.host}:{pg_admin.port}/{dbname}"
-    )
-    run_migrations(url)
-    try:
-        yield url
-    finally:
-        with psycopg.connect(
-            pg_admin.dsn(pg_admin.maintenance_db), autocommit=True
-        ) as conn:
-            conn.execute(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname = %s AND pid <> pg_backend_pid()",
-                (dbname,),
-            )
-            conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
+def _culture_db(pg_module_url: str) -> str:
+    return pg_module_url
 
 
 @pytest.fixture(params=["memory", "sql"])
@@ -163,3 +141,19 @@ async def test_a_blank_body_is_refused(store):
 async def test_a_body_over_the_ceiling_is_refused(store):
     with pytest.raises(Exception):  # noqa: B017 — IntegrityError vs ValueError
         await _append(store, "x" * (CULTURE_BODY_CEILING_CHARS + 1))
+
+
+@pytest.mark.parametrize("attempt", [0, 1])
+async def test_reused_store_starts_empty_after_independent_commit(store, attempt, request):
+    """Each invocation writes the same key; the next must see the reset."""
+    key = "generated-reset-probe"
+    assert await store.head(key=key) is None
+    written = await _append(store, f"generated reset {attempt}", key=key)
+    assert await store.head(key=key) == written
+    if isinstance(store, SqlCultureStore):
+        # Reopen through an independent engine, as restart callers do.
+        engine = create_sql_engine(request.getfixturevalue("_culture_db"))
+        try:
+            assert await SqlCultureStore(engine).head(key=key) == written
+        finally:
+            await engine.dispose()

@@ -1,0 +1,23 @@
+[
+  {
+    "name": "test_media_fetch retains module reuse",
+    "file": "tests/test_media_fetch.py",
+    "old": "async def wiring(tmp_path, record_pg_url):\n    store = SqlRecordStore(create_sql_engine(record_pg_url))",
+    "new": "async def wiring(tmp_path, pg_url):\n    store = SqlRecordStore(create_sql_engine(pg_url))",
+    "target": "tests/test_media_fetch.py::test_wiring_reuses_the_module_database"
+  },
+  {
+    "name": "test_tools retains module reuse",
+    "file": "tests/test_tools.py",
+    "old": "async def wiring(record_pg_url, tmp_path):\n    store = SqlRecordStore(create_sql_engine(record_pg_url))",
+    "new": "async def wiring(pg_url, tmp_path):\n    store = SqlRecordStore(create_sql_engine(pg_url))",
+    "target": "tests/test_tools.py::test_wiring_reuses_the_module_database"
+  },
+  {
+    "name": "committed record state is reset between consumers",
+    "file": "tests/conftest.py",
+    "old": "\"TRUNCATE messages, memory_node, memory_edge, memory_projection_queue, \"\n            \"row_history RESTART IDENTITY CASCADE\"",
+    "new": "\"SELECT 1\"",
+    "target": "tests/infra/test_pg_fixture_lifecycle.py::test_record_reuse_resets_committed_state"
+  }
+]

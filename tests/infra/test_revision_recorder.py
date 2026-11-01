@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -39,9 +40,9 @@ async def engine(pg_url: str) -> AsyncIterator[Any]:
         await eng.dispose()
 
 
-async def _clock(engine: Any) -> Any:
-    async with engine.connect() as conn:
-        return (await conn.execute(sa.text("SELECT clock_timestamp()"))).scalar_one()
+async def _clock(_engine: Any) -> datetime:
+    """Match instruction loads' process clock, independently of Docker's clock."""
+    return datetime.now(UTC)
 
 
 async def test_each_load_is_recorded_and_in_force_answers_by_time(
@@ -109,6 +110,24 @@ async def test_each_load_is_recorded_and_in_force_answers_by_time(
         assert (out / "doctrine" / path.relative_to(doctrine_dir)).read_text(
             encoding="utf-8",
         ) == path.read_text(encoding="utf-8")
+
+
+async def test_instruction_history_cuts_do_not_depend_on_database_clock(
+    engine: Any, tmp_path: Path,
+) -> None:
+    def skew_clock(conn, cursor, statement, parameters, context, executemany):
+        if statement == "SELECT clock_timestamp()":
+            statement += " + interval '5 seconds'"
+        return statement, parameters
+
+    sa.event.listen(engine.sync_engine, "before_cursor_execute", skew_clock, retval=True)
+    try:
+        async with engine.connect() as conn:
+            database_now = (await conn.execute(sa.text("SELECT clock_timestamp()"))).scalar_one()
+        assert database_now > datetime.now(UTC) + timedelta(seconds=4)
+        await test_each_load_is_recorded_and_in_force_answers_by_time(engine, tmp_path)
+    finally:
+        sa.event.remove(engine.sync_engine, "before_cursor_execute", skew_clock)
 
 
 async def test_a_deploy_that_names_no_code_is_unavailable(engine: Any, tmp_path: Path) -> None:
