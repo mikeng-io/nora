@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.13.14](https://github.com/mikeng-io/nora/compare/v7.13.13...v7.13.14) (2026-11-01)
+
+
+### Bug Fixes
+
+* **gate:** classify canonical agent skill links as documentation ([5bcf122](https://github.com/mikeng-io/nora/commit/5bcf122ef781d4f1f0013ead258cb32e482ea68e))
+
 ## [7.13.13](https://github.com/mikeng-io/nora/compare/v7.13.12...v7.13.13) (2026-11-01)
 
 
