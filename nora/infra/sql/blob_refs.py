@@ -95,6 +95,25 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
     ),
     ("row_history", "row_key"): "a history row's key, never a blob",
     ("stimulus", "ref"): "a stimulus's source row (`social_read:<read id>`), never a blob",
+    ("platform_observation", "payload"): (
+        "typed variant bodies — emoji/vote refs, room fields, member and pin "
+        "refs, and artifact source metadata (a contact's name/org, a link "
+        "preview's url/title): `custody` is the declared/held/unavailable "
+        "LABEL and `perception_ref` a reading id, never a blob address — "
+        "byte custody is `messages.media_json`/`media_objects`"
+    ),
+    ("platform_observation", "coverage"): (
+        "the observation's own complete/covered/gaps/reason claim, "
+        "never blob custody"
+    ),
+    ("platform_object_state", "state"): (
+        "the fold's head over the same payloads — votes, fields, member "
+        "and pin sets, artifact refs and their source metadata; the same "
+        "custody labels, never a blob address"
+    ),
+    ("platform_object_state", "coverage"): (
+        "the head's folded coverage claim, never blob custody"
+    ),
     ("bridge_event", "payload"): (
         "the retained inbound journal: media refs name bridge custody keys "
         "(truncated content handles) and may carry a content `sha256` for "

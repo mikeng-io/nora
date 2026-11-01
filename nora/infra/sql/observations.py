@@ -458,7 +458,7 @@ class SqlObservationStore:
         head = _row_to_head(row)
         new_head = fold_observation(head, stored)
         await conn.execute(
-            sa.update(ST).where(ST.c.id == row["id"]).values(
+            sa.update(PLATFORM_OBJECT_STATE).where(ST.c.id == row["id"]).values(
                 **_head_to_row(new_head), updated_at=sa.func.now()))
 
     async def _union_reactions(
@@ -638,7 +638,7 @@ class SqlObservationStore:
     ) -> int:
         async with self._engine.begin() as conn:
             res = await conn.execute(
-                sa.update(OBS).where(
+                sa.update(PLATFORM_OBSERVATION).where(
                     _scope_where(scope), OBS.c.target_key == target_key,
                     OBS.c.target_message_id.is_(None))
                 .values(target_message_id=message_id))
@@ -767,7 +767,8 @@ async def relink_arriving_targets(
                             sa.or_(OBS.c.target_author_id.is_(None),
                                    OBS.c.target_author_id == ""))
             result = await conn.execute(
-                sa.update(OBS).where(pending, OBS.c.target_key == key, author_match)
+                sa.update(PLATFORM_OBSERVATION).where(
+                    pending, OBS.c.target_key == key, author_match)
                 .values(target_message_id=resolved))
             linked += result.rowcount
     return linked

@@ -823,15 +823,14 @@ class SqlRecordStore:
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
             row_id = int(result.scalar_one())
-            heads = PLATFORM_OBJECT_STATE
             target_link = sa.exists().where(
                 PLATFORM_OBSERVATION.c.kind == "reaction",
                 PLATFORM_OBSERVATION.c.target_message_id == message_id,
-                *(PLATFORM_OBSERVATION.c[name] == heads.c[name]
+                *(PLATFORM_OBSERVATION.c[name] == PLATFORM_OBJECT_STATE.c[name]
                   for name in ("platform", "account_key", "conversation_id",
                                "thread", "object_ref")))
-            await conn.execute(sa.update(heads).where(
-                heads.c.kind == "reaction", target_link,
+            await conn.execute(sa.update(PLATFORM_OBJECT_STATE).where(
+                PLATFORM_OBJECT_STATE.c.kind == "reaction", target_link,
             ).values(updated_at=sa.func.clock_timestamp()))
             await memory_index.project(conn, "message", message_id, metrics=self._metrics)
         return row_id
