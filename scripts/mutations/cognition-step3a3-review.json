@@ -86,15 +86,15 @@
  {
   "name": "major 2: a message line carries no id",
   "file": "nora/language/cognition_render.py",
-  "old": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"reaction\", (r.emoji or \"?\") if reacted else None),",
-  "new": "            [rec], row_id=lambda r: \"\",\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"reaction\", (r.emoji or \"?\") if reacted else None),",
+  "old": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"reaction\", emoji_display(r.emoji or \"?\") if reacted else None),",
+  "new": "            [rec], row_id=lambda r: \"\",\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"reaction\", emoji_display(r.emoji or \"?\") if reacted else None),",
   "target": "tests/unit/test_cognition_grounding.py::test_each_message_carries_its_id_its_author_its_time_and_its_room"
  },
  {
   "name": "major 2: a message line carries no time",
   "file": "nora/language/cognition_render.py",
-  "old": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"reaction\", (r.emoji or \"?\") if reacted else None),",
-  "new": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", None), (\"from\", speaker_of(r.author)),\n                (\"reaction\", (r.emoji or \"?\") if reacted else None),",
+  "old": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"reaction\", emoji_display(r.emoji or \"?\") if reacted else None),",
+  "new": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", None), (\"from\", speaker_of(r.author)),\n                (\"reaction\", emoji_display(r.emoji or \"?\") if reacted else None),",
   "target": "tests/unit/test_cognition_grounding.py::test_each_message_carries_its_id_its_author_its_time_and_its_room"
  },
  {

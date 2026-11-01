@@ -143,6 +143,19 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
            "version. Absent when nothing came between"
        ),
        was="what it said before its sender first changed it",
+       reactions=(
+           "the emoji reactions standing on it now, `x N` per emoji — "
+           "RECORDED transitions only: a reaction the capture missed, an "
+           "upstream clear or a snapshot is absent, so a count is what was "
+           "recorded, never the whole upstream set. `removed` means every "
+           "recorded reaction was taken back; `partial` means the state "
+           "could not be fully read"
+       ),
+       reactions_observed=(
+           "the coverage, and how long ago the newest recorded reaction "
+           "event was: `recorded` is recorded transitions only, `partial` a "
+           "read cut short"
+       ),
        window=(
            "how many messages back you were shown. Nothing older than that is "
            "in front of you, so a thing you cannot find here may simply be "
@@ -727,6 +740,21 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
            "reaction": "the emoji: someone reacted to message `n`; `from` and the "
                        "words are that message's, so cite a message from its own "
                        "row, not from this one",
+           "reaction_removed": "`yes` when the stimulus took the reaction "
+                               "back rather than added it",
+           "reactions": (
+               "the emoji reactions standing on `n`, `x N` per emoji — "
+               "RECORDED transitions only: an upstream clear, a snapshot or "
+               "a reaction the capture missed is absent, so a count is what "
+               "was recorded, never the whole upstream set. `removed` means "
+               "all recorded ones were taken back, `partial` the read was "
+               "cut short"
+           ),
+           "reactions_observed": (
+               "the coverage, and how long ago the newest recorded reaction "
+               "event was: `recorded` is recorded transitions only, "
+               "`partial` a read cut short"
+           ),
            "withdrawn": "`yes` if the words are not shown: their author took them "
                         "back",
            "deleted": "`yes` on a row recording that deletion",
