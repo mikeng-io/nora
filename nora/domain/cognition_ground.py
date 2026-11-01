@@ -36,6 +36,7 @@ from nora.domain.cognition_session import Room
 from nora.domain.culture import CultureRevision
 from nora.domain.memo import Memo
 from nora.domain.models import RowReactions
+from nora.domain.observations import SourceEvent
 from nora.domain.profile import ProfileView
 from nora.domain.stimuli import Stimulus
 
@@ -50,6 +51,18 @@ RecordKind = Literal["message", "edit", "reaction", "delete"]
 #: (R-18, and the deleted proactive pass's `UNNAMED_ROOM` rule): a raw id on a
 #: model's wire is an identifier egress and reads as noise.
 UNNAMED_ROOM = "a room with no name"
+
+
+def observation_ref(stimulus: Stimulus) -> int | None:
+    """The `platform_observation` row id an `observation` stimulus names —
+    `platform_observation:<id>` — or None for every other kind and a `ref`
+    that does not parse."""
+    if stimulus.kind != "observation":
+        return None
+    table, _, tail = stimulus.ref.partition(":")
+    if table != "platform_observation" or not tail.isdigit():
+        return None
+    return int(tail)
 
 
 def record_ref(stimulus: Stimulus) -> tuple[str, int] | None:
@@ -279,6 +292,21 @@ class Grounding:
     #: A `social` stimulus's readable fields, by the stimulus `ref`; one whose
     #: person the roster does not know has no entry and is not shown.
     socials: Mapping[str, SocialLine] = field(default_factory=dict)
+    #: An `observation` stimulus's readable fields, by the stimulus `ref`
+    #: (`platform_observation:<id>`): the typed source event — kind,
+    #: operation, source time (and WHICH clock), a named actor when the
+    #: source names one, the object's model-safe handle and a bounded
+    #: summary. A stimulus with no entry is counted unreadable, never
+    #: rendered as a guess.
+    observations: Mapping[str, SourceEvent] = field(default_factory=dict)
+    #: The folded CURRENT state of the agenda rooms' source objects —
+    #: `room_key` → the heads' `SourceEvent`s (`state` filled, `summary`
+    #: of the newest applied observation). This is the Standing block's
+    #: typed input: off-window object truth (an open poll, the pin set,
+    #: the member count) presented beside the position, never inside a
+    #: transcript row and never as a guess.
+    source_objects: Mapping[str, tuple[SourceEvent, ...]] = field(
+        default_factory=dict)
     #: Nora's own sends inside each item's window, by the item's index in the
     #: agenda that was grounded (D1): what the room's messages may be answering.
     own_sends: Mapping[int, tuple[RecordItem, ...]] = field(default_factory=dict)
@@ -331,6 +359,13 @@ class Grounding:
                 {"ref": s.ref, "person_id": s.person_id, "item": s.item, "at_ms": s.at_ms}
                 for s in self.socials.values()
             ],
+            # Source events by row reference — never a name, never a summary.
+            "observations": [
+                {"ref": e.ref, "kind": e.kind, "operation": e.operation,
+                 "at_ms": e.at_ms, "time_quality": e.time_quality,
+                 "target_message_id": e.target_message_id}
+                for e in self.observations.values()
+            ],
             # Her own sends by message id and time; never the words.
             "own_sends": {
                 str(i): [{"message_id": m.message_id, "at_ms": m.at_ms,
@@ -341,7 +376,18 @@ class Grounding:
 
 
 __all__ = [
-    "RECORD_REF_TABLES", "UNNAMED_ROOM", "EventLine", "Grounding", "NoteLine", "RecordItem",
-    "RecordKind", "RollupLine", "RollupRef", "SocialLine", "StayDeviation", "parse_rollup_ref",
+    "RECORD_REF_TABLES",
+    "UNNAMED_ROOM",
+    "EventLine",
+    "Grounding",
+    "NoteLine",
+    "RecordItem",
+    "RecordKind",
+    "RollupLine",
+    "RollupRef",
+    "SocialLine",
+    "StayDeviation",
+    "observation_ref",
+    "parse_rollup_ref",
     "record_ref",
 ]

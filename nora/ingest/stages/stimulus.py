@@ -175,6 +175,65 @@ async def run_typed(
         return ("failed", None, "exception")
 
 
+async def run_observation(
+    *,
+    observation_row_id: int, object_kind: str,
+    platform: str, conversation_id: str, unit: str | None,
+    at_ms: int, actor_person_id: str | None,
+    wiring: Wiring, metrics: Any,
+    recorded_at_ms: int | None = None,
+) -> tuple[str, int | None, str | None]:
+    """The ONE source-event stimulus family (design/platform-observations
+    05): one `observation` stimulus per admitted `platform_observation` row
+    of a NON-message kind (poll, room, membership, pin, artifact,
+    message_metadata). A row's id IS its dedupe key —
+    `platform_observation:<id>` — so a retried obligation can never double
+    the stimulus, and one stimulus family covers every platform
+    (no per-platform kinds).
+
+    `item` is the object kind, `ref` the observation row — the grounding
+    read the session makes for it. `at_ms` is the observation's own clock:
+    its source `occurred_ms` when the source supplied one, else the bridge
+    receipt time — never a fabricated source time.
+
+    `run_typed`'s contract: `("written", sid, None)` / `("skipped", None,
+    reason)` / `("failed", None, reason)`; nothing propagates.
+
+    `unit` is the room's unit resolved at ingest, denormalized into the
+    obligation the way the message stimulus's payload denormalizes its own;
+    `None` (or an empty one) skips — an observation a unit never owned never
+    reaches an agenda."""
+    try:
+        if actor_person_id and actor_person_id in wiring.self_ids:
+            return ("skipped", None, "self_authored")
+        if not unit:
+            return ("skipped", None, "no_unit")
+        ref = f"platform_observation:{observation_row_id}"
+        existing = await wiring.store.existing_id(
+            unit=unit, kind="observation", ref=ref)
+        if existing is not None:
+            return ("written", existing, None)
+        sid = await asyncio.wait_for(
+            wiring.store.append(
+                stimulus=NewStimulus(
+                    unit=unit, kind="observation", item=object_kind, ref=ref,
+                    at_ms=at_ms, platform=platform,
+                    conversation_id=conversation_id,
+                    person_id=actor_person_id),
+                recorded_at_ms=(
+                    recorded_at_ms if recorded_at_ms is not None
+                    else int(wiring.clock() * 1000))),
+            timeout=wiring.timeout_seconds)
+        metrics.inc("nora_stimulus_total", kind="observation", cue="none")
+        if sid is not None:
+            return ("written", sid, None)
+        return ("failed", None, "append_returned_none")
+    except Exception:
+        log.exception("observation stimulus stage failed")
+        metrics.inc("nora_errors_total", stage="stimulus", platform=platform)
+        return ("failed", None, "exception")
+
+
 async def _append(
     *, message: NormalizedMessage, item: MessageItem, row_id: int,
     person_id: str | None, wiring: Wiring, metrics: Any,

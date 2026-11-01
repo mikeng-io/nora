@@ -763,6 +763,15 @@ class TagContext:
     # `[standing] enabled = false` it stays `None` on every turn.
     standing: Standing | None = None
     ledger: tuple[LedgerEntry, ...] = ()
+    # The typed SOURCE events of the transcript window (design/platform-
+    # observations 04): poll/room/membership/pin/artifact transitions the
+    # bridge recorded, interleaved into the transcript by their own clock
+    # — typed rows, never a speaker's line and never a fabricated message.
+    # `source_objects` is the room's folded object heads (the open poll,
+    # the pin set), the Standing block's typed input; both empty while no
+    # ObservationStore is wired.
+    source_events: tuple[Any, ...] = ()
+    source_objects: tuple[Any, ...] = ()
     # The room's CULTURE head — an account of what this room is and why it
     # became so. Beside `standing` because both are
     # room-scoped and both are her own output, and apart from it on the one

@@ -804,7 +804,7 @@ CONSTRAINT ck_social_perception_outcome CHECK ((outcome = ANY (ARRAY['ok'::text,
 CONSTRAINT ck_social_poll_outcome CHECK ((outcome = ANY (ARRAY['unchanged'::text, 'story_due'::text, 'items_due'::text, 'partial'::text, 'count_fell'::text, 'read_ok'::text, 'halted'::text, 'backed_off'::text, 'error'::text, 'abandoned'::text, 'unavailable'::text]))),
 CONSTRAINT ck_social_poll_stage CHECK ((stage = ANY (ARRAY['probe'::text, 'story'::text, 'items'::text, 'item'::text, 'backfill'::text, 'relist'::text, 'recount'::text])))
 CONSTRAINT ck_source_health_event CHECK ((event = ANY (ARRAY['poll'::text, 'transition'::text])))
-CONSTRAINT ck_stimulus_kind CHECK ((kind = ANY (ARRAY['message'::text, 'social'::text, 'play'::text, 'rollup'::text, 'time'::text, 'self'::text])))
+CONSTRAINT ck_stimulus_kind CHECK ((kind = ANY (ARRAY['message'::text, 'social'::text, 'play'::text, 'rollup'::text, 'time'::text, 'self'::text, 'observation'::text])))
 CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing'::text, 'done'::text, 'failed'::text])))
 CONSTRAINT config_revision_file_check CHECK ((file = ANY (ARRAY['config.toml'::text, 'policy.toml'::text, 'identity.toml'::text])))
 CONSTRAINT culture_has_a_key_check CHECK ((length(btrim(key)) > 0))

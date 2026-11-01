@@ -11,6 +11,7 @@ the transaction's all-or-nothing shape.
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 from nora.domain.observations import (
@@ -35,6 +36,21 @@ class FakeObservationStore:
     def _object_key(scope: SourceScope, kind: str, object_ref: str):
         return (*scope.key(), kind, object_ref)
 
+    @staticmethod
+    def _in_scope(row_scope: SourceScope, scope: SourceScope) -> bool:
+        """The store's read boundary, same rule as `_scope_where`'s: an
+        EMPTY `account_key` reads room-wide (`platform` +
+        `conversation_id` + `thread`), a named one must match exactly."""
+        if scope.account_key:
+            return row_scope.key() == scope.key()
+        return (row_scope.platform == scope.platform
+                and row_scope.conversation_id == scope.conversation_id
+                and row_scope.thread == scope.thread)
+
+    def _scoped_rows(self, scope: SourceScope) -> list[StoredObservation]:
+        return [r for r in self._rows
+                if self._in_scope(r.observation.scope, scope)]
+
     async def append(
         self, *, observation: Observation, event_id: str, source_digest: str,
         target_message_id: int | None = None, tx_hook: Any = None,
@@ -48,7 +64,9 @@ class FakeObservationStore:
             observation=obs, target_message_id=target_message_id)
         self._next_id += 1
         if tx_hook is not None:
-            tx_hook(None, row.id)
+            awaited = tx_hook(None, row.id)
+            if inspect.isawaitable(awaited):
+                await awaited
         self._digests.add(dedupe)
         self._rows.append(row)
         key = self._object_key(obs.scope, obs.object_kind, obs.object_ref)
@@ -58,37 +76,64 @@ class FakeObservationStore:
     async def current(
         self, *, scope: SourceScope, kind: str, object_ref: str,
     ) -> ObservationHead | None:
-        return self._heads.get(self._object_key(scope, kind, object_ref))
+        if scope.account_key:
+            return self._heads.get(self._object_key(scope, kind, object_ref))
+        for (p, _a, c, t, k, r), h in self._heads.items():
+            if (p, c, t, k, r) == (scope.platform, scope.conversation_id,
+                                   scope.thread, kind, object_ref):
+                return h
+        return None
 
     async def heads(
         self, *, scope: SourceScope, kind: str | None = None,
         limit: int = 100,
     ) -> list[ObservationHead]:
         out = [h for (p, a, c, t, k, _r), h in self._heads.items()
-               if (p, a, c, t) == scope.key() and (kind is None or k == kind)]
+               if self._in_scope(
+                   SourceScope(platform=p, account_key=a, conversation_id=c,
+                               thread=t), scope)
+               and (kind is None or k == kind)]
         return out[: max(limit, 0)]
 
     async def history(
         self, *, scope: SourceScope, kind: str, object_ref: str,
         after_id: int = 0, limit: int = 1000,
     ) -> list[StoredObservation]:
-        out = [r for r in self._rows
-               if r.observation.scope.key() == scope.key()
-               and r.observation.object_kind == kind
+        out = [r for r in self._scoped_rows(scope)
+               if r.observation.object_kind == kind
                and r.observation.object_ref == object_ref
                and r.id > after_id]
         return out[: max(limit, 0)]
 
     async def as_of(
         self, *, scope: SourceScope, kind: str, object_ref: str,
-        through_id: int,
-    ) -> ObservationHead | None:
-        rows = [r for r in self._rows
-                if r.observation.scope.key() == scope.key()
-                and r.observation.object_kind == kind
+        through_id: int, limit: int = 1000,
+    ) -> tuple[ObservationHead | None, bool]:
+        rows = [r for r in self._scoped_rows(scope)
+                if r.observation.object_kind == kind
                 and r.observation.object_ref == object_ref
                 and r.id <= through_id]
-        return rebuild_head(rows, kind=kind, object_ref=object_ref)
+        more = len(rows) > max(limit, 0)
+        head = rebuild_head(rows[: max(limit, 0)],
+                            kind=kind, object_ref=object_ref)
+        return head, more
+
+    async def recent(
+        self, *, scope: SourceScope, since_ms: int = 0, limit: int = 50,
+    ) -> list[StoredObservation]:
+        def at(r: StoredObservation) -> int:
+            o = r.observation
+            return o.occurred_ms if o.occurred_ms is not None else o.received_ms
+        out = sorted((r for r in self._scoped_rows(scope) if at(r) >= since_ms),
+                     key=lambda r: (at(r), r.id), reverse=True)
+        return out[: max(limit, 0)]
+
+    async def by_ids(
+        self, *, scope: SourceScope, ids: tuple[int, ...], limit: int = 200,
+    ) -> list[StoredObservation]:
+        wanted = set(ids)
+        out = [r for r in self._scoped_rows(scope) if r.id in wanted]
+        return out[: max(limit, 0)]
 
     async def resolve_targets(
         self, *, scope: SourceScope, target_key: str, message_id: int,

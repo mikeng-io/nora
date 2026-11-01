@@ -18,6 +18,7 @@ from ..domain.blocks import (
     ContextBlock,
     assemble,
     render_bullets,
+    render_elements,
     render_messages,
     restamp,
     speaker_name,
@@ -526,6 +527,26 @@ def _transcript_block(
     but it makes the tag unreadable for nothing.
     """
     rows = render_transcript(ctx.transcript, display_name=display_name, now=now)
+    # The typed source events of the same window (design/platform-
+    # observations 04): `<source_event>` elements AFTER the `<m>` list —
+    # they are not messages and take no `#n` handle (a reply cannot name
+    # one). Each says its kind, the operation, the source's own time (and
+    # WHICH clock, when it is not the upstream's), the actor the source
+    # names — a roster name or nothing, never a speaker line.
+    events = render_elements(
+        sorted(ctx.source_events, key=lambda e: e.at_ms), tag="source_event",
+        attrs=lambda e, _i: (
+            ("kind", e.kind), ("op", e.operation),
+            ("at", age(e.at_ms, now)),
+            ("actor", e.actor or (
+                "anonymous" if e.actor_status == "anonymous" else None)),
+            ("time", e.time_quality if e.time_quality != "upstream" else None),
+            ("object", e.handle),
+        ),
+        body=lambda e: e.summary,
+    )
+    if events:
+        rows = f"{rows}\n{events}" if rows else events
     # `window` is R-15, on the block it is about. A model that does not know
     # how far back it can see cannot tell «nobody said that» from «not in what
     # you were shown», and «further back than you were shown» means nothing
@@ -887,7 +908,25 @@ def _standing_block(
     """
     if not _shown(ctx, view, "standing"):
         return None
-    return render_standing(ctx.standing)
+    block = render_standing(ctx.standing)
+    # The room's folded source-object heads (design/platform-observations
+    # 04), typed rows under the SAME Standing presentation: the open poll,
+    # the pin set, the member count — each with its ordering and coverage
+    # flags so a gapped or partial state never reads as settled truth.
+    if ctx.source_objects:
+        objects = render_elements(
+            ctx.source_objects, tag="source_object",
+            attrs=lambda e, _i: (
+                ("kind", e.kind), ("object", e.handle),
+                ("ordering", e.ordering or None),
+            ),
+            body=lambda e: e.state or e.summary,
+        )
+        if block is None:
+            block = ContextBlock(name="standing", body=objects)
+        else:
+            block = replace(block, body=f"{block.body}\n{objects}")
+    return block
 
 
 def _standing_working_set_block(

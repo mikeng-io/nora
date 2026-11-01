@@ -1147,7 +1147,10 @@ class ObservationStore(Protocol):
         `tx_hook`, when given, is called `(conn, observation_id)` INSIDE the
         same transaction, the way `RecordStore.append` lets callers join its
         write — the place a required stimulus or a second-store obligation
-        commits with the observation rather than arriving after it."""
+        commits with the observation rather than arriving after it. The
+        hook may return an awaitable, which the implementation AWAITS inside
+        the transaction: an async downstream obligation joins the commit,
+        never runs detached."""
         ...
 
     async def current(
@@ -1175,11 +1178,36 @@ class ObservationStore(Protocol):
 
     async def as_of(
         self, *, scope: SourceScope, kind: str, object_ref: str,
-        through_id: int,
-    ) -> ObservationHead | None:
+        through_id: int, limit: int = 1000,
+    ) -> tuple[ObservationHead | None, bool]:
         """The object's state folded through observation `through_id` —
         what the head held at that point in retained arrival history. The
-        same fold `current` uses, so the two agree by construction."""
+        same fold `current` uses, so the two agree by construction.
+
+        Returns `(head, more)`. `more` is True when more than `limit` rows
+        stand at or before `through_id`: the head then folds an earlier
+        point than requested and the caller must treat it as PARTIAL, never
+        as the as-of state it asked for."""
+        ...
+
+    async def recent(
+        self, *, scope: SourceScope, since_ms: int = 0, limit: int = 50,
+    ) -> list[StoredObservation]:
+        """The scope's newest retained observations at/after `since_ms`
+        (their own `occurred_ms`/`received_ms` clock), bounded — the
+        transcript-window read. Same scope-boundary rule as `by_ids`:
+        an empty `account_key` reads room-wide."""
+        ...
+
+    async def by_ids(
+        self, *, scope: SourceScope, ids: tuple[int, ...], limit: int = 200,
+    ) -> list[StoredObservation]:
+        """The rows `ids` names within `scope`, ascending by id, bounded —
+        the batch read a grounder makes for the stimuli its agenda names.
+        Scope is the read boundary: an id of another scope never resolves.
+        An EMPTY `account_key` reads room-wide (`platform` +
+        `conversation_id` + `thread`) — the boundary a unit holds when the
+        stimuli it grounds carry no account."""
         ...
 
     async def resolve_targets(

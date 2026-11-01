@@ -1089,3 +1089,166 @@ def _apply_metadata(
             fields["shared_refs"] = list(p.shared_refs)
     state["fields"] = fields
     return state
+
+
+# ── Model-facing source-event view ────────────────────────────────────────
+# ONE read model shared by the transcript's typed source events, the agenda
+# row an `observation` stimulus renders, and the detail tools: what happened
+# (kind + operation), when — and WHICH clock, who when the source genuinely
+# names them, the object's model-safe handle, a bounded summary, and the
+# head's current state for detail reads. No speaker, no fabricated
+# utterance: an observation is something the source DID to an object, never
+# a line somebody said.
+
+
+@dataclass(frozen=True, slots=True)
+class SourceEvent:
+    """One platform source event as a model or a tool result reads it.
+
+    `actor` is a NAME the caller already resolved (roster/persons), or None —
+    a source that names no actor shows none, and `actor_status`/`anonymous`
+    says why. `at_ms` pairs with `time_quality` so "unknown" never reads as
+    a source time; `received_ms` is the bridge's own clock, stated as such.
+    `handle` is `object_handle`'s — the only form of `object_ref` a model
+    ever sees or hands back.
+    """
+
+    ref: str                        # "platform_observation:<row id>"
+    kind: str                       # object kind
+    operation: str
+    at_ms: int
+    time_quality: str               # upstream | bridge_local | unknown
+    actor: str | None
+    actor_status: str
+    handle: str                     # object_handle(kind, object_ref)
+    summary: str                    # bounded pure summary of the change
+    target_message_id: int | None = None
+    state: str = ""                 # head summary when a detail read asks
+    ordering: str = ""              # head's ordered|arrival|gap, when shown
+
+
+def object_handle(kind: str, object_ref: str) -> str:
+    """The model-safe name of an object: `<kind>:<12 hex of its ref>`.
+    Deterministic, so a handle a tool handed out resolves on the next read
+    of the same scope — and an opaque digest, so a platform's own object id
+    never reaches a prompt or a tool result (R-18)."""
+    import hashlib
+    digest = hashlib.sha256(f"{kind}:{object_ref}".encode()).hexdigest()[:12]
+    return f"{kind}:{digest}"
+
+
+_SUMMARY_MAX = 160
+
+
+def _clip(text: str, limit: int = _SUMMARY_MAX) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _fields_summary(fields: dict[str, Any]) -> str:
+    out = []
+    for name in sorted(fields):
+        value = fields[name]
+        if value is None:
+            out.append(f"{name} cleared")
+        else:
+            out.append(f"{name} set to {_clip(value, 60)}")
+    return "; ".join(out)
+
+
+def observation_summary(obs: Observation) -> str:
+    """The change one observation reports, as one bounded fact line — pure
+    (a summary of the payload, never a conclusion about it)."""
+    p = obs.payload
+    op = obs.operation
+    if isinstance(p, PollPayload):
+        if p.question:
+            tail = f"“{_clip(p.question, 80)}”"
+            opts = f" with {len(p.options)} options" if p.options else ""
+            return _clip(f"poll {op}: {tail}{opts}")
+        if p.voter_ref or p.option_ref or p.selected is not None:
+            choice = ", ".join(p.selected) if p.selected else (p.option_ref or "")
+            who = "a voter" if p.anonymous else (p.voter_ref or "a voter")
+            return _clip(f"poll vote {op}: {who} on {choice or 'an option'}")
+        if p.state:
+            return _clip(f"poll {op}: state {p.state}"
+                         + (f", {p.voter_count} votes"
+                            if p.voter_count is not None else ""))
+        if p.option_counts:
+            return _clip(f"poll {op}: totals "
+                         + ", ".join(f"{k}={v}" for k, v in p.option_counts))
+        return f"poll {op}"
+    if isinstance(p, RoomPayload):
+        return _clip(f"room {op}: {_fields_summary(p.fields)}")
+    if isinstance(p, MembershipPayload):
+        if p.members:
+            return _clip(f"membership {op}: {len(p.members)} members "
+                         f"reported ({p.covered or 'set'})")
+        role = f" as {p.role}" if p.role else ""
+        state = f" ({p.state})" if p.state else ""
+        return _clip(f"membership {op}: {obs.subject_ref or 'a member'}"
+                     f"{role}{state}")
+    if isinstance(p, PinPayload):
+        if p.pins:
+            return _clip(f"pin set {op}: {len(p.pins)} pins reported")
+        return f"pin {op}: a message pinned" if op == "add" else \
+            f"pin {op}: a message unpinned"
+    if isinstance(p, ArtifactPayload):
+        return _clip(f"artifact {op}: {p.artifact_kind or 'object'} "
+                     f"({p.custody or 'custody unknown'})")
+    if isinstance(p, MessageMetadataPayload):
+        bits = []
+        if p.forward_origin is not None:
+            bits.append("forwarded")
+        if p.view_once:
+            bits.append("view-once")
+        if p.expires_in_ms is not None:
+            bits.append("expiring")
+        if p.shared_refs:
+            bits.append(f"{len(p.shared_refs)} shared refs")
+        return _clip(f"message metadata {op}: {', '.join(bits) or 'fields'}")
+    if isinstance(p, ReactionPayload):
+        return _clip(f"reaction {op}: {p.emoji or '?'}")
+    return f"{obs.object_kind} {op}"
+
+
+def head_summary(head: ObservationHead) -> str:
+    """The object's folded CURRENT state as one bounded fact line —
+    a poll's open/closed and recorded tallies, a room's named fields, a
+    member count, the pin count. Reads the head the same fold wrote;
+    `coverage`/`ordering` ride beside it so a partial or gapped state is
+    never presented as settled truth."""
+    s = head.state
+    if head.kind == "poll":
+        state = s.get("state") or "unknown"
+        votes = s.get("votes") or {}
+        counts = s.get("option_counts") or {}
+        q = s.get("question")
+        parts = [f"poll {state}"]
+        if q:
+            parts.append(f"“{_clip(q, 60)}”")
+        if votes:
+            parts.append(f"{len(votes)} recorded vote(s)")
+        if counts:
+            parts.append("totals "
+                         + ", ".join(f"{k}={v}" for k, v in counts.items()))
+        return _clip("; ".join(parts))
+    if head.kind == "room":
+        return _clip("room: " + (_fields_summary(s.get("fields") or {})
+                                 or "no fields recorded"))
+    if head.kind == "membership":
+        members = s.get("members") or {}
+        return _clip(f"membership: {len(members)} member(s) recorded")
+    if head.kind == "pin":
+        return _clip(f"pin set: {len(s.get('pins') or ())} pin(s)")
+    if head.kind == "artifact":
+        return _clip(f"artifacts: {len(s.get('artifacts') or {})} recorded")
+    if head.kind == "message_metadata":
+        return _clip("metadata: "
+                     + ", ".join(sorted(s.get("fields") or {})) or "none")
+    if head.kind == "reaction":
+        counts = s.get("counts") or {}
+        return _clip("reactions: "
+                     + ", ".join(f"{k}={v}" for k, v in counts.items())
+                     or "none recorded")
+    return _clip(f"{head.kind}: {head.applied} observation(s) applied")

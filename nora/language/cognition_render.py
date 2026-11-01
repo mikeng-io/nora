@@ -83,6 +83,7 @@ from nora.domain.cognition_ground import (
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.external_files import render_file_links
 from nora.domain.models import REACTION_LABEL_MAX, emoji_display
+from nora.domain.observations import SourceEvent
 from nora.domain.prompt import ago, clip, escape, legal, one_line
 from nora.domain.social_stream import describe_read
 from nora.domain.stimuli import Stimulus
@@ -114,6 +115,11 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("reads", 20, "turn"),
     ("agenda", 30, "turn"),
     ("note_index", 40, "turn"),
+    # The reused Standing presentation (design/platform-observations 05):
+    # the room's position AND its source-object state (folded observation
+    # heads), read once and rendered once — typed input, its own budget row,
+    # never prose smuggled into the agenda.
+    ("standing", 45, "turn"),
     ("events", 50, "turn"),
     # What the unit settled and keeps (DEC-306), LAST of the Register and on
     # its own budget, so no number of memos can push an agenda room's events
@@ -511,13 +517,43 @@ def _social_row(stimulus: Stimulus, line: SocialLine, *, now_ms: int, tz: tzinfo
     return _Row(stimulus.at_ms, stimulus.id, show)
 
 
+def _observation_row(
+    stimulus: Stimulus, event: SourceEvent, *, now_ms: int, tz: tzinfo,
+) -> _Row:
+    """A typed source event as `<observation kind op at>` — the ONE
+    non-message family. It has no message id and NO speaker: it is something
+    the source did to an object, never a line somebody said. `at` is the
+    source's own time only when `time_quality` says so; `bridge_local` and
+    `unknown` say which clock it is not."""
+    when = _when(event.at_ms, now_ms, tz)
+
+    def show(limit: int | None) -> str:
+        who = event.actor or (
+            "anonymous" if event.actor_status == "anonymous" else None)
+        return render_elements(
+            [event], tag="observation",
+            attrs=lambda e, _i: (
+                ("kind", e.kind), ("op", e.operation), ("at", when),
+                ("actor", who),
+                ("time", e.time_quality if e.time_quality != "upstream"
+                        else None),
+                ("object", e.handle),
+            ),
+            body=lambda _e: (
+                one_line(event.summary) if limit is None
+                else _words(event.summary, limit)),
+        )
+
+    return _Row(stimulus.at_ms, stimulus.id, show)
+
+
 def _item_rows(
     item: AgendaItem, rows: Sequence[Stimulus], grounding: Grounding,
     own: Sequence[RecordItem], *, now_ms: int, tz: tzinfo, message_chars: int,
 ) -> tuple[list[_Row], int]:
     """The item's readable rows and how many stimuli of it could not be read:
     its messages (Record rows), Nora's own sends in its window, its Rollup
-    rows and its social reads."""
+    rows, its social reads and its typed source events."""
     out: list[_Row] = []
     unreadable = 0
     for s in rows:
@@ -527,6 +563,13 @@ def _item_rows(
                 unreadable += 1
                 continue
             out.append(_social_row(s, social, now_ms=now_ms, tz=tz))
+            continue
+        if s.kind == "observation":
+            event = grounding.observations.get(s.ref)
+            if event is None:
+                unreadable += 1
+                continue
+            out.append(_observation_row(s, event, now_ms=now_ms, tz=tz))
             continue
         if s.kind == "rollup":
             roll = grounding.rollups.get(s.ref)
@@ -657,6 +700,37 @@ def _register(
             attrs=_attrs([("not_listed", str(left_out) if left_out else None)]),
             when_empty="self_close",
         ), _ROW))
+    # Standing: each agenda room's folded source-object state (design 05) —
+    # the open poll, the pin set, the member count — typed rows under ONE
+    # block, on the Register's own budget row. A gap/unordered head says so
+    # (`ordering`); a partial snapshot says what it covers, never the whole.
+    standing_groups: list[str] = []
+    for room in rooms:
+        objects = grounding.source_objects.get(room_key(room), ())
+        if not objects:
+            continue
+        rows = listed([
+            render_elements(
+                [o], tag="source_object",
+                attrs=lambda e, _i: (
+                    ("kind", e.kind), ("object", e.handle),
+                    ("ordering", e.ordering or None),
+                    ("state", e.state or None),
+                ),
+                body=lambda _e: "",
+            )
+            for o in objects[: budget.register_lines]
+        ])
+        left = len(objects) - len(rows)
+        standing_groups.append(render_group(
+            "room_objects",
+            [("room", room_label(room, grounding.room_labels)),
+             ("not_listed", str(left) if left else None)],
+            "\n".join(rows),
+        ))
+    if standing_groups:
+        blocks.append(restamp(ContextBlock(
+            name="standing", body="\n".join(standing_groups)), _ROW))
     groups: list[str] = []
     for room in rooms:
         events = [e for e in grounding.events if e.room == room]

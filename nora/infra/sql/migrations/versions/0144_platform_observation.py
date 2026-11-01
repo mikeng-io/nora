@@ -132,8 +132,22 @@ def upgrade() -> None:
             f"EXECUTE FUNCTION nora_row_history_refuse_truncate()"
         )
 
+    # The 'observation' stimulus kind — the ONE source-event family the
+    # cognition loop admits for non-message platform evidence (design
+    # 05). `ck_stimulus_kind` is rebuilt rather than added so the shipped
+    # constraint keeps one name and one vocabulary.
+    op.drop_constraint("ck_stimulus_kind", "stimulus", type_="check")
+    op.create_check_constraint(
+        "ck_stimulus_kind", "stimulus",
+        "kind IN ('message', 'social', 'play', 'rollup', 'time', 'self', "
+        "'observation')")
+
 
 def downgrade() -> None:
+    op.drop_constraint("ck_stimulus_kind", "stimulus", type_="check")
+    op.create_check_constraint(
+        "ck_stimulus_kind", "stimulus",
+        "kind IN ('message', 'social', 'play', 'rollup', 'time', 'self')")
     for table in _HISTORY_TABLES:
         op.execute(
             f'DROP TRIGGER IF EXISTS nora_row_history ON "{table}"')

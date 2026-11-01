@@ -3490,7 +3490,8 @@ STIMULUS = sa.Table(
     # Written out, not read from `nora.domain.stimuli.STIMULUS_KINDS`: the
     # migration hardcodes it, and the parity gate ties the two.
     sa.CheckConstraint(
-        "kind IN ('message', 'social', 'play', 'rollup', 'time', 'self')",
+        "kind IN ('message', 'social', 'play', 'rollup', 'time', 'self', "
+        "'observation')",
         name="ck_stimulus_kind",
     ),
 )

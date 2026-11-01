@@ -55,6 +55,13 @@ from nora.domain.models import (
     TranscriptRow,
 )
 from nora.domain.notes import Note
+from nora.domain.observations import (
+    SourceEvent,
+    SourceScope,
+    head_summary,
+    object_handle,
+    observation_summary,
+)
 from nora.domain.ports import (
     CultureReader,
     EngagementRequest,
@@ -169,9 +176,15 @@ class TranscriptInjection:
         profile: ProfileHeads | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
         self_ids: frozenset[str] = frozenset(),
+        observations: Any = None,
     ) -> None:
         self._rosters = rosters or {}
         self._self_ids = self_ids
+        # The typed platform-observation Record (`ObservationStore`): the
+        # room's source events for the transcript window and its folded
+        # object heads for the standing slot. `None` on a harness that
+        # wires none renders neither — never a guessed source line.
+        self._observations = observations
         self._audit = audit
         # `<recalled>`, the pre-fetch: the SAME retrieval service the tool
         # registry's `memory_search` holds, `None` on the Honcho surface
@@ -300,7 +313,8 @@ class TranscriptInjection:
 
         (
             ((transcript, character, profiles, prefetch),
-             card, tagger_card, standing, notes, ledger),
+             card, tagger_card, standing, notes, ledger,
+             (source_events, source_objects)),
             presence,
             culture,
             (unit_culture, self_account, lessons),
@@ -313,6 +327,7 @@ class TranscriptInjection:
                 self._standing(msg),
                 self._notes(msg),
                 self._ledger(msg, ref),
+                self._observation_reads(msg),
             ),
             self._presence(msg),
             self._culture(msg),
@@ -363,6 +378,8 @@ class TranscriptInjection:
             memos=memos,
             standing=standing,
             ledger=ledger,
+            source_events=source_events,
+            source_objects=source_objects,
             presence=presence,
             culture=culture,
             character=character,
@@ -989,6 +1006,74 @@ class TranscriptInjection:
                 "nora_errors_total", stage="standing", platform=msg.platform)
             return None
         return found
+
+    async def _observation_reads(
+        self, msg: NormalizedMessage,
+    ) -> tuple[tuple[SourceEvent, ...], tuple[SourceEvent, ...]]:
+        """`(source events, source objects)` of THIS room — the scoped
+        source read of design/platform-observations 04. `recent` is bounded
+        by the prompt window, `heads` by 16 objects; both read through the
+        room's boundary (`account_key=""` — the turn already passed the
+        allowlist for this room, and a row of another room never resolves).
+        Fail-soft and counted (`stage="observations"`), like `_standing`:
+        a thinner prompt beats no reply; an unwired store renders nothing
+        rather than a guess."""
+        if self._observations is None:
+            return (), ()
+        scope = SourceScope(platform=msg.platform, account_key="",
+                            conversation_id=msg.conversation_id)
+        limit = self._prompt_window or self._context_window
+        try:
+            rows, heads = await asyncio.gather(
+                traced_read(
+                    "observations", "recent",
+                    self._observations.recent(scope=scope, limit=limit)),
+                traced_read(
+                    "observations", "heads",
+                    self._observations.heads(scope=scope, limit=16)),
+            )
+        except Exception:
+            log.exception("observation reads failed; continuing without them")
+            self._metrics.inc(
+                "nora_errors_total", stage="observations", platform=msg.platform)
+            return (), ()
+
+        def actor_of(obs: Any) -> str | None:
+            if not obs.actor_id or obs.actor_status != "known":
+                return None
+            ref = self._persons.resolve(obs.scope.platform, obs.actor_id)
+            return ref.name if ref is not None else None
+
+        events = tuple(
+            SourceEvent(
+                ref=f"platform_observation:{r.id}",
+                kind=r.observation.object_kind, operation=r.observation.operation,
+                at_ms=(r.observation.occurred_ms
+                       if r.observation.occurred_ms is not None
+                       else r.observation.received_ms),
+                time_quality=r.observation.time_quality,
+                actor=actor_of(r.observation),
+                actor_status=r.observation.actor_status,
+                handle=object_handle(
+                    r.observation.object_kind, r.observation.object_ref),
+                summary=observation_summary(r.observation),
+                target_message_id=r.target_message_id,
+            )
+            for r in rows
+        )
+        objects = tuple(
+            SourceEvent(
+                ref=f"{h.kind}:{h.object_ref}", kind=h.kind, operation="state",
+                at_ms=h.observed_ms or 0,
+                time_quality=("upstream" if h.observed_ms is not None
+                              else "unknown"),
+                actor=None, actor_status="not_applicable",
+                handle=object_handle(h.kind, h.object_ref),
+                summary="", state=head_summary(h), ordering=h.ordering,
+            )
+            for h in heads if h.applied > 0
+        )
+        return events, objects
 
     async def _memos(self, msg: NormalizedMessage) -> tuple[Memo, ...]:
         """The unit's kept memos for `<memos>` (DEC-306), keyed on the UNIT as

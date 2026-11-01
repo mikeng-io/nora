@@ -131,8 +131,9 @@ async def test_incremental_head_equals_as_of_rebuild(store):
         operation="revise", payload=PollPayload(state="closed",
                                                 close_ms=NOW)), "u3"))
     head = await store.current(scope=SCOPE, kind="poll", object_ref="poll-1")
-    replay = await store.as_of(scope=SCOPE, kind="poll", object_ref="poll-1",
-                               through_id=max(ids))
+    replay, more = await store.as_of(scope=SCOPE, kind="poll",
+                                     object_ref="poll-1", through_id=max(ids))
+    assert not more
     assert replay == head
     assert head.state["votes"] == {"v1": ["a"]}
     assert head.state["state"] == "closed"
@@ -143,11 +144,13 @@ async def test_as_of_boundaries(store):
     i2 = await _append(store, _obs(
         operation="add", actor_id="v1", actor_status="known",
         payload=PollPayload(voter_ref="v1", option_ref="a")), "u2")
-    early = await store.as_of(scope=SCOPE, kind="poll", object_ref="poll-1",
-                              through_id=i1)
+    early, more = await store.as_of(scope=SCOPE, kind="poll",
+                                    object_ref="poll-1", through_id=i1)
+    assert not more
     assert early.state["votes"] == {} and early.applied == 1
-    later = await store.as_of(scope=SCOPE, kind="poll", object_ref="poll-1",
-                              through_id=i2)
+    later, more = await store.as_of(scope=SCOPE, kind="poll",
+                                    object_ref="poll-1", through_id=i2)
+    assert not more
     assert later.state["votes"] == {"v1": ["a"]}
 
 
@@ -178,8 +181,9 @@ async def test_out_of_order_delta_is_a_gap_not_a_lie(store):
     assert head.ordering == "gap"
     assert head.coverage.get("ordering_gap") is True
     # History retains it; replay applies it at its own position.
-    replay = await store.as_of(scope=SCOPE, kind="poll", object_ref="poll-1",
-                               through_id=2)
+    replay, more = await store.as_of(scope=SCOPE, kind="poll",
+                                     object_ref="poll-1", through_id=2)
+    assert not more
     assert replay.state["votes"] == {"v1": ["a"]}
     assert replay.ordering == "ordered"
 
@@ -305,3 +309,51 @@ async def test_timestamp_target_resolution_keeps_authors_separate(store):
     remaining = await store.unresolved_targets(scope=scope)
     assert [r.observation.object_ref for r in remaining] == ["poll-b"]
     assert remaining[0].observation.target_author_id == "author-b"
+
+
+async def test_async_tx_hook_joins_the_append(store):
+    """An awaitable hook is awaited inside the write — a downstream
+    obligation that itself awaits commits with the observation, not after."""
+    seen: list[Any] = []
+
+    async def hook(conn: Any, obs_id: int) -> None:
+        seen.append(obs_id)
+
+    rid = await _append(store, _obs(), "u1", tx_hook=hook)
+    assert seen == [rid]
+
+
+async def test_async_tx_hook_failure_fails_the_append(store):
+    async def hook(conn: Any, obs_id: int) -> None:
+        raise RuntimeError("downstream obligation failed")
+
+    with pytest.raises(RuntimeError):
+        await _append(store, _obs(), "u1", tx_hook=hook)
+    # The append rolled back with its hook: nothing recorded, replayable.
+    assert await store.current(scope=SCOPE, kind="poll",
+                             object_ref="poll-1") is None
+
+
+async def test_as_of_is_bounded_and_reports_truncation(store):
+    await _append(store, _obs(), "u1")
+    i2 = await _append(store, _obs(
+        operation="add", actor_id="v1", actor_status="known",
+        payload=PollPayload(voter_ref="v1", option_ref="a")), "u2")
+    head, more = await store.as_of(scope=SCOPE, kind="poll",
+                                   object_ref="poll-1", through_id=i2, limit=1)
+    # The bound cut the history: the head folds the EARLIEST limit rows, an
+    # earlier point than requested — `more` is what keeps that honest.
+    assert more is True
+    assert head is not None and head.applied == 1
+    assert head.state["votes"] == {}
+
+
+async def test_by_ids_reads_only_inside_the_scope(store):
+    i1 = await _append(store, _obs(), "u1")
+    other = SourceScope(platform="discord", account_key="acct",
+                        conversation_id="room2")
+    i2 = await _append(store, _obs(scope=other), "u2")
+    rows = await store.by_ids(scope=SCOPE, ids=(i1, i2))
+    # The other scope's id never resolves through this scope's read.
+    assert [r.id for r in rows] == [i1]
+    assert await store.by_ids(scope=SCOPE, ids=()) == []

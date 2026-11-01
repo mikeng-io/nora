@@ -11,17 +11,26 @@ head, a full replay and the fake agree by construction.
 transaction — the "Record append + cheap current head update committed
 together" of design 02 — and `tx_hook` lets a caller join that transaction
 the way `RecordStore.append`'s does. Concurrent appends to one object
-serialize on the head row's `FOR UPDATE` read.
+serialize on the head row's `FOR UPDATE` read; the FIRST writer claims the
+row with an `ON CONFLICT DO NOTHING` insert and a loser re-reads under the
+same lock, so two simultaneous first appends cannot race the insert.
+
+`tx_hook` may be a plain callable or return an awaitable: a downstream
+obligation that itself awaits (an enqueue, a state write) is awaited INSIDE
+the transaction — a hook detached as a task would be an obligation the
+commit never joined.
 """
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from nora.domain.models import EditTarget
 from nora.domain.observations import (
     OBSERVATION_CONTRACT,
     Coverage,
@@ -36,7 +45,12 @@ from nora.domain.observations import (
     target_key,
 )
 
-from .schema import PLATFORM_OBJECT_STATE, PLATFORM_OBSERVATION
+from .schema import (
+    MESSAGE_EDIT,
+    MESSAGES,
+    PLATFORM_OBJECT_STATE,
+    PLATFORM_OBSERVATION,
+)
 
 OBS = PLATFORM_OBSERVATION
 ST = PLATFORM_OBJECT_STATE
@@ -55,24 +69,32 @@ def _scope_columns(scope: SourceScope) -> dict[str, Any]:
     }
 
 
-def _scope_where(scope: SourceScope) -> Any:
-    t = OBS
+def _room_where(t: Any, scope: SourceScope) -> Any:
+    """`platform` + `conversation_id` + `thread` — the room's boundary, no
+    account. A read with an EMPTY `account_key` holds the room's boundary
+    (the unit the grounder reads for): `platform` and `conversation_id`
+    still name the room, so a scope cannot widen past it."""
     return sa.and_(
         t.c.platform == scope.platform,
-        t.c.account_key == scope.account_key,
         t.c.conversation_id == scope.conversation_id,
         t.c.thread == scope.thread,
     )
+
+
+def _scope_where(scope: SourceScope) -> Any:
+    if not scope.account_key:
+        return _room_where(OBS, scope)
+    t = OBS
+    return sa.and_(
+        _room_where(t, scope), t.c.account_key == scope.account_key)
 
 
 def _st_scope_where(scope: SourceScope) -> Any:
+    if not scope.account_key:
+        return _room_where(ST, scope)
     t = ST
     return sa.and_(
-        t.c.platform == scope.platform,
-        t.c.account_key == scope.account_key,
-        t.c.conversation_id == scope.conversation_id,
-        t.c.thread == scope.thread,
-    )
+        _room_where(t, scope), t.c.account_key == scope.account_key)
 
 
 def _row_to_stored(row: sa.RowMapping) -> StoredObservation:
@@ -172,7 +194,9 @@ class SqlObservationStore:
                 target_message_id=target_message_id)
             await self._apply_head(conn, stored)
             if tx_hook is not None:
-                tx_hook(conn, int(row_id))
+                awaited = tx_hook(conn, int(row_id))
+                if inspect.isawaitable(awaited):
+                    await awaited
             return int(row_id)
 
     async def _apply_head(
@@ -185,17 +209,29 @@ class SqlObservationStore:
                    ST.c.object_ref == obs.object_ref)
             .with_for_update())
         row = (await conn.execute(sel)).mappings().one_or_none()
-        head = _row_to_head(row) if row is not None else None
-        new_head = fold_observation(head, stored)
-        values = _head_to_row(new_head)
         if row is None:
-            await conn.execute(pg_insert(ST).values(
-                **_scope_columns(obs.scope), kind=obs.object_kind,
-                object_ref=obs.object_ref, **values))
-        else:
-            await conn.execute(
-                sa.update(ST).where(ST.c.id == row["id"]).values(
-                    **values, updated_at=sa.func.now()))
+            # FIRST WRITER: two appends to one new object can both read an
+            # absent head (an absent row holds no lock). Claim the row with a
+            # conflict-safe insert of our fold; the loser re-reads the
+            # winner's row under FOR UPDATE and folds from THAT, so one
+            # object's appends serialize rather than violating the unique key
+            # or last-write-wins-ing a head.
+            first = fold_observation(None, stored)
+            ins = await conn.execute(
+                pg_insert(ST).values(
+                    **_scope_columns(obs.scope), kind=obs.object_kind,
+                    object_ref=obs.object_ref, **_head_to_row(first))
+                .on_conflict_do_nothing(
+                    constraint="uq_platform_object_state_object")
+                .returning(ST.c.id))
+            if ins.scalar_one_or_none() is not None:
+                return
+            row = (await conn.execute(sel)).mappings().one()
+        head = _row_to_head(row)
+        new_head = fold_observation(head, stored)
+        await conn.execute(
+            sa.update(ST).where(ST.c.id == row["id"]).values(
+                **_head_to_row(new_head), updated_at=sa.func.now()))
 
     async def current(
         self, *, scope: SourceScope, kind: str, object_ref: str,
@@ -234,16 +270,49 @@ class SqlObservationStore:
 
     async def as_of(
         self, *, scope: SourceScope, kind: str, object_ref: str,
-        through_id: int,
-    ) -> ObservationHead | None:
+        through_id: int, limit: int = 1000,
+    ) -> tuple[ObservationHead | None, bool]:
+        """Bounded as-of: at most `limit` retained rows fold. `more` says the
+        history continues past the bound — the head then folds an EARLIER
+        point than `through_id` and the caller must treat it as partial,
+        never as the requested state."""
         async with self._engine.connect() as conn:
             rows = (await conn.execute(
                 sa.select(OBS).where(
                     _scope_where(scope), OBS.c.kind == kind,
                     OBS.c.object_ref == object_ref, OBS.c.id <= through_id)
-                .order_by(OBS.c.id))).mappings().all()
-        return rebuild_head([_row_to_stored(r) for r in rows],
-                            kind=kind, object_ref=object_ref)
+                .order_by(OBS.c.id).limit(max(limit, 0) + 1))).mappings().all()
+        more = len(rows) > max(limit, 0)
+        head = rebuild_head(
+            [_row_to_stored(r) for r in rows[: max(limit, 0)]],
+            kind=kind, object_ref=object_ref)
+        return head, more
+
+    async def recent(
+        self, *, scope: SourceScope, since_ms: int = 0, limit: int = 50,
+    ) -> list[StoredObservation]:
+        at = sa.func.coalesce(OBS.c.occurred_ms, OBS.c.received_ms)
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(OBS).where(_scope_where(scope), at >= since_ms)
+                .order_by(at.desc(), OBS.c.id.desc())
+                .limit(max(limit, 0)))).mappings().all()
+        return [_row_to_stored(r) for r in rows]
+
+    async def by_ids(
+        self, *, scope: SourceScope, ids: tuple[int, ...], limit: int = 200,
+    ) -> list[StoredObservation]:
+        """Specific observation rows of one scope, bounded — the grounder's
+        batch read of the rows agenda stimuli name. A row of ANOTHER scope
+        never resolves here: the scope is the read boundary."""
+        if not ids:
+            return []
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(OBS).where(
+                    _scope_where(scope), OBS.c.id.in_(tuple(ids)))
+                .order_by(OBS.c.id).limit(max(limit, 0)))).mappings().all()
+        return [_row_to_stored(r) for r in rows]
 
     async def resolve_targets(
         self, *, scope: SourceScope, target_key: str, message_id: int,
@@ -269,3 +338,43 @@ class SqlObservationStore:
 
     async def aclose(self) -> None:
         await self._engine.dispose()
+
+
+async def resolve_target_message_id(
+    engine: AsyncEngine, *, platform: str, conversation_id: str,
+    target: EditTarget | None, target_author_id: str = "",
+) -> int | None:
+    """Resolve an observation's `target` to a `messages.id`, or None when the
+    Record cannot point at it — an unresolved target stays unresolved (the
+    observation is retained for `resolve_targets`), NEVER guessed at a
+    same-timestamp row.
+
+    `message_id` targets match `platform_message_id`. Timestamp targets match
+    `messages.ts` OR one of its edits (`SqlRecordStore`'s edit-target rule:
+    a second edit can name the first edit's timestamp) and prefer the row
+    authored by `target_author_id` when several match — the author's identity
+    is preserved separately from the actor's (commit `38b4a157f`)."""
+    if target is None or (not target.message_id and target.sent_ts is None):
+        return None
+    if target.message_id:
+        match = MESSAGES.c.platform_message_id == target.message_id
+        prefer = sa.literal(0)
+    elif target.sent_ts is not None:
+        edited_at = sa.exists().where(
+            MESSAGE_EDIT.c.message_id == MESSAGES.c.id,
+            MESSAGE_EDIT.c.ts == target.sent_ts,
+        )
+        match = sa.or_(MESSAGES.c.ts == target.sent_ts, edited_at)
+        prefer = (
+            sa.case((MESSAGES.c.sender_id == target_author_id, 0), else_=1)
+            if target_author_id else sa.literal(0))
+    else:
+        return None
+    stmt = (
+        sa.select(MESSAGES.c.id)
+        .where(MESSAGES.c.platform == platform,
+               MESSAGES.c.conversation_id == conversation_id, match)
+        .order_by(prefer, MESSAGES.c.id.asc()).limit(1))
+    async with engine.connect() as conn:
+        row = (await conn.execute(stmt)).first()
+    return int(row[0]) if row is not None else None

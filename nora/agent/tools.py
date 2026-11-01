@@ -210,6 +210,12 @@ from ..domain.notes import (
     has_duplicate_open_title,
     note_handle,
 )
+from ..domain.observations import (
+    SourceScope,
+    head_summary,
+    object_handle,
+    observation_summary,
+)
 from ..domain.ports import (
     BrowserRunner,
     CultureReader,
@@ -3055,6 +3061,12 @@ def _before_bound(before: str | None, now: datetime) -> int | None:
 
 
 #: `record_query`'s notes (ADR 0015 §3: interpretation lives in the result).
+#: The source-object kinds `record_query`'s `kind` branch reads
+#: (design/platform-observations 05): everything the observation Record
+#: folds a head for, and nothing else — a poll, the room itself, its
+#: member set, the pin set, a shared artifact.
+_OBSERVATION_KINDS = ("poll", "room", "membership", "pin", "artifact")
+
 _RECORD_QUERY_OFF = (
     "I can't search what was said right now. Say so; do not guess what was said."
 )
@@ -4945,6 +4957,10 @@ def build_tool_specs(
     # the policy is, `nora.app.assembler.lineage_policy`). `None` for either
     # (offline, eval, every test that does not care) answers `unavailable`.
     record: RecordQuerySource | None = None,
+    # The typed platform-observation Record (`ObservationStore`), for
+    # `record_query`'s `kind` branch: `None` answers it `unavailable`,
+    # never an empty list that reads as «no such objects».
+    observations: Any = None,
     lineage: LineagePolicy | None = None,
     # `rollup_read`'s Rollup read and `standing_read`'s Standing head.
     # `None` (offline, eval, every tag
@@ -5711,20 +5727,114 @@ def build_tool_specs(
             result["note"] = " ".join(notes)
         return _memory_result(result)
 
+    async def _observation_query(
+        kind: str, object: str | None, history: bool, at_id: int | None,
+    ) -> dict:
+        """The typed `kind` branch of `record_query`: ONE bounded, scoped
+        read of the observation Record — discovery (`heads`) with no
+        `object`, the object's folded head with one, its retained history
+        or an as-of point when asked. R-27 holds: an unwired store is
+        `unavailable`, a scope with no such object is `nothing_found`,
+        and a bounded `as_of` that cut its history says `partial`."""
+        scope = SourceScope(
+            platform=room.platform, account_key="",
+            conversation_id=bound_conversation_id)
+        try:
+            heads = await observations.heads(
+                scope=scope, kind=kind, limit=20)
+            if object is None and not history and at_id is None:
+                # DISCOVERY: this room's objects of the kind (its polls,
+                # its pin set) — model-safe handles + folded state.
+                if not heads:
+                    _record(metrics, "record_query", "nothing_found",
+                            kind=kind)
+                    return {"status": "nothing_found",
+                            "note": f"No {kind} objects are recorded "
+                                    f"for this room."}
+                out = [{"object": object_handle(h.kind, h.object_ref),
+                        "state": head_summary(h), "ordering": h.ordering}
+                       for h in heads if h.applied > 0]
+                if not out:
+                    _record(metrics, "record_query", "nothing_found",
+                            kind=kind)
+                    return {"status": "nothing_found",
+                            "note": f"No {kind} objects are recorded "
+                                    f"for this room."}
+                _record(metrics, "record_query", "ok", kind=kind,
+                        objects=len(out))
+                return _memory_result(
+                    {"status": "ok", "kind": kind, "objects": out,
+                     "note": "Objects are named by opaque handles; pass one "
+                             "back as `object` for its detail."})
+            # DETAIL: resolve the handle the model handed back against the
+            # bounded head set — a digest it invented resolves to nothing.
+            head = next(
+                (h for h in heads
+                 if object_handle(h.kind, h.object_ref) == object), None)
+            if head is None:
+                _record(metrics, "record_query", "nothing_found",
+                        kind=kind, handle=bool(object))
+                return {"status": "nothing_found",
+                        "note": "No recorded object has that handle here."}
+            if at_id is not None:
+                folded, more = await observations.as_of(
+                    scope=scope, kind=kind, object_ref=head.object_ref,
+                    through_id=at_id)
+                note = ("The read cut off part-way through the object's "
+                        "history — this is an earlier, partial state."
+                        if more else None)
+                _record(metrics, "record_query", "ok", kind=kind, as_of=True)
+                return _memory_result(
+                    {"status": "ok", "kind": kind,
+                     "object": object,
+                     "state": (head_summary(folded) if folded else "no state"),
+                     "ordering": folded.ordering if folded else "",
+                     **({"note": note} if note else {})})
+            if history:
+                rows = await observations.history(
+                    scope=scope, kind=kind, object_ref=head.object_ref,
+                    limit=50)
+                out = [{"event": f"platform_observation:{r.id}",
+                        "op": r.observation.operation,
+                        "at_ms": (r.observation.occurred_ms
+                                  if r.observation.occurred_ms is not None
+                                  else r.observation.received_ms),
+                        "time": r.observation.time_quality,
+                        "summary": observation_summary(r.observation)}
+                       for r in rows]
+                _record(metrics, "record_query", "ok", kind=kind,
+                        events=len(out))
+                return _memory_result(
+                    {"status": "ok", "kind": kind, "object": object,
+                     "events": out})
+            _record(metrics, "record_query", "ok", kind=kind, detail=True)
+            return _memory_result(
+                {"status": "ok", "kind": kind, "object": object,
+                 "state": head_summary(head), "ordering": head.ordering})
+        except Exception:
+            log.exception("record_query observation branch failed")
+            _record(metrics, "record_query", "unavailable", kind=kind)
+            return {"status": "unavailable", "note": _RECORD_QUERY_OFF}
+
     async def record_query(
-        start: str,
+        start: str = "",
         end: str | None = None,
         scope: Literal["this_room", "all_rooms"] = "this_room",
         author: str | None = None,
         text: str | None = None,
+        kind: str | None = None,
+        object: str | None = None,
+        history: bool = False,
+        at_id: int | None = None,
     ) -> dict:
         """Search this group's recorded messages over a time span, by author
-        or words. Call this when someone asks what was said on a day or who
-        mentioned something.
+        or words — or read the room's recorded source objects (polls, the
+        room's state, members, pins, shared artifacts) by `kind`.
 
         SHOULD: give `text` as the words were written, not a paraphrase.
         Returns `messages` oldest first, each with `room`, `sender`, `body`
-        and `when`. Statuses: ok, nothing_found, ambiguous, unavailable.
+        and `when`; a `kind` call returns `objects`/`state`/`events`
+        instead. Statuses: ok, nothing_found, ambiguous, unavailable.
 
         Args:
             start: From this Hong Kong time, "YYYY-MM-DD HH:MM", or a date
@@ -5735,7 +5845,26 @@ def build_tool_specs(
             author: Only messages by this person, a name used in this
                 conversation.
             text: Only messages containing these words.
+            kind: One of poll, room, membership, pin, artifact — switches the
+                query to the room's recorded source objects of that kind.
+            object: An object handle a `kind` call returned, for its detail.
+            history: With `object`, the object's retained source events.
+            at_id: With `object`, the object's folded state through that
+                observation id (partial when the bound cut the history).
         """
+        if kind is not None or object is not None:
+            # The typed source-object branch: the observation Record's own
+            # read, not the message query's — it does not consult `record`
+            # or `lineage`, and an unwired store is `unavailable` (R-27).
+            if observations is None or (
+                    kind is not None and kind not in _OBSERVATION_KINDS):
+                _record(metrics, "record_query", "unavailable",
+                        reason="unwired" if observations is None else "kind")
+                return {"status": "unavailable",
+                        "note": _RECORD_QUERY_OFF if observations is None else
+                        f"`kind` must be one of {', '.join(_OBSERVATION_KINDS)}."}
+            return await _observation_query(
+                kind or "poll", object, history, at_id)
         # LINEAGE FIRST, before any read: the rooms this call may touch are the ones
         # whose `message` lineage passes for THIS room (DEC-225), so
         # another room's words never reach the process for a room that may

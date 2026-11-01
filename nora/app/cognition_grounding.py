@@ -76,6 +76,7 @@ from nora.domain.cognition_ground import (
     RollupLine,
     SocialLine,
     StayDeviation,
+    observation_ref,
     parse_rollup_ref,
     record_ref,
 )
@@ -85,6 +86,13 @@ from nora.domain.gatherings import Gathering
 from nora.domain.memo import Memo
 from nora.domain.mobility_forecast import detect_stay_anomalies, place_words
 from nora.domain.notes import Note, likely_duplicates
+from nora.domain.observations import (
+    SourceEvent,
+    SourceScope,
+    head_summary,
+    object_handle,
+    observation_summary,
+)
 from nora.domain.profile import ProfileLine, ProfileView
 from nora.domain.record_query import RecordHit, RecordRefHit
 from nora.domain.reminders import Reminder
@@ -423,6 +431,95 @@ def unit_self_profile_reader(
     return gated
 
 
+async def _observation_lines(
+    pending: Sequence[Stimulus], claimed: set[int],
+    observations: Any | None, allowed: set[tuple[str, str]], persons: Any,
+) -> dict[str, SourceEvent]:
+    """The readable `observation` stimuli of the agenda, by `ref`, each a
+    typed source event with its actor's roster name when the source names
+    one and the roster knows them. A stimulus whose observation row the
+    Record does not hold, or whose room is not one of the unit's, has no
+    entry — counted unreadable, never rendered as a guess."""
+    out: dict[str, SourceEvent] = {}
+    if observations is None:
+        return out
+    wanted: list[tuple[Stimulus, int]] = []
+    for s in pending:
+        if s.id not in claimed or s.kind != "observation":
+            continue
+        row_id = observation_ref(s)
+        if row_id is None or (s.platform, s.conversation_id) not in allowed:
+            continue
+        wanted.append((s, row_id))
+    by_scope: dict[tuple[str, str], list[int]] = {}
+    for s, row_id in wanted:
+        by_scope.setdefault((s.platform, s.conversation_id), []).append(row_id)
+    found: dict[int, Any] = {}
+    for (platform, cid), ids in by_scope.items():
+        # Room-wide scope: the stimuli carry the room's boundary; the rows
+        # must match it (another account's room never resolves).
+        for row in await observations.by_ids(
+            scope=SourceScope(platform=platform, account_key="",
+                              conversation_id=cid),
+            ids=tuple(ids)):
+            found[row.id] = row
+    for s, row_id in wanted:
+        row = found.get(row_id)
+        if row is None:
+            continue
+        obs = row.observation
+        actor: str | None = None
+        if obs.actor_id and obs.actor_status == "known":
+            ref = persons.resolve(obs.scope.platform, obs.actor_id)
+            actor = ref.name if ref is not None else None
+        out[s.ref] = SourceEvent(
+            ref=s.ref, kind=obs.object_kind, operation=obs.operation,
+            at_ms=(obs.occurred_ms if obs.occurred_ms is not None
+                   else obs.received_ms),
+            time_quality=obs.time_quality,
+            actor=actor, actor_status=obs.actor_status,
+            handle=object_handle(obs.object_kind, obs.object_ref),
+            summary=observation_summary(obs),
+            target_message_id=row.target_message_id,
+        )
+    return out
+
+
+async def _source_objects(
+    agenda_rooms: Sequence[Room], allowed: set[tuple[str, str]],
+    observations: Any | None, persons: Any, *, limit: int = 8,
+) -> dict[str, tuple[SourceEvent, ...]]:
+    """The agenda rooms' folded source-object heads, `room_key` → at most
+    `limit` of the newest — the Standing block's typed input. A room the
+    unit does not own contributes nothing; an unwired store reads as no
+    objects, never as a failed guess."""
+    out: dict[str, tuple[SourceEvent, ...]] = {}
+    if observations is None:
+        return out
+    for room in agenda_rooms:
+        if (room.platform, room.conversation_id) not in allowed:
+            continue
+        heads = await observations.heads(
+            scope=SourceScope(platform=room.platform, account_key="",
+                              conversation_id=room.conversation_id),
+            limit=limit)
+        events: list[SourceEvent] = []
+        for h in heads:
+            if h.applied == 0:
+                continue
+            events.append(SourceEvent(
+                ref=f"{h.kind}:{h.object_ref}", kind=h.kind,
+                operation="state", at_ms=h.observed_ms or 0,
+                time_quality=("upstream" if h.observed_ms is not None
+                              else "unknown"),
+                actor=None, actor_status="not_applicable",
+                handle=object_handle(h.kind, h.object_ref),
+                summary="", state=head_summary(h), ordering=h.ordering))
+        if events:
+            out[f"{room.platform}:{room.conversation_id}"] = tuple(events)
+    return out
+
+
 def build_grounder(
     *,
     records: RecordRefSource,
@@ -445,6 +542,7 @@ def build_grounder(
     metrics: Any = None,
     memo_index: Callable[[str], Awaitable[Sequence[Memo]]] | None = None,
     pending_reminds: Callable[[], Awaitable[Sequence[Reminder]]] | None = None,
+    observations: Any | None = None,
 ) -> Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]:
     """The session's `Grounder` (`nora.app.cognition_session.Grounder`).
 
@@ -646,9 +744,14 @@ def build_grounder(
                 None if self_account is None else self_account(unit),
                 stage="cognition_self", platform="cognition", metrics=metrics,
             )
+        observations_out = await _observation_lines(
+            pending, claimed, observations, allowed, persons)
+        source_objects = await _source_objects(
+            agenda_rooms, allowed, observations, persons)
         return Grounding(
             records=records_out, notes=notes, memos=memos, events=tuple(events),
             rollups=rollups, socials=_social_lines(pending, claimed, persons),
+            observations=observations_out, source_objects=source_objects,
             own_sends=own_sends, room_labels=labels, self_account=account,
             self_profile=profile_view, profile_names=profile_names,
         )
