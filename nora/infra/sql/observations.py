@@ -284,7 +284,7 @@ class SqlObservationStore:
             row = (await conn.execute(
                 sa.select(ST).where(
                     _st_scope_where(scope), ST.c.kind == kind,
-                    _HANDLE_DIGEST == digest))
+                    digest == _HANDLE_DIGEST))
             ).mappings().one_or_none()
         return None if row is None else _row_to_head(row)
 
@@ -383,15 +383,7 @@ async def _resolve_target_row(
     The author's identity is preserved separately from the actor's (commit
     `38b4a157f`): an author-qualified target resolves only a row that author
     sent, and only when that author sent exactly one."""
-    if target.message_id:
-        row = (await conn.execute(
-            sa.select(MESSAGES.c.id).where(
-                MESSAGES.c.platform == platform,
-                MESSAGES.c.conversation_id == conversation_id,
-                MESSAGES.c.platform_message_id == target.message_id)
-            .order_by(MESSAGES.c.id).limit(1))).first()
-        return int(row[0]) if row is not None else None
-    if target.sent_ts is None:
+    if not target.message_id and target.sent_ts is None:
         return None
     # `SqlRecordStore`'s edit-target rule: a second edit can name the first
     # edit's timestamp, so a timestamp target matches the message OR one of
@@ -399,14 +391,15 @@ async def _resolve_target_row(
     edited_at = sa.exists().where(
         MESSAGE_EDIT.c.message_id == MESSAGES.c.id,
         MESSAGE_EDIT.c.ts == target.sent_ts)
-    rows = (await conn.execute(
-        sa.select(MESSAGES.c.id, MESSAGES.c.sender_id).where(
-            MESSAGES.c.platform == platform,
-            MESSAGES.c.conversation_id == conversation_id,
-            sa.or_(MESSAGES.c.ts == target.sent_ts, edited_at))
-        .order_by(MESSAGES.c.id).limit(20))).all()
+    match = (MESSAGES.c.platform_message_id == target.message_id
+             if target.message_id else
+             sa.or_(MESSAGES.c.ts == target.sent_ts, edited_at))
+    where = sa.and_(MESSAGES.c.platform == platform,
+                    MESSAGES.c.conversation_id == conversation_id, match)
     if target_author_id:
-        rows = [r for r in rows if r.sender_id == target_author_id]
+        where = sa.and_(where, MESSAGES.c.sender_id == target_author_id)
+    rows = (await conn.execute(
+        sa.select(MESSAGES.c.id).where(where).limit(2))).all()
     if len(rows) != 1:
         return None
     return int(rows[0].id)
@@ -460,22 +453,31 @@ async def relink_arriving_targets(
             keys.append(f"ts:{sent_ts}:author:{sender_id}")
     if not keys:
         return 0
-    rows = (await conn.execute(
-        sa.select(OBS.c.id, OBS.c.target_key, OBS.c.target_author_id).where(
-            _scope_where(scope), OBS.c.target_key.in_(keys),
-            OBS.c.target_message_id.is_(None)))).mappings().all()
+    pending = sa.and_(_scope_where(scope), OBS.c.target_key.in_(keys),
+                      OBS.c.target_message_id.is_(None))
+    if not (await conn.execute(sa.select(sa.exists().where(pending)))).scalar_one():
+        return 0
     linked = 0
-    for row in rows:
-        resolved = await _resolve_target_row(
-            conn, platform=scope.platform,
-            conversation_id=scope.conversation_id,
-            target=target_from_key(row["target_key"]),
-            target_author_id=row["target_author_id"] or "")
-        if resolved is None:
-            continue
-        await conn.execute(
-            sa.update(OBS).where(
-                OBS.c.id == row["id"], OBS.c.target_message_id.is_(None))
-            .values(target_message_id=resolved))
-        linked += 1
+    # Resolve each address once, not once per retained vote/reaction row.
+    # There are at most three addresses; author-qualified native ids share
+    # an address with bare ids, so those need their own unique-match read.
+    for key in keys:
+        authors = ("", sender_id) if key.startswith("id:") and sender_id else ("",)
+        for author in authors:
+            qualified_author = (
+                sender_id or "" if ":author:" in key else author)
+            resolved = await _resolve_target_row(
+                conn, platform=scope.platform,
+                conversation_id=scope.conversation_id,
+                target=target_from_key(key), target_author_id=qualified_author)
+            if resolved is None:
+                continue
+            author_match = (OBS.c.target_author_id == qualified_author
+                            if qualified_author else
+                            sa.or_(OBS.c.target_author_id.is_(None),
+                                   OBS.c.target_author_id == ""))
+            result = await conn.execute(
+                sa.update(OBS).where(pending, OBS.c.target_key == key, author_match)
+                .values(target_message_id=resolved))
+            linked += result.rowcount
     return linked

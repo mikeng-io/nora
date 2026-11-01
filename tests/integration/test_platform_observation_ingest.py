@@ -25,8 +25,15 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from nora.app.bridge_queue import StreamReader, WorkRunner, stream_name
+from nora.domain.models import EditTarget, NormalizedMessage
+from nora.domain.observations import SourceScope
+from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.bridge_store import SqlBridgeStore
-from nora.infra.sql.observations import SqlObservationStore
+from nora.infra.sql.observations import (
+    SqlObservationStore,
+    relink_arriving_targets,
+    resolve_target_message_id,
+)
 from nora.infra.sql.schema import (
     BRIDGE_EVENT,
     BRIDGE_WORK,
@@ -39,6 +46,7 @@ from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.ingest.stages.stimulus import Wiring as StimulusWiring
 from nora.platform.bridge.envelope import Envelope, canonical_source_key, event_id
 from nora.platform.bridge.queue import StreamProducer, ensure_group
+from nora.platform.bridge.rehydrate import observation_from_dict
 from nora.policy import Policy, permissive_policy
 from tests.integration.test_bridge_queue import (
     ACCOUNT,
@@ -839,8 +847,8 @@ async def test_reaction_sibling_does_not_consume_its_sidecar(
     event = await store.event(env.event_id)
     # The touch's terminal answer committed first (the replay marker);
     # the sidecar's durable path committed regardless.
-    assert event["state"] in ("intentional_skip", "failed_retained")
-    assert event["payload"]["ingest_ended"]["outcome"]
+    assert event["state"] == "intentional_skip"
+    assert event["payload"]["ingest_ended"]["outcome"] == "reaction_recorded"
     obs_rows = await _obs_rows(store)
     assert len(obs_rows) == 1
     heads = await _head_rows(store)
@@ -850,3 +858,67 @@ async def test_reaction_sibling_does_not_consume_its_sidecar(
     assert ("stimulus", 90) in kinds
     assert event["admission"]["observation"] == "ok"
     assert await _pending(redis_client, stream) == 0
+
+
+async def test_target_uniqueness_is_measured_after_author_filtering(bridge):
+    store, _, _ = bridge
+    audit = SqlRecordStore(store._engine)
+
+    async def put(sender, mid):
+        return await audit.append(message=NormalizedMessage(
+            platform=PLATFORM, conversation_id=CONV, conversation_type="group",
+            sender_id=sender, sender_name=None, timestamp=7200,
+            body="generated target", raw={},
+            message_id=mid))
+
+    first = await put("author-a", "native-a")
+    for i in range(21):
+        await put("other-author", f"native-other-{i}")
+    late = await put("author-b", "native-b")
+    assert await resolve_target_message_id(
+        store._engine, platform=PLATFORM, conversation_id=CONV,
+        target=EditTarget(sent_ts=7200), target_author_id="author-b") == late
+    assert await resolve_target_message_id(
+        store._engine, platform=PLATFORM, conversation_id=CONV,
+        target=EditTarget(sent_ts=7200), target_author_id="author-a") == first
+    # A second answer beyond the old twenty-row page makes it ambiguous.
+    await put("author-a", "native-a")
+    for target in (EditTarget(sent_ts=7200), EditTarget(message_id="native-a")):
+        assert await resolve_target_message_id(
+            store._engine, platform=PLATFORM, conversation_id=CONV,
+            target=target, target_author_id="author-a") is None
+
+
+async def test_late_target_relinks_history_without_a_query_per_observation(bridge):
+    store, _, _ = bridge
+    observations = SqlObservationStore(store._engine)
+    scope = SourceScope(platform=PLATFORM, account_key=ACCOUNT, conversation_id=CONV)
+    for i in range(32):
+        obs = observation_from_dict(_obs(
+            kind="message_metadata", object_ref="late-metadata",
+            payload={"view_once": True}, target={"message_id": "native-late"},
+            target_author_id="author-a", received_ms=7300 + i))
+        await observations.append(
+            observation=obs, event_id=f"late-event-{i}", source_digest=f"late-source-{i}")
+    target_id = await SqlRecordStore(store._engine).append(message=NormalizedMessage(
+        platform=PLATFORM, conversation_id=CONV, conversation_type="group",
+        sender_id="author-a", sender_name=None, timestamp=7300,
+        body="generated late target", raw={},
+        message_id="native-late"))
+    statements = []
+
+    def record_statement(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    sa.event.listen(store._engine.sync_engine, "before_cursor_execute", record_statement)
+    try:
+        async with store._engine.begin() as conn:
+            linked = await relink_arriving_targets(
+                conn, scope=scope, platform_message_id="native-late", sent_ts=7300,
+                sender_id="author-a")
+    finally:
+        sa.event.remove(store._engine.sync_engine, "before_cursor_execute", record_statement)
+    assert linked == 32
+    rows = await _obs_rows(store)
+    assert len(rows) == 32 and all(r["target_message_id"] == target_id for r in rows)
+    assert len(statements) <= 12  # bounded by target addresses, not history length
