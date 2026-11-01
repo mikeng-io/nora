@@ -15,6 +15,8 @@ import { strict as assert } from 'node:assert';
 import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { createServer } from 'node:http';
+import { sendJson } from './http_util.js';
 
 import { AttachmentStore, validAttachmentKey } from './media.js';
 import { ActionStore, actionResponse } from './store.js';
@@ -27,6 +29,37 @@ import { Metrics } from './obs.js';
 import { canonicalJson } from './canon.js';
 
 const tmpDir = () => mkdtempSync(path.join(tmpdir(), 'wa-bridge-'));
+
+test('handled v1 JSON routes do not fall through to the legacy 404', async (t) => {
+  const handleV1 = createV1({ health: () => ({ ok: true }), self: () => ({ platform: 'whatsapp' }) });
+  let fallbacks = 0;
+  let errors = 0;
+  const server = createServer(async (req, res) => {
+    try {
+      if (await handleV1(req, res, new URL(req.url, 'http://bridge'))) return;
+      fallbacks++;
+      sendJson(res, 404, { error: 'not_found' });
+    } catch {
+      errors++;
+      res.end();
+    }
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  for (const route of ['/v1/health', '/v1/self']) {
+    const response = await fetch(base + route);
+    assert.equal(response.status, 200);
+    assert.ok(await response.json());
+  }
+  assert.equal(fallbacks, 0);
+  assert.equal(errors, 0);
+  const missing = await fetch(base + '/v1/unknown');
+  assert.equal(missing.status, 404);
+  assert.deepEqual(await missing.json(), { error: 'not_found' });
+  assert.equal(fallbacks, 1);
+  assert.equal(errors, 0);
+});
 
 // -- attachment custody ---------------------------------------------------------
 
