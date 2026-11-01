@@ -51,8 +51,8 @@
   {
     "name": "visible reaction tally has one presentation owner",
     "file": "nora/agent/prefill.py",
-    "old": "                if e.kind == \"reaction\" and e.handle in reaction_targets",
-    "new": "                if False",
+    "old": "                None if e.kind == \"reaction\" and e.handle in reaction_targets",
+    "new": "                None if False",
     "target": "tests/unit/test_platform_observation_wired.py::test_old_target_reaction_union_reaches_standing_and_real_tools -k False"
   },
   {
@@ -61,5 +61,12 @@
     "old": "        if (kind is not None or object is not None) and scope != \"this_room\":",
     "new": "        if False:",
     "target": "tests/unit/test_platform_observation_wired.py::test_typed_tools_refuse_wrong_handle_kind_and_unsupported_room_scope"
+  },
+  {
+    "name": "Discord roster result does not claim channel audience",
+    "file": "nora/agent/tools.py",
+    "old": "                if room.platform == \"discord\" else \"this conversation\"",
+    "new": "                if False else \"this conversation\"",
+    "target": "tests/test_room_tools.py::test_group_members_on_discord_labels_the_guild_scope_not_the_channel"
   }
 ]

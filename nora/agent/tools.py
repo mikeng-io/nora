@@ -6937,10 +6937,10 @@ here.
 
 SHOULD: call it rather than guess from the transcript. People who have not
 spoken lately are still here, and people named in a message may not be. `scope`
-says what the platform's roster actually covers — on Discord the member list is
+says what the platform's roster actually covers; on Discord the member list is
 the whole server's, which can exceed this channel's audience.
 
-Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
+Returns `status`: ok (`members`, `scope`) or unavailable (`note`)."""
         view = await room.members()
         if not view.available:
             _record_room(metrics, "group_members", "unavailable")
