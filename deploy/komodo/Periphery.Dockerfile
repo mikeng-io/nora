@@ -1,4 +1,4 @@
-# Same Komodo 2.3.3 base audited for wrapper/config semantics, plus stdlib Python
+# Komodo 2.3.4 base, plus stdlib Python
 # and updated system CAs for Periphery's HTTPS Git fetches.
 #
 # Deliberately no USER: Periphery's job is to drive the host Docker socket and
