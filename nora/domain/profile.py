@@ -552,6 +552,20 @@ def rank(line: ProfileLine, *, subject: str | None) -> int | None:
     return {"deduced": 1, "induced": 0}.get(line.mode)
 
 
+def chain_heads(lines: Sequence[ProfileLine]) -> tuple[tuple[ProfileLine, ...], dict[str, str]]:
+    """Every row of one account reduced to its chain heads (the rows nothing
+    supersedes), and each row id's head id (`plan_write`'s `aliases`)."""
+    successor = {line.supersedes: line.id for line in lines if line.supersedes is not None}
+    heads = tuple(line for line in lines if line.id not in successor)
+    aliases: dict[str, str] = {}
+    for line in lines:
+        head = line.id
+        while head in successor:
+            head = successor[head]
+        aliases[line.id] = head
+    return heads, aliases
+
+
 def handles_for(heads: Sequence[ProfileLine]) -> dict[str, str]:
     """`P1`, `P2`, ... for the HELD lines, part by part then oldest first: the
     handles a writer acts on (a line's id is never shown). Deterministic, so

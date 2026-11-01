@@ -43,6 +43,7 @@ from nora.domain.profile import (
     ProfileOp,
     ProfileRefusal,
     ProfileWriteResult,
+    chain_heads,
     identity_text,
     match_disputed_line,
     plan_write,
@@ -121,20 +122,6 @@ def _values(line: ProfileLine) -> dict[str, Any]:
         "written_at": line.written_at,
         "written_by_session": line.written_by_session,
     }
-
-
-def chain_heads(lines: Sequence[ProfileLine]) -> tuple[tuple[ProfileLine, ...], dict[str, str]]:
-    """Every row of one account reduced to its chain heads (the rows nothing
-    supersedes), and each row id's head id (`plan_write`'s `aliases`)."""
-    successor = {line.supersedes: line.id for line in lines if line.supersedes is not None}
-    heads = tuple(line for line in lines if line.id not in successor)
-    aliases: dict[str, str] = {}
-    for line in lines:
-        head = line.id
-        while head in successor:
-            head = successor[head]
-        aliases[line.id] = head
-    return heads, aliases
 
 
 class SqlProfileStore:

@@ -10,9 +10,9 @@ from nora.domain.profile import (
     Account,
     ProfileCitable,
     ProfileWriteResult,
+    chain_heads,
     plan_write,
 )
-from nora.infra.sql.profile import chain_heads
 
 
 class InMemoryProfileStore:
