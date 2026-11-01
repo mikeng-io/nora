@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -473,22 +473,24 @@ class SqlReminderStore:
         self, rooms: Sequence[tuple[str, str]], *, requester_person_id: str,
         since: datetime, limit: int,
     ) -> Sequence[Reminder]:
-        """`history` with the room predicate INSIDE the query — a unit's rows
-        can no longer be cut by a global limit before its filter runs."""
+        """Current executions and recent handled/created rows, scoped before
+        the bound; a long-scheduled act must survive its claim."""
         if not rooms:
             return ()
         in_rooms = sa.or_(*(
             sa.and_(REMINDERS.c.platform == p, REMINDERS.c.conversation_id == c)
             for p, c in rooms
         ))
+        handled_at = sa.func.coalesce(REMINDERS.c.fired_at, REMINDERS.c.created_at)
+        firing = REMINDERS.c.state == ReminderState.FIRING.value
         stmt = (
             sa.select(REMINDERS)
             .where(
                 REMINDERS.c.requester_person_id == requester_person_id,
-                REMINDERS.c.created_at >= ensure_utc(since, field="since"),
+                sa.or_(firing, handled_at >= ensure_utc(since, field="since")),
                 in_rooms,
             )
-            .order_by(REMINDERS.c.created_at.asc(), REMINDERS.c.id.asc())
+            .order_by(firing.desc(), handled_at.desc(), REMINDERS.c.id.desc())
             .limit(check_limit(limit))
         )
         async with self._engine.connect() as conn:
@@ -581,7 +583,7 @@ class SqlReminderStore:
                 REMINDERS.c.conversation_id == conversation_id,
                 REMINDERS.c.state == ReminderState.PENDING.value,
             )
-            .values(state=ReminderState.CANCELLED.value)
+            .values(state=ReminderState.CANCELLED.value, fired_at=datetime.now(UTC))
         )
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)

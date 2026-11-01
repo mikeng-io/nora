@@ -851,6 +851,44 @@ async def test_a_claimed_row_still_holds_its_note(store):
 # -- one open proactive row per (subject, action, destination) -------------
 
 
+@pytest.mark.parametrize("terminal,outcome", [
+    (ReminderState.DONE, "sent"), (ReminderState.FAILED, "failed_error"),
+])
+async def test_recent_in_keeps_old_claims_and_recent_terminal_outcomes(store, terminal, outcome):
+    row = _row(requester_person_id="nora", created_at=T0 - timedelta(days=30), due_at=T0)
+    await store.create(row)
+    stale = _row(requester_person_id="nora", state=ReminderState.DONE,
+                 created_at=T0 - timedelta(days=40), fired_at=T0 - timedelta(days=20))
+    await store.create(stale)
+    await store.create(_row(requester_person_id="nora", created_at=T0 - timedelta(days=1)))
+    assert await store.claim(row.id, now=T0)
+    for expected in (ReminderState.FIRING, terminal):
+        if expected is terminal:
+            assert await store.mark(row.id, terminal, fired_at=T0, outcome=outcome)
+        found = await store.recent_in(
+            [("signal", "conv-1")], requester_person_id="nora",
+            since=T0 - timedelta(days=7), limit=1,
+        )
+        assert [(r.id, r.state) for r in found] == [(row.id, expected)]
+        assert await store.recent_in(
+            [("discord", "elsewhere")], requester_person_id="nora",
+            since=T0 - timedelta(days=7), limit=10,
+        ) == []
+
+
+async def test_recent_in_keeps_a_new_cancellation_of_an_old_row(store):
+    before = datetime.now(UTC)
+    row = _row(requester_person_id="nora", created_at=before - timedelta(days=30))
+    await store.create(row)
+    assert await store.cancel(row.id, conversation_id=row.conversation_id)
+    found = await store.recent_in(
+        [(row.platform, row.conversation_id)], requester_person_id="nora",
+        since=before - timedelta(hours=1), limit=10,
+    )
+    assert len(found) == 1 and found[0].state is ReminderState.CANCELLED
+    assert before <= found[0].fired_at <= datetime.now(UTC)
+
+
 def _subject(
     subject_id: str = "dec-1", action: str = "tell", **kw,
 ) -> Reminder:

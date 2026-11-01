@@ -156,6 +156,46 @@ async def test_a_pending_act_appears_once_when_history_contains_the_same_row():
     ]
 
 
+async def test_an_old_act_stays_visible_through_claim_and_delivery():
+    store = FakeReminderStore()
+    row = _reminder(
+        created_at=T0 - timedelta(days=30), due_at=T0,
+        state=ReminderState.PENDING, fired_at=None, outcome=None,
+    )
+    await store.create(row)
+    for status in ("pending", "firing", "sent"):
+        if status == "firing":
+            assert await store.claim(row.id, now=T0)
+        elif status == "sent":
+            assert await store.mark(row.id, ReminderState.DONE, fired_at=T0, outcome="sent")
+        view = await read_shared(
+            unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS, reminders=store,
+        )
+        assert [(e.id, e.status) for e in view.entries if e.kind == "act"] == [
+            (str(row.id), status),
+        ]
+    assert view.entries[0].delivery == "sent"
+
+
+async def test_an_old_pending_act_cancelled_now_is_visible_without_a_send():
+    store = FakeReminderStore()
+    now = datetime.now(UTC)
+    row = _reminder(
+        created_at=now - timedelta(days=30), due_at=now,
+        state=ReminderState.PENDING, fired_at=None, outcome=None,
+    )
+    await store.create(row)
+    assert await store.cancel(row.id, conversation_id=row.conversation_id)
+    view = await read_shared(
+        unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=int(datetime.now(UTC).timestamp() * 1000),
+        reminders=store,
+    )
+    assert [(e.id, e.status, e.delivery) for e in view.entries] == [
+        (str(row.id), "cancelled", "none"),
+    ]
+    assert view.entries[0].at_ms >= int(now.timestamp() * 1000)
+
+
 class _Sends:
     def __init__(self, hits=()):
         self._hits = list(hits)

@@ -287,7 +287,8 @@ async def read_shared(
                     status=status, subject=text,
                     destination=scope,
                     action=str(action), subject_ref=subject_ref,
-                    refs=refs, at_ms=_ms(r.due_at),
+                    refs=refs, at_ms=_ms(
+                        r.due_at if status == "pending" else r.fired_at or r.due_at),
                     provenance="nora" if own else "person",
                     delivery=delivery,
                     permitted=scoped(scope, (r.platform, r.conversation_id)),
@@ -321,7 +322,7 @@ async def read_shared(
                     "delivered_message_ids"
                 ):
                     delivery = "sent"
-                elif not fired_ms or (
+                elif r.state.value == "cancelled" or not fired_ms or (
                     sends_read_ok
                     and created_ms >= now_ms - _SEND_LOOKBACK_MS
                     and not any(h.row.ts >= created_ms for h in room_sends)

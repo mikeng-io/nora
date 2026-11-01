@@ -823,11 +823,10 @@ class ReminderStore(Protocol):
         self, rooms: Sequence[tuple[str, str]], *, requester_person_id: str,
         since: datetime, limit: int,
     ) -> Sequence[Reminder]:
-        """`history`, scoped to `rooms` IN THE QUERY: one requester's rows in
-        these `(platform, conversation_id)`s created at or after `since`,
-        oldest first, at most `limit`. The unit-scoped read `history` cannot
-        stand in for — `history`'s global `limit` runs BEFORE a caller's room
-        filter, so a unit whose rows sit beyond the cut is silently complete.
+        """One requester's FIRING rows regardless of creation age, plus rows
+        handled at or after `since` (`fired_at`, falling back to `created_at`).
+        Scoped to `rooms` before the limit, executions first, then newest
+        lifecycle time and id first. Full PENDING inventory is `pending_of`.
         `since` timezone-aware; `limit` obeys `check_limit`."""
         ...
 
@@ -892,6 +891,8 @@ class ReminderStore(Protocol):
         `claim`, so cancelling its one pending occurrence is cancelling the
         whole of what is left. Occurrences already fired stay as they are — a
         cancel cannot un-send anything.
+        A successful cancellation stamps its handling time in `fired_at`;
+        this is a lifecycle timestamp, not evidence of a send.
         """
         ...
 

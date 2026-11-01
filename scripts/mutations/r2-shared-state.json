@@ -86,7 +86,7 @@
   {
     "name": "delivered-act-retains-canonical-identity",
     "file": "nora/language/shared_render.py",
-    "old": "identity = f\"{e.subject_ref or 'subject unresolved'} \u00b7 {e.action or 'remind'}\"",
+    "old": "identity = f\"{e.subject_ref or 'subject unresolved'} · {e.action or 'remind'}\"",
     "new": "identity = \"identity omitted\"",
     "target": "tests/unit/test_shared_state.py::test_delivery_facts_expose_action_identity_and_legacy_uncertainty"
   },
@@ -117,5 +117,47 @@
     "old": "            shared=shared,",
     "new": "            shared=None,",
     "target": "tests/unit/test_memory_prefetch.py::test_graph_prefetch_and_shared_state_reach_the_same_turn"
+  },
+  {
+    "name": "review3-notebook-index-survives-standing",
+    "file": "nora/language/cognition_render.py",
+    "old": "    blocks += item_blocks",
+    "new": "    blocks += [b for b in item_blocks if shared is None or b.name != \"note_index\"]",
+    "target": "tests/unit/test_cognition_live_writes.py::test_the_daily_floor_is_a_notebook_review_and_the_index_marks_what_code_noticed"
+  },
+  {
+    "name": "review3-sql-old-act-lifecycle",
+    "file": "nora/infra/sql/reminders.py",
+    "old": "sa.or_(firing, handled_at >= ensure_utc(since, field=\"since\")),",
+    "new": "REMINDERS.c.created_at >= ensure_utc(since, field=\"since\"),",
+    "target": "tests/contract/test_reminder_store_contract.py::test_recent_in_keeps_old_claims_and_recent_terminal_outcomes"
+  },
+  {
+    "name": "review3-fake-old-act-lifecycle",
+    "file": "nora/testing/reminders.py",
+    "old": "and (r.state is ReminderState.FIRING or (r.fired_at or r.created_at) >= cutoff)",
+    "new": "and r.created_at >= cutoff",
+    "target": "tests/contract/test_reminder_store_contract.py::test_recent_in_keeps_old_claims_and_recent_terminal_outcomes"
+  },
+  {
+    "name": "review3-sql-cancellation-clock",
+    "file": "nora/infra/sql/reminders.py",
+    "old": ".values(state=ReminderState.CANCELLED.value, fired_at=datetime.now(UTC))",
+    "new": ".values(state=ReminderState.CANCELLED.value)",
+    "target": "tests/contract/test_reminder_store_contract.py::test_recent_in_keeps_a_new_cancellation_of_an_old_row"
+  },
+  {
+    "name": "review3-fake-cancellation-clock",
+    "file": "nora/testing/reminders.py",
+    "old": "self._put(replace(row, state=ReminderState.CANCELLED, fired_at=datetime.now(UTC)))",
+    "new": "self._put(replace(row, state=ReminderState.CANCELLED))",
+    "target": "tests/contract/test_reminder_store_contract.py::test_recent_in_keeps_a_new_cancellation_of_an_old_row"
+  },
+  {
+    "name": "review3-cancellation-is-not-delivery",
+    "file": "nora/agent/shared_state.py",
+    "old": "elif r.state.value == \"cancelled\" or not fired_ms or (",
+    "new": "elif not fired_ms or (",
+    "target": "tests/unit/test_shared_state.py::test_an_old_pending_act_cancelled_now_is_visible_without_a_send"
   }
 ]

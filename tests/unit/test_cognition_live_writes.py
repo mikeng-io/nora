@@ -9,6 +9,8 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
+
 from nora.app.cognition_session import now_utc
 from nora.domain.cognition_ground import Grounding, NoteLine
 from nora.domain.cognition_session import AgendaItem, Room, build_agenda
@@ -354,7 +356,10 @@ def test_two_titles_sharing_most_of_their_words_are_likely_duplicates():
     assert twins == {"n1": "n2", "n2": "n1"}
 
 
-def test_the_daily_floor_is_a_notebook_review_and_the_index_marks_what_code_noticed():
+@pytest.mark.parametrize("shared_status", [None, "ok", "nothing_found", "unavailable"])
+def test_the_daily_floor_is_a_notebook_review_and_the_index_marks_what_code_noticed(shared_status):
+    from nora.domain.shared_state import SharedView
+
     floor = Stimulus(
         id=7, unit="u", kind="time", item="floor", ref="floor:07:00@2026-10-03",
         at_ms=NOW, recorded_at_ms=NOW,
@@ -370,8 +375,11 @@ def test_the_daily_floor_is_a_notebook_review_and_the_index_marks_what_code_noti
         [AgendaItem(kind="time", room=Room("signal", "room-a"), summary=item.summary,
                     stimulus_ids=(7,), cues=(), surprise=0.0)],
         stimuli={7: floor}, grounding=grounding, now_ms=NOW,
+        shared=(SharedView(unit="u", status=shared_status, as_of_ms=NOW)
+                if shared_status is not None else None),
     )
     assert 'review="anchor_passed"' in text and 'may_duplicate="n2"' in text
+    assert 'n="n1"' in text and "dinner" in text
 
 
 async def test_the_upcoming_reader_names_each_room_once_inside_the_horizon():

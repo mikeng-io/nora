@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import replace
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from nora.domain.reminders import (
@@ -153,10 +153,12 @@ class FakeReminderStore:
         rows = [
             r for r in self._rows.values()
             if r.requester_person_id == requester_person_id
-            and r.created_at >= cutoff
+            and (r.state is ReminderState.FIRING or (r.fired_at or r.created_at) >= cutoff)
             and (r.platform, r.conversation_id) in room_set
         ]
-        return sorted(rows, key=lambda r: (r.created_at, r.id))[:size]
+        return sorted(rows, key=lambda r: (
+            r.state is ReminderState.FIRING, r.fired_at or r.created_at, r.id,
+        ), reverse=True)[:size]
 
     async def get(self, reminder_id: UUID) -> Reminder | None:
         return self._rows.get(reminder_id)
@@ -256,7 +258,7 @@ class FakeReminderStore:
             return False
         if row.state is not ReminderState.PENDING:
             return False
-        self._put(replace(row, state=ReminderState.CANCELLED))
+        self._put(replace(row, state=ReminderState.CANCELLED, fired_at=datetime.now(UTC)))
         return True
 
     async def sweep_firing(self, *, now: datetime) -> int:

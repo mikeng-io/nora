@@ -775,10 +775,6 @@ def render_agenda(
         items, stimuli or {}, grounding or Grounding(), now_ms=now_ms, tz=tz,
         budget=budget or RenderBudget(),
     )
-    if shared is not None:
-        # `note_index` retires when the shared view renders: its rows and
-        # the shared block's Open section are the same facts shown twice.
-        item_blocks = [b for b in item_blocks if b.name != "note_index"]
     blocks += item_blocks
     if shared is not None and now_ms is not None:
         shared_block = restamp(
