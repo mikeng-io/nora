@@ -75,5 +75,12 @@
   "old": "                \"keys\": sorted(emitted),\n            }",
   "new": "                \"keys\": [],\n            }",
   "target": "tests/unit/test_memory_search.py::test_read_publishes_the_keys_of_the_nodes_it_actually_emits"
+ },
+ {
+  "name": "wake preview: a key the budget cut was never shown",
+  "file": "nora/app/cognition_memory.py",
+  "old": "        # `shown_keys` is the renderer's own emitted-rows provenance: a row the\n        # budget omits was never shown, whatever the walk returned.\n        state.graph_text = preview_text(Preview(seeds, graph, (), (at, at)),\n                                        shown_keys=state.shown_keys)",
+  "new": "        state.shown_keys.update(n.key for n in graph.nodes)\n        state.shown_keys.update(\n            k for e in graph.relations for k in (e.relation.src, e.relation.dst))\n        state.graph_text = preview_text(Preview(seeds, graph, (), (at, at)))",
+  "target": "tests/unit/test_cognition_session_runner.py::test_wake_preview_admits_only_the_keys_the_renderer_emitted"
  }
 ]

@@ -763,6 +763,50 @@ async def test_association_shown_only_by_a_memory_search_is_admissible():
                for r in memory.graph.relations.values())
 
 
+async def test_wake_preview_admits_only_the_keys_the_renderer_emitted():
+    """`prepare` must not admit a key the budget cut: `shown_keys` is the
+    renderer's emitted rows, not the whole walked subgraph. Two chosen keys,
+    checked against the actual emitted preview, are the independent control."""
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from nora.agent.fetch_watch import GraphFetched
+    from nora.domain.cognition_ground import Grounding, RecordItem
+    from nora.domain.memory_graph import Entity, Relation
+    memory = wake_memory()
+    at = datetime.fromtimestamp(NOW / 1000, UTC)
+    # Two hops of twenty leaves under five hubs: the depth-2 walk reaches ~100
+    # nodes but the preview budget renders far fewer, so the last walked leaf
+    # is a key the walk had and the model was never shown.
+    for h in range(5):
+        hub = Entity(f"u:place:h{h}", "place", "u", "Long generated label " * 10)
+        memory.graph.entities[hub.id] = hub
+        memory.graph.relations[f"hub{h}"] = Relation(
+            f"hub{h}", ("message", "1"), "concerns", hub.key, "record", "u",
+            asserted_at=at)
+        for i in range(30):
+            leaf = Entity(f"u:place:l{h}_{i}", "place", "u", "Long generated label " * 10)
+            memory.graph.entities[leaf.id] = leaf
+            memory.graph.relations[f"l{h}_{i}"] = Relation(
+                f"l{h}_{i}", hub.key, "concerns", leaf.key, "notebook", "u",
+                asserted_at=at)
+    state = SimpleNamespace(now_ms=NOW, unit="u", session_id=1, historical=False,
+        items_by_index={0: SimpleNamespace(stimulus_ids=(1,), room=HOME)},
+        memory_items={}, graph_fetched=GraphFetched(), admitted_indices=set(),
+        admitted_relations={}, admitted_evidence=[], shown_keys=set())
+    await memory.prepare(state, {1: replace(_pending("u")[0], kind="message", ref="messages:1")},
+        Grounding(records={"messages:1": RecordItem(
+            ref="messages:1", kind="message", message_id=1, room=HOME,
+            author="Generated author", person_id="generated-author",
+            at_ms=NOW, text="Generated message")}))
+    # The emitted preview is the shown surface: hub h0 was rendered, a deep
+    # walked leaf was cut. Both keys are chosen independently of the state.
+    assert "place:u:place:h0" in state.graph_text
+    assert "place:u:place:l3_19" not in state.graph_text
+    assert ("place", "u:place:h0") in state.shown_keys
+    assert ("place", "u:place:l3_19") not in state.shown_keys
+
+
 async def test_stays_and_plays_join_the_same_proposal_coverage():
     from dataclasses import replace
     from types import SimpleNamespace

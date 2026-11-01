@@ -150,10 +150,10 @@ class WakeMemory:
                                                 valid_at=at))
         if graph.status == "unavailable":
             raise RuntimeError("wake graph unavailable")
-        state.shown_keys.update(n.key for n in graph.nodes)
-        state.shown_keys.update(
-            k for e in graph.relations for k in (e.relation.src, e.relation.dst))
-        state.graph_text = preview_text(Preview(seeds, graph, (), (at, at)))
+        # `shown_keys` is the renderer's own emitted-rows provenance: a row the
+        # budget omits was never shown, whatever the walk returned.
+        state.graph_text = preview_text(Preview(seeds, graph, (), (at, at)),
+                                        shown_keys=state.shown_keys)
         # The slot map the model cites by row id. The agenda already renders the
         # text, so each body is clipped to identify the row, never repeat it.
         # ponytail: fixed clip; count it into RenderBudget if busy wakes overflow.
