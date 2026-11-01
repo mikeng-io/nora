@@ -59,3 +59,6 @@ class RecordRefHit:
     row_id: int
     hit: RecordHit
     emoji: str = ""
+    #: For a `message_reaction` ref, whether that row took the reaction back
+    #: — the stimulus's own change, distinct from the target's current state.
+    removed: bool = False

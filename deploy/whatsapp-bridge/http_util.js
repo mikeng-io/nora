@@ -4,6 +4,7 @@ export function sendJson(res, status, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
   res.end(body);
+  return true;
 }
 
 export function readBody(req, maxBytes = 100 * 1024 * 1024) {

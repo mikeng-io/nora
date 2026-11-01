@@ -1,9 +1,15 @@
 # Typed observation and persistence contract — proposed
 
 This specifies domain semantics for implementation, not shipped classes or DDL.
-Extend the existing bridge versioned union at its owner. Keep NormalizedMessage
-for utterances; add a sibling non-message observation payload. A shared event
-header does not mean every payload is a message or every object shares one table.
+At the `3fe09ac7` audit snapshot the bridge union was proposed, not built.
+Integration with master `23ee4a5ed` brings the v1 `Envelope` in
+`nora/platform/bridge/envelope.py`: its kinds are message/edit/delete/reaction/
+summons. `rehydrate.py` serializes and restores `NormalizedMessage`/`Touch`,
+including the reaction removal bit. This is now the transport owner of those
+payloads; the first reaction visibility slice changes their read projection,
+not the wire. The sibling poll/room observation payloads below remain proposed
+extensions at that same owner. Keep NormalizedMessage for utterances; a shared
+event header does not mean every payload is a message or shares one table.
 
 ## Header and identity
 

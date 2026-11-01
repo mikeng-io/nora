@@ -66,6 +66,14 @@ class SqlComprehendRecords:
                 RESULT.c.work_id == key, RESULT.c.part == "act_result")
                 .order_by(RESULT.c.id).limit(1))).scalar_one_or_none()
 
+    @staticmethod
+    async def act_result_on(conn: Any, key: str, session: int, result: Any) -> None:
+        """The act receipt on a caller-owned connection: the register verb's
+        own transaction carries it, so the row and its receipt commit or roll
+        back together."""
+        await conn.execute(sa.insert(RESULT).values(work_id=key, input_hash="",
+            session_id=session, part="act_result", payload=result))
+
     async def failures(self, unit: str, sid: int, *, reset: bool = False) -> int:
         key = f"stimulus:{unit}:{sid}"
         async with self.engine.begin() as conn:
