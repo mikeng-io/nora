@@ -62,7 +62,9 @@ def _item(social: bool = False) -> Any:
                     "kind": "post"}
     return SimpleNamespace(
         work=SimpleNamespace(id="w1", input_hash="h", as_of=AS_OF),
-        snapshot={"messages": rows, "source_keys": keys, "metadata": metadata},
+        snapshot={"messages": rows, "source_keys": keys, "metadata": metadata,
+                  "source_provenance": {"social:insta:it9": {
+                      "metadata": metadata, "author": PERSON}}},
         room=ROOM,
         sources=(),
     )
@@ -304,8 +306,10 @@ async def test_a_competing_revision_conflicts_then_recovers() -> None:
     memory, state = _memory(store, records), _state(_item())
     await memory.account_view(state, ["person", PERSON])
     account = state.profile_accounts[PERSON_ACCOUNT_KEY]["account"]
+    from nora.domain.profile import parse_ops
     await store.profile_write(
-        account=account, ops=(), citable=ProfileCitable(),
+        account=account, ops=parse_ops([_induced_op()])[0],
+        citable=memory._citable_for(state, account),
         now_ms=NOW_MS, written_by_session="other", apply_decay=False)
     conflict = await memory.profile(state, ["person", PERSON], [_deduced_op()],
                                     act_key="k")
@@ -417,13 +421,16 @@ def test_profile_writer_ownership_matrix() -> None:
         PROFILE_UNIT_ADAPTOR_NAME,
     )
     from nora.language.profile_verdict import PROFILE_VERDICT_ADAPTOR_NAME
-    on = _unified_profile_writers_retired(profile_index=True, graph_comprehend=True)
+    coverage = {"cognition_enabled": True, "units": frozenset({UNIT}),
+                "home_units": frozenset({UNIT})}
+    on = _unified_profile_writers_retired(
+        profile_index=True, graph_comprehend=True, **coverage)
     assert on == frozenset({PROFILE_PERSON_ADAPTOR_NAME, PROFILE_ROOM_ADAPTOR_NAME,
                             PROFILE_UNIT_ADAPTOR_NAME, PROFILE_NORA_ADAPTOR_NAME})
     assert PROFILE_VERDICT_ADAPTOR_NAME not in on
     for profile_index, comprehend in ((False, True), (True, False), (False, False)):
         assert _unified_profile_writers_retired(
-            profile_index=profile_index, graph_comprehend=comprehend) == frozenset()
+            profile_index=profile_index, graph_comprehend=comprehend, **coverage) == frozenset()
 
 
 @pytest.mark.asyncio
@@ -442,3 +449,79 @@ async def test_shadow_mode_receipts_ops_without_writing() -> None:
                     "rhythm": "x", "setting": "x"},
         "mode": "deduced", "citations": ["message:999"]}])
     assert refused["status"] == "refused" and len(records.shadows) == 1
+
+
+@pytest.mark.asyncio
+async def test_explicit_relation_premises_replace_instead_of_carrying() -> None:
+    records, store = _records(), InMemoryProfileStore()
+    memory, state = _memory(store, records), _state(_item())
+    await memory.account_view(state, ["person", PERSON])
+    assert (await memory.profile(state, ["person", PERSON], [_deduced_op()]))["status"] == "ok"
+    await memory.account_view(state, ["person", PERSON])
+    op = {**_revise_op("P1"), "draws_on": []}
+    assert (await memory.profile(state, ["person", PERSON], [op]))["status"] == "ok"
+    heads = await store.account_heads(key=PERSON_ACCOUNT_KEY)
+    assert len(heads) == 1 and heads[0].draws_on == ()
+
+
+def test_writers_stay_without_cognition_or_complete_unit_coverage() -> None:
+    from nora.app.composition import _unified_profile_writers_retired
+    flags = {"profile_index": True, "graph_comprehend": True,
+             "cognition_enabled": True, "units": frozenset({"one", "two"}),
+             "home_units": frozenset({"one", "two"})}
+    assert len(_unified_profile_writers_retired(**flags)) == 4
+    assert not _unified_profile_writers_retired(**{**flags, "cognition_enabled": False})
+    assert not _unified_profile_writers_retired(**{**flags, "home_units": frozenset({"one"})})
+    assert not _unified_profile_writers_retired(**{**flags, "units": frozenset()})
+
+
+@pytest.mark.asyncio
+async def test_no_change_keeps_the_real_store_revision() -> None:
+    from nora.domain.profile import Account
+    store = InMemoryProfileStore()
+    result = await store.profile_write(
+        account=Account(PERSON_ACCOUNT_KEY, "human", UNIT, PERSON), ops=(),
+        citable=ProfileCitable(), now_ms=NOW_MS, written_by_session="other",
+        apply_decay=False)
+    assert result.status == "ok" and result.revision == 0
+    assert (await store.account_state(key=PERSON_ACCOUNT_KEY))[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_prepare_keeps_each_social_sources_real_provenance() -> None:
+    from nora.domain.comprehend import ComprehendItem
+    from nora.domain.memory_graph import WorkItem
+    from nora.testing.memory_graph import FakeMemoryGraph
+    records, store = _records(), InMemoryProfileStore()
+    for ref, stamp in (("insta:first", DAY1), ("insta:second", DAY2),
+                       ("insta:third", DAY1B), ("insta:undated", None)):
+        key = ("social", ref)
+        records.items[key] = ComprehendItem(
+            WorkItem(ref, key, UNIT, "", AS_OF),
+            (Source(key, "record", UNIT, persons=(PERSON,), text="generated social item"),),
+            "signal", ROOM, author=PERSON,
+            snapshot={"metadata": {"taken_at": stamp}})
+    memory = WakeMemory(graph=FakeMemoryGraph(), records=records,
+                        metrics=SimpleNamespace(inc=lambda *a, **k: None),
+                        profile=store, listed_rooms=lambda u, p: (ROOM,), content_checks=False)
+    state = _state(None)
+    state.historical = False
+    state.shown_keys = set()
+    state.items_by_index = {0: SimpleNamespace(
+        stimulus_ids=(1, 2, 3, 4), room=SimpleNamespace(platform="signal", conversation_id=ROOM))}
+    stimuli = {i: SimpleNamespace(kind="social", ref="social:" + ref)
+               for i, ref in enumerate(
+                   ("insta:first", "insta:second", "insta:third", "insta:undated"), 1)}
+    await memory.prepare(state, stimuli, SimpleNamespace(records={}))
+    await memory.account_view(state, ["person", PERSON])
+    account = state.profile_accounts[PERSON_ACCOUNT_KEY]["account"]
+    citable = memory._citable_for(state, account)
+    assert citable.social["insta:first"].ts == DAY1
+    assert citable.social["insta:second"].ts == DAY2
+    assert citable.social["insta:first"].person_id == PERSON
+    assert "insta:undated" not in citable.social
+    op = {**_induced_op(),
+          "citations": ["social:insta:first", "social:insta:second", "social:insta:third"]}
+    result = await memory.profile(state, ["person", PERSON], [op])
+    assert result["status"] == "ok", result
+    assert len(await store.account_heads(key=PERSON_ACCOUNT_KEY)) == 1

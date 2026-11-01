@@ -1194,7 +1194,8 @@ def plan_write(
             # written, so it needs no `citable.relations` membership now —
             # only premises the writer STATES this call must be declared.
             carried_rels = tuple(
-                c[len("relation:"):] for c in carried if c.startswith("relation:"))
+                c[len("relation:"):] for c in carried
+                if op.draws_on is None and c.startswith("relation:"))
             draws_handles = (
                 op.draws_on
                 if op.draws_on is not None

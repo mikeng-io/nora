@@ -233,7 +233,8 @@ existing typed Profile accounts through `SqlProfileStore`/`plan_write`: one
 entity's heads as handles, open disputes and revision shown before a write;
 add/keep/revise/retire judged under `expected_revision`, `relation:<id>`
 premises in `draws_on`, `kind:id` citations resolved from shown sources. The
-write is bound to `write && read` AND graph comprehension: under that one
+write is bound to `write && read`, graph comprehension, enabled Cognition
+and home-room coverage for every configured unit: under that one
 condition the Dreamer profile-writer adaptors retire atomically — the verdict
 judge and the tag path's told/dispute writes stay — and under every other
 flag combination `profile_revise` still records shadow receipts while the

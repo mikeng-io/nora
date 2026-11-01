@@ -54,7 +54,7 @@ class InMemoryProfileStore:
             return ProfileWriteResult(
                 status="refused", revision=revision, refusals=plan.refusals)
         self.lines.setdefault(account.key, []).extend(plan.inserts)
-        self.revisions[account.key] = revision + 1
+        self.revisions[account.key] = revision + bool(plan.inserts)
         if receipt is not None:
             await receipt(None, {
                 "status": "ok", "revision": self.revisions[account.key],

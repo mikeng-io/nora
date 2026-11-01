@@ -138,12 +138,21 @@ class WakeMemory:
             work = WorkItem(f"stimuli:{','.join(map(str, agenda.stimulus_ids))}",
                             ("stimulus", str(agenda.stimulus_ids)), state.unit, digest, at,
                             historical=state.historical)
+            source_provenance = {
+                f"{source.key[0]}:{source.key[1]}": {
+                    "metadata": loaded.snapshot.get("metadata") or {},
+                    "author": loaded.author,
+                }
+                for loaded in loaded_items for source in loaded.sources
+                if source.key[0] == "social"
+            }
             item = ComprehendItem(work, tuple(sources), agenda.room.platform,
                                   agenda.room.conversation_id,
                                   author=next((r.get("person_id") for r in rows
                                                if r.get("person_id")), ""),
                                   snapshot={"messages": rows, "context": [],
-                                            "source_keys": source_keys})
+                                            "source_keys": source_keys,
+                                            "source_provenance": source_provenance})
             from dataclasses import replace
             if loaded_items:
                 item = replace(item, author=item.author or loaded_items[0].author,
@@ -324,7 +333,7 @@ class WakeMemory:
         said: dict[str, Said] = {}
         social: dict[str, Said] = {}
         for item in state.memory_items.values():
-            metadata = item.snapshot.get("metadata") or {}
+            provenance = item.snapshot.get("source_provenance") or {}
             for source_key in item.snapshot.get("source_keys", {}).values():
                 kind, ref = source_key[0], source_key[1]
                 citation = f"{kind}:{ref}"
@@ -339,16 +348,14 @@ class WakeMemory:
                         room=getattr(record.room, "conversation_id", None),
                         occasion=citation)
                 elif kind == "social":
-                    taken_at = metadata.get("taken_at")
+                    origin = provenance.get(citation) or {}
+                    taken_at = (origin.get("metadata") or {}).get("taken_at")
                     if isinstance(taken_at, str):
                         taken_at = int(
                             datetime.fromisoformat(taken_at).timestamp() * 1000)
                     if not isinstance(taken_at, int):
                         continue
-                    source = state.graph_fetched.sources.get(tuple(source_key))
-                    author = (source.persons[0]
-                              if source is not None and len(source.persons) == 1
-                              else None)
+                    author = origin.get("author")
                     social[ref] = Said(
                         ts=taken_at, person_id=author, room=None,
                         occasion=citation, medium="social")

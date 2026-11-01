@@ -4203,7 +4203,11 @@ async def build_dependencies(
             SqlProfileStore(
                 engine, screen=functools.partial(text_offence, content_checks=content_checks),
                 index=profile_index)
-            if profile_index else None)
+            if _unified_profile_writers_retired(
+                profile_index=profile_index, graph_comprehend=True,
+                cognition_enabled=cfg.cognition.enabled,
+                units=frozenset(unit_scopes()),
+                home_units=frozenset(allowlist.home_rooms())) else None)
         wake_listed_rooms = LiveMapping(lambda: {
             (u, p): tuple(c.primary_id for c in allowlist.rooms()
                           if c.unit == u and c.primary_id
@@ -4565,7 +4569,10 @@ async def build_dependencies(
             retired |= _unified_profile_writers_retired(
                 profile_index=profile_index,
                 graph_comprehend=(cfg.memory.graph.enabled
-                                  and cfg.memory.graph.comprehend.enabled))
+                                  and cfg.memory.graph.comprehend.enabled),
+                cognition_enabled=cfg.cognition.enabled,
+                units=frozenset(unit_scopes()),
+                home_units=frozenset(allowlist.home_rooms()))
             dream_adaptors = tuple(a for a in dream_adaptors if a.name not in retired)
             dream_schedules = {k: v for k, v in dream_schedules.items() if k not in retired}
 
@@ -5503,17 +5510,21 @@ async def _build_blob_store(cfg: Config, *, cipher: BlobCipher) -> BlobStore:
 
 
 def _unified_profile_writers_retired(
-    *, profile_index: bool, graph_comprehend: bool,
+    *, profile_index: bool, graph_comprehend: bool, cognition_enabled: bool,
+    units: frozenset[str], home_units: frozenset[str],
 ) -> frozenset[str]:
     """The Dreamer profile writers the unified Cognition session replaces —
     only where the replacement is actually wired (`[memory.profile] write &&
     read` AND `[memory.graph] comprehend`, the same condition `WakeMemory`
     gets its store under). The verdict judge never retires (45 §3), and the
-    tag path's told/dispute writes are untouched."""
+    tag path's told/dispute writes are untouched. Retirement is global, so
+    incomplete unit home coverage keeps every old writer and disables the
+    unified writer too; mixed ownership would write the same account twice."""
     return (
         frozenset({PROFILE_PERSON_ADAPTOR_NAME, PROFILE_ROOM_ADAPTOR_NAME,
                    PROFILE_UNIT_ADAPTOR_NAME, PROFILE_NORA_ADAPTOR_NAME})
-        if profile_index and graph_comprehend else frozenset())
+        if (profile_index and graph_comprehend and cognition_enabled
+            and units and units <= home_units) else frozenset())
 
 
 def _note_unit_of(policy: Policy) -> Callable[[str, str], str | None]:
