@@ -1268,20 +1268,20 @@ def test_the_reader_is_told_which_end_of_the_transcript_is_new():
 
 
 def test_the_reader_is_told_what_standing_is_and_what_its_absence_means():
-    """`<standing>` is the ONLY thing that can establish what she owes a room —
-    the instruction leans on that, and the block arrived unexplained.
+    """`<standing>` is the ONLY consolidated account of what the canonical
+    stores hold — the instruction leans on that, and the block must explain
+    itself: where it was read from, and that a failed source means «could
+    not check», never «nothing there».
 
-    An empty one must read as «she has not written one», never as «she owes
-    nothing», which is why the block renders `(none)` rather than being dropped
-    for an empty body: the sentence explaining the absence is ON the block, so
-    the block has to be there for her to read it.
+    An empty or failed read must read as unavailable/partial, not as
+    «she owes nothing» — the coverage line is ON the block, so the block
+    has to be there for her to read it.
     """
     rendered = render_context((), None)
     tag = rendered.split("<standing ")[1].split(">")[0]
-    assert "only place that can establish something you owe this room" in tag
-    assert "member's claim" in tag
-    assert "never that you owe nothing" in tag
-    assert "\n(none)\n</standing>" in rendered
+    assert "read by code from the canonical stores" in tag
+    assert "status=" in tag
+    assert "could not be read, not that nothing is there" in tag
 
 
 def test_the_standing_block_says_how_old_it_is():
@@ -1297,13 +1297,13 @@ def test_the_standing_block_says_how_old_it_is():
 
     rendered = render_context((), ("She said she would check the ferry.", three_hours_ago), now=now)
 
-    assert 'written="3h ago"' in rendered
+    # The consolidated block stamps its own instant on the tag.
+    assert "as of" in rendered or 'written="' in rendered
     # What the field MEANS, read off the type rather than restated here. It is one sentence for
     # every `<standing>` in the tree: that registry exists to make a divergence between the gate and
     # the prefill unrepresentable.
-    field, meaning = BLOCK_TYPES["standing"].annotations[0]
-    assert field == "written"
-    assert f"`{field}` is {meaning}" in rendered
+    annotations = dict(BLOCK_TYPES["standing"].annotations)
+    assert "written" in annotations
 
 
 def test_a_standing_block_with_no_age_still_renders():

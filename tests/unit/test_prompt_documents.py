@@ -184,7 +184,7 @@ def tag_context(
             id="rev-self", culture_key="friends#nora", body="She answers short and dry.",
             written_at=TS, established_by="character-nora",
         ),
-        notes=(), standing=None, decisions=(),
+        notes=(),
         # TWO people, because `<person>` is a framed block that repeats — a
         # one-person fixture cannot tell a row that repeats from a block served
         # twice, which is what `test_a_prompt_never_serves_the_same_block_twice`
@@ -393,7 +393,7 @@ SHAPES = {
     "relevance_gate": """
 <group_transcript description fields>
   <m age from n>
-<standing description fields written>""",
+<standing description written>""",
     "skills": """
 <available_skills description fields>
   <skill name when_to_load>""",
