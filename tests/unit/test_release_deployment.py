@@ -1304,3 +1304,59 @@ def test_previous_manifest_compatibility_keeps_image_and_cohort_checks(fault):
         previous['services']['unknown'] = previous['services']['nora']
     with pytest.raises(ValueError):
         bundle.validate_manifest(previous, previous=True)
+
+
+def _pre_bridge_manifest(bundle):
+    _, manifest = bundle.render(source(), images(bundle), 'v7.12.3', 'b' * 40)
+    for name in ('signal-bridge', 'discord-bridge', 'bridge-projection'):
+        del manifest['services'][name]
+    image = 'ghcr.io/mikeng-io/nora-signal-cli@sha256:' + 'c' * 64
+    manifest['services']['signal-cli'] = image
+    manifest['artifacts'] = {
+        name: {'name': name, 'image': value, 'version': manifest['version'],
+               'commit': manifest['commit'], 'channel': 'release', 'inputs': {'external': {}}}
+        for name, value in manifest['services'].items() if name not in ('presence', 'analytics')}
+    manifest['artifacts']['signal-cli']['inputs']['external'] = {
+        'signal-cli-0.14.7.tar.gz': 'd' * 64,
+        'signal-cli-0.14.7.tar.gz.asc': 'e' * 64}
+    return manifest
+
+
+def test_previous_pre_bridge_manifest_keeps_provenance_and_is_not_a_new_bundle():
+    bundle = load('release_bundle')
+    previous = _pre_bridge_manifest(bundle)
+    bundle.validate_manifest(previous, previous=True)
+    with pytest.raises(ValueError, match='service set'):
+        bundle.validate_manifest(previous)
+    _, current = bundle.render(source(), images(bundle), 'v7.13.0', 'f' * 40)
+    bundle.validate_manifest(current)
+    assert 'signal-cli' not in current['services']
+    assert {'signal-bridge', 'discord-bridge', 'bridge-projection'} <= current['services'].keys()
+
+
+@pytest.mark.parametrize('fault', ['missing', 'hybrid', 'extra', 'mutable', 'foreign',
+                                  'artifact-missing', 'artifact-image', 'signature', 'external'])
+def test_previous_pre_bridge_manifest_refuses_incomplete_or_untrusted_state(fault):
+    bundle = load('release_bundle')
+    previous = _pre_bridge_manifest(bundle)
+    if fault == 'missing':
+        del previous['services']['voice-wake']
+    elif fault == 'hybrid':
+        previous['services']['signal-bridge'] = images(bundle)['signal-bridge']
+    elif fault == 'extra':
+        previous['services']['unknown'] = previous['services']['nora']
+    elif fault == 'mutable':
+        previous['services']['signal-cli'] = 'ghcr.io/mikeng-io/nora-signal-cli:latest'
+    elif fault == 'foreign':
+        previous['services']['signal-cli'] = previous['services']['nora']
+    elif fault == 'artifact-missing':
+        del previous['artifacts']['signal-cli']
+    elif fault == 'artifact-image':
+        previous['artifacts']['signal-cli']['image'] = previous['services']['nora']
+    elif fault == 'signature':
+        external = previous['artifacts']['signal-cli']['inputs']['external']
+        del external['signal-cli-0.14.7.tar.gz.asc']
+    else:
+        previous['artifacts']['app']['inputs']['external'] = {'unexpected': 'd' * 64}
+    with pytest.raises(ValueError):
+        bundle.validate_manifest(previous, previous=True)
