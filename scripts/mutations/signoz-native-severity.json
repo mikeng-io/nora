@@ -1,0 +1,9 @@
+[
+  {
+    "name": "journald chain promotes declared levels to native severity (issue #440)",
+    "file": "deploy/signoz/deployment/ingester/ingester.yaml",
+    "old": "    - type: severity_parser\n      parse_from: attributes.level\n      if: attributes.level != nil\n      on_error: send\n      mapping:\n        debug: DEBUG\n        info: INFO\n        warn:\n        - WARNING\n        - WARN\n        error: ERROR\n        fatal:\n        - CRITICAL\n        - FATAL\n",
+    "new": "",
+    "target": "tests/unit/test_signoz_config.py::test_structured_levels_promote_to_native_severity"
+  }
+]
