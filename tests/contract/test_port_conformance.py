@@ -248,6 +248,21 @@ def test_the_media_object_store_conforms_to_the_port():
     assert isinstance(SqlMediaObjectStore(engine), MediaObjectStore)
 
 
+def test_the_observation_stores_conform_to_the_port():
+    """`ObservationStore` (design/platform-observations 02) at the name level
+    — the floor every other port gets. Behaviour is
+    `tests/contract/test_observation_store_contract.py` over both;
+    `create_sql_engine` is lazy so this needs no live database."""
+    from nora.domain.ports import ObservationStore
+    from nora.infra.sql.engine import create_sql_engine
+    from nora.infra.sql.observations import SqlObservationStore
+    from nora.testing.observations import FakeObservationStore
+
+    engine = create_sql_engine("postgresql+asyncpg://u:p@127.0.0.1:1/db")
+    assert isinstance(SqlObservationStore(engine), ObservationStore)
+    assert isinstance(FakeObservationStore(), ObservationStore)
+
+
 def test_both_search_adapters_satisfy_the_search_provider_port():
     """`SearchProvider` (DEC-73, DEC-116, DEC-157) has TWO implementations, which is
     what the port is for: another backend plugs in behind

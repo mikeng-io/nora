@@ -844,6 +844,12 @@ class WorkRunner:
                 unit = handoff.get("unit")
                 row_id = handoff["row_id"]
             else:
+                if envelope.message is None:
+                    # An observation-only envelope (v2): this worker owns
+                    # utterance ingest only; the observation lane binds
+                    # here next. Fail closed rather than rehydrate a fake.
+                    raise ValueError(
+                        "observation-only envelope reached utterance ingest")
                 message = message_from_dict(envelope.message)
 
                 async def hook(conn: Any, row_id: int, context: Any) -> None:
