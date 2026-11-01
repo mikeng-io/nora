@@ -61,5 +61,19 @@
   "old": "                relations=tuple(dict.fromkeys((*wanted.values(), *managed)))",
   "new": "                relations=tuple(dict.fromkeys(wanted.values()))",
   "target": "tests/unit/test_cognition_session_runner.py::test_revise_with_empty_associations_clears_the_link"
+ },
+ {
+  "name": "renderer: only the rows the budget emitted may be shown keys",
+  "file": "nora/language/comprehend_render.py",
+  "old": "        if shown_keys is not None:\n            shown_keys.update(row_keys.get(row, ()))",
+  "new": "        if shown_keys is not None:\n            shown_keys.update(n.key for g in graphs for n in g.nodes)",
+  "target": "tests/unit/test_comprehend.py::test_preview_text_never_reports_a_row_the_budget_omitted"
+ },
+ {
+  "name": "memory read: the emitted keys reach the result the session checks",
+  "file": "nora/agent/memory_search.py",
+  "old": "                \"keys\": sorted(emitted),\n            }",
+  "new": "                \"keys\": [],\n            }",
+  "target": "tests/unit/test_memory_search.py::test_read_publishes_the_keys_of_the_nodes_it_actually_emits"
  }
 ]

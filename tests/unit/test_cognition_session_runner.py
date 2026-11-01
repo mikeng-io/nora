@@ -741,7 +741,7 @@ async def test_association_shown_only_by_a_memory_search_is_admissible():
                 "content": [{"json": {"status": "ok",
                     # A returned node's body may MENTION a key it never
                     # returned: prose is not shown-ness; `keys` is.
-                    "preview": "event:u:event:search-gala · prose says event:not-returned",
+                    "preview": "event:u:event:search-gala · prose says event:u:event:forged",
                     "keys": [["event", "u:event:search-gala"]]}}]})
 
     async def behave(by, tools):
@@ -749,7 +749,7 @@ async def test_association_shown_only_by_a_memory_search_is_admissible():
             pass
         await by["memory_propose"](**proposal())
         answers.append(await by["note_create"](
-            body=GOOD_BODY, associations=[["event", "u:event:not-returned"]], **NOTE))
+            body=GOOD_BODY, associations=[["event", "u:event:forged"]], **NOTE))
         answers.append(await by["note_create"](
             body=GOOD_BODY, associations=[["event", event.id]], **NOTE))
 
