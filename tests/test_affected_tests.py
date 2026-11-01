@@ -446,8 +446,8 @@ def test_main_falls_back_to_all_when_the_base_ref_cannot_be_resolved(
 #
 # A branch that touched nora/dreamer/** or nora/doctrine/** once must not stay
 # pinned to ALL for every later commit on that branch — only the commit that
-# actually touches those paths should. The default base is HEAD~1, not
-# origin/master, which would diff the WHOLE branch.
+# actually touches those paths should. A clean tree defaults to HEAD~1,
+# not origin/master, which would diff the WHOLE branch.
 
 
 def test_default_base_does_not_re_flag_an_earlier_dreamer_commit(
@@ -488,7 +488,7 @@ def test_default_base_still_selects_all_when_the_latest_commit_is_dreamer(
 
 
 def test_default_behaviour_ignores_uncommitted_and_untracked_changes(tiny_repo):
-    """Without --include-worktree (the loop's default), an uncommitted edit
+    """With an explicit base and no --include-worktree, an uncommitted edit
     and an untracked file are invisible."""
     (tiny_repo / "docs" / "readme.md").write_text("uncommitted edit\n")
     (tiny_repo / "untracked.txt").write_text("x\n")
@@ -1022,7 +1022,7 @@ def test_gate_cannot_be_redirected_from_the_environment():
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="needs make")
-def test_full_gate_and_the_loop_default_are_unchanged():
+def test_full_gate_stays_full_and_iteration_aliases_share_auto_selection():
     assert _dry_run("full-gate") == ["uv run python -m scripts.gate --full"]
     full = _dry_run("_full-gate")
     assert [line.split()[:3] for line in full[:3]] == [
@@ -1032,9 +1032,12 @@ def test_full_gate_and_the_loop_default_are_unchanged():
     assert full[4] == "uv run python -m scripts.pytest_gate --workers 0"
     assert not any("affected_tests" in line for line in full)
 
-    loop = _dry_run("test-affected")
-    selector = loop[_first(loop, "affected_tests.py")]
-    assert "--base HEAD~1" in selector and "--include-worktree" not in selector
+    assert _dry_run("test-all") == [full[4]]
+    for target in ("test", "test-fast", "test-affected"):
+        loop = _dry_run(target)
+        selector = loop[_first(loop, "affected_tests.py")]
+        assert "--base" not in selector and "--include-worktree" in selector
+        assert "--workers 2" in "\n".join(loop)
 
 
 def test_tests_readme_uses_readers_but_helpers_and_fixture_markdown_stay_broad(tmp_path):
@@ -1092,3 +1095,90 @@ def test_lfs_hook_symlink_or_unknown_hook_is_not_ignored(tiny_repo):
         ".githooks/post-commit",
         ".githooks/unknown",
     ]
+
+
+@pytest.mark.parametrize('state', ['dirty', 'staged', 'new', 'staged-reversed'])
+def test_auto_base_selects_current_work_instead_of_previous_broad_commit(tiny_repo, capsys, state):
+    tests = tiny_repo / 'tests/unit'
+    tests.mkdir(parents=True)
+    test = tests / 'test_small.py'
+    test.write_text(_TRIVIAL)
+    (tiny_repo / 'nora').mkdir()
+    (tiny_repo / 'nora/source.py').write_text('broad = True\n')
+    _run_git(tiny_repo, 'add', '.')
+    _run_git(tiny_repo, 'commit', '-qm', 'previous broad commit')
+    if state == 'new':
+        test = tests / 'test_new.py'
+    test.write_text(_TRIVIAL + '\n# edited\n')
+    if state in {'staged', 'staged-reversed'}:
+        _run_git(tiny_repo, 'add', '.')
+    if state == 'staged-reversed':
+        test.write_text(_TRIVIAL)
+    assert main(['--repo', str(tiny_repo)]) == 0
+    output = capsys.readouterr()
+    assert output.out.split() == [META, test.relative_to(tiny_repo).as_posix()]
+    assert 'base=HEAD;' in output.err
+    assert main(['--repo', str(tiny_repo), '--base', 'base-ref', '--include-worktree']) == 0
+    assert capsys.readouterr().out.strip() == ALL
+
+
+@pytest.mark.parametrize('path', ['tests/conftest.py', 'unknown.txt', 'nora/source.py'])
+def test_auto_base_retains_full_fallback_for_helpers_unmapped_and_runtime(tiny_repo, capsys, path):
+    file = tiny_repo / path
+    file.parent.mkdir(parents=True, exist_ok=True)
+    file.write_text('generated\n')
+    assert main(['--repo', str(tiny_repo)]) == 0
+    assert capsys.readouterr().out.strip() == ALL
+
+
+def test_auto_base_missing_parent_and_git_errors_fail_closed(tiny_repo, tmp_path, capsys):
+    for repo in (tiny_repo, tmp_path):
+        assert main(['--repo', str(repo)]) == 0
+        output = capsys.readouterr()
+        assert output.out.strip() == ALL
+        assert 'falling back to ALL' in output.err
+
+
+def test_auto_base_ignores_only_exact_generated_untracked_hooks(tiny_repo, capsys):
+    (tiny_repo / 'tests').mkdir()
+    (tiny_repo / 'tests/test_small.py').write_text(_TRIVIAL)
+    _run_git(tiny_repo, 'add', '.')
+    _run_git(tiny_repo, 'commit', '-qm', 'small test')
+    hook = tiny_repo / '.githooks/post-checkout'
+    hook.parent.mkdir()
+    hook.write_text(_lfs_post_hook('post-checkout'))
+    assert main(['--repo', str(tiny_repo)]) == 0
+    output = capsys.readouterr()
+    assert output.out.split() == [META, 'tests/test_small.py']
+    assert 'base=HEAD~1;' in output.err
+    hook.write_text(hook.read_text() + '# changed\n')
+    assert main(['--repo', str(tiny_repo)]) == 0
+    assert capsys.readouterr().out.strip() == ALL
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="needs make")
+@pytest.mark.parametrize('target', ['test', 'test-fast', 'test-affected'])
+@pytest.mark.parametrize('fails', [False, True])
+@pytest.mark.parametrize('base', [None, 'HEAD'])
+def test_iteration_commands_use_real_auto_selector_and_preserve_runner_failure(
+    tiny_repo, tmp_path, target, fails, base,
+):
+    tests = tiny_repo / 'tests/unit'
+    tests.mkdir(parents=True)
+    (tests / 'test_new.py').write_text(_TRIVIAL)
+    runner = tmp_path / 'runner.py'
+    runner.write_text(
+        'import sys\n'
+        'assert sys.argv[1:] == ["tests/architecture", "tests/unit/test_new.py"], sys.argv\n'
+        'print("SELECTED-RAN")\n'
+        f'sys.exit({1 if fails else 0})\n'
+    )
+    done = subprocess.run(  # noqa: S603 — real selector, generated argv-checking runner
+        ['make', '-f', str(REPO / 'Makefile'), '--no-print-directory', target,
+         f'SELECTOR={sys.executable} {REPO / "scripts/affected_tests.py"} --repo {tiny_repo}',
+         f'PYTEST={sys.executable} {runner}', *([f'BASE={base}'] if base else [])],
+        cwd=tiny_repo, env=_clean_env(), capture_output=True, text=True,
+    )
+    assert (done.returncode != 0) == fails, done.stdout + done.stderr
+    assert 'SELECTED-RAN' in done.stdout
+    assert 'base=HEAD;' in done.stderr

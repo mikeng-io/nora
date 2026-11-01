@@ -433,6 +433,14 @@ Historical paths and deprecated tiers: `docs/maintainers/conventions-rationale.m
 Load **`nora-land`** for setup, the fast loop, final gate and rc read-back.
 Run the final gate once on the final head; use focused tests while iterating.
 Docs-only changes use its affected-test procedure, never hand-picked readers.
+`make test` is incremental; `make test-fast` and `make test-affected` are aliases.
+They compare staged, unstaged and untracked changes against HEAD, or the last
+commit (HEAD~1) when clean. Only exact generated untracked LFS post-hooks are
+ignored. `BASE=<ref>` overrides auto selection. Unmapped/shared-helper changes
+and selector errors run the full suite; the command reports its base and scope.
+`make test-all` explicitly runs the full serial suite. For a named file/function,
+use `uv run python -m scripts.pytest_gate <file-or-node>`.
+
 `make gate` runs static checks and affected tests, or document readers for docs-only changes;
 local identical candidate/context PASS receipts may be reused. `make gate-fresh`
 forces execution; CI and `make full-gate` always run fresh, with full-gate serial.
