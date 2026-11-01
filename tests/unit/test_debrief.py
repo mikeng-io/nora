@@ -360,11 +360,13 @@ def test_the_objective_gives_a_concrete_recap_vs_position_contrast():
     # shape is explicitly wrong.
     assert "RECAP — wrong" in body
     assert "POSITION — right" in body
-    # The recap example must not be the only shape the model sees — the
-    # position example carries the state vocabulary (commitment, open
-    # problem, hypothesis, next step) that the recap lacks.
-    assert "commit 咗" in body
-    assert "root cause" in body
+    # The position records completed/unconfirmed/open work without inventing
+    # the commitment and failure hypothesis the old example added.
+    position = body.split("POSITION — right", 1)[1].split("The recap answers", 1)[0]
+    assert "要求已完成" in position
+    assert "未確認裝好" in position
+    assert "仍未睇到" in position
+    assert "adds no hypothesis" in position
     # The closing line states the axis: what happened vs what I hold open.
     assert 'The recap answers "what happened"' in body
     assert 'The position answers "what I am holding open' in body
