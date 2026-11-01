@@ -1,0 +1,23 @@
+[
+  {
+    "name": "profile-write-receipt-rides-the-write-transaction",
+    "file": "nora/infra/sql/profile.py",
+    "old": "            if receipt is not None:\n                await receipt(conn, {\n                    \"status\": \"ok\", \"revision\": revision,\n                    \"written\": [x.id for x in plan.inserts],\n                })\n            await trans.commit()",
+    "new": "            await trans.commit()",
+    "target": "tests/contract/test_profile_write_receipt.py::test_the_receipt_commits_with_the_write"
+  },
+  {
+    "name": "shown-account-refreshes-after-the-sessions-own-write",
+    "file": "nora/app/cognition_memory.py",
+    "old": "            heads = await self.profile_store.account_heads(key=account.key)\n            shown.update({\"heads\": heads, \"handles\": handles_for(heads),\n                          \"revision\": result.revision})",
+    "new": "",
+    "target": "tests/unit/test_cognition_profile_handoff.py::test_revise_induced_trait_draws_on_relation_then_later_turn_renders"
+  },
+  {
+    "name": "a-draws-on-relation-ref-resolves-to-declared-relations",
+    "file": "nora/domain/profile.py",
+    "old": "            if handle.startswith(\"relation:\"):\n                relation_id = handle[len(\"relation:\"):]\n                if relation_id not in citable.relations:\n                    return ProfileRefusal(\n                        \"unknown_premise\", f\"{handle!r} is not a relation you \"\n                        \"were shown and admitted\", i)\n                rels.append(relation_id)\n                continue",
+    "new": "",
+    "target": "tests/unit/test_cognition_profile_handoff.py::test_revise_induced_trait_draws_on_relation_then_later_turn_renders"
+  }
+]
