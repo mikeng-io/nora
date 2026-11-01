@@ -3,19 +3,49 @@
     "name": "participants added delta with member snapshot",
     "generated": true,
     "native_event": "delta __typename=SlideUQPPParticipantsAddedToGroupThread",
-    "capture_today": "partially captured — only the embedded admin message is normalized; thread.users member snapshot and joiner identity are discarded",
+    "capture_today": "captured -> embedded admin message + kind=observation membership snapshot of the POST-ACTION member set (thread.users[], covered=members, subjects are messaging fbids)",
     "semantic": "thread{users[]} is a POST-ACTION member snapshot: who is in the room now, plus thread_title. The embedded message is the admin-text rendering ('X added Y'). A join delta's subject list is derivable only by diffing snapshots or reading the admin text — the event carries no typed subject field."
   },
   "payload": {
-    "__typename": "SlideUQPPParticipantsAddedToGroupThread", "uq_seq_id": "216", "thread_fbid": "1234567890123456",
-    "message": { "thread_fbid": "1234567890123456", "message_id": "mid.$adm2", "sender_fbid": "63123456700000011",
-      "timestamp_ms": "1790002300000", "content_type": "ADD_PARTICIPANT_XMAT",
-      "content": { "__typename": "SlideMessageAdminText", "text_body": "Member A added Member D." } },
-    "thread": { "id": "1234567890123456", "thread_title": "Saturday planning",
+    "__typename": "SlideUQPPParticipantsAddedToGroupThread",
+    "uq_seq_id": "216",
+    "thread_fbid": "1234567890123456",
+    "message": {
+      "thread_fbid": "1234567890123456",
+      "message_id": "mid.$adm2",
+      "sender_fbid": "63123456700000011",
+      "timestamp_ms": "1790002300000",
+      "content_type": "ADD_PARTICIPANT_XMAT",
+      "content": {
+        "__typename": "SlideMessageAdminText",
+        "text_body": "Member A added Member D."
+      }
+    },
+    "thread": {
+      "id": "1234567890123456",
+      "thread_title": "Saturday planning",
       "users": [
-        { "id": "63123456700000011", "interop_messaging_user_fbid": "63123456700000011", "username": "member_a" },
-        { "id": "63987654300000022", "interop_messaging_user_fbid": "63987654300000022", "username": "member_b" },
-        { "id": "60123456700000033", "interop_messaging_user_fbid": "60123456700000033", "username": "member_c" },
-        { "id": "61000000000000044", "interop_messaging_user_fbid": "61000000000000044", "username": "member_d" } ] }
+        {
+          "id": "63123456700000011",
+          "interop_messaging_user_fbid": "63123456700000011",
+          "username": "member_a"
+        },
+        {
+          "id": "63987654300000022",
+          "interop_messaging_user_fbid": "63987654300000022",
+          "username": "member_b"
+        },
+        {
+          "id": "60123456700000033",
+          "interop_messaging_user_fbid": "60123456700000033",
+          "username": "member_c"
+        },
+        {
+          "id": "61000000000000044",
+          "interop_messaging_user_fbid": "61000000000000044",
+          "username": "member_d"
+        }
+      ]
+    }
   }
 }

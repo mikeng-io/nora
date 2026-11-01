@@ -189,7 +189,7 @@ test('reactions arrive as touch rows beside the target, never transcript lines',
     removed: false, timestamp_ms: 1730300000000,
   });
   assert.equal(kind, 'reaction');
-  assert.equal(upstream, 'r:3EB0F0:R1:+85290000105:add');
+  assert.equal(upstream, 'r:3EB0F0:R1:+85290000105:add:1730300000000');
   assert.equal(msg.body, '');
   assert.deepEqual(msg.touch, {
     kind: 'reaction', target: { message_id: '3EB0F0', sent_ts: null, mentions_known: true },
@@ -207,7 +207,7 @@ test('reaction removal is a distinct upstream transition', () => {
     timestamp_ms: 1730300001000,
   });
   assert.equal(kind, 'reaction');
-  assert.equal(upstream, 'r:3EB0F0:R1:+85290000105:remove');
+  assert.equal(upstream, 'r:3EB0F0:R1:+85290000105:remove:1730300001000');
   assert.equal(msg.touch.emoji, '');
   assert.equal(msg.touch.removed, true);
 });
@@ -238,17 +238,34 @@ test('add → remove → add are three distinct upstream transitions', () => {
     sender_jid: '85290000105@s.whatsapp.net', sender_phone: '+85290000105',
     target_id: '3EB0F0', target_author: '+85290000111',
   };
-  const add1 = parseEvent({ ...base, id: 'R-ADD-1', emoji: '👍', removed: false });
-  const rem = parseEvent({ ...base, id: 'R-REM-1', emoji: '', removed: true });
-  const add2 = parseEvent({ ...base, id: 'R-ADD-2', emoji: '👍', removed: false });
+  const add1 = parseEvent({ ...base, id: 'R-ADD-1', emoji: '👍', removed: false,
+    timestamp_ms: 1730300000000 });
+  const rem = parseEvent({ ...base, id: 'R-REM-1', emoji: '', removed: true,
+    timestamp_ms: 1730300001000 });
+  const add2 = parseEvent({ ...base, id: 'R-ADD-2', emoji: '👍', removed: false,
+    timestamp_ms: 1730300002000 });
   const ids = [add1.upstream, rem.upstream, add2.upstream];
   assert.equal(new Set(ids).size, 3);
-  assert.match(rem.upstream, /:remove$/);
-  assert.match(add1.upstream, /:add$/);
-  // Even under stanza-id reuse, add and remove can never collapse.
-  const addReuse = parseEvent({ ...base, id: 'SAME', emoji: '👍', removed: false });
-  const remReuse = parseEvent({ ...base, id: 'SAME', emoji: '', removed: true });
+  assert.match(rem.upstream, /:remove:1730300001000$/);
+  assert.match(add1.upstream, /:add:1730300000000$/);
+  // Even under stanza-id reuse with clocks, add and remove can never collapse.
+  const addReuse = parseEvent({ ...base, id: 'SAME', emoji: '👍', removed: false,
+    timestamp_ms: 1730300003000 });
+  const remReuse = parseEvent({ ...base, id: 'SAME', emoji: '', removed: true,
+    timestamp_ms: 1730300004000 });
   assert.notEqual(addReuse.upstream, remReuse.upstream);
+  // And a reused id with the source clock distinguishing a re-add stays a
+  // third transition — the platform's own senderTimestampMs is the
+  // discriminator, never a fabricated sequence.
+  const readd = parseEvent({ ...base, id: 'SAME', emoji: '👍', removed: false,
+    timestamp_ms: 1730300005000 });
+  assert.notEqual(addReuse.upstream, readd.upstream);
+  // With NO clock at all the ambiguity is retained: re-add collapses into
+  // the first add's identity rather than guessing a discriminator.
+  const noClk1 = parseEvent({ ...base, id: 'SAME', emoji: '👍', removed: false });
+  const noClk2 = parseEvent({ ...base, id: 'SAME', emoji: '👍', removed: false });
+  assert.equal(noClk1.upstream, noClk2.upstream);
+  assert.match(noClk1.upstream, /:add:na$/);
 });
 
 test('a touch with no stanza id is ambiguous, never an invented identity', () => {

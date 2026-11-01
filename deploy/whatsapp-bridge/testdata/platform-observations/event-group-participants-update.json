@@ -3,7 +3,7 @@
     "name": "group-participants.update event payloads (add / remove / promote / demote / unknown actor)",
     "generated": true,
     "native_event": "ev 'group-participants.update': {id, author, authorPn?, participants, action}",
-    "capture_today": "NOT SUBSCRIBED",
+    "capture_today": "captured — subscribed in bridge.js; each participant becomes a membership observation (add/remove/revise by action) with author as actor, '' -> not_supplied",
     "semantic": "author = actor (JID), participants = subjects with role after the action ({id, admin}), action ∈ add|remove|promote|demote|modify — transition semantics. Case 4 has author '' (source supplied none): an unexplained removal has no inferred actor or intent. 'remove' cannot distinguish kicked from left-voluntarily; design/02 forbids inferring departure intent."
   },
   "payload": [

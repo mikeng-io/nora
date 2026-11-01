@@ -78,6 +78,8 @@ func TestEventIDAliasSemantics(t *testing.T) {
 	}
 }
 
+func ptrI64(v int64) *int64 { return &v }
+
 // Every required wire field is present in the marshaled envelope — the
 // contract names them all, nulls included.
 func TestEnvelopeRequiredFields(t *testing.T) {
@@ -85,7 +87,7 @@ func TestEnvelopeRequiredFields(t *testing.T) {
 		V: 1, Platform: "instagram", AccountKey: "a", Kind: "message",
 		SourceKey: "s", EventID: "v1:x", ConversationID: "c",
 		ConversationType: "dm", SenderID: "s1",
-		SentMS: 1, ReceivedMS: 2, QueuedMS: 3, TimeQuality: TimeUpstream,
+		SentMS: ptrI64(1), ReceivedMS: 2, QueuedMS: 3, TimeQuality: TimeUpstream,
 		Message: map[string]any{}, Attachments: []Attachment{},
 		Trace: map[string]any{}, Receipt: nil, AdmissionRev: nil,
 	}
@@ -357,7 +359,7 @@ func TestNormalizeMessage(t *testing.T) {
 	if env.Kind != KindMessage || env.ConversationID != "room-1" || env.SenderID != "fb-9" {
 		t.Fatalf("envelope core wrong: %+v", env)
 	}
-	if env.TimeQuality != TimeUpstream || env.SentMS != 1730300000000 {
+	if env.TimeQuality != TimeUpstream || env.SentMS == nil || *env.SentMS != 1730300000000 {
 		t.Fatal("upstream timestamp must be used")
 	}
 	// Person mentions only: the THREAD-range entry carries the chat id, not

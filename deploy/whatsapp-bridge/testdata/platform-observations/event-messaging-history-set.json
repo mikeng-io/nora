@@ -3,7 +3,7 @@
     "name": "messaging-history.set (history sync coverage)",
     "generated": true,
     "native_event": "ev 'messaging-history.set': {chats, contacts, messages, lidPnMappings?, isLatest?, progress?, syncType?, pastParticipants?, chunkOrder?}",
-    "capture_today": "NOT SUBSCRIBED — and messages.upsert type 'append' is dropped too; the bridge deliberately captures notify-only, so pre-bridge history is an explicit coverage gap, not an absence of events",
+    "capture_today": "subscribed for secret custody only — history stanzas are remembered into the recent-message cache (their messageContextInfo.messageSecret unlocks later votes/responses) and never emitted as events",
     "semantic": "Backfill evidence: isLatest=false/progress<100 means the snapshot is PARTIAL; syncType scopes the covered window (HistorySyncType ordinal); pastParticipants is room-membership history the live events never name. A poll definition arriving only in history still gates vote decryption: messageContextInfo.messageSecret is per-creation."
   },
   "payload": {

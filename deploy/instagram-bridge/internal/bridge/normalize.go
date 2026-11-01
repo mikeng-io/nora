@@ -281,6 +281,8 @@ func Normalize(ev any, accountKey string, key []byte, keyVersion int, receivedMS
 		return normalizeSummons(m, accountKey, key, keyVersion, receivedMS)
 	case KindMessage:
 		return normalizeMessage(m, accountKey, key, keyVersion, receivedMS)
+	case "observation":
+		return normalizeObservation(m, accountKey, key, keyVersion, receivedMS)
 	}
 	return nil, nil // heartbeat / dropped / typing / unknown kinds
 }
@@ -297,7 +299,9 @@ func normalizeMessage(m map[string]any, accountKey string, key []byte, keyVersio
 	shared, _ := m["shared"].(map[string]any)
 	sharedLineText, sharedKind, sharedLink := sharedLine(shared)
 	var ref map[string]any
+	var hasMedia bool
 	if media, ok := m["media"].(map[string]any); ok {
+		hasMedia = true
 		ref = mediaRef(media)
 	}
 	if ref != nil && len(shared) > 0 {
@@ -365,14 +369,25 @@ func normalizeMessage(m map[string]any, accountKey string, key []byte, keyVersio
 	if ts <= 0 {
 		sentMS, quality = receivedMS, TimeBridgeLocal
 	}
+	// A shared post is ALSO a typed artifact: the observation rides the
+	// same envelope as the utterance (one source transition, one wake),
+	// which lifts the record to v2 while the message stays byte-identical.
+	var observation map[string]any
+	if len(shared) > 0 {
+		// hasMedia (a thumbnail rode the delta), not ref: a linked reel's
+		// cover is dropped from message.media but still previewed the share.
+		observation = artifactObservation(
+			accountKey, room, messageID, sender, shared, ts, receivedMS, hasMedia)
+	}
 	sourceKey := SourceKey(Platform, accountKey, room, KindMessage, upstream)
 	env := &Envelope{
-		V: 1, Platform: Platform, AccountKey: accountKey, Kind: KindMessage,
+		V:        envelopeVersion(KindMessage, observation),
+		Platform: Platform, AccountKey: accountKey, Kind: KindMessage,
 		SourceKey: sourceKey, EventID: EventID(sourceKey, key, keyVersion),
 		ConversationID: room, ConversationType: convType,
 		SenderID: idForm(sender["fbid"]), SenderName: strOrNil(idForm(sender["username"])),
-		SentMS: sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
-		Message: message, Attachments: []Attachment{},
+		SentMS: &sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
+		Message: message, Observation: observation, Attachments: []Attachment{},
 		Trace: map[string]any{}, Receipt: nil,
 	}
 	n := &Normalized{Env: env, MediaIndex: 0}
@@ -415,7 +430,7 @@ func normalizeEdit(m map[string]any, accountKey string, key []byte, keyVersion i
 		SourceKey: sourceKey, EventID: EventID(sourceKey, key, keyVersion),
 		ConversationID: room, ConversationType: "group",
 		SenderID: "", SenderName: nil,
-		SentMS: sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
+		SentMS: &sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
 		Message: message, Attachments: []Attachment{}, Trace: map[string]any{}, Receipt: nil,
 	}}, nil
 }
@@ -506,7 +521,7 @@ func normalizeTouch(m map[string]any, accountKey string, key []byte, keyVersion 
 		SourceKey: sourceKey, EventID: EventID(sourceKey, key, keyVersion),
 		ConversationID: room, ConversationType: "group",
 		SenderID: sender, SenderName: nil,
-		SentMS: sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
+		SentMS: &sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
 		Message: message, Attachments: []Attachment{}, Trace: map[string]any{}, Receipt: nil,
 	}, Transitions: transitions}, nil
 }
@@ -539,9 +554,87 @@ func normalizeSummons(m map[string]any, accountKey string, key []byte, keyVersio
 		SourceKey: sourceKey, EventID: EventID(sourceKey, key, keyVersion),
 		ConversationID: room, ConversationType: "group",
 		SenderID: idForm(sender["fbid"]), SenderName: strOrNil(idForm(sender["username"])),
-		SentMS: sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
+		SentMS: &sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
 		Message: message, Attachments: []Attachment{}, Trace: map[string]any{}, Receipt: nil,
 	}}, nil
+}
+
+// normalizeObservation validates one `kind:"observation"` event — the
+// gateway's typed record of a source event about an OBJECT (pin set, room,
+// member set, artifact). The dict is the contract's own wire shape: it is
+// checked field-for-field (observationProblem) and scope-bound to this
+// envelope before it is allowed anywhere near the journal. A malformed or
+// out-of-scope observation returns an ERROR — a retained failure at the
+// boundary, not a dropped event and not a best-effort parse.
+//
+// `scope.account_key` is stamped HERE, never claimed by the gateway: the
+// account identity has exactly one owner (the capture side), the same
+// rule the wrong-scope control expresses in the other direction.
+func normalizeObservation(m map[string]any, accountKey string, key []byte, keyVersion int, receivedMS int64) (*Normalized, error) {
+	room := idForm(m["room_id"])
+	upstream := str(m, "upstream")
+	if room == "" || upstream == "" {
+		return nil, nil // an observation cannot route without room+identity
+	}
+	obs, _ := m["observation"].(map[string]any)
+	if obs == nil {
+		return nil, fmt.Errorf("observation event carries no observation")
+	}
+	scope, _ := obs["scope"].(map[string]any)
+	if scope == nil {
+		return nil, fmt.Errorf("observation carries no scope")
+	}
+	if p, _ := scope["platform"].(string); p != Platform {
+		return nil, fmt.Errorf("observation scope platform %q != %q", p, Platform)
+	}
+	if c, _ := scope["conversation_id"].(string); c != room {
+		return nil, fmt.Errorf("observation scope conversation %q != envelope room %q", c, room)
+	}
+	scope["account_key"] = accountKey // single owner stamps its own identity
+	obs["received_ms"] = receivedMS   // capture time, beside the envelope's
+	if problem := observationProblem(obs); problem != "" {
+		return nil, fmt.Errorf("observation invalid: %s", problem)
+	}
+	kind := str(obs, "kind")
+	sender := idForm(m["sender_fbid"])
+	// The envelope clock is the observation's own occurred_ms when the
+	// source supplied one; a clockless observation emits sent_ms=null and
+	// bridge_local — never a fabricated upstream time.
+	ts := intMS(m, "timestamp_ms")
+	var sentMS *int64
+	quality := TimeBridgeLocal
+	if ts > 0 {
+		sentMS = &ts
+		quality = TimeUpstream
+	}
+	var transitions []Transition
+	if kind == KindPin {
+		// Pin set transitions ride the same ledger as clockless reaction
+		// deltas: seq>0 is forward progress / redelivery suppression,
+		// seq==0 makes a re-transition unresolvable → ambiguous, journaled,
+		// never guessed.
+		if tgt, ok := obs["target"].(map[string]any); ok {
+			op := str(obs, "operation")
+			if id := str(tgt, "message_id"); id != "" && (op == "add" || op == "remove") {
+				transitions = append(transitions, Transition{
+					Key:         room + "|pin|" + id,
+					State:       op,
+					UpstreamSeq: intMS(m, "upstream_seq"),
+				})
+			}
+		}
+	}
+	sourceKey := SourceKey(Platform, accountKey, room, kind, upstream)
+	return &Normalized{Env: &Envelope{
+		V: envelopeVersion(kind, obs), Platform: Platform, AccountKey: accountKey,
+		Kind:      kind,
+		SourceKey: sourceKey, EventID: EventID(sourceKey, key, keyVersion),
+		ConversationID: room, ConversationType: "group",
+		SenderID: sender, SenderName: nil,
+		SentMS: sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
+		Message: nil, Observation: obs, Attachments: []Attachment{},
+		Trace: map[string]any{}, Receipt: nil,
+	}, Transitions: transitions}, nil
 }
 
 func nilIfEmpty(s string) any {

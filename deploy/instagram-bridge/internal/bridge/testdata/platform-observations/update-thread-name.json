@@ -3,14 +3,24 @@
     "name": "thread title change delta",
     "generated": true,
     "native_event": "delta __typename=SlideUQPPThreadName",
-    "capture_today": "DROPPED — no UpdateThreadNameEvent branch in emitDelta; the embedded admin message is discarded with it",
+    "capture_today": "captured -> embedded admin message (deduped by mid) + kind=observation room revise {title}; actor/timestamp read off the embedded message when present",
     "semantic": "thread_name is the NEW title (room-change delta). The event embeds a *slidetypes.Message admin-text body — the service-message rendering of the change — which today's fall-through discards entirely rather than emitting as an admin message. UpdateThreadImageEvent (SlideUQPPThreadImage {thread_image.uri}) is the same shape and also dropped."
   },
   "payload": {
-    "__typename": "SlideUQPPThreadName", "uq_seq_id": "215", "thread_fbid": "1234567890123456",
+    "__typename": "SlideUQPPThreadName",
+    "uq_seq_id": "215",
+    "thread_fbid": "1234567890123456",
     "thread_name": "Saturday planning",
-    "message": { "thread_fbid": "1234567890123456", "message_id": "mid.$adm1", "sender_fbid": "63123456700000011",
-      "timestamp_ms": "1790002200000", "content_type": "THREAD_NAME",
-      "content": { "__typename": "SlideMessageAdminText", "text_body": "Member A named the group Saturday planning." } }
+    "message": {
+      "thread_fbid": "1234567890123456",
+      "message_id": "mid.$adm1",
+      "sender_fbid": "63123456700000011",
+      "timestamp_ms": "1790002200000",
+      "content_type": "THREAD_NAME",
+      "content": {
+        "__typename": "SlideMessageAdminText",
+        "text_body": "Member A named the group Saturday planning."
+      }
+    }
   }
 }

@@ -15,16 +15,27 @@
  *                                                   transition
  *   delete   `d:{target_id}:{revoke_id}`             each revoke stanza is one
  *                                                   transition
- *   reaction `r:{target_id}:{rid}:{sender}:{add|remove}`  the transition kind
- *                                                   rides in the identity: an
- *                                                   add→remove pair can reuse
- *                                                   the stanza id
+ *   reaction `r:{target_id}:{rid}:{sender}:{add|remove}:{source_clock}`  the
+ *                                                   transition kind AND the
+ *                                                   source's own clock ride in
+ *                                                   the identity: an
+ *                                                   add→remove→add sequence can
+ *                                                   reuse the stanza id, and
+ *                                                   senderTimestampMs is what
+ *                                                   distinguishes a re-add from
+ *                                                   a replay (absent clock →
+ *                                                   `:na`, ambiguity retained)
  */
 import { createHmac, createHash } from 'node:crypto';
 
-export const ENVELOPE_VERSION = 1;
+export const ENVELOPE_VERSION = 2;
 const SEP = '\x1f';
-const KINDS = new Set(['message', 'edit', 'delete', 'reaction', 'summons']);
+const V1_KINDS = new Set(['message', 'edit', 'delete', 'reaction', 'summons']);
+// v2 observation kinds — a source event about an OBJECT, never an
+// utterance: a poll (definition and response), a room/thread, a member set,
+// a pin set, a shared artifact, a message's own metadata.
+const OBSERVATION_KINDS = new Set(['message_metadata', 'poll', 'room', 'membership', 'pin', 'artifact']);
+const KINDS = new Set([...V1_KINDS, ...OBSERVATION_KINDS]);
 
 export function canonicalSourceKey({ platform, accountKey, conversationId, kind, upstream }) {
   if (!KINDS.has(kind)) {
@@ -65,6 +76,13 @@ export function validateTraceparent(value) {
   return hex(parts[1]) && hex(parts[2]);
 }
 
+/** The `v` a record emits: 2 iff it carries anything a v1 reader cannot
+ * interpret — an observation sidecar or a kind outside V1_KINDS — else 1.
+ * The version describes the SHAPE USED, not the library (frozen contract). */
+export function envelopeVersion({ kind, observation = null }) {
+  return observation !== null || !V1_KINDS.has(kind) ? 2 : 1;
+}
+
 /** Build the complete stream field payload (design 02-wire §envelope). */
 export function buildEnvelope({
   platform = 'whatsapp',
@@ -80,6 +98,7 @@ export function buildEnvelope({
   queuedMs,
   timeQuality,
   message,
+  observation = null,
   attachments = [],
   trace = {},
   receipt = null,
@@ -97,7 +116,7 @@ export function buildEnvelope({
     cleanTrace.tracestate = trace.tracestate;
   }
   return {
-    v: ENVELOPE_VERSION,
+    v: envelopeVersion({ kind, observation }),
     platform,
     account_key: accountKey,
     kind,
@@ -112,6 +131,7 @@ export function buildEnvelope({
     queued_ms: queuedMs,
     time_quality: timeQuality === 'upstream' ? 'upstream' : 'bridge_local',
     message,
+    observation,
     attachments,
     trace: cleanTrace,
     receipt,

@@ -3,11 +3,16 @@
     "name": "admin set mutation delta",
     "generated": true,
     "native_event": "delta __typename=SlideUQPPGenericMapAdminsKeyMutation",
-    "capture_today": "DROPPED — no AdminChangeEvent branch in emitDelta",
+    "capture_today": "captured -> kind=observation membership snapshot on admins:{room} (IGID space — a different object from members:{room}); no actor/direction exists",
     "semantic": "admin_igids is the admin SET as a snapshot (IGID space — the public instagram id, NOT the messaging fbid; roster joins need the id-space mapping). No actor, no timestamp, no delta direction: whether someone was added or removed is only derivable by diffing consecutive snapshots."
   },
   "payload": {
-    "__typename": "SlideUQPPGenericMapAdminsKeyMutation", "uq_seq_id": "219", "thread_fbid": "1234567890123456",
-    "admin_igids": ["901234567", "998765432"]
+    "__typename": "SlideUQPPGenericMapAdminsKeyMutation",
+    "uq_seq_id": "219",
+    "thread_fbid": "1234567890123456",
+    "admin_igids": [
+      "901234567",
+      "998765432"
+    ]
   }
 }

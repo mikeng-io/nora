@@ -3,7 +3,7 @@
     "name": "encrypted event response (encEventResponseMessage)",
     "generated": true,
     "native_event": "messages.upsert (type=notify), message.encEventResponseMessage",
-    "capture_today": "DROPPED — and upstream decryption ALSO fails today: rc13 decrypts these live, but the bridge's getMessage returns {conversation:''}, so the creation's messageSecret is never found ('event creation message not found')",
+    "capture_today": "captured — upstream's live decryptEventResponse now resolves: getMessage answers from the recent-message cache, so the creation's messageContextInfo.messageSecret decrypts the response and it surfaces via messages.update{eventResponses} -> artifact revise; missing secret stays an upstream warning (no response claimed)",
     "semantic": "Same encryption contract as poll votes, live code path (unlike the commented-out poll block): decryptEventResponse needs the creation message's messageContextInfo.messageSecret via getMessage — which the bridge stub never supplies. Available upstream, unavailable today; the honest cell is 'not retrievable', not 'unsupported'."
   },
   "payload": {

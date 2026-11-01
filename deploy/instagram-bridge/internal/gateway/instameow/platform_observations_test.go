@@ -1,12 +1,14 @@
 package instameow
 
-// Native platform-observation fixture check — CURRENT library behavior only.
+// Native platform-observation fixture check — decode AND emission.
 //
-// Decodes every fixture in internal/bridge/testdata/platform-observations/
-// through the pinned slidetypes.Delta.UnmarshalJSON and asserts the decoded
-// event Go type matches the fixture's declared surface. This pins what the
-// SDK decodes today; it says nothing about whether emitDelta forwards the
-// event — the fixture README records that half per file.
+// Half one decodes every fixture in internal/bridge/testdata/platform-
+// observations/ through the pinned slidetypes.Delta.UnmarshalJSON and
+// asserts the decoded event Go type matches the fixture's declared surface.
+// Half two routes each delta through emitDelta into a recording sink and
+// asserts the event vector the bridge actually sends downstream — decode
+// proves the library types the delta; emission proves the data reaches the
+// durable pipeline's door.
 //
 // Fixture placement note: the raw slide deltas live under internal/bridge's
 // testdata (the named platform-observations home); the decode harness lives
@@ -17,7 +19,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
+
+	"instagram-bridge/internal/domain"
+	"instagram-bridge/internal/session"
 
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 )
@@ -25,10 +32,10 @@ import (
 const obsFixtureDir = "../../bridge/testdata/platform-observations"
 
 type obsFixture struct {
-	Meta    struct {
-		Name          string `json:"name"`
-		NativeEvent   string `json:"native_event"`
-		CaptureToday  string `json:"capture_today"`
+	Meta struct {
+		Name         string `json:"name"`
+		NativeEvent  string `json:"native_event"`
+		CaptureToday string `json:"capture_today"`
 	}
 	Payload json.RawMessage `json:"payload"`
 }
@@ -97,6 +104,7 @@ func TestPlatformObservationFixturesDecode(t *testing.T) {
 			"*slidetypes.CreateReactionEvent", "*slidetypes.DeleteReactionEvent", "*slidetypes.CreateReactionEvent"}},
 		{"pin-unpin-message.json", []string{"*slidetypes.PinMessageEvent"}},
 		{"update-thread-name.json", []string{"*slidetypes.UpdateThreadNameEvent"}},
+		{"update-thread-image.json", []string{"*slidetypes.UpdateThreadImageEvent"}},
 		{"participant-join.json", []string{"*slidetypes.ParticipantJoinEvent"}},
 		{"participant-join-empty-users.json", []string{"*slidetypes.ParticipantJoinEvent"}},
 		{"participant-leave.json", []string{"*slidetypes.ParticipantLeaveEvent"}},
@@ -181,5 +189,334 @@ func TestPlatformObservationSemanticsSurvive(t *testing.T) {
 	unk := decodePayloads(t, loadObsFixture(t, "unknown-delta-typename.json"))[0]
 	if _, ok := unk.Data.(slidetypes.UnknownEvent); !ok {
 		t.Fatalf("unmapped typename decoded as %T, want UnknownEvent", unk.Data)
+	}
+}
+
+// --- emission: what emitDelta actually sends downstream ---------------------
+//
+// Decode proved the library types the delta; this half proves the bridge
+// emits the typed observation — the two are different claims and only the
+// second one means the data reaches the durable pipeline.
+
+// recordingSink is an EventSink that keeps everything emitted.
+type recordingSink struct {
+	mu      sync.Mutex
+	emitted []any
+}
+
+func (r *recordingSink) Emit(ev any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.emitted = append(r.emitted, ev)
+}
+
+func (r *recordingSink) HasClients() bool { return true }
+
+// obsTestBridge is a Bridge wired to a recording sink, self-bound like
+// eventBridge but with capture instead of the hub.
+func obsTestBridge(t *testing.T) (*Bridge, *recordingSink) {
+	t.Helper()
+	sink := &recordingSink{}
+	b := NewBridge(Options{
+		Store: session.Store{Dir: t.TempDir()},
+		Sink:  sink,
+		State: domain.StateAuthenticated,
+		Self:  domain.Self{FBID: "60987654321000000", IGID: "1", Username: "self"},
+	})
+	return b, sink
+}
+
+// emitFixture routes one fixture's deltas through emitDelta and returns the
+// emitted events in order.
+func emitFixture(t *testing.T, name string) []any {
+	t.Helper()
+	b, sink := obsTestBridge(t)
+	for _, d := range decodePayloads(t, loadObsFixture(t, name)) {
+		b.emitDelta(d)
+	}
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	return append([]any(nil), sink.emitted...)
+}
+
+// observationsOf filters the emitted set to observation events.
+func observationsOf(emitted []any) []*observationEvent {
+	var out []*observationEvent
+	for _, ev := range emitted {
+		if o, ok := ev.(*observationEvent); ok {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+func messagesOf(emitted []any) []*messageEvent {
+	var out []*messageEvent
+	for _, ev := range emitted {
+		if m, ok := ev.(*messageEvent); ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// A pin-set delta emits one pin observation per named message id, add and
+// remove, on the room's pin-set object — seq-grounded, actorless.
+func TestPinDeltaEmitsObservations(t *testing.T) {
+	emitted := emitFixture(t, "pin-unpin-message.json")
+	if len(emitted) != 2 {
+		t.Fatalf("pin delta emitted %d events, want 2", len(emitted))
+	}
+	obs := observationsOf(emitted)
+	if len(obs) != 2 {
+		t.Fatalf("emitted %d observations, want 2", len(obs))
+	}
+	var add, remove *observationEvent
+	for _, o := range obs {
+		if o.Observation["operation"] == "add" {
+			add = o
+		} else {
+			remove = o
+		}
+		if o.Observation["kind"] != "pin" {
+			t.Errorf("observation kind = %v, want pin", o.Observation["kind"])
+		}
+		if o.Observation["object_ref"] != "pins:1234567890123456" {
+			t.Errorf("object_ref = %v", o.Observation["object_ref"])
+		}
+		if o.Observation["actor_status"] != "not_supplied" {
+			t.Errorf("actor_status = %v, want not_supplied", o.Observation["actor_status"])
+		}
+		if o.UpstreamSeq != 214 {
+			t.Errorf("upstream_seq = %d, want 214", o.UpstreamSeq)
+		}
+		if o.Observation["source_position"] != int64(214) {
+			t.Errorf("source_position = %v, want 214", o.Observation["source_position"])
+		}
+		if o.Observation["revision_scope"] != revisionScopeUQSeqID {
+			t.Errorf("revision_scope = %v", o.Observation["revision_scope"])
+		}
+	}
+	if add == nil || remove == nil {
+		t.Fatal("expected one add and one remove observation")
+	}
+	tgt, _ := add.Observation["target"].(map[string]any)
+	if tgt["message_id"] != "mid.$a1" {
+		t.Errorf("add target = %v", tgt)
+	}
+	tgt, _ = remove.Observation["target"].(map[string]any)
+	if tgt["message_id"] != "mid.$b9" {
+		t.Errorf("remove target = %v", tgt)
+	}
+	if add.Upstream != "pin:214:mid.$a1:add" {
+		t.Errorf("add upstream = %q", add.Upstream)
+	}
+}
+
+// A thread-name delta emits the embedded admin message AND the typed room
+// revise carrying the new title — the actor comes off the embedded message.
+func TestThreadNameEmitsMessageAndRoomObservation(t *testing.T) {
+	emitted := emitFixture(t, "update-thread-name.json")
+	if len(emitted) != 2 {
+		t.Fatalf("thread-name delta emitted %d events, want 2", len(emitted))
+	}
+	msgs := messagesOf(emitted)
+	if len(msgs) != 1 || msgs[0].MessageID != "mid.$adm1" {
+		t.Fatalf("expected the embedded admin message, got %+v", msgs)
+	}
+	obs := observationsOf(emitted)
+	if len(obs) != 1 {
+		t.Fatalf("expected one room observation, got %d", len(obs))
+	}
+	o := obs[0].Observation
+	if o["kind"] != "room" || o["operation"] != "revise" {
+		t.Fatalf("kind/op = %v/%v", o["kind"], o["operation"])
+	}
+	fields, _ := o["payload"].(map[string]any)["fields"].(map[string]any)
+	if fields["title"] != "Saturday planning" {
+		t.Fatalf("title field = %v", fields)
+	}
+	if o["actor_id"] != "63123456700000011" || o["actor_status"] != "known" {
+		t.Errorf("actor = %v/%v", o["actor_id"], o["actor_status"])
+	}
+	if obs[0].TimestampMS != 1790002200000 {
+		t.Errorf("timestamp_ms = %d", obs[0].TimestampMS)
+	}
+}
+
+// A thread-image delta is the parallel room revise — fields{image} carries
+// the new avatar URI, nothing else is claimed.
+func TestThreadImageEmitsRoomObservation(t *testing.T) {
+	emitted := emitFixture(t, "update-thread-image.json")
+	if len(emitted) != 2 {
+		t.Fatalf("thread-image delta emitted %d events, want 2", len(emitted))
+	}
+	obs := observationsOf(emitted)
+	if len(obs) != 1 {
+		t.Fatalf("expected one room observation, got %d", len(obs))
+	}
+	o := obs[0].Observation
+	if o["kind"] != "room" || o["operation"] != "revise" {
+		t.Fatalf("kind/op = %v/%v", o["kind"], o["operation"])
+	}
+	fields, _ := o["payload"].(map[string]any)["fields"].(map[string]any)
+	uri, _ := fields["image"].(string)
+	if !strings.HasPrefix(uri, "https://") || len(fields) != 1 {
+		t.Fatalf("image field = %v", fields)
+	}
+}
+
+// A join delta emits the admin message AND a membership snapshot of the
+// POST-ACTION member set — the joiner has no typed field, so the covered
+// member collection is what the source supplies.
+func TestJoinEmitsMessageAndMemberSnapshot(t *testing.T) {
+	emitted := emitFixture(t, "participant-join.json")
+	if len(emitted) != 2 {
+		t.Fatalf("join delta emitted %d events, want 2", len(emitted))
+	}
+	if len(messagesOf(emitted)) != 1 {
+		t.Fatal("expected the embedded admin message")
+	}
+	obs := observationsOf(emitted)
+	if len(obs) != 1 {
+		t.Fatalf("expected one membership observation, got %d", len(obs))
+	}
+	o := obs[0].Observation
+	if o["kind"] != "membership" || o["operation"] != "snapshot" {
+		t.Fatalf("kind/op = %v/%v", o["kind"], o["operation"])
+	}
+	if o["object_ref"] != "members:1234567890123456" {
+		t.Errorf("object_ref = %v", o["object_ref"])
+	}
+	payload, _ := o["payload"].(map[string]any)
+	members, _ := payload["members"].([]any)
+	if len(members) != 4 {
+		t.Fatalf("snapshot members = %d, want 4", len(members))
+	}
+	if payload["covered"] != "members" {
+		t.Errorf("covered = %v", payload["covered"])
+	}
+	cov, _ := o["coverage"].(map[string]any)
+	if cov["complete"] != true {
+		t.Errorf("coverage.complete = %v", cov["complete"])
+	}
+}
+
+// An empty users[] still emits a snapshot — covered-set semantics mean the
+// source reported an empty member set, not a missing one.
+func TestJoinEmptyUsersEmitsEmptySnapshot(t *testing.T) {
+	emitted := emitFixture(t, "participant-join-empty-users.json")
+	obs := observationsOf(emitted)
+	if len(obs) != 1 {
+		t.Fatalf("expected one membership observation, got %d", len(obs))
+	}
+	payload, _ := obs[0].Observation["payload"].(map[string]any)
+	members, _ := payload["members"].([]any)
+	if len(members) != 0 {
+		t.Fatalf("expected empty covered set, got %d", len(members))
+	}
+}
+
+// A leave delta emits the admin message AND a typed remove: actor and
+// subject are separate fields here — state 'left' only when actor==subject.
+func TestLeaveEmitsTypedActorAndSubject(t *testing.T) {
+	emitted := emitFixture(t, "participant-leave.json")
+	obs := observationsOf(emitted)
+	if len(obs) != 1 {
+		t.Fatalf("expected one membership observation, got %d", len(obs))
+	}
+	o := obs[0].Observation
+	if o["kind"] != "membership" || o["operation"] != "remove" {
+		t.Fatalf("kind/op = %v/%v", o["kind"], o["operation"])
+	}
+	if o["subject_ref"] != "63987654300000022" {
+		t.Errorf("subject_ref = %v", o["subject_ref"])
+	}
+	if o["actor_id"] != "63123456700000011" {
+		t.Errorf("actor_id = %v", o["actor_id"])
+	}
+	// actor != subject: a removal, never asserted as voluntary leave.
+	payload, _ := o["payload"].(map[string]any)
+	if payload["state"] != "" {
+		t.Errorf("state = %v, want empty for an admin removal", payload["state"])
+	}
+}
+
+// actor==subject on a leave is a self-departure the source proves.
+func TestSelfLeaveReadsLeft(t *testing.T) {
+	d := decodePayloads(t, loadObsFixture(t, "participant-leave.json"))[0]
+	lv := d.Data.(*slidetypes.ParticipantLeaveEvent)
+	lv.ActorFBID = lv.LeftParticipantFBID // self-departure
+	b, sink := obsTestBridge(t)
+	b.emitDelta(d)
+	obs := observationsOf(sink.emitted)
+	if len(obs) != 1 {
+		t.Fatalf("expected one observation, got %d", len(obs))
+	}
+	payload, _ := obs[0].Observation["payload"].(map[string]any)
+	if payload["state"] != "left" {
+		t.Errorf("state = %v, want left", payload["state"])
+	}
+}
+
+// The admin-set mutation emits a snapshot on admins:{room} — IGID space,
+// a different object from the fbid member set.
+func TestAdminChangeEmitsIgidSnapshot(t *testing.T) {
+	emitted := emitFixture(t, "admin-change.json")
+	obs := observationsOf(emitted)
+	if len(obs) != 1 {
+		t.Fatalf("expected one membership observation, got %d", len(obs))
+	}
+	o := obs[0].Observation
+	if o["object_ref"] != "admins:1234567890123456" {
+		t.Errorf("object_ref = %v", o["object_ref"])
+	}
+	payload, _ := o["payload"].(map[string]any)
+	if payload["covered"] != "admins" {
+		t.Errorf("covered = %v", payload["covered"])
+	}
+	members, _ := payload["members"].([]any)
+	if len(members) != 2 {
+		t.Fatalf("admin members = %d", len(members))
+	}
+	first, _ := members[0].(map[string]any)
+	if first["role"] != "admin" || first["subject"] != "901234567" {
+		t.Errorf("admin member = %+v", first)
+	}
+	if o["actor_status"] != "not_applicable" {
+		t.Errorf("actor_status = %v, want not_applicable", o["actor_status"])
+	}
+}
+
+// A shared XMA emits the ordinary message event with the decoded `shared`
+// metadata intact — the artifact sidecar is derived downstream at
+// Normalize, but only because these fields actually reach the sink.
+func TestSharedXMAEmitsSharedMetadata(t *testing.T) {
+	emitted := emitFixture(t, "new-message-shared-xma.json")
+	msgs := messagesOf(emitted)
+	if len(msgs) != 1 {
+		t.Fatalf("expected one message event, got %d", len(msgs))
+	}
+	sh := msgs[0].Shared
+	if sh == nil {
+		t.Fatal("shared metadata did not reach the sink")
+	}
+	if sh.Author != "@creator_example" || sh.TargetID != "3401111111111111111" {
+		t.Errorf("shared = %+v", sh)
+	}
+	if sh.TargetURL != "https://www.instagram.com/reel/ABC123def/" {
+		t.Errorf("target_url = %q", sh.TargetURL)
+	}
+}
+
+// Inbox-level and receipt surfaces stay dropped; an unmapped typename emits
+// nothing (explicit unavailability, never a guessed route).
+func TestUnmappedAndInboxDeltasEmitNothing(t *testing.T) {
+	for _, f := range []string{
+		"unknown-delta-typename.json", "read-receipt-and-pinned-thread.json",
+	} {
+		if n := len(emitFixture(t, f)); n != 0 {
+			t.Errorf("%s emitted %d events, want 0", f, n)
+		}
 	}
 }

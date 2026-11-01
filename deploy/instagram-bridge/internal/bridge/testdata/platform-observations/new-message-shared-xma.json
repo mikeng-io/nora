@@ -3,20 +3,55 @@
     "name": "shared reel/post XMA in a group message",
     "generated": true,
     "native_event": "delta __typename=SlideUQPPNewMessage, content SlideMessageXMAContent",
-    "capture_today": "captured -> kind=message with shared{author,target_url,typename,layout,caption,...} + media=thumbnail still; one thumbnail attachment only",
+    "capture_today": "captured -> kind=message + artifact observation SIDECAR on the same v2 envelope (kind validated from target_url shape; typename/layout verbatim uninterpreted); one thumbnail attachment",
     "semantic": "shared.author is the POST's author, not the sharer (sharer = sender_fbid). preview_image is a thumbnail of the shared object — never the object itself. target_url/cta_buttons are pass-through; typename/preview_layout_type are Instagram's own discriminators, unmeasured and uninterpreted by the bridge."
   },
   "payload": {
-    "__typename": "SlideUQPPNewMessage", "uq_seq_id": "210", "thread_fbid": "1234567890123456",
+    "__typename": "SlideUQPPNewMessage",
+    "uq_seq_id": "210",
+    "thread_fbid": "1234567890123456",
     "message": {
-      "thread_fbid": "1234567890123456", "message_id": "mid.$a1", "sender_fbid": "63123456700000011",
-      "text_body": null, "timestamp_ms": "1790002000000", "content_type": "MESSAGE_INLINE_SHARE",
-      "content": { "__typename": "SlideMessageXMAContent", "xma_text_body": "check this",
-        "xma": { "__typename": "XMATemplate", "title_text": "a reel", "header_title_text": "@creator_example",
-          "subtitle_text": "12k plays", "target_url": "https://www.instagram.com/reel/ABC123def/", "target_id": "3401111111111111111",
-          "preview_layout_type": "DEFAULT", "preview_image": { "url": "https://scontent.example.net/v/t1.15752-9/xma.png?stp=cp0&_nc_cat=100", "width": 1080, "height": 1350 },
-          "cta_buttons": [ { "action_url": "https://www.instagram.com/reel/ABC123def/", "cta_type": "OPEN_URL", "title": "Watch reel" } ] } },
-      "sender": { "name": "Member A", "id": "63123456700000011", "igid": "901234567",
-        "user_dict": { "username": "member_a", "interop_messaging_user_fbid": "63123456700000011", "id": "901234567" } } }
+      "thread_fbid": "1234567890123456",
+      "message_id": "mid.$a1",
+      "sender_fbid": "63123456700000011",
+      "text_body": null,
+      "timestamp_ms": "1790002000000",
+      "content_type": "MESSAGE_INLINE_SHARE",
+      "content": {
+        "__typename": "SlideMessageXMAContent",
+        "xma_text_body": "check this",
+        "xma": {
+          "__typename": "XMATemplate",
+          "title_text": "a reel",
+          "header_title_text": "@creator_example",
+          "subtitle_text": "12k plays",
+          "target_url": "https://www.instagram.com/reel/ABC123def/",
+          "target_id": "3401111111111111111",
+          "preview_layout_type": "DEFAULT",
+          "preview_image": {
+            "url": "https://scontent.example.net/v/t1.15752-9/xma.png?stp=cp0&_nc_cat=100",
+            "width": 1080,
+            "height": 1350
+          },
+          "cta_buttons": [
+            {
+              "action_url": "https://www.instagram.com/reel/ABC123def/",
+              "cta_type": "OPEN_URL",
+              "title": "Watch reel"
+            }
+          ]
+        }
+      },
+      "sender": {
+        "name": "Member A",
+        "id": "63123456700000011",
+        "igid": "901234567",
+        "user_dict": {
+          "username": "member_a",
+          "interop_messaging_user_fbid": "63123456700000011",
+          "id": "901234567"
+        }
+      }
+    }
   }
 }

@@ -3,7 +3,7 @@
     "name": "groups.upsert member snapshot (full + partial-scope)",
     "generated": true,
     "native_event": "ev 'groups.upsert': GroupMetadata[]",
-    "capture_today": "NOT SUBSCRIBED",
+    "capture_today": "captured — subscribed in bridge.js; participants[] -> membership snapshot (complete iff size == len(participants)), present fields -> room revise. Entry 2 has no participants -> no member claim at all",
     "semantic": "A SNAPSHOT surface: participants[] is the complete covered set AT this observation — a snapshot records observed state, it does not fabricate join/leave transitions for members it omits (design/02). Entry 2 is a PARTIAL payload (fields present, participants absent): a partial snapshot can never erase members it did not list. size vs participants.length is its own coverage check."
   },
   "payload": [

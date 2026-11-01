@@ -23,9 +23,9 @@ synthetic placeholder-shaped data (`55501` fiction range, repeated/zero digits,
   (exported, live) needs `{pollCreatorJid, pollMsgId, pollEncKey, voterJid}`;
   `pollEncKey` = the creation message's `messageContextInfo.messageSecret`.
   The analogous `pollUpdateMessage → messages.update{pollUpdates}` emit block
-  is COMMENTED OUT in rc13; `encEventResponseMessage` decryption is live but
-  gated on `getMessage()` finding the creation (the bridge stub returns
-  `{conversation:''}`, so it never finds one).
+  is COMMENTED OUT in rc13, so live votes are decrypted at the stanza by
+  `observations.js`; `encEventResponseMessage` decryption is live and works
+  now that `getMessage` answers from the recent-message cache.
 - **Group surfaces**: `groups.update` → `Partial<GroupMetadata>[]`,
   `group-participants.update` → `{id, author, participants, action}`,
   `groups.upsert` → `GroupMetadata[]`, `messaging-history.set` →
@@ -33,20 +33,24 @@ synthetic placeholder-shaped data (`55501` fiction range, repeated/zero digits,
   (`lib/Types/Events.d.ts`, `lib/Types/GroupMetadata.d.ts`, stub enum in
   `WAProto.proto` `WebMessageInfo.StubType`).
 
-## Today's capture route (base c537267a)
+## Capture route (post-binding)
 
-`bridge.js` subscribes ONLY `messages.upsert` (type `notify` only),
-`connection.update`, `creds.update`. Upsert stanzas →
-`bridge_helpers.js:extractMessageEvent` → event types `message` / `reaction` /
-`delete` → `pipeline.capture` → `normalize.js:parseEvent` → envelope kinds
-`message` / `edit` / `reaction` / `delete` with upstream identities
-`m:` / `e:` / `d:` / `r:`. Stanzas with `!msg.message` (stub notifications)
-are skipped before extraction; content types with no text/media (polls, pins,
-locations, contacts, events, poll updates, result snapshots) drop inside
-`extractMessageEvent` with a shape-only log line. Every other Baileys event
-(`messages.reaction`, `messages.update`, `messages.delete`, `groups.*`,
-`group-participants.update`, `group.join-request`, `group.member-tag.update`,
-`messaging-history.set`, `chats.*`, `newsletter.*`) is never subscribed.
+`bridge.js` subscribes `messages.upsert` (type `notify` only),
+`connection.update`, `creds.update`, and the observation surfaces
+`messages.update`, `messaging-history.set` (secret custody only — never
+emitted), `groups.upsert`, `groups.update`, `group-participants.update`,
+`group.join-request`. Upsert stanzas → `extractMessageEvent` (ordinary
+turns) AND `observations.js:stanzaObservations` (typed object reports:
+poll/vote/snapshot, pin, stub room/membership, shared artifacts). An event
+callback payload routes through the same `observations.js` extractors.
+Every path feeds `pipeline.capture` → `normalize.js:parseEvent` (wire
+validation) → journal → enqueue: ordinary turns stay v1 envelopes; a typed
+observation (alone, or as a sidecar next to an admitted message) is a v2
+envelope with `observation` set and `message` null for pure observations.
+Not subscribed: `messages.reaction` (the same stanza already arrives via
+upsert — subscribing would double-report one transition),
+`group.member-tag.update` (a member label is not a role/state — no typed
+field carries it), receipts/presence/newsletter families.
 
 ## File map
 

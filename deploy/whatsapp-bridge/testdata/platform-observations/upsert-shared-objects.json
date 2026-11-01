@@ -3,7 +3,7 @@
     "name": "shared objects: contact card, location, group event",
     "generated": true,
     "native_event": "messages.upsert (type=notify): contactsArrayMessage, locationMessage, eventMessage",
-    "capture_today": "ALL DROPPED — none produce text/media in extractMessageEvent",
+    "capture_today": "captured — contacts/location/event stanzas -> artifact create observations, custody=declared, sender-authored metadata retained; vcards/coordinates/join-link withheld as explicit coverage gaps",
     "semantic": "Non-media shared artifacts. contactsArrayMessage carries displayName + contacts[]; locationMessage carries name/address/coords (zeros here: generated); eventMessage is the WhatsApp group event (name, startTime, isCanceled) whose RESPONSES arrive separately as encEventResponseMessage. Media attachments are already captured as descriptors; these object types are the artifact-multiplicity gap the census names."
   },
   "payload": [

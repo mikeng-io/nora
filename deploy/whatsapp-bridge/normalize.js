@@ -19,6 +19,7 @@ import {
   isLidJid, lidForm, parseJid, phoneForm, senderForm,
 } from './wa_jid.js';
 import { labelFor, renderPlaceholder } from './media_labels.js';
+import { observationProblem } from './observations.js';
 
 function mediaRef(entry) {
   return {
@@ -128,11 +129,14 @@ function parseTouch(event) {
   }
   const ts = (typeof event.timestamp_ms === 'number' && Number.isInteger(event.timestamp_ms))
     ? event.timestamp_ms : 0;
-  // The transition kind rides in the identity, not just the envelope's kind
-  // field: an add→remove pair can arrive reusing the reaction stanza id, and
-  // two distinct transitions must never collapse to one event.
+  // The transition kind AND the source's own clock ride in the identity:
+  // an add→remove→add sequence can reuse the stanza id, and the upstream
+  // reaction timestamp distinguishes a re-add from a replay. When the
+  // source clock is absent the `na` form retains the ambiguity honestly —
+  // no fabricated discriminator, no global sequence invented.
+  const clock = ts ? String(ts) : 'na';
   const upstream = kind === 'reaction'
-    ? `r:${target}:${stanza}:${senderId}:${touch.removed ? 'remove' : 'add'}`
+    ? `r:${target}:${stanza}:${senderId}:${touch.removed ? 'remove' : 'add'}:${clock}`
     : `d:${target}:${stanza}`;
   return {
     kind,
@@ -168,6 +172,33 @@ function parseTouch(event) {
 export function parseEvent(event, { log = () => {} } = {}) {
   try {
     if (!event || typeof event !== 'object') return null;
+    if (event.type === 'observation') {
+      // A typed observation event (observations.js): validate the wire dict
+      // here so a malformed observation fails closed at the boundary and
+      // never enters the journal as a best-effort record.
+      const obs = event.observation;
+      const problem = observationProblem(obs);
+      const upstream = String(event.upstream || '');
+      if (problem || !upstream) {
+        log(`unparseable whatsapp observation (${problem || 'no upstream identity'}), skipping`);
+        return null;
+      }
+      return {
+        kind: obs.kind,
+        upstream,
+        msg: null,
+        observation: obs,
+        route: {
+          conversation_id: String(event.conversation_id || ''),
+          conversation_type: event.conversation_type === 'dm' ? 'dm' : 'group',
+          sender_id: String(event.sender_id || ''),
+          sender_name: event.sender_name || null,
+          sent_ms: (typeof event.sent_ms === 'number' && Number.isInteger(event.sent_ms))
+            ? event.sent_ms : null,
+          time_quality: event.time_quality === 'upstream' ? 'upstream' : 'bridge_local',
+        },
+      };
+    }
     if (event.type === 'reaction' || event.type === 'delete') {
       return parseTouch(event);
     }
@@ -212,9 +243,24 @@ export function parseEvent(event, { log = () => {} } = {}) {
     }
     const upstream = editOf ? `e:${editOf}:${stanza}` : `m:${stanza}:${senderId}`;
 
+    // A source stanza that is BOTH an ordinary turn and an object event
+    // carries the observation as a sidecar on the same envelope — one
+    // obligation, no duplicate wake. A malformed sidecar fails the whole
+    // event closed rather than silently widening the admitted record.
+    let sidecar = null;
+    if (event.observation !== undefined && event.observation !== null) {
+      const problem = observationProblem(event.observation);
+      if (problem) {
+        log(`unparseable whatsapp observation sidecar (${problem}), skipping`);
+        return null;
+      }
+      sidecar = event.observation;
+    }
+
     return {
       kind,
       upstream,
+      observation: sidecar,
       msg: {
         platform: 'whatsapp',
         conversation_id: conversationIdFor(chatJid, resolvedPhone),

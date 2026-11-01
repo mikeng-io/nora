@@ -3,12 +3,18 @@
     "name": "message pin/unpin set delta",
     "generated": true,
     "native_event": "delta __typename=SlideUQPPPinUnpinMessage",
-    "capture_today": "DROPPED — emitDelta has no PinMessageEvent branch; falls through silently",
+    "capture_today": "captured -> kind=observation, pin add/remove per message id on pins:{room}; uq_seq_id grounds identity + source_position (scope uq_seq_id); no actor/timestamp exists on the event — both unavailable",
     "semantic": "A pin-set delta naming pinned_messages and unpinned_messages by id in one payload: add and remove transitions plus covered-set information. No actor and no timestamp exist on this event — pin authorship/time is unavailable from this source shape. Distinct from SlideUQPPPinnedThread (inbox-level thread pin, also dropped)."
   },
   "payload": {
-    "__typename": "SlideUQPPPinUnpinMessage", "uq_seq_id": "214", "thread_fbid": "1234567890123456",
-    "pinned_messages": ["mid.$a1"],
-    "unpinned_messages": ["mid.$b9"]
+    "__typename": "SlideUQPPPinUnpinMessage",
+    "uq_seq_id": "214",
+    "thread_fbid": "1234567890123456",
+    "pinned_messages": [
+      "mid.$a1"
+    ],
+    "unpinned_messages": [
+      "mid.$b9"
+    ]
   }
 }

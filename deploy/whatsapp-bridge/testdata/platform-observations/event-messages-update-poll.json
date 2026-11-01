@@ -3,7 +3,7 @@
     "name": "messages.update carrying decrypted pollUpdates",
     "generated": true,
     "native_event": "ev 'messages.update': WAMessageUpdate[] {key, update{pollUpdates[]}}",
-    "capture_today": "NOT SUBSCRIBED — and for live votes rc13 never emits this (its emit block is commented out); upstream SYNC delivery can still attach decrypted pollUpdates to a stored creation",
+    "capture_today": "captured — subscribed in bridge.js; pollUpdates[] -> per-voter poll revise observations (selectedOptions hashes = complete replacement set; empty = withdrawn vote). Same upstream identity family as the live stanza path (v:{poll}:{vote stanza}) so the two surfaces dedupe",
     "semantic": "WebMessageInfo.pollUpdates (proto field 45) is the DECRYPTED vote list bound to the creation message: each entry {pollUpdateMessageKey, vote: PollVoteMessage{selectedOptions[] = option hash refs}, senderTimestampMs, serverTimestampMs, unread}. selectedOptions are opaque option hashes joined to creation options by hash — a vote naming no known option hash is an unresolved option reference, not a new option. This is the shape a messages.update subscription would hand the pipeline."
   },
   "payload": {

@@ -3,7 +3,7 @@
     "name": "pin then unpin of a message (PinInChatMessage)",
     "generated": true,
     "native_event": "messages.upsert (type=notify), message.pinInChatMessage",
-    "capture_today": "DROPPED — no text/media",
+    "capture_today": "captured — pinInChatMessage -> pin add/remove observation, target=pin.key.id, actor=stanza participant, occurred_ms=senderTimestampMs",
     "semantic": "key is the PINNED message's key (target); type is PIN_FOR_ALL=1 / UNPIN_FOR_ALL=2 — add/remove transitions, not a set. senderTimestampMs is the actor's source clock; the stanza's own key.participant is the actor. WebMessageInfo.pinInChat (field 54) is a DIFFERENT surface: a pin annotation arriving via messages.update/history sync on the pinned message itself. A pins-set snapshot is not part of this payload."
   },
   "payload": [

@@ -1,0 +1,28 @@
+{
+  "_fixture": {
+    "name": "thread image change delta with embedded admin message",
+    "generated": true,
+    "native_event": "delta __typename=SlideUQPPThreadImage",
+    "capture_today": "captured -> embedded admin message (deduped by mid) + kind=observation room revise {image}; actor/timestamp read off the embedded message when it carries them",
+    "semantic": "thread_image{uri} is the new room avatar — a room field revise, parallel to thread_name. The embedded message is the admin-text rendering ('X changed the group photo'). No member-set facts exist on this event."
+  },
+  "payload": {
+    "__typename": "SlideUQPPThreadImage",
+    "uq_seq_id": "215",
+    "thread_fbid": "1234567890123456",
+    "thread_image": {
+      "uri": "https://scontent.example.net/v/t1.15752-9/groupphoto.jpg?stp=cp0&_nc_cat=100"
+    },
+    "message": {
+      "thread_fbid": "1234567890123456",
+      "message_id": "mid.$adm3",
+      "sender_fbid": "63123456700000011",
+      "timestamp_ms": "1790002400000",
+      "content_type": "THREAD_IMAGE",
+      "content": {
+        "__typename": "SlideMessageAdminText",
+        "text_body": "Member A changed the group photo."
+      }
+    }
+  }
+}

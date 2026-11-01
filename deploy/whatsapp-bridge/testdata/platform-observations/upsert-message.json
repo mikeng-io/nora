@@ -3,7 +3,7 @@
     "name": "group text message (control)",
     "generated": true,
     "native_event": "messages.upsert (type=notify)",
-    "capture_today": "captured -> kind=message",
+    "capture_today": "captured -> kind=message (unchanged v1 ordinary turn)",
     "semantic": "Baseline admitted turn: key.remoteJid is the room, key.participant the author in groups, messageTimestamp whole seconds, pushName the display name."
   },
   "payload": {
