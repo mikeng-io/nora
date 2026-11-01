@@ -89,5 +89,12 @@
   "old": "        wanted: dict[Key, str] = dict.fromkeys(\n            targets if selected is None else selected, verb)",
   "new": "        wanted: dict[Key, str] = dict.fromkeys(\n            [*targets, *(selected or ())], verb)",
   "target": "tests/unit/test_cognition_session_runner.py::test_revise_with_empty_associations_clears_the_link tests/unit/test_cognition_session_runner.py::test_explicit_association_excludes_unshown_body_alias"
+ },
+ {
+  "name": "register graph: refreshing own event entity must not stage an orphan",
+  "file": "nora/app/register_graph.py",
+  "old": "        if entities and not any(\n            e.key in (r.src, r.dst) for e in entities for r in relations\n        ):",
+  "new": "        if entities and not relations:",
+  "target": "tests/unit/test_cognition_session_runner.py::test_event_revise_replaces_association_without_an_orphan_retry"
  }
 ]

@@ -552,6 +552,43 @@ async def test_note_revise_replaces_the_semantic_association():
     assert stale.valid_to is not None
 
 
+async def test_event_revise_replaces_association_without_an_orphan_retry():
+    memory = wake_memory()
+    stores = Stores()
+    memory.records.load = _register_load(stores)
+    first = _seed_event(memory, "u:event:first", "first gathering")
+    second = _seed_event(memory, "u:event:second", "second gathering")
+    answers = []
+
+    async def behave(by, tools):
+        await by["memory_propose"](**_about_proposal(first.id, "r-first"))
+        await by["memory_propose"](**_about_proposal(second.id, "r-second"))
+        created = await by["event_propose"](
+            title="Generated gathering", reasoning="told", confidence="high",
+            cited_ids=["101"], associations=[["event", first.id]])
+        assert created["status"] == "ok", created
+        event_id = str(created["id"])
+        event = next(e for e in stores.gatherings._events.values() if str(e.id) == event_id)
+        arguments = dict(
+            event_id=event_id, base_revision_id=str(event.head_revision_id),
+            venue_text="Generated venue", reasoning="told", confidence="high",
+            cited_ids=["101"], associations=[["event", second.id]])
+        answers.append(await by["event_revise"](**arguments))
+        revisions = len(stores.gatherings._revisions)
+        answers.append(await by["event_revise"](**arguments))
+        assert len(stores.gatherings._revisions) == revisions
+        rows = [r for r in memory.graph.relations.values()
+                if r.src == ("event_entry", event_id) and r.valid_to is None]
+        assert {(r.rel, r.dst) for r in rows} == {
+            ("records", ("event", f"u:event:{event_id}")), ("concerns", second.key)}
+        assert any(r.dst == first.key and r.valid_to is not None
+                   for r in memory.graph.relations.values())
+
+    await session(behave, stores=stores, runner_kwargs={"memory": memory})
+    assert [a["status"] for a in answers] == ["ok", "ok"], answers
+    assert not any(r[-1] == "orphan_entity" for r in memory.records.refusals)
+
+
 async def test_unshown_or_out_of_unit_association_cannot_persist():
     memory = wake_memory()
     stores = Stores()

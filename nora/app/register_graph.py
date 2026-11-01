@@ -112,7 +112,9 @@ class RegisterGraphLinks:
                 )
             )
             evidence.extend(Evidence(s.key, relation_id=rid) for s in sources.values())
-        if entities and not relations:
+        if entities and not any(
+            e.key in (r.src, r.dst) for e in entities for r in relations
+        ):
             for entity in entities:
                 await self.graph.upsert_entity(entity)
             entities = ()
