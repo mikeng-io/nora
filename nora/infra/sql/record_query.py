@@ -29,7 +29,6 @@ are there, and it would make that claim about words their author took back.
 
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any
 
@@ -38,7 +37,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.cognition_ground import RECORD_REF_TABLES
 from nora.domain.record_query import RECORD_QUERY_MAX, RecordHit, RecordQuery, RecordRefHit
-from nora.infra.sql.audit import transcript_row, transcript_select
+from nora.infra.sql.audit import (
+    reaction_states,
+    transcript_row,
+    transcript_select,
+    with_reactions,
+)
 from nora.infra.sql.schema import MESSAGE_DELETE, MESSAGE_EDIT, MESSAGE_REACTION, MESSAGES
 
 __all__ = ["WORD_SIMILARITY_MIN", "SqlRecordQuery"]
@@ -124,14 +128,17 @@ class SqlRecordQuery:
             more = len(rows) > limit
             rows = rows[:limit]
             ids = [r.id for r in rows]
-            reactions = await self._reactions(conn, ids)
+            reactions = await reaction_states(conn, ids)
             gone = await self._deleted(conn, ids)
         near = frozenset(r.id for r in rows if needle and not r.contains)
         hits = sorted(
             (
                 RecordHit(
                     platform=r.platform, conversation_id=r.conversation_id,
-                    row=transcript_row(r), reactions=reactions.get(r.id, ()),
+                    row=with_reactions([transcript_row(r)], reactions)[0],
+                    reactions=(
+                        reactions[r.id].counts if r.id in reactions else ()
+                    ),
                     deleted=r.id in gone,
                 )
                 for r in rows
@@ -166,15 +173,17 @@ class SqlRecordQuery:
             if table in wanted:
                 wanted[table].add(row_id)
         async with self._engine.connect() as conn:
-            emoji: dict[int, tuple[int, str]] = {}
+            emoji: dict[int, tuple[int, str, bool]] = {}
             if wanted["message_reaction"]:
                 for r in (await conn.execute(
                     sa.select(
                         MESSAGE_REACTION.c.id, MESSAGE_REACTION.c.message_id,
-                        MESSAGE_REACTION.c.emoji,
+                        MESSAGE_REACTION.c.emoji, MESSAGE_REACTION.c.removed,
                     ).where(MESSAGE_REACTION.c.id.in_(wanted["message_reaction"]))
                 )).all():
-                    emoji[int(r.id)] = (int(r.message_id), str(r.emoji))
+                    emoji[int(r.id)] = (
+                        int(r.message_id), str(r.emoji), bool(r.removed)
+                    )
             deleted_of: dict[int, int] = {}
             if wanted["message_delete"]:
                 for r in (await conn.execute(
@@ -184,7 +193,7 @@ class SqlRecordQuery:
                     deleted_of[int(r.id)] = int(r.message_id)
             message_ids = (
                 wanted["messages"]
-                | {m for m, _ in emoji.values()} | set(deleted_of.values())
+                | {m for m, _, _ in emoji.values()} | set(deleted_of.values())
             )
             if not message_ids:
                 return ()
@@ -194,12 +203,15 @@ class SqlRecordQuery:
                 .where(in_rooms, MESSAGES.c.id.in_(message_ids))
             )).all()
             ids = [r.id for r in rows]
-            reactions = await self._reactions(conn, ids)
+            reactions = await reaction_states(conn, ids)
             gone = await self._deleted(conn, ids)
         hits = {
             int(r.id): RecordHit(
                 platform=r.platform, conversation_id=r.conversation_id,
-                row=transcript_row(r), reactions=reactions.get(r.id, ()),
+                row=with_reactions([transcript_row(r)], reactions)[0],
+                reactions=(
+                    reactions[r.id].counts if r.id in reactions else ()
+                ),
                 deleted=r.id in gone,
             )
             for r in rows
@@ -208,9 +220,11 @@ class SqlRecordQuery:
         for mid in sorted(wanted["messages"]):
             if mid in hits:
                 out.append(RecordRefHit("messages", mid, hits[mid]))
-        for rid, (mid, mark) in sorted(emoji.items()):
+        for rid, (mid, mark, rem) in sorted(emoji.items()):
             if mid in hits:
-                out.append(RecordRefHit("message_reaction", rid, hits[mid], emoji=mark))
+                out.append(RecordRefHit(
+                    "message_reaction", rid, hits[mid], emoji=mark, removed=rem,
+                ))
         for rid, mid in sorted(deleted_of.items()):
             if mid in hits:
                 out.append(RecordRefHit("message_delete", rid, hits[mid]))
@@ -245,54 +259,22 @@ class SqlRecordQuery:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
             ids = [r.id for r in rows]
-            reactions = await self._reactions(conn, ids)
+            reactions = await reaction_states(conn, ids)
             gone = await self._deleted(conn, ids)
         return tuple(sorted(
             (
                 RecordHit(
                     platform=r.platform, conversation_id=r.conversation_id,
-                    row=transcript_row(r), reactions=reactions.get(r.id, ()),
+                    row=with_reactions([transcript_row(r)], reactions)[0],
+                    reactions=(
+                        reactions[r.id].counts if r.id in reactions else ()
+                    ),
                     deleted=r.id in gone,
                 )
                 for r in rows
             ),
             key=lambda h: (h.row.ts, h.row.id),
         ))
-
-    @staticmethod
-    async def _reactions(
-        conn: Any, ids: list[int],
-    ) -> dict[int, tuple[tuple[str, int], ...]]:
-        """Each message's reactions standing now: a person's newest row per
-        emoji, counted unless it took the reaction back (`removed`)."""
-        if not ids:
-            return {}
-        latest = (
-            sa.select(
-                MESSAGE_REACTION.c.message_id, MESSAGE_REACTION.c.emoji,
-                MESSAGE_REACTION.c.removed,
-            )
-            .where(MESSAGE_REACTION.c.message_id.in_(ids))
-            .distinct(
-                MESSAGE_REACTION.c.message_id, MESSAGE_REACTION.c.sender_id,
-                MESSAGE_REACTION.c.emoji,
-            )
-            .order_by(
-                MESSAGE_REACTION.c.message_id, MESSAGE_REACTION.c.sender_id,
-                MESSAGE_REACTION.c.emoji, MESSAGE_REACTION.c.id.desc(),
-            )
-            .subquery()
-        )
-        stmt = (
-            sa.select(latest.c.message_id, latest.c.emoji, sa.func.count())
-            .where(latest.c.removed == 0)
-            .group_by(latest.c.message_id, latest.c.emoji)
-            .order_by(latest.c.message_id, latest.c.emoji)
-        )
-        out: dict[int, list[tuple[str, int]]] = defaultdict(list)
-        for message_id, emoji, count in (await conn.execute(stmt)).all():
-            out[message_id].append((emoji, int(count)))
-        return {k: tuple(v) for k, v in out.items()}
 
     @staticmethod
     async def _deleted(conn: Any, ids: list[int]) -> frozenset[int]:

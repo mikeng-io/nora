@@ -23,6 +23,7 @@ from nora.domain.cognition_ground import (
     RollupLine,
 )
 from nora.domain.cognition_session import AgendaItem, Room
+from nora.domain.models import RowReactions
 from nora.domain.prompt import escape_attr
 from nora.domain.stimuli import Stimulus
 from nora.language.cognition_render import RenderBudget, render_agenda
@@ -52,10 +53,13 @@ def _stim(sid: int, room: Room | None, *, kind: str = "message", ref: str | None
 
 
 def _rec(sid: int, kind: str, *, mid: int, text: str | None, room: Room = A, emoji: str = "",
-         edited: bool = False, own: bool = False, author: str = "Ada") -> RecordItem:
+         edited: bool = False, own: bool = False, author: str = "Ada",
+         removed: bool = False, reactions: RowReactions | None = None,
+         at_ms: int | None = None) -> RecordItem:
     return RecordItem(
         ref=f"messages:{sid}", kind=kind, message_id=mid, room=room, author=author,  # type: ignore[arg-type]
-        at_ms=NOW - 10 * 60_000, text=text, emoji=emoji, edited=edited, own=own,
+        at_ms=at_ms if at_ms is not None else NOW - 10 * 60_000, text=text,
+        emoji=emoji, removed=removed, edited=edited, own=own, reactions=reactions,
         turn_id=7 if own else None,
     )
 
@@ -76,7 +80,14 @@ def _everything() -> str:
                       start_ms=NOW - 600_000, end_ms=None, place="Ramen Ya")
     records = {
         "messages:1": _rec(1, "edit", mid=101, text="friday at 9", edited=True),
-        "message_reaction:2": _rec(2, "reaction", mid=44, text="see you", emoji="👍"),
+        "message_reaction:2": _rec(
+            # The NEWEST row: `_fit` keeps newest first, so this one always
+            # renders its attributes under the shared budget.
+            2, "reaction", mid=44, text="see you", emoji="👍", removed=True,
+            reactions=RowReactions(
+                counts=(("👍", 2),), observed_at=NOW - 60_000, recorded=3,
+            ), at_ms=NOW,
+        ),
         "message_delete:3": _rec(3, "delete", mid=45, text=None),
         "messages:4": _rec(4, "message", mid=46, text=None),          # withdrawn words
         "messages:6": _rec(6, "message", mid=601, text="x" * 300, room=B),
@@ -107,7 +118,7 @@ def _everything() -> str:
     )
     return render_agenda(
         agenda, stimuli=stims, grounding=grounding, now_ms=NOW, tz=HK,
-        budget=RenderBudget(record_chars=900, min_item_chars=100, register_lines=1),
+        budget=RenderBudget(record_chars=1200, min_item_chars=100, register_lines=1),
     )
 
 
@@ -142,6 +153,7 @@ def test_the_fixture_makes_every_element_carry_every_attribute_it_can():
     assert seen["agenda"] == {
         "index", "kind", "room", "summary", "returning", "window", "earlier_not_shown",
         "earlier_range", "unreadable", "n", "at", "from", "edited", "reaction",
+        "reaction_removed", "reactions", "reactions_observed",
         "withdrawn", "deleted", "own", "cues", "turn",
     }
     assert seen["note_index"] == {
@@ -206,7 +218,9 @@ def test_twelve_items_cost_their_own_rows_and_not_twelve_copies_of_the_type_text
         + sum(len(k) + len(v) + 6 for k, v in BLOCK_TYPES[n].annotations)
         for n in ("agenda", "events")
     )
-    assert type_text < 3_200, type_text          # said once: the 12-item prompt holds it once
+    # The floor moved when the reaction fields' coverage glosses joined the
+    # agenda type; the type text is still said once, never per item.
+    assert type_text < 3_900, type_text          # said once: the 12-item prompt holds it once
 
 
 # ---- the test helper itself sees what it claims to ------------------------------------

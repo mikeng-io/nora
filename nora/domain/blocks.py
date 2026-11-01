@@ -712,6 +712,8 @@ def render_messages(
     edited: Callable[[Row], int | None] = lambda _: None,
     was: Callable[[Row], str | None] = lambda _: None,
     turn: Callable[[Row], str | None] = lambda _: None,
+    reactions: Callable[[Row], str | None] = lambda _: None,
+    reactions_observed: Callable[[Row], str | None] = lambda _: None,
 ) -> str:
     """A conversation as one TAG PER MESSAGE, not one line per message.
 
@@ -773,6 +775,8 @@ def render_messages(
             ("edited", age(changed, clock) if changed is not None else None),
             ("edited_after", _edited_after(i, changed) if changed is not None else None),
             ("was", was(row) if changed is not None else None),
+            ("reactions", reactions(row)),
+            ("reactions_observed", reactions_observed(row)),
         )
 
     return render_elements(rows, tag=tag, attrs=_attrs, body=body)

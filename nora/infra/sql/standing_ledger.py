@@ -15,7 +15,12 @@ from nora.domain.note_body import NoteBodyError, Shown, cited_ids_in, rollup_key
 from nora.domain.standing_ledger import LedgerEntry, LedgerKind, LedgerOp, LedgerResult, ThreadSpan
 from nora.domain.standing_revise import Refusal, check_ledger_op
 from nora.domain.turn_record import turn_handles_in
-from nora.infra.sql.audit import transcript_row, transcript_select
+from nora.infra.sql.audit import (
+    reaction_states,
+    transcript_row,
+    transcript_select,
+    with_reactions,
+)
 from nora.infra.sql.event_evidence import rollup_lineage
 from nora.infra.sql.schema import (
     LEDGER_COMMITMENT,
@@ -243,7 +248,8 @@ class SqlStandingLedger:
                     stmt.order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc()).limit(limit + 1)
                 )
             ).all()
-        return [transcript_row(r) for r in reversed(rows)]
+            states = await reaction_states(conn, [r.id for r in rows])
+        return with_reactions([transcript_row(r) for r in reversed(rows)], states)
 
     async def history(self, *, unit: str, kind: LedgerKind, id: str) -> tuple[LedgerEntry, ...]:
         table = _TABLES[kind][1]
