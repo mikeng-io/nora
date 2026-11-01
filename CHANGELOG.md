@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.13.7](https://github.com/mikeng-io/nora/compare/v7.13.6...v7.13.7) (2026-11-01)
+
+
+### Bug Fixes
+
+* **bridges:** preserve projection revision width during durable handoff ([9ce8f42](https://github.com/mikeng-io/nora/commit/9ce8f42d9bd4f17ba207ed73ba36f20b4610c1e3))
+* **whatsapp:** stop handled bridge responses falling through to 404 ([74d1560](https://github.com/mikeng-io/nora/commit/74d1560f08965e406f359a0f25b57ac6fd8314f0))
+
 ## [7.13.6](https://github.com/mikeng-io/nora/compare/v7.13.5...v7.13.6) (2026-11-01)
 
 
