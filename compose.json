@@ -1,36 +1,138 @@
 {
   "services": {
-    "signal-cli": {
-      "image": "ghcr.io/mikeng-io/nora-signal-cli@sha256:aa71b9c1c11d2697d61d028c9e44c6db90cecc46b3be3c8299c0e696e3d73038",
-      "container_name": "signal-cli",
+    "redis": {
+      "image": "redis:7.4-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f",
+      "container_name": "nora-redis",
       "restart": "unless-stopped",
       "networks": [
         "nora"
       ],
+      "environment": [
+        "NORA_REDIS_PRODUCER_PASSWORD=${NORA_REDIS_PRODUCER_PASSWORD:?set NORA_REDIS_PRODUCER_PASSWORD in .env}",
+        "NORA_REDIS_CONSUMER_PASSWORD=${NORA_REDIS_CONSUMER_PASSWORD:?set NORA_REDIS_CONSUMER_PASSWORD in .env}",
+        "NORA_REDIS_INSPECTOR_PASSWORD=${NORA_REDIS_INSPECTOR_PASSWORD:?set NORA_REDIS_INSPECTOR_PASSWORD in .env}"
+      ],
+      "entrypoint": [
+        "/bin/sh",
+        "-c",
+        "umask 077 && case \"$NORA_REDIS_PRODUCER_PASSWORD\" in *[!A-Za-z0-9_-]*|'') echo 'nora-redis: NORA_REDIS_PRODUCER_PASSWORD must match [A-Za-z0-9_-]+ (the generated secrets.token_urlsafe charset): it lands in a redis://user:pass@ URL and an ACL >-field' >&2; exit 1 ;; esac && case \"$NORA_REDIS_CONSUMER_PASSWORD\" in *[!A-Za-z0-9_-]*|'') echo 'nora-redis: NORA_REDIS_CONSUMER_PASSWORD must match [A-Za-z0-9_-]+ (the generated secrets.token_urlsafe charset): it lands in a redis://user:pass@ URL and an ACL >-field' >&2; exit 1 ;; esac && case \"$NORA_REDIS_INSPECTOR_PASSWORD\" in *[!A-Za-z0-9_-]*|'') echo 'nora-redis: NORA_REDIS_INSPECTOR_PASSWORD must match [A-Za-z0-9_-]+ (the generated secrets.token_urlsafe charset): it lands in a redis://user:pass@ URL and an ACL >-field' >&2; exit 1 ;; esac && printf '%s\\n' 'user default off' \"user nq-producer on >$$NORA_REDIS_PRODUCER_PASSWORD ~nq:* +xadd +set +get +eval +evalsha +script|load +xgroup|create +ping\" \"user nq-consumer on >$$NORA_REDIS_CONSUMER_PASSWORD ~nq:* +xreadgroup +xack +xautoclaim +xpending +xinfo +xrange +xgroup|create +time +ping\" \"user nq-inspector on >$$NORA_REDIS_INSPECTOR_PASSWORD ~nq:* +xinfo +xlen +xpending +xrange +xread +get +time +info +ping\" > /run/acl/users.acl && chown redis:redis /run/acl/users.acl && exec docker-entrypoint.sh redis-server --aclfile /run/acl/users.acl --appendonly yes --appendfsync everysec --maxmemory-policy noeviction --no-appendfsync-on-rewrite no --dir /data"
+      ],
+      "tmpfs": [
+        "/run/acl"
+      ],
       "volumes": [
-        "${NORA_RUNTIME_ROOT:?}/state/signal-cli:/data/signal-cli"
+        "redis-data:/data"
+      ],
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "signal-bridge": {
+      "image": "ghcr.io/mikeng-io/nora-signal-bridge@sha256:a28f41ff6ec87ff775daba15bc871a0420f9ebe9d9d9cb66b5717fda42a0e4b8",
+      "container_name": "signal-bridge",
+      "restart": "unless-stopped",
+      "networks": [
+        "nora"
+      ],
+      "extra_hosts": [
+        "host.docker.internal:host-gateway"
+      ],
+      "volumes": [
+        "${NORA_RUNTIME_ROOT:?}/state/signal-cli:/data/signal-cli",
+        "${NORA_RUNTIME_ROOT:?}/state/bridge/signal:/data/bridge",
+        "bridge-projection:/bridge-projection:ro"
       ],
       "environment": [
-        "XDG_DATA_HOME=/data"
-      ],
-      "command": [
-        "--account",
-        "${SIGNAL_ACCOUNT:?set SIGNAL_ACCOUNT in .env}",
-        "daemon",
-        "--http",
-        "0.0.0.0:18080",
-        "--receive-mode",
-        "on-start"
+        "XDG_DATA_HOME=/data",
+        "SIGNAL_ACCOUNT=${SIGNAL_ACCOUNT:?set SIGNAL_ACCOUNT in .env}",
+        "NORA_REDIS_URL=redis://nq-producer:${NORA_REDIS_PRODUCER_PASSWORD:?}@redis:6379/0",
+        "NORA_BRIDGE_API_TOKEN=${NORA_BRIDGE_API_TOKEN:-${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_API_TOKEN in .env}}",
+        "NORA_BRIDGE_CORRELATION_KEY=${NORA_BRIDGE_CORRELATION_KEY:?}",
+        "NORA_BRIDGE_CORRELATION_KEY_VERSION=${NORA_BRIDGE_CORRELATION_KEY_VERSION:-1}",
+        "NORA_BRIDGE_ACCOUNT_KEY=${SIGNAL_BRIDGE_ACCOUNT_KEY:?set SIGNAL_BRIDGE_ACCOUNT_KEY in .env}",
+        "NORA_BRIDGE_JOURNAL=/data/bridge/journal/signal.jsonl",
+        "DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?}@db:5432/nora",
+        "NORA_BRIDGE_ATTACH_DIR=/data/bridge/attachments",
+        "NORA_BRIDGE_PORT=18090",
+        "NORA_TRACING_ENABLED=${NORA_TRACING_ENABLED:-}",
+        "NORA_TRACING_ENDPOINT=${NORA_TRACING_ENDPOINT:-}",
+        "NORA_TRACING_EXPORTER=${NORA_TRACING_EXPORTER:-otlp_http}",
+        "NORA_TRACING_HEADERS_ENV=${NORA_TRACING_HEADERS_ENV:-}",
+        "LANGFUSE_OTLP_HEADERS=${LANGFUSE_OTLP_HEADERS:-}"
       ],
       "healthcheck": {
         "test": [
           "CMD-SHELL",
-          "curl -fsS -m 5 -X POST http://127.0.0.1:18080/api/v1/rpc -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":\"hc\",\"method\":\"version\",\"params\":{}}' | grep -q '\"version\"' || exit 1"
+          "printf 'Authorization: Bearer %s\\n' \"$$NORA_BRIDGE_API_TOKEN\" | curl -fsS -m 5 -H @- http://127.0.0.1:18090/v1/health || exit 1"
         ],
-        "interval": "60s",
+        "interval": "15s",
         "timeout": "10s",
-        "start_period": "60s",
-        "retries": 3
+        "retries": 10,
+        "start_period": "30s"
+      },
+      "depends_on": [
+        "redis"
+      ],
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "discord-bridge": {
+      "image": "ghcr.io/mikeng-io/nora-discord-bridge@sha256:9b6ba4c9e3962d89ad2a9e47badaa2f70c8b9aa2e1eea34645224e550eb2e5ed",
+      "container_name": "discord-bridge",
+      "restart": "unless-stopped",
+      "networks": [
+        "nora"
+      ],
+      "extra_hosts": [
+        "host.docker.internal:host-gateway"
+      ],
+      "volumes": [
+        "${NORA_RUNTIME_ROOT:?}/state/bridge/discord:/data/bridge",
+        "bridge-projection:/bridge-projection:ro",
+        "${NORA_RUNTIME_ROOT:?}/config.toml:/app/config.toml:ro"
+      ],
+      "environment": [
+        "DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:?set in .env}",
+        "NORA_REDIS_URL=redis://nq-producer:${NORA_REDIS_PRODUCER_PASSWORD:?}@redis:6379/0",
+        "NORA_BRIDGE_API_TOKEN=${NORA_BRIDGE_API_TOKEN:-${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_API_TOKEN in .env}}",
+        "NORA_BRIDGE_CORRELATION_KEY=${NORA_BRIDGE_CORRELATION_KEY:?}",
+        "NORA_BRIDGE_CORRELATION_KEY_VERSION=${NORA_BRIDGE_CORRELATION_KEY_VERSION:-1}",
+        "NORA_BRIDGE_ACCOUNT_KEY=${DISCORD_BRIDGE_ACCOUNT_KEY:?set DISCORD_BRIDGE_ACCOUNT_KEY in .env}",
+        "NORA_BRIDGE_JOURNAL=/data/bridge/journal/discord.jsonl",
+        "DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?}@db:5432/nora",
+        "NORA_BRIDGE_ATTACH_DIR=/data/bridge/attachments",
+        "NORA_BRIDGE_PORT=18093"
+      ],
+      "command": [
+        "--config",
+        "/app/config.toml"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "printf 'Authorization: Bearer %s\\n' \"$$NORA_BRIDGE_API_TOKEN\" | curl -fsS -m 5 -H @- http://127.0.0.1:18093/v1/health || exit 1"
+        ],
+        "interval": "15s",
+        "timeout": "10s",
+        "retries": 10,
+        "start_period": "45s"
+      },
+      "depends_on": {
+        "redis": {
+          "condition": "service_started"
+        },
+        "db": {
+          "condition": "service_healthy"
+        }
       },
       "logging": {
         "driver": "json-file",
@@ -41,17 +143,35 @@
       }
     },
     "whatsapp-bridge": {
-      "image": "ghcr.io/mikeng-io/nora-whatsapp-bridge@sha256:93e0bbe38f50546af747bc40e51c395b703ea5a325439ad01d68da3bf45bba54",
+      "image": "ghcr.io/mikeng-io/nora-whatsapp-bridge@sha256:2e50111f8fddfb4baf2512cff794c166d2b9194b080657476aae5c0a06e3cd06",
       "container_name": "whatsapp-bridge",
       "restart": "unless-stopped",
       "networks": [
         "nora"
       ],
+      "extra_hosts": [
+        "host.docker.internal:host-gateway"
+      ],
       "volumes": [
-        "${NORA_RUNTIME_ROOT:?}/state/whatsapp:/app/session"
+        "${NORA_RUNTIME_ROOT:?}/state/whatsapp:/app/session",
+        "${NORA_RUNTIME_ROOT:?}/state/bridge/whatsapp:/data/bridge",
+        "bridge-projection:/bridge-projection:ro"
       ],
       "environment": [
-        "NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}"
+        "NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}",
+        "NORA_REDIS_URL=redis://nq-producer:${NORA_REDIS_PRODUCER_PASSWORD:?}@redis:6379/0",
+        "NORA_BRIDGE_API_TOKEN=${NORA_BRIDGE_API_TOKEN:-${NORA_BRIDGE_TOKEN}}",
+        "NORA_BRIDGE_CORRELATION_KEY=${NORA_BRIDGE_CORRELATION_KEY:?}",
+        "NORA_BRIDGE_CORRELATION_KEY_VERSION=${NORA_BRIDGE_CORRELATION_KEY_VERSION:-1}",
+        "NORA_BRIDGE_ACCOUNT_KEY=${WHATSAPP_BRIDGE_ACCOUNT_KEY:?set WHATSAPP_BRIDGE_ACCOUNT_KEY in .env}",
+        "NORA_BRIDGE_JOURNAL=/data/bridge/journal/whatsapp.jsonl",
+        "NORA_BRIDGE_PROJECTION_DIR=/bridge-projection",
+        "DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?}@db:5432/nora",
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}",
+        "OTEL_SERVICE_NAME=whatsapp-bridge"
+      ],
+      "depends_on": [
+        "redis"
       ],
       "command": [
         "node",
@@ -80,14 +200,16 @@
       }
     },
     "instagram-bridge": {
-      "image": "ghcr.io/mikeng-io/nora-instagram-bridge@sha256:409d883eaf2db7f4205ac8afd0ab2ffaf4f58f60806df7fde801f1f9e2437af9",
+      "image": "ghcr.io/mikeng-io/nora-instagram-bridge@sha256:5d1a51bd14ec5d524911a20b5ab8a3895f4685c22a4a5c47ac8f64d7ac1cc11d",
       "container_name": "instagram-bridge",
       "restart": "unless-stopped",
       "networks": [
         "nora"
       ],
       "volumes": [
-        "${NORA_RUNTIME_ROOT:?}/state/instagram:/session"
+        "${NORA_RUNTIME_ROOT:?}/state/instagram:/session",
+        "${NORA_RUNTIME_ROOT:?}/state/bridge/instagram:/data/bridge",
+        "bridge-projection:/bridge-projection:ro"
       ],
       "extra_hosts": [
         "host.docker.internal:host-gateway"
@@ -95,6 +217,14 @@
       "environment": [
         "IG_SESSION_DIR=/session",
         "NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}",
+        "NORA_REDIS_URL=redis://nq-producer:${NORA_REDIS_PRODUCER_PASSWORD:?}@redis:6379/0",
+        "NORA_BRIDGE_API_TOKEN=${NORA_BRIDGE_API_TOKEN:-${NORA_BRIDGE_TOKEN}}",
+        "NORA_BRIDGE_CORRELATION_KEY=${NORA_BRIDGE_CORRELATION_KEY:?}",
+        "NORA_BRIDGE_CORRELATION_KEY_VERSION=${NORA_BRIDGE_CORRELATION_KEY_VERSION:-1}",
+        "NORA_BRIDGE_ACCOUNT_KEY=${INSTAGRAM_BRIDGE_ACCOUNT_KEY:?set INSTAGRAM_BRIDGE_ACCOUNT_KEY in .env}",
+        "NORA_BRIDGE_JOURNAL=/data/bridge/journal/instagram.jsonl",
+        "NORA_BRIDGE_PROJECTION_DIR=/bridge-projection",
+        "DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?}@db:5432/nora",
         "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://host.docker.internal:4318/v1/traces",
         "OTEL_SERVICE_NAME=instagram-bridge",
         "INSTAGRAM_COMMENT_WRITES=${INSTAGRAM_COMMENT_WRITES:-off}",
@@ -102,6 +232,9 @@
         "INSTAGRAM_COMMENT_MIN_INTERVAL=${INSTAGRAM_COMMENT_MIN_INTERVAL:-90s}",
         "INSTAGRAM_STORY_DOC_ID=${INSTAGRAM_STORY_DOC_ID:-}",
         "INSTAGRAM_TIMELINE_DOC_ID=${INSTAGRAM_TIMELINE_DOC_ID:-}"
+      ],
+      "depends_on": [
+        "redis"
       ],
       "command": [
         "--port",
@@ -127,8 +260,58 @@
         }
       }
     },
+    "bridge-projection": {
+      "image": "ghcr.io/mikeng-io/nora-bridge-projection@sha256:21c407f15214abb7d884ec61d8ba7015f6459710a6410dce984967d5bab0686a",
+      "container_name": "bridge-projection",
+      "restart": "unless-stopped",
+      "networks": [
+        "nora"
+      ],
+      "command": [
+        "--config",
+        "/app/config.toml",
+        "--all",
+        "--projection-dir",
+        "/bridge-projection",
+        "--health-port",
+        "8091"
+      ],
+      "environment": [
+        "NORA_BRIDGE_API_TOKEN=${NORA_BRIDGE_API_TOKEN:-${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_API_TOKEN in .env}}",
+        "SIGNAL_BRIDGE_ACCOUNT_KEY=${SIGNAL_BRIDGE_ACCOUNT_KEY:?set SIGNAL_BRIDGE_ACCOUNT_KEY in .env}",
+        "DISCORD_BRIDGE_ACCOUNT_KEY=${DISCORD_BRIDGE_ACCOUNT_KEY:-default}",
+        "WHATSAPP_BRIDGE_ACCOUNT_KEY=${WHATSAPP_BRIDGE_ACCOUNT_KEY:-default}",
+        "INSTAGRAM_BRIDGE_ACCOUNT_KEY=${INSTAGRAM_BRIDGE_ACCOUNT_KEY:-default}",
+        "NORA_BRIDGE_PROJECTION_DIR=/bridge-projection"
+      ],
+      "volumes": [
+        "${NORA_RUNTIME_ROOT:?}/config.toml:/app/config.toml:ro",
+        "${NORA_RUNTIME_ROOT:?}/policy.toml:/app/policy.toml:ro",
+        "${NORA_RUNTIME_ROOT:?}/identity.toml:/app/identity.toml:ro",
+        "bridge-projection:/bridge-projection"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "curl",
+          "-fsS",
+          "http://127.0.0.1:8091/live"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "start_period": "15s",
+        "retries": 3
+      },
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
     "nora": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:28a325135aef96727e7314b18b03e1cf43202fee6468a0801d26cf04192de846",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:da1396e5daa1e2e1c42533503e4eaad0355343dc5deb5c8a06edb5f170be8e3b",
       "container_name": "nora",
       "restart": "unless-stopped",
       "stop_grace_period": "75s",
@@ -151,7 +334,7 @@
         "127.0.0.1:9100:9100"
       ],
       "depends_on": {
-        "signal-cli": {
+        "signal-bridge": {
           "condition": "service_healthy"
         },
         "db": {
@@ -161,6 +344,7 @@
       "environment": [
         "OMNIROUTE_API_KEY=${OMNIROUTE_API_KEY:-}",
         "NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}",
+        "NORA_REDIS_URL=redis://nq-consumer:${NORA_REDIS_CONSUMER_PASSWORD:?}@redis:6379/0",
         "DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db/nora",
         "LANGFUSE_OTLP_HEADERS=${LANGFUSE_OTLP_HEADERS:-}",
         "SENTRY_DSN=${SENTRY_DSN:-}",
@@ -214,7 +398,7 @@
       }
     },
     "app": {
-      "image": "ghcr.io/mikeng-io/nora-app@sha256:f8d99bffd8d820382fc962f60c4b0ec87b625cec4c85da7a9f1ff1aaa03f5fc7",
+      "image": "ghcr.io/mikeng-io/nora-app@sha256:12a4af09370d1f8741561aa1bb544d91be2132632e3ad134501e2d5e9c1b9c9a",
       "container_name": "nora-app",
       "restart": "unless-stopped",
       "networks": [
@@ -243,7 +427,7 @@
       ]
     },
     "site": {
-      "image": "ghcr.io/mikeng-io/nora-site@sha256:9f1e0fd29c1a611b9a7eb7ac3220da598a776b1ff908242af11d619f6f416d0c",
+      "image": "ghcr.io/mikeng-io/nora-site@sha256:5857a87cdd7cac363779b73055c5027133b8e8ff9e7540ea9ba8e66427c7d134",
       "container_name": "nora-site",
       "profiles": [
         "site"
@@ -254,7 +438,7 @@
       ]
     },
     "presence": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:28a325135aef96727e7314b18b03e1cf43202fee6468a0801d26cf04192de846",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:da1396e5daa1e2e1c42533503e4eaad0355343dc5deb5c8a06edb5f170be8e3b",
       "container_name": "presence",
       "restart": "unless-stopped",
       "entrypoint": [
@@ -306,7 +490,7 @@
       }
     },
     "analytics": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:28a325135aef96727e7314b18b03e1cf43202fee6468a0801d26cf04192de846",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:da1396e5daa1e2e1c42533503e4eaad0355343dc5deb5c8a06edb5f170be8e3b",
       "container_name": "analytics",
       "restart": "unless-stopped",
       "entrypoint": [
@@ -482,7 +666,7 @@
           "max-file": "3"
         }
       },
-      "image": "ghcr.io/mikeng-io/nora-stt@sha256:d2495d1d80ab8cb2b7f8244fbfbf20913e1d31da5a0ade12ffbba674e21a744a",
+      "image": "ghcr.io/mikeng-io/nora-stt@sha256:e49a604e6b926b44abd1c0e3f15e11173f1218395d5a3505894bf1edc233ab3e",
       "container_name": "stt",
       "restart": "unless-stopped",
       "networks": [
@@ -516,7 +700,7 @@
           "max-file": "3"
         }
       },
-      "image": "ghcr.io/mikeng-io/nora-voice-sidecar@sha256:5514c1922c65ea380bb8421e49fa8690119bb35e22f77cb2038a34238de2927e",
+      "image": "ghcr.io/mikeng-io/nora-voice-sidecar@sha256:c9fcb8e4295882f1c64b8541d3a72d744072f723843972e287b8e6f0e3052a29",
       "container_name": "voice-sidecar",
       "restart": "unless-stopped",
       "networks": [
@@ -529,7 +713,7 @@
         "PUMP_PORT=${VOICE_PUMP_PORT:-4599}",
         "HOST=0.0.0.0",
         "STATE_DIR=/var/lib/audio-controller",
-        "NORA_EVENT_URL=http://nora:9100/app/v1/voice/event"
+        "NORA_EVENT_URL=http://discord-bridge:18093/v1/voice/event"
       ],
       "volumes": [
         "audio-controller-state:/var/lib/audio-controller",
@@ -554,7 +738,7 @@
           "max-file": "3"
         }
       },
-      "image": "ghcr.io/mikeng-io/nora-voice-wake@sha256:c97dfeabee31a73c292e65d309763832c2b404b3558449c930f9f6e6a593a6e2",
+      "image": "ghcr.io/mikeng-io/nora-voice-wake@sha256:776d00c0a80912c04d0f2803102e90422fd724ee66421a7ef809feee58e2f58f",
       "container_name": "voice-wake",
       "restart": "unless-stopped",
       "networks": [
@@ -599,6 +783,8 @@
     }
   },
   "volumes": {
+    "redis-data": null,
+    "bridge-projection": null,
     "db-data": null,
     "rustfs-data": null,
     "stt-modelscope-cache": null,
