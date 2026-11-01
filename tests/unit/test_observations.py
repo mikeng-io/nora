@@ -495,3 +495,14 @@ def test_message_metadata_fold():
                                        view_once=True)), 1))
     assert head.state["fields"]["forward_origin"] == "r9"
     assert head.state["fields"]["view_once"] is True
+
+
+def test_timestamp_target_author_survives_wire_round_trip():
+    obs = _obs(target=EditTarget(sent_ts=NOW), target_author_id="author-a")
+    restored = observation_from_dict(observation_to_dict(obs))
+    assert restored.target_author_id == "author-a"
+    assert restored.target == EditTarget(sent_ts=NOW)
+    assert target_key(restored.target, author_id="author-a") != target_key(
+        restored.target, author_id="author-b"
+    )
+    assert target_from_key(target_key(restored.target, author_id="author-a")) == obs.target

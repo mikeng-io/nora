@@ -5584,6 +5584,7 @@ PLATFORM_OBSERVATION = sa.Table(
     # `target_message_id` is the resolved `messages.id`, NULL while the
     # target is retained-unresolved.
     sa.Column("target_key", sa.Text),
+    sa.Column("target_author_id", sa.Text),
     sa.Column("target_message_id", sa.BigInteger,
               sa.ForeignKey("messages.id",
                             name="platform_observation_target_fkey",

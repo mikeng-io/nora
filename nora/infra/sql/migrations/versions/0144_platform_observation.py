@@ -38,6 +38,7 @@ def upgrade() -> None:
         sa.Column("object_ref", sa.Text, nullable=False),
         sa.Column("operation", sa.Text, nullable=False),
         sa.Column("target_key", sa.Text),
+        sa.Column("target_author_id", sa.Text),
         sa.Column("target_message_id", sa.BigInteger,
                   sa.ForeignKey("messages.id",
                                 name="platform_observation_target_fkey",

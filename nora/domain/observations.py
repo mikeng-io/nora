@@ -196,8 +196,11 @@ def _target_key(t: EditTarget) -> str:
     return f"ts:{t.sent_ts}"
 
 
-def target_key(target: EditTarget | None) -> str | None:
-    return None if target is None else _target_key(target)
+def target_key(target: EditTarget | None, *, author_id: str = "") -> str | None:
+    if target is None:
+        return None
+    key = _target_key(target)
+    return f"{key}:author:{author_id}" if not target.message_id and author_id else key
 
 
 def target_from_key(key: str | None) -> EditTarget | None:
@@ -209,7 +212,7 @@ def target_from_key(key: str | None) -> EditTarget | None:
     if scheme == "id" and rest:
         return EditTarget(message_id=rest)
     if scheme == "ts" and rest:
-        return EditTarget(sent_ts=int(rest))
+        return EditTarget(sent_ts=int(rest.partition(":author:")[0]))
     raise ValueError(f"malformed target_key {key!r}")
 
 
@@ -597,6 +600,7 @@ class Observation:
     operation: Operation
     payload: ObservationPayload
     target: EditTarget | None = None
+    target_author_id: str = ""
     subject_ref: str = ""
     actor_id: str = ""
     actor_status: ActorStatus = "not_supplied"

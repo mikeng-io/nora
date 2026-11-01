@@ -305,3 +305,14 @@ record, `contract` versioned separately from the envelope's `v`:
   `ObservationStore.current`/`heads`/`history` and `unresolved_targets` —
   `coverage`/`ordering` are part of the answer, never dropped. No model
   block exists yet; none is wired in this stage.
+
+
+### Timestamp-addressed target authors
+
+A Signal target is `(author, sent timestamp)`, not timestamp alone. The typed
+header and wire carry `target_author_id` separately from actor/subject; the
+stored target key includes it for timestamp targets, and target relinking uses
+that complete key. A missing author leaves the target unresolved rather than
+choosing an arbitrary same-timestamp message. Message-ID targets retain their
+existing platform-scoped addressing. This additive contract detail is part of
+the same unshipped cluster, including its initial migration and shared store tests.

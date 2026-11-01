@@ -111,7 +111,8 @@ class FakeObservationStore:
 
     @staticmethod
     def _row_target_key(r: StoredObservation) -> str | None:
-        return target_key(r.observation.target)
+        return target_key(r.observation.target,
+                          author_id=r.observation.target_author_id)
 
     async def unresolved_targets(
         self, *, scope: SourceScope, limit: int = 200,

@@ -285,3 +285,23 @@ async def test_stale_snapshot_never_overlays_newer_state(store):
     assert head.state["votes"] == {"v1": ["a"]}
     assert head.state["option_counts"] == {}
     assert head.coverage.get("superseded_snapshots") == 1
+
+
+async def test_timestamp_target_resolution_keeps_authors_separate(store):
+    from nora.domain.observations import target_key
+
+    scope = SourceScope(platform="signal", account_key="acct", conversation_id="room")
+    target = EditTarget(sent_ts=NOW)
+    for suffix, author in [("a", "author-a"), ("b", "author-b")]:
+        await _append(
+            store,
+            _obs(scope=scope, object_ref="poll-" + suffix, target=target, target_author_id=author),
+            suffix,
+        )
+    resolved = await store.resolve_targets(
+        scope=scope, target_key=target_key(target, author_id="author-a"), message_id=42
+    )
+    assert resolved == 1
+    remaining = await store.unresolved_targets(scope=scope)
+    assert [r.observation.object_ref for r in remaining] == ["poll-b"]
+    assert remaining[0].observation.target_author_id == "author-b"
