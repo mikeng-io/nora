@@ -172,6 +172,36 @@ def test_document_readers_come_from_the_existing_selector(tmp_path, monkeypatch,
     assert not json.loads(values["plan"])["python"]
 
 
+@pytest.mark.parametrize("canonical", [True, False])
+def test_agent_skill_link_ci_uses_the_same_document_classification(
+    tmp_path, monkeypatch, canonical,
+):
+    skill = tmp_path / ".agents/skills/nora-generated/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# Generated skill\n")
+    link = tmp_path / ".claude/skills/nora-generated"
+    link.parent.mkdir(parents=True)
+    link.symlink_to("../../.agents/skills/nora-generated" if canonical else "/missing")
+    (tmp_path / "tests").mkdir()
+    event = tmp_path / "event.json"
+    event.write_text(json.dumps({"pull_request": {}}))
+    output = tmp_path / "output"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setattr("sys.argv", ["ci_plan"])
+    monkeypatch.setattr(ci_plan, "changed_paths", lambda event, repo: [
+        ".agents/skills/nora-generated/SKILL.md", ".claude/skills/nora-generated",
+    ])
+    assert ci_plan.main() == 0
+    values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert values["docs_only"] == str(canonical).lower()
+    selected = {job for job, chosen in json.loads(values["plan"]).items() if chosen}
+    assert selected == ({"contracts"} if canonical else set(ci_plan.JOBS))
+    if canonical:
+        assert "tests/architecture/test_agent_skills.py" in json.loads(values["readers"])
+
+
 def test_shared_component_contracts_select_their_readers():
     assert ci_plan.classify(["nora/documents/node.schema.json"])["portal"]
     assert ci_plan.classify(["tests/fixtures/instagram_bridge/account.json"])["go"]

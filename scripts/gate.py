@@ -310,7 +310,7 @@ def main(argv: list[str] | None = None) -> int:
                     repo, "origin/master", include_worktree=True
                 )
                 docs_only = bool(changed) and all(
-                    affected_tests._is_doc_or_data(p) for p in changed
+                    affected_tests._is_doc_or_data(p, repo) for p in changed
                 )
             except (OSError, RuntimeError, subprocess.SubprocessError):
                 docs_only = False
