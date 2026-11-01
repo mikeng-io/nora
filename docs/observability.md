@@ -750,6 +750,15 @@ worse ERROR". **An unmapped level gets no field rather than a guessed one** —
 the same three-state discipline R-27 imposes on every other instrument: absent
 means "not stated", never "zero".
 
+The ingester applies the same rule on the collector side: its `severity_parser`
+promotes a declared `level` attribute to the record's NATIVE severity fields,
+at the same band bases, so SigNoz/MCP severity filters see these lines. A body
+with no `level` (unstructured bridge lines, level-less JSON) is skipped, an
+unmapped level passes through UNSPECIFIED, and nothing is dropped. Reading
+back, native `severity_number`/`severity_text` are the promoted fields;
+`attributes.level` and `attributes_number.severity_number` are the app's own
+copies and both remain.
+
 ### An exception is three fields, not one blob
 
 `format_exc_info` renders the whole traceback into one `exception` string with
