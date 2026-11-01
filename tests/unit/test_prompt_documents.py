@@ -393,7 +393,7 @@ SHAPES = {
     "relevance_gate": """
 <group_transcript description fields>
   <m age from n>
-<standing description written>""",
+<standing description fields written>""",
     "skills": """
 <available_skills description fields>
   <skill name when_to_load>""",
