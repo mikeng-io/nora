@@ -38,7 +38,6 @@ from nora.domain.models import EditTarget, NormalizedMessage, PersonRef
 from nora.domain.observations import (
     ArtifactPayload,
     Coverage,
-    MembershipEntry,
     MembershipPayload,
     Observation,
     PinPayload,
@@ -156,8 +155,10 @@ async def _say(audit: FakeRecordStore, n: int) -> None:
 
 def _prompt(ctx: Any) -> str:
     return "\n".join(
-        m["content"] for m in build_prefill(
-            ctx, display_name="Nora", context_window=40, now=NOW))
+        block["text"]
+        for message in build_prefill(
+            ctx, display_name="Nora", context_window=40, now=NOW)
+        for block in message["content"] if "text" in block)
 
 
 class _NoRecord:
@@ -352,6 +353,15 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
     prompt carries the event — and the stimulus is consumed exactly once."""
     obs_store = FakeObservationStore()
     ids = await _seed(obs_store)
+    for name, kind, payload, subject in (
+        ("share", "artifact", ArtifactPayload(artifact_kind="post", custody="declared"), ""),
+        ("join", "membership", MembershipPayload(state="member"), "new-member"),
+    ):
+        ids[name] = await obs_store.append(
+            observation=_obs(kind=kind, ref=name, op="create" if kind == "artifact" else "add",
+                             payload=payload, subject=subject, ago=1),
+            event_id=f"session-{name}", source_digest=f"session-{name}")
+        assert ids[name] is not None
 
     ledger = InMemoryCognitionStore()
     stimuli = InMemoryStimulusStore(ledger=ledger)
@@ -405,11 +415,13 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
         tz=HK, clock=lambda: clock_ms[0] / 1000, settle_seconds=0,
         on_wake=runner.wake_hook)
 
-    sid = await stimuli.append(stimulus=NewStimulus(
-        unit="u1", kind="observation", item="poll",
-        ref=f"platform_observation:{ids['close']}", at_ms=NOW_MS,
-        platform="signal", conversation_id=CID), recorded_at_ms=NOW_MS)
-    assert sid is not None
+    for name, kind in (("close", "poll"), ("pin", "pin"),
+                       ("share", "artifact"), ("join", "membership")):
+        sid = await stimuli.append(stimulus=NewStimulus(
+            unit="u1", kind="observation", item=kind,
+            ref=f"platform_observation:{ids[name]}", at_ms=NOW_MS,
+            platform="signal", conversation_id=CID), recorded_at_ms=NOW_MS)
+        assert sid is not None
 
     await ev.tick()
     await ev.drain()
@@ -417,6 +429,8 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
     assert agent.calls == 1
     (prompt,) = agent.prompts
     assert "<observation" in prompt and 'kind="poll"' in prompt
+    for kind in ("pin", "artifact", "membership"):
+        assert f'kind="{kind}"' in prompt
     assert 'op="revise"' in prompt
     assert f'rev="{revision_label(3, "rev")}"' in prompt
     assert "closed" in prompt and "p1" not in prompt
@@ -433,7 +447,8 @@ async def test_the_wire_contract_refuses_a_wrong_scope_and_a_malformed_row():
     whose wire scope is not the envelope's is refused, and a payload with
     no contract is refused — retained failures, never silent success."""
     good = _obs(kind="poll", ref="p9", op="create",
-                payload=PollPayload(question="Q?"), ago=1, position=1)
+                payload=PollPayload(question="Q?", options=(("a", "A"),)),
+                ago=1, position=1)
     wrong = observation_to_dict(dataclasses.replace(
         good, scope=SourceScope(platform="signal", account_key="acct",
                                 conversation_id="other-room")))
@@ -557,6 +572,29 @@ async def test_unknown_source_time_never_dresses_up_as_upstream():
     assert row["received_ms"]
 
 
+async def test_clockless_update_does_not_inherit_the_previous_source_clock():
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    await _seed(store)
+    await store.append(
+        observation=_obs(
+            kind="pin", ref="pins", op="remove",
+            payload=PinPayload(message=EditTarget(message_id="m-1")),
+            ago=1, unknown=True),
+        event_id="clockless-remove", source_digest="clockless-remove")
+    ctx = await _assembler(audit, store).assemble(request=_request())
+    head = next(o for o in ctx.source_objects if o.kind == "pin")
+    assert head.time_quality == "unknown" and head.at_ms == 0
+    assert head.received_ms > 0 and head.ordering == "arrival"
+    detail = await _call(_tools(audit, store), "record_query", object=head.handle)
+    assert detail["status"] == "ok"
+    assert "observed_ms" not in detail["detail"]
+    assert detail["detail"]["time_quality"] == "unknown"
+    assert detail["detail"]["received_ms"] == head.received_ms
+    line = next(line for line in _prompt(ctx).splitlines()
+                if line.startswith("<source_object") and 'kind="pin"' in line)
+    assert 'time="unknown"' in line and "observed=" not in line
+
+
 async def test_mixed_share_member_pin_poll_journey_all_surfaces():
     """The journey case: an artifact share, a member join and a pin land
     between the poll's vote and close. Every surface folds them into the
@@ -565,16 +603,15 @@ async def test_mixed_share_member_pin_poll_journey_all_surfaces():
     await _seed(store)
     await store.append(
         observation=_obs(
-            kind="artifact", ref="a1", op="create",
-            payload=ArtifactPayload(artifact_kind="post", custody="external",
+            kind="artifact", ref="private-artifact-origin", op="create",
+            payload=ArtifactPayload(artifact_kind="post", custody="declared",
                                     metadata={"title": "a clip"}),
             ago=45, actor="+852111", actor_status="known", position=5),
         event_id="art-1", source_digest="art-1")
     await store.append(
         observation=_obs(
             kind="membership", ref="members", op="add",
-            payload=MembershipPayload(
-                members=(MembershipEntry(person_ref="+999000", state="member"),)),
+            payload=MembershipPayload(state="member"),
             ago=40, actor="+852111", actor_status="known",
             subject="+999000", position=6,
             coverage=Coverage(covered="channel")),
@@ -597,7 +634,7 @@ async def test_mixed_share_member_pin_poll_journey_all_surfaces():
     assert {"artifact", "membership", "pin", "poll"} <= heads
     prompt = _prompt(ctx)
     assert 'kind="artifact"' in prompt and 'kind="membership"' in prompt
-    assert "a1" not in prompt and "+999000" not in prompt
+    assert "private-artifact-origin" not in prompt and "+999000" not in prompt
     # The join names nobody — the subject isn't on the roster.
     member_ev = next(e for e in ctx.source_events if e.kind == "membership")
     assert "+999000" not in member_ev.summary
@@ -646,7 +683,7 @@ async def test_named_and_anonymous_voters_stay_distinct_everywhere():
     listed = await _call(tools, "poll_list")
     detail = await _call(tools, "poll_read",
                          object=listed["polls"][0]["object"])
-    d = detail["detail"]
+    d = detail["poll"]
     assert d["voters_named"] == ["Ada"] and d["voters_unnamed"] == 2
     dumped = json.dumps(detail)
     assert "anon-77" not in dumped and "v-9" not in dumped and '"999"' not in dumped
@@ -654,7 +691,7 @@ async def test_named_and_anonymous_voters_stay_distinct_everywhere():
     ctx = await _assembler(audit, store).assemble(request=_request())
     prompt = _prompt(ctx)
     anon = next(e for e in ctx.source_events if e.actor_status == "anonymous")
-    assert anon.actor == "" and "anon-77" not in prompt
+    assert anon.actor is None and "anon-77" not in prompt
 
 
 async def test_source_event_links_to_its_shown_transcript_row():
@@ -686,7 +723,9 @@ async def test_source_event_links_to_its_shown_transcript_row():
     assert len(pin_events) == 2
     assert all(e.target_message_id is None for e in pin_events)
     transcript_part = prompt.split("<group_transcript")[1]
-    assert 'on="' not in transcript_part.split("</group_transcript>")[0]
+    assert all(' on="' not in line
+               for line in transcript_part.splitlines()
+               if line.startswith("<source_event"))
 
     # Late resolution: the durable row links, the next assemble renders it.
     linked = await store.resolve_targets(
@@ -721,8 +760,7 @@ async def test_model_facing_surfaces_carry_no_platform_ids():
     await store.append(
         observation=_obs(
             kind="membership", ref="members", op="add",
-            payload=MembershipPayload(members=(
-                MembershipEntry(person_ref="+999000", state="member"),)),
+            payload=MembershipPayload(state="member"),
             ago=40, subject="+999000",
             coverage=Coverage(covered="guild:123456789")),
         event_id="mg-1", source_digest="mg-1")

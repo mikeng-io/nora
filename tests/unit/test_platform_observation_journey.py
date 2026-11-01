@@ -222,7 +222,8 @@ async def test_replay_and_window_and_bound_stay_honest():
     # no doubled stimulus, no folded-twice head.
     again = await store.append(
         observation=_obs(kind="poll", ref="p1", op="create",
-                         payload=PollPayload(question="Dinner Friday?"),
+                         payload=PollPayload(question="Dinner Friday?",
+                                             options=(("a", "ramen"),)),
                          ago=125, position=1),
         event_id="evt-poll_create", source_digest="digest-poll_create")
     assert again is None
@@ -232,7 +233,8 @@ async def test_replay_and_window_and_bound_stay_honest():
     for i in range(45):
         await store.append(
             observation=_obs(kind="pin", ref="pins", op="add",
-                             payload=PinPayload(), ago=50 - i * 0.1),
+                             payload=PinPayload(message=EditTarget(message_id=f"m-{i}")),
+                             ago=50 - i * 0.1),
             event_id=f"flood-{i}", source_digest=f"flood-{i}")
     window = await store.recent(scope=SCOPE, limit=40)
     assert len(window) == 40
@@ -261,7 +263,7 @@ async def test_ordering_gap_and_anonymous_actor_are_stated_not_smoothed():
     store = FakeObservationStore()
     base = await store.append(
         observation=_obs(kind="poll", ref="p1", op="create",
-                         payload=PollPayload(question="Q?"), ago=60,
+                         payload=PollPayload(question="Q?", options=(("a", "A"),)), ago=60,
                          position=5),
         event_id="e1", source_digest="d1")
     # An OLDER revision arriving after a newer one is retained and marked —

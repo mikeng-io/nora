@@ -20,7 +20,9 @@ from nora.domain.observations import (
     RoomPayload,
     SourceScope,
     StoredObservation,
+    coverage_label,
     fold_observation,
+    head_detail,
     rebuild_head,
     target_from_key,
     target_key,
@@ -506,3 +508,44 @@ def test_timestamp_target_author_survives_wire_round_trip():
         restored.target, author_id="author-b"
     )
     assert target_from_key(target_key(restored.target, author_id="author-a")) == obs.target
+
+
+def test_current_head_revision_tracks_a_changed_source_scope_without_global_order():
+    head = fold_observation(None, _stored(_obs(
+        source_position=50, revision_scope="session-a"), 1))
+    head = fold_observation(head, _stored(_obs(
+        operation="revise", payload=PollPayload(state="closed"),
+        source_position=2, revision_scope="session-b"), 2))
+    assert head.state["state"] == "closed"
+    assert (head.position, head.scope) == (2, "session-b")
+    assert head.ordering == "arrival" and head.coverage["unordered"]
+
+
+def test_rejected_late_event_cannot_relabel_current_state_time():
+    head = fold_observation(None, _stored(_obs(
+        occurred_ms=NOW, time_quality="upstream",
+        source_position=5, revision_scope="stream"), 1))
+    head = fold_observation(head, _stored(_obs(
+        operation="revise", payload=PollPayload(state="closed"),
+        occurred_ms=NOW + 100, time_quality="upstream",
+        source_position=3, revision_scope="stream"), 2))
+    assert head.state["state"] == "open" and head.observed_ms == NOW
+    head = fold_observation(head, _stored(_obs(
+        operation="revise", payload=PollPayload(state="closed"),
+        source_position=6, revision_scope="stream"), 3))
+    assert head.state["state"] == "closed" and head.ordering == "gap"
+    assert "ordering_gap" in coverage_label(head.coverage)
+
+
+def test_partial_snapshot_grain_survives_model_facing_current_state():
+    head = fold_observation(None, _stored(_obs(
+        kind="membership", operation="snapshot",
+        payload=MembershipPayload(covered="guild:source-id",
+                                  members=(MembershipEntry("u1"),)),
+        coverage=Coverage(complete=False, covered="guild:source-id"))))
+    label = coverage_label(head.coverage)
+    assert "partial" in label and "guild:" in label and "source-id" not in label
+    detail = head_detail(head)
+    assert detail["member_count"] == 1
+    assert detail["coverage"]["partial"] is True
+    assert "source-id" not in str(detail)

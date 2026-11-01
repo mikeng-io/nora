@@ -675,7 +675,7 @@ class StoredObservation:
 class ObservationHead:
     """One object's folded current state — `platform_object_state`'s shape.
 
-    `position`/`scope` name the newest comparable source position applied.
+    `position`/`scope` name the latest applied event's source position.
     `ordering` is "ordered" (positions compared), "arrival" (no comparable
     order — the honest fallback) or "gap" (a known-stale transition was
     retained rather than applied out of order; `rebuild_head` resolves it).
@@ -690,7 +690,7 @@ class ObservationHead:
     head_id: int = 0                      # newest applied observation id
     position: int | None = None           # newest comparable source position
     scope: str = ""                       # revision_scope `position` lives in
-    observed_ms: int | None = None        # newest source time applied
+    observed_ms: int | None = None        # latest applied event's source time
     ordering: str = "arrival"             # ordered | arrival | gap
     coverage: dict[str, Any] = field(default_factory=dict)
     #: The object's account and thread, carried from its scope so a
@@ -777,11 +777,17 @@ def fold_observation(
     else:
         state = _apply(dict(head.state), obs, cmp)
         applied = True
-        if obs.source_position is not None:
-            ordering = "ordered"
-        elif ordering == "arrival" and (head.position is not None
-                                        or obs.source_position is not None):
+        if head.applied and cmp == _UNCOMPARABLE and (
+            head.position is not None or obs.source_position is not None
+        ):
             coverage["unordered"] = True
+        if head.ordering != "gap":
+            ordering = (
+                "ordered" if obs.source_position is not None
+                and obs.revision_scope and not coverage.get("unordered")
+                else "arrival")
+        if obs.coverage.covered != "event":
+            coverage["covered"] = obs.coverage.covered
         if obs.coverage.gaps or not obs.coverage.complete:
             coverage["gaps"] = sorted(
                 set(coverage.get("gaps", ())) | set(obs.coverage.gaps))
@@ -798,11 +804,8 @@ def fold_observation(
         else:
             coverage.pop("awaiting_definition", None)
 
-    observed = head.observed_ms
-    if obs.occurred_ms is not None and (
-        observed is None or obs.occurred_ms > observed
-    ):
-        observed = obs.occurred_ms
+    observed = obs.occurred_ms if applied else head.observed_ms
+    if applied:
         coverage["observed_quality"] = obs.time_quality
     # The newest receipt the fold has seen — the honest availability clock
     # for a head whose source clock is unknown; `received_ms` states it as
@@ -810,9 +813,7 @@ def fold_observation(
     coverage["received_ms"] = max(
         head.received_ms, obs.received_ms)
     position, scope = head.position, head.scope
-    if obs.source_position is not None and obs.revision_scope and (
-        position is None or cmp > 0
-    ) and (position is None or obs.revision_scope == scope):
+    if applied:
         position, scope = obs.source_position, obs.revision_scope
     return ObservationHead(
         kind=head.kind, object_ref=head.object_ref, state=state,
@@ -1231,13 +1232,16 @@ def coverage_label(coverage: Coverage | dict[str, Any] | None) -> str:
         lambda k, d=None: getattr(coverage, k, d))
     covered = get("covered") or ""
     gaps = get("gaps") or ()
-    complete = bool(get("complete", True))
+    complete = bool(get("complete", True)) and not get("partial", False)
     reason = get("reason") or ""
     parts: list[str] = []
     if covered and covered != "event":
         parts.append(_grain_label(covered))
     if not complete:
         parts.append("partial")
+    for flag in ("ordering_gap", "unordered", "awaiting_definition"):
+        if get(flag, False):
+            parts.append(flag)
     if gaps:
         parts.append("gaps:" + "+".join(
             _grain_label(g) for g in list(gaps)[:8]))
@@ -1504,6 +1508,8 @@ def head_detail(head: ObservationHead, *, name_of: Any = None) -> dict[str, Any]
         out["revision"] = rev
     coverage = {k: v for k, v in head.coverage.items()
                 if k not in _FOLD_CLOCK_KEYS}
+    if coverage.get("covered"):
+        coverage["covered"] = _grain_label(coverage["covered"])
     if coverage:
         out["coverage"] = coverage
         label = coverage_label(coverage)
