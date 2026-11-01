@@ -75,6 +75,7 @@ class DiscordListener:
         on_message_cb: Callable[[Any], Awaitable[None]],
         on_edit_cb: Callable[[Any], Awaitable[None]] | None = None,
         on_touch_cb: Callable[[str, Any], Awaitable[None]] | None = None,
+        on_observation_cb: Callable[[str, Any], Awaitable[None]] | None = None,
     ) -> None:
         """`on_edit_cb` receives the EDITED message.
         It is wired to `on_raw_message_edit`, not `on_message_edit`: the
@@ -146,6 +147,59 @@ class DiscordListener:
         async def on_raw_message_delete(payload: Any) -> None:
             await _touch("delete", payload)
 
+        # NON-UTTERANCE dispatches — the platform-observation families
+        # (design/platform-observations): raw events for `on_raw_message_edit`'s
+        # reason (cache independence) wherever the SDK offers them. They reach
+        # `on_observation_cb` as `(kind, payload)`; nothing is unioned into the
+        # message callback, which keeps its old meaning.
+        async def _observation(kind: str, payload: Any) -> None:
+            self.last_event_at = self._clock()
+            if on_observation_cb is None:
+                return
+            try:
+                await on_observation_cb(kind, payload)
+            except Exception as exc:  # noqa: BLE001 — SDK-dispatch boundary; logged by type
+                log.error("%s handler raised; continuing: %s", kind, type(exc).__name__)
+
+        async def on_raw_poll_vote_add(payload: Any) -> None:
+            await _observation("poll_vote_add", payload)
+
+        async def on_raw_poll_vote_remove(payload: Any) -> None:
+            await _observation("poll_vote_remove", payload)
+
+        async def on_raw_reaction_clear(payload: Any) -> None:
+            await _observation("reaction_clear_all", payload)
+
+        async def on_raw_reaction_clear_emoji(payload: Any) -> None:
+            await _observation("reaction_clear_emoji", payload)
+
+        async def on_guild_channel_pins_update(channel: Any, last_pin: Any) -> None:
+            await _observation("pins_update", (channel, last_pin))
+
+        async def on_thread_create(thread: Any) -> None:
+            await _observation("thread_create", thread)
+
+        async def on_raw_thread_update(raw: Any) -> None:
+            await _observation("thread_update", raw)
+
+        async def on_raw_thread_delete(raw: Any) -> None:
+            await _observation("thread_delete", raw)
+
+        async def on_member_join(member: Any) -> None:
+            await _observation("member_join", member)
+
+        async def on_raw_member_remove(raw: Any) -> None:
+            await _observation("member_remove", raw)
+
+        async def on_member_update(before: Any, after: Any) -> None:
+            await _observation("member_update", (before, after))
+
+        async def on_guild_channel_update(before: Any, after: Any) -> None:
+            await _observation("channel_update", (before, after))
+
+        async def on_guild_role_update(before: Any, after: Any) -> None:
+            await _observation("role_update", (before, after))
+
         async def on_disconnect() -> None:
             self.connected = False
             log.warning("discord gateway disconnected")
@@ -159,5 +213,18 @@ class DiscordListener:
         self._client.event(on_raw_reaction_add)
         self._client.event(on_raw_reaction_remove)
         self._client.event(on_raw_message_delete)
+        self._client.event(on_raw_poll_vote_add)
+        self._client.event(on_raw_poll_vote_remove)
+        self._client.event(on_raw_reaction_clear)
+        self._client.event(on_raw_reaction_clear_emoji)
+        self._client.event(on_guild_channel_pins_update)
+        self._client.event(on_thread_create)
+        self._client.event(on_raw_thread_update)
+        self._client.event(on_raw_thread_delete)
+        self._client.event(on_member_join)
+        self._client.event(on_raw_member_remove)
+        self._client.event(on_member_update)
+        self._client.event(on_guild_channel_update)
+        self._client.event(on_guild_role_update)
         self._client.event(on_disconnect)
         await self._client.start(self._token)
