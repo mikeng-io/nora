@@ -26,10 +26,10 @@ PERSON = "ada"
 ROOM = "room-a"
 ACCOUNT = Account(key=f"{UNIT}#character:{PERSON}", entity_kind="human",
                   unit=UNIT, subject=PERSON)
-DAY1 = 1_735_600_800_000   # 10:00 HKT 2025-01-01
-DAY1B = 1_735_615_200_000  # 14:00 HKT 2025-01-01
-DAY2 = 1_735_790_400_000   # 12:00 HKT 2025-01-02
-NOW = 1_736_049_600_000    # 2025-01-05
+DAY1 = 1_735_600_800_000
+DAY1B = 1_735_615_200_000
+DAY2 = 1_735_790_400_000
+NOW = 1_736_049_600_000
 AS_OF = datetime.fromtimestamp(NOW / 1000, tz=UTC)
 
 
