@@ -8,7 +8,7 @@ timestamp: '2026-10-30'
 # Platform observations: capture, memory and model exposure
 
 Status: **design amendment requested by the operator, 2026-10-30**. This document
-summarizes the proposed social-data contract; [04](04-build-and-acceptance.md) owns
+summarizes the proposed platform-observation contract; [04](04-build-and-acceptance.md) owns
 the acceptance specification, and §7 below is orientation only. No collector, wire version,
 table, tool, model occasion or live flag is changed by this document. Exact new
 field/table/tool signatures are resolved against the implementation when built.
@@ -22,7 +22,7 @@ add mappings and coverage, not a new platform-specific cognition workflow.
 ## 1. Owners and boundaries
 
 [Platform bridges](../platform-bridges/00-contract.md) own transport capture,
-recovery, ordering and delivery. Their current proposed inbound kind union names
+recovery, ordering and delivery. The integrated v1 inbound kind union names
 message/edit/delete/reaction/summons and serializes NormalizedMessage. Non-message
 observations below require an explicit typed domain/wire extension; do not smuggle
 poll votes or membership changes through empty messages. Keep existing transport
@@ -46,9 +46,9 @@ inferred intent. Actor, subject, target and source room remain distinct referenc
 | Group | Source evidence | Transcript / automatic context | Detail reads |
 |---|---|---|---|
 | Utterances and shares | Body, author, reply/quote, mentions, edit/withdrawal, shared object | Speaker lines plus structural annotations and existing media reading | Existing transcript/Record reads |
-| Responses | Reaction transitions or replacement set; poll choice/vote changes or aggregate snapshot | Current target annotation; material off-window changes in context | Target response history; poll state/options/coverage |
-| Collective choice | Poll definition, options, multiple-choice/anonymous flags, close/change state | Poll creation anchors conversation; current tally and source status | Bounded poll detail and supported voter data |
-| Room state | Title/topic, membership, roles, permissions, pins, thread lifecycle | Relevant changes and current state with as-of | Existing room/member reads; bounded history when needed |
+| Responses | Reaction transitions or replacement set; poll choice/vote changes or aggregate snapshot | Target annotation / typed transcript events; relevant off-window state in Standing | Target response history; poll state/options/coverage |
+| Collective choice | Poll definition, options, multiple-choice/anonymous flags, close/change state | Creation/change events in transcript; relevant tally/status in Standing | Bounded poll detail and supported voter data |
+| Room state | Title/topic, membership, roles, permissions, pins, thread lifecycle | Typed transcript changes; relevant source-backed state in Standing with as-of | Existing room/member reads; bounded history when needed |
 | Shared artifacts | Files, posts, reels, contacts or location shares when supported/admitted | Typed share and available reading; distinguish metadata, bytes and interpretation | Existing media/social/Record reads |
 | Coverage | Capability, collection gap, snapshot completeness, freshness | State limitations beside the affected claim | Same coverage fields on all reads |
 | Ephemeral signals | Typing | Ignore; do not persist, inject or wake on it | None |
@@ -115,7 +115,7 @@ absence, abstention or a negative social judgement.
 
 Use the current domain stores where they express the object; extend only missing
 stores (for example poll definitions/options and vote/snapshot observations).
-Avoid a universal JSON/EAV event table or a separate social-context database.
+Avoid a universal JSON/EAV event table or a separate context database.
 A private raw payload may be retained only for a supported reconstruction/debugging
 need under existing admission, retention and deletion rules.
 
@@ -177,16 +177,22 @@ Both surfaces read the same scoped, current projection and graph semantics.
 F1/F2 must be addressed: richer data is ineffective if structural anchors disappear
 or automatic recall walks different relations from the explicit graph tools.
 
-1. **Transcript:** preserve actual utterances/shares as speaker lines. Annotate the
-   target message with supported reactions, reply/quote, edit/withdrawal and poll
-   state. A reaction/vote/member update is not a new utterance by a person.
-2. **Declared context block:** through existing context assembly, show relevant
-   off-window target changes, referenced active polls and meaningful room changes.
-   Include object reference, as-of, state/version and coverage. Reuse graph context
-   for curated understanding and evidence; distinguish it from source tally/state.
-   Deduplicate against transcript. Reassemble from current heads each turn so a
-   closed poll is not rendered from a stale open summary. Required but unavailable
-   state must carry its limitation.
+Operator amendment, 2026-11-01: [03](03-model-projections.md) supersedes the
+separate observation-block proposal. Social understanding is not a metadata block.
+The default is enriched transcript plus continuity in the existing Standing
+presentation; tools expand the same source data. No new block is required.
+
+1. **Enriched transcript:** preserve utterances/shares and annotate their targets.
+   Represent source-supported poll/room/member/pin/thread changes as typed platform
+   events, not fabricated human speech. Label snapshots and source/observation times.
+   Typed stores remain separate; this does not force observations into message rows.
+2. **Standing continuity:** when a relevant target leaves the recent window,
+   retain its scoped reference with the ongoing matter. At context assembly, read
+   its current state, time/revision and coverage from the existing domain owner.
+   Do not repeatedly compress vote counts into model-authored Standing prose or
+   create another poll-list store/block. New admitted observations can enter
+   without a pre-existing Notebook link; budgets expose omissions/read handles.
+   A poll closing is a source event, not proof the group's arrangement is settled.
 3. **Task-shaped tools:** retain memory_search/read for connected understanding;
    transcript/Record tools for source evidence; room/member tools for group state;
    media/social tools for artifact content. Add poll list/read only if existing
@@ -218,7 +224,7 @@ are not evidence that the implementation or model has passed them:
 - Reconcile complete and partial poll snapshots; anonymous totals never invent
   voter identities or abstention. An unavailable source stays visibly unavailable.
 - Update a target outside the transcript window and close its poll. The next context
-  shows the current version once, tools agree, and no fake speaker line appears.
+  shows the current version once through transcript/Standing, tools agree, and no fake speaker line appears; a 40-entry window cannot erase an ongoing matter.
 - Follow a permitted room-state/artifact update through capture, persistence,
   projection and both read surfaces. Missing bytes and unknown membership retain
   their limitation. Typing produces no stored evidence, context or model work.
@@ -248,7 +254,7 @@ inventory above stays historical; [01](01-coverage.md) is the newer source-groun
 coverage census. [02](02-observation-contract.md) specifies typed data and folds;
 [03](03-model-projections.md) specifies model exposure; [04](04-build-and-acceptance.md)
 owns acceptance, delivery and how findings accumulate. These extend the overview where
-it previously deferred exact contract details; all remain proposed, not built.
+it previously deferred exact contract details. Recorded-reaction target annotations were delivered in PR #478; the broader poll/room and Standing enrichment contract remains proposed.
 
 The existing bridge bundle owns transport/recovery and telemetry; unified-memory
 owns interpretation, graph admission and profile rollout. This bundle owns source

@@ -126,7 +126,7 @@ def test_both_image_channels_share_pinned_tooling_source_and_publication_lane():
     assert jobs['prepare']['permissions'].get('packages') is None
     builder = next(step for step in jobs['build']['steps'] if step.get('id') == 'buildx')
     assert builder['uses'] == (
-        'docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f')
+        'docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069')
     assert builder['with'] == {'driver': 'docker-container',
                                'driver-opts': 'network=host',
                                'buildkitd-flags': '--allow-insecure-entitlement network.host'}
