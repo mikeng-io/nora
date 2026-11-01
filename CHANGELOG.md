@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.13.4](https://github.com/mikeng-io/nora/compare/v7.13.3...v7.13.4) (2026-11-01)
+
+
+### Bug Fixes
+
+* **release:** accept the complete pre-bridge predecessor bundle ([efe8525](https://github.com/mikeng-io/nora/commit/efe85250e41082a1d87eefc31ad834b7c09d17e6))
+
 ## [7.13.3](https://github.com/mikeng-io/nora/compare/v7.13.2...v7.13.3) (2026-10-31)
 
 
