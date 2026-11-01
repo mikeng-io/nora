@@ -494,6 +494,7 @@ async def _observation_lines(
                 account_key=obs.scope.account_key, thread=obs.scope.thread),
             summary=observation_summary(obs, name_of=name_of),
             target_message_id=row.target_message_id,
+            delivered_message_id=row.delivered_message_id,
             received_ms=obs.received_ms,
             revision=revision_label(
                 obs.source_position, obs.revision_scope),
@@ -523,10 +524,8 @@ async def _source_objects(
             scope=SourceScope(platform=room.platform, account_key="",
                               conversation_id=room.conversation_id),
             limit=limit + 1)
-        heads = sorted(
-            (h for h in heads if h.applied > 0),
-            key=lambda h: max(h.observed_ms or 0, h.received_ms),
-            reverse=True)
+        # The store orders by last write, independently of source clocks.
+        heads = [h for h in heads if h.applied > 0]
         events: list[SourceEvent] = []
         for h in heads[:limit]:
             events.append(SourceEvent(
@@ -619,17 +618,18 @@ def build_grounder(
             wanted_rooms.add((s.platform, s.conversation_id))
         # The utterance a typed source event was co-delivered as: the merged
         # source obligation links it through the observation row's
-        # `target_message_id`, and it reads as its `messages:<id>` record
+        # `delivered_message_id`, and it reads as its `messages:<id>` record
         # through the same `by_refs` seam and the same room check — both
         # evidence paths of the one event on the agenda, off one stimulus.
         sibling_wanted: list[tuple[Stimulus, tuple[str, int]]] = []
         for s in pending:
-            if s.id not in claimed or s.kind != "observation":
+            if (s.id not in claimed or s.kind != "observation"
+                    or s.platform is None or s.conversation_id is None):
                 continue
             event = observations_out.get(s.ref)
-            if event is None or event.target_message_id is None:
+            if event is None or event.delivered_message_id is None:
                 continue
-            sibling_wanted.append((s, ("messages", event.target_message_id)))
+            sibling_wanted.append((s, ("messages", event.delivered_message_id)))
             wanted_rooms.add((s.platform, s.conversation_id))
         found: dict[tuple[str, int], RecordRefHit] = {}
         refs = [r for _, r in wanted] + [r for _, r in sibling_wanted]

@@ -206,7 +206,7 @@ async def run_observation(
 
     `item` is the object kind, `ref` the observation row — the grounding
     read the session makes for it (the sibling rides the observation row's
-    `target_message_id` link). `at_ms` is the observation's own clock:
+    `delivered_message_id` link). `at_ms` is the observation's own clock:
     its source `occurred_ms` when the source supplied one, else the bridge
     receipt time — never a fabricated source time.
 
@@ -221,7 +221,8 @@ async def run_observation(
     `actor_person_id`, which names a different identity space and rides the
     row instead)."""
     try:
-        if actor_id and actor_id in wiring.self_ids:
+        source_actor = message.sender_id if message is not None else actor_id
+        if source_actor and source_actor in wiring.self_ids:
             return ("skipped", None, "self_authored")
         if not unit:
             return ("skipped", None, "no_unit")

@@ -21,7 +21,7 @@ from nora.domain.observations import (
     ObservationHead,
     SourceScope,
     StoredObservation,
-    _commit_us,
+    _record_us,
     fold_observation,
     fold_target_reactions,
     object_handle,
@@ -79,7 +79,8 @@ class FakeObservationStore:
 
     async def append(
         self, *, observation: Observation, event_id: str, source_digest: str,
-        target_message_id: int | None = None, tx_hook: Any = None,
+        target_message_id: int | None = None,
+        delivered_message_id: int | None = None, tx_hook: Any = None,
     ) -> int | None:
         obs = observation
         dedupe = (obs.scope.platform, obs.scope.account_key, source_digest)
@@ -88,6 +89,7 @@ class FakeObservationStore:
         row = StoredObservation(
             id=self._next_id, event_id=event_id, source_digest=source_digest,
             observation=obs, target_message_id=target_message_id,
+            delivered_message_id=delivered_message_id,
             recorded_at=next(self._clock))
         self._next_id += 1
         if tx_hook is not None:
@@ -214,7 +216,7 @@ class FakeObservationStore:
             bound_row = next(
                 (r for r in self._rows if r.id == through_id), None)
             bound_at = (None if bound_row is None
-                        else _commit_us(bound_row.recorded_at))
+                        else _record_us(bound_row.recorded_at))
             more = len(rows) > max(limit, 0)
             kept = rows[: max(limit, 0)]
             mids = {r.target_message_id for r in kept
@@ -226,7 +228,7 @@ class FakeObservationStore:
             else:
                 legacy = [
                     r for r in legacy_all
-                    if (at := _commit_us(r.created_at)) is not None
+                    if (at := _record_us(r.created_at)) is not None
                     and at <= bound_at]
                 gap = len(legacy) < len(legacy_all)
             tr = fold_target_reactions(

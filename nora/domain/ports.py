@@ -1135,6 +1135,7 @@ class ObservationStore(Protocol):
         event_id: str,
         source_digest: str,
         target_message_id: int | None = None,
+        delivered_message_id: int | None = None,
         tx_hook: Any = None,
     ) -> int | None:
         """Record one source observation and fold it into the object's head,
@@ -1144,6 +1145,8 @@ class ObservationStore(Protocol):
         contract). `target_message_id` is the caller's resolution of the
         observation's `target` to a `messages.id` when it already can —
         `resolve_targets` re-links the rest when the target arrives.
+        `delivered_message_id` independently names the co-delivered utterance;
+        it can differ from the affected target and is never target-relinked.
         `tx_hook`, when given, is called `(conn, observation_id)` INSIDE the
         same transaction, the way `RecordStore.append` lets callers join its
         write — the place a required stimulus or a second-store obligation

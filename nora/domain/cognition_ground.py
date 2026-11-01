@@ -277,7 +277,7 @@ class Grounding:
     `records` is keyed by the stimulus `ref` (`messages:12`), so the renderer
     joins a stimulus to its row without re-parsing anything — and by a
     `messages:<id>` key for the utterance a typed source event links through
-    its `target_message_id` (the co-delivered sibling of a merged source
+    its `delivered_message_id` (the co-delivered sibling of a merged source
     obligation), which is a row the event's own ref never names. `notes` is the
     unit's (the unit is the read boundary, DEC-231); `events` are the rooms on
     the agenda's. There is no Standing here: Standing is pulled, never pushed,
@@ -370,7 +370,8 @@ class Grounding:
             "observations": [
                 {"ref": e.ref, "kind": e.kind, "operation": e.operation,
                  "at_ms": e.at_ms, "time_quality": e.time_quality,
-                 "target_message_id": e.target_message_id}
+                 "target_message_id": e.target_message_id,
+                 "delivered_message_id": e.delivered_message_id}
                 for e in self.observations.values()
             ],
             # Her own sends by message id and time; never the words.

@@ -287,20 +287,28 @@ async def test_observation_replay_and_rotated_alias_do_not_duplicate(
     assert len(events) == 1  # the alias mapped, never a second event row
 
 
+@pytest.mark.parametrize("separate_target", [False, True])
 async def test_message_sidecar_is_one_source_obligation_with_both_refs(
-        bridge, redis_client, harness):
+        bridge, redis_client, harness, separate_target):
     """The single-source-wake contract (design/platform-observations 05):
     a message envelope carrying an observation sidecar commits ONE durable
     stimulus obligation naming BOTH refs — the observation row and the
     utterance row — never two independent wakes of one source event. The
     observation row links the co-delivered message through
-    `target_message_id`; the ONE stimulus row the obligation executes is
+    `delivered_message_id`; the ONE stimulus row the obligation executes is
     `observation`-kind and carries the utterance's own cues and person.
     There is NO `kind="message"` stimulus for the event — its evidence
     rides the merged obligation, and its audit + downstream obligations
     commit as always."""
     store, _, stream = bridge
-    obs = _obs(received_ms=5200, actor_id=MILES_ID, actor_status="known")
+    target_id = None
+    if separate_target:
+        target_id = await SqlRecordStore(store._engine).append(message=NormalizedMessage(
+            platform=PLATFORM, conversation_id=CONV, conversation_type="group",
+            sender_id=MILES_ID, sender_name=None, timestamp=5100,
+            body="earlier poll", raw={}, message_id="earlier"))
+    obs = _obs(received_ms=5200, actor_id=MILES_ID, actor_status="known",
+               target={"message_id": "earlier"} if separate_target else None)
     env = _sidecar_envelope("lunch poll — who's in at 7pm?", 5200, obs)
     sid = await _produce(redis_client, stream, env)
     reader = _reader(redis_client, store, stream)
@@ -320,7 +328,8 @@ async def test_message_sidecar_is_one_source_obligation_with_both_refs(
     assert obs_rows[0]["event_id"] == env.event_id
     # The sibling link committed WITH the row: the observation names no
     # target of its own, so the co-delivered utterance is its message link.
-    assert obs_rows[0]["target_message_id"] == msg_row_id
+    assert obs_rows[0]["target_message_id"] == target_id
+    assert obs_rows[0]["delivered_message_id"] == msg_row_id
     heads = await _head_rows(store)
     assert len(heads) == 1 and heads[0]["applied"] == 1
     # Exactly ONE stimulus obligation for the whole source event: the
@@ -926,7 +935,7 @@ async def test_delayed_sidecar_obligation_survives_prior_consumption(
     3. The delayed obligation THEN executes: the merged observation
        stimulus lands PENDING — a stimulus recorded after a watermark is
        never consumed retroactively by it — carrying the utterance's cues
-       and the sibling `target_message_id` link.
+       and the sibling `delivered_message_id` link.
     4. The next real tick claims exactly that one stimulus. Both evidence
        paths surface once, and the utterance never raised a wake of its
        own — nothing about the interleave can consume it unseen.
@@ -946,7 +955,7 @@ async def test_delayed_sidecar_obligation_survives_prior_consumption(
     await _register(reader, env, sid)
     await _claim_run(store, runner, kind="ingest")
     obs_row = (await _obs_rows(store))[0]
-    msg_row_id = obs_row["target_message_id"]
+    msg_row_id = obs_row["delivered_message_id"]
     assert msg_row_id  # the sibling link committed with the row
     work = await _work_rows(store, env.event_id)
     stim_works = [w for w in work if w["kind"] == "stimulus"]

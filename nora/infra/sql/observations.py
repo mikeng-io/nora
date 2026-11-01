@@ -135,7 +135,8 @@ def _row_to_stored(row: Any) -> StoredObservation:
         id=int(row["id"]), event_id=row["event_id"],
         source_digest=row["source_digest"], observation=obs,
         target_message_id=row["target_message_id"],
-        recorded_at=row.get("recorded_at"))
+        recorded_at=row.get("recorded_at"),
+        delivered_message_id=row.get("delivered_message_id"))
 
 
 def _head_to_row(head: ObservationHead) -> dict[str, Any]:
@@ -183,7 +184,7 @@ def _rx_union_stmt(
 
     `t` rows: the scope's typed reaction rows for `refs`, ranked per
     `(account_key, thread, object_ref)` and bounded, each carrying its
-    commit clock; `n` rows: the same groups' REAL totals (before the
+    recording clock; `n` rows: the same groups' REAL totals (before the
     bound), so a cut is detectable. `l` rows: bounded latest-per-key
     `message_reaction` tuples for the targets the typed rows resolved to;
     `m` rows: their real totals. `b` rows (as-of only): whether the bound
@@ -217,9 +218,8 @@ def _rx_union_stmt(
     ).cte("rx_t_meta")
     mids = sa.select(t_bounded.c.target_message_id).where(
         t_bounded.c.target_message_id.isnot(None)).distinct().cte("rx_mids")
-    # The legacy side counts only where its durable commit clock proves it
-    # preceded the as-of bound — the same genuine ordering the unbounded
-    # read gets for free.
+    # Legacy recording stamps must fall before the as-of bound. This is
+    # recording order, not a PostgreSQL commit timestamp.
     mr_where = MESSAGE_REACTION.c.message_id.in_(
         sa.select(mids.c.target_message_id))
     bound = None
@@ -383,7 +383,8 @@ class SqlObservationStore:
 
     async def append(
         self, *, observation: Observation, event_id: str, source_digest: str,
-        target_message_id: int | None = None, tx_hook: Any = None,
+        target_message_id: int | None = None,
+        delivered_message_id: int | None = None, tx_hook: Any = None,
     ) -> int | None:
         obs = observation
         scope = obs.scope
@@ -397,6 +398,7 @@ class SqlObservationStore:
                     target_key=target_key(obs.target, author_id=obs.target_author_id),
                     target_author_id=obs.target_author_id or None,
                     target_message_id=target_message_id,
+                    delivered_message_id=delivered_message_id,
                     actor_id=obs.actor_id or None,
                     actor_status=obs.actor_status,
                     subject_ref=obs.subject_ref or None,
@@ -554,8 +556,8 @@ class SqlObservationStore:
 
         For `kind="reaction"` the state is the same union `current` and the
         target annotation read — typed rows at or before `through_id` plus
-        legacy deltas whose durable commit clock proves they preceded that
-        row's own commit. A bound naming no row cannot order legacy events:
+        legacy deltas whose durable recording clock proves they preceded that
+        row's recording stamp. A bound naming no row cannot order legacy events:
         they are excluded and the fold flags `unordered`, never guessed."""
         if kind == "reaction":
             async with self._engine.connect() as conn:

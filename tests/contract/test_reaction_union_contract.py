@@ -4,7 +4,7 @@ MODULE»).
 
 Two implementations: `SqlRecordStore` + `SqlObservationStore` over real
 Postgres, and `FakeRecordStore` + `FakeObservationStore` wired to share the
-fake's commit clock. The property under test is the coherence design
+fake's recording clock. The property under test is the coherence design
 02-03 rules on: a target's recorded reactions live on TWO append-only
 tables — per-actor `message_reaction` deltas and typed
 `platform_observation` reaction rows — and every read (the transcript
@@ -376,3 +376,41 @@ async def test_new_legacy_reaction_refreshes_bounded_object_discovery(stores):
     heads = await obs.heads(scope=SCOPE, limit=1)
     assert len(heads) == 1 and heads[0].kind == "reaction"
     assert heads[0].state["standing"] == {"👍": ["u1"]}
+
+
+async def test_a_waiting_transaction_does_not_backdate_a_later_reaction(stores, request):
+    """A transaction starts before the clear, but inserts its add after it.
+    PostgreSQL now() would backdate that add; clock_timestamp() must not."""
+    import asyncio
+    from contextlib import asynccontextmanager
+
+    if request.node.callspec.params["stores"] != "sql":
+        pytest.skip("PostgreSQL transaction-start clock property")
+    records, obs = stores
+    mid = await _message(records)
+    real_engine = records._engine
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    class WaitingEngine:
+        @asynccontextmanager
+        async def begin(self):
+            async with real_engine.begin() as conn:
+                await conn.execute(sa.text("select now()"))
+                entered.set()
+                await release.wait()
+                yield conn
+
+    delayed_records = SqlRecordStore(WaitingEngine())
+    pending = asyncio.create_task(delayed_records.append_reaction(
+        message_id=mid, message=_touch(emoji="👍", sender="u1"), person_id=None))
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        await _obs(obs, _rx("clear"), "clear-during-transaction", mid)
+    finally:
+        release.set()
+        await pending
+    state = await _annotation(records, mid)
+    assert state.coverage == "recorded"
+    assert dict(state.counts) == {"👍": 1}
+    head = await obs.current(scope=SCOPE, kind="reaction", object_ref="msg:m1")
+    assert head.state["standing"] == {"👍": ["u1"]}

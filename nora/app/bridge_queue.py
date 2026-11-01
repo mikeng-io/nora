@@ -1294,12 +1294,10 @@ class WorkRunner:
         co-delivered utterance of a message+sidecar envelope. With one
         set, the ordinal-90 obligation is the ONE durable source
         obligation for the whole event — it names both rows — and the
-        observation's `target_message_id` falls back to the sibling when
-        the observation names no target of its own, so the grounding read
-        can join the utterance back to the typed event. An observation
-        that names a target keeps it (an unresolved one stays NULL for
-        `resolve_targets`, never silently re-pointed at the delivery
-        vehicle)."""
+        observation's `delivered_message_id` records that utterance
+        independently of the affected `target_message_id`. An unresolved
+        affected target stays NULL for `resolve_targets`; it never becomes
+        the delivery vehicle by fallback."""
         from nora.infra.sql.observations import resolve_target_message_id
 
         if self._observations is None:
@@ -1324,14 +1322,6 @@ class WorkRunner:
             self._store._engine, platform=work.platform,
             conversation_id=work.conversation_id, target=obs.target,
             target_author_id=obs.target_author_id)
-        if (target_message_id is None and sibling_row_id is not None
-                and (obs.target is None or (
-                    not obs.target.message_id and obs.target.sent_ts is None))):
-            # The event rode in as this utterance, and the observation
-            # names no target of its own (the same emptiness rule
-            # `resolve_target_message_id` applies): the sibling row IS its
-            # message link, so the ONE source obligation names both refs.
-            target_message_id = sibling_row_id
         actor_pid = None
         if obs.actor_id and obs.actor_status == "known" and self._persons:
             ref = self._persons.resolve(work.platform, obs.actor_id)
@@ -1380,7 +1370,8 @@ class WorkRunner:
             await self._observations.append(
                 observation=obs, event_id=envelope.event_id,
                 source_digest=canonical_digest(envelope.source_key),
-                target_message_id=target_message_id, tx_hook=hook)
+                target_message_id=target_message_id,
+                delivered_message_id=sibling_row_id, tx_hook=hook)
         except Exception:
             log.exception("observation append failed for event %s",
                           envelope.event_id)

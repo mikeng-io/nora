@@ -609,9 +609,9 @@ def _item_rows(
         # both evidence paths of the one source reach the session. A row
         # already shown (its own stimulus, or a reaction's target) is not
         # repeated; an absent one is absent, never a guess.
-        if event.target_message_id is None:
+        if event.delivered_message_id is None:
             continue
-        rec = grounding.records.get(f"messages:{event.target_message_id}")
+        rec = grounding.records.get(f"messages:{event.delivered_message_id}")
         if rec is None or rec.room != item.room or rec.message_id in message_ids:
             continue
         message_ids.add(rec.message_id)

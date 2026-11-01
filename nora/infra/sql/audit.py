@@ -818,6 +818,7 @@ class SqlRecordStore:
             removed=int(touch.removed) if touch is not None else 0,
             ts=message.timestamp,
             raw_json=json.dumps(message.raw),
+            created_at=sa.func.clock_timestamp(),
         ).returning(MESSAGE_REACTION.c.id)
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)

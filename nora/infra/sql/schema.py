@@ -5594,6 +5594,10 @@ PLATFORM_OBSERVATION = sa.Table(
                             ondelete="SET NULL")),
     # Actor/subject, per the source — '' / NULL are 'not supplied', never
     # invented.
+    sa.Column("delivered_message_id", sa.BigInteger,
+              sa.ForeignKey("messages.id",
+                            name="platform_observation_delivered_fkey",
+                            ondelete="SET NULL")),
     sa.Column("actor_id", sa.Text),
     sa.Column("actor_status", sa.Text, nullable=False),
     sa.Column("subject_ref", sa.Text),

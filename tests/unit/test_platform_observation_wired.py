@@ -364,6 +364,12 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
             event_id=f"session-{name}", source_digest=f"session-{name}")
         assert ids[name] is not None
 
+    ids["delivery"] = await obs_store.append(
+        observation=_obs(kind="artifact", ref="delivery", op="create", ago=1,
+                         payload=ArtifactPayload(artifact_kind="post", custody="declared")),
+        event_id="delivery", source_digest="delivery",
+        target_message_id=8, delivered_message_id=9)
+
     ledger = InMemoryCognitionStore()
     stimuli = InMemoryStimulusStore(ledger=ledger)
     agent = _CaptureAgent()
@@ -376,7 +382,15 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
 
     class _NoRecords:
         async def by_refs(self, refs: Any, rooms: Any) -> Any:
-            return ()
+            from nora.domain.models import TranscriptRow
+            from nora.domain.record_query import RecordHit, RecordRefHit
+
+            if ("messages", 9) not in refs or ("signal", CID) not in rooms:
+                return ()
+            row = TranscriptRow(9, "author", "Ada", NOW_MS,
+                                "This is the co-delivered utterance", False,
+                                "observed", None)
+            return (RecordRefHit("messages", 9, RecordHit("signal", CID, row)),)
 
         async def own_sends(self, rooms: Any, *, start_ms: int,
                             end_ms: int, limit: int) -> Any:
@@ -417,7 +431,8 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
         on_wake=runner.wake_hook)
 
     for name, kind in (("close", "poll"), ("pin", "pin"),
-                       ("share", "artifact"), ("join", "membership")):
+                       ("share", "artifact"), ("join", "membership"),
+                       ("delivery", "artifact")):
         sid = await stimuli.append(stimulus=NewStimulus(
             unit="u1", kind="observation", item=kind,
             ref=f"platform_observation:{ids[name]}", at_ms=NOW_MS,
@@ -435,6 +450,7 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
     assert 'op="revise"' in prompt
     assert f'rev="{revision_label(3, "rev")}"' in prompt
     assert "closed" in prompt and "p1" not in prompt
+    assert "This is the co-delivered utterance" in prompt
 
     # Consumed exactly once: a second tick with nothing new wakes nothing.
     clock_ms[0] += 120_000
@@ -837,6 +853,12 @@ async def test_old_target_reaction_union_reaches_standing_and_real_tools():
                          payload=ReactionPayload(), ago=60,
                          target=EditTarget(message_id="old-target")),
         event_id="old-clear", source_digest="old-clear", target_message_id=mid)
+    for i in range(18):
+        await store.append(
+            observation=_obs(kind="artifact", ref=f"later-{i}", op="create",
+                             payload=ArtifactPayload(artifact_kind="post", custody="declared"),
+                             ago=-i-1),
+            event_id=f"later-{i}", source_digest=f"later-{i}")
     await react("second-actor", 1)
     await _say(audit, 41)
     ctx = await _assembler(audit, store).assemble(request=_request())

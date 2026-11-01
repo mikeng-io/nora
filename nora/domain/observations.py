@@ -668,15 +668,10 @@ _UNCOMPARABLE = 2
 class StoredObservation:
     """An `Observation` as persisted: its identity, resolution and arrival.
 
-    `recorded_at` is the row's DURABLE COMMIT CLOCK — the value the store
-    stamped when it made the row durable (`platform_observation.recorded_at`,
-    or an equivalent commit-order stamp a fake supplies). The union fold
-    (`fold_target_reactions`) interleaves typed rows with legacy
-    `message_reaction` deltas on it: both clocks are the same database's,
-    and the ingest lock serializes a conversation's writers, so the stamp
-    orders the way rows became durable — arrival order across stores, never
-    a source clock and never a fabricated cross-store revision. None means
-    the store did not supply it; the union fold flags the order unproven.
+    `recorded_at` is the database's insertion clock, not a commit timestamp.
+    The union fold interleaves it with legacy `created_at` recording stamps.
+    This defines the recorded-arrival fallback across stores; it proves no
+    upstream ordering. Missing stamps or cross-family ties flag a gap.
     """
 
     id: int
@@ -685,6 +680,7 @@ class StoredObservation:
     observation: Observation
     target_message_id: int | None = None
     recorded_at: Any = None
+    delivered_message_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -873,12 +869,12 @@ def rebuild_head(
 # answer derives from — the SQL annotation path, the typed head surfaces
 # and the fake all call it.
 
-_COMMIT_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
-_COMMIT_US = timedelta(microseconds=1)
+_RECORD_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+_RECORD_US = timedelta(microseconds=1)
 
 
-def _commit_us(value: Any) -> int | None:
-    """A durable commit-clock stamp as comparable epoch microseconds —
+def _record_us(value: Any) -> int | None:
+    """A database recording-clock stamp as comparable epoch microseconds —
     `recorded_at`/`created_at` may arrive as a `datetime` or as an already-
     extracted integer. None or an unrecognized form means the store supplied
     no clock, which the fold surfaces as an unproven order, never a guessed
@@ -888,7 +884,7 @@ def _commit_us(value: Any) -> int | None:
     if isinstance(value, datetime):
         if value.tzinfo is None:
             value = value.replace(tzinfo=UTC)
-        return int((value - _COMMIT_EPOCH) // _COMMIT_US)
+        return int((value - _RECORD_EPOCH) // _RECORD_US)
     if isinstance(value, (int, float)):
         return int(value)
     return None
@@ -905,7 +901,7 @@ class TargetReactions:
     honest-but-incomplete (the read's bound cut transitions, a removal or a
     covered-actor clear could not be attributed, or the source declared its
     snapshot incomplete), "gap" when the ORDER of recorded transitions
-    could not be proven (incomparable commit clocks, out-of-scope source
+    could not be proven (incomparable recording clocks, out-of-scope source
     positions, retained stale rows). `standing`/`counts`/`reactors` carry
     the recorded state regardless — projections apply the withholding rule
     (`merged_reaction_counts`), never the fold.
@@ -996,16 +992,12 @@ def fold_target_reactions(
     reaction `platform_observation` rows — including unresolved-target
     rows a head-level fold legitimately owns.
 
-    ORDER: each legacy delta's only state-bearing position is its own
-    durable commit clock (`created_at`), and each typed row's is
-    `recorded_at` — one database clock, serialized by the ingest lock, so
-    the merge IS durable commit order: the honest "arrival" fallback made
-    concrete across stores, not a source-clock sort and not a fabricated
-    global revision. A pair whose clocks cannot be compared (a missing
-    stamp or a cross-family tie) is flagged `unordered` — never silently
-    ordered. Within the typed stream the fold keeps `fold_observation`'s
-    source-position rules: a provably-stale row is retained-not-applied
-    and flags `ordering_gap`; incomparable positions flag `unordered`.
+    ORDER: legacy `created_at` and typed `recorded_at` use the database's
+    insertion clock, never transaction-start or source time. Their merge
+    defines recorded arrival, not transaction commit order or an upstream
+    revision. Missing stamps and cross-family ties flag `unordered`.
+    Within the typed stream, comparable source positions still reject stale
+    rows and flag ordering gaps; incomparable positions remain labelled.
 
     `recorded`/`observed_at` let a bounded read supply the REAL totals
     (database-side, before its cap) so the projection reports the whole
@@ -1028,16 +1020,16 @@ def fold_target_reactions(
         if prev is None or r.id > prev.id:
             latest[(r.sender_id, r.emoji)] = r
 
-    # (commit_at μs | None, family 0=legacy 1=typed, seq, row). On a tie the
+    # (recorded_at μs | None, family 0=legacy 1=typed, seq, row). On a tie the
     # legacy delta applies first — deterministic, and the fail-closed side:
     # a clear that cannot be proven LATER still wins. Unorderable clocks
     # matter only across families: same-family events order by `id` anyway,
     # and distinct (actor, emoji) legacy deltas commute.
     events: list[tuple[int | None, int, int, Any]] = []
     for r in latest.values():
-        events.append((_commit_us(r.created_at), 0, r.id, r))
+        events.append((_record_us(r.created_at), 0, r.id, r))
     for s in stored:
-        events.append((_commit_us(s.recorded_at), 1, s.id, s))
+        events.append((_record_us(s.recorded_at), 1, s.id, s))
     mixed = len({fam for _a, fam, _s, _r in events}) > 1
     unordered_clock = mixed and any(
         a is None for a, _f, _s, _r in events)
@@ -1535,6 +1527,7 @@ class SourceEvent:
     handle: str                     # object_handle(kind, object_ref)
     summary: str                    # bounded pure summary of the change
     target_message_id: int | None = None
+    delivered_message_id: int | None = None
     state: str = ""                 # head summary when a detail read asks
     ordering: str = ""              # head's ordered|arrival|gap, when shown
     #: The bridge's own receive clock for this row — shown beside `at_ms`

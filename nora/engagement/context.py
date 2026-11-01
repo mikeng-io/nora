@@ -1107,6 +1107,7 @@ class TranscriptInjection:
                         o.scope.platform, ref),
                     option_label=lambda ref, r=r: option_label(r, ref)),
                 target_message_id=r.target_message_id,
+                delivered_message_id=r.delivered_message_id,
                 received_ms=r.observation.received_ms,
                 revision=revision_label(
                     r.observation.source_position,
@@ -1123,10 +1124,9 @@ class TranscriptInjection:
         # fold applied, `observed_quality` says which clock that is, and
         # `received_ms` is the newest receipt — never presented as the
         # source's own time. Recency ranks on whichever clock exists.
-        heads = sorted(
-            (h for h in heads if h.applied > 0),
-            key=lambda h: max(h.observed_ms or 0, h.received_ms),
-            reverse=True)
+        # Preserve the store's last-write order; source clocks can be late
+        # or wrong and must not evict a freshly changed object.
+        heads = [h for h in heads if h.applied > 0]
         objects = tuple(
             SourceEvent(
                 # `head_id` IS the newest applied row's id — naming the
