@@ -1,5 +1,17 @@
 # Changelog
 
+## [7.13.8](https://github.com/mikeng-io/nora/compare/v7.13.7...v7.13.8) (2026-11-01)
+
+
+### Bug Fixes
+
+* **cognition:** carry shown associations through the Register boundary, receipt revisions ([7321ba4](https://github.com/mikeng-io/nora/commit/7321ba41f15b0c654faac8792b231c0f7c3abf28))
+* **cognition:** shown keys from emitted rows, not prose; empty associations clear links ([2d0951c](https://github.com/mikeng-io/nora/commit/2d0951c8e7f38e9b66d393aac9668b89b74d423c))
+* **cognition:** the wake preview admits only keys the renderer emitted ([4473499](https://github.com/mikeng-io/nora/commit/4473499bee891db5173de5be8b79ac7c491386bb))
+* **memory:** avoid orphan entity staging during event relinking ([581c381](https://github.com/mikeng-io/nora/commit/581c381636a4b91a5feea700326dfda03e5afe10))
+* **memory:** make explicit Register associations authoritative ([8d68e49](https://github.com/mikeng-io/nora/commit/8d68e49219c052e4032e2d136fd14af07dc61ada))
+* **register:** carry the session's admitted association through Register writes ([164005c](https://github.com/mikeng-io/nora/commit/164005c94968a3c51bc52bd9449e6fef0108501d))
+
 ## [7.13.7](https://github.com/mikeng-io/nora/compare/v7.13.6...v7.13.7) (2026-11-01)
 
 
