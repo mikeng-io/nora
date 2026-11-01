@@ -181,6 +181,8 @@ async def run_observation(
     platform: str, conversation_id: str, unit: str | None,
     at_ms: int, actor_person_id: str | None,
     actor_id: str | None = None,
+    message: NormalizedMessage | None = None,
+    person_id: str | None = None,
     wiring: Wiring, metrics: Any,
     recorded_at_ms: int | None = None,
 ) -> tuple[str, int | None, str | None]:
@@ -192,8 +194,19 @@ async def run_observation(
     the stimulus, and one stimulus family covers every platform
     (no per-platform kinds).
 
+    **The merged source obligation.** When the typed event was co-delivered
+    as an utterance (a message+sidecar envelope), the ONE durable
+    obligation carries the sibling `message` too, and this row is the
+    event's ONLY stimulus: the utterance's own cues, `waits` and person
+    ride it exactly as `_append` computes them for a message stimulus, so
+    one source event can never wake a unit twice and neither evidence path
+    is dropped. `person_id` is the sibling's resolved person; it wins over
+    `actor_person_id` (the two coincide in practice, and it is the
+    utterance's identity the row names).
+
     `item` is the object kind, `ref` the observation row — the grounding
-    read the session makes for it. `at_ms` is the observation's own clock:
+    read the session makes for it (the sibling rides the observation row's
+    `target_message_id` link). `at_ms` is the observation's own clock:
     its source `occurred_ms` when the source supplied one, else the bridge
     receipt time — never a fabricated source time.
 
@@ -217,18 +230,32 @@ async def run_observation(
             unit=unit, kind="observation", ref=ref)
         if existing is not None:
             return ("written", existing, None)
+        cues: tuple[str, ...] = ()
+        waits = False
+        if message is not None:
+            cues = cues_of(message.body)
+            answers = _answers_nora_at(
+                message, "message", None, wiring.self_ids)
+            at_for_reply = (
+                message.timestamp if message.timestamp > 0 else at_ms)
+            waits = (
+                answers is not None
+                and at_for_reply - answers <= wiring.reply_quiet_seconds * 1000
+            )
         sid = await asyncio.wait_for(
             wiring.store.append(
                 stimulus=NewStimulus(
                     unit=unit, kind="observation", item=object_kind, ref=ref,
                     at_ms=at_ms, platform=platform,
                     conversation_id=conversation_id,
-                    person_id=actor_person_id),
+                    person_id=person_id or actor_person_id,
+                    cues=cues, waits=waits),
                 recorded_at_ms=(
                     recorded_at_ms if recorded_at_ms is not None
                     else int(wiring.clock() * 1000))),
             timeout=wiring.timeout_seconds)
-        metrics.inc("nora_stimulus_total", kind="observation", cue="none")
+        for cue in cues or ("none",):
+            metrics.inc("nora_stimulus_total", kind="observation", cue=cue)
         if sid is not None:
             return ("written", sid, None)
         return ("failed", None, "append_returned_none")

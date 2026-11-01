@@ -275,7 +275,10 @@ class Grounding:
     """Everything one session is shown beside its agenda, built once.
 
     `records` is keyed by the stimulus `ref` (`messages:12`), so the renderer
-    joins a stimulus to its row without re-parsing anything. `notes` is the
+    joins a stimulus to its row without re-parsing anything — and by a
+    `messages:<id>` key for the utterance a typed source event links through
+    its `target_message_id` (the co-delivered sibling of a merged source
+    obligation), which is a row the event's own ref never names. `notes` is the
     unit's (the unit is the read boundary, DEC-231); `events` are the rooms on
     the agenda's. There is no Standing here: Standing is pulled, never pushed,
     and `standing_read` does not exist yet."""

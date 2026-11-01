@@ -596,6 +596,8 @@ def build_grounder(
     ) -> Grounding:
         allowed = set(unit_rooms(unit))
         claimed = {sid for item in items for sid in item.stimulus_ids}
+        observations_out = await _observation_lines(
+            pending, claimed, observations, allowed, persons)
         wanted: list[tuple[Stimulus, tuple[str, int]]] = []
         wanted_rooms: set[tuple[str, str]] = set()
         for s in pending:
@@ -615,13 +617,28 @@ def build_grounder(
                 continue
             wanted.append((s, ref))
             wanted_rooms.add((s.platform, s.conversation_id))
+        # The utterance a typed source event was co-delivered as: the merged
+        # source obligation links it through the observation row's
+        # `target_message_id`, and it reads as its `messages:<id>` record
+        # through the same `by_refs` seam and the same room check — both
+        # evidence paths of the one event on the agenda, off one stimulus.
+        sibling_wanted: list[tuple[Stimulus, tuple[str, int]]] = []
+        for s in pending:
+            if s.id not in claimed or s.kind != "observation":
+                continue
+            event = observations_out.get(s.ref)
+            if event is None or event.target_message_id is None:
+                continue
+            sibling_wanted.append((s, ("messages", event.target_message_id)))
+            wanted_rooms.add((s.platform, s.conversation_id))
         found: dict[tuple[str, int], RecordRefHit] = {}
-        if wanted:
-            hits = await records.by_refs([r for _, r in wanted], sorted(wanted_rooms))
+        refs = [r for _, r in wanted] + [r for _, r in sibling_wanted]
+        if refs:
+            hits = await records.by_refs(refs, sorted(wanted_rooms))
             found = {(h.table, h.row_id): h for h in hits}
         rows = []
         pairs: list[tuple[Stimulus, tuple[str, int], RecordRefHit]] = []
-        for s, ref in wanted:
+        for s, ref in wanted + sibling_wanted:
             hit = found.get(ref)
             # The row must be in the room the stimulus named.
             if hit is None or (hit.hit.platform, hit.hit.conversation_id) != (
@@ -642,9 +659,13 @@ def build_grounder(
                 ai_display_name if row.is_nora
                 else speaker_name(row.person_name, row.sender_name)
             )
-            records_out[s.ref] = _record_item(
-                s, ref, hit, body=row.body, author=author,
-            )
+            item = _record_item(s, ref, hit, body=row.body, author=author)
+            if s.kind == "observation":
+                # A sibling record answers to its OWN record ref: the
+                # observation stimulus's `platform_observation:<id>` names
+                # the event, never the row the event rode in on.
+                item = replace(item, ref=f"{ref[0]}:{ref[1]}")
+            records_out[item.ref] = item
 
         agenda_rooms = list(dict.fromkeys(i.room for i in items))
         targets = [
@@ -775,8 +796,6 @@ def build_grounder(
                 None if self_account is None else self_account(unit),
                 stage="cognition_self", platform="cognition", metrics=metrics,
             )
-        observations_out = await _observation_lines(
-            pending, claimed, observations, allowed, persons)
         source_objects, source_objects_more = await _source_objects(
             agenda_rooms, allowed, observations, persons)
         return Grounding(

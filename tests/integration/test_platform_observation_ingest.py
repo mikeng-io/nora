@@ -7,17 +7,19 @@ Every test drives the production seam `test_bridge_queue` drives —
 `IngestPipeline` and `permissive_policy` wired the way composition wires
 them (nora/app/composition.py).
 
-The contract under test: a co-delivered message and its observation
-sidecar are TWO evidence paths — the utterance's audit + downstream
-obligations, and the typed `platform_observation` row + folded
-`platform_object_state` head + ordinal-90 `stimulus` obligation. Neither
-sibling's outcome may silently consume the other's durable work; a
-deterministic observation failure gets its own `failed_retained`
-obligation rather than riding a `done` marker alone; and the stream entry
-is XACKed only after durable ownership commits.
+The contract under test (design/platform-observations 05): a co-delivered
+message and its observation sidecar are ONE durable source obligation —
+the typed `platform_observation` row + folded `platform_object_state`
+head + ONE ordinal-90 `stimulus` obligation naming BOTH refs — never two
+independent wakes of one event. The utterance's audit + downstream
+obligations still commit; the merged stimulus carries its cues, `waits`
+and person. A deterministic observation failure gets its own
+`failed_retained` obligation rather than riding a `done` marker alone,
+and the stream entry is XACKed only after durable ownership commits.
 """
 
 import json
+import time
 from dataclasses import replace
 
 import pytest
@@ -25,8 +27,11 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from nora.app.bridge_queue import StreamReader, WorkRunner, stream_name
+from nora.app.wake import WakeEvaluator
 from nora.domain.models import EditTarget, NormalizedMessage
 from nora.domain.observations import SourceScope
+from nora.domain.ports import NewWakeOutcome
+from nora.domain.stimuli import WakePolicy
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.bridge_store import SqlBridgeStore
 from nora.infra.sql.observations import (
@@ -282,15 +287,21 @@ async def test_observation_replay_and_rotated_alias_do_not_duplicate(
     assert len(events) == 1  # the alias mapped, never a second event row
 
 
-async def test_message_sidecar_keeps_both_evidence_paths(
+async def test_message_sidecar_is_one_source_obligation_with_both_refs(
         bridge, redis_client, harness):
-    """A message envelope carrying an observation sidecar: the utterance
-    commits its audit + downstream obligations, the sidecar commits its
-    row + head + ordinal-90 stimulus — one event, two durable facts, and
-    the utterance's completion does not consume the observation's work."""
+    """The single-source-wake contract (design/platform-observations 05):
+    a message envelope carrying an observation sidecar commits ONE durable
+    stimulus obligation naming BOTH refs — the observation row and the
+    utterance row — never two independent wakes of one source event. The
+    observation row links the co-delivered message through
+    `target_message_id`; the ONE stimulus row the obligation executes is
+    `observation`-kind and carries the utterance's own cues and person.
+    There is NO `kind="message"` stimulus for the event — its evidence
+    rides the merged obligation, and its audit + downstream obligations
+    commit as always."""
     store, _, stream = bridge
     obs = _obs(received_ms=5200, actor_id=MILES_ID, actor_status="known")
-    env = _sidecar_envelope("a plain message", 5200, obs)
+    env = _sidecar_envelope("lunch poll — who's in at 7pm?", 5200, obs)
     sid = await _produce(redis_client, stream, env)
     reader = _reader(redis_client, store, stream)
     runner = _obs_runner(
@@ -307,20 +318,51 @@ async def test_message_sidecar_keeps_both_evidence_paths(
     obs_rows = await _obs_rows(store)
     assert len(obs_rows) == 1
     assert obs_rows[0]["event_id"] == env.event_id
+    # The sibling link committed WITH the row: the observation names no
+    # target of its own, so the co-delivered utterance is its message link.
+    assert obs_rows[0]["target_message_id"] == msg_row_id
     heads = await _head_rows(store)
     assert len(heads) == 1 and heads[0]["applied"] == 1
-    # The message's own stimulus (ordinal 1, wired above) AND the
-    # observation's (ordinal 90) are distinct obligations — the sidecar's
-    # wake was never folded into the utterance's.
+    # Exactly ONE stimulus obligation for the whole source event: the
+    # ordinal-90 row the observation's own transaction enqueued, carrying
+    # BOTH refs and the utterance's resolved person. No ordinary
+    # message-stimulus obligation exists — a second would be a second wake.
     work = await _work_rows(store, env.event_id)
     kinds = [(w["kind"], w["ordinal"]) for w in work]
     assert ("ingest", 0) in kinds
-    assert ("stimulus", 90) in kinds
-    stim90 = next(w for w in work if w["ordinal"] == 90)
+    stim_works = [w for w in work if w["kind"] == "stimulus"]
+    assert [(w["ordinal"]) for w in stim_works] == [90]
+    stim90 = stim_works[0]
     assert stim90["payload"]["observation_row_id"] == obs_rows[0]["id"]
+    assert stim90["payload"]["message_row_id"] == msg_row_id
+    assert stim90["payload"]["message"]["body"] == (
+        "lunch poll — who's in at 7pm?")
     assert stim90["payload"]["actor_id"] == MILES_ID
     assert stim90["payload"]["actor_person_id"] == "miles"
     assert await _pending(redis_client, stream) == 0
+
+    # Executing the ONE obligation lands exactly ONE stimulus row —
+    # `observation`-kind, `platform_observation:<id>` — that carries the
+    # utterance's cue (`datetime` for «at 7pm») and person: both evidence
+    # paths of the one event, one durable wake.
+    stim = await _claim_run(store, runner, kind="stimulus")
+    assert stim.kind == "stimulus"
+    async with store._engine.connect() as conn:
+        stimuli = (await conn.execute(sa.select(STIMULUS))).mappings().all()
+    assert len(stimuli) == 1
+    row = stimuli[0]
+    assert row["kind"] == "observation"
+    assert row["item"] == "poll"
+    assert row["ref"] == f"platform_observation:{obs_rows[0]['id']}"
+    assert row["unit"] == "nora"
+    assert "datetime" in row["cues"]
+    # The utterance's resolved person wins; the observation's actor person
+    # is the fallback when the sender resolves to nobody.
+    assert row["person_id"] == (stim90["payload"]["person_id"] or "miles")
+    assert not row["waits"]
+    # And no `message`-kind stimulus: the utterance's evidence path is the
+    # row this one links, not a wake of its own.
+    assert all(s["kind"] != "message" for s in stimuli)
 
 
 async def test_malformed_sidecar_is_retained_while_utterance_completes(
@@ -860,6 +902,127 @@ async def test_reaction_sibling_does_not_consume_its_sidecar(
     kinds = [(w["kind"], w["ordinal"]) for w in work]
     assert ("stimulus", 90) in kinds
     assert event["admission"]["observation"] == "ok"
+    assert await _pending(redis_client, stream) == 0
+
+
+async def test_delayed_sidecar_obligation_survives_prior_consumption(
+        bridge, redis_client, harness):
+    """The delayed-obligation guard: the merged obligation is durable before
+    it runs, and an earlier consumption cannot lose it.
+
+    Everything below is the REAL seam — `StreamProducer`/`StreamReader`/
+    `WorkRunner` on real Postgres+Redis for the bridge half, and the REAL
+    `WakeEvaluator`/`SqlStimulusStore` wake path (`tick` → `decide` →
+    `record_wake` under the unit's `WakeGuard` → `record_outcome`, the rows
+    a Cognition session's settle writes) for the consumption half:
+
+    1. A message+sidecar event ingests: ONE pending `stimulus` obligation
+       naming BOTH rows commits with the observation's own transaction. It
+       is claimed under a lease — a worker a deploy or a crash delayed —
+       and NOT executed.
+    2. An ordinary message lands, its stimulus obligation executes, and a
+       real tracked wake closes over it: the durable watermark passes the
+       utterance-free stimulus.
+    3. The delayed obligation THEN executes: the merged observation
+       stimulus lands PENDING — a stimulus recorded after a watermark is
+       never consumed retroactively by it — carrying the utterance's cues
+       and the sibling `target_message_id` link.
+    4. The next real tick claims exactly that one stimulus. Both evidence
+       paths surface once, and the utterance never raised a wake of its
+       own — nothing about the interleave can consume it unseen.
+    """
+    store, _, stream = bridge
+    stim_store = SqlStimulusStore(store._engine)
+    reader = _reader(redis_client, store, stream)
+    runner = _obs_runner(
+        store, redis_client, harness, stimulus=_wiring(store),
+        persons=harness.handler._dispatcher._ingest._persons)
+
+    # 1. The merged event ingests; its ONE obligation is claimed and held —
+    #    durable, unexecuted: the delayed sidecar of the contract.
+    obs = _obs(received_ms=6600, actor_id=MILES_ID, actor_status="known")
+    env = _sidecar_envelope("lunch poll — who's in at 7pm?", 6600, obs)
+    sid = await _produce(redis_client, stream, env)
+    await _register(reader, env, sid)
+    await _claim_run(store, runner, kind="ingest")
+    obs_row = (await _obs_rows(store))[0]
+    msg_row_id = obs_row["target_message_id"]
+    assert msg_row_id  # the sibling link committed with the row
+    work = await _work_rows(store, env.event_id)
+    stim_works = [w for w in work if w["kind"] == "stimulus"]
+    assert [w["ordinal"] for w in stim_works] == [90]
+    delayed = await store.claim_next(
+        owner="w-delayed", lease_seconds=600, kinds=("stimulus",))
+    assert delayed is not None
+    assert delayed.payload["observation_row_id"] == obs_row["id"]
+    assert delayed.payload["message_row_id"] == msg_row_id
+    assert delayed.payload["message"]["body"] == (
+        "lunch poll — who's in at 7pm?")
+
+    # 2. An ordinary message's stimulus executes and a REAL tracked wake
+    #    closes over it — the durable rows a session's settle writes, not a
+    #    simulated consumption.
+    env2 = _envelope("meanwhile", 6610)
+    sid2 = await _produce(redis_client, stream, env2)
+    await _register(reader, env2, sid2)
+    await _claim_run(store, runner, kind="ingest")
+    ordinary = await store.claim_next(
+        owner="w-fast", lease_seconds=60, kinds=("stimulus",))
+    assert ordinary is not None
+    assert "observation_row_id" not in ordinary.payload
+    await runner._execute(ordinary)
+    async with store._engine.connect() as conn:
+        rows = (await conn.execute(sa.select(STIMULUS))).mappings().all()
+    assert [r["kind"] for r in rows] == ["message"]
+
+    now = [time.time() + 2000.0]  # past `quiet_seconds`
+    wakes: list[int] = []
+
+    async def close(*, unit, view, wake_id, now_ms):
+        # The same durable `closed` outcome the session's settle writes.
+        await stim_store.record_outcome(
+            outcome=NewWakeOutcome(
+                wake_id=wake_id, unit=unit, outcome="closed",
+                at_ms=now_ms),
+            recorded_at_ms=now_ms)
+        wakes.append(wake_id)
+
+    evaluator = WakeEvaluator(
+        store=stim_store, units=lambda: ["nora"], policy=WakePolicy(),
+        metrics=harness.metrics, on_wake=close,
+        clock=lambda: now[0], settle_seconds=0.0)
+    assert await evaluator.tick() != []
+    await evaluator.drain()
+    assert len(wakes) == 1
+    view = await stim_store.view(
+        unit="nora", mode="live", now_ms=int(now[0] * 1000), limit=50)
+    assert view.pending == ()  # the closed wake's watermark covers the message
+
+    # 3. The delayed obligation executes AFTER the consumption: the merged
+    #    stimulus lands pending with the utterance's cue and person, and is
+    #    the ONLY stimulus the event ever wrote.
+    await runner._execute(delayed)
+    async with store._engine.connect() as conn:
+        rows = (await conn.execute(sa.select(STIMULUS))).mappings().all()
+    assert len(rows) == 2
+    obs_stim = next(r for r in rows if r["kind"] == "observation")
+    assert obs_stim["ref"] == f"platform_observation:{obs_row['id']}"
+    assert obs_stim["item"] == "poll"
+    assert "datetime" in obs_stim["cues"]
+    view = await stim_store.view(
+        unit="nora", mode="live", now_ms=int(now[0] * 1000), limit=50)
+    assert [s.id for s in view.pending] == [obs_stim["id"]]
+
+    # 4. The next real tick claims exactly the delayed stimulus: both
+    #    evidence paths of the one source event surface together, once.
+    now[0] += 400.0  # past the closed wake's cooldown
+    assert await evaluator.tick() != []
+    await evaluator.drain()
+    assert len(wakes) == 2
+    view = await stim_store.view(
+        unit="nora", mode="live", now_ms=int(now[0] * 1000), limit=50)
+    assert view.pending == ()
+    # Nothing the interleave produced is left for the stream either.
     assert await _pending(redis_client, stream) == 0
 
 

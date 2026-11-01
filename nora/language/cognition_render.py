@@ -567,6 +567,8 @@ def _item_rows(
     rows, its social reads and its typed source events."""
     out: list[_Row] = []
     unreadable = 0
+    message_ids: set[int] = set()
+    linked: list[tuple[Stimulus, SourceEvent]] = []
     for s in rows:
         if s.kind == "social":
             social = grounding.socials.get(s.ref)
@@ -581,6 +583,7 @@ def _item_rows(
                 unreadable += 1
                 continue
             out.append(_observation_row(s, event, now_ms=now_ms, tz=tz))
+            linked.append((s, event))
             continue
         if s.kind == "rollup":
             roll = grounding.rollups.get(s.ref)
@@ -596,6 +599,22 @@ def _item_rows(
         if rec is None or rec.room != item.room:
             unreadable += 1
             continue
+        message_ids.add(rec.message_id)
+        out.append(_message_row(
+            rec, s.cues, now_ms=now_ms, tz=tz, message_chars=message_chars,
+        ))
+    for s, event in linked:
+        # The message the event is about — for a merged source obligation
+        # the utterance it was co-delivered as — read beside the event so
+        # both evidence paths of the one source reach the session. A row
+        # already shown (its own stimulus, or a reaction's target) is not
+        # repeated; an absent one is absent, never a guess.
+        if event.target_message_id is None:
+            continue
+        rec = grounding.records.get(f"messages:{event.target_message_id}")
+        if rec is None or rec.room != item.room or rec.message_id in message_ids:
+            continue
+        message_ids.add(rec.message_id)
         out.append(_message_row(
             rec, s.cues, now_ms=now_ms, tz=tz, message_chars=message_chars,
         ))

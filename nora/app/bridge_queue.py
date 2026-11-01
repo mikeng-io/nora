@@ -952,14 +952,15 @@ class WorkRunner:
                 row_id = result.row_id
             observation_status: str | None = None
             if envelope.observation is not None:
-                # Message + observation sidecar on ONE envelope: the
-                # utterance's downstream obligations commit below as always;
-                # the observation row + head + its OWN stimulus obligation
-                # commit inside the observation's append transaction
-                # (tx_hook), so one source event produces both durable
-                # facts and never two independent wakes of the same thing.
-                # A refused observation is recorded, never allowed to kill
-                # the already-ingested utterance's obligations.
+                # Message + observation sidecar on ONE envelope: ONE
+                # durable source obligation with both refs, not two
+                # independent wakes. The observation row + head + the
+                # merged stimulus obligation commit inside the append's
+                # own transaction (tx_hook), and the ordinary message
+                # stimulus below is enqueued ONLY when no merged
+                # obligation committed — a refused observation is
+                # recorded, never allowed to kill the already-ingested
+                # utterance's obligations.
                 if not absorbed:
                     # The observation-only lane's own admission rule: a
                     # room that is not absorbed never persists evidence —
@@ -967,7 +968,11 @@ class WorkRunner:
                     observation_status = "refused:scope_refused"
                 else:
                     status = await self._append_observation(
-                        work, envelope, unit=unit)
+                        work, envelope, unit=unit,
+                        sibling_message=result_message,
+                        sibling_row_id=row_id,
+                        sibling_person_id=(
+                            person.person_id if person else None))
                     if status is None:
                         return
                     observation_status = status
@@ -1056,7 +1061,17 @@ class WorkRunner:
                                  "absorbed": absorbed, "unit": unit,
                                  **downstream})
                     ordinal += 1
-                if self._stimulus is not None and row_id is not None:
+                # A committed sidecar made its ordinal-90 obligation the ONE
+                # stimulus obligation for the whole source event — the hook
+                # enqueued it inside the observation's own transaction with
+                # both refs — so raising a second, ordinary message stimulus
+                # here would give one source event two independent wakes. A
+                # refused or unscoped sidecar committed no merged
+                # obligation: the utterance's own stimulus is enqueued as
+                # always.
+                source_owned = observation_status == "ok" and bool(unit)
+                if (self._stimulus is not None and row_id is not None
+                        and not source_owned):
                     await self._store.enqueue_work(
                         conn, event_id=envelope.event_id,
                         kind="stimulus", ordinal=ordinal,
@@ -1259,6 +1274,9 @@ class WorkRunner:
     async def _append_observation(
         self, work: Any, envelope: Envelope, *, unit: str | None,
         observation: Any | None = None,
+        sibling_message: Any | None = None,
+        sibling_row_id: int | None = None,
+        sibling_person_id: str | None = None,
     ) -> str | None:
         """Append the envelope's observation and its durable obligations in
         the append's own transaction.
@@ -1270,7 +1288,18 @@ class WorkRunner:
         observation-only lane skips from it; a message's sidecar proceeds
         on it (a malformed sidecar never kills the utterance's own
         obligations, and a deterministic refusal gets its own retained
-        obligation)."""
+        obligation).
+
+        `sibling_message`/`sibling_row_id`/`sibling_person_id` are the
+        co-delivered utterance of a message+sidecar envelope. With one
+        set, the ordinal-90 obligation is the ONE durable source
+        obligation for the whole event — it names both rows — and the
+        observation's `target_message_id` falls back to the sibling when
+        the observation names no target of its own, so the grounding read
+        can join the utterance back to the typed event. An observation
+        that names a target keeps it (an unresolved one stays NULL for
+        `resolve_targets`, never silently re-pointed at the delivery
+        vehicle)."""
         from nora.infra.sql.observations import resolve_target_message_id
 
         if self._observations is None:
@@ -1295,6 +1324,14 @@ class WorkRunner:
             self._store._engine, platform=work.platform,
             conversation_id=work.conversation_id, target=obs.target,
             target_author_id=obs.target_author_id)
+        if (target_message_id is None and sibling_row_id is not None
+                and (obs.target is None or (
+                    not obs.target.message_id and obs.target.sent_ts is None))):
+            # The event rode in as this utterance, and the observation
+            # names no target of its own (the same emptiness rule
+            # `resolve_target_message_id` applies): the sibling row IS its
+            # message link, so the ONE source obligation names both refs.
+            target_message_id = sibling_row_id
         actor_pid = None
         if obs.actor_id and obs.actor_status == "known" and self._persons:
             ref = self._persons.resolve(work.platform, obs.actor_id)
@@ -1325,6 +1362,13 @@ class WorkRunner:
                         "unit": unit, "at_ms": at_ms,
                         "actor_id": obs.actor_id or None,
                         "actor_person_id": actor_pid,
+                        # A co-delivered utterance rides the SAME
+                        # obligation — both refs of the one source event,
+                        # never a second wake of its own.
+                        "message_row_id": sibling_row_id,
+                        "message": (message_to_dict(sibling_message)
+                                    if sibling_message is not None else None),
+                        "person_id": sibling_person_id,
                         # Reaching the append at all means the admission was
                         # absorbed — every caller refuses otherwise.
                         "absorbed": True,
@@ -1565,7 +1609,11 @@ class WorkRunner:
             return
         if "observation_row_id" in work.payload:
             # The ONE observation stimulus family: the obligation the
-            # observation's own append transaction enqueued.
+            # observation's own append transaction enqueued. A co-delivered
+            # utterance rides the same row — the payload carries it under
+            # `message`/`person_id` so the single stimulus holds the whole
+            # source event's wake semantics.
+            sibling = work.payload.get("message")
             outcome, sid, reason = await stimulus_stage.run_observation(
                 observation_row_id=int(work.payload["observation_row_id"]),
                 object_kind=work.payload.get("object_kind") or "unknown",
@@ -1575,6 +1623,9 @@ class WorkRunner:
                 at_ms=int(work.payload.get("at_ms") or 0),
                 actor_person_id=work.payload.get("actor_person_id"),
                 actor_id=work.payload.get("actor_id"),
+                message=(message_from_dict(sibling)
+                         if sibling is not None else None),
+                person_id=work.payload.get("person_id"),
                 wiring=self._stimulus, metrics=self._metrics,
                 recorded_at_ms=work.payload.get("enqueued_ms"))
             if outcome == "written":
