@@ -17,7 +17,8 @@ Existing recorded-wake rules apply when claiming semantic evaluation results.
    current transport ownership and media custody; do not rebuild the bridge project.
 3. Implement the deterministic current projection, graph references and durable
    downstream obligations. Read back the committed state and rebuild equivalence.
-4. Wire the same read model through transcript/context and existing/detail tools.
+4. Wire the same read model through enriched transcript, the existing Standing
+   presentation and existing/detail tools.
    Prove assembled input, partial/unavailable behavior and no fake speaker lines.
 5. Broaden supported families after one complete journey, recording source evidence
    and limitations in 01. Accumulate grounded histories for semantic evaluation;
@@ -41,7 +42,7 @@ Use generated data and real wrong-call shapes; no private chat fixtures.
 | Targets | Response precedes message/poll definition; retained unresolved reference later links once; no empty synthetic utterance |
 | Poll semantics | Complete empty voter selection withdraws; missing selection unknown; multi-select total differs from sum; anonymous count never creates identity |
 | Room/snapshot | Partial member set never removes omitted accounts; guild scope never presented as channel audience |
-| Exposure | Visible target annotation and off-window block deduplicate; close/edit appears on next assembly; newer tool state labelled with newer revision |
+| Exposure | Transcript annotation/event and Standing source enrichment deduplicate; close/edit appears on next assembly; newer tool state labelled with newer revision |
 | Availability/budget | Source/field failure yields limitation; capped options are visibly incomplete with read handle; no guessed zero |
 | Atomic recovery | Commit/ACK failure and deferred projection survive restart through existing obligations; retry does not duplicate Record or stimulus |
 | Trace independence | Collector failure changes no domain state/work completion; source event can still be reconstructed from its durable owner |
@@ -77,7 +78,8 @@ to the integrated implementation's controls; they are not new tests in this chan
 
 - Inspect actual Engagement and Cognition assembled inputs: visible target
   annotations, relevant off-window state, source time/coverage and existing graph
-  account are present once in their declared blocks. Unavailable required state
+  account are present once through transcript, the existing Standing presentation
+  and the existing graph surface; no separate observation block is required. Unavailable required state
   is explicit; no operational traces are interpreted as social evidence.
 - The same object is enriched consistently in prompt and transcript tools.
   A later tool read labels its newer revision; historical replay cannot see future state.
@@ -89,3 +91,38 @@ to the integrated implementation's controls; they are not new tests in this chan
 - Admit/consume every observation family through the same durable wake/proposal
   contract. A co-delivered message cannot silently consume unseen poll/room evidence;
   replay creates no duplicate source obligations, and failure retains pending work.
+
+## Transcript-window and Standing acceptance amendment (2026-11-01)
+
+These properties apply across admitted message metadata, reactions, polls,
+shared artifacts and room/member/pin/thread observations, not just poll tallies.
+They specify future implementation checks, not a claim those families are built.
+
+- **Beyond 40 entries:** create a relevant poll, push its creation outside a
+  generated 40-entry transcript, then assemble both Engagement and Cognition.
+  Standing still exposes its scoped reference and supported current state without
+  requiring a model to remember to call a tool. No second poll-list block/store.
+- **Freshness without new chat:** update/vote/close that old poll without a new
+  human message. On the next eligible assembly, state/time/coverage match the
+  domain head; the change is grounded by existing wake/coalescing rules. No stale
+  copied tally and no model call required for every callback.
+- **State is not settlement:** closing a poll leaves an unresolved activity matter
+  visible. An explicit supported completion/cancellation can retire its current
+  reference; source history remains readable. An unrelated old open poll is not
+  permanently pinned into every prompt.
+- **New evidence:** a newly admitted unlinked poll/room event can enter the scoped
+  working context and Cognition grounding without an existing Notebook match.
+- **Typed chronology:** service events have no invented speaker; unknown actor or
+  occurrence time stays unknown. A snapshot is labelled as observed state. Current
+  annotation on an old message is not presented as known at original send time.
+- **One source result:** visible-target annotations, off-window Standing references
+  and tool reads agree at the same revision; per-assembly source detail deduplicates.
+  Later tool reads label their newer revision. Generated examples include a shared
+  post reading update and a pin/membership change as well as a poll.
+- **Budget/scope/failure:** overflow preserves limitation and bounded read handles;
+  unavailable/partial state never becomes zero or a fabricated closed state. A
+  Standing reference cannot widen scope. Replay sees only its as-of state; source
+  withdrawal/retention gaps are reflected, not recovered from stale Standing prose.
+- **Ownership:** transcript truncation or lost rendered text cannot delete canonical
+  observations. Standing enrichment is derived from typed refs and source reads;
+  no new model-driven ETL, Standing writer or operational-trace-to-social pipeline.
