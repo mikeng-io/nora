@@ -1297,13 +1297,13 @@ def test_the_standing_block_says_how_old_it_is():
 
     rendered = render_context((), ("She said she would check the ferry.", three_hours_ago), now=now)
 
-    # The consolidated block stamps its own instant on the tag.
-    assert "as of" in rendered or 'written="' in rendered
+    assert 'written="3h ago"' in rendered
     # What the field MEANS, read off the type rather than restated here. It is one sentence for
     # every `<standing>` in the tree: that registry exists to make a divergence between the gate and
     # the prefill unrepresentable.
     annotations = dict(BLOCK_TYPES["standing"].annotations)
     assert "written" in annotations
+    assert f"`written` is {annotations['written']}" in rendered
 
 
 def test_a_standing_block_with_no_age_still_renders():
