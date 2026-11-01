@@ -1,0 +1,33 @@
+{
+  "_fixture": {
+    "name": "poll vote (encrypted PollUpdateMessage)",
+    "generated": true,
+    "native_event": "messages.upsert (type=notify), message.pollUpdateMessage",
+    "capture_today": "DROPPED — no text/media; AND rc13's own decrypt+emit block in lib/Utils/process-message.js is commented out, so Baileys emits no messages.update{pollUpdates} for this either",
+    "semantic": "pollCreationMessageKey names the poll; vote.encPayload/encIv is AES-GCM sealed. decryptPollVote (exported, live in rc13) needs {pollCreatorJid, pollMsgId=creation key id, pollEncKey=creation's messageContextInfo.messageSecret, voterJid=author of this stanza} -> PollVoteMessage{selectedOptions[]} = replacement set of option SHA256 hashes; EMPTY selection = withdrawn vote, ABSENT update = unknown (design/02). Actor: the vote stanza's own key.participant — the voter is known even though the payload is sealed. senderTimestampMs is the voter's source clock."
+  },
+  "payload": {
+    "key": {
+      "remoteJid": "12036123456789@g.us",
+      "fromMe": false,
+      "id": "3EB0VOTE01",
+      "participant": "15550100022@s.whatsapp.net"
+    },
+    "message": {
+      "pollUpdateMessage": {
+        "pollCreationMessageKey": {
+          "remoteJid": "12036123456789@g.us",
+          "fromMe": false,
+          "id": "3EB0POLL01",
+          "participant": "15550100011@s.whatsapp.net"
+        },
+        "vote": {
+          "encPayload": "aabbccddeeff00112233445566778899",
+          "encIv": "00112233445566778899aabb"
+        },
+        "senderTimestampMs": 1790000700000
+      }
+    },
+    "messageTimestamp": 1780900000
+  }
+}

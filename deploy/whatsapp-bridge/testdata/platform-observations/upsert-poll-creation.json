@@ -1,0 +1,39 @@
+{
+  "_fixture": {
+    "name": "poll creation (definition + decryption secret)",
+    "generated": true,
+    "native_event": "messages.upsert (type=notify), message.pollCreationMessage (v2/v3/v5 aliases exist: pollCreationMessageV2/V3/V5)",
+    "capture_today": "DROPPED — extractMessageEvent finds no text/media, logs outer=[pollCreationMessage,...]",
+    "semantic": "The definition: name=question, options[].optionName=labels (optionHash when supplied matches the decrypted vote's selectedOptions SHA256 entries), selectableOptionsCount=multi-select bound (1 = single choice), contextInfo carries mentions/quote. messageContextInfo.messageSecret is THE decryption prerequisite for pollUpdateMessage votes — it must be cached at creation capture; votes on a poll whose creation the bridge missed are permanently undecryptable (source key cannot be invented). No anonymity flag exists in this proto: WhatsApp polls are always identified-voter protocol-wise, but votes stay encrypted until decrypted per-voter."
+  },
+  "payload": {
+    "key": {
+      "remoteJid": "12036123456789@g.us",
+      "fromMe": false,
+      "id": "3EB0POLL01",
+      "participant": "15550100011@s.whatsapp.net"
+    },
+    "message": {
+      "pollCreationMessage": {
+        "name": "Saturday breakfast?",
+        "options": [
+          {
+            "optionName": "Congee"
+          },
+          {
+            "optionName": "Toast"
+          },
+          {
+            "optionName": "Skip"
+          }
+        ],
+        "selectableOptionsCount": 1
+      },
+      "messageContextInfo": {
+        "messageSecret": "AAABBBCCCDDDEEEFFFGGGHHHIIIJJJKKKLLLMMMNNN="
+      }
+    },
+    "messageTimestamp": 1781000000,
+    "pushName": "Member A"
+  }
+}

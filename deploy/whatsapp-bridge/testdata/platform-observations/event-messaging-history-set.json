@@ -1,0 +1,50 @@
+{
+  "_fixture": {
+    "name": "messaging-history.set (history sync coverage)",
+    "generated": true,
+    "native_event": "ev 'messaging-history.set': {chats, contacts, messages, lidPnMappings?, isLatest?, progress?, syncType?, pastParticipants?, chunkOrder?}",
+    "capture_today": "NOT SUBSCRIBED — and messages.upsert type 'append' is dropped too; the bridge deliberately captures notify-only, so pre-bridge history is an explicit coverage gap, not an absence of events",
+    "semantic": "Backfill evidence: isLatest=false/progress<100 means the snapshot is PARTIAL; syncType scopes the covered window (HistorySyncType ordinal); pastParticipants is room-membership history the live events never name. A poll definition arriving only in history still gates vote decryption: messageContextInfo.messageSecret is per-creation."
+  },
+  "payload": {
+    "chats": [
+      {
+        "id": "12036123456789@g.us",
+        "name": "Saturday planning",
+        "unreadCount": 0
+      }
+    ],
+    "contacts": [
+      {
+        "id": "15550100011@s.whatsapp.net",
+        "name": "Member A"
+      }
+    ],
+    "messages": [
+      {
+        "key": {
+          "remoteJid": "12036123456789@g.us",
+          "fromMe": false,
+          "id": "3EB0HIST01",
+          "participant": "15550100011@s.whatsapp.net"
+        },
+        "message": {
+          "conversation": "older breakfast thread"
+        },
+        "messageTimestamp": 1789000000
+      }
+    ],
+    "isLatest": false,
+    "progress": 40,
+    "syncType": 1,
+    "pastParticipants": [
+      {
+        "groupJid": "12036123456789@g.us",
+        "userJid": "15550100055@s.whatsapp.net",
+        "leaveReason": "REMOVED",
+        "leaveTs": 1788000000
+      }
+    ],
+    "chunkOrder": 2
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "_fixture": {
+    "name": "participant add stub (GROUP_PARTICIPANT_ADD=27)",
+    "generated": true,
+    "native_event": "messages.upsert (type=notify), messageStubType + messageStubParameters",
+    "capture_today": "DROPPED at the same !msg.message guard",
+    "semantic": "messageStubParameters[0] is the SUBJECT (who was added); key.participant is the ACTOR (who added). Subject!=actor is the difference between 'joined' and 'was added'; removal never establishes voluntary departure (design/02). The same fact is emitted typed as group-participants.update{action:'add'} — two surfaces, one fact; capture must dedupe by source identity, not double-count."
+  },
+  "payload": {
+    "key": {
+      "remoteJid": "12036123456789@g.us",
+      "fromMe": false,
+      "id": "3EB0STUB02",
+      "participant": "15550100011@s.whatsapp.net"
+    },
+    "messageTimestamp": 1780400000,
+    "messageStubType": 27,
+    "messageStubParameters": [
+      "15550100044@s.whatsapp.net"
+    ]
+  }
+}

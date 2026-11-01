@@ -1,0 +1,31 @@
+{
+  "_fixture": {
+    "name": "reaction remove on a target the bridge never saw",
+    "generated": true,
+    "native_event": "messages.upsert (type=notify), message.reactionMessage",
+    "capture_today": "captured -> kind=reaction, removed=true; upstream r:{target}:{rid}:{sender}:remove",
+    "semantic": "Empty text is WhatsApp's 'reaction removed'. The target stanza id is all the source supplies: if the bridge never captured the target, the touch still lands as an unresolved reference — per design/02, it stays scoped-unresolved, never a fabricated message and never dropped."
+  },
+  "payload": {
+    "key": {
+      "remoteJid": "12036123456789@g.us",
+      "fromMe": false,
+      "id": "3EB0RRR102",
+      "participant": "15550100022@s.whatsapp.net"
+    },
+    "message": {
+      "reactionMessage": {
+        "key": {
+          "remoteJid": "12036123456789@g.us",
+          "fromMe": false,
+          "id": "3EB0UNSEEN",
+          "participant": "15550100033@s.whatsapp.net"
+        },
+        "text": "",
+        "senderTimestampMs": 1790000120000
+      }
+    },
+    "messageTimestamp": 1781100000,
+    "pushName": "Member B"
+  }
+}

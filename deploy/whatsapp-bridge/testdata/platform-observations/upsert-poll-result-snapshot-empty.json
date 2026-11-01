@@ -1,0 +1,24 @@
+{
+  "_fixture": {
+    "name": "poll result snapshot, empty pollVotes",
+    "generated": true,
+    "native_event": "messages.upsert (type=notify), message.pollResultSnapshotMessage",
+    "capture_today": "DROPPED — no text/media",
+    "semantic": "An empty pollVotes array is a COMPLETE empty snapshot ('observed: no recorded option counts'), not 'unknown options' — the distinction design/02 draws between a covered empty set and an uncovered one. It also cannot settle whether the poll was invalidated; WebMessageInfo.pollAdditionalMetadata.pollInvalidated is a separate field on the message envelope, not in this payload."
+  },
+  "payload": {
+    "key": {
+      "remoteJid": "12036123456789@g.us",
+      "fromMe": false,
+      "id": "3EB0SNAP02",
+      "participant": "15550100011@s.whatsapp.net"
+    },
+    "message": {
+      "pollResultSnapshotMessage": {
+        "name": "Saturday breakfast?",
+        "pollVotes": []
+      }
+    },
+    "messageTimestamp": 1780500000
+  }
+}

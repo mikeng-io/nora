@@ -1,0 +1,28 @@
+{
+  "_fixture": {
+    "name": "groups.update event payload (Partial<GroupMetadata>)",
+    "generated": true,
+    "native_event": "ev 'groups.update': Partial<GroupMetadata>[]",
+    "capture_today": "NOT SUBSCRIBED — bridge.js binds only messages.upsert, connection.update, creds.update",
+    "semantic": "A DELTA surface for room state: each entry carries only changed fields (subject/desc/announce/restrict/ephemeralDuration/descId). Absent fields are unchanged, not null — partial-update semantics from design/02's room-change payload. No actor field exists on GroupMetadata entries; actor comes only from the parallel stub/participant events."
+  },
+  "payload": [
+    {
+      "id": "12036123456789@g.us",
+      "subject": "Saturday planning",
+      "subjectOwner": "15550100011@s.whatsapp.net",
+      "subjectTime": 1780000000
+    },
+    {
+      "id": "12036123456789@g.us",
+      "desc": "Weekly breakfast coordination",
+      "descId": "BAE5F00D",
+      "descOwner": "15550100011@s.whatsapp.net",
+      "descTime": 1780600000
+    },
+    {
+      "id": "12036123456789@g.us",
+      "announce": true
+    }
+  ]
+}

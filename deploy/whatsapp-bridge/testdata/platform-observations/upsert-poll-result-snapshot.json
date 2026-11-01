@@ -1,0 +1,37 @@
+{
+  "_fixture": {
+    "name": "poll result snapshot (aggregate counts)",
+    "generated": true,
+    "native_event": "messages.upsert (type=notify), message.pollResultSnapshotMessage (v3 alias exists)",
+    "capture_today": "DROPPED — no text/media",
+    "semantic": "Aggregate-only snapshot: per-option optionVoteCount with NO voter identities and NO unique-voter total. Design/02: anonymous totals never invent voters; multi-select option counts cannot be summed into unique people. This is 'observed state as of a time', not a transition sequence — it cannot prove who voted or that the poll closed."
+  },
+  "payload": {
+    "key": {
+      "remoteJid": "12036123456789@g.us",
+      "fromMe": false,
+      "id": "3EB0SNAP01",
+      "participant": "15550100011@s.whatsapp.net"
+    },
+    "message": {
+      "pollResultSnapshotMessage": {
+        "name": "Saturday breakfast?",
+        "pollVotes": [
+          {
+            "optionName": "Congee",
+            "optionVoteCount": 3
+          },
+          {
+            "optionName": "Toast",
+            "optionVoteCount": 2
+          },
+          {
+            "optionName": "Skip",
+            "optionVoteCount": 0
+          }
+        ]
+      }
+    },
+    "messageTimestamp": 1780800000
+  }
+}

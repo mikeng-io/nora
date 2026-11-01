@@ -1,0 +1,15 @@
+{
+  "_fixture": {
+    "name": "reaction create delta",
+    "generated": true,
+    "native_event": "delta __typename=SlideUQPPCreateReaction",
+    "capture_today": "captured -> kind=reaction removed=false; upstream react:{target}:{sender}:{emoji}:add:{ts}",
+    "semantic": "reaction_timestamp_ms is the honest ordering anchor; uq_seq_id is the delta-level monotonic revision. reacted_to_message_sender_fbid names the TARGET's author — distinct evidence from the reactor (reaction.sender_fbid)."
+  },
+  "payload": {
+    "__typename": "SlideUQPPCreateReaction", "uq_seq_id": "211", "thread_fbid": "1234567890123456",
+    "message_id": "mid.$a1",
+    "reaction": { "reaction": "❤️", "sender_fbid": "63987654300000022", "reaction_timestamp_ms": "1790002100000", "log_message_id": "mid.$a1" },
+    "reacted_to_message_sender_fbid": "63123456700000011"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "_fixture": {
+    "name": "message unsend delta",
+    "generated": true,
+    "native_event": "delta __typename=SlideUQPPDeleteMessage",
+    "capture_today": "captured -> kind=delete; no actor, no timestamp on the event",
+    "semantic": "message_id is the only evidence: who unsent and when is unavailable from this source. Withdrawal semantics — the target stays resolved by id even though the actor cannot be named."
+  },
+  "payload": {
+    "__typename": "SlideUQPPDeleteMessage", "uq_seq_id": "221", "thread_fbid": "1234567890123456",
+    "message_id": "mid.$a1"
+  }
+}

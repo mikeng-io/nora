@@ -1,0 +1,31 @@
+{
+  "_fixture": {
+    "name": "reaction add",
+    "generated": true,
+    "native_event": "messages.upsert (type=notify), message.reactionMessage; also redelivered as event 'messages.reaction'",
+    "capture_today": "captured -> kind=reaction, removed=false; upstream r:{target}:{rid}:{sender}:add",
+    "semantic": "reactionMessage.key is the TARGET message key (id + participant = target author); text is the emoji; senderTimestampMs is the source clock. Actor is the stanza's key.participant. Event 'messages.reaction' (unsubscribed today) carries {key: target key, reaction: {...reactionMessage, key: stanza key}} — same evidence, second surface."
+  },
+  "payload": {
+    "key": {
+      "remoteJid": "12036123456789@g.us",
+      "fromMe": false,
+      "id": "3EB0RRR101",
+      "participant": "15550100022@s.whatsapp.net"
+    },
+    "message": {
+      "reactionMessage": {
+        "key": {
+          "remoteJid": "12036123456789@g.us",
+          "fromMe": false,
+          "id": "3EB0AAA100",
+          "participant": "15550100011@s.whatsapp.net"
+        },
+        "text": "👍",
+        "senderTimestampMs": 1790000060000
+      }
+    },
+    "messageTimestamp": 1790000060,
+    "pushName": "Member B"
+  }
+}

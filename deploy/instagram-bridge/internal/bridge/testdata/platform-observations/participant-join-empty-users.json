@@ -1,0 +1,16 @@
+{
+  "_fixture": {
+    "name": "participants added delta, empty users list (partial snapshot)",
+    "generated": true,
+    "native_event": "delta __typename=SlideUQPPParticipantsAddedToGroupThread",
+    "capture_today": "same partial capture — admin message only",
+    "semantic": "users[] empty is a PARTIAL snapshot: it covers nothing, so it can never erase members (design/02 partial-snapshot rule). An empty covered set is observable evidence only of 'the snapshot listed nobody', not 'the room is empty'."
+  },
+  "payload": {
+    "__typename": "SlideUQPPParticipantsAddedToGroupThread", "uq_seq_id": "217", "thread_fbid": "1234567890123456",
+    "message": { "thread_fbid": "1234567890123456", "message_id": "mid.$adm3", "sender_fbid": "63123456700000011",
+      "timestamp_ms": "1790002400000", "content_type": "ADD_PARTICIPANT_XMAT",
+      "content": { "__typename": "SlideMessageAdminText", "text_body": "Member A added someone." } },
+    "thread": { "id": "1234567890123456", "thread_title": "Saturday planning", "users": [] }
+  }
+}

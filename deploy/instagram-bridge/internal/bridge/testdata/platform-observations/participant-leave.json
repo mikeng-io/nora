@@ -1,0 +1,19 @@
+{
+  "_fixture": {
+    "name": "participant left delta (actor vs subject)",
+    "generated": true,
+    "native_event": "delta __typename=SlideUQPPParticipantLeftGroupThread",
+    "capture_today": "partially captured — embedded admin message only; actor_fbid/left_participant_fbid/viewer_fbid and TinyThread are discarded",
+    "semantic": "The ONE delta that types actor and subject separately: actor_fbid acted, left_participant_fbid is who left, viewer_fbid scopes whose copy this is. actor==subject reads 'left voluntarily'; actor!=subject reads 'removed' — but even then, reason is unobservable (design/02: removal never establishes voluntary departure or intent)."
+  },
+  "payload": {
+    "__typename": "SlideUQPPParticipantLeftGroupThread", "uq_seq_id": "218", "thread_fbid": "1234567890123456",
+    "actor_fbid": "63123456700000011",
+    "left_participant_fbid": "63987654300000022",
+    "viewer_fbid": "60987654321000000",
+    "thread": { "id": "1234567890123456", "thread_title": "Saturday planning", "input_mode": 1 },
+    "message": { "thread_fbid": "1234567890123456", "message_id": "mid.$adm4", "sender_fbid": "63123456700000011",
+      "timestamp_ms": "1790002500000", "content_type": "REMOVE_PARTICIPANT_XMAT",
+      "content": { "__typename": "SlideMessageAdminText", "text_body": "Member A removed Member B." } }
+  }
+}

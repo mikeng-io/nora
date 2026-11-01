@@ -1,0 +1,56 @@
+{
+  "_fixture": {
+    "name": "group-participants.update event payloads (add / remove / promote / demote / unknown actor)",
+    "generated": true,
+    "native_event": "ev 'group-participants.update': {id, author, authorPn?, participants, action}",
+    "capture_today": "NOT SUBSCRIBED",
+    "semantic": "author = actor (JID), participants = subjects with role after the action ({id, admin}), action ∈ add|remove|promote|demote|modify — transition semantics. Case 4 has author '' (source supplied none): an unexplained removal has no inferred actor or intent. 'remove' cannot distinguish kicked from left-voluntarily; design/02 forbids inferring departure intent."
+  },
+  "payload": [
+    {
+      "id": "12036123456789@g.us",
+      "author": "15550100011@s.whatsapp.net",
+      "authorPn": "15550100011@s.whatsapp.net",
+      "participants": [
+        {
+          "id": "15550100044@s.whatsapp.net",
+          "admin": null
+        }
+      ],
+      "action": "add"
+    },
+    {
+      "id": "12036123456789@g.us",
+      "author": "15550100011@s.whatsapp.net",
+      "participants": [
+        {
+          "id": "15550100022@s.whatsapp.net",
+          "admin": null
+        }
+      ],
+      "action": "remove"
+    },
+    {
+      "id": "12036123456789@g.us",
+      "author": "15550100011@s.whatsapp.net",
+      "participants": [
+        {
+          "id": "15550100022@s.whatsapp.net",
+          "admin": "admin"
+        }
+      ],
+      "action": "promote"
+    },
+    {
+      "id": "12036123456789@g.us",
+      "author": "",
+      "participants": [
+        {
+          "id": "15550100033@s.whatsapp.net",
+          "admin": null
+        }
+      ],
+      "action": "remove"
+    }
+  ]
+}
