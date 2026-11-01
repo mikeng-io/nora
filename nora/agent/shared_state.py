@@ -301,7 +301,10 @@ async def read_shared(
                            for r in pending)
             entries.extend(act_entry(r, status="pending", delivery="")
                            for r in human)
+            pending_ids = {r.id for r in (*pending, *human)}
             for r in recent:
+                if r.id in pending_ids:
+                    continue
                 fired_ms = _ms(getattr(r, "fired_at", None))
                 room_sends = sends.get((r.platform, r.conversation_id), ())
                 created_ms = (

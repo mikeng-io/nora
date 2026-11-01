@@ -143,6 +143,19 @@ def _send(message_id: int, at_ms: int, text: str = "already said it"):
     )
 
 
+async def test_a_pending_act_appears_once_when_history_contains_the_same_row():
+    store = FakeReminderStore()
+    row = _reminder(state=ReminderState.PENDING, fired_at=None, outcome=None)
+    await store.create(row)
+    view = await read_shared(
+        unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS,
+        reminders=store,
+    )
+    assert [(e.id, e.status) for e in view.entries if e.kind == "act"] == [
+        (str(row.id), "pending"),
+    ]
+
+
 class _Sends:
     def __init__(self, hits=()):
         self._hits = list(hits)

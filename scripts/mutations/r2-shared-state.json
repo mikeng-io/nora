@@ -1,5 +1,12 @@
 [
   {
+    "name": "standing-does-not-project-pending-history-twice",
+    "file": "nora/agent/shared_state.py",
+    "old": "                if r.id in pending_ids:",
+    "new": "                if False:",
+    "target": "tests/unit/test_shared_state.py::test_a_pending_act_appears_once_when_history_contains_the_same_row"
+  },
+  {
     "name": "proactive-gate-uses-the-reader-coverage-name",
     "file": "nora/app/fire.py",
     "old": "_REQUIRED_ACTION_SOURCES = (\"acts\", \"turns\", \"sends\")",
