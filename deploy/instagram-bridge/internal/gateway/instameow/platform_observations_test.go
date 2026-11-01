@@ -520,3 +520,41 @@ func TestUnmappedAndInboxDeltasEmitNothing(t *testing.T) {
 		}
 	}
 }
+
+// A MULTI_MEDIA delta carries ordered_photo_video_attachments — the fifth
+// attachment nesting. EVERY entry must reach the sink: `media` keeps the
+// singular first-attachment contract for pre-multiplicity readers, and
+// `media_list` carries the ordered set — image first, video second, in the
+// source's order, with kinds inferred from the dash manifest. Dropping the
+// second attachment is exactly the silent-multiplicity bug this guards.
+func TestMultiMediaEmitsEveryAttachmentInOrder(t *testing.T) {
+	emitted := emitFixture(t, "multimedia-two-attachments.json")
+	msgs := messagesOf(emitted)
+	if len(msgs) != 1 {
+		t.Fatalf("expected one message event, got %d", len(msgs))
+	}
+	m := msgs[0]
+	if m.Media == nil {
+		t.Fatal("singular media contract broke — first attachment missing")
+	}
+	if m.Media.Kind != mediaImage || m.Media.AttachmentFBID != "970000000000001" {
+		t.Fatalf("media[0] = %+v, want the image attachment 970000000000001", m.Media)
+	}
+	if len(m.MediaList) != 2 {
+		t.Fatalf("media_list = %d entries, want 2 — multiplicity was dropped", len(m.MediaList))
+	}
+	img, vid := m.MediaList[0], m.MediaList[1]
+	if img.Kind != mediaImage || img.AttachmentFBID != "970000000000001" {
+		t.Fatalf("media_list[0] = %+v, want image 970000000000001", img)
+	}
+	if vid.Kind != mediaVideo || vid.AttachmentFBID != "970000000000002" {
+		t.Fatalf("media_list[1] = %+v, want video (dash manifest) 970000000000002", vid)
+	}
+	if img.URL == nil || vid.URL == nil {
+		t.Fatalf("cdn urls lost: %+v / %+v", img, vid)
+	}
+	// The singular contract IS the first list entry — not a different read.
+	if *m.Media.URL != *img.URL || m.Media.AttachmentFBID != img.AttachmentFBID {
+		t.Fatalf("media and media_list[0] diverged: %+v vs %+v", m.Media, img)
+	}
+}

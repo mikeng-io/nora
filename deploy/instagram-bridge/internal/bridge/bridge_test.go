@@ -1758,3 +1758,457 @@ func TestCanonicalDSNStripsDialect(t *testing.T) {
 		t.Fatalf("dialect URL must parse after normalisation: %v", err)
 	}
 }
+
+// --- observation transitions: room / membership / admin ---------------------
+//
+// The room-revise, member-snapshot, admin-snapshot and member-leave routes all
+// mint content-hash upstream identities (roomrev/msnap/asnap/memleave). With
+// no source revision an A→B→A reuses the A identity, so the transition
+// ledger — resolved BEFORE the queue's source-key dedupe — is the only thing
+// that can tell a stale redelivery from a genuine return.
+
+// obsEvent renders one kind:"observation" SSE event — the dict the gateway's
+// observationEvent marshals to — scope.platform bound, account_key empty
+// (capture stamps it). seq==0 is the clockless shape (no upstream_seq, the
+// upstream identity carries :na:).
+func obsEvent(room, upstream, kind, objectRef, op, subjectRef string,
+	payload, coverage map[string]any, seq int64) map[string]any {
+	ev := map[string]any{
+		"kind": "observation", "room_id": room, "upstream": upstream,
+		"observation": map[string]any{
+			"contract":   float64(ObservationContract),
+			"kind":       kind,
+			"scope":      map[string]any{"platform": Platform, "conversation_id": room},
+			"object_ref": objectRef, "operation": op,
+			"subject_ref": subjectRef,
+			"actor_id":    "", "actor_status": "not_supplied",
+			"target": nil, "target_author_id": "",
+			"time_quality": "unknown",
+			"coverage":     coverage,
+			"payload":      payload,
+		},
+	}
+	if seq > 0 {
+		ev["upstream_seq"] = float64(seq)
+	}
+	return ev
+}
+
+func roomReviseEvent(title string, seq int64) map[string]any {
+	mark := "na"
+	if seq > 0 {
+		mark = fmt.Sprint(seq)
+	}
+	return obsEvent("r", "roomrev:"+mark+":"+title, "room", "room:r", "revise", "",
+		map[string]any{"fields": map[string]any{"title": title}},
+		map[string]any{"complete": true, "covered": "fields", "gaps": []any{}, "reason": ""}, seq)
+}
+
+func memberSnapEvent(seq int64, subjects ...string) map[string]any {
+	members := make([]any, 0, len(subjects))
+	for _, s := range subjects {
+		members = append(members, map[string]any{"subject": s, "role": "", "state": "member"})
+	}
+	mark := "na"
+	if seq > 0 {
+		mark = fmt.Sprint(seq)
+	}
+	return obsEvent("r", "msnap:"+mark+":"+fmt.Sprint(subjects), "membership", "members:r", "snapshot", "",
+		map[string]any{"role": "", "state": "", "covered": "members", "members": members},
+		map[string]any{"complete": true, "covered": "members", "gaps": []any{}, "reason": ""}, seq)
+}
+
+func adminSnapEvent(seq int64, igids ...string) map[string]any {
+	members := make([]any, 0, len(igids))
+	for _, s := range igids {
+		members = append(members, map[string]any{"subject": s, "role": "admin", "state": "member"})
+	}
+	mark := "na"
+	if seq > 0 {
+		mark = fmt.Sprint(seq)
+	}
+	return obsEvent("r", "asnap:"+mark+":"+fmt.Sprint(igids), "membership", "admins:r", "snapshot", "",
+		map[string]any{"role": "", "state": "", "covered": "admins", "members": members},
+		map[string]any{"complete": true, "covered": "admins",
+			"gaps": []any{"subjects_are_igids"}, "reason": "admin_igids is the public igid space"}, seq)
+}
+
+func memberLeaveEvent(subject, actor string, seq int64) map[string]any {
+	state := ""
+	if actor != "" && actor == subject {
+		state = "left" // self-departure — the only state the source proves
+	}
+	mark := "na"
+	if seq > 0 {
+		mark = fmt.Sprint(seq)
+	}
+	actorStatus := "not_supplied"
+	if actor != "" {
+		actorStatus = "known"
+	}
+	ev := obsEvent("r", "memleave:"+mark+":"+subject+":"+actor, "membership", "members:r", "remove", subject,
+		map[string]any{"role": "", "state": state, "covered": "", "members": []any{}},
+		map[string]any{"complete": true, "covered": "event", "gaps": []any{}, "reason": ""}, seq)
+	obs := ev["observation"].(map[string]any)
+	obs["actor_id"], obs["actor_status"] = actor, actorStatus
+	return ev
+}
+
+func countAmbiguous(s *Sink) int {
+	recs, _, _ := s.journal.Recover()
+	n := 0
+	for _, raw := range recs {
+		var rec map[string]any
+		if json.Unmarshal(raw, &rec) == nil && rec["type"] == recAmbiguous {
+			n++
+		}
+	}
+	return n
+}
+
+// Clockless room-revise A→B→A: the return to Alpha reuses Alpha's
+// roomrev:na:<hash(fields,actor)> identity — source-key dedupe alone would
+// call it a redelivery and leave "Beta" as the current state forever. The
+// transition ledger keys on the FIELD content, sees Alpha was already
+// committed, and retains the delta as ambiguous — journaled, never queued,
+// never consumed.
+func TestObservationRoomReviseABA(t *testing.T) {
+	dir := t.TempDir()
+	writeProjection(t, dir, []string{"r"}, nil)
+	q, compat := &fakeQueue{}, &fakeCompat{}
+	s := newTestSink(t, q, compat, dir)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.Start(ctx)
+	s.Emit(roomReviseEvent("Alpha", 0))
+	s.Emit(roomReviseEvent("Alpha", 0)) // identical redelivery — replay
+	s.Emit(roomReviseEvent("Beta", 0))  // genuine change
+	s.Emit(roomReviseEvent("Alpha", 0)) // clockless return — ambiguous
+	time.Sleep(400 * time.Millisecond)
+	if q.count() != 2 {
+		t.Fatalf("enqueued %d, want 2 (Alpha + Beta); ambiguous never queues", q.count())
+	}
+	if n := countAmbiguous(s); n != 1 {
+		t.Fatalf("ambiguous records = %d, want 1", n)
+	}
+	want := "v:" + stateHash(map[string]any{"title": "Beta"})
+	if st := s.transitions["r|room|fields"]; st == nil || st.Last != want {
+		t.Fatalf("ledger last = %+v, want %q — the return to Alpha must not commit", st, want)
+	}
+}
+
+// Revision-grounded room-revise: forward progress emits, a committed state
+// at/below the watermark is a stale redelivery, an uncommitted state below
+// it is unverifiable (ambiguous), and a real return at a LATER revision
+// emits. Ordering comes from uq_seq_id alone — none is minted.
+func TestObservationRoomReviseSeqWatermark(t *testing.T) {
+	dir := t.TempDir()
+	writeProjection(t, dir, []string{"r"}, nil)
+	q, compat := &fakeQueue{}, &fakeCompat{}
+	s := newTestSink(t, q, compat, dir)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.Start(ctx)
+	s.Emit(roomReviseEvent("Alpha", 5)) // genuine
+	s.Emit(roomReviseEvent("Alpha", 5)) // identical redelivery — replay
+	s.Emit(roomReviseEvent("Beta", 6))  // genuine
+	s.Emit(roomReviseEvent("Alpha", 4)) // committed state below watermark — replay
+	s.Emit(roomReviseEvent("Gamma", 4)) // uncommitted state below watermark — ambiguous
+	s.Emit(roomReviseEvent("Alpha", 7)) // real return at a later revision — genuine
+	time.Sleep(400 * time.Millisecond)
+	if q.count() != 3 {
+		t.Fatalf("enqueued %d, want 3 (rev 5, 6, 7)", q.count())
+	}
+	if n := countAmbiguous(s); n != 1 {
+		t.Fatalf("ambiguous records = %d, want 1", n)
+	}
+	want := "v:" + stateHash(map[string]any{"title": "Alpha"})
+	if st := s.transitions["r|room|fields"]; st == nil || st.Last != want || st.LastSeq != 7 {
+		t.Fatalf("ledger = %+v, want last=%q seq=7", st, want)
+	}
+}
+
+// Member snapshots A→B→A: msnap identities hash the member list, so the
+// return to the {fb-1,fb-2} set reuses the first snapshot's identity. The
+// covered-set state — including an EMPTY set — is the ledger state.
+func TestObservationMemberSnapshotABA(t *testing.T) {
+	dir := t.TempDir()
+	writeProjection(t, dir, []string{"r"}, nil)
+	q, compat := &fakeQueue{}, &fakeCompat{}
+	s := newTestSink(t, q, compat, dir)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.Start(ctx)
+	s.Emit(memberSnapEvent(0, "fb-1", "fb-2"))
+	s.Emit(memberSnapEvent(0, "fb-1", "fb-2"))         // redelivery — replay
+	s.Emit(memberSnapEvent(0, "fb-1", "fb-2", "fb-3")) // join — genuine
+	s.Emit(memberSnapEvent(0))                         // empty set — still a state
+	s.Emit(memberSnapEvent(0, "fb-1", "fb-2", "fb-3")) // clockless return — ambiguous
+	time.Sleep(400 * time.Millisecond)
+	if q.count() != 3 {
+		t.Fatalf("enqueued %d, want 3 (A, B, empty)", q.count())
+	}
+	if n := countAmbiguous(s); n != 1 {
+		t.Fatalf("ambiguous records = %d, want 1", n)
+	}
+	want := "v:" + stateHash([]any{})
+	if st := s.transitions["r|members"]; st == nil || st.Last != want {
+		t.Fatalf("ledger last = %+v, want the empty-set state %q", st, want)
+	}
+}
+
+// leave→rejoin→leave with no revision: the second departure carries the
+// same memleave:na: identity AND the same delta state as the first — only
+// the intervening snapshot's per-subject commit (member|fb-9 → member)
+// makes the second leave an honest ambiguity instead of a replay.
+func TestObservationMemberLeaveRejoinLeave(t *testing.T) {
+	dir := t.TempDir()
+	writeProjection(t, dir, []string{"r"}, nil)
+	q, compat := &fakeQueue{}, &fakeCompat{}
+	s := newTestSink(t, q, compat, dir)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.Start(ctx)
+	s.Emit(memberLeaveEvent("fb-9", "fb-9", 0)) // self-departure — genuine
+	s.Emit(memberLeaveEvent("fb-9", "fb-9", 0)) // identical redelivery — replay
+	s.Emit(memberSnapEvent(0, "fb-1", "fb-9"))  // rejoin snapshot — genuine
+	s.Emit(memberLeaveEvent("fb-9", "fb-9", 0)) // second departure — ambiguous
+	time.Sleep(400 * time.Millisecond)
+	if q.count() != 2 {
+		t.Fatalf("enqueued %d, want 2 (leave + rejoin snapshot)", q.count())
+	}
+	if n := countAmbiguous(s); n != 1 {
+		t.Fatalf("ambiguous records = %d, want 1", n)
+	}
+	if st := s.transitions["r|member|fb-9"]; st == nil || st.Last != "member" {
+		t.Fatalf("subject ledger = %+v, want last=member — the ambiguous leave must not commit", st)
+	}
+}
+
+// Admin snapshots are the SAME shape but the subjects are igids — a second
+// id space. The set transition keys on r|admins and the per-subject commits
+// on r|admin|{igid}, which must never fold into the member-fbid namespace.
+func TestObservationAdminSnapshotABA(t *testing.T) {
+	dir := t.TempDir()
+	writeProjection(t, dir, []string{"r"}, nil)
+	q, compat := &fakeQueue{}, &fakeCompat{}
+	s := newTestSink(t, q, compat, dir)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.Start(ctx)
+	s.Emit(adminSnapEvent(0, "ig-1"))
+	s.Emit(adminSnapEvent(0, "ig-1", "ig-2"))
+	s.Emit(adminSnapEvent(0, "ig-1")) // clockless return — ambiguous
+	time.Sleep(400 * time.Millisecond)
+	if q.count() != 2 {
+		t.Fatalf("enqueued %d, want 2 (A + B)", q.count())
+	}
+	if n := countAmbiguous(s); n != 1 {
+		t.Fatalf("ambiguous records = %d, want 1", n)
+	}
+	if st := s.transitions["r|admin|ig-1"]; st == nil || st.Last != "member" {
+		t.Fatalf("admin subject ledger = %+v, want last=member (ig-1 is still admin)", st)
+	}
+	if _, folded := s.transitions["r|member|ig-1"]; folded {
+		t.Fatal("an igid landed on a member-fbid key — the two id spaces folded")
+	}
+}
+
+// Restart across observation transitions: the ledger is rebuilt from the
+// transitions embedded in each journaled event record, so a delayed
+// redelivery after restart still suppresses and a genuine later transition
+// still emits.
+func TestObservationTransitionsSurviveRestart(t *testing.T) {
+	dir := t.TempDir()
+	writeProjection(t, dir, []string{"r"}, nil)
+	jpath := filepath.Join(t.TempDir(), "j.log")
+	j1, _ := OpenJournal(jpath, 0)
+	q1 := &fakeQueue{}
+	s1 := NewSink(SinkConfig{AccountKey: "acct", Key: testKey, KeyVersion: 1,
+		Journal: j1, Queue: q1, Projection: NewProjectionSource(dir, "instagram"),
+		Compat: &fakeCompat{}, Actions: newFakeActions()})
+	s1.projection.Poll(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	s1.Start(ctx)
+	s1.Emit(roomReviseEvent("Alpha", 5))
+	s1.Emit(roomReviseEvent("Beta", 6))
+	deadline := time.Now().Add(3 * time.Second)
+	for q1.count() < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if q1.count() != 2 {
+		cancel()
+		t.Fatalf("boot-1 enqueued %d, want 2", q1.count())
+	}
+	cancel()
+
+	j2, _ := OpenJournal(jpath, 0)
+	q2 := &fakeQueue{}
+	s2 := NewSink(SinkConfig{AccountKey: "acct", Key: testKey, KeyVersion: 1,
+		Journal: j2, Queue: q2, Projection: NewProjectionSource(dir, "instagram"),
+		Compat: &fakeCompat{}, Actions: newFakeActions()})
+	s2.projection.Poll(context.Background())
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	s2.Start(ctx2)
+	s2.Emit(roomReviseEvent("Alpha", 4)) // stale below rebuilt watermark — replay
+	s2.Emit(roomReviseEvent("Beta", 6))  // delayed committed redelivery — replay
+	s2.Emit(roomReviseEvent("Gamma", 7)) // genuine new state — emits
+	deadline = time.Now().Add(3 * time.Second)
+	for q2.count() < 1 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if q2.count() != 1 {
+		t.Fatalf("enqueued %d after restart, want 1 (only the rev-7 revise)", q2.count())
+	}
+}
+
+// --- multi-media custody ------------------------------------------------------
+
+// The two-attachment message: normalize keeps EVERY entry of media_list in
+// order and capture spools one custody object per ref, keyed by attachment
+// index — `media` stays the singular first-attachment shape for readers
+// written before multiplicity existed.
+func TestMultiMediaTwoAttachmentsSpoolInOrder(t *testing.T) {
+	dir := t.TempDir()
+	writeProjection(t, dir, []string{"r"}, nil)
+	cust, err := NewCustody(filepath.Join(t.TempDir(), "custody"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	one, two := "http://cdn.example/one.jpg", "http://cdn.example/two.mp4"
+	var fetches []string
+	q, compat := &fakeQueue{}, &fakeCompat{}
+	s := newTestSink(t, q, compat, dir)
+	s.custody = cust
+	s.httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		fetches = append(fetches, r.URL.String())
+		ct := "image/jpeg"
+		if strings.HasSuffix(r.URL.Path, ".mp4") {
+			ct = "video/mp4"
+		}
+		return &http.Response{StatusCode: 200,
+			Body:          io.NopCloser(strings.NewReader("bytes-of-" + r.URL.Path)),
+			ContentLength: 9,
+			Header:        http.Header{"Content-Type": []string{ct}}}, nil
+	})}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.Start(ctx)
+	s.Emit(map[string]any{
+		"kind": "message", "room_id": "r", "is_group": true,
+		"message_id": "mid.$mm1", "timestamp_ms": float64(1790002800000),
+		"sender": map[string]any{"fbid": "fb-7", "username": "member_a"},
+		"media":  map[string]any{"kind": "image", "url": one, "attachment_fbid": "970000000000001"},
+		"media_list": []any{
+			map[string]any{"kind": "image", "url": one, "attachment_fbid": "970000000000001"},
+			map[string]any{"kind": "video", "url": two, "attachment_fbid": "970000000000002"},
+			// A declared attachment with NO fetchable URL: the record says
+			// the bytes existed and custody could never reach them.
+			map[string]any{"kind": "video", "attachment_fbid": "970000000000003"},
+		},
+	})
+	deadline := time.Now().Add(3 * time.Second)
+	for q.count() < 1 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if q.count() != 1 {
+		t.Fatalf("enqueued %d, want 1", q.count())
+	}
+	var env map[string]any
+	if err := json.Unmarshal(q.envs[0], &env); err != nil {
+		t.Fatal(err)
+	}
+	media, _ := env["message"].(map[string]any)["media"].([]any)
+	if len(media) != 3 {
+		t.Fatalf("message.media = %d refs, want 3 — multiplicity was dropped", len(media))
+	}
+	if len(fetches) != 2 || fetches[0] != one || fetches[1] != two {
+		t.Fatalf("fetches = %v, want [%s %s] in order", fetches, one, two)
+	}
+	for i, want := range []string{"image/jpeg", "video/mp4"} {
+		ref := media[i].(map[string]any)
+		if ref["attachment_key"] != AttachmentKey(env["event_id"].(string), i) {
+			t.Fatalf("ref %d attachment_key = %v", i, ref["attachment_key"])
+		}
+		if ref["media_type"] != want {
+			t.Fatalf("ref %d media_type = %v, want %q", i, ref["media_type"], want)
+		}
+		if ref["unavailable"] == true {
+			t.Fatalf("ref %d marked unavailable on a successful fetch", i)
+		}
+	}
+	unfetched := media[2].(map[string]any)
+	if unfetched["unavailable"] != true || unfetched["unavailable_reason"] != "no_source_url" {
+		t.Fatalf("url-less attachment not honestly marked: %+v", unfetched)
+	}
+	if unfetched["platform_id"] != "970000000000003" {
+		t.Fatalf("url-less attachment lost its identity: %+v", unfetched)
+	}
+	if n := len(env["attachments"].([]any)); n != 2 {
+		t.Fatalf("attachments = %d, want 2 custody objects", n)
+	}
+}
+
+// A per-attachment custody failure marks ONLY that ref unavailable, with the
+// error class named — the other attachment's bytes still spool, and the
+// message still queues rather than pretending the media never existed.
+func TestMultiMediaPartialCustodyFailure(t *testing.T) {
+	dir := t.TempDir()
+	writeProjection(t, dir, []string{"r"}, nil)
+	cust, err := NewCustody(filepath.Join(t.TempDir(), "custody"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	one, two := "http://cdn.example/one.jpg", "http://cdn.example/two.mp4"
+	q, compat := &fakeQueue{}, &fakeCompat{}
+	s := newTestSink(t, q, compat, dir)
+	s.custody = cust
+	s.httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.String() == two {
+			return &http.Response{StatusCode: 403, Body: io.NopCloser(strings.NewReader("")),
+				Header: http.Header{}}, nil
+		}
+		return &http.Response{StatusCode: 200,
+			Body:          io.NopCloser(strings.NewReader("img-bytes")),
+			ContentLength: 9,
+			Header:        http.Header{"Content-Type": []string{"image/png"}}}, nil
+	})}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.Start(ctx)
+	s.Emit(map[string]any{
+		"kind": "message", "room_id": "r", "is_group": true,
+		"message_id": "mid.$mm2", "timestamp_ms": float64(1790002800000),
+		"sender": map[string]any{"fbid": "fb-7"},
+		"media":  map[string]any{"kind": "image", "url": one, "attachment_fbid": "a1"},
+		"media_list": []any{
+			map[string]any{"kind": "image", "url": one, "attachment_fbid": "a1"},
+			map[string]any{"kind": "video", "url": two, "attachment_fbid": "a2"},
+		},
+	})
+	deadline := time.Now().Add(3 * time.Second)
+	for q.count() < 1 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if q.count() != 1 {
+		t.Fatalf("enqueued %d, want 1 — a partial custody failure must not drop the message", q.count())
+	}
+	var env map[string]any
+	json.Unmarshal(q.envs[0], &env)
+	media, _ := env["message"].(map[string]any)["media"].([]any)
+	if len(media) != 2 {
+		t.Fatalf("message.media = %d refs, want 2", len(media))
+	}
+	ok, bad := media[0].(map[string]any), media[1].(map[string]any)
+	if bad["unavailable"] != true || bad["unavailable_reason"] == "" {
+		t.Fatalf("failed ref not marked unavailable: %+v", bad)
+	}
+	if ok["unavailable"] == true || ok["attachment_key"] == nil {
+		t.Fatalf("successful ref degraded by its sibling's failure: %+v", ok)
+	}
+	if n := len(env["attachments"].([]any)); n != 1 {
+		t.Fatalf("attachments = %d, want 1 (only the spooled object)", n)
+	}
+}

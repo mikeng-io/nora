@@ -198,6 +198,12 @@ type messageEvent struct {
 	Mentions    []eventMention `json:"mentions"`
 	ReplyTo     *eventReply    `json:"reply_to"`
 	Media       *eventMedia    `json:"media"`
+	// MediaList is the ORDERED full attachment list of a multi-media
+	// message, emitted only when more than one attachment arrived. `media`
+	// keeps its single-object contract shape (the first attachment) so a
+	// reader written before multiplicity existed sees exactly what it saw;
+	// the list is what the capture side fans out to per-attachment custody.
+	MediaList []*eventMedia `json:"media_list,omitempty"`
 	// Shared is non-nil ONLY for a shared post/reel. It is a sibling of
 	// Media rather than part of it because the two answer different
 	// questions: Media is "what bytes came with this message", Shared is
@@ -240,7 +246,15 @@ func normalizeMessage(threadFBID string, msg *slidetypes.Message, ownFBID int64)
 		// the same thing to a careful reader and different things to a careless
 		// one; emitting the empty array removes the question.
 		Mentions: []eventMention{},
-		Media:    extractMedia(msg),
+	}
+	if media := extractMedia(msg); len(media) > 0 {
+		// `media` keeps its singular contract shape — the FIRST attachment —
+		// for every reader written before multiplicity existed; `media_list`
+		// carries the ordered full set only when the delta supplied one.
+		ev.Media = media[0]
+		if len(media) > 1 {
+			ev.MediaList = media
+		}
 	}
 	if !msg.TimestampMS.IsZero() {
 		// A zero jsontime.UnixMilliString is the zero time.Time, and
@@ -379,27 +393,27 @@ func replyOf(msg *slidetypes.Message) *eventReply {
 // (MessageContentWrapper.UnmarshalJSON) and re-deriving it from the string
 // would be a second interpretation of the same input, free to disagree with
 // the first.
-func extractMedia(msg *slidetypes.Message) *eventMedia {
+func extractMedia(msg *slidetypes.Message) []*eventMedia {
 	switch c := msg.Content.Content.(type) {
 	case *slidetypes.MessageContentImage:
-		return fromAttachment(mediaImage, firstAttachment(c.Attachments))
+		return oneOrNone(fromAttachment(mediaImage, firstAttachment(c.Attachments)))
 
 	case *slidetypes.MessageContentVideo:
 		// VIDEOS nests under `videos`, NOT `attachments`. This one line is the
 		// whole reason a generic attachment path does not work.
-		return fromAttachment(mediaVideo, firstAttachment(c.Videos))
+		return oneOrNone(fromAttachment(mediaVideo, firstAttachment(c.Videos)))
 
 	case *slidetypes.MessageContentAnimatedMedia:
-		return fromAnimated(c.AnimatedMedia)
+		return oneOrNone(fromAnimated(c.AnimatedMedia))
 
 	case *slidetypes.MessageContentAudio:
-		return fromAudio(c.AudioAttachments)
+		return oneOrNone(fromAudio(c.AudioAttachments))
 
 	case *slidetypes.MessageContentRavenImage:
-		return fromRaven(mediaImage, c.ViewMode, c.Attachment)
+		return oneOrNone(fromRaven(mediaImage, c.ViewMode, c.Attachment))
 
 	case *slidetypes.MessageContentRavenVideo:
-		return fromRaven(mediaVideo, c.ViewMode, c.Attachment)
+		return oneOrNone(fromRaven(mediaVideo, c.ViewMode, c.Attachment))
 
 	case *slidetypes.MessageContentXMA:
 		// The THUMBNAIL of a shared post, not the post. It is a real, fetchable
@@ -408,21 +422,45 @@ func extractMedia(msg *slidetypes.Message) *eventMedia {
 		// without fetching the video. `kind` is image even for a shared VIDEO,
 		// because these bytes are a still — calling it a video would make her
 		// describe a frame as if she had watched the clip.
-		return fromXMAPreview(c)
+		return oneOrNone(fromXMAPreview(c))
 
 	case *slidetypes.MessageContentMultiMedia:
-		// UNMEASURED. `ordered_photo_video_attachments` is a fifth nesting the
-		// probes never saw, so the kind is INFERRED from the presence of a
-		// dash manifest rather than observed. Handled anyway because dropping
-		// it would make a mixed photo/video post arrive as a text message with
-		// no text — a message that looks empty rather than unparsed.
-		att := firstAttachment(c.Attachments)
-		if att != nil && att.DashManifest != "" {
-			return fromAttachment(mediaVideo, att)
+		// `ordered_photo_video_attachments` is ORDERED and can carry more
+		// than one item; the kind of each is INFERRED from the presence of a
+		// dash manifest rather than observed. Every entry is surfaced — an
+		// attachment with no resolvable URL keeps its kind so the record says
+		// "a video existed and could not be fetched", never "nothing was
+		// sent" and never "only the first arrived".
+		out := make([]*eventMedia, 0, len(c.Attachments))
+		for _, att := range c.Attachments {
+			if att == nil {
+				continue
+			}
+			kind := mediaImage
+			if att.DashManifest != "" {
+				kind = mediaVideo
+			}
+			if m := fromAttachment(kind, att); m != nil {
+				out = append(out, m)
+			} else {
+				out = append(out, &eventMedia{
+					Kind:           kind,
+					AttachmentFBID: att.AttachmentFBID,
+					Width:          att.PreviewWidth,
+					Height:         att.PreviewHeight,
+				})
+			}
 		}
-		return fromAttachment(mediaImage, att)
+		return out
 	}
 	return nil
+}
+
+func oneOrNone(m *eventMedia) []*eventMedia {
+	if m == nil {
+		return nil
+	}
+	return []*eventMedia{m}
 }
 
 // fromXMAPreview is the shared post's preview image.

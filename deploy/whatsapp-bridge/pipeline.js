@@ -70,6 +70,84 @@ export function createPipeline({
   let drainAgain = false;
   let drainPromise = Promise.resolve();
 
+  // The committed-state ledger for content-derived transition identities:
+  // `gu`/`gpu`/`gus`/`gjr`/`puc` callback upstreams and clockless `:na`
+  // reactions reuse the FIRST transition's key byte-for-byte, so a genuine
+  // A→B→A re-transition would silently dedupe into falsely-current B. Each
+  // key holds { seen:Set<state>, last, lastSeq } — the journal (not memory)
+  // is the authority; the map is rebuilt from the `transitions` folded into
+  // each envelope record on first use after a restart, exactly as the
+  // Instagram bridge's capture rebuilds its ledger. Ambiguous verdicts are
+  // journaled and never consume a state.
+  const transitionLedger = new Map();
+  let ledgerReady = false;
+
+  function ensureLedger() {
+    if (ledgerReady) return;
+    ledgerReady = true;
+    for (const r of journal.recover()) {
+      if (r && r.envelope && Array.isArray(r.transitions)) {
+        for (const t of r.transitions) commitTransition(t);
+      }
+    }
+  }
+
+  function commitTransition(t) {
+    const key = typeof t?.key === 'string' ? t.key : '';
+    if (!key) return;
+    let st = transitionLedger.get(key);
+    if (!st) {
+      st = { seen: new Set(), last: null, lastSeq: 0 };
+      transitionLedger.set(key, st);
+    }
+    st.seen.add(t.state);
+    st.last = t.state;
+    const seq = Number(t?.upstream_seq) || 0;
+    if (seq > st.lastSeq) st.lastSeq = seq;
+  }
+
+  /**
+   * emit / replay / ambiguous for one event's transitions — the JS mirror
+   * of the Instagram sink's resolveTransitions, same three outcomes:
+   *
+   *   - emit: a genuinely new transition — forward upstream revision, a
+   *     same-revision new state, or a never-before-committed state.
+   *   - replay (emit=false, reason=''): an identical redelivery — the
+   *     committed state repeated, or a state committed at this revision
+   *     or later. Suppressed silently; it IS a replay by definition.
+   *   - ambiguous (emit=false, reason set): ordering cannot be grounded —
+   *     a state the key already committed under a clockless identity
+   *     (stale redelivery and genuine re-transition are indistinguishable),
+   *     or a never-committed state below the upstream watermark. Journaled
+   *     `ambiguous`, never queued, and the ledger is NOT updated.
+   *
+   * No sequence numbers are minted: `upstream_seq` is whatever clock the
+   * source actually stamped (a reaction/uq timestamp), 0 when it stamped
+   * none.
+   */
+  function resolveTransitions(list) {
+    for (const t of list) {
+      const st = transitionLedger.get(t.key) || { seen: new Set(), last: null, lastSeq: 0 };
+      const seen = st.seen.has(t.state);
+      const seq = Number(t.upstream_seq) || 0;
+      if (seq > 0) {
+        if (seq > st.lastSeq) continue;
+        if (seq < st.lastSeq && !seen) {
+          return { emit: false, reason: 'stale upstream revision below watermark' };
+        }
+        if (seen && st.lastSeq > 0 && seq <= st.lastSeq) {
+          return { emit: false, reason: '' };
+        }
+        continue; // same revision, new state — same-batch transition
+      }
+      if (t.state === st.last) return { emit: false, reason: '' };
+      if (seen) {
+        return { emit: false, reason: 'unresolvable clockless transition: state repeats without upstream revision' };
+      }
+    }
+    return { emit: true, reason: '' };
+  }
+
   function halt(err) {
     broken = err;
     jlog('capture.halt', { reason: 'journal_broken' });
@@ -112,6 +190,34 @@ export function createPipeline({
       jlog('capture.denied', { conv_type: route.conversation_type, kind });
       return;
     }
+
+    // Transition-identity resolution BEFORE the emit/journal commit: a
+    // content-derived upstream that repeats a committed state is decided
+    // by the ledger, not by source-key dedupe — a genuine clockless
+    // re-transition is retained as ambiguous rather than deduped into a
+    // falsely-current last state.
+    const declared = Array.isArray(parsed.transitions) ? parsed.transitions : [];
+    if (declared.length) {
+      ensureLedger();
+      const verdict = resolveTransitions(declared);
+      if (!verdict.emit) {
+        if (!verdict.reason) {
+          inc('bridge_capture_total', { outcome: 'transition_replay' });
+          return;
+        }
+        noteAmbiguous({
+          conversationId: route.conversation_id,
+          conversationType: route.conversation_type,
+          senderId: route.sender_id,
+          identity: upstream,
+          targetId: declared[0]?.key || null,
+          reason: verdict.reason,
+          kind,
+        });
+        return;
+      }
+    }
+
     // Admitted only: the compat SSE emit IS a capture surface — a denied
     // room's body must reach no consumer at all. Pure observations carry no
     // utterance, so they never feed the legacy (message-shaped) emit.
@@ -203,11 +309,19 @@ export function createPipeline({
     } : null;
 
     try {
-      journal.append(react ? { envelope: env, react } : { envelope: env });
+      // The committed transition states ride the SAME record — no crash
+      // window between a transition and the event it belongs to exists,
+      // and the ledger rebuild on restart re-folds them in journal order.
+      journal.append({
+        envelope: env,
+        ...(react ? { react } : {}),
+        ...(declared.length ? { transitions: declared } : {}),
+      });
     } catch (err) {
       captureSpan?.end?.('journal_failed');
       throw halt(err);
     }
+    for (const t of declared) commitTransition(t);
     captureSpan?.end?.();
     inc('bridge_capture_total', { outcome: 'journaled' });
     pump();
@@ -345,7 +459,7 @@ export function createPipeline({
    * edit, or an upstream transition with no stable identity): retained for
    * diagnosis in admitted rooms, never queued, never guessed.
    */
-  function noteAmbiguous({ conversationId, conversationType, senderId, stanzaId, targetId, reason, kind = 'edit' }) {
+  function noteAmbiguous({ conversationId, conversationType, senderId, stanzaId, targetId, identity, reason, kind = 'edit' }) {
     if (broken) return;
     if (!projection.admitted(conversationId, senderId, conversationType)) {
       inc('bridge_capture_total', { outcome: 'denied' });
@@ -356,6 +470,9 @@ export function createPipeline({
         platform, account_key: accountKey, kind,
         conversation_id: conversationId, sender_id: senderId,
         stanza_id: stanzaId || null, target_id: targetId || null,
+        // The upstream identity whose transition could not be grounded —
+        // the diagnosis a replayed ambiguous record re-derives from.
+        identity: identity || null,
         reason: String(reason || 'unknown').slice(0, 80),
         received_ms: Date.now(),
       } });

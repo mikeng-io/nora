@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 
 import { decryptPollVote, proto } from '@whiskeysockets/baileys';
 
-import { extractMessageEvent, createRecentMessageCache } from './bridge_helpers.js';
+import { extractMessageEvent, createRecentMessageCache, cacheEntryMatchesKey } from './bridge_helpers.js';
 import {
   groupsUpsertObservations,
   groupsUpdateObservations,
@@ -488,7 +488,10 @@ async function capturedEnvelopes(events, { room = GROUP } = {}) {
       stream,
       async evalSha(_s, { keys, arguments: args }) {
         const orig = store.get(keys[1]);
-        if (orig) return [store.get(keys[2] + orig), orig];
+        if (orig) {
+          const prior = store.get(keys[2] + orig);
+          if (prior) return [prior, orig];
+        }
         const prior = store.get(keys[3]);
         if (prior) { store.set(keys[1], args[1]); return [prior, args[1]]; }
         const id = `1-${stream.length}`;
@@ -558,4 +561,288 @@ test('a denied room admits no observation at all', async () => {
   const events = stanzaObservations(fixture('upsert-poll-creation.json'), baseCtx);
   const envs = await capturedEnvelopes(events, { room: 'other@g.us' });
   assert.equal(envs.length, 0);
+});
+
+// -- transition-identity guards -------------------------------------------------
+//
+// The defect these pin: content-derived upstreams (`gu`, `gpu`, `gus`,
+// `gjr`, `puc`, clockless `:na` reactions) reproduce byte-identically on a
+// genuine A→B→A re-transition, so source-key dedupe alone would keep the
+// FALSE last state. The capture-side transition ledger decides:
+//   identical repeat → replay (never re-journaled, never queued);
+//   a state the key already committed, clockless → ambiguous (journaled,
+//   never queued, ledger untouched);
+//   a never-committed state → genuine transition.
+// `runCapture` is the production owner: createPipeline + Journal + the real
+// nq:src Lua contract faked by shape — same seam capturedEnvelopes uses,
+// with the journal records returned so the ambiguous/replay verdicts are
+// asserted, not inferred.
+
+async function runCapture(events, { room = GROUP, journalPath } = {}) {
+  const jpath = journalPath || path.join(mkdtempSync(path.join(tmpdir(), 'obsq-')), 'capture');
+  const redis = (() => {
+    const store = new Map(); const stream = [];
+    return {
+      stream,
+      async evalSha(_s, { keys, arguments: args }) {
+        const orig = store.get(keys[1]);
+        if (orig) {
+          const prior = store.get(keys[2] + orig);
+          if (prior) return [prior, orig];
+        }
+        const prior = store.get(keys[3]);
+        if (prior) { store.set(keys[1], args[1]); return [prior, args[1]]; }
+        const id = `1-${stream.length}`;
+        stream.push({ id, fields: { e: args[0] } });
+        store.set(keys[3], id); store.set(keys[1], args[1]);
+        return [id, args[1]];
+      },
+      async eval(_s, args) { return this.evalSha(_s, args); },
+    };
+  })();
+  const journal = new Journal(jpath);
+  const pipeline = createPipeline({
+    platform: 'whatsapp', accountKey: 'acct-1',
+    correlationKey: KEY, keyVersion: 1,
+    journal,
+    producer: new StreamProducer(redis, streamName('whatsapp', 'acct-1')),
+    projection: {
+      revision: 1, receiptEmoji: null,
+      admitted: (cid) => cid === room,
+      addressed: () => false,
+    },
+    attachments: { maxBytes: 1 << 20, putInbound: () => ({ key: 'k', size: 0 }) },
+    downloadMedia: null, runReceipt: null, emitLegacy: null,
+    metrics: null, jlog: () => {},
+  });
+  for (const ev of events) await pipeline.capture(ev, null);
+  await pipeline.pump();
+  return {
+    envs: redis.stream.map((e) => JSON.parse(e.fields.e)),
+    records: new Journal(jpath).recover(),
+    journalPath: jpath,
+  };
+}
+
+const ambiguousOf = (records) => records.filter((r) => r.ambiguous);
+const envelopeRecs = (records) => records.filter((r) => r.envelope);
+
+/** groups.update-style room revise for one field set — the `gu:` upstream. */
+function roomRevise(title) {
+  return groupsUpdateObservations({ id: GROUP, subject: title }, baseCtx);
+}
+
+test('clockless room revise A→B→A: the re-transition is ambiguous, never deduped into B', async () => {
+  const { envs, records } = await runCapture([
+    ...roomRevise('Alpha title'),
+    ...roomRevise('Beta title'),
+    ...roomRevise('Alpha title'),
+  ]);
+  assert.equal(envs.length, 2, 'A and B enqueue once each; the second A never reaches the stream');
+  assert.deepEqual(
+    envs.map((e) => e.observation.payload.fields.title), ['Alpha title', 'Beta title']);
+  const amb = ambiguousOf(records);
+  assert.equal(amb.length, 1, 'the clockless re-transition is retained as ambiguous');
+  assert.match(amb[0].ambiguous.reason, /clockless/);
+  // The ambiguous record names the upstream identity it could not ground —
+  // the FIRST A's key, which the re-transition collided with.
+  assert.equal(amb[0].ambiguous.identity, roomRevise('Alpha title')[0].upstream);
+});
+
+test('an identical clockless redelivery is a replay: one envelope, no second journal record', async () => {
+  const ev = roomRevise('Alpha title');
+  const { envs, records } = await runCapture([...ev, ...ev]);
+  assert.equal(envs.length, 1);
+  assert.equal(envelopeRecs(records).length, 1,
+    'the replay is suppressed before journaling — one durable record, not two');
+  assert.equal(ambiguousOf(records).length, 0);
+});
+
+test('clockless participant add→remove→add: the second add is ambiguous, not silently dropped', async () => {
+  const evt = (action) => participantsUpdateObservations({
+    id: GROUP, action,
+    participants: [{ id: '15550100044@s.whatsapp.net' }],
+    author: '15550100011@s.whatsapp.net',
+  }, baseCtx);
+  const { envs, records } = await runCapture([...evt('add'), ...evt('remove'), ...evt('add')]);
+  assert.equal(envs.length, 2, 'add and remove enqueue; the re-add is held');
+  assert.deepEqual(envs.map((e) => e.observation.operation), ['add', 'remove']);
+  const amb = ambiguousOf(records);
+  assert.equal(amb.length, 1);
+  assert.match(amb[0].ambiguous.reason, /clockless/);
+});
+
+test('clockless reaction add→remove→add on one stanza: last add is ambiguous', async () => {
+  const mk = (text) => {
+    const m = structuredClone(fixture('upsert-reaction-add.json'));
+    m.message.reactionMessage.text = text;
+    m.message.reactionMessage.senderTimestampMs = null;
+    m.messageTimestamp = null;
+    return extractMessageEvent(m, {});
+  };
+  const { envs, records } = await runCapture([mk('👍'), mk(''), mk('👍')]);
+  assert.equal(envs.length, 2, 'add and remove enqueue; the clockless re-add is held');
+  assert.match(envs[0].upstream, /:add:na$/);
+  assert.match(envs[1].upstream, /:remove:na$/);
+  const amb = ambiguousOf(records);
+  assert.equal(amb.length, 1);
+  assert.match(amb[0].ambiguous.reason, /clockless/);
+});
+
+test('source clock resolves reaction ordering: forward emits, stale-seen replays, stale-unseen is ambiguous', async () => {
+  const mk = (text, ms) => {
+    const m = structuredClone(fixture('upsert-reaction-add.json'));
+    m.message.reactionMessage.text = text;
+    m.message.reactionMessage.senderTimestampMs = ms;
+    m.messageTimestamp = Math.floor(ms / 1000);
+    return extractMessageEvent(m, {});
+  };
+  const { envs, records } = await runCapture([
+    mk('❤️', 1790000100000), // add @t1 — genuine
+    mk('❤️', 1790000100000), // identical clocked redelivery — replay
+    mk('', 1790000300000),   // remove @t3 — genuine
+    mk('❤️', 1790000200000), // DELAYED original add @t2 — stale, state seen → replay
+    mk('👍', 1790000200000), // a different emoji @t2 — stale AND uncommitted → ambiguous
+    mk('❤️', 1790000500000), // real re-add @t5 — forward progress → genuine
+  ]);
+  assert.equal(envs.length, 3, 'add@t1, remove@t3, re-add@t5 enqueue; replays and ambiguous do not');
+  assert.match(envs[0].upstream, /:add:1790000100000$/);
+  assert.match(envs[1].upstream, /:remove:1790000300000$/);
+  assert.match(envs[2].upstream, /:add:1790000500000$/);
+  const amb = ambiguousOf(records);
+  assert.equal(amb.length, 1);
+  assert.match(amb[0].ambiguous.reason, /watermark/);
+});
+
+test('clockless groups.upsert member snapshot A→B→A: the returning set is ambiguous', async () => {
+  const snap = (ids) => groupsUpsertObservations({
+    id: GROUP,
+    participants: ids.map((id) => ({ id: `${id}@s.whatsapp.net` })),
+  }, baseCtx);
+  const A = ['15550100011', '15550100022'];
+  const B = ['15550100011', '15550100022', '15550100044'];
+  const { envs, records } = await runCapture([...snap(A), ...snap(B), ...snap(A)]);
+  assert.equal(envs.length, 2, 'the two distinct covered sets enqueue; the clockless return is held');
+  const amb = ambiguousOf(records);
+  assert.equal(amb.length, 1);
+  assert.match(amb[0].ambiguous.reason, /clockless/);
+});
+
+test('clockless join-request requested→withdrawn→requested: the repeat is ambiguous', async () => {
+  const evt = (action) => joinRequestObservations({
+    id: GROUP, action,
+    participant: '15550100044@s.whatsapp.net',
+    author: '15550100011@s.whatsapp.net',
+  }, baseCtx);
+  const { envs, records } = await runCapture([
+    ...evt('created'), ...evt('revoked'), ...evt('created'),
+  ]);
+  assert.equal(envs.length, 2, 'requested and withdrawn enqueue; the re-request is held');
+  assert.deepEqual(
+    envs.map((e) => e.observation.payload.state), ['requested', 'withdrawn']);
+  const amb = ambiguousOf(records);
+  assert.equal(amb.length, 1);
+  assert.match(amb[0].ambiguous.reason, /clockless/);
+});
+
+test('restart: the ledger is rebuilt from journaled transitions — stale repeats stay held', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'obsq-'));
+  try {
+    const jpath = path.join(dir, 'capture');
+    // Boot 1: A and B commit. A fresh pipeline on the same journal has an
+    // EMPTY in-memory ledger until the first transition-bearing capture
+    // rebuilds it from the durable records.
+    const first = await runCapture([...roomRevise('Alpha title'), ...roomRevise('Beta title')], { journalPath: jpath });
+    assert.equal(first.envs.length, 2);
+    const second = await runCapture([
+      ...roomRevise('Alpha title'),  // committed state, clockless — ambiguous
+      ...roomRevise('Gamma title'),  // never-committed state — genuine
+    ], { journalPath: jpath });
+    assert.equal(second.envs.length, 1, 'only the genuinely-new Gamma emits after restart');
+    assert.equal(second.envs[0].observation.payload.fields.title, 'Gamma title');
+    const amb = ambiguousOf(second.records);
+    assert.equal(amb.length, 1, 'the rebuilt ledger still held the repeat');
+    assert.match(amb[0].ambiguous.reason, /clockless/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('compaction keeps the transition ledger: transition-bearing records survive', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'obsq-'));
+  try {
+    const jpath = path.join(dir, 'capture');
+    const { records } = await runCapture([
+      ...roomRevise('Alpha title'),
+      extractMessageEvent(fixture('upsert-message.json'), {}),
+    ], { journalPath: jpath });
+    const journal = new Journal(jpath);
+    const keep = journal.compactable(journal.recover());
+    assert.ok(
+      keep.some((r) => r.envelope && Array.isArray(r.transitions) && r.transitions.length),
+      'a transition-bearing envelope record is never compacted away',
+    );
+    assert.ok(
+      !keep.some((r) => r.envelope && r.envelope.kind === 'message'),
+      'a fully-drained plain message still compacts out',
+    );
+    void records;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// -- bound poll-secret reads ------------------------------------------------------
+
+test('a same-id stanza from a foreign room cannot shadow the creation secret', () => {
+  const cache = createRecentMessageCache(100);
+  cache.remember(fixture('upsert-poll-creation.json')); // GROUP, participant 15550100011
+  // A colliding stanza id in ANOTHER room remembered later: under a bare
+  // id→entry map it would have overwritten the creation and poisoned the
+  // decrypt with the wrong room's secret.
+  cache.remember({
+    key: { id: '3EB0POLL01', remoteJid: '15550100077@s.whatsapp.net', fromMe: false },
+    messageTimestamp: 1781000100,
+    message: { conversation: 'unrelated', messageContextInfo: { messageSecret: Buffer.alloc(32, 9).toString('base64') } },
+  });
+  const secret = cache.getBound('3EB0POLL01', (e) => cacheEntryMatchesKey(e, {
+    remoteJid: GROUP, participant: '15550100011@s.whatsapp.net', fromMe: false, id: '3EB0POLL01',
+  }, {}))?.message_secret;
+  assert.ok(secret, 'the bound read still finds the real creation behind the collision');
+  const congeeRef = createHash('sha256').update('Congee', 'utf8').digest();
+  const msg = structuredClone(fixture('upsert-poll-update-encrypted.json'));
+  msg.message.pollUpdateMessage.vote = encryptVote({
+    secret, pollMsgId: '3EB0POLL01',
+    pollCreatorJid: '15550100011@s.whatsapp.net',
+    voterJid: '15550100022@s.whatsapp.net',
+    selected: [congeeRef],
+  });
+  const [ev] = stanzaObservations(msg, { ...baseCtx, recentCache: cache });
+  assert.deepEqual(ev.observation.payload.selected, [congeeRef.toString('hex')],
+    'the vote decrypts through the room+creator-bound entry');
+  assert.equal(ev.observation.coverage.complete, true);
+});
+
+test('a creation key that cannot prove its context fails the secret read closed', () => {
+  const cache = createRecentMessageCache(100);
+  cache.remember(fixture('upsert-poll-creation.json'));
+  const msg = structuredClone(fixture('upsert-poll-update-encrypted.json'));
+  // A group creation key naming NO participant cannot prove its creator —
+  // the stanza id alone is not evidence enough to lend a secret.
+  delete msg.message.pollUpdateMessage.pollCreationMessageKey.participant;
+  const [ev] = stanzaObservations(msg, { ...baseCtx, recentCache: cache });
+  const o = ev.observation;
+  assert.equal(o.coverage.complete, false);
+  assert.deepEqual(o.coverage.gaps, ['selection']);
+  assert.equal(o.coverage.reason, 'poll_secret_unavailable');
+  assert.equal(o.payload.selected, null, 'unavailable, never a zero selection');
+});
+
+test('a creation key in a different room finds no secret at all', () => {
+  const cache = createRecentMessageCache(100);
+  cache.remember(fixture('upsert-poll-creation.json'));
+  const msg = structuredClone(fixture('upsert-poll-update-encrypted.json'));
+  msg.message.pollUpdateMessage.pollCreationMessageKey.remoteJid = '999999999@g.us';
+  const [ev] = stanzaObservations(msg, { ...baseCtx, recentCache: cache });
+  assert.equal(ev.observation.coverage.reason, 'poll_secret_unavailable');
 });

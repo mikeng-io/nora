@@ -24,7 +24,8 @@
  */
 import { createHash } from 'node:crypto';
 import {
-  getMessageContent, normalizeJid, resolveIdentity, timestampMs, toNumber,
+  cacheEntryMatchesKey, getMessageContent, normalizeJid, resolveIdentity,
+  timestampMs, toNumber,
 } from './bridge_helpers.js';
 import {
   conversationIdFor, isBroadcast, isGroupJid, isNewsletter, isPhoneJid,
@@ -80,7 +81,7 @@ function sha256hex(buf) {
 }
 
 /** A stable content identity for stanza-less callbacks: sorted-JSON digest. */
-function contentHash(value) {
+export function contentHash(value) {
   return sha256hex(Buffer.from(JSON.stringify(sortDeep(value)), 'utf8')).slice(0, 20);
 }
 
@@ -337,7 +338,15 @@ function pollVoteUpdate(msg, upd, ctx) {
   if (!pollId) return [];
   const occurred = toNumber(upd.senderTimestampMs) || timestampMs(msg.messageTimestamp);
   const timeQ = occurred ? 'upstream' : 'unknown';
-  const cached = ctx.recentCache ? ctx.recentCache.get(pollId) : null;
+  // Stanza ids are sender-chosen: the same creation id can exist in another
+  // room under another creator. The secret read is therefore BOUND to the
+  // creation key the update itself names — right room, right creator — and
+  // a key that cannot prove its creator (a group creation key with no
+  // participant) yields no secret rather than borrowing one from an
+  // unrelated stanza: the vote lands as unavailable, never a wrong decrypt.
+  const cached = ctx.recentCache?.getBound
+    ? ctx.recentCache.getBound(pollId, (e) => cacheEntryMatchesKey(e, creationKey, ctx))
+    : (ctx.recentCache ? ctx.recentCache.get(pollId) : null);
   const secret = cached?.message_secret || null;
   const vote = upd.vote || {};
 

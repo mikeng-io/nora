@@ -77,6 +77,7 @@ import {
   authorizedBridgeRequest,
   buildLidMap,
   buildMediaPayload,
+  cacheEntryMatchesKey,
   createEventBuffer,
   createRecentMessageCache,
   createReconnectScheduler,
@@ -334,8 +335,17 @@ async function startSocket() {
     // path uses for `encEventResponseMessage` — the recent-message cache
     // answers with the full stanza (its messageContextInfo.messageSecret is
     // the event's enc key) when the creation is still in custody.
-    getMessage: async (key) =>
-      recentMessages.get(key?.id)?.raw?.message || { conversation: '' },
+    getMessage: async (key) => {
+      // The creation lookup feeds secret-keyed decrypts (event responses,
+      // the E2EE retry handshake). The read is bound to the stanza's room
+      // and creator — a same-id stanza from a foreign room must not answer
+      // it; a key that cannot prove its context gets nothing, and the
+      // decrypt above fails closed rather than on a borrowed secret.
+      const entry = recentMessages.getBound(
+        key?.id, (e) => cacheEntryMatchesKey(e, key, { lidToPhone, phoneToLid }),
+      );
+      return entry?.raw?.message || { conversation: '' };
+    },
   });
 
   sock.ev.on('creds.update', () => {
