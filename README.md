@@ -160,6 +160,14 @@ make lint typecheck imports
 uv run pytest -q tests/test_docs.py tests/test_architecture_doc.py
 ```
 
+`make test` is incremental; `make test-fast` and `make test-affected` are aliases.
+They compare staged, unstaged and untracked changes against HEAD, or the last
+commit (HEAD~1) when clean. Only exact generated untracked LFS post-hooks are
+ignored. `BASE=<ref>` overrides auto selection. Unmapped/shared-helper changes
+and selector errors run the full suite; the command reports its base and scope.
+`make test-all` explicitly runs the full serial suite. For a named file/function,
+use `uv run python -m scripts.pytest_gate <file-or-node>`.
+
 `make gate` runs static checks and the tests affected by the branch against
 `origin/master`; unknown changes run the full suite. Database and object-store
 tests need Docker. Live model evaluations are separate and need operator-owned

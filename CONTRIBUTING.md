@@ -148,6 +148,14 @@ and verified execution context; it prints `REUSED` when no checks were rerun.
 The full receipt contract and exclusions are in `tests/README.md`. For a fork, fetch
 upstream master into `origin/master` before running it (keep `origin` as your fork):
 `git fetch upstream master:refs/remotes/origin/master`.
+`make test` is incremental; `make test-fast` and `make test-affected` are aliases.
+They compare staged, unstaged and untracked changes against HEAD, or the last
+commit (HEAD~1) when clean. Only exact generated untracked LFS post-hooks are
+ignored. `BASE=<ref>` overrides auto selection. Unmapped/shared-helper changes
+and selector errors run the full suite; the command reports its base and scope.
+`make test-all` explicitly runs the full serial suite. For a named file/function,
+use `uv run python -m scripts.pytest_gate <file-or-node>`.
+
 During iteration, run the tests you touched. `make full-gate` is the unconditional
 full run. Name a pre-existing unrelated gate failure with its issue number;
 never absorb it into "tests pass".

@@ -1,5 +1,23 @@
 # Changelog
 
+## [7.13.10](https://github.com/mikeng-io/nora/compare/v7.13.9...v7.13.10) (2026-11-01)
+
+
+### Maintenance
+
+* **test:** make iteration commands select current changes ([9aff1d6](https://github.com/mikeng-io/nora/commit/9aff1d6a4f7e7e1c0eb94b127e56c47006549ba6))
+* **tooling:** keep incremental test guidance within skill limit ([537625b](https://github.com/mikeng-io/nora/commit/537625b6614641904622720bd02e28d7ad41c9c0))
+* **tooling:** skip make command cases when make is unavailable ([25c1a30](https://github.com/mikeng-io/nora/commit/25c1a30e4dfc24784d8640e2d7912d2f55979c6d))
+
+## [7.13.9](https://github.com/mikeng-io/nora/compare/v7.13.8...v7.13.9) (2026-11-01)
+
+
+### Security
+
+* **deps:** bump @azure/msal-node ([509704f](https://github.com/mikeng-io/nora/commit/509704f29dd3fd0d9d6f6c05e406eb45f65466cd))
+* **deps:** bump moghtech/komodo-periphery ([3387149](https://github.com/mikeng-io/nora/commit/338714996402e8a3bdac8eab9a4b167662b9d9e4))
+* **deps:** bump the uv-security group across 2 directories with 2 updates ([b3b20b7](https://github.com/mikeng-io/nora/commit/b3b20b76a1e4a7fbb22d60646ef3a1f17efa7262))
+
 ## [7.13.8](https://github.com/mikeng-io/nora/compare/v7.13.7...v7.13.8) (2026-11-01)
 
 
