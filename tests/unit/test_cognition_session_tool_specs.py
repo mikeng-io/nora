@@ -41,13 +41,15 @@ EXPECTED: dict[str, tuple[dict[str, tuple[str, Any]], set[str]]] = {
          "uncertainty": ("string", None), "closing_condition": ("string", None),
          "body": ("string", None), "anchor_date": ("string", None),
          "anchor_entities": ("array", {"type": "string"}), "room": ("string", None),
-         "item": ("integer", None)},
+         "item": ("integer", None),
+         "associations": ("array", {"type": "array", "items": {"type": "string"}})},
         {"title", "description", "uncertainty", "closing_condition", "body"},
     ),
     "note_revise": (
         {"note_id": ("string", None), "body": ("string", None),
          "parent_revision_id": ("string", None), "room": ("string", None),
-         "item": ("integer", None)},
+         "item": ("integer", None),
+         "associations": ("array", {"type": "array", "items": {"type": "string"}})},
         {"note_id", "body", "parent_revision_id"},
     ),
     "note_set_status": (
@@ -65,14 +67,16 @@ EXPECTED: dict[str, tuple[dict[str, tuple[str, Any]], set[str]]] = {
     "memo_create": (
         {"title": ("string", None), "body": ("string", None),
          "mode": ("string", ["told", "deduced", "abduced"]), "room": ("string", None),
-         "item": ("integer", None)},
+         "item": ("integer", None),
+         "associations": ("array", {"type": "array", "items": {"type": "string"}})},
         {"title", "body"},
     ),
     "memo_revise": (
         {"memo_id": ("string", None), "base_revision_id": ("string", None),
          "body": ("string", None), "title": ("string", None),
          "mode": ("string", ["told", "deduced", "abduced"]), "room": ("string", None),
-         "item": ("integer", None)},
+         "item": ("integer", None),
+         "associations": ("array", {"type": "array", "items": {"type": "string"}})},
         {"memo_id", "base_revision_id", "body"},
     ),
     "memo_set_status": (
@@ -88,7 +92,8 @@ EXPECTED: dict[str, tuple[dict[str, tuple[str, Any]], set[str]]] = {
          "cited_ids": ("array", {"type": "string"}),
          "when": ("string", None), "venue_text": ("string", None),
          "status": ("string", ["staged", "proposed"]), "room": ("string", None),
-         "item": ("integer", None)},
+         "item": ("integer", None),
+         "associations": ("array", {"type": "array", "items": {"type": "string"}})},
         {"title", "reasoning", "confidence", "cited_ids"},
     ),
     "event_revise": (
@@ -99,7 +104,8 @@ EXPECTED: dict[str, tuple[dict[str, tuple[str, Any]], set[str]]] = {
          "when": ("string", None),
          "venue_text": ("string", None), "base_revision_id": ("string", None),
          "room": ("string", None),
-         "item": ("integer", None)},
+         "item": ("integer", None),
+         "associations": ("array", {"type": "array", "items": {"type": "string"}})},
         {"event_id", "reasoning", "confidence", "cited_ids"},
     ),
     "event_set_status": (

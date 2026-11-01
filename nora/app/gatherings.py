@@ -194,6 +194,7 @@ class GatheringService:
         status: GatheringStatus = GatheringStatus.PROPOSED,
         reasoning: str | None = None, confidence: str | None = None,
         field_meta: tuple[FieldMeta, ...] = (),
+        receipt: Any = None,
     ) -> Gathering:
         """`status`, `reasoning`, `confidence` and `field_meta` are what a
         Cognition session states with its write (how each field was
@@ -257,7 +258,7 @@ class GatheringService:
             | ({"start"} if when is not None else set())
             | ({"place"} if venue_text is not None else set()),
             platform, conversation_id, message_ids,
-        ))
+        ), receipt=receipt)
 
     async def update_event(
         self, *, event_id: UUID, conversation_id: str,
@@ -267,6 +268,7 @@ class GatheringService:
         base_revision_id: UUID | None = None, message_ids: Sequence[int] = (),
         reasoning: str | None = None, confidence: str | None = None,
         field_meta: tuple[FieldMeta, ...] = (),
+        receipt: Any = None,
     ) -> Gathering:
         current = await self._require_in_conversation(
             event_id,
@@ -299,6 +301,7 @@ class GatheringService:
                 | ({"place"} if venue_text is not None else set()),
                 platform, conversation_id, message_ids,
             ),
+            receipt=receipt,
         )
 
     async def set_event_status(
