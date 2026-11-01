@@ -1,7 +1,7 @@
-"""Reads the unit's shared cognitive state, ONCE, from the canonical stores.
+"""Reads the unit's Standing, ONCE, from the canonical stores.
 
-`design/notebook-memory-types/20-shared-cognitive-state.md`: one typed
-projection over the existing stores — open notes, open ledger judgements,
+`design/notebook-memory-types/20-standing.md`: one typed
+projection over the existing stores — scoped ledger entries,
 pending and recently resolved act rows, self-wakes, working-set findings and
 her own delivered sends — with every source's coverage named, so a failed
 read is `unavailable`, never `nothing_found` (R-27). Every source's read AND
@@ -43,7 +43,7 @@ _SEND_LOOKBACK_MS = 24 * 3600_000
 _HISTORY_LOOKBACK_MS = 7 * 24 * 3600_000
 
 #: The tool names whose toolUse/toolResult pairs the view reads as facts —
-#: producer conclusions and act attempts.
+#: unresolved act attempts.
 _TURN_FACT_TOOLS = ("remind",)
 
 
@@ -80,8 +80,7 @@ async def read_shared(
     the same `ledger_permits` the ledger read applies. For a `room` read, an
     entry scoped to a DIFFERENT room is `permitted=False` (withheld); the
     ledger predicate can further withhold unit/other-room ledger entries the
-    lineage rules refuse. `wakes`, `conclusions` and `unresolved` are read by
-    the caller that owns them and passed in.
+    lineage rules refuse. `wakes` are passed in by the caller that owns them.
     """
     entries: list[SharedEntry] = []
     sources: list[tuple[str, str]] = []
@@ -347,10 +346,8 @@ async def read_shared(
     unresolved_lines: list[str] = []
     if traces is not None:
         try:
-            # The turn Record is the carrier: `conclude` toolUses are the
-            # producer's explicit conclusions, and a `remind` result that
-            # answered `unresolved` is the durable unresolved evidence —
-            # both read back across restarts and across processes, newest
+            # The turn Record carries unresolved `remind` results across
+            # restarts and processes, newest
             # first. An unresolved act is discharged only by a NEWER `ok`
             # result for the same (subject, action): the record retains the
             # attempt until something valid resolved it.

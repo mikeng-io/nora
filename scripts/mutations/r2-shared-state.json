@@ -1,5 +1,19 @@
 [
   {
+    "name": "proactive-gate-uses-the-reader-coverage-name",
+    "file": "nora/app/fire.py",
+    "old": "_REQUIRED_ACTION_SOURCES = (\"acts\", \"turns\", \"sends\")",
+    "new": "_REQUIRED_ACTION_SOURCES = (\"reminders\", \"turns\", \"sends\")",
+    "target": "tests/unit/test_fire_path.py::test_a_proactive_act_runs_when_only_optional_display_coverage_fails"
+  },
+  {
+    "name": "standing-keeps-settled-ledger-outcomes",
+    "file": "nora/language/shared_render.py",
+    "old": "and e.status != \"open\"",
+    "new": "and e.status == \"open\"",
+    "target": "tests/unit/test_shared_state.py::test_closed_decisions_and_done_commitments_survive_the_standing_read"
+  },
+  {
     "name": "r2-5-fact-projection-latest-per-key",
     "file": "nora/domain/tag_trace.py",
     "old": "if prior is None or item.ordinal > prior.ordinal:",

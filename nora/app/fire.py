@@ -257,11 +257,11 @@ PARTICIPATION_AUDIENCE = audience_names.PARTICIPATION
 SILENT = "silent"
 
 #: The shared-view sources a proactive act's OWN checks rest on — pending and
-#: FIRING arbitration (`reminders`), recorded delivery/turn facts (`turns`)
+#: FIRING arbitration (`acts`), recorded delivery/turn facts (`turns`)
 #: and authored sends (`sends`). Any of them unread withholds the act; the
 #: rest of the view — positions, findings, ledger readbacks — is display
 #: coverage that may degrade the prompt but never starves proactive work.
-_REQUIRED_ACTION_SOURCES = ("reminders", "turns", "sends")
+_REQUIRED_ACTION_SOURCES = ("acts", "turns", "sends")
 
 # The proactive occasion's audience (DEC-162): a `kind="proactive"` reminder
 # row — written by Nora's own Cognition session, owed to nobody — coming due.
@@ -1769,7 +1769,7 @@ class FirePath:
         # turn that never ran; the heartbeat resolves the row on it and the
         # crash-sweep does not mistake it for a delivery.
         # A proactive act's own REQUIRED checks are fail-closed: pending
-        # and FIRING arbitration (`reminders`), the delivery/turn facts
+        # and FIRING arbitration (`acts`), the delivery/turn facts
         # (`turns`) and authored sends (`sends`) — any of those unread is
         # «could not check» for THIS act, never «nothing pending». Optional
         # display coverage (positions/findings/ledger readbacks) may degrade

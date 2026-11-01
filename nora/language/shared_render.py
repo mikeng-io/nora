@@ -32,6 +32,11 @@ def render_shared_state(
         if e.kind in ("note", "decision", "commitment", "thread")
         and e.status == "open"
     ]
+    settled_entries = [
+        e for e in view.entries
+        if e.kind in ("decision", "commitment", "thread")
+        and e.status != "open"
+    ]
     waiting = [
         e for e in view.entries
         if e.kind in ("act", "wake") and e.status == "pending"
@@ -58,14 +63,19 @@ def render_shared_state(
             lines.append(f"- {e.scope}{ago} · {e.subject}")
             if e.detail:
                 lines.append(f"    {e.detail}")
-    if open_entries:
-        lines.append("## Open")
-        for e in open_entries:
+    for heading, ledger_entries in (("Open", open_entries), ("Settled", settled_entries)):
+        if not ledger_entries:
+            continue
+        lines.append(f"## {heading}")
+        for e in ledger_entries:
             if not e.permitted:
-                lines.append(f"- {e.kind} · open in another room · withheld")
+                lines.append(f"- {e.kind} · {e.status} in another room · withheld")
                 continue
             rev = f" rev{e.revision}" if e.revision else ""
             head = f"- {e.kind} {e.id}{rev} · {e.scope} · {e.subject}"
+            if heading == "Settled":
+                ago = f" · {age(e.at_ms, now)} ago" if e.at_ms else ""
+                head += f" · {e.status}{ago}"
             tail = (
                 f" — sources: {', '.join(e.refs)}"
                 + (f"; produced by {e.provenance}" if e.provenance else "")

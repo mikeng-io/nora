@@ -1,6 +1,6 @@
 """The unit's shared cognitive state: ONE typed projection, many audiences.
 
-`design/notebook-memory-types/20-shared-cognitive-state.md`: «Standing» is a
+`design/notebook-memory-types/20-standing.md`: «Standing» is a
 shared persistent VIEW over the five Notebook kinds plus pending and executed
 acts — never a kind, never a second store. `SharedView` is that projection.
 Each audience (Engagement's tag turn, the unit Cognition session, a Proactive

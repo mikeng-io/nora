@@ -1,6 +1,6 @@
 """The shared cognitive state: dedupe, projection, coverage, render.
 
-`design/notebook-memory-types/20-shared-cognitive-state.md`'s generated
+`design/notebook-memory-types/20-standing.md`'s generated
 scenarios, at unit grain: the same act in two rooms is ONE act (never a
 citation-set match), an unread source is `unavailable` never
 `nothing_found`, and a send the row could not record is `unknown`, never
@@ -368,6 +368,29 @@ async def test_an_unresolved_remind_persists_until_a_newer_ok_discharges_it():
     assert view2.unresolved == ()
 
 
+async def test_closed_decisions_and_done_commitments_survive_the_standing_read():
+    from nora.domain.standing_ledger import LedgerEntry
+    from nora.testing.standing_ledger import InMemoryStandingLedger
+
+    ledger = InMemoryStandingLedger([
+        LedgerEntry(
+            id=f"generated-{kind}", kind=kind, unit="u1", scope="unit",
+            platform="signal", conversation_id="room-a", revision=2,
+            status=status, subject=f"generated {kind}", opened_at=T0_MS - 1000,
+            last_revised_at=T0_MS, body=f"generated {status} outcome turn(t1)",
+        )
+        for kind, status in (("decision", "closed"), ("commitment", "done"))
+    ])
+    view = await read_shared(
+        unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS, ledger=ledger,
+    )
+    block = render_shared_state(view, now_ms=T0_MS)
+    assert block is not None
+    for status in ("closed", "done"):
+        assert f"generated {status} outcome" in block.body
+    assert "turn(t1)" in block.body
+
+
 def test_render_preserves_positions_conclusions_and_withholds_their_content():
     from nora.domain.shared_state import SharedEntry, SharedView
 
@@ -380,6 +403,8 @@ def test_render_preserves_positions_conclusions_and_withholds_their_content():
                     refs=("note:n-1",), provenance="tag-1", at_ms=T0_MS),
         SharedEntry(kind="decision", id="secret-choice", scope="unit", status="open",
                     subject="SECRET SUBJECT", detail="SECRET DETAIL", permitted=False),
+        SharedEntry(kind="commitment", id="secret-done", scope="unit", status="done",
+                    subject="SECRET COMMITMENT", detail="SECRET OUTCOME", permitted=False),
         SharedEntry(kind="act", id="secret-act", scope="room-b", status="done",
                     subject="SECRET ACTION", destination="SECRET DEST", permitted=False),
     )

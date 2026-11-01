@@ -3262,7 +3262,7 @@ async def test_a_proactive_act_is_withheld_when_a_required_check_fails(
     async def shared(**_):
         return SharedView(
             unit="u1", status="partial", as_of_ms=1,
-            sources=(("reminders", "unavailable"), ("turns", "ok"),
+            sources=(("acts", "unavailable"), ("turns", "ok"),
                      ("sends", "ok"), ("findings", "ok")),
         )
     path = FirePath(
@@ -3291,12 +3291,18 @@ async def test_a_proactive_act_runs_when_only_optional_display_coverage_fails(
     degrades the prompt without withholding the act itself (design 20 §5:
     "a display-only cap must not permanently prevent all proactive
     activity")."""
-    from nora.domain.shared_state import SharedView
+    from dataclasses import replace
+
+    from nora.agent.shared_state import read_shared
 
     async def shared(**_):
-        return SharedView(
-            unit="u1", status="partial", as_of_ms=1,
-            sources=(("reminders", "ok"), ("turns", "ok"), ("sends", "ok"),
+        view = await read_shared(
+            unit="u1", rooms=(("signal", "conv-1"),), ai_peer="nora",
+            now_ms=int(T0.timestamp() * 1000), reminders=FakeReminderStore(),
+        )
+        return replace(
+            view, status="partial",
+            sources=(*view.sources, ("turns", "ok"), ("sends", "ok"),
                      ("findings", "unavailable"), ("ledger", "unavailable")),
         )
     path = FirePath(
