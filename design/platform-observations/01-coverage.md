@@ -102,7 +102,7 @@ subsequent binding changes below.
 
 ## Integrated implementation candidate (2026-11-02)
 
-Source mapping inspected at `0fa3fe55f`; development verification is incomplete.
+Source mapping inspected through `93a12364d`; integrated acceptance is incomplete.
 This supersedes the baseline's missing-capture cells for the selected operations,
 not its platform/account-mode limitations. The final PR owns acceptance receipts.
 
@@ -111,7 +111,7 @@ not its platform/account-mode limitations. The final PR owns acceptance receipts
 | Signal groups | `parse_observations` and the bridge wrapper carry poll definition/vote/close, pin/unpin, room fields, contacts/previews and expiry/view-once metadata alongside messages or as observation-only envelopes | Target creator remains separate from actor; absent creator stays unresolved. Existing group-only admission remains. Generated parser/capture checks do not establish live signal-cli delivery |
 | Discord configured rooms | Poll definitions/votes/finalization, reaction clears, pins, thread/channel/member/role observations reach the existing bridge journal | Guild-grained observations bind only to configured child conversations. Intent/cache restrictions remain. Reaction clear capture still requires reconciliation with the shipped target-count reader before this family is complete |
 | WhatsApp admitted conversations | Bound stanza and group callbacks produce poll, pin, membership, room and shared-artifact observations through the existing capture pipeline | Creation-secret lookup is room/creator-bound and private. Clockless recurrence is retained as ambiguous, never guessed replay; unavailable selections do not become withdrawals. Native focused checks cover generated inputs, not live source completeness |
-| Instagram admitted conversations | Pinned typed deltas feed room/pin/member/admin observations and shared artifacts; supplied attachment multiplicity reaches normalization and custody | Polls remain unsupported by the pinned transport; member FBIDs and admin IGIDs stay distinct. Native Go verification is not yet green, including custody and member snapshot cases |
+| Instagram admitted conversations | Pinned typed deltas feed room/pin/member/admin observations and shared artifacts; supplied attachment multiplicity reaches normalization and custody | Polls remain unsupported by the pinned transport; member FBIDs and admin IGIDs stay distinct. Missing member sets are partial rather than complete empty rosters. The native Go suite passes; this does not establish live source completeness |
 
 The common candidate path is envelope v2 → typed observation history/current head
 → durable stimulus obligation → enriched transcript, existing Standing and scoped
