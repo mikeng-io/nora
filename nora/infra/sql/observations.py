@@ -289,7 +289,7 @@ class SqlObservationStore:
             row = (await conn.execute(
                 sa.select(ST).where(
                     _st_scope_where(scope), ST.c.kind == kind,
-                    digest == _HANDLE_DIGEST))
+                    sa.literal(digest) == _HANDLE_DIGEST))
             ).mappings().one_or_none()
         return None if row is None else _row_to_head(row)
 
@@ -471,10 +471,13 @@ async def relink_arriving_targets(
         for author in authors:
             qualified_author = (
                 sender_id or "" if ":author:" in key else author)
+            target = target_from_key(key)
+            if target is None:
+                continue
             resolved = await _resolve_target_row(
                 conn, platform=scope.platform,
                 conversation_id=scope.conversation_id,
-                target=target_from_key(key), target_author_id=qualified_author)
+                target=target, target_author_id=qualified_author)
             if resolved is None:
                 continue
             author_match = (OBS.c.target_author_id == qualified_author

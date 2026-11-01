@@ -36,6 +36,7 @@ import sqlalchemy as sa
 from opentelemetry.trace import Link
 
 from nora.domain.actions import ActionOwner
+from nora.domain.observations import SourceScope
 from nora.domain.ports import EngageDecision, EngagementRequest
 from nora.infra.sql.bridge_store import (
     WORK_TERMINAL,
@@ -1223,7 +1224,7 @@ class WorkRunner:
             return
         try:
             obs = observation_from_dict(
-                envelope.observation,
+                envelope.observation or {},
                 expect_scope=self._observation_scope(work))
         except (ValueError, KeyError, TypeError) as exc:
             # A malformed wire contract is a RETAINED FAILURE (design 02),
@@ -1246,12 +1247,11 @@ class WorkRunner:
             return
         await finish("done", {"outcome": "recorded"})
 
-    def _observation_scope(self, work: Any):
+    def _observation_scope(self, work: Any) -> SourceScope:
         """The scope this ingest may persist: the WORK row's platform,
         account and conversation — the claim the bridge_event was written
         under. An observation whose wire scope differs is refused by
         `observation_from_dict`, not narrowed here."""
-        from nora.domain.observations import SourceScope
         return SourceScope(
             platform=work.platform, account_key=work.account_key,
             conversation_id=work.conversation_id, thread="")
@@ -1282,7 +1282,7 @@ class WorkRunner:
             return "unavailable:observation store unwired"
         try:
             obs = observation or observation_from_dict(
-                envelope.observation,
+                envelope.observation or {},
                 expect_scope=self._observation_scope(work))
         except (ValueError, KeyError, TypeError) as exc:
             return f"refused:malformed observation: {exc}"

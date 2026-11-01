@@ -6220,8 +6220,8 @@ def build_tool_specs(
                     if found is None:
                         src_failed = True
                         continue
-                    ev, more = found
-                    src_more += more
+                    ev, source_more = found
+                    src_more += source_more
                     src_pairs += [(e, label) for e in ev
                                   if e.at_ms <= end_ms]
             if src_failed:

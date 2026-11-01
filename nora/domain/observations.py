@@ -1361,10 +1361,10 @@ def observation_summary(
     reaches a prompt or a tool result."""
     p = obs.payload
     op = obs.operation
-    option_ref = lambda ref: (  # noqa: E731 — one-line projection
-        (option_label(ref) if option_label is not None else None)
-        or _option_handle(ref, account_key=obs.scope.account_key,
-                          thread=obs.scope.thread))
+    def option_ref(ref: str) -> str:
+        return ((option_label(ref) if option_label is not None else None)
+                or _option_handle(ref, account_key=obs.scope.account_key,
+                                  thread=obs.scope.thread))
     if isinstance(p, PollPayload):
         if p.question:
             tail = f"“{_clip(p.question, 80)}”"
@@ -1431,10 +1431,10 @@ def head_summary(head: ObservationHead) -> str:
     `coverage`/`ordering` ride beside it so a partial or gapped state is
     never presented as settled truth."""
     s = head.state
-    opt = lambda ref: (  # noqa: E731 — label or scoped opaque handle
-        (s.get("options") or {}).get(ref, {}).get("label")
-        or _option_handle(ref, account_key=head.account_key,
-                          thread=head.thread))
+    def opt(ref: str) -> str:
+        return ((s.get("options") or {}).get(ref, {}).get("label")
+                or _option_handle(ref, account_key=head.account_key,
+                                  thread=head.thread))
     if head.kind == "poll":
         state = s.get("state") or "unknown"
         votes = s.get("votes") or {}

@@ -30,6 +30,7 @@ from ...domain.observations import (
     PollPayload,
     RoomPayload,
     SourceScope,
+    TimeQuality,
 )
 
 log = logging.getLogger("nora.signal.parser")
@@ -579,7 +580,7 @@ def parse_observations(
             return None
         sent_ts = _source_ts(env, data)
         occurred = sent_ts or None
-        time_quality = "upstream" if occurred is not None else "unknown"
+        time_quality: TimeQuality = "upstream" if occurred is not None else "unknown"
         scope = SourceScope(
             platform="signal", account_key=account_key,
             conversation_id=str(group_id))

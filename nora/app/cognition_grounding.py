@@ -456,6 +456,8 @@ async def _observation_lines(
         wanted.append((s, row_id))
     by_scope: dict[tuple[str, str], list[int]] = {}
     for s, row_id in wanted:
+        if s.platform is None or s.conversation_id is None:
+            continue
         by_scope.setdefault((s.platform, s.conversation_id), []).append(row_id)
     found: dict[int, Any] = {}
     for (platform, cid), ids in by_scope.items():
@@ -477,7 +479,7 @@ async def _observation_lines(
             actor = ref.name if ref is not None else None
 
         def name_of(subject: str, *, platform: str = obs.scope.platform,
-                    _p=persons) -> str | None:
+                    _p: Any = persons) -> str | None:
             r = _p.resolve(platform, subject)
             return r.name if r is not None else None
 

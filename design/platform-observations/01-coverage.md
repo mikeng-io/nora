@@ -5,6 +5,8 @@ Research date: 2026-10-30. Implementation snapshot:
 are unchanged from the earlier investigation head `a535a6960`. Live configuration,
 private rows, unmerged bridge branches and installed collector were not inspected.
 This is source evidence, not a deployment capability declaration.
+The census below is the historical baseline. The candidate mapping at the end
+records subsequent implementation; neither section attests to a deployed version.
 
 ## Stage vocabulary
 
@@ -61,19 +63,20 @@ No live accounts were queried. Re-check revision and fill unknown cells during b
 
 ## Pinned native-source evidence (implementation cluster addendum)
 
-Consolidated from `/tmp/nora-po/platform-observation-python-sources-receipt.md`
-(Python lane) and `platform-observation-native-sources-findings.md` (native
-lane), labels preserved. This addendum supersedes no cell above; it pins the
-revisions the capture lanes landed against.
+The generated [Python fixtures](../../tests/fixtures/platform_observations/README.md),
+[WhatsApp fixtures](../../deploy/whatsapp-bridge/testdata/platform-observations/README.md)
+and [Instagram fixtures](../../deploy/instagram-bridge/internal/bridge/testdata/platform-observations/README.md)
+pin the discovery inputs. Distinguish their original capture outcome from the
+subsequent binding changes below.
 
 - **[W] WhatsApp transport pinned at `@whiskeysockets/baileys 7.0.0-rc13`.**
-  Capture subscribes `messages.upsert` (type `notify`), `connection.update`,
-  `creds.update` only; poll definitions, poll votes, poll snapshots, pin
+  The discovery snapshot subscribed `messages.upsert` (type `notify`),
+  `connection.update` and `creds.update` only; poll definitions, poll votes, poll snapshots, pin
   transitions, room changes, membership events and shared artifacts are
   upstream-supported but reach the typed path only through the capture lane's
   explicit bindings. Poll votes require creation-message secret material: a
-  vote whose creation predates capture is permanently unavailable — recorded
-  as a coverage gap, never a guessed tally. WhatsApp has no global ordering
+  vote without its creation secret is unavailable — recorded as a coverage
+  gap, never a guessed tally. WhatsApp has no global ordering
   token; per-field clocks plus arrival order are the honest ordering
   evidence. Snapshot payloads are covered sets — an omitted member is
   `unknown`, never a deletion. The conditional WhatsApp stanza reuse noted
@@ -95,5 +98,27 @@ revisions the capture lanes landed against.
   grain is labelled source grain, not channel audience, and a new member is
   the SUBJECT, never the invented actor.
 - Typing notifications remain excluded by decision.
-- The native lane made no production edits, no SQL, no eval and no PR; its
-  findings are evidence for this cluster, not shipped capture.
+- Those discovery fixtures alone establish neither capture nor model visibility.
+
+## Integrated implementation candidate (2026-11-02)
+
+Source mapping inspected at `0fa3fe55f`; development verification is incomplete.
+This supersedes the baseline's missing-capture cells for the selected operations,
+not its platform/account-mode limitations. The final PR owns acceptance receipts.
+
+| Source | Candidate capture | Coverage and remaining verification |
+|---|---|---|
+| Signal groups | `parse_observations` and the bridge wrapper carry poll definition/vote/close, pin/unpin, room fields, contacts/previews and expiry/view-once metadata alongside messages or as observation-only envelopes | Target creator remains separate from actor; absent creator stays unresolved. Existing group-only admission remains. Generated parser/capture checks do not establish live signal-cli delivery |
+| Discord configured rooms | Poll definitions/votes/finalization, reaction clears, pins, thread/channel/member/role observations reach the existing bridge journal | Guild-grained observations bind only to configured child conversations. Intent/cache restrictions remain. Reaction clear capture still requires reconciliation with the shipped target-count reader before this family is complete |
+| WhatsApp admitted conversations | Bound stanza and group callbacks produce poll, pin, membership, room and shared-artifact observations through the existing capture pipeline | Creation-secret lookup is room/creator-bound and private. Clockless recurrence is retained as ambiguous, never guessed replay; unavailable selections do not become withdrawals. Native focused checks cover generated inputs, not live source completeness |
+| Instagram admitted conversations | Pinned typed deltas feed room/pin/member/admin observations and shared artifacts; supplied attachment multiplicity reaches normalization and custody | Polls remain unsupported by the pinned transport; member FBIDs and admin IGIDs stay distinct. Native Go verification is not yet green, including custody and member snapshot cases |
+
+The common candidate path is envelope v2 → typed observation history/current head
+→ durable stimulus obligation → enriched transcript, existing Standing and scoped
+task reads. `record_query` retains message compatibility and adds typed reads;
+`poll_list`, `poll_read` and `room_state_read` serve bounded tasks. No new context
+block, feed crawler or trace-to-social collector is introduced.
+
+Source merge, deployment, live platform delivery and model-routing measurement
+are separate obligations. None is established by the generated fixtures or the
+current implementation mapping.
