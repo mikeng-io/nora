@@ -1,19 +1,13 @@
 """Change-aware test selection.
 
 Takes a base ref, reads the changed paths from git, and decides which pytest
-targets are worth running for *that diff*. This backs BOTH `make test-affected`
-(the iteration loop, default base `HEAD~1`, committed history only) AND
-`make gate` (one run per PR, base `origin/master`, `--include-worktree` so an
-uncommitted edit is judged too — see `git_changed_paths` below). `make
-full-gate` is the one command this script never touches: it always runs the
-whole serial suite, unconditionally, regardless of what changed.
-
-The loop's default base is `HEAD~1` — the latest commit only, not `origin/master`. Diffing the
-whole branch has a real cost: a branch that touches `nora/dreamer/**` or `nora/doctrine/**` once
-stays pinned to `ALL` for every commit for the rest of its life, because that path never leaves
-the cumulative diff. `make gate` runs on `origin/master` deliberately (it must judge everything
-the branch changed, once, before it lands); the loop's `HEAD~1` default is what avoids re-flagging
-an already-judged commit on every later diff.
+targets are worth running for *that diff*. This backs `make test`, `make
+test-fast` and `make test-affected`: auto compares meaningful staged, unstaged
+and untracked work against HEAD; a clean tree compares HEAD~1 to HEAD. Only
+byte-exact generated untracked LFS post-hooks are ignored. Explicit --base
+preserves ref selection. `make gate` pins origin/master with --include-worktree
+for branch-level validation. `make test-all` and `make full-gate` always run
+the whole serial suite, without this selector.
 
 THE OUTPUT CONTRACT (one line on stdout, three shapes). `ALL` means run the
 whole suite; `NONE` means a narrow rule found that nothing reads the diff, so
@@ -185,8 +179,7 @@ def git_changed_paths(
     stands, not just the tree at HEAD. `make gate` uses this: it is the final
     check on a PR, and an edit that hasn't been committed yet is still
     untested if the gate silently skips it (it must judge the working tree,
-    not a stale commit). The loop's `make test-affected` (default base
-    `HEAD~1`) does NOT set this — it keeps judging committed history only.
+    not a stale commit). Auto selection also includes the worktree.
 
     `--no-renames` lists BOTH sides of a rename: by default git reports only
     the new path, and the old one (a deleted test, a moved doc) is a change
@@ -473,25 +466,31 @@ def select(changed: list[str], repo: Path = ROOT) -> list[str] | str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--base", default="HEAD~1",
-        help="ref to diff HEAD against (default: HEAD~1, the last commit only "
-             "— NOT origin/master, which would re-flag every commit for the "
-             "rest of the branch's life the first time it touches loaded "
-             "markdown; see module docstring)",
+        "--base", help="explicit diff base (default: HEAD for dirty work, HEAD~1 when clean)",
     )
     parser.add_argument(
         "--include-worktree", action="store_true",
-        help="also include uncommitted edits and untracked files in the diff "
-             "(`make gate` passes this; the loop's default HEAD~1 run does "
-             "not — see git_changed_paths)",
+        help="include staged, unstaged and untracked files with an explicit base",
     )
     parser.add_argument("--repo", type=Path, default=ROOT)
     args = parser.parse_args(argv)
 
     try:
-        changed = git_changed_paths(
-            args.repo, args.base, include_worktree=args.include_worktree,
-        )
+        base = args.base
+        if base is None:
+            changed = git_changed_paths(args.repo, "HEAD", include_worktree=True)
+            staged = _git(args.repo, "diff", "--cached", "-z", "--name-only",
+                          "--no-renames", "HEAD", nul=True)
+            changed = sorted(set(changed) | set(staged))
+            base = "HEAD" if changed else "HEAD~1"
+            if not changed:
+                changed = git_changed_paths(args.repo, base, include_worktree=True)
+        else:
+            changed = git_changed_paths(
+                args.repo, base, include_worktree=args.include_worktree,
+            )
+        print(f"affected_tests: base={base}; worktree="
+              f"{args.include_worktree or args.base is None}", file=sys.stderr)
         result = select(changed, args.repo)
     except Exception as exc:  # noqa: BLE001 - fail closed on ANY failure
         # Whatever went wrong (no git, no diff base, a bug in a rule), the

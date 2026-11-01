@@ -41,13 +41,18 @@ Check: `## <type>/<slug>...origin/master`, no ahead/behind; hooksPath ends `.git
 ## 2. Iterate
 
 ```bash
-uv run python -m scripts.pytest_gate <test paths>   # uncommitted edits: name the tests
-make test-affected                   # judges the LAST COMMIT only (HEAD~1...HEAD)
-make test-fast                       # whole suite, parallel
+make test                           # current work; clean tree: last commit
+make test-fast                      # incremental alias (same as test-affected)
+uv run python -m scripts.pytest_gate tests/unit/test_example.py::test_named
+make test-all                       # explicit full serial suite, when needed
 ```
 
-It never sees uncommitted edits (`scripts/affected_tests.py`). The gate is the
-final check, not the loop (2026-08-21: eight gate runs in one session).
+The three incremental entries compare meaningful staged/unstaged/untracked work
+against HEAD; when clean they compare the last commit (HEAD~1). Only exact
+generated untracked LFS post-hooks are ignored. `BASE=<ref>` overrides auto.
+Unknown/shared-helper changes and selection errors run ALL; read the reported
+base and selected/full scope. Workers default to two; timing contracts stay serial.
+The gate is the final branch check, not the iteration loop.
 
 ## 3. Gate — once per candidate tree
 

@@ -44,6 +44,14 @@ Shared modules at this level:
   `FakeClock`, `FixedModelSource`). Port fakes live in `nora/testing/`.
 - `fixtures/` — captured data files.
 
+`make test` is incremental; `make test-fast` and `make test-affected` are aliases.
+They compare staged, unstaged and untracked changes against HEAD, or the last
+commit (HEAD~1) when clean. Only exact generated untracked LFS post-hooks are
+ignored. `BASE=<ref>` overrides auto selection. Unmapped/shared-helper changes
+and selector errors run the full suite; the command reports its base and scope.
+`make test-all` explicitly runs the full serial suite. For a named file/function,
+use `uv run python -m scripts.pytest_gate <file-or-node>`.
+
 Run `make test-affected` (or the tests you touched) while iterating, and
 `make gate` once, on the final head, before claiming a PR is done — never a
 gate per fix round. `make full-gate` runs the whole suite serially and
