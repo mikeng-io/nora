@@ -140,6 +140,24 @@ def test_doc_only_candidate_runs_the_reader_path_and_mixed_code_keeps_static_che
     assert gate.main([]) == 0 and count(calls) == ["docs", "code"]
 
 
+def test_new_agent_skill_link_uses_the_document_gate_and_runtime_changes_stay_broad(job):
+    repo, calls, _, _, _ = job
+    skill = repo / ".agents/skills/nora-generated/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# Generated skill\n")
+    link = repo / ".claude/skills/nora-generated"
+    link.parent.mkdir(parents=True)
+    link.symlink_to("../../.agents/skills/nora-generated", target_is_directory=True)
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "generated skill")
+    assert gate.main([]) == 0
+    assert count(calls) == ["docs"]
+    (repo / "source.py").write_text("VALUE = 2\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "runtime control")
+    assert gate.main([]) == 0 and count(calls) == ["docs", "code"]
+
+
 def test_changed_context_during_success_is_not_recorded(job):
     _, calls, control, context, receipt = job
     # The child really changes an external context input while checks execute.

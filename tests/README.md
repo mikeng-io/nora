@@ -98,7 +98,10 @@ Disposable PostgreSQL reuse:
 Local gate receipts:
 
 - `make gate` uses the canonical runner: code/mixed changes run static checks plus
-  affected tests; ordinary docs run their reader tests. Unknown paths/selection
+  affected tests; ordinary docs run their reader tests. Canonical in-repository
+  `.claude/skills/<name>` links use the linked SKILL.md readers plus the agent-skill
+  contract, through the same classification in local gates and hosted CI.
+  Missing/redirected links and runtime changes stay broad. Unknown paths/selection
   errors remain broad. README guides under `tests/` are docs; other test/fixture Markdown
   and non-collectible Python helpers remain broad. Only byte-exact regular Git LFS
   post-hooks are excluded from untracked noise; edits, symlinks and tracked hooks

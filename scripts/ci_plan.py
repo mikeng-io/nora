@@ -26,7 +26,7 @@ JOBS = (
 )
 
 
-def classify(paths: list[str]) -> dict[str, bool]:
+def classify(paths: list[str], repo: Path = affected_tests.ROOT) -> dict[str, bool]:
     plan = dict.fromkeys(JOBS, False)
     plan["contracts"] = True
     for path in paths:
@@ -38,10 +38,9 @@ def classify(paths: list[str]) -> dict[str, bool]:
         name = Path(path).name
         suffix = Path(path).suffix
         # Build and analyzer policy can affect every component.
-        if (path.startswith(".github/") and not affected_tests._is_doc_or_data(path)) or path in {
-            "Makefile",
-            "scripts/ci_plan.py",
-        }:
+        if (
+            path.startswith(".github/") and not affected_tests._is_doc_or_data(path, repo)
+        ) or path in {"Makefile", "scripts/ci_plan.py"}:
             return dict.fromkeys(JOBS, True)
         dependency = name in {
             "pyproject.toml",
@@ -72,7 +71,7 @@ def classify(paths: list[str]) -> dict[str, bool]:
                     plan["codeql-javascript"] = True
         elif path.startswith("deploy/instagram-bridge/") and suffix != ".md":
             plan["go"] = plan["codeql-go"] = True
-        elif affected_tests._is_doc_or_data(path):
+        elif affected_tests._is_doc_or_data(path, repo):
             continue
         elif path.startswith(("nora/", "evals/", "tests/", "scripts/")) or path in {
             "pyproject.toml",
@@ -196,8 +195,8 @@ def main() -> int:
     try:
         has_delta = "pull_request" in event or ("before" in event and "after" in event)
         paths = changed_paths(event, repo) if has_delta else []
-        plan = classify(paths) if has_delta else dict.fromkeys(JOBS, True)
-        docs = [p for p in paths if affected_tests._is_doc_or_data(p)]
+        plan = classify(paths, repo) if has_delta else dict.fromkeys(JOBS, True)
+        docs = [p for p in paths if affected_tests._is_doc_or_data(p, repo)]
         targets = affected_tests.select(docs, repo)
         # A shared helper may read the document: retain the selector's ALL
         # fallback and let testcontainers provision the full suite's services.
