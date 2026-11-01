@@ -62,7 +62,8 @@ Neither prescribes a provider, model, effort label or toolset. Select the lowest
 execution tier that covers the task's ambiguity and the cost of a miss; critical
 boundaries require critical capability even in a small diff.
 
-Choose review by the highest applicable row, after the final gate is green:
+Select review depth when scoping; confirm the highest applicable row against the
+final diff after the gate is green:
 
 | Change | Minimum review |
 |---|---|
@@ -75,6 +76,45 @@ None still requires the gate, orchestrator's diff read and read-back. The operat
 can require or waive review explicitly. A missed first fix, scope surprise or
 unplanned gate repair raises review one tier (full is the ceiling) and prompts
 reassessment of execution capability. A light-review BLOCKER requires full review.
+
+| Tier | Inspection and stopping boundary |
+|---|---|
+| none | Orchestrator checks the agreed slice, actual diff, applicable gate and required read-back; no independent reviewer is launched. |
+| light | Independent reviewer checks the changed behavior, direct affected callers and named acceptance/regression paths. |
+| full | Independent reviewer traces affected flows through inputs, outputs, failure paths and relevant trust/cost boundaries; this is not a repository-wide audit. |
+
+All tiers apply the five Cs to the same agreed slice. Tier is inspection depth,
+not finding severity or authority to add requirements. Review procedure:
+`.agents/skills/nora-review/SKILL.md`. A report must show acceptance coverage and
+unverified limits as well as findings; a tier name or APPROVE alone is insufficient.
+
+## Intent, evidence and completion
+
+Before editing, identify the requested outcome, scope/non-goals, acceptance and
+evidence obligations in the existing issue/design or direct operator brief. Pin
+the relevant revision; for direct work the PR records the brief. Do not create
+an issue, task database or separate contract file merely to repeat it.
+Carry that same intent through implementation, review and closure: comprehend
+once, measure each obligation, serialize the result in existing artifacts.
+
+Inspect the current implementation before adding work. Judge each obligation as
+met, unmet or unavailable, with evidence bound to the relevant source/runtime.
+Missing evidence is unavailable, not proof that implementation is missing.
+Tests, review, merge and deployment prove different properties; require only
+those specified by acceptance and applicable repository rules.
+
+An invalid plan returns to scoping; an implementation defect returns to bounded
+repair and verification. Record an explicit scope/acceptance amendment and its
+authority before expanding work; neither a reviewer suggestion nor an unknown
+in a brief is a new requirement. Do not soften an obligation to obtain a pass.
+
+The orchestrator closes the slice when every required obligation is evidenced
+and no BLOCKER remains, then stops adding implementation, checks or reviews.
+Record remaining non-blocking limitations without claiming they are delivered.
+Update the design's delivery coverage and the issue's remaining scope/state when
+present. Only a whole-issue outcome closes that issue; a completed slice of a
+larger design does not keep the slice perpetually unfinished. Reopen a settled
+result only on new evidence or an explicit change of requirement.
 
 ## Resolve a worker at launch
 
@@ -131,9 +171,16 @@ NONE is valid. Mark pre-existing findings explicitly.
 | Verdict | Consequence |
 |---|---|
 | BLOCKER: this diff causes reachable wrong output, data loss, disclosure, crash or weakened gate | Fix and verify; only this verdict buys another round |
-| FIX-IF-CHEAP: real in-diff defect with bounded harm | Fix if minutes, otherwise track in an issue; no new round |
-| ISSUE: real but pre-existing/outside scope | Track in its existing issue or file one; does not block this change |
+| FIX-IF-CHEAP: real in-diff defect with bounded harm | Fix if minutes within the agreed slice; otherwise record a limitation or use its existing home; no new round |
+| ISSUE: real but pre-existing/outside scope | Use the existing design/issue; file only actionable deferred work with no home (`nora-decision`); does not block this change |
 | DROP: hypothetical, contrived, style or unrelated | One-line disposition |
+
+Severity follows reachable consequences, not recurrence, confidence or repair
+effort. One remedy fixing several instances makes them one defect class: search
+the affected diff for siblings on the first report and group them. Do not buy
+rounds by enumerating new inputs for an already reported class. A repair-induced
+finding names its predecessor and explains the distinct failure; an unresolved
+same-class BLOCKER remains blocking, not silently dropped as a duplicate.
 
 The higher applicable verdict wins. Verify findings at the cited line and with
 the appropriate check; production fixes follow `nora-prove-fix`. A clean review
@@ -143,6 +190,9 @@ A round with no BLOCKER ends review. **At most two rounds**: round two checks on
 the failure. A remaining BLOCKER is fixed and proved, then the orchestrator
 rereads the spec and reports; only the operator can authorize round three.
 Record review tier and triage in the PR's Gate section.
+Keep the source finding and evidence when adjudicating it; do not silently
+downgrade a blocker. A disagreement needs a grounded disposition, and a waiver
+of an applicable requirement remains the operator's decision.
 
 ## Artifact ownership and admission
 

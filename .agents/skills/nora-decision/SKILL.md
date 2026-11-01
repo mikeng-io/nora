@@ -18,13 +18,13 @@ branch's worktree.
 |---|---|
 | a defect you can fix in this session | nothing new: fix it; the PR is the record |
 | work a merged design bundle, an ADR or an open issue already names | an edit to THAT (the bundle's sequence, its `_index.yaml` open questions, the issue body) |
-| work you decided not to do now | an issue, filed in the same turn you decided, saying why |
+| actionable deferred work with no existing home | an issue, filed in the same turn you decided, saying why |
 | a decision that will look wrong to someone who does not know what it replaced | an ADR |
 | a landed decision and the test that enforces it | a decision-index row |
 
 ## 1. Filing an issue
 
-1. **Can you fix it now?** Then fix it (gate, then `nora-prove-fix`). File only
+1. **Can you fix it now within the agreed slice?** Then fix it (gate, then `nora-prove-fix`). File only
    what you have decided not to fix. A residue too small to act on goes in the
    PR body's limitations, not a new issue.
 2. **Look for a home first.**
