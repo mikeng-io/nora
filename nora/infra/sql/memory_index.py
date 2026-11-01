@@ -1280,7 +1280,9 @@ async def _project_profile_line(conn: AsyncConnection, source_id: str) -> None:
                           "profile_line.fact_value"))
     edges += _profile_cites(source_id, row.citations)
     edges += [
-        ("profile_line", source_id, "draws_on", "profile_line", str(d),
+        ("profile_line", source_id, "draws_on",
+         "relation" if str(d).startswith("relation:") else "profile_line",
+         str(d)[len("relation:"):] if str(d).startswith("relation:") else str(d),
          "profile_line.draws_on")
         for d in row.draws_on
     ]
