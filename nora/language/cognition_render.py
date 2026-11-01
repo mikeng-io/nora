@@ -526,9 +526,11 @@ def _observation_row(
     source's own time only when `time_quality` says so; `bridge_local` and
     `unknown` say which clock it is not."""
     # `at` is the source's own time only when `time_quality` says so and a
-    # time exists — at_ms<=0 is "no source time", never 1970-01-01; a
-    # bridge-local or unknown clock says WHICH clock `received` is.
-    when = _when(event.at_ms, now_ms, tz) if event.at_ms > 0 else ""
+    # time exists — at_ms<=0 is "no source time", never 1970-01-01, and an
+    # unknown clock shows `time="unknown"` plus `received`, never a
+    # dressed-up `at`; a bridge-local clock says WHICH clock it is.
+    when = (_when(event.at_ms, now_ms, tz)
+            if event.at_ms > 0 and event.time_quality != "unknown" else "")
 
     def show(limit: int | None) -> str:
         who = event.actor or (
@@ -725,15 +727,26 @@ def _register(
                     ("kind", e.kind), ("object", e.handle),
                     ("ordering", e.ordering or None),
                     ("coverage", e.coverage or None),
+                    ("rev", e.revision or None),
                     ("state", e.state or None),
+                    ("time", e.time_quality if e.time_quality != "upstream"
+                            else None),
                     ("observed", _when(e.at_ms, now_ms, tz)
-                            if e.at_ms > 0 else None),
+                            if e.at_ms > 0
+                            and e.time_quality != "unknown" else None),
+                    ("received", _when(e.received_ms, now_ms, tz)
+                            if e.received_ms
+                            and e.time_quality != "upstream" else None),
                 ),
                 body=lambda _e: "",
             )
             for o in objects[: budget.register_lines]
         ])
-        left = len(objects) - len(rows)
+        # `not_listed` counts what the grounder's own bounded read already
+        # confirmed beyond the shown heads — a lower bound, never a
+        # complete-looking cut.
+        left = (len(objects) - len(rows)
+                + grounding.source_objects_more.get(room_key(room), 0))
         standing_groups.append(render_group(
             "room_objects",
             [("room", room_label(room, grounding.room_labels)),

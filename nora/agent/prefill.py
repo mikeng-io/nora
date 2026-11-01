@@ -536,13 +536,27 @@ def _transcript_block(
     # messages and take no `#n` handle (a reply cannot name one). Each
     # says its kind, the operation, the source's own time (and WHICH
     # clock, when it is not the upstream's), the actor the source
-    # names — a roster name or nothing, never a speaker line.
+    # names — a roster name or nothing, never a speaker line. An event
+    # the source pinned to a message says `on="n"` — the message's own
+    # `#n` handle, never an invented quote or reply target; a source
+    # that named no message takes none.
+    #
+    # `#n` is `render_transcript`'s positional index over `ctx.transcript`,
+    # so the same map resolves it here.
+    index_of = {row.id: i for i, row in enumerate(ctx.transcript, 1)}
+
     def _event(e: Any) -> str:
         return render_elements(
             [e], tag="source_event",
             attrs=lambda ev, _i: (
                 ("kind", ev.kind), ("op", ev.operation),
-                ("at", age(ev.at_ms, now) if ev.at_ms > 0 else None),
+                # `at` is the SOURCE's clock — it appears only when the
+                # source actually gave a time. An unknown clock shows
+                # `time="unknown"` plus `received` (the bridge's own
+                # clock, stated as receipt), never a dressed-up `at`.
+                ("at", age(ev.at_ms, now)
+                        if ev.at_ms > 0 and ev.time_quality != "unknown"
+                        else None),
                 ("actor", ev.actor or (
                     "anonymous" if ev.actor_status == "anonymous" else None)),
                 ("time", ev.time_quality if ev.time_quality != "upstream"
@@ -553,6 +567,8 @@ def _transcript_block(
                 ("rev", ev.revision or None),
                 ("coverage", ev.coverage or None),
                 ("object", ev.handle),
+                ("on", (f"{index_of[ev.target_message_id]}"
+                        if ev.target_message_id in index_of else None)),
             ),
             body=lambda ev: ev.summary,
         )
@@ -564,7 +580,7 @@ def _transcript_block(
         # `\n<m ` (escape keeps `<` out of every body and attribute).
         chunks = re.split(r"(?=\n<m )", rows) if rows else []
         merged: list[str] = []
-        pending = iter(zip(ctx.transcript, chunks))
+        pending = iter(zip(ctx.transcript, chunks, strict=False))
         row, chunk = next(pending, (None, ""))
         for e in events:
             while row is not None and row.ts <= e.at_ms:
@@ -592,8 +608,8 @@ def _transcript_block(
     # parameter for the caller's own bookkeeping; this block does not read it.
     return _block(
         "group_transcript",
-        attrs=(("window", str(len(ctx.transcript))),)
-        + (("source_more", str(ctx.source_events_more)),)
+        attrs=(("window", str(len(ctx.transcript))),
+               ("source_more", str(ctx.source_events_more)))
         if ctx.source_events_more else (("window", str(len(ctx.transcript))),),
         body=rows,
     )
@@ -954,8 +970,21 @@ def _standing_block(
                 ("kind", e.kind), ("object", e.handle),
                 ("ordering", e.ordering or None),
                 ("coverage", e.coverage or None),
+                ("rev", e.revision or None),
+                # `observed` is the newest SOURCE time applied — absent
+                # when the source's clock is unknown, with `time` naming
+                # the non-upstream clock and `received` stating the
+                # bridge's own receipt instead.
+                ("time", e.time_quality if e.time_quality != "upstream"
+                        else None),
                 ("observed",
                  age(e.at_ms, now) if now is not None and e.at_ms > 0
+                 and e.time_quality != "unknown"
+                 else None),
+                ("received",
+                 age(e.received_ms, now)
+                 if now is not None and e.received_ms
+                 and e.time_quality != "upstream"
                  else None),
             ),
             body=lambda e: e.state or e.summary,

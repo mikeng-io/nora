@@ -269,8 +269,13 @@ class SqlObservationStore:
         if kind is not None:
             where = sa.and_(where, ST.c.kind == kind)
         async with self._engine.connect() as conn:
+            # MOST-RECENTLY-TOUCHED first (`updated_at` bumps on every
+            # folded head write), so a bounded page is the scope's freshest
+            # objects — relevance is recency, and a `limit + 1` caller can
+            # honestly say how many older heads it did not read.
             rows = (await conn.execute(
-                sa.select(ST).where(where).order_by(ST.c.id)
+                sa.select(ST).where(where)
+                .order_by(ST.c.updated_at.desc(), ST.c.id)
                 .limit(max(limit, 0)))).mappings().all()
         return [_row_to_head(r) for r in rows]
 

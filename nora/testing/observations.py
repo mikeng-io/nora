@@ -33,6 +33,10 @@ class FakeObservationStore:
         self._next_id = 1
         self._digests: set[tuple[str, str, str]] = set()
         self._heads: dict[tuple[str, str, str, str, str, str], ObservationHead] = {}
+        # `platform_object_state.updated_at`'s mirror: the row id of the
+        # newest append that folded into each head — `heads` orders on it
+        # exactly as the SQL store orders on `updated_at`.
+        self._touched: dict[tuple[str, str, str, str, str, str], int] = {}
 
     @staticmethod
     def _object_key(scope: SourceScope, kind: str, object_ref: str):
@@ -73,6 +77,7 @@ class FakeObservationStore:
         self._rows.append(row)
         key = self._object_key(obs.scope, obs.object_kind, obs.object_ref)
         self._heads[key] = fold_observation(self._heads.get(key), row)
+        self._touched[key] = row.id
         return row.id
 
     async def current(
@@ -90,12 +95,16 @@ class FakeObservationStore:
         self, *, scope: SourceScope, kind: str | None = None,
         limit: int = 100,
     ) -> list[ObservationHead]:
-        out = [h for (p, a, c, t, k, _r), h in self._heads.items()
+        out = [(key, h) for key, h in self._heads.items()
+               for (p, a, c, t, k, _r) in (key,)
                if self._in_scope(
                    SourceScope(platform=p, account_key=a, conversation_id=c,
                                thread=t), scope)
                and (kind is None or k == kind)]
-        return out[: max(limit, 0)]
+        # `updated_at DESC` — most-recently-touched first, dict order the
+        # tie-break, matching the SQL store's page.
+        out.sort(key=lambda kh: self._touched.get(kh[0], 0), reverse=True)
+        return [h for _key, h in out][: max(limit, 0)]
 
     async def head_for_handle(
         self, *, scope: SourceScope, handle: str,

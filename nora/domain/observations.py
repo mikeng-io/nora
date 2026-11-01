@@ -29,7 +29,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 
-from nora.domain.models import EditTarget
+from nora.domain.models import (
+    REACTION_PAIRS_MAX,
+    EditTarget,
+    display_reactions,
+    emoji_display,
+)
 
 #: The observation payload contract version the wire `contract` field carries.
 #: Bumped only when a payload shape changes incompatibly; an unrecognized
@@ -58,6 +63,17 @@ ActorStatus = Literal["known", "anonymous", "not_supplied", "not_applicable"]
 ACTOR_STATUSES: tuple[str, ...] = (
     "known", "anonymous", "not_supplied", "not_applicable",
 )
+
+#: Kinds a platform's PINNED bridge cannot supply at all — the coverage
+#: matrix's explicit "unavailable" cells (design/platform-observations 01:
+#: Instagram polls at mautrix-meta v0.2609.0, where a poll read must answer
+#: `unavailable`, never a confident `nothing_found`). A kind absent from a
+#: platform's set is NOT claimed supported — it is simply not known to be
+#: unsupported. Read tools consult this; it is a fact of the frozen matrix,
+#: never a capability service.
+UNSUPPORTED_KINDS: dict[str, frozenset[str]] = {
+    "instagram": frozenset({"poll"}),
+}
 
 #: Where `occurred_ms` came from. `unknown`: the source gave no time and the
 #: observation carries no fabricated one.
@@ -684,6 +700,30 @@ class ObservationHead:
     account_key: str = ""
     thread: str = ""
 
+    @property
+    def observed_quality(self) -> str:
+        """Which clock `observed_ms` reads on — the `time_quality` of the
+        observation that supplied the newest applied source time, kept in
+        `coverage` so the SQL row round-trips it. `unknown` when the head
+        has no source time at all; a bridge's own clock is `bridge_local`,
+        never promoted to `upstream`."""
+        if self.observed_ms is None:
+            return "unknown"
+        return str(self.coverage.get("observed_quality") or "unknown")
+
+    @property
+    def received_ms(self) -> int:
+        """The newest bridge-receipt clock folded into this head — the
+        head's own availability time when the source's clock is unknown,
+        stated as receipt, never as occurrence."""
+        return int(self.coverage.get("received_ms") or 0)
+
+
+#: `coverage` keys the fold writes for its own bookkeeping rather than as a
+#: coverage CLAIM — lifted to named fields in `head_detail`, never rendered
+#: inside the coverage label.
+_FOLD_CLOCK_KEYS = ("observed_quality", "received_ms")
+
 
 def _compare(head: ObservationHead, obs: Observation) -> int:
     """`obs` against the head's position: >0 newer, 0 equal, <0 stale —
@@ -763,6 +803,12 @@ def fold_observation(
         observed is None or obs.occurred_ms > observed
     ):
         observed = obs.occurred_ms
+        coverage["observed_quality"] = obs.time_quality
+    # The newest receipt the fold has seen — the honest availability clock
+    # for a head whose source clock is unknown; `received_ms` states it as
+    # receipt, never as occurrence.
+    coverage["received_ms"] = max(
+        head.received_ms, obs.received_ms)
     position, scope = head.position, head.scope
     if obs.source_position is not None and obs.revision_scope and (
         position is None or cmp > 0
@@ -1154,6 +1200,26 @@ class SourceEvent:
     coverage: str = ""
 
 
+def _short_digest(text: str) -> str:
+    import hashlib
+    return hashlib.sha256(text.encode()).hexdigest()[:8]
+
+
+def _grain_label(covered: Any) -> str:
+    """A coverage grain as a model-safe token: `guild` passes through, a
+    scoped grain (`guild:123…`, `channel abc`) keeps its NAME and digests
+    whatever identified it — a guild or channel id is a platform identifier
+    (R-18), never model-facing."""
+    text = str(covered or "")[:80]
+    name, sep, ident = text.partition(":")
+    if sep and ident:
+        return f"{name}:{_short_digest(ident)}"
+    name, _, ident = text.partition(" ")
+    if ident:
+        return f"{name}:{_short_digest(ident)}"
+    return text
+
+
 def coverage_label(coverage: Coverage | dict[str, Any] | None) -> str:
     """A coverage header/dict as one compact label, or "" for the default
     full-event coverage. The covered grain is always named first when it
@@ -1169,13 +1235,14 @@ def coverage_label(coverage: Coverage | dict[str, Any] | None) -> str:
     reason = get("reason") or ""
     parts: list[str] = []
     if covered and covered != "event":
-        parts.append(str(covered))
+        parts.append(_grain_label(covered))
     if not complete:
         parts.append("partial")
     if gaps:
-        parts.append("gaps:" + "+".join(str(g) for g in gaps))
+        parts.append("gaps:" + "+".join(
+            _grain_label(g) for g in list(gaps)[:8]))
     if reason and (not complete or gaps):
-        parts.append(f"reason:{reason}")
+        parts.append(f"reason:{_clip(str(reason), 60)}")
     return ";".join(parts)
 
 
@@ -1220,6 +1287,27 @@ _SUMMARY_MAX = 160
 def _clip(text: str, limit: int = _SUMMARY_MAX) -> str:
     text = " ".join(str(text).split())
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def revision_label(position: int | None, scope: str) -> str:
+    """One source revision as the model reads it — `<scope digest>:<pos>`.
+
+    `revision_scope` is a source-side identifier (a Discord session id, a
+    poll's revision token): ordering evidence, never a value the model
+    reads raw (R-18). The scope keeps a stable opaque digest — two events
+    in one scope share one label prefix, positions still order them."""
+    if position is None or not scope:
+        return ""
+    return f"{_short_digest(str(scope))}:{position}"
+
+
+def _option_handle(
+    ref: str, *, account_key: str = "", thread: str = "",
+) -> str:
+    """A poll option ref as a scoped opaque handle — never a tail of the
+    platform's own option id (R-18; `option <last4>` leaked exactly that)."""
+    return object_handle("option", ref,
+                         account_key=account_key, thread=thread)
 
 
 def _field_value(value: Any) -> str:
@@ -1269,6 +1357,10 @@ def observation_summary(
     reaches a prompt or a tool result."""
     p = obs.payload
     op = obs.operation
+    option_ref = lambda ref: (  # noqa: E731 — one-line projection
+        (option_label(ref) if option_label is not None else None)
+        or _option_handle(ref, account_key=obs.scope.account_key,
+                          thread=obs.scope.thread))
     if isinstance(p, PollPayload):
         if p.question:
             tail = f"“{_clip(p.question, 80)}”"
@@ -1277,13 +1369,9 @@ def observation_summary(
         if p.voter_ref or p.option_ref or p.selected is not None:
             if p.selected:
                 choice = ", ".join(
-                    option_label(o) if option_label is not None and
-                    option_label(o) else f"option {o[-4:] or '?'}"
-                    for o in p.selected) or "an option"
+                    option_ref(o) for o in p.selected[:4]) or "an option"
             elif p.option_ref:
-                choice = (option_label(p.option_ref)
-                          if option_label is not None else None) or \
-                    f"option {p.option_ref[-4:] or '?'}"
+                choice = option_ref(p.option_ref)
             else:
                 choice = "an option"
             who = ("an anonymous voter" if p.anonymous
@@ -1294,8 +1382,9 @@ def observation_summary(
                          + (f", {p.voter_count} votes"
                             if p.voter_count is not None else ""))
         if p.option_counts:
-            return _clip(f"poll {op}: totals "
-                         + ", ".join(f"{k}={v}" for k, v in p.option_counts))
+            return _clip(f"poll {op}: totals " + ", ".join(
+                f"{option_ref(k)}={v}"
+                for k, v in list(p.option_counts)[:8]))
         return f"poll {op}"
     if isinstance(p, RoomPayload):
         return _clip(f"room {op}: {_fields_summary(p.fields)}")
@@ -1327,7 +1416,7 @@ def observation_summary(
             bits.append(f"{len(p.shared_refs)} shared refs")
         return _clip(f"message metadata {op}: {', '.join(bits) or 'fields'}")
     if isinstance(p, ReactionPayload):
-        return _clip(f"reaction {op}: {p.emoji or '?'}")
+        return _clip(f"reaction {op}: {emoji_display(p.emoji or '?')}")
     return f"{obs.object_kind} {op}"
 
 
@@ -1338,6 +1427,10 @@ def head_summary(head: ObservationHead) -> str:
     `coverage`/`ordering` ride beside it so a partial or gapped state is
     never presented as settled truth."""
     s = head.state
+    opt = lambda ref: (  # noqa: E731 — label or scoped opaque handle
+        (s.get("options") or {}).get(ref, {}).get("label")
+        or _option_handle(ref, account_key=head.account_key,
+                          thread=head.thread))
     if head.kind == "poll":
         state = s.get("state") or "unknown"
         votes = s.get("votes") or {}
@@ -1349,15 +1442,16 @@ def head_summary(head: ObservationHead) -> str:
         if votes:
             parts.append(f"{len(votes)} recorded vote(s)")
         if counts:
-            parts.append("totals "
-                         + ", ".join(f"{k}={v}" for k, v in counts.items()))
+            parts.append("totals " + ", ".join(
+                f"{opt(k)}={v}" for k, v in list(counts.items())[:8]))
         return _clip("; ".join(parts))
     if head.kind == "room":
         return _clip("room: " + (_fields_summary(s.get("fields") or {})
                                  or "no fields recorded"))
     if head.kind == "membership":
         members = s.get("members") or {}
-        return _clip(f"membership: {len(members)} member(s) recorded")
+        covered = f" ({_grain_label(s['covered'])})" if s.get("covered") else ""
+        return _clip(f"membership: {len(members)} member(s) recorded{covered}")
     if head.kind == "pin":
         return _clip(f"pin set: {len(s.get('pins') or ())} pin(s)")
     if head.kind == "artifact":
@@ -1366,11 +1460,17 @@ def head_summary(head: ObservationHead) -> str:
         return _clip("metadata: "
                      + ", ".join(sorted(s.get("fields") or {})) or "none")
     if head.kind == "reaction":
-        counts = s.get("counts") or {}
-        return _clip("reactions: "
-                     + ", ".join(f"{k}={v}" for k, v in counts.items())
-                     or "none recorded")
+        counts = display_reactions((s.get("counts") or {}).items())
+        shown = list(counts.items())[:REACTION_PAIRS_MAX]
+        return _clip("reactions: " + (
+            ", ".join(f"{k}={v}" for k, v in shown)
+            + (" …" if len(counts) > len(shown) else "")
+            or "none recorded"))
     return _clip(f"{head.kind}: {head.applied} observation(s) applied")
+
+
+_NAMED_MAX = 24
+_OPTIONS_MAX = 16
 
 
 def head_detail(head: ObservationHead, *, name_of: Any = None) -> dict[str, Any]:
@@ -1390,36 +1490,66 @@ def head_detail(head: ObservationHead, *, name_of: Any = None) -> dict[str, Any]
         "ordering": head.ordering,
         "applied": head.applied,
         "summary": head_summary(head),
+        #: Which clock `observed_ms` reads — a bridge-local or unknown
+        #: source clock is stated, never read as an upstream time.
+        "time_quality": head.observed_quality,
     }
     if head.observed_ms is not None:
         out["observed_ms"] = head.observed_ms
-    if head.coverage:
-        out["coverage"] = dict(head.coverage)
+    received = head.received_ms
+    if received and head.observed_quality != "upstream":
+        out["received_ms"] = received
+    rev = revision_label(head.position, head.scope)
+    if rev:
+        out["revision"] = rev
+    coverage = {k: v for k, v in head.coverage.items()
+                if k not in _FOLD_CLOCK_KEYS}
+    if coverage:
+        out["coverage"] = coverage
+        label = coverage_label(coverage)
+        if label:
+            out["coverage_label"] = label
     if head.kind == "poll":
         out["state"] = s.get("state") or "unknown"
         if s.get("question"):
-            out["question"] = s["question"]
+            out["question"] = _clip(s["question"], 240)
         options = s.get("options") or {}
         if options:
-            # Option refs stay opaque handles (`option <tail>`); labels
-            # are the model-facing name.
+            # Option refs stay scoped opaque handles; labels are the
+            # model-facing name. The list itself is bounded — a tall
+            # option list cannot bypass the result's own budget.
             out["options"] = [
-                {"option": f"option {ref[-4:] or '?'}",
-                 "label": (e or {}).get("label") or ""}
-                for ref, e in options.items()
+                {"option": _option_handle(
+                    ref, account_key=head.account_key, thread=head.thread),
+                 "label": _clip((e or {}).get("label") or "", 80)}
+                for ref, e in list(options.items())[:_OPTIONS_MAX]
             ]
+            if len(options) > _OPTIONS_MAX:
+                out["options_more"] = len(options) - _OPTIONS_MAX
         counts = s.get("option_counts") or {}
         if counts:
-            out["tally"] = {
-                f"option {ref[-4:] or '?'}": n for ref, n in counts.items()}
+            out["tally"] = [
+                {"option": _option_handle(
+                    ref, account_key=head.account_key, thread=head.thread),
+                 "label": (s.get("options") or {}).get(ref, {}).get("label")
+                          or "",
+                 "count": n}
+                for ref, n in list(counts.items())[:_OPTIONS_MAX]
+            ]
+            if len(counts) > _OPTIONS_MAX:
+                out["tally_more"] = len(counts) - _OPTIONS_MAX
         if s.get("voter_count") is not None:
             out["voter_count"] = s["voter_count"]
         votes = s.get("votes") or {}
         if votes:
             out["recorded_votes"] = sum(len(v) for v in votes.values())
-            out["voters_named"] = sum(
-                1 for v in votes if name_of is not None and name_of(v))
-            out["voters_unnamed"] = len(votes) - out["voters_named"]
+            named = [n for v in votes
+                     if (n := name_of(v) if name_of is not None else None)]
+            if named:
+                out["voters_named"] = named[:_NAMED_MAX]
+                if len(named) > _NAMED_MAX:
+                    out["voters_named_more"] = len(named) - _NAMED_MAX
+            out["voters_unnamed"] = len(votes) - len(named)
         if s.get("anonymous") is not None:
             out["anonymous"] = s["anonymous"]
         if s.get("counts_complete") is not None:
@@ -1428,7 +1558,7 @@ def head_detail(head: ObservationHead, *, name_of: Any = None) -> dict[str, Any]
     if head.kind == "room":
         fields = s.get("fields") or {}
         out["fields"] = {
-            k: v for k, v in fields.items()
+            k: v for k, v in list(fields.items())[:32]
             if isinstance(v, (str, int, float, bool)) or v is None
         }
         # Structured field values (permission sets, participant maps) are
@@ -1436,22 +1566,62 @@ def head_detail(head: ObservationHead, *, name_of: Any = None) -> dict[str, Any]
         complex_fields = [k for k, v in fields.items()
                           if not isinstance(v, (str, int, float, bool, type(None)))]
         if complex_fields:
-            out["fields_structured"] = sorted(complex_fields)
+            out["fields_structured"] = sorted(complex_fields)[:32]
         return out
     if head.kind == "membership":
         members = s.get("members") or {}
         out["member_count"] = len(members)
-        named = [m for m in members if name_of is not None and name_of(m)]
+        named = [n for m in members
+                 if (n := name_of(m) if name_of is not None else None)]
         if named:
-            out["members_named"] = [name_of(m) for m in named]
+            out["members_named"] = named[:_NAMED_MAX]
+            if len(named) > _NAMED_MAX:
+                out["members_named_more"] = len(named) - _NAMED_MAX
         out["members_unnamed"] = len(members) - len(named)
         if s.get("covered"):
-            out["covered"] = s["covered"]
+            out["covered"] = _grain_label(s["covered"])
         return out
     if head.kind == "pin":
         out["pin_count"] = len(s.get("pins") or {})
         return out
     if head.kind == "artifact":
-        out["artifact_count"] = len(s.get("artifacts") or {})
+        arts = s.get("artifacts") or {}
+        out["artifact_count"] = len(arts)
+        kinds = sorted({(a or {}).get("artifact_kind") or ""
+                        for a in arts.values()} - {""})
+        if kinds:
+            out["artifact_kinds"] = kinds[:16]
+        return out
+    if head.kind == "reaction":
+        counts = display_reactions((s.get("counts") or {}).items())
+        shown = dict(list(counts.items())[:REACTION_PAIRS_MAX])
+        if shown:
+            out["counts"] = shown
+            if len(counts) > len(shown):
+                out["counts_more"] = len(counts) - len(shown)
+        if s.get("snapshot"):
+            out["snapshot"] = True
+        reactors = [r for r in (s.get("reactors") or []) if r]
+        named = [n for r in reactors
+                 if (n := name_of(r) if name_of is not None else None)]
+        if named:
+            out["reactors_named"] = named[:_NAMED_MAX]
+            if len(named) > _NAMED_MAX:
+                out["reactors_named_more"] = len(named) - _NAMED_MAX
+        unnamed = len(reactors) - len(named)
+        if unnamed:
+            out["reactors_unnamed"] = unnamed
+        return out
+    if head.kind == "message_metadata":
+        fields = s.get("fields") or {}
+        out["fields"] = {
+            k: v for k, v in list(fields.items())[:16]
+            if k != "shared_refs" and
+            isinstance(v, (str, int, float, bool, type(None)))
+        }
+        if fields.get("shared_refs"):
+            # Shared-object refs are platform identities — counted, never
+            # listed raw.
+            out["shared_refs"] = len(fields["shared_refs"])
         return out
     return out

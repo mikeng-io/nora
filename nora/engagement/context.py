@@ -56,7 +56,6 @@ from nora.domain.models import (
 )
 from nora.domain.notes import Note
 from nora.domain.observations import (
-    Observation,
     SourceEvent,
     SourceScope,
     coverage_label,
@@ -64,6 +63,7 @@ from nora.domain.observations import (
     head_summary,
     object_handle,
     observation_summary,
+    revision_label,
 )
 from nora.domain.ports import (
     CultureReader,
@@ -100,16 +100,6 @@ log = logging.getLogger(__name__)
 #: bound on the most recently observed objects, not "every open poll
 #: forever" and not an arbitrary first-N of the scope.
 _SOURCE_OBJECT_MAX = 12
-
-
-def _revision_label(obs: Observation) -> str:
-    """The source revision as one label (`scope:position`), or "" when the
-    source supplied no ordered position — ordering evidence, never
-    coerced from arrival."""
-    if obs.source_position is None:
-        return ""
-    scope = obs.revision_scope or "rev"
-    return f"{scope}:{obs.source_position}"
 
 
 class StandingNotesReader(Protocol):
@@ -1053,10 +1043,16 @@ class TranscriptInjection:
                             conversation_id=msg.conversation_id)
         limit = self._prompt_window or self._context_window
         try:
+            # Both reads take ONE row past what they show — the sentinel
+            # that makes `*_more` an honest count instead of a silently
+            # complete-looking page. `heads` answers recency-ordered
+            # (`updated_at` — the object most recently touched first), so
+            # the page IS the freshest and `objects_more` is a real count
+            # of unshown heads, up to the page bound.
             rows, heads = await asyncio.gather(
                 traced_read(
                     "observations", "recent",
-                    self._observations.recent(scope=scope, limit=limit)),
+                    self._observations.recent(scope=scope, limit=limit + 1)),
                 traced_read(
                     "observations", "heads",
                     self._observations.heads(scope=scope, limit=64)),
@@ -1112,27 +1108,41 @@ class TranscriptInjection:
                     option_label=lambda ref, r=r: option_label(r, ref)),
                 target_message_id=r.target_message_id,
                 received_ms=r.observation.received_ms,
-                revision=_revision_label(r.observation),
+                revision=revision_label(
+                    r.observation.source_position,
+                    r.observation.revision_scope),
                 coverage=coverage_label(r.observation.coverage),
             )
-            for r in rows
+            for r in rows[:limit]
         )
         # Current state, most-recently-observed first — relevance is
         # recency, not all-open-polls-forever: an object the room has not
         # touched in a while yields its slot to one it just did, and the
-        # bound says how many older heads were not shown.
+        # bound says how many older heads were not shown. A head's own
+        # clock stays honest: `observed_ms` is the newest SOURCE time the
+        # fold applied, `observed_quality` says which clock that is, and
+        # `received_ms` is the newest receipt — never presented as the
+        # source's own time. Recency ranks on whichever clock exists.
         heads = sorted(
             (h for h in heads if h.applied > 0),
-            key=lambda h: h.observed_ms or 0, reverse=True)
+            key=lambda h: max(h.observed_ms or 0, h.received_ms),
+            reverse=True)
         objects = tuple(
             SourceEvent(
-                ref=f"{h.kind}:{h.object_ref}", kind=h.kind, operation="state",
+                # `head_id` IS the newest applied row's id — naming the
+                # head by `platform_observation:<id>` makes it the SAME
+                # ref an event row carries, so an object whose newest
+                # change is already shown as an `<source_event>` is
+                # recognisably the same thing, not a second fact.
+                ref=f"platform_observation:{h.head_id}",
+                kind=h.kind, operation="state",
                 at_ms=h.observed_ms or 0,
-                time_quality=("upstream" if h.observed_ms is not None
-                              else "unknown"),
+                time_quality=h.observed_quality,
                 actor=None, actor_status="not_applicable",
                 handle=handle_of(h),
                 summary="", state=head_summary(h), ordering=h.ordering,
+                received_ms=h.received_ms,
+                revision=revision_label(h.position, h.scope),
                 coverage=coverage_label(h.coverage),
             )
             for h in heads[: _SOURCE_OBJECT_MAX]

@@ -774,8 +774,9 @@ class TagContext:
     source_objects: tuple[Any, ...] = ()
     # `source_reads_failed` marks a FAILED observation read so the prompt
     # can say «could not read» rather than presenting an empty list as
-    # «nothing recorded» (R-27); the `*_more` counts say how many events/
-    # heads the bounds left out, so a slice is never read as the whole.
+    # «nothing recorded» (R-27); the `*_more` counts are a LOWER BOUND on
+    # what the bounds left out — each read takes a sentinel row past what
+    # it shows, so a slice is never read as the whole.
     source_reads_failed: bool = False
     source_events_more: int = 0
     source_objects_more: int = 0

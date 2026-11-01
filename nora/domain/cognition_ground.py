@@ -307,6 +307,10 @@ class Grounding:
     #: transcript row and never as a guess.
     source_objects: Mapping[str, tuple[SourceEvent, ...]] = field(
         default_factory=dict)
+    #: `room_key` → how many MORE folded heads the room's bounded read
+    #: confirmed exist beyond those shown in `source_objects` — a lower
+    #: bound, never a silently complete-looking list.
+    source_objects_more: Mapping[str, int] = field(default_factory=dict)
     #: Nora's own sends inside each item's window, by the item's index in the
     #: agenda that was grounded (D1): what the room's messages may be answering.
     own_sends: Mapping[int, tuple[RecordItem, ...]] = field(default_factory=dict)

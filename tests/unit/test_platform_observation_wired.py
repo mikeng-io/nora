@@ -36,12 +36,16 @@ from nora.app.wake import WakeEvaluator
 from nora.domain.cognition_session import Room
 from nora.domain.models import EditTarget, NormalizedMessage, PersonRef
 from nora.domain.observations import (
+    ArtifactPayload,
     Coverage,
+    MembershipEntry,
+    MembershipPayload,
     Observation,
     PinPayload,
     PollPayload,
     SourceScope,
     object_handle,
+    revision_label,
 )
 from nora.domain.ports import EngageDecision, EngagementRequest
 from nora.domain.stimuli import NewStimulus, WakePolicy
@@ -74,14 +78,25 @@ PERSONS = Persons(
 
 def _obs(*, kind: str, ref: str, op: str, payload: Any, ago: float,
          actor: str = "", actor_status: str = "not_supplied",
-         position: int | None = None,
+         position: int | None = None, rev_scope: str = "rev",
+         room: str = CID, platform: str = "signal",
+         target: Any = None, subject: str = "",
+         unknown: bool = False,
          coverage: Coverage | None = None) -> Observation:
+    if unknown:
+        occurred_ms, quality = None, "unknown"
+    else:
+        occurred_ms, quality = NOW_MS - int(ago * MIN), "upstream"
     return Observation(
-        object_kind=kind, scope=SCOPE, object_ref=ref, operation=op,
-        payload=payload, actor_id=actor, actor_status=actor_status,
-        occurred_ms=NOW_MS - int(ago * MIN), received_ms=NOW_MS - int(ago * MIN) + 5,
-        time_quality="upstream", source_position=position,
-        revision_scope="rev" if position is not None else "",
+        object_kind=kind,
+        scope=SourceScope(platform=platform, account_key="acct",
+                          conversation_id=room),
+        object_ref=ref, operation=op,
+        payload=payload, target=target, subject_ref=subject,
+        actor_id=actor, actor_status=actor_status,
+        occurred_ms=occurred_ms, received_ms=NOW_MS - int(ago * MIN) + 5,
+        time_quality=quality, source_position=position,
+        revision_scope=rev_scope if position is not None else "",
         coverage=coverage or Coverage(),
     )
 
@@ -150,12 +165,13 @@ class _NoRecord:
         return (), False, frozenset()
 
 
-def _tools(audit: FakeRecordStore, store: Any, cid: str = CID) -> dict[str, Any]:
+def _tools(audit: FakeRecordStore, store: Any, cid: str = CID,
+           platform: str = "signal") -> dict[str, Any]:
     tools = build_tools(
         store=audit, conversation_id=cid, conversation_type="group",
         persons=PERSONS, honcho=FakeMemoryStore(), deliverer=SinkSender(),
         metrics=Metrics(),
-        room=AgentRoom(platform="signal", conversation_id=cid,
+        room=AgentRoom(platform=platform, conversation_id=cid,
                        roster_source=None, persons=PERSONS),
         transit_source=TransitClient(
             kmb_base_url="http://127.0.0.1:1",
@@ -215,7 +231,10 @@ async def test_vote_and_close_with_no_new_human_message_still_render():
     assert ("poll", "add") in ops and ("poll", "revise") in ops
     close = next(e for e in ctx.source_events
                  if e.operation == "revise" and e.kind == "poll")
-    assert close.revision == "rev:3"
+    # The revision label is the shared opaque projection — the raw
+    # `revision_scope` value never renders, the position does.
+    assert close.revision == revision_label(3, "rev")
+    assert "rev" not in close.revision.split(":")[0]
 
 
 async def test_a_failed_source_read_is_unavailable_not_empty():
@@ -398,7 +417,8 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
     assert agent.calls == 1
     (prompt,) = agent.prompts
     assert "<observation" in prompt and 'kind="poll"' in prompt
-    assert 'op="revise"' in prompt and 'rev="rev:3"' in prompt
+    assert 'op="revise"' in prompt
+    assert f'rev="{revision_label(3, "rev")}"' in prompt
     assert "closed" in prompt and "p1" not in prompt
 
     # Consumed exactly once: a second tick with nothing new wakes nothing.
@@ -421,3 +441,333 @@ async def test_the_wire_contract_refuses_a_wrong_scope_and_a_malformed_row():
         observation_from_dict(wrong, expect_scope=SCOPE)
     with pytest.raises(ValueError):
         observation_from_dict({})  # no contract — refused at the boundary
+
+
+async def test_high_cardinality_reads_mark_their_overflow():
+    """Bounded reads never pretend to be the whole: a 50-event window read
+    returns `source_more` and 16 folded objects return `source_objects_more`
+    — exact counts below the fetch page, lower bounds above it."""
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    await _say(audit, 3)
+    for i in range(50):  # one pin SET, fifty pin events
+        await store.append(
+            observation=_obs(
+                kind="pin", ref="pins", op="add",
+                payload=PinPayload(message=EditTarget(message_id=f"m-{i}")),
+                ago=200 - i, actor="+852111", actor_status="known"),
+            event_id=f"cap-{i}", source_digest=f"cap-{i}")
+    for i in range(15):  # fifteen artifact objects
+        await store.append(
+            observation=_obs(
+                kind="artifact", ref=f"art-{i}", op="create",
+                payload=ArtifactPayload(artifact_kind="post"),
+                ago=10 + i * 0.01),
+            event_id=f"art-{i}", source_digest=f"art-{i}")
+
+    ctx = await _assembler(audit, store).assemble(request=_request())
+
+    assert len(ctx.source_events) == 40 and ctx.source_events_more == 1
+    assert len(ctx.source_objects) == 12 and ctx.source_objects_more == 4
+    prompt = _prompt(ctx)
+    assert 'source_more="1"' in prompt
+    assert '<source_objects_more count="4"/>' in prompt
+
+
+async def test_revision_and_head_ref_agree_across_prompt_and_tools():
+    """One revision label everywhere: the prompt event, the Standing
+    source_object and `record_query`'s detail carry the same opaque
+    `digest:position`, and the folded head's ref is the newest applied
+    event's own `platform_observation:` id — event and current views
+    deduplicate on it."""
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    ids = await _seed(store)
+    # A raw revision scope that must NEVER render — digest only.
+    for i in range(3):
+        await store.append(
+            observation=_obs(
+                kind="pin", ref="pins", op="add",
+                payload=PinPayload(message=EditTarget(message_id=f"x-{i}")),
+                ago=3 - i, position=10 + i, rev_scope="discord-sess-9f8c"),
+            event_id=f"rv-{i}", source_digest=f"rv-{i}")
+    tools = _tools(audit, store)
+    ctx = await _assembler(audit, store).assemble(request=_request())
+
+    close = next(e for e in ctx.source_events
+                 if e.kind == "poll" and e.operation == "revise")
+    pin_head = next(o for o in ctx.source_objects if o.kind == "pin")
+    poll_head = next(o for o in ctx.source_objects if o.kind == "poll")
+    assert pin_head.revision == revision_label(12, "discord-sess-9f8c")
+    # The current view points at the event that produced it.
+    assert poll_head.ref == f"platform_observation:{ids['close']}"
+    assert close.ref == poll_head.ref
+
+    listed = await _call(tools, "poll_list")
+    handle = listed["polls"][0]["object"]
+    detail = await _call(tools, "record_query", kind="poll", object=handle)
+    assert detail["detail"]["revision"] == close.revision
+
+    prompt = _prompt(ctx)
+    assert f'rev="{close.revision}"' in prompt
+    assert f'rev="{pin_head.revision}"' in prompt
+    assert "discord-sess" not in prompt
+    assert "sess-9f8c" not in json.dumps(detail)
+
+
+async def test_unknown_source_time_never_dresses_up_as_upstream():
+    """A bridge row with no source clock keeps `time="unknown"` and its
+    receipt stamps, on every surface; nothing fabricates `at`/`observed`."""
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    await _say(audit, 2)
+    await store.append(
+        observation=_obs(
+            kind="pin", ref="pins", op="add",
+            payload=PinPayload(message=EditTarget(message_id="m-1")),
+            ago=8, unknown=True),
+        event_id="unk-1", source_digest="unk-1")
+    tools = _tools(audit, store)
+    ctx = await _assembler(audit, store).assemble(request=_request())
+
+    (event,) = [e for e in ctx.source_events if e.kind == "pin"]
+    assert event.time_quality == "unknown"
+    assert event.at_ms == event.received_ms  # ordered by receipt, honestly
+    (head,) = [o for o in ctx.source_objects if o.kind == "pin"]
+    assert head.time_quality == "unknown" and head.received_ms
+
+    prompt = _prompt(ctx)
+    ev_line = next(ln for ln in prompt.splitlines()
+                   if ln.startswith("<source_event"))
+    assert 'time="unknown"' in ev_line and "received=" in ev_line
+    assert "at=" not in ev_line
+    obj_line = next(ln for ln in prompt.splitlines()
+                    if ln.startswith("<source_object"))
+    assert 'time="unknown"' in obj_line and "received=" in obj_line
+    assert "observed=" not in obj_line
+
+    found = await _call(tools, "record_query", kind="pin")
+    assert found["status"] == "ok" and found["objects"][0]["time"] == "unknown"
+    detail = await _call(tools, "record_query", kind="pin",
+                         object=found["objects"][0]["object"])
+    d = detail["detail"]
+    assert d["time_quality"] == "unknown"
+    assert "observed_ms" not in d and d["received_ms"]
+    hist = await _call(tools, "record_query", kind="pin",
+                       object=found["objects"][0]["object"], history=True)
+    (row,) = hist["events"]
+    assert row["time"] == "unknown" and "at_ms" not in row
+    assert row["received_ms"]
+
+
+async def test_mixed_share_member_pin_poll_journey_all_surfaces():
+    """The journey case: an artifact share, a member join and a pin land
+    between the poll's vote and close. Every surface folds them into the
+    right kinds; the session runner's agenda wake carries them typed."""
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    await _seed(store)
+    await store.append(
+        observation=_obs(
+            kind="artifact", ref="a1", op="create",
+            payload=ArtifactPayload(artifact_kind="post", custody="external",
+                                    metadata={"title": "a clip"}),
+            ago=45, actor="+852111", actor_status="known", position=5),
+        event_id="art-1", source_digest="art-1")
+    await store.append(
+        observation=_obs(
+            kind="membership", ref="members", op="add",
+            payload=MembershipPayload(
+                members=(MembershipEntry(person_ref="+999000", state="member"),)),
+            ago=40, actor="+852111", actor_status="known",
+            subject="+999000", position=6,
+            coverage=Coverage(covered="channel")),
+        event_id="mem-1", source_digest="mem-1")
+    await _say(audit, 5)
+    tools = _tools(audit, store)
+
+    state = await _call(tools, "room_state_read")
+    assert state["status"] == "ok", state
+    assert "memberships" in state and "pins" in state
+    member_detail = state["memberships"][0]["detail"]
+    assert member_detail["member_count"] == 1
+    assert "+999000" not in json.dumps(state)
+
+    ctx = await _assembler(audit, store).assemble(request=_request())
+    seen = {(e.kind, e.operation) for e in ctx.source_events}
+    assert {("artifact", "create"), ("membership", "add"),
+            ("pin", "add"), ("poll", "revise")} <= seen
+    heads = {o.kind for o in ctx.source_objects}
+    assert {"artifact", "membership", "pin", "poll"} <= heads
+    prompt = _prompt(ctx)
+    assert 'kind="artifact"' in prompt and 'kind="membership"' in prompt
+    assert "a1" not in prompt and "+999000" not in prompt
+    # The join names nobody — the subject isn't on the roster.
+    member_ev = next(e for e in ctx.source_events if e.kind == "membership")
+    assert "+999000" not in member_ev.summary
+
+    # The same room reads stay typed and scoped through the tools.
+    found = await _call(tools, "record_query", kind="artifact")
+    assert found["status"] == "ok" and len(found["objects"]) == 1
+    out = await _call(tools, "record_query", kind="artifact",
+                      object=found["objects"][0]["object"])
+    assert out["status"] == "ok" and out["detail"]["artifact_kinds"] == ["post"]
+    out = await _call(tools, "record_query", kind="membership")
+    assert out["status"] == "ok" and "+999000" not in json.dumps(out)
+
+
+async def test_named_and_anonymous_voters_stay_distinct_everywhere():
+    """Named voters resolve; anonymous and unmapped voters count unnamed —
+    never invented, never leaking their refs."""
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    await store.append(
+        observation=_obs(
+            kind="poll", ref="p1", op="create",
+            payload=PollPayload(question="Lunch?",
+                                options=(("r", "ramen"), ("s", "sushi"))),
+            ago=120, actor="+852111", actor_status="known", position=1),
+        event_id="e1", source_digest="e1")
+    await store.append(
+        observation=_obs(
+            kind="poll", ref="p1", op="add",
+            payload=PollPayload(voter_ref="+852111", option_ref="ramen"),
+            ago=60, actor="+852111", actor_status="known", position=2),
+        event_id="e2", source_digest="e2")
+    await store.append(
+        observation=_obs(
+            kind="poll", ref="p1", op="add",
+            payload=PollPayload(voter_ref="anon-77", option_ref="sushi"),
+            ago=55, actor_status="anonymous", position=3),
+        event_id="e3", source_digest="e3")
+    await store.append(
+        observation=_obs(
+            kind="poll", ref="p1", op="add",
+            payload=PollPayload(voter_ref="v-9", option_ref="sushi"),
+            ago=50, actor="999", actor_status="known", position=4),
+        event_id="e4", source_digest="e4")
+    tools = _tools(audit, store)
+
+    listed = await _call(tools, "poll_list")
+    detail = await _call(tools, "poll_read",
+                         object=listed["polls"][0]["object"])
+    d = detail["detail"]
+    assert d["voters_named"] == ["Ada"] and d["voters_unnamed"] == 2
+    dumped = json.dumps(detail)
+    assert "anon-77" not in dumped and "v-9" not in dumped and '"999"' not in dumped
+
+    ctx = await _assembler(audit, store).assemble(request=_request())
+    prompt = _prompt(ctx)
+    anon = next(e for e in ctx.source_events if e.actor_status == "anonymous")
+    assert anon.actor == "" and "anon-77" not in prompt
+
+
+async def test_source_event_links_to_its_shown_transcript_row():
+    """`target_message_id` finally renders: a pin of a shown message gains
+    `on="<n>"` matching that row's `#n`; a target outside the window, and
+    an unresolved target, carry no `on`. `resolve_targets` re-links the
+    durable row and the next assemble shows the link."""
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    rid = await audit.append(message=NormalizedMessage(
+        platform="signal", conversation_id=CID, conversation_type="group",
+        sender_id="+852111", sender_name="Ada",
+        timestamp=NOW_MS - 10 * MIN, body="the pinned words", raw={}))
+    await store.append(
+        observation=_obs(
+            kind="pin", ref="pins", op="add",
+            payload=PinPayload(message=EditTarget(message_id="m-1")),
+            ago=5, target=EditTarget(message_id="m-1")),
+        event_id="pin-1", source_digest="pin-1")
+    await store.append(
+        observation=_obs(
+            kind="pin", ref="pins", op="add",
+            payload=PinPayload(message=EditTarget(message_id="m-2")),
+            ago=4, target=EditTarget(message_id="m-2")),
+        event_id="pin-2", source_digest="pin-2")
+
+    ctx = await _assembler(audit, store).assemble(request=_request())
+    prompt = _prompt(ctx)
+    pin_events = [e for e in ctx.source_events if e.kind == "pin"]
+    assert len(pin_events) == 2
+    assert all(e.target_message_id is None for e in pin_events)
+    transcript_part = prompt.split("<group_transcript")[1]
+    assert 'on="' not in transcript_part.split("</group_transcript>")[0]
+
+    # Late resolution: the durable row links, the next assemble renders it.
+    linked = await store.resolve_targets(
+        scope=SCOPE, target_key="id:m-1", message_id=rid)
+    assert linked == 1
+    ctx = await _assembler(audit, store).assemble(request=_request())
+    prompt = _prompt(ctx)
+    index_of = {row.id: i for i, row in enumerate(ctx.transcript, 1)}
+    want = index_of[rid]
+    pin_lines = [ln for ln in prompt.splitlines()
+                 if ln.startswith("<source_event") and 'kind="pin"' in ln]
+    # Both pins name the same object handle; exactly ONE carries `on=`,
+    # and it points at the shown message's own `#n` index.
+    with_on = [ln for ln in pin_lines if "on=" in ln]
+    assert len(pin_lines) == 2 and len(with_on) == 1
+    assert f'on="{want}"' in with_on[0]
+    assert any(e.target_message_id is None for e in ctx.source_events
+               if e.kind == "pin")
+
+    tools = _tools(audit, store)
+    out = await _call(tools, "load_transcript", limit=40)
+    pins = [m["source_event"] for m in out["messages"]
+            if m.get("source_event", {}).get("kind") == "pin"]
+    assert sorted(p.get("on") or 0 for p in pins) == [0, want]
+
+
+async def test_model_facing_surfaces_carry_no_platform_ids():
+    """One sweep: raw refs, actor numbers, account keys, room ids, revision
+    scopes and message ids appear on NONE of the model-facing surfaces."""
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    await _seed(store)
+    await store.append(
+        observation=_obs(
+            kind="membership", ref="members", op="add",
+            payload=MembershipPayload(members=(
+                MembershipEntry(person_ref="+999000", state="member"),)),
+            ago=40, subject="+999000",
+            coverage=Coverage(covered="guild:123456789")),
+        event_id="mg-1", source_digest="mg-1")
+    tools = _tools(audit, store)
+    ctx = await _assembler(audit, store).assemble(request=_request())
+
+    surfaces = [_prompt(ctx)]
+    for name, kw in (
+        ("poll_list", {}), ("room_state_read", {}),
+        ("record_query", {"kind": "poll"}),
+        ("record_query", {"kind": "membership"}),
+        ("load_transcript", {"limit": 40}),
+    ):
+        surfaces.append(json.dumps(await _call(tools, name, **kw)))
+    blob = "\n".join(surfaces)
+    for raw in ("p1", "+852111", "+999000", "123456789", "acct", "m-1"):
+        assert raw not in blob, raw
+
+
+async def test_unsupported_platform_kind_is_unavailable_never_empty():
+    """The frozen coverage matrix: an Instagram poll read says
+    `unavailable`, a kind the platform could serve says `nothing_found`
+    — and the answer never widens authority."""
+    store = FakeObservationStore()
+    await store.append(
+        observation=_obs(
+            kind="pin", ref="pins", op="add",
+            payload=PinPayload(message=EditTarget(message_id="m-1")),
+            platform="instagram", ago=5),
+        event_id="ig-1", source_digest="ig-1")
+    ig_tools = _tools(FakeRecordStore(), store, platform="instagram")
+
+    listed = await _call(ig_tools, "poll_list")
+    assert listed["status"] == "unavailable"
+    read = await _call(ig_tools, "poll_read", object="poll:0123456789ab")
+    assert read["status"] == "unavailable"
+    rq = await _call(ig_tools, "record_query", kind="poll")
+    assert rq["status"] == "unavailable"
+    # A kind the same source CAN carry reads normally — not unavailable.
+    rq = await _call(ig_tools, "record_query", kind="pin")
+    assert rq["status"] == "ok" and len(rq["objects"]) == 1
+    # And a signal-bound read in the same room still says nothing_found,
+    # not unavailable — the matrix marks Instagram's polls, not polls.
+    sig_tools = _tools(FakeRecordStore(), store)
+    rq = await _call(sig_tools, "record_query", kind="poll")
+    assert rq["status"] == "nothing_found"
+    listed = await _call(sig_tools, "poll_list")
+    assert listed["status"] == "nothing_found"

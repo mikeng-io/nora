@@ -94,6 +94,7 @@ from nora.domain.observations import (
     head_summary,
     object_handle,
     observation_summary,
+    revision_label,
 )
 from nora.domain.profile import ProfileLine, ProfileView
 from nora.domain.record_query import RecordHit, RecordRefHit
@@ -492,53 +493,60 @@ async def _observation_lines(
             summary=observation_summary(obs, name_of=name_of),
             target_message_id=row.target_message_id,
             received_ms=obs.received_ms,
-            revision=_revision_label(obs),
+            revision=revision_label(
+                obs.source_position, obs.revision_scope),
             coverage=coverage_label(obs.coverage),
         )
     return out
 
 
-def _revision_label(obs: Any) -> str:
-    """`scope:position` of the source revision, or "" when none was
-    supplied — ordering evidence, never coerced from arrival."""
-    if obs.source_position is None:
-        return ""
-    return f"{obs.revision_scope or 'rev'}:{obs.source_position}"
-
-
 async def _source_objects(
     agenda_rooms: Sequence[Room], allowed: set[tuple[str, str]],
     observations: Any | None, persons: Any, *, limit: int = 8,
-) -> dict[str, tuple[SourceEvent, ...]]:
-    """The agenda rooms' folded source-object heads, `room_key` → at most
-    `limit` of the newest — the Standing block's typed input. A room the
-    unit does not own contributes nothing; an unwired store reads as no
-    objects, never as a failed guess."""
+) -> tuple[dict[str, tuple[SourceEvent, ...]], dict[str, int]]:
+    """The agenda rooms' folded source-object heads — `(room_key → at most
+    `limit` of the newest, room_key → how many more the read confirmed)` —
+    the Standing block's typed input. A room the unit does not own
+    contributes nothing; an unwired store reads as no objects, never as a
+    failed guess. The read takes `limit + 1` so the `more` count is a real
+    lower bound, not a silently complete-looking list."""
     out: dict[str, tuple[SourceEvent, ...]] = {}
+    more: dict[str, int] = {}
     if observations is None:
-        return out
+        return out, more
     for room in agenda_rooms:
         if (room.platform, room.conversation_id) not in allowed:
             continue
         heads = await observations.heads(
             scope=SourceScope(platform=room.platform, account_key="",
                               conversation_id=room.conversation_id),
-            limit=limit)
+            limit=limit + 1)
+        heads = sorted(
+            (h for h in heads if h.applied > 0),
+            key=lambda h: max(h.observed_ms or 0, h.received_ms),
+            reverse=True)
         events: list[SourceEvent] = []
-        for h in sorted((h for h in heads if h.applied > 0),
-                        key=lambda h: h.observed_ms or 0, reverse=True):
+        for h in heads[:limit]:
             events.append(SourceEvent(
-                ref=f"{h.kind}:{h.object_ref}", kind=h.kind,
+                # `head_id` IS the newest applied row's id — the head is
+                # named by the same `platform_observation:<id>` ref the
+                # agenda's stimulus row carries, so an object already shown
+                # as an `<observation>` is recognisably the same thing.
+                ref=f"platform_observation:{h.head_id}", kind=h.kind,
                 operation="state", at_ms=h.observed_ms or 0,
-                time_quality=("upstream" if h.observed_ms is not None
-                              else "unknown"),
+                time_quality=h.observed_quality,
                 actor=None, actor_status="not_applicable",
                 handle=handle_of(h),
                 summary="", state=head_summary(h), ordering=h.ordering,
+                received_ms=h.received_ms,
+                revision=revision_label(h.position, h.scope),
                 coverage=coverage_label(h.coverage)))
         if events:
-            out[f"{room.platform}:{room.conversation_id}"] = tuple(events)
-    return out
+            key = f"{room.platform}:{room.conversation_id}"
+            out[key] = tuple(events)
+            if len(heads) > len(events):
+                more[key] = len(heads) - len(events)
+    return out, more
 
 
 def build_grounder(
@@ -767,12 +775,13 @@ def build_grounder(
             )
         observations_out = await _observation_lines(
             pending, claimed, observations, allowed, persons)
-        source_objects = await _source_objects(
+        source_objects, source_objects_more = await _source_objects(
             agenda_rooms, allowed, observations, persons)
         return Grounding(
             records=records_out, notes=notes, memos=memos, events=tuple(events),
             rollups=rollups, socials=_social_lines(pending, claimed, persons),
             observations=observations_out, source_objects=source_objects,
+            source_objects_more=source_objects_more,
             own_sends=own_sends, room_labels=labels, self_account=account,
             self_profile=profile_view, profile_names=profile_names,
         )
