@@ -53,6 +53,7 @@ from nora.infra.sql.schema import (
     MESSAGE_EDIT,
     MESSAGE_REACTION,
     MESSAGES,
+    PLATFORM_OBJECT_STATE,
     PLATFORM_OBSERVATION,
     TAG_TRACE,
 )
@@ -249,7 +250,9 @@ async def reaction_states(
     obs_bounded = (
         sa.select(obs_ranked).where(obs_ranked.c.rn <= REACTION_STATES_MAX)
     ).cte("obs_bounded")
-    nul = sa.literal(None)
+    null_int = sa.cast(sa.null(), sa.BigInteger)
+    null_text = sa.cast(sa.null(), sa.Text)
+    null_json = sa.cast(sa.null(), pg.JSONB)
     union = sa.union_all(
         # Per-target union meta: real totals, never the capped window's.
         sa.select(
@@ -262,7 +265,7 @@ async def reaction_states(
                 sa.func.coalesce(obs_meta.c.observed_at, 0)).label("b"),
             sa.func.coalesce(expected.c.expected, 0).label("c"),
             sa.func.coalesce(obs_meta.c.recorded, 0).label("d"),
-            nul.label("e"), nul.label("f"), nul.label("j"),
+            null_text.label("e"), null_text.label("f"), null_json.label("j"),
         ).select_from(
             meta.outerjoin(
                 expected, meta.c.message_id == expected.c.message_id)
@@ -274,7 +277,7 @@ async def reaction_states(
         sa.select(
             sa.literal("s"), bounded.c.message_id,
             bounded.c.id, bounded.c.ts, bounded.c.at,
-            bounded.c.removed, bounded.c.sender_id, bounded.c.emoji, nul,
+            bounded.c.removed, bounded.c.sender_id, bounded.c.emoji, null_json,
         ),
         # Bounded typed rows as JSON — the whole row the fold needs.
         sa.select(
@@ -283,8 +286,8 @@ async def reaction_states(
             sa.cast(
                 sa.extract("epoch", obs_bounded.c.recorded_at) * 1_000_000,
                 sa.BigInteger),
-            nul, nul, nul, nul,
-            sa.type_coerce(sa.func.to_jsonb(obs_bounded), pg.JSONB)),
+            null_int, null_int, null_text, null_text,
+            sa.type_coerce(sa.func.to_jsonb(obs_bounded.table_valued()), pg.JSONB)),
     )
     rows = (await conn.execute(union)).all()
     meta_by: dict[int, tuple[int, int, int, int]] = {}
@@ -805,7 +808,7 @@ class SqlRecordStore:
     async def append_reaction(
         self, *, message_id: int, message: NormalizedMessage, person_id: str | None,
     ) -> int:
-        """See `nora.domain.ports.RecordStore.append_reaction`. One INSERT."""
+        """Record the delta and refresh existing reaction-head discovery."""
         touch = message.touch
         stmt = sa.insert(MESSAGE_REACTION).values(
             message_id=message_id,
@@ -819,6 +822,16 @@ class SqlRecordStore:
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
             row_id = int(result.scalar_one())
+            heads = PLATFORM_OBJECT_STATE
+            target_link = sa.exists().where(
+                PLATFORM_OBSERVATION.c.kind == "reaction",
+                PLATFORM_OBSERVATION.c.target_message_id == message_id,
+                *(PLATFORM_OBSERVATION.c[name] == heads.c[name]
+                  for name in ("platform", "account_key", "conversation_id",
+                               "thread", "object_ref")))
+            await conn.execute(sa.update(heads).where(
+                heads.c.kind == "reaction", target_link,
+            ).values(updated_at=sa.func.clock_timestamp()))
             await memory_index.project(conn, "message", message_id, metrics=self._metrics)
         return row_id
 

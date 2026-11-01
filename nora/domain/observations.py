@@ -1019,7 +1019,7 @@ def fold_target_reactions(
     """
     legacy = list(legacy)
     stored = list(stored)
-    if not legacy and not stored:
+    if not legacy and not stored and not recorded:
         return None
 
     latest: dict[tuple[str, str], ReactionRow] = {}
@@ -1069,6 +1069,8 @@ def fold_target_reactions(
             standing = state["standing"]
             actors = standing.setdefault(r.emoji, [])
             if r.removed:
+                if r.sender_id not in actors and state["counts"].get(r.emoji):
+                    ambiguous = True
                 if r.sender_id in actors:
                     actors.remove(r.sender_id)
                 if not actors:
@@ -1116,6 +1118,11 @@ def fold_target_reactions(
                 observed_quality = obs.time_quality
             continue
         p = cast(ReactionPayload, obs.payload)
+        if obs.operation == "remove" and obs.actor_id and (
+            obs.actor_id not in state["standing"].get(p.emoji, ())
+            and state["counts"].get(p.emoji)
+        ):
+            ambiguous = True
         if obs.operation == "remove" and not obs.actor_id and (
             not state["counts"].get(p.emoji)
             and state["standing"].get(p.emoji)
@@ -1158,6 +1165,8 @@ def fold_target_reactions(
 
     if ambiguous:
         cov["ambiguous"] = True
+    if partial:
+        cov["partial"] = True
     if unordered_clock or gap:
         cov["unordered"] = True
     gapped = (gap or unordered_clock or ordering == "gap"
@@ -1331,7 +1340,9 @@ def _apply_reaction(
             else:
                 state["counts"].pop(p.emoji, None)
     elif op == "clear":
-        emojis = p.covered_emojis or tuple(standing.keys())
+        emojis = p.covered_emojis or tuple(sorted(
+            set(standing) | set(state["counts"])))
+        state["snapshot"] = False
         for emoji in emojis:
             if not p.covered_actors:
                 standing.pop(emoji, None)

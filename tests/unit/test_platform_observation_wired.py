@@ -34,7 +34,7 @@ from nora.app.cognition_session import (
 )
 from nora.app.wake import WakeEvaluator
 from nora.domain.cognition_session import Room
-from nora.domain.models import EditTarget, NormalizedMessage, PersonRef
+from nora.domain.models import EditTarget, NormalizedMessage, PersonRef, Touch
 from nora.domain.observations import (
     ArtifactPayload,
     Coverage,
@@ -42,6 +42,7 @@ from nora.domain.observations import (
     Observation,
     PinPayload,
     PollPayload,
+    ReactionPayload,
     SourceScope,
     object_handle,
     revision_label,
@@ -809,3 +810,41 @@ async def test_unsupported_platform_kind_is_unavailable_never_empty():
     assert rq["status"] == "nothing_found"
     listed = await _call(sig_tools, "poll_list")
     assert listed["status"] == "nothing_found"
+
+
+async def test_old_target_reaction_union_reaches_standing_and_real_tools():
+    audit = FakeRecordStore()
+    store = FakeObservationStore(records=audit)
+    audit.observations = store
+    mid = await audit.append(message=NormalizedMessage(
+        platform="signal", conversation_id=CID, conversation_type="group",
+        sender_id="+852111", sender_name="Ada", timestamp=NOW_MS - 180 * MIN,
+        body="an old target", raw={}, message_id="old-target"))
+
+    async def react(sender: str, ago: int) -> None:
+        await audit.append_reaction(
+            message_id=mid, person_id=None,
+            message=NormalizedMessage(
+                platform="signal", conversation_id=CID, conversation_type="group",
+                sender_id=sender, sender_name=None, timestamp=NOW_MS - ago * MIN,
+                body="", raw={}, touch=Touch(
+                    kind="reaction", target=EditTarget(message_id="old-target"),
+                    emoji="👍")))
+
+    await react("first-actor", 120)
+    await store.append(
+        observation=_obs(kind="reaction", ref="msg:old-target", op="clear",
+                         payload=ReactionPayload(), ago=60,
+                         target=EditTarget(message_id="old-target")),
+        event_id="old-clear", source_digest="old-clear", target_message_id=mid)
+    await react("second-actor", 1)
+    await _say(audit, 41)
+    ctx = await _assembler(audit, store).assemble(request=_request())
+    assert mid not in {row.id for row in ctx.transcript}
+    head = next(obj for obj in ctx.source_objects if obj.kind == "reaction")
+    assert "👍=1" in head.state
+    line = next(line for line in _prompt(ctx).splitlines()
+                if line.startswith("<source_object") and 'kind="reaction"' in line)
+    assert "👍=1" in line
+    detail = await _call(_tools(audit, store), "record_query", object=head.handle)
+    assert detail["status"] == "ok" and detail["detail"]["counts"] == {"👍": 1}

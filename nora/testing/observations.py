@@ -70,6 +70,13 @@ class FakeObservationStore:
         return [r for r in self._rows
                 if self._in_scope(r.observation.scope, scope)]
 
+    def _reaction_arrived(self, message_id: int, recorded_at: int) -> None:
+        for row in self._rows:
+            obs = row.observation
+            if obs.object_kind == "reaction" and row.target_message_id == message_id:
+                key = self._object_key(obs.scope, obs.object_kind, obs.object_ref)
+                self._touched[key] = recorded_at
+
     async def append(
         self, *, observation: Observation, event_id: str, source_digest: str,
         target_message_id: int | None = None, tx_hook: Any = None,
@@ -91,7 +98,7 @@ class FakeObservationStore:
         self._rows.append(row)
         key = self._object_key(obs.scope, obs.object_kind, obs.object_ref)
         self._heads[key] = fold_observation(self._heads.get(key), row)
-        self._touched[key] = row.id
+        self._touched[key] = int(row.recorded_at)
         return row.id
 
     def _union_rows(

@@ -3197,11 +3197,10 @@ _RECORD_QUERY_NEAR = (
 #: lives in the result, paid only when the keys appear) — shared by the three
 #: tools `_transcript_messages` annotates.
 _REACTIONS_NOTE = (
-    "A message's reaction counts come from recorded transitions only: a "
-    "count is what was recorded, not the whole upstream set (an upstream "
-    "clear, a snapshot or a reaction the capture missed is absent). "
-    "`reactions_removed` means every recorded reaction was taken back, "
-    "`reactions_partial` that the state could not be fully read, "
+    "Reaction counts fold recorded changes, including captured clears and "
+    "snapshots. They are not the complete upstream set; uncaptured changes "
+    "remain unknown. `reactions_removed` means no recorded reaction remains; "
+    "`reactions_partial` means incomplete or unproven state with counts withheld, "
     "`reactions_more` how many standing reactions were left out, and "
     "`reactions_at` the newest recorded reaction event's time."
 )

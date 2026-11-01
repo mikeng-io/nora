@@ -190,7 +190,9 @@ def _rx_union_stmt(
     resolved — a bound that names no row cannot order legacy events, which
     the fold must flag rather than guess.
     """
-    nul = sa.literal(None)
+    null_int = sa.cast(sa.null(), sa.BigInteger)
+    null_text = sa.cast(sa.null(), sa.Text)
+    null_json = sa.cast(sa.null(), pg.JSONB)
     obs_where = sa.and_(
         _scope_where(scope), OBS.c.kind == "reaction",
         OBS.c.object_ref.in_(tuple(refs)))
@@ -223,7 +225,7 @@ def _rx_union_stmt(
     bound = None
     if through_id is not None:
         bound = sa.select(OBS.c.recorded_at).where(
-            OBS.c.id == through_id).cte("rx_bound")
+            _scope_where(scope), OBS.c.id == through_id).cte("rx_bound")
         mr_where = sa.and_(
             mr_where,
             sa.cast(MESSAGE_REACTION.c.created_at,
@@ -253,33 +255,33 @@ def _rx_union_stmt(
         sa.select(
             sa.literal("t").label("tag"), t_bounded.c.account_key.label("k1"),
             t_bounded.c.thread.label("k2"), t_bounded.c.object_ref.label("k3"),
-            nul.label("mid"), t_bounded.c.id.label("a"),
-            t_bounded.c.at.label("b"), nul.label("c"), nul.label("d"),
-            nul.label("e"), nul.label("f"),
+            null_int.label("mid"), t_bounded.c.id.label("a"),
+            t_bounded.c.at.label("b"), null_int.label("c"), null_int.label("d"),
+            null_text.label("e"), null_text.label("f"),
             sa.type_coerce(
-                sa.func.to_jsonb(t_bounded), pg.JSONB).label("j")),
+                sa.func.to_jsonb(t_bounded.table_valued()), pg.JSONB).label("j")),
         sa.select(
             sa.literal("n"), t_meta.c.account_key, t_meta.c.thread,
-            t_meta.c.object_ref, nul, nul, t_meta.c.total, t_meta.c.obs,
-            nul, nul, nul, nul, nul),
+            t_meta.c.object_ref, null_int, t_meta.c.total, t_meta.c.obs,
+            null_int, null_int, null_text, null_text, null_json),
         sa.select(
-            sa.literal("l"), nul, nul, nul, l_bounded.c.message_id, nul,
+            sa.literal("l"), null_text, null_text, null_text, l_bounded.c.message_id,
             l_bounded.c.id, l_bounded.c.ts, l_bounded.c.at,
             l_bounded.c.removed, l_bounded.c.sender_id,
-            l_bounded.c.emoji, nul),
+            l_bounded.c.emoji, null_json),
         sa.select(
-            sa.literal("m"), nul, nul, nul, l_meta.c.message_id, nul,
+            sa.literal("m"), null_text, null_text, null_text, l_meta.c.message_id,
             l_meta.c.recorded, l_meta.c.observed_at,
-            sa.func.coalesce(l_expected.c.n, 0), nul, nul, nul, nul,
+            sa.func.coalesce(l_expected.c.n, 0), null_int, null_text, null_text, null_json,
         ).select_from(
             l_meta.outerjoin(
                 l_expected, l_meta.c.message_id == l_expected.c.message_id)),
     ]
     if bound is not None:
         selects.append(sa.select(
-            sa.literal("b"), nul, nul, nul, nul, nul,
+            sa.literal("b"), null_text, null_text, null_text, null_int,
             sa.func.count(bound.c.recorded_at),
-            nul, nul, nul, nul, nul, nul))
+            null_int, null_int, null_int, null_text, null_text, null_json))
     return sa.union_all(*selects)
 
 

@@ -351,6 +351,8 @@ class FakeRecordStore:
             "ts": message.timestamp, "raw_json": json.dumps(message.raw),
             "created_at": next(self._clock),
         })
+        if self.observations is not None:
+            self.observations._reaction_arrived(message_id, self.reactions[-1]["created_at"])
         return len(self.reactions)
 
     async def append_delete(

@@ -28,6 +28,7 @@ import sqlalchemy as sa
 
 from nora.domain.models import EditTarget, NormalizedMessage, Touch
 from nora.domain.observations import (
+    ArtifactPayload,
     Coverage,
     Observation,
     ReactionPayload,
@@ -307,7 +308,7 @@ async def test_as_of_overflow_reports_more_and_partial(stores):
 async def test_record_query_matches_the_annotation(stores, request):
     """`record_query` reads its hits through the same `reaction_states`
     the transcript annotation does — the union answer, not a second fold."""
-    if request.node.callspec.param == "memory":
+    if request.node.callspec.params["stores"] == "memory":
         pytest.skip("no fake record_query — the SQL store is the tool path")
     records, obs = stores
     engine = records._engine
@@ -328,3 +329,50 @@ async def test_record_query_matches_the_annotation(stores, request):
     assert hit.reactions == ann.counts == (("👍", 1),)
     assert hit.row.reactions is not None
     assert hit.row.reactions.counts == (("👍", 1),)
+
+
+async def test_clear_all_removes_unattributed_snapshot_counts(stores):
+    records, obs = stores
+    mid = await _message(records)
+    await _obs(obs, _rx("snapshot", counts={"👍": 3, "❤️": 2}), "snapshot", mid)
+    await _obs(obs, _rx("clear"), "clear", mid)
+    ann = await _annotation(records, mid)
+    head = await obs.current(scope=SCOPE, kind="reaction", object_ref="msg:m1")
+    assert ann is not None and ann.coverage == "recorded" and ann.counts == ()
+    assert head.state["counts"] == {} and head.state["standing"] == {}
+    assert head.state["snapshot"] is False
+
+
+@pytest.mark.parametrize("typed", [False, True])
+async def test_removal_with_unknown_snapshot_actor_overlap_is_partial(stores, typed):
+    records, obs = stores
+    mid = await _message(records)
+    await _obs(obs, _rx("snapshot", counts={"👍": 3}), "snapshot", mid)
+    if typed:
+        await _obs(obs, _rx("remove", actor="u1"), "remove", mid)
+    else:
+        await records.append_reaction(
+            message_id=mid, message=_touch(emoji="👍", sender="u1", removed=True),
+            person_id=None)
+    ann = await _annotation(records, mid)
+    head = await obs.current(scope=SCOPE, kind="reaction", object_ref="msg:m1")
+    assert ann is not None and ann.coverage == "partial" and ann.counts == ()
+    assert head.coverage["ambiguous"] is True
+    assert head.state["counts"] == {} and head.state["standing"] == {}
+
+
+async def test_new_legacy_reaction_refreshes_bounded_object_discovery(stores):
+    records, obs = stores
+    mid = await _message(records)
+    await _obs(obs, _rx("clear"), "clear", mid)
+    for i in range(18):
+        await _obs(obs, Observation(
+            object_kind="artifact", scope=SCOPE, object_ref=f"post-{i}",
+            operation="create", payload=ArtifactPayload(artifact_kind="post"),
+            received_ms=NOW), f"post-{i}")
+    assert (await obs.heads(scope=SCOPE, limit=1))[0].kind == "artifact"
+    await records.append_reaction(
+        message_id=mid, message=_touch(emoji="👍", sender="u1"), person_id=None)
+    heads = await obs.heads(scope=SCOPE, limit=1)
+    assert len(heads) == 1 and heads[0].kind == "reaction"
+    assert heads[0].state["standing"] == {"👍": ["u1"]}

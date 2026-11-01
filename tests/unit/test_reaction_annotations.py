@@ -298,15 +298,12 @@ async def test_the_reaction_read_reduces_in_sql_and_bounds_what_it_transfers(
 
     monkeypatch.setattr(audit, "REACTION_STATES_MAX", 3)
     conn = _Conn([[
-        SimpleNamespace(message_id=1, recorded=4, observed_at=30, expected=3,
-                        emoji="👍", removed=0),
-        SimpleNamespace(message_id=1, recorded=4, observed_at=30, expected=3,
-                        emoji="👍", removed=0),
-        SimpleNamespace(message_id=1, recorded=4, observed_at=30, expected=3,
-                        emoji="❤️", removed=0),
-        # The outer join preserves metadata for a target beyond the cap.
-        SimpleNamespace(message_id=2, recorded=2, observed_at=20, expected=1,
-                        emoji=None, removed=None),
+        SimpleNamespace(tag="m", mid=1, a=4, b=30, c=3, d=0),
+        SimpleNamespace(tag="s", mid=1, a=1, b=30, c=100, d=0, e="a", f="👍"),
+        SimpleNamespace(tag="s", mid=1, a=2, b=30, c=100, d=0, e="b", f="👍"),
+        SimpleNamespace(tag="s", mid=1, a=3, b=30, c=100, d=0, e="c", f="❤️"),
+        # The meta branch preserves a target beyond the standing cap.
+        SimpleNamespace(tag="m", mid=2, a=2, b=20, c=1, d=0),
     ]])
     states = await reaction_states(conn, [1, 2])
     assert states[1].counts == (("❤️", 1), ("👍", 2))
@@ -541,4 +538,6 @@ async def test_the_tool_result_note_explains_the_counts_are_recorded_only(tmp_pa
     )]
     answer = json.loads(events[-1].tool_result["content"][0]["text"])
     assert answer["messages"][0]["reactions"] == {"👍": 1}
-    assert "recorded transitions only" in answer["note"]
+    assert "recorded changes" in answer["note"]
+    assert "captured clears and snapshots" in answer["note"]
+    assert "not the complete upstream set" in answer["note"]
