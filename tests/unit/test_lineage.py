@@ -43,6 +43,7 @@ from nora.domain.lineage import (
 )
 from nora.domain.models import NormalizedMessage, TagContext
 from nora.domain.notes import Note
+from nora.domain.shared_state import SharedEntry, SharedView
 from nora.domain.standing import Standing, WorkingSetItem
 
 # A unit of three rooms: A lists p1..p3, B lists p1..p2 (a subset of A), C
@@ -262,6 +263,33 @@ def _standing(room: str) -> Standing:
     )
 
 
+def _shared(*entries: SharedEntry, status: str = "ok") -> SharedView:
+    """The consolidated `<standing>` view `TagContext.shared` carries — the
+    one block the shared read projects after its own room gating ran."""
+    return SharedView(
+        unit="u", status=status, as_of_ms=int(NOW.timestamp() * 1000),
+        entries=entries, sources=(("findings", "ok"),),
+    )
+
+
+def _position_entry(room: str) -> SharedEntry:
+    platform = {"a": "signal", "b": "discord", "c": "whatsapp"}[room]
+    return SharedEntry(
+        kind="standing", id=f"{platform}:{room}#position",
+        scope=f"{platform}:{room}", status="open",
+        subject="where it had got to",
+    )
+
+
+def _finding_entry(room: str) -> SharedEntry:
+    platform = {"a": "signal", "b": "discord", "c": "whatsapp"}[room]
+    return SharedEntry(
+        kind="finding", id=f"{platform}:{room}#find",
+        scope=f"{platform}:{room}", status="open", subject="an option",
+        at_ms=int(NOW.timestamp() * 1000),
+    )
+
+
 def _culture(room: str) -> CultureRevision:
     return CultureRevision(
         id="0191f2c4-0000-7000-8000-0000000000cc", culture_key=room,
@@ -270,12 +298,12 @@ def _culture(room: str) -> CultureRevision:
     )
 
 
-def _ctx(room: RoomFacts, *, notes=(), standing=None, culture=None,
+def _ctx(room: RoomFacts, *, notes=(), shared=None, culture=None,
          lineage_room: RenderRoom | None = None) -> TagContext:
     cid = sorted(room.ids)[0]
     msg = NormalizedMessage(room.platform, cid, "group", "s1", "someone", 1, "hi", {})
     return TagContext(
-        "tag-1", msg, None, (), (), 0.0, notes=tuple(notes), standing=standing,
+        "tag-1", msg, None, (), (), 0.0, notes=tuple(notes), shared=shared,
         culture=culture, lineage_room=lineage_room,
     )
 
@@ -290,17 +318,35 @@ def _body_at(ctx: TagContext, now: datetime) -> str:
     return content if isinstance(content, str) else "".join(c["text"] for c in content)
 
 
-def test_the_working_set_ages_against_the_clock_the_prefill_was_given():
-    """The block is aged against `build_prefill`'s `now`, not the wall clock.
+async def test_the_working_set_ages_against_the_clock_the_read_was_given():
+    """The finding is aged against the shared read's `now_ms`, not the wall
+    clock: the consolidated `<standing>` block draws working-set items through
+    `read_shared`, which drops one whose `found_at` passes the 48-hour TTL —
+    the same instant property the prefill-time render used to enforce, now at
+    the producer so every occasion sees the same answer."""
+    from nora.agent.shared_state import read_shared
+    from nora.testing import InMemoryStandingStore
 
-    The lineage tests pin `now` and give the item `found_at=NOW`; a block that
-    fell back to `datetime.now()` would expire the item on a later day and turn
-    `test_a_same_room_read_renders_exactly_what_it_rendered_without_lineage`
-    red. A prefill built for a given instant must render the same on any day;
-    that is also what makes a replayed turn reproducible."""
-    ctx = _ctx(A, standing=_standing("a"))
-    assert "<standing_working_set" in _body_at(ctx, NOW + timedelta(hours=47))
-    assert "<standing_working_set" not in _body_at(ctx, NOW + timedelta(hours=49))
+    found_at = int(NOW.timestamp() * 1000)
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="a",
+        body="where it had got to", fold_count=1, updated_at=1,
+        working_set=(WorkingSetItem(what="an option", source="web_search",
+                                    found_at=found_at),),
+        lineage=own_room_lineage("signal:a", (BODY, WORKING_SET)),
+    ))
+    def read(shift):
+        return read_shared(
+            unit="u", rooms=(("signal", "a"),), ai_peer="nora",
+            now_ms=found_at + int(shift.total_seconds() * 1000),
+            room=("signal", "a"), standing=store,
+        )
+    fresh = await read(timedelta(hours=47))
+    assert any(e.kind == "finding" and "an option" in e.subject
+               for e in fresh.entries)
+    stale = await read(timedelta(hours=49))
+    assert not any("an option" in e.subject for e in stale.entries)
 
 
 # Backfilled rows, as `0073_lineage` writes them for a room's own data.
@@ -315,15 +361,17 @@ NOTE_A_LEGACY = _note("0191f2c4-0000-7000-8000-0000000000a3", "legacy revision",
 def test_a_same_room_read_renders_exactly_what_it_rendered_without_lineage():
     """Every block a backfilled room's OWN rows produce is byte-identical with
     lineage on and with it absent."""
-    rows = {"notes": (NOTE_A, NOTE_A_LEGACY), "standing": _standing("a"),
+    rows = {"notes": (NOTE_A, NOTE_A_LEGACY),
+            "shared": _shared(_position_entry("a"), _finding_entry("a")),
             "culture": _culture("a")}
     policy = LineagePolicy(rooms=ROOMS, circles=(CIRCLE,), mode="on",
                            _by_id={("signal", "a"): A})
     on = _ctx(A, **rows, lineage_room=policy.render_room(platform="signal", conversation_id="a"))
     off = _ctx(A, **rows)
     assert _body(on) == _body(off)
-    for tag in ("<notes", "<standing", "<standing_working_set", "<culture"):
+    for tag in ("<notes", "<standing", "<culture"):
         assert tag in _body(on)
+    assert "an option" in _body(on)  # the finding rides the one standing block
 
 
 def test_a_note_is_not_rendered_in_a_wider_room_and_the_rest_are():
@@ -350,20 +398,23 @@ def test_a_failing_section_is_dropped_and_the_rest_of_its_row_renders():
     standing = replace(_standing("b"), lineage=Lineage.of({
         BODY: [message("discord:b")], WORKING_SET: [message("discord:b"), unresolved("c")],
     }))
-    ctx = _ctx(B, standing=standing, lineage_room=_in(B))
     view = derived_view(notes=(), standing=standing, culture=None, target=_in(B))
     assert (view.standing, view.standing_working_set) == (True, True)
-    elsewhere = _ctx(A, standing=standing, lineage_room=_in(A))
-    body = _body(elsewhere)
-    # In A the body (message:b, b -> a fails) and the working set both fail.
+    # In A the whole row's lineage fails — the consolidated read projects
+    # nothing for that room (a `nothing_found` view renders no block).
+    body = _body(_ctx(A, shared=None, lineage_room=_in(A)))
     assert "<standing" not in body
-    # Make only the working set fail in B: the position still renders.
+    # In B the position section passes and the working set fails — the read
+    # projects the position entry alone into the one `<standing>` block.
     split = replace(standing, lineage=Lineage.of({
         BODY: [message("discord:b")], WORKING_SET: [LineageEntry(kind="presence", subject="p1")],
     }))
-    body = _body(replace(ctx, standing=split))
+    split_view = derived_view(notes=(), standing=split, culture=None, target=_in(B))
+    assert (split_view.standing, split_view.standing_working_set) == (True, False)
+    body = _body(_ctx(B, shared=_shared(_position_entry("b")),
+                      lineage_room=_in(B)))
     assert "where it had got to" in body
-    assert "<standing_working_set" not in body
+    assert "an option" not in body
 
 
 def test_shadow_computes_the_same_answer_and_renders_everything():
