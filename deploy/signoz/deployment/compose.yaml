@@ -23,6 +23,7 @@ services:
     - SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN=tcp://default:${SIGNOZ_CLICKHOUSE_PASSWORD:?set SIGNOZ_CLICKHOUSE_PASSWORD}@signoz-telemetrystore-clickhouse-0-0:9000
     - SIGNOZ_OTEL_COLLECTOR_TIMEOUT=10m
     - SIGNOZ_CLICKHOUSE_PASSWORD=${SIGNOZ_CLICKHOUSE_PASSWORD:?set SIGNOZ_CLICKHOUSE_PASSWORD}
+    - NORA_BRIDGE_API_TOKEN=${NORA_BRIDGE_API_TOKEN:-${NORA_BRIDGE_TOKEN:-}}
     group_add:
     # The collector runs uid 10001; host journal files are root:systemd-journal
     # 0640, so it joins the host's journal-read group. The GID is host

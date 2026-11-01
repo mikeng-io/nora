@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Literal
@@ -261,6 +263,10 @@ class DeliveryStatus(Enum):
     PENDING = "pending"
     SENT = "sent"
     FAILED = "failed"
+    # The send may have landed and its answer is lost — terminal (a pending
+    # row would keep the owner valid and invite a blind resend), never
+    # folded into `failed`: an unknown outcome is not a proven non-send.
+    UNCERTAIN = "uncertain"
 
 
 @dataclass(frozen=True)
@@ -320,6 +326,12 @@ class TranscriptRow:
     # platform handle from. What it first said and the latest envelope ride
     # here.
     edit: RowEdit | None = None
+    # The reactions recorded against this row, folded to now by the ONE fold
+    # (`fold_reactions`, the definition `record_query` established). None
+    # means the read carried none — nothing recorded, or a read that does
+    # not populate it — and renderers show NOTHING either way: «reaction
+    # state unknown» and «no reactions» are never collapsed into a zero.
+    reactions: RowReactions | None = None
     turn_id: int | None = None
 
     @property
@@ -342,6 +354,220 @@ class RowEdit:
     ts: int
     was: str | None
     raw_json: str | None = None
+
+
+@dataclass(frozen=True)
+class ReactionRow:
+    """One `message_reaction` row as the fold reads it.
+
+    `sender_id` is the actor the platform named — the fold's per-actor key is
+    this id, exactly as `SqlRecordQuery`'s distinct-on grouped it, so one
+    person reacting from two accounts counts twice (the same definition
+    `record_query` has always returned). `ts` is the platform's time for the
+    event (arrival when it gives none); `id` is arrival order, the tie-break
+    the append-only table resolves latest by.
+    """
+
+    id: int
+    message_id: int
+    sender_id: str
+    emoji: str
+    removed: bool
+    ts: int
+
+
+#: A platform's custom-emoji wire identity — Discord stores a reaction as
+#: `str(payload.emoji)`, `<:name:id>` or `<a:name:id>` (animated). The
+#: `:name:` is the scoped handle a model may see; the id is a platform
+#: identifier and stays off every prompt, tool result and annotation (R-18).
+_CUSTOM_EMOJI = re.compile(r"<a?:([A-Za-z0-9_]+):[0-9]+>")
+
+#: The longest stored emoji an annotation passes through as-is — a family
+#: glyph runs to about 11 codepoints; longer is payload, not emoji, and
+#: collapses to a bounded placeholder rather than a raw dump or a string cut
+#: that could render a DIFFERENT glyph.
+_EMOJI_DISPLAY_MAX = 24
+
+#: The most standing (emoji, n) pairs a tool result lists per message; the
+#: rest reads as `reactions_more`.
+REACTION_PAIRS_MAX = 16
+
+#: The label's character ceiling on a surface that does not budget the
+#: annotation itself (the tag transcript); a budgeted render passes its own
+#: cap to `RowReactions.bounded_label`.
+REACTION_LABEL_MAX = 240
+
+
+def emoji_display(emoji: str) -> str:
+    """A stored emoji's model-facing form.
+
+    The Record keeps the emoji's RAW identity — the fold's per-actor key
+    depends on it — and every model surface projects it through here: a
+    custom-emoji wire form (`<:name:id>`, `<a:name:id>`) becomes its scoped
+    `:name:`, never the platform id inside; an ordinary emoji or short string
+    passes through; anything longer or carrying markup brackets collapses to
+    `[emoji]`, a bounded placeholder, rather than leaking the raw form.
+    """
+    custom = _CUSTOM_EMOJI.fullmatch(emoji)
+    if custom is not None:
+        return f":{custom.group(1)[:32]}:"
+    if len(emoji) <= _EMOJI_DISPLAY_MAX and "<" not in emoji and ">" not in emoji:
+        return emoji
+    return "[emoji]"
+
+
+def display_reactions(
+    counts: Iterable[tuple[str, int]],
+) -> dict[str, int]:
+    """Standing counts as the model reads them: each stored emoji projected
+    to its bounded handle (`emoji_display`), identical handles merged — two
+    custom emoji one handle cannot tell apart are one count, never two
+    indistinguishable entries."""
+    out: dict[str, int] = {}
+    for emoji, n in counts:
+        shown = emoji_display(emoji)
+        out[shown] = out.get(shown, 0) + n
+    return out
+
+
+@dataclass(frozen=True)
+class RowReactions:
+    """The reactions recorded against a message, folded to its current state.
+
+    `counts` is `(emoji, how many actors)` standing now: each actor's NEWEST
+    recorded row per emoji, counted unless it took the reaction back. Ordered
+    by emoji so every reader renders the same line. `observed_at` is the
+    newest SOURCE-EVENT `ts` among the rows the fold read — a removal is an
+    event too — never the read's as-of time. `recorded` is how many
+    transition rows the fold read.
+
+    **Coverage is recorded transitions only**, which is what `coverage` says.
+    The Record holds what the transports delivered: an upstream clear, a
+    snapshot, or any reaction the capture path never saw is absent, so a
+    count is what was recorded, not a claim of the whole upstream set. An
+    empty `counts` with `recorded > 0` means every recorded reaction was
+    taken back — a fact, not a zero. `coverage="partial"` means the read's
+    own bound cut the standing set short: `recorded` and `observed_at` still
+    hold, and `counts` is EMPTY on purpose — a truncated set is never folded
+    into an apparently complete count.
+    """
+
+    counts: tuple[tuple[str, int], ...] = ()
+    observed_at: int | None = None
+    recorded: int = 0
+    coverage: str = "recorded"
+
+    @property
+    def display_counts(self) -> tuple[tuple[str, int], ...]:
+        """`counts` as model-facing pairs (`display_reactions`)."""
+        return tuple(display_reactions(self.counts).items())
+
+    def bounded_label(self, cap: int) -> str | None:
+        """The annotation text with at most `cap` characters of emoji pairs —
+        pairs that do not fit fold into a trailing `+N`, how many STANDING
+        reactions are not shown, a count, never a string cut mid-emoji or
+        mid-escape. `partial` coverage renders `partial`, every recorded
+        reaction taken back `removed`, nothing recorded None — an annotation
+        never renders an empty set or a zero. The marker itself is the one
+        overshoot `cap` can take and stays bounded.
+        """
+        if self.coverage != "recorded":
+            return self.coverage
+        out: list[str] = []
+        used = dropped = 0
+        for shown, n in self.display_counts:
+            pair = f"{shown}x{n}"
+            cost = len(pair) + bool(out)
+            if used + cost <= cap:
+                out.append(pair)
+                used += cost
+            else:
+                dropped += n
+        if dropped:
+            marker = f"+{dropped}"
+            return " ".join([*out, marker]) if out else marker
+        return " ".join(out) or ("removed" if self.recorded else None)
+
+    @property
+    def label(self) -> str | None:
+        """The annotation text — `bounded_label` at `REACTION_LABEL_MAX`, the
+        ceiling a surface without its own budget takes."""
+        return self.bounded_label(REACTION_LABEL_MAX)
+
+
+def fold_reactions(rows: Iterable[ReactionRow]) -> dict[int, RowReactions]:
+    """The `message_reaction` rows of a batch of messages, folded to each
+    target's current state. THE ONE FOLD: `record_query` established it
+    (latest per actor+emoji, `removed` wins, counts by emoji), and every
+    read that annotates a target uses it — a second implementation would
+    produce a second count for the same record.
+
+    Latest is by `id` (arrival order), not `ts`: ingest appends source
+    events, and a skewed platform clock cannot let an older event's row
+    outrank the one appended after it — the same reason the edit fold is
+    newest-by-arrival. Replay of the same recorded row folds identically;
+    it cannot inflate a count.
+
+    Returns only message ids that HAVE recorded rows: a message with none
+    stays absent, so its `TranscriptRow.reactions` stays None and reads
+    «nothing recorded», never a fabricated empty set.
+    """
+    latest: dict[tuple[int, str, str], ReactionRow] = {}
+    recorded: dict[int, int] = {}
+    observed: dict[int, int] = {}
+    for r in rows:
+        recorded[r.message_id] = recorded.get(r.message_id, 0) + 1
+        observed[r.message_id] = max(observed.get(r.message_id, 0), r.ts)
+        key = (r.message_id, r.sender_id, r.emoji)
+        prev = latest.get(key)
+        if prev is None or r.id > prev.id:
+            latest[key] = r
+    return states_from_standing(
+        ((r.message_id, r.emoji, r.removed) for r in latest.values()),
+        recorded=recorded,
+        observed=observed,
+    )
+
+
+def states_from_standing(
+    standing: Iterable[tuple[int, str, bool]],
+    *,
+    recorded: Mapping[int, int],
+    observed: Mapping[int, int],
+    partial: Collection[int] = (),
+) -> dict[int, RowReactions]:
+    """Each target's state assembled from its LATEST standing rows — one
+    `(message_id, emoji, removed)` per (target, actor, emoji) — with the
+    metadata measured across the whole recorded history. `fold_reactions`
+    reaches this through its own Python reduction and `audit.reaction_states`
+    through the database's, so the fake and the SQL read share ONE counting
+    definition.
+
+    A target in `partial` keeps its `recorded` and `observed_at` but carries
+    NO counts and `coverage="partial"`: a truncated standing set is never
+    folded into an apparently complete count. `recorded` keys the result —
+    a target with no rows is absent, so its `TranscriptRow.reactions` stays
+    None and reads «nothing recorded», never a fabricated empty set.
+    """
+    withheld = frozenset(partial)
+    standing_counts: dict[int, dict[str, int]] = {}
+    for message_id, emoji, removed in standing:
+        if removed or message_id in withheld:
+            continue
+        per = standing_counts.setdefault(message_id, {})
+        per[emoji] = per.get(emoji, 0) + 1
+    return {
+        message_id: RowReactions(
+            counts=(
+                () if message_id in withheld
+                else tuple(sorted(standing_counts.get(message_id, {}).items()))
+            ),
+            observed_at=observed[message_id],
+            recorded=recorded[message_id],
+            coverage="partial" if message_id in withheld else "recorded",
+        )
+        for message_id in recorded
+    }
 
 
 @dataclass(frozen=True)

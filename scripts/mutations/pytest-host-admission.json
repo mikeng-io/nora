@@ -1,0 +1,51 @@
+[
+  {
+    "name": "exclusive host admission rejects another controller",
+    "old": "(fcntl.LOCK_SH if generation else fcntl.LOCK_EX)",
+    "new": "fcntl.LOCK_SH",
+    "target": "tests/integration/test_pytest_gate.py::test_workers_retain_admission_after_controller_exit_and_reject_stale_generation",
+    "file": "scripts/pytest_gate.py"
+  },
+  {
+    "name": "admission covers the flock conversion gap",
+    "old": "fcntl.flock(admission, fcntl.LOCK_EX | fcntl.LOCK_NB)",
+    "new": "pass",
+    "target": "tests/integration/test_pytest_gate.py::test_admission_covers_a_non_atomic_lock_downgrade",
+    "file": "scripts/pytest_gate.py"
+  },
+  {
+    "name": "late workers cannot join a new generation",
+    "old": "elif stream.read() != generation:",
+    "new": "elif False:",
+    "target": "tests/integration/test_pytest_gate.py::test_workers_retain_admission_after_controller_exit_and_reject_stale_generation",
+    "file": "scripts/pytest_gate.py"
+  },
+  {
+    "name": "raw pytest cannot exceed the host worker bound",
+    "old": "len(tx) > MAX_WORKERS",
+    "new": "False",
+    "target": "tests/integration/test_pytest_gate.py::test_raw_pytest_cannot_bypass_worker_cap_or_parallelize_timing_contracts",
+    "file": "scripts/pytest_gate.py"
+  },
+  {
+    "name": "phase failures remain gate failures",
+    "old": "return rc if rc > 0 else 128 - rc",
+    "new": "return 0",
+    "target": "tests/integration/test_pytest_gate.py::test_phase_failures_propagate_and_the_lease_spans_both_phases",
+    "file": "scripts/pytest_gate.py"
+  },
+  {
+    "name": "timing classification is independent of caller cwd",
+    "file": "scripts/pytest_gate.py",
+    "old": "(PROJECT_ROOT / path).resolve(): path",
+    "new": "Path(path).resolve(): path",
+    "target": "tests/integration/test_pytest_gate.py::test_timing_admission_and_default_targets_are_independent_of_caller_cwd"
+  },
+  {
+    "name": "collection remains a read without running another job",
+    "file": "scripts/pytest_gate.py",
+    "old": "if config.option.collectonly:",
+    "new": "if False:",
+    "target": "tests/integration/test_pytest_gate.py::test_collection_can_read_the_catalogue_during_a_job_without_running_tests"
+  }
+]

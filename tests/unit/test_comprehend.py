@@ -214,3 +214,42 @@ def test_the_instruction_lists_the_vocabulary_admission_checks():
 
 
 
+
+
+def test_preview_text_reports_only_the_keys_of_the_rows_it_emitted():
+    """`shown_keys` is the emitted row's own provenance: node rows give their
+    node, edge rows both endpoints — a kind:id string inside a label is prose
+    and is never collected."""
+    shown: set = set()
+    edge = Relation("r", PERSON.key, "likes", ("event", "u:event:edge-endpoint"),
+                    "notebook", UNIT, asserted_at=AT)
+    graph = Subgraph(
+        "partial",
+        (GraphNode(PERSON.key, PERSON),
+         GraphNode(("place", "u:forged-name"),
+                   Entity("u:forged-name", "place", UNIT,
+                          "a name saying event:u:event:forged"))),
+        (GraphEdge(edge, 3),),
+    )
+    preview_text(Preview((), graph, (), (AT, AT)), shown_keys=shown)
+    assert shown == {
+        PERSON.key,
+        ("place", "u:forged-name"),
+        ("event", "u:event:edge-endpoint"),
+    }
+
+
+def test_preview_text_never_reports_a_row_the_budget_omitted():
+    shown: set = set()
+    graph = Subgraph(
+        "ok",
+        nodes=tuple(
+            GraphNode(("place", str(i)),
+                      replace(PLACE, id=str(i), name="Long generated label " * 10))
+            for i in range(100)
+        ),
+    )
+    preview_text(Preview((), graph, (), (AT, AT)), tokens=250, shown_keys=shown)
+    assert ("place", "0") in shown
+    assert ("place", "99") not in shown
+    assert len(shown) < 100

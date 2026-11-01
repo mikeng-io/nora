@@ -49,12 +49,20 @@ type Server struct {
 	app       *app.Service
 	events    Events
 	startedAt time.Time
+	v1        *V1
 }
 
 // New builds the surface. startedAt is the process start, for /health's
 // uptime.
 func New(svc *app.Service, events Events, startedAt time.Time) *Server {
 	return &Server{app: svc, events: events, startedAt: startedAt}
+}
+
+// WithV1 mounts the shared bridge facade (/v1/*, /metrics) when the durable
+// wiring is configured.
+func (s *Server) WithV1(v *V1) *Server {
+	s.v1 = v
+	return s
 }
 
 // Routes is the whole handler, traced.
@@ -117,6 +125,18 @@ func (s *Server) Routes() http.Handler {
 	// and people's words, none of which may become a span attribute.
 	mux.HandleFunc("GET /posts/{shortcode}/comments", observability.PatternOnlyRoute("GET /posts/{shortcode}/comments", s.handleComments))
 	mux.HandleFunc("POST /posts/{shortcode}/comments", observability.PatternOnlyRoute("POST /posts/{shortcode}/comments", s.handlePostComment))
+	// The shared durable-bridge facade (frozen nora-bridge-wire v1): actions,
+	// self, health, reads, attachment custody and metrics.
+	if s.v1 != nil {
+		mux.HandleFunc("POST /v1/actions", s.v1.handleActions)
+		mux.HandleFunc("GET /v1/actions/{action_id}", s.v1.handleActionGet)
+		mux.HandleFunc("GET /v1/self", s.v1.handleV1Self)
+		mux.HandleFunc("GET /v1/health", s.v1.handleV1Health)
+		mux.HandleFunc("POST /v1/reads", s.v1.handleV1Reads)
+		mux.HandleFunc("PUT /v1/attachments/{key}", s.v1.handleV1AttachmentPut)
+		mux.HandleFunc("GET /v1/attachments/{key}", s.v1.handleV1AttachmentGet)
+		mux.HandleFunc("GET /metrics", s.v1.handleMetrics)
+	}
 	return observability.TraceHTTP(mux)
 }
 

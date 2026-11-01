@@ -21,8 +21,9 @@ import sqlalchemy as sa
 from nora.domain.media import MediaBlob
 from nora.domain.models import DeliveryStatus, EditTarget, NormalizedMessage, Quote, RowEdit
 from nora.domain.ports import RecordStore
-from nora.infra.sql.audit import SqlRecordStore
+from nora.infra.sql.audit import SqlRecordStore, reaction_states
 from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.schema import MESSAGE_REACTION
 from nora.testing.fakes import FakeRecordStore
 
 
@@ -915,6 +916,93 @@ async def test_a_reaction_and_its_removal_are_two_rows_beside_the_message(store)
     assert deletes == []
     rows = await store.recent(conversation_id="g1", limit=10)
     assert [r.body for r in rows] == ["dinner at 8"]
+    # The whole removal folded: a real recorded state, never a zero.
+    assert rows[0].reactions is not None
+    assert rows[0].reactions.counts == ()
+    assert rows[0].reactions.recorded == 2
+    assert rows[0].reactions.observed_at == 9
+
+
+async def test_recent_carries_the_folded_reaction_state(store):
+    """The target annotation both renderers read: standing counts, the newest
+    recorded source event's `ts` and how many transition rows folded —
+    identical on both stores."""
+    target = await store.append(message=_msg(body="dinner at 8", ts=1))
+    other = await store.append(message=_msg(body="unrelated", ts=2))
+    await store.append_reaction(
+        message_id=target, message=_touch("reaction", ts=5, emoji="👍"), person_id="p2")
+    await store.append_reaction(
+        message_id=target, message=_touch("reaction", ts=7, emoji="👍", sender="+852333"),
+        person_id="p3")
+    await store.append_reaction(
+        message_id=other, message=_touch("reaction", ts=9, emoji="❤️"), person_id="p2")
+    rows = await store.recent(conversation_id="g1", limit=10)
+    first, second = rows
+    assert first.reactions is not None
+    assert first.reactions.counts == (("👍", 2),)
+    assert first.reactions.observed_at == 7
+    assert first.reactions.recorded == 2
+    assert second.reactions is not None
+    assert second.reactions.counts == (("❤️", 1),)
+
+
+@pytest.mark.parametrize("initial", [1, 512])
+async def test_reaction_counts_and_provenance_share_a_snapshot(_audit_db, initial):
+    """A second connection commits after the reader's first statement.
+
+    Both an ordinary read and the cap boundary must describe the old snapshot
+    consistently; the next read sees the committed append, honestly partial
+    when it exceeds the bound. These are real READ COMMITTED connections.
+    """
+    engine = create_sql_engine(_audit_db)
+    record = SqlRecordStore(engine)
+    try:
+        target = await record.append(message=_msg(body="generated reaction race"))
+        async with engine.begin() as conn:
+            await conn.execute(sa.insert(MESSAGE_REACTION), [
+                {"message_id": target, "sender_id": f"actor-{i}", "emoji": "👍",
+                 "removed": 0, "ts": i + 1}
+                for i in range(initial)
+            ])
+
+        async with engine.connect() as reader:
+            class AppendAfterFirstRead:
+                calls = 0
+
+                async def execute(self, statement):
+                    result = await reader.execute(statement)
+                    self.calls += 1
+                    if self.calls == 1:
+                        async with engine.begin() as writer:
+                            await writer.execute(sa.insert(MESSAGE_REACTION).values(
+                                message_id=target, sender_id="new-actor", emoji="👍",
+                                removed=0, ts=1000,
+                            ))
+                    return result
+
+            concurrent = AppendAfterFirstRead()
+            state = (await reaction_states(concurrent, [target]))[target]
+            assert state.counts == (("👍", initial),)
+            assert state.recorded == initial
+            assert state.observed_at == initial
+            assert state.coverage == "recorded"
+            assert concurrent.calls == 1
+
+        async with engine.connect() as reader:
+            newer = (await reaction_states(reader, [target]))[target]
+        assert newer.recorded == initial + 1 and newer.observed_at == 1000
+        if initial == 512:
+            assert newer.coverage == "partial" and newer.counts == ()
+        else:
+            assert newer.coverage == "recorded" and newer.counts == (("👍", 2),)
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
+            await conn.execute(sa.text(
+                "TRUNCATE messages, memory_node, memory_edge, "
+                "memory_projection_queue RESTART IDENTITY CASCADE"
+            ))
+        await record.aclose()
 
 
 async def test_hide_message_hides_once_and_find_edited_says_so(store):

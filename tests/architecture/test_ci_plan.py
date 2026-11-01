@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -191,6 +192,40 @@ def test_shared_document_reader_keeps_full_suite_fallback(tmp_path, monkeypatch)
     plan = json.loads(values["plan"])
     assert plan["contracts"] and not plan["python"]
     assert not any(selected for name, selected in plan.items() if name.startswith("codeql-"))
+
+
+@pytest.mark.parametrize("targets", [
+    "ALL", ["tests/integration/test_latency.py"],
+    ["tests/unit/test_engagement_pipeline.py",
+     "tests/integration/test_bridge_queue_telemetry.py"], [],
+])
+@pytest.mark.parametrize("failure", [None, 0, 1])
+def test_timing_contracts_run_without_competing_pytest_workers(monkeypatch, targets, failure):
+    root = Path(__file__).resolve().parents[2]
+    workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())
+    step = next(s for s in workflow["jobs"]["contracts"]["steps"]
+                if s.get("name") == "Document readers selected by the existing selector")
+    source = step["run"].split("<<'PYTEST'\n", 1)[1].rsplit("PYTEST", 1)[0]
+    runner = [sys.executable, "-m", "scripts.pytest_gate"]
+    expected = ([runner] if targets == "ALL"
+                else [[*runner, *targets]] if targets else [])
+    calls = []
+
+    def run(command, *, check):
+        assert check is True
+        calls.append(command)
+        if len(calls) - 1 == failure:
+            raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setenv("READERS", json.dumps(targets))
+    monkeypatch.setattr(subprocess, "run", run)
+    if failure is not None and failure < len(expected):
+        with pytest.raises(subprocess.CalledProcessError):
+            exec(compile(source, ".github/workflows/ci.yml", "exec"), {})  # noqa: S102 — trusted repo workflow
+        assert calls == expected[:failure + 1]
+    else:
+        exec(compile(source, ".github/workflows/ci.yml", "exec"), {})  # noqa: S102 — trusted repo workflow
+        assert calls == expected
 
 
 @pytest.mark.parametrize(

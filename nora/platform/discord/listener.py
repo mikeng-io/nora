@@ -113,8 +113,8 @@ class DiscordListener:
             self.last_event_at = self._clock()
             try:
                 await on_message_cb(message)
-            except Exception:
-                log.exception("event handler raised; continuing")
+            except Exception as exc:  # noqa: BLE001 — SDK-dispatch boundary; logged by type, never swallowed
+                log.error("event handler raised; continuing: %s", type(exc).__name__)
 
         async def on_raw_message_edit(payload: Any) -> None:
             self.last_event_at = self._clock()
@@ -122,8 +122,8 @@ class DiscordListener:
                 return
             try:
                 await on_edit_cb(payload.message)
-            except Exception:
-                log.exception("edit handler raised; continuing")
+            except Exception as exc:  # noqa: BLE001 — SDK-dispatch boundary; logged by type
+                log.error("edit handler raised; continuing: %s", type(exc).__name__)
 
         # REACTIONS and DELETES, raw for `on_raw_message_edit`'s reason: the cached events miss any
         # message older than the cache. `on_touch_cb` receives the event's
@@ -134,8 +134,8 @@ class DiscordListener:
                 return
             try:
                 await on_touch_cb(kind, payload)
-            except Exception:
-                log.exception("%s handler raised; continuing", kind)
+            except Exception as exc:  # noqa: BLE001 — SDK-dispatch boundary; logged by type
+                log.error("%s handler raised; continuing: %s", kind, type(exc).__name__)
 
         async def on_raw_reaction_add(payload: Any) -> None:
             await _touch("reaction_add", payload)

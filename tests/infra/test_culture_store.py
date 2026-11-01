@@ -14,44 +14,22 @@ whatever the head was at the moment it was written.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from typing import Any
-from uuid import uuid4
 
-import psycopg
 import pytest
 import sqlalchemy as sa
 
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.migrations_runner import run_migrations
 
 T0 = 1_757_000_000_000
 KEY = "discord/g1"
 
 
 @pytest.fixture(scope="module")
-def _culture_db(pg_admin: Any) -> Iterator[str]:
-    dbname = "t_culture_" + uuid4().hex
-    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
-        conn.execute(f'CREATE DATABASE "{dbname}"')
-    url = (
-        f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
-        f"@{pg_admin.host}:{pg_admin.port}/{dbname}"
-    )
-    run_migrations(url)
-    try:
-        yield url
-    finally:
-        with psycopg.connect(
-            pg_admin.dsn(pg_admin.maintenance_db), autocommit=True
-        ) as conn:
-            conn.execute(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname = %s AND pid <> pg_backend_pid()",
-                (dbname,),
-            )
-            conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
+def _culture_db(pg_module_url: str) -> str:
+    return pg_module_url
 
 
 @pytest.fixture

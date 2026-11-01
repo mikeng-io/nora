@@ -15,7 +15,9 @@ so `append` gets the new id back via `RETURNING`.
 
 from __future__ import annotations
 
+import dataclasses
 import json
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import sqlalchemy as sa
@@ -30,10 +32,12 @@ from nora.domain.models import (
     EditTarget,
     NormalizedMessage,
     RowEdit,
+    RowReactions,
     TranscriptRow,
     UnattributedRow,
     mentions_json,
     parse_mentions_json,
+    states_from_standing,
 )
 from nora.domain.ports import RoomActivity
 from nora.infra.sql import memory_index
@@ -124,6 +128,113 @@ def _edit_mentions_json(message: NormalizedMessage) -> str | None:
     return mentions_json(message.mentions)
 
 
+#: The most (target, actor, emoji) STANDING tuples one batched read hands
+#: back. `reaction_states` reduces each target's transition history in the
+#: database to its latest standing tuples — the history itself never crosses
+#: the wire — and this caps how many of THOSE a call transfers. A batch that
+#: hits the cap keeps the bound; the targets the cut reached read `partial`,
+#: never a folded prefix wearing a complete count.
+REACTION_STATES_MAX = 512
+
+
+async def reaction_states(
+    conn: Any, message_ids: Sequence[int],
+) -> dict[int, RowReactions]:
+    """The reactions recorded against these messages, folded to each
+    target's current state — one bounded statement for the whole window,
+    never a per-row query. `idx_message_reaction_message` serves the `IN`.
+
+    The reduction runs WHERE THE ROWS ARE: `latest` is the database's
+    distinct-on of the same fold `record_query` established (newest by
+    arrival `id` per target+actor+emoji, `removed` wins), so the transition
+    history — one hot target can hold thousands of rows — is never
+    transferred. `meta` and `expected` are grouped CTEs bounded by the
+    TARGET count; the standing rows themselves are capped at
+    `REACTION_STATES_MAX`, and a target the cap reached is returned
+    `partial`: its `recorded`/`observed_at` are real, its counts are withheld
+    rather than folded from a truncated set. `states_from_standing` is the
+    one assembly `fold_reactions` and `FakeRecordStore` share, so a prompt
+    line, a tool result and a Record read cannot disagree about a target.
+    All three inputs share the statement's snapshot, so a concurrent append
+    cannot pair newer counts with older provenance or invalidate the cap's
+    completeness check. A target with no recorded rows stays absent.
+    """
+    if not message_ids:
+        return {}
+    in_targets = MESSAGE_REACTION.c.message_id.in_(message_ids)
+    meta = (
+        sa.select(
+            MESSAGE_REACTION.c.message_id,
+            sa.func.count().label("recorded"),
+            sa.func.max(MESSAGE_REACTION.c.ts).label("observed_at"),
+        ).where(in_targets).group_by(MESSAGE_REACTION.c.message_id)
+    ).cte("reaction_meta")
+    latest = (
+        sa.select(
+            MESSAGE_REACTION.c.message_id, MESSAGE_REACTION.c.sender_id,
+            MESSAGE_REACTION.c.emoji, MESSAGE_REACTION.c.removed,
+        )
+        .where(in_targets)
+        .distinct(
+            MESSAGE_REACTION.c.message_id, MESSAGE_REACTION.c.sender_id,
+            MESSAGE_REACTION.c.emoji,
+        )
+        .order_by(
+            MESSAGE_REACTION.c.message_id, MESSAGE_REACTION.c.sender_id,
+            MESSAGE_REACTION.c.emoji, MESSAGE_REACTION.c.id.desc(),
+        )
+        .cte("latest_reactions")
+    )
+    # Each target's standing-tuple count, the yardstick the cap below is
+    # measured against: a target short of it would fold a truncated set.
+    expected = (
+        sa.select(latest.c.message_id, sa.func.count().label("expected"))
+        .group_by(latest.c.message_id)
+    ).cte("reaction_expected")
+    bounded = (
+        sa.select(latest)
+        .order_by(latest.c.message_id, latest.c.sender_id, latest.c.emoji)
+        .limit(REACTION_STATES_MAX)
+    ).cte("bounded_reactions")
+    rows = (await conn.execute(
+        sa.select(
+            meta.c.message_id, meta.c.recorded, meta.c.observed_at,
+            expected.c.expected, bounded.c.emoji, bounded.c.removed,
+        ).select_from(
+            meta.join(expected, meta.c.message_id == expected.c.message_id)
+            .outerjoin(bounded, meta.c.message_id == bounded.c.message_id)
+        ).order_by(meta.c.message_id, bounded.c.sender_id, bounded.c.emoji)
+    )).all()
+    recorded = {int(r.message_id): int(r.recorded) for r in rows}
+    observed = {int(r.message_id): int(r.observed_at) for r in rows}
+    wanted = {int(r.message_id): int(r.expected) for r in rows}
+    standing = [r for r in rows if r.emoji is not None]
+    received: dict[int, int] = {}
+    for r in standing:
+        mid = int(r.message_id)
+        received[mid] = received.get(mid, 0) + 1
+    partial = frozenset(
+        m for m, want in wanted.items() if received.get(m, 0) < want
+    )
+    return states_from_standing(
+        ((int(r.message_id), str(r.emoji), bool(r.removed)) for r in standing),
+        recorded=recorded, observed=observed, partial=partial,
+    )
+
+
+def with_reactions(
+    rows: Sequence[TranscriptRow], states: Mapping[int, RowReactions],
+) -> list[TranscriptRow]:
+    """`rows` with each one's recorded reaction state attached — the part of
+    the target annotation `transcript_select` cannot join (the fold is a
+    grouped read, not a per-row column). A row absent from `states` keeps
+    `reactions=None`: nothing recorded, never a fabricated empty set."""
+    return [
+        dataclasses.replace(r, reactions=states.get(r.id)) if r.id in states else r
+        for r in rows
+    ]
+
+
 def transcript_row(r: Any) -> TranscriptRow:
     """The column-row -> `TranscriptRow` mapping for every `transcript_select`
     read — they select the same columns, so the mapping exists once.
@@ -208,6 +319,7 @@ class SqlRecordStore:
         is_nora: bool = False,
         delivery_status: DeliveryStatus = DeliveryStatus.PENDING,
         person_id: str | None = None,
+        tx_hook: Any = None,
     ) -> int:
         stmt = sa.insert(MESSAGES).values(
             platform=message.platform,
@@ -245,6 +357,11 @@ class SqlRecordStore:
         # one row came back, which a bare INSERT always produces.
         async with self._engine.begin() as conn:
             row_id = int((await conn.execute(stmt)).scalar_one())
+            # `tx_hook(conn, row_id)` runs INSIDE this transaction — the
+            # platform-bridge seam that makes source mapping + message +
+            # extraction + projection one atomic commit (design 03).
+            if tx_hook is not None:
+                await tx_hook(conn, row_id)
             if self._extraction_unit is not None:
                 from nora.infra.sql.extraction import admission, enqueue
 
@@ -298,7 +415,8 @@ class SqlRecordStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [self._row(r) for r in rows]
+            states = await reaction_states(conn, [r.id for r in rows])
+        return with_reactions([self._row(r) for r in rows], states)
 
     async def external_file_rows(
         self, *, conversation_id: str, since_ts: int, limit: int,
@@ -320,7 +438,8 @@ class SqlRecordStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [self._row(r) for r in rows]
+            states = await reaction_states(conn, [r.id for r in rows])
+        return with_reactions([self._row(r) for r in rows], states)
 
     async def recent_before(
         self, *, conversation_id: str, before_ts: int, limit: int,
@@ -355,13 +474,15 @@ class SqlRecordStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        # Cut BEFORE reversing: the query is newest-first, so the rows to keep
-        # are the leading `limit`. Cutting after the reverse would drop the
-        # newest rows and keep the oldest — the opposite of what this reads.
-        kept = cut(
-            rows, limit=limit, site="audit.recent", metrics=self._metrics,
-        )
-        return [self._row(r) for r in reversed(kept)]
+            # Cut BEFORE reversing: the query is newest-first, so the rows to
+            # keep are the leading `limit`. Cutting after the reverse would
+            # drop the newest rows and keep the oldest — the opposite of what
+            # this reads.
+            kept = cut(
+                rows, limit=limit, site="audit.recent", metrics=self._metrics,
+            )
+            states = await reaction_states(conn, [r.id for r in kept])
+        return with_reactions([self._row(r) for r in reversed(kept)], states)
 
     async def depth_to(self, *, conversation_id: str, ts: int) -> int | None:
         """See `nora.domain.ports.RecordStore.depth_to`.
@@ -412,7 +533,8 @@ class SqlRecordStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [self._row(r) for r in rows]
+            states = await reaction_states(conn, [r.id for r in rows])
+        return with_reactions([self._row(r) for r in rows], states)
 
     async def since_including_nora(
         self, *, conversation_id: str, after_id: int, limit: int
@@ -439,7 +561,8 @@ class SqlRecordStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [self._row(r) for r in rows]
+            states = await reaction_states(conn, [r.id for r in rows])
+        return with_reactions([self._row(r) for r in rows], states)
 
     @staticmethod
     def _row(r: Any) -> TranscriptRow:

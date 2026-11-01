@@ -1,0 +1,100 @@
+[
+ {
+  "name": "receipt (sql): the act receipt must commit inside the register transaction",
+  "file": "nora/infra/sql/comprehend.py",
+  "old": "        await conn.execute(sa.insert(RESULT).values(work_id=key, input_hash=\"\",\n            session_id=session, part=\"act_result\", payload=result))",
+  "new": "        return",
+  "target": "tests/integration/test_register_receipt_boundary.py::test_receipt_boundary_crash_restart_retry_does_not_duplicate"
+ },
+ {
+  "name": "session: an association the session was never shown must be refused",
+  "file": "nora/app/cognition_session.py",
+  "old": "                if key not in state.shown_keys:",
+  "new": "                if False:",
+  "target": "tests/unit/test_cognition_session_runner.py::test_unshown_or_out_of_unit_association_cannot_persist"
+ },
+ {
+  "name": "session: a Register revision must re-link the row's associations",
+  "file": "nora/app/cognition_session.py",
+  "old": "                if (self._memory is not None and verb.__name__ in linked",
+  "new": "                if (self._memory is not None and False",
+  "target": "tests/unit/test_cognition_session_runner.py::test_note_revise_replaces_the_semantic_association"
+ },
+ {
+  "name": "register graph: the session's selected association must reach the projection",
+  "file": "nora/app/register_graph.py",
+  "old": "        wanted: dict[Key, str] = dict.fromkeys(\n            targets if selected is None else selected, verb)",
+  "new": "        wanted: dict[Key, str] = dict.fromkeys(targets, verb)",
+  "target": "tests/unit/test_cognition_session_runner.py::test_alias_free_admitted_association_survives_create_and_later_read"
+ },
+ {
+  "name": "receipt (sql): a revision's act receipt must commit inside the append transaction",
+  "file": "nora/infra/sql/notes.py",
+  "old": "            if receipt is not None:\n                await receipt(conn, revision)",
+  "new": "            pass",
+  "target": "tests/integration/test_register_receipt_boundary.py::test_revision_receipt_commits_inside_the_append_transaction"
+ },
+ {
+  "name": "register graph: a re-selected association needs a new relation id, not a duplicate",
+  "file": "nora/app/register_graph.py",
+  "old": "            rid = str(uuid5(NAMESPACE_URL, base if prior == 0 else f\"{base}:{prior}\"))",
+  "new": "            rid = str(uuid5(NAMESPACE_URL, base))",
+  "target": "tests/unit/test_cognition_session_runner.py::test_reselecting_a_closed_association_relinks_with_a_new_relation"
+ },
+ {
+  "name": "session: a revise that names no associations must leave the row's links alone",
+  "file": "nora/app/cognition_session.py",
+  "old": "                    if targets is not None or verb.__name__ not in row_arg:\n                        await self._memory.link_result(\n                            state, result, targets=targets)",
+  "new": "                    if True:\n                        await self._memory.link_result(\n                            state, result, targets=targets)",
+  "target": "tests/unit/test_cognition_session_runner.py::test_revise_without_associations_keeps_the_semantic_link"
+ },
+ {
+  "name": "session reads: a graph key the session was shown must become admissible",
+  "file": "nora/agent/comprehend_tools.py",
+  "old": "                    state.shown_keys.update(\n                        tuple(k) for k in answer.get(\"keys\") or ()",
+  "new": "                    state.shown_keys.update(\n                        ()",
+  "target": "tests/unit/test_cognition_session_runner.py::test_association_shown_only_by_a_memory_search_is_admissible"
+ },
+ {
+  "name": "register graph: clearing all associations must still see the edges it closes",
+  "file": "nora/app/register_graph.py",
+  "old": "                relations=tuple(dict.fromkeys((*wanted.values(), *managed)))",
+  "new": "                relations=tuple(dict.fromkeys(wanted.values()))",
+  "target": "tests/unit/test_cognition_session_runner.py::test_revise_with_empty_associations_clears_the_link"
+ },
+ {
+  "name": "renderer: only the rows the budget emitted may be shown keys",
+  "file": "nora/language/comprehend_render.py",
+  "old": "        if shown_keys is not None:\n            shown_keys.update(row_keys.get(row, ()))",
+  "new": "        if shown_keys is not None:\n            shown_keys.update(n.key for g in graphs for n in g.nodes)",
+  "target": "tests/unit/test_comprehend.py::test_preview_text_never_reports_a_row_the_budget_omitted"
+ },
+ {
+  "name": "memory read: the emitted keys reach the result the session checks",
+  "file": "nora/agent/memory_search.py",
+  "old": "                \"keys\": sorted(emitted),\n            }",
+  "new": "                \"keys\": [],\n            }",
+  "target": "tests/unit/test_memory_search.py::test_read_publishes_the_keys_of_the_nodes_it_actually_emits"
+ },
+ {
+  "name": "wake preview: a key the budget cut was never shown",
+  "file": "nora/app/cognition_memory.py",
+  "old": "        # `shown_keys` is the renderer's own emitted-rows provenance: a row the\n        # budget omits was never shown, whatever the walk returned.\n        state.graph_text = preview_text(Preview(seeds, graph, (), (at, at)),\n                                        shown_keys=state.shown_keys)",
+  "new": "        state.shown_keys.update(n.key for n in graph.nodes)\n        state.shown_keys.update(\n            k for e in graph.relations for k in (e.relation.src, e.relation.dst))\n        state.graph_text = preview_text(Preview(seeds, graph, (), (at, at)))",
+  "target": "tests/unit/test_cognition_session_runner.py::test_wake_preview_admits_only_the_keys_the_renderer_emitted"
+ },
+ {
+  "name": "register graph: explicit selections override body aliases, including empty",
+  "file": "nora/app/register_graph.py",
+  "old": "        wanted: dict[Key, str] = dict.fromkeys(\n            targets if selected is None else selected, verb)",
+  "new": "        wanted: dict[Key, str] = dict.fromkeys(\n            [*targets, *(selected or ())], verb)",
+  "target": "tests/unit/test_cognition_session_runner.py::test_revise_with_empty_associations_clears_the_link tests/unit/test_cognition_session_runner.py::test_explicit_association_excludes_unshown_body_alias"
+ },
+ {
+  "name": "register graph: refreshing own event entity must not stage an orphan",
+  "file": "nora/app/register_graph.py",
+  "old": "        if entities and not any(\n            e.key in (r.src, r.dst) for e in entities for r in relations\n        ):",
+  "new": "        if entities and not relations:",
+  "target": "tests/unit/test_cognition_session_runner.py::test_event_revise_replaces_association_without_an_orphan_retry"
+ }
+]

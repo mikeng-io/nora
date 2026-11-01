@@ -2,10 +2,9 @@
 
 The record store is PostgreSQL, so DB-touching tests run against a
 REAL Postgres in a testcontainer — never a mock, never an in-memory shim that
-would answer every query the same way (CLAUDE.md). One container is shared for
-the whole session; **each test that asks for `pg_url` gets its own freshly
-CREATEd database**, dropped on teardown, so isolation is a real separate catalog
-rather than a shared mutable one.
+would answer every query the same way (CLAUDE.md). Each requesting xdist worker
+shares one container; `pg_url` clones a fresh database per test, dropped at
+teardown. Eligible modules opt into `pg_module_url` and own their row resets.
 
 The container starts lazily on the first `pg_url` request, so the pure-unit
 majority of the suite (which uses `FakeRecordStore`) pays nothing for it.
@@ -18,6 +17,7 @@ import urllib.error
 import urllib.request
 import uuid
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,6 +27,7 @@ import psycopg
 import pytest
 from testcontainers.core.container import DockerContainer
 from testcontainers.postgres import PostgresContainer
+from testcontainers.redis import RedisContainer
 
 from nora.agent.registry import ToolRegistry
 from nora.config import Config
@@ -34,6 +35,8 @@ from nora.config import load as load_config
 from nora.doctrine.loader import DoctrineStore
 from nora.obs.metrics import Metrics
 from tests.builders import copy_example_config
+
+pytest_plugins = ["scripts.pytest_gate"]
 
 # MUST track `docker-compose.yml`'s `db` image, and
 # `test_the_test_container_tracks_the_deployment` is what pins the two
@@ -291,22 +294,9 @@ def pg_template(pg_admin: _PgAdmin) -> str:
     return dbname
 
 
-@pytest.fixture
-def pg_url(pg_admin: _PgAdmin, pg_template: str, monkeypatch) -> Iterator[str]:
-    """A fresh PostgreSQL database at the migration head, and the asyncpg URL
-    that reaches it.
-
-    Also exported to the environment as `DATABASE_URL`, so any test that builds a
-    full `Config` and runs the composition root (which reads
-    `store.database_url_env`) is pointed at this same fresh database with no
-    per-call-site threading. The database is dropped on teardown; open
-    connections are terminated first so the DROP cannot hang on a pooled handle.
-
-    **Cloned from `pg_template`, not created empty** — see that fixture. Callers
-    that call `run_migrations(url)` are correct and cheap: the chain is already
-    at head, so it costs one connection and a version check. Callers that never
-    migrate get a migrated database.
-    """
+@contextmanager
+def _pg_database(pg_admin: _PgAdmin, pg_template: str) -> Iterator[str]:
+    """Own one migrated clone, including cleanup when its consumer raises."""
     dbname = "t_" + uuid.uuid4().hex
     with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
         # Terminate stragglers on the TEMPLATE first: Postgres refuses to copy a
@@ -319,7 +309,6 @@ def pg_url(pg_admin: _PgAdmin, pg_template: str, monkeypatch) -> Iterator[str]:
         )
         conn.execute(f'CREATE DATABASE "{dbname}" TEMPLATE "{pg_template}"')
     url = _async_url(pg_admin, dbname)
-    monkeypatch.setenv("DATABASE_URL", url)
     try:
         yield url
     finally:
@@ -332,6 +321,41 @@ def pg_url(pg_admin: _PgAdmin, pg_template: str, monkeypatch) -> Iterator[str]:
                 (dbname,),
             )
             conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
+
+
+@pytest.fixture(scope="module")
+def pg_module_url(pg_admin: _PgAdmin, pg_template: str) -> Iterator[str]:
+    """Opt-in module database; consumers own their table reset and engine disposal.
+
+    No environment export: composition/restart tests keep function-scoped pg_url.
+    Never use this for committed schema changes or migration/bootstrap tests.
+    """
+    with _pg_database(pg_admin, pg_template) as url:
+        yield url
+
+
+@pytest.fixture
+def record_pg_url(pg_admin: _PgAdmin, pg_module_url: str) -> str:
+    """Opt-in record-only database, with committed rows reset between tests.
+
+    Consumers dispose their engines. No environment export, schema changes,
+    extraction or graph-projection context: those tests keep fresh pg_url.
+    """
+    with psycopg.connect(pg_admin.dsn(pg_module_url.rsplit('/', 1)[1])) as conn:
+        conn.execute("SET LOCAL nora.row_history = 'off'")
+        conn.execute(
+            "TRUNCATE messages, memory_node, memory_edge, memory_projection_queue, "
+            "row_history RESTART IDENTITY CASCADE"
+        )
+    return pg_module_url
+
+
+@pytest.fixture
+def pg_url(pg_admin: _PgAdmin, pg_template: str, monkeypatch) -> Iterator[str]:
+    """Fresh migrated database per test, exported for independent composition engines."""
+    with _pg_database(pg_admin, pg_template) as url:
+        monkeypatch.setenv("DATABASE_URL", url)
+        yield url
 
 
 @pytest.fixture
@@ -430,3 +454,25 @@ def evaluation_config(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(importlib.import_module("nora.subject.obtain"), "_TEMPLATE", target)
         yield target
+
+
+# The platform-bridge durable handoff's other half: a REAL Redis for the
+# consumer-group/dedupe Lua the queue contract is built on. Session-scoped like
+# `_pg_container`; each test flushes the keyspace so orderings never leak.
+@pytest.fixture(scope="session")
+def _redis_container() -> Iterator[RedisContainer]:
+    with RedisContainer("redis:7.4-alpine") as r:
+        yield r
+
+
+@pytest.fixture
+async def redis_client(_redis_container: RedisContainer):
+    import redis.asyncio as aioredis
+
+    client = aioredis.Redis(
+        host=_redis_container.get_container_host_ip(),
+        port=int(_redis_container.get_exposed_port(6379)),
+    )
+    await client.flushall()
+    yield client
+    await client.aclose()

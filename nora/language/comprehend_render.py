@@ -97,10 +97,15 @@ no live Character, culture, Lessons or entry store changes. Empty proposals mean
 """
 
 
-def preview_text(preview: Preview, *, tokens: int = 1500) -> str:
-    """Whole labelled rows within the budget; an omitted row always says more."""
+def preview_text(preview: Preview, *, tokens: int = 1500,
+                 shown_keys: set[tuple[str, str]] | None = None) -> str:
+    """Whole labelled rows within the budget; an omitted row always says more.
+
+    `shown_keys`, when handed a set, collects the node keys of the rows the
+    budget actually emitted — never an omitted, truncated or merely-cited key."""
     graphs = (preview.graph, *preview.candidates)
     rows: list[str] = []
+    row_keys: dict[str, tuple[tuple[str, str], ...]] = {}
     seen: set[str] = set()
     for graph in graphs:
         for node in graph.nodes:
@@ -132,7 +137,9 @@ def preview_text(preview: Preview, *, tokens: int = 1500) -> str:
                 label = "label=unavailable · time=unavailable · state=unavailable"
             if node.key[0] == "web_page":
                 label = "found · " + label
-            rows.append(f"{node.key[0]}:{node.key[1]} {label}")
+            row = f"{node.key[0]}:{node.key[1]} {label}"
+            rows.append(row)
+            row_keys.setdefault(row, (node.key,))
         for edge in graph.relations:
             r = edge.relation
             layer = {"record": "said", "rollup": "computed", "notebook": "judgement"}[r.layer]
@@ -140,11 +147,13 @@ def preview_text(preview: Preview, *, tokens: int = 1500) -> str:
                 layer = "found"
             counts = Counter(e.source[0] for e in edge.evidence)
             counted = ", ".join(f"{n} {kind}" for kind, n in sorted(counts.items()))
-            rows.append(
+            row = (
                 f"{r.id}: {r.src[0]}:{r.src[1]} ─{r.rel}─▶ {r.dst[0]}:{r.dst[1]} "
                 f"{layer} · {r.status} · valid={r.valid_from}/{r.valid_to} · "
                 f"asserted={r.asserted_at.isoformat()} · evidence={edge.evidence_count} {counted}"
             )
+            rows.append(row)
+            row_keys.setdefault(row, (r.src, r.dst))
     kept: list[str] = []
     partial = any(g.status == "partial" for g in graphs)
     for row in rows:
@@ -156,6 +165,8 @@ def preview_text(preview: Preview, *, tokens: int = 1500) -> str:
             partial = True
             continue
         kept.append(row)
+        if shown_keys is not None:
+            shown_keys.update(row_keys.get(row, ()))
     return "more=" + ("available" if partial else "none") + "\n" + "\n".join(kept)
 
 

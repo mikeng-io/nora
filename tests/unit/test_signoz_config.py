@@ -9,8 +9,9 @@ invisible tests cannot see but a typo silently breaks:
   name rather than by shape alone.
 * `deploy/signoz/deployment/ingester/ingester.yaml` — the collector-side
   cache-key normalization (SDK flat keys → UI dotted keys on model leaves
-  only, agent aggregates excluded) and the one canonical log source
-  (journald CONTAINER_TAG matches, no unscoped filelog).
+  only, agent aggregates excluded), the one canonical log source
+  (journald CONTAINER_TAG matches, no unscoped filelog) and the native
+  severity promotion for declared structured `level`s.
 * `deploy/signoz/docker-compose.signoz.yaml` — the owned bridge producers
   carry journald tags matching the receiver's match list.
 """
@@ -29,6 +30,27 @@ OVERLAY = yaml.safe_load(
     (ROOT / "deploy/signoz/docker-compose.signoz.yaml").read_text())
 COMPOSE = yaml.safe_load(
     (ROOT / "deploy/signoz/deployment/compose.yaml").read_text())
+_OWNED_LOG_PRODUCERS = {
+    "nora", "presence", "analytics", "bridge-projection",
+    "signal-bridge", "discord-bridge", "whatsapp-bridge", "instagram-bridge",
+}
+
+
+def test_bridge_producer_scrapes_use_the_effective_api_bearer():
+    jobs = {job["job_name"]: job for job in
+            INGESTER["receivers"]["prometheus/nora"]["config"]["scrape_configs"]}
+    for platform, port in (("signal", 18090), ("discord", 18093),
+                           ("whatsapp", 18081), ("instagram", 18082)):
+        job = jobs[platform + "-bridge"]
+        assert job["metrics_path"] == "/metrics"
+        assert job["authorization"] == {
+            "type": "Bearer", "credentials": "${env:NORA_BRIDGE_API_TOKEN}"}
+        assert job["static_configs"] == [{"targets": [f"{platform}-bridge:{port}"]}]
+    assert "NORA_BRIDGE_API_TOKEN=${NORA_BRIDGE_API_TOKEN:-${NORA_BRIDGE_TOKEN:-}}" in (
+        COMPOSE["services"]["ingester"]["environment"])
+    assert jobs["bridge-projection"]["static_configs"] == [
+        {"targets": ["bridge-projection:8091"]}]
+    assert "signoz" in OVERLAY["services"]["bridge-projection"]["networks"]
 
 _FOR = re.compile(r"for (\d+)m")
 def _comparisons_without_bool(query: str) -> list[str]:
@@ -159,6 +181,39 @@ def test_cache_keys_are_normalized_only_on_model_leaves():
         for s in statements)
 
 
+def test_structured_levels_promote_to_native_severity():
+    """The journald chain json-parses `level` into an attribute but only a
+    severity_parser promotes it to the FIRST-CLASS fields native filters
+    read — without one every row lands as Unspecified(0) and severity
+    filters hide real records (collector readback). The operator must run
+    after the JSON parse, be confined to records that declared a level, and
+    never drop a record it cannot map."""
+    ops = INGESTER["receivers"]["journald/nora"]["operators"]
+    types = [op["type"] for op in ops]
+    sev = next(op for op in ops if op["type"] == "severity_parser")
+    assert types.index("severity_parser") > types.index("json_parser")
+    assert sev["parse_from"] == "attributes.level"
+    # Missing level (unstructured lines, level-less JSON) skips the parse
+    # rather than erroring — absent stays absent, never a guessed band.
+    assert sev["if"] == "attributes.level != nil"
+    # An unmapped level keeps its record; `drop` would lose log lines.
+    assert sev.get("on_error", "send") != "drop"
+    # The declared set is the app's five stdlib levels (band bases, as
+    # nora/obs/logging.py's SEVERITY_NUMBERS emits) plus WARN/FATAL spellings.
+    mapping = sev["mapping"]
+    assert set(mapping) == {"debug", "info", "warn", "error", "fatal"}
+
+    def words(band: str) -> set[str]:
+        declared = mapping[band]
+        return {declared} if isinstance(declared, str) else set(declared)
+
+    assert words("debug") == {"DEBUG"}
+    assert words("info") == {"INFO"}
+    assert words("warn") == {"WARNING", "WARN"}
+    assert words("error") == {"ERROR"}
+    assert words("fatal") == {"CRITICAL", "FATAL"}
+
+
 def test_journald_is_the_one_log_source_scoped_to_owned_producers():
     """No filelog receiver: docker json-file logs carry no container name,
     so a glob can never scope them. The journald match list IS the scope —
@@ -169,10 +224,7 @@ def test_journald_is_the_one_log_source_scoped_to_owned_producers():
     assert logs == ["journald/nora"]
     tags = [m["CONTAINER_TAG"] for m in receivers["journald/nora"]["matches"]
             if "CONTAINER_TAG" in m]
-    assert set(tags) == {
-        "nora", "presence", "analytics",
-        "signal-cli", "whatsapp-bridge", "instagram-bridge",
-    }
+    assert set(tags) == _OWNED_LOG_PRODUCERS
     assert any(m.get("SYSLOG_IDENTIFIER") == "nora-session-probe"
                for m in receivers["journald/nora"]["matches"])
 
@@ -187,12 +239,24 @@ def test_the_compose_mount_and_overlay_match_the_journald_source():
         name for name, svc in OVERLAY["services"].items()
         if (svc.get("logging") or {}).get("driver") == "journald"
     }
-    assert tagged == {
-        "nora", "presence", "analytics",
-        "instagram-bridge", "whatsapp-bridge", "signal-cli",
-    }
+    assert tagged == _OWNED_LOG_PRODUCERS
     for name in tagged:
         assert OVERLAY["services"][name]["logging"]["options"]["tag"] == name
+
+
+def test_bridge_cutover_overlay_uses_existing_services_and_reachable_otlp():
+    base = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    assert set(OVERLAY["services"]) <= set(base["services"])
+    endpoint = "http://signoz-ingester:4318/v1/traces"
+    for name in ("signal-bridge", "discord-bridge", "whatsapp-bridge", "instagram-bridge"):
+        service = OVERLAY["services"][name]
+        assert "signoz" in service["networks"]
+        env = dict(entry.split("=", 1) for entry in service.get("environment", []))
+        if name == "signal-bridge":
+            assert env["NORA_TRACING_ENABLED"] == "true"
+            assert env["NORA_TRACING_ENDPOINT"] == endpoint
+        elif name != "discord-bridge":
+            assert env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] == endpoint
 
 
 def test_clickhouse_authentication_requires_the_private_password():

@@ -314,7 +314,10 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "extraction_queue": ("source_key", lambda i: f"revised-{i}"),
     "extraction_claim": ("content", lambda i: {"what": f"revised {i}"}),
     "extraction_attempt": ("input_tokens", lambda i: i + 10),
-    "messages": ("delivery_status", lambda i: f"delivered-{i}"),
+    # The CHECK keeps the column closed: a revision cycles the legitimate
+    # non-seed statuses (seeds are `pending`) instead of inventing values.
+    "messages": ("delivery_status",
+                 lambda i: ("sent", "failed", "uncertain")[i % 3]),
     "message_edit": ("body", lambda i: f"re-edited {i}"),
     "message_reaction": ("removed", lambda i: 1),
     "message_delete": ("ts", lambda i: MS0 + 100 + i),

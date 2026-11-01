@@ -118,23 +118,70 @@ async def run(
     # into the pipeline and stop the memory feed and the gate for a message
     # that is already recorded. A stimulus is never worth a lost turn.
     try:
-        return await _append(
+        sid, _reason = await _append(
             message=message, item=item, row_id=row_id, person_id=person_id,
             wiring=wiring, metrics=metrics, target=target,
         )
+        return sid
     except Exception:
         log.exception("stimulus stage failed; the item is recorded, its stimulus is not")
         metrics.inc("nora_errors_total", stage="stimulus", platform=message.platform)
         return None
 
 
+async def run_typed(
+    *,
+    message: NormalizedMessage,
+    item: MessageItem,
+    row_id: int,
+    person_id: str | None,
+    wiring: Wiring,
+    metrics: Any,
+    target: EditedMessage | None = None,
+    recorded_at_ms: int | None = None,
+    dedupe: bool = False,
+) -> tuple[str, int | None, str | None]:
+    """`run` with a typed answer for a durable caller: `(outcome, sid, reason)`
+    — `("written", sid, None)` when a row now exists (a `dedupe` hit returns
+    the row already on record, so a retried obligation can never double the
+    stimulus), `("skipped", None, reason)` for a legitimate non-effect,
+    `("failed", None, reason)` when the write did not happen.
+
+    `recorded_at_ms` pins the write's clock for a caller that must hold one
+    value across retries; `None` keeps the wiring clock. The same exception
+    contract as `run` holds: nothing propagates, failures are counted here."""
+    try:
+        if dedupe:
+            unit = wiring.unit_of(message.platform, message.conversation_id)
+            if unit:
+                existing = await wiring.store.existing_id(
+                    unit=unit, kind="message",
+                    ref=f"{_REF_TABLE[item]}:{row_id}")
+                if existing is not None:
+                    return ("written", existing, None)
+        sid, reason = await _append(
+            message=message, item=item, row_id=row_id, person_id=person_id,
+            wiring=wiring, metrics=metrics, target=target,
+            recorded_at_ms=recorded_at_ms,
+        )
+        if sid is not None:
+            return ("written", sid, None)
+        if reason == "self_authored":
+            return ("skipped", None, reason)
+        return ("failed", None, reason or "unknown")
+    except Exception:
+        log.exception("stimulus stage failed; the item is recorded, its stimulus is not")
+        metrics.inc("nora_errors_total", stage="stimulus", platform=message.platform)
+        return ("failed", None, "exception")
+
+
 async def _append(
     *, message: NormalizedMessage, item: MessageItem, row_id: int,
     person_id: str | None, wiring: Wiring, metrics: Any,
-    target: EditedMessage | None,
-) -> int | None:
+    target: EditedMessage | None, recorded_at_ms: int | None = None,
+) -> tuple[int | None, str | None]:
     if _authored_by_nora(message, target, wiring.self_ids):
-        return None
+        return (None, "self_authored")
     unit = wiring.unit_of(message.platform, message.conversation_id)
     if not unit:
         # Scope admitted the room, so it is in policy.toml and has a unit
@@ -143,8 +190,8 @@ async def _append(
             "stimulus: no unit for an admitted room (platform=%s); no stimulus",
             message.platform,
         )
-        return None
-    now_ms = int(wiring.clock() * 1000)
+        return (None, "no_unit")
+    now_ms = recorded_at_ms if recorded_at_ms is not None else int(wiring.clock() * 1000)
     cues = cues_of(message.body) if item in ("message", "edit") else ()
     answers = _answers_nora_at(message, item, target, wiring.self_ids)
     at_ms = message.timestamp if message.timestamp > 0 else now_ms
@@ -164,4 +211,4 @@ async def _append(
     )
     for cue in cues or ("none",):
         metrics.inc("nora_stimulus_total", kind="message", cue=cue)
-    return sid
+    return (sid, None if sid is not None else "append_returned_none")

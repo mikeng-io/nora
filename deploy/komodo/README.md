@@ -17,8 +17,9 @@ the first-install bootstrap below is not the normal production deploy procedure.
    dispatch can rebuild an already-published stable tag. The separate default-off
    **Deploy master** entry selects current master without a formal release. Both
    entries share the existing complete-bundle publisher and installed route.
-2. Hosted AMD64 runners account for all nine artifacts named by the root Compose file:
-   Nora, app, site, STT, voice sidecar/wake, Signal/WhatsApp/Instagram bridges,
+2. Hosted AMD64 runners account for all eleven artifacts named by the root Compose file:
+   Nora, app, site, STT, voice sidecar/wake, Signal/Discord/WhatsApp/Instagram bridges
+   and the bridge projection publisher,
    with Signal's signed tarball preparation retained. The
    Nora manifest must name the exact selected source and truthful version. CI gets registry
    publication permission, never deployment-host credentials.
@@ -111,7 +112,7 @@ This source requires a one-time reviewed update of `komodo_deploy.py` and
 attempts and private diagnostics. Parent/operator installation and live acceptance
 remain separate from local disposable proof. No master-deploy flag change is needed.
 
-The complete manifest still contains eleven services and nine artifacts. Its top-level
+The complete manifest contains thirteen services and eleven artifacts. Its top-level
 version/source/channel describes the **selected release**; `artifacts` records each
 immutable image's **original** version/source/channel and build inputs. Reuse copies
 that artifact record verbatim, without a build, new tag or rewritten OCI labels.

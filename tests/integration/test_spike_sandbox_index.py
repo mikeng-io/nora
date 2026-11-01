@@ -114,15 +114,20 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(pg_url, pg_te
             ])
             tick = await conn.scalar(sa.text("SELECT clock_timestamp()"))
             at_ms = int(tick.timestamp() * 1000)
+            # Match the stimulus writer's millisecond clock; a DB-default
+            # microsecond stamp can fall after the wake fallback's floored ms.
+            stimulus_at = datetime.fromtimestamp((at_ms - 1000) / 1000, UTC)
             sid_msg = (await conn.execute(sa.insert(STIMULUS).values(
                 unit=UNIT, kind="message", item="message", ref="messages:1000",
                 platform="signal", conversation_id="generated-room",
                 person_id="member-a", at_ms=at_ms - 1000,
+                recorded_at=stimulus_at,
             ).returning(STIMULUS.c.id))).scalar_one()
             sid_soc = (await conn.execute(sa.insert(STIMULUS).values(
                 unit=UNIT, kind="social", item="post", ref=f"social_read:{read_id}",
                 platform="signal", conversation_id="generated-room",
                 person_id=PERSON, at_ms=at_ms - 1000,
+                recorded_at=stimulus_at,
             ).returning(STIMULUS.c.id))).scalar_one()
             wid = (await conn.execute(sa.insert(COGNITION_WAKE).values(
                 unit=UNIT, mode="live", reason="settled", from_stimulus_id=0,
@@ -231,7 +236,7 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(pg_url, pg_te
                     },
                     memory_items={}, graph_fetched=GraphFetched(),
                     admitted_indices=set(), admitted_relations={},
-                    admitted_evidence=[])
+                    admitted_evidence=[], shown_keys=set())
                 grounding = Grounding(records={
                     "messages:1000": RecordItem(
                         ref="messages:1000", kind="message", message_id=1000,

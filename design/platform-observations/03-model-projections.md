@@ -5,6 +5,15 @@ block and detail tools. Existing context assembly owns all rendering. The graph
 retrieval repairs in unified-memory 27 §17 remain prerequisites for consistent
 connected understanding; this bundle does not create another retrieval service.
 
+Recorded 2026-10-31: an independent source audit (head `3fe09ac7`) verified the
+F1/F2 MECHANISMS are repaired at that head — `WakeMemory.prepare` restores the
+structural anchors and seeds via `preview_seeds`, and automatic prefetch calls
+the same `MemorySearch.read`/`graph.walk` retrieval as the tools. That is
+source-mechanism evidence, not a live probe or model-quality receipt. One
+limitation stands: automatic prefetch and tool reads share the retrieval
+mechanism, but the per-turn prefetch cache in `context.py` is local — a shared
+cache between automatic and tool reads is not proven at that head.
+
 ## Shared read model
 
 Every object result carries a model-safe handle, kind, source scope label, source
@@ -45,6 +54,18 @@ remain discoverable even if no existing matter references them. Curated graph
 context informs Cognition's attention; an ETL keyword classifier must not decide
 which unknown patterns can ever be discovered.
 
+**Dedup against `recalled` and `graph`, by object identity.** `social_context`
+owns SOURCE state (tally, current state, coverage); `recalled` and the graph
+preview own curated interpretation and evidence handles. The same object (a
+poll, a target message, a room) is keyed identically in both, so a
+`social_context` summary and a `recalled` hit on the same object identity are
+one object, not two claims: the block states the source fact once and carries
+the graph handle, it does not repeat Notebook prose, and a `recalled` row
+naming that object is not suppressed — the two answers are labelled by layer,
+never merged into a third. A new block is added only if the existing surfaces
+cannot carry the source-state layer; annotation of visible targets already
+lives in the transcript, not in `social_context`.
+
 Preserve existing prompt budgets. Share a per-assembly rendered-object set across
 transcript/context renderers: annotate visible targets once, then use references
 for off-window changes. Keep kind, time, source/interpretation label, open/closed
@@ -73,13 +94,10 @@ Reuse existing verbs for transcript/Record evidence, graph understanding, room
 membership and media/social content. Add only capabilities they cannot express.
 No platform-specific model workflow and no universal SQL/query/execute tool.
 
-| Task | Surface and bounded arguments | Result |
-|---|---|---|
-| Connected account/evidence | Existing memory_search/read | Scoped graph preview/full fields and supporting/contradicting evidence |
-| Conversation/observation history | Existing Record/transcript reads extended with typed target refs/time/cursor | Actual source observations, not guessed transitions |
-| Room/member state | Existing room/member reads | Supported current scope/roles/coverage, not inferred channel audience |
-| Collective-choice discovery | Proposed poll_list(scope=server-bound current room, state, limit, cursor) | Poll handles, questions, state/as_of/coverage |
-| Collective-choice detail | Proposed poll_read(handle, view=state or history, limit, cursor) | Definition/options, supported counts/voters or bounded source history |
+The planned per-tool **Engagement/Cognition allowlist** and the existing
+record_query capability boundary are in [05](05-occasion-map.md). It also owns
+per-object injection maps, generated examples and the proposed stimulus extension.
+Do not treat the shared projection contract as automatic exposure on every occasion.
 
 These signatures specify intent, not registered tools. At implementation follow the
 existing tool skill, naming conventions and measured routing. Do not add another

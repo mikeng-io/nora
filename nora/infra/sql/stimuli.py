@@ -310,6 +310,20 @@ class SqlStimulusStore:
             row = (await conn.execute(stmt)).first()
         return None if row is None else int(row.id)
 
+    async def existing_id(self, *, unit: str, kind: str, ref: str) -> int | None:
+        """`(unit, kind, ref)` carries no unique index for `kind='message'`,
+        so a durable caller proves whether its append already committed
+        instead of blindly writing a second row. Newest id wins."""
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(
+                sa.select(STIMULUS.c.id).where(
+                    STIMULUS.c.unit == unit,
+                    STIMULUS.c.kind == kind,
+                    STIMULUS.c.ref == ref,
+                ).order_by(STIMULUS.c.id.desc()).limit(1)
+            )).first()
+        return None if row is None else int(row.id)
+
     async def view(
         self, *, unit: str, mode: str, now_ms: int, limit: int,
         stale_before_ms: int | None = None,
