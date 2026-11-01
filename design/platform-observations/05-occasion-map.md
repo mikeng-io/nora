@@ -100,7 +100,13 @@ what changed; the existing Standing presentation carries ongoing references and
 fresh source state when the event/parent is outside the recent transcript.
 Notebook/graph supplies revisable understanding. Reuse reaction/edit/delete
 rendering; new poll/room payloads still require the coherent stimulus changes below.
-No new model-facing block or blanket tool-catalogue expansion follows from this map.
+No new model-facing block kind or blanket tool-catalogue expansion follows from
+this map. Cognition's current `_BLOCKS` does not declare Standing: implementation
+must explicitly declare and assemble the reused Standing block(s) selected by the
+Standing owner for this occasion, with its scoped typed input and budget. Reusing
+an existing block kind in another occasion requires that declaration; it does not
+permit hiding Standing source state inside agenda/graph text. This does not require
+reviving the legacy working-set store or indiscriminately exposing its blocks.
 
 Standing is the presentation owner, not another poll database. Related source
 objects persist in their typed stores and are refreshed during assembly, not by
