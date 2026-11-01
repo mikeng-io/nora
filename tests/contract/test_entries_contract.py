@@ -22,31 +22,8 @@ CONTENT = EntryContent(
 
 
 @pytest.fixture(scope="module")
-def _entry_db(pg_admin):
-    from uuid import uuid4
-
-    import psycopg
-
-    from nora.infra.sql.migrations_runner import run_migrations
-
-    dbname = "t_entry_" + uuid4().hex
-    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
-        conn.execute(f'CREATE DATABASE "{dbname}"')
-    url = (
-        f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
-        f"@{pg_admin.host}:{pg_admin.port}/{dbname}"
-    )
-    run_migrations(url)
-    try:
-        yield url
-    finally:
-        with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
-            conn.execute(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname=%s AND pid<>pg_backend_pid()",
-                (dbname,),
-            )
-            conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
+def _entry_db(pg_module_url: str) -> str:
+    return pg_module_url
 
 
 @pytest.fixture(params=["fake", "sql"])

@@ -1,5 +1,34 @@
 # Changelog
 
+## [7.13.3](https://github.com/mikeng-io/nora/compare/v7.13.2...v7.13.3) (2026-10-31)
+
+
+### Maintenance
+
+* **db:** reuse isolated record databases in media and tool tests ([2ebd5f3](https://github.com/mikeng-io/nora/commit/2ebd5f37313ab8c15cca93894d9b9e11b77a25d5))
+
+## [7.13.2](https://github.com/mikeng-io/nora/compare/v7.13.1...v7.13.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* **gate:** bound directory and PATH inputs before reusing acceptance ([6819150](https://github.com/mikeng-io/nora/commit/6819150400a62a2dad05cf7d7e3b2f795528d84e))
+* **gate:** canonicalize Docker mounts in receipt context ([dda3239](https://github.com/mikeng-io/nora/commit/dda3239bb4218cebf2c57a349569856fdaeadb40))
+* **gate:** preserve path identity and bound receipt lookups ([1705796](https://github.com/mikeng-io/nora/commit/1705796f5091633f4739b3ebcc2a1c0c54a119a7))
+* **gate:** reuse exact local acceptance and narrow document selection ([f9ce8ff](https://github.com/mikeng-io/nora/commit/f9ce8ffee97b67d6caeed19d384397d1f9ff8063))
+
+## [7.13.1](https://github.com/mikeng-io/nora/compare/v7.13.0...v7.13.1) (2026-10-31)
+
+
+### Maintenance
+
+* **ci:** keep database reuse consumers on one worker ([a56f8db](https://github.com/mikeng-io/nora/commit/a56f8dbe62614d6b2f5a12d825a124558693b8dc))
+* **gate:** allow catalogue collection during an admitted run ([ce52543](https://github.com/mikeng-io/nora/commit/ce525433ced8f7ff788e707573d122f22a26dbc4))
+* **gate:** anchor timing selection to the checkout ([6c62403](https://github.com/mikeng-io/nora/commit/6c62403711da4f60b8bd68c0f16b4f94a0e96224))
+* **gate:** serialize local pytest jobs and isolate timing phases ([dbcb74f](https://github.com/mikeng-io/nora/commit/dbcb74fed020dfa294d8b20912feb745db4413d1))
+* **infra:** reuse migrated module databases and group fixture consumers ([b75243b](https://github.com/mikeng-io/nora/commit/b75243b4307232f2fac121686693d8c870fb6061))
+* restore logging state and align revision test clocks ([746ce4c](https://github.com/mikeng-io/nora/commit/746ce4c3b2a9d61b93e919fc68a3bd500c5a1686))
+
 ## [7.13.0](https://github.com/mikeng-io/nora/compare/v7.12.3...v7.13.0) (2026-10-31)
 
 

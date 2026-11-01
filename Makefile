@@ -6,7 +6,7 @@
 # so it does not have to be retyped. Edit the docs first if the underlying
 # command changes; this file follows them, not the other way round.
 
-.PHONY: bridge test test-fast test-affected lint typecheck imports gate full-gate mutate \
+.PHONY: bridge test test-fast test-affected lint typecheck imports gate gate-fresh gate-reuse _gate full-gate _full-gate mutate \
         setup hooks schema-parity heads decision-numbers \
         eval-participation eval-adversarial-corpora eval-gate \
         build up stop logs ps \
@@ -35,7 +35,7 @@ hooks:
 # serial suite unconditionally) ---
 
 test:
-	uv run pytest -q
+	uv run python -m scripts.pytest_gate --workers 0
 
 lint:
 	uv run ruff check nora/ evals/ tests/
@@ -46,22 +46,35 @@ typecheck:
 imports:
 	uv run lint-imports
 
-# `gate` checks what the BRANCH changed: ruff, mypy and lint-imports in full
-# (fast), then only the tests scripts/affected_tests.py maps from the diff
+# `gate` checks what the BRANCH changed: code/mixed changes run ruff, mypy
+# and lint-imports, then the tests scripts/affected_tests.py maps from the diff.
+# Ordinary docs run only their readers. The diff is
 # against origin/master, INCLUDING uncommitted edits and untracked files (the
 # gate must judge the tree as it stands, not just the tree at HEAD — an
 # uncommitted fix is still untested if the gate skips it). It fails closed: an
 # unmapped or broad change, or a selector that fails or says nothing, runs the
 # whole suite, so it is never weaker than full-gate on a change it cannot
 # scope. `full-gate` is the whole suite, serial, unconditionally.
-gate: lint typecheck imports
+gate:
+	uv run python -m scripts.gate
+
+gate-fresh:
+	uv run python -m scripts.gate --fresh
+
+gate-reuse:
+	uv run python -m scripts.gate --reuse-only
+
+_gate: lint typecheck imports
 	@if ! git diff --quiet origin/master -- deploy/instagram-bridge 2>/dev/null \
 		|| git ls-files --others --exclude-standard -- deploy/instagram-bridge | grep -q .; then \
 		$(MAKE) --no-print-directory bridge; \
 	else echo "bridge: deploy/instagram-bridge untouched, skipped"; fi
 	@$(MAKE) --no-print-directory test-affected BASE=origin/master INCLUDE_WORKTREE=--include-worktree
 
-full-gate: lint typecheck imports bridge test
+full-gate:
+	uv run python -m scripts.gate --full
+
+_full-gate: lint typecheck imports bridge test
 
 # --- the Go instagram-bridge -------------------------------------------------
 # Nothing else builds it before an image does: the 2026-10-14 history scrub
@@ -84,8 +97,10 @@ mutate:
 # --- fast pass (for the edit-run-edit loop) ---
 # For the edit-run-edit loop only. `make full-gate` above stays serial.
 
+TEST_WORKERS ?= 2
+
 test-fast:
-	uv run pytest -q -n 8
+	uv run python -m scripts.pytest_gate --workers $(TEST_WORKERS)
 
 # Selects pytest targets from what actually changed (scripts/affected_tests.py,
 # spec §3). BASE is the diff base: HEAD~1 (the last commit) by default,
@@ -106,7 +121,7 @@ test-fast:
 BASE ?= HEAD~1
 INCLUDE_WORKTREE ?=
 SELECTOR := uv run python scripts/affected_tests.py
-PYTEST := uv run pytest -q -n 8
+PYTEST := uv run python -m scripts.pytest_gate --workers $(TEST_WORKERS)
 test-affected:
 	@targets="$$($(SELECTOR) --base $(BASE) $(INCLUDE_WORKTREE))"; rc=$$?; \
 	if [ "$$rc" -ne 0 ] || [ -z "$$targets" ]; then \
