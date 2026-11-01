@@ -1156,6 +1156,7 @@ def test_auto_base_ignores_only_exact_generated_untracked_hooks(tiny_repo, capsy
     assert capsys.readouterr().out.strip() == ALL
 
 
+@pytest.mark.skipif(shutil.which("make") is None, reason="needs make")
 @pytest.mark.parametrize('target', ['test', 'test-fast', 'test-affected'])
 @pytest.mark.parametrize('fails', [False, True])
 @pytest.mark.parametrize('base', [None, 'HEAD'])
