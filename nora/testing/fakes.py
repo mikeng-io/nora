@@ -78,9 +78,11 @@ from nora.domain.models import (
     EditedMessage,
     EditTarget,
     NormalizedMessage,
+    ReactionRow,
     RowEdit,
     TranscriptRow,
     UnattributedRow,
+    fold_reactions,
     mentions_json,
     parse_mentions_json,
 )
@@ -465,6 +467,17 @@ class FakeRecordStore:
         `since` — mirrors `SqlRecordStore._row` so the two stay legible
         side by side, the edit fold included."""
         latest = self._latest_edit(r["id"])
+        # Mirrors `SqlRecordStore`'s `reaction_states` + `with_reactions`:
+        # the SAME `fold_reactions` definition over the rows this fake holds,
+        # so a fake window annotates exactly what the SQL one would.
+        reactions = fold_reactions(
+            ReactionRow(
+                id=e["id"], message_id=e["message_id"],
+                sender_id=e["sender_id"], emoji=e["emoji"],
+                removed=bool(e["removed"]), ts=e["ts"],
+            )
+            for e in self.reactions if e["message_id"] == r["id"]
+        ).get(r["id"])
         return TranscriptRow(
             id=r["id"], sender_id=r["sender_id"], sender_name=r["sender_name"],
             ts=r["ts"], body=latest["body"] if latest else r["body"],
@@ -477,6 +490,7 @@ class FakeRecordStore:
                 RowEdit(ts=latest["ts"], was=r["body"], raw_json=latest["raw_json"])
                 if latest else None
             ),
+            reactions=reactions,
         )
 
     async def set_delivery_outcome(
