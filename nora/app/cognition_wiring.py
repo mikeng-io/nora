@@ -69,7 +69,7 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     "record_query", "rollup_read", "event_search", "memo_read", "character_read",
     "standing_read", "social_read",
     # the typed source-object reads (platform-observations 05)
-    "poll_list", "poll_read", "room_state_read",
+    "poll_list", "poll_read", "room_state_read", "group_members",
     # the tiers' reads that already exist
     "where_been", "routine_read", "note_read", "note_search",
     # memory
@@ -92,6 +92,8 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
 #: get-or-create the tag path performs) and answers; no message and no
 #: conclusion is written.
 READ_TOOL_AUDIT: Mapping[str, str] = {
+    "group_members": "Scoped Room.members read through the agenda room registry; "
+                     "existing roster availability and audience checks; counters only.",
     "record_query": "SQL read of messages, edits, reactions, deletes and the media "
                     "index (`MediaJoin.enrich`); counters only. No write.",
     "poll_list": "SQL SELECT of `platform_object_state` heads of this room's "

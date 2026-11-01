@@ -1,0 +1,65 @@
+[
+  {
+    "name": "anonymous snapshot clear removes all emoji keys",
+    "file": "nora/domain/observations.py",
+    "old": "        emojis = p.covered_emojis or tuple(sorted(\n            set(standing) | set(state[\"counts\"])))",
+    "new": "        emojis = p.covered_emojis or tuple(standing.keys())",
+    "target": "tests/contract/test_reaction_union_contract.py::test_clear_all_removes_unattributed_snapshot_counts"
+  },
+  {
+    "name": "unknown legacy actor removal withholds anonymous overlap",
+    "file": "nora/domain/observations.py",
+    "old": "                if r.sender_id not in actors and state[\"counts\"].get(r.emoji):\n                    ambiguous = True\n",
+    "new": "",
+    "target": "tests/contract/test_reaction_union_contract.py::test_removal_with_unknown_snapshot_actor_overlap_is_partial -k False"
+  },
+  {
+    "name": "legacy recording time is insert time rather than transaction start",
+    "file": "nora/infra/sql/audit.py",
+    "old": "            created_at=sa.func.clock_timestamp(),\n",
+    "new": "",
+    "target": "tests/contract/test_reaction_union_contract.py::test_a_waiting_transaction_does_not_backdate_a_later_reaction -k sql"
+  },
+  {
+    "name": "new legacy change refreshes old typed reaction discovery",
+    "file": "nora/infra/sql/audit.py",
+    "old": "                heads.c.kind == \"reaction\", target_link,",
+    "new": "                sa.false(), target_link,",
+    "target": "tests/contract/test_reaction_union_contract.py::test_new_legacy_reaction_refreshes_bounded_object_discovery -k sql"
+  },
+  {
+    "name": "message and sidecar own one durable stimulus obligation",
+    "file": "nora/app/bridge_queue.py",
+    "old": "                        and not source_owned):",
+    "new": "                        and True):",
+    "target": "tests/integration/test_platform_observation_ingest.py::test_message_sidecar_is_one_source_obligation_with_both_refs"
+  },
+  {
+    "name": "Cognition grounds delivery independently from the affected target",
+    "file": "nora/app/cognition_grounding.py",
+    "old": "            sibling_wanted.append((s, (\"messages\", event.delivered_message_id)))",
+    "new": "            sibling_wanted.append((s, (\"messages\", event.target_message_id)))",
+    "target": "tests/unit/test_platform_observation_wired.py::test_the_session_runner_assembles_and_consumes_an_observation_stimulus"
+  },
+  {
+    "name": "bounded prompt discovery preserves last-write order",
+    "file": "nora/engagement/context.py",
+    "old": "        heads = [h for h in heads if h.applied > 0]",
+    "new": "        heads = sorted((h for h in heads if h.applied > 0), key=lambda h: max(h.observed_ms or 0, h.received_ms), reverse=True)",
+    "target": "tests/unit/test_platform_observation_wired.py::test_old_target_reaction_union_reaches_standing_and_real_tools"
+  },
+  {
+    "name": "visible reaction tally has one presentation owner",
+    "file": "nora/agent/prefill.py",
+    "old": "                if e.kind == \"reaction\" and e.handle in reaction_targets",
+    "new": "                if False",
+    "target": "tests/unit/test_platform_observation_wired.py::test_old_target_reaction_union_reaches_standing_and_real_tools -k False"
+  },
+  {
+    "name": "typed query does not mislabel current-room data as all rooms",
+    "file": "nora/agent/tools.py",
+    "old": "        if (kind is not None or object is not None) and scope != \"this_room\":",
+    "new": "        if False:",
+    "target": "tests/unit/test_platform_observation_wired.py::test_typed_tools_refuse_wrong_handle_kind_and_unsupported_room_scope"
+  }
+]

@@ -828,7 +828,8 @@ async def test_unsupported_platform_kind_is_unavailable_never_empty():
     assert listed["status"] == "nothing_found"
 
 
-async def test_old_target_reaction_union_reaches_standing_and_real_tools():
+@pytest.mark.parametrize("outside_window", [False, True])
+async def test_old_target_reaction_union_reaches_standing_and_real_tools(outside_window):
     audit = FakeRecordStore()
     store = FakeObservationStore(records=audit)
     audit.observations = store
@@ -860,13 +861,33 @@ async def test_old_target_reaction_union_reaches_standing_and_real_tools():
                              ago=-i-1),
             event_id=f"later-{i}", source_digest=f"later-{i}")
     await react("second-actor", 1)
-    await _say(audit, 41)
+    if outside_window:
+        await _say(audit, 41)
     ctx = await _assembler(audit, store).assemble(request=_request())
-    assert mid not in {row.id for row in ctx.transcript}
+    assert (mid not in {row.id for row in ctx.transcript}) == outside_window
+    prompt = _prompt(ctx)
+    if outside_window:
+        assert "Recorded reaction state on transcript" not in prompt
+    else:
+        assert "Recorded reaction state on transcript #" in prompt
+        assert "reactions: 👍=1" not in prompt
     head = next(obj for obj in ctx.source_objects if obj.kind == "reaction")
     assert "👍=1" in head.state
     line = next(line for line in _prompt(ctx).splitlines()
                 if line.startswith("<source_object") and 'kind="reaction"' in line)
-    assert "👍=1" in line
+    assert ("👍=1" in line) == outside_window
     detail = await _call(_tools(audit, store), "record_query", object=head.handle)
     assert detail["status"] == "ok" and detail["detail"]["counts"] == {"👍": 1}
+
+
+async def test_typed_tools_refuse_wrong_handle_kind_and_unsupported_room_scope():
+    store = FakeObservationStore()
+    await _seed(store)
+    tools = _tools(FakeRecordStore(), store)
+    other_kind = await _call(tools, "record_query", kind="pin")
+    assert other_kind["status"] == "ok"
+    handle = other_kind["objects"][0]["object"]
+    bad = await _call(tools, "poll_read", object=handle)
+    assert bad["status"] == "unavailable"
+    broad = await _call(tools, "record_query", kind="poll", scope="all_rooms")
+    assert broad["status"] == "unavailable"

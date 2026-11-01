@@ -199,3 +199,33 @@ They specify future implementation checks, not a claim those families are built.
 - **Ownership:** transcript truncation or lost rendered text cannot delete canonical
   observations. Standing enrichment is derived from typed refs and source reads;
   no new model-driven ETL, Standing writer or operational-trace-to-social pipeline.
+
+
+## Candidate evidence boundary (2026-11-02)
+
+The integrated candidate implements the selected four-platform capture cells,
+typed durable history/current heads, transactional stimulus obligations,
+transcript/Standing projections and bounded task reads described in [01](01-coverage.md),
+[02](02-observation-contract.md) and the current-candidate map in
+[05](05-occasion-map.md). The original acceptance above remains binding; this is
+not a declaration that every proposed extension or semantic property is complete.
+
+Generated native fixtures, SQL/memory contracts, real WorkRunner recovery tests
+and actual session-input/consumption tests measure deterministic behavior. They do
+not prove real platform completeness, model tool choice, social interpretation or
+production deployment. The final candidate gate and independent full review remain
+the PR's acceptance evidence owners, not the lane reports.
+
+Tool-routing measurement remains unavailable while the declared eval subject-config
+failure is open ([issue 480](https://github.com/mikeng-io/nora/issues/480)); its fix
+is not merged at the inspection snapshot. Do not bypass parity, invent a detail
+handle or seed synthetic production history to make that measurement pass. The
+new dinner-poll case requires discovery because its snapshot supplies no poll
+handle; it does not establish `poll_read` detail routing. A source-backed detail
+anchor and live routing evidence remain unmet. This does not waive the tool/eval
+procedures or authorize a claim of routing quality from deterministic tests.
+
+The candidate's automatic source-head working set is a bounded recency selection,
+with explicit omissions and exact-handle reads. Ongoing matter-linked selection
+and retirement must be verified against the Standing owner's actual typed refs;
+no semantic lifecycle or lossless model compression is established by this slice.

@@ -1500,13 +1500,16 @@ cases:
       not_tools: [who_said, record_query, room_state_read]
     snapshot: *room_a
 
-  - name: route_poll_read_result
+  # No handle exists in this snapshot: discover first, never invent one.
+  # This measures discovery routing, not successful poll_read detail.
+  - name: route_poll_discover_result
     entry: tag
     expect: reply
     mention: true
     input: "The dinner poll — how did the vote split on ramen vs sushi?"
     metadata:
-      tools: [poll_read]
+      tools: [poll_list, poll_read]
+      required_tools: [poll_list]
       not_tools: [who_said, record_query]
     snapshot: *room_a
 

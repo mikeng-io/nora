@@ -316,3 +316,25 @@ that complete key. A missing author leaves the target unresolved rather than
 choosing an arbitrary same-timestamp message. Message-ID targets retain their
 existing platform-scoped addressing. This additive contract detail is part of
 the same unshipped cluster, including its initial migration and shared store tests.
+
+
+## Integrated candidate: delivery and recording provenance
+
+The candidate extends the existing bridge envelope to v2 for typed observations;
+v1 utterances/touches remain readable. `platform_observation` and
+`platform_object_state` retain source history and its folded head. Selected capture
+cells are in [01](01-coverage.md); [04](04-build-and-acceptance.md) owns acceptance.
+
+A co-delivered utterance and an affected message are different relationships.
+`delivered_message_id` identifies the utterance that carried the typed fact;
+`target_message_id` identifies the affected message and remains nullable until
+its independently addressed target resolves. A pin notice can carry words while
+pinning an older message. Both links survive in durable history without making the
+notice the pin target. Neither link depends on the live bridge journal surviving.
+
+Reaction reads merge legacy per-actor deltas and typed clears/snapshots through
+one bounded fold. SQL returns metadata and bounded state in one statement snapshot;
+truncated, unattributable or unorderable state withholds exact counts. Database
+insertion stamps define the recorded-arrival fallback across these two tables.
+They are not transaction commit timestamps and prove no upstream ordering;
+source revisions remain scoped to the native stream that supplied them.

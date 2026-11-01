@@ -212,6 +212,7 @@ from ..domain.notes import (
 )
 from ..domain.observations import (
     UNSUPPORTED_KINDS,
+    ObjectKind,
     SourceEvent,
     SourceScope,
     coverage_label,
@@ -6045,19 +6046,18 @@ def build_tool_specs(
         scope: Literal["this_room", "all_rooms"] = "this_room",
         author: str | None = None,
         text: str | None = None,
-        kind: str | None = None,
+        kind: ObjectKind | None = None,
         object: str | None = None,
         history: bool = False,
         at_id: int | None = None,
     ) -> dict:
-        """Search this group's recorded messages over a time span, by author
-        or words — or read the room's recorded source objects (polls, the
-        room's state, members, pins, shared artifacts) by `kind`.
+        """Search recorded messages or source objects. Call this when somebody
+        asks what was said or how a recorded poll or room object stands.
 
-        SHOULD: give `text` as the words were written, not a paraphrase.
-        Returns `messages` oldest first, each with `room`, `sender`, `body`
-        and `when`; a `kind` call returns `objects`/`state`/`events`
-        instead. Statuses: ok, nothing_found, ambiguous, unavailable.
+        SHOULD: give `text` as the words were written.
+        Message queries return `messages` oldest first with room, sender,
+        body and time. Object queries return objects, state or history.
+        Statuses: ok, nothing_found, ambiguous, unavailable.
 
         Args:
             start: From this Hong Kong time, "YYYY-MM-DD HH:MM", or a date
@@ -6069,16 +6069,21 @@ def build_tool_specs(
                 conversation.
             text: Only messages containing these words.
             kind: One of poll, room, membership, pin, artifact, reaction,
-                message_metadata — switches the query to the room's recorded
+                message_metadata, switches the query to the room's recorded
                 source objects of that kind.
             object: An object handle a `kind` call returned, for its detail.
             history: With `object`, the object's retained source events.
             at_id: With `object`, the object's folded state through that
                 observation id (partial when the bound cut the history).
         """
+        if (kind is not None or object is not None) and scope != "this_room":
+            _record(metrics, "record_query", "unavailable", reason="object_scope")
+            return {"status": "unavailable",
+                    "note": "Source object reads are bound to this room. "
+                            "Choose the authorized room before reading its objects."}
         if kind is not None or object is not None:
             # The typed source-object branch: the observation Record's own
-            # read, not the message query's — it does not consult `record`
+            # read, not the message query's, it does not consult `record`
             # or `lineage`, and an unwired store is `unavailable` (R-27).
             if observations is None or (
                     kind is not None and kind not in _OBSERVATION_KINDS):
@@ -6087,7 +6092,7 @@ def build_tool_specs(
                 return {"status": "unavailable",
                         "note": _RECORD_QUERY_OFF if observations is None else
                         f"`kind` must be one of {', '.join(_OBSERVATION_KINDS)}."}
-            # `object` without `kind`: the handle NAMES its kind — an
+            # `object` without `kind`: the handle NAMES its kind, an
             # opaque `<kind>:<digest>` parses, anything else is a real
             # `nothing_found`, never a defaulted `poll` that could
             # misroute a pin's handle.
@@ -6200,7 +6205,7 @@ def build_tool_specs(
                 rooms=len(rooms), withheld=withheld, near=len(near))
         result: dict = {"status": "ok", "messages": out}
         # The AUTHORIZED rooms' typed source events of the SAME interval,
-        # same projection — the query reads what was said AND what the
+        # same projection, the query reads what was said AND what the
         # source did there. `_readable_rooms` is the whole authority: an
         # event is read per authorized room and labelled with that room's
         # own name, so `all_rooms` attributes each one correctly and never
@@ -6293,12 +6298,11 @@ def build_tool_specs(
     _obs_off = "I can't read what the source recorded right now. Say so."
 
     async def poll_list() -> dict:
-        """List this room's recorded polls and how each stands.
+        """List this room's recorded polls. Call this when somebody asks which
+        polls exist or needs a handle for poll_read.
 
-        Returns `polls`, each with an `object` handle (for `poll_read`),
-        `question`, `status`, `options` (label plus counted votes), and
-        `ordering` when the source gave one.
-        """
+        Returns poll handles, questions, lifecycle state, choices, recorded
+        tallies and coverage. Statuses: ok, nothing_found, unavailable."""
         if observations is None:
             _record(metrics, "poll_list", "unavailable", reason="unwired")
             return {"status": "unavailable", "note": _obs_off}
@@ -6356,13 +6360,14 @@ def build_tool_specs(
              **({"more": True} if more else {})})
 
     async def poll_read(object: str) -> dict:
-        """Read one recorded poll's full state by its `object` handle.
+        """Read a recorded poll by its handle. Call this when you have a poll
+        handle and need its question, choices or recorded tally.
 
-        `object` is a handle `poll_list` or the transcript returned —
-        `poll:` followed by letters and digits. Returns the question,
-        options with counted votes, the voters who could be named, the
-        closing state, retained history length and the poll's ordering.
-        """
+        Returns poll state, supported voters, times and coverage.
+        Statuses: ok, nothing_found, unavailable.
+
+        Args:
+            object: A poll handle returned by poll_list or the transcript."""
         if observations is None:
             _record(metrics, "poll_read", "unavailable", reason="unwired")
             return {"status": "unavailable", "note": _obs_off}
@@ -6372,12 +6377,10 @@ def build_tool_specs(
             return {"status": "unavailable",
                     "note": "This source cannot report polls — the platform "
                             "does not carry them to the bridge."}
-        kind, _digest = parse_handle(object)
-        if kind != "poll":
-            _record(metrics, "poll_read", "nothing_found", reason="kind")
-            return {"status": "nothing_found",
-                    "note": "That is not a poll handle. `poll_list` gives "
-                            "this room's poll handles."}
+        if parse_handle(object)[0] != "poll":
+            _record(metrics, "poll_read", "unavailable", reason="handle_kind")
+            return {"status": "unavailable",
+                    "note": "Use a recorded poll handle from poll_list or the transcript."}
         scope = SourceScope(
             platform=room.platform, account_key="",
             conversation_id=bound_conversation_id)
@@ -6400,13 +6403,11 @@ def build_tool_specs(
             return {"status": "unavailable", "note": _obs_off}
 
     async def room_state_read() -> dict:
-        """Read what the source recorded about this room itself.
+        """Read recorded room, membership and pin state. Call this when
+        somebody asks about the room's name, settings, members or pins.
 
-        Returns the room's folded `room` head — title, topic, who may post
-        — plus its member-set head's counted state (member count when the
-        source said one), each with `ordering` and `coverage` so a partial
-        snapshot reads as partial.
-        """
+        Returns scoped source state with times and coverage.
+        Statuses: ok, nothing_found, unavailable."""
         if observations is None:
             _record(metrics, "room_state_read", "unavailable",
                     reason="unwired")

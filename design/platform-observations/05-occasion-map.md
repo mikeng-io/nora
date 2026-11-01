@@ -217,3 +217,43 @@ Stimuli accumulate under existing coalescing/wake rules; every callback does not
 invoke a model. A configured group event may become relevant to a new understanding
 without an existing note predicting it. Rendering and deterministic folds do not
 classify sincerity, agreement, attendance or intent.
+
+
+## Integrated candidate map (2026-11-02)
+
+The historical baseline and proposed richer signatures above remain distinguishable
+from this implementation candidate. Runtime wiring exists in the candidate; a
+merged/deployed version or measured model routing is not claimed here.
+
+| Consumer | Automatic input | Task reads |
+|---|---|---|
+| Engagement | Chronologically interleaved typed source events in `group_transcript`; supported current source heads in existing `standing`; visible reaction target annotations | Existing transcript/room/message tools; typed `record_query`; `poll_list`, `poll_read`, `room_state_read` |
+| Cognition | Room-bound `observation` agenda items, grounded source rows and explicitly declared reused `standing`; a co-delivered utterance appears beside its event | Same scoped typed reads plus existing Record/graph reads and `group_members` through the agenda room's registry/roster |
+
+The candidate implements `poll_list()` and `poll_read(object)` for discovery and
+current detail, and `room_state_read()` for current room/membership/pin heads.
+Pagination cursors and history arguments on those three tools are not implemented;
+bounded results mark omissions. Retained history and as-of reads use
+`record_query(kind, object, history, at_id)`. Its original time/author/text message
+mode remains compatible. Typed object queries are current-room reads; requesting
+`scope=all_rooms` in that mode returns `unavailable` rather than silently presenting
+a current-room subset as a unit-wide result. Existing reader flags and roster
+availability remain effective; there is no new platform-specific tool.
+
+One message+sidecar source event owns one observation stimulus obligation carrying
+both row refs and the utterance snapshot. Its cues/waits/person survive while the
+ordinary duplicate message stimulus is suppressed only after durable ownership.
+Malformed sidecars preserve utterance obligations. Observation-only and silent
+message-sibling paths retain their own observation obligation. Grounding reads the
+co-delivered utterance through `delivered_message_id`; the affected target remains
+separate, including an unresolved target. Distinct later source transitions remain
+distinct evidence. The new stimulus family is `observation`, not one per platform.
+
+Current source heads are bounded and selected by store last-write recency, not by
+untrusted source timestamps. Events describe changes; Standing describes current
+state, rather than a second event count. A visible message's recorded reaction
+annotation is the tally's presentation owner; Standing references that transcript
+annotation instead of repeating its tally. Off-window reactions retain source
+state in Standing. Interpretive matter relevance/retirement still belongs to the
+existing Standing/Notebook owners; recency selection is not evidence of semantic
+matter tracking or sincerity understanding.

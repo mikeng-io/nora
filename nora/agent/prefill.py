@@ -964,6 +964,11 @@ def _standing_block(
     # the pin set, the member count — each with its ordering and coverage
     # flags so a gapped or partial state never reads as settled truth.
     if ctx.source_objects:
+        annotated = {row.id: i for i, row in enumerate(ctx.transcript, 1)
+                     if row.reactions is not None}
+        reaction_targets = {e.handle: annotated[e.target_message_id]
+                            for e in ctx.source_events if e.kind == "reaction"
+                            and e.target_message_id in annotated}
         objects = render_elements(
             ctx.source_objects, tag="source_object",
             attrs=lambda e, _i: (
@@ -987,7 +992,10 @@ def _standing_block(
                  and e.time_quality != "upstream"
                  else None),
             ),
-            body=lambda e: e.state or e.summary,
+            body=lambda e: (
+                f"Recorded reaction state on transcript #{reaction_targets[e.handle]}"
+                if e.kind == "reaction" and e.handle in reaction_targets
+                else e.state or e.summary),
         )
         if ctx.source_objects_more:
             objects = (f"{objects}\n<source_objects_more "

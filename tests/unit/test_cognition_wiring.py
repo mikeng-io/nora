@@ -60,7 +60,10 @@ FLAGS_ON = {"record_query.enabled", "culture.enabled"}
 def test_the_catalogue_is_the_designs_and_names_no_live_social_read():
     """The warehouse queries and the tiers' reads. The live
     `instagram_*`, `x_*` and `linkedin_*` reads stay on the tag path."""
-    assert {"record_query", "note_read", "about", "event_search"} <= COGNITION_READ_CATALOGUE
+    assert {
+        "record_query", "note_read", "about", "event_search",
+        "group_members", "poll_list", "poll_read", "room_state_read",
+    } <= COGNITION_READ_CATALOGUE
     live_social = {n for n in NATIVE_TOOLS if n.startswith(("instagram_", "x_", "linkedin_"))}
     assert live_social, "positive control: the tool table has live social reads"
     assert not (COGNITION_READ_CATALOGUE & live_social)

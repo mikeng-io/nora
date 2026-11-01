@@ -734,6 +734,11 @@ def _register(
     # the open poll, the pin set, the member count — typed rows under ONE
     # block, on the Register's own budget row. A gap/unordered head says so
     # (`ordering`); a partial snapshot says what it covers, never the whole.
+    annotated_ids = {r.message_id for r in grounding.records.values()
+                     if r.reactions is not None}
+    reaction_targets = {e.handle: e.target_message_id
+                        for e in grounding.observations.values()
+                        if e.kind == "reaction" and e.target_message_id in annotated_ids}
     standing_groups: list[str] = []
     for room in rooms:
         objects = grounding.source_objects.get(room_key(room), ())
@@ -747,7 +752,10 @@ def _register(
                     ("ordering", e.ordering or None),
                     ("coverage", e.coverage or None),
                     ("rev", e.revision or None),
-                    ("state", e.state or None),
+                    ("state", (
+                        f"Recorded reaction state on agenda message {reaction_targets[e.handle]}"
+                        if e.kind == "reaction" and e.handle in reaction_targets
+                        else e.state or None)),
                     ("time", e.time_quality if e.time_quality != "upstream"
                             else None),
                     ("observed", _when(e.at_ms, now_ms, tz)
