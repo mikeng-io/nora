@@ -1,5 +1,18 @@
 # Changelog
 
+## [7.13.5](https://github.com/mikeng-io/nora/compare/v7.13.4...v7.13.5) (2026-11-01)
+
+
+### Features
+
+* **record:** show recorded reaction state on transcript targets ([1714914](https://github.com/mikeng-io/nora/commit/17149148630e76bae6a587bda3b6d0f4237304af))
+
+
+### Bug Fixes
+
+* **record:** bound reaction reads, budget their annotation, mark coverage ([8f2b09f](https://github.com/mikeng-io/nora/commit/8f2b09f13ebdc2cd4bbd121062f8b1f4a35d9485))
+* **record:** read reaction state from one database snapshot ([55b3f16](https://github.com/mikeng-io/nora/commit/55b3f1659f58af38ee060f7f1b83925895296852))
+
 ## [7.13.4](https://github.com/mikeng-io/nora/compare/v7.13.3...v7.13.4) (2026-11-01)
 
 
