@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.13.12](https://github.com/mikeng-io/nora/compare/v7.13.11...v7.13.12) (2026-11-01)
+
+
+### Maintenance
+
+* **engineering:** bind review and closure to the agreed scope ([1feecb0](https://github.com/mikeng-io/nora/commit/1feecb03c51d4124dcc87835124f24fb359378d1))
+
 ## [7.13.11](https://github.com/mikeng-io/nora/compare/v7.13.10...v7.13.11) (2026-11-01)
 
 
