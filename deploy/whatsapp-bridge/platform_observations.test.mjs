@@ -682,8 +682,8 @@ test('clockless reaction add→remove→add on one stanza: last add is ambiguous
   };
   const { envs, records } = await runCapture([mk('👍'), mk(''), mk('👍')]);
   assert.equal(envs.length, 2, 'add and remove enqueue; the clockless re-add is held');
-  assert.match(envs[0].upstream, /:add:na$/);
-  assert.match(envs[1].upstream, /:remove:na$/);
+  assert.match(envs[0].source_key, /:add:na$/);
+  assert.match(envs[1].source_key, /:remove:na$/);
   const amb = ambiguousOf(records);
   assert.equal(amb.length, 1);
   assert.match(amb[0].ambiguous.reason, /clockless/);
@@ -706,9 +706,9 @@ test('source clock resolves reaction ordering: forward emits, stale-seen replays
     mk('❤️', 1790000500000), // real re-add @t5 — forward progress → genuine
   ]);
   assert.equal(envs.length, 3, 'add@t1, remove@t3, re-add@t5 enqueue; replays and ambiguous do not');
-  assert.match(envs[0].upstream, /:add:1790000100000$/);
-  assert.match(envs[1].upstream, /:remove:1790000300000$/);
-  assert.match(envs[2].upstream, /:add:1790000500000$/);
+  assert.match(envs[0].source_key, /:add:1790000100000$/);
+  assert.match(envs[1].source_key, /:remove:1790000300000$/);
+  assert.match(envs[2].source_key, /:add:1790000500000$/);
   const amb = ambiguousOf(records);
   assert.equal(amb.length, 1);
   assert.match(amb[0].ambiguous.reason, /watermark/);

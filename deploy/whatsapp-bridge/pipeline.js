@@ -126,26 +126,29 @@ export function createPipeline({
    * none.
    */
   function resolveTransitions(list) {
+    let changed = list.length === 0;
     for (const t of list) {
       const st = transitionLedger.get(t.key) || { seen: new Set(), last: null, lastSeq: 0 };
       const seen = st.seen.has(t.state);
       const seq = Number(t.upstream_seq) || 0;
       if (seq > 0) {
-        if (seq > st.lastSeq) continue;
+        if (seq > st.lastSeq) { changed = true; continue; }
         if (seq < st.lastSeq && !seen) {
           return { emit: false, reason: 'stale upstream revision below watermark' };
         }
         if (seen && st.lastSeq > 0 && seq <= st.lastSeq) {
-          return { emit: false, reason: '' };
+          continue;
         }
+        changed = true;
         continue; // same revision, new state — same-batch transition
       }
-      if (t.state === st.last) return { emit: false, reason: '' };
+      if (t.state === st.last) continue;
       if (seen) {
         return { emit: false, reason: 'unresolvable clockless transition: state repeats without upstream revision' };
       }
+      changed = true;
     }
-    return { emit: true, reason: '' };
+    return { emit: changed, reason: '' };
   }
 
   function halt(err) {

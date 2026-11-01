@@ -390,6 +390,7 @@ func (s *Sink) confirmHead() {
 func (s *Sink) resolveTransitions(norm *Normalized) (emit bool, ambiguousReason string) {
 	s.transitionsMu.Lock()
 	defer s.transitionsMu.Unlock()
+	changed := len(norm.Transitions) == 0
 	for _, t := range norm.Transitions {
 		st := s.transitions[t.Key]
 		if st == nil {
@@ -403,12 +404,14 @@ func (s *Sink) resolveTransitions(norm *Normalized) (emit bool, ambiguousReason 
 			// unverifiable — ambiguous.
 			switch {
 			case t.UpstreamSeq > st.LastSeq:
+				changed = true
 				continue // forward progress — genuine
 			case t.UpstreamSeq < st.LastSeq && !seen:
 				return false, "stale upstream revision below watermark"
 			case seen && st.LastSeq > 0 && t.UpstreamSeq <= st.LastSeq:
-				return false, "" // redelivery of a committed transition
+				continue // this component is unchanged
 			default:
+				changed = true
 				continue // same revision, new state — same-batch transition
 			}
 		}
@@ -419,14 +422,15 @@ func (s *Sink) resolveTransitions(norm *Normalized) (emit bool, ambiguousReason 
 		// a never-committed state is genuine.
 		switch {
 		case t.State == st.Last:
-			return false, ""
+			continue
 		case seen:
 			return false, "unresolvable clockless transition: state repeats without upstream revision"
 		default:
+			changed = true
 			continue
 		}
 	}
-	return true, ""
+	return changed, ""
 }
 
 // commitTransitions applies the emitted event's transitions to the
