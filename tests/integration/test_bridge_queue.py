@@ -12,6 +12,7 @@ transport adapter are fakes — the same fakes every tag-path test uses.
 import asyncio
 import contextlib
 import json
+from dataclasses import replace
 
 import pytest
 import sqlalchemy as sa
@@ -130,6 +131,31 @@ async def test_signal_event_flows_audit_work_and_xack(bridge, redis_client, harn
     assert len(rows) == 1
     assert event["state"] == "done"
     assert await _pending(redis_client, stream) == 0  # ack AFTER the commit
+
+
+async def test_projection_revision_survives_registration_ingest_and_ack(bridge, harness):
+    store, redis_client, stream = bridge
+    revision = (1 << 53) - 1
+    env = replace(_envelope("revision boundary", 1002), admission_rev=revision)
+    sid = await _produce(redis_client, stream, env)
+    batch = await redis_client.xreadgroup(
+        CONSUMER_GROUP, "revision-reader", {stream: ">"}, count=1)
+    claimed_sid, fields = batch[0][1][0]
+    await _reader(redis_client, store, stream)._register(claimed_sid, fields)
+
+    event = await store.event(env.event_id)
+    assert event is not None and event["admission_rev"] == revision
+    assert event["stream_id"] == sid
+    assert await _pending(redis_client, stream) == 1
+    work = await store.claim_next(owner="revision-worker", lease_seconds=60)
+    assert work is not None and work.kind == "ingest"
+    await _runner(store, redis_client, harness)._execute(work)
+
+    event = await store.event(env.event_id)
+    assert event["admission_rev"] == revision
+    assert event["payload"]["message_row_id"]
+    assert event["state"] == "done"
+    assert await _pending(redis_client, stream) == 0
 
 
 async def test_duplicate_delivery_registers_once_and_acks_when_owned(
