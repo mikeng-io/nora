@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.13.10](https://github.com/mikeng-io/nora/compare/v7.13.9...v7.13.10) (2026-11-01)
+
+
+### Maintenance
+
+* **test:** make iteration commands select current changes ([9aff1d6](https://github.com/mikeng-io/nora/commit/9aff1d6a4f7e7e1c0eb94b127e56c47006549ba6))
+* **tooling:** keep incremental test guidance within skill limit ([537625b](https://github.com/mikeng-io/nora/commit/537625b6614641904622720bd02e28d7ad41c9c0))
+* **tooling:** skip make command cases when make is unavailable ([25c1a30](https://github.com/mikeng-io/nora/commit/25c1a30e4dfc24784d8640e2d7912d2f55979c6d))
+
 ## [7.13.9](https://github.com/mikeng-io/nora/compare/v7.13.8...v7.13.9) (2026-11-01)
 
 
