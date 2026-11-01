@@ -44,7 +44,7 @@ dependencies = [
     # Reading a shared PDF as text (design/external-files §2, the `pdf` kind).
     # Pure Python with no dependencies of its own; the stdlib has no PDF
     # parser, and docx/xlsx/pptx are read with zipfile + ElementTree instead.
-    "pypdf>=6.21.1",
+    "pypdf>=6.21.4",
     "redis>=5.0",
     "opentelemetry-instrumentation-aiohttp-server>=0.66b2",
 ]
