@@ -87,13 +87,6 @@ class GraphWrite(Shape):
     readings: list[ExtractionClaim]
 
 
-class ProfileProposal(Shape):
-    part: Literal["trait", "guess", "culture", "lesson", "topic"]
-    text: str = Field(min_length=1)
-    relation_ids: list[str] = Field(min_length=1)
-    evidence: list[list[str]] = Field(min_length=1)
-
-
 _FIELD = re.compile(r"[a-z][a-z0-9_]{0,39}")
 
 

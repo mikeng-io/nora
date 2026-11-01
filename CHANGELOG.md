@@ -1,5 +1,18 @@
 # Changelog
 
+## [7.13.13](https://github.com/mikeng-io/nora/compare/v7.13.12...v7.13.13) (2026-11-01)
+
+
+### Features
+
+* **cognition:** write typed Profile accounts from the unified session ([8629ffa](https://github.com/mikeng-io/nora/commit/8629ffa45727141da50f8a122c79b1de4f62176b))
+
+
+### Bug Fixes
+
+* **cognition:** bind the shown account to what the session was shown ([8a655b3](https://github.com/mikeng-io/nora/commit/8a655b376d1ef624b2cc4216ea6fd7716780476f))
+* **profile:** preserve writer ownership and revision provenance ([7aae2a1](https://github.com/mikeng-io/nora/commit/7aae2a12c6f883d85d74f3dc9adef4367be49ddb))
+
 ## [7.13.12](https://github.com/mikeng-io/nora/compare/v7.13.11...v7.13.12) (2026-11-01)
 
 

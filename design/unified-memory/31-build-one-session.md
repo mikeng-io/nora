@@ -226,3 +226,19 @@ prerequisites. This changes acceptance, not their implementation status.
 unsupported interpretation or correction lost in a later answer, or operational
 readback contradicting the replacement claim requires investigation and repair.
 Sparse traffic alone does not reopen a demand for conclusive population parity.
+
+**Profile-surface handoff, delivered (2026-11-01, `fix/unified-profile-handoff`).**
+`profile_read`/`profile_revise` in the Cognition session read and write the
+existing typed Profile accounts through `SqlProfileStore`/`plan_write`: one
+entity's heads as handles, open disputes and revision shown before a write;
+add/keep/revise/retire judged under `expected_revision`, `relation:<id>`
+premises in `draws_on`, `kind:id` citations resolved from shown sources. The
+write is bound to `write && read`, graph comprehension, enabled Cognition
+and home-room coverage for every configured unit: under that one
+condition the Dreamer profile-writer adaptors retire atomically — the verdict
+judge and the tag path's told/dispute writes stay — and under every other
+flag combination `profile_revise` still records shadow receipts while the
+adaptors write. The result receipt rides the write's own transaction, so an
+identical retried call replays its recorded result. Ceilings unchanged: the
+flag flip, backfill and the read-back in a later live turn are operator-held;
+generated fixtures prove code guarantees only.

@@ -1,0 +1,65 @@
+[
+  {
+    "name": "profile-write-receipt-rides-the-write-transaction",
+    "file": "nora/infra/sql/profile.py",
+    "old": "            if receipt is not None:\n                await receipt(conn, {\n                    \"status\": \"ok\", \"revision\": revision,\n                    \"written\": [x.id for x in plan.inserts],\n                })\n            await trans.commit()",
+    "new": "            await trans.commit()",
+    "target": "tests/contract/test_profile_write_receipt.py::test_the_receipt_commits_with_the_write"
+  },
+  {
+    "name": "a-write-invalidates-the-shown-handles",
+    "file": "nora/app/cognition_memory.py",
+    "old": "            # A write renumbers the account's handles — drop the shown view\n            # rather than bind the model to P-numbers it never re-saw; the\n            # next write requires a fresh profile_read.\n            state.profile_accounts.pop(account.key, None)",
+    "new": "",
+    "target": "tests/unit/test_cognition_profile_handoff.py::test_a_write_invalidates_the_shown_view"
+  },
+  {
+    "name": "held-relation-premises-carry-through-a-revision",
+    "file": "nora/domain/profile.py",
+    "old": "            carried_rels = tuple(\n                c[len(\"relation:\"):] for c in carried\n                if op.draws_on is None and c.startswith(\"relation:\"))\n            draws_handles = (\n                op.draws_on\n                if op.draws_on is not None\n                else tuple(h for h, lid in handles.items() if lid in carried)\n            )",
+    "new": "            carried_rels = ()\n            draws_handles = (\n                op.draws_on\n                if op.draws_on is not None\n                else tuple(h for h, lid in handles.items() if lid in carried)\n                + tuple(c for c in carried if c.startswith(\"relation:\"))\n            )",
+    "target": "tests/unit/test_cognition_profile_handoff.py::test_a_carried_relation_premise_survives_a_later_session"
+  },
+  {
+    "name": "model-authored-facts-and-told-are-refused",
+    "file": "nora/app/cognition_memory.py",
+    "old": "            if (getattr(op, \"part\", None) == \"facts\"\n                    or getattr(op, \"mode\", None) == \"told\"):\n                out.append(\"facts are rendered by code from the graph and told \"\n                           \"lines belong to the turn path; this session writes \"\n                           \"traits and guesses\")\n                continue",
+    "new": "",
+    "target": "tests/unit/test_cognition_profile_handoff.py::test_facts_and_told_ops_are_refused_at_the_seam"
+  },
+  {
+    "name": "a-draws-on-relation-ref-resolves-to-declared-relations",
+    "file": "nora/domain/profile.py",
+    "old": "            if handle.startswith(\"relation:\"):\n                relation_id = handle[len(\"relation:\"):]\n                if relation_id not in citable.relations:\n                    return ProfileRefusal(\n                        \"unknown_premise\", f\"{handle!r} is not a relation you \"\n                        \"were shown and admitted\", i)\n                rels.append(relation_id)\n                continue",
+    "new": "",
+    "target": "tests/unit/test_cognition_profile_handoff.py::test_write_then_later_turn_renders"
+  },
+  {
+    "name": "writer-retirement-requires-cognition-and-every-unit-home",
+    "file": "nora/app/composition.py",
+    "old": "if (profile_index and graph_comprehend and cognition_enabled\n            and units and units <= home_units) else frozenset())",
+    "new": "if profile_index and graph_comprehend else frozenset())",
+    "target": "tests/unit/test_cognition_profile_handoff.py::test_writers_stay_without_cognition_or_complete_unit_coverage"
+  },
+  {
+    "name": "prepared-social-sources-retain-their-individual-provenance",
+    "file": "nora/app/cognition_memory.py",
+    "old": "\"source_provenance\": source_provenance",
+    "new": "\"source_provenance\": {}",
+    "target": "tests/unit/test_cognition_profile_handoff.py::test_prepare_keeps_each_social_sources_real_provenance"
+  },
+  {
+    "name": "explicit-premise-replacement-does-not-carry-old-relations",
+    "file": "nora/domain/profile.py",
+    "old": "if op.draws_on is None and c.startswith(\"relation:\"))",
+    "new": "if c.startswith(\"relation:\"))",
+    "target": "tests/unit/test_cognition_profile_handoff.py::test_explicit_relation_premises_replace_instead_of_carrying"
+  },
+  {
+    "name": "fake-no-change-preserves-account-revision",
+    "file": "nora/testing/profile.py",
+    "old": "self.revisions[account.key] = revision + bool(plan.inserts)",
+    "new": "self.revisions[account.key] = revision + 1",
+    "target": "tests/unit/test_cognition_profile_handoff.py::test_no_change_keeps_the_real_store_revision"
+  }
+]

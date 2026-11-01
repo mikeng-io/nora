@@ -23,13 +23,13 @@ equals live projection.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
 from typing import Any, Literal
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.culture import CultureRevision
 from nora.domain.profile import (
@@ -43,6 +43,7 @@ from nora.domain.profile import (
     ProfileOp,
     ProfileRefusal,
     ProfileWriteResult,
+    chain_heads,
     identity_text,
     match_disputed_line,
     plan_write,
@@ -121,20 +122,6 @@ def _values(line: ProfileLine) -> dict[str, Any]:
         "written_at": line.written_at,
         "written_by_session": line.written_by_session,
     }
-
-
-def chain_heads(lines: Sequence[ProfileLine]) -> tuple[tuple[ProfileLine, ...], dict[str, str]]:
-    """Every row of one account reduced to its chain heads (the rows nothing
-    supersedes), and each row id's head id (`plan_write`'s `aliases`)."""
-    successor = {line.supersedes: line.id for line in lines if line.supersedes is not None}
-    heads = tuple(line for line in lines if line.id not in successor)
-    aliases: dict[str, str] = {}
-    for line in lines:
-        head = line.id
-        while head in successor:
-            head = successor[head]
-        aliases[line.id] = head
-    return heads, aliases
 
 
 class SqlProfileStore:
@@ -404,15 +391,22 @@ class SqlProfileStore:
         self, *, account: Account, ops: Sequence[ProfileOp], citable: ProfileCitable,
         now_ms: int, written_by_session: str,
         apply_decay: bool, expected_revision: int | None = None,
+        receipt: Callable[[AsyncConnection, Mapping[str, Any]], Awaitable[None]] | None = None,
     ) -> ProfileWriteResult:
         """Judge and apply one write atomically (45 §4). `expected_revision`
         is the revision the writer read its handles at; a write against a
-        newer one is a `conflict` and changes nothing."""
+        newer one is a `conflict` and changes nothing.
+
+        `receipt` is the caller's idempotency receipt bound into the SAME
+        transaction (the `receipt=` register pattern): the write's result and
+        its receipt commit or roll back together, so a crash between them can
+        neither lose the receipt nor leave it behind on a refused plan."""
         try:
             return await self._write(
                 account=account, ops=ops, citable=citable, now_ms=now_ms,
                 written_by_session=written_by_session,
                 apply_decay=apply_decay, expected_revision=expected_revision,
+                receipt=receipt,
             )
         except sa.exc.IntegrityError as exc:
             if "uq_profile_line_supersedes" not in str(exc):
@@ -423,6 +417,7 @@ class SqlProfileStore:
         self, *, account: Account, ops: Sequence[ProfileOp], citable: ProfileCitable,
         now_ms: int, written_by_session: str,
         apply_decay: bool, expected_revision: int | None,
+        receipt: Callable[[AsyncConnection, Mapping[str, Any]], Awaitable[None]] | None,
     ) -> ProfileWriteResult:
         async with self._engine.connect() as conn:
             trans = await conn.begin()
@@ -477,6 +472,11 @@ class SqlProfileStore:
             if changed:
                 await conn.execute(
                     sa.update(PROFILE).where(PROFILE.c.key == account.key).values(**changed))
+            if receipt is not None:
+                await receipt(conn, {
+                    "status": "ok", "revision": revision,
+                    "written": [x.id for x in plan.inserts],
+                })
             await trans.commit()
         return ProfileWriteResult(
             status="ok", revision=revision, written=tuple(x.id for x in plan.inserts))

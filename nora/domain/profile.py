@@ -41,10 +41,10 @@ from __future__ import annotations
 import math
 import re
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta, timezone
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from nora.domain.memory_item import TRAIT_SLOTS, MemoryItem, content_text, is_location_fact
 
@@ -179,6 +179,7 @@ PROFILE_REFUSALS = frozenset(
     {
         "malformed",
         "unknown_line",
+        "unknown_premise",
         "line_twice",
         "part_kind",
         "mode_part",
@@ -280,6 +281,13 @@ class ProfileCitable:
     interpretation_only: frozenset[int] = frozenset()
     sources: Mapping[str, Said] = field(default_factory=dict)
     social_subjects: frozenset[str] = frozenset()
+    #: Admitted memory-graph relation ids this writer may rest a line on
+    #: (27 §9: a line `draws_on` the relations it generalises, spelled
+    #: `relation:<id>` in `draws_on`). Declared by the caller; an undeclared
+    #: ref is `unknown_premise`. A graph relation is a PREMISE like a held
+    #: line, never independent evidence — the line still cites Record/Rollup
+    #: sources for its own support.
+    relations: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -524,6 +532,7 @@ class ProfileWriter(Protocol):
         self, *, account: Account, ops: Sequence[ProfileOp], citable: ProfileCitable,
         now_ms: int, written_by_session: str,
         apply_decay: bool, expected_revision: int | None = None,
+        receipt: Callable[[Any, Mapping[str, Any]], Awaitable[None]] | None = None,
     ) -> ProfileWriteResult: ...
 
     async def record_dispute(
@@ -541,6 +550,20 @@ def rank(line: ProfileLine, *, subject: str | None) -> int | None:
     if line.mode == "told":
         return 3 if subject is not None and line.told_by == subject else 2
     return {"deduced": 1, "induced": 0}.get(line.mode)
+
+
+def chain_heads(lines: Sequence[ProfileLine]) -> tuple[tuple[ProfileLine, ...], dict[str, str]]:
+    """Every row of one account reduced to its chain heads (the rows nothing
+    supersedes), and each row id's head id (`plan_write`'s `aliases`)."""
+    successor = {line.supersedes: line.id for line in lines if line.supersedes is not None}
+    heads = tuple(line for line in lines if line.id not in successor)
+    aliases: dict[str, str] = {}
+    for line in lines:
+        head = line.id
+        while head in successor:
+            head = successor[head]
+        aliases[line.id] = head
+    return heads, aliases
 
 
 def handles_for(heads: Sequence[ProfileLine]) -> dict[str, str]:
@@ -832,6 +855,7 @@ def _check_line(
     shown_ids: frozenset[int],
     shown_items: frozenset[str],
     now_ms: int,
+    relation_premises: int = 0,
 ) -> ProfileRefusal | None:
     """Every rule a whole line must meet, whatever op produced it."""
     collective = account.entity_kind in COLLECTIVE_ENTITY_KINDS
@@ -925,7 +949,8 @@ def _check_line(
             return ProfileRefusal("premise_abduced", "a guess is not a premise")
         if any(p.state != "current" for p in premises):
             return ProfileRefusal("premise_not_current", "every premise line must be current")
-        count = len(evidence.said) + evidence.unrooted_rollups + len(premises)
+        count = (len(evidence.said) + evidence.unrooted_rollups
+                 + len(premises) + relation_premises)
         if count < DEDUCED_MIN_PREMISES:
             return ProfileRefusal("deduced_premises", f"a deduction rests on at least "
                                   f"{DEDUCED_MIN_PREMISES} premises; it has {count}")
@@ -1005,9 +1030,23 @@ def plan_write(
             return ProfileRefusal("line_twice", f"{handle} is acted on twice in one call", i)
         return by_id[line_id]
 
-    def premises_of(draws: Sequence[str], i: int) -> list[ProfileLine] | ProfileRefusal:
-        out = []
+    def premises_of(
+        draws: Sequence[str], i: int,
+    ) -> tuple[list[ProfileLine], list[str]] | ProfileRefusal:
+        """Resolve `draws_on` handles to held lines, and `relation:<id>` refs
+        to the writer's declared admitted relations. Returns the held lines
+        and the relation ids."""
+        lines = []
+        rels = []
         for handle in dict.fromkeys(draws):
+            if handle.startswith("relation:"):
+                relation_id = handle[len("relation:"):]
+                if relation_id not in citable.relations:
+                    return ProfileRefusal(
+                        "unknown_premise", f"{handle!r} is not a relation you "
+                        "were shown and admitted", i)
+                rels.append(relation_id)
+                continue
             line_id = handles.get(handle)
             if line_id is None:
                 return ProfileRefusal("unknown_line", f"{handle!r} in `draws_on` is not a "
@@ -1015,8 +1054,8 @@ def plan_write(
             if line_id in touched and line_id not in after:
                 return ProfileRefusal("premise_not_current", f"{handle} changes in this "
                                       "call; rest on it in a later one", i)
-            out.append(by_id[line_id])
-        return out
+            lines.append(by_id[line_id])
+        return lines, rels
 
     def successor(old: ProfileLine, **changes: object) -> ProfileLine:
         return replace(
@@ -1068,6 +1107,7 @@ def plan_write(
             for r in citable.rollup_roots.get(c, ())))))
 
     for i, op in enumerate(ops):
+        carried_rels: tuple[str, ...] = ()
         if isinstance(op, RetireOp):
             target = held(op.line, i)
             if isinstance(target, ProfileRefusal):
@@ -1149,6 +1189,13 @@ def plan_write(
             # Unrestated premises carry over, each followed to its chain head:
             # a premise kept or revised since is the same line under a new row.
             carried = {aliases.get(lid, lid) for lid in old.draws_on}
+            # A relation premise the line already held rides the revision
+            # UNRESTATEMENT: it was admitted and declared when the line was
+            # written, so it needs no `citable.relations` membership now —
+            # only premises the writer STATES this call must be declared.
+            carried_rels = tuple(
+                c[len("relation:"):] for c in carried
+                if op.draws_on is None and c.startswith("relation:"))
             draws_handles = (
                 op.draws_on
                 if op.draws_on is not None
@@ -1168,10 +1215,12 @@ def plan_write(
         else:
             draws_handles = op.draws_on
             cites = op.citations
-        prem = premises_of(draws_handles, i)
-        if isinstance(prem, ProfileRefusal):
-            refusals.append(prem)
+        resolved = premises_of(draws_handles, i)
+        if isinstance(resolved, ProfileRefusal):
+            refusals.append(resolved)
             continue
+        prem, prem_rels = resolved
+        prem_rels = [*prem_rels, *carried_rels]
         ev = _resolve(cites, citable, handles, subject=account.subject)
         if isinstance(ev, ProfileRefusal):
             refusals.append(replace(ev, op_index=i))
@@ -1180,7 +1229,8 @@ def plan_write(
         if old is not None:
             candidate = successor(
                 old,
-                draws_on=tuple(p.id for p in prem),
+                draws_on=tuple(p.id for p in prem)
+                + tuple(f"relation:{r}" for r in prem_rels),
                 state="current",
                 as_of=max((x.ts for x in ev.said), default=None),
                 support_count=count,
@@ -1207,7 +1257,8 @@ def plan_write(
                 unit=account.unit,
                 written_at=now_ms,
                 written_by_session=written_by_session,
-                draws_on=tuple(p.id for p in prem),
+                draws_on=tuple(p.id for p in prem)
+                + tuple(f"relation:{r}" for r in prem_rels),
                 told_by=op.told_by,
                 prediction=op.prediction,
                 prediction_observable=op.prediction_observable,
@@ -1263,6 +1314,7 @@ def plan_write(
             account=account,
             evidence=ev,
             premises=prem,
+            relation_premises=len(prem_rels),
             screen=screen,
             shown_ids=shown_ids,
             shown_items=shown_items,
