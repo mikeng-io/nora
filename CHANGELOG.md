@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.13.11](https://github.com/mikeng-io/nora/compare/v7.13.10...v7.13.11) (2026-11-01)
+
+
+### Maintenance
+
+* **platforms:** declare Standing reuse in the Cognition occasion ([c59fef0](https://github.com/mikeng-io/nora/commit/c59fef0ff1c25811a4f42c2b60ab655aed85ba14))
+* **platforms:** use transcript and Standing for observation continuity ([f7c8621](https://github.com/mikeng-io/nora/commit/f7c8621106ee1c00a65b0688617f95455dc05353))
+
 ## [7.13.10](https://github.com/mikeng-io/nora/compare/v7.13.9...v7.13.10) (2026-11-01)
 
 
