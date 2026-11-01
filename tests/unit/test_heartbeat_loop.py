@@ -443,12 +443,16 @@ async def test_a_row_cancelled_during_an_earlier_turn_is_not_resurrected():
     await store.create(first)
     await store.create(cancelled)
     seen: list[list[Reminder]] = []
+    cancelled_at: list[datetime] = []
 
     async def _fire(rows):
         seen.append(list(rows))
         if rows[0].conversation_id == "conv-1":
             # A human cancels the other reminder while this turn is running.
             assert await store.cancel(cancelled.id, conversation_id="conv-2") is True
+            stamp = (await store.get(cancelled.id)).fired_at
+            assert stamp is not None
+            cancelled_at.append(stamp)
         return "sent"
 
     loop, _ = _build(store=store, fire=_fire)
@@ -459,7 +463,7 @@ async def test_a_row_cancelled_during_an_earlier_turn_is_not_resurrected():
     resolved = await store.get(cancelled.id)
     assert resolved.state is ReminderState.CANCELLED
     assert resolved.outcome is None
-    assert resolved.fired_at is None
+    assert resolved.fired_at == cancelled_at[0]
 
 
 # --------------------------------------------------------------------------
