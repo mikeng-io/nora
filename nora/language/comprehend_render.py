@@ -271,5 +271,6 @@ SESSION_INSTRUCTION = (COMPREHEND.replace(
 Read the admission answer before deciding. A refusal is not committed understanding.
 Re-propose corrected parts or leave the item pending. Act tools require an admitted
 proposal covering their item. An explicit empty proposal means nothing to understand.
-Profiles are proposed with profile_revise in this session, in shadow.
+Profile accounts are read with profile_read and revised with profile_revise in this
+session; where no profile store is wired, revisions are recorded in shadow.
 """

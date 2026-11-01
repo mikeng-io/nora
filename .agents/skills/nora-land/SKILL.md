@@ -5,13 +5,12 @@ description: Lands a Nora change from first edit to merged master, covering a ne
 
 # nora-land
 
-Worktree, sync, (check, commit)*, gate once, push, PR, review, merge, read-back.
-Rules and reasons: `CONTRIBUTING.md`, `AGENTS.md`. Every step ends in a check:
+Worktree → focused checks → gate → PR → review → merge → read-back.
+Rules: `CONTRIBUTING.md`, `AGENTS.md`. Every step ends in a check:
 the log or the read-back, never an exit code alone. Go end to end; stop only
 for a blocker or a fact only the operator holds (a decision is not input).
-Two roles, one procedure (ORCHESTRATION.md): a builder under a bounded brief
-runs named checks (1–2), commits (4–5), pushes/opens the PR (6) and STOPS.
-The orchestrator gates the final head (3), then reviews, merges and reads back (7–9).
+Under `ORCHESTRATION.md`, builders run named checks (1–2), commit (4–5), push/open
+PR (6) and STOP; the orchestrator gates (3), reviews, merges and reads back (7–9).
 
 ```bash
 TYPE=<commit-type>; SLUG=<kebab-slug>; WT=<new-worktree-path>        # WT outside every checkout
@@ -20,7 +19,10 @@ LOG=${TMPDIR:-/tmp}/land-$SLUG; mkdir -p "$LOG"   # fixed, OUTSIDE the worktree
 
 Shell state may not survive between calls: re-set `TYPE`/`SLUG`/`LOG` each call; carry results in files, not variables.
 
-## 1. Start: a new worktree on a new branch
+## 1. Start: intent, then a new worktree on a new branch
+
+Read `ORCHESTRATION.md` «Intent, evidence and completion»: pin the brief/design's
+outcome, scope, obligations and stopping boundary; inspect existing code and carry that intent.
 
 ```bash
 git fetch origin
@@ -41,13 +43,13 @@ Check: `## <type>/<slug>...origin/master`, no ahead/behind; hooksPath ends `.git
 ## 2. Iterate
 
 ```bash
-uv run python -m scripts.pytest_gate <test paths>   # uncommitted edits: name the tests
-make test-affected                   # judges the LAST COMMIT only (HEAD~1...HEAD)
-make test-fast                       # whole suite, parallel
+make test                           # incremental; aliases: test-fast, test-affected
+uv run python -m scripts.pytest_gate tests/unit/test_example.py::test_named
+make test-all                       # explicit full serial suite, when needed
 ```
 
-It never sees uncommitted edits (`scripts/affected_tests.py`). The gate is the
-final check, not the loop (2026-08-21: eight gate runs in one session).
+Incremental entries compare staged/unstaged/untracked work to HEAD, or HEAD~1 when clean; `BASE=<ref>` overrides auto. Only exact generated untracked LFS post-hooks are ignored.
+Unknown/shared-helper changes or errors run ALL; read base/scope. Workers default to two; timing contracts stay serial. Gate is final, not the loop.
 
 ## 3. Gate — once per candidate tree
 
@@ -143,20 +145,14 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
 
 ## 7. Review, when the change earns one
 
-- Whether and at which level: `ORCHESTRATION.md` «Capability and review requirements». Level
-  none: go straight to step 8. The PR's Gate section names the row.
-- Otherwise follow `ORCHESTRATION.md` «Resolve a worker at launch» to select a
-  fresh reviewer with actual advertised options: neither builder nor
-  brief-author, a different model vendor from the builder. Give it the diff
-  (`gh pr diff <N>`) and the PR's claims.
-- Triage every finding (`ORCHESTRATION.md` «Bounded independent review»). Only a
-  BLOCKER buys another round; at most two, with the second checking the fix diff only.
-- Verify each finding before acting on or dismissing it: open the line, run the
-  test, revert the fix and watch the named test fail.
-- A clean review is not a pass: one plus a green gate missed an empty-body read
-  returned as `ok`; the live read-back caught it (2026-09-24).
-- Review fixes: step 2's checks, step 4 again, step 3 on the changed head,
-  push, re-check `headRefOid`, refresh the Gate section.
+- Confirm the tier under `ORCHESTRATION.md`: none uses orchestrator read-back;
+  otherwise resolve an independent reviewer and have it load `nora-review`.
+- Supply original scope/non-goals, revisioned acceptance, exact base/head, diff,
+  claims, evidence and prior findings. Check actual coverage, not just APPROVE.
+- Triage under the policy: bounded repair for defects, scoping for invalid intent;
+  advice is not scope. Prove code fixes with `nora-prove-fix`, without unrelated repair.
+- Repair: focused checks, commit, gate, push and refresh the PR. No BLOCKER ends
+  review; the policy owns the two-round limit.
 
 ## 8. Merge: a real merge commit, authored message
 
@@ -195,7 +191,11 @@ make heads > "$LOG/heads.txt" 2>&1; grep -c '(head)' "$LOG/heads.txt"    # must 
 make decision-numbers > "$LOG/dn.txt" 2>&1; grep -vc '^==' "$LOG/dn.txt" # must print 0
 ```
 
-No more edits here: the next change is step 1, a new worktree. Cleanup:
+Reconcile original obligations with met/unmet/unavailable evidence; update design
+coverage and issue remaining scope, closing only a fully satisfied issue with a reason.
+Report completed/unmet obligations separately; keep required read-back, add no extra
+research/deployment, and stop when the completion rule holds.
+The next change starts in a new worktree. Cleanup:
 `docs/maintainers/conventions.md` Cleanup. Deploying: nora-deploy.
 
 ## Tool notes

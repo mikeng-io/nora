@@ -95,14 +95,19 @@ The table records what a branch proved and is deliberately outside `make gate`.
 First establish a collecting, green baseline. Pytest exit 5 means nothing was
 collected, not a failed test. The mutant must fail because the reverted behaviour
 is observed, not through a broken replacement or `NameError`. A `BROKEN ENTRY`
-is a finding about the evidence and must be corrected before claiming proof.
+is a finding about the evidence and must be corrected before claiming that proof.
+Repair this diff's broken guards; compare historical failures with the base and
+keep unrelated existing debt outside the change. Missing required proof remains
+unavailable, never a pass. `nora-prove-fix` owns the bounded table procedure.
 
 ## Issues
 
-Not-yet-built design ideas discussed in a session get **filed as a GitHub
-issue** on `mikeng-io/nora`, not left in a chat transcript or a memory file.
-Scope and task-specific deltas live on the issue; evidence comments link the run
-or review record. Project status is the scheduling view of that same issue.
+Deferred work needs a durable home, not a duplicate ticket. First update an
+existing design's build sequence/open questions or an existing issue. File a
+GitHub issue on `mikeng-io/nora` only for actionable deferred work with no home;
+small residues belong in PR limitations. Never leave work only in chat or memory.
+When an issue is used, scope and task-specific deltas live there; evidence links
+the run/review record and Project status is the scheduling view of that issue.
 **File through an issue form**
 (`.github/ISSUE_TEMPLATE/`); blank issues are disabled.
 
@@ -195,7 +200,7 @@ idea in a session
    ├─ small, obvious, and doable now? ──▶ worktree + branch + PR.  No issue.
    │                                       The PR body is the record.
    │
-   └─ not being built now, or needs scoping? ──▶ FILE AN ISSUE
+   └─ deferred or needs scoping? ──▶ UPDATE EXISTING HOME; OTHERWISE ISSUE
                                                    │
                     design document written? ──────┤  (large or contested work only)
                                                    ▼
@@ -208,19 +213,21 @@ idea in a session
                             issue closed  ──or──  left open for the next PR
 ```
 
-**When to create an issue.** File one when the work is *not being done right
-now* — a design idea from a session, a defect you found while doing something
-else, a gap you decided to defer. The test is displacement, not size: anything
-that would otherwise survive only in a chat transcript or a memory file gets an
-issue, because those are not readable by the next session. Work you are about
-to do in the same sitting does not need one; its PR is the record.
+**When to create an issue.** File actionable work deferred from the present
+slice only after looking for its existing design/issue home (`nora-decision`).
+A design sequence can own unassigned future work; an issue provides a bounded
+outcome when separate assignment/tracking is needed. Do not copy the design.
+Work being completed in the same sitting needs no issue; its PR is the record.
 
 **When to update an issue.** When the scope changes, when a dependency gets
 filed (replace the `#TBD`), when a measurement changes the picture, and when a
 PR lands part of it. An issue that has taken three PRs and says nothing about
 them is a stale issue. Update the body for scope, comment for evidence.
 
-**When to close an issue.** Three ways, and each needs a stated reason:
+**When to close an issue.** Apply `ORCHESTRATION.md` «Intent, evidence and
+completion» against the original slice, not newly invented obligations. Update
+its remaining scope after each landing; evidence unavailable is distinct from
+implementation absent. Three ways to close, and each needs a stated reason:
 
 | reason | how |
 |---|---|

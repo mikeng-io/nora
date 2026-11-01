@@ -4,7 +4,8 @@ title: Platform observations — capture to social understanding
 status: proposed
 implementation_status: not-built
 governance: operator-directed
-timestamp: '2026-10-30'
+timestamp: '2026-11-01'
+description: Enriched transcript and source-backed Standing continuity, with typed Record ownership and bounded detail tools; no separate observation block.
 members:
   - 00-overview.md
   - 01-coverage.md

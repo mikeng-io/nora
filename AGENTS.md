@@ -93,7 +93,8 @@ that names none is not a verdict.
    named test, a read-back), never asserted by whoever built it.
 5. **Completeness** — it covers the whole scope: every caller, every doc,
    every deleted name, nothing left "still in shadow" or "not yet built".
-   Coverage, not correctness; each C is checked on its own.
+   Coverage of the agreed slice, not the whole surrounding system; each C is
+   checked on its own. Completion and scope changes follow `ORCHESTRATION.md`.
 
 **Apply it at every grain** — the whole turn AND each sub-step, down to one tool
 call. `serialize(N)` is the input you `comprehend(N+1)`. The **eval layer is this
@@ -382,6 +383,7 @@ rules were written down and not read at the moment they applied.
 | when the task is | load |
 |---|---|
 | starting a change, running the gate, committing, opening or merging a PR | `nora-land` |
+| reviewing a change against its original scope and acceptance | `nora-review` |
 | putting merged code or config live on `nora-host`, or checking it is live | `nora-deploy` |
 | cutting a release: the release-please PR, the `vX.Y.Z` tag, the GitHub Release | `nora-release` |
 | reading a trace, a metric, a row or a log as evidence | `nora-readback` |
@@ -433,6 +435,14 @@ Historical paths and deprecated tiers: `docs/maintainers/conventions-rationale.m
 Load **`nora-land`** for setup, the fast loop, final gate and rc read-back.
 Run the final gate once on the final head; use focused tests while iterating.
 Docs-only changes use its affected-test procedure, never hand-picked readers.
+`make test` is incremental; `make test-fast` and `make test-affected` are aliases.
+They compare staged, unstaged and untracked changes against HEAD, or the last
+commit (HEAD~1) when clean. Only exact generated untracked LFS post-hooks are
+ignored. `BASE=<ref>` overrides auto selection. Unmapped/shared-helper changes
+and selector errors run the full suite; the command reports its base and scope.
+`make test-all` explicitly runs the full serial suite. For a named file/function,
+use `uv run python -m scripts.pytest_gate <file-or-node>`.
+
 `make gate` runs static checks and affected tests, or document readers for docs-only changes;
 local identical candidate/context PASS receipts may be reused. `make gate-fresh`
 forces execution; CI and `make full-gate` always run fresh, with full-gate serial.
@@ -523,7 +533,10 @@ Agent skills (`.agents/skills/`): ADR 0017; add the Skills-table row and `.claud
 
 ## Design backlog
 
-File deferred ideas as GitHub issues on `mikeng-io/nora`; keep scoping/status there (`CONTRIBUTING.md`). Only landed decisions enter the decision index.
+Update an existing design sequence or issue before opening another. File deferred
+work with no existing home as a GitHub issue on `mikeng-io/nora`; tiny residues
+belong in the PR limitations. See `nora-decision`. Only landed decisions enter
+the decision index.
 
 <!-- OPENWIKI:START -->
 

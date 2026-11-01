@@ -1,8 +1,8 @@
 # Model projections and neutral tools — proposed
 
-One scoped read result supplies transcript annotations, a declared social-context
-block and detail tools. Existing context assembly owns all rendering. The graph
-retrieval repairs in unified-memory 27 §17 remain prerequisites for consistent
+One scoped read result supplies enriched transcript entries, source-backed state
+in the existing Standing presentation, and detail tools. Existing context assembly
+owns all rendering. The graph retrieval repairs in unified-memory 27 §17 remain prerequisites for consistent
 connected understanding; this bundle does not create another retrieval service.
 
 Recorded 2026-10-31: an independent source audit (head `3fe09ac7`) verified the
@@ -33,60 +33,110 @@ read result. A later tool read can be newer; label it with its own as_of/revisio
 rather than pretending it is identical to the earlier prompt. Do not hold a DB
 transaction open across model calls just to freeze time.
 
-## Transcript and context contract
+## Transcript-first presentation and Standing continuity
 
-Actual utterances/shares remain speaker lines. The target's annotation can include
-reply/quote, edit/withdrawal and response state; poll creation can anchor an
-utterance. Never fabricate speaker lines for votes/reactions/membership.
+Operator amendment, 2026-11-01: the proposed `social_context` block/name is
+withdrawn. Social context is Nora's connected understanding of people, relationships,
+conventions and matters; it is not a name for platform metadata. Use **platform
+observations** for source-reported events and **current state** for their supported
+fold. No replacement block or dedicated poll-list block is introduced by this
+amendment. These are proposed presentation requirements, not shipped Standing or
+poll behavior. The first recorded-reaction target annotations were delivered by
+PR #478; their documented capture/ordering ceilings remain.
 
-The new declared social-context block covers material off-window updates to
-referenced objects, active polls and relevant room changes. Its typed input has:
+The default for admitted message metadata and conversation events is the enriched
+transcript. Actual utterances/shares remain speaker lines; reply/quote, edits,
+reactions and shared-artifact metadata annotate their target. Poll creation and
+room/member/pin/thread changes can be typed platform-event entries, with their
+real source identity, target, actor when supplied and time quality. Never fabricate
+a human utterance or an actor for a service event. This display contract does not
+put every payload in the message table: [02](02-observation-contract.md) retains
+typed domain ownership and storage.
 
-- objects: bounded state summaries using the shared read model;
-- changes: source-supported transition summaries and their time window;
-- coverage: source gaps and omitted detail/more references;
-- related matters: handles into the existing graph preview, not a second copy of
-  Notebook prose or an independent truth inferred by the renderer.
+A source-reported transition and a snapshot read are different. A snapshot says
+what was observed as of a time; it does not invent the intervening events or their
+occurrence times. Current state annotated onto an older message carries its own
+observation time; it must not look like information available when that message
+was originally sent. Historical assembly reads the replay's as-of state.
 
-Selection starts from actual message/reply/mention/shared-object references, the
-current room and existing open matters within scope. New admitted observations
-remain discoverable even if no existing matter references them. Curated graph
-context informs Cognition's attention; an ETL keyword classifier must not decide
-which unknown patterns can ever be discovered.
+### Surviving the transcript window
 
-**Dedup against `recalled` and `graph`, by object identity.** `social_context`
-owns SOURCE state (tally, current state, coverage); `recalled` and the graph
-preview own curated interpretation and evidence handles. The same object (a
-poll, a target message, a room) is keyed identically in both, so a
-`social_context` summary and a `recalled` hit on the same object identity are
-one object, not two claims: the block states the source fact once and carries
-the graph handle, it does not repeat Notebook prose, and a `recalled` row
-naming that object is not suppressed — the two answers are labelled by layer,
-never merged into a third. A new block is added only if the existing surfaces
-cannot carry the source-state layer; annotation of visible targets already
-lives in the transcript, not in `social_context`.
+A bounded recent transcript (40 entries in the operator's example, not a new
+hard-coded limit) is a presentation window, not retention or the whole working
+context. Falling out of that window must not make a still-relevant poll, shared
+artifact or room change invisible. Durable Record ownership alone, or a passive
+tool nobody knows to call, does not satisfy this visibility requirement.
 
-Preserve existing prompt budgets. Share a per-assembly rendered-object set across
-transcript/context renderers: annotate visible targets once, then use references
-for off-window changes. Keep kind, time, source/interpretation label, open/closed
-state and coverage before optional details. If material objects exceed the budget,
-mark omitted detail and provide bounded read handles; never silently truncate a
-poll's options into an apparently complete choice. Exact token allocation is
-measured with the existing assembler at implementation time.
+Use the **existing Standing presentation** for a compact working set of relevant
+matters and referenced objects. Standing retains scoped object/matter references
+and supported progress; context assembly resolves them through the shared read
+model and attaches fresh, bounded source state. This is not another persisted
+poll summary, a new free-standing working-set store, or repeated model compression
+of tallies into prose. Re-derivable detail remains in its domain store; the
+[Standing ledger](../standing-ledger/10-what-standing-holds.md) keeps pointers to
+what Record can return. The Standing owner retains its update/render lifecycle;
+this bundle specifies observation references and source-state enrichment, not a
+parallel Standing writer. Cognition decides and acts; code projects recorded
+facts and never declares attendance, agreement or a settled arrangement from a
+poll tally or close event.
 
-Illustrative **proposed**, generated render (handles are placeholders):
+Selection combines actual message/reply/mention/shared-object references, relevant
+room observations and existing ongoing matters within scope. Newly admitted
+observations remain discoverable even before Notebook has a matching matter.
+Existing stimulus/wake grounding admits them; an ETL keyword classifier or a
+requirement for a pre-existing graph link must not permanently hide new evidence.
+A new change on an old target enters the recent typed-event view with a scoped
+handle and enough target summary to understand it, even if the parent message is
+outside the window. This does not require restoring the whole old conversation.
+
+Keep relevant objects while the underlying matter still needs them. A poll's
+source open/closed state and the matter's progress are separate fields: closing
+the poll cannot automatically settle or drop the matter. Completion, cancellation
+or supported loss of current relevance can remove a reference from the rendered
+working set without deleting its history. An open poll is not an instruction to
+keep it in every prompt forever. Budget omissions, unavailable reads and missing
+history remain explicit; no guessed zeros and no claim of lossless model prose.
+
+### Authority, deduplication and budgets
+
+Label source state (tally, membership/pin status, as-of and coverage) separately
+from recorded decisions/work progress and curated interpretation. Culture carries
+long-term group conventions; Notebook/graph carry revisable relationships and
+underlying matters. They are not duplicate stores of live poll counts. Operational
+logs/traces never enter this social evidence path.
+
+Deduplicate by scoped object identity across transcript and Standing: render a
+full source-state fragment once, and use references elsewhere. Preserve a
+`recalled`/graph account of that same object when relevant, labelled as interpreted
+understanding rather than a second independent observation. A Standing reference
+must not widen room/unit access to the target or its evidence.
+
+Every assembly reads supported current heads; a later tool read can be newer and
+carries its own as-of/revision. No DB transaction spans a model call. Budgets bound
+both transcript events and Standing enrichment. Keep object/kind, source time,
+open/closed or unknown state, coverage and a read handle before optional details.
+Collapse noisy transitions into a labelled supported summary where appropriate;
+keep the history available. Overflow reports omitted items/details and a scoped
+read path, never a silently complete-looking list or a truncated choice set.
+
+Illustrative **proposed**, generated presentation (placeholder handles):
 
 ```text
-[social context · observed 09:10 · more available]
-poll P1 on message M1: closed; option O1 "A" count 3, O2 "B" count 2
-voter identities: unavailable (anonymous); unique-voter total: unknown
-source coverage: latest snapshot complete for option counts only
-related ongoing matter: E1 (Notebook judgement; read graph evidence)
+transcript window: recent 40 entries; original poll message is outside it
+  09:08 platform event: poll P1 closed; target M1 (Saturday breakfast choice)
+
+standing: Saturday activity arrangement — awaiting confirmation (recorded matter)
+  related source object P1 on M1: closed as of 09:10
+  option O1 "A" count 3; option O2 "B" count 2
+  anonymous: voter identities unavailable; unique-voter total unknown
+  coverage: snapshot complete for option counts only
+  Nora owes: check transport; result not yet delivered (recorded commitment)
+  detail/history: read P1; graph evidence for the underlying matter: E1
 ```
 
-It does not mean five attendees, or that the literal poll title defines E1.
-A missing vote is not an absence fact. New source state is assembled each turn;
-no persisted pre-rendered context block remains authoritative after a close/edit.
+In an actual assembly the duplicated P1 state is shown once, with references in
+other fragments. This is a presentation sketch, not an XML/DDL/tool signature.
+It does not mean five attendees or that the literal breakfast question defines E1.
 
 ## Tool groups and proposed signatures
 

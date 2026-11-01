@@ -6,7 +6,7 @@
 # so it does not have to be retyped. Edit the docs first if the underlying
 # command changes; this file follows them, not the other way round.
 
-.PHONY: bridge test test-fast test-affected lint typecheck imports gate gate-fresh gate-reuse _gate full-gate _full-gate mutate \
+.PHONY: bridge test test-all test-fast test-affected lint typecheck imports gate gate-fresh gate-reuse _gate full-gate _full-gate mutate \
         setup hooks schema-parity heads decision-numbers \
         eval-participation eval-adversarial-corpora eval-gate \
         build up stop logs ps \
@@ -34,7 +34,7 @@ hooks:
 # iterating — never a gate per fix round; `make full-gate` for the whole
 # serial suite unconditionally) ---
 
-test:
+test-all:
 	uv run python -m scripts.pytest_gate --workers 0
 
 lint:
@@ -74,7 +74,7 @@ _gate: lint typecheck imports
 full-gate:
 	uv run python -m scripts.gate --full
 
-_full-gate: lint typecheck imports bridge test
+_full-gate: lint typecheck imports bridge test-all
 
 # --- the Go instagram-bridge -------------------------------------------------
 # Nothing else builds it before an image does: the 2026-10-14 history scrub
@@ -99,16 +99,8 @@ mutate:
 
 TEST_WORKERS ?= 2
 
-test-fast:
-	uv run python -m scripts.pytest_gate --workers $(TEST_WORKERS)
-
-# Selects pytest targets from what actually changed (scripts/affected_tests.py,
-# spec §3). BASE is the diff base: HEAD~1 (the last commit) by default,
-# origin/master when `gate` runs it for the whole branch. INCLUDE_WORKTREE is
-# empty by default (loop: committed history only, at HEAD~1, unchanged); `gate`
-# sets it to `--include-worktree` so uncommitted edits and untracked files are
-# judged too.
-#
+# All iteration entry points share safe auto selection: dirty worktree vs HEAD,
+# otherwise the last commit. Explicit BASE overrides auto; gate pins origin/master.
 # FAILS CLOSED. The selector's one line of stdout is `ALL`, `NONE` or a list of
 # targets (its module docstring). Only an explicit `NONE` runs nothing: a
 # nonzero exit status, or an EMPTY line (a script that died before it could
@@ -118,12 +110,12 @@ test-fast:
 # drive this exact recipe against a stub from the COMMAND LINE. They are
 # assigned with `:=`, not `?=`, so an exported SELECTOR='echo NONE' in someone's
 # shell cannot replace the gate's command: only `make SELECTOR=...` can.
-BASE ?= HEAD~1
-INCLUDE_WORKTREE ?=
+BASE ?=
+INCLUDE_WORKTREE ?= --include-worktree
 SELECTOR := uv run python scripts/affected_tests.py
 PYTEST := uv run python -m scripts.pytest_gate --workers $(TEST_WORKERS)
-test-affected:
-	@targets="$$($(SELECTOR) --base $(BASE) $(INCLUDE_WORKTREE))"; rc=$$?; \
+test test-fast test-affected:
+	@targets="$$($(SELECTOR) $(if $(BASE),--base $(BASE)) $(INCLUDE_WORKTREE))"; rc=$$?; \
 	if [ "$$rc" -ne 0 ] || [ -z "$$targets" ]; then \
 		echo "affected_tests: selector failed (exit $$rc) or printed nothing, running the full suite"; \
 		$(PYTEST); \

@@ -3,7 +3,11 @@
 Operator clarification, 2026-10-30. **Proposed implementation contract**, not
 currently wired behavior. [03](03-model-projections.md) owns shared projection
 semantics; this node owns the two explicit occasion maps and their examples.
-[04](04-build-and-acceptance.md) remains the sole acceptance owner.
+[04](04-build-and-acceptance.md) remains the sole acceptance owner. The operator
+amendment of 2026-11-01 replaces the separate observation-block proposal with
+enriched transcript and source-backed continuity in the existing Standing presentation.
+Poll/room capture, typed history and Standing enrichment remain proposed; this
+document does not claim them from the shipped reaction annotations.
 
 ## Existing capability baseline
 
@@ -39,13 +43,13 @@ Post means a shared post/reel; poll is a separate collective-choice object.
 All inclusion is bounded by the current room/unit, source authorization, relevance
 and budget. Collection does not imply that every object is shown on every turn.
 
-| Object | Engagement transcript | Engagement social_context | Cognition agenda / context |
+| Object | Engagement transcript | Existing Standing presentation | Cognition agenda / context |
 |---|---|---|---|
-| Reaction | Annotate visible target with current supported responses, as-of and coverage — SHIPPED as `reactions`/`reactions_observed` attributes | Relevant off-window target/change; no duplicate full annotation | Agenda identifies change/target with the same current-state annotation; social_context supplies state; graph supplies existing account |
-| Shared post/reel | Keep the actual share, sharer's words, artifact ref and available reading | Relevant off-window artifact/reading update; cover-only labelled | Existing message/social arrival in agenda; saved artifact content in context; graph connections |
-| Poll | Creation message anchors question/options and bounded source state | Relevant off-window poll, closing/change and state; limited voter coverage explicit | Agenda identifies create/vote/close observation; context provides definition/state; interpretation stays Notebook |
-| Group event: topic/title, membership/role, pin, thread lifecycle | Retain an actual platform service message as a labelled system event if present; never invent human speech | Relevant room changes/current state with subject, as-of and coverage | Agenda identifies new room observation; context provides relevant state, graph prior understanding |
-| Operational trace | None | None as social evidence | None as social evidence; diagnostics use durable correlation refs |
+| Reaction | Annotate visible target with supported counts/time/coverage — delivered by #478; relevant new change can reference an old target | Relevant off-window target reference, with fresh source-backed state; no duplicate tally | Existing reaction agenda identifies change/target; same state/read model, relevant Standing refs and graph account |
+| Shared post/reel | Actual share, sharer's words, artifact ref and available reading; typed reading update when supported | Relevant off-window artifact/matter reference; current bytes/reading availability and coverage | Existing message/social agenda; saved artifact reading, relevant Standing refs and graph connections |
+| Poll | Creation anchors definition; vote/close/change as typed source events, not fake human speech | Related matter plus poll reference, fresh definition/tally/status/time/coverage; survives the recent-message window | Proposed typed observation agenda; same source-backed Standing state, graph interpretation; close does not settle the matter |
+| Group event: topic/title, membership/role, pin, thread lifecycle | Source-supported typed platform event, retaining real service-message identity when present | Relevant room/object reference and current state with as-of/coverage; no invented actor/intent | Proposed observation agenda; relevant source state and existing matter understanding |
+| Operational log/trace/metric | None as conversational evidence | None as social evidence | Diagnostics only via existing correlation refs |
 | Typing | None | None | No stimulus or model work |
 
 A system service message and its structured observation can share source identity;
@@ -56,12 +60,13 @@ semantics. Unknown historic metadata stays unknown; never backfill guessed zeros
 ## Injection points and data flow
 
 **Engagement:** `nora/engagement/context.py`, `TranscriptInjection.assemble`,
-reads a scoped typed observation view while constructing TagContext. Add typed
-observation/context fields there; do not let a pure renderer query stores.
-Register
-`social_context` in `nora/agent/prefill.py`'s `_BLOCKS` and render through assemble.
-Perform shared object-read/dedup before rendering. Existing transcript tools use
-that same enrichment/annotation contract, not a separate reaction formatter.
+reads the scoped typed observation view while constructing TagContext. Carry
+typed message annotations/platform events and resolve relevant Standing object
+references there, through existing context assembly; pure renderers never query
+stores. Do not register another observation block. Perform shared source reads
+and object-identity dedup before rendering, preserving chronology and coverage.
+Existing transcript tools use that same enrichment/annotation contract, not a
+separate reaction formatter.
 
 Correction recorded 2026-10-31 (independent audit at `3fe09ac7`): an earlier
 draft described target annotation as already wired. At that head the only
@@ -89,65 +94,71 @@ that recorded transitions do not establish upstream completeness. Custom emoji
 identities stay in storage; model surfaces use bounded display labels. Reaction
 agenda items distinguish a removal from an addition beside the stimulus time.
 
-**Cognition:** extend grounding for typed observation refs/state before
+**Cognition:** ground typed observation refs/state before
 `CognitionSessionRunner._session_input` assembles the session. Agenda identifies
-what changed. Register `social_context` in `nora/language/cognition_render.py`'s
-`_BLOCKS`; its state summaries are separate from existing graph/Notebook judgement
-and open Register items. Existing reaction/edit/delete agenda rendering is reused
-and extended; it does not establish support for new poll/room payloads by itself.
+what changed; the existing Standing presentation carries ongoing references and
+fresh source state when the event/parent is outside the recent transcript.
+Notebook/graph supplies revisable understanding. Reuse reaction/edit/delete
+rendering; new poll/room payloads still require the coherent stimulus changes below.
+No new model-facing block kind or blanket tool-catalogue expansion follows from
+this map. Cognition's current `_BLOCKS` does not declare Standing: implementation
+must explicitly declare and assemble the reused Standing block(s) selected by the
+Standing owner for this occasion, with its scoped typed input and budget. Reusing
+an existing block kind in another occasion requires that declaration; it does not
+permit hiding Standing source state inside agenda/graph text. This does not require
+reviving the legacy working-set store or indiscriminately exposing its blocks.
 
-`social_context` is the proposed common name, not a shipped block. Every model
-occasion consuming these data must declare its input under existing context
-assembly rules. Do not assume relevance/classifier inputs inherit TagContext:
-trace each caller and add only the observation fields its judgement actually needs.
+Standing is the presentation owner, not another poll database. Related source
+objects persist in their typed stores and are refreshed during assembly, not by
+asking a model to copy counts into a standing paragraph. The working set is a
+presentation concept, not a resurrection of the legacy free-standing working-set
+store. Keep matter status distinct from source-object status. Newly admitted
+observations can be discovered without an existing Notebook link. Material
+objects that do not fit expose omissions and bounded read paths.
 
-Read current heads at assembly time. A later tool result can be newer and carries
-its own revision/as-of. Historical replay uses as-of state from the replay sandbox,
-not today's state. Missing history is partial/unavailable. No DB transaction stays
-open over model calls. Apply [03](03-model-projections.md)'s budget/dedup policy.
+Read current heads at assembly time and deduplicate source detail across transcript
+and Standing. A later tool result can be newer and labels its revision/as-of.
+Historical replay reads as-of state; missing history is partial/unavailable. No DB
+transaction spans model calls. Other occasions do not automatically inherit this
+context: trace each consumer and add only the fields its judgement needs.
 
 ### Generated examples, not a live schema or production content
 
-Engagement: M1 is visible; P1's original message is outside this window.
+Engagement, with an old poll outside the current 40-entry example window:
 
-```xml
-<group_transcript>
-  <m ref="M1" from="Person A" at="09:00">
-    Would this activity work for Saturday?
-    <shared_post ref="S1" reading="activity introduction; content available"/>
-    <reactions observed_at="09:10" coverage="partial">
-      thumbs-up count=3; full reactor list unknown
-    </reactions>
-  </m>
-</group_transcript>
-<social_context as_of="09:10" projection_revision="example-v2">
-  <poll ref="P1" target="M0" state="closed">
-    options A=3, B=2; voter identities unavailable (anonymous)
-    coverage: option counts complete; unique voter total unknown
-  </poll>
-  <room_change ref="O8" at="09:05">topic changed; old value unavailable</room_change>
-</social_context>
+```text
+transcript:
+  M1 · Person A · 09:00: Would Saturday work? [shared artifact S1]
+    recorded reactions: thumbs-up x3; observed 09:10; upstream completeness unknown
+  O8 · platform event · 09:05: topic changed; actor/old value unavailable
+  O7 · platform event · 09:08: poll P1 on old message M0 closed
+
+standing:
+  E1 · Saturday activity arrangement: awaiting confirmation (recorded matter)
+    P1 on M0 · closed · observed 09:10 · source revision example-v2
+    options A=3, B=2; anonymous: voter identities and unique total unknown
+    coverage: option counts complete; detail/history handle P1
+  C1 · Nora owes: check transport; result not delivered (recorded commitment)
 ```
 
-Cognition: agenda identifies changes, context states what is currently known,
-graph carries a revisable account. Object/state text is not repeated in graph.
+Cognition uses the same grounded source objects:
 
-```xml
-<agenda>
-  <observation ref="O7" object="P1" operation="closed" at="09:08"/>
-  <observation ref="O8" object="R1" operation="topic_changed" at="09:05"/>
-</agenda>
-<social_context as_of="09:10" projection_revision="example-v2">
-  P1: closed; options A=3, B=2; voter identities unavailable
-  R1: current topic updated; historical coverage partial
-</social_context>
-<graph>
-  P1 relates to E1; Notebook judgement with independent evidence handles
-</graph>
+```text
+agenda:
+  O7 · P1 closed · source event 09:08
+  O8 · room topic changed · source event 09:05
+standing:
+  E1 remains unresolved; P1's observed state is closed, tally A=3/B=2
+  C1 remains open; no completion recorded
+existing graph preview:
+  P1 relates to E1; Notebook account and independent evidence handles
 ```
 
-Neither rendering means five attendees or a settled group decision. Literal poll
-purpose and the ongoing matter can differ; Cognition interprets the connected account.
+These are conceptual fragments, not new block names or registered schemas. The
+actual assembler emits one source-state summary per object, with refs elsewhere.
+Neither rendering means five attendees or a settled arrangement. The breakfast
+poll's literal subject and the underlying activity can differ. Culture/Notebook
+interpret the longer account; deterministic projections do not infer sincerity.
 
 ## List 2: tools and target occasion allowlists
 

@@ -194,6 +194,7 @@ SESSION_VERB_NAMES: frozenset[str] = frozenset({
     "memo_create", "memo_revise", "memo_set_status", "event_propose", "event_revise",
     "event_set_status", "standing_revise",
     "wake_at", "wake_move", "wake_cancel", "remind", "remind_move", "remind_cancel",
+    "memory_propose", "profile_read", "profile_revise",
 })
 
 _DAY_MS = 24 * 3600 * 1000
@@ -429,6 +430,10 @@ class _RunState:
     graph_fetched: Any = field(default_factory=GraphFetched)
     admitted_relations: dict[str, Any] = field(default_factory=dict)
     admitted_evidence: list[Any] = field(default_factory=list)
+    #: account key -> the heads, handles, revision and disputes `profile_read`
+    #: showed this session: the ONLY account state `profile_revise` may write
+    #: against (a conflict drops the entry, so a stale view is never kept).
+    profile_accounts: dict[str, Any] = field(default_factory=dict)
     #: Graph node keys this session was actually shown (the wake preview and
     #: every proposal's connected subgraph, plus admitted relation endpoints):
     #: the only targets a Register `associations` argument may name.
@@ -804,8 +809,8 @@ class CognitionSessionRunner:
                 log.exception("cognition verb %s failed", verb)
                 self._inc("nora_errors_total", stage="cognition_session")
                 result = {"status": "unavailable", "reason": "error", "detail": _UNFINISHED}
-            # Native verbs report this session's own unit activity. Keep any
-            # source-specific requirements already recorded in the same call.
+            # Native verbs operate on this unit's canonical state. Keep any
+            # more-specific requirements already recorded by their reads.
             from nora.agent.turn_recording import record_requirement
             from nora.domain.lineage import message
             from nora.domain.turn_record import DisclosureRequirement
@@ -3072,18 +3077,46 @@ class CognitionSessionRunner:
                 "evidence": evidence, "corrections": corrections})
             return result
 
-        async def profile_revise(
-            entity: list[str], proposals: list[dict[str, Any]],
+        async def profile_read(
+            entity: list[str],
         ) -> dict[str, Any]:
-            """Record profile changes in shadow. Call this when admitted evidence changes a profile.
+            """Read one profile account's lines, open disputes and revision before revising it.
+
+            Returns `status`: ok with handled lines, disputes and revision, refused or unavailable.
 
             Args:
-                entity: The profile subject kind and id.
-                proposals: Parts, text, relation ids and evidence keys.
+                entity: The profile subject kind and id: person, room, unit or nora.
             """
             if self._memory is None:
                 return {"status": "unavailable"}
-            result: dict[str, Any] = await self._memory.profile(state, entity, proposals)
+            result: dict[str, Any] = await self._memory.account_view(state, entity)
+            return result
+
+        async def profile_revise(
+            entity: list[str], ops: list[dict[str, Any]],
+        ) -> dict[str, Any]:
+            """Change a profile account you read this session. Call this on new admitted evidence.
+
+            Returns `status`: ok, refused with `refusals`, conflict or unavailable.
+
+            Args:
+                entity: The profile subject kind and id: person, room, unit or nora.
+                ops: The changes, each an object with `op`: add (part, kind,
+                    text, mode, citations, and draws_on, told_by, prediction,
+                    prediction_observable, prediction_window_end or
+                    conflicts_with where they apply), keep (line, citations),
+                    revise (line, citations, text, mode, draws_on,
+                    conflicts_with) or retire (line, why). A held line is
+                    named by its `handle` from profile_read; a relation the
+                    line generalises is `relation:<id>` in draws_on; a shown
+                    source is cited as `<kind>:<id>`.
+            """
+            if self._memory is None:
+                return {"status": "unavailable"}
+            key = await self._memory.act_key(state, "profile_revise",
+                                             {"entity": entity, "ops": ops})
+            result: dict[str, Any] = await self._memory.profile(
+                state, entity, ops, act_key=key)
             return result
 
         verbs = (
@@ -3095,9 +3128,9 @@ class CognitionSessionRunner:
             )),
         )
         if self._memory is not None:
-            verbs = (memory_propose, profile_revise, *verbs)
+            verbs = (memory_propose, profile_read, profile_revise, *verbs)
         if state.historical:
-            verbs = (memory_propose, profile_revise, close)
+            verbs = (memory_propose, profile_read, profile_revise, close)
         return [*read_tools, *(self._counted(v.__name__, v, state=state) for v in verbs)]
 
     # `created_by_session_id=None` on every pace move and cancel above, on

@@ -85,6 +85,18 @@ Unknown targets retain a scoped unresolved reference for later linking. They do 
 become fabricated messages or disappear. Target arrival re-links the same observation
 idempotently. Unsupported reconciliation remains visible as partial/unavailable.
 
+## Presentation references are not duplicate storage
+
+[03](03-model-projections.md) owns the transcript-first and Standing-continuity
+contract. A transcript entry is a typed view of a message or platform event, not
+a requirement to store every observation as a message row. Standing references
+objects/matters; assembly reads their state from these domain stores. Tallies,
+source revisions and coverage are not maintained by a second Standing prose fold.
+Leaving the recent transcript window does not delete observations or their links;
+source retention/deletion rules still apply. Missing retained history is a visible
+gap, not reconstructable from a remembered summary. Source deletion/withdrawal must
+also invalidate affected derived presentation on its next authorized assembly.
+
 ## Folding, late arrival and correction
 
 Delta operations apply once in source order. A complete snapshot replaces only its

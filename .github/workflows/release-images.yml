@@ -45,7 +45,7 @@ jobs:
           ref: ${{ github.workflow_sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: '0.13.4'
           python-version: '3.12'
@@ -90,7 +90,7 @@ jobs:
           ref: ${{ fromJSON(needs.prepare.outputs.selection).commit }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: '0.13.4'
           python-version: '3.12'
@@ -98,7 +98,7 @@ jobs:
       - run: uv sync --frozen
       - name: Set up registry-cache capable builder
         id: buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           driver: docker-container
           driver-opts: network=host
@@ -140,7 +140,7 @@ jobs:
           ref: ${{ fromJSON(needs.prepare.outputs.selection).commit }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: '0.13.4'
           python-version: '3.12'

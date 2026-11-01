@@ -1,5 +1,51 @@
 # Changelog
 
+## [7.13.13](https://github.com/mikeng-io/nora/compare/v7.13.12...v7.13.13) (2026-11-01)
+
+
+### Features
+
+* **cognition:** write typed Profile accounts from the unified session ([8629ffa](https://github.com/mikeng-io/nora/commit/8629ffa45727141da50f8a122c79b1de4f62176b))
+
+
+### Bug Fixes
+
+* **cognition:** bind the shown account to what the session was shown ([8a655b3](https://github.com/mikeng-io/nora/commit/8a655b376d1ef624b2cc4216ea6fd7716780476f))
+* **profile:** preserve writer ownership and revision provenance ([7aae2a1](https://github.com/mikeng-io/nora/commit/7aae2a12c6f883d85d74f3dc9adef4367be49ddb))
+
+## [7.13.12](https://github.com/mikeng-io/nora/compare/v7.13.11...v7.13.12) (2026-11-01)
+
+
+### Maintenance
+
+* **engineering:** bind review and closure to the agreed scope ([1feecb0](https://github.com/mikeng-io/nora/commit/1feecb03c51d4124dcc87835124f24fb359378d1))
+
+## [7.13.11](https://github.com/mikeng-io/nora/compare/v7.13.10...v7.13.11) (2026-11-01)
+
+
+### Maintenance
+
+* **platforms:** declare Standing reuse in the Cognition occasion ([c59fef0](https://github.com/mikeng-io/nora/commit/c59fef0ff1c25811a4f42c2b60ab655aed85ba14))
+* **platforms:** use transcript and Standing for observation continuity ([f7c8621](https://github.com/mikeng-io/nora/commit/f7c8621106ee1c00a65b0688617f95455dc05353))
+
+## [7.13.10](https://github.com/mikeng-io/nora/compare/v7.13.9...v7.13.10) (2026-11-01)
+
+
+### Maintenance
+
+* **test:** make iteration commands select current changes ([9aff1d6](https://github.com/mikeng-io/nora/commit/9aff1d6a4f7e7e1c0eb94b127e56c47006549ba6))
+* **tooling:** keep incremental test guidance within skill limit ([537625b](https://github.com/mikeng-io/nora/commit/537625b6614641904622720bd02e28d7ad41c9c0))
+* **tooling:** skip make command cases when make is unavailable ([25c1a30](https://github.com/mikeng-io/nora/commit/25c1a30e4dfc24784d8640e2d7912d2f55979c6d))
+
+## [7.13.9](https://github.com/mikeng-io/nora/compare/v7.13.8...v7.13.9) (2026-11-01)
+
+
+### Security
+
+* **deps:** bump @azure/msal-node ([509704f](https://github.com/mikeng-io/nora/commit/509704f29dd3fd0d9d6f6c05e406eb45f65466cd))
+* **deps:** bump moghtech/komodo-periphery ([3387149](https://github.com/mikeng-io/nora/commit/338714996402e8a3bdac8eab9a4b167662b9d9e4))
+* **deps:** bump the uv-security group across 2 directories with 2 updates ([b3b20b7](https://github.com/mikeng-io/nora/commit/b3b20b76a1e4a7fbb22d60646ef3a1f17efa7262))
+
 ## [7.13.8](https://github.com/mikeng-io/nora/compare/v7.13.7...v7.13.8) (2026-11-01)
 
 

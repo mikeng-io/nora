@@ -4241,8 +4241,32 @@ async def build_dependencies(
                     roster_source=rosters.get(platform), persons=persons,
                     self_ids=registry.self_aliases()).members(),
                 circles=presence_circles, content_checks=content_checks))
+        # THE PROMOTED PROFILE WRITER (27 §9, 31 §5): the same
+        # `[memory.profile] write && read` switch (`profile_index`) as the
+        # read surface and index projection; `None` under every other flag
+        # combination, where `profile_revise` keeps recording shadow
+        # receipts and the Dreamer profile adaptors stay the account writers.
+        wake_profile_store = (
+            SqlProfileStore(
+                engine, screen=functools.partial(text_offence, content_checks=content_checks),
+                index=profile_index)
+            if _unified_profile_writers_retired(
+                profile_index=profile_index, graph_comprehend=True,
+                cognition_enabled=cfg.cognition.enabled,
+                units=frozenset(unit_scopes()),
+                home_units=frozenset(allowlist.home_rooms())) else None)
+        wake_listed_rooms = LiveMapping(lambda: {
+            (u, p): tuple(c.primary_id for c in allowlist.rooms()
+                          if c.unit == u and c.primary_id
+                          and c.persons and p in c.persons)
+            for u in unit_scopes()
+            for p in {x for c in allowlist.rooms()
+                      if c.unit == u for x in (c.persons or ())}
+        })
         cognition_memory = WakeMemory(graph=memory_graph, records=graph_records, metrics=metrics,
             content_checks=content_checks,
+            profile=wake_profile_store,
+            listed_rooms=(lambda u, p: wake_listed_rooms.get((u, p))),
             private_names=tuple({name for p in persons.by_person.values()
                 for name in (p.person_id, p.name, p.first_name, p.last_name, *p.aliases) if name}
                 | {value for (_, value) in persons.index}
@@ -4589,6 +4613,13 @@ async def build_dependencies(
         if profile_index or not cfg.culture.enabled:
             retired = {CULTURE_ADAPTOR_NAME, CHARACTER_PERSON_ADAPTOR_NAME,
                        CHARACTER_UNIT_ADAPTOR_NAME, CHARACTER_NORA_ADAPTOR_NAME}
+            retired |= _unified_profile_writers_retired(
+                profile_index=profile_index,
+                graph_comprehend=(cfg.memory.graph.enabled
+                                  and cfg.memory.graph.comprehend.enabled),
+                cognition_enabled=cfg.cognition.enabled,
+                units=frozenset(unit_scopes()),
+                home_units=frozenset(allowlist.home_rooms()))
             dream_adaptors = tuple(a for a in dream_adaptors if a.name not in retired)
             dream_schedules = {k: v for k, v in dream_schedules.items() if k not in retired}
 
@@ -5526,6 +5557,24 @@ async def _build_blob_store(cfg: Config, *, cipher: BlobCipher) -> BlobStore:
         )
         return fallback
     return store
+
+
+def _unified_profile_writers_retired(
+    *, profile_index: bool, graph_comprehend: bool, cognition_enabled: bool,
+    units: frozenset[str], home_units: frozenset[str],
+) -> frozenset[str]:
+    """The Dreamer profile writers the unified Cognition session replaces —
+    only where the replacement is actually wired (`[memory.profile] write &&
+    read` AND `[memory.graph] comprehend`, the same condition `WakeMemory`
+    gets its store under). The verdict judge never retires (45 §3), and the
+    tag path's told/dispute writes are untouched. Retirement is global, so
+    incomplete unit home coverage keeps every old writer and disables the
+    unified writer too; mixed ownership would write the same account twice."""
+    return (
+        frozenset({PROFILE_PERSON_ADAPTOR_NAME, PROFILE_ROOM_ADAPTOR_NAME,
+                   PROFILE_UNIT_ADAPTOR_NAME, PROFILE_NORA_ADAPTOR_NAME})
+        if (profile_index and graph_comprehend and cognition_enabled
+            and units and units <= home_units) else frozenset())
 
 
 def _note_unit_of(policy: Policy) -> Callable[[str, str], str | None]:
