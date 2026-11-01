@@ -8,7 +8,7 @@
 # without removing the host escape the socket already grants.
 # The stock Periphery already has Docker and flock, but has no Python interpreter.
 # Keep the release tag: the untagged digest update selected an older bullseye image.
-FROM ghcr.io/moghtech/komodo-periphery:2.3.3@sha256:fa3f1a641a265216066676950d5eecdf506955a7bafe2f01996135ae93115cd5
+FROM ghcr.io/moghtech/komodo-periphery:2.3.4@sha256:fb4b52961fcce7a31e3776930e422967b6640f653de876f59f26dea243e29beb
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
