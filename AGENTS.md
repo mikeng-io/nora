@@ -433,7 +433,9 @@ Historical paths and deprecated tiers: `docs/maintainers/conventions-rationale.m
 Load **`nora-land`** for setup, the fast loop, final gate and rc read-back.
 Run the final gate once on the final head; use focused tests while iterating.
 Docs-only changes use its affected-test procedure, never hand-picked readers.
-`make gate` runs static checks and affected tests; `make full-gate` runs all.
+`make gate` runs static checks and affected tests, or document readers for docs-only changes;
+local identical candidate/context PASS receipts may be reused. `make gate-fresh`
+forces execution; CI and `make full-gate` always run fresh, with full-gate serial.
 The schema gate, import cache and typecheck scope are in `docs/maintainers/conventions-rationale.md`.
 
 ## Reaching the deployment

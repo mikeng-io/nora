@@ -121,10 +121,12 @@ would miss exactly the known real names, hostnames and ids that are the
 commonest finding; it would catch phones, emails, ids, coordinate tables and
 media GPS. Not built in this change.
 
-**Git LFS** is not used in this repo (no `filter=lfs` in any
-`.gitattributes`). If it ever is: an LFS file reaches the scanner as its
-pointer text, not its content, and `core.hooksPath=.githooks` replaces LFS's
-own `pre-push` hook, so `git lfs push` would have to be wired in by hand.
+**Git LFS** is used for showreel media (`showreel/.gitattributes`). An LFS file
+reaches the scanner as pointer text, not binary content. `core.hooksPath=.githooks`
+replaces LFS's own `pre-push` hook, so media uploads need an explicit `git lfs push`.
+Generated standard LFS post-hooks can appear as untracked installation artifacts;
+the affected-test selector excludes only their exact regular-file templates,
+never modified/symlinked/tracked hooks or arbitrary executables.
 
 **Setup, once per machine.** The real values live in a denylist OUTSIDE the
 repo, `~/.config/nora/pii-denylist.txt` (or `$NORA_PII_DENYLIST`), built from

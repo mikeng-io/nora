@@ -23,7 +23,6 @@ from nora.domain.ports import ImageResult, MessageHits, OutboundAttachment, Send
 from nora.domain.utf16 import utf16_len
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, load_persons
@@ -84,9 +83,8 @@ def wiring_with(wiring):
 
 
 @pytest.fixture
-async def wiring(pg_url, tmp_path):
-    run_migrations(pg_url)
-    store = SqlRecordStore(create_sql_engine(pg_url))
+async def wiring(record_pg_url, tmp_path):
+    store = SqlRecordStore(create_sql_engine(record_pg_url))
     for i in range(3):
         await store.append(message=NormalizedMessage("signal", "g1", "group", "+852111",
                                                       "Miles", i, f"m{i}", {}))
@@ -128,6 +126,10 @@ async def wiring(pg_url, tmp_path):
                "persons": persons, "room": room, "doctrine": doctrine}
     finally:
         await store.aclose()
+
+
+async def test_wiring_reuses_the_module_database(wiring, pg_module_url):
+    assert wiring["store"]._engine.url.database == pg_module_url.rsplit('/', 1)[1]
 
 
 def test_every_declared_tool_is_built(wiring):

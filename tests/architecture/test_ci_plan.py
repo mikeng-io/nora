@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -205,12 +206,9 @@ def test_timing_contracts_run_without_competing_pytest_workers(monkeypatch, targ
     step = next(s for s in workflow["jobs"]["contracts"]["steps"]
                 if s.get("name") == "Document readers selected by the existing selector")
     source = step["run"].split("<<'PYTEST'\n", 1)[1].rsplit("PYTEST", 1)[0]
-    serial = ["tests/integration/test_latency.py",
-              "tests/unit/test_engagement_pipeline.py",
-              "tests/integration/test_bridge_queue_telemetry.py"]
-    expected = ([["pytest", "-q", "-n", "8", *(f"--ignore={p}" for p in serial)],
-                 ["pytest", "-q", *serial]] if targets == "ALL"
-                else [["pytest", "-q", *targets]] if targets else [])
+    runner = [sys.executable, "-m", "scripts.pytest_gate"]
+    expected = ([runner] if targets == "ALL"
+                else [[*runner, *targets]] if targets else [])
     calls = []
 
     def run(command, *, check):
