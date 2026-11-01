@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.13.9](https://github.com/mikeng-io/nora/compare/v7.13.8...v7.13.9) (2026-11-01)
+
+
+### Security
+
+* **deps:** bump @azure/msal-node ([509704f](https://github.com/mikeng-io/nora/commit/509704f29dd3fd0d9d6f6c05e406eb45f65466cd))
+* **deps:** bump moghtech/komodo-periphery ([3387149](https://github.com/mikeng-io/nora/commit/338714996402e8a3bdac8eab9a4b167662b9d9e4))
+* **deps:** bump the uv-security group across 2 directories with 2 updates ([b3b20b7](https://github.com/mikeng-io/nora/commit/b3b20b76a1e4a7fbb22d60646ef3a1f17efa7262))
+
 ## [7.13.8](https://github.com/mikeng-io/nora/compare/v7.13.7...v7.13.8) (2026-11-01)
 
 
