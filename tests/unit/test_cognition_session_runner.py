@@ -569,10 +569,11 @@ async def test_event_revise_replaces_association_without_an_orphan_retry():
         assert created["status"] == "ok", created
         event_id = str(created["id"])
         event = next(e for e in stores.gatherings._events.values() if str(e.id) == event_id)
-        arguments = dict(
-            event_id=event_id, base_revision_id=str(event.head_revision_id),
-            venue_text="Generated venue", reasoning="told", confidence="high",
-            cited_ids=["101"], associations=[["event", second.id]])
+        arguments = {
+            "event_id": event_id, "base_revision_id": str(event.head_revision_id),
+            "venue_text": "Generated venue", "reasoning": "told", "confidence": "high",
+            "cited_ids": ["101"], "associations": [["event", second.id]],
+        }
         answers.append(await by["event_revise"](**arguments))
         revisions = len(stores.gatherings._revisions)
         answers.append(await by["event_revise"](**arguments))
