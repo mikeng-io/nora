@@ -26,12 +26,16 @@ a discriminated union, not a generic JSON/EAV bag.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 
 from nora.domain.models import (
     REACTION_PAIRS_MAX,
     EditTarget,
+    ReactionRow,
+    RowReactions,
     display_reactions,
     emoji_display,
 )
@@ -662,13 +666,25 @@ _UNCOMPARABLE = 2
 
 @dataclass(frozen=True)
 class StoredObservation:
-    """An `Observation` as persisted: its identity, resolution and arrival."""
+    """An `Observation` as persisted: its identity, resolution and arrival.
+
+    `recorded_at` is the row's DURABLE COMMIT CLOCK — the value the store
+    stamped when it made the row durable (`platform_observation.recorded_at`,
+    or an equivalent commit-order stamp a fake supplies). The union fold
+    (`fold_target_reactions`) interleaves typed rows with legacy
+    `message_reaction` deltas on it: both clocks are the same database's,
+    and the ingest lock serializes a conversation's writers, so the stamp
+    orders the way rows became durable — arrival order across stores, never
+    a source clock and never a fabricated cross-store revision. None means
+    the store did not supply it; the union fold flags the order unproven.
+    """
 
     id: int
     event_id: str
     source_digest: str
     observation: Observation
     target_message_id: int | None = None
+    recorded_at: Any = None
 
 
 @dataclass(frozen=True)
@@ -846,6 +862,328 @@ def rebuild_head(
     for row in rows:
         head = fold_observation(head, row)
     return head
+
+
+# ── The reaction union fold ─────────────────────────────────────────────
+# One target's reactions are recorded on TWO append-only tables: per-actor
+# `message_reaction` deltas and typed `platform_observation` reaction rows
+# (clear/clear-emoji/snapshot, plus typed deltas where a platform emits
+# them). A read that consults only one disagrees with a read that consults
+# the other, so `fold_target_reactions` is the ONE fold every reader's
+# answer derives from — the SQL annotation path, the typed head surfaces
+# and the fake all call it.
+
+_COMMIT_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+_COMMIT_US = timedelta(microseconds=1)
+
+
+def _commit_us(value: Any) -> int | None:
+    """A durable commit-clock stamp as comparable epoch microseconds —
+    `recorded_at`/`created_at` may arrive as a `datetime` or as an already-
+    extracted integer. None or an unrecognized form means the store supplied
+    no clock, which the fold surfaces as an unproven order, never a guessed
+    position."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return int((value - _COMMIT_EPOCH) // _COMMIT_US)
+    if isinstance(value, (int, float)):
+        return int(value)
+    return None
+
+
+@dataclass(frozen=True)
+class TargetReactions:
+    """One reaction target's folded state across BOTH append-only stores —
+    `fold_target_reactions`' single answer, projected to a `RowReactions`
+    annotation or an `ObservationHead` depending on which reader asked.
+
+    `coverage` is the annotation-scale claim: "recorded" when every recorded
+    transition folded with its order proven, "partial" when the fold is
+    honest-but-incomplete (the read's bound cut transitions, a removal or a
+    covered-actor clear could not be attributed, or the source declared its
+    snapshot incomplete), "gap" when the ORDER of recorded transitions
+    could not be proven (incomparable commit clocks, out-of-scope source
+    positions, retained stale rows). `standing`/`counts`/`reactors` carry
+    the recorded state regardless — projections apply the withholding rule
+    (`merged_reaction_counts`), never the fold.
+    """
+
+    standing: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    counts: tuple[tuple[str, int], ...] = ()
+    reactors: tuple[str, ...] | None = None
+    snapshot: bool = False
+    applied: int = 0
+    recorded: int = 0
+    observed_at: int | None = None
+    coverage: str = "recorded"
+    ordering: str = "arrival"
+    position: int | None = None
+    scope: str = ""
+    head_id: int = 0
+    flags: dict[str, Any] = field(default_factory=dict)
+
+
+def merged_reaction_counts(
+    tr: TargetReactions,
+) -> tuple[tuple[str, int], ...]:
+    """Standing actors plus unattributed counts as per-emoji totals — the
+    one counting rule the annotation and the head render share. Withheld
+    entirely unless the fold's coverage is `recorded`: a truncated,
+    ambiguous or order-unproven set never presents as an exact count."""
+    if tr.coverage != "recorded":
+        return ()
+    merged: dict[str, int] = {e: len(a) for e, a in tr.standing}
+    for emoji, n in tr.counts:
+        merged[emoji] = merged.get(emoji, 0) + n
+    return tuple(sorted(merged.items()))
+
+
+def to_row_reactions(tr: TargetReactions) -> RowReactions:
+    """The union fold's answer as the transcript/tool annotation every
+    `message_reaction` reader has always consumed — same `RowReactions`
+    shape, same `recorded`/`observed_at`/`coverage` semantics, now covering
+    typed clear/snapshot transitions too."""
+    return RowReactions(counts=merged_reaction_counts(tr),
+                        observed_at=tr.observed_at, recorded=tr.recorded,
+                        coverage=tr.coverage)
+
+
+def union_head(
+    tr: TargetReactions, *, object_ref: str, account_key: str = "",
+    thread: str = "",
+) -> ObservationHead:
+    """The union fold's answer as a typed `ObservationHead` — the current/
+    heads/detail surfaces' shape. `state` keeps `_apply_reaction`'s keys;
+    `standing`/`counts` withhold under non-"recorded" coverage, the same
+    rule `merged_reaction_counts` applies to the annotation, so a partial
+    or order-unproven state never shows as exact on one surface while
+    withheld on another. `observed_ms` is the newest recorded source-event
+    time across both stores — `RowReactions.observed_at`'s semantic, which
+    unlike the plain fold's counts retained-but-unapplied rows too."""
+    withhold = tr.coverage != "recorded"
+    state = {
+        "standing": ({} if withhold
+                     else {e: list(a) for e, a in tr.standing}),
+        "counts": {} if withhold else dict(tr.counts),
+        "reactors": list(tr.reactors or ()),
+        "snapshot": tr.snapshot,
+    }
+    return ObservationHead(
+        kind="reaction", object_ref=object_ref, state=state,
+        applied=tr.applied, head_id=tr.head_id, position=tr.position,
+        scope=tr.scope, observed_ms=tr.observed_at, ordering=tr.ordering,
+        coverage=dict(tr.flags), account_key=account_key, thread=thread)
+
+
+def fold_target_reactions(
+    legacy: Iterable[ReactionRow],
+    stored: Iterable[StoredObservation],
+    *,
+    recorded: int | None = None,
+    observed_at: int | None = None,
+    partial: bool = False,
+    gap: bool = False,
+) -> TargetReactions | None:
+    """Fold one reaction target across BOTH append-only tables.
+
+    `legacy` is the target's `message_reaction` rows — the fold reduces
+    them to latest-per-(actor, emoji) exactly as `fold_reactions` does, so
+    a caller may pass the whole set or the already-reduced standing tuples
+    (the reduction is idempotent). `stored` is the object's/target's typed
+    reaction `platform_observation` rows — including unresolved-target
+    rows a head-level fold legitimately owns.
+
+    ORDER: each legacy delta's only state-bearing position is its own
+    durable commit clock (`created_at`), and each typed row's is
+    `recorded_at` — one database clock, serialized by the ingest lock, so
+    the merge IS durable commit order: the honest "arrival" fallback made
+    concrete across stores, not a source-clock sort and not a fabricated
+    global revision. A pair whose clocks cannot be compared (a missing
+    stamp or a cross-family tie) is flagged `unordered` — never silently
+    ordered. Within the typed stream the fold keeps `fold_observation`'s
+    source-position rules: a provably-stale row is retained-not-applied
+    and flags `ordering_gap`; incomparable positions flag `unordered`.
+
+    `recorded`/`observed_at` let a bounded read supply the REAL totals
+    (database-side, before its cap) so the projection reports the whole
+    recorded set's reach rather than the window's. `partial` marks a read
+    whose own bound cut transitions — the coverage the annotation has
+    always used. `gap` lets a caller assert the order itself could not be
+    proven (an as-of bound that resolved to nothing): coverage degrades to
+    "gap" even when the rows it did fold compared cleanly. Returns None
+    when nothing at all was recorded, so the caller's `reactions=None`
+    ("nothing recorded") stays distinct from an empty standing set.
+    """
+    legacy = list(legacy)
+    stored = list(stored)
+    if not legacy and not stored:
+        return None
+
+    latest: dict[tuple[str, str], ReactionRow] = {}
+    for r in legacy:
+        prev = latest.get((r.sender_id, r.emoji))
+        if prev is None or r.id > prev.id:
+            latest[(r.sender_id, r.emoji)] = r
+
+    # (commit_at μs | None, family 0=legacy 1=typed, seq, row). On a tie the
+    # legacy delta applies first — deterministic, and the fail-closed side:
+    # a clear that cannot be proven LATER still wins. Unorderable clocks
+    # matter only across families: same-family events order by `id` anyway,
+    # and distinct (actor, emoji) legacy deltas commute.
+    events: list[tuple[int | None, int, int, Any]] = []
+    for r in latest.values():
+        events.append((_commit_us(r.created_at), 0, r.id, r))
+    for s in stored:
+        events.append((_commit_us(s.recorded_at), 1, s.id, s))
+    mixed = len({fam for _a, fam, _s, _r in events}) > 1
+    unordered_clock = mixed and any(
+        a is None for a, _f, _s, _r in events)
+    seen_at: dict[int, int] = {}
+    for at, fam, _seq, _row in events:
+        if at is None:
+            continue
+        if at in seen_at and seen_at[at] != fam:
+            unordered_clock = True
+        else:
+            seen_at[at] = fam
+    events.sort(key=lambda e: (e[0] is None, e[0] or 0, e[1], e[2]))
+
+    state = _initial_state("reaction")
+    position: int | None = None
+    scope = ""
+    ordering = "arrival"
+    cov: dict[str, Any] = {}
+    applied = 0
+    head_id = 0
+    received_ms = 0
+    observed = 0
+    observed_quality = "unknown"
+    ambiguous = False
+
+    for _at, fam, _seq, row in events:
+        if fam == 0:
+            r = cast(ReactionRow, row)
+            standing = state["standing"]
+            actors = standing.setdefault(r.emoji, [])
+            if r.removed:
+                if r.sender_id in actors:
+                    actors.remove(r.sender_id)
+                if not actors:
+                    standing.pop(r.emoji, None)
+            else:
+                if r.sender_id not in actors:
+                    actors.append(r.sender_id)
+                # A recorded delta lands after any snapshot: the state is a
+                # fold again, never a verbatim snapshot.
+                state["snapshot"] = False
+            applied += 1
+            if r.ts >= observed:
+                observed = r.ts
+                observed_quality = "unknown"
+            continue
+
+        srow = cast(StoredObservation, row)
+        obs = srow.observation
+        # `_compare` against the union's running typed position — the same
+        # position rules `fold_observation` applies, factored to a running
+        # (position, scope) pair rather than a carried head.
+        if obs.source_position is None or not obs.revision_scope:
+            cmp = _UNCOMPARABLE
+        elif position is None:
+            cmp = 1
+        elif obs.revision_scope != scope:
+            cmp = _UNCOMPARABLE
+        else:
+            cmp = (obs.source_position > position) - (
+                obs.source_position < position)
+        received_ms = max(received_ms, obs.received_ms)
+        ev_ms = (obs.occurred_ms if obs.occurred_ms is not None
+                 else obs.received_ms)
+        if cmp < 0:
+            # Provably-stale row: retained and read into `observed`,
+            # never applied over a newer position.
+            if obs.operation == "snapshot":
+                cov["superseded_snapshots"] = (
+                    cov.get("superseded_snapshots", 0) + 1)
+            else:
+                cov["ordering_gap"] = True
+                ordering = "gap"
+            if ev_ms >= observed:
+                observed = ev_ms
+                observed_quality = obs.time_quality
+            continue
+        p = cast(ReactionPayload, obs.payload)
+        if obs.operation == "remove" and not obs.actor_id and (
+            not state["counts"].get(p.emoji)
+            and state["standing"].get(p.emoji)
+        ):
+            # An unattributed removal with no unattributed count left may
+            # name a recorded standing actor's reaction — the state cannot
+            # say which, so it cannot claim an exact count.
+            ambiguous = True
+        if obs.operation == "clear" and p.covered_actors and any(
+            state["counts"].get(e)
+            for e in (p.covered_emojis or tuple(state["counts"]))
+        ):
+            # An actor-scoped clear can overlap unattributed counts whose
+            # actors the source never supplied.
+            ambiguous = True
+        prior = applied
+        state = _apply_reaction(state, obs, cmp)
+        applied += 1
+        head_id = srow.id
+        if prior and cmp == _UNCOMPARABLE and (
+            position is not None or obs.source_position is not None
+        ):
+            cov["unordered"] = True
+        if ordering != "gap":
+            ordering = ("ordered"
+                        if obs.source_position is not None
+                        and obs.revision_scope
+                        and not cov.get("unordered") else "arrival")
+        if obs.coverage.covered != "event":
+            cov["covered"] = obs.coverage.covered
+        if obs.coverage.gaps or not obs.coverage.complete:
+            cov["gaps"] = sorted(
+                set(cov.get("gaps", ())) | set(obs.coverage.gaps))
+            if not obs.coverage.complete:
+                cov["partial"] = True
+        position, scope = obs.source_position, obs.revision_scope
+        if ev_ms >= observed:
+            observed = ev_ms
+            observed_quality = obs.time_quality
+
+    if ambiguous:
+        cov["ambiguous"] = True
+    if unordered_clock or gap:
+        cov["unordered"] = True
+    gapped = (gap or unordered_clock or ordering == "gap"
+              or bool(cov.get("unordered")))
+    coverage = ("gap" if gapped else
+                "partial" if (partial or ambiguous or cov.get("partial")
+                              or cov.get("gaps")) else "recorded")
+    if ordering == "gap" or unordered_clock or gap:
+        ordering = "gap"
+    obs_ms = int(observed_at) if observed_at is not None else observed
+    # A caller-supplied (real) newest time ahead of the folded one means the
+    # bound cut newer rows — their source clock is not claimed.
+    cov["observed_quality"] = (
+        "unknown" if obs_ms > observed else observed_quality)
+    cov["received_ms"] = received_ms
+    rec = int(recorded) if recorded is not None else len(legacy) + len(stored)
+    return TargetReactions(
+        standing=tuple(sorted(
+            (e, tuple(a)) for e, a in state["standing"].items())),
+        counts=tuple(sorted(state["counts"].items())),
+        reactors=(tuple(sorted(state["reactors"]))
+                  if state["reactors"] is not None else None),
+        snapshot=bool(state["snapshot"]),
+        applied=applied, recorded=rec, observed_at=obs_ms or None,
+        coverage=coverage, ordering=ordering, position=position,
+        scope=scope, head_id=head_id, flags=cov)
 
 
 def _initial_state(kind: str) -> dict[str, Any]:
@@ -1464,7 +1802,7 @@ def head_summary(head: ObservationHead) -> str:
         return _clip("metadata: "
                      + ", ".join(sorted(s.get("fields") or {})) or "none")
     if head.kind == "reaction":
-        counts = display_reactions((s.get("counts") or {}).items())
+        counts = display_reactions(_merged_counts(s).items())
         shown = list(counts.items())[:REACTION_PAIRS_MAX]
         return _clip("reactions: " + (
             ", ".join(f"{k}={v}" for k, v in shown)
@@ -1475,6 +1813,18 @@ def head_summary(head: ObservationHead) -> str:
 
 _NAMED_MAX = 24
 _OPTIONS_MAX = 16
+
+
+def _merged_counts(state: dict[str, Any]) -> dict[str, int]:
+    """A reaction head's per-emoji totals: attributed `standing` actors plus
+    unattributed `counts` — the same accounting `merged_reaction_counts`
+    gives the annotation, so both renders report ONE number. Under
+    withheld coverage the union state carries empty standing/counts, so
+    this renders nothing."""
+    merged = {e: len(a) for e, a in (state.get("standing") or {}).items()}
+    for emoji, n in (state.get("counts") or {}).items():
+        merged[emoji] = merged.get(emoji, 0) + int(n)
+    return merged
 
 
 def head_detail(head: ObservationHead, *, name_of: Any = None) -> dict[str, Any]:
@@ -1599,7 +1949,7 @@ def head_detail(head: ObservationHead, *, name_of: Any = None) -> dict[str, Any]
             out["artifact_kinds"] = kinds[:16]
         return out
     if head.kind == "reaction":
-        counts = display_reactions((s.get("counts") or {}).items())
+        counts = display_reactions(_merged_counts(s).items())
         shown = dict(list(counts.items())[:REACTION_PAIRS_MAX])
         if shown:
             out["counts"] = shown

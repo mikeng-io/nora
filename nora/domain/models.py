@@ -366,6 +366,15 @@ class ReactionRow:
     `record_query` has always returned). `ts` is the platform's time for the
     event (arrival when it gives none); `id` is arrival order, the tie-break
     the append-only table resolves latest by.
+
+    `created_at` is the row's DURABLE COMMIT CLOCK — the value the store
+    stamped when it made the row (the `created_at` column, or an equivalent
+    commit-order stamp a fake supplies). `fold_target_reactions` uses it to
+    interleave this legacy delta with typed `platform_observation` rows by
+    genuine system ordering: the ingest lock serializes the writers, so the
+    stamp is the row's position in durable commit order — never a source
+    clock and never a fabricated cross-store revision. None means the store
+    did not supply it, and the union fold must flag the order as unproven.
     """
 
     id: int
@@ -374,6 +383,7 @@ class ReactionRow:
     emoji: str
     removed: bool
     ts: int
+    created_at: Any = None
 
 
 #: A platform's custom-emoji wire identity — Discord stores a reaction as
@@ -446,10 +456,15 @@ class RowReactions:
     snapshot, or any reaction the capture path never saw is absent, so a
     count is what was recorded, not a claim of the whole upstream set. An
     empty `counts` with `recorded > 0` means every recorded reaction was
-    taken back — a fact, not a zero. `coverage="partial"` means the read's
-    own bound cut the standing set short: `recorded` and `observed_at` still
-    hold, and `counts` is EMPTY on purpose — a truncated set is never folded
-    into an apparently complete count.
+    taken back — a fact, not a zero. `coverage="partial"` means the fold is
+    honest-but-incomplete — the read's own bound cut the standing set, a
+    removal could not be attributed to a recorded actor, or a source snapshot
+    declared itself incomplete: `recorded` and `observed_at` still hold, and
+    `counts` is EMPTY on purpose — a truncated or uncertain set is never
+    folded into an apparently complete count. `coverage="gap"` means the
+    order of recorded transitions could not be proven (incomparable commit
+    clocks, out-of-scope positions): `counts` is withheld there too, because
+    a guessed order is not a state.
     """
 
     counts: tuple[tuple[str, int], ...] = ()

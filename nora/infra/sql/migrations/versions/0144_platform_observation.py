@@ -82,6 +82,9 @@ def upgrade() -> None:
         "idx_platform_observation_unresolved", "platform_observation",
         ["platform", "account_key", "conversation_id", "target_key"],
         postgresql_where=sa.text("target_message_id IS NULL"))
+    op.create_index(
+        "idx_platform_observation_target", "platform_observation",
+        ["kind", "target_message_id"])
 
     op.create_table(
         "platform_object_state",
@@ -157,6 +160,8 @@ def downgrade() -> None:
                   table_name="platform_object_state")
     op.drop_table("platform_object_state")
     op.drop_index("idx_platform_observation_unresolved",
+                  table_name="platform_observation")
+    op.drop_index("idx_platform_observation_target",
                   table_name="platform_observation")
     op.drop_index("idx_platform_observation_object",
                   table_name="platform_observation")

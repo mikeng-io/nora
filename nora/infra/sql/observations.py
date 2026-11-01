@@ -23,14 +23,17 @@ commit never joined.
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
+import json
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from nora.domain.models import EditTarget
+from nora.domain.models import EditTarget, ReactionRow
 from nora.domain.observations import (
     OBSERVATION_CONTRACT,
     Coverage,
@@ -39,15 +42,19 @@ from nora.domain.observations import (
     SourceScope,
     StoredObservation,
     fold_observation,
+    fold_target_reactions,
     parse_handle,
     payload_from_dict,
     rebuild_head,
     target_from_key,
     target_key,
+    union_head,
 )
 
+from .audit import REACTION_STATES_MAX
 from .schema import (
     MESSAGE_EDIT,
+    MESSAGE_REACTION,
     MESSAGES,
     PLATFORM_OBJECT_STATE,
     PLATFORM_OBSERVATION,
@@ -98,7 +105,7 @@ def _st_scope_where(scope: SourceScope) -> Any:
         _room_where(t, scope), t.c.account_key == scope.account_key)
 
 
-def _row_to_stored(row: sa.RowMapping) -> StoredObservation:
+def _row_to_stored(row: Any) -> StoredObservation:
     contract = int(row["contract"])
     if contract != OBSERVATION_CONTRACT:
         raise ValueError(f"unsupported stored observation contract {contract}")
@@ -127,7 +134,8 @@ def _row_to_stored(row: sa.RowMapping) -> StoredObservation:
     return StoredObservation(
         id=int(row["id"]), event_id=row["event_id"],
         source_digest=row["source_digest"], observation=obs,
-        target_message_id=row["target_message_id"])
+        target_message_id=row["target_message_id"],
+        recorded_at=row.get("recorded_at"))
 
 
 def _head_to_row(head: ObservationHead) -> dict[str, Any]:
@@ -152,6 +160,204 @@ def _row_to_head(row: sa.RowMapping) -> ObservationHead:
         coverage=dict(row["coverage"]),
         account_key=row["account_key"] or "",
         thread=row["thread"] or "")
+
+
+#: `message_reaction.created_at` as epoch microseconds — the durable commit
+#: clock `fold_target_reactions` orders legacy deltas by, computed where the
+#: rows are so a text column never reaches the fold as a string.
+_MR_AT = sa.cast(
+    sa.extract(
+        "epoch",
+        sa.cast(MESSAGE_REACTION.c.created_at, sa.DateTime(timezone=True)))
+    * 1_000_000, sa.BigInteger)
+_OBS_AT = sa.cast(
+    sa.extract("epoch", OBS.c.recorded_at) * 1_000_000, sa.BigInteger)
+
+
+def _rx_union_stmt(
+    scope: SourceScope, refs: frozenset[str], *,
+    through_id: int | None = None, per_object: int = REACTION_STATES_MAX,
+) -> Any:
+    """One tagged row set for a union reaction read — the head surfaces'
+    batched counterpart of `audit.reaction_states`.
+
+    `t` rows: the scope's typed reaction rows for `refs`, ranked per
+    `(account_key, thread, object_ref)` and bounded, each carrying its
+    commit clock; `n` rows: the same groups' REAL totals (before the
+    bound), so a cut is detectable. `l` rows: bounded latest-per-key
+    `message_reaction` tuples for the targets the typed rows resolved to;
+    `m` rows: their real totals. `b` rows (as-of only): whether the bound
+    resolved — a bound that names no row cannot order legacy events, which
+    the fold must flag rather than guess.
+    """
+    nul = sa.literal(None)
+    obs_where = sa.and_(
+        _scope_where(scope), OBS.c.kind == "reaction",
+        OBS.c.object_ref.in_(tuple(refs)))
+    if through_id is not None:
+        obs_where = sa.and_(obs_where, OBS.c.id <= through_id)
+    t_ranked = sa.select(
+        OBS, _OBS_AT.label("at"),
+        sa.func.row_number().over(
+            partition_by=(OBS.c.account_key, OBS.c.thread,
+                          OBS.c.object_ref),
+            order_by=OBS.c.id).label("rn"),
+    ).where(obs_where).cte("rx_t_ranked")
+    t_bounded = sa.select(t_ranked).where(
+        t_ranked.c.rn <= per_object).cte("rx_t_bounded")
+    t_meta = sa.select(
+        t_ranked.c.account_key, t_ranked.c.thread, t_ranked.c.object_ref,
+        sa.func.count().label("total"),
+        sa.func.max(sa.func.coalesce(
+            t_ranked.c.occurred_ms, t_ranked.c.received_ms)).label("obs"),
+    ).group_by(
+        t_ranked.c.account_key, t_ranked.c.thread, t_ranked.c.object_ref,
+    ).cte("rx_t_meta")
+    mids = sa.select(t_bounded.c.target_message_id).where(
+        t_bounded.c.target_message_id.isnot(None)).distinct().cte("rx_mids")
+    # The legacy side counts only where its durable commit clock proves it
+    # preceded the as-of bound — the same genuine ordering the unbounded
+    # read gets for free.
+    mr_where = MESSAGE_REACTION.c.message_id.in_(
+        sa.select(mids.c.target_message_id))
+    bound = None
+    if through_id is not None:
+        bound = sa.select(OBS.c.recorded_at).where(
+            OBS.c.id == through_id).cte("rx_bound")
+        mr_where = sa.and_(
+            mr_where,
+            sa.cast(MESSAGE_REACTION.c.created_at,
+                    sa.DateTime(timezone=True))
+            <= sa.select(bound.c.recorded_at).scalar_subquery())  # type: ignore[assignment]
+    l_scope = sa.select(
+        MESSAGE_REACTION.c.message_id, MESSAGE_REACTION.c.id,
+        MESSAGE_REACTION.c.sender_id, MESSAGE_REACTION.c.emoji,
+        MESSAGE_REACTION.c.removed, MESSAGE_REACTION.c.ts,
+        _MR_AT.label("at"),
+    ).where(mr_where).cte("rx_l_scope")
+    l_meta = sa.select(
+        l_scope.c.message_id, sa.func.count().label("recorded"),
+        sa.func.max(l_scope.c.ts).label("observed_at"),
+    ).group_by(l_scope.c.message_id).cte("rx_l_meta")
+    l_latest = sa.select(l_scope).distinct(
+        l_scope.c.message_id, l_scope.c.sender_id, l_scope.c.emoji
+    ).order_by(
+        l_scope.c.message_id, l_scope.c.sender_id, l_scope.c.emoji,
+        l_scope.c.id.desc()).cte("rx_l_latest")
+    l_expected = sa.select(
+        l_latest.c.message_id, sa.func.count().label("n")
+    ).group_by(l_latest.c.message_id).cte("rx_l_expected")
+    l_bounded = sa.select(l_latest).limit(
+        REACTION_STATES_MAX).cte("rx_l_bounded")
+    selects = [
+        sa.select(
+            sa.literal("t").label("tag"), t_bounded.c.account_key.label("k1"),
+            t_bounded.c.thread.label("k2"), t_bounded.c.object_ref.label("k3"),
+            nul.label("mid"), t_bounded.c.id.label("a"),
+            t_bounded.c.at.label("b"), nul.label("c"), nul.label("d"),
+            nul.label("e"), nul.label("f"),
+            sa.type_coerce(
+                sa.func.to_jsonb(t_bounded), pg.JSONB).label("j")),
+        sa.select(
+            sa.literal("n"), t_meta.c.account_key, t_meta.c.thread,
+            t_meta.c.object_ref, nul, nul, t_meta.c.total, t_meta.c.obs,
+            nul, nul, nul, nul, nul),
+        sa.select(
+            sa.literal("l"), nul, nul, nul, l_bounded.c.message_id, nul,
+            l_bounded.c.id, l_bounded.c.ts, l_bounded.c.at,
+            l_bounded.c.removed, l_bounded.c.sender_id,
+            l_bounded.c.emoji, nul),
+        sa.select(
+            sa.literal("m"), nul, nul, nul, l_meta.c.message_id, nul,
+            l_meta.c.recorded, l_meta.c.observed_at,
+            sa.func.coalesce(l_expected.c.n, 0), nul, nul, nul, nul,
+        ).select_from(
+            l_meta.outerjoin(
+                l_expected, l_meta.c.message_id == l_expected.c.message_id)),
+    ]
+    if bound is not None:
+        selects.append(sa.select(
+            sa.literal("b"), nul, nul, nul, nul, nul,
+            sa.func.count(bound.c.recorded_at),
+            nul, nul, nul, nul, nul, nul))
+    return sa.union_all(*selects)
+
+
+def _split_rx_rows(
+    rows: Any,
+) -> tuple[
+    dict[tuple[str, str, str], list[StoredObservation]],
+    dict[tuple[str, str, str], tuple[int, int]],
+    dict[int, list[ReactionRow]],
+    dict[int, tuple[int, int, int]],
+    int,
+]:
+    """The tagged union row set back into per-object typed rows, per-object
+    totals, per-target legacy tuples and per-target totals — and the as-of
+    bound's existence (`b`, -1 when no bound was read). A typed row that
+    fails to parse is counted by `tmeta`'s real total anyway, so the head's
+    partial flag covers it rather than folding without it."""
+    typed: dict[tuple[str, str, str], list[StoredObservation]] = {}
+    tmeta: dict[tuple[str, str, str], tuple[int, int]] = {}
+    legacy: dict[int, list[ReactionRow]] = {}
+    lmeta: dict[int, tuple[int, int, int]] = {}
+    bound = -1
+    for r in rows:
+        if r.tag == "t":
+            try:
+                j = r.j if isinstance(r.j, dict) else json.loads(r.j)
+                stored = dataclasses.replace(
+                    _row_to_stored(j), recorded_at=int(r.b))
+            except (ValueError, TypeError, KeyError):
+                continue
+            typed.setdefault(
+                (str(r.k1), str(r.k2), str(r.k3)), []).append(stored)
+        elif r.tag == "n":
+            tmeta[(str(r.k1), str(r.k2), str(r.k3))] = (
+                int(r.a), int(r.b or 0))
+        elif r.tag == "l":
+            legacy.setdefault(int(r.mid), []).append(ReactionRow(
+                id=int(r.a), message_id=int(r.mid), sender_id=str(r.e),
+                emoji=str(r.f), removed=bool(r.d), ts=int(r.b),
+                created_at=int(r.c)))
+        elif r.tag == "m":
+            lmeta[int(r.mid)] = (int(r.a), int(r.b or 0), int(r.c or 0))
+        elif r.tag == "b":
+            bound = int(r.a)
+    return typed, tmeta, legacy, lmeta, bound
+
+
+def _rx_fold(
+    head: ObservationHead,
+    typed: dict[tuple[str, str, str], list[StoredObservation]],
+    tmeta: dict[tuple[str, str, str], tuple[int, int]],
+    legacy: dict[int, list[ReactionRow]],
+    lmeta: dict[int, tuple[int, int, int]],
+    *, gap: bool = False, partial: bool = False,
+) -> ObservationHead:
+    """`head` re-folded across BOTH stores — the ST row's existence plus
+    the union fold's state, so `current`/`heads`/`head_for_handle`/`as_of`
+    for `kind="reaction"` read the same answer the target annotation
+    carries. `partial`/`gap` are the caller's own bound flags; a typed
+    bound cut or a legacy standing cut is detected here from the real
+    totals. The ST row itself stays the typed-only incremental head — a
+    UNION head is always rebuilt on read, never stored."""
+    key = (head.account_key, head.thread, head.object_ref)
+    rows = typed.get(key, [])
+    ttotal, tobs = tmeta.get(key, (0, 0))
+    mids = {r.target_message_id for r in rows if r.target_message_id}
+    l_rows = [r for m in mids for r in legacy.get(m, ())]
+    recorded = ttotal + sum(lmeta.get(m, (0, 0, 0))[0] for m in mids)
+    observed = max([tobs] + [lmeta.get(m, (0, 0, 0))[1] for m in mids])
+    partial = partial or len(rows) < ttotal or any(
+        len(legacy.get(m, ())) < lmeta.get(m, (0, 0, 0))[2] for m in mids)
+    tr = fold_target_reactions(
+        l_rows, rows, recorded=recorded,
+        observed_at=observed or None, partial=partial, gap=gap)
+    if tr is None:
+        return head
+    return union_head(tr, object_ref=head.object_ref,
+                      account_key=head.account_key, thread=head.thread)
 
 
 #: `object_handle`'s digest in SQL: sha256 of
@@ -251,6 +457,29 @@ class SqlObservationStore:
             sa.update(ST).where(ST.c.id == row["id"]).values(
                 **_head_to_row(new_head), updated_at=sa.func.now()))
 
+    async def _union_reactions(
+        self, scope: SourceScope, heads: list[ObservationHead],
+    ) -> list[ObservationHead]:
+        """The page's `reaction` heads re-folded across BOTH stores, one
+        batched statement — the same union `reaction_states` serves the
+        target annotations, so an object's current read and its message's
+        reaction line cannot disagree. Unresolved-target rows fold into
+        the object's head (they are its evidence) while the annotation
+        folds only resolved ones — the two disagree only where the link
+        itself is unproven, which `resolve_targets` closes later feeding
+        the SAME projection."""
+        refs = {h.object_ref for h in heads if h.kind == "reaction"}
+        if not refs:
+            return heads
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(
+                _rx_union_stmt(scope, frozenset(refs)))).all()
+        typed, tmeta, legacy, lmeta, _ = _split_rx_rows(rows)
+        return [
+            _rx_fold(h, typed, tmeta, legacy, lmeta)
+            if h.kind == "reaction" else h for h in heads
+        ]
+
     async def current(
         self, *, scope: SourceScope, kind: str, object_ref: str,
     ) -> ObservationHead | None:
@@ -259,7 +488,10 @@ class SqlObservationStore:
                 sa.select(ST).where(_st_scope_where(scope), ST.c.kind == kind,
                                     ST.c.object_ref == object_ref))
             ).mappings().one_or_none()
-        return None if row is None else _row_to_head(row)
+        head = None if row is None else _row_to_head(row)
+        if head is not None and kind == "reaction":
+            head = (await self._union_reactions(scope, [head]))[0]
+        return head
 
     async def heads(
         self, *, scope: SourceScope, kind: str | None = None,
@@ -277,7 +509,8 @@ class SqlObservationStore:
                 sa.select(ST).where(where)
                 .order_by(ST.c.updated_at.desc(), ST.c.id)
                 .limit(max(limit, 0)))).mappings().all()
-        return [_row_to_head(r) for r in rows]
+        return await self._union_reactions(
+            scope, [_row_to_head(r) for r in rows])
 
     async def head_for_handle(
         self, *, scope: SourceScope, handle: str,
@@ -291,7 +524,10 @@ class SqlObservationStore:
                     _st_scope_where(scope), ST.c.kind == kind,
                     sa.literal(digest) == _HANDLE_DIGEST))
             ).mappings().one_or_none()
-        return None if row is None else _row_to_head(row)
+        head = None if row is None else _row_to_head(row)
+        if head is not None and kind == "reaction":
+            head = (await self._union_reactions(scope, [head]))[0]
+        return head
 
     async def history(
         self, *, scope: SourceScope, kind: str, object_ref: str,
@@ -312,16 +548,58 @@ class SqlObservationStore:
         """Bounded as-of: at most `limit` retained rows fold. `more` says the
         history continues past the bound — the head then folds an EARLIER
         point than `through_id` and the caller must treat it as partial,
-        never as the requested state."""
+        never as the requested state.
+
+        For `kind="reaction"` the state is the same union `current` and the
+        target annotation read — typed rows at or before `through_id` plus
+        legacy deltas whose durable commit clock proves they preceded that
+        row's own commit. A bound naming no row cannot order legacy events:
+        they are excluded and the fold flags `unordered`, never guessed."""
+        if kind == "reaction":
+            async with self._engine.connect() as conn:
+                rows = (await conn.execute(_rx_union_stmt(
+                    scope, frozenset({object_ref}), through_id=through_id,
+                    per_object=max(limit, 0) + 1))).all()
+            typed, tmeta, legacy, lmeta, bound = _split_rx_rows(rows)
+            all_rows = sorted(
+                (r for v in typed.values() for r in v), key=lambda r: r.id)
+            more = len(all_rows) > max(limit, 0)
+            kept = all_rows[: max(limit, 0)]
+            ttotal = sum(t[0] for t in tmeta.values())
+            tobs = max([t[1] for t in tmeta.values()] or [0])
+            mids = {r.target_message_id for r in kept
+                    if r.target_message_id}
+            l_rows = [r for m in mids for r in legacy.get(m, ())]
+            recorded = ttotal + sum(
+                lmeta.get(m, (0, 0, 0))[0] for m in mids)
+            observed = max(
+                [tobs] + [lmeta.get(m, (0, 0, 0))[1] for m in mids])
+            partial = more or len(all_rows) < ttotal or any(
+                len(legacy.get(m, ())) < lmeta.get(m, (0, 0, 0))[2]
+                for m in mids)
+            tr = fold_target_reactions(
+                l_rows, kept, recorded=recorded,
+                observed_at=observed or None, partial=partial,
+                gap=bound == 0 and bool(mids))
+            if tr is None:
+                return None, more
+            account_key = thread = ""
+            if kept:
+                last = kept[-1].observation.scope
+                account_key, thread = last.account_key, last.thread
+            return union_head(
+                tr, object_ref=object_ref, account_key=account_key,
+                thread=thread), more
         async with self._engine.connect() as conn:
-            rows = (await conn.execute(
+            kept_rows = (await conn.execute(
                 sa.select(OBS).where(
                     _scope_where(scope), OBS.c.kind == kind,
                     OBS.c.object_ref == object_ref, OBS.c.id <= through_id)
-                .order_by(OBS.c.id).limit(max(limit, 0) + 1))).mappings().all()
-        more = len(rows) > max(limit, 0)
+                .order_by(OBS.c.id).limit(
+                    max(limit, 0) + 1))).mappings().all()
+        more = len(kept_rows) > max(limit, 0)
         head = rebuild_head(
-            [_row_to_stored(r) for r in rows[: max(limit, 0)]],
+            [_row_to_stored(r) for r in kept_rows[: max(limit, 0)]],
             kind=kind, object_ref=object_ref)
         return head, more
 

@@ -21,6 +21,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.bounds import cut, over_fetch
@@ -31,13 +32,18 @@ from nora.domain.models import (
     EditedMessage,
     EditTarget,
     NormalizedMessage,
+    ReactionRow,
     RowEdit,
     RowReactions,
     TranscriptRow,
     UnattributedRow,
     mentions_json,
     parse_mentions_json,
-    states_from_standing,
+)
+from nora.domain.observations import (
+    StoredObservation,
+    fold_target_reactions,
+    to_row_reactions,
 )
 from nora.domain.ports import RoomActivity
 from nora.infra.sql import memory_index
@@ -47,6 +53,7 @@ from nora.infra.sql.schema import (
     MESSAGE_EDIT,
     MESSAGE_REACTION,
     MESSAGES,
+    PLATFORM_OBSERVATION,
     TAG_TRACE,
 )
 
@@ -142,26 +149,42 @@ async def reaction_states(
 ) -> dict[int, RowReactions]:
     """The reactions recorded against these messages, folded to each
     target's current state — one bounded statement for the whole window,
-    never a per-row query. `idx_message_reaction_message` serves the `IN`.
+    never a per-row query. `idx_message_reaction_message` serves the
+    legacy `IN`, `idx_platform_observation_target` the typed one.
+
+    A target's recorded reactions now live on TWO append-only tables —
+    per-actor `message_reaction` deltas and typed `platform_observation`
+    reaction rows (clear/clear-emoji/snapshot, plus typed deltas where a
+    platform emits them) — so the read carries both and
+    `fold_target_reactions` produces the one answer `RowReactions`
+    annotates. The merge orders each latest legacy delta against typed
+    rows by DURABLE COMMIT CLOCK — `created_at`/`recorded_at`, the same
+    database's stamps, serialized by the ingest lock — never a source
+    clock and never a fabricated cross-store revision; a pair it cannot
+    compare comes back flagged `unordered`, not guessed.
 
     The reduction runs WHERE THE ROWS ARE: `latest` is the database's
     distinct-on of the same fold `record_query` established (newest by
-    arrival `id` per target+actor+emoji, `removed` wins), so the transition
-    history — one hot target can hold thousands of rows — is never
-    transferred. `meta` and `expected` are grouped CTEs bounded by the
-    TARGET count; the standing rows themselves are capped at
-    `REACTION_STATES_MAX`, and a target the cap reached is returned
-    `partial`: its `recorded`/`observed_at` are real, its counts are withheld
-    rather than folded from a truncated set. `states_from_standing` is the
-    one assembly `fold_reactions` and `FakeRecordStore` share, so a prompt
-    line, a tool result and a Record read cannot disagree about a target.
-    All three inputs share the statement's snapshot, so a concurrent append
-    cannot pair newer counts with older provenance or invalidate the cap's
-    completeness check. A target with no recorded rows stays absent.
+    arrival `id` per target+actor+emoji, `removed` wins), so the legacy
+    transition history — one hot target can hold thousands of rows — is
+    never transferred. Typed rows are ranked per target and capped the
+    same way. `meta`/`expected` are grouped CTEs bounded by the TARGET
+    count; the standing rows themselves are capped at
+    `REACTION_STATES_MAX`, and a target a cap reached is returned
+    `partial`: its `recorded`/`observed_at` are real, its counts are
+    withheld rather than folded from a truncated set. All inputs share
+    the statement's snapshot, so a concurrent append cannot pair newer
+    counts with older provenance or invalidate a cap's completeness
+    check. A target with no recorded rows — on either table — stays
+    absent, so `reactions=None` keeps meaning "nothing recorded".
     """
     if not message_ids:
         return {}
+    obs = PLATFORM_OBSERVATION
     in_targets = MESSAGE_REACTION.c.message_id.in_(message_ids)
+    in_obs = sa.and_(
+        obs.c.kind == "reaction",
+        obs.c.target_message_id.in_(message_ids))
     meta = (
         sa.select(
             MESSAGE_REACTION.c.message_id,
@@ -171,8 +194,16 @@ async def reaction_states(
     ).cte("reaction_meta")
     latest = (
         sa.select(
-            MESSAGE_REACTION.c.message_id, MESSAGE_REACTION.c.sender_id,
-            MESSAGE_REACTION.c.emoji, MESSAGE_REACTION.c.removed,
+            MESSAGE_REACTION.c.message_id, MESSAGE_REACTION.c.id,
+            MESSAGE_REACTION.c.sender_id, MESSAGE_REACTION.c.emoji,
+            MESSAGE_REACTION.c.removed, MESSAGE_REACTION.c.ts,
+            sa.cast(
+                sa.extract(
+                    "epoch",
+                    sa.cast(MESSAGE_REACTION.c.created_at,
+                            sa.DateTime(timezone=True))) * 1_000_000,
+                sa.BigInteger,
+            ).label("at"),
         )
         .where(in_targets)
         .distinct(
@@ -196,30 +227,113 @@ async def reaction_states(
         .order_by(latest.c.message_id, latest.c.sender_id, latest.c.emoji)
         .limit(REACTION_STATES_MAX)
     ).cte("bounded_reactions")
-    rows = (await conn.execute(
+    # The typed side: per-target totals for coverage, the bounded rows for
+    # the fold — the same cap, the same "reduce where the rows are" rule.
+    obs_meta = (
         sa.select(
-            meta.c.message_id, meta.c.recorded, meta.c.observed_at,
-            expected.c.expected, bounded.c.emoji, bounded.c.removed,
+            obs.c.target_message_id.label("mid"),
+            sa.func.count().label("recorded"),
+            sa.func.max(
+                sa.func.coalesce(obs.c.occurred_ms, obs.c.received_ms)
+            ).label("observed_at"),
+        ).where(in_obs).group_by(obs.c.target_message_id)
+    ).cte("obs_meta")
+    obs_ranked = (
+        sa.select(
+            obs,
+            sa.func.row_number().over(
+                partition_by=obs.c.target_message_id,
+                order_by=obs.c.id).label("rn"),
+        ).where(in_obs)
+    ).cte("obs_ranked")
+    obs_bounded = (
+        sa.select(obs_ranked).where(obs_ranked.c.rn <= REACTION_STATES_MAX)
+    ).cte("obs_bounded")
+    nul = sa.literal(None)
+    union = sa.union_all(
+        # Per-target union meta: real totals, never the capped window's.
+        sa.select(
+            sa.literal("m").label("tag"),
+            sa.func.coalesce(meta.c.message_id, obs_meta.c.mid).label("mid"),
+            (sa.func.coalesce(meta.c.recorded, 0)
+             + sa.func.coalesce(obs_meta.c.recorded, 0)).label("a"),
+            sa.func.greatest(
+                sa.func.coalesce(meta.c.observed_at, 0),
+                sa.func.coalesce(obs_meta.c.observed_at, 0)).label("b"),
+            sa.func.coalesce(expected.c.expected, 0).label("c"),
+            sa.func.coalesce(obs_meta.c.recorded, 0).label("d"),
+            nul.label("e"), nul.label("f"), nul.label("j"),
         ).select_from(
-            meta.join(expected, meta.c.message_id == expected.c.message_id)
-            .outerjoin(bounded, meta.c.message_id == bounded.c.message_id)
-        ).order_by(meta.c.message_id, bounded.c.sender_id, bounded.c.emoji)
-    )).all()
-    recorded = {int(r.message_id): int(r.recorded) for r in rows}
-    observed = {int(r.message_id): int(r.observed_at) for r in rows}
-    wanted = {int(r.message_id): int(r.expected) for r in rows}
-    standing = [r for r in rows if r.emoji is not None]
-    received: dict[int, int] = {}
-    for r in standing:
-        mid = int(r.message_id)
-        received[mid] = received.get(mid, 0) + 1
-    partial = frozenset(
-        m for m, want in wanted.items() if received.get(m, 0) < want
+            meta.outerjoin(
+                expected, meta.c.message_id == expected.c.message_id)
+            .outerjoin(
+                obs_meta, meta.c.message_id == obs_meta.c.mid, full=True)
+        ),
+        # Bounded latest-per-key legacy tuples, each carrying its commit
+        # clock for the merge.
+        sa.select(
+            sa.literal("s"), bounded.c.message_id,
+            bounded.c.id, bounded.c.ts, bounded.c.at,
+            bounded.c.removed, bounded.c.sender_id, bounded.c.emoji, nul,
+        ),
+        # Bounded typed rows as JSON — the whole row the fold needs.
+        sa.select(
+            sa.literal("t"), obs_bounded.c.target_message_id,
+            obs_bounded.c.id,
+            sa.cast(
+                sa.extract("epoch", obs_bounded.c.recorded_at) * 1_000_000,
+                sa.BigInteger),
+            nul, nul, nul, nul,
+            sa.type_coerce(sa.func.to_jsonb(obs_bounded), pg.JSONB)),
     )
-    return states_from_standing(
-        ((int(r.message_id), str(r.emoji), bool(r.removed)) for r in standing),
-        recorded=recorded, observed=observed, partial=partial,
-    )
+    rows = (await conn.execute(union)).all()
+    meta_by: dict[int, tuple[int, int, int, int]] = {}
+    standing: dict[int, list[ReactionRow]] = {}
+    typed: dict[int, list[StoredObservation]] = {}
+    skipped: dict[int, int] = {}
+    for r in rows:
+        mid = int(r.mid)
+        if r.tag == "m":
+            meta_by[mid] = (int(r.a), int(r.b), int(r.c), int(r.d))
+        elif r.tag == "s":
+            standing.setdefault(mid, []).append(ReactionRow(
+                id=int(r.a), message_id=mid, sender_id=str(r.e),
+                emoji=str(r.f), removed=bool(r.d), ts=int(r.b),
+                created_at=int(r.c)))
+        elif r.j is not None:
+            stored = _stored_from_json(
+                r.j if isinstance(r.j, dict) else json.loads(r.j))
+            if stored is None:
+                skipped[mid] = skipped.get(mid, 0) + 1
+            else:
+                typed.setdefault(mid, []).append(dataclasses.replace(
+                    stored, recorded_at=int(r.b)))
+    out: dict[int, RowReactions] = {}
+    for mid, (recorded, observed, expected_n, typed_total) in meta_by.items():
+        partial = (
+            len(standing.get(mid, ())) < expected_n
+            or len(typed.get(mid, ())) < typed_total
+            or skipped.get(mid, 0) > 0
+        )
+        tr = fold_target_reactions(
+            standing.get(mid, ()), typed.get(mid, ()),
+            recorded=recorded, observed_at=observed or None,
+            partial=partial)
+        if tr is not None:
+            out[mid] = to_row_reactions(tr)
+    return out
+
+
+def _stored_from_json(d: dict[str, Any]) -> StoredObservation | None:
+    """One `platform_observation` row back as a `StoredObservation` — the
+    `to_jsonb` form the union statement emits. An unparsable row is
+    skipped rather than misread, and the caller flags the target `partial`
+    instead of pretending the row was never there."""
+    from nora.infra.sql.observations import _row_to_stored
+    try:
+        return _row_to_stored(d)
+    except (ValueError, TypeError, KeyError):
+        return None
 
 
 def with_reactions(

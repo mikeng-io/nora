@@ -19,8 +19,10 @@ defaults are not.
 - `created_at`'s server default is `sa.text("now()::text")`. The column is
   `TEXT`, and a bare `now()` is `timestamptz` with no implicit cast into a
   `text` column (a `CREATE TABLE` type error). The format is harmless because
-  `created_at` is **write-only**: it is on no `TranscriptRow`/`UnattributedRow`,
-  is never `SELECT`ed, and ordering is on `ts`/`id` only.
+  it is only ever read CAST BACK to `timestamptz` — `reaction_states` and
+  `infra/sql/observations.py`'s union read order `message_reaction` against
+  `platform_observation.recorded_at` on that durable commit clock
+  (`fold_target_reactions`); it is still on no `TranscriptRow`/`UnattributedRow`.
 - `idx_messages_conv_ts` is `(conversation_id, ts DESC)`, the descending order
   declared with `sa.text("ts DESC")`. Autogenerate cannot see the per-column
   ordering (it compares the reflected plain column and reports permanent phantom
@@ -5638,6 +5640,13 @@ IDX_PLATFORM_OBSERVATION_UNRESOLVED = sa.Index(
     PLATFORM_OBSERVATION.c.platform, PLATFORM_OBSERVATION.c.account_key,
     PLATFORM_OBSERVATION.c.conversation_id, PLATFORM_OBSERVATION.c.target_key,
     postgresql_where=sa.text("target_message_id IS NULL"),
+)
+
+# The transcript-annotation union read: reaction rows against a bounded
+# `target_message_id IN (...)` window (`audit.reaction_states`).
+IDX_PLATFORM_OBSERVATION_TARGET = sa.Index(
+    "idx_platform_observation_target",
+    PLATFORM_OBSERVATION.c.kind, PLATFORM_OBSERVATION.c.target_message_id,
 )
 
 PLATFORM_OBJECT_STATE = sa.Table(

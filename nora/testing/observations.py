@@ -12,23 +12,28 @@ the transaction's all-or-nothing shape.
 from __future__ import annotations
 
 import inspect
+import itertools
 from typing import Any
 
+from nora.domain.models import ReactionRow
 from nora.domain.observations import (
     Observation,
     ObservationHead,
     SourceScope,
     StoredObservation,
+    _commit_us,
     fold_observation,
+    fold_target_reactions,
     object_handle,
     parse_handle,
     rebuild_head,
     target_key,
+    union_head,
 )
 
 
 class FakeObservationStore:
-    def __init__(self) -> None:
+    def __init__(self, records: Any = None) -> None:
         self._rows: list[StoredObservation] = []
         self._next_id = 1
         self._digests: set[tuple[str, str, str]] = set()
@@ -37,6 +42,14 @@ class FakeObservationStore:
         # newest append that folded into each head — `heads` orders on it
         # exactly as the SQL store orders on `updated_at`.
         self._touched: dict[tuple[str, str, str, str, str, str], int] = {}
+        self._records = records
+        # The durable commit clock `recorded_at` stamps: when a
+        # `FakeRecordStore` is wired BOTH tables stamp from ONE counter —
+        # the fake's mirror of both stamps being the same database's clock
+        # under the ingest lock, so a union fold sees genuine commit order
+        # rather than a fabricated one. A lone store stamps its own.
+        self._clock = (records._clock if records is not None
+                       else itertools.count(1))
 
     @staticmethod
     def _object_key(scope: SourceScope, kind: str, object_ref: str):
@@ -67,7 +80,8 @@ class FakeObservationStore:
             return None  # replay of an admitted source event: no effect
         row = StoredObservation(
             id=self._next_id, event_id=event_id, source_digest=source_digest,
-            observation=obs, target_message_id=target_message_id)
+            observation=obs, target_message_id=target_message_id,
+            recorded_at=next(self._clock))
         self._next_id += 1
         if tx_hook is not None:
             awaited = tx_hook(None, row.id)
@@ -80,16 +94,64 @@ class FakeObservationStore:
         self._touched[key] = row.id
         return row.id
 
+    def _union_rows(
+        self, scope: SourceScope, h: ObservationHead,
+    ) -> list[StoredObservation]:
+        """The stored reaction rows of THIS object's own group — the head's
+        `(account_key, thread)` keeps a room-wide read's same-named
+        objects apart, matching the SQL union's per-object partition."""
+        return [
+            r for r in self._rows
+            if r.observation.object_kind == "reaction"
+            and r.observation.object_ref == h.object_ref
+            and r.observation.scope.account_key == h.account_key
+            and r.observation.scope.thread == h.thread
+            and self._in_scope(r.observation.scope, scope)
+        ]
+
+    def _legacy(self, mids: set[int]) -> list[ReactionRow]:
+        """The wired record store's `message_reaction` rows for these
+        resolved targets — the legacy half the union fold needs."""
+        if self._records is None:
+            return []
+        return [
+            ReactionRow(
+                id=int(d["id"]), message_id=int(d["message_id"]),
+                sender_id=str(d["sender_id"]), emoji=str(d["emoji"]),
+                removed=bool(d["removed"]), ts=int(d["ts"]),
+                created_at=d.get("created_at"))
+            for d in self._records.reactions
+            if int(d["message_id"]) in mids
+        ]
+
+    def _union_head(self, scope: SourceScope, h: ObservationHead) -> ObservationHead:
+        """A `reaction` head re-folded across BOTH stores — the fake's
+        mirror of `SqlObservationStore._union_reactions`, so `current`/
+        `heads`/`head_for_handle` serve the same state the fake's
+        transcript annotation does."""
+        if h.kind != "reaction":
+            return h
+        rows = self._union_rows(scope, h)
+        mids = {r.target_message_id for r in rows if r.target_message_id}
+        tr = fold_target_reactions(self._legacy(mids), rows)
+        if tr is None:
+            return h
+        return union_head(tr, object_ref=h.object_ref,
+                          account_key=h.account_key, thread=h.thread)
+
     async def current(
         self, *, scope: SourceScope, kind: str, object_ref: str,
     ) -> ObservationHead | None:
+        head: ObservationHead | None = None
         if scope.account_key:
-            return self._heads.get(self._object_key(scope, kind, object_ref))
-        for (p, _a, c, t, k, r), h in self._heads.items():
-            if (p, c, t, k, r) == (scope.platform, scope.conversation_id,
-                                   scope.thread, kind, object_ref):
-                return h
-        return None
+            head = self._heads.get(self._object_key(scope, kind, object_ref))
+        else:
+            for (p, _a, c, t, k, r), h in self._heads.items():
+                if (p, c, t, k, r) == (scope.platform, scope.conversation_id,
+                                       scope.thread, kind, object_ref):
+                    head = h
+                    break
+        return None if head is None else self._union_head(scope, head)
 
     async def heads(
         self, *, scope: SourceScope, kind: str | None = None,
@@ -104,7 +166,7 @@ class FakeObservationStore:
         # `updated_at DESC` — most-recently-touched first, dict order the
         # tie-break, matching the SQL store's page.
         out.sort(key=lambda kh: self._touched.get(kh[0], 0), reverse=True)
-        return [h for _key, h in out][: max(limit, 0)]
+        return [self._union_head(scope, h) for _key, h in out][: max(limit, 0)]
 
     async def head_for_handle(
         self, *, scope: SourceScope, handle: str,
@@ -119,7 +181,7 @@ class FakeObservationStore:
                     and k == kind
                     and object_handle(k, h.object_ref, account_key=a,
                                       thread=t) == handle):
-                return h
+                return self._union_head(scope, h)
         return None
 
     async def history(
@@ -136,6 +198,41 @@ class FakeObservationStore:
         self, *, scope: SourceScope, kind: str, object_ref: str,
         through_id: int, limit: int = 1000,
     ) -> tuple[ObservationHead | None, bool]:
+        if kind == "reaction":
+            rows = [r for r in self._rows
+                    if r.observation.object_kind == "reaction"
+                    and r.observation.object_ref == object_ref
+                    and self._in_scope(r.observation.scope, scope)
+                    and r.id <= through_id]
+            bound_row = next(
+                (r for r in self._rows if r.id == through_id), None)
+            bound_at = (None if bound_row is None
+                        else _commit_us(bound_row.recorded_at))
+            more = len(rows) > max(limit, 0)
+            kept = rows[: max(limit, 0)]
+            mids = {r.target_message_id for r in kept
+                    if r.target_message_id}
+            legacy_all = self._legacy(mids)
+            if bound_at is None:
+                legacy = []
+                gap = bool(mids)
+            else:
+                legacy = [
+                    r for r in legacy_all
+                    if (at := _commit_us(r.created_at)) is not None
+                    and at <= bound_at]
+                gap = len(legacy) < len(legacy_all)
+            tr = fold_target_reactions(
+                legacy, kept, partial=more, gap=gap)
+            if tr is None:
+                return None, more
+            account_key = thread = ""
+            if kept:
+                last = kept[-1].observation.scope
+                account_key, thread = last.account_key, last.thread
+            return union_head(
+                tr, object_ref=object_ref, account_key=account_key,
+                thread=thread), more
         rows = [r for r in self._scoped_rows(scope)
                 if r.observation.object_kind == kind
                 and r.observation.object_ref == object_ref
@@ -175,7 +272,8 @@ class FakeObservationStore:
                 r = StoredObservation(
                     id=r.id, event_id=r.event_id,
                     source_digest=r.source_digest, observation=o,
-                    target_message_id=message_id)
+                    target_message_id=message_id,
+                    recorded_at=r.recorded_at)
                 n += 1
             rows.append(r)
         self._rows = rows
