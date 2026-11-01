@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -578,6 +578,152 @@ async def test_projection_outage_keeps_created_row_and_retry_relinks_same_associ
     assert answers[-1]["note_id"] == next(iter(stores.notes.notes))
     assert len(stores.notes.notes) == 1
     assert any(r.src == ("note", answers[-1]["note_id"]) and r.dst == event.key
+               for r in memory.graph.relations.values())
+
+
+async def test_revise_without_associations_keeps_the_semantic_link():
+    from nora.domain.memory_graph import Walk
+    memory = wake_memory()
+    stores = Stores()
+    memory.records.load = _register_load(stores)
+    event = _seed_event(memory, "u:event:generated-gala")
+    answers = []
+    note_id = None
+
+    async def behave(by, tools):
+        nonlocal note_id
+        await by["memory_propose"](**_about_proposal(event.id))
+        created = await by["note_create"](
+            body=GOOD_BODY, associations=[["event", event.id]], **NOTE)
+        note_id = created["note_id"]
+        got = await stores.notes.read(unit="u", note_id=note_id)
+        answers.append(await by["note_revise"](
+            note_id=note_id, parent_revision_id=got[0].head_revision_id,
+            body=GOOD_BODY))
+
+    await session(behave, stores=stores, runner_kwargs={"memory": memory})
+    assert answers[0]["status"] == "ok"
+    seen = await memory.graph.walk(
+        (("note", note_id),),
+        Walk(unit="u", persons=frozenset({"p_ada"}), depth=1,
+             relations=("concerns",), valid_at=datetime.fromtimestamp(
+                 NOW / 1000 + 3600, UTC)))
+    assert [e.relation.dst for e in seen.relations] == [event.key]
+
+
+async def test_reselecting_a_closed_association_relinks_with_a_new_relation():
+    from nora.domain.memory_graph import Walk
+    memory = wake_memory()
+    stores = Stores()
+    memory.records.load = _register_load(stores)
+    first = _seed_event(memory, "u:event:generated-gala")
+    second = _seed_event(memory, "u:event:generated-regatta")
+    answers = []
+    note_id = None
+
+    async def behave(by, tools):
+        nonlocal note_id
+        await by["memory_propose"](**_about_proposal(first.id, "r1"))
+        await by["memory_propose"](**_about_proposal(second.id, "r2"))
+        created = await by["note_create"](
+            body=GOOD_BODY, associations=[["event", first.id]], **NOTE)
+        note_id = created["note_id"]
+        for assoc in (second, first):
+            got = await stores.notes.read(unit="u", note_id=note_id)
+            answers.append(await by["note_revise"](
+                note_id=note_id, parent_revision_id=got[0].head_revision_id,
+                body=GOOD_BODY, associations=[["event", assoc.id]]))
+
+    await session(behave, stores=stores, runner_kwargs={"memory": memory})
+    assert [a["status"] for a in answers] == ["ok", "ok"]
+    seen = await memory.graph.walk(
+        (("note", note_id),),
+        Walk(unit="u", persons=frozenset({"p_ada"}), depth=1,
+             relations=("concerns",), valid_at=datetime.fromtimestamp(
+                 NOW / 1000 + 3600, UTC)))
+    assert [e.relation.dst for e in seen.relations] == [first.key]
+    ids = {r.id for r in memory.graph.relations.values()
+           if r.src == ("note", note_id) and r.dst == first.key}
+    assert len(ids) == 2  # the re-added link is a new generation, not a duplicate
+
+
+async def test_revise_commit_then_projection_crash_retries_and_relinks():
+    from nora.app import register_graph
+    memory = wake_memory()
+    stores = Stores()
+    memory.records.load = _register_load(stores)
+    first = _seed_event(memory, "u:event:generated-gala")
+    second = _seed_event(memory, "u:event:generated-regatta")
+    answers = []
+    note_id = None
+    head = None
+
+    async def create_behave(by, tools):
+        nonlocal note_id, head
+        await by["memory_propose"](**_about_proposal(first.id, "r1"))
+        await by["memory_propose"](**_about_proposal(second.id, "r2"))
+        created = await by["note_create"](
+            body=GOOD_BODY, associations=[["event", first.id]], **NOTE)
+        note_id = created["note_id"]
+        head = (await stores.notes.read(unit="u", note_id=note_id))[0].head_revision_id
+
+    async def revise_behave(by, tools):
+        await by["memory_propose"](**_about_proposal(first.id, "r1"))
+        await by["memory_propose"](**_about_proposal(second.id, "r2"))
+        answers.append(await by["note_revise"](
+            note_id=note_id, parent_revision_id=head, body=GOOD_BODY,
+            associations=[["event", second.id]]))
+
+    real_project = register_graph.RegisterGraphLinks.project
+
+    async def outage(self, item, session_id, *, selected=()):
+        raise RuntimeError("generated projection outage")
+
+    await session(create_behave, stores=stores, runner_kwargs={"memory": memory})
+    register_graph.RegisterGraphLinks.project = outage
+    await session(revise_behave, stores=stores, runner_kwargs={"memory": memory})
+    register_graph.RegisterGraphLinks.project = real_project
+    assert answers[-1]["status"] == "unavailable"
+    # The receipt committed with the revision: the identical retry replays it
+    # rather than meeting a stale_base on the row it already wrote.
+    await session(revise_behave, stores=stores, runner_kwargs={"memory": memory})
+    assert answers[-1]["status"] == "ok"
+    assert [r.dst for r in memory.graph.relations.values()
+            if r.src == ("note", note_id) and r.valid_to is None] == [second.key]
+
+
+async def test_association_shown_only_by_a_memory_search_is_admissible():
+    from strands.types._events import ToolResultEvent
+    memory = wake_memory()
+    stores = Stores()
+    memory.records.load = _register_load(stores)
+    event = _seed_event(memory, "u:event:search-gala")
+    answers = []
+
+    class SearchTool:
+        tool_name = "memory_search"
+        tool_type = "python"
+        tool_spec: ClassVar = {"name": "memory_search", "description": "generated search",
+                     "inputSchema": {"json": {"type": "object", "properties": {}}}}
+
+        async def stream(self, tool_use, invocation_state, **kwargs):
+            yield ToolResultEvent({"toolUseId": tool_use["toolUseId"],
+                "content": [{"json": {"status": "ok",
+                    "text": "event:u:event:search-gala Generated gala"}}]})
+
+    async def behave(by, tools):
+        async for _ in by["memory_search"].stream({"toolUseId": "t1", "input": {}}, {}):
+            pass
+        await by["memory_propose"](**proposal())
+        answers.append(await by["note_create"](
+            body=GOOD_BODY, associations=[["event", event.id]], **NOTE))
+
+    await session(behave, stores=stores, runner_kwargs={
+        "memory": memory,
+        "read_tools_for": lambda unit, rooms: [SearchTool()],
+        "read_only_tools": frozenset({"memory_search"})})
+    assert answers[0]["status"] == "ok"
+    assert any(r.src[0] == "note" and r.dst == event.key
                for r in memory.graph.relations.values())
 
 

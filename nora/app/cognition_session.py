@@ -1459,7 +1459,8 @@ class CognitionSessionRunner:
             lookups = LookupState(state.graph_fetched, unit, state.session_id,
                 self._memory.records, self._metrics, self._memory.private_names,
                 persons=tuple({p for v in state.memory_items.values()
-                               for source in v.sources for p in source.persons}))
+                               for source in v.sources for p in source.persons}),
+                shown_keys=state.shown_keys)
         # The reads that hand out citable rows are watched: what they return is
         # what a note may cite besides the agenda's own rows.
         read_tools = watch_reads(self._guarded_read_tools(unit, rooms), state.fetched, keys)
@@ -1755,6 +1756,8 @@ class CognitionSessionRunner:
                     parent_revision_id=parent_revision_id,
                     established_by=established_by, now_ms=self._now_ms(),
                     evidence_room=_room_key(Room(platform, conversation_id)),
+                    receipt=_act_receipt(
+                        lambda row: {"status": "ok", "revision_id": row.id}),
                 )
             except StaleNoteHeadError:
                 return _STALE_NOTE
@@ -2092,6 +2095,8 @@ class CognitionSessionRunner:
                         title=new_title, body=parsed.text, citations=citations, mode=mode,
                         state="kept", established_by=established_by, model=self._model_id,
                         now_ms=self._now_ms(),
+                        receipt=_act_receipt(
+                            lambda row: {"status": "ok", "revision_id": row.id}),
                     )
                 except StaleMemoError:
                     return _refused(
@@ -2367,6 +2372,9 @@ class CognitionSessionRunner:
                 unit_id=unit, base_revision_id=base,
                 message_ids=ids, reasoning=reasoning, confidence=confidence,
                 field_meta=meta,
+                receipt=_act_receipt(
+                    lambda row: {"status": "ok", "id": str(row.id),
+                                 "head_revision_id": str(row.head_revision_id)}),
             ), platform, conversation_id, item)
 
         async def event_set_status(
@@ -2743,16 +2751,24 @@ class CognitionSessionRunner:
 
             return write
 
-        receipted = ("note_create", "memo_create", "event_propose")
-        linked = (*receipted, "note_revise", "memo_revise", "event_revise")
+        receipted = linked = (
+            "note_create", "memo_create", "event_propose",
+            "note_revise", "memo_revise", "event_revise",
+        )
         #: The revise verbs' row id lives in their ARGUMENTS, not their result.
         row_arg = {"note_revise": "note_id", "memo_revise": "memo_id",
                    "event_revise": "event_id"}
 
-        def _assoc_targets(bound: Mapping[str, Any]) -> list[Any]:
+        def _assoc_targets(bound: Mapping[str, Any]) -> Any:
+            """The named associations, or None when `associations` was left
+            out — a revise that does not name them leaves the row's links
+            untouched; a create always projects its own links."""
+            raw = bound.get("associations")
+            if raw is None:
+                return None
             return [
                 (a[0], a[1])
-                for a in bound.get("associations") or ()
+                for a in raw
                 if isinstance(a, (list, tuple)) and len(a) == 2
             ]
 
@@ -2776,10 +2792,17 @@ class CognitionSessionRunner:
                     key = await self._memory.act_key(state, verb.__name__, bound)
                     existing = await self._memory.records.act_result(key, state.session_id)
                     if existing is not None:
-                        await self._memory.link_result(state,
-                            {**existing, **({"event_id": existing["id"]}
-                                if verb.__name__ == "event_propose" else {})},
-                            targets=_assoc_targets(bound))
+                        targets = _assoc_targets(bound)
+                        if verb.__name__ == "event_propose":
+                            merged = {**existing, "event_id": existing["id"]}
+                        elif verb.__name__ in row_arg:
+                            merged = {**existing,
+                                      row_arg[verb.__name__]: bound[row_arg[verb.__name__]]}
+                        else:
+                            merged = existing
+                        if targets is not None or verb.__name__ not in row_arg:
+                            await self._memory.link_result(
+                                state, merged, targets=targets or ())
                         return dict(existing)
                 state.acted = True
                 unstop()
@@ -2796,8 +2819,10 @@ class CognitionSessionRunner:
                                   row_arg[verb.__name__]: bound[row_arg[verb.__name__]]}
                     elif verb.__name__ == "event_propose":
                         result = {**result, "event_id": result["id"]}
-                    await self._memory.link_result(
-                        state, result, targets=_assoc_targets(bound))
+                    targets = _assoc_targets(bound)
+                    if targets is not None or verb.__name__ not in row_arg:
+                        await self._memory.link_result(
+                            state, result, targets=targets or ())
                 return result
             return call
 

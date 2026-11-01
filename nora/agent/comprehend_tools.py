@@ -18,7 +18,7 @@ from nora.agent.dream_screen import text_offence
 from nora.agent.egress import _canonical
 from nora.agent.fetch_watch import GraphFetched, _result_of
 from nora.domain.comprehend import EGRESS_REASONS
-from nora.domain.memory_graph import Source
+from nora.domain.memory_graph import ENTITY_KINDS, ENTRY, Source
 
 READ_NAMES = frozenset(
     {
@@ -60,6 +60,19 @@ def egress_reason(text: str, private_names: Sequence[str]) -> str | None:
     return None
 
 
+#: A graph node key as a read result renders it — `kind:id` in preview text,
+#: `"kind","id"` in a serialized key. A key the session was shown may be named
+#: as a Register `associations` target.
+_SHOWN_TEXT = re.compile(
+    r"(?<![:\w])(" + "|".join((*ENTITY_KINDS, *ENTRY)) + r"):(\S+?)[\s,\]\}\"']")
+_SHOWN_PAIR = re.compile(
+    r'"(' + "|".join((*ENTITY_KINDS, *ENTRY)) + r')"\s*,\s*"([^"]+)"')
+
+
+def _shown_keys(text: str) -> set[tuple[str, str]]:
+    return set(_SHOWN_TEXT.findall(text)) | set(_SHOWN_PAIR.findall(text))
+
+
 @dataclass
 class LookupState:
     fetched: GraphFetched
@@ -69,6 +82,7 @@ class LookupState:
     metrics: Any
     private_names: tuple[str, ...]
     persons: tuple[str, ...] = ()
+    shown_keys: set = field(default_factory=set)
     limits: dict[str, int] = field(default_factory=lambda: {"web_search": 3, "web_fetch": 3})
     used: dict[str, int] = field(default_factory=dict)
 
@@ -133,6 +147,8 @@ class ComprehendRead(AgentTool):
             if name in ("memory_search", "memory_read"):
                 # A graph preview includes notebook judgements. It is not a new
                 # Record source, and cannot launder those judgements into evidence.
+                if isinstance(answer, dict) and answer.get("status") == "ok":
+                    state.shown_keys.update(_shown_keys(json.dumps(answer)))
                 yield event
                 continue
             if isinstance(answer, dict) and answer.get("status") == "ok":

@@ -316,7 +316,7 @@ class SqlGatheringStore:
 
     async def update(
         self, event: Gathering, *, base_revision_id: UUID | None = None,
-        evidence: EventEvidence | None = None,
+        evidence: EventEvidence | None = None, receipt: Any = None,
     ) -> Gathering:
         row = normalise_gathering(event)
         async with self._engine.begin() as conn:
@@ -352,7 +352,10 @@ class SqlGatheringStore:
                 sa.update(EVENTS).where(EVENTS.c.id == row.id).values(**values),
             )
             await memory_index.project(conn, "event", str(row.id))
-        return _replace(row, head_revision_id=revision.id)
+            row_with_head = _replace(row, head_revision_id=revision.id)
+            if receipt is not None:
+                await receipt(conn, row_with_head)
+        return row_with_head
 
     async def add_rsvp(self, rsvp: RSVP) -> None:
         # Append-only (`0074_event_revision`): a repeat RSVP is a new row,

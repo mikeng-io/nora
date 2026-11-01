@@ -290,6 +290,7 @@ class InMemoryNoteStore:
         instruction_sha256: str | None = None,
         model: str | None = None,
         evidence_room: str | None = None,
+        receipt: Any = None,
     ) -> NoteRevision:
         """The compare-and-swap — the refusal in the module docstring's (1).
 
@@ -327,6 +328,8 @@ class InMemoryNoteStore:
         )
         self.revisions[revision.id] = revision
         self.notes[note_id] = replace(note, head_revision_id=revision.id)
+        if receipt is not None:
+            await receipt(None, revision)
         return revision
 
     async def search(

@@ -594,6 +594,7 @@ class SqlNoteStore:
         instruction_sha256: str | None = None,
         model: str | None = None,
         evidence_room: str | None = None,
+        receipt: Any = None,
     ) -> NoteRevision:
         """The compare-and-swap append. See the module docstring's (2): the
         comparison IS the `UPDATE`'s `WHERE`, so a `rowcount` of 0 is the
@@ -629,6 +630,8 @@ class SqlNoteStore:
             await self._append_on_conn(
                 conn, unit=unit, revision=revision, evidence_room=evidence_room,
             )
+            if receipt is not None:
+                await receipt(conn, revision)
         return revision
 
     @staticmethod

@@ -107,7 +107,7 @@ class InMemoryMemoStore:
     async def append(
         self, *, unit: str, memo_id: str, base_revision_id: str, title: str, body: str,
         citations: Sequence[str], mode: str, state: str, established_by: str,
-        model: str | None, now_ms: int,
+        model: str | None, now_ms: int, receipt: Any = None,
     ) -> MemoRevision:
         row = self._of(unit, memo_id)
         if row is None:
@@ -125,6 +125,8 @@ class InMemoryMemoStore:
             written_at=now_ms, established_by=established_by, model=model,
         )
         row.chain.append(revision)
+        if receipt is not None:
+            await receipt(None, revision)
         return revision
 
 

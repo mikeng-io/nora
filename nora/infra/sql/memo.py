@@ -146,6 +146,9 @@ class SqlMemoStore:
         self, *, unit: str, memo_id: str, base_revision_id: str, title: str, body: str,
         citations: Sequence[str], mode: str, state: str, established_by: str,
         model: str | None, now_ms: int,
+        # Called with (conn, revision) inside this write's transaction: the
+        # Cognition session binds its idempotency receipt to the commit.
+        receipt: Any = None,
     ) -> MemoRevision:
         if not _is_uuid(memo_id):
             raise LookupError(f"no memo {memo_id!r}")
@@ -172,8 +175,11 @@ class SqlMemoStore:
                     ).returning(*MEMO_REVISION.c)
                 )).one()
                 await memory_index.project(conn, "memo", memo_id)
+                revision = replace(_revision(row), lineage=lineage)
+                if receipt is not None:
+                    await receipt(conn, revision)
         except sa.exc.IntegrityError as exc:
             if "uq_memo_revision_seq" not in str(exc):
                 raise
             raise StaleMemoError(f"memo {memo_id} was revised concurrently") from exc
-        return replace(_revision(row), lineage=lineage)
+        return revision

@@ -58,16 +58,28 @@ class RegisterGraphLinks:
                 nodes=100,
                 fan_out=20,
                 relations=tuple(dict.fromkeys(wanted.values())),
-                valid_at=at,
             ),
         )
         if current.status != "ok":
             raise RuntimeError("Register links unavailable")
-        existing = {
-            (e.relation.rel, e.relation.dst): e.relation
-            for e in current.relations
+        # A valid_at-less walk reaches closed edges too: a target re-selected
+        # after a close gets a new deterministic id for its generation, since
+        # the closed row keeps the bare one.
+        mine = [
+            e.relation for e in current.relations
             if e.relation.src == source and e.relation.rel in wanted.values()
+        ]
+        existing = {
+            (r.rel, r.dst): r
+            for r in mine
+            if (r.valid_from is None or r.valid_from <= at)
+            and (r.valid_to is None or at < r.valid_to)
         }
+        closed_counts: dict[tuple[str, Any], int] = {}
+        for r in mine:
+            if r.valid_to is not None:
+                key = (r.rel, r.dst)
+                closed_counts[key] = closed_counts.get(key, 0) + 1
         corrections = tuple(
             Correction(r.id, "close", at, evidence=tuple(sources))
             for (rel, target), r in existing.items()
@@ -78,7 +90,9 @@ class RegisterGraphLinks:
         for target, verb in wanted.items():
             if (verb, target) in existing:
                 continue
-            rid = str(uuid5(NAMESPACE_URL, f"{work.id}:{verb}:{target}"))
+            base = f"{work.id}:{verb}:{target}"
+            prior = closed_counts.get((verb, target), 0)
+            rid = str(uuid5(NAMESPACE_URL, base if prior == 0 else f"{base}:{prior}"))
             relations.append(
                 Relation(
                     rid,

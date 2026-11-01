@@ -132,3 +132,59 @@ async def test_receipt_boundary_crash_restart_retry_does_not_duplicate(pg_url):
         )
     finally:
         await engine.dispose()
+
+
+async def test_revision_receipt_commits_inside_the_append_transaction(pg_url):
+    """A revision's receipt rides the same append transaction: a crash leaves
+    the head unmoved and no receipt; the retry writes revision + receipt."""
+    from nora.infra.sql.notes import SqlNoteStore
+    from nora.infra.sql.schema import NOTE, NOTE_REVISION
+
+    engine = create_sql_engine(pg_url)
+    try:
+        notes = SqlNoteStore(engine)
+        records = SqlComprehendRecords(
+            engine, media_join=None,
+            rooms_by_unit={"u": [("signal", "room-a")]},
+            persons_by_unit={"u": {"p_ada"}},
+        )
+        note = await notes.create(
+            unit="u", title="generated", description="d", uncertainty="q",
+            closing_condition="c", established_in="signal:room-a",
+            body="generated body", established_by="nora", now_ms=NOW,
+            anchor_date=20251101,
+        )
+
+        async def crash(conn, revision):
+            raise RuntimeError("generated crash at the receipt boundary")
+
+        with pytest.raises(RuntimeError, match="generated crash"):
+            await notes.append_revision(
+                unit="u", note_id=note.id, body="generated revision",
+                parent_revision_id=note.head_revision_id, established_by="nora",
+                now_ms=NOW, receipt=crash)
+        async with engine.connect() as conn:
+            assert await _count(
+                conn, NOTE_REVISION,
+                NOTE_REVISION.c.body == "generated revision") == 0
+            assert (await conn.execute(sa.select(NOTE.c.head_revision_id)
+                    .where(NOTE.c.id == note.id))).scalar_one() == note.head_revision_id
+            assert await _count(conn, RESULT, RESULT.c.part == "act_result") == 0
+
+        async def write(conn, revision):
+            await records.act_result_on(
+                conn, "generated-revise-key", 1,
+                {"status": "ok", "revision_id": revision.id})
+
+        revision = await notes.append_revision(
+            unit="u", note_id=note.id, body="generated revision",
+            parent_revision_id=note.head_revision_id, established_by="nora",
+            now_ms=NOW, receipt=write)
+        async with engine.connect() as conn:
+            assert await _count(
+                conn, NOTE_REVISION,
+                NOTE_REVISION.c.body == "generated revision") == 1
+            assert await _count(conn, RESULT, RESULT.c.part == "act_result") == 1
+            assert revision.id != note.head_revision_id
+    finally:
+        await engine.dispose()

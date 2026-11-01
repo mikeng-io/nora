@@ -127,7 +127,7 @@ class FakeGatheringStore:
 
     async def update(
         self, event: Gathering, *, base_revision_id: UUID | None = None,
-        evidence: EventEvidence | None = None,
+        evidence: EventEvidence | None = None, receipt: Any = None,
     ) -> Gathering:
         row = normalise_gathering(event)
         current = self._events.get(row.id)
@@ -140,6 +140,8 @@ class FakeGatheringStore:
         stored = replace(row, head_revision_id=revision.id)
         self._events[row.id] = stored
         self._revisions.setdefault(row.id, []).append(revision)
+        if receipt is not None:
+            await receipt(None, stored)
         return stored
 
     async def add_rsvp(self, rsvp: RSVP) -> None:
