@@ -293,9 +293,18 @@ class WakeMemory:
             "lines": [
                 {"handle": handle, "part": line.part, "kind": line.kind,
                  "mode": line.mode, "state": line.state, "text": line.text,
+                 "content": dict(line.content),
                  "verdict": line.verdict, "told_by": line.told_by,
+                 "citations": list(line.citations),
                  "draws_on": list(line.draws_on),
-                 "support_count": line.support_count}
+                 "support_count": line.support_count,
+                 "last_supported_at": line.last_supported_at,
+                 "as_of": line.as_of, "written_at": line.written_at,
+                 "valid_from": line.valid_from, "valid_until": line.valid_until,
+                 "fact_key": line.fact_key, "fact_value": line.fact_value,
+                 "prediction": line.prediction,
+                 "prediction_observable": line.prediction_observable,
+                 "prediction_window_end": line.prediction_window_end}
                 for handle, line_id in handles.items()
                 for line in (by_id[line_id],)],
             "disputes": [
@@ -309,26 +318,40 @@ class WakeMemory:
         session was shown, resolved to `(ts, person, room)` from the frozen
         snapshot rows (unresolvable keys stay out, so a citation of one is
         `unresolved_citation`), plus the admitted relations as premises."""
+        # Only sources whose REAL loader provenance resolves may cite — a
+        # missing date/author stays unavailable rather than being stamped
+        # with the wake's own clock or the source's sole person.
         said: dict[str, Said] = {}
         social: dict[str, Said] = {}
         for item in state.memory_items.values():
-            keys = item.snapshot.get("source_keys", {})
-            for row in item.snapshot.get("messages", ()):
-                source_key = keys.get(str(row.get("id")))
-                if not source_key:
-                    continue
-                citation = f"{source_key[0]}:{source_key[1]}"
-                person = row.get("person_id") or None
-                if source_key[0] == "social":
-                    # `social:<network>:<item id>` is evidence about its author
-                    # alone, in no room (45 §4) — the `social` map, not `sources`.
-                    social[source_key[1]] = Said(
-                        ts=row.get("ts"), person_id=person, room=None,
-                        occasion=citation, medium="social")
-                else:
+            metadata = item.snapshot.get("metadata") or {}
+            for source_key in item.snapshot.get("source_keys", {}).values():
+                kind, ref = source_key[0], source_key[1]
+                citation = f"{kind}:{ref}"
+                if kind in ("message", "edit"):
+                    record = next(
+                        (r for r in state.records
+                         if str(getattr(r, "message_id", "")) == str(ref)), None)
+                    if record is None:
+                        continue
                     said[citation] = Said(
-                        ts=row.get("ts"), person_id=person,
-                        room=item.room, occasion=citation)
+                        ts=record.at_ms, person_id=record.person_id or None,
+                        room=getattr(record.room, "conversation_id", None),
+                        occasion=citation)
+                elif kind == "social":
+                    taken_at = metadata.get("taken_at")
+                    if isinstance(taken_at, str):
+                        taken_at = int(
+                            datetime.fromisoformat(taken_at).timestamp() * 1000)
+                    if not isinstance(taken_at, int):
+                        continue
+                    source = state.graph_fetched.sources.get(tuple(source_key))
+                    author = (source.persons[0]
+                              if source is not None and len(source.persons) == 1
+                              else None)
+                    social[ref] = Said(
+                        ts=taken_at, person_id=author, room=None,
+                        occasion=citation, medium="social")
         listed = (self.listed_rooms(account.unit, account.subject)
                   if account.entity_kind == "human" else None)
         return ProfileCitable(
@@ -344,6 +367,12 @@ class WakeMemory:
         supports = {(e.relation_id, e.source) for e in state.admitted_evidence}
         out = []
         for op in parsed:
+            if (getattr(op, "part", None) == "facts"
+                    or getattr(op, "mode", None) == "told"):
+                out.append("facts are rendered by code from the graph and told "
+                           "lines belong to the turn path; this session writes "
+                           "traits and guesses")
+                continue
             cites = getattr(op, "citations", ()) or ()
             for cite in cites:
                 if cite not in shown_cites:
@@ -440,13 +469,11 @@ class WakeMemory:
                 for r in result.refusals]}
         else:
             out = {"status": "ok", "revision": result.revision,
-                   "written": list(result.written)}
-            # Keep the shown view honest for the session's NEXT write: heads,
-            # handles and revision refresh so `expected_revision` never trips
-            # on the session's own landed lines.
-            heads = await self.profile_store.account_heads(key=account.key)
-            shown.update({"heads": heads, "handles": handles_for(heads),
-                          "revision": result.revision})
-        if act_key is not None and out["status"] != "ok":
-            await self.records.act_result(act_key, state.session_id, out)
+                   "written": list(result.written),
+                   "note": "Handles changed: call profile_read again before "
+                           "the next write to this account."}
+            # A write renumbers the account's handles — drop the shown view
+            # rather than bind the model to P-numbers it never re-saw; the
+            # next write requires a fresh profile_read.
+            state.profile_accounts.pop(account.key, None)
         return out

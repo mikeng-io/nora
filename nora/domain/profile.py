@@ -41,10 +41,10 @@ from __future__ import annotations
 import math
 import re
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta, timezone
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from nora.domain.memory_item import TRAIT_SLOTS, MemoryItem, content_text, is_location_fact
 
@@ -532,6 +532,7 @@ class ProfileWriter(Protocol):
         self, *, account: Account, ops: Sequence[ProfileOp], citable: ProfileCitable,
         now_ms: int, written_by_session: str,
         apply_decay: bool, expected_revision: int | None = None,
+        receipt: Callable[[Any, Mapping[str, Any]], Awaitable[None]] | None = None,
     ) -> ProfileWriteResult: ...
 
     async def record_dispute(
@@ -1092,6 +1093,7 @@ def plan_write(
             for r in citable.rollup_roots.get(c, ())))))
 
     for i, op in enumerate(ops):
+        carried_rels: tuple[str, ...] = ()
         if isinstance(op, RetireOp):
             target = held(op.line, i)
             if isinstance(target, ProfileRefusal):
@@ -1173,11 +1175,16 @@ def plan_write(
             # Unrestated premises carry over, each followed to its chain head:
             # a premise kept or revised since is the same line under a new row.
             carried = {aliases.get(lid, lid) for lid in old.draws_on}
+            # A relation premise the line already held rides the revision
+            # UNRESTATEMENT: it was admitted and declared when the line was
+            # written, so it needs no `citable.relations` membership now —
+            # only premises the writer STATES this call must be declared.
+            carried_rels = tuple(
+                c[len("relation:"):] for c in carried if c.startswith("relation:"))
             draws_handles = (
                 op.draws_on
                 if op.draws_on is not None
                 else tuple(h for h, lid in handles.items() if lid in carried)
-                + tuple(c for c in carried if c.startswith("relation:"))
             )
             cites = op.citations
             candidate_fields = {
@@ -1198,6 +1205,7 @@ def plan_write(
             refusals.append(resolved)
             continue
         prem, prem_rels = resolved
+        prem_rels = [*prem_rels, *carried_rels]
         ev = _resolve(cites, citable, handles, subject=account.subject)
         if isinstance(ev, ProfileRefusal):
             refusals.append(replace(ev, op_index=i))

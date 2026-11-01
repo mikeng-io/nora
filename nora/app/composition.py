@@ -4562,16 +4562,10 @@ async def build_dependencies(
         if profile_index or not cfg.culture.enabled:
             retired = {CULTURE_ADAPTOR_NAME, CHARACTER_PERSON_ADAPTOR_NAME,
                        CHARACTER_UNIT_ADAPTOR_NAME, CHARACTER_NORA_ADAPTOR_NAME}
-            # The unified Cognition session owns the typed accounts only where
-            # it is actually wired (write && read AND graph comprehension); the
-            # Dreamer profile writers retire atomically at that same condition.
-            # The verdict judge never retires — a guess is not graded by its
-            # writer (45 §3) — and the tag path's told/dispute writes are
-            # untouched.
-            if (profile_index and cfg.memory.graph.enabled
-                    and cfg.memory.graph.comprehend.enabled):
-                retired |= {PROFILE_PERSON_ADAPTOR_NAME, PROFILE_ROOM_ADAPTOR_NAME,
-                            PROFILE_UNIT_ADAPTOR_NAME, PROFILE_NORA_ADAPTOR_NAME}
+            retired |= _unified_profile_writers_retired(
+                profile_index=profile_index,
+                graph_comprehend=(cfg.memory.graph.enabled
+                                  and cfg.memory.graph.comprehend.enabled))
             dream_adaptors = tuple(a for a in dream_adaptors if a.name not in retired)
             dream_schedules = {k: v for k, v in dream_schedules.items() if k not in retired}
 
@@ -5506,6 +5500,20 @@ async def _build_blob_store(cfg: Config, *, cipher: BlobCipher) -> BlobStore:
         )
         return fallback
     return store
+
+
+def _unified_profile_writers_retired(
+    *, profile_index: bool, graph_comprehend: bool,
+) -> frozenset[str]:
+    """The Dreamer profile writers the unified Cognition session replaces —
+    only where the replacement is actually wired (`[memory.profile] write &&
+    read` AND `[memory.graph] comprehend`, the same condition `WakeMemory`
+    gets its store under). The verdict judge never retires (45 §3), and the
+    tag path's told/dispute writes are untouched."""
+    return (
+        frozenset({PROFILE_PERSON_ADAPTOR_NAME, PROFILE_ROOM_ADAPTOR_NAME,
+                   PROFILE_UNIT_ADAPTOR_NAME, PROFILE_NORA_ADAPTOR_NAME})
+        if profile_index and graph_comprehend else frozenset())
 
 
 def _note_unit_of(policy: Policy) -> Callable[[str, str], str | None]:

@@ -1,9 +1,9 @@
 """The F4 handoff: `profile_read`/`profile_revise` in the unified Cognition
 session against the typed Profile store (27 §9, 31 §5).
 
-The fake store applies REAL `plan_write`/`chain_heads`, so refusals,
-precedence and revision conflicts are production semantics; only the
-persistence is in memory. Fixtures are generated, never production rows.
+The store is the shared `InMemoryProfileStore`: REAL `plan_write`/
+`chain_heads` semantics, in-memory persistence. Fixtures are generated,
+never production rows.
 """
 from __future__ import annotations
 
@@ -16,15 +16,10 @@ import pytest
 from nora.agent.fetch_watch import GraphFetched
 from nora.app.cognition_memory import WakeMemory
 from nora.domain.memory_graph import Source
-from nora.domain.profile import (
-    Account,
-    ProfileCitable,
-    ProfileWriteResult,
-    plan_write,
-)
-from nora.infra.sql.profile import chain_heads
+from nora.domain.profile import ProfileCitable
 from nora.language.profile_render import ProfileView, render_profile
 from nora.testing.comprehend import InMemoryComprehendRecords
+from nora.testing.profile import InMemoryProfileStore
 
 UNIT = "u1"
 PERSON = "p1"
@@ -36,58 +31,13 @@ DAY1B = int(datetime(2025, 1, 1, 6, tzinfo=UTC).timestamp() * 1000)  # 14:00 HKT
 DAY2 = int(datetime(2025, 1, 2, 4, tzinfo=UTC).timestamp() * 1000)   # 12:00 HKT Jan 2
 WINDOW_END = int(datetime(2025, 2, 1, tzinfo=UTC).timestamp() * 1000)
 PERSON_ACCOUNT_KEY = f"{UNIT}#character:{PERSON}"
+ROOM_KEY = ROOM
 
-
-class FakeProfileStore:
-    """`ProfileWriter` over the real domain judge: `plan_write` and
-    `chain_heads` run for real; rows and revisions sit in dicts."""
-
-    def __init__(self, *, fail: bool = False) -> None:
-        self.lines: dict[str, list[Any]] = {}
-        self.revisions: dict[str, int] = {}
-        self.writes = 0
-        self.fail = fail
-        self.now_ms_seen: int | None = None
-        self.by_session: str | None = None
-
-    async def account_state(self, *, key: str) -> tuple[int, int | None]:
-        return self.revisions.get(key, 0), None
-
-    async def account_heads(self, *, key: str) -> tuple[Any, ...]:
-        return chain_heads(self.lines.get(key, []))[0]
-
-    async def open_disputes(self, *, key: str, limit: int) -> tuple[Any, ...]:
-        return ()
-
-    async def profile_write(
-        self, *, account: Account, ops: Any, citable: ProfileCitable,
-        now_ms: int, written_by_session: str, apply_decay: bool,
-        expected_revision: int | None = None, receipt: Any = None,
-    ) -> ProfileWriteResult:
-        self.writes += 1
-        if self.fail:
-            raise RuntimeError("profile store down")
-        revision = self.revisions.get(account.key, 0)
-        self.now_ms_seen, self.by_session = now_ms, written_by_session
-        if expected_revision is not None and revision != expected_revision:
-            return ProfileWriteResult(status="conflict", revision=revision)
-        heads, aliases = chain_heads(self.lines.get(account.key, []))
-        plan = plan_write(
-            account=account, heads=heads, ops=ops, citable=citable,
-            now_ms=now_ms, written_by_session=written_by_session,
-            screen=lambda _: None, apply_decay=apply_decay, aliases=aliases)
-        if plan.refused:
-            return ProfileWriteResult(
-                status="refused", revision=revision, refusals=plan.refusals)
-        self.lines.setdefault(account.key, []).extend(plan.inserts)
-        self.revisions[account.key] = revision + 1
-        if receipt is not None:
-            await receipt(None, {
-                "status": "ok", "revision": self.revisions[account.key],
-                "written": [x.id for x in plan.inserts]})
-        return ProfileWriteResult(
-            status="ok", revision=self.revisions[account.key],
-            written=tuple(x.id for x in plan.inserts))
+_RECORDS = tuple(
+    SimpleNamespace(
+        message_id=mid, at_ms=ts, person_id=PERSON,
+        room=SimpleNamespace(conversation_id=ROOM), kind="message", text="x")
+    for mid, ts in ((11, DAY1), (12, DAY1B), (13, DAY2)))
 
 
 def _records() -> InMemoryComprehendRecords:
@@ -97,32 +47,40 @@ def _records() -> InMemoryComprehendRecords:
     return records
 
 
-def _item() -> Any:
+def _item(social: bool = False) -> Any:
     rows = [
         {"id": "r1", "ts": DAY1, "person_id": PERSON, "body": "a"},
         {"id": "r2", "ts": DAY1B, "person_id": PERSON, "body": "b"},
         {"id": "r3", "ts": DAY2, "person_id": PERSON, "body": "c"},
     ]
+    keys = {r["id"]: ["message", str(i)]
+            for r, i in zip(rows, (11, 12, 13), strict=True)}
+    metadata: dict[str, Any] = {}
+    if social:
+        keys["r9"] = ["social", "insta:it9"]
+        metadata = {"taken_at": DAY2, "account": "p1-insta", "network": "insta",
+                    "kind": "post"}
     return SimpleNamespace(
         work=SimpleNamespace(id="w1", input_hash="h", as_of=AS_OF),
-        snapshot={
-            "messages": rows,
-            "source_keys": {r["id"]: ["message", str(i)]
-                            for r, i in zip(rows, (11, 12, 13), strict=True)},
-        },
+        snapshot={"messages": rows, "source_keys": keys, "metadata": metadata},
         room=ROOM,
         sources=(),
     )
 
 
-def _state(item: Any, relations: tuple[str, ...] = ("rel-1",)) -> Any:
+def _state(item: Any, *, relations: tuple[str, ...] = ("rel-1",),
+           social: bool = False) -> Any:
     fetched = GraphFetched()
     for key in (("message", "11"), ("message", "12"), ("message", "13")):
         fetched.show(Source(key, "record", UNIT, text="x"))
+    if social:
+        fetched.show(Source(("social", "insta:it9"), "record", UNIT,
+                            persons=(PERSON,), text="x"))
     return SimpleNamespace(
         unit=UNIT, session_id=7, now_ms=NOW_MS,
         memory_items={0: item} if item is not None else {},
         graph_fetched=fetched,
+        records=_RECORDS,
         admitted_relations={r: object() for r in relations},
         admitted_evidence=[
             SimpleNamespace(relation_id="rel-1", source=("message", "11"))],
@@ -158,9 +116,20 @@ def _deduced_op(draws: list[str] | None = None) -> dict[str, Any]:
     }
 
 
+def _revise_op(handle: str, statement: str = "paces fast") -> dict[str, Any]:
+    return {
+        "op": "revise", "line": handle,
+        "content": {
+            "statement": statement, "context": "weeknights",
+            "action": "evening walks", "rhythm": "daily",
+            "setting": "in the neighbourhood"},
+        "citations": ["message:11", "message:12", "message:13"],
+    }
+
+
 @pytest.mark.asyncio
-async def test_read_shows_heads_handles_and_revision() -> None:
-    records, store = _records(), FakeProfileStore()
+async def test_read_shows_the_complete_typed_account() -> None:
+    records, store = _records(), InMemoryProfileStore()
     memory, state = _memory(store, records), _state(_item())
     view = await memory.account_view(state, ["person", PERSON])
     assert view["status"] == "ok"
@@ -171,13 +140,14 @@ async def test_read_shows_heads_handles_and_revision() -> None:
 
 
 @pytest.mark.asyncio
-async def test_revise_induced_trait_draws_on_relation_then_later_turn_renders() -> None:
-    records, store = _records(), FakeProfileStore()
+async def test_write_then_later_turn_renders() -> None:
+    records, store = _records(), InMemoryProfileStore()
     memory, state = _memory(store, records), _state(_item())
     await memory.account_view(state, ["person", PERSON])
     result = await memory.profile(state, ["person", PERSON], [_induced_op()],
                                   act_key="k1")
     assert result["status"] == "ok", result
+    await memory.account_view(state, ["person", PERSON])
     deduced = await memory.profile(state, ["person", PERSON], [_deduced_op()],
                                    act_key="k2")
     assert deduced["status"] == "ok", deduced
@@ -186,7 +156,6 @@ async def test_revise_induced_trait_draws_on_relation_then_later_turn_renders() 
     assert heads[1].mode == "deduced" and heads[1].draws_on == ("relation:rel-1",)
     assert store.now_ms_seen == int(AS_OF.timestamp() * 1000)
     assert store.by_session == "cognition:profile:7"
-    # The persisted head is what a later assembled turn renders.
     block = render_profile(
         ProfileView(entity="person", of=PERSON, lines=heads),
         name_of=lambda pid: pid, now=AS_OF)
@@ -194,20 +163,28 @@ async def test_revise_induced_trait_draws_on_relation_then_later_turn_renders() 
 
 
 @pytest.mark.asyncio
+async def test_a_write_invalidates_the_shown_view() -> None:
+    """Handle-movement regression: after a write lands, P-handles renumber —
+    the session must re-read before the next write, never apply a stale P1."""
+    records, store = _records(), InMemoryProfileStore()
+    memory, state = _memory(store, records), _state(_item())
+    await memory.account_view(state, ["person", PERSON])
+    await memory.profile(state, ["person", PERSON], [_induced_op()], act_key="w")
+    assert PERSON_ACCOUNT_KEY not in state.profile_accounts
+    again = await memory.profile(state, ["person", PERSON], [_deduced_op()],
+                                 act_key="w2")
+    assert again["status"] == "refused" and again["reason"] == "read_first"
+
+
+@pytest.mark.asyncio
 async def test_correction_and_retirement_change_the_later_read() -> None:
-    records, store = _records(), FakeProfileStore()
+    records, store = _records(), InMemoryProfileStore()
     memory, state = _memory(store, records), _state(_item())
     await memory.account_view(state, ["person", PERSON])
     await memory.profile(state, ["person", PERSON], [_induced_op()], act_key="a")
     await memory.account_view(state, ["person", PERSON])
-    handles = state.profile_accounts[PERSON_ACCOUNT_KEY]["handles"]
-    revise = await memory.profile(state, ["person", PERSON], [{
-        "op": "revise", "line": next(iter(handles)),
-        "content": {
-            "statement": "paces fast in the evenings", "context": "weeknights",
-            "action": "evening walks", "rhythm": "daily",
-            "setting": "in the neighbourhood"},
-        "citations": ["message:11", "message:12", "message:13"]}], act_key="b")
+    revise = await memory.profile(state, ["person", PERSON],
+                                  [_revise_op("P1")], act_key="b")
     assert revise["status"] == "ok", revise
     heads = await store.account_heads(key=PERSON_ACCOUNT_KEY)
     assert len(heads) == 1 and "paces fast" in heads[0].text
@@ -225,7 +202,7 @@ async def test_correction_and_retirement_change_the_later_read() -> None:
 
 @pytest.mark.asyncio
 async def test_revise_requires_a_shown_account() -> None:
-    records, store = _records(), FakeProfileStore()
+    records, store = _records(), InMemoryProfileStore()
     memory, state = _memory(store, records), _state(_item())
     result = await memory.profile(state, ["person", PERSON], [_induced_op()],
                                   act_key="k")
@@ -239,7 +216,7 @@ async def test_revise_requires_a_shown_account() -> None:
     ["room", "not-in-unit"], ["unit", "other-unit"], ["person"],
 ])
 async def test_unknown_subjects_fail_closed(entity: list[str]) -> None:
-    records, store = _records(), FakeProfileStore()
+    records, store = _records(), InMemoryProfileStore()
     memory, state = _memory(store, records), _state(_item())
     view = await memory.account_view(state, entity)
     assert view["status"] == "refused" and view["reason"] == "unknown_account"
@@ -248,31 +225,21 @@ async def test_unknown_subjects_fail_closed(entity: list[str]) -> None:
 
 @pytest.mark.asyncio
 async def test_unshown_source_and_undeclared_relation_refuse() -> None:
-    records, store = _records(), FakeProfileStore()
+    records, store = _records(), InMemoryProfileStore()
     memory, state = _memory(store, records), _state(_item())
     await memory.account_view(state, ["person", PERSON])
     unseen = await memory.profile(state, ["person", PERSON], [{
-        "op": "add", "part": "traits", "kind": "trait", "text": "x",
+        "op": "add", "part": "traits", "kind": "habit",
+        "content": {"statement": "x", "context": "x", "action": "x",
+                    "rhythm": "x", "setting": "x"},
         "mode": "deduced", "citations": ["message:999", "message:11"]}],
         act_key="u1")
     assert unseen["status"] == "refused", unseen
-    bad_premise = await memory.profile(state, ["person", PERSON], [{
-        "op": "add", "part": "traits", "kind": "trait", "text": "x",
-        "mode": "deduced", "citations": ["message:11", "message:12", "message:13"],
-        "draws_on": ["relation:not-admitted"]}], act_key="u2")
+    bad_premise = await memory.profile(state, ["person", PERSON],
+                                       [_deduced_op(["relation:not-admitted"])],
+                                       act_key="u2")
     assert bad_premise["status"] == "refused", bad_premise
     assert {r["reason"] for r in bad_premise["refusals"]} == {"unshown"}
-    # A relation the session DID admit but the op's own citations do not
-    # support is refused the same way (the line must cite the relation's
-    # evidence, 27 §9).
-    unsupported = await memory.profile(state, ["person", PERSON], [{
-        "op": "add", "part": "traits", "kind": "habit", "text": "x",
-        "content": {"statement": "x", "context": "x", "action": "x",
-                    "rhythm": "x", "setting": "x"},
-        "mode": "deduced", "citations": ["message:12", "message:13"],
-        "draws_on": ["relation:rel-1"]}], act_key="u2b")
-    assert unsupported["status"] == "refused" and any(
-        "not supported" in r["detail"] for r in unsupported["refusals"])
     bad_handle = await memory.profile(state, ["person", PERSON], [{
         "op": "revise", "line": "P9", "text": "x",
         "citations": ["message:11", "message:12"]}], act_key="u3")
@@ -281,8 +248,43 @@ async def test_unshown_source_and_undeclared_relation_refuse() -> None:
 
 
 @pytest.mark.asyncio
+async def test_an_unsupported_relation_premise_is_refused() -> None:
+    records, store = _records(), InMemoryProfileStore()
+    memory, state = _memory(store, records), _state(_item())
+    await memory.account_view(state, ["person", PERSON])
+    op = _deduced_op(["relation:rel-1"])
+    op["citations"] = ["message:12", "message:13"]  # not the relation's evidence
+    result = await memory.profile(state, ["person", PERSON], [op], act_key="x")
+    assert result["status"] == "refused" and any(
+        "not supported" in r["detail"] for r in result["refusals"])
+
+
+@pytest.mark.asyncio
+async def test_facts_and_told_ops_are_refused_at_the_seam() -> None:
+    """Facts are code-rendered from the graph and told lines are the turn
+    path's own writes — neither may be authored by this session."""
+    records, store = _records(), InMemoryProfileStore()
+    memory, state = _memory(store, records), _state(_item())
+    await memory.account_view(state, ["person", PERSON])
+    facts = await memory.profile(state, ["person", PERSON], [{
+        "op": "add", "part": "facts", "kind": "attribute", "mode": "deduced",
+        "text": "works at Example Co",
+        "fact_key": "occupation", "fact_value": {"name": "Example Co"},
+        "citations": ["message:11", "message:12"]}], act_key="f")
+    assert facts["status"] == "refused", facts
+    told = await memory.profile(state, ["person", PERSON], [{
+        "op": "add", "part": "traits", "kind": "habit", "mode": "told",
+        "content": {"statement": "x", "context": "x", "action": "x",
+                    "rhythm": "x", "setting": "x"},
+        "told_by": PERSON, "citations": ["message:11"]}], act_key="t")
+    assert told["status"] == "refused", told
+    assert store.writes == 0
+    assert await store.account_heads(key=PERSON_ACCOUNT_KEY) == ()
+
+
+@pytest.mark.asyncio
 async def test_identical_replay_writes_once() -> None:
-    records, store = _records(), FakeProfileStore()
+    records, store = _records(), InMemoryProfileStore()
     memory, state = _memory(store, records), _state(_item())
     await memory.account_view(state, ["person", PERSON])
     first = await memory.profile(state, ["person", PERSON], [_induced_op()],
@@ -295,27 +297,35 @@ async def test_identical_replay_writes_once() -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_competing_revision_forces_a_reread() -> None:
-    records, store = _records(), FakeProfileStore()
+async def test_a_competing_revision_conflicts_then_recovers() -> None:
+    """Read A -> competing write -> conflict -> reread B -> the SAME ops
+    succeed; the committed replay stays once."""
+    records, store = _records(), InMemoryProfileStore()
     memory, state = _memory(store, records), _state(_item())
     await memory.account_view(state, ["person", PERSON])
-    # A competing writer moves the account between the read and the revise.
     account = state.profile_accounts[PERSON_ACCOUNT_KEY]["account"]
     await store.profile_write(
-        account=account, ops=(), citable=ProfileCitable(), now_ms=NOW_MS,
-        written_by_session="other", apply_decay=False)
-    result = await memory.profile(state, ["person", PERSON], [_induced_op()],
-                                  act_key="k")
-    assert result["status"] == "conflict"
+        account=account, ops=(), citable=ProfileCitable(),
+        now_ms=NOW_MS, written_by_session="other", apply_decay=False)
+    conflict = await memory.profile(state, ["person", PERSON], [_deduced_op()],
+                                    act_key="k")
+    assert conflict["status"] == "conflict"
     assert PERSON_ACCOUNT_KEY not in state.profile_accounts
-    again = await memory.profile(state, ["person", PERSON], [_induced_op()],
-                                 act_key="k2")
-    assert again["status"] == "refused" and again["reason"] == "read_first"
+    # Same ops after a fresh read — NOT a replay: the conflict was never
+    # receipted, so the write lands.
+    await memory.account_view(state, ["person", PERSON])
+    recovered = await memory.profile(state, ["person", PERSON], [_deduced_op()],
+                                     act_key="k")
+    assert recovered["status"] == "ok", recovered
+    replay = await memory.profile(state, ["person", PERSON], [_deduced_op()],
+                                  act_key="k")
+    # competing write + conflict attempt + the one landed write
+    assert replay["status"] == "ok" and store.writes == 3
 
 
 @pytest.mark.asyncio
 async def test_a_failed_store_write_is_unavailable_not_ok() -> None:
-    records, store = _records(), FakeProfileStore(fail=True)
+    records, store = _records(), InMemoryProfileStore(fail=True)
     memory, state = _memory(store, records), _state(_item())
     await memory.account_view(state, ["person", PERSON])
     with pytest.raises(RuntimeError, match="profile store down"):
@@ -326,7 +336,7 @@ async def test_a_failed_store_write_is_unavailable_not_ok() -> None:
 
 @pytest.mark.asyncio
 async def test_abduced_guess_rests_on_a_current_induced_trait() -> None:
-    records, store = _records(), FakeProfileStore()
+    records, store = _records(), InMemoryProfileStore()
     memory, state = _memory(store, records), _state(_item())
     await memory.account_view(state, ["person", PERSON])
     await memory.profile(state, ["person", PERSON], [_induced_op()], act_key="a")
@@ -347,15 +357,73 @@ async def test_abduced_guess_rests_on_a_current_induced_trait() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_carried_relation_premise_survives_a_later_session() -> None:
+    """A line written in an earlier wake keeps its `relation:` premise; a
+    later session revising it without restating draws_on is not asked to
+    re-admit a relation it never saw."""
+    records, store = _records(), InMemoryProfileStore()
+    memory, state_a = _memory(store, records), _state(_item())
+    await memory.account_view(state_a, ["person", PERSON])
+    await memory.profile(state_a, ["person", PERSON], [_deduced_op()],
+                         act_key="a")
+    # A LATER session: the relation is not admitted or shown here.
+    state_b = _state(_item(), relations=())
+    state_b.admitted_evidence = []
+    await memory.account_view(state_b, ["person", PERSON])
+    revise = await memory.profile(state_b, ["person", PERSON],
+                                  [_revise_op("P1")], act_key="b")
+    assert revise["status"] == "ok", revise
+    heads = await store.account_heads(key=PERSON_ACCOUNT_KEY)
+    assert "relation:rel-1" in heads[0].draws_on
+
+
+@pytest.mark.asyncio
+async def test_social_item_resolves_author_and_taken_at() -> None:
+    records, store = _records(), InMemoryProfileStore()
+    memory, state = _memory(store, records), _state(_item(social=True),
+                                                  social=True)
+    await memory.account_view(state, ["person", PERSON])
+    account = state.profile_accounts[PERSON_ACCOUNT_KEY]["account"]
+    citable = memory._citable_for(state, account)
+    said = citable.social.get("insta:it9")
+    assert said is not None and said.ts == DAY2 and said.person_id == PERSON
+    assert said.room is None and said.medium == "social"
+    # A message key with no record row stays unresolved — never blessed.
+    state.graph_fetched.show(Source(("message", "99"), "record", UNIT, text="x"))
+    assert "message:99" not in memory._citable_for(state, account).sources
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("entity,entity_kind", [
     (["room", ROOM], "room"), (["unit", UNIT], "unit"), (["nora", "nora"], "nora"),
 ])
 async def test_collective_accounts_map(entity: list[str], entity_kind: str) -> None:
-    records, store = _records(), FakeProfileStore()
+    records, store = _records(), InMemoryProfileStore()
     memory, state = _memory(store, records), _state(_item())
     view = await memory.account_view(state, entity)
     assert view["status"] == "ok" and view["account"]["entity_kind"] == entity_kind
     assert len(state.profile_accounts) == 1
+
+
+def test_profile_writer_ownership_matrix() -> None:
+    """One account writer per flag combination: the Dreamer writers retire
+    exactly where the unified session is wired; the verdict judge and tag
+    told/dispute paths never."""
+    from nora.app.composition import _unified_profile_writers_retired
+    from nora.language.profile import PROFILE_PERSON_ADAPTOR_NAME
+    from nora.language.profile_collective import (
+        PROFILE_NORA_ADAPTOR_NAME,
+        PROFILE_ROOM_ADAPTOR_NAME,
+        PROFILE_UNIT_ADAPTOR_NAME,
+    )
+    from nora.language.profile_verdict import PROFILE_VERDICT_ADAPTOR_NAME
+    on = _unified_profile_writers_retired(profile_index=True, graph_comprehend=True)
+    assert on == frozenset({PROFILE_PERSON_ADAPTOR_NAME, PROFILE_ROOM_ADAPTOR_NAME,
+                            PROFILE_UNIT_ADAPTOR_NAME, PROFILE_NORA_ADAPTOR_NAME})
+    assert PROFILE_VERDICT_ADAPTOR_NAME not in on
+    for profile_index, comprehend in ((False, True), (True, False), (False, False)):
+        assert _unified_profile_writers_retired(
+            profile_index=profile_index, graph_comprehend=comprehend) == frozenset()
 
 
 @pytest.mark.asyncio
@@ -369,6 +437,8 @@ async def test_shadow_mode_receipts_ops_without_writing() -> None:
     assert result["status"] == "ok", result
     assert records.shadows[0]["would_writes"] == [_induced_op()]
     refused = await memory.profile(state, ["person", PERSON], [{
-        "op": "add", "part": "traits", "kind": "trait", "text": "x",
+        "op": "add", "part": "traits", "kind": "habit",
+        "content": {"statement": "x", "context": "x", "action": "x",
+                    "rhythm": "x", "setting": "x"},
         "mode": "deduced", "citations": ["message:999"]}])
     assert refused["status"] == "refused" and len(records.shadows) == 1
