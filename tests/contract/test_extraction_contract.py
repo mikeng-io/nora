@@ -48,8 +48,8 @@ def message(
 
 
 @pytest.fixture
-async def stores(pg_url):
-    engine = create_sql_engine(pg_url)
+async def stores(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     record = SqlRecordStore(engine, extraction_unit=lambda platform, room: "unit-a")
     yield record, SqlExtraction(engine), engine
     await engine.dispose()
@@ -746,7 +746,7 @@ async def test_old_pending_snapshot_keeps_its_shape_and_can_publish(stores):
 
 
 async def test_fifth_failure_is_terminal_counted_once_and_requeueable(
-    stores, example_config, pg_url
+    stores, example_config, clean_pg_url
 ):
     record, store, engine = stores
     await record.append(message=message(), person_id="subject-a")
@@ -775,7 +775,7 @@ async def test_fifth_failure_is_terminal_counted_once_and_requeueable(
     assert await finish(store, stale) == 0
     process = await asyncio.create_subprocess_exec(
         sys.executable, "scripts/extraction_requeue.py", str(held["id"]),
-        env={**os.environ, "DATABASE_URL": pg_url}, stdout=asyncio.subprocess.PIPE,
+        env={**os.environ, "DATABASE_URL": clean_pg_url}, stdout=asyncio.subprocess.PIPE,
     )
     output, _ = await process.communicate()
     assert process.returncode == 0 and output == b"requeued\n"

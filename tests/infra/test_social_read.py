@@ -142,8 +142,8 @@ _ROSTER = FakeRosterSource(groups={
 
 
 @pytest.fixture
-async def engine(pg_url):
-    eng = create_sql_engine(pg_url)
+async def engine(clean_pg_url):
+    eng = create_sql_engine(clean_pg_url)
     try:
         yield eng
     finally:

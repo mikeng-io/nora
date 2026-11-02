@@ -38,13 +38,13 @@ pytestmark = pytest.mark.usefixtures("draw_honcho")
     ("quantity_repaired", PASS),
 ])
 async def test_writer_runtime_receipt_and_fail_closed_paths(
-    pg_url, pg_template, tmp_path, monkeypatch, behavior, label,
+    clean_pg_url, pg_template, tmp_path, monkeypatch, behavior, label,
 ):
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     policy = ('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
               'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n')
     source = await seed_source(
-        pg_url, tmp_path,
+        clean_pg_url, tmp_path,
         Knowledge(transcript=tuple(f"restored background {i}" for i in range(101))),
         template=pg_template, policy=policy,
     )
@@ -143,11 +143,11 @@ async def test_writer_runtime_receipt_and_fail_closed_paths(
 
 @pytest.mark.parametrize("vector", list(case_file()))
 async def test_all_declared_sources_reach_writer_after_restored_backlog(
-    pg_url, pg_template, tmp_path, monkeypatch, vector,
+    clean_pg_url, pg_template, tmp_path, monkeypatch, vector,
 ):
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     source = await seed_source(
-        pg_url, tmp_path,
+        clean_pg_url, tmp_path,
         Knowledge(transcript=tuple(f"restored background {i}" for i in range(101))),
         template=pg_template,
         policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
@@ -181,7 +181,7 @@ async def test_all_declared_sources_reach_writer_after_restored_backlog(
 
 
 async def test_restored_out_of_order_rows_do_not_enter_recent_writer_batch(
-    pg_url, pg_template, tmp_path, monkeypatch,
+    clean_pg_url, pg_template, tmp_path, monkeypatch,
 ):
     from evals.backbone import _close
     from nora.subject import Message, SubjectSpec, know, obtain
@@ -190,7 +190,7 @@ async def test_restored_out_of_order_rows_do_not_enter_recent_writer_batch(
 
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     subject = await obtain(SubjectSpec(
-        database_url=pg_url, workdir=tmp_path,
+        database_url=clean_pg_url, workdir=tmp_path,
         overrides={"dreamer.enabled": True, "memory.profile.write": True},
         policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
                 'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n'),
@@ -229,7 +229,7 @@ async def test_restored_out_of_order_rows_do_not_enter_recent_writer_batch(
 ])
 @pytest.mark.parametrize("print_only", [True, False])
 async def test_source_lane_composed_input_and_storage(
-    pg_url, tmp_path, monkeypatch, vector, exposure, print_only,
+    clean_pg_url, tmp_path, monkeypatch, vector, exposure, print_only,
 ):
     from evals.backbone import _close
     from evals.rebuilt.profile_identity import check_identity
@@ -251,7 +251,7 @@ async def test_source_lane_composed_input_and_storage(
     preference_text = ("usual food preference is vegetarian ramen." if media_only else
                        "My usual food preference is vegetarian ramen.")
     subject = await obtain(SubjectSpec(
-        database_url=pg_url, workdir=tmp_path,
+        database_url=clean_pg_url, workdir=tmp_path,
         now=datetime.fromtimestamp(private["clock_ms"] / 1000, UTC),
         overrides={"dreamer.enabled": True, "memory.profile.write": True},
         policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
@@ -342,7 +342,7 @@ async def test_source_lane_composed_input_and_storage(
 
 
 async def test_v2_missing_reading_cannot_pass_with_missing_fixture_root(
-    pg_url, tmp_path, monkeypatch,
+    clean_pg_url, tmp_path, monkeypatch,
 ):
     from evals.backbone import _close
     from nora.agent.dreamer import DreamerRuntime
@@ -352,7 +352,7 @@ async def test_v2_missing_reading_cannot_pass_with_missing_fixture_root(
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     private = case_file(source_lanes_v2=True)["profile_media_only_missing"]
     subject = await obtain(SubjectSpec(
-        database_url=pg_url, workdir=tmp_path,
+        database_url=clean_pg_url, workdir=tmp_path,
         overrides={"dreamer.enabled": True, "memory.profile.write": True},
         policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
                 'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n'),
@@ -375,7 +375,7 @@ async def test_v2_missing_reading_cannot_pass_with_missing_fixture_root(
 @pytest.mark.parametrize("print_only", [True, False])
 @pytest.mark.parametrize("judge_mode", ["pass", "fail", "missing"])
 async def test_representation_sources_use_composed_writer_and_store(
-    pg_url, pg_template, tmp_path, monkeypatch, vector, print_only, judge_mode,
+    clean_pg_url, pg_template, tmp_path, monkeypatch, vector, print_only, judge_mode,
 ):
     from nora.subject.obtain import _DEFAULT_IDENTITY
 
@@ -385,7 +385,7 @@ async def test_representation_sources_use_composed_writer_and_store(
               '[[conversations]]\nplatform = "discord"\nid = "d1"\nlabel = "Games room"\n'
               'persons = ["miles_novak"]\nunit = "nora"\n')
     identity = _DEFAULT_IDENTITY + '[[persons.miles_novak.discord]]\nuser_id = "12345"\n'
-    source = await seed_source(pg_url, tmp_path, Knowledge(transcript=("background",)),
+    source = await seed_source(clean_pg_url, tmp_path, Knowledge(transcript=("background",)),
                                template=pg_template, policy=policy, identity=identity)
     private = case_file(representation=True)[vector]
     calls = []

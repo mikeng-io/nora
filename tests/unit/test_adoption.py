@@ -337,14 +337,14 @@ async def test_an_empty_body_is_marked_but_never_fed():
     assert counts.marked == 1
 
 
-async def test_adoption_against_the_real_postgres_store(pg_url):
+async def test_adoption_against_the_real_postgres_store(clean_pg_url):
     """The fake proves the logic; this proves the UPDATE actually lands in
     production's storage — `person_id` is the idempotence marker, and a marker
     that only works in memory is no marker at all."""
     from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 
-    run_migrations(pg_url)
-    store = SqlRecordStore(create_sql_engine(pg_url))
+    run_migrations(clean_pg_url)
+    store = SqlRecordStore(create_sql_engine(clean_pg_url))
     memory = FakeMemoryStore()
     try:
         await store.append(message=_msg(body="older", ts=1))

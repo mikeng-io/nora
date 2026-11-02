@@ -1,6 +1,7 @@
 """Synthetic, reversible ADR 0029 migration, including overlapping cursor keys."""
 from __future__ import annotations
 
+import pytest
 import sqlalchemy as sa
 from alembic import command
 
@@ -15,10 +16,11 @@ def _rows(conn, tables):
     )).scalars().all() for table in tables}
 
 
-def test_upgrade_downgrade_upgrade_preserves_every_row_and_cursor(pg_url):
-    cfg = alembic_config(pg_url)
+@pytest.mark.fresh_database
+def test_upgrade_downgrade_upgrade_preserves_every_row_and_cursor(clean_pg_url):
+    cfg = alembic_config(clean_pg_url)
     command.downgrade(cfg, "0129_message_readings")
-    engine = sa.create_engine(sync_url_for(pg_url))
+    engine = sa.create_engine(sync_url_for(clean_pg_url))
     try:
         with engine.begin() as conn:
             conn.execute(

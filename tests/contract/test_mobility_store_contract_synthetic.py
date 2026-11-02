@@ -31,11 +31,11 @@ START = EventPosition(0, -1, 0)
 
 
 @pytest.fixture(params=["memory", "sql"])
-async def store(request: Any) -> AsyncIterator[Any]:
+async def store(_pg_engine_scope, request: Any) -> AsyncIterator[Any]:
     if request.param == "memory":
         yield FakeMobilityStore()
         return
-    engine = create_sql_engine(request.getfixturevalue("pg_url"))
+    engine = create_sql_engine(request.getfixturevalue("clean_pg_url"))
     try:
         yield SqlMobilityStore(engine)
     finally:

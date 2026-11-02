@@ -185,8 +185,8 @@ async def _seed_everything(engine: Any) -> dict[str, Any]:
     return {"talk": talk, "said": said, "shown": shown, "memo": memo, "outing": outing}
 
 
-async def test_a_rebuild_equals_live_projection_and_is_idempotent(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_a_rebuild_equals_live_projection_and_is_idempotent(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     try:
         seeded = await _seed_everything(engine)
         live_nodes, live_edges = await _index(engine)
@@ -225,11 +225,11 @@ async def test_a_rebuild_equals_live_projection_and_is_idempotent(pg_url):
         await engine.dispose()
 
 
-async def test_the_final_pass_drops_what_a_batch_raced(pg_url):
+async def test_the_final_pass_drops_what_a_batch_raced(clean_pg_url):
     """A hide that lands while a batch holds the message, simulated by hiding
     it underneath the projector, and an episode node of no current build:
     the final pass removes both."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         record = SqlRecordStore(engine)
         mid = await record.append(message=_message("gone soon", ts=1000), person_id="member-a")
@@ -265,9 +265,9 @@ async def test_the_final_pass_drops_what_a_batch_raced(pg_url):
 
 
 async def test_status_runs_never_building_complete_and_counts_what_stayed_queued(
-    pg_url, monkeypatch,
+    clean_pg_url, monkeypatch,
 ):
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         await SqlRecordStore(engine).append(message=_message("hi", ts=1000), person_id="a")
         lesson = await SqlLessonStore(engine).create(
@@ -300,8 +300,8 @@ async def test_status_runs_never_building_complete_and_counts_what_stayed_queued
         await engine.dispose()
 
 
-async def test_a_second_rebuild_is_refused_while_one_holds_the_lock(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_a_second_rebuild_is_refused_while_one_holds_the_lock(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     try:
         await SqlRecordStore(engine).append(message=_message("hi", ts=1000), person_id="a")
         holder = await engine.connect()
@@ -334,8 +334,8 @@ async def test_a_second_rebuild_is_refused_while_one_holds_the_lock(pg_url):
         await engine.dispose()
 
 
-async def test_a_restored_sandbox_reads_never(pg_url, pg_template):
-    engine = create_sql_engine(pg_url)
+async def test_a_restored_sandbox_reads_never(clean_pg_url, pg_template):
+    engine = create_sql_engine(clean_pg_url)
     try:
         await SqlRecordStore(engine).append(message=_message("hi", ts=1000), person_id="a")
         await memory_index.rebuild(engine)
@@ -345,7 +345,7 @@ async def test_a_restored_sandbox_reads_never(pg_url, pg_template):
     finally:
         await engine.dispose()
 
-    async with sandbox_as_of(pg_url, at, template=pg_template) as (url, report):
+    async with sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, report):
         assert report.copied["messages"] == 1  # positive control: it restored
         restored = create_sql_engine(url)
         try:
@@ -363,12 +363,12 @@ async def test_a_restored_sandbox_reads_never(pg_url, pg_template):
             await restored.dispose()
 
 
-async def test_a_hub_being_attached_survives_a_concurrent_orphan_drop(pg_url):
+async def test_a_hub_being_attached_survives_a_concurrent_orphan_drop(clean_pg_url):
     """Transaction A re-attributes a message to P while a hide of P's only other
     message commits. A holds P's hub (`_hub` locks it), so the hide's orphan drop
     must leave it; otherwise A would commit an `authored_by` edge to a missing
     hub."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         record = SqlRecordStore(engine)
         m1 = await record.append(message=_message("only", ts=1000), person_id="P")
@@ -392,13 +392,13 @@ async def test_a_hub_being_attached_survives_a_concurrent_orphan_drop(pg_url):
         await engine.dispose()
 
 
-async def test_opposing_reattributions_do_not_deadlock(pg_url):
+async def test_opposing_reattributions_do_not_deadlock(clean_pg_url):
     """Two transactions move a message each between the same two people in
     opposite directions, at once. A projection holds the hub it attaches to
     and only SKIPS a hub another holds, so the one wait possible is on a hub
     the other already deleted, until that one commits: never a cycle (a
     Postgres deadlock would raise; a hang would time out)."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         record = SqlRecordStore(engine)
         m1 = await record.append(message=_message("one", ts=1000), person_id="P")
@@ -423,13 +423,13 @@ async def test_opposing_reattributions_do_not_deadlock(pg_url):
         await engine.dispose()
 
 
-async def test_a_person_known_only_through_a_stay_leaves_with_the_build(pg_url):
+async def test_a_person_known_only_through_a_stay_leaves_with_the_build(clean_pg_url):
     """A build switch that drops the only episode about a person drops that
     person's hub too, live, as a rebuild from empty would."""
     from nora.infra.sql.rollups import SqlRollupStore
     from nora.infra.sql.schema import PRESENCE_STAYS, ROLLUP_BUILD
 
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         async with engine.begin() as conn:
             old = (await conn.execute(sa.insert(ROLLUP_BUILD).values(

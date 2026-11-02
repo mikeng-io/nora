@@ -74,10 +74,11 @@ def _entries(raw, section: str) -> set[tuple]:
 KEY_A, KEY_B, KEY_C = "signal:room-a", "signal:room-b", "signal:room-c"
 
 
-def test_the_backfill_derives_lineage_from_citations_and_unresolved_otherwise(pg_url):
-    run_migrations(pg_url)
-    alembic_command.downgrade(alembic_config(pg_url), "0072_row_history_search_path")
-    engine = sa.create_engine(sync_url_for(pg_url))
+@pytest.mark.fresh_database
+def test_the_backfill_derives_lineage_from_citations_and_unresolved_otherwise(clean_pg_url):
+    run_migrations(clean_pg_url)
+    alembic_command.downgrade(alembic_config(clean_pg_url), "0072_row_history_search_path")
+    engine = sa.create_engine(sync_url_for(clean_pg_url))
     n1 = "00000000-0000-0000-0000-000000000001"
     n2 = "00000000-0000-0000-0000-000000000002"
     n3 = "00000000-0000-0000-0000-000000000003"
@@ -111,9 +112,9 @@ def test_the_backfill_derives_lineage_from_citations_and_unresolved_otherwise(pg
     finally:
         engine.dispose()
 
-    run_migrations(pg_url)
+    run_migrations(clean_pg_url)
 
-    engine = sa.create_engine(sync_url_for(pg_url))
+    engine = sa.create_engine(sync_url_for(clean_pg_url))
     try:
         with engine.connect() as conn:
             revs = {r.id: r for r in conn.execute(sa.text(
@@ -155,8 +156,8 @@ def test_the_backfill_derives_lineage_from_citations_and_unresolved_otherwise(pg
 
 
 @pytest.fixture
-async def engine(pg_url):
-    eng = create_sql_engine(pg_url)
+async def engine(clean_pg_url):
+    eng = create_sql_engine(clean_pg_url)
     try:
         yield eng
     finally:

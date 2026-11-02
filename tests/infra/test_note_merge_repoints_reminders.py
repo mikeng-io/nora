@@ -54,9 +54,9 @@ NOW_MS = int(T0.timestamp() * 1000)
 
 
 @pytest.fixture
-async def stores(pg_url):
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+async def stores(clean_pg_url):
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     notes = SqlNoteStore(engine)
     reminders = SqlReminderStore(engine)
     yield notes, reminders, engine

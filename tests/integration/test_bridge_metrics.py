@@ -89,6 +89,7 @@ def rendered_scrape_bearer(tmp_path, api_override):
         **_DOTENV, "NORA_BRIDGE_TOKEN": LEGACY_TOKEN,
         "SIGNOZ_CLICKHOUSE_PASSWORD": "11" * 32,
         "SIGNOZ_POSTGRES_PASSWORD": "22" * 32, "SIGNOZ_JOURNAL_GID": "0",
+        "NORA_DEPLOYMENT_ENVIRONMENT": "generated-test",
     }
     if api_override is not None:
         values["NORA_BRIDGE_API_TOKEN"] = api_override
@@ -151,3 +152,24 @@ async def test_missing_metric_registry_reports_unavailable(platform, tmp_path, m
         response = await http.get(
             "/metrics", headers={"Authorization": f"Bearer {API_TOKEN}"})
         assert response.status == 503
+
+
+@pytest.mark.parametrize("deployment_environment", [None, "", "generated-test"])
+def test_backend_rejects_unknown_deployment_environment(tmp_path, deployment_environment):
+    values = {"SIGNOZ_CLICKHOUSE_PASSWORD": "generated-clickhouse",
+              "SIGNOZ_POSTGRES_PASSWORD": "generated-postgres", "SIGNOZ_JOURNAL_GID": "0"}
+    if deployment_environment is not None:
+        values["NORA_DEPLOYMENT_ENVIRONMENT"] = deployment_environment
+    envfile = tmp_path / "generated.env"
+    envfile.write_text("".join(f"{key}={value}\n" for key, value in values.items()))
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith(("NORA_", "SIGNOZ_"))}
+    path = Path(__file__).resolve().parents[2] / "deploy/signoz/deployment/compose.yaml"
+    result = subprocess.run(  # noqa: S603 — actual Compose interpolation, generated values only
+        ["docker", "compose", "--env-file", str(envfile), "-f", str(path), "config", "--quiet"],
+        env=env, capture_output=True, text=True, check=False)
+    if deployment_environment:
+        assert result.returncode == 0, result.stderr
+    else:
+        assert result.returncode != 0
+        assert "NORA_DEPLOYMENT_ENVIRONMENT" in result.stderr

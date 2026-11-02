@@ -1,6 +1,6 @@
 [project]
 name = "nora"
-version = "7.14.0"
+version = "7.14.1"
 description = "A self-hosted, sessionless social AI agent with memory and background cognition"
 requires-python = ">=3.11"
 dependencies = [
@@ -122,6 +122,7 @@ addopts = "-m 'not network'"
 markers = [
     "network: requires a live external service (OmniRoute, signal-cli, Honcho); excluded by default",
     "integration: spins disposable containers (Postgres/Redis) via testcontainers",
+    "fresh_database: changes schema or database-level state; requires a dedicated migrated DB",
 ]
 
 [tool.mypy]

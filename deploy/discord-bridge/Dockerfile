@@ -21,6 +21,8 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY nora/ ./nora/
 COPY deploy/discord-bridge/entry.py /app/entry.py
+ARG NORA_VERSION=""
+ENV OTEL_SERVICE_VERSION=${NORA_VERSION}
 RUN uv sync --frozen --no-dev \
  && mkdir -p /data/bridge && chown -R nora:nora /data /app
 

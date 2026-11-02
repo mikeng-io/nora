@@ -1,5 +1,7 @@
 """Real PostgreSQL clone ownership and isolation, including committed state."""
 
+import time
+
 import psycopg
 import pytest
 from psycopg import sql
@@ -9,6 +11,7 @@ from nora.domain.models import NormalizedMessage
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from tests.conftest import _pg_database
+from tests.infra.pg_baseline import PgBaseline
 
 
 def _row_and_sequence_state(conn):
@@ -125,3 +128,100 @@ def test_module_clone_isolation_and_exception_cleanup(pg_admin, pg_template):
         assert admin.execute(
             "SELECT datname FROM pg_database WHERE datname = %s", (pg_template,)
         ).fetchone() == (pg_template,)
+
+
+def test_complete_reset_restores_seeds_history_and_rolled_back_sequences(pg_admin, pg_template):
+    with psycopg.connect(pg_admin.dsn(pg_template)) as conn:
+        baseline = PgBaseline.capture(conn)
+        expected = _row_and_sequence_state(conn)
+    with _pg_database(pg_admin, pg_template) as url:
+        dsn = pg_admin.dsn(url.rsplit('/', 1)[1])
+        with psycopg.connect(dsn) as conn:
+            conn.execute("UPDATE memory_index_state SET status = 'building'")
+            conn.execute(
+                "INSERT INTO tag_debounce_state (platform, conversation_id, last_allowed_at) "
+                "VALUES ('signal', 'generated-reset-room', 1000)"
+            )
+        with psycopg.connect(dsn) as conn:
+            assert conn.execute("SELECT count(*) FROM row_history").fetchone()[0] > 0
+            conn.execute("SELECT nextval('messages_id_seq')")
+            conn.rollback()
+        with psycopg.connect(dsn) as conn:
+            assert baseline.reset(conn) > 0
+        with psycopg.connect(dsn) as conn:
+            assert _row_and_sequence_state(conn) == expected
+            assert conn.execute("SELECT current_setting('nora.row_history', true)").fetchone() != (
+                'off',
+            )
+            # No new physical table files or reset DDL for an already-clean DB.
+            assert baseline.reset(conn) == 0
+
+
+def test_reset_rejects_live_connections_and_schema_changes(pg_admin, pg_template):
+    with psycopg.connect(pg_admin.dsn(pg_template)) as conn:
+        baseline = PgBaseline.capture(conn)
+    with _pg_database(pg_admin, pg_template) as url:
+        dsn = pg_admin.dsn(url.rsplit('/', 1)[1])
+        with psycopg.connect(dsn) as live, psycopg.connect(dsn) as reset:
+            assert live.execute("SELECT 1").fetchone() == (1,)
+            with pytest.raises(RuntimeError, match="test-owned connections"):
+                baseline.reset(reset)
+        with psycopg.connect(dsn) as conn:
+            conn.execute("CREATE TABLE generated_reset_drift (id bigint)")
+        with (
+            psycopg.connect(dsn) as conn,
+            pytest.raises(RuntimeError, match="schema changed"),
+        ):
+            baseline.reset(conn)
+
+
+def test_empty_database_is_actually_unmigrated(empty_pg_url, pg_admin):
+    with psycopg.connect(pg_admin.dsn(empty_pg_url.rsplit('/', 1)[1])) as conn:
+        assert conn.execute("SELECT current_database()").fetchone()[0].startswith('t_')
+        assert conn.execute("SELECT to_regclass('public.alembic_version')").fetchone() == (None,)
+        assert conn.execute(
+            "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'"
+        ).fetchone() == (0,)
+
+
+def test_reset_does_not_mistake_autovacuum_for_a_test_connection(pg_admin, pg_template):
+    maintenance = pg_admin.dsn(pg_admin.maintenance_db)
+    with psycopg.connect(maintenance, autocommit=True) as admin:
+        prior = admin.execute("SHOW autovacuum_naptime").fetchone()[0]
+        # Only this worker's disposable server; make the real background owner observable.
+        admin.execute("ALTER SYSTEM SET autovacuum_naptime = '1s'")
+        admin.execute("SELECT pg_reload_conf()")
+    try:
+        with _pg_database(pg_admin, pg_template) as url:
+            dsn = pg_admin.dsn(url.rsplit('/', 1)[1])
+            with psycopg.connect(dsn) as conn:
+                conn.execute(
+                    "CREATE TABLE generated_vacuum (id bigint) WITH ("
+                    "autovacuum_vacuum_threshold=0, autovacuum_vacuum_scale_factor=0, "
+                    "autovacuum_vacuum_cost_delay=100, autovacuum_vacuum_cost_limit=1)"
+                )
+            with psycopg.connect(dsn) as conn:
+                baseline = PgBaseline.capture(conn)
+                conn.execute("INSERT INTO generated_vacuum SELECT generate_series(1, 10000)")
+                conn.execute("DELETE FROM generated_vacuum")
+            with psycopg.connect(dsn) as conn:
+                deadline = time.monotonic() + 20
+                while True:
+                    conn.execute("SELECT pg_stat_clear_snapshot()")
+                    observed = conn.execute(
+                        "SELECT pid FROM pg_stat_activity WHERE datname = current_database() "
+                        "AND backend_type = 'autovacuum worker'"
+                    ).fetchall()
+                    if observed:
+                        break
+                    assert time.monotonic() < deadline, "Real autovacuum worker was not observed"
+                    conn.commit()
+                    time.sleep(0.1)
+                # Positive control above: a real server worker is alive at the reset boundary.
+                assert baseline.reset(conn) == 0
+    finally:
+        with psycopg.connect(maintenance, autocommit=True) as admin:
+            admin.execute(sql.SQL("ALTER SYSTEM SET autovacuum_naptime = {}").format(
+                sql.Literal(prior)
+            ))
+            admin.execute("SELECT pg_reload_conf()")

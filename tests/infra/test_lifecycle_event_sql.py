@@ -25,8 +25,8 @@ from tests.unit.nora_computer_harness import load_lifecycle_event
 lifecycle = load_lifecycle_event()
 
 
-def _dsn(pg_url: str) -> str:
-    return pg_url.replace("postgresql+asyncpg://", "postgresql://")
+def _dsn(clean_pg_url: str) -> str:
+    return clean_pg_url.replace("postgresql+asyncpg://", "postgresql://")
 
 
 def _run(dsn: str, statements: list[str]) -> None:
@@ -47,10 +47,10 @@ def _rows(dsn: str) -> list[dict]:
 
 
 @pytest.mark.parametrize("event", sorted(lifecycle.EVENTS))
-def test_every_event_kind_satisfies_the_tables_own_constraints(pg_url, event) -> None:
+def test_every_event_kind_satisfies_the_tables_own_constraints(clean_pg_url, event) -> None:
     """The five constraints (actor, path, phase, phase times, uniqueness) accept
     what the script writes for each kind, with no migration."""
-    dsn = _dsn(pg_url)
+    dsn = _dsn(clean_pg_url)
     made = lifecycle.make_event(
         event, "ok", name="nora-computer", detail={"k": "v"}, actor_host="norty",
     )
@@ -65,8 +65,8 @@ def test_every_event_kind_satisfies_the_tables_own_constraints(pg_url, event) ->
     assert row["session_id"] is None
 
 
-def test_replaying_the_whole_spool_is_a_no_op(pg_url, tmp_path) -> None:
-    dsn = _dsn(pg_url)
+def test_replaying_the_whole_spool_is_a_no_op(clean_pg_url, tmp_path) -> None:
+    dsn = _dsn(clean_pg_url)
     spool = tmp_path / "spool.jsonl"
     for kind in ("create", "computerd_start", "token_rotation"):
         lifecycle.main(["record", "--spool", str(spool), "--event", kind])
@@ -82,8 +82,8 @@ def _sql_of(spool) -> list[str]:
     return [lifecycle.insert_sql(e) for e in lifecycle.read_spool(spool)[0]]
 
 
-def test_a_row_carries_when_it_happened_not_when_it_was_synced(pg_url) -> None:
-    dsn = _dsn(pg_url)
+def test_a_row_carries_when_it_happened_not_when_it_was_synced(clean_pg_url) -> None:
+    dsn = _dsn(clean_pg_url)
     then = datetime(2026, 10, 1, 3, 5, 4, tzinfo=UTC)
     made = lifecycle.make_event("computerd_start", now=then)
     _run(dsn, [lifecycle.insert_sql(made)])
@@ -91,10 +91,10 @@ def test_a_row_carries_when_it_happened_not_when_it_was_synced(pg_url) -> None:
     assert row["created_at"] == then
 
 
-def test_the_append_only_triggers_still_refuse_every_change(pg_url) -> None:
+def test_the_append_only_triggers_still_refuse_every_change(clean_pg_url) -> None:
     """The writer must not weaken the table. UPDATE, DELETE and TRUNCATE of a
     lifecycle row are refused by the same triggers as of a tool's row."""
-    dsn = _dsn(pg_url)
+    dsn = _dsn(clean_pg_url)
     _run(dsn, [lifecycle.insert_sql(lifecycle.make_event("destroy"))])
     for statement in (
         "UPDATE computer_events SET status = 'ok'",
@@ -106,10 +106,10 @@ def test_the_append_only_triggers_still_refuse_every_change(pg_url) -> None:
     assert len(_rows(dsn)) == 1
 
 
-def test_a_conflicting_replay_does_not_try_to_update(pg_url) -> None:
+def test_a_conflicting_replay_does_not_try_to_update(clean_pg_url) -> None:
     """ON CONFLICT DO NOTHING, not DO UPDATE: a replay that updated would trip
     the trigger. Proved by the replay succeeding with the trigger in force."""
-    dsn = _dsn(pg_url)
+    dsn = _dsn(clean_pg_url)
     made = lifecycle.make_event("create")
     _run(dsn, [lifecycle.insert_sql(made)])
     changed = {**made, "status": "failed"}      # same operation_id, a different body
@@ -118,8 +118,8 @@ def test_a_conflicting_replay_does_not_try_to_update(pg_url) -> None:
     assert row["status"] == "ok"                # the first record stands
 
 
-def test_hostile_text_in_a_detail_is_data_not_sql(pg_url) -> None:
-    dsn = _dsn(pg_url)
+def test_hostile_text_in_a_detail_is_data_not_sql(clean_pg_url) -> None:
+    dsn = _dsn(clean_pg_url)
     nasty = "x'); DROP TABLE computer_events; --"
     made = lifecycle.make_event("policy_log_read", detail={"args": nasty})
     _run(dsn, [lifecycle.insert_sql(made)])
@@ -135,20 +135,20 @@ def test_the_event_and_operation_ids_are_uuids_the_table_accepts() -> None:
     assert made["id"] != made["operation_id"]
 
 
-def test_two_syncs_racing_to_insert_the_same_event_do_not_fail(pg_url) -> None:
+def test_two_syncs_racing_to_insert_the_same_event_do_not_fail(clean_pg_url) -> None:
     """The same event arrives twice as a concurrent sync would send it: the second
     insert collides on the primary key AND the operation key. With a conflict
     TARGET naming only (operation_id, phase), a collision that surfaced on the
     primary key first would raise; bare DO NOTHING takes whichever unique key it is."""
-    dsn = _dsn(pg_url)
+    dsn = _dsn(clean_pg_url)
     made = lifecycle.make_event("computerd_start")
     _run(dsn, [lifecycle.insert_sql(made)])
     _run(dsn, [lifecycle.insert_sql(made)])
     assert len(_rows(dsn)) == 1
 
 
-def test_a_collision_on_the_primary_key_alone_is_skipped_too(pg_url) -> None:
-    dsn = _dsn(pg_url)
+def test_a_collision_on_the_primary_key_alone_is_skipped_too(clean_pg_url) -> None:
+    dsn = _dsn(clean_pg_url)
     first = lifecycle.make_event("create")
     other = {**lifecycle.make_event("destroy"), "id": first["id"]}      # same id, new operation
     _run(dsn, [lifecycle.insert_sql(first)])

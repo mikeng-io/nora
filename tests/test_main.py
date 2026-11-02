@@ -12,8 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
-async def env(tmp_path, monkeypatch, aiohttp_server, pg_url, example_config_path):
-    # `pg_url` creates a fresh Postgres database and exports DATABASE_URL, which
+async def env(tmp_path, monkeypatch, aiohttp_server, clean_pg_url, example_config_path):
+    # `clean_pg_url` supplies a reset module database and exports DATABASE_URL, which
     # the composition root reads (store.database_url_env).
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
 
@@ -158,12 +158,12 @@ async def test_a_broken_migration_refuses_to_start(env, monkeypatch):
         await build_app(env)
 
 
-async def test_the_database_is_migrated_at_startup(env, pg_url):
+async def test_the_database_is_migrated_at_startup(env, clean_pg_url):
     from nora.infra.sql.migrations_runner import current_revision, head_revision
 
     app = await build_app(env)
     try:
-        assert current_revision(pg_url) == head_revision()
+        assert current_revision(clean_pg_url) == head_revision()
         assert (await app.store.stats())["schema_revision"] == head_revision()
     finally:
         await app.shutdown()
@@ -176,7 +176,7 @@ async def test_shutdown_closes_the_omniroute_client(env):
     assert client.is_closed()
 
 
-async def test_the_prune_sweep_actually_prunes(pg_url, monkeypatch):
+async def test_the_prune_sweep_actually_prunes(clean_pg_url, monkeypatch):
     """Proves `runtime.prune_loop` — the sweep `App.run` wires in via
     `nora.app.runtime` — runs and calls `store.prune_all`, not merely that the
     coroutine exists. `append` does not prune inline, so this sweep is the only
@@ -191,8 +191,8 @@ async def test_the_prune_sweep_actually_prunes(pg_url, monkeypatch):
     from nora.obs.metrics import Metrics
 
     monkeypatch.setattr(main_module, "PRUNE_INTERVAL_SECONDS", 0.01)
-    run_migrations(pg_url)
-    store = SqlRecordStore(create_sql_engine(pg_url), max_per_conversation=3)
+    run_migrations(clean_pg_url)
+    store = SqlRecordStore(create_sql_engine(clean_pg_url), max_per_conversation=3)
     metrics = Metrics()
     try:
         for i in range(10):

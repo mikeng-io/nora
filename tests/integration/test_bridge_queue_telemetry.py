@@ -84,8 +84,8 @@ def _envelope(body: str, ts: int, *, trace: dict | None = None,
 
 
 @pytest.fixture
-async def bridge(pg_url, redis_client):
-    store = SqlBridgeStore(create_async_engine(pg_url))
+async def bridge(clean_pg_url, redis_client):
+    store = SqlBridgeStore(create_async_engine(clean_pg_url))
     stream = stream_name(PLATFORM, ACCOUNT)
     await ensure_group(redis_client, stream)
     yield store, redis_client, stream
@@ -425,12 +425,13 @@ async def test_lanes_ingest_progresses_while_turn_suspended(
 
 
 async def test_killed_lock_backend_halts_turn_and_reclaims(
-        bridge, redis_client, harness_factory):
+        bridge, redis_client, harness_factory, caplog, exported_spans):
     """The held-session check, for real: `pg_terminate_backend` on the exact
     backend holding the speaking lock kills the session mid-phase — the
     heartbeat's pg_locks probe sees it, the phase unwinds before any effect,
     and only lease expiry + reclaim (never the stale attempt) lets a later
     generation proceed."""
+    caplog.set_level(logging.INFO, "nora.platform.bridge.telemetry")
     h = await harness_factory(delay=15.0, script=[ScriptedTurn(
         tool_calls=[("send_reply", {"text": "must not send"})],
         final_text="must not send")])
@@ -470,6 +471,15 @@ async def test_killed_lock_backend_halts_turn_and_reclaims(
     assert row["state"] == "pending"
     assert row["generation"] == turn.generation + 1
     assert row["lease_owner"] is None
+    attempt = bt.last_attempt(row["result"])
+    assert attempt is not None
+    ctx = bt.remote_context(attempt.get("traceparent"))
+    assert ctx is not None
+    deferred = [r for r in caplog.records
+                if getattr(r, "queue_event", None) == "deferred"]
+    assert len(deferred) == 1
+    assert deferred[0].trace_id == f"{ctx.trace_id:032x}"
+    assert deferred[0].span_id == f"{ctx.span_id:016x}"
     async with store._engine.connect() as conn:
         assert (await conn.execute(sa.text(
             "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'"

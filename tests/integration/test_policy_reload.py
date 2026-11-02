@@ -12,6 +12,7 @@ from nora.ingest.stages import scope
 from nora.presence.composition import build_collector
 from tests.builders import override_config
 from tests.test_composition import cfg as cfg
+from tests.test_composition import owned_dependencies as owned_dependencies
 
 
 def room(room_id, label):

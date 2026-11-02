@@ -188,7 +188,10 @@ class Harness:
     participation_trigger: ParticipationTrigger | None = None
 
     async def aclose(self) -> None:
-        await self.store.aclose()
+        try:
+            await self._background.cancel_all()
+        finally:
+            await self.store.aclose()
 
     @property
     def agents_constructed(self) -> int:

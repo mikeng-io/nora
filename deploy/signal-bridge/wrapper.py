@@ -770,6 +770,7 @@ def _setup_tracing() -> None:
             exporter=os.environ.get("NORA_TRACING_EXPORTER", "otlp_http"),
             endpoint=os.environ.get("NORA_TRACING_ENDPOINT", ""),
             headers_env=os.environ.get("NORA_TRACING_HEADERS_ENV", ""),
+            service_version=os.environ.get("OTEL_SERVICE_VERSION", ""),
             credentials=dict(os.environ))
     except Exception as exc:  # noqa: BLE001 — tracing is never load-bearing
         log.warning("tracing setup failed; continuing without tracing: %s",
@@ -792,7 +793,7 @@ async def supervise() -> None:
         "daemon", "--http", "127.0.0.1:18080", "--receive-mode", "on-start")
     try:
         app = bridge.routes()
-        runner = web.AppRunner(app)
+        runner = web.AppRunner(app, access_log=None)
         await runner.setup()
         await web.TCPSite(runner, "0.0.0.0", cfg.port).start()  # noqa: S104 — private nora network, token-authed
         await bridge.capture()
