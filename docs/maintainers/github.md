@@ -124,8 +124,9 @@ cannot be discovered through `/apps/{slug}` using that job's repository token.
 
 The `release-please` workflow runs on every master push. It first lets
 release-please publish merged pending metadata, then fetches the new tags and
-plans the complete reachable range on latest master. Every ordinary change
-qualifies, including docs, config, CI and maintenance; generated metadata is
+plans the complete reachable range on latest master. Shipped changes qualify; docs, tests, CI, agent tooling and repository-only
+maintenance paths are excluded. Unknown paths and runtime Markdown qualify, and
+explicit breaking/minor declarations remain visible. Generated metadata is
 excluded to avoid loops. Internal types can stay hidden in the changelog.
 Existing tags and version history remain unchanged.
 

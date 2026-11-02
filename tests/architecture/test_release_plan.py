@@ -235,8 +235,8 @@ def test_bot_commits_are_attributed_to_the_app_not_a_generic_noreply_account():
 @pytest.mark.parametrize(
     "subject", ["docs: clarify setup", "ci: improve checks", "config: adjust defaults"]
 )
-def test_internal_only_changes_automatically_write_a_patch(repo, plan, subject):
-    sha = commit(repo, "docs/note.md", subject)
+def test_internal_commit_types_on_runtime_paths_write_a_patch(repo, plan, subject):
+    sha = commit(repo, "nora/note.py", subject)
     assert plan.main(["--repo", REPO, "--out", str(repo / "out")]) == 0
     assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.0.1"}
     assert (repo / "out/title.txt").exists()
@@ -366,7 +366,7 @@ def test_breaking_merge_message_is_not_hidden(repo, plan):
 
 
 def test_metadata_merge_publication_and_later_internal_change_do_not_loop(repo, plan):
-    commit(repo, "docs/ordinary.md", "docs: clarify setup")
+    commit(repo, "nora/ordinary.py", "fix: repair behavior")
     source = run("rev-parse", "HEAD").strip()
     out = repo.parent / "release-output"
     run("switch", "-qc", plan.PR_HEAD)
@@ -389,7 +389,7 @@ def test_metadata_merge_publication_and_later_internal_change_do_not_loop(repo, 
     assert (repo / ".release-please-manifest.json").read_bytes() == before
     commit(repo, "tests/new.py", "test: cover a detail")
     assert plan.main(["--repo", REPO, "--out", str(out)]) == 0
-    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.0.2"}
+    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.0.1"}
 
 
 def release_workflow():
@@ -610,7 +610,7 @@ def test_concurrent_master_push_reprepares_same_version_and_complete_range(repo,
 
 
 def test_workflow_refuses_replaced_pr_head_before_enabling_auto_merge(repo, workflow_repo):
-    commit(repo, "docs/a.md", "docs: clarify setup")
+    commit(repo, "nora/a.py", "fix: repair behavior")
     run("push", "origin", "master")
     workflow_repo.write_text(json.dumps({"head_race": True}))
     result = run_plan_shell()
@@ -619,7 +619,7 @@ def test_workflow_refuses_replaced_pr_head_before_enabling_auto_merge(repo, work
 
 
 def test_workflow_refuses_stale_owner_source_before_preparing(repo, workflow_repo, monkeypatch):
-    source = commit(repo, "docs/a.md", "docs: clarify setup")
+    source = commit(repo, "nora/a.py", "fix: repair behavior")
     commit(repo, "docs/b.md", "docs: describe a later change")
     run("push", "origin", "master")
     monkeypatch.setenv("EVENT", "workflow_dispatch")
@@ -629,3 +629,11 @@ def test_workflow_refuses_stale_owner_source_before_preparing(repo, workflow_rep
     assert result.returncode == 1, result.stderr
     assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.0.0"}
     assert json.loads(workflow_repo.read_text()) == {}
+
+
+def test_docs_only_range_does_not_write_versions(repo, plan, capsys):
+    commit(repo, "docs/note.md", "docs: clarify setup")
+    assert plan.main(["--repo", REPO, "--out", str(repo / "out")]) == 0
+    assert "eligible=false" in capsys.readouterr().out
+    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.0.0"}
+    assert not (repo / "out").exists()

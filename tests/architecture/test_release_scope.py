@@ -44,37 +44,40 @@ def commit(repo, path, subject):
 @pytest.mark.parametrize(
     "path,subject,expected",
     [
-        ("design/new-capability.md", "feat: propose a capability", True),
-        ("docs/setup.md", "fix: clarify setup", True),
-        ("README.md", "feat: decorate README", True),
+        ("design/new-capability.md", "feat: propose a capability", False),
+        ("docs/setup.md", "fix: clarify setup", False),
+        ("README.md", "feat: decorate README", False),
         ("site/README.md", "fix: clarify site setup", True),
         ("docs-site/README.md", "fix: clarify wiki setup", True),
         ("docs-site/astro.config.mjs", "docs: describe the renderer", True),
         ("site/src/styles/global.css", "fix(site): restore readable text", True),
         ("docs-site/astro.config.mjs", "fix(wiki): render diagrams", True),
         ("docs-site/package-lock.json", "security(wiki): patch a renderer dependency", True),
-        ("tests/test_new.py", "fix: improve test", True),
-        (".github/workflows/ci.yml", "feat: add a check", True),
+        ("tests/test_new.py", "fix: improve test", False),
+        (".github/workflows/ci.yml", "feat: add a check", False),
         ("nora/feature.py", "docs: describe a feature", True),
         ("nora/feature.py", "feat: implement a feature", True),
         ("nora/feature.py", "fix(feature)!: change runtime behavior", True),
         ("nora/doctrine/voice.md", "doctrine: change runtime voice", True),
         ("nora/skills/example/SKILL.md", "change: adjust runtime guidance", True),
+        (".agents/skills/example/SKILL.md", "chore: update builder guidance", False),
+        (".githooks/pre-commit", "chore: update hook", False),
+        ("unknown/new.py", "chore: add an unknown input", True),
         ("uv.lock", "security: update a vulnerable dependency", True),
     ],
 )
-def test_every_ordinary_change_qualifies_including_internal_only(repo, path, subject, expected):
+def test_eligibility_follows_paths_not_commit_types(repo, path, subject, expected):
     commit(repo, path, subject)
     assert scope.eligible("v1.0.0") is expected
 
 
-def test_later_docs_also_release_after_the_previous_range_is_published(repo):
+def test_later_docs_do_not_release_after_the_previous_range_is_published(repo):
     commit(repo, "nora/feature.py", "feat: implement a feature")
     commit(repo, "docs/feature.md", "docs: describe the feature")
     assert scope.eligible("v1.0.0")
     run("tag", "v1.1.0")
     commit(repo, "design/future.md", "feat: describe future work")
-    assert scope.eligible("v1.1.0")
+    assert not scope.eligible("v1.1.0")
 
 
 def test_failed_history_read_never_grants_release(repo):
@@ -130,5 +133,22 @@ def test_generated_metadata_is_excluded_but_a_release_subject_on_other_work_is_n
     run("add", ".")
     run("commit", "-qm", "chore(master): release 1.0.1")
     assert not scope.eligible("v1.0.0")
-    commit(repo, "docs/ordinary.md", "chore(master): release 1.0.2")
+    commit(repo, "nora/ordinary.py", "chore(master): release 1.0.2")
     assert scope.eligible("v1.0.0")
+
+
+def test_docs_only_merge_is_excluded(repo):
+    run("switch", "-qc", "docs-topic")
+    commit(repo, "docs/new.md", "docs: add guidance")
+    run("switch", "-q", "master")
+    run("merge", "--no-ff", "docs-topic", "-m", "merge: add guidance")
+    assert not scope.eligible("v1.0.0")
+
+
+def test_runtime_rename_into_docs_still_qualifies(repo):
+    commit(repo, "nora/input.md", "fix: add runtime input")
+    run("tag", "v1.1.0")
+    (repo / "docs").mkdir()
+    run("mv", "nora/input.md", "docs/input.md")
+    run("commit", "-qm", "chore: move input")
+    assert scope.eligible("v1.1.0")
