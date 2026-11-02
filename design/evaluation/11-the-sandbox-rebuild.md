@@ -1034,9 +1034,15 @@ path for the entire corpus, alongside recall and Cognition sessions. Routing
 must read the stores the selected tool uses: the legacy snapshot holds no typed
 platform observations, and its direct Note query cannot read a newly added
 field from a source clone predating that migration. Full restore reads recorded
-row history into the current private sandbox before subject composition; it
-uses the existing schema defaults for older images, without migrating the
-shared source or changing parity checks. Source freshness still requires the
-normal locked refresh; no synthetic poll, handle or vote is seeded to obtain a
+row history before subject composition, and requires the source and target to
+have the same migration revision. Schema defaults fill missing keys in older
+row images; they do not waive this revision check. If the candidate is ahead,
+make a separately named, disposable copy of the refreshed source under the
+eval lock, migrate only that private copy with the candidate, and supply it
+through the existing `--source-url` option. Verify the shared source and blank
+template remain unchanged, and validate restoration without a model call
+before measuring. Drop the private copy and its blank template after the run.
+Source freshness still requires the normal locked refresh; no synthetic poll,
+handle or vote is seeded to obtain a
 successful tool result. The existing full-restore reader/geocoder restrictions
 remain in effect. Other corpora retain their selected path.
