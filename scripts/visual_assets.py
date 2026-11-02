@@ -114,8 +114,8 @@ def report(data: dict) -> str:
         ),
         "",
         (
-            "Approved production setting, 2026-10-26: **2D anime Bauhinia for all non-3D "
-            "uses of adult and Mini Nora**; stylized 3D PNGs are Meshy inputs only. "
+            "Baseline production setting, 2026-10-26: **2D anime Bauhinia for non-3D "
+            "uses of adult and Mini Nora**. The accepted 2026-11-02 cinematic artwork set in assets/cinematic/ is a scoped exception; existing website/runtime inputs and 3D models are retained. Baseline stylized 3D PNGs are Meshy inputs only. "
             "Mini retains option08 eyes, no nose marker and one tiny mouth. Simplified "
             "broad hair clumps and five-petal clasp apply to new references. Per-file rows "
             "record current source imports and derivative state. Parent integrated browser "

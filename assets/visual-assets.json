@@ -2674,6 +2674,78 @@
       ],
       "mode": "RGB",
       "visual_review": "Operator approved retention as a candidate; no final winner selected or formal avatar replacement."
+    },
+    {
+      "id": "assets.cinematic.mini-nora-master",
+      "path": "assets/cinematic/mini-nora-master.png",
+      "form": "mini",
+      "role": "canonical",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/cinematic/README.md (accepted visual anchor)",
+        "DESIGN.md (cinematic artwork direction)"
+      ],
+      "provenance": "Operator accepted 2026-11-02; AI cinematic artwork anchor. Social icon is full-bleed square; platforms own cropping. Existing 3D model retained. No runtime, website or external profile replacement.",
+      "unchanged_reason": null,
+      "sha256": "966896900030285219803e6a6c555e9efc31168656ac0c1643e64a4d4c982f62",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.cinematic.mini-nora-social-icon",
+      "path": "assets/cinematic/mini-nora-social-icon.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/cinematic/mini-nora-master.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/cinematic/README.md (accepted visual anchor)",
+        "DESIGN.md (cinematic artwork direction)"
+      ],
+      "provenance": "Operator accepted 2026-11-02; AI cinematic artwork anchor. Social icon is full-bleed square; platforms own cropping. Existing 3D model retained. No runtime, website or external profile replacement.",
+      "unchanged_reason": null,
+      "sha256": "42f85c4dff312ef8ecb42734d473cfc6235f781b9bbfdcbb441164c2c6a9d93e",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "assets.cinematic.mini-nora-social-banner",
+      "path": "assets/cinematic/mini-nora-social-banner.png",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/cinematic/mini-nora-master.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "assets/cinematic/README.md (accepted visual anchor)",
+        "DESIGN.md (cinematic artwork direction)"
+      ],
+      "provenance": "Operator accepted 2026-11-02; AI cinematic artwork anchor. Social icon is full-bleed square; platforms own cropping. Existing 3D model retained. No runtime, website or external profile replacement.",
+      "unchanged_reason": null,
+      "sha256": "cbf489b431eff0747ee437fd4f836be61e4bcb45e80bcc544dd945b14cb00253",
+      "size": [
+        2172,
+        724
+      ],
+      "mode": "RGB"
     }
   ],
   "historical_exports": [
@@ -2736,6 +2808,7 @@
     "bauhinia_modeling_pack": "Seven v1 PNGs retained byte-identically as history. Five simplified-hair v2 sheets and six isolated Meshy-only input candidates registered; parent viewed sources PASS as artwork/candidates. Hand orientation/digits, calibrated projection, scale/alignment and margins remain unverified. No Meshy call, mesh, rig or operator 3D engineering approval.",
     "bauhinia_2d_preparation": "Integration supersedes the preparatory state: 23 accepted production targets, full sanitized canonical pin, runtime appearance/identity text, derivatives and mock screenshots refreshed. Earlier parent gate applies only to the old staged tree. Final parent browser acceptance of current 2D site PASS; final gate remains parent-owned. No commit/publication/live ingest/deploy.",
     "video_consumer_closure": "REPOSITORY DISCOVERY ONLY, 2026-10-26: nine MP4s. No website or root README reference found. The showreel README former current-export table is now explicitly historical; render.sh is a writer to those same eight paths, not a playback consumer. A new current export requires 2D image sync, Thread/Quiet focal-logic adaptation, picture render and existing-audio mux to separate versioned paths. External/live publication UNMEASURED; no video rerender performed.",
-    "site_2d_harmonization": "Existing WebGL2 texture warp and procedural 2D face retained. Eight new texture/pivot sets and static fallbacks rebuilt; empty studio/night plate bytes preserved as background inputs. Parent current 2D browser seam/feature/animation acceptance PASS, 2026-10-26; no shader redesign."
+    "site_2d_harmonization": "Existing WebGL2 texture warp and procedural 2D face retained. Eight new texture/pivot sets and static fallbacks rebuilt; empty studio/night plate bytes preserved as background inputs. Parent current 2D browser seam/feature/animation acceptance PASS, 2026-10-26; no shader redesign.",
+    "cinematic_anchors": "ACCEPTED by operator, 2026-11-02: master, square social icon and Lingnan xianxia banner. Artwork only; existing 3D model retained; website/runtime/profile adoption not performed."
   }
 }
