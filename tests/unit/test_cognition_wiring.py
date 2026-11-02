@@ -194,7 +194,7 @@ def test_read_tools_are_built_for_the_agenda_room_under_the_cognition_grant():
 def test_read_tools_carry_the_sessions_clock_to_the_source():
     """The historical lane's seam: `clock` reaches `RegistryToolSource.build`
     per room — the per-occasion bind the registry's injected clock is swapped
-    through — and a live call passes `None`, never a second tool source."""
+    through — and a live call omits the optional clock, never a second tool source."""
     from nora.app.cognition_agent_runner import as_strands_tools
 
     class RoutedSource(_Source):
@@ -214,7 +214,7 @@ def test_read_tools_carry_the_sessions_clock_to_the_source():
     build("friends", [Room("signal", "g1"), Room("discord", "g2")], clock=clock)
     assert all(c["clock"] is clock for c in source.calls[1:])
     build("friends", [Room("signal", "g1")])
-    assert source.calls[-1]["clock"] is None
+    assert "clock" not in source.calls[-1]
 
 
 # ---- what the runner does with them ------------------------------------------
@@ -328,7 +328,7 @@ async def test_an_agenda_spanning_rooms_asks_for_each_rooms_reads_and_never_the_
     """DEC-231: each item's reads resolve through
     that item's room. The session hands the source EVERY agenda room, in agenda
     order, and never substitutes the unit's home room for an item's; the prompt
-    says the reads take a `room` and lists them."""
+    says the reads take an `agenda_room` and lists them."""
     asked: list[list[Room]] = []
 
     def reads(unit: str, rooms: Sequence[Room]) -> list[Any]:
@@ -343,7 +343,8 @@ async def test_an_agenda_spanning_rooms_asks_for_each_rooms_reads_and_never_the_
     assert asked == [[OTHER, third]]              # once, both rooms, agenda order
     assert HOME not in asked[0]
     assert (
-        "take a `room`, one of: `discord:other` («The Other Room»), `whatsapp:third` («Third»)"
+        "take an `agenda_room`, one of: `discord:other` («The Other Room»), "
+        "`whatsapp:third` («Third»)"
         in agent.prompts[0]
     )
     assert "look through room" not in agent.prompts[0]

@@ -475,8 +475,7 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
     # A tool that answered `unavailable` for a wiring gap was never really run.
     reached = {"note_search", "note_read", "record_query", "event_search",
                "rollup_read", "standing_read", "memo_read", "social_read",
-               "group_members", "poll_list", "poll_read", "room_state_read",
-               "load_transcript"}
+               "group_members", "poll_list", "poll_read", "room_state_read"}
     for name in reached:
         assert set(results[name]) <= {"ok", "nothing_found"}, (name, results[name])
     assert "nothing_found" in results["note_search"] and "ok" in results["note_search"]
@@ -494,7 +493,9 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
     # is that the call reached the seeded rows and returned the contract's
     # shape — not a `status` it never claims.
     lt = await _call(world.tools([A])["load_transcript"], limit=5)
-    assert lt["messages"]
+    assert {"dinner plans number 0", "dinner plans number 1"} <= {
+        row.get("body") for row in lt["messages"]
+    }
     assert "status" not in lt
     assert results["lookup_person"] == ["ok"]
     # The inert-by-config reads were still CALLED (coverage), and every one of
@@ -611,14 +612,22 @@ async def test_a_bound_clock_reads_the_record_as_it_then_stood(engine, world):
             {"i": pier, "s": ADA, "p": "p1", "ts": after})
 
     at = datetime.fromtimestamp(NOW_MS / 1000, UTC)
+    shown = []
     bound = {
         t.tool_name: t
         for t in read_tools_for(
             world.source,
             names=frozenset({"load_transcript", "record_query"}),
-        )("u1", [A], clock=lambda: at)
+        )("u1", [A], clock=lambda: at, on_rows=shown.extend)
     }
-    live = world.tools([A])
+    live_at = datetime.fromtimestamp((after + 1_000) / 1000, UTC)
+    live = {
+        t.tool_name: t
+        for t in read_tools_for(
+            world.source,
+            names=frozenset({"load_transcript", "record_query"}),
+        )("u1", [A], clock=lambda: live_at)
+    }
 
     transcript = await _call(bound["load_transcript"], limit=10)
     bodies = [m.get("body") for m in transcript["messages"]]
@@ -626,6 +635,8 @@ async def test_a_bound_clock_reads_the_record_as_it_then_stood(engine, world):
     assert "dinner at nine" not in bodies
     assert "meet at the pier" in bodies           # and the delete had not either
     assert "words from after the instant" not in bodies
+    assert any(r.id == edited and r.body == "dinner at seven" for r in shown)
+    assert all(r.ts <= NOW_MS for r in shown)
 
     live_transcript = await _call(live["load_transcript"], limit=10)
     live_bodies = [m.get("body") for m in live_transcript["messages"]]

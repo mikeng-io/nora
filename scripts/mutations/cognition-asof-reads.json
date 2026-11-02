@@ -58,10 +58,10 @@
  {
   "name": "the transcript rows a read showed never reach evidence custody (a proposal can cite nothing they contained)",
   "file": "nora/agent/tools.py",
-  "old": "        if on_rows is not None:\n            on_rows(rows)",
-  "new": "        pass",
-  "target": "tests/unit/test_cognition_session_runner.py::test_rows_a_read_shows_become_the_evidence_a_proposal_may_cite",
-  "note": "the load_transcript site; the mutation is the omitted custody call, whichever return path it sits on"
+  "old": "            source_events=this_events,\n        )\n        if on_rows is not None:\n            on_rows(rows)\n",
+  "new": "            source_events=this_events,\n        )\n",
+  "target": "tests/infra/test_a_cognition_sessions_read_tools_write_nothing.py::test_a_bound_clock_reads_the_record_as_it_then_stood tests/unit/test_cognition_session_runner.py::test_rows_a_read_shows_become_the_evidence_a_proposal_may_cite",
+  "note": "The real native transcript call must hand the bounded rows to on_rows; the SQL test observes that callback before the session-boundary proposal test checks its consumer."
  },
  {
   "name": "the status-free success envelope is kept on FAILED reads too (a failed read is kept as fetched rows)",
@@ -76,5 +76,12 @@
   "old": "            extra: dict[str, Any] = (\n                {\"on_rows\": loaded.extend} if saw is not None else {}\n            )",
   "new": "            extra: dict[str, Any] = {\"on_rows\": loaded.extend}",
   "target": "tests/unit/test_dreamer_runtime.py::test_rows_a_tool_loaded_reach_the_adaptor_before_accept tests/unit/test_dreamer_runtime.py::test_an_adaptor_with_no_saw_gets_the_unchanged_build"
+ },
+ {
+  "name": "newly reachable provider arguments retain the mandatory Cognition egress screen",
+  "file": "nora/agent/comprehend_tools.py",
+  "old": "        if name in SCREENED_ARGS:",
+  "new": "        if name in state.limits:",
+  "target": "tests/unit/test_comprehend.py::test_outbound_arguments_are_screened_before_the_tool_runs"
  }
 ]

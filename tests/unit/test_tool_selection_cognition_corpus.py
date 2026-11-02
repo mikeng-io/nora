@@ -103,6 +103,38 @@ async def test_every_verb_the_corpus_names_is_a_tool_the_probe_offers():
     assert named_verbs <= offered, (named_verbs - offered)
 
 
+async def test_probe_and_wake_reuse_the_same_descriptions_and_schemas():
+    from nora.agent.ports import adapt
+    from nora.agent.registry import ToolRegistry
+    from nora.app.cognition_agent_runner import as_strands_tools
+    from tests.unit.test_cognition_agenda_skills import _Spy, build_runner, one_message_view
+
+    native = {
+        spec.name: adapt(spec)
+        for spec in ToolRegistry()._introspection_specs()
+        if spec.name in COGNITION_READ_CATALOGUE
+    }
+    assert {"load_transcript", "web_search", "web_fetch", "media_fetch"} <= native.keys()
+
+    def reads(unit, rooms, **kwargs):
+        return list(native.values())
+
+    spy = _Spy()
+    runner = build_runner(
+        InMemoryCognitionStore(), spy, InMemoryStimulusStore(),
+    ).with_collaborators(read_tools_for=reads, read_only_tools=frozenset(native))
+
+    def offered():
+        return {tool.tool_name: tool.tool_spec for tool in as_strands_tools(spy.tools)}
+
+    await runner.probe(unit="u", summary="1 new message in this room", now_ms=NOW)
+    probe_specs = offered()
+    for name, tool in native.items():
+        assert probe_specs[name] == tool.tool_spec, name
+    await runner.replay(view=one_message_view(), now_ms=NOW)
+    assert offered() == probe_specs
+
+
 def test_each_new_read_is_measured_against_the_sibling_it_is_confusable_with():
     """`rollup_read`, `standing_read` and `social_read` each have routing
     cases against their confusable siblings: `rollup_read` against

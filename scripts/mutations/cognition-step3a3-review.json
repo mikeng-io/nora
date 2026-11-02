@@ -163,8 +163,8 @@
  {
   "name": "major 3: a spanning agenda gets one room's tools",
   "file": "nora/app/cognition_wiring.py",
-  "old": "        if len(rooms) == 1:\n            return build_for(rooms[0])",
-  "new": "        if len(rooms) >= 1:\n            return build_for(rooms[0])",
+  "old": "        if len(rooms) == 1:\n            return build_for(rooms[0], clock, on_rows)",
+  "new": "        if len(rooms) >= 1:\n            return build_for(rooms[0], clock, on_rows)",
   "target": "tests/unit/test_cognition_room_reads.py::test_one_room_gets_the_registrys_tools_untouched_and_several_get_routed_ones tests/infra/test_a_cognition_sessions_read_tools_write_nothing.py::test_a_two_room_agenda_reads_each_room_through_itself_and_cannot_read_another"
  },
  {
@@ -189,10 +189,10 @@
   "target": "tests/unit/test_cognition_room_reads.py::test_a_call_that_names_no_room_is_refused_never_guessed_from_the_first"
  },
  {
-  "name": "major 3: the guard's argument table refuses `room`",
+  "name": "major 3: the guard's argument table refuses the agenda_room routing selector",
   "file": "nora/app/cognition_wiring.py",
-  "old": "            n: frozenset(names) | {\"room\"}",
-  "new": "            n: frozenset(names)",
+  "old": "            n: frozenset(names) | {\"agenda_room\", \"room\"}",
+  "new": "            n: frozenset(names) | {\"room\"}",
   "target": "tests/test_composition.py::test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluator"
  },
  {
