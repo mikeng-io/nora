@@ -363,3 +363,51 @@ sources yielding different completion hashes through source/person iteration
 order. Paid continuation is stopped on that reproducible progress defect;
 [PR #545](https://github.com/mikeng-io/nora/pull/545) carries the bounded repair
 and its pending acceptance. No complete backfill or Honcho replacement is claimed.
+
+**One read surface for both lanes (2026-11-03, pending merge).** The read
+catalogue the Cognition session declares is completed, and the historical lane
+stops blanking it: `historical_runner` no longer replaces `read_tools_for` /
+`read_only_tools`, so the replay reads the same declared surface a live wake
+does, built through the same `RegistryToolSource` + `cognition_grant` path.
+Both lanes keep one surface under the same flags and withholding rules — no
+second catalogue, no historical-only tool list.
+
+Before: the live catalogue carried 21 read names (the warehouse queries, the
+tiers' reads, the Honcho memory verbs or the graph pair under DEC-316) and the
+historical runner suppressed every one of them — a replay held only
+`memory_propose` and `close`. After: the catalogue also declares the 17 memory,
+room and enrichment reads the registry already built but the catalogue
+excluded — `room_read`, `load_transcript`, `who_said`, `lookup_person`,
+`media_fetch`, `media_search`, `file_fetch`, `document_read`, `web_search`,
+`web_fetch`, `place_info`, `instagram_read`, `instagram_search`, `x_read`,
+`x_search`, `linkedin_read`, `linkedin_search`. A read with no wired provider
+stays present-but-inert and answers `unavailable`, as on the tag path.
+
+How a historical session honours the instant: `historical` makes the runner
+build every read under the batch's evidence instant — the registry's injected
+clock swapped per occasion by `with_clock` (the same copy-seam as
+`with_memory_search`) — and wraps the built tools in `HistoricalRead`. Inside
+that wrap: `load_transcript`/`room_read` have `before` bound at the instant
+(absent or at-or-after reads «the newest»; the store cannot be trusted to be
+empty); `record_query`'s messages branch is bounded by the instant, while its
+object fold/history branches and `scope="all_rooms"` answer `unavailable`
+(they read today's folds and member lists); a named table of current-head
+reads — Honcho and graph memory reads, notebook/memo/standing/rollup/event/
+culture/routine/presence heads, roster and room-state reads, `social_read`,
+`media_search` — answers `unavailable` with the limitation, never
+`nothing_found`; public enrichment and stored-object reads
+(`web_*`, the social providers', `place_info`, `media_fetch`, `file_fetch`,
+`document_read`) pass through — a fetch keeps its real fetch time and
+provenance, a stored object is the same artifact at every instant. Nothing
+here widens scope: unit and room/lineage boundaries, the egress screen and
+the fetched-evidence receipts (`ComprehendRead`/`watch_reads`) apply in the
+replay exactly as live, and `unavailable` early-returns never enter the
+citable set.
+
+Honest limits, stated rather than worked around: `memory_search`/`memory_read`
+cannot be read back as-of (the grounding's `valid_at` preview carries the
+as-of context instead); `index.read=false`/`profile.read=false` remain the
+rollout state — nothing here flips a flag; `media_objects` latest-fold state
+is unchanged; current withdrawal stays effective at every replay instant.
+Acts, profile verbs, sends and reminders stay withheld as before; the lane's
+only write is still `memory_propose`.

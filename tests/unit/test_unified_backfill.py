@@ -579,11 +579,13 @@ async def test_census_writes_nothing_and_builds_no_runner(monkeypatch: Any):
 # -- the runner variant ---------------------------------------------------------
 
 
-def test_historical_runner_withholds_every_read_and_keeps_collaborators():
+def test_historical_runner_shares_the_live_read_surface_and_keeps_collaborators():
     """The historical runner IS the live one with explicit deltas; a test
-    spy records exactly which collaborators changed — read tools, the
+    spy records exactly which collaborators changed — grounding, the
     register/self/live seams and the agent runner, never doctrine, budgets,
-    clocks or stores."""
+    clocks, stores or the READ SURFACE: `read_tools_for`/`read_only_tools`
+    are inherited, so the historical lane reads the same declared surface a
+    live session does (the session binds it to the evidence instant)."""
     changes: dict[str, Any] = {}
 
     class _Live:
@@ -593,8 +595,7 @@ def test_historical_runner_withholds_every_read_and_keeps_collaborators():
 
     runner = ub.historical_runner(_Live(), grounder="G", agent_runner="A")
     assert changes["grounder"] == "G" and changes["agent_runner"] == "A"
-    assert changes["read_only_tools"] == frozenset()
-    assert changes["read_tools_for"]("u", []) == []
+    assert "read_only_tools" not in changes and "read_tools_for" not in changes
     assert changes["shared"] is None and changes["standing_fold"] is None
     for untouched in ("doctrine_source", "budget", "store", "clock",
                       "notes", "events", "standing", "reminders"):

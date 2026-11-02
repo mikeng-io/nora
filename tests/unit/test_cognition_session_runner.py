@@ -86,13 +86,16 @@ def _runner(
     store: InMemoryCognitionStore | None = None,
     stimuli: InMemoryStimulusStore | None = None,
     memory: Any = None, grounder: Any = None,
+    read_tools_for: Any = None, read_only_tools: frozenset[str] = frozenset(),
 ) -> tuple[CognitionSessionRunner, InMemoryCognitionStore, FakeCognitionAgentRunner]:
     store = store or InMemoryCognitionStore()
     fake = agent_runner or FakeCognitionAgentRunner()
     runner = CognitionSessionRunner(
         store=store, stimulus_store=stimuli or _seeded(), memory=memory,
         agent_runner=fake, units=("unit-1",), session_timeout_seconds=900.0,
-        home_rooms={"unit-1": HOME}, read_tools_for=lambda unit, rooms: [],
+        home_rooms={"unit-1": HOME},
+        read_tools_for=read_tools_for or (lambda unit, rooms, **kw: []),
+        read_only_tools=read_only_tools,
         skill_text_for=lambda kinds: "", grounder=grounder or EmptyGrounder(),
         doctrine_text="DOCTRINE",
         doctrine_sha256="sha", open_note_titles=_async_const(()),
@@ -295,6 +298,55 @@ async def test_cognition_09_backfill_withholds_act_tools():
                  "commitment_", "standing_", "wake_", "remind", "send_")
     assert not any(n.startswith(forbidden) for n in fake.last_tool_names)
     assert not store.paces
+
+
+class _StubRead:
+    """A read-tool-shaped stand-in (`tool_name`/`tool_spec`/`stream`), the
+    shape `as_of_reads` recognises and wraps."""
+
+    tool_name = "memory_search"
+    tool_type = "python"
+    tool_spec: ClassVar = {"name": "memory_search", "description": "generated search",
+                 "inputSchema": {"json": {"type": "object", "properties": {}}}}
+
+    async def stream(self, tool_use: Any, invocation_state: Any, **kw: Any) -> Any:
+        yield tool_use
+
+
+async def test_cognition_backfill_reads_the_same_surface_as_of_the_evidence_instant():
+    """`historical` no longer blanks the read surface: the session asks the
+    SAME `read_tools_for` a live wake does — with a `clock` bound to the
+    evidence instant, and every returned tool wrapped in `HistoricalRead` —
+    so a shared read reaches the model through one code path."""
+    from nora.agent.comprehend_tools import HistoricalRead
+
+    seen: dict[str, Any] = {}
+
+    def reads(unit: str, rooms: Any, **kw: Any) -> list[Any]:
+        seen.update(kw)
+        return [_StubRead()]
+
+    class _Agent:
+        built: ClassVar[list[Any]] = []
+
+        async def run(self, *, tools: list[Any], **kw: Any) -> CognitionRunResult:
+            _Agent.built = list(tools)
+            return CognitionRunResult(stop_reason="end_turn")
+
+    runner, _, _ = _runner(agent_runner=_Agent(), read_tools_for=reads,
+                           read_only_tools=frozenset({"memory_search"}))
+    view = UnitView(unit="unit-1", pending=_pending("unit-1"),
+                    last_activity_ms=None, last_wake=None)
+    await runner.replay(view=view, now_ms=NOW, historical=True)
+    (record,) = (t for t in _Agent.built if isinstance(t, HistoricalRead))
+    assert record.tool_name == "memory_search"
+    assert seen["clock"]() == datetime.fromtimestamp(NOW / 1000, UTC)
+
+    # A live wake asks the same source, clockless, with nothing wrapped.
+    seen.clear()
+    await runner.replay(view=view, now_ms=NOW)
+    assert "clock" not in seen
+    assert not [t for t in _Agent.built if isinstance(t, HistoricalRead)]
 
 
 @pytest.mark.parametrize("admit", [False, True])

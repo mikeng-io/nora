@@ -34,11 +34,15 @@ runs while earlier work is unresolved. The lane never touches
 `cognition_wake*`, live stimuli or profile-writer retirement.
 
 **Historical does not act.** The runner is a variant of the live
-composition's with act verbs already refused by `historical`; this lane also
-withholds every read tool (none can be bounded as-of), the Register index
-blocks and self/shared/presence context that only exist as CURRENT heads
+composition's with act verbs already refused by `historical`, reading the
+SAME declared Cognition read surface — the reads are bound to the batch's
+evidence instant by the session itself (each tool's `now_fn` is the instant,
+and `HistoricalRead` answers `unavailable` for a read that can only show a
+CURRENT head: notebook/roster/room folds, the memory index's current state,
+social streams, folded objects). What stays withheld is what exists only as
+a current head: the Register index blocks and self/shared/presence context
 (the graph preview — `valid_at = evidence time` — carries as-of context
-instead), and `platform_observation` folded heads (immutable event rows stay
+instead) and `platform_observation` folded heads (immutable event rows stay
 readable). Media readings render at their latest fold — the same bound
 `records.load` applies everywhere else; `media_objects` carries no read
 timestamp for a stricter as-of.
@@ -420,14 +424,17 @@ class UnitOutcome:
 
 def historical_runner(live: Any, *, grounder: Any, agent_runner: Any) -> Any:
     """The live composition's session runner, variant: historical grounding,
-    no read tools, no live-only seams. `with_collaborators` shares every other
+    the SAME read surface (`read_tools_for` and `read_only_tools` are not
+    named, so the clone keeps the live ones), no live-only seams. The session
+    binds the reads to its evidence instant itself — `historical` makes the
+    runner build every tool under that instant's clock and wrap the reads
+    that cannot answer as-of with `HistoricalRead` — so a clone cannot get
+    them wrong by accident. `with_collaborators` shares every other
     collaborator, so doctrine, skills, budgets, clocks and stores cannot drift
     from the live session's."""
     return live.with_collaborators(
         grounder=grounder,
         agent_runner=agent_runner,
-        read_tools_for=lambda _unit, _rooms: [],
-        read_only_tools=frozenset(),
         shared=None,
         standing_fold=None,
         open_note_titles=_no_titles,

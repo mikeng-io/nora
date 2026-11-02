@@ -12,6 +12,7 @@ import dataclasses
 from collections.abc import Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any, ClassVar
 
@@ -57,16 +58,22 @@ FLAGS_ON = {"record_query.enabled", "culture.enabled"}
 
 # ---- the read catalogue ------------------------------------------------------
 
-def test_the_catalogue_is_the_designs_and_names_no_live_social_read():
-    """The warehouse queries and the tiers' reads. The live
-    `instagram_*`, `x_*` and `linkedin_*` reads stay on the tag path."""
+def test_the_catalogue_is_the_designs_and_names_the_enrichment_reads():
+    """The warehouse queries, the tiers' reads, the room/people reads, the
+    stored-object reads and the public enrichment reads (`web_*`, social
+    providers', `place_info`) — public fetches the tag path already made,
+    now on the session's own surface too."""
     assert {
         "record_query", "note_read", "about", "event_search",
         "group_members", "poll_list", "poll_read", "room_state_read",
+        "room_read", "load_transcript", "who_said", "lookup_person",
+        "media_fetch", "media_search", "file_fetch", "document_read",
+        "web_search", "web_fetch", "place_info",
+        "instagram_read", "instagram_search", "x_read", "x_search",
+        "linkedin_read", "linkedin_search",
     } <= COGNITION_READ_CATALOGUE
     live_social = {n for n in NATIVE_TOOLS if n.startswith(("instagram_", "x_", "linkedin_"))}
-    assert live_social, "positive control: the tool table has live social reads"
-    assert not (COGNITION_READ_CATALOGUE & live_social)
+    assert live_social <= COGNITION_READ_CATALOGUE
 
 
 def test_every_tool_the_session_would_wire_exists_and_is_read_only():
@@ -173,6 +180,26 @@ def test_read_tools_are_built_for_the_agenda_room_under_the_cognition_grant():
     assert call["key"] == "g1" and call["unit"] is None       # scope-resolved: the room's own
     assert call["adaptor"] == "cognition"
     assert call["grant"] == cognition_grant() == AdaptorGrant(home_room=True)
+
+
+def test_read_tools_carry_the_sessions_clock_to_the_source():
+    """The historical lane's seam: `clock` reaches `RegistryToolSource.build`
+    per room — the per-occasion bind the registry's injected clock is swapped
+    through — and a live call passes `None`, never a second tool source."""
+    source = _Source()
+    build = read_tools_for(source, names=frozenset({"record_query"}))
+    as_of = datetime.fromtimestamp(NOW / 1000, UTC)
+
+    def clock() -> datetime:
+        return as_of
+
+    build("friends", [Room("signal", "g1")], clock=clock)
+    assert source.calls[-1]["clock"] is clock
+    # several agenda rooms: the same instant reaches every per-room build
+    build("friends", [Room("signal", "g1"), Room("discord", "g2")], clock=clock)
+    assert all(c["clock"] is clock for c in source.calls[1:])
+    build("friends", [Room("signal", "g1")])
+    assert source.calls[-1]["clock"] is None
 
 
 # ---- what the runner does with them ------------------------------------------

@@ -355,7 +355,9 @@ RoomProactive = Callable[[str, str], bool]
 #: by the caller. That names the room a read is BOUND to, not the only room it
 #: reads: `record_query scope="all_rooms"` and `search_memory_workspace` reach
 #: the unit's other rooms, which the unit-wide read boundary allows.
-ReadToolsFor = Callable[[str, Sequence[Room]], list[Any]]
+#: `(unit, rooms, *, clock=None)`: `clock` is the historical lane's as-of bind
+#: — a live call passes nothing and the source's own clock stands.
+ReadToolsFor = Callable[..., list[Any]]
 #: `(unit, agenda items, the claimed stimuli)` -> what she is shown beside the
 #: agenda (`nora.domain.cognition_ground`): the Record rows that raised each
 #: stimulus and the Register index lines. RAISES when it cannot read: a session
@@ -367,6 +369,18 @@ Grounder = Callable[
     [str, Sequence[AgendaItem], Sequence[Stimulus], int | None],
     Awaitable[Grounding],
 ]
+#: A historical session passes its evidence instant as `clock`, binding every
+#: built tool's `now_fn` to that instant rather than the process's wall clock;
+#: a live session passes nothing and `read_tools_for` defaults it.
+HistoricalClock = Callable[[], datetime]
+
+
+def _as_clock(instant: datetime) -> HistoricalClock:
+    """`instant` as the constant clock a historical session's reads are built
+    under."""
+    return lambda: instant
+
+
 SkillsFor = Callable[[Sequence[str]], str]
 #: The versions (content digests) of the skills `SkillsFor` would inject for
 #: these agenda kinds, recorded on the session row.
@@ -1588,12 +1602,18 @@ class CognitionSessionRunner:
 
     # -- tools --------------------------------------------------------------
 
-    def _guarded_read_tools(self, unit: str, rooms: Sequence[Room]) -> list[Any]:
+    def _guarded_read_tools(
+        self, unit: str, rooms: Sequence[Room],
+        *, clock: HistoricalClock | None = None,
+    ) -> list[Any]:
         """`read_tools_for`'s result, refused unless every tool is on the
         read-only allowlist and none shadows a session verb. The session's
         ceiling is «may look, may not write»; a read-tool source that ever
         returned a write is stopped here, not trusted."""
-        tools = self._read_tools_for(unit, rooms)
+        tools = (
+            self._read_tools_for(unit, rooms) if clock is None
+            else self._read_tools_for(unit, rooms, clock=clock)
+        )
         seen: set[str] = set()
         for tool in tools:
             name = getattr(tool, "tool_name", None) or getattr(tool, "__name__", None)
@@ -1652,13 +1672,28 @@ class CognitionSessionRunner:
                 persons=tuple({p for v in state.memory_items.values()
                                for source in v.sources for p in source.persons}),
                 shown_keys=state.shown_keys)
+        # A historical session reads as of its evidence instant: every built
+        # tool's `now_fn` is bound to it (the registry's injected clock, the
+        # same seam `with_memory_search` uses), so an end-less or before-less
+        # read lands at the instant the same way it lands at «now» live.
+        historical_clock: HistoricalClock | None = None
+        historical_as_of: datetime | None = None
+        if state.historical:
+            historical_as_of = datetime.fromtimestamp(now_ms / 1000, UTC)
+            historical_clock = _as_clock(historical_as_of)
         # The reads that hand out citable rows are watched: what they return is
         # what a note may cite besides the agenda's own rows.
-        read_tools = watch_reads(self._guarded_read_tools(unit, rooms), state.fetched, keys)
+        read_tools = watch_reads(
+            self._guarded_read_tools(unit, rooms, clock=historical_clock),
+            state.fetched, keys)
 
         if self._memory is not None:
             read_tools = [ComprehendRead(t, lookups) if hasattr(t, "stream") else t
                           for t in read_tools]
+
+        if historical_as_of is not None:
+            from nora.agent.comprehend_tools import as_of_reads
+            read_tools = as_of_reads(read_tools, as_of=historical_as_of)
 
         async def shown_for(
             platform: str, conversation_id: str, body: str,

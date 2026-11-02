@@ -76,6 +76,7 @@ import logging
 import time
 from collections.abc import Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Literal, Protocol, TypeVar, get_args
 
 from ..domain.errors import AccountNotRecordableError
@@ -477,6 +478,7 @@ class DreamToolSource(Protocol):
         self, *, key: str, names: frozenset[str], unit: str | None = None,
         adaptor: str = "", grant: AdaptorGrant | None = None,
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> list[Any]: ...
 
     # R-99: `DreamGuard` needs the same accepted-argument table `ReplyGuard` reads
@@ -912,6 +914,7 @@ class RegistryToolSource:
         self, *, key: str, names: frozenset[str], unit: str | None = None,
         adaptor: str = "", grant: AdaptorGrant | None = None,
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> list[Any]:
         from .room import Room
 
@@ -977,7 +980,10 @@ class RegistryToolSource:
                 platform="", conversation_id=key, roster_source=None,
                 persons=self._persons,
             )
-        return self._registry.surface(
+        registry = (
+            self._registry if clock is None else self._registry.with_clock(clock)
+        )
+        return registry.surface(
             # The adaptor's ceiling, applied by the SAME scope every loop's tools
             # pass through.
             grant=wanted,
@@ -1339,7 +1345,7 @@ class DreamerRuntime:
                 unit=key if adaptor.key_kind == "unit" else None,
                 adaptor=adaptor.name, grant=grant,
                 # Only for an adaptor that grounds on what it loaded (`saw`).
-                **({"on_rows": loaded.extend} if saw is not None else {}),
+                on_rows=loaded.extend if saw is not None else None,
             )
             # THE ADAPTOR'S OWN WRITE VERBS (`character_revise`): typed closures
             # that VALIDATE a write as the model makes it and answer a refusal it

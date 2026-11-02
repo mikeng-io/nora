@@ -15,8 +15,9 @@ here rather than derived from `read_only_tools()`, because a session that
 quietly gained every read tool the registry ever adds is a change nobody decided;
 `read_surface` says which of the named tools are wired and which are missing (a
 named tool the tree does not have is a fact the boot log states, never a silent
-gap). The live social reads (`instagram_*`, `x_*`, `linkedin_*`) are not in it:
-they stay on the tag path.
+gap). The public enrichment reads (`web_*`, the social providers', `place_info`)
+ARE in it: they fetch public content, never the unit's own speech, so the tag
+path's having them first is no reason the session stays blind to them.
 
 **Who they read through.** The read tools are built by the SAME
 `RegistryToolSource` every other Dreamer adaptor reads through, under
@@ -30,6 +31,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from types import MappingProxyType
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -77,6 +79,16 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     # the graph surface's (DEC-316): built instead of the Honcho memory verbs
     # above while `[memory.index] read`, never beside them
     "memory_search", "memory_read",
+    # the room's own rows, roster and people (platform-observations 05)
+    "room_read", "load_transcript", "who_said", "lookup_person",
+    # the stored-object reads: a media object, a shared file, a published
+    # document, the generated-image library
+    "media_fetch", "media_search", "file_fetch", "document_read",
+    # the public enrichment reads (their providers live on the tag path too;
+    # an unwired one is `withheld` or answers `unavailable`, never absent)
+    "web_search", "web_fetch", "place_info",
+    "instagram_read", "instagram_search",
+    "x_read", "x_search", "linkedin_read", "linkedin_search",
 })
 
 #: The side-effect audit of every tool in the catalogue
@@ -137,6 +149,36 @@ READ_TOOL_AUDIT: Mapping[str, str] = {
     "memory_search": "SQL reads of the memory index and graph (`SqlMemoryIndex`, which "
                      "writes nothing) and one query embedding; counters only. "
                      "No write.",
+    "room_read": "The room directory's read of one room's live state; "
+                 "counters only. No write.",
+    "load_transcript": "SQL read of recorded rows through `ledger.span_rows`/"
+                       "`store.recent`, rendered through the shared media join; "
+                       "counters only. No write.",
+    "who_said": "In-memory read of the shown transcript window; counters only. "
+                "No write.",
+    "lookup_person": "Person registry read (`persons`); counters only. No write.",
+    "media_fetch": "Stored media-object reads and optional blob/vision fetch; "
+                   "counters only. No write.",
+    "media_search": "SQL read of the generated-image library (`media_store`); "
+                    "counters only. No write.",
+    "file_fetch": "Stored shared-file read (`external_files`); counters only. "
+                  "No write.",
+    "document_read": "Stored document read (`documents`); counters only. No write.",
+    "place_info": "Geocoder place lookup; counters only. No write.",
+    "web_search": "Search provider query; result screening and provenance at "
+                  "`ComprehendRead`; counters only. No write.",
+    "web_fetch": "One page fetch; the bounded text lands as a `web_page` Record "
+                 "source via `ComprehendRead`; counters only. No write.",
+    "instagram_read": "Instagram read through the social provider; counters "
+                      "only. No write.",
+    "instagram_search": "Instagram search through the social provider; counters "
+                        "only. No write.",
+    "x_read": "X read through the social provider; counters only. No write.",
+    "x_search": "X search through the social provider; counters only. No write.",
+    "linkedin_read": "LinkedIn read through the LinkedIn provider; counters "
+                     "only. No write.",
+    "linkedin_search": "LinkedIn search through the LinkedIn provider; counters "
+                       "only. No write.",
 }
 
 #: Tools withheld while their flag is off. `record_query` is offered only with
@@ -201,7 +243,11 @@ def cognition_budget(b: Any) -> Any:
     )
 
 
-ReadTools = Callable[[str, Sequence[Room]], list[Any]]
+#: `CognitionSessionRunner`'s `read_tools_for` collaborator: `(unit, rooms,
+#: *, clock=None)`. `clock` binds every built tool's `now_fn` to a session
+#: instant — the historical lane's evidence time — rather than the process's
+#: wall clock; a live session passes `None`.
+ReadTools = Callable[..., list[Any]]
 
 
 def read_tools_for(
@@ -223,22 +269,30 @@ def read_tools_for(
     lineage), not which rooms' data a tool may reach: `record_query
     scope="all_rooms"` and `search_memory_workspace` read the unit's OTHER
     rooms too, because the unit is the read boundary (DEC-231). The unit's home
-    room is never substituted for an item's room."""
+    room is never substituted for an item's room.
+
+    `clock` is forwarded to the source's per-occasion bind (the registry's
+    injected clock, swapped by copy the way `with_memory_search` swaps the
+    reader): every `now_fn()` the built tools call then reads that instant."""
     allowance = grant if grant is not None else cognition_grant()
 
-    def build_for(room: Room) -> list[Any]:
+    def build_for(room: Room, clock: Callable[[], datetime] | None = None) -> list[Any]:
         return source.build(
             key=room.conversation_id, names=names, unit=None,
-            adaptor=COGNITION_ADAPTOR_NAME, grant=allowance,
+            adaptor=COGNITION_ADAPTOR_NAME, grant=allowance, clock=clock,
         )
 
-    def build(unit: str, rooms: Sequence[Room]) -> list[Any]:
+    def build(
+        unit: str, rooms: Sequence[Room], *,
+        clock: Callable[[], datetime] | None = None,
+    ) -> list[Any]:
         if len(rooms) == 1:
-            return build_for(rooms[0])
+            return build_for(rooms[0], clock)
         from nora.agent.room_routing import route_reads
 
         return route_reads({
-            f"{room.platform}:{room.conversation_id}": build_for(room) for room in rooms
+            f"{room.platform}:{room.conversation_id}": build_for(room, clock)
+            for room in rooms
         })
 
     return build

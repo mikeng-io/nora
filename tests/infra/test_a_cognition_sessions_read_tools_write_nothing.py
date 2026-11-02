@@ -317,6 +317,32 @@ CALLS: dict[str, list[dict[str, Any]]] = {
     "poll_list": [{}],
     "poll_read": [{"object": "POLL"}, {"object": "poll:000000000000"}],
     "room_state_read": [{}],
+    # The room/people reads: `load_transcript` reaches the seeded rows and
+    # answers `ok`; `lookup_person` reaches the roster view; `who_said` and
+    # `room_read` answer `unavailable` here (no shown window, no rooms
+    # directory) — called anyway, so an unwired answer is not a non-run.
+    "load_transcript": [{"limit": 5}],
+    "who_said": [{"words": "dinner"}],
+    "lookup_person": [{"name": "Ada"}],
+    "room_read": [{"room": "Room A", "limit": 1}],
+    # The stored-object reads: providers/stores are not wired in this world,
+    # so each answers `unavailable` — still called, still counted, still
+    # writes nothing.
+    "media_fetch": [{"code": "generated-code"}],
+    "media_search": [{"query": "dinner"}],
+    "file_fetch": [{"code": "generated-code"}],
+    # The public enrichment reads, inert by config here (no search provider,
+    # no social bridge, no route source): each answers `unavailable` without
+    # a packet leaving the host.
+    "web_search": [{"query": "ramen"}],
+    "web_fetch": [{"url": "https://example.invalid/"}],
+    "place_info": [{"name": "generated-place"}],
+    "instagram_read": [{"handle": "generated-handle", "what": "profile"}],
+    "instagram_search": [{"query": "ramen"}],
+    "x_read": [{"handle": "generated-handle", "what": "profile"}],
+    "x_search": [{"query": "ramen"}],
+    "linkedin_read": [{"handle": "generated-handle", "what": "profile"}],
+    "linkedin_search": [{"query": "ramen"}],
 }
 
 
@@ -449,7 +475,8 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
     # A tool that answered `unavailable` for a wiring gap was never really run.
     reached = {"note_search", "note_read", "record_query", "event_search",
                "rollup_read", "standing_read", "memo_read", "social_read",
-               "group_members", "poll_list", "poll_read", "room_state_read"}
+               "group_members", "poll_list", "poll_read", "room_state_read",
+               "load_transcript"}
     for name in reached:
         assert set(results[name]) <= {"ok", "nothing_found"}, (name, results[name])
     assert "nothing_found" in results["note_search"] and "ok" in results["note_search"]
@@ -462,6 +489,16 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
     assert results["poll_read"] == ["ok", "nothing_found"]
     assert results["room_state_read"] == ["ok"]
     assert results["group_members"] == ["ok"]
+    assert results["load_transcript"] == ["ok"]
+    assert results["lookup_person"] == ["ok"]
+    # The inert-by-config reads were still CALLED (coverage), and every one of
+    # them answered the honest state rather than a silent nothing.
+    for name in ("who_said", "room_read", "media_fetch", "media_search",
+                 "file_fetch", "web_search", "web_fetch", "place_info",
+                 "instagram_read", "instagram_search", "x_read", "x_search",
+                 "linkedin_read", "linkedin_search"):
+        if name in results:
+            assert set(results[name]) == {"unavailable"}, (name, results[name])
     # the derived-presence reads reached their SQL (a current build exists)
     assert not {"unavailable"} & set(results["where_been"] + results["routine_read"]), results
     # No counter that feeds a decision moved, and Honcho was only ever read.
