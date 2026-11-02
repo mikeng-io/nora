@@ -21,15 +21,18 @@ and the stream entry is XACKed only after durable ownership commits.
 import json
 import time
 from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import sqlalchemy as sa
+from discord.raw_models import RawThreadDeleteEvent, RawThreadUpdateEvent
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from nora.app.bridge_queue import StreamReader, WorkRunner, stream_name
 from nora.app.wake import WakeEvaluator
 from nora.domain.models import EditTarget, NormalizedMessage
-from nora.domain.observations import SourceScope
+from nora.domain.observations import Observation, SourceScope
 from nora.domain.ports import NewWakeOutcome
 from nora.domain.stimuli import WakePolicy
 from nora.infra.sql.audit import SqlRecordStore
@@ -51,7 +54,15 @@ from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.ingest.stages.stimulus import Wiring as StimulusWiring
 from nora.platform.bridge.envelope import Envelope, canonical_source_key, event_id
 from nora.platform.bridge.queue import CONSUMER_GROUP, StreamProducer, ensure_group
-from nora.platform.bridge.rehydrate import observation_from_dict
+from nora.platform.bridge.rehydrate import (
+    observation_from_dict,
+    observation_to_dict,
+)
+from nora.platform.discord.parser import (
+    parse_discord_thread_create,
+    parse_discord_thread_delete,
+    parse_discord_thread_update,
+)
 from nora.policy import Policy, permissive_policy
 from tests.integration.test_bridge_queue import (
     ACCOUNT,
@@ -117,15 +128,15 @@ def _obs(*, kind="poll", object_ref="poll-1", operation="create",
 
 
 def _obs_envelope(upstream: str, obs: dict, *, kind=None,
-                  key_version=1) -> Envelope:
+                  key_version=1, conv=CONV) -> Envelope:
     """An observation-ONLY envelope (v2, `message=None`). `kind` overrides
     let a test mint the malformed kind-mismatch shape."""
     k = kind or str(obs["kind"])
-    sk = canonical_source_key(PLATFORM, ACCOUNT, CONV, k, upstream)
+    sk = canonical_source_key(PLATFORM, ACCOUNT, conv, k, upstream)
     return Envelope(
         platform=PLATFORM, account_key=ACCOUNT, kind=k,
         source_key=sk, event_id=event_id(sk, key=KEY, key_version=key_version),
-        conversation_id=CONV, conversation_type="group",
+        conversation_id=conv, conversation_type="group",
         sender_id=str(obs.get("actor_id") or ""), sender_name=None,
         sent_ms=obs.get("occurred_ms"),
         received_ms=int(obs.get("received_ms") or 0),
@@ -1097,3 +1108,156 @@ async def test_late_target_relinks_history_without_a_query_per_observation(bridg
     rows = await _obs_rows(store)
     assert len(rows) == 32 and all(r["target_message_id"] == target_id for r in rows)
     assert len(statements) <= 12  # bounded by target addresses, not history length
+
+
+# ── Discord thread observations: room scope, one wire boundary ───────────────
+#
+# A Discord thread is a span inside its parent channel's room — the
+# `Envelope`/`bridge_work` boundary carries no thread sub-scope, and
+# `WorkRunner._observation_scope` binds `expect_scope` to `thread=""`.
+# These guards drive the REAL `parse_discord_thread_*` output through the
+# bridge's own projection shape into the real ingest seam: create/update/
+# delete commit typed state + one stimulus, an unadmitted parent room is
+# refused, and a non-empty `scope.thread` on the wire — the defect's exact
+# shape — is retained as malformed, proving `expect_scope` was not
+# weakened to admit it.
+
+DISCORD_FIXTURES = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures" / "platform_observations" / "discord")
+THREAD_PARENT = "123456789012345600/123456789012345601"
+THREAD_ID = "123456789012345610"
+
+
+def _thread_obs(fixture: str) -> Observation:
+    """The real `parse_discord_thread_*` output for the generated gateway
+    fixtures — the observation `_emit_observation` would hand the sink.
+    The SimpleNamespace mirrors `discord.Thread`'s attribute names on
+    discord.py 2.7.1 (verified against its `threads.py`); the raw-event
+    DTOs are the SDK's own."""
+    d = json.loads((DISCORD_FIXTURES / fixture).read_text())["payload"]["d"]
+    if fixture == "thread_create.json":
+        thread = SimpleNamespace(
+            id=int(d["id"]), name=d["name"], parent_id=int(d["parent_id"]),
+            owner_id=int(d["owner_id"]), archived=False, locked=False,
+            auto_archive_duration=1440, slowmode_delay=0,
+            type=SimpleNamespace(value=d["type"]),
+            guild=SimpleNamespace(id=int(d["guild_id"])))
+        return parse_discord_thread_create(thread, account_key=ACCOUNT)
+    if fixture == "thread_update.json":
+        return parse_discord_thread_update(
+            RawThreadUpdateEvent(d).data, account_key=ACCOUNT)
+    return parse_discord_thread_delete(
+        RawThreadDeleteEvent(d), account_key=ACCOUNT)
+
+
+def _emit_projected(obs, upstream: str) -> Envelope:
+    """`DiscordBridge._emit_observation`'s room projection, mirrored: the
+    envelope's `conversation_id` IS the observation's room scope and the
+    serialized observation rides unchanged — the exact shape
+    `expect_scope` then binds at ingest."""
+    conv = obs.scope.conversation_id
+    sk = canonical_source_key(
+        obs.scope.platform, ACCOUNT, conv, obs.object_kind, upstream)
+    received = 6500
+    return Envelope(
+        platform=obs.scope.platform, account_key=ACCOUNT,
+        kind=obs.object_kind, source_key=sk,
+        event_id=event_id(sk, key=KEY, key_version=1),
+        conversation_id=conv, conversation_type="group",
+        sender_id=obs.actor_id or "", sender_name=None,
+        sent_ms=obs.occurred_ms,
+        received_ms=received, queued_ms=received + 1,
+        time_quality="upstream" if obs.occurred_ms else "bridge_local",
+        message=None,
+        observation=observation_to_dict(
+            replace(obs, received_ms=received)),
+        admission_rev=1)
+
+
+@pytest.mark.parametrize(
+    "fixture", ["thread_create.json", "thread_update.json",
+                "thread_delete.json"])
+async def test_discord_thread_lifecycle_round_trips_the_room_scope(
+        bridge, redis_client, harness, fixture):
+    """A thread lifecycle observation is scoped to the parent channel's
+    room — `scope.thread == ""`, the thread's own id on `object_ref` —
+    so it survives `expect_scope`, commits the observation row + folded
+    head + exactly one ordinal-90 stimulus obligation, and acks."""
+    store, _, stream = bridge
+    obs = _thread_obs(fixture)
+    assert obs is not None
+    assert obs.scope.conversation_id == THREAD_PARENT
+    assert obs.scope.thread == ""
+    env = _emit_projected(obs, f"obs-{fixture}")
+    sid = await _produce(redis_client, stream, env)
+    reader = _reader(redis_client, store, stream)
+    runner = _obs_runner(store, redis_client, harness,
+                         stimulus=_wiring(store))
+    await _register(reader, env, sid)
+    await _claim_run(store, runner)
+
+    event = await store.event(env.event_id)
+    assert event["state"] == "done"
+    rows = await _obs_rows(store)
+    assert len(rows) == 1
+    assert rows[0]["kind"] == "room"
+    assert rows[0]["object_ref"] == f"thread:{THREAD_ID}"
+    assert rows[0]["conversation_id"] == THREAD_PARENT
+    assert rows[0]["thread"] == ""
+    heads = await _head_rows(store)
+    assert len(heads) == 1 and heads[0]["applied"] == 1
+    work = await _work_rows(store, env.event_id)
+    kinds = [(w["kind"], w["ordinal"]) for w in work]
+    assert ("ingest", 0) in kinds
+    assert kinds.count(("stimulus", 90)) == 1
+    assert await _pending(redis_client, stream) == 0
+
+
+async def test_discord_thread_observation_in_an_unadmitted_room_is_refused(
+        bridge, redis_client, harness):
+    """A thread event whose parent room is not absorbed never persists
+    evidence — the configured-room authorization the repair was
+    forbidden to widen, unchanged."""
+    store, _, stream = bridge
+    obs = _thread_obs("thread_create.json")
+    env = _emit_projected(obs, "obs-thread-refused")
+    sid = await _produce(redis_client, stream, env)
+    reader = _reader(redis_client, store, stream)
+    runner = _runner(store, redis_client, harness,
+                     allowlist=Policy(conversations=()),
+                     observations=SqlObservationStore(store._engine))
+    await _register(reader, env, sid)
+    await _claim_run(store, runner)
+
+    event = await store.event(env.event_id)
+    assert event["state"] == "intentional_skip"
+    assert event["outcome_reason"] == "scope_refused"
+    assert await _obs_rows(store) == []
+    assert await _pending(redis_client, stream) == 0
+
+
+async def test_a_thread_subscope_on_the_wire_is_retained_as_malformed(
+        bridge, redis_client, harness):
+    """The defect's own wire shape — `scope.thread` non-empty while the
+    envelope names the room — stays a deterministic refusal: the
+    `expect_scope` bind was repaired by scoping the observation to the
+    room, never by widening what the boundary accepts."""
+    store, _, stream = bridge
+    bad = _obs(kind="room", object_ref=f"thread:{THREAD_ID}",
+               operation="create",
+               payload={"fields": {"name": "fixture-thread"}},
+               received_ms=6510, conversation_id=THREAD_PARENT)
+    bad["scope"]["thread"] = THREAD_ID
+    env = _obs_envelope("obs-thread-subscope", bad, conv=THREAD_PARENT)
+    sid = await _produce(redis_client, stream, env)
+    reader = _reader(redis_client, store, stream)
+    runner = _obs_runner(store, redis_client, harness)
+    await _register(reader, env, sid)
+    await _claim_run(store, runner)
+
+    event = await store.event(env.event_id)
+    assert event["state"] == "failed_retained"
+    assert event["outcome_reason"].startswith("malformed observation")
+    assert await _obs_rows(store) == []
+    assert await _pending(redis_client, stream) == 0

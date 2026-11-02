@@ -416,14 +416,16 @@ def parse_discord_delete(
 
 def _message_scope(message: Any, account_key: str) -> SourceScope:
     """The room scope of a message-shaped event: the thread's PARENT is the
-    room (a thread is a span inside it), `thread` carries the thread id —
-    `parse_discord_message`'s own convention."""
+    room (a thread is a span inside it — `parse_discord_message`'s own
+    convention). The observation wire names the room only — `Envelope`
+    carries no thread sub-scope and `WorkRunner`'s `expect_scope` binds to
+    `thread=""` — so the thread's identity stays on the observation's
+    refs (object/target), never in `scope.thread`."""
     parent_id = getattr(message.channel, "parent_id", None)
     room_id = parent_id if parent_id is not None else message.channel.id
     return SourceScope(
         platform="discord", account_key=account_key,
-        conversation_id=f"{message.guild.id}/{room_id}",
-        thread="" if parent_id is None else str(message.channel.id))
+        conversation_id=f"{message.guild.id}/{room_id}")
 
 
 def _event_scope(
@@ -432,13 +434,13 @@ def _event_scope(
 ) -> SourceScope:
     """The scope of a channel-naming raw event (votes, clears): the channel
     is a room itself unless the caller resolved it to a thread's parent —
-    `room_channel_id` non-None then means the channel IS a thread."""
+    `room_channel_id` non-None then means the channel IS a thread, and the
+    same room-scope rule as `_message_scope` applies."""
     room_id = room_channel_id if room_channel_id is not None else str(
         channel_id)
     return SourceScope(
         platform="discord", account_key=account_key,
-        conversation_id=f"{guild_id}/{room_id}",
-        thread="" if room_channel_id is None else str(channel_id))
+        conversation_id=f"{guild_id}/{room_id}")
 
 
 def _poll_object(message_id: Any) -> str:
@@ -450,7 +452,12 @@ def parse_discord_poll_definition(
 ) -> Observation | None:
     """`MESSAGE_CREATE` carrying a poll → `poll/create`, the typed sidecar
     that rides the message's own envelope. Discord polls are never
-    anonymous: every voter is a `user_id` on `MESSAGE_POLL_VOTE_*`."""
+    anonymous: every voter is a `user_id` on `MESSAGE_POLL_VOTE_*`.
+
+    The reads name the HYDRATED discord.py object's attributes — the
+    `Message.poll` a `MESSAGE_CREATE` arrives holding: `Poll.question`
+    (a str), `Poll.multiple`, `PollAnswer.id`/`media.text` — never the
+    gateway payload's own field names, which the SDK does not re-expose."""
     poll = getattr(message, "poll", None)
     if (message is None or poll is None
             or getattr(message, "guild", None) is None
@@ -458,8 +465,8 @@ def parse_discord_poll_definition(
         return None
     options = tuple(
         (ref, label) for ref, label in (
-            (str(getattr(a, "answer_id", "") or ""),
-             str(getattr(getattr(a, "poll_media", None), "text", "") or ""))
+            (str(getattr(a, "id", "") or ""),
+             str(getattr(getattr(a, "media", None), "text", "") or ""))
             for a in getattr(poll, "answers", None) or ())
         if ref)
     if not options:
@@ -473,10 +480,9 @@ def parse_discord_poll_definition(
         object_kind="poll", scope=_message_scope(message, account_key),
         object_ref=_poll_object(message.id), operation="create",
         payload=PollPayload(
-            question=str(getattr(getattr(poll, "question", None), "text", "")
-                         or ""),
+            question=str(getattr(poll, "question", "") or ""),
             options=options,
-            multi_select=bool(getattr(poll, "allow_multiselect", False)),
+            multi_select=bool(getattr(poll, "multiple", False)),
             anonymous=False, state="open", close_ms=close_ms,
             parent_ref=f"msg:{message.id}"),
         target=EditTarget(message_id=str(message.id)),
@@ -487,20 +493,31 @@ def parse_discord_poll_definition(
 def parse_discord_poll_close(
     message: Any, *, account_key: str,
 ) -> tuple[Observation, ...]:
-    """A `MESSAGE_UPDATE` whose `poll.results.is_finalized` → the close.
+    """A `MESSAGE_UPDATE` whose poll finalized → the close.
 
     Discord delivers finalized tallies through the update seam WITHOUT an
     `edited_timestamp`, which is exactly why `parse_discord_edit` answers
-    None for it — the close is detected on `results`, never on the edit
-    marker. Two observations because they are two distinct facts: the
-    definition's `state` revising to closed, and the final option counts
-    the snapshot reports (never voter identities — Discord supplies none
-    here)."""
+    None for it — the close is detected on `Poll.is_finalized()`, never on
+    the edit marker. Two observations because they are two distinct facts:
+    the definition's `state` revising to closed, and the final option
+    counts the snapshot reports (never voter identities — Discord supplies
+    none here). The hydrated `Poll` folds the gateway's `results` block
+    INTO the answers: `is_finalized()` is a method and each `PollAnswer`
+    carries its own `vote_count`. A finalized tally of all zeros is a
+    genuinely empty result — still a fact, still a snapshot; a unique
+    `voter_count` is attached only when `multiple` is KNOWN false, since
+    summing option votes across a multi-select is votes, not people."""
     poll = getattr(message, "poll", None)
-    results = getattr(poll, "results", None) if poll is not None else None
     if (message is None or getattr(message, "guild", None) is None
-            or results is None
-            or not getattr(results, "is_finalized", False)):
+            or poll is None):
+        return ()
+    finalized = getattr(poll, "is_finalized", None)
+    try:
+        closed = bool(finalized() if callable(finalized) else finalized)
+    except Exception:
+        log.exception("unreadable discord poll finalization flag, skipping")
+        closed = False
+    if not closed:
         return ()
     expires = getattr(poll, "expires_at", None)
     try:
@@ -510,9 +527,14 @@ def parse_discord_poll_close(
     scope = _message_scope(message, account_key)
     counts = tuple(
         (ref, count) for ref, count in (
-            (str(getattr(a, "id", "") or ""), int(getattr(a, "count", 0) or 0))
-            for a in getattr(results, "answer_counts", None) or ())
-        if ref)
+            (str(getattr(a, "id", "") or ""), getattr(a, "vote_count", None))
+            for a in getattr(poll, "answers", None) or ())
+        if ref and isinstance(count, int) and not isinstance(count, bool))
+    voter_count = None
+    if getattr(poll, "multiple", None) is False:
+        total = getattr(poll, "total_votes", None)
+        if isinstance(total, int) and not isinstance(total, bool):
+            voter_count = total
     obs: list[Observation] = [
         Observation(
             object_kind="poll", scope=scope,
@@ -524,7 +546,8 @@ def parse_discord_poll_close(
         obs.append(Observation(
             object_kind="poll", scope=scope,
             object_ref=_poll_object(message.id), operation="snapshot",
-            payload=PollPayload(option_counts=counts),
+            payload=PollPayload(
+                option_counts=counts, voter_count=voter_count),
             target=EditTarget(message_id=str(message.id)),
             actor_status="not_applicable", time_quality="unknown",
             coverage=Coverage(covered="option_counts")))
@@ -617,7 +640,7 @@ def parse_discord_pin_message(
         return None                       # a pin notice naming nothing
     return Observation(
         object_kind="pin", scope=_message_scope(message, account_key),
-        object_ref="pin_set", operation="add",
+        object_ref=f"pin_set:{message.channel.id}", operation="add",
         payload=PinPayload(message=EditTarget(message_id=str(target_id))),
         target=EditTarget(message_id=str(target_id)),
         actor_id=str(message.author.id), actor_status="known",
@@ -633,7 +656,9 @@ def parse_discord_pins_update(
     message and no actor. A partial snapshot records that the set changed
     with `targets`/`actor` as named gaps; the type-6 system message and any
     later read are the real target evidence. An empty `pins` merges nothing
-    and can never claim the set emptied."""
+    and can never claim the set emptied. The pin set is named for the
+    channel the event names — a thread's pins are its own set, folded
+    under the parent room's scope, never merged into the parent's."""
     guild = getattr(channel, "guild", None)
     if channel is None or guild is None:
         return None
@@ -643,9 +668,8 @@ def parse_discord_pins_update(
         object_kind="pin",
         scope=SourceScope(
             platform="discord", account_key=account_key,
-            conversation_id=f"{guild.id}/{room_id}",
-            thread="" if parent_id is None else str(channel.id)),
-        object_ref="pin_set", operation="snapshot",
+            conversation_id=f"{guild.id}/{room_id}"),
+        object_ref=f"pin_set:{channel.id}", operation="snapshot",
         payload=PinPayload(pins=()),
         actor_status="not_supplied", time_quality="unknown",
         coverage=Coverage(
@@ -704,12 +728,13 @@ def parse_discord_thread_create(
                         getattr(thread, "type", None)),
     }
     parent_id = getattr(thread, "parent_id", None)
+    fields["parent_id"] = (
+        str(parent_id) if parent_id is not None else None)
     return Observation(
         object_kind="room",
         scope=SourceScope(
             platform="discord", account_key=account_key,
-            conversation_id=f"{guild.id}/{parent_id or thread.id}",
-            thread=str(thread.id)),
+            conversation_id=f"{guild.id}/{parent_id or thread.id}"),
         object_ref=f"thread:{thread.id}", operation="create",
         payload=RoomPayload(
             fields={k: v for k, v in fields.items() if v is not None}),
@@ -734,6 +759,8 @@ def parse_discord_thread_update(
         meta = data.get("thread_metadata") or {}
         fields = {
             "name": data.get("name"),
+            "parent_id": (str(data["parent_id"])
+                          if data.get("parent_id") is not None else None),
             "archived": meta.get("archived"),
             "locked": meta.get("locked"),
             "auto_archive_duration": meta.get("auto_archive_duration"),
@@ -744,8 +771,7 @@ def parse_discord_thread_update(
             scope=SourceScope(
                 platform="discord", account_key=account_key,
                 conversation_id=(
-                    f"{guild_id}/{data.get('parent_id') or thread_id}"),
-                thread=thread_id),
+                    f"{guild_id}/{data.get('parent_id') or thread_id}")),
             object_ref=f"thread:{thread_id}", operation="snapshot",
             payload=RoomPayload(
                 fields={k: v for k, v in fields.items() if v is not None}),
@@ -771,8 +797,7 @@ def parse_discord_thread_delete(
             scope=SourceScope(
                 platform="discord", account_key=account_key,
                 conversation_id=(
-                    f"{guild_id}/{getattr(raw, 'parent_id', None) or thread_id}"),
-                thread=thread_id),
+                    f"{guild_id}/{getattr(raw, 'parent_id', None) or thread_id}")),
             object_ref=f"thread:{thread_id}", operation="withdraw",
             payload=RoomPayload(fields={}),
             actor_status="not_supplied", time_quality="unknown")

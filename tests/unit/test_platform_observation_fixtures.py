@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -35,6 +34,7 @@ from typing import Any
 
 import discord
 import pytest
+from discord.channel import PartialMessageable
 from discord.partial_emoji import PartialEmoji
 from discord.raw_models import (
     RawMemberRemoveEvent,
@@ -44,6 +44,7 @@ from discord.raw_models import (
     RawReactionClearEmojiEvent,
     RawReactionClearEvent,
     RawThreadDeleteEvent,
+    RawThreadUpdateEvent,
 )
 from discord.state import ConnectionState
 
@@ -459,92 +460,41 @@ def test_the_delete_fixture_parses_through_the_real_touch_path() -> None:
     assert msg.sender_id == "", "a delete names no actor"
 
 
-# ── Discord message-carried shapes, hydrated onto the parser's Protocol ───────
+# ── Discord message-carried shapes, hydrated as the REAL pinned SDK does ─────
 
 
-@dataclass
-class _FakeAttachment:
-    id: int
-    content_type: str | None = None
-    filename: str = ""
-    size: int = 0
-    url: str = ""
-
-    def is_voice_message(self) -> bool:
-        return False
+def _gateway_state() -> ConnectionState:
+    """A `ConnectionState` detached from a client — everything `Message`,
+    `PartialMessageable.guild` and the SDK's inner DTOs need to hydrate
+    real objects from a gateway `d` (`http` is stored, never called, on
+    this path)."""
+    return ConnectionState(
+        dispatch=lambda *a, **k: None, handlers={}, hooks={}, http=None,
+        intents=discord.Intents.none())
 
 
-def _message_from_gateway(d: dict[str, Any]) -> Any:
-    """A gateway MESSAGE_CREATE/UPDATE `d` reduced to the attributes
-    `parse_discord_message`'s Protocol reads — the same structural fake the
-    existing suite uses, filled from the fixture rather than hand-built."""
-    guild = SimpleNamespace(id=int(d["guild_id"])) if d.get("guild_id") else None
-    channel = SimpleNamespace(id=int(d["channel_id"]), parent_id=d.get("parent_id"))
-    mentions = [
-        SimpleNamespace(id=int(u["id"]), display_name=u.get("global_name") or u["username"])
-        for u in d.get("mentions") or []
-    ]
-    attachments = [
-        _FakeAttachment(
-            id=int(a["id"]),
-            content_type=a.get("content_type"),
-            filename=a.get("filename") or "",
-            size=a.get("size") or 0,
-            url=a.get("url") or "",
-        )
-        for a in d.get("attachments") or []
-    ]
-    reference = None
-    if d.get("message_reference"):
-        mr = d["message_reference"]
-        reference = SimpleNamespace(
-            resolved=None,
-            message_id=int(mr["message_id"]),
-            channel_id=int(mr["channel_id"]),
-            guild_id=int(mr["guild_id"]) if mr.get("guild_id") else None)
-    poll = None
-    if d.get("poll"):
-        pd = d["poll"]
-        results = pd.get("results") or {}
-        poll = SimpleNamespace(
-            question=SimpleNamespace(
-                text=(pd.get("question") or {}).get("text")),
-            answers=[
-                SimpleNamespace(
-                    answer_id=a.get("answer_id"),
-                    poll_media=SimpleNamespace(
-                        text=(a.get("poll_media") or {}).get("text")))
-                for a in pd.get("answers") or []
-            ],
-            allow_multiselect=pd.get("allow_multiselect"),
-            expires_at=(datetime.fromisoformat(pd["expiry"])
-                        if pd.get("expiry") else None),
-            results=(SimpleNamespace(
-                is_finalized=results.get("is_finalized"),
-                answer_counts=[
-                    SimpleNamespace(id=a.get("id"), count=a.get("count"))
-                    for a in results.get("answer_counts") or []
-                ]) if results else None),
-        )
-    return SimpleNamespace(
-        id=int(d["id"]),
-        author=SimpleNamespace(
-            id=int(d["author"]["id"]),
-            display_name=d["author"].get("global_name") or d["author"]["username"],
-        ),
-        guild=guild,
-        channel=channel,
-        content=d.get("content") or "",
-        mentions=mentions,
-        attachments=attachments,
-        reference=reference,
-        stickers=[],
-        embeds=d.get("embeds") or [],
-        poll=poll,
-        message_snapshots=d.get("message_snapshots") or [],
-        type=SimpleNamespace(value=d.get("type", 0)),
-        edited_at=None,
-    )
+def _guild_for(state: ConnectionState, guild_id: Any) -> discord.Guild:
+    guild = state._get_or_create_unavailable_guild(int(guild_id))
+    state._add_guild(guild)   # `PartialMessageable.guild` resolves here
+    return guild
+
+
+def _message_from_gateway(d: dict[str, Any]) -> discord.Message:
+    """The REAL discord.py `Message` the pinned SDK builds from a gateway
+    `d`: `Poll`, `PollAnswer`, `MessageReference`, `MessageSnapshot`,
+    attachments and the `Member` author inside are all the SDK's own
+    objects. A parser that reads attribute names discord.py never
+    hydrates (the gateway payload's own spelling, for instance) fails
+    here exactly the way it fails live — which is what a stub mirroring
+    the wrong names used to hide."""
+    state = _gateway_state()
+    guild_id = d.get("guild_id")
+    if guild_id:
+        _guild_for(state, guild_id)
+    channel = PartialMessageable(
+        state, int(d["channel_id"]),
+        guild_id=int(guild_id) if guild_id else None)
+    return discord.Message(state=state, channel=channel, data=d)
 
 
 def test_the_poll_message_parses_as_a_marker_and_loses_the_object() -> None:
@@ -558,8 +508,15 @@ def test_the_poll_message_parses_as_a_marker_and_loses_the_object() -> None:
 
 def test_discord_poll_definition_is_typed() -> None:
     d = _load(FIXTURES / "discord" / "message_create_poll.json")["payload"]["d"]
+    message = _message_from_gateway(d)
+    # The control is the SDK's own hydrated object — `Poll.question` is a
+    # plain str on discord.py 2.7.1, answers carry `id`/`media.text`, and
+    # `multiple` is the multi-select flag (the gateway's own spellings —
+    # `question.text`, `answer_id`, `poll_media`, `allow_multiselect` —
+    # are not re-exposed).
+    assert isinstance(message.poll, discord.Poll)
     obs = parse_discord_poll_definition(
-        _message_from_gateway(d), own_id=DISCORD_OWN, account_key="acct")
+        message, own_id=DISCORD_OWN, account_key="acct")
     assert obs is not None
     assert obs.object_kind == "poll" and obs.operation == "create"
     assert obs.object_ref == f"poll:{d['id']}"
@@ -569,9 +526,36 @@ def test_discord_poll_definition_is_typed() -> None:
     assert p.options == (("1", "Noodles"), ("2", "Dim sum"), ("3", "Skip it"))
     assert p.multi_select is False and p.anonymous is False
     assert p.state == "open" and p.close_ms is not None
+    assert p.close_ms == int(
+        datetime.fromisoformat(d["poll"]["expiry"]).timestamp() * 1000)
     assert obs.target == EditTarget(message_id=d["id"])
     assert obs.actor_id == d["author"]["id"]
     assert obs.scope.conversation_id == f"{d['guild_id']}/{d['channel_id']}"
+    assert obs.scope.thread == ""
+
+
+def test_a_poll_created_inside_a_thread_scopes_the_parent_room() -> None:
+    """The same room rule the thread lifecycle events follow: a poll
+    posted in a thread belongs to the parent channel's room — a thread
+    is a span inside it, never a room of its own, and the wire carries
+    no thread sub-scope."""
+    d = _load(FIXTURES / "discord" / "message_create_poll.json")["payload"]["d"]
+    td = _load(FIXTURES / "discord" / "thread_create.json")["payload"]["d"]
+    d["channel_id"] = td["id"]           # the poll lands inside the thread
+    state = _gateway_state()
+    guild = _guild_for(state, d["guild_id"])
+    thread = discord.Thread(guild=guild, state=state, data=td)
+    message = discord.Message(state=state, channel=thread, data=d)
+    obs = parse_discord_poll_definition(
+        message, own_id=DISCORD_OWN, account_key="acct")
+    assert obs is not None
+    assert obs.scope.conversation_id == f"{d['guild_id']}/{td['parent_id']}"
+    assert obs.scope.thread == ""
+    # The thread-resident poll's identity is still recoverable: the
+    # object and parent refs name the message it lives on.
+    assert obs.object_ref == f"poll:{d['id']}"
+    assert isinstance(obs.payload, PollPayload)
+    assert obs.payload.parent_ref == f"msg:{d['id']}"
 
 
 def test_discord_poll_votes_are_per_option_deltas() -> None:
@@ -591,6 +575,20 @@ def test_discord_poll_votes_are_per_option_deltas() -> None:
         # The vote names its voter but the event itself carries no time —
         # unknown, never a fabricated one.
         assert obs.actor_id == d["user_id"] and obs.time_quality == "unknown"
+
+
+def test_a_poll_vote_inside_a_thread_scopes_the_parent_room() -> None:
+    """`room_channel_id` is the bridge's resolved parent — the vote lands
+    in the parent's room with no thread sub-scope."""
+    d = _load(FIXTURES / "discord" / "message_poll_vote_add.json")["payload"]["d"]
+    obs = parse_discord_poll_vote(
+        RawPollVoteActionEvent(d), own_id=DISCORD_OWN,
+        account_key="acct", added=True,
+        room_channel_id="123456789012345999")
+    assert obs is not None
+    assert obs.scope.conversation_id == (
+        f"{d['guild_id']}/123456789012345999")
+    assert obs.scope.thread == ""
 
 
 def test_the_dm_poll_vote_is_dropped_at_admission() -> None:
@@ -655,6 +653,10 @@ def test_the_pin_system_message_is_real_pin_evidence() -> None:
         _message_from_gateway(d), own_id=DISCORD_OWN, account_key="acct")
     assert obs is not None
     assert obs.object_kind == "pin" and obs.operation == "add"
+    # The pin set is named for the channel the notice landed in — a
+    # thread's own `pin_set:<thread id>` can never fold into the parent's.
+    assert obs.object_ref == f"pin_set:{d['channel_id']}"
+    assert obs.scope.thread == ""
     p = obs.payload
     assert isinstance(p, PinPayload)
     assert p.message == EditTarget(message_id=d["message_reference"]["message_id"])
@@ -675,15 +677,33 @@ def test_channel_pins_update_is_an_incomplete_marker() -> None:
         channel, d["last_pin_timestamp"], account_key="acct")
     assert obs is not None
     assert obs.object_kind == "pin" and obs.operation == "snapshot"
+    assert obs.object_ref == f"pin_set:{d['channel_id']}"
     assert obs.coverage.complete is False
     assert set(obs.coverage.gaps) == {"targets", "actor"}
     assert obs.actor_status == "not_supplied"
 
 
+def test_a_thread_pins_update_keeps_its_own_pin_set_in_the_parent_room() -> None:
+    """A thread's `CHANNEL_PINS_UPDATE` folds under the parent channel's
+    room but names the THREAD's own pin set — the two sets stay distinct
+    objects instead of one head merging both."""
+    d = _load(FIXTURES / "discord" / "channel_pins_update.json")["payload"]["d"]
+    channel = SimpleNamespace(
+        id=123456789012345610, parent_id=int(d["channel_id"]),
+        guild=SimpleNamespace(id=int(d["guild_id"])))
+    obs = parse_discord_pins_update(
+        channel, d["last_pin_timestamp"], account_key="acct")
+    assert obs is not None
+    assert obs.scope.conversation_id == (
+        f"{d['guild_id']}/{d['channel_id']}")
+    assert obs.scope.thread == ""
+    assert obs.object_ref == "pin_set:123456789012345610"
+
+
 def test_the_poll_close_is_not_an_edit_and_is_dropped() -> None:
     """A finalized-poll MESSAGE_UPDATE still parses as no edit — the close
     is captured on `parse_discord_poll_close` (asserted next), which keys
-    on `results.is_finalized`, never on `edited_timestamp`."""
+    on `Poll.is_finalized()`, never on `edited_timestamp`."""
     d = _load(FIXTURES / "discord" / "message_update_poll_finalized.json")["payload"]["d"]
     assert d["edited_timestamp"] is None and d["poll"]["results"]["is_finalized"] is True
     assert parse_discord_edit(_message_from_gateway(d), own_id=DISCORD_OWN) is None
@@ -699,6 +719,13 @@ def test_the_poll_close_produces_state_and_counts() -> None:
     assert isinstance(state.payload, PollPayload)
     assert state.payload.state == "closed"
     assert dict(counts.payload.option_counts) == {"1": 3, "2": 2, "3": 0}  # type: ignore[attr-defined]
+    # Single-select: option votes ARE unique voters — the SDK's own total
+    # is honest evidence, never a synthesized one.
+    assert counts.payload.voter_count == 5  # type: ignore[attr-defined]
+    # Close carries no actor and no source clock — the update names
+    # neither, and neither is invented.
+    assert state.actor_status == "not_applicable"
+    assert state.time_quality == "unknown" and state.occurred_ms is None
     # An unfinalized update answers nothing.
     obs = parse_discord_poll_close(
         _message_from_gateway(
@@ -707,28 +734,71 @@ def test_the_poll_close_produces_state_and_counts() -> None:
     assert obs == ()
 
 
+def test_the_poll_close_keeps_a_genuinely_empty_result() -> None:
+    """A finalized poll whose every answer count is zero still reports
+    its snapshot — 'nobody voted' is a fact the close delivers, not an
+    absent tally."""
+    d = _load(FIXTURES / "discord" / "message_update_poll_finalized.json")["payload"]["d"]
+    d["poll"]["results"]["answer_counts"] = []
+    obs = parse_discord_poll_close(
+        _message_from_gateway(d), account_key="acct")
+    assert len(obs) == 2
+    state, counts = obs
+    assert state.payload.state == "closed"  # type: ignore[attr-defined]
+    assert dict(counts.payload.option_counts) == {"1": 0, "2": 0, "3": 0}  # type: ignore[attr-defined]
+    assert counts.payload.voter_count == 0  # type: ignore[attr-defined]
+
+
+def test_a_multiselect_close_reports_no_unique_voter_total() -> None:
+    """Option votes on a multi-select poll are votes, not people — the
+    snapshot keeps per-option counts and leaves `voter_count` unset
+    rather than sum a fabricated unique total."""
+    d = _load(FIXTURES / "discord" / "message_update_poll_finalized.json")["payload"]["d"]
+    d["poll"]["allow_multiselect"] = True
+    obs = parse_discord_poll_close(
+        _message_from_gateway(d), account_key="acct")
+    assert len(obs) == 2
+    counts = obs[1]
+    assert dict(counts.payload.option_counts) == {"1": 3, "2": 2, "3": 0}  # type: ignore[attr-defined]
+    assert counts.payload.voter_count is None  # type: ignore[attr-defined]
+    # The same hydrated flag drives the definition's multi_select.
+    d = _load(FIXTURES / "discord" / "message_create_poll.json")["payload"]["d"]
+    d["poll"]["allow_multiselect"] = True
+    obs = parse_discord_poll_definition(
+        _message_from_gateway(d), own_id=DISCORD_OWN, account_key="acct")
+    assert obs is not None
+    assert isinstance(obs.payload, PollPayload)
+    assert obs.payload.multi_select is True
+
+
 # ── Discord channel/thread/member/role lifecycle observations ─────────────
 
 
 def test_thread_lifecycle_observations() -> None:
+    """Create/update/delete all scope the thread's PARENT room — the
+    durable boundary `Envelope` + `expect_scope` can carry — while the
+    thread's own id stays on `object_ref` and `fields`. A `scope.thread`
+    here is exactly the defect that used to strand these as
+    `failed_retained`."""
     d = _load(FIXTURES / "discord" / "thread_create.json")["payload"]["d"]
-    thread = SimpleNamespace(
-        id=int(d["id"]), name=d["name"], parent_id=int(d["parent_id"]),
-        owner_id=int(d["owner_id"]), archived=False, locked=False,
-        auto_archive_duration=1440, slowmode_delay=0,
-        type=SimpleNamespace(value=d["type"]),
-        guild=SimpleNamespace(id=int(d["guild_id"])))
+    state = _gateway_state()
+    guild = _guild_for(state, d["guild_id"])
+    thread = discord.Thread(guild=guild, state=state, data=d)
     obs = parse_discord_thread_create(thread, account_key="acct")
     assert obs is not None
     assert obs.object_kind == "room" and obs.operation == "create"
     assert obs.object_ref == f"thread:{d['id']}"
     assert obs.scope.conversation_id == f"{d['guild_id']}/{d['parent_id']}"
-    assert obs.scope.thread == d["id"]
+    assert obs.scope.thread == ""
     assert obs.actor_id == d["owner_id"]  # creator, not the bot join in `member`
+    assert obs.payload.fields["parent_id"] == d["parent_id"]  # type: ignore[attr-defined]
 
     d = _load(FIXTURES / "discord" / "thread_update.json")["payload"]["d"]
-    obs = parse_discord_thread_update(d, account_key="acct")
+    obs = parse_discord_thread_update(
+        RawThreadUpdateEvent(d).data, account_key="acct")
     assert obs is not None and obs.operation == "snapshot"
+    assert obs.scope.conversation_id == f"{d['guild_id']}/{d['parent_id']}"
+    assert obs.scope.thread == ""
     assert obs.payload.fields["archived"] is True  # type: ignore[attr-defined]
     # An AFTER snapshot reports covered fields — never an invented delta.
     assert obs.actor_status == "not_supplied"
@@ -736,6 +806,8 @@ def test_thread_lifecycle_observations() -> None:
     d = _load(FIXTURES / "discord" / "thread_delete.json")["payload"]["d"]
     obs = parse_discord_thread_delete(RawThreadDeleteEvent(d), account_key="acct")
     assert obs is not None and obs.operation == "withdraw"
+    assert obs.scope.conversation_id == f"{d['guild_id']}/{d['parent_id']}"
+    assert obs.scope.thread == ""
     assert obs.actor_status == "not_supplied"
 
 

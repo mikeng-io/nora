@@ -96,7 +96,10 @@ subsequent binding changes below.
   retain their guild `object_ref` and guild-grained coverage; the bridge
   binds scoped copies only to configured guild/channel conversations — guild
   grain is labelled source grain, not channel audience, and a new member is
-  the SUBJECT, never the invented actor.
+  the SUBJECT, never the invented actor. Thread lifecycle and in-thread
+  observations scope the parent channel's room — a thread is a span inside
+  one room, never a room of its own — and the thread's own id stays on
+  `object_ref`/`fields`; the wire carries no thread sub-scope.
 - Typing notifications remain excluded by decision.
 - Those discovery fixtures alone establish neither capture nor model visibility.
 
