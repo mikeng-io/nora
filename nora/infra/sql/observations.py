@@ -163,8 +163,8 @@ def _row_to_head(row: sa.RowMapping) -> ObservationHead:
         thread=row["thread"] or "")
 
 
-#: `message_reaction.created_at` as epoch microseconds — the durable commit
-#: clock `fold_target_reactions` orders legacy deltas by, computed where the
+#: `message_reaction.created_at` as epoch microseconds — the insertion stamp
+#: `fold_target_reactions` orders legacy deltas by, computed where the
 #: rows are so a text column never reaches the fold as a string.
 _MR_AT = sa.cast(
     sa.extract(
@@ -720,9 +720,9 @@ async def relink_arriving_targets(
     platform_message_id: str | None, sent_ts: int | None,
     sender_id: str | None,
 ) -> int:
-    """Re-link retained observations whose target can name the message that
-    just committed — called INSIDE the message row's own transaction so the
-    link lands with the row, never after it (the port's "resolve_targets
+    """Re-link retained observations whose target names a message or edit
+    now being recorded — called INSIDE that arrival's transaction so
+    the link lands with it, never after it (the port's "resolve_targets
     re-links the rest when the target arrives").
 
     The arriving message generates every target key it could answer — `id:`

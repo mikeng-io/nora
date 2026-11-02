@@ -414,3 +414,96 @@ async def test_a_waiting_transaction_does_not_backdate_a_later_reaction(stores, 
     assert dict(state.counts) == {"👍": 1}
     head = await obs.current(scope=SCOPE, kind="reaction", object_ref="msg:m1")
     assert head.state["standing"] == {"👍": ["u1"]}
+
+
+@pytest.mark.parametrize("qualified", [False, True])
+async def test_edit_arrival_relinks_retained_timestamp_targets(stores, qualified):
+    records, obs = stores
+    mid = await _message(records, sender="original-author")
+    later = NOW + 1000
+    observation = Observation(
+        object_kind="reaction", scope=SCOPE, object_ref="msg:later-edit", operation="add",
+        payload=ReactionPayload(emoji="👍"), actor_id="reactor", actor_status="known",
+        target=EditTarget(sent_ts=later),
+        target_author_id="original-author" if qualified else "", received_ms=NOW)
+    oid = await _obs(obs, observation, "before-edit")
+    wrong_author = await _obs(obs, Observation(
+        object_kind="reaction", scope=SCOPE, object_ref="msg:wrong-author", operation="add",
+        payload=ReactionPayload(emoji="👍"), actor_id="reactor", actor_status="known",
+        target=EditTarget(sent_ts=later), target_author_id="someone-else", received_ms=NOW),
+        "wrong-author")
+    # A same-clock row in another room/platform cannot displace this target.
+    for platform, conversation in (
+            (SCOPE.platform, "other-room"), ("signal", SCOPE.conversation_id)):
+        await records.append(message=NormalizedMessage(
+            platform=platform, conversation_id=conversation, conversation_type="group",
+            sender_id="original-author", sender_name=None, timestamp=later,
+            body="elsewhere", raw={}))
+    assert oid is not None and wrong_author is not None
+    before = await obs.by_ids(scope=SCOPE, ids=(oid, wrong_author))
+    assert len(before) == 2 and all(r.target_message_id is None for r in before)
+    await records.append_edit(message_id=mid, message=NormalizedMessage(
+        platform=SCOPE.platform, conversation_id=SCOPE.conversation_id, conversation_type="group",
+        sender_id="edit-actor", sender_name=None, timestamp=later, body="edited", raw={}))
+    rows = {r.id: r for r in await obs.by_ids(scope=SCOPE, ids=(oid, wrong_author))}
+    assert rows[oid].target_message_id == mid
+    assert rows[wrong_author].target_message_id is None
+    assert (await _annotation(records, mid)).counts == (("👍", 1),)
+
+
+async def test_edit_arrival_does_not_guess_an_ambiguous_timestamp(stores):
+    records, obs = stores
+    mid = await _message(records, sender="first-author")
+    later = NOW + 2000
+    await records.append(message=NormalizedMessage(
+        platform=SCOPE.platform, conversation_id=SCOPE.conversation_id, conversation_type="group",
+        sender_id="second-author", sender_name=None, timestamp=later, body="other", raw={}))
+    ids = []
+    for name, author in (("bare", ""), ("qualified", "first-author")):
+        ids.append(await _obs(obs, Observation(
+            object_kind="reaction", scope=SCOPE, object_ref=f"msg:{name}", operation="add",
+            payload=ReactionPayload(emoji="👍"), actor_id="reactor", actor_status="known",
+            target=EditTarget(sent_ts=later), target_author_id=author, received_ms=NOW), name))
+    await records.append_edit(message_id=mid, message=NormalizedMessage(
+        platform=SCOPE.platform, conversation_id=SCOPE.conversation_id, conversation_type="group",
+        sender_id="first-author", sender_name=None, timestamp=later, body="edit", raw={}))
+    rows = {r.id: r for r in await obs.by_ids(scope=SCOPE, ids=tuple(ids))}
+    assert rows[ids[0]].target_message_id is None
+    assert rows[ids[1]].target_message_id == mid
+
+
+async def test_edit_target_relink_is_in_the_edit_transaction(stores, request, monkeypatch):
+    if request.node.callspec.params["stores"] != "sql":
+        pytest.skip("SQL transaction rollback; paired re-link behavior runs on both stores")
+    from nora.infra.sql import memory_index
+    from nora.infra.sql.schema import MESSAGE_EDIT, PLATFORM_OBSERVATION
+
+    records, obs = stores
+    mid = await _message(records)
+    later = NOW + 3000
+    oid = await _obs(obs, Observation(
+        object_kind="reaction", scope=SCOPE, object_ref="msg:rollback", operation="add",
+        payload=ReactionPayload(emoji="👍"), target=EditTarget(sent_ts=later),
+        received_ms=NOW), "before-rollback")
+    assert oid is not None
+    called = []
+
+    async def fail_after_relink(conn, *args, **kwargs):
+        linked = (await conn.execute(sa.select(PLATFORM_OBSERVATION.c.target_message_id)
+                                    .where(PLATFORM_OBSERVATION.c.id == oid))).scalar_one()
+        called.append(linked)
+        assert linked == mid
+        raise RuntimeError("projection failed after target re-link")
+
+    monkeypatch.setattr(memory_index, "project", fail_after_relink)
+    with pytest.raises(RuntimeError, match="projection failed after target re-link"):
+        await records.append_edit(message_id=mid, message=NormalizedMessage(
+            platform=SCOPE.platform, conversation_id=SCOPE.conversation_id,
+            conversation_type="group", sender_id="author", sender_name=None,
+            timestamp=later, body="rolled back edit", raw={}))
+    assert called == [mid]
+    rows = await obs.by_ids(scope=SCOPE, ids=(oid,))
+    assert len(rows) == 1 and rows[0].target_message_id is None
+    async with records._engine.connect() as conn:
+        assert (await conn.execute(sa.select(sa.func.count()).select_from(MESSAGE_EDIT)
+                                   .where(MESSAGE_EDIT.c.message_id == mid))).scalar_one() == 0

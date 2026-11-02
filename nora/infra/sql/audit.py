@@ -41,6 +41,7 @@ from nora.domain.models import (
     parse_mentions_json,
 )
 from nora.domain.observations import (
+    SourceScope,
     StoredObservation,
     fold_target_reactions,
     to_row_reactions,
@@ -834,6 +835,17 @@ class SqlRecordStore:
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
+            from nora.infra.sql.observations import relink_arriving_targets
+
+            original = (await conn.execute(sa.select(
+                MESSAGES.c.platform, MESSAGES.c.conversation_id, MESSAGES.c.sender_id,
+            ).where(MESSAGES.c.id == message_id))).one()
+            await relink_arriving_targets(
+                conn, scope=SourceScope(
+                    platform=original.platform, account_key="",
+                    conversation_id=original.conversation_id),
+                platform_message_id=None, sent_ts=message.timestamp,
+                sender_id=original.sender_id)
             # The node's text is the newest edit's.
             await memory_index.project(conn, "message", message_id, metrics=self._metrics)
 

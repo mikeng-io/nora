@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import inspect
 import itertools
+from dataclasses import replace
 from typing import Any
 
 from nora.domain.models import ReactionRow
@@ -69,6 +70,29 @@ class FakeObservationStore:
     def _scoped_rows(self, scope: SourceScope) -> list[StoredObservation]:
         return [r for r in self._rows
                 if self._in_scope(r.observation.scope, scope)]
+
+    def _edit_arrived(self, *, platform: str, conversation_id: str, sent_ts: int) -> None:
+        """Mirror the edit transaction's unique, room-bound target re-link."""
+        if self._records is None:
+            return
+        rows = []
+        for row in self._rows:
+            o = row.observation
+            if (row.target_message_id is not None or o.target is None
+                    or o.target.message_id or o.target.sent_ts != sent_ts
+                    or o.scope.platform != platform
+                    or o.scope.conversation_id != conversation_id or o.scope.thread):
+                rows.append(row)
+                continue
+            matches = [r["id"] for r in self._records.rows
+                       if r["platform"] == platform
+                       and r["conversation_id"] == conversation_id
+                       and (not o.target_author_id or r["sender_id"] == o.target_author_id)
+                       and (r["ts"] == sent_ts or any(
+                           e["message_id"] == r["id"] and e["ts"] == sent_ts
+                           for e in self._records.edits))]
+            rows.append(replace(row, target_message_id=matches[0]) if len(matches) == 1 else row)
+        self._rows = rows
 
     def _reaction_arrived(self, message_id: int, recorded_at: int) -> None:
         for row in self._rows:

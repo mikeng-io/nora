@@ -338,6 +338,12 @@ class FakeRecordStore:
             ),
         })
 
+        if self.observations is not None:
+            original = next(r for r in self.rows if r["id"] == message_id)
+            self.observations._edit_arrived(
+                platform=original["platform"],
+                conversation_id=original["conversation_id"], sent_ts=message.timestamp)
+
     async def append_reaction(
         self, *, message_id: int, message: NormalizedMessage, person_id: str | None,
     ) -> int:
