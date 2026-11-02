@@ -1051,7 +1051,6 @@ def parse_discord_scheduled_event(
     gaps = ["join_url", "image"]
     if operation == "withdraw":
         metadata: dict[str, Any] = {"name": str(getattr(ev, "name", "") or "")}
-        op = "withdraw"
     else:
         fields = _scheduled_event_fields(ev)
         entity_type = str(fields.pop("entity_type", "") or "")
@@ -1090,13 +1089,12 @@ def parse_discord_scheduled_event(
         else:
             metadata = {k: v for k, v in metadata.items()
                         if v != "" and v is not None}
-        op = operation
     return Observation(
         object_kind="artifact",
         scope=SourceScope(
             platform="discord", account_key=account_key,
             conversation_id=str(guild_id)),
-        object_ref=object_ref, operation=op,
+        object_ref=object_ref, operation=operation,
         payload=ArtifactPayload(
             artifact_kind="event", metadata=metadata, custody="declared"),
         actor_status="not_supplied", time_quality="unknown",

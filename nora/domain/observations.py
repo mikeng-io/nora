@@ -2022,8 +2022,10 @@ def _artifact_entry_label(
         bits.append(f"responded {shown}" + (f" (+{rest})" if rest > 0 else ""))
     elif f.get("recorded_responders"):
         bits.append(f"{f['recorded_responders']} recorded response(s)")
+    if f.get("recorded_extra_guests"):
+        bits.append(f"{f['recorded_extra_guests']} recorded extra guest(s)")
     if f.get("contacts"):
-        shown = ", ".join(_contact_label(c) for c in f["contacts"][:4])
+        shown = ", ".join(_contact_summary(c) for c in f["contacts"][:4])
         more = (f.get("contacts_more") or 0) + max(0, len(f["contacts"]) - 4)
         bits.append(f"contacts {shown}" + (f" (+{more})" if more else ""))
     custody = entry.get("custody")

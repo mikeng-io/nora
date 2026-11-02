@@ -367,3 +367,12 @@ def test_member_names_resolve_only_for_active_subjects():
     detail = head_detail(raw, name_of=_name_of)
     assert detail["member_count"] == 1 and detail["members_unnamed"] == 1
     assert "stranger-7" not in str(detail)
+
+
+def test_contact_current_summary_keeps_shared_contact_values():
+    head = _fold(_stored(_artifact({"contacts": [{
+        "display_name": "Example Contact", "organization": "Example Org",
+        "phones": ["extension 41"], "emails": ["example@example.invalid"]}]}), 1))
+    summary = head_summary(head)
+    assert "Example Contact" in summary and "Example Org" in summary
+    assert "extension 41" in summary and "example@example.invalid" in summary

@@ -258,6 +258,7 @@ async def test_an_event_and_its_answers_reach_the_assembled_state_named():
               if o.kind == "artifact"]
     assert "Breakfast" in obj.state and "canceled" in obj.state
     assert "Ada" in obj.state and "going" in obj.state
+    assert "2 recorded extra guest" in obj.state
     assert "e9" not in obj.state and "acct" not in obj.state
 
     prompt = _prompt(stimuli, g)
