@@ -579,6 +579,29 @@ async def standing(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     )
 
 
+async def standing_unit(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
+    """Judge the composed unit updater on one retained Cognition Record."""
+    from nora.subject.standing_fold import fold_recorded_unit
+
+    if case.moment is None:
+        return Outcome(admitted=None, error="recorded Cognition moment required")
+    dry = bool(case.metadata.get("print_input"))
+    try:
+        folded, shown, evidence = await fold_recorded_unit(
+            subject, source_url=case.moment.source_url,
+            tag_id=str(case.metadata.get("tag_id", "")), now_ms=now_ms, call_model=not dry,
+            generated_record_text=(case.metadata.get("record_text")
+                                   if (case.metadata.get("counterfactual") or {}).get("varies")
+                                   == "unit_record" else None),
+        )
+    except (LookupError, ValueError, RuntimeError) as exc:
+        return Outcome(admitted=None, source="fail_closed", error=str(exc))
+    if dry:
+        return Outcome(admitted=None, shown=shown, error="print-input: no model was called")
+    return Outcome(admitted=None, shown=shown, position=folded.position,
+                   evidence=evidence, outcome_token=folded.outcome)
+
+
 @dataclass(frozen=True, slots=True)
 class EntryPoint:
     """One port implementation, plus the configuration it needs to EXIST.
@@ -713,5 +736,10 @@ ENTRY_POINTS = {
     # room, Discord's included: nothing is spoken.
     "standing": EntryPoint(
         drive=standing, config={"standing.enabled": True}, judged_on="position",
+    ),
+    "standing_unit": EntryPoint(
+        drive=standing_unit,
+        config={**_PARTICIPATION_SUBSYSTEM, "standing.enabled": True, "cognition.enabled": True},
+        judged_on="position",
     ),
 }

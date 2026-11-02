@@ -86,6 +86,7 @@ from nora.domain.external_files import render_file_links
 from nora.domain.models import REACTION_LABEL_MAX, emoji_display
 from nora.domain.observations import SourceEvent, parse_handle
 from nora.domain.prompt import ago, clip, escape, legal, one_line
+from nora.domain.shared_state import SharedView
 from nora.domain.social_stream import describe_read
 from nora.domain.stimuli import Stimulus
 from nora.language.culture_render import render_self
@@ -93,6 +94,7 @@ from nora.language.event_render import render_event_rows
 from nora.language.memo_render import memo_rows
 from nora.language.note_render import render_note_rows
 from nora.language.profile_render import render_profile
+from nora.language.shared_render import render_shared_state
 
 #: What this prompt carries, declared as data. `render_agenda` builds its
 #: blocks from this table and walks it with `assemble`, so `order` IS the order
@@ -116,10 +118,9 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("reads", 20, "turn"),
     ("agenda", 30, "turn"),
     ("note_index", 40, "turn"),
-    # The reused Standing presentation (design/platform-observations 05):
-    # the room's position AND its source-object state (folded observation
-    # heads), read once and rendered once — typed input, its own budget row,
-    # never prose smuggled into the agenda.
+    # The one `standing` block (design/notebook-memory-types/20-standing.md):
+    # positions, open judgements, pending acts, delivered results — read by
+    # code from the canonical stores, right after the note index.
     ("standing", 45, "turn"),
     ("events", 50, "turn"),
     # What the unit settled and keeps (DEC-306), LAST of the Register and on
@@ -917,6 +918,7 @@ def render_agenda(
     grounding: Grounding | None = None, reads_note: str = "", now_ms: int | None = None,
     last_session_ms: int | None = None, tz: tzinfo = UTC,
     budget: RenderBudget | None = None, graph: str = "",
+    shared: SharedView | None = None,
 ) -> str:
     """The session's prompt. `stimuli` is the claimed stimuli by id (an item
     names its own by id), `grounding` what code read for them.
@@ -956,10 +958,21 @@ def render_agenda(
         ), _ROW))
     if reads_note:
         blocks.append(restamp(ContextBlock(name="reads", body=escape(reads_note)), _ROW))
-    blocks += _item_blocks(
+    item_blocks = _item_blocks(
         items, stimuli or {}, grounding or Grounding(), now_ms=now_ms, tz=tz,
         budget=budget or RenderBudget(),
     )
+    blocks += item_blocks
+    if shared is not None and now_ms is not None:
+        shared_block = restamp(
+            render_shared_state(shared, now_ms=now_ms, tz=tz), _ROW)
+        if shared_block is not None:
+            source_blocks = [b for b in blocks if b.name == "standing"]
+            shared_block = replace(shared_block, body="\n".join(
+                [shared_block.body, *(b.body for b in source_blocks)],
+            ))
+            blocks = [b for b in blocks if b.name != "standing"]
+            blocks.append(shared_block)
     if graph:
         blocks.append(restamp(ContextBlock(name="graph", body=escape(graph)), _ROW))
     return assemble(blocks, sep=_SEP)

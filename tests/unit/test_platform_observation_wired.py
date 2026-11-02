@@ -226,6 +226,38 @@ async def test_old_poll_pushed_beyond_40_messages_still_surfaces():
     assert "room-a" not in prompt and "acct" not in prompt
 
 
+async def test_source_objects_and_shared_state_render_in_one_standing_block():
+    from nora.domain.cognition_ground import Grounding
+    from nora.domain.cognition_session import AgendaItem
+    from nora.domain.shared_state import SharedEntry, SharedView
+    from nora.language.cognition_render import render_agenda
+
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    await _seed(store)
+    ctx = await _assembler(audit, store).assemble(request=_request())
+    shared = SharedView(
+        unit="u1", status="ok", as_of_ms=NOW_MS,
+        entries=(SharedEntry(
+            kind="decision", id="d-generated", scope="unit", status="open",
+            subject="Generated choice remains conditional",
+        ),),
+    )
+    tagged = _prompt(dataclasses.replace(ctx, shared=shared))
+    item = AgendaItem(
+        kind="message", room=Room("signal", CID), summary="",
+        stimulus_ids=(), cues=(), surprise=0.0,
+    )
+    cognition = render_agenda(
+        [item], grounding=Grounding(source_objects={f"signal:{CID}": ctx.source_objects}),
+        now_ms=NOW_MS, tz=HK, shared=shared,
+    )
+    for prompt in (tagged, cognition):
+        assert prompt.count("<standing ") == 1
+        assert "Generated choice remains conditional" in prompt
+        assert '<source_object kind="poll"' in prompt
+        assert "closed" in prompt
+
+
 async def test_vote_and_close_with_no_new_human_message_still_render():
     """A later vote/close arrives with NO new message: the transcript's
     `<m>` set is unchanged and the events still render, with their source

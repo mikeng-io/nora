@@ -243,6 +243,58 @@ def _rig(
     return Rig(ledger, stimuli, clock, metrics, agent, runner, ev)
 
 
+
+# ---------------------------------------------------------------------------
+# the Standing fold is the session's AUTOMATIC completion hook, not a verb
+# (design/notebook-memory-types/20-standing.md): it runs on the retained
+# Record after a completed loop, once per room the session actually bound
+# ---------------------------------------------------------------------------
+
+async def test_a_completed_session_folds_the_units_standing_once():
+    folds: list[dict] = []
+
+    async def fold(*, trace, unit, rooms):
+        folds.append({"unit": unit, "rooms": rooms,
+                      "messages": len(trace.messages)})
+
+    async def spoke(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+        return CognitionRunResult(
+            stop_reason="end_turn",
+            messages=({"role": "assistant", "content": [{"text": "a turn"}]},))
+
+    rig = _rig(agent=ScriptedAgent(script=[spoke]))
+    rig.runner._standing_fold = fold
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+
+    # ONE unit-scoped fold for the whole session — the unit's own key, with
+    # the rooms the session actually bound as its source set; never a fold
+    # per room, never a fabricated unit room.
+    assert len(folds) == 1
+    assert folds[0]["unit"] == "u1"
+    assert folds[0]["rooms"] == (("signal", "room-a"),)
+    assert folds[0]["messages"] > 0  # the retained Record, not a tool report
+
+
+async def test_a_session_with_an_empty_record_folds_nothing():
+    """`trace.messages` empty means the loop produced no retained exchange —
+    folding that would write a position from nothing."""
+    folds: list[dict] = []
+
+    async def fold(*, trace, unit, rooms):
+        folds.append({"unit": unit, "rooms": rooms})
+
+    rig = _rig()  # the `ok` script leaves `result.messages` empty
+    rig.runner._standing_fold = fold
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+
+    assert folds == []
+
 # ---------------------------------------------------------------------------
 # the evaluator and the runner share ONE typed hook
 # ---------------------------------------------------------------------------

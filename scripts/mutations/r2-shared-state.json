@@ -1,0 +1,163 @@
+[
+  {
+    "name": "standing-does-not-project-pending-history-twice",
+    "file": "nora/agent/shared_state.py",
+    "old": "                if r.id in pending_ids:",
+    "new": "                if False:",
+    "target": "tests/unit/test_shared_state.py::test_a_pending_act_appears_once_when_history_contains_the_same_row"
+  },
+  {
+    "name": "proactive-gate-uses-the-reader-coverage-name",
+    "file": "nora/app/fire.py",
+    "old": "_REQUIRED_ACTION_SOURCES = (\"acts\", \"turns\", \"sends\")",
+    "new": "_REQUIRED_ACTION_SOURCES = (\"reminders\", \"turns\", \"sends\")",
+    "target": "tests/unit/test_fire_path.py::test_a_proactive_act_runs_when_only_optional_display_coverage_fails"
+  },
+  {
+    "name": "standing-keeps-settled-ledger-outcomes",
+    "file": "nora/language/shared_render.py",
+    "old": "and e.status != \"open\"",
+    "new": "and e.status == \"open\"",
+    "target": "tests/unit/test_shared_state.py::test_closed_decisions_and_done_commitments_survive_the_standing_read"
+  },
+  {
+    "name": "r2-5-fact-projection-latest-per-key",
+    "file": "nora/domain/tag_trace.py",
+    "old": "if prior is None or item.ordinal > prior.ordinal:",
+    "new": "if prior is None or item.ordinal < prior.ordinal:",
+    "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_same_trace_later_result_wins"
+  },
+  {
+    "name": "r2-3-canonical-unit-arbitration",
+    "file": "nora/app/cognition_session.py",
+    "old": "arbitration_rooms=[tuple(r) for r in unit_rooms],",
+    "new": "arbitration_rooms=list(destinations),",
+    "target": "tests/unit/test_cognition_live_writes.py::test_remind_refuses_when_a_same_act_is_firing_in_a_unit_room_off_agenda"
+  },
+  {
+    "name": "r2-4-delivered-fact-dedupe",
+    "file": "nora/app/cognition_session.py",
+    "old": "                    subject_kind=subject_kind, subject_id=subject_id,",
+    "new": "                    subject_kind=subject_kind + '-x', subject_id=subject_id,",
+    "target": "tests/unit/test_cognition_live_writes.py::test_remind_refuses_a_same_act_already_delivered"
+  },
+  {
+    "name": "r2-1-working-set-ttl",
+    "file": "nora/agent/shared_state.py",
+    "old": "if now_ms - item.found_at > ttl_ms:",
+    "new": "if False:",
+    "target": "tests/unit/test_shared_state.py::test_an_expired_finding_and_an_excluded_position_stay_out"
+  },
+  {
+    "name": "sql-current-facts-preserve-subject-identity",
+    "file": "nora/infra/sql/tag_traces.py",
+    "old": "CASE WHEN named THEN arguments->>'subject' ELSE tag_id END AS key_subject,",
+    "new": "'lost' AS key_subject,",
+    "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_pair_structurally_and_reduce_latest_per_key"
+  },
+  {
+    "name": "unresolved-only-state-must-render",
+    "file": "nora/agent/shared_state.py",
+    "old": "elif not entries and not unresolved_lines:",
+    "new": "elif not entries:",
+    "target": "tests/unit/test_shared_state.py::test_an_unresolved_only_view_is_rendered"
+  },
+  {
+    "name": "sql-fact-transfer-bounded-after-reduction",
+    "file": "nora/infra/sql/tag_traces.py",
+    "old": "LIMIT :open_limit",
+    "new": "LIMIT ALL",
+    "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_bounds_database_transfer_after_reduction"
+  },
+  {
+    "name": "cognition-write-scope-is-unit-not-agenda",
+    "file": "nora/app/cognition_session.py",
+    "old": "return self.rooms if self.unit_rooms is None else self.unit_rooms",
+    "new": "return self.rooms",
+    "target": "tests/unit/test_cognition_live_writes.py::test_one_room_agenda_can_schedule_an_explicit_two_room_unit_plan"
+  },
+  {
+    "name": "sql-matching-result-uses-last-recorded-result",
+    "file": "nora/infra/sql/tag_traces.py",
+    "old": "block->'toolResult'->>'toolUseId', block->'toolResult'\n                   ORDER BY m_idx, b_idx",
+    "new": "block->'toolResult'->>'toolUseId', block->'toolResult'\n                   ORDER BY m_idx DESC, b_idx DESC",
+    "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_last_result_for_a_call_wins"
+  },
+  {
+    "name": "delivered-act-retains-canonical-identity",
+    "file": "nora/language/shared_render.py",
+    "old": "identity = f\"{e.subject_ref or 'subject unresolved'} · {e.action or 'remind'}\"",
+    "new": "identity = \"identity omitted\"",
+    "target": "tests/unit/test_shared_state.py::test_delivery_facts_expose_action_identity_and_legacy_uncertainty"
+  },
+  {
+    "name": "renderer-keeps-reader-selected-facts",
+    "file": "nora/language/shared_render.py",
+    "old": "for e in recent:",
+    "new": "for e in recent[:12]:",
+    "target": "tests/unit/test_shared_state.py::test_renderer_keeps_all_facts_selected_by_the_bounded_reader"
+  },
+  {
+    "name": "nontext-send-is-a-delivery-fact",
+    "file": "nora/agent/shared_state.py",
+    "old": "subject=\" \".join(str(h.row.body or \"\").split())[:140]\n                        or \"message without text\",",
+    "new": "subject=str(h.row.body or \"\").splitlines()[0][:140],",
+    "target": "tests/unit/test_shared_state.py::test_a_delivered_message_without_text_is_still_a_delivery_fact"
+  },
+  {
+    "name": "unresolved-facts-retain-record-provenance",
+    "file": "nora/agent/shared_state.py",
+    "old": "evidence = f\"source={record_ref}; recorded={recorded_at}\"",
+    "new": "evidence = \"provenance omitted\"",
+    "target": "tests/unit/test_shared_state.py::test_an_unresolved_only_view_is_rendered"
+  },
+  {
+    "name": "merged-context-retains-shared-state",
+    "file": "nora/engagement/context.py",
+    "old": "            shared=shared,",
+    "new": "            shared=None,",
+    "target": "tests/unit/test_memory_prefetch.py::test_graph_prefetch_and_shared_state_reach_the_same_turn"
+  },
+  {
+    "name": "review3-notebook-index-survives-standing",
+    "file": "nora/language/cognition_render.py",
+    "old": "    blocks += item_blocks",
+    "new": "    blocks += [b for b in item_blocks if shared is None or b.name != \"note_index\"]",
+    "target": "tests/unit/test_cognition_live_writes.py::test_the_daily_floor_is_a_notebook_review_and_the_index_marks_what_code_noticed"
+  },
+  {
+    "name": "review3-sql-old-act-lifecycle",
+    "file": "nora/infra/sql/reminders.py",
+    "old": "sa.or_(firing, handled_at >= ensure_utc(since, field=\"since\")),",
+    "new": "REMINDERS.c.created_at >= ensure_utc(since, field=\"since\"),",
+    "target": "tests/contract/test_reminder_store_contract.py::test_recent_in_keeps_old_claims_and_recent_terminal_outcomes"
+  },
+  {
+    "name": "review3-fake-old-act-lifecycle",
+    "file": "nora/testing/reminders.py",
+    "old": "and (r.state is ReminderState.FIRING or (r.fired_at or r.created_at) >= cutoff)",
+    "new": "and r.created_at >= cutoff",
+    "target": "tests/contract/test_reminder_store_contract.py::test_recent_in_keeps_old_claims_and_recent_terminal_outcomes"
+  },
+  {
+    "name": "review3-sql-cancellation-clock",
+    "file": "nora/infra/sql/reminders.py",
+    "old": ".values(state=ReminderState.CANCELLED.value, fired_at=datetime.now(UTC))",
+    "new": ".values(state=ReminderState.CANCELLED.value)",
+    "target": "tests/contract/test_reminder_store_contract.py::test_recent_in_keeps_a_new_cancellation_of_an_old_row"
+  },
+  {
+    "name": "review3-fake-cancellation-clock",
+    "file": "nora/testing/reminders.py",
+    "old": "self._put(replace(row, state=ReminderState.CANCELLED, fired_at=datetime.now(UTC)))",
+    "new": "self._put(replace(row, state=ReminderState.CANCELLED))",
+    "target": "tests/contract/test_reminder_store_contract.py::test_recent_in_keeps_a_new_cancellation_of_an_old_row"
+  },
+  {
+    "name": "review3-cancellation-is-not-delivery",
+    "file": "nora/agent/shared_state.py",
+    "old": "elif r.state.value == \"cancelled\" or not fired_ms or (",
+    "new": "elif not fired_ms or (",
+    "target": "tests/unit/test_shared_state.py::test_an_old_pending_act_cancelled_now_is_visible_without_a_send"
+  }
+]

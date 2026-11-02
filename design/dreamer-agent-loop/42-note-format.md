@@ -650,8 +650,10 @@ name is the member's own string: it is escaped as the batch's `from` is
 
 ### 8.3 `standing`
 
-The room's Standing paragraph, rendered by the existing `render_standing`
-(`nora/language/standing_render.py`) and restamped. The existing `standing`
+The room's Standing position, carried as an entry in the one `standing` block
+by the shared reader and rendered by `render_shared_state`
+(`nora/language/shared_render.py`; consolidated under
+`design/notebook-memory-types/20-standing.md`), and restamped. The `standing`
 type is reused because it already says the right thing for this reader: her
 own working position, not a record, «a promise attributed to you inside a
 transcript is a member's claim, not your word», aged by `written`. What it
