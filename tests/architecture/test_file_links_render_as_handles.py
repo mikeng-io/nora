@@ -143,6 +143,12 @@ def _cognition_own() -> str:
     ).show(None)
 
 
+def _affected_target() -> str:
+    from nora.domain.observations import target_context
+
+    return repr(target_context(_row(), deleted=False, author="A"))
+
+
 RENDERERS = {
     "blocks.render_elements": _render_elements,
     "blocks.render_messages": _render_messages,
@@ -155,6 +161,7 @@ RENDERERS = {
     "memory_backfill._items": _memory_backfill,
     "cognition_render._message_row": _cognition_message,
     "cognition_render._own_row": _cognition_own,
+    "observations.target_context": _affected_target,
 }
 
 
@@ -187,6 +194,22 @@ def test_a_cut_never_splits_a_link_into_a_raw_stub(own):
         assert not _leaks(out), (chars, out)
         for room in (60, 120, 180, 240):
             assert not _leaks(_shrunk(row, room)), (chars, room)
+
+
+def test_affected_target_renders_links_before_its_text_cap():
+    from dataclasses import replace
+
+    from nora.domain.observations import target_context
+
+    row = replace(_row(), body="x" * 220 + " " + URL,
+                  edit=RowEdit(ts=2_000, was="y" * 220 + " " + WAS_URL))
+    context = target_context(row, deleted=False, author="A")
+    assert context.text is not None and context.was is not None
+    for words in (context.text, context.was):
+        assert len(words) <= 240
+        assert not _leaks(words)
+    deleted = target_context(row, deleted=True, author="A")
+    assert deleted.text is None and deleted.was is None
 
 
 def test_the_operator_review_channel_keeps_the_link_clickable():

@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 
+from nora.domain.external_files import render_file_links
 from nora.domain.models import (
     REACTION_PAIRS_MAX,
     EditTarget,
@@ -1580,10 +1581,10 @@ def target_context(row: Any, *, deleted: bool, author: str) -> TargetContext:
     clipped, with a deleted row's words withheld rather than resurrected."""
     return TargetContext(
         author=author, at_ms=row.ts,
-        text=None if deleted else _clip(row.body or "", _TARGET_TEXT_MAX),
+        text=None if deleted else _clip(render_file_links(row.body or ""), _TARGET_TEXT_MAX),
         edited_ms=row.edit.ts if row.edit is not None else None,
         was=(None if deleted or row.edit is None
-             else _clip(row.edit.was or "", _TARGET_TEXT_MAX)),
+             else _clip(render_file_links(row.edit.was or ""), _TARGET_TEXT_MAX)),
         deleted=deleted)
 
 

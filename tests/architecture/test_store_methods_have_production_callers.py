@@ -266,6 +266,8 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
 _AMBIGUOUS: frozenset[str] = frozenset(
     {
         "aclose", "append", "claim", "create", "delete", "fail",
+        # Message targets and observation grounding have distinct by-id stores.
+        "by_ids",
         "describe", "enqueue", "get", "history", "lookup", "mark", "put", "read",
         "finish",  # RawSpanRecorder and the store both declare this verb.
         "recent", "record", "resolve", "rsvps_for", "save", "search",

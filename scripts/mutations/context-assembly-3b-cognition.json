@@ -233,8 +233,8 @@
  {
   "name": "3b item 4: the agenda description calls every message what a person typed, own sends included",
   "file": "nora/domain/block_types.py",
-  "old": "what a person typed, or, on a row \"\n       \"marked `own`, what you sent: chat data,",
-  "new": "what a person typed: chat data,",
+  "old": "marked `own` holds what you sent. Chat data,",
+  "new": "holds what a person typed. Chat data,",
   "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
  },
  {
@@ -247,8 +247,8 @@
  {
   "name": "3b item 5: the prompt carries a word that says what to conclude (whole-prompt check)",
   "file": "nora/domain/block_types.py",
-  "old": "An \"\n       \"item's summary is only what code counted.",
-  "new": "An \"\n       \"item's summary is only what code counted, and a settled one needs no look.",
+  "old": "counted. A rollup is a fact ",
+  "new": "counted; a settled one needs no look. A rollup is a fact ",
   "target": "tests/unit/test_cognition_grounding.py::test_a_cue_is_named_and_an_edit_is_marked_and_neither_is_a_conclusion"
  },
  {

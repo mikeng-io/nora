@@ -26,5 +26,19 @@
     "old": "                    kind=\"delete\" if hit.hit.deleted else item.kind,",
     "new": "                    kind=item.kind,",
     "target": "tests/unit/test_platform_observation_wired.py::test_the_session_runner_assembles_and_consumes_an_observation_stimulus -k True"
+  },
+  {
+    "name": "affected-message words render file handles before clipping",
+    "file": "nora/domain/observations.py",
+    "old": "_clip(render_file_links(row.body or \"\"), _TARGET_TEXT_MAX)",
+    "new": "_clip(row.body or \"\", _TARGET_TEXT_MAX)",
+    "target": "tests/architecture/test_file_links_render_as_handles.py::test_affected_target_renders_links_before_its_text_cap"
+  },
+  {
+    "name": "affected-message original words render file handles before clipping",
+    "file": "nora/domain/observations.py",
+    "old": "_clip(render_file_links(row.edit.was or \"\"), _TARGET_TEXT_MAX)",
+    "new": "_clip(row.edit.was or \"\", _TARGET_TEXT_MAX)",
+    "target": "tests/architecture/test_file_links_render_as_handles.py::test_affected_target_renders_links_before_its_text_cap"
   }
 ]
