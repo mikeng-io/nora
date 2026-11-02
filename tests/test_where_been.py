@@ -910,7 +910,7 @@ async def test_the_day_names_a_saved_place_by_its_name_and_an_unsaved_one_near_i
     assert names == ["Home", "a place they go near Main Road"]
 
 
-async def test_no_rollup_build_yet_is_unavailable_not_nothing_found(persons, pg_url):
+async def test_no_rollup_build_yet_is_unavailable_not_nothing_found(persons, clean_pg_url):
     """A fresh database has no current Rollup build until the analytics
     process's first rebuild switches one in: `where_been` then answers
     `unavailable`, never an empty `nothing_found` («no places») about data
@@ -919,7 +919,7 @@ async def test_no_rollup_build_yet_is_unavailable_not_nothing_found(persons, pg_
     from nora.infra.sql import create_sql_engine
     from nora.infra.sql.mobility import SqlMobilityStore
 
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         mobility = SqlMobilityStore(engine)
         for what in ("places", "rhythm", "routes"):

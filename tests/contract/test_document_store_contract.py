@@ -1,5 +1,5 @@
 """One suite, both implementations of `DocumentStore` (ADR 0020). The real-Postgres
-`pg_url` fixture, migrated up before the SQL store is built, parametrized beside the
+`clean_pg_url` fixture, migrated up before the SQL store is built, parametrized beside the
 in-memory fake, as `test_compute_job_store_contract.py` does."""
 
 from __future__ import annotations
@@ -37,13 +37,13 @@ def _rev(title: str = "Weekend", sha: str = SHA_A, **overrides: Any) -> Revision
 
 
 @pytest.fixture(params=["fake", "sql"])
-async def store(request):
+async def store(_pg_engine_scope, request):
     if request.param == "fake":
         s = FakeDocumentStore()
     else:
-        pg_url = request.getfixturevalue("pg_url")
-        run_migrations(pg_url)
-        s = SqlDocumentStore(create_sql_engine(pg_url))
+        clean_pg_url = request.getfixturevalue("clean_pg_url")
+        run_migrations(clean_pg_url)
+        s = SqlDocumentStore(create_sql_engine(clean_pg_url))
     yield s
     await s.aclose()
 
@@ -270,16 +270,18 @@ async def test_a_page_past_the_end_or_out_of_bounds_is_an_empty_page_on_both_sto
     )
 
 
-async def test_the_table_refuses_a_bad_media_element_and_an_oversized_spec(request):
+async def test_the_table_refuses_a_bad_media_element_and_an_oversized_spec(
+    _pg_engine_scope, request,
+):
     """SQL only: the CHECKs are the table's own bound, for a writer that is not the store."""
     import sqlalchemy as sa
     from sqlalchemy.exc import IntegrityError
 
     from nora.infra.sql.schema import DOCUMENT_REVISION, DOCUMENTS
 
-    pg_url = request.getfixturevalue("pg_url")
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+    clean_pg_url = request.getfixturevalue("clean_pg_url")
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     doc_id = uuid4()
     base = {
         "document_id": doc_id,
@@ -564,7 +566,9 @@ async def test_set_state_on_an_unknown_id_is_false_and_writes_nothing(store):
     assert await store.set_state(document_id=uuid4(), state="deleted", set_by="ken") is False
 
 
-async def test_the_state_table_is_append_only_and_its_check_names_every_state(request):
+async def test_the_state_table_is_append_only_and_its_check_names_every_state(
+    _pg_engine_scope, request,
+):
     """SQL only: every change is a row (none updated), the latest wins, and the CHECK on
     `state` admits exactly `DOCUMENT_STATES` and refuses anything else."""
     import sqlalchemy as sa
@@ -573,9 +577,9 @@ async def test_the_state_table_is_append_only_and_its_check_names_every_state(re
     from nora.domain.documents import DOCUMENT_STATES
     from nora.infra.sql.schema import DOCUMENT_STATE
 
-    pg_url = request.getfixturevalue("pg_url")
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+    clean_pg_url = request.getfixturevalue("clean_pg_url")
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     s = SqlDocumentStore(engine)
     try:
         doc = await _make(s)
@@ -632,7 +636,7 @@ async def _locked_holder(engine, doc):
     return conn, trans
 
 
-async def test_a_revision_waits_for_a_delete_in_flight_and_then_refuses(request):
+async def test_a_revision_waits_for_a_delete_in_flight_and_then_refuses(_pg_engine_scope, request):
     """SQL only, two real connections. A delete holds the identity-row lock and has
     written its state row but not committed; a revision that starts now must wait, and
     when the delete commits it must see `deleted` and write nothing."""
@@ -640,9 +644,9 @@ async def test_a_revision_waits_for_a_delete_in_flight_and_then_refuses(request)
 
     from nora.infra.sql.schema import DOCUMENT_STATE
 
-    pg_url = request.getfixturevalue("pg_url")
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+    clean_pg_url = request.getfixturevalue("clean_pg_url")
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     s = SqlDocumentStore(engine)
     try:
         doc = await _make(s)
@@ -664,12 +668,12 @@ async def test_a_revision_waits_for_a_delete_in_flight_and_then_refuses(request)
         await engine.dispose()
 
 
-async def test_a_state_change_waits_for_a_revision_in_flight(request):
+async def test_a_state_change_waits_for_a_revision_in_flight(_pg_engine_scope, request):
     """SQL only: the other direction. A revision holds the lock; `set_state` waits for it
     rather than writing alongside it."""
-    pg_url = request.getfixturevalue("pg_url")
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+    clean_pg_url = request.getfixturevalue("clean_pg_url")
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     s = SqlDocumentStore(engine)
     try:
         doc = await _make(s)

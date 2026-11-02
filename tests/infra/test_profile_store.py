@@ -42,9 +42,9 @@ def _no_offence(_text: str) -> None:
 
 
 @pytest.fixture
-async def env(pg_url):
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+async def env(clean_pg_url):
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         yield SimpleNamespace(engine=engine, store=SqlProfileStore(engine, screen=_no_offence))
     finally:

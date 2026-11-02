@@ -23,7 +23,7 @@ NOW = 1_790_000_000_000
 
 
 @pytest.fixture(params=["memory", "sql"])
-async def log_and_rows(request: Any) -> AsyncIterator[tuple[Any, Any]]:
+async def log_and_rows(_pg_engine_scope, request: Any) -> AsyncIterator[tuple[Any, Any]]:
     if request.param == "memory":
         log = InMemorySourceHealthLog()
 
@@ -33,7 +33,7 @@ async def log_and_rows(request: Any) -> AsyncIterator[tuple[Any, Any]]:
 
         yield log, rows
         return
-    engine = create_sql_engine(request.getfixturevalue("pg_url"))
+    engine = create_sql_engine(request.getfixturevalue("clean_pg_url"))
 
     async def sql_rows() -> list[tuple[str, str, str, str, int, str]]:
         async with engine.connect() as conn:
@@ -77,9 +77,9 @@ async def test_transitions_read_back_one_source_from_a_time_oldest_first(log_and
     assert len(await log.transitions(source="social.instagram", since_ms=NOW)) == 2
 
 
-async def test_a_failed_write_answers_false_and_never_raises(pg_url):
+async def test_a_failed_write_answers_false_and_never_raises(clean_pg_url):
     """The SQL half on a dead engine; the fake's `fail` switch mirrors it."""
-    engine = create_sql_engine(pg_url.replace("/t_", "/missing_t_"))
+    engine = create_sql_engine(clean_pg_url.replace("/t_", "/missing_t_"))
     try:
         ok = await SqlSourceHealthLog(engine).record(
             source="presence", scope="c1", event="poll", outcome="ok", at_ms=NOW)

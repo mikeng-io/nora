@@ -60,8 +60,8 @@ def _spec(url: str, src: Source, workdir: Any) -> SubjectSpec:
 
 
 @pytest.fixture
-async def engine(pg_url: str) -> AsyncIterator[Any]:
-    eng = create_sql_engine(pg_url)
+async def engine(clean_pg_url: str) -> AsyncIterator[Any]:
+    eng = create_sql_engine(clean_pg_url)
     try:
         yield eng
     finally:
@@ -90,11 +90,11 @@ async def _clock(engine: Any) -> datetime:
 
 @pytest.mark.asyncio
 async def test_a_restore_renders_the_blocks_the_turn_was_handed(
-    pg_url: str, pg_template: str, engine: Any, tmp_path: Any, monkeypatch: Any,
+    clean_pg_url: str, pg_template: str, engine: Any, tmp_path: Any, monkeypatch: Any,
 ) -> None:
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     src = await seed_source(
-        pg_url, tmp_path, Knowledge(
+        clean_pg_url, tmp_path, Knowledge(
             transcript=(
                 Message(body="anyone up for friday", at_ms=BEFORE_MS - 30 * MINUTE),
                 Message(
@@ -126,7 +126,7 @@ async def test_a_restore_renders_the_blocks_the_turn_was_handed(
     )
     await _describe(engine, _photo_sha(1), "a red bicycle against a wall")
 
-    live = await obtain(_spec(pg_url, src, tmp_path / "live"))
+    live = await obtain(_spec(clean_pg_url, src, tmp_path / "live"))
     try:
         tag = NormalizedMessage(
             platform=ROOM[0], conversation_id=ROOM[1], conversation_type="group",
@@ -184,7 +184,7 @@ async def test_a_restore_renders_the_blocks_the_turn_was_handed(
     control = compare_blocks(recorded, moved)
     assert set(control.differs) >= MUST_COMPARE, control
 
-    async with sandbox_as_of(pg_url, at, template=pg_template) as (url, _report):
+    async with sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, _report):
         restored_subject = await obtain(_spec(url, src, tmp_path / "restored"))
         try:
             restored = await render_tag_blocks(restored_subject, message=tag, now=NOW)

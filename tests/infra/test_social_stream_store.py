@@ -19,9 +19,9 @@ T0 = datetime(2026, 10, 5, 9, 0, tzinfo=UTC)
 
 
 @pytest.fixture
-async def stores(pg_url):
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+async def stores(clean_pg_url):
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         yield SqlSocialStreamStore(engine), engine
     finally:

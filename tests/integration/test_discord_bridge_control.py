@@ -393,11 +393,11 @@ def world(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-async def bridge(world, pg_url):
+async def bridge(world, clean_pg_url):
     """The real bridge graph — disposable Postgres stores, real
     hub/manager/consumer, the real read/send implementations — served by a
     real aiohttp TestServer so every app-side call crosses a socket."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     controller = TestServer(_controller_app(world["controller_state"]))
     await controller.start_server()
     rest = TestServer(_discord_rest_app(world["rest_state"]))

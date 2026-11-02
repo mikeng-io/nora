@@ -20,8 +20,8 @@ from tests.objectives import shipped_objectives
 from tests.unit.test_cognition_agenda_skills import run_one_session
 
 
-async def test_the_session_row_in_postgres_records_the_register_skills_digest(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_the_session_row_in_postgres_records_the_register_skills_digest(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     try:
         spy = await run_one_session(SqlCognitionStore(engine))
         async with engine.connect() as conn:

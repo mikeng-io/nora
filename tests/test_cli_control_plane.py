@@ -86,7 +86,7 @@ POLICY_ALLOWING_GROUP = (
 
 
 @pytest.fixture
-async def env(tmp_path, aiohttp_server, monkeypatch, pg_url, example_config_path):
+async def env(tmp_path, aiohttp_server, monkeypatch, clean_pg_url, example_config_path):
     """A config.toml, an identity.toml, a policy.toml, a migrated database and
     a fake daemon — the whole 3am situation, with nothing else running.
 
@@ -95,7 +95,7 @@ async def env(tmp_path, aiohttp_server, monkeypatch, pg_url, example_config_path
     a control plane that refused to run without it would be useless exactly
     when it is needed. `DATABASE_URL`, by contrast, IS present: after cutover the
     operator runs this via `docker exec` into a nora-network container, which
-    carries it. `pg_url` provides a fresh throwaway database and exports it.
+    carries it. `clean_pg_url` provides a reset throwaway module database and exports it.
     """
     monkeypatch.delenv("OMNIROUTE_API_KEY", raising=False)
     state = {"groups": [], "contacts": [], "seen": []}
@@ -123,8 +123,8 @@ async def env(tmp_path, aiohttp_server, monkeypatch, pg_url, example_config_path
     with config_path.open("wb") as f:
         tomli_w.dump(cfg, f)
 
-    run_migrations(pg_url)
-    state.update(path=config_path, tmp=tmp_path, url=pg_url)
+    run_migrations(clean_pg_url)
+    state.update(path=config_path, tmp=tmp_path, url=clean_pg_url)
     return state
 
 

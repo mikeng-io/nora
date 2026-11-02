@@ -209,8 +209,8 @@ async def _presence_rows(engine, build_id: int) -> dict:
     return out
 
 
-async def test_every_rollup_recomputes_identically_from_the_record(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_every_rollup_recomputes_identically_from_the_record(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine)
@@ -265,12 +265,12 @@ async def test_every_rollup_recomputes_identically_from_the_record(pg_url):
     await engine.dispose()
 
 
-async def test_unquoted_answers_are_counted_as_follows_on_the_right_send(pg_url):
+async def test_unquoted_answers_are_counted_as_follows_on_the_right_send(clean_pg_url):
     """A member's message that quotes nothing answers her latest send in
     its room when it comes within 120 s and mentions no one else, or at any time
     inside the response window when it names her; a multi-part turn is answered
     at its last part; a quoted reply is a reply, counted once."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     base = _START
 
     async with engine.begin() as conn:
@@ -343,7 +343,9 @@ async def test_unquoted_answers_are_counted_as_follows_on_the_right_send(pg_url)
     await engine.dispose()
 
 
-async def test_a_forgotten_persons_message_is_no_longer_a_reply_target_in_the_tie_rollup(pg_url):
+async def test_a_forgotten_persons_message_is_no_longer_a_reply_target_in_the_tie_rollup(
+    clean_pg_url,
+):
     """NEGATIVE: `message_facts`'s `quoted` join must filter on `hidden_at`, so
     a `nora person forget` (removed)-hidden message a reply quotes does not
     count as a reply relationship feeding `rollup_tie` (and, on the main select,
@@ -353,7 +355,7 @@ async def test_a_forgotten_persons_message_is_no_longer_a_reply_target_in_the_ti
     `test_every_rollup_recomputes_identically_from_the_record` pins — hide every
     message person "a" sent, and rebuild fresh: the replies that quoted them
     must be GONE from the tie rollup, not merely relabelled."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine)
@@ -384,8 +386,8 @@ async def test_a_forgotten_persons_message_is_no_longer_a_reply_target_in_the_ti
     await engine.dispose()
 
 
-async def test_a_citation_resolves_by_overlap_after_a_rebuild_switches_the_pointer(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_a_citation_resolves_by_overlap_after_a_rebuild_switches_the_pointer(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine)
@@ -413,8 +415,8 @@ async def test_a_citation_resolves_by_overlap_after_a_rebuild_switches_the_point
     await engine.dispose()
 
 
-async def test_ensure_build_rebuilds_a_build_of_other_code_and_keeps_its_own(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_ensure_build_rebuilds_a_build_of_other_code_and_keeps_its_own(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine)
@@ -451,11 +453,11 @@ class _Pub:
         return [EventPlace(ref="event:7", lat=PUB[0], lng=PUB[1], radius_m=200.0)]
 
 
-async def test_a_colocation_start_and_an_arrival_are_raised_once(pg_url):
+async def test_a_colocation_start_and_an_arrival_are_raised_once(clean_pg_url):
     """Through the REAL stimulus store: its `(unit, ref)` conflict target must
     match migration 0071's partial index, which an in-memory sink never
     checks."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine, stimuli=SqlStimulusStore(engine), events=_Pub())
@@ -476,13 +478,13 @@ async def test_a_colocation_start_and_an_arrival_are_raised_once(pg_url):
 
 
 @pytest.mark.parametrize("outage", [False, True])
-async def test_a_deviation_is_raised_only_on_healthy_sources(pg_url, outage):
+async def test_a_deviation_is_raised_only_on_healthy_sources(clean_pg_url, outage):
     """A silent day (nothing posted, never at home) raises a deviation
     only when the collector's polls were proved healthy for the span; a poll
     outage inside it suppresses the stimulus (R-27: missing data is not
     absence). Silence here is a synthetic third day with no fixes at home
     and no message, so the span is day 2."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed(engine, mobility, polls_fail_at=_t(1, 3) if outage else None)
     # Day 1 without messages or home: delete them from the Record the unit reads.
@@ -508,12 +510,12 @@ async def test_a_deviation_is_raised_only_on_healthy_sources(pg_url, outage):
     await engine.dispose()
 
 
-async def test_a_run_with_nothing_new_rewrites_no_settled_row(pg_url):
+async def test_a_run_with_nothing_new_rewrites_no_settled_row(clean_pg_url):
     """Write amplification: if each row's `as_of_ms` were the unit's clock, the
     unit rollups would rewrite EVERY row EVERY tick, bloating row_history. A
     row's `as_of_ms` is its own newest evidence, so a later run whose Record
     adds only polls changes nothing that has settled."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine)
@@ -598,8 +600,8 @@ async def _seed_with_outing_talk(engine, mobility) -> int:
     return int(talk)
 
 
-async def test_a_switch_replaces_the_episode_nodes_and_keeps_what_cites_them(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_a_switch_replaces_the_episode_nodes_and_keeps_what_cites_them(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     mobility = SqlMobilityStore(engine)
     talk = await _seed_with_outing_talk(engine, mobility)
     runner = _runner(engine)
@@ -670,8 +672,8 @@ async def test_a_switch_replaces_the_episode_nodes_and_keeps_what_cites_them(pg_
     await engine.dispose()
 
 
-async def test_a_build_still_building_has_no_episode_nodes(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_a_build_still_building_has_no_episode_nodes(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine)
@@ -687,8 +689,8 @@ async def test_a_build_still_building_has_no_episode_nodes(pg_url):
     await engine.dispose()
 
 
-async def test_the_delete_half_of_the_diff_drops_the_outing_node(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_the_delete_half_of_the_diff_drops_the_outing_node(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed_with_outing_talk(engine, mobility)
     runner = _runner(engine)
@@ -706,11 +708,11 @@ async def test_the_delete_half_of_the_diff_drops_the_outing_node(pg_url):
     await engine.dispose()
 
 
-async def test_a_tick_on_the_current_build_projects_what_it_folds(pg_url):
+async def test_a_tick_on_the_current_build_projects_what_it_folds(clean_pg_url):
     """The daemon's path, not a switch: each run on the current build adds its
     new stays, trips and outings to the index as `commit_fold` and `apply`
     write them."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine)
@@ -746,12 +748,12 @@ async def test_a_tick_on_the_current_build_projects_what_it_folds(pg_url):
     await engine.dispose()
 
 
-async def test_a_drain_waiting_on_a_switch_keeps_the_new_builds_episode(pg_url):
+async def test_a_drain_waiting_on_a_switch_keeps_the_new_builds_episode(clean_pg_url):
     """A drain that blocks on the build row while a switch commits must read
     the NEW current build after it, never «no build»: under READ COMMITTED the
     locked re-check sees only the old row, now superseded, and acting on it
     would drop the node the switch had just projected and clear its queue row."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     key = episode_key("a", _t(0, 19), _t(0, 20))
     async with engine.begin() as conn:
         old = (await conn.execute(sa.insert(ROLLUP_BUILD).values(
@@ -789,10 +791,10 @@ async def test_a_drain_waiting_on_a_switch_keeps_the_new_builds_episode(pg_url):
     await engine.dispose()
 
 
-async def test_a_switch_that_fails_abandons_the_build(pg_url, monkeypatch):
+async def test_a_switch_that_fails_abandons_the_build(clean_pg_url, monkeypatch):
     """A rebuild whose switch raises leaves no build `building` forever: the
     switch rolled back whole, and the build is abandoned."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine)
@@ -822,12 +824,12 @@ async def _cache_an_area_at_the_pub(engine) -> SqlGeocodeCacheStore:
     return cache
 
 
-async def test_an_outing_is_located_in_the_cached_area_of_its_place(pg_url):
+async def test_an_outing_is_located_in_the_cached_area_of_its_place(clean_pg_url):
     """Step 3a: an outing at no saved place takes the district and city of
     the nearest cached geocode, the cache its place labels come from, and the
     index places it there: outing -> district -> city. The area is a public
     name and never a street (the cached address is not copied)."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed(engine, mobility)
     cache = await _cache_an_area_at_the_pub(engine)
@@ -854,11 +856,11 @@ async def test_an_outing_is_located_in_the_cached_area_of_its_place(pg_url):
     await engine.dispose()
 
 
-async def test_an_outing_at_a_saved_place_has_no_area_even_where_one_is_cached(pg_url):
+async def test_an_outing_at_a_saved_place_has_no_area_even_where_one_is_cached(clean_pg_url):
     """R-35: a saved place's existence is the secret, so an outing there is
     never placed, though the cache holds an area within reach (the positive
     control) and the same outing elsewhere would be."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed_with_outing_talk(engine, mobility)
     cache = await _cache_an_area_at_the_pub(engine)

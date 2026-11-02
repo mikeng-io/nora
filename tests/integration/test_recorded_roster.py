@@ -23,8 +23,8 @@ DAY = 86_400_000
 
 
 @pytest.fixture
-async def engine(pg_url: str) -> AsyncIterator[Any]:
-    eng = create_sql_engine(pg_url)
+async def engine(clean_pg_url: str) -> AsyncIterator[Any]:
+    eng = create_sql_engine(clean_pg_url)
     try:
         yield eng
     finally:
@@ -41,7 +41,9 @@ async def _say(engine: Any, *rows: tuple[str, str, str | None, int, int]) -> Non
             ), {"c": conversation, "s": sender, "t": ts, "n": is_nora, "p": person})
 
 
-async def test_the_members_are_the_speakers_inside_the_window(engine: Any, pg_url: str) -> None:
+async def test_the_members_are_the_speakers_inside_the_window(
+    engine: Any, clean_pg_url: str,
+) -> None:
     await _say(
         engine,
         # one person reaching Nora under two id forms is ONE member
@@ -56,14 +58,16 @@ async def test_the_members_are_the_speakers_inside_the_window(engine: Any, pg_ur
         ("g1", "+852333", "p3", NOW_MS + DAY, 0),
         ("g2", "+852444", "p4", NOW_MS - DAY, 0),
     )
-    got = await RecordedRoster(platform="signal", database_url=pg_url, now=NOW).roster(
+    got = await RecordedRoster(platform="signal", database_url=clean_pg_url, now=NOW).roster(
         conversation_id="g1")
     assert got.available
     assert set(got.members) == {frozenset({"+852111", "aci-p1"}), frozenset({"+852999"})}
 
 
-async def test_a_room_nobody_spoke_in_is_unavailable_not_empty(engine: Any, pg_url: str) -> None:
-    got = await RecordedRoster(platform="signal", database_url=pg_url, now=NOW).roster(
+async def test_a_room_nobody_spoke_in_is_unavailable_not_empty(
+    engine: Any, clean_pg_url: str,
+) -> None:
+    got = await RecordedRoster(platform="signal", database_url=clean_pg_url, now=NOW).roster(
         conversation_id="nobody-here")
     assert got.available is False
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
 import sqlalchemy as sa
 from alembic import command
 
@@ -40,10 +41,11 @@ async def _two_notes(url: str) -> tuple[str, str, str]:
     return note.head_revision_id, revision.id, bare.id
 
 
-def test_the_backfill_stores_each_revision_s_citations_and_queues_every_note(pg_url):
-    first, second, bare = asyncio.run(_two_notes(pg_url))
-    cfg = alembic_config(pg_url)
-    engine = sa.create_engine(sync_url_for(pg_url))
+@pytest.mark.fresh_database
+def test_the_backfill_stores_each_revision_s_citations_and_queues_every_note(clean_pg_url):
+    first, second, bare = asyncio.run(_two_notes(clean_pg_url))
+    cfg = alembic_config(clean_pg_url)
+    engine = sa.create_engine(sync_url_for(clean_pg_url))
     try:
         with engine.begin() as conn:
             conn.execute(sa.text("DELETE FROM memory_projection_queue"))

@@ -267,7 +267,7 @@ async def test_the_prefix_guard_refuses_before_any_honcho_call(honcho, workspace
 
 @pytest.mark.asyncio
 async def test_no_memory_call_of_a_composed_subject_escapes_the_draws_workspace(
-    honcho, tmp_path: Path, pg_url, monkeypatch,
+    honcho, tmp_path: Path, clean_pg_url, monkeypatch,
 ) -> None:
     """The real graph, composed for a draw, with its memory pointed at the
     fake. Every Honcho client alive afterwards is on the draw's workspace,

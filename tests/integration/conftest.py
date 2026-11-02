@@ -28,8 +28,8 @@ async def draw_honcho(monkeypatch):
 
 
 @pytest.fixture
-async def harness(tmp_path, monkeypatch, pg_url):
-    # `pg_url` (tests/conftest.py) creates a fresh Postgres database for this test
+async def harness(tmp_path, monkeypatch, clean_pg_url):
+    # `clean_pg_url` restores a module Postgres database to its migrated baseline
     # and exports it as DATABASE_URL — the composition root and the harness read
     # it from there. A "restart" (simulate_restart) reuses the same DATABASE_URL,
     # so the record survives exactly as a real process exit would leave it.
@@ -42,7 +42,7 @@ async def harness(tmp_path, monkeypatch, pg_url):
 
 
 @pytest.fixture
-async def harness_factory(tmp_path, monkeypatch, pg_url):
+async def harness_factory(tmp_path, monkeypatch, clean_pg_url):
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     built: list = []
 

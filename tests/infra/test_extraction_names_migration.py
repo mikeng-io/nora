@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import pytest
 import sqlalchemy as sa
 from alembic import command
 
 from nora.infra.sql.migrations_runner import alembic_config, sync_url_for
 
 
-def test_extraction_rename_round_trip_preserves_rows_history_and_sql_names(pg_url):
-    cfg = alembic_config(pg_url)
-    engine = sa.create_engine(sync_url_for(pg_url))
+@pytest.mark.fresh_database
+def test_extraction_rename_round_trip_preserves_rows_history_and_sql_names(clean_pg_url):
+    cfg = alembic_config(clean_pg_url)
+    engine = sa.create_engine(sync_url_for(clean_pg_url))
     command.downgrade(cfg, "0128_event_platform")
     command.upgrade(cfg, "0130_profile_names")
     constraints_sql = sa.text(
@@ -115,9 +117,10 @@ def test_extraction_rename_round_trip_preserves_rows_history_and_sql_names(pg_ur
         engine.dispose()
 
 
-def test_terminal_extraction_state_round_trip_preserves_pending_work(pg_url):
-    cfg = alembic_config(pg_url)
-    engine = sa.create_engine(sync_url_for(pg_url))
+@pytest.mark.fresh_database
+def test_terminal_extraction_state_round_trip_preserves_pending_work(clean_pg_url):
+    cfg = alembic_config(clean_pg_url)
+    engine = sa.create_engine(sync_url_for(clean_pg_url))
     try:
         with engine.begin() as conn:
             batch_id = conn.execute(sa.text("""

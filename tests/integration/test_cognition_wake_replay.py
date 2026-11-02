@@ -102,7 +102,7 @@ async def test_a_session_agenda_written_as_a_string_still_selects_its_batch(data
         await engine.dispose()
 
 
-async def test_due_floor_replay_restores_the_session_clock_and_evidence(pg_url, pg_template):
+async def test_due_floor_replay_restores_the_session_clock_and_evidence(clean_pg_url, pg_template):
     """Generated evaluator tick: due floor written ten seconds after watermark."""
     from datetime import timedelta
 
@@ -111,7 +111,7 @@ async def test_due_floor_replay_restores_the_session_clock_and_evidence(pg_url, 
     from nora.subject import sandbox_as_of
     from tests.integration.test_snapshot_holds_what_was_held import ROWS
 
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         async with engine.begin() as conn:
             await conn.execute(sa.insert(MESSAGES).values(ROWS["messages"](0)))
@@ -147,7 +147,7 @@ async def test_due_floor_replay_restores_the_session_clock_and_evidence(pg_url, 
         at, view = replay
         assert at == tick_ms, "replay uses execution clock, never pending watermark"
         assert [s.id for s in view.pending] == [sid]
-        async with sandbox_as_of(pg_url, datetime.fromtimestamp(at / 1000, UTC),
+        async with sandbox_as_of(clean_pg_url, datetime.fromtimestamp(at / 1000, UTC),
                                  template=pg_template) as (url, _):
             restored = create_sql_engine(url)
             try:
@@ -167,13 +167,13 @@ async def test_due_floor_replay_restores_the_session_clock_and_evidence(pg_url, 
         await engine.dispose()
 
 
-async def test_recorded_membership_refuses_missing_foreign_and_future_rows(pg_url):
+async def test_recorded_membership_refuses_missing_foreign_and_future_rows(clean_pg_url):
     import pytest
 
     from nora.infra.sql.cognition_replay import recorded_wake
     from nora.infra.sql.schema import COGNITION_SESSION
 
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     at = datetime.fromtimestamp(NOW / 1000, UTC)
     try:
         async with engine.begin() as conn:

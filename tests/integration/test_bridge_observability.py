@@ -383,9 +383,9 @@ CREATE TABLE IF NOT EXISTS bridge_action (
 
 
 @pytest.fixture
-async def engine(pg_url):
+async def engine(clean_pg_url):
     from sqlalchemy.ext.asyncio import create_async_engine
-    eng = create_async_engine(pg_url)
+    eng = create_async_engine(clean_pg_url)
     async with eng.begin() as conn:
         for stmt in _BRIDGE_DDL.strip().split(";\n"):
             if stmt.strip():
@@ -912,10 +912,10 @@ class TestInspection:
                            platform=PLATFORM, state="uncertain") == 0
 
     async def test_db_failure_marks_unavailable_not_empty(
-            self, redis_client, pg_url):
+            self, redis_client, clean_pg_url):
         from sqlalchemy.ext.asyncio import create_async_engine
         bad = create_async_engine(
-            pg_url.replace("/t_", "/db_that_does_not_exist_"))
+            clean_pg_url.replace("/t_", "/db_that_does_not_exist_"))
         metrics = Metrics()
         insp = QueueInspector(redis_client, engine=bad, metrics=metrics)
         await redis_client.xadd("nq:in:signal:dbf", {"env": "{}"})
