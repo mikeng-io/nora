@@ -355,7 +355,7 @@ bounded rollout and observation decision.
 **Rollout checkpoint, 2026-11-02.** v7.14.0 is deployed. Rate-limited code
 projection completed with no excluded or queued sources; this is code-derived
 structure, not model-quality evidence. Seven historical sessions used 657,255
-reported tokens, with 42 distinct input completion receipts observed. Index and
+reported tokens, with 40 distinct historical input completion receipts observed. Index and
 profile prompt-read flags remain off; catch-up and the 14-day switch observation
 have not started. The first inspect hit a recursive SQL timeout; a same-input
 zero-model retry passed. A separate two-process probe found equal canonical
