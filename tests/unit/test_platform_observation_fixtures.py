@@ -342,6 +342,12 @@ def test_signal_contacts_and_previews_are_artifacts() -> None:
     assert md["display_name"] == "Fixture Contact"
     assert md["organization"] == "Example Org"
     assert md["phones"] == ["+85200000002"]
+    head = fold_observation(None, StoredObservation(
+        id=1, event_id="contact-event", source_digest="contact-digest",
+        observation=contact))
+    summary = head_summary(head)
+    assert "Fixture Contact" in summary and "Example Org" in summary
+    assert md["phones"][0] in summary
 
     (preview,) = _signal_observations("link_preview.json")
     assert preview.object_kind == "artifact" and preview.operation == "create"

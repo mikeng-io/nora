@@ -2006,7 +2006,9 @@ def _artifact_entry_label(
     name = next((f[k] for k in ("name", "display_name", "formatted_name",
                                 "title", "organization", "url") if f.get(k)),
                 "")
-    if name:
+    if entry.get("artifact_kind") == "contact" and not f.get("contacts"):
+        bits.append(_contact_summary(f))
+    elif name:
         bits.append(f"“{_clip(name, 40)}”")
     if f.get("start_time"):
         bits.append(f"at {f['start_time']}")

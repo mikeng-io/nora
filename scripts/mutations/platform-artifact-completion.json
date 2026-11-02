@@ -96,5 +96,12 @@
     "old": "                platform_message_ids=tuple(dict.fromkeys(ids)))",
     "new": "                platform_message_ids=())",
     "target": "tests/integration/test_whatsapp_send.py::test_two_confirmed_posts_yield_both_native_ids"
+  },
+  {
+    "name": "Signal top-level contact values disappear from retained state",
+    "file": "nora/domain/observations.py",
+    "old": "    if entry.get(\"artifact_kind\") == \"contact\" and not f.get(\"contacts\"):\n        bits.append(_contact_summary(f))\n    elif name:",
+    "new": "    if name:",
+    "target": "tests/unit/test_platform_observation_wired.py::test_a_retained_signal_contact_keeps_top_level_values"
   }
 ]

@@ -230,12 +230,13 @@ from nora.domain.observations import ArtifactPayload  # noqa: E402
 
 
 def _artifact(md: dict, *, op: str = "create", actor: str = "",
-              actor_status: str = "not_supplied") -> Observation:
+              actor_status: str = "not_supplied",
+              coverage: Coverage | None = None) -> Observation:
     return _obs(kind="artifact", object_ref="event:e1", operation=op,
                 actor_id=actor, actor_status=actor_status,
                 payload=ArtifactPayload(
                     artifact_kind="event", metadata=md,
-                    custody="declared"))
+                    custody="declared"), coverage=coverage or Coverage())
 
 
 def test_event_artifact_projects_time_fields_and_per_responder_responses():

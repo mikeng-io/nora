@@ -1617,3 +1617,34 @@ async def test_a_handle_shown_for_two_rooms_cannot_silently_bind_the_last_room()
     assert answers[0]["status"] == "refused", answers
     assert answers[0]["reason"] == "ambiguous_object_ref"
     assert await stores.notes.standing(unit="u") == ()
+
+
+async def test_a_retained_signal_contact_keeps_top_level_values():
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    rid = await store.append(
+        observation=_obs(kind="artifact", ref="shared-contact", op="create",
+                         payload=ArtifactPayload(artifact_kind="contact", metadata={
+                             "display_name": "Example Contact",
+                             "organization": "Example Org",
+                             "phones": ["extension 42"],
+                             "emails": ["shared@example.invalid"]}), ago=60),
+        event_id="contact-event", source_digest="contact-digest")
+    assert rid is not None
+    await _newer_heads(store, _SOURCE_OBJECT_MAX + 1)
+    handle = object_handle("artifact", "shared-contact", account_key="acct")
+    notes = InMemoryNoteStore()
+    await _note_with_ref(notes, handle)
+    ctx = await _assembler_with_notes(audit, store, notes).assemble(request=_request())
+    retained = next(r for r in ctx.retained_sources if r.ref.handle == handle)
+    assert retained.head is not None
+    for value in ("Example Org", "extension 42", "shared@example.invalid"):
+        assert value in retained.head.state
+        assert value in _prompt(ctx)
+    tools = _tools(audit, store)
+    history = await _call(tools, "record_query", kind="artifact", object=handle,
+                          history=True)
+    as_of = await _call(tools, "record_query", kind="artifact", object=handle,
+                        at_id=rid)
+    assert history["status"] == as_of["status"] == "ok"
+    assert "extension 42" in json.dumps(history)
+    assert "shared@example.invalid" in json.dumps(as_of)
