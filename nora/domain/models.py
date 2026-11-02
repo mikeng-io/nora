@@ -365,6 +365,15 @@ class ReactionRow:
     `record_query` has always returned). `ts` is the platform's time for the
     event (arrival when it gives none); `id` is arrival order, the tie-break
     the append-only table resolves latest by.
+
+    `created_at` is the row's DURABLE COMMIT CLOCK — the value the store
+    stamped when it made the row (the `created_at` column, or an equivalent
+    commit-order stamp a fake supplies). `fold_target_reactions` uses it to
+    interleave this legacy delta with typed `platform_observation` rows by
+    genuine system ordering: the ingest lock serializes the writers, so the
+    stamp is the row's position in durable commit order — never a source
+    clock and never a fabricated cross-store revision. None means the store
+    did not supply it, and the union fold must flag the order as unproven.
     """
 
     id: int
@@ -373,6 +382,7 @@ class ReactionRow:
     emoji: str
     removed: bool
     ts: int
+    created_at: Any = None
 
 
 #: A platform's custom-emoji wire identity — Discord stores a reaction as
@@ -445,10 +455,15 @@ class RowReactions:
     snapshot, or any reaction the capture path never saw is absent, so a
     count is what was recorded, not a claim of the whole upstream set. An
     empty `counts` with `recorded > 0` means every recorded reaction was
-    taken back — a fact, not a zero. `coverage="partial"` means the read's
-    own bound cut the standing set short: `recorded` and `observed_at` still
-    hold, and `counts` is EMPTY on purpose — a truncated set is never folded
-    into an apparently complete count.
+    taken back — a fact, not a zero. `coverage="partial"` means the fold is
+    honest-but-incomplete — the read's own bound cut the standing set, a
+    removal could not be attributed to a recorded actor, or a source snapshot
+    declared itself incomplete: `recorded` and `observed_at` still hold, and
+    `counts` is EMPTY on purpose — a truncated or uncertain set is never
+    folded into an apparently complete count. `coverage="gap"` means the
+    order of recorded transitions could not be proven (incomparable commit
+    clocks, out-of-scope positions): `counts` is withheld there too, because
+    a guessed order is not a state.
     """
 
     counts: tuple[tuple[str, int], ...] = ()
@@ -742,13 +757,31 @@ class TagContext:
     # The unit's kept memos (DEC-306), the `<memos>` index: unit-wide like
     # `notes`, filled by the tag and fire assemblers; `()` renders no block.
     memos: tuple[Memo, ...] = ()
-    # Standing — HER OWN position in THIS conversation, a fold of the previous
-    # turn.
-    #
-    # It is the odd one out among the blocks above in three ways, each a rule
-    # somewhere else. It is the only one that is Nora's own output rather than a
-    # distillation of other people's (a position, not a record). It is the only one
-    # keyed on the CONVERSATION where `notes` is keyed on the unit, and unlike it
+    # The typed SOURCE events of the transcript window (design/platform-
+    # observations 04): poll/room/membership/pin/artifact transitions the
+    # bridge recorded, interleaved into the transcript by their own clock
+    # — typed rows, never a speaker's line and never a fabricated message.
+    # `source_objects` is the room's folded object heads (the open poll,
+    # the pin set), the Standing block's typed input; both empty while no
+    # ObservationStore is wired.
+    source_events: tuple[Any, ...] = ()
+    source_objects: tuple[Any, ...] = ()
+    # `source_reads_failed` marks a FAILED observation read so the prompt
+    # can say «could not read» rather than presenting an empty list as
+    # «nothing recorded» (R-27); the `*_more` counts are a LOWER BOUND on
+    # what the bounds left out — each read takes a sentinel row past what
+    # it shows, so a slice is never read as the whole.
+    source_reads_failed: bool = False
+    source_events_more: int = 0
+    source_objects_more: int = 0
+    # `retained_sources` is the retained lane (design/platform-observations
+    # 03): `RetainedSource`s — this room's open notes' curated `object_refs`
+    # resolved against the store NOW, each with its CURRENT folded head or an
+    # explicit unresolved marker. An object an ongoing matter tracks stays in
+    # view after the recency page above would have evicted it; the state is
+    # read fresh here, never copied onto the note.
+    retained_sources: tuple[Any, ...] = ()
+    retained_sources_more: int = 0
     # The room's CULTURE head — an account of what this room is and why it
     # became so. Beside `standing` because both are
     # room-scoped and both are her own output, and apart from it on the one

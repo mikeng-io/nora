@@ -12,8 +12,8 @@ conflict behaviour to this index.
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0144_proactive_open_subject"
-down_revision = "0143_bridge_revision_width"
+revision = "0145_proactive_open_subject"
+down_revision = "0144_platform_observation"
 branch_labels = None
 depends_on = None
 

@@ -229,6 +229,22 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "the operator's own entry point, not a verb the tag/participation "
         "loop should ever reach, and `_call_sites` scans `nora/` only.",
     ),
+    ("observations.py", "resolve_targets"): _Pin(
+        "deferred_consumer",
+        "The port's standalone re-link of a retained observation to its "
+        "target (design/platform-observations 02). Production relinking "
+        "instead commits inside the arriving message row's own transaction — "
+        "`relink_arriving_targets` (nora/app/bridge_queue.py) — so no caller "
+        "outside an ingest commit exists yet.",
+    ),
+    ("observations.py", "unresolved_targets"): _Pin(
+        "deferred_consumer",
+        "The retained-but-unresolved target listing, named for the exposure "
+        "lanes in design/platform-observations 02 («read "
+        "ObservationStore.current/heads/history and unresolved_targets»). No "
+        "lane reads it this stage: the context and grounding reads take "
+        "recent/heads/by_ids/head_for_handle only.",
+    ),
 }
 
 # Names this file CANNOT resolve, pinned so the set cannot grow in silence.
@@ -250,6 +266,8 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
 _AMBIGUOUS: frozenset[str] = frozenset(
     {
         "aclose", "append", "claim", "create", "delete", "fail",
+        # Message targets and observation grounding have distinct by-id stores.
+        "by_ids",
         "describe", "enqueue", "get", "history", "lookup", "mark", "put", "read",
         "finish",  # RawSpanRecorder and the store both declare this verb.
         "recent", "record", "resolve", "rsvps_for", "save", "search",
@@ -275,6 +293,12 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         # name with other workers' ticks. Caller: `nora.app.runtime.
         # memory_drain_loop`, pinned by `tests/unit/test_runtime.py`.
         "run_once",
+        # `SqlObservationStore.current` shares the name with
+        # `VersionManifest.current`, `WeatherSource.current` and the two
+        # config watchers (`nora/config_reload.py`,
+        # `nora/instructions/reload.py`) — a `.current(...)` call cannot be
+        # attributed.
+        "current",
     }
 )
 
@@ -299,7 +323,8 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "media_descriptions.py", "media_objects.py", "memo.py", "memory_embed.py",
         "memory_read.py", "mobility.py",
         "extraction.py", "memory_graph.py",
-        "music_queue.py", "music_session.py", "notes.py", "otp.py",
+        "music_queue.py", "music_session.py", "notes.py", "observations.py",
+        "otp.py",
         "participation_state.py", "profile.py", "profile_inputs.py", "presence.py",
         "reasoning_strip.py", "record_query.py",
         "reminders.py", "revisions.py", "rollup_read.py", "rollups.py",

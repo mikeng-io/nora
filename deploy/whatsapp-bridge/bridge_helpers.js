@@ -147,14 +147,19 @@ export function timestampMs(value) {
 // -- Recent-message cache (quoted timestamps + /react key lookup) ----------
 
 export function createRecentMessageCache(limit = 1000) {
-  const byId = new Map();
+  // Stanza ids are sender-chosen: two rooms can mint the same id, and a
+  // Map keyed on id alone silently overwrites one room's creation stanza
+  // with another's. Each id therefore holds a small list of per-context
+  // entries — same stanza redelivered refreshes in place, a foreign
+  // same-id stanza coexists — and callers that read SECRETS bind the read
+  // to the stanza's room and creator (`getBound`) rather than trusting the
+  // id.
+  const byId = new Map(); // id -> entry[] (newest last)
+  const SAME_ID_MAX = 8;
 
-  function remember(msg) {
-    const id = msg?.key?.id;
-    if (!id) return;
-    byId.delete(id);
-    byId.set(id, {
-      id,
+  function entryFor(msg) {
+    return {
+      id: msg.key.id,
       chat_jid: msg.key.remoteJid || null,
       sender_jid: msg.key.participant || msg.key.remoteJid || null,
       from_me: Boolean(msg.key.fromMe),
@@ -168,26 +173,104 @@ export function createRecentMessageCache(limit = 1000) {
       // onto the real parent, not a hollow synthesized key.
       raw: msg,
       key: {
-        id,
+        id: msg.key.id,
         remoteJid: msg.key.remoteJid,
         fromMe: Boolean(msg.key.fromMe),
         ...(msg.key.participant ? { participant: msg.key.participant } : {}),
       },
-    });
-    while (byId.size > limit) {
-      byId.delete(byId.keys().next().value);
+    };
+  }
+
+  function total() {
+    let n = 0;
+    for (const list of byId.values()) n += list.length;
+    return n;
+  }
+
+  function remember(msg) {
+    const id = msg?.key?.id;
+    if (!id) return;
+    const entry = entryFor(msg);
+    const list = byId.get(id) || [];
+    const i = list.findIndex((e) =>
+      e.chat_jid === entry.chat_jid && e.sender_jid === entry.sender_jid && e.from_me === entry.from_me);
+    if (i >= 0) list[i] = entry; else list.push(entry);
+    if (list.length > SAME_ID_MAX) list.shift();
+    byId.delete(id);
+    byId.set(id, list);
+    let n = total();
+    while (n > limit) {
+      const oldest = byId.keys().next().value;
+      const l = byId.get(oldest);
+      n -= l.length;
+      byId.delete(oldest);
     }
   }
 
   function get(id) {
     if (!id || !byId.has(id)) return null;
-    const entry = byId.get(id);
+    const list = byId.get(id);
+    const entry = list[list.length - 1];
     byId.delete(id);
-    byId.set(id, entry);
+    byId.set(id, list);
     return entry;
   }
 
-  return { remember, get, get size() { return byId.size; } };
+  /**
+   * A stanza-id read bound to the context the caller names. `bound(entry)`
+   * decides whether a cached stanza is THE stanza this reader means — the
+   * right room and creator for a poll/event creation key. A same-id entry
+   * from a foreign room never satisfies it: the miss is honest
+   * unavailability, not a wrong-room secret read. `get` callers (quotes,
+   * timestamps) that only want the newest stanza of that id are unchanged.
+   */
+  function getBound(id, bound) {
+    if (!id || !byId.has(id)) return null;
+    const list = byId.get(id);
+    for (let i = list.length - 1; i >= 0; i--) {
+      const entry = list[i];
+      if (bound(entry)) {
+        byId.delete(id);
+        byId.set(id, list);
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  return { remember, get, getBound, get size() { return total(); } };
+}
+
+/**
+ * Does a cached stanza satisfy the identity a `MessageKey` names? Binds a
+ * secret read to the stanza's creation room and creator:
+ *   - room:    key.remoteJid must equal the cached stanza's chat — a same-id
+ *              stanza from a foreign room never satisfies the read;
+ *   - creator: key.participant (group keys) must be the cached sender under
+ *              every known JID form; a key with no participant proves its
+ *              creator only through fromMe (self-authored) or a two-party
+ *              room, where the room itself names the peer.
+ * A group key that names no participant and is not self-authored proves
+ * nothing — the caller's read fails closed rather than borrowing a secret
+ * from an unrelated stanza.
+ */
+export function cacheEntryMatchesKey(entry, key, { lidToPhone = {}, phoneToLid = {} } = {}) {
+  const room = normalizeJid(key?.remoteJid || '');
+  if (!room || normalizeJid(entry?.chat_jid || '') !== room) return false;
+  if (key?.fromMe !== undefined && Boolean(key.fromMe) !== entry.from_me) return false;
+  const named = [key?.participant, key?.participantAlt]
+    .map((j) => normalizeJid(j || '')).filter(Boolean);
+  if (named.length) {
+    const have = new Set([entry.sender_jid, entry.sender_alt]
+      .map((j) => normalizeJid(j || '')).filter(Boolean));
+    return named.some((j) => {
+      if (have.has(j)) return true;
+      const id = resolveIdentity(j, lidToPhone, phoneToLid);
+      return (id.phone && have.has(`${id.phone}@s.whatsapp.net`))
+        || (id.lid && have.has(`${id.lid}@lid`));
+    });
+  }
+  return key?.fromMe === true || !isGroupJid(room);
 }
 
 // -- Secret-encrypted edits (`secretEncryptedMessage`, MESSAGE_EDIT) -------
@@ -265,7 +348,12 @@ export function decryptSecretEdit(msg, { recentCache, decode, lidToPhone = {}, p
   if (!sem) return { reason: 'not_secret_encrypted' };
   if (Number(sem.secretEncType) !== SECRET_ENC_MESSAGE_EDIT) return { reason: 'not_a_message_edit' };
   const target = sem.targetMessageKey || {};
-  const cached = recentCache ? recentCache.get(target.id) : null;
+  // The secret read is bound to the room and original sender the target
+  // key names — a same-id stanza from another room must not lend its
+  // secret, and a key that cannot prove its context yields nothing.
+  const cached = recentCache?.getBound
+    ? recentCache.getBound(target.id, (e) => cacheEntryMatchesKey(e, target, { lidToPhone, phoneToLid }))
+    : (recentCache ? recentCache.get(target.id) : null);
   if (!target.id || !cached || !cached.message_secret) return { reason: 'secret_unknown' };
   if (!sem.encIv || !sem.encPayload) return { reason: 'malformed' };
 

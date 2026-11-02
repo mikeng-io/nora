@@ -600,8 +600,50 @@ func (b *Bridge) emitDelta(d *slidetypes.Delta) {
 		if ev := normalizeMessage(room, data.Message, own); ev != nil {
 			b.sink.Emit(ev)
 		}
+		// The delta carries no typed joiner — the POST-ACTION member set
+		// (thread.users[]) is the covered fact the source supplies.
+		if ev := joinSnapshot(room, data, d.UQSeqID); ev != nil {
+			b.sink.Emit(ev)
+		}
 	case *slidetypes.ParticipantLeaveEvent:
 		if ev := normalizeMessage(room, data.Message, own); ev != nil {
+			b.sink.Emit(ev)
+		}
+		if ev := leaveObservation(room, data, d.UQSeqID); ev != nil {
+			b.sink.Emit(ev)
+		}
+	case *slidetypes.PinMessageEvent:
+		// A pin-set delta naming message ids — add/remove transitions on the
+		// room's pin set, not inbox pinned-thread state (PinThreadEvent, which
+		// stays dropped by design). No actor/timestamp exists on this event.
+		for _, ev := range pinObservations(room, data, d.UQSeqID) {
+			b.sink.Emit(ev)
+		}
+	case *slidetypes.UpdateThreadNameEvent:
+		// The embedded admin message is genuine service content — emit it as
+		// before (deduped by mid if it also arrives as an admin delta), and
+		// report the typed room-title revise alongside.
+		if ev := normalizeMessage(room, data.Message, own); ev != nil {
+			b.sink.Emit(ev)
+		}
+		if ev := roomFieldObservation(room, map[string]any{
+			"title": data.ThreadName,
+		}, data.Message, d.UQSeqID); ev != nil {
+			b.sink.Emit(ev)
+		}
+	case *slidetypes.UpdateThreadImageEvent:
+		if ev := normalizeMessage(room, data.Message, own); ev != nil {
+			b.sink.Emit(ev)
+		}
+		if ev := roomFieldObservation(room, map[string]any{
+			"image": data.ThreadImage.URI,
+		}, data.Message, d.UQSeqID); ev != nil {
+			b.sink.Emit(ev)
+		}
+	case *slidetypes.AdminChangeEvent:
+		// admin_igids is the covered admin SET — IGID space, not fbids;
+		// object_ref namespaces it apart from the member collection.
+		if ev := adminSnapshot(room, data, d.UQSeqID); ev != nil {
 			b.sink.Emit(ev)
 		}
 	case *slidetypes.CreateReactionEvent:

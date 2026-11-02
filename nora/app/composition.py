@@ -200,6 +200,7 @@ from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.music_queue import SqlMusicQueueStore
 from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.sql.notes import SqlNoteStore
+from nora.infra.sql.observations import SqlObservationStore
 from nora.infra.sql.otp import SqlOtpStore
 from nora.infra.sql.participation_state import SqlParticipationStateStore
 from nora.infra.sql.presence import PresenceStore
@@ -1786,6 +1787,14 @@ async def build_dependencies(
     # writer, forgot the reader" mistake. What the flag gates is the FOLD,
     # which is the part that spends a model call inside the reply slot.
     standing_store = SqlStandingStore(engine)
+    # The typed platform-observation Record (design/platform-observations
+    # 02): persisted whenever a bridge ingests typed source evidence.
+    # Cognition OFF still retains the rows — they simply wake no session
+    # (the obligation enqueued in the append's transaction is answered
+    # "stimulus off"). ONE instance: the bridge writes it, the assembler
+    # reads the room's events/objects, the grounder and `record_query`'s
+    # kind branch read the same store.
+    observation_store = SqlObservationStore(engine)
     ledger_store = SqlStandingLedger(engine, metrics=metrics)
     # The unified media index (DEC-138), built HERE rather than beside the
     # vision client below because THREE readers now hold it and the earliest is
@@ -2529,6 +2538,10 @@ async def build_dependencies(
         # `<subagents>`: `None` while `[subagent]` is off. The worker is
         # attached below, beside the desk's. Not given to the fire path.
         subagents=subagents_context,
+        # The typed source events of the transcript window and the room's
+        # folded object heads for the standing slot (design 04): the ONE
+        # store the bridge writes.
+        observations=observation_store,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -3313,6 +3326,9 @@ async def build_dependencies(
         # `[record_query] enabled` (ships off): without the read the registry
         # withholds the tool from every turn.
         record=SqlRecordQuery(engine) if cfg.record_query.enabled else None,
+        # `record_query`'s typed `kind` branch (design/platform-observations
+        # 05): the same store the bridge writes; `None` only in a harness.
+        observations=observation_store,
         # `[memory.index] read` (ships off):
         # one memory surface: `memory_search` over the index; off, the Honcho
         # verbs as before (DEC-316, `nora.agent.tools.GRAPH_MEMORY_TOOLS`).
@@ -4167,6 +4183,7 @@ async def build_dependencies(
             allowlist=allowlist, persons=persons,
             fire_speak=fire_path.speak if fire_path else None,
             participation_state=SqlParticipationStateStore(engine),
+            observations=observation_store,
         )
         # The inspector reads the REAL redis client + engine the runtime
         # runs on — a second connection would measure a different world.
@@ -5029,6 +5046,9 @@ async def build_dependencies(
                     ),
                 ),
                 metrics=metrics,
+                # The agenda's observation stimuli and the Standing block's
+                # source objects read through the one store the bridge wrote.
+                observations=observation_store,
             )
 
             try:
@@ -5071,6 +5091,7 @@ async def build_dependencies(
                     model_id=dream_model, model_route=cfg.endpoint("dreamer")[0],
                     budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),
                     result_caps=TOOL_RESULT_CAPS,
+                    observations=observation_store,
                 )
             except (InstructionError, PreludeMissingError, SkillNotInstalledError) as exc:
                 # A missing or malformed `cognition` objective, a prelude it resolved

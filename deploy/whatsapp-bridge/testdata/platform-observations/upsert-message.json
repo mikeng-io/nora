@@ -1,0 +1,22 @@
+{
+  "_fixture": {
+    "name": "group text message (control)",
+    "generated": true,
+    "native_event": "messages.upsert (type=notify)",
+    "capture_today": "captured -> kind=message (unchanged v1 ordinary turn)",
+    "semantic": "Baseline admitted turn: key.remoteJid is the room, key.participant the author in groups, messageTimestamp whole seconds, pushName the display name."
+  },
+  "payload": {
+    "key": {
+      "remoteJid": "12036123456789@g.us",
+      "fromMe": false,
+      "id": "3EB0AAA100",
+      "participant": "15550100011@s.whatsapp.net"
+    },
+    "message": {
+      "conversation": "Saturday breakfast at 9?"
+    },
+    "messageTimestamp": 1790000000,
+    "pushName": "Member A"
+  }
+}

@@ -9,15 +9,18 @@ for its own injected XML, with the label replaced by the sentence.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
+from typing import Any
 
 from ..domain.blocks import (
     BlockKey,
     ContextBlock,
     assemble,
     render_bullets,
+    render_elements,
     render_messages,
     restamp,
     speaker_name,
@@ -34,6 +37,7 @@ from ..domain.framing import (
     ContextHeader,
 )
 from ..domain.models import TagContext, TranscriptRow
+from ..domain.observations import SourceEvent, parse_handle
 from ..domain.profile import ProfileView
 from ..domain.prompt import age, escape
 from ..domain.quote_window import first_by_ts
@@ -524,6 +528,90 @@ def _transcript_block(
     but it makes the tag unreadable for nothing.
     """
     rows = render_transcript(ctx.transcript, display_name=display_name, now=now)
+    # The typed source events of the same window (design/platform-
+    # observations 04): `<source_event>` elements INTERLEAVED into the
+    # transcript at their own time — a vote between two messages reads
+    # between them, not as an appendix after the last word. They are not
+    # messages and take no `#n` handle (a reply cannot name one). Each
+    # says its kind, the operation, the source's own time (and WHICH
+    # clock, when it is not the upstream's), the actor the source
+    # names — a roster name or nothing, never a speaker line. An event
+    # the source pinned to a message says `on="n"` — the message's own
+    # `#n` handle, never an invented quote or reply target; a source
+    # that named no message takes none.
+    #
+    # `#n` is `render_transcript`'s positional index over `ctx.transcript`,
+    # so the same map resolves it here.
+    index_of = {row.id: i for i, row in enumerate(ctx.transcript, 1)}
+
+    def _event(e: Any) -> str:
+        # The affected message, when the transcript does not already show
+        # it: `target_*` is the recorded row's own words and author as
+        # labelled context — bounded, roster-named, and never the event's
+        # actor's words. An `on=` row needs none of it (the target IS the
+        # shown row); a named-but-unresolvable target says so once.
+        shown = e.target is not None and e.target_message_id not in index_of
+        return render_elements(
+            [e], tag="source_event",
+            attrs=lambda ev, _i: (
+                ("kind", ev.kind), ("op", ev.operation),
+                # `at` is the SOURCE's clock — it appears only when the
+                # source actually gave a time. An unknown clock shows
+                # `time="unknown"` plus `received` (the bridge's own
+                # clock, stated as receipt), never a dressed-up `at`.
+                ("at", age(ev.at_ms, now)
+                        if ev.at_ms > 0 and ev.time_quality != "unknown"
+                        else None),
+                ("actor", ev.actor or (
+                    "anonymous" if ev.actor_status == "anonymous" else None)),
+                ("time", ev.time_quality if ev.time_quality != "upstream"
+                        else None),
+                ("received", age(ev.received_ms, now)
+                        if ev.received_ms and ev.time_quality != "upstream"
+                        else None),
+                ("rev", ev.revision or None),
+                ("coverage", ev.coverage or None),
+                ("object", ev.handle),
+                ("on", (f"{index_of[ev.target_message_id]}"
+                        if ev.target_message_id in index_of else None)),
+                ("target_author", ev.target.author if shown else None),
+                ("target_at", age(ev.target.at_ms, now)
+                        if shown and ev.target.at_ms > 0 else None),
+                ("target_text", ev.target.text if shown else None),
+                ("target_edited", age(ev.target.edited_ms, now)
+                        if shown and ev.target.edited_ms else None),
+                ("target_was", ev.target.was if shown else None),
+                ("target_deleted", "yes"
+                        if shown and ev.target.deleted else None),
+                ("target_unresolved", "yes"
+                        if (ev.target_message_id is not None
+                            and ev.target_message_id not in index_of
+                            and ev.target is None) else None),
+            ),
+            body=lambda ev: ev.summary,
+        )
+
+    events = sorted(ctx.source_events, key=lambda e: e.at_ms)
+    if events:
+        # The `<m>` elements correspond 1:1 to `ctx.transcript` in order;
+        # split at element boundaries — an element body cannot contain
+        # `\n<m ` (escape keeps `<` out of every body and attribute).
+        chunks = re.split(r"(?=\n<m )", rows) if rows else []
+        merged: list[str] = []
+        pending = iter(zip(ctx.transcript, chunks, strict=False))
+        row, chunk = next(pending, (None, ""))
+        for e in events:
+            while row is not None and row.ts <= e.at_ms:
+                merged.append(chunk)
+                row, chunk = next(pending, (None, ""))
+            merged.append(_event(e))
+        while row is not None:
+            merged.append(chunk)
+            row, chunk = next(pending, (None, ""))
+        rows = "\n".join(c for c in merged if c)
+    if ctx.source_reads_failed:
+        rows = f"{rows}\n<source_reads unavailable/>" if rows else \
+            "<source_reads unavailable/>"
     # `window` is R-15, on the block it is about. A model that does not know
     # how far back it can see cannot tell «nobody said that» from «not in what
     # you were shown», and «further back than you were shown» means nothing
@@ -538,7 +626,9 @@ def _transcript_block(
     # parameter for the caller's own bookkeeping; this block does not read it.
     return _block(
         "group_transcript",
-        attrs=(("window", str(len(ctx.transcript))),),
+        attrs=(("window", str(len(ctx.transcript))),
+               ("source_more", str(ctx.source_events_more)))
+        if ctx.source_events_more else (("window", str(len(ctx.transcript))),),
         body=rows,
     )
 
@@ -860,6 +950,150 @@ def _spoken_turn_block(ctx: TagContext) -> ContextBlock | None:
     return _block("spoken_turn", body=SPOKEN_TURN)
 
 
+def _standing_block(
+    ctx: TagContext, view: DerivedView | None = None,
+    *, now: datetime | None = None,
+) -> ContextBlock | None:
+    """The shared account and freshly read source objects in ONE Standing block."""
+    block = render_shared_state(ctx.shared, now_ms=int((now or local_now()).timestamp() * 1000))
+    # The room's folded source-object heads (design/platform-observations
+    # 04), typed rows under the SAME Standing presentation: the open poll,
+    # the pin set, the member count — each with its ordering and coverage
+    # flags so a gapped or partial state never reads as settled truth.
+    if ctx.source_objects:
+        annotated = {row.id: i for i, row in enumerate(ctx.transcript, 1)
+                     if row.reactions is not None}
+        reaction_targets = {e.handle: annotated[e.target_message_id]
+                            for e in ctx.source_events if e.kind == "reaction"
+                            and e.target_message_id in annotated}
+        index_of = {row.id: i for i, row in enumerate(ctx.transcript, 1)}
+        # One expanded target per assembly: a `<source_event>` in the
+        # transcript already carrying `target_*` owns it for the handle —
+        # the object repeats the state, never the words.
+        event_targets = {e.handle for e in ctx.source_events
+                         if e.target is not None}
+
+        def _target_shown(e: Any) -> bool:
+            return (e.target is not None
+                    and e.target_message_id not in index_of
+                    and e.handle not in event_targets)
+
+        objects = render_elements(
+            ctx.source_objects, tag="source_object",
+            attrs=lambda e, _i: (
+                ("kind", e.kind), ("object", e.handle),
+                ("ordering", e.ordering or None),
+                ("coverage", e.coverage or None),
+                ("rev", e.revision or None),
+                # `on` is the numbered transcript row this reaction's tally
+                # annotates — the SAME numbering `replying_to="n"` uses, so a
+                # pointer and the transcript name one message. Absent while the
+                # target is off-window: the row then keeps its plain source
+                # state in Standing and no pointer invents a visible target.
+                ("on", f"#{reaction_targets[e.handle]}"
+                 if e.kind == "reaction" and e.handle in reaction_targets
+                 else None),
+                # `observed` is the newest SOURCE time applied — absent
+                # when the source's clock is unknown, with `time` naming
+                # the non-upstream clock and `received` stating the
+                # bridge's own receipt instead.
+                ("time", e.time_quality if e.time_quality != "upstream"
+                        else None),
+                ("observed",
+                 age(e.at_ms, now) if now is not None and e.at_ms > 0
+                 and e.time_quality != "unknown"
+                 else None),
+                ("received",
+                 age(e.received_ms, now)
+                 if now is not None and e.received_ms
+                 and e.time_quality != "upstream"
+                 else None),
+                # The affected message, as the `<source_event>` elements
+                # carry it — only when the transcript does not show it and
+                # no interleaved event already expanded this handle.
+                ("target_author", e.target.author if _target_shown(e) else None),
+                ("target_at", age(e.target.at_ms, now)
+                 if _target_shown(e) and now is not None
+                 and e.target.at_ms > 0 else None),
+                ("target_text", e.target.text if _target_shown(e) else None),
+                ("target_edited", age(e.target.edited_ms, now)
+                 if _target_shown(e) and now is not None
+                 and e.target.edited_ms else None),
+                ("target_was", e.target.was if _target_shown(e) else None),
+                ("target_deleted", "yes"
+                 if _target_shown(e) and e.target.deleted else None),
+                ("target_unresolved", "yes"
+                 if (e.target_message_id is not None
+                     and e.target_message_id not in index_of
+                     and e.target is None) else None),
+            ),
+            # The tally rides once, on the visible target row — `on` naming
+            # it is the pointer, so the row's own body then repeats nothing.
+            # Off-window there is nowhere else the state shows, and the row
+            # keeps its plain `state`/`summary` in Standing.
+            body=lambda e: (
+                None if e.kind == "reaction" and e.handle in reaction_targets
+                else e.state or e.summary),
+        )
+        if ctx.source_objects_more:
+            objects = (f"{objects}\n<source_objects_more "
+                       f"count=\"{ctx.source_objects_more}\"/>")
+        if block is None:
+            block = ContextBlock(name="standing", body=objects)
+        else:
+            block = replace(block, body="\n".join((block.body, objects)))
+    # The retained lane (design/platform-observations 03): an ongoing
+    # matter's curated `object_refs`, resolved NOW through the store — an
+    # old tracked poll keeps its CURRENT state in view after the recency
+    # page above evicted it. `matter` says which note tracks it, and a ref
+    # the store no longer resolves shows `unresolved`, never a dropped row.
+    if ctx.retained_sources:
+        retained_rows = []
+        for r in ctx.retained_sources:
+            e = r.head
+            if e is None:
+                e = SourceEvent(
+                    ref="", kind=parse_handle(r.ref.handle)[0] or "object",
+                    operation="state", at_ms=0, time_quality="unknown",
+                    actor=None, actor_status="not_applicable",
+                    handle=r.ref.handle, summary="")
+
+            def _retained_attrs(_e: Any, _i: int, _r: Any = r,
+                                ) -> tuple[tuple[str, Any], ...]:
+                return (
+                    ("kind", _e.kind or None), ("object", _e.handle),
+                    ("matter", _r.matter or None),
+                    ("unresolved", "yes" if _r.head is None else None),
+                    ("ordering", _e.ordering or None),
+                    ("coverage", _e.coverage or None),
+                    ("rev", _e.revision or None),
+                    ("time", _e.time_quality if _e.time_quality != "upstream"
+                            else None),
+                    ("observed",
+                     age(_e.at_ms, now) if now is not None and _e.at_ms > 0
+                     and _e.time_quality != "unknown" else None),
+                    ("received",
+                     age(_e.received_ms, now)
+                     if now is not None and _e.received_ms
+                     and _e.time_quality != "upstream" else None),
+                )
+
+            retained_rows.append(render_elements(
+                [e], tag="source_object",
+                attrs=_retained_attrs,
+                body=lambda _e: _e.state or _e.summary))
+        if ctx.retained_sources_more:
+            retained_rows.append(render_elements(
+                [ctx.retained_sources_more], tag="source_objects_more",
+                attrs=lambda count, _: (("count", str(count)),), body=lambda _: ""))
+        retained = "\n".join(retained_rows)
+        if block is None:
+            block = ContextBlock(name="standing", body=retained)
+        else:
+            block = replace(block, body="\n".join((block.body, retained)))
+    return block
+
+
 def _culture_block(
     ctx: TagContext, *, now: datetime, view: DerivedView | None = None,
 ) -> ContextBlock | None:
@@ -1007,7 +1241,7 @@ def build_prefill(
             _restamp(render_computer(ctx.computer)),
             _restamp(render_documents(ctx.documents)),
             _restamp(render_subagents(ctx.subagents)),
-            _restamp(render_shared_state(ctx.shared, now_ms=int(clock.timestamp() * 1000))),
+            _restamp(_standing_block(ctx, view, now=clock)),
             _transcript_block(ctx, display_name, clock, context_window),
             _spoken_turn_block(ctx),
             _recalled_block(ctx),

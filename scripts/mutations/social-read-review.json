@@ -9,8 +9,8 @@
  {
   "name": "2 agenda: a social stimulus binds the home room whatever room it names",
   "file": "nora/domain/cognition_session.py",
-  "old": "_ROOM_BOUND_KINDS: frozenset[str] = frozenset({\"message\", \"social\"})",
-  "new": "_ROOM_BOUND_KINDS: frozenset[str] = frozenset({\"message\"})",
+  "old": "_ROOM_BOUND_KINDS: frozenset[str] = frozenset(\n    {\"message\", \"social\", \"observation\"})",
+  "new": "_ROOM_BOUND_KINDS: frozenset[str] = frozenset(\n    {\"message\", \"observation\"})",
   "target": "tests/unit/test_cognition_session.py::test_a_social_read_binds_the_room_it_names_and_home_when_it_names_none"
  },
  {

@@ -60,6 +60,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, tzinfo
+from typing import Any
 
 from nora.domain.blocks import (
     BlockKey,
@@ -83,6 +84,7 @@ from nora.domain.cognition_ground import (
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.external_files import render_file_links
 from nora.domain.models import REACTION_LABEL_MAX, emoji_display
+from nora.domain.observations import SourceEvent, parse_handle
 from nora.domain.prompt import ago, clip, escape, legal, one_line
 from nora.domain.shared_state import SharedView
 from nora.domain.social_stream import describe_read
@@ -264,12 +266,15 @@ class _Row:
 
 
 def _message_row(
-    rec: RecordItem, cues: Sequence[str], *, now_ms: int, tz: tzinfo, message_chars: int,
+    rec: RecordItem, cues: Sequence[str], *, now_ms: int, tz: tzinfo,
+    message_chars: int, target: bool = False,
 ) -> _Row:
     """A person's message, an edit of one, a reaction to one or a deletion of
     one, as `<m n="<message id>" at from ...>words</m>`. `n` is the message's
     own id (`render_row_window` writes it first); a reaction's is the message
-    reacted to, and its `from` and words are that message's."""
+    reacted to, and its `from` and words are that message's. `target="yes"`
+    marks a row shown only because a source event affected it — context for
+    the event, never a fresh utterance."""
     when = _when(rec.at_ms, now_ms, tz)
     reacted = rec.kind == "reaction"
     deleted = rec.kind == "delete"
@@ -291,6 +296,7 @@ def _message_row(
             [rec], row_id=lambda r: r.message_id,
             attrs=lambda r: (
                 ("at", when), ("from", speaker_of(r.author)),
+                ("target", "yes" if target else None),
                 ("reaction", emoji_display(r.emoji or "?") if reacted else None),
                 ("reaction_removed", "yes" if reacted and r.removed else None),
                 (
@@ -517,15 +523,58 @@ def _social_row(stimulus: Stimulus, line: SocialLine, *, now_ms: int, tz: tzinfo
     return _Row(stimulus.at_ms, stimulus.id, show)
 
 
+def _observation_row(
+    stimulus: Stimulus, event: SourceEvent, *, now_ms: int, tz: tzinfo,
+) -> _Row:
+    """A typed source event as `<observation kind op at>` — the ONE
+    non-message family. It has no message id and NO speaker: it is something
+    the source did to an object, never a line somebody said. `at` is the
+    source's own time only when `time_quality` says so; `bridge_local` and
+    `unknown` say which clock it is not."""
+    # `at` is the source's own time only when `time_quality` says so and a
+    # time exists — at_ms<=0 is "no source time", never 1970-01-01, and an
+    # unknown clock shows `time="unknown"` plus `received`, never a
+    # dressed-up `at`; a bridge-local clock says WHICH clock it is.
+    when = (_when(event.at_ms, now_ms, tz)
+            if event.at_ms > 0 and event.time_quality != "unknown" else "")
+
+    def show(limit: int | None) -> str:
+        who = event.actor or (
+            "anonymous" if event.actor_status == "anonymous" else None)
+        return render_elements(
+            [event], tag="observation",
+            attrs=lambda e, _i: (
+                ("kind", e.kind), ("op", e.operation),
+                ("at", when or None),
+                ("actor", who),
+                ("time", e.time_quality if e.time_quality != "upstream"
+                        else None),
+                ("received", _when(e.received_ms, now_ms, tz)
+                        if e.received_ms and e.time_quality != "upstream"
+                        else None),
+                ("rev", e.revision or None),
+                ("coverage", e.coverage or None),
+                ("object", e.handle),
+            ),
+            body=lambda _e: (
+                one_line(event.summary) if limit is None
+                else _words(event.summary, limit)),
+        )
+
+    return _Row(stimulus.at_ms, stimulus.id, show)
+
+
 def _item_rows(
     item: AgendaItem, rows: Sequence[Stimulus], grounding: Grounding,
     own: Sequence[RecordItem], *, now_ms: int, tz: tzinfo, message_chars: int,
 ) -> tuple[list[_Row], int]:
     """The item's readable rows and how many stimuli of it could not be read:
     its messages (Record rows), Nora's own sends in its window, its Rollup
-    rows and its social reads."""
+    rows, its social reads and its typed source events."""
     out: list[_Row] = []
     unreadable = 0
+    message_ids: set[int] = set()
+    linked: list[tuple[Stimulus, SourceEvent]] = []
     for s in rows:
         if s.kind == "social":
             social = grounding.socials.get(s.ref)
@@ -533,6 +582,14 @@ def _item_rows(
                 unreadable += 1
                 continue
             out.append(_social_row(s, social, now_ms=now_ms, tz=tz))
+            continue
+        if s.kind == "observation":
+            event = grounding.observations.get(s.ref)
+            if event is None:
+                unreadable += 1
+                continue
+            out.append(_observation_row(s, event, now_ms=now_ms, tz=tz))
+            linked.append((s, event))
             continue
         if s.kind == "rollup":
             roll = grounding.rollups.get(s.ref)
@@ -548,9 +605,36 @@ def _item_rows(
         if rec is None or rec.room != item.room:
             unreadable += 1
             continue
+        message_ids.add(rec.message_id)
         out.append(_message_row(
             rec, s.cues, now_ms=now_ms, tz=tz, message_chars=message_chars,
         ))
+    for s, event in linked:
+        # The messages the event is about — for a merged source obligation
+        # the utterance it was co-delivered as (`delivered`), and the
+        # recorded row the event affected (`target`): a reaction's target,
+        # a pinned message, an edited row. Both read beside the event so
+        # each evidence path of the one source reaches the session. A row
+        # already shown (its own stimulus, or another event's) is not
+        # repeated; an absent one is absent, never a guess. The AFFECTED
+        # row is marked `target` so it reads as the event's context — not
+        # as a fresh utterance, and never the event actor's words.
+        for message_id in (
+            event.delivered_message_id, event.target_message_id,
+        ):
+            if message_id is None:
+                continue
+            rec = grounding.records.get(f"messages:{message_id}")
+            if (rec is None or rec.room != item.room
+                    or rec.message_id in message_ids):
+                continue
+            message_ids.add(rec.message_id)
+            out.append(_message_row(
+                rec, s.cues, now_ms=now_ms, tz=tz,
+                message_chars=message_chars,
+                target=(message_id == event.target_message_id
+                        and message_id != event.delivered_message_id),
+            ))
     for rec in own:
         if rec.room == item.room:
             out.append(_own_row(rec, now_ms=now_ms, tz=tz, message_chars=message_chars))
@@ -663,6 +747,109 @@ def _register(
             attrs=_attrs([("not_listed", str(left_out) if left_out else None)]),
             when_empty="self_close",
         ), _ROW))
+    # Standing: each agenda room's folded source-object state (design 05) —
+    # the open poll, the pin set, the member count — typed rows under ONE
+    # block, on the Register's own budget row. A gap/unordered head says so
+    # (`ordering`); a partial snapshot says what it covers, never the whole.
+    annotated_ids = {r.message_id for r in grounding.records.values()
+                     if r.reactions is not None}
+    reaction_targets = {e.handle: e.target_message_id
+                        for e in grounding.observations.values()
+                        if e.kind == "reaction" and e.target_message_id in annotated_ids}
+    standing_groups: list[str] = []
+    for room in rooms:
+        objects = grounding.source_objects.get(room_key(room), ())
+        if not objects:
+            continue
+        rows = listed([
+            render_elements(
+                [o], tag="source_object",
+                attrs=lambda e, _i: (
+                    ("kind", e.kind), ("object", e.handle),
+                    ("ordering", e.ordering or None),
+                    ("coverage", e.coverage or None),
+                    ("rev", e.revision or None),
+                    ("state", (
+                        f"Recorded reaction state on agenda message {reaction_targets[e.handle]}"
+                        if e.kind == "reaction" and e.handle in reaction_targets
+                        else e.state or None)),
+                    ("time", e.time_quality if e.time_quality != "upstream"
+                            else None),
+                    ("observed", _when(e.at_ms, now_ms, tz)
+                            if e.at_ms > 0
+                            and e.time_quality != "unknown" else None),
+                    ("received", _when(e.received_ms, now_ms, tz)
+                            if e.received_ms
+                            and e.time_quality != "upstream" else None),
+                ),
+                body=lambda _e: "",
+            )
+            for o in objects[: budget.register_lines]
+        ])
+        # `not_listed` counts what the grounder's own bounded read already
+        # confirmed beyond the shown heads — a lower bound, never a
+        # complete-looking cut.
+        left = (len(objects) - len(rows)
+                + grounding.source_objects_more.get(room_key(room), 0))
+        standing_groups.append(render_group(
+            "room_objects",
+            [("room", room_label(room, grounding.room_labels)),
+             ("not_listed", str(left) if left else None)],
+            "\n".join(rows),
+        ))
+    # The retained lane (design 03): an open matter's curated refs, each
+    # resolved NOW off the recency page — `matter` names the note tracking
+    # it, and an unresolved ref says so rather than vanishing.
+    for room in rooms:
+        retained = grounding.retained_objects.get(room_key(room), ())
+        if not retained:
+            continue
+        rows = []
+        for r in retained[: budget.register_lines]:
+            e = r.head
+            if e is None:
+                e = SourceEvent(
+                    ref="", kind=parse_handle(r.ref.handle)[0] or "object",
+                    operation="state", at_ms=0, time_quality="unknown",
+                    actor=None, actor_status="not_applicable",
+                    handle=r.ref.handle, summary="")
+
+            def _retained_attrs(_e: Any, _i: int, _r: Any = r,
+                                ) -> tuple[tuple[str, Any], ...]:
+                return (
+                    ("kind", _e.kind or None), ("object", _e.handle),
+                    ("matter", _r.matter or None),
+                    ("unresolved", "yes" if _r.head is None else None),
+                    ("ordering", _e.ordering or None),
+                    ("coverage", _e.coverage or None),
+                    ("rev", _e.revision or None),
+                    ("state", _e.state or None),
+                    ("time", _e.time_quality if _e.time_quality != "upstream"
+                            else None),
+                    ("observed", _when(_e.at_ms, now_ms, tz)
+                            if _e.at_ms > 0
+                            and _e.time_quality != "unknown" else None),
+                    ("received", _when(_e.received_ms, now_ms, tz)
+                            if _e.received_ms
+                            and _e.time_quality != "upstream" else None),
+                )
+
+            rows.append(render_elements(
+                [e], tag="source_object",
+                attrs=_retained_attrs,
+                body=lambda _e: "",
+            ))
+        omitted = len(retained) - len(rows) + grounding.retained_objects_more.get(room_key(room), 0)
+        standing_groups.append(render_group(
+            "retained_objects",
+            [("room", room_label(room, grounding.room_labels)),
+             ("not_listed",
+              str(omitted) if omitted else None)],
+            "\n".join(rows),
+        ))
+    if standing_groups:
+        blocks.append(restamp(ContextBlock(
+            name="standing", body="\n".join(standing_groups)), _ROW))
     groups: list[str] = []
     for room in rooms:
         events = [e for e in grounding.events if e.room == room]
@@ -780,6 +967,11 @@ def render_agenda(
         shared_block = restamp(
             render_shared_state(shared, now_ms=now_ms, tz=tz), _ROW)
         if shared_block is not None:
+            source_blocks = [b for b in blocks if b.name == "standing"]
+            shared_block = replace(shared_block, body="\n".join(
+                [shared_block.body, *(b.body for b in source_blocks)],
+            ))
+            blocks = [b for b in blocks if b.name != "standing"]
             blocks.append(shared_block)
     if graph:
         blocks.append(restamp(ContextBlock(name="graph", body=escape(graph)), _ROW))

@@ -69,7 +69,9 @@ from .cues import is_rearming, is_strong
 #: The stimulus kinds. The evaluator handles all of them generically; each is
 #: raised by its own producer (ingest for `message`, the evaluator for `time`,
 #: the Rollup for `rollup`).
-StimulusKind = Literal["message", "social", "play", "rollup", "time", "self"]
+StimulusKind = Literal[
+    "message", "social", "play", "rollup", "time", "self", "observation",
+]
 STIMULUS_KINDS: tuple[str, ...] = get_args(StimulusKind)
 
 #: What a `message` stimulus's item was (including an edit,
@@ -106,7 +108,8 @@ WAKE_MODES: tuple[str, ...] = get_args(WakeMode)
 
 #: The kinds raised by something a person or a source DID, as opposed to the
 #: Rollup's derived changes and the clock's (and Cognition's own) due times.
-_OBSERVED: frozenset[str] = frozenset({"message", "social", "play"})
+_OBSERVED: frozenset[str] = frozenset(
+    {"message", "social", "play", "observation"})
 
 
 @dataclass(frozen=True)

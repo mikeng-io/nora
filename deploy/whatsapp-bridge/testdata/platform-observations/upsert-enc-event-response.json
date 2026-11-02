@@ -1,0 +1,31 @@
+{
+  "_fixture": {
+    "name": "encrypted event response (encEventResponseMessage)",
+    "generated": true,
+    "native_event": "messages.upsert (type=notify), message.encEventResponseMessage",
+    "capture_today": "captured — upstream's live decryptEventResponse now resolves: getMessage answers from the recent-message cache, so the creation's messageContextInfo.messageSecret decrypts the response and it surfaces via messages.update{eventResponses} -> artifact revise; missing secret stays an upstream warning (no response claimed)",
+    "semantic": "Same encryption contract as poll votes, live code path (unlike the commented-out poll block): decryptEventResponse needs the creation message's messageContextInfo.messageSecret via getMessage — which the bridge stub never supplies. Available upstream, unavailable today; the honest cell is 'not retrievable', not 'unsupported'."
+  },
+  "payload": {
+    "key": {
+      "remoteJid": "12036123456789@g.us",
+      "fromMe": false,
+      "id": "3EB0EVR001",
+      "participant": "15550100022@s.whatsapp.net"
+    },
+    "message": {
+      "encEventResponseMessage": {
+        "eventCreationMessageKey": {
+          "remoteJid": "12036123456789@g.us",
+          "fromMe": false,
+          "id": "3EB0EVT001",
+          "participant": "15550100011@s.whatsapp.net"
+        },
+        "encPayload": "aabbccddeeff00112233445566778899",
+        "encIv": "00112233445566778899aabb",
+        "responseTimestampMs": 1790001700000
+      }
+    },
+    "messageTimestamp": 1781700000
+  }
+}

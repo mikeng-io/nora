@@ -1,0 +1,16 @@
+[
+  {
+    "name": "an edit timestamp arrival re-links its retained observations",
+    "file": "nora/infra/sql/audit.py",
+    "old": "                platform_message_id=None, sent_ts=message.timestamp,",
+    "new": "                platform_message_id=None, sent_ts=None,",
+    "target": "tests/contract/test_reaction_union_contract.py::test_edit_arrival_relinks_retained_timestamp_targets -k sql"
+  },
+  {
+    "name": "an edit target resolves against the original author rather than the edit actor",
+    "file": "nora/infra/sql/audit.py",
+    "old": "                sender_id=original.sender_id)",
+    "new": "                sender_id=message.sender_id)",
+    "target": "tests/contract/test_reaction_union_contract.py::test_edit_arrival_relinks_retained_timestamp_targets -k sql"
+  }
+]

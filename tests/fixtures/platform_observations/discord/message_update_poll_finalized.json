@@ -1,0 +1,116 @@
+{
+  "meta": {
+    "native": "discord-gateway",
+    "native_version": "discord.py 2.7.1",
+    "transport": "gateway",
+    "dispatch": "MESSAGE_UPDATE",
+    "discord_py_parse": "parse_message_update",
+    "discord_py_event": "raw_message_edit",
+    "upstream_source": "https://docs.discord.com/developers/events/gateway-events#message-update",
+    "case": "the poll on an earlier message ends — Discord delivers close as a MESSAGE_UPDATE with finalized results, not a dedicated event",
+    "generated": true
+  },
+  "payload": {
+    "op": 0,
+    "t": "MESSAGE_UPDATE",
+    "s": 41,
+    "d": {
+      "id": "123456789012345700",
+      "channel_id": "123456789012345601",
+      "guild_id": "123456789012345600",
+      "author": {
+        "id": "123456789012345801",
+        "username": "fixture_sender",
+        "discriminator": "0",
+        "global_name": "Fixture Sender",
+        "avatar": null,
+        "bot": false
+      },
+      "member": {
+        "roles": [
+          "123456789012345900"
+        ],
+        "joined_at": "2026-01-01T00:00:00+00:00",
+        "deaf": false,
+        "mute": false,
+        "flags": 0
+      },
+      "content": "",
+      "timestamp": "2026-11-02T09:00:00.000000+00:00",
+      "edited_timestamp": null,
+      "tts": false,
+      "mention_everyone": false,
+      "mentions": [],
+      "mention_roles": [],
+      "attachments": [],
+      "embeds": [],
+      "pinned": false,
+      "type": 0,
+      "flags": 0,
+      "poll": {
+        "question": {
+          "text": "Lunch on Saturday?"
+        },
+        "answers": [
+          {
+            "answer_id": 1,
+            "poll_media": {
+              "text": "Noodles"
+            }
+          },
+          {
+            "answer_id": 2,
+            "poll_media": {
+              "text": "Dim sum"
+            }
+          },
+          {
+            "answer_id": 3,
+            "poll_media": {
+              "text": "Skip it"
+            }
+          }
+        ],
+        "expiry": "2026-11-03T09:00:00.000000+00:00",
+        "allow_multiselect": false,
+        "layout_type": 1,
+        "results": {
+          "is_finalized": true,
+          "answer_counts": [
+            {
+              "id": 1,
+              "count": 3,
+              "me_voted": false
+            },
+            {
+              "id": 2,
+              "count": 2,
+              "me_voted": false
+            },
+            {
+              "id": 3,
+              "count": 0,
+              "me_voted": false
+            }
+          ]
+        }
+      }
+    }
+  },
+  "semantics": {
+    "object": "poll",
+    "operation": "close",
+    "room_ref": "d.guild_id/d.channel_id",
+    "object_ref": "d.id — the poll's message",
+    "target_ref": "d.id",
+    "actor": "none — expiry-driven close has no actor",
+    "source_time": "poll.expiry on the definition; the update frame carries only arrival time",
+    "native_fields": {
+      "poll.results.is_finalized": "bool — the close bit",
+      "poll.results.answer_counts[]": "final per-option counts",
+      "edited_timestamp": "null — a poll end is NOT an edit"
+    },
+    "notes": "parse_discord_edit answers None here BY DESIGN (edited_at absent): the poll-close seam today is a discarded non-edit update. Close detection must branch on poll.results.is_finalized inside the update path, and still cannot infer a settled matter.",
+    "today": "raw edit handler calls parse_discord_edit which returns None — the close event vanishes"
+  }
+}

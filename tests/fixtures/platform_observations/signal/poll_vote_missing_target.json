@@ -1,0 +1,51 @@
+{
+  "meta": {
+    "native": "signal-cli",
+    "native_version": "0.14.7",
+    "transport": "sse",
+    "upstream": "JsonDataMessage.pollVote",
+    "upstream_source": "https://github.com/AsamK/signal-cli/blob/v0.14.7/src/main/java/org/asamk/signal/json/JsonPollVote.java",
+    "case": "a malformed poll vote carrying no targetSentTimestamp",
+    "generated": true
+  },
+  "payload": {
+    "envelope": {
+      "source": "+85212345679",
+      "sourceName": "Fixture Voter",
+      "timestamp": 1703,
+      "dataMessage": {
+        "pollVote": {
+          "authorNumber": "+85212345679",
+          "authorUuid": "a2000000-0000-4000-8000-000000000000",
+          "optionIndexes": [
+            0
+          ],
+          "voteCount": 1
+        },
+        "groupInfo": {
+          "groupId": "Z3JvdXA=",
+          "groupName": "Example Group",
+          "revision": 3,
+          "type": "DELIVER"
+        },
+        "timestamp": 1703
+      }
+    },
+    "account": "+85290000100"
+  },
+  "semantics": {
+    "object": "poll-response",
+    "operation": "add",
+    "room_ref": "payload.envelope.dataMessage.groupInfo.groupId",
+    "object_ref": "none — the vote names no poll",
+    "target_ref": "absent: targetSentTimestamp missing, so nothing can ever resolve",
+    "actor": "envelope.source",
+    "source_time_ms": "envelope.timestamp",
+    "native_fields": {
+      "optionIndexes": "int[]",
+      "voteCount": "int"
+    },
+    "notes": "A future pollVote branch must refuse this the way _touch refuses a reaction with no usable target: dropped or retained-failed, never attached to a guessed poll.",
+    "today": "parse_event returns None"
+  }
+}

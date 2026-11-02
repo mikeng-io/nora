@@ -1,0 +1,53 @@
+{
+  "meta": {
+    "native": "discord-gateway",
+    "native_version": "discord.py 2.7.1",
+    "transport": "gateway",
+    "dispatch": "GUILD_ROLE_UPDATE",
+    "discord_py_parse": "parse_guild_role_update",
+    "discord_py_event": "guild_role_update",
+    "upstream_source": "https://docs.discord.com/developers/events/gateway-events#guild-role-update",
+    "case": "a role definition changes",
+    "generated": true
+  },
+  "payload": {
+    "op": 0,
+    "t": "GUILD_ROLE_UPDATE",
+    "s": 30,
+    "d": {
+      "guild_id": "123456789012345600",
+      "role": {
+        "id": "123456789012345900",
+        "name": "fixture-role",
+        "color": 0,
+        "colors": null,
+        "hoist": false,
+        "icon": null,
+        "unicode_emoji": null,
+        "position": 3,
+        "permissions": "1043200",
+        "managed": false,
+        "mentionable": false,
+        "flags": 0,
+        "tags": null
+      }
+    }
+  },
+  "semantics": {
+    "object": "room",
+    "operation": "revise",
+    "room_ref": "d.guild_id",
+    "object_ref": "d.role.id — the role",
+    "target_ref": null,
+    "actor": "none — AFTER object only",
+    "source_time": "none carried",
+    "native_fields": {
+      "role.name": "string",
+      "role.permissions": "bitfield string",
+      "role.position": "int",
+      "role.tags": "null|{bot_id,...}"
+    },
+    "notes": "Role create/delete are separate dispatches (GUILD_ROLE_CREATE/DELETE) — same after-state shape. Role state matters for channel-audience computation, not for 'who is in the room' claims.",
+    "today": "no listener subscription — dropped"
+  }
+}

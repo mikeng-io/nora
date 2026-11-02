@@ -22,6 +22,7 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import replace
 from datetime import datetime
 from typing import Any, NamedTuple, Protocol
 
@@ -29,6 +30,7 @@ from nora.agent.clock import local_now
 from nora.agent.egress import scan_identifiers
 from nora.agent.lineage import (
     LineagePolicy,
+    derived_view,
     excluded,
     profile_lines_for,
     section_permits,
@@ -40,6 +42,7 @@ from nora.agent.memory_search import (
 )
 from nora.agent.room import Room
 from nora.agent.standing_ledger import ledger_permits, ledger_target
+from nora.domain.blocks import row_speaker
 from nora.domain.comprehend import ComprehendItem, Preview, preview_seeds
 from nora.domain.computer_context import ComputerView
 from nora.domain.culture import (
@@ -66,7 +69,19 @@ from nora.domain.models import (
     TagContext,
     TranscriptRow,
 )
-from nora.domain.notes import Note
+from nora.domain.notes import Note, RetainedSource
+from nora.domain.observations import (
+    SourceEvent,
+    SourceScope,
+    TargetContext,
+    coverage_label,
+    handle_of,
+    head_summary,
+    object_handle,
+    observation_summary,
+    revision_label,
+    target_context,
+)
 from nora.domain.ports import (
     CultureReader,
     EngagementRequest,
@@ -98,6 +113,16 @@ from nora.persons import Persons
 from nora.policy import Policy
 
 log = logging.getLogger(__name__)
+
+#: The folded object heads the Standing presentation shows at most — a
+#: bound on the most recently observed objects, not "every open poll
+#: forever" and not an arbitrary first-N of the scope.
+_SOURCE_OBJECT_MAX = 12
+
+#: Distinct affected messages one assembly resolves — one batched Record
+#: read, so the bound is on distinct targets, not on event count. A target
+#: past the cap shows `target_unresolved`, not a scan.
+_OBSERVATION_TARGET_MAX = 8
 
 
 class StandingNotesReader(Protocol):
@@ -182,9 +207,15 @@ class TranscriptInjection:
         profile: ProfileHeads | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
         self_ids: frozenset[str] = frozenset(),
+        observations: Any = None,
     ) -> None:
         self._rosters = rosters or {}
         self._self_ids = self_ids
+        # The typed platform-observation Record (`ObservationStore`): the
+        # room's source events for the transcript window and its folded
+        # object heads for the standing slot. `None` on a harness that
+        # wires none renders neither — never a guessed source line.
+        self._observations = observations
         self._audit = audit
         # `<recalled>`, the pre-fetch: the SAME retrieval service the tool
         # registry's `memory_search` holds, `None` on the Honcho surface
@@ -316,7 +347,9 @@ class TranscriptInjection:
 
         (
             ((transcript, character, profiles, prefetch),
-             card, tagger_card, notes),
+             card, tagger_card, notes,
+             (source_events, source_objects, source_failed,
+              source_events_more, source_objects_more)),
             presence,
             culture,
             (unit_culture, self_account, lessons),
@@ -327,9 +360,8 @@ class TranscriptInjection:
                 transcript_and_prefetch(),
                 self._peer_card(ref, msg),
                 self._recall_tagger(ref, msg),
-
                 self._notes(msg),
-
+                self._observation_reads(msg),
             ),
             self._presence(msg),
             self._culture(msg),
@@ -367,6 +399,10 @@ class TranscriptInjection:
         shown = self._shown(transcript, msg)
         lookup = tuple(transcript) if len(shown) < len(transcript) else ()
         recalled = self._recalled(prefetch, msg, shown)
+        # The retained lane is a post-gather read: it needs the note index
+        # (which refs exist) and the shown heads (what NOT to resolve again).
+        retained, retained_more = await self._retained_sources(
+            msg, notes, frozenset(o.handle for o in source_objects))
 
         return TagContext(
             tag_id=request.tag_id,
@@ -380,6 +416,13 @@ class TranscriptInjection:
             notes=notes,
             memos=memos,
             shared=shared,
+            source_events=source_events,
+            source_objects=source_objects,
+            source_reads_failed=source_failed,
+            source_events_more=source_events_more,
+            source_objects_more=source_objects_more,
+            retained_sources=retained,
+            retained_sources_more=retained_more,
             presence=presence,
             culture=culture,
             character=character,
@@ -1055,6 +1098,278 @@ class TranscriptInjection:
                 unit=convo.unit, status="unavailable",
                 as_of_ms=int(self._clock().timestamp() * 1000),
             )
+
+    async def _observation_reads(
+        self, msg: NormalizedMessage,
+    ) -> tuple[
+        tuple[SourceEvent, ...], tuple[SourceEvent, ...], bool, int, int,
+    ]:
+        """`(events, objects, failed, events_more, objects_more)` of THIS
+        room — the scoped source read of design/platform-observations 04.
+
+        `recent` is bounded by the prompt window; `heads` by
+        `_SOURCE_OBJECT_MAX` of the objects OBSERVED NEWEST first (an old
+        object's state is not pinned forever; a poll the room just voted
+        on outranks a stale one). Both read through the room's boundary
+        (`account_key=""` — the turn already passed the allowlist for
+        this room, and a row of another room never resolves). Fail-soft
+        and counted (`stage="observations"`), like `_standing`: a thinner
+        prompt beats no reply — but a failed read SAYS it failed
+        (`failed`), never an empty list dressed as "nothing recorded";
+        an unwired store is `unavailable`, not nothing."""
+        if self._observations is None:
+            return (), (), False, 0, 0
+        scope = SourceScope(platform=msg.platform, account_key="",
+                            conversation_id=msg.conversation_id)
+        limit = self._prompt_window or self._context_window
+        try:
+            # Both reads take ONE row past what they show — the sentinel
+            # that makes `*_more` an honest count instead of a silently
+            # complete-looking page. `heads` answers recency-ordered
+            # (`updated_at` — the object most recently touched first), so
+            # the page IS the freshest and `objects_more` is a real count
+            # of unshown heads, up to the page bound.
+            rows, heads = await asyncio.gather(
+                traced_read(
+                    "observations", "recent",
+                    self._observations.recent(scope=scope, limit=limit + 1)),
+                traced_read(
+                    "observations", "heads",
+                    self._observations.heads(scope=scope, limit=64)),
+            )
+        except Exception:
+            log.exception("observation reads failed; continuing without them")
+            self._metrics.inc(
+                "nora_errors_total", stage="observations", platform=msg.platform)
+            return (), (), True, 0, 0
+
+        def actor_of(obs: Any) -> str | None:
+            if not obs.actor_id or obs.actor_status != "known":
+                return None
+            ref = self._persons.resolve(obs.scope.platform, obs.actor_id)
+            return ref.name if ref is not None else None
+
+        def name_of(platform: str, ref: str) -> str | None:
+            found = self._persons.resolve(platform, ref)
+            return found.name if found is not None else None
+
+        # A vote's option ref resolves to the definition's label through
+        # the object's OWN head (matched on ref + its account/thread —
+        # two accounts' same-named polls never lend each other labels).
+        poll_heads = {
+            (h.object_ref, h.account_key, h.thread): h
+            for h in heads if h.kind == "poll"}
+
+        def option_label(r: Any, ref: str) -> str | None:
+            h = poll_heads.get((
+                r.observation.object_ref, r.observation.scope.account_key,
+                r.observation.scope.thread))
+            entry = (h.state.get("options") or {}).get(ref) if h else None
+            return (entry or {}).get("label")
+
+        events = tuple(
+            SourceEvent(
+                ref=f"platform_observation:{r.id}",
+                kind=r.observation.object_kind, operation=r.observation.operation,
+                at_ms=(r.observation.occurred_ms
+                       if r.observation.occurred_ms is not None
+                       else r.observation.received_ms),
+                time_quality=r.observation.time_quality,
+                actor=actor_of(r.observation),
+                actor_status=r.observation.actor_status,
+                handle=object_handle(
+                    r.observation.object_kind, r.observation.object_ref,
+                    account_key=r.observation.scope.account_key,
+                    thread=r.observation.scope.thread),
+                summary=observation_summary(
+                    r.observation,
+                    name_of=lambda ref, o=r.observation: name_of(
+                        o.scope.platform, ref),
+                    option_label=lambda ref, r=r: option_label(r, ref)),
+                target_message_id=r.target_message_id,
+                delivered_message_id=r.delivered_message_id,
+                received_ms=r.observation.received_ms,
+                revision=revision_label(
+                    r.observation.source_position,
+                    r.observation.revision_scope),
+                coverage=coverage_label(r.observation.coverage),
+            )
+            for r in rows[:limit]
+        )
+        # Current state, most-recently-observed first — relevance is
+        # recency, not all-open-polls-forever: an object the room has not
+        # touched in a while yields its slot to one it just did, and the
+        # bound says how many older heads were not shown. A head's own
+        # clock stays honest: `observed_ms` is the newest SOURCE time the
+        # fold applied, `observed_quality` says which clock that is, and
+        # `received_ms` is the newest receipt — never presented as the
+        # source's own time. Recency ranks on whichever clock exists.
+        # Preserve the store's last-write order; source clocks can be late
+        # or wrong and must not evict a freshly changed object.
+        heads = [h for h in heads if h.applied > 0]
+        shown = heads[: _SOURCE_OBJECT_MAX]
+        # The affected messages the shown events and heads name, resolved
+        # in two bounded reads through the room's own boundary — the
+        # event's `target` says what it acted on when that message is not
+        # in the transcript window (its words and author as labelled
+        # context, never the reactor's).
+        targets, head_targets = await self._observation_targets(
+            msg, scope, rows[:limit], [h.head_id for h in shown])
+        events = tuple(
+            replace(e, target=targets.get(e.target_message_id)
+                    if e.target_message_id is not None else None)
+            for e in events)
+        # Each shown head carries its newest applied row's affected
+        # message — the SAME resolved context the events carry.
+        head_ctx = {
+            hid: targets.get(mid) for hid, mid in head_targets.items()}
+        objects = tuple(
+            SourceEvent(
+                # `head_id` IS the newest applied row's id — naming the
+                # head by `platform_observation:<id>` makes it the SAME
+                # ref an event row carries, so an object whose newest
+                # change is already shown as an `<source_event>` is
+                # recognisably the same thing, not a second fact.
+                ref=f"platform_observation:{h.head_id}",
+                kind=h.kind, operation="state",
+                at_ms=h.observed_ms or 0,
+                time_quality=h.observed_quality,
+                actor=None, actor_status="not_applicable",
+                handle=handle_of(h),
+                summary="", state=head_summary(h), ordering=h.ordering,
+                received_ms=h.received_ms,
+                revision=revision_label(h.position, h.scope),
+                coverage=coverage_label(h.coverage),
+                target_message_id=head_targets.get(h.head_id),
+                target=head_ctx.get(h.head_id),
+            )
+            for h in shown
+        )
+        return (
+            events, objects, False,
+            max(0, len(rows) - len(events)),
+            max(0, len(heads) - len(objects)),
+        )
+
+    async def _retained_sources(
+        self, msg: NormalizedMessage, notes: tuple[Note, ...],
+        shown_handles: frozenset[str],
+    ) -> tuple[tuple[RetainedSource, ...], int]:
+        """This room's retained lane: the `object_refs` open notes of the
+        unit curated, resolved through `head_for_handle` under each ref's
+        OWN scope — never the recency page.
+
+        A ref naming another room contributes nothing here (the digest binds
+        account and thread, and the room check is the boundary); one the
+        page already shows contributes nothing twice. A ref the store no
+        longer resolves comes back `head=None` — the explicit unresolved
+        marker the render names, never a dropped row. Fail-soft and
+        counted like the sibling read: a failed resolve is one marker,
+        not a failed turn."""
+        if self._observations is None:
+            return (), 0
+        if self._lineage is not None and self._lineage.mode == "on":
+            notes = derived_view(
+                notes=notes, standing=None, culture=None,
+                target=self._lineage.render_room(
+                    platform=msg.platform, conversation_id=msg.conversation_id)).notes
+        out: list[RetainedSource] = []
+        more = 0
+        seen: set[str] = set(shown_handles)
+        for note in notes:
+            for ref in note.object_refs:
+                if (ref.platform, ref.conversation_id) != (
+                        msg.platform, msg.conversation_id):
+                    continue
+                if ref.handle in seen:
+                    continue
+                seen.add(ref.handle)
+                if len(out) >= _SOURCE_OBJECT_MAX:
+                    more += 1
+                    continue
+                try:
+                    head = await traced_read(
+                        "observations", "retained",
+                        self._observations.head_for_handle(
+                            scope=SourceScope(
+                                platform=ref.platform, account_key="",
+                                conversation_id=ref.conversation_id,
+                                thread=ref.thread),
+                            handle=ref.handle))
+                except Exception:
+                    log.exception("retained source read failed for %s",
+                                  ref.handle[:16])
+                    self._metrics.inc(
+                        "nora_errors_total", stage="observations",
+                        platform=msg.platform)
+                    head = None
+                out.append(RetainedSource(
+                    ref=ref, matter=note.title,
+                    head=None if head is None else SourceEvent(
+                        ref=f"platform_observation:{head.head_id}",
+                        kind=head.kind, operation="state",
+                        at_ms=head.observed_ms or 0,
+                        time_quality=head.observed_quality,
+                        actor=None, actor_status="not_applicable",
+                        handle=handle_of(head),
+                        summary="", state=head_summary(head),
+                        ordering=head.ordering,
+                        received_ms=head.received_ms,
+                        revision=revision_label(head.position, head.scope),
+                        coverage=coverage_label(head.coverage))))
+        return tuple(out), more
+
+    async def _observation_targets(
+        self, msg: NormalizedMessage, scope: SourceScope,
+        rows: Sequence[Any], head_ids: Sequence[int],
+    ) -> tuple[dict[int, TargetContext], dict[int, int]]:
+        """The shown events'/heads' affected messages — `(target context by
+        message id, target id by newest applied row id)`.
+
+        TWO bounded reads, both inside the room's own boundary:
+        `observations.by_ids` maps each shown head's newest applied row to
+        its `target_message_id`, then `RecordStore.by_ids` resolves those
+        ids — same-room only, hidden rows absent, recorded deletes named.
+        A failed read resolves NOTHING (fail-soft and counted, like the
+        observation reads themselves): `target` stays absent rather than
+        guessed, and `target_unresolved` on the render says why.
+        """
+        try:
+            head_rows = (
+                await traced_read(
+                    "observations", "targets",
+                    self._observations.by_ids(
+                        scope=scope, ids=tuple(head_ids)))
+                if head_ids else ())
+            wanted = {r.target_message_id for r in rows}
+            wanted.update(r.target_message_id for r in head_rows)
+            wanted.discard(None)
+            if not wanted:
+                return {}, {}
+            found, gone = await traced_read(
+                "record", "targets",
+                self._audit.by_ids(
+                    platform=msg.platform, conversation_id=msg.conversation_id,
+                    ids=tuple(sorted(wanted))[:_OBSERVATION_TARGET_MAX]))
+            named = self._persons.name_transcript(
+                list(found.values()), platform=msg.platform)
+            targets = {
+                mid: target_context(
+                    row, deleted=mid in gone, author=row_speaker(row))
+                for mid, row in zip(found, named, strict=True)
+            }
+            return (
+                targets,
+                {r.id: r.target_message_id for r in head_rows
+                 if r.target_message_id is not None},
+            )
+        except Exception:
+            log.exception(
+                "observation target read failed; continuing without it")
+            self._metrics.inc(
+                "nora_errors_total", stage="observations",
+                platform=msg.platform)
+            return {}, {}
 
     async def _memos(self, msg: NormalizedMessage) -> tuple[Memo, ...]:
         """The unit's kept memos for `<memos>` (DEC-306), keyed on the UNIT as

@@ -68,6 +68,8 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     # the warehouse queries
     "record_query", "rollup_read", "event_search", "memo_read", "character_read",
     "standing_read", "social_read",
+    # the typed source-object reads (platform-observations 05)
+    "poll_list", "poll_read", "room_state_read", "group_members",
     # the tiers' reads that already exist
     "where_been", "routine_read", "note_read", "note_search",
     # memory
@@ -90,8 +92,17 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
 #: get-or-create the tag path performs) and answers; no message and no
 #: conclusion is written.
 READ_TOOL_AUDIT: Mapping[str, str] = {
+    "group_members": "Scoped Room.members read through the agenda room registry; "
+                     "existing roster availability and audience checks; counters only.",
     "record_query": "SQL read of messages, edits, reactions, deletes and the media "
                     "index (`MediaJoin.enrich`); counters only. No write.",
+    "poll_list": "SQL SELECT of `platform_object_state` heads of this room's "
+                 "scope, kind poll; counters only. No write.",
+    "poll_read": "SQL SELECT of one `platform_object_state` head by its scoped "
+                 "digest; counters only. No write.",
+    "room_state_read": "SQL SELECT of `platform_object_state` heads of this "
+                       "room's scope, kinds room/membership/pin; counters only. "
+                       "No write.",
     "rollup_read": "SQL SELECT of the CURRENT rollup build's rows (`rollup_build` "
                    "status=current) and derived places; counters only. It starts, "
                    "advances and switches no build, and folds nothing. No write.",
@@ -507,6 +518,7 @@ def build_cognition_runner(
     shared: Any = None,
     standing_fold: Any = None,
     rooms_of_unit: Callable[[str], Sequence[tuple[str, str]]] | None = None,
+    observations: Any = None,
 ) -> Any:
     """The session runner. Imported lazily: `LiveCognitionAgentRunner` (and
     with it Strands) is loaded only when a session will actually run."""
@@ -596,6 +608,10 @@ def build_cognition_runner(
         overflow_window_fraction=cfg.cognition.overflow_window_fraction,
         roster_of=roster_of, nora_names=nora_names,
         content_checks=cfg.content_checks.enabled,
+        # The observation Record `object_refs` validates a retained source
+        # against: no store, no ref write (`unavailable`, never accepted
+        # unchecked).
+        observations=observations,
     )
 
 

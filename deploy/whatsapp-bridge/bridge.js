@@ -49,7 +49,7 @@
 import http from 'node:http';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, proto, downloadMediaMessage } from '@whiskeysockets/baileys';
+import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, proto, downloadMediaMessage, decryptPollVote } from '@whiskeysockets/baileys';
 import { createClient } from 'redis';
 import pg from 'pg';
 
@@ -63,12 +63,21 @@ import { createV1, runAction } from './actions.js';
 import { initTracing, otlpEndpoint } from './tracing.js';
 import { createPipeline } from './pipeline.js';
 import { Metrics, jlog } from './obs.js';
+import {
+  groupsUpsertObservations,
+  groupsUpdateObservations,
+  joinRequestObservations,
+  messagesUpdateObservations,
+  participantsUpdateObservations,
+  stanzaObservations,
+} from './observations.js';
 import { conversationIdFor, lidForm, phoneForm, senderForm } from './wa_jid.js';
 
 import {
   authorizedBridgeRequest,
   buildLidMap,
   buildMediaPayload,
+  cacheEntryMatchesKey,
   createEventBuffer,
   createRecentMessageCache,
   createReconnectScheduler,
@@ -242,6 +251,18 @@ const actionCtx = {
   get selfAliases() { return selfAliases(); },
 };
 
+// The pure-observation extractor context: live LID maps (they rebuild on
+// creds.update), the recent-message cache (poll/event message secrets under
+// private bridge custody — they feed the pinned decrypt utils and never
+// appear on an observation), and Baileys' own decryptPollVote.
+const obsCtx = {
+  accountKey: ACCOUNT_KEY,
+  get lidToPhone() { return lidToPhone; },
+  get phoneToLid() { return phoneToLid; },
+  recentCache: recentMessages,
+  decryptPollVote,
+};
+
 // -- SSE fan-out + buffering (contract §dropped) ------------------------------
 
 function sseWrite(res, event) {
@@ -309,8 +330,22 @@ async function startSocket() {
     syncFullHistory: false,
     markOnlineOnConnect: false,
     // Baileys 7.x needs this to complete the E2EE retry handshake for
-    // messages that arrive before their session is established.
-    getMessage: async () => ({ conversation: '' }),
+    // messages that arrive before their session is established. It is also
+    // the creation-message lookup upstream's live `decryptEventResponse`
+    // path uses for `encEventResponseMessage` — the recent-message cache
+    // answers with the full stanza (its messageContextInfo.messageSecret is
+    // the event's enc key) when the creation is still in custody.
+    getMessage: async (key) => {
+      // The creation lookup feeds secret-keyed decrypts (event responses,
+      // the E2EE retry handshake). The read is bound to the stanza's room
+      // and creator — a same-id stanza from a foreign room must not answer
+      // it; a key that cannot prove its context gets nothing, and the
+      // decrypt above fails closed rather than on a borrowed secret.
+      const entry = recentMessages.getBound(
+        key?.id, (e) => cacheEntryMatchesKey(e, key, { lidToPhone, phoneToLid }),
+      );
+      return entry?.raw?.message || { conversation: '' };
+    },
   });
 
   sock.ev.on('creds.update', () => {
@@ -381,7 +416,11 @@ async function startSocket() {
     if (type !== 'notify') return;
 
     for (const msg of messages || []) {
-      if (!msg?.key?.id || !msg.message) continue;
+      // Every stanza with an id joins the secret cache first — the
+      // messageContextInfo.messageSecret of a poll/event CREATION is the
+      // decrypt key a later vote/response needs, and a stub stanza with no
+      // `message` must not be dropped before its service evidence runs.
+      if (!msg?.key?.id) continue;
       recentMessages.remember(msg);
       let source = msg;
       if (getMessageContent(msg)?.secretEncryptedMessage) {
@@ -407,17 +446,55 @@ async function startSocket() {
         log(`secret edit decrypted id=${msg.key.id} chat=${redactJid(msg.key.remoteJid)} shape=[${opened.shape}]`);
         source = opened.msg;
       }
+      const obsEvents = stanzaObservations(source, obsCtx);
+      if (!msg.message) {
+        // A service stanza carries no `message` — its evidence is the
+        // observation set alone, never a fabricated utterance.
+        for (const obsEvent of obsEvents) {
+          if (pipeline) {
+            onChain(() => pipeline.capture(obsEvent, msg)).catch(captureDied);
+          }
+        }
+        if (obsEvents.length) {
+          log(`service stanza id=${msg.key.id} chat=${redactJid(msg.key.remoteJid)} observations=${obsEvents.length}`);
+        }
+        continue;
+      }
       const event = extractMessageEvent(source, { lidToPhone, phoneToLid, recentCache: recentMessages, self: selfForms() });
       if (!event) {
-        // WHAT WAS DROPPED, by SHAPE only — the message's own keys and the
-        // unwrapped content's, never a value. A phone's edit produced no event
-        // at all on 2026-09-24 and nothing here said what it had looked like,
-        // so there was no way to tell a wrapper this function does not unwrap
-        // from an encrypted payload it cannot read.
-        const outer = Object.keys(msg.message || {}).join(',');
-        const inner = Object.keys(getMessageContent(msg) || {}).join(',');
-        log(`dropped id=${msg.key.id} chat=${redactJid(msg.key.remoteJid)} outer=[${outer}] inner=[${inner}]`);
+        if (!obsEvents.length) {
+          // WHAT WAS DROPPED, by SHAPE only — the message's own keys and the
+          // unwrapped content's, never a value. A phone's edit produced no event
+          // at all on 2026-09-24 and nothing here said what it had looked like,
+          // so there was no way to tell a wrapper this function does not unwrap
+          // from an encrypted payload it cannot read.
+          const outer = Object.keys(msg.message || {}).join(',');
+          const inner = Object.keys(getMessageContent(msg) || {}).join(',');
+          log(`dropped id=${msg.key.id} chat=${redactJid(msg.key.remoteJid)} outer=[${outer}] inner=[${inner}]`);
+          continue;
+        }
+        // An object stanza (poll/vote/pin/shared artifact) with no ordinary
+        // turn: its observations are the whole event — pure v2 envelopes,
+        // not a synthetic empty message.
+        for (const obsEvent of obsEvents) {
+          log(`observation id=${msg.key.id} kind=${obsEvent.kind} chat=${redactJid(msg.key.remoteJid)}`);
+          if (pipeline) {
+            onChain(() => pipeline.capture(obsEvent, msg)).catch(captureDied);
+          }
+        }
         continue;
+      }
+      // A stanza that is BOTH an ordinary turn and an object report rides
+      // one envelope: the first observation is the sidecar; any extras are
+      // their own pure observations (the contract carries one sidecar).
+      if (obsEvents.length) {
+        const [sidecar, ...rest] = obsEvents;
+        event.observation = sidecar.observation;
+        for (const obsEvent of rest) {
+          if (pipeline) {
+            onChain(() => pipeline.capture(obsEvent, msg)).catch(captureDied);
+          }
+        }
       }
       log(`message id=${event.id || '?'} chat=${redactJid(event.chat_jid)} from=${redactJid(event.sender_jid)} group=${event.is_group} from_me=${event.from_me} edit=${!!event.edit_of} type=${event.type} media=${(event.media || []).length} buffered=${sseClients.size === 0}`);
       if (pipeline) {
@@ -428,6 +505,53 @@ async function startSocket() {
         emitEvent(event);
       }
     }
+  });
+
+  // -- Observation callbacks --------------------------------------------------
+  // The surfaces Baileys already emits but no subscriber used: stub-derived
+  // group deltas, metadata snapshots, join requests, update aggregates and
+  // the history sync whose stanzas carry poll/event message secrets. Each
+  // routes through the SAME durable pipeline — admit → journal → enqueue —
+  // as an observation event, never through a second bus and never an SSE.
+  const captureObservations = (events) => {
+    for (const obsEvent of events) {
+      if (pipeline) {
+        onChain(() => pipeline.capture(obsEvent, null)).catch(captureDied);
+      }
+    }
+  };
+
+  sock.ev.on('messages.update', (updates) => {
+    for (const upd of updates || []) {
+      captureObservations(messagesUpdateObservations(upd, obsCtx));
+    }
+  });
+
+  sock.ev.on('messaging-history.set', ({ messages: history } = {}) => {
+    // Never emitted as events (first-pairing history must not flood the
+    // record); remembered so a live vote/response can find its creation
+    // secret while the stanzas are still in custody.
+    for (const msg of history || []) recentMessages.remember(msg);
+  });
+
+  sock.ev.on('groups.upsert', (entries) => {
+    for (const entry of entries || []) {
+      captureObservations(groupsUpsertObservations(entry, obsCtx));
+    }
+  });
+
+  sock.ev.on('groups.update', (entries) => {
+    for (const entry of entries || []) {
+      captureObservations(groupsUpdateObservations(entry, obsCtx));
+    }
+  });
+
+  sock.ev.on('group-participants.update', (evt) => {
+    captureObservations(participantsUpdateObservations(evt, obsCtx));
+  });
+
+  sock.ev.on('group.join-request', (evt) => {
+    captureObservations(joinRequestObservations(evt, obsCtx));
   });
 }
 

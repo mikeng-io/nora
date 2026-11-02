@@ -1,0 +1,69 @@
+{
+  "_fixture": {
+    "name": "shared objects: contact card, location, group event",
+    "generated": true,
+    "native_event": "messages.upsert (type=notify): contactsArrayMessage, locationMessage, eventMessage",
+    "capture_today": "captured — contacts/location/event stanzas -> artifact create observations, custody=declared, sender-authored metadata retained; vcards/coordinates/join-link withheld as explicit coverage gaps",
+    "semantic": "Non-media shared artifacts. contactsArrayMessage carries displayName + contacts[]; locationMessage carries name/address/coords (zeros here: generated); eventMessage is the WhatsApp group event (name, startTime, isCanceled) whose RESPONSES arrive separately as encEventResponseMessage. Media attachments are already captured as descriptors; these object types are the artifact-multiplicity gap the census names."
+  },
+  "payload": [
+    {
+      "key": {
+        "remoteJid": "12036123456789@g.us",
+        "fromMe": false,
+        "id": "3EB0CONT01",
+        "participant": "15550100011@s.whatsapp.net"
+      },
+      "message": {
+        "contactsArrayMessage": {
+          "displayName": "Example Person",
+          "contacts": [
+            {
+              "displayName": "Example Person",
+              "vcard": "BEGIN:VCARD\nVERSION:3.0\nFN:Example Person\nEND:VCARD"
+            }
+          ]
+        }
+      },
+      "messageTimestamp": 1780100000
+    },
+    {
+      "key": {
+        "remoteJid": "12036123456789@g.us",
+        "fromMe": false,
+        "id": "3EB0LOC001",
+        "participant": "15550100022@s.whatsapp.net"
+      },
+      "message": {
+        "locationMessage": {
+          "degreesLatitude": 0.0,
+          "degreesLongitude": 0.0,
+          "name": "Example Cafe",
+          "address": "1 Example Street"
+        }
+      },
+      "messageTimestamp": 1780200000
+    },
+    {
+      "key": {
+        "remoteJid": "12036123456789@g.us",
+        "fromMe": false,
+        "id": "3EB0EVT001",
+        "participant": "15550100011@s.whatsapp.net"
+      },
+      "message": {
+        "eventMessage": {
+          "name": "Saturday breakfast",
+          "description": "Congee place",
+          "startTime": 1790100000,
+          "isCanceled": false,
+          "extraGuestsAllowed": false
+        },
+        "messageContextInfo": {
+          "messageSecret": "AAABBBCCCDDDEEEFFFGGGHHHIIIJJJKKKLLLMMMNNN="
+        }
+      },
+      "messageTimestamp": 1780300000
+    }
+  ]
+}

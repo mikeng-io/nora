@@ -15,6 +15,8 @@ The rules under test:
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from nora.agent.egress import scan_identifiers
@@ -47,6 +49,8 @@ uuid  = "a1000001-0000-4000-8000-000000000001"
 label = "business"
 phone = "+85290000103"
 uuid  = "a1000002-0000-4000-8000-000000000002"
+[[persons.miles_novak.discord]]
+user_id = "d1-user"
 
 [persons.tyler_cortez]
 first_name = "Tyler"
@@ -90,19 +94,21 @@ def _build(
     question="邊個係阿豹",
     metrics=None,
     tagger_card_injected=False,
+    platform="signal",
+    group_id=GROUP,
 ):
     source = (
         FakeRosterSource(fail=True) if roster_fails
-        else FakeRosterSource(groups={GROUP: tuple(members)})
+        else FakeRosterSource(groups={group_id: tuple(members)})
     )
     metrics = metrics or Metrics()
     room = Room(
-        platform="signal", conversation_id=GROUP, roster_source=source,
+        platform=platform, conversation_id=group_id, roster_source=source,
         persons=persons, tagger=tagger, self_ids=NORA,
         tagger_card_injected=tagger_card_injected,
     )
     tools = build_tools(
-        store=_NullStore(), conversation_id=GROUP, conversation_type="group",
+        store=_NullStore(), conversation_id=group_id, conversation_type="group",
         persons=persons, honcho=honcho or FakeMemoryStore(), deliverer=SinkSender(),
         metrics=metrics, room=room, transit_source=_UNREACHABLE_TRANSIT,
         question=question, context_window=40,
@@ -222,6 +228,44 @@ async def test_group_members_is_counted_when_it_succeeds_too(persons):
     metrics = Metrics()
     await _call(_build(persons=persons, metrics=metrics)["group_members"])
     assert metrics.get("nora_room_lookups_total", tool="group_members", status="ok") == 1
+
+
+async def test_group_members_labels_a_conversation_roster_as_the_conversation(persons):
+    """Signal's roster IS the conversation's own member list, so `scope` says
+    exactly that — the Discord caveat must not become a hedge applied to
+    every platform."""
+    result = await _call(_build(persons=persons)["group_members"])
+    assert result["scope"] == "this conversation"
+
+
+async def test_group_members_on_discord_labels_the_guild_scope_not_the_channel(persons):
+    """`DiscordRoster` reads `GET /guilds/{id}/members` — the whole server's
+    member list, which can exceed this channel's audience (Discord exposes no
+    per-channel member read). The `ok` result names that actual scope rather
+    than letting «in this conversation» claim a precision the source does not
+    have; the names still list, since over-reporting is the safe direction."""
+    cid = "channel-one"
+    tools = _build(persons=persons, platform="discord", group_id=cid,
+                   members=(frozenset({"d1-user"}),
+                            frozenset({"unmapped-actor"})))
+    result = await _call(tools["group_members"])
+    assert result["status"] == "ok"
+    # The mapped member resolves by name; the unmapped one is a COUNT, and
+    # neither result nor scope ever carries the source id itself (R-18).
+    assert result["members"] == ["Miles Novak"]
+    assert result["members_i_have_no_name_for"] == 1
+    assert "server" in result["scope"]
+    assert "unmapped-actor" not in json.dumps(result)
+
+
+async def test_group_members_on_discord_reports_unavailable_not_an_empty_server(persons):
+    """A roster failure is `unavailable`, never an empty guild — and the scope
+    label rides along on `ok` only, so a failed read asserts nothing."""
+    result = await _call(_build(
+        persons=persons, platform="discord", group_id="channel-one",
+        roster_fails=True)["group_members"])
+    assert result["status"] == "unavailable"
+    assert "members" not in result and "scope" not in result
 
 
 # ---- lookup_person -----------------------------------------------------------

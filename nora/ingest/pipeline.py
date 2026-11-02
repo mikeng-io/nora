@@ -594,4 +594,4 @@ class IngestPipeline:
                     metrics=m, target=done.target,
                 )
         _outcome(m, message, done.ending)
-        return IngestResult(message=None, decision=None)
+        return IngestResult(message=None, decision=None, outcome=done.ending)

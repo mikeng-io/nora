@@ -1,0 +1,52 @@
+{
+  "_fixture": {
+    "name": "multi-media message with two attachments (multiplicity gap)",
+    "generated": true,
+    "native_event": "delta __typename=SlideUQPPNewMessage, content SlideMessageMultiMediaContent",
+    "capture_today": "captured -> kind=message, first attachment only (multiplicity gap remains — the wire media is a single object)",
+    "semantic": "ordered_photo_video_attachments is the fifth attachment nesting; the contract's `media` is a single object so only the first survives. This is the attachment-multiplicity cell of the census — available upstream, partially captured."
+  },
+  "payload": {
+    "__typename": "SlideUQPPNewMessage",
+    "uq_seq_id": "225",
+    "thread_fbid": "1234567890123456",
+    "message": {
+      "thread_fbid": "1234567890123456",
+      "message_id": "mid.$mm1",
+      "sender_fbid": "63123456700000011",
+      "text_body": null,
+      "timestamp_ms": "1790002800000",
+      "content_type": "MULTI_MEDIA",
+      "content": {
+        "__typename": "SlideMessageMultiMediaContent",
+        "ordered_photo_video_attachments": [
+          {
+            "__typename": "XFBSlideAttachment",
+            "attachment_fbid": "970000000000001",
+            "attachment_cdn_url": "https://scontent.example.net/v/one.jpg?stp=cp0&_nc_cat=100",
+            "preview_width": 720,
+            "preview_height": 960
+          },
+          {
+            "__typename": "XFBSlideAttachment",
+            "attachment_fbid": "970000000000002",
+            "attachment_cdn_url": "https://scontent.example.net/v/two.mp4?stp=cp0&_nc_cat=100",
+            "preview_width": 720,
+            "preview_height": 960,
+            "dash_manifest": "<MPD/>"
+          }
+        ]
+      },
+      "sender": {
+        "name": "Member A",
+        "id": "63123456700000011",
+        "igid": "901234567",
+        "user_dict": {
+          "username": "member_a",
+          "interop_messaging_user_fbid": "63123456700000011",
+          "id": "901234567"
+        }
+      }
+    }
+  }
+}

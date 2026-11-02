@@ -390,6 +390,7 @@ func (s *Sink) confirmHead() {
 func (s *Sink) resolveTransitions(norm *Normalized) (emit bool, ambiguousReason string) {
 	s.transitionsMu.Lock()
 	defer s.transitionsMu.Unlock()
+	changed := len(norm.Transitions) == 0
 	for _, t := range norm.Transitions {
 		st := s.transitions[t.Key]
 		if st == nil {
@@ -403,12 +404,14 @@ func (s *Sink) resolveTransitions(norm *Normalized) (emit bool, ambiguousReason 
 			// unverifiable — ambiguous.
 			switch {
 			case t.UpstreamSeq > st.LastSeq:
+				changed = true
 				continue // forward progress — genuine
 			case t.UpstreamSeq < st.LastSeq && !seen:
 				return false, "stale upstream revision below watermark"
 			case seen && st.LastSeq > 0 && t.UpstreamSeq <= st.LastSeq:
-				return false, "" // redelivery of a committed transition
+				continue // this component is unchanged
 			default:
+				changed = true
 				continue // same revision, new state — same-batch transition
 			}
 		}
@@ -419,14 +422,15 @@ func (s *Sink) resolveTransitions(norm *Normalized) (emit bool, ambiguousReason 
 		// a never-committed state is genuine.
 		switch {
 		case t.State == st.Last:
-			return false, ""
+			continue
 		case seen:
 			return false, "unresolvable clockless transition: state repeats without upstream revision"
 		default:
+			changed = true
 			continue
 		}
 	}
-	return true, ""
+	return changed, ""
 }
 
 // commitTransitions applies the emitted event's transitions to the
@@ -691,27 +695,23 @@ type mediaFetch struct {
 
 // mediaFetches derives the fetch list from the event's raw provenance — the
 // same derivation live events and journal-replayed ones share. `raw.media`
-// may be a single object (today's shape) or a list (multi-attachment
-// variants); message.media entries already holding a custody handle are
-// skipped, so a replay never re-fetches.
+// is the singular shape; `raw.media_list` carries the ordered attachment
+// set of a multi-media message. A fetch's `index` counts only entries that
+// produced a message.media ref — normalize emits one ref per ref-able
+// entry in the same order, so index i is always ref i. Entries already
+// holding a custody handle are skipped, so a replay never re-fetches.
 func mediaFetches(env *Envelope) []mediaFetch {
 	raw, _ := env.Message["raw"].(map[string]any)
 	var out []mediaFetch
-	switch m := raw["media"].(type) {
-	case map[string]any:
-		if u := str(m, "url"); u != "" {
-			out = append(out, mediaFetch{index: 0, url: u})
+	i := 0
+	for _, d := range mediaEntries(raw) {
+		if mediaRef(d) == nil {
+			continue // no ref was emitted for this entry — nothing to wire
 		}
-	case []any:
-		for i, it := range m {
-			d, ok := it.(map[string]any)
-			if !ok {
-				continue
-			}
-			if u := str(d, "url"); u != "" {
-				out = append(out, mediaFetch{index: i, url: u})
-			}
+		if u := str(d, "url"); u != "" {
+			out = append(out, mediaFetch{index: i, url: u})
 		}
+		i++
 	}
 	// Skip entries already spooled (replay after a custody write).
 	media, _ := env.Message["media"].([]any)

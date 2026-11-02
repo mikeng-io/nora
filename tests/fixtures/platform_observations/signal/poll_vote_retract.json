@@ -1,0 +1,51 @@
+{
+  "meta": {
+    "native": "signal-cli",
+    "native_version": "0.14.7",
+    "transport": "sse",
+    "upstream": "JsonDataMessage.pollVote",
+    "upstream_source": "https://github.com/AsamK/signal-cli/blob/v0.14.7/src/main/java/org/asamk/signal/json/JsonPollVote.java",
+    "case": "a voter withdraws by sending an empty complete selection",
+    "generated": true
+  },
+  "payload": {
+    "envelope": {
+      "source": "+85212345679",
+      "sourceName": "Fixture Voter",
+      "timestamp": 1702,
+      "dataMessage": {
+        "pollVote": {
+          "author": "+85212345679",
+          "authorNumber": "+85212345679",
+          "authorUuid": "a2000000-0000-4000-8000-000000000000",
+          "targetSentTimestamp": 1700,
+          "optionIndexes": [],
+          "voteCount": 0
+        },
+        "groupInfo": {
+          "groupId": "Z3JvdXA=",
+          "groupName": "Example Group",
+          "revision": 3,
+          "type": "DELIVER"
+        },
+        "timestamp": 1702
+      }
+    },
+    "account": "+85290000100"
+  },
+  "semantics": {
+    "object": "poll-response",
+    "operation": "withdraw",
+    "room_ref": "payload.envelope.dataMessage.groupInfo.groupId",
+    "object_ref": "poll addressed by (pollVote.author, pollVote.targetSentTimestamp)",
+    "target_ref": "pollVote.targetSentTimestamp + pollVote.author*/authorNumber/authorUuid",
+    "actor": "envelope.source (the voter)",
+    "source_time_ms": "envelope.timestamp",
+    "native_fields": {
+      "optionIndexes": "int[] — empty means the voter retracted",
+      "voteCount": "int"
+    },
+    "notes": "An empty COMPLETE selection is a withdrawal; an absent optionIndexes field would be unknown, not a retracted vote.",
+    "today": "parse_event returns None — no poll branch"
+  }
+}

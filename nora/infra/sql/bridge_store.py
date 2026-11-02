@@ -193,6 +193,29 @@ class SqlBridgeStore:
         await conn.execute(pg_insert(BRIDGE_WORK).values(
             **values).on_conflict_do_nothing(constraint="uq_bridge_work_obligation"))
 
+    async def retain_obligation(
+        self, conn: AsyncConnection, *, event_id: str | None, kind: str,
+        ordinal: int, platform: str, account_key: str, conversation_id: str,
+        payload: dict[str, Any], result: dict[str, Any] | None = None,
+    ) -> None:
+        """Persist an obligation already TERMINAL as `failed_retained` — the
+        durable owner of a deterministic refusal found while a sibling
+        obligation completed (a malformed observation sidecar under a
+        delivered utterance). The same artifact a claim leaves when its
+        attempts exhaust, written directly because there is nothing to
+        retry: the row is inspectable, the event is dischargable, and the
+        refusal never rides a `done` marker alone. Conflict-safe on the
+        obligation key so a replayed finish cannot double it."""
+        if kind not in WORK_KINDS:
+            raise ValueError(f"unknown work kind {kind!r}")
+        await conn.execute(pg_insert(BRIDGE_WORK).values(
+            event_id=event_id, kind=kind, ordinal=ordinal,
+            platform=platform, account_key=account_key,
+            conversation_id=conversation_id, payload=payload,
+            state="failed_retained", result=result or {},
+            completed_at=sa.func.now(),
+        ).on_conflict_do_nothing(constraint="uq_bridge_work_obligation"))
+
     async def claim_next(self, *, owner: str, lease_seconds: int = 300,
                          platform: str | None = None,
                          conversation_id: str | None = None,

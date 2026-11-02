@@ -1165,18 +1165,25 @@ def test_the_digest_is_derived_from_the_registry_and_read_only():
 
     # Minus the loader: read-only, but registry
     # plumbing — whether it can LOAD a tool is never whether an answer exists.
-    # And minus the two reads only a Dreamer loop holds (DEC-246): what a
-    # reply cannot call is never «something she can serve» to the gate.
-    from nora.agent.surface import DREAMER_LOOP_TOOLS, TAG_ONLY_TOOLS
+    # And minus the reads only a Dreamer loop holds (DEC-246): what a reply
+    # cannot call is never «something she can serve» to the gate — except the
+    # loop reads a tag turn can also hold (`TAG_READABLE_LOOP_TOOLS`).
+    from nora.agent.surface import (
+        DREAMER_LOOP_TOOLS,
+        TAG_ONLY_TOOLS,
+        TAG_READABLE_LOOP_TOOLS,
+    )
 
     # (the tag-only `subagent_*` reads are not offered to a gate about an untagged window)
-    # And minus the memory surface the registry did not select (DEC-316): no
-    # index wired here, so the graph's `memory_search` is not offered.
-    from nora.agent.tools import GRAPH_MEMORY_TOOLS
-
+    # And minus whatever THIS registry withholds: the memory surface it did not
+    # select (DEC-316: no index wired here, so the graph's `memory_search` is
+    # not offered) and every read whose store is unwired — the observation
+    # reads (`poll_list`, `poll_read`, `room_state_read`) among them. A read
+    # that would answer `unavailable` is not «something she can serve».
     assert named == (
-        set(registry.read_only_tools()) - {"load_tools"} - DREAMER_LOOP_TOOLS - TAG_ONLY_TOOLS
-        - GRAPH_MEMORY_TOOLS
+        set(registry.read_only_tools()) - {"load_tools"} - TAG_ONLY_TOOLS
+        - registry.withheld_tools()
+        - (DREAMER_LOOP_TOOLS - TAG_READABLE_LOOP_TOOLS)
     )
     # Two of the read-only tools it should name.
     assert "weather" in named

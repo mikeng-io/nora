@@ -1,0 +1,107 @@
+[
+ {
+  "name": "poll definition reads the hydrated PollAnswer, not the gateway payload's field names",
+  "file": "nora/platform/discord/parser.py",
+  "old": "    options = tuple(\n        (ref, label) for ref, label in (\n            (str(getattr(a, \"id\", \"\") or \"\"),\n             str(getattr(getattr(a, \"media\", None), \"text\", \"\") or \"\"))\n            for a in getattr(poll, \"answers\", None) or ())\n        if ref)\n    if not options:\n        return None",
+  "new": "    options = tuple(\n        (ref, label) for ref, label in (\n            (str(getattr(a, \"answer_id\", \"\") or \"\"),\n             str(getattr(getattr(a, \"poll_media\", None), \"text\", \"\") or \"\"))\n            for a in getattr(poll, \"answers\", None) or ())\n        if ref)\n    if not options:\n        return None",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_discord_poll_definition_is_typed"
+ },
+ {
+  "name": "poll question is a str on the hydrated Poll, not a media object",
+  "file": "nora/platform/discord/parser.py",
+  "old": "            question=str(getattr(poll, \"question\", \"\") or \"\"),",
+  "new": "            question=str(getattr(getattr(poll, \"question\", None), \"text\", \"\")\n                         or \"\"),",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_discord_poll_definition_is_typed"
+ },
+ {
+  "name": "multi-select is the hydrated `multiple`, not gateway `allow_multiselect`",
+  "file": "nora/platform/discord/parser.py",
+  "old": "            multi_select=bool(getattr(poll, \"multiple\", False)),",
+  "new": "            multi_select=bool(getattr(poll, \"allow_multiselect\", False)),",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_a_multiselect_close_reports_no_unique_voter_total"
+ },
+ {
+  "name": "a poll close is detected on Poll.is_finalized(), not a `results` object the SDK never exposes",
+  "file": "nora/platform/discord/parser.py",
+  "old": "    finalized = getattr(poll, \"is_finalized\", None)\n    try:\n        closed = bool(finalized() if callable(finalized) else finalized)\n    except Exception:\n        log.exception(\"unreadable discord poll finalization flag, skipping\")\n        closed = False\n    if not closed:\n        return ()",
+  "new": "    results = getattr(poll, \"results\", None)\n    if (results is None\n            or not getattr(results, \"is_finalized\", False)):\n        return ()",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_the_poll_close_produces_state_and_counts"
+ },
+ {
+  "name": "final counts come off the hydrated PollAnswer.vote_count, not a results.answer_counts list",
+  "file": "nora/platform/discord/parser.py",
+  "old": "    counts = tuple(\n        (ref, count) for ref, count in (\n            (str(getattr(a, \"id\", \"\") or \"\"), getattr(a, \"vote_count\", None))\n            for a in getattr(poll, \"answers\", None) or ())\n        if ref and isinstance(count, int) and not isinstance(count, bool))",
+  "new": "    counts = ()",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_the_poll_close_produces_state_and_counts"
+ },
+ {
+  "name": "a genuinely empty finalized tally still reports its snapshot",
+  "file": "nora/platform/discord/parser.py",
+  "old": "    if counts:\n        obs.append(Observation(",
+  "new": "    if counts and any(c > 0 for _, c in counts):\n        obs.append(Observation(",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_the_poll_close_keeps_a_genuinely_empty_result"
+ },
+ {
+  "name": "a multi-select close never invents a unique voter total",
+  "file": "nora/platform/discord/parser.py",
+  "old": "    voter_count = None\n    if getattr(poll, \"multiple\", None) is False:\n        total = getattr(poll, \"total_votes\", None)\n        if isinstance(total, int) and not isinstance(total, bool):\n            voter_count = total",
+  "new": "    voter_count = getattr(poll, \"total_votes\", None)",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_a_multiselect_close_reports_no_unique_voter_total"
+ },
+ {
+  "name": "a message-shaped event's scope is the parent room, never a thread sub-scope",
+  "file": "nora/platform/discord/parser.py",
+  "old": "    return SourceScope(\n        platform=\"discord\", account_key=account_key,\n        conversation_id=f\"{message.guild.id}/{room_id}\")",
+  "new": "    return SourceScope(\n        platform=\"discord\", account_key=account_key,\n        conversation_id=f\"{message.guild.id}/{room_id}\",\n        thread=\"\" if parent_id is None else str(message.channel.id))",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_a_poll_created_inside_a_thread_scopes_the_parent_room"
+ },
+ {
+  "name": "a channel-naming raw event's scope is the resolved parent room, never a thread sub-scope",
+  "file": "nora/platform/discord/parser.py",
+  "old": "    return SourceScope(\n        platform=\"discord\", account_key=account_key,\n        conversation_id=f\"{guild_id}/{room_id}\")",
+  "new": "    return SourceScope(\n        platform=\"discord\", account_key=account_key,\n        conversation_id=f\"{guild_id}/{room_id}\",\n        thread=\"\" if room_channel_id is None else str(channel_id))",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_a_poll_vote_inside_a_thread_scopes_the_parent_room"
+ },
+ {
+  "name": "thread create scopes the parent room, keeping the thread id on object_ref",
+  "file": "nora/platform/discord/parser.py",
+  "old": "        scope=SourceScope(\n            platform=\"discord\", account_key=account_key,\n            conversation_id=f\"{guild.id}/{parent_id or thread.id}\"),",
+  "new": "        scope=SourceScope(\n            platform=\"discord\", account_key=account_key,\n            conversation_id=f\"{guild.id}/{parent_id or thread.id}\",\n            thread=str(thread.id)),",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_thread_lifecycle_observations"
+ },
+ {
+  "name": "thread update scopes the parent room, keeping the thread id on object_ref",
+  "file": "nora/platform/discord/parser.py",
+  "old": "            scope=SourceScope(\n                platform=\"discord\", account_key=account_key,\n                conversation_id=(\n                    f\"{guild_id}/{data.get('parent_id') or thread_id}\")),",
+  "new": "            scope=SourceScope(\n                platform=\"discord\", account_key=account_key,\n                conversation_id=(\n                    f\"{guild_id}/{data.get('parent_id') or thread_id}\"),\n                thread=thread_id),",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_thread_lifecycle_observations"
+ },
+ {
+  "name": "thread delete scopes the parent room, keeping the thread id on object_ref",
+  "file": "nora/platform/discord/parser.py",
+  "old": "            scope=SourceScope(\n                platform=\"discord\", account_key=account_key,\n                conversation_id=(\n                    f\"{guild_id}/{getattr(raw, 'parent_id', None) or thread_id}\")),",
+  "new": "            scope=SourceScope(\n                platform=\"discord\", account_key=account_key,\n                conversation_id=(\n                    f\"{guild_id}/{getattr(raw, 'parent_id', None) or thread_id}\"),\n                thread=thread_id),",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_thread_lifecycle_observations"
+ },
+ {
+  "name": "a pin notice names the channel's own pin set, not a shared bare one",
+  "file": "nora/platform/discord/parser.py",
+  "old": "        object_ref=f\"pin_set:{message.channel.id}\", operation=\"add\",",
+  "new": "        object_ref=\"pin_set\", operation=\"add\",",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_the_pin_system_message_is_real_pin_evidence"
+ },
+ {
+  "name": "a thread's pins update names the thread's own pin set",
+  "file": "nora/platform/discord/parser.py",
+  "old": "        object_ref=f\"pin_set:{channel.id}\", operation=\"snapshot\",",
+  "new": "        object_ref=\"pin_set\", operation=\"snapshot\",",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_a_thread_pins_update_keeps_its_own_pin_set_in_the_parent_room"
+ },
+ {
+  "name": "thread owner and parent source ids never reach a model projection raw",
+  "file": "nora/domain/observations.py",
+  "old": "    if value is None or not (name.endswith(\"_id\") or name == \"forward_origin\"):",
+  "new": "    if True:",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_thread_lifecycle_observations"
+ }
+]

@@ -234,8 +234,9 @@ are not evidence that the implementation or model has passed them:
   arrangement with its underlying matter, then revise an expectation when independent
   counterevidence arrives. Inspect the account and later assembled turn/answer.
 
-Implementation should fill the per-stage coverage table and prove one complete
-useful journey through the existing owners before broadening object coverage.
+Implementation follows the [integrated metadata map](04-build-and-acceptance.md#integrated-metadata-implementation-map):
+freeze source coverage, then join responses, polls, shared artifacts and room events
+through the existing owners in one candidate rather than family-by-family releases.
 The graph/session work and observation-capture work can be owned separately, but
 join on this typed evidence/projection contract. Neither can claim completion from
 its local write alone. Delivery status and receipts belong with implementation;

@@ -1,0 +1,53 @@
+{
+  "meta": {
+    "native": "discord-gateway",
+    "native_version": "discord.py 2.7.1",
+    "transport": "gateway",
+    "dispatch": "GUILD_MEMBER_ADD",
+    "discord_py_parse": "parse_guild_member_add",
+    "discord_py_event": "member_join",
+    "upstream_source": "https://docs.discord.com/developers/events/gateway-events#guild-member-add",
+    "case": "a member joins the guild",
+    "generated": true
+  },
+  "payload": {
+    "op": 0,
+    "t": "GUILD_MEMBER_ADD",
+    "s": 26,
+    "d": {
+      "guild_id": "123456789012345600",
+      "user": {
+        "id": "123456789012345801",
+        "username": "fixture_joiner",
+        "discriminator": "0",
+        "global_name": "Fixture Joiner",
+        "avatar": null,
+        "bot": false
+      },
+      "roles": [],
+      "joined_at": "2026-11-02T09:50:00+00:00",
+      "nick": null,
+      "deaf": false,
+      "mute": false,
+      "flags": 0,
+      "pending": false
+    }
+  },
+  "semantics": {
+    "object": "membership",
+    "operation": "add",
+    "room_ref": "d.guild_id — GUILD scope, not channel audience",
+    "object_ref": "the membership of d.user.id in d.guild_id",
+    "target_ref": "d.user.id (the subject)",
+    "actor": "the subject themselves — join events carry no separate actor",
+    "source_time": "d.joined_at",
+    "native_fields": {
+      "user.id": "snowflake",
+      "roles": "snowflake[] initial",
+      "joined_at": "ISO8601",
+      "pending": "bool — membership screening"
+    },
+    "notes": "Guild membership is not channel readership: a joined member cannot necessarily see a restricted channel. Requires the privileged guild_members intent, already enabled in adapter.listen.",
+    "today": "no listener subscription — roster reads are point-in-time only"
+  }
+}
