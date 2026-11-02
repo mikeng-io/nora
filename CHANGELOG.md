@@ -1,5 +1,53 @@
 # Changelog
 
+## [7.13.16](https://github.com/mikeng-io/nora/compare/v7.13.15...v7.13.16) (2026-11-02)
+
+
+### Features
+
+* **bridges:** capture typed platform observations for signal and discord ([509e311](https://github.com/mikeng-io/nora/commit/509e311b931c28792ef12cdf9b0a93d72d48f770))
+* **observations:** model-safe read-model completion ([b3f169d](https://github.com/mikeng-io/nora/commit/b3f169d98a5bc731e22ee2c7506747892fd42b21))
+* **observations:** model-safe reads, task tools, durable ingest ([dfea625](https://github.com/mikeng-io/nora/commit/dfea62566f660b64644128faad3f8617e308d48f))
+* **observations:** typed evidence end to end ([b3c1ce6](https://github.com/mikeng-io/nora/commit/b3c1ce6d001154e42a452ecfc82c30899f727d9c))
+* **platforms:** native observation capture for whatsapp and instagram bridges ([d3086a5](https://github.com/mikeng-io/nora/commit/d3086a576101521417001984653d34926890cc32))
+* **platforms:** retain authors on timestamp-addressed observation targets ([38b4a15](https://github.com/mikeng-io/nora/commit/38b4a157f1382f2002308cb0036aa7480cfecfbe))
+* **platforms:** typed observation foundation and v2 envelope contract ([f8b17ba](https://github.com/mikeng-io/nora/commit/f8b17ba7f6f3c09ced9314647d1aab7fdc78b741))
+
+
+### Bug Fixes
+
+* **bridge:** durable observation ingest across sidecar, silent and replay paths ([64f708f](https://github.com/mikeng-io/nora/commit/64f708ff49df90cc9fae3f2d9e69915bae889d0a))
+* **bridges:** retain new snapshot components alongside unchanged members ([0fa3fe5](https://github.com/mikeng-io/nora/commit/0fa3fe55fc2c60653d40662c83338d7d249c9da9))
+* **ci:** allow full contract readers to finish within bounded timeout ([5cbc96e](https://github.com/mikeng-io/nora/commit/5cbc96ee10fed11715074ac93e77cc29e45d6680))
+* **discord:** poll SDK mapping and thread observation scope ([18e372d](https://github.com/mikeng-io/nora/commit/18e372d96bcc41c5f372b32ffc84288fd1e37d81))
+* **evals:** restore the Record stores consumed by routing tools ([5e0c09c](https://github.com/mikeng-io/nora/commit/5e0c09c9d45def9424620afe0d8beb8f74a89406))
+* **instagram-bridge:** partial member coverage, correct wire/fixture shapes ([93a1236](https://github.com/mikeng-io/nora/commit/93a12364db3535af7bdf270d772c4d2732282e71))
+* **observations:** bind current state clocks and revisions to applied evidence ([db578e3](https://github.com/mikeng-io/nora/commit/db578e387d40e87507e0dc0b00232254958572b5))
+* **observations:** close metadata storage gate on fixtures, callers and custody ([6e22267](https://github.com/mikeng-io/nora/commit/6e222675df196f7a3349aa7696ebc3f888d2ada6))
+* **observations:** close source reference projection and scope ambiguities ([c1f9cfc](https://github.com/mikeng-io/nora/commit/c1f9cfce7c7573e7761f7c5930a6557b36f6c6a8))
+* **observations:** close the metadata cluster's runtime and eval parity gaps ([233e059](https://github.com/mikeng-io/nora/commit/233e0596289aea4812ec02d1620a2bb095dfb917))
+* **observations:** complete retained source scope and lifecycle validation ([b2799db](https://github.com/mikeng-io/nora/commit/b2799dbefe3c7ed73d306d291d09224494464ef1))
+* **observations:** execute bounded reaction union and retain honest coverage ([effe872](https://github.com/mikeng-io/nora/commit/effe872de034358fe0c04246dddc8849798e78ad))
+* **observations:** honor covered-set snapshots and project current truth ([7985362](https://github.com/mikeng-io/nora/commit/7985362dab5e7e9bb0644c0911e02627a83070ce))
+* **observations:** merge co-delivered utterance into the one source obligation ([8b7720d](https://github.com/mikeng-io/nora/commit/8b7720dd280117273b89dcacb37bdff9c1154bea))
+* **observations:** normalize voter selections and complete domain guards ([76039e7](https://github.com/mikeng-io/nora/commit/76039e74d410fd91f1ced40ba256e0eccf0efa1c))
+* **observations:** preserve delivery links independently of affected targets ([1032ede](https://github.com/mikeng-io/nora/commit/1032ede419b59cc477aa868d7d973f213bb7d58c))
+* **observations:** preserve source identities and authorized room bindings ([0fb89af](https://github.com/mikeng-io/nora/commit/0fb89af76037e2d02f555f8577568eee73cf979e))
+* **observations:** project room source references without raw ids ([b0e7a7e](https://github.com/mikeng-io/nora/commit/b0e7a7ee52402a3bdf6eec228ea99816f9e9ed9e))
+* **observations:** relink retained targets inside edit transactions ([b609cb5](https://github.com/mikeng-io/nora/commit/b609cb5534b2a11e359b8c9fd81d0765912d2dcc))
+* **observations:** render target file handles and preserve context contracts ([d149f7d](https://github.com/mikeng-io/nora/commit/d149f7d4d3e3aea2283215f4184280683174df28))
+* **observations:** resolve affected-message context for source events ([b31ac32](https://github.com/mikeng-io/nora/commit/b31ac3227029532980b9ce2cfd22f14b3c94c9a3))
+* **observations:** resolve targets without truncating uniqueness evidence ([eae4a89](https://github.com/mikeng-io/nora/commit/eae4a89c1cc30ce9a31cf42e35cf9f53982a278c))
+* **observations:** retain matter-linked source objects past the recency page ([75bda57](https://github.com/mikeng-io/nora/commit/75bda57352469f50d265f2fd4fba8a3287985abf))
+* **observations:** scope affected-message reads and explain source evidence ([37ae102](https://github.com/mikeng-io/nora/commit/37ae1023ba2be3922779d74db70957b74c132792))
+* **observations:** transition-identity ambiguity, IG media multiplicity, bound secret reads ([c25b0ad](https://github.com/mikeng-io/nora/commit/c25b0ad0e20fd2d0b5cd02c86a0671fb7918ed82))
+* **observations:** type integrated read boundaries and refresh capture coverage ([8396018](https://github.com/mikeng-io/nora/commit/8396018a8068a4d79a5b6b76b01f1e579e41df89))
+* **observations:** union recorded reaction state across both stores ([697eba7](https://github.com/mikeng-io/nora/commit/697eba764ad560c0ee6f9bd41cad5002b8c1cc29))
+* **platforms:** complete metadata tool contracts and presentation ownership ([6552e0d](https://github.com/mikeng-io/nora/commit/6552e0d3259a5883a481588b6b834368b1f4ec93))
+* **platforms:** finish tool spec and rebase closeout regression guards ([1acf335](https://github.com/mikeng-io/nora/commit/1acf3351ca40aa511436109a365bc641aa96b9f3))
+* **tools:** keep the group-name catalogue hint within budget ([5f2a640](https://github.com/mikeng-io/nora/commit/5f2a64041436d6c05f970aecd50847559f49b4b5))
+* **tools:** name group changes in the room-state catalogue ([eb6ac36](https://github.com/mikeng-io/nora/commit/eb6ac36dd42aa0d0079c6d213faa1888cf422d2c))
+
 ## [7.13.15](https://github.com/mikeng-io/nora/compare/v7.13.14...v7.13.15) (2026-11-02)
 
 
