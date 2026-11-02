@@ -1,5 +1,21 @@
 # Changelog
 
+## [7.14.0](https://github.com/mikeng-io/nora/compare/v7.13.25...v7.14.0) (2026-11-02)
+
+
+### Features
+
+* the chronological unified-memory backfill driver ([9607b02](https://github.com/mikeng-io/nora/commit/9607b02685d06cb98c24a8a90b4442d910e9646f))
+
+
+### Bug Fixes
+
+* **memory:** isolate historical views and bind backfill progress to source inputs ([5e514f6](https://github.com/mikeng-io/nora/commit/5e514f60b1a18315c38222ac9387ac57d2fb8c56))
+* **memory:** keep historical checks aligned with exact input receipts ([71f7c35](https://github.com/mikeng-io/nora/commit/71f7c35d02f828865b0d4e820908143616ab4900))
+* **memory:** satisfy backfill lint and type contracts ([56f1cf0](https://github.com/mikeng-io/nora/commit/56f1cf09b4b857b3f6ad9fa3ce36a68473c43c9f))
+* unified backfill repair — withdrawal, future-state leaks, bounds, receipts, isolation, catch-up gate ([85b81e7](https://github.com/mikeng-io/nora/commit/85b81e73b22d117c9c7684474a7beb6c6a10dedc))
+* unified backfill round-3 — still-open selection, invoked-work receipts, deadline enclosure, load withhold ([77d6148](https://github.com/mikeng-io/nora/commit/77d6148abad85ae42bf6c2481d7d7f36f3c1902d))
+
 ## [7.13.25](https://github.com/mikeng-io/nora/compare/v7.13.24...v7.13.25) (2026-11-02)
 
 
