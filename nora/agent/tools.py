@@ -5913,7 +5913,7 @@ def build_tool_specs(
             return {}
         try:
             found, gone = await store.by_ids(
-                conversation_id=conversation_id,
+                platform=platform, conversation_id=conversation_id,
                 ids=wanted[:_TARGET_MAX])
         except Exception:
             log.exception("record target read failed")

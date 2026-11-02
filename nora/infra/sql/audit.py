@@ -559,7 +559,7 @@ class SqlRecordStore:
         return with_reactions([self._row(r) for r in rows], states)
 
     async def by_ids(
-        self, *, conversation_id: str, ids: Sequence[int],
+        self, *, platform: str, conversation_id: str, ids: Sequence[int],
     ) -> tuple[dict[int, TranscriptRow], frozenset[int]]:
         """See `nora.domain.ports.RecordStore.by_ids`. The `media_rows` select
         keyed by `id IN` instead of a `ts` window: `transcript_select` keeps
@@ -572,6 +572,7 @@ class SqlRecordStore:
         stmt = (
             transcript_select()
             .where(
+                MESSAGES.c.platform == platform,
                 MESSAGES.c.conversation_id == conversation_id,
                 MESSAGES.c.id.in_(wanted),
             )

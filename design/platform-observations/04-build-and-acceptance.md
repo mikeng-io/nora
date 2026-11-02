@@ -216,10 +216,12 @@ not prove real platform completeness, model tool choice, social interpretation o
 production deployment. The final candidate gate and independent full review remain
 the PR's acceptance evidence owners, not the lane reports.
 
-Tool-routing measurement remains unavailable while the declared eval subject-config
-failure is open ([issue 480](https://github.com/mikeng-io/nora/issues/480)); its fix
-is not merged at the inspection snapshot. Do not bypass parity, invent a detail
-handle or seed synthetic production history to make that measurement pass. The
+Tool-routing measurement has not run. The historical implicit-Signal-mode
+subject-config failure ([issue 480](https://github.com/mikeng-io/nora/issues/480))
+remains open, but a read-only deployment-config preflight found explicit bridge
+mode; that historical failure alone does not establish a blocker for this input.
+The official subject parity check remains required. Do not bypass parity, invent
+a detail handle or seed synthetic production history to make measurement pass. The
 new dinner-poll case requires discovery because its snapshot supplies no poll
 handle; it does not establish `poll_read` detail routing. A source-backed detail
 anchor and live routing evidence remain unmet. This does not waive the tool/eval

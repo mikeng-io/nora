@@ -351,7 +351,8 @@ async def _ret(value: Any) -> Any:
     return value
 
 
-async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus():
+@pytest.mark.parametrize("target_deleted", [False, True])
+async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus(target_deleted):
     """The REAL `CognitionSessionRunner` + `WakeEvaluator`: an observation
     stimulus wakes a session, the REAL grounder grounds it, the model's
     prompt carries the event — and the stimulus is consumed exactly once."""
@@ -402,9 +403,10 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
             if ("messages", 8) in refs:
                 hits.append(RecordRefHit("messages", 8, RecordHit(
                     "signal", CID,
-                    TranscriptRow(8, "author", "Ada", NOW_MS - 60_000,
+                    TranscriptRow(8, "target-author", "Target Author", NOW_MS - 60_000,
                                   "the affected words",
-                                  False, "observed", None))))
+                                  False, "observed", None, person_id="target-person"),
+                    deleted=target_deleted)))
             return tuple(hits)
 
         async def own_sends(self, rooms: Any, *, start_ms: int,
@@ -470,7 +472,12 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
     # `<m>` sibling, the AFFECTED message a marked `target` row — labelled
     # context, never a fresh utterance and never attributed to the actor.
     affected = next(ln for ln in prompt.splitlines() if ln.startswith('<m n="8"'))
-    assert 'target="yes"' in affected and "the affected words" in affected
+    assert 'target="yes"' in affected and 'from="Target Author"' in affected
+    if target_deleted:
+        assert 'deleted="yes"' in affected
+        assert "the affected words" not in prompt
+    else:
+        assert "the affected words" in affected
     delivered = next(ln for ln in prompt.splitlines() if ln.startswith('<m n="9"'))
     assert "target=" not in delivered
 
@@ -1023,7 +1030,7 @@ async def test_target_context_names_the_author_never_the_actor():
     tools = _tools(audit, store)
     out = await _call(tools, "load_transcript", limit=40)
     events = [m["source_event"] for m in out["messages"] if "source_event" in m]
-    said_ev = next(e for e in events if e.get("target"))
+    said_ev = next(e for e in events if e.get("target", {}).get("body"))
     assert said_ev["target"]["sender"] == "Author Name"
     assert said_ev["target"]["body"] == "the reacted words"
     assert said_ev["actor"] == "Ada"

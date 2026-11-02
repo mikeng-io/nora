@@ -37,8 +37,8 @@
   {
     "name": "Cognition grounds delivery independently from the affected target",
     "file": "nora/app/cognition_grounding.py",
-    "old": "            sibling_wanted.append((s, (\"messages\", event.delivered_message_id)))",
-    "new": "            sibling_wanted.append((s, (\"messages\", event.target_message_id)))",
+    "old": "                event.delivered_message_id, event.target_message_id,",
+    "new": "                event.target_message_id, event.target_message_id,",
     "target": "tests/unit/test_platform_observation_wired.py::test_the_session_runner_assembles_and_consumes_an_observation_stimulus"
   },
   {

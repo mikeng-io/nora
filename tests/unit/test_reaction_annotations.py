@@ -481,8 +481,8 @@ def test_a_reaction_removal_is_marked_distinct_from_an_add():
 
 def test_the_reaction_fields_are_glossed_where_the_model_reads_them():
     """The coverage explanation lives in the block's field glosses, not in a
-    docstring: recorded transitions only, upstream clears/snapshots/missed
-    captures absent, `partial` a read cut short."""
+    docstring: recorded changes include captured clears/snapshots, upstream
+    completeness stays unknown, and partial state is explicit."""
     for name in ("group_transcript", "agenda"):
         glosses = dict(BLOCK_TYPES[name].annotations)
         assert "reactions" in glosses and "reactions_observed" in glosses

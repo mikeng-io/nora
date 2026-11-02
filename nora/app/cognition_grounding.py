@@ -673,7 +673,10 @@ def build_grounder(
                 # A sibling record answers to its OWN record ref: the
                 # observation stimulus's `platform_observation:<id>` names
                 # the event, never the row the event rode in on.
-                item = replace(item, ref=f"{ref[0]}:{ref[1]}")
+                item = replace(
+                    item, ref=f"{ref[0]}:{ref[1]}", person_id=row.person_id,
+                    kind="delete" if hit.hit.deleted else item.kind,
+                )
             records_out[item.ref] = item
 
         agenda_rooms = list(dict.fromkeys(i.room for i in items))

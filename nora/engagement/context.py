@@ -1210,7 +1210,7 @@ class TranscriptInjection:
             found, gone = await traced_read(
                 "record", "targets",
                 self._audit.by_ids(
-                    conversation_id=msg.conversation_id,
+                    platform=msg.platform, conversation_id=msg.conversation_id,
                     ids=tuple(sorted(wanted))[:_OBSERVATION_TARGET_MAX]))
             named = self._persons.name_transcript(
                 list(found.values()), platform=msg.platform)

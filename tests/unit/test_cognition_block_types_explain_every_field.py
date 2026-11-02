@@ -24,6 +24,7 @@ from nora.domain.cognition_ground import (
 )
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.models import RowReactions
+from nora.domain.observations import SourceEvent
 from nora.domain.prompt import escape_attr
 from nora.domain.stimuli import Stimulus
 from nora.language.cognition_render import RenderBudget, render_agenda
@@ -36,7 +37,7 @@ LABELS = {"signal:room-a": "Room A", "discord:room-b": "Room B"}
 
 #: The block type each element's attributes are glossed in.
 TYPE_OF = {
-    "item": "agenda", "m": "agenda", "rollup": "agenda",
+    "item": "agenda", "m": "agenda", "rollup": "agenda", "observation": "agenda",
     "note": "note_index", "note_index": "note_index",
     "event": "events", "room_events": "events",
 }
@@ -122,17 +123,36 @@ def _everything() -> str:
     )
 
 
+def _source_prompt() -> str:
+    stimulus = _stim(10, A, kind="observation", ref="platform_observation:10")
+    event = SourceEvent(
+        ref=stimulus.ref, kind="pin", operation="add", at_ms=0,
+        time_quality="unknown", actor="Ada", actor_status="known",
+        handle="pin:generated", summary="Pinned a message",
+        target_message_id=777, received_ms=NOW, revision="source:2",
+        coverage="pin_set partial")
+    rec = _rec(777, "message", mid=777, text="the affected message")
+    item = AgendaItem(kind="observation", room=A, summary="1 pin source event",
+                      cues=(), surprise=1.0, stimulus_ids=(10,))
+    return render_agenda(
+        (item,), stimuli={10: stimulus},
+        grounding=Grounding(records={"messages:777": rec},
+                            observations={stimulus.ref: event}),
+        now_ms=NOW, tz=HK)
+
+
 def _emitted() -> dict[str, set[str]]:
-    """Every attribute name each element of the rendered prompt carries, by the
-    block type that must gloss it."""
+    """Every emitted attribute, including the non-message source occasion."""
     seen: dict[str, set[str]] = defaultdict(set)
-    for block in blocks(_everything()):
-        if block.tag in ("note_index", "events"):
-            seen[block.tag].update(k for k in block.attrib if k not in ("description", "fields"))
-        for el in block.iter():
-            if el is block or el.tag not in TYPE_OF:
-                continue
-            seen[TYPE_OF[el.tag]].update(el.attrib)
+    for prompt in (_everything(), _source_prompt()):
+        for block in blocks(prompt):
+            if block.tag in ("note_index", "events"):
+                seen[block.tag].update(
+                    k for k in block.attrib if k not in ("description", "fields"))
+            for el in block.iter():
+                if el is block or el.tag not in TYPE_OF:
+                    continue
+                seen[TYPE_OF[el.tag]].update(el.attrib)
     return seen
 
 
@@ -154,7 +174,8 @@ def test_the_fixture_makes_every_element_carry_every_attribute_it_can():
         "index", "kind", "room", "summary", "returning", "window", "earlier_not_shown",
         "earlier_range", "unreadable", "n", "at", "from", "edited", "reaction",
         "reaction_removed", "reactions", "reactions_observed",
-        "withdrawn", "deleted", "own", "cues", "turn",
+        "withdrawn", "deleted", "own", "cues", "turn", "target",
+        "op", "actor", "time", "received", "rev", "coverage", "object",
     }
     assert seen["note_index"] == {
         "n", "title", "not_listed", "review", "may_duplicate", "reminds",

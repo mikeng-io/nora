@@ -1052,7 +1052,7 @@ async def test_by_ids_resolves_named_rows_of_the_one_conversation(store):
     assert await store.hide_message(message_id=hidden, now_ms=8) is True
 
     found, deleted = await store.by_ids(
-        conversation_id="g1",
+        platform="signal", conversation_id="g1",
         ids=(target, plain, gone, hidden, other, 999999))
 
     assert set(found) == {target, plain, gone}
@@ -1065,9 +1065,11 @@ async def test_by_ids_resolves_named_rows_of_the_one_conversation(store):
     assert deleted == frozenset({gone})
     assert hidden not in found and other not in found
 
-    assert await store.by_ids(conversation_id="g2", ids=(target,)) == (
+    assert await store.by_ids(platform="discord", conversation_id="g1", ids=(target,)) == (
         {}, frozenset())
-    assert await store.by_ids(conversation_id="g1", ids=()) == (
+    assert await store.by_ids(platform="signal", conversation_id="g2", ids=(target,)) == (
+        {}, frozenset())
+    assert await store.by_ids(platform="signal", conversation_id="g1", ids=()) == (
         {}, frozenset())
 
 
@@ -1079,7 +1081,7 @@ async def test_by_ids_folds_the_newest_edit_as_recent_does(store):
     await store.append_edit(
         message_id=target,
         message=_msg(body="edited words", ts=1))
-    found, _ = await store.by_ids(conversation_id="g1", ids=(target,))
+    found, _ = await store.by_ids(platform="signal", conversation_id="g1", ids=(target,))
     assert found[target].body == "edited words"
     assert found[target].edit is not None
     assert found[target].edit.was == "first words"

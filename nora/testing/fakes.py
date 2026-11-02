@@ -419,7 +419,7 @@ class FakeRecordStore:
         return [self._transcript_row(r) for r in matching[:limit]]
 
     async def by_ids(
-        self, *, conversation_id: str, ids: Sequence[int],
+        self, *, platform: str, conversation_id: str, ids: Sequence[int],
     ) -> tuple[dict[int, TranscriptRow], frozenset[int]]:
         """Mirrors `SqlRecordStore.by_ids`: one conversation's rows by id —
         hidden rows absent, a recorded delete named in the second element,
@@ -430,7 +430,7 @@ class FakeRecordStore:
         found = {
             r["id"]: self._transcript_row(r)
             for r in self.rows
-            if r["conversation_id"] == conversation_id
+            if r["platform"] == platform and r["conversation_id"] == conversation_id
             and r["id"] in wanted and r["id"] not in self.hidden_ids
         }
         gone = frozenset(
