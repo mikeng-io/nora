@@ -169,6 +169,17 @@ product, an influencer or an "AI assistant" with sparkles.
 
 ## 2. Representation
 
+**Operator amendment, 2026-11-02:** Mini cinematic artwork is accepted for
+social presentation: [master](assets/cinematic/mini-nora-master.png),
+[square icon](assets/cinematic/mini-nora-social-icon.png) and
+[banner](assets/cinematic/mini-nora-social-banner.png). This supersedes the
+2D-only restriction for this artwork set. Preserve Mini identity and Bauhinia
+clothing while using dimensional soft materials and Lingnan xianxia mountain-and-sea
+art direction. Icons have no baked circle; platforms own cropping. Generate
+from the master directly, with the original full-body reference for unseen clothing.
+Existing 3D model, website inputs and runtime self-image routing remain unchanged.
+Human Nora is outside this amendment. See [anchor scope](assets/cinematic/README.md).
+
 One identity, two forms: adult human Nora and Mini Nora (mini mode), per 08/09.
 **Later operator ruling, 2026-10-26:** all non-3D uses of either form use the
 2D anime production setting. Stylized 3D PNGs serve Meshy modeling only.
