@@ -216,7 +216,11 @@ class _SignalExecutor:
 
     def _attachment(self, att: Any) -> OutboundAttachment | None:
         """Custody bytes live under `/v1/attachments/{key}` — read them back
-        so the send carries real bytes, not a stale ref."""
+        so the send carries real bytes, not a stale ref. A miss returns None
+        and the whole send is REJECTED upstream — deliberately NOT
+        `DiscordRestActionService._attachment`'s policy, which drops the
+        attachment and delivers text-only (whatsapp rejects the same way
+        this does)."""
         if self._attach_dir is None or not isinstance(att, dict):
             return None
         key = str(att.get("key") or "")
@@ -259,6 +263,10 @@ class _SignalExecutor:
 #: whole action inside the executor's try).
 _STYLE_VALUES = frozenset(s.value for s in Style)
 
+#: Outbound custody PUT bound — the "bounded bytes" clause of the wire
+#: contract, at the whatsapp bridge's figure (discord/instagram run 32 MiB).
+MAX_ATTACHMENT_BYTES = 64 * 1024 * 1024
+
 
 class Bridge:
     """Capture + durable /v1 actions. `store` is the action ledger; an effect
@@ -284,10 +292,12 @@ class Bridge:
         self.store = store or SqlBridgeStore(
             create_async_engine(cfg.database_url))
         self.journal = Journal(cfg.journal_path)
-        # `dm_recipients=None`: the app-side adapter already ran the
-        # identity.toml DM check before the action existed (`send_via_bridge`)
-        # — the bridge holds no policy file to re-check against, and every
-        # other bridge platform trusts the app the same way.
+        # `dm_recipients=None`: the identity.toml DM check lives app-side in
+        # `send_via_bridge` — the bridge holds no policy file to re-check
+        # against, and every other bridge platform trusts the app the same
+        # way. CAVEAT: that check only fires when the app's set is POPULATED
+        # (`send_via_bridge` skips it on an empty set, and the owner gate is
+        # what still stands between a DM action and the wire).
         self.sender = sender or SignalSender(
             cfg.signal_http, dm_recipients=None)
         self.reactor = reactor or SignalReactor(cfg.signal_http)
@@ -683,6 +693,8 @@ class Bridge:
         if not attachment_key_ok(key):
             return web.json_response({"error": "bad key"}, status=400)
         body = await req.read()
+        if len(body) > MAX_ATTACHMENT_BYTES:
+            return web.json_response({"error": "too large"}, status=413)
         path = self.cfg.attach_dir / key
         if path.is_file() and path.read_bytes() != body:
             # Immutable custody: a key names ONE payload; a different body

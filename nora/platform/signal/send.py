@@ -257,11 +257,12 @@ class SignalSender:
         # The direct-message addresses this sender may reach: every Signal id
         # in `identity.toml` (`Persons.direct_addresses`). Empty by default, so
         # a sender nobody handed the set to refuses every direct message.
-        # `None` lifts the check entirely — the bridge's case: the action
-        # ledger already admitted the send and the app-side adapter ran the
-        # SAME identity.toml check in `send_via_bridge`; the bridge holds no
-        # policy file, so a second check here could only refuse with an empty
-        # set. Every other bridge platform trusts the app the same way.
+        # `None` lifts the check entirely — the bridge's case: the bridge
+        # holds no policy file, so a second check here could only refuse with
+        # an empty set. The app-side check in `send_via_bridge` is the real
+        # guard, and it only fires when the app's set is POPULATED — an
+        # empty-set deployment admits every DM the action owner gate admits,
+        # which is the accepted trust shape on every other bridge platform.
         self._dm_recipients = dm_recipients
         self._base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout)
