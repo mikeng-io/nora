@@ -1,0 +1,16 @@
+[
+  {
+    "name": "source order cannot change a completion digest",
+    "file": "nora/app/cognition_memory.py",
+    "old": "    return sorted(rows, key=lambda row: json.dumps(row, sort_keys=True, default=str))",
+    "new": "    return rows",
+    "target": "tests/unit/test_unified_backfill_boundaries.py::test_prepared_input_hash_ignores_source_and_person_iteration_order"
+  },
+  {
+    "name": "person-set iteration cannot change a completion digest",
+    "file": "nora/app/cognition_memory.py",
+    "old": "    rows = [{**asdict(source), \"persons\": sorted(source.persons)} for source in sources]",
+    "new": "    rows = [asdict(source) for source in sources]",
+    "target": "tests/unit/test_unified_backfill_boundaries.py::test_prepared_input_hash_ignores_source_and_person_iteration_order"
+  }
+]
