@@ -734,9 +734,11 @@ class WorkRunner:
                 " WHERE id = :id AND generation = :g"
                 " AND state = 'running'"),
                 {"s": seconds, "id": work.id, "g": work.generation})
+        attempt = self._attempts.get(work.id)
         bt.lifecycle(self._metrics, "deferred", platform=work.platform,
                      event_id=work.event_id or "", reason=reason,
-                     attempt_id=bt.attempt_identity(work.id, work.generation))
+                     attempt_id=bt.attempt_identity(work.id, work.generation),
+                     trace=attempt[1] if attempt else None)
 
     def _attempt_patch(self, work: Any, state: str,
                        result: dict[str, Any] | None) -> dict[str, Any]:
@@ -1104,10 +1106,12 @@ class WorkRunner:
             if retained_observation:
                 # The refusal's durable commit happened above; the bounded
                 # lifecycle line follows it, never precedes it.
+                attempt = self._attempts.get(work.id)
                 bt.lifecycle(self._metrics, "failed_retained",
                              platform=work.platform,
                              event_id=envelope.event_id,
-                             outcome="observation_refused")
+                             outcome="observation_refused",
+                             trace=attempt[1] if attempt else None)
             await self._ack(work)
 
     async def _stamp_ingest_ended(
@@ -1190,10 +1194,12 @@ class WorkRunner:
         if ok:
             self._emit_terminal(work, state)
             if retained_observation:
+                attempt = self._attempts.get(work.id)
                 bt.lifecycle(self._metrics, "failed_retained",
                              platform=work.platform,
                              event_id=envelope.event_id,
-                             outcome="observation_refused")
+                             outcome="observation_refused",
+                             trace=attempt[1] if attempt else None)
             await self._ack(work)
 
     async def _run_observation_ingest(

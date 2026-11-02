@@ -663,8 +663,8 @@ work/action before retrying; an uncertain action may already have taken effect.
 SigNoz deployment identity comes from each bridge image's baked
 `OTEL_SERVICE_VERSION`; reused images retain their own build version. The
 backend's private `NORA_DEPLOYMENT_ENVIRONMENT` names the deployment environment
-for otherwise unstamped spans. Set it from the deployed configuration, never
-from the latest application release number.
+for otherwise unstamped spans. Compose refuses an unset or empty value. Set it
+from the deployed configuration, never from the latest application release number.
 
 `bridge-projection` is the independent publisher every bridge reads before
 capturing a message body or attachment. It is one container (`entry.py --all`)
