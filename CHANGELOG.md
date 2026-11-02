@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.13.20](https://github.com/mikeng-io/nora/compare/v7.13.19...v7.13.20) (2026-11-02)
+
+
+### Maintenance
+
+* **agents:** inspect scanner findings before merging ([bafdf41](https://github.com/mikeng-io/nora/commit/bafdf4139258759527af68e23c0371d76b9e38bd))
+* **agents:** keep scanner triage within skill size limit ([cbdcdbc](https://github.com/mikeng-io/nora/commit/cbdcdbc76ec7a0a2286a2be45c17b3aec1c44b8c))
+* **agents:** leave ordinary deployment to the automatic pipeline ([63e002f](https://github.com/mikeng-io/nora/commit/63e002f64bf6ef506631fcef34a87726fa78f4ad))
+
 ## [7.13.19](https://github.com/mikeng-io/nora/compare/v7.13.18...v7.13.19) (2026-11-02)
 
 
