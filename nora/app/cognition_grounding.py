@@ -546,8 +546,8 @@ async def _source_objects(
         heads = [h for h in heads if h.applied > 0]
         events: list[SourceEvent] = []
 
-        def name_of(ref: str) -> str | None:
-            found = persons.resolve(room.platform, ref)
+        def name_of(ref: str, platform: str = room.platform) -> str | None:
+            found = persons.resolve(platform, ref)
             return found.name if found is not None else None
         for h in heads[:limit]:
             events.append(SourceEvent(

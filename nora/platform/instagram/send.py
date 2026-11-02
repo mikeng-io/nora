@@ -372,6 +372,7 @@ class InstagramSender:
         # media post are their own stanzas with their own ids, and the
         # durable row's `platform_message_ids_json` holds the whole set.
         ids: list[str] = []
+        sent_any = False
         last_ts: int | None = None
         # `or not attachments` so a text-less, attachment-less send still makes
         # the call and the bridge decides. Returning `ok=True` for a send that
@@ -388,6 +389,7 @@ class InstagramSender:
                 # put an image in the room with nothing explaining it, and
                 # would report the TEXT's failure as a success.
                 return result
+            sent_any = True
             if result.platform_message_id:
                 ids.append(result.platform_message_id)
             last_ts = result.timestamp
@@ -413,9 +415,10 @@ class InstagramSender:
                 # Earlier pieces DID land. `ok=False` alone would let a
                 # caller retry the whole send and double-post the parts that
                 # already went out; `uncertain` is the honest state.
-                if ids:
+                if sent_any:
                     return SendResult(ok=False, uncertain=True)
                 return media_result
+            sent_any = True
             if media_result.platform_message_id:
                 ids.append(media_result.platform_message_id)
             last_ts = media_result.timestamp

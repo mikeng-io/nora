@@ -37,11 +37,26 @@ async def bridge():
     box: dict = {"calls": [], "queue": []}
 
     async def handler(request: web.Request) -> web.Response:
-        box["calls"].append((request.path, await request.json()))
+        payload = await request.json()
+        box["calls"].append((request.path, payload))
+        valid = payload.get("jid") == ROOM
+        if request.path == "/send":
+            valid = valid and isinstance(payload.get("text"), str)
+        elif request.path == "/send-media":
+            valid = valid and payload.get("media_type") in {
+                "image", "video", "audio", "sticker", "document"}
+            valid = valid and bool(payload.get("data_base64"))
+        else:
+            valid = False
+        if not valid:
+            return web.json_response({"error": "bad_request"}, status=400)
         status, body = box["queue"].pop(0)
         return web.json_response(body, status=status)
 
-    server = TestServer(web.Application(web.post("/{tail:.*}", handler)))
+    app = web.Application()
+    app.router.add_post("/send", handler)
+    app.router.add_post("/send-media", handler)
+    server = TestServer(app)
     await server.start_server()
     sender = WhatsAppSender(str(server.make_url("")), dm_recipients={ROOM})
     yield box, sender
@@ -86,3 +101,38 @@ async def test_a_text_send_sets_the_alias_list_too(bridge) -> None:
     res = await sender.send(GROUP, "hi")
     assert res.platform_message_id == "wamid.t1"
     assert res.platform_message_ids == ("wamid.t1",)
+
+
+async def test_a_missing_id_does_not_make_a_partial_send_retryable(bridge) -> None:
+    box, sender = bridge
+    box["queue"] += [(200, {"ok": True}), (503, {"error": "not_connected"})]
+    res = await sender.send(GROUP, "cap", attachments=(PNG, JPG))
+    assert not res.ok and res.uncertain and not res.retryable
+    assert res.platform_message_ids == ()
+    assert len(box["calls"]) == 2
+
+
+async def test_an_instagram_confirmation_without_id_still_blocks_partial_retry() -> None:
+    from nora.platform.instagram.send import InstagramSender
+
+    calls = []
+
+    async def handle(request: web.Request) -> web.Response:
+        body = await request.json()
+        calls.append(body)
+        if len(calls) == 1 and body == {"text": "caption"}:
+            return web.json_response({"timestamp_ms": 1790000000000})
+        if len(calls) == 2 and isinstance(body.get("media"), dict):
+            return web.json_response({"error": {"code": "reconnecting"}}, status=503)
+        return web.json_response({"error": {"code": "bad_request"}}, status=400)
+
+    app = web.Application()
+    app.router.add_post("/threads/example-thread/messages", handle)
+    async with TestServer(app) as server:
+        sender = InstagramSender(str(server.make_url("")))
+        result = await sender.send(
+            ConversationTarget("instagram", "example-thread", "group"),
+            "caption", attachments=(PNG,))
+    assert len(calls) == 2
+    assert not result.ok and result.uncertain and not result.retryable
+    assert result.platform_message_ids == ()

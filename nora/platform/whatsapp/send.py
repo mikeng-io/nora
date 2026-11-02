@@ -206,7 +206,7 @@ class WhatsAppSender:
                     # parts. `uncertain` is the honest state — and the
                     # confirmed ids stay OUT of the result so nothing mints
                     # handles a partial action cannot prove.
-                    return SendResult(ok=False, uncertain=True) if ids else result
+                    return SendResult(ok=False, uncertain=True) if i > 0 else result
                 if result.platform_message_id:
                     ids.append(result.platform_message_id)
             log.info("sent %d attachment(s) to %s (id=%s)",

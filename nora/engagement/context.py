@@ -1278,6 +1278,10 @@ class TranscriptInjection:
         out: list[RetainedSource] = []
         more = 0
         seen: set[str] = set(shown_handles)
+        def name_of(person_ref: str) -> str | None:
+            found = self._persons.resolve(msg.platform, person_ref)
+            return found.name if found is not None else None
+
         for note in notes:
             for ref in note.object_refs:
                 if (ref.platform, ref.conversation_id) != (
@@ -1315,9 +1319,7 @@ class TranscriptInjection:
                         actor=None, actor_status="not_applicable",
                         handle=handle_of(head),
                         summary="", ordering=head.ordering,
-                        state=head_summary(
-                            head, name_of=lambda ref, p=ref.platform:
-                            name_of(p, ref)),
+                        state=head_summary(head, name_of=name_of),
                         received_ms=head.received_ms,
                         revision=revision_label(head.position, head.scope),
                         coverage=coverage_label(head.coverage))))
