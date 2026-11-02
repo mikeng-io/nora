@@ -1,5 +1,13 @@
 # Open questions and measurements
 
+Current scope (2026-11-02): the
+[scoped anonymous browser target](00-design.md#current-target--scoped-anonymous-browser-2026-11-02)
+is NOT BUILT and owns today's acceptance in issue #520. The rulings and B3
+measurement programme below are retained historical context. Login/vault,
+streaming/noVNC, tier cache, small models, GPU and stealth-engine arms are
+outside the current slice; challenge rate is measured on the consistent Chrome
+baseline without an anti-bot guarantee. ADR 0022 remains unchanged.
+
 Status (2026-10-07): every ruling made, ADR 0022 accepted, S1 run. Nothing here is decided by argument.
 
 ## 1. Rulings for the operator

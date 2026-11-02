@@ -1,13 +1,129 @@
 ---
 type: design
-title: "Nora's browser — headed Chrome in the computer, a tiered driver, and a vault she never reads"
-description: "Not built. Extends design/sandbox-runtime §14 (S4). Real Google Chrome runs headed on Xvfb inside the sbx computer; a sub-agent outside the VM drives it over a CDP proxy through computerd, through four tiers (site adapter, cached script, small decision model, DeepSeek Flash with vision) and a human hand-off over noVNC. Credentials live in OpenBao and reach a page only through a fill broker, bound to an origin; the model holds handles. The portal can watch the screen read-only. ADR 0022, accepted 2026-10-07. Research from 2026-10-06, much of it from search snippets and marked so."
+title: "Nora's browser — anonymous headed Chrome in a scoped microVM"
+description: "Current target NOT BUILT: one microVM per policy unit or canonical private-DM scope, with one on-demand anonymous headed Chrome, reusable in-memory tabs and direct screenshots. Preserves the accepted ADR 0022 design and historical B1/B2 delivery below; vault, login, streaming and tier optimizations are outside the current slice."
 tags: [nora, compute, sandbox, sbx, browser, computer-use, credentials, openbao, vault, cdp]
-timestamp: '2026-10-07'
-status: accepted
+timestamp: '2026-11-02'
+status: partly-built
 ---
 
 # Nora's browser
+
+## Current target — scoped anonymous browser (2026-11-02)
+
+**NOT BUILT.** Operator-directed scope amendment, tracked with the Pi/sandbox
+outcome in [issue #520](https://github.com/mikeng-io/nora/issues/520).
+The baseline is one shared microVM with unit-scoped workspaces, not one VM per
+unit. The [unit migration](../computer-unit-scope/01-migration.md) is already
+shipped; B1/B2 below record browser delivery, not delivery of this topology.
+No host or runtime state was probed by this documentation revision.
+
+This section owns the current slice and takes precedence over the historical
+sequence below. ADR 0022 stays accepted and unchanged; its broader login/vault
+and display plans are retained history and deferred work, not this slice's
+acceptance. This target holds unless the operator changes scope or measured
+isolation, resource or concurrency results require revisiting its mechanics.
+
+### Scope and topology
+
+- One microVM per **policy unit** for group work. Consecutive turns and the
+  same unit's admitted transports resolve the same VM and browser session.
+- A private DM gets its own VM using the canonical unique
+  `(person_id, anchor_unit)` / `dm_scope_id` binding and opaque DM hash in
+  [private-DM scope](../private-dm/05-cross-platform.md#3-computer-browser-and-export-are-in-the-first-slice).
+  Never collapse by person alone, use the anchor unit's VM, or infer a scope
+  from a display name. A default-unit change selects a different partition.
+  DM admission/publication prerequisites remain required; this does not enable DMs.
+- Nora resolves authority once from the admitted turn/job. Native tools and
+  Pi (later ACP) workers use that **same scoped VM**, workspace and browser;
+  the worker cannot choose a different scope or management/CDP endpoint.
+  Scope identity is independent of the sandbox-provider adapter.
+- Nora stays in the trusted container; her Strands subagent remains Nora and
+  the Pi/ACP worker remains an external harness inside the scoped VM. The
+  browser model loop stays outside the VM. No identity or model-key relocation.
+- Management calls, lifecycle/state reads, process handles and computerd/CDP
+  connections must route to the bound VM, with scope checked on reconnect and
+  by-ID lookups. Never fall back to the shared VM, another endpoint or another
+  scope when resolution fails. No unauthenticated CDP port is exposed to peers.
+
+### Browser lifetime and operations
+
+One native headed Google Chrome per VM starts **on demand**, with its virtual
+display inside that VM. Anonymous browsing only: no account login, credential
+fill, vault or existing authenticated profile import. Anonymous cookies and
+page state may be reused in memory across consecutive turns and same-unit
+transports while the browser lives. Each task owns separate tabs; a continuation
+may resume its own tabs, while concurrent tasks must not navigate or close each
+other's tabs. A task/session handle is bound to scope, VM instance and tab owner.
+
+Idle cleanup closes unused task tabs and stops an idle browser after active
+owners release it; it must not kill an active native/worker task. There is no
+promise that sessions, tabs or cookies survive browser/VM/service restart,
+recreation or idle expiry. An old handle returns explicit `expired` detail under
+`unavailable`; it never silently attaches to a replacement tab/session. A new
+session is reported as new. Files retain their separate workspace contract.
+
+The accessibility snapshot remains the default model input, with screenshot on
+demand. A **direct screenshot operation** supports viewport and full-page capture
+without requiring an objective-driven browser loop. Both direct and loop capture
+bind scope and task tab, return the actual image with capture provenance, and
+report capture failure as `unavailable`, never an empty successful image. A
+full-page capture says when a page cannot be fully captured. This adds no live
+screen stream, recording, noVNC or interactive takeover surface.
+
+Use one consistent fingerprint baseline (Chrome build, display/viewport, locale,
+timezone, fonts and proxy configuration), and record it with challenge-rate
+measurements on a fixed anonymous task set. Report challenged visits / attempted
+visits, failures and sample size, alongside task success. Headed Chrome is no
+guarantee against bot detection; a challenge is an explicit unavailable outcome,
+not a solver, fabricated success or automatic switch to a stealth engine.
+
+### Migration prerequisites and acceptance
+
+The next implementation must first refresh the current shared-VM inventory and
+scope routing. Preserve the shipped room-to-unit mapping, existing files,
+private browser data and session/audit provenance. Pause admission and drain
+jobs/leases before taking verified private backups; reconcile source-to-archive
+inventory and prove restore before moving data. Migrate each existing unit
+workspace without flattening legacy room prefixes or merging profiles. Preserve
+old profile bytes as private data, without reusing their logins in the new
+anonymous browser. Unknown scope ownership or a conflicting destination blocks
+cutover with source data intact. Keep rollback mapping and backups until readback.
+The [DM owner-map and backup prerequisites](../private-dm/04-build-and-acceptance.md)
+remain open; a VM split does not declare them satisfied. This is a prerequisite
+specification, not a new host runbook or permission to run the old cutover again.
+
+Acceptance for #520 uses generated scopes and the existing sandbox/worker
+contracts, plus later explicitly authorized runtime readback:
+
+- Two transports of one unit resolve one VM and reuse a live anonymous session;
+  a different unit and a DM resolve distinct VMs. Two anchor units for the same
+  person resolve different DM VMs; admitted linked DM transports share only the
+  same canonical DM scope. Unknown/unadmitted scope is unavailable before work.
+- Native tools and Pi/ACP agree on workspace and browser identity for the same
+  scope. Cross-scope management, state, session/process/tab handles and CDP are
+  refused, including forged IDs, reconnects and stale-instance handles.
+- Concurrent native and worker browser tasks in one scope use separate tabs;
+  same-tab operations serialize under one owner/admission mechanism. Existing
+  `job:<id>` leases alone are not browser exclusion. Different scoped VMs
+  progress independently; cancellation/idle cleanup leaves active tasks intact.
+- Consecutive-turn snapshot and direct viewport/full-page image captures are
+  verified against the intended tab. Restart/idle expiry returns unavailable
+  with expired detail; no hidden persistence or cross-task tab substitution.
+- Migrated files, modes, ownership, digests and session bindings reconcile;
+  interrupted/conflicting migration preserves sources and refuses enablement.
+  DM private-to-unit publication remains governed by the existing DM contract;
+  VM isolation is not permission to copy private bytes into a unit workspace.
+- Measure cold start, warm reuse, idle resource release, concurrent-scope cost,
+  task success and challenge rate against the recorded fingerprint baseline.
+  No unmeasured anti-bot guarantee or runtime acceptance from docs checks.
+
+**Outside this slice:** streaming/noVNC, vault/credentials/login implementation,
+site/script tier cache, small decision models, GPU and stealth/alternative
+engines. Existing host social browsing remains outside this change. No runtime,
+config, deployment or host operation is authorized by this planning update.
+
+## Historical accepted design and delivery
 
 Status (2026-10-07): **accepted (ADR 0022); B1a built** (Chrome in the image, a per-room
 browser in computerd over the pipe; `deploy/computer/README.md` «The browser»). B1b built (egress `**` with the private ranges denied, DEC-289); B2 built, off by default (`computer_browse`: a Flash sub-agent over an accessibility snapshot with refs, a marked screenshot on request, and a `needs_human` hand-off; `[computer.browse]`). B3 on are not built. This bundle is the design for
