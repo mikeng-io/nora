@@ -15,7 +15,7 @@ status: partly-built
 > [The current browser contract](../browser-runtime/00-design.md#current-target--scoped-anonymous-browser-2026-11-02)
 > owns session/tab lifetime, direct screenshots, routed management/CDP,
 > concurrency and data-preserving migration acceptance. The shared-VM topology
-> and dated S-stage observations below are historical; the later
+> below remains the baseline; dated S-stage observations are historical. The later
 > [unit workspace cutover](../computer-unit-scope/01-migration.md) shipped within
 > that shared VM. Neither that cutover nor this docs update built per-scope VMs.
 

@@ -45,3 +45,4 @@ edges:
   - {src: 50-verification-and-migration, dst: 10-worker-port, rel: measures, provenance: asserted}
   - {src: 30-sandbox-port, dst: ../sandbox-runtime/00-design.md, rel: amends, provenance: asserted}
   - {src: 10-worker-port, dst: ../subagent/00-design.md, rel: extends, provenance: asserted}
+  - {src: 30-sandbox-port, dst: ../browser-runtime/00-design.md, rel: amends, provenance: operator-directed-2026-11-02}

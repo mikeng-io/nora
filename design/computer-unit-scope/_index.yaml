@@ -10,7 +10,7 @@ status: implemented
 timestamp: '2026-10-21'
 governance: operator-directed
 origin: Operator ruling that work must resume across a unit's group transports.
-revision: '2026-10-21; records shipped implementation and live cutover; 00-contract.md retains the original design beneath a current-status banner.'
+revision: '2026-11-02: next per-unit/private-DM VM topology remains unbuilt; shipped migration preserved. 2026-10-21; records shipped implementation and live cutover; 00-contract.md retains the original design beneath a current-status banner.'
 docs:
   - 00-contract.md
   - 01-migration.md
