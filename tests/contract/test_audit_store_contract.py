@@ -303,6 +303,45 @@ async def test_set_delivery_outcome_on_an_unknown_row_is_a_silent_no_op(store):
     await store.set_delivery_outcome(row_id=9999, status=DeliveryStatus.SENT, ts=1)
 
 
+async def test_set_delivery_outcome_lands_the_platforms_message_id(store):
+    """The sent message's own handle exists only after the platform answers,
+    so it lands on the outcome write — and `find_edited` then resolves a
+    later reaction/edit/quote target named by it, in this room only."""
+    row_id = await store.append(message=_msg(platform="whatsapp"), is_nora=True)
+    await store.set_delivery_outcome(
+        row_id=row_id, status=DeliveryStatus.SENT,
+        platform_message_id="3EB0F1",
+    )
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(message_id="3EB0F1"), sender_id="",
+    )
+    assert found is not None and found.id == row_id
+    assert found.platform_message_id == "3EB0F1"
+    assert await store.find_edited(
+        conversation_id="g2", target=EditTarget(message_id="3EB0F1"), sender_id="",
+    ) is None, "a handle must never resolve across a conversation"
+
+
+async def test_an_outcome_without_a_native_id_never_blanks_the_handle(store):
+    """`None` leaves the column untouched: a platform that answered without
+    an id stamps none, and a later outcome carrying none does not erase the
+    handle already recorded."""
+    row_id = await store.append(message=_msg(platform="whatsapp"), is_nora=True)
+    await store.set_delivery_outcome(row_id=row_id, status=DeliveryStatus.SENT)
+    assert await store.find_edited(
+        conversation_id="g1", target=EditTarget(message_id="3EB0F1"), sender_id="",
+    ) is None
+    await store.set_delivery_outcome(
+        row_id=row_id, status=DeliveryStatus.SENT,
+        platform_message_id="3EB0F1",
+    )
+    await store.set_delivery_outcome(row_id=row_id, status=DeliveryStatus.SENT)
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(message_id="3EB0F1"), sender_id="",
+    )
+    assert found is not None and found.platform_message_id == "3EB0F1"
+
+
 # ---------------------------------------------------------------------------
 # quoted_ts — the parent pointer, written in the SAME insert
 # ---------------------------------------------------------------------------

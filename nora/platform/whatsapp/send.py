@@ -105,6 +105,18 @@ def _sent_timestamp(body: object) -> int | None:
     return value
 
 
+def _sent_message_id(body: object) -> str | None:
+    """`id` out of the bridge's `{ok, id, timestamp_ms}` result — the
+    platform's own handle for the sent message, which a later reaction or
+    unsend names it by. Anything absent or not a string degrades to None,
+    `_sent_timestamp`'s rule: a send that reached the group must never be
+    reported as failed over a missing field."""
+    if not isinstance(body, dict):
+        return None
+    value = body.get("id")
+    return value if isinstance(value, str) and value else None
+
+
 class WhatsAppSender:
     def __init__(
         self, base_url: str, *, timeout: float = 10.0,
@@ -125,7 +137,10 @@ class WhatsAppSender:
                 ) as resp,
             ):
                 if resp.status == 200:
-                    return SendResult(ok=True, timestamp=_sent_timestamp(await resp.json()))
+                    body = await resp.json()
+                    return SendResult(
+                        ok=True, timestamp=_sent_timestamp(body),
+                        platform_message_id=_sent_message_id(body))
                 if resp.status == 429:
                     retry_after = _retry_after_seconds(resp.headers.get("Retry-After"))
                     log.error("send rate-limited: HTTP 429 (conversation=%s)", conversation_id)
