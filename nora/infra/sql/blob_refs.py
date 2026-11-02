@@ -161,6 +161,7 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
     ("rollup_fold_state", "open_stay"): "a stay still open",
     ("room_exchange", "examples"): "quoted exchanges, text only",
     ("room_lexeme", "examples"): "quoted usages, text only",
+    ("note", "object_refs"): "typed source scope and opaque object handles, never byte custody",
     ("standing", "working_set"): "a position's working notes, text only",
     ("standing_revision", "working_set"): "a position's working notes, text only",
     ("standing_thread", "spans"): "room, message ids and timestamps, never blob custody",
