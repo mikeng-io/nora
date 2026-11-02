@@ -63,13 +63,16 @@ class BridgeAdapter:
         self._dm_recipients = dm_recipients
         self._degraded_reason = ""
         self._session: aiohttp.ClientSession | None = None
+        self._transport_owner: BridgeAdapter | None = None
         self._ordinal = 0
 
     def bind_owner(self, owner: ActionOwner | None) -> BridgeAdapter:
         """A facade with a durable action owner — how a fenced work identity
-        reaches its sends. Shares nothing mutable with the parent adapter."""
-        return BridgeAdapter(self.platform, self._endpoint, owner,
-                             dm_recipients=self._dm_recipients)
+        reaches its sends. Owns its ordinal; borrows the root's transport."""
+        bound = BridgeAdapter(self.platform, self._endpoint, owner,
+                              dm_recipients=self._dm_recipients)
+        bound._transport_owner = self._transport_owner or self
+        return bound
 
     @property
     def action_owner(self) -> ActionOwner | None:
@@ -90,12 +93,16 @@ class BridgeAdapter:
         return bool(self._degraded_reason)
 
     async def _client(self) -> aiohttp.ClientSession:
+        if self._transport_owner is not None:
+            return await self._transport_owner._client()
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(headers={
                 "Authorization": f"Bearer {self._endpoint.token}"})
         return self._session
 
     async def close(self) -> None:
+        if self._transport_owner is not None:
+            return
         if self._session is not None and not self._session.closed:
             await self._session.close()
 
