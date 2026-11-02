@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.14.3](https://github.com/mikeng-io/nora/compare/v7.14.2...v7.14.3) (2026-11-02)
+
+
+### Bug Fixes
+
+* **memory:** canonicalize source digests across process restarts ([bfcc3a1](https://github.com/mikeng-io/nora/commit/bfcc3a1675a068c71369c62f410b80d3c10873e6))
+* **release:** exclude agent config and generated wiki paths ([4f0b817](https://github.com/mikeng-io/nora/commit/4f0b8179ec6326c06e0de674c16f1229bc37f29c))
+* **release:** exclude changes confined to non-runtime paths ([8d96581](https://github.com/mikeng-io/nora/commit/8d96581730c11ca7637644dd4824b5b367b7a96d))
+
 ## [7.14.2](https://github.com/mikeng-io/nora/compare/v7.14.1...v7.14.2) (2026-11-02)
 
 
