@@ -435,7 +435,7 @@ class _RunState:
     #: `object` handles this session was actually shown, to the room the
     #: grounder read them from — the only refs a note's `object_refs` may
     #: name (the `shown_keys` rule, one axis over).
-    shown_handles: dict[str, tuple[str, str]] = field(default_factory=dict)
+    shown_handles: dict[str, tuple[str, str] | None] = field(default_factory=dict)
     graph_text: str = ""
     historical: bool = False
     #: A verb other than `close` was called in this session, whatever it
@@ -1140,22 +1140,27 @@ class CognitionSessionRunner:
         items = situation.agenda.items
         # The `object` handles this session was shown, each to the room the
         # grounder read it from — the evidence `object_refs` is held to.
-        shown_handles: dict[str, tuple[str, str]] = {}
+        shown_handles: dict[str, tuple[str, str] | None] = {}
+
+        def remember(handle: str, room: tuple[str, str]) -> None:
+            if handle not in shown_handles:
+                shown_handles[handle] = room
+            elif shown_handles[handle] != room:
+                shown_handles[handle] = None
+
         for ref, e in grounding.observations.items():
             stimulus = next((s for s in view.pending if s.ref == ref), None)
             if (stimulus is not None and stimulus.platform is not None
                     and stimulus.conversation_id is not None):
-                shown_handles[e.handle] = (
-                    stimulus.platform, stimulus.conversation_id)
+                remember(e.handle, (stimulus.platform, stimulus.conversation_id))
         for key, events in grounding.source_objects.items():
             platform, _, cid = key.partition(":")
             for e in events:
-                shown_handles[e.handle] = (platform, cid)
+                remember(e.handle, (platform, cid))
         for retained in grounding.retained_objects.values():
             for r in retained:
                 if r.head is not None:
-                    shown_handles[r.ref.handle] = (
-                        r.ref.platform, r.ref.conversation_id)
+                    remember(r.ref.handle, (r.ref.platform, r.ref.conversation_id))
         state = _RunState(
             session_id=session_id, wake_id=wake_id, unit=unit, now_ms=now_ms,
             items_by_index=dict(enumerate(items)), historical=historical,
@@ -1614,6 +1619,9 @@ class CognitionSessionRunner:
                     return _refused("duplicate_object_ref", "an object handle is listed twice")
                 seen.add(handle)
                 shown_room = state.shown_handles.get(handle)
+                if handle in state.shown_handles and shown_room is None:
+                    return _refused(
+                        "ambiguous_object_ref", "that handle names objects in multiple shown rooms")
                 if shown_room is None:
                     return _refused(
                         "unseen_object_ref", "that object was not shown in this session")

@@ -1731,7 +1731,7 @@ def _field_value(value: Any) -> str:
 
 def _field_projection(name: str, value: Any, *, name_of: Any = None) -> Any:
     """Source reference fields keep their raw value only inside Record."""
-    if value is None or not name.endswith("_id"):
+    if value is None or not (name.endswith("_id") or name == "forward_origin"):
         return value
     if name == "owner_id" and name_of is not None:
         owner = name_of(str(value))
@@ -2137,7 +2137,8 @@ def head_detail(head: ObservationHead, *, name_of: Any = None) -> dict[str, Any]
     if head.kind == "message_metadata":
         fields = s.get("fields") or {}
         out["fields"] = {
-            k: v for k, v in list(fields.items())[:16]
+            k: _field_projection(k, v, name_of=name_of)
+            for k, v in list(fields.items())[:16]
             if k != "shared_refs" and
             isinstance(v, (str, int, float, bool, type(None)))
         }

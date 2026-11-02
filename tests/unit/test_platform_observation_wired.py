@@ -40,6 +40,7 @@ from nora.domain.observations import (
     ArtifactPayload,
     Coverage,
     MembershipPayload,
+    MessageMetadataPayload,
     Observation,
     PinPayload,
     PollPayload,
@@ -1470,3 +1471,54 @@ async def test_note_read_returns_only_the_retained_handles():
     assert out["status"] == "ok"
     assert out["object_refs"] == [_POLL_HANDLE]
     assert CID not in json.dumps(out)
+
+
+async def test_forwarded_metadata_detail_projects_its_source_reference():
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    origin = "discord:generated-guild/generated-channel/generated-message"
+    await store.append(
+        observation=_obs(kind="message_metadata", ref="forwarded", op="create", ago=1,
+                         platform="discord", payload=MessageMetadataPayload(
+                             forward_origin=origin, expires_in_ms=30_000)),
+        event_id="forwarded", source_digest="forwarded")
+    out = await _call(_tools(audit, store, platform="discord"), "record_query",
+                      object=object_handle("message_metadata", "forwarded", account_key="acct"))
+    assert out["status"] == "ok"
+    assert out["detail"]["fields"]["expires_in_ms"] == 30_000
+    assert origin not in json.dumps(out)
+    head = await store.current(
+        scope=SourceScope(platform="discord", account_key="acct", conversation_id=CID),
+        kind="message_metadata", object_ref="forwarded")
+    assert head.state["fields"]["forward_origin"] == origin
+
+
+async def test_a_handle_shown_for_two_rooms_cannot_silently_bind_the_last_room():
+    from nora.domain.cognition_ground import Grounding
+    from nora.testing.cognition_grounding import StaticGrounder
+    from tests.unit.cognition_rig import GOOD_BODY, NOTE, RECORDS, A, B, session
+    store, audit = FakeObservationStore(), FakeRecordStore()
+    # Signal really uses object_ref=pin_set under the same account in every group.
+    for room in (A, B):
+        await store.append(
+            observation=_obs(kind="pin", ref="pin_set", op="add", ago=1,
+                             room=room.conversation_id,
+                             payload=PinPayload(message=EditTarget(message_id=room.conversation_id))),
+            event_id=f"pins-{room.conversation_id}", source_digest=f"pins-{room.conversation_id}")
+    a = await _assembler(audit, store).assemble(request=_request())
+    b_request = dataclasses.replace(
+        _request(), message=dataclasses.replace(
+            _request().message, conversation_id=B.conversation_id))
+    b = await _assembler(audit, store).assemble(request=b_request)
+    assert a.source_objects[0].handle == b.source_objects[0].handle
+    grounding = Grounding(records=dict(RECORDS), source_objects={
+        f"signal:{A.conversation_id}": a.source_objects,
+        f"signal:{B.conversation_id}": b.source_objects})
+    answers=[]
+    async def behave(by, tools):
+        answers.append(await by["note_create"](
+            body=GOOD_BODY, item=0, object_refs=[a.source_objects[0].handle], **NOTE))
+    stores, _ = await session(behave, rooms=(A,B), runner_kwargs={
+        "grounder":StaticGrounder(grounding), "observations":store})
+    assert answers[0]["status"] == "refused", answers
+    assert answers[0]["reason"] == "ambiguous_object_ref"
+    assert await stores.notes.standing(unit="u") == ()

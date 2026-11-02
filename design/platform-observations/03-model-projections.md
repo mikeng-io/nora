@@ -104,8 +104,9 @@ opaque handle — persisted on the note head and swapped under the revision CAS.
 The Cognition session's existing `note_create`/`note_revise` verbs accept only
 shown object handles (no new model occasion); source scope stays server-side,
 and `note_read` returns handles for revision; each ref must name an object handle that session was
-shown in the same room and still resolve through `head_for_handle`, else the
-write is refused/`unavailable`. Both assemblies (Engagement `TagContext.
+shown unambiguously in one room and still resolve through `head_for_handle`, else the
+write is refused/`unavailable`. A handle shown for different rooms is refused,
+never bound to whichever room was read last. Both assemblies (Engagement `TagContext.
 retained_sources`, Cognition `Grounding.retained_objects`) resolve the refs
 fresh on every turn, mark each row with the tracking note's title as `matter`,
 report `unresolved` for a ref the store no longer holds, and never repeat a

@@ -100,7 +100,7 @@
  {
   "name": "thread owner and parent source ids never reach a model projection raw",
   "file": "nora/domain/observations.py",
-  "old": "    if value is None or not name.endswith(\"_id\"):",
+  "old": "    if value is None or not (name.endswith(\"_id\") or name == \"forward_origin\"):",
   "new": "    if True:",
   "target": "tests/unit/test_platform_observation_fixtures.py::test_thread_lifecycle_observations"
  }
