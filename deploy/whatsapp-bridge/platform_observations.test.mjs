@@ -958,12 +958,15 @@ test('numeric event responses decode once — per responder, never "1"/"2"/"3"',
   assert.equal(obs.length, 3);
   const byActor = Object.fromEntries(
     obs.map((e) => [e.observation.actor_id, e.observation]));
-  assert.equal(byActor['15550100011'].payload.metadata.response, 'going');
-  assert.equal(byActor['15550100011'].payload.metadata.extra_guest_count, 2);
+  assert.deepEqual(Object.keys(byActor).sort(), [
+    '+15550100011', '+15550100022', '+15550100033',
+  ]);
+  assert.equal(byActor['+15550100011'].payload.metadata.response, 'going');
+  assert.equal(byActor['+15550100011'].payload.metadata.extra_guest_count, 2);
   // not_going is an ANSWER — never coerced to a withdrawal.
-  assert.equal(byActor['15550100022'].payload.metadata.response, 'not_going');
-  assert.equal(byActor['15550100022'].payload.metadata.extra_guest_count, undefined);
-  assert.equal(byActor['15550100033'].payload.metadata.response, 'maybe');
+  assert.equal(byActor['+15550100022'].payload.metadata.response, 'not_going');
+  assert.equal(byActor['+15550100022'].payload.metadata.extra_guest_count, undefined);
+  assert.equal(byActor['+15550100033'].payload.metadata.response, 'maybe');
   for (const [i, e] of obs.entries()) {
     assert.equal(e.observation.object_ref, 'artifact:EVTRSVP');
     assert.equal(e.observation.operation, 'revise');
@@ -983,13 +986,13 @@ test('UNKNOWN (0) and out-of-vocabulary responses are coverage-stated, never con
     obs.map((e) => [e.observation.actor_id, e.observation]));
   // UNKNOWN: the source retracts readability — the responder's recorded
   // answer clears (''), coverage says why; never a confirmed responder.
-  assert.equal(byActor['15550100011'].payload.metadata.response, '');
-  assert.equal(byActor['15550100011'].coverage.complete, false);
-  assert.deepEqual(byActor['15550100011'].coverage.gaps, ['response']);
+  assert.equal(byActor['+15550100011'].payload.metadata.response, '');
+  assert.equal(byActor['+15550100011'].coverage.complete, false);
+  assert.deepEqual(byActor['+15550100011'].coverage.gaps, ['response']);
   // Out-of-vocabulary enum: same clear, its own reason.
-  assert.equal(byActor['15550100022'].payload.metadata.response, '');
-  assert.match(byActor['15550100022'].coverage.reason, /unrecognized/);
+  assert.equal(byActor['+15550100022'].payload.metadata.response, '');
+  assert.match(byActor['+15550100022'].coverage.reason, /unrecognized/);
   // No decoded response at all: state untouched (no response key), gap said.
-  assert.equal('response' in byActor['15550100033'].payload.metadata, false);
-  assert.equal(byActor['15550100033'].coverage.complete, false);
+  assert.equal('response' in byActor['+15550100033'].payload.metadata, false);
+  assert.equal(byActor['+15550100033'].coverage.complete, false);
 });
