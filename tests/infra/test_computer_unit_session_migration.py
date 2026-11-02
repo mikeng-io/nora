@@ -59,10 +59,10 @@ def test_mapping_uses_all_policy_ids_and_unit_names_never_room_membership(policy
 
 
 async def test_multiple_open_legacy_sessions_keep_state_and_audit_then_reuse_one_unit(
-    pg_url, policy
+    clean_pg_url, policy
 ):
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     store, events = SqlComputerSessionStore(engine), SqlComputerEventStore(engine)
     now = datetime(2026, 10, 21, tzinfo=UTC)
     originals = []

@@ -187,13 +187,13 @@ GUARDRAIL_BODY = (
 
 
 @pytest.fixture
-async def store(pg_url):
+async def store(clean_pg_url):
     from nora.infra.sql.audit import SqlRecordStore
     from nora.infra.sql.engine import create_sql_engine
     from nora.infra.sql.migrations_runner import run_migrations
 
-    run_migrations(pg_url)
-    s = SqlRecordStore(create_sql_engine(pg_url))
+    run_migrations(clean_pg_url)
+    s = SqlRecordStore(create_sql_engine(clean_pg_url))
     yield s
     await s.aclose()
 

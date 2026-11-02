@@ -208,16 +208,17 @@ def test_recorded_usage_and_refusals_do_not_invent_missing_cost():
     assert rows[2]["refusals"] == ["induced_instances"]
 
 
-def test_migration_up_down_keeps_one_head_and_legacy_rows(pg_url):
-    run_migrations(pg_url)
+@pytest.mark.fresh_database
+def test_migration_up_down_keeps_one_head_and_legacy_rows(clean_pg_url):
+    run_migrations(clean_pg_url)
     from nora.infra.sql.migrations_runner import sync_url_for
-    sync = sa.create_engine(sync_url_for(pg_url))
+    sync = sa.create_engine(sync_url_for(clean_pg_url))
     with sync.begin() as conn:
         conn.execute(sa.insert(PROFILE_LINE).values(id="00000000-0000-0000-0000-000000000001",
             profile_key="invented#unit", part="traits", kind="trait", text="legacy prose",
             mode="induced", citations=["1"], state="current", support_count=1,
             unit="invented", written_at=1, written_by_session="synthetic"))
-    cfg = alembic_config(pg_url)
+    cfg = alembic_config(clean_pg_url)
     command.downgrade(cfg, "0126_social_backfill_end")
     command.upgrade(cfg, "head")
     with sync.connect() as conn:

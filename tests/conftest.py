@@ -3,8 +3,9 @@
 The record store is PostgreSQL, so DB-touching tests run against a
 REAL Postgres in a testcontainer — never a mock, never an in-memory shim that
 would answer every query the same way (CLAUDE.md). Each requesting xdist worker
-shares one container; `pg_url` clones a fresh database per test, dropped at
-teardown. Eligible modules opt into `pg_module_url` and own their row resets.
+shares one container; ordinary `clean_pg_url` callers reuse a module database,
+restoring its migrated baseline between cases. Dedicated `pg_url` callers keep
+fresh clones; `pg_module_url` also supports existing explicit module owners.
 
 The container starts lazily on the first `pg_url` request, so the pure-unit
 majority of the suite (which uses `FakeRecordStore`) pays nothing for it.
@@ -12,6 +13,7 @@ majority of the suite (which uses `FakeRecordStore`) pays nothing for it.
 
 from __future__ import annotations
 
+import asyncio
 import time
 import urllib.error
 import urllib.request
@@ -25,6 +27,7 @@ from typing import Any
 import boto3
 import psycopg
 import pytest
+from sqlalchemy import event
 from testcontainers.core.container import DockerContainer
 from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
@@ -35,6 +38,7 @@ from nora.config import load as load_config
 from nora.doctrine.loader import DoctrineStore
 from nora.obs.metrics import Metrics
 from tests.builders import copy_example_config
+from tests.infra.pg_baseline import PgBaseline
 
 pytest_plugins = ["scripts.pytest_gate"]
 
@@ -269,17 +273,9 @@ def pg_template(pg_admin: _PgAdmin) -> str:
     """One database with the WHOLE migration chain applied, built once per
     session and used as a `CREATE DATABASE ... TEMPLATE` source.
 
-    **Why this exists.** `pg_url` below hands out a fresh database per test, and
-    running the full Alembic chain into each is the dominant cost of a full run.
-    It is not paid where it is spent: replaying migrations hammers the shared
-    testcontainer, and the bill lands on
-    `tests/integration/test_latency.py::test_overhead_stays_within_the_budget`,
-    which writes audit rows to the same container and asserts a p95.
-
-    Copying a template is a file-level clone inside Postgres, so a per-test
-    database still costs a `CREATE DATABASE` and nothing more. Isolation is
-    unchanged: every test gets its own database, and `run_migrations` at the
-    call sites is a cheap no-op because the chain is already at head.
+    Cloning avoids replaying the migration chain, but still writes database
+    blocks and WAL; dropping a clone forces a checkpoint. Ordinary callers
+    therefore use clean_pg_url's module clone and complete baseline reset.
 
     Session-scoped on purpose. It is never written to — Postgres refuses to
     copy a template with other sessions connected, and the only connection it
@@ -295,19 +291,22 @@ def pg_template(pg_admin: _PgAdmin) -> str:
 
 
 @contextmanager
-def _pg_database(pg_admin: _PgAdmin, pg_template: str) -> Iterator[str]:
-    """Own one migrated clone, including cleanup when its consumer raises."""
+def _pg_database(pg_admin: _PgAdmin, pg_template: str | None) -> Iterator[str]:
+    """Own a migrated clone or empty DB, including cleanup when its consumer raises."""
     dbname = "t_" + uuid.uuid4().hex
     with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
         # Terminate stragglers on the TEMPLATE first: Postgres refuses to copy a
         # database that has any other session connected, and a pooled handle
         # from a previous clone is exactly the kind of thing that lingers.
-        conn.execute(
-            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-            "WHERE datname = %s AND pid <> pg_backend_pid()",
-            (pg_template,),
-        )
-        conn.execute(f'CREATE DATABASE "{dbname}" TEMPLATE "{pg_template}"')
+        if pg_template is None:
+            conn.execute(f'CREATE DATABASE "{dbname}"')
+        else:
+            conn.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = %s AND pid <> pg_backend_pid()",
+                (pg_template,),
+            )
+            conn.execute(f'CREATE DATABASE "{dbname}" TEMPLATE "{pg_template}"')
     url = _async_url(pg_admin, dbname)
     try:
         yield url
@@ -327,32 +326,105 @@ def _pg_database(pg_admin: _PgAdmin, pg_template: str) -> Iterator[str]:
 def pg_module_url(pg_admin: _PgAdmin, pg_template: str) -> Iterator[str]:
     """Opt-in module database; consumers own their table reset and engine disposal.
 
-    No environment export: composition/restart tests keep function-scoped pg_url.
-    Never use this for committed schema changes or migration/bootstrap tests.
+    Raw ownership only; clean_pg_url adds DATABASE_URL export and baseline reset.
+    Deliberate schema changes and migration/bootstrap properties stay dedicated.
     """
     with _pg_database(pg_admin, pg_template) as url:
         yield url
 
 
-@pytest.fixture
-def record_pg_url(pg_admin: _PgAdmin, pg_module_url: str) -> str:
-    """Opt-in record-only database, with committed rows reset between tests.
+@pytest.fixture(scope="session")
+def _pg_baseline(pg_admin: _PgAdmin, pg_template: str) -> PgBaseline:
+    with psycopg.connect(pg_admin.dsn(pg_template)) as conn:
+        return PgBaseline.capture(conn)
 
-    Consumers dispose their engines. No environment export, schema changes,
-    extraction or graph-projection context: those tests keep fresh pg_url.
+
+@pytest.fixture
+async def _pg_engine_scope():
+    """Keep pytest's loop alive until dynamic synchronous URL teardown completes."""
+    yield asyncio.get_running_loop()
+
+
+@pytest.fixture
+def clean_pg_url(request, pg_admin: _PgAdmin, monkeypatch, _pg_engine_scope) -> Iterator[str]:
+    """Real committed module DB, reset after all dependent engines/tasks close.
+
+    A named fresh_database case changes schema or database-level state, so owns
+    a dedicated clone. Other cases share only their module/worker's database.
     """
-    with psycopg.connect(pg_admin.dsn(pg_module_url.rsplit('/', 1)[1])) as conn:
-        conn.execute("SET LOCAL nora.row_history = 'off'")
-        conn.execute(
-            "TRUNCATE messages, memory_node, memory_edge, memory_projection_queue, "
-            "row_history RESTART IDENTITY CASCADE"
-        )
-    return pg_module_url
+    if request.node.get_closest_marker("fresh_database"):
+        yield request.getfixturevalue("pg_url")
+        return
+    url = request.getfixturevalue("pg_module_url")
+    baseline = request.getfixturevalue("_pg_baseline")
+    monkeypatch.setenv("DATABASE_URL", url)
+    from nora.infra.sql import engine as engine_module
+
+    create = engine_module.create_async_engine
+    owned = []
+
+    def create_owned(*args, **kwargs):
+        engine = create(*args, **kwargs)
+        state = {"engine": engine, "loop": None, "closed": False}
+
+        def connected(connection):
+            state.update(loop=asyncio.get_running_loop(), closed=False)
+
+        def disposed(sync_engine):
+            state["closed"] = True
+
+        event.listen(engine.sync_engine, "engine_connect", connected)
+        event.listen(engine.sync_engine, "engine_disposed", disposed)
+        owned.append((state, connected, disposed))
+        return engine
+
+    # Keep real engines/commits, but own even partially constructed graphs.
+    monkeypatch.setattr(engine_module, "create_async_engine", create_owned)
+    try:
+        yield url
+    finally:
+        try:
+            for state, connected, disposed in reversed(owned):
+                engine = state["engine"]
+                if not state["closed"]:
+                    loop = state["loop"]
+                    if loop is None:
+                        engine.sync_engine.dispose()  # never connected
+                    elif loop.is_closed() or loop.is_running():
+                        raise RuntimeError("Close test-owned engines before their event loop ends")
+                    else:
+                        loop.run_until_complete(engine.dispose())
+                event.remove(engine.sync_engine, "engine_connect", connected)
+                event.remove(engine.sync_engine, "engine_disposed", disposed)
+            with psycopg.connect(pg_admin.dsn(url.rsplit('/', 1)[1])) as conn:
+                truncated = baseline.reset(conn)
+            from scripts.pytest_cost import cost
+
+            receipt = cost(request.config)
+            receipt["ordinary_resets"] += 1
+            receipt["truncated_tables"] += truncated
+        except Exception as exc:
+            request.session.shouldstop = f"Module DB reset unavailable: {exc}"
+            raise RuntimeError(request.session.shouldstop) from exc
+
+
+@pytest.fixture
+def record_pg_url(clean_pg_url: str) -> str:
+    """Compatibility name for the record-only callers; use the complete reset."""
+    return clean_pg_url
+
+
+@pytest.fixture
+def empty_pg_url(pg_admin: _PgAdmin, monkeypatch) -> Iterator[str]:
+    """A genuinely empty database for bootstrap/migration properties."""
+    with _pg_database(pg_admin, None) as url:
+        monkeypatch.setenv("DATABASE_URL", url)
+        yield url
 
 
 @pytest.fixture
 def pg_url(pg_admin: _PgAdmin, pg_template: str, monkeypatch) -> Iterator[str]:
-    """Fresh migrated database per test, exported for independent composition engines."""
+    """Dedicated migrated database for schema/non-row-state test properties."""
     with _pg_database(pg_admin, pg_template) as url:
         monkeypatch.setenv("DATABASE_URL", url)
         yield url

@@ -63,9 +63,9 @@ HANDLES = {"ada.swims": frozenset({"ada"}), "bo_runs": frozenset({"bo"})}
 
 
 @pytest.fixture
-async def social(pg_url):
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+async def social(clean_pg_url):
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         # `cy` has `social = false`.
         yield SqlSocialStreamStore(engine, opted_out=frozenset({"cy"})), engine

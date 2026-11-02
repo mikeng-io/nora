@@ -4,6 +4,7 @@ receives dependencies. This test pins that property."""
 import ast
 import base64
 import os
+import sys
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -32,6 +33,23 @@ from tests.conftest import RUSTFS_TEST_PASSWORD, RUSTFS_TEST_USER
 
 ROOT = Path(__file__).resolve().parents[1]
 
+
+@pytest.fixture
+async def owned_dependencies(clean_pg_url, monkeypatch):
+    build = build_dependencies
+    owned = []
+
+    async def build_owned(cfg, **kwargs):
+        deps = await build(cfg, **kwargs)
+        owned.append(deps)
+        return deps
+
+    monkeypatch.setattr(sys.modules[__name__], "build_dependencies", build_owned)
+    yield
+    for deps in reversed(owned):
+        await deps.background.cancel_all()
+        await deps.audit.aclose()
+
 _HOME_POLICY = (
     'default = "deny"\n'
     '[[conversations]]\nplatform = "signal"\nid = "g1"\npersons = "*"\n'
@@ -43,8 +61,8 @@ _HOME_POLICY = (
 
 
 @pytest.fixture
-def cfg(tmp_path, monkeypatch, pg_url, example_config_path):
-    # `pg_url` (tests/conftest.py) creates a fresh Postgres database and exports
+def cfg(tmp_path, monkeypatch, clean_pg_url, example_config_path, owned_dependencies):
+    # `clean_pg_url` (tests/conftest.py) supplies a reset module database and exports
     # DATABASE_URL, which build_dependencies() reads (store.database_url_env) to run
     # migrations and wire the store: a throwaway database, never production.
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
@@ -65,7 +83,7 @@ def cfg(tmp_path, monkeypatch, pg_url, example_config_path):
     )
     # store.data_dir is overridden to tmp_path so media custody lands in a
     # throwaway directory; the record store's own database is the throwaway
-    # `pg_url` (via DATABASE_URL), never production.
+    # `clean_pg_url` (via DATABASE_URL), never production.
     #
     # platforms.signal.account overrides the empty "derive from the daemon" default
     # (config.example.toml) with a fixed value: derive_account() returns an override
@@ -305,13 +323,13 @@ async def test_no_enabled_platform_refuses_to_start(cfg):
         await build_dependencies(disabled)
 
 
-def test_build_dependencies_never_wires_the_real_database(cfg, tmp_path, pg_url):
+def test_build_dependencies_never_wires_the_real_database(cfg, tmp_path, clean_pg_url):
     """A fixture that forgot to point the store at a throwaway database would wire a real
     SqlRecordStore against production. The store's URL comes from DATABASE_URL, which
-    `pg_url` set to an ephemeral `t_…` database; the media root is under tmp_path. Both
+    `clean_pg_url` set to an ephemeral `t_…` database; the media root is under tmp_path. Both
     being throwaways is what proves it."""
-    assert os.environ["DATABASE_URL"] == pg_url
-    assert "/t_" in pg_url                          # the ephemeral-database marker
+    assert os.environ["DATABASE_URL"] == clean_pg_url
+    assert "/t_" in clean_pg_url                          # the ephemeral-database marker
     assert cfg.store.data_dir == tmp_path
 
 
@@ -629,7 +647,7 @@ def _spawned(deps, qualname: str) -> list:
     ]
 
 
-async def test_remind_writes_a_real_row_through_the_registry_the_root_builds(cfg, pg_url):
+async def test_remind_writes_a_real_row_through_the_registry_the_root_builds(cfg, clean_pg_url):
     """The live `ToolRegistry` gets the reminders store, and `[heartbeat]` being off does not
     change that.
 
@@ -674,7 +692,7 @@ async def test_remind_writes_a_real_row_through_the_registry_the_root_builds(cfg
     finally:
         await deps.background.cancel_all()
 
-    check = SqlReminderStore(create_sql_engine(pg_url))
+    check = SqlReminderStore(create_sql_engine(clean_pg_url))
     try:
         rows = await check.all_pending(limit=10)
         assert [r.text for r in rows] == ["洗衫"]
@@ -685,7 +703,7 @@ async def test_remind_writes_a_real_row_through_the_registry_the_root_builds(cfg
         await check.aclose()
 
 
-async def test_boot_recovery_counts_the_rows_it_swept(cfg, pg_url):
+async def test_boot_recovery_counts_the_rows_it_swept(cfg, clean_pg_url):
     """The sweep is the only path that resolves reminders with no tick running, and
     `nora_reminders_fired_total`'s spec says a reminder that vanishes must never vanish
     from the metrics too. A sweep that only logs a count and increments nothing leaves a
@@ -698,8 +716,8 @@ async def test_boot_recovery_counts_the_rows_it_swept(cfg, pg_url):
     from nora.infra.sql import create_sql_engine, run_migrations
     from nora.infra.sql.reminders import SqlReminderStore
 
-    run_migrations(pg_url)
-    store = SqlReminderStore(create_sql_engine(pg_url))
+    run_migrations(clean_pg_url)
+    store = SqlReminderStore(create_sql_engine(clean_pg_url))
     now = datetime.now(UTC)
     await store.create(Reminder(
         id=uuid.uuid4(), requester_person_id="miles", platform="signal",
@@ -729,7 +747,7 @@ async def test_the_liveness_gauge_is_seeded_even_with_the_heartbeat_off(cfg):
     ) == HEARTBEAT_NOT_RUNNING
 
 
-async def test_compute_boot_recovery_sweeps_a_stranded_row_even_when_disabled(cfg, pg_url):
+async def test_compute_boot_recovery_sweeps_a_stranded_row_even_when_disabled(cfg, clean_pg_url):
     """Mirrors `test_boot_recovery_counts_the_rows_it_swept`: a `FIRING` `ComputeJob` (a
     crash mid-delivery) must resolve to `FAILED` at boot whether or not `[compute]
     enabled` is true. That is the point of the unconditional `compute_poller_recover` call
@@ -744,8 +762,8 @@ async def test_compute_boot_recovery_sweeps_a_stranded_row_even_when_disabled(cf
 
     assert cfg.compute.enabled is False
 
-    run_migrations(pg_url)
-    store = SqlComputeJobStore(create_sql_engine(pg_url))
+    run_migrations(clean_pg_url)
+    store = SqlComputeJobStore(create_sql_engine(clean_pg_url))
     now = datetime.now(UTC)
     await store.create(ComputeJob(
         id=uuid.uuid4(), backend_job_id="job_stranded", task="make a chart",
@@ -1822,7 +1840,7 @@ async def test_cognition_on_that_built_no_runner_refuses_to_boot(
 
 
 async def test_the_session_is_grounded_from_the_record_with_record_query_off(
-    cfg, tmp_path, pg_url,
+    cfg, tmp_path, clean_pg_url,
 ):
     """The rows that raised a stimulus are read by code for the agenda whether or not
     `[record_query] enabled` offers a MODEL the tool. Real Postgres, the composition's own
@@ -1836,7 +1854,7 @@ async def test_the_session_is_grounded_from_the_record_with_record_query_off(
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, _SESSION_ON))
     assert "record_query" not in deps.cognition_runner._read_only_tools   # the tool is OFF
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     now = 1_790_000_000_000
     try:
         async with engine.begin() as conn:

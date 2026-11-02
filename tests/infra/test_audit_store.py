@@ -22,19 +22,19 @@ def _msg(conv="g1", body="hello", ts=1) -> NormalizedMessage:
 
 
 @pytest.fixture
-async def make_store(pg_url):
+async def make_store(clean_pg_url):
     """Factory, not a bare store: the retention window is construction-time
     policy, so a test that needs a small window builds a store with one rather
     than reaching into a private attribute.
 
     Every store built here shares this test's own freshly-created Postgres
-    database (`pg_url`); the schema is migrated once, idempotently."""
-    run_migrations(pg_url)
+    database (`clean_pg_url`); the schema is migrated once, idempotently."""
+    run_migrations(clean_pg_url)
     created = []
 
     def _make(*, max_per_conversation=500, metrics=None):
         s = SqlRecordStore(
-            create_sql_engine(pg_url), max_per_conversation=max_per_conversation,
+            create_sql_engine(clean_pg_url), max_per_conversation=max_per_conversation,
             metrics=metrics,
         )
         created.append(s)

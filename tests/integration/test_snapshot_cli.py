@@ -20,8 +20,8 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture
-async def engine(pg_url: str) -> AsyncIterator[Any]:
-    eng = create_sql_engine(pg_url)
+async def engine(clean_pg_url: str) -> AsyncIterator[Any]:
+    eng = create_sql_engine(clean_pg_url)
     try:
         yield eng
     finally:
@@ -55,56 +55,56 @@ async def _state(engine: Any) -> tuple[str, int]:
 
 
 async def test_a_dry_run_reports_and_writes_nothing(
-    pg_url: str, engine: Any, capsys: Any,
+    clean_pg_url: str, engine: Any, capsys: Any,
 ) -> None:
     at, _ = await _state(engine)
-    before = await _count(pg_url, "SELECT count(*) FROM row_history")
-    assert await _run("--at", at, "--source", pg_url) == 0
+    before = await _count(clean_pg_url, "SELECT count(*) FROM row_history")
+    assert await _run("--at", at, "--source", clean_pg_url) == 0
     out = capsys.readouterr().out
     assert "dry run: nothing written" in out
     assert "tag_debounce_state" in out
     assert "doctrine: UNAVAILABLE" in out  # no load recorded: said, not guessed
     assert "memory (Honcho)" in out and "step 2" in out
-    assert await _count(pg_url, "SELECT count(*) FROM row_history") == before
+    assert await _count(clean_pg_url, "SELECT count(*) FROM row_history") == before
 
 
 async def test_into_seeds_an_empty_sandbox_and_refuses_it_twice(
-    pg_url: str, pg_template: str, engine: Any, capsys: Any,
+    clean_pg_url: str, pg_template: str, engine: Any, capsys: Any,
 ) -> None:
     at, held = await _state(engine)
-    async with sandbox_database(pg_url, template=pg_template) as target:
-        assert await _run("--at", at, "--source", pg_url, "--into", target) == 0
+    async with sandbox_database(clean_pg_url, template=pg_template) as target:
+        assert await _run("--at", at, "--source", clean_pg_url, "--into", target) == 0
         assert await _count(
             target, "SELECT last_allowed_at FROM tag_debounce_state",
         ) == held
         capsys.readouterr()
-        assert await _run("--at", at, "--source", pg_url, "--into", target) == 1
+        assert await _run("--at", at, "--source", clean_pg_url, "--into", target) == 1
         assert "already holds rows" in capsys.readouterr().err
 
 
-async def test_the_source_is_never_the_target(pg_url: str, engine: Any, capsys: Any) -> None:
+async def test_the_source_is_never_the_target(clean_pg_url: str, engine: Any, capsys: Any) -> None:
     at, _ = await _state(engine)
-    assert await _run("--at", at, "--source", pg_url, "--into", pg_url) == 1
+    assert await _run("--at", at, "--source", clean_pg_url, "--into", clean_pg_url) == 1
     assert "never writes the source" in capsys.readouterr().err
 
 
-async def test_a_time_without_an_offset_is_refused(pg_url: str, capsys: Any) -> None:
-    assert await _run("--at", "2026-09-28T12:00:00", "--source", pg_url) == 1
+async def test_a_time_without_an_offset_is_refused(clean_pg_url: str, capsys: Any) -> None:
+    assert await _run("--at", "2026-09-28T12:00:00", "--source", clean_pg_url) == 1
     assert "no offset" in capsys.readouterr().err
 
 
 async def test_a_date_typed_as_digits_is_refused_not_read_as_1970(
-    pg_url: str, capsys: Any,
+    clean_pg_url: str, capsys: Any,
 ) -> None:
-    assert await _run("--at", "20260927", "--source", pg_url) == 1
+    assert await _run("--at", "20260927", "--source", clean_pg_url) == 1
     assert "before 2020" in capsys.readouterr().err
 
 
 async def test_a_target_at_another_migration_is_refused(
-    pg_url: str, pg_template: str, engine: Any, capsys: Any,
+    clean_pg_url: str, pg_template: str, engine: Any, capsys: Any,
 ) -> None:
     at, _ = await _state(engine)
-    async with sandbox_database(pg_url, template=pg_template) as target:
+    async with sandbox_database(clean_pg_url, template=pg_template) as target:
         other = create_sql_engine(target)
         try:
             async with other.begin() as conn:
@@ -113,6 +113,6 @@ async def test_a_target_at_another_migration_is_refused(
                 ))
         finally:
             await other.dispose()
-        assert await _run("--at", at, "--source", pg_url, "--into", target) == 1
+        assert await _run("--at", at, "--source", clean_pg_url, "--into", target) == 1
         assert "one schema only" in capsys.readouterr().err
         assert await _count(target, "SELECT count(*) FROM tag_debounce_state") == 0

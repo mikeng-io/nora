@@ -36,9 +36,9 @@ PERSON = 'person-a'
 
 
 @pytest.fixture
-async def env(pg_url):
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+async def env(clean_pg_url):
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         yield engine
     finally:
@@ -601,6 +601,7 @@ async def test_budget_trim_and_write_conflict_never_acknowledge_unsettled_source
     assert {r.roots[0].row.id for r in pending} == {10, 11}
 
 
+@pytest.mark.fresh_database
 async def test_unavailable_social_is_explicit_and_does_not_block_or_ack_other_domains(env):
     from nora.infra.sql.schema import CONSOLIDATION_WATERMARK as W
 

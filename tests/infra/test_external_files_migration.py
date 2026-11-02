@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 import sqlalchemy as sa
 from alembic import command
 
@@ -13,10 +14,11 @@ from nora.infra.sql.migrations_runner import alembic_config, sync_url_for
 ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz012345"
 
 
-def test_the_backfill_records_old_links_and_leaves_other_rows_null(pg_url):
-    cfg = alembic_config(pg_url)
+@pytest.mark.fresh_database
+def test_the_backfill_records_old_links_and_leaves_other_rows_null(clean_pg_url):
+    cfg = alembic_config(clean_pg_url)
     command.downgrade(cfg, "0103_memos")
-    engine = sa.create_engine(sync_url_for(pg_url))
+    engine = sa.create_engine(sync_url_for(clean_pg_url))
     try:
         with engine.begin() as conn:
             for body, is_nora in (

@@ -32,8 +32,8 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture
-async def engine(pg_url: str) -> AsyncIterator[Any]:
-    eng = create_sql_engine(pg_url)
+async def engine(clean_pg_url: str) -> AsyncIterator[Any]:
+    eng = create_sql_engine(clean_pg_url)
     try:
         yield eng
     finally:
@@ -45,6 +45,7 @@ async def _clock(_engine: Any) -> datetime:
     return datetime.now(UTC)
 
 
+@pytest.mark.fresh_database
 async def test_each_load_is_recorded_and_in_force_answers_by_time(
     engine: Any, tmp_path: Path,
 ) -> None:
@@ -112,6 +113,7 @@ async def test_each_load_is_recorded_and_in_force_answers_by_time(
         ) == path.read_text(encoding="utf-8")
 
 
+@pytest.mark.fresh_database
 async def test_instruction_history_cuts_do_not_depend_on_database_clock(
     engine: Any, tmp_path: Path,
 ) -> None:

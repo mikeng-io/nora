@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 import sqlalchemy as sa
 from alembic import command
 
@@ -24,11 +25,14 @@ async def _one(engine: Any, sql: str) -> Any:
         return (await conn.execute(sa.text(sql))).all()
 
 
-async def test_existing_rows_become_the_current_legacy_build_with_history(pg_url: str) -> None:
-    engine = create_sql_engine(pg_url)
+@pytest.mark.fresh_database
+async def test_existing_rows_become_the_current_legacy_build_with_history(
+    clean_pg_url: str,
+) -> None:
+    engine = create_sql_engine(clean_pg_url)
     try:
         assert await _one(engine, "SELECT id FROM rollup_build") == []  # fresh: no build
-        command.downgrade(alembic_config(pg_url), "0070_stimulus_rename")
+        command.downgrade(alembic_config(clean_pg_url), "0070_stimulus_rename")
         async with engine.begin() as conn:
             await conn.execute(sa.text(
                 "INSERT INTO presence_stays (subject_id, person_id, circle_id, started_ts, "
@@ -39,7 +43,7 @@ async def test_existing_rows_become_the_current_legacy_build_with_history(pg_url
                 "INSERT INTO presence_places (circle_id, place_id, name, lat, lng, updated_ms) "
                 "VALUES ('c1', 'p1', 'Home', 22.4, 114.1, 1790000000000)"
             ))
-        run_migrations(pg_url)
+        run_migrations(clean_pg_url)
         [(build_id, version, status)] = await _one(
             engine, "SELECT id, code_version, status FROM rollup_build",
         )

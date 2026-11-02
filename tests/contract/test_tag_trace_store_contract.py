@@ -17,11 +17,11 @@ from nora.testing.tag_traces import FakeTagTraceStore
 
 
 @pytest.fixture(params=["sql", "fake"])
-async def store(request):
+async def store(_pg_engine_scope, request):
     if request.param == "sql":
-        pg_url = request.getfixturevalue("pg_url")
-        run_migrations(pg_url)
-        s = SqlTagTraceStore(create_sql_engine(pg_url))
+        clean_pg_url = request.getfixturevalue("clean_pg_url")
+        run_migrations(clean_pg_url)
+        s = SqlTagTraceStore(create_sql_engine(clean_pg_url))
         yield s
         await s._engine.dispose()
     else:

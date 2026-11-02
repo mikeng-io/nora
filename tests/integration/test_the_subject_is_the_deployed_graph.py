@@ -19,7 +19,7 @@ from nora.subject import SubjectSpec, obtain
 
 
 @pytest.fixture
-def spec(tmp_path, pg_url, monkeypatch) -> SubjectSpec:
+def spec(tmp_path, clean_pg_url, monkeypatch) -> SubjectSpec:
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     # No identity.toml or policy.toml written here, deliberately: `obtain` owns
     # them, because a caller writing them by hand is how every caller ends up
@@ -167,7 +167,7 @@ async def test_overrides_reach_the_composed_graph(spec) -> None:
 
 @pytest.mark.asyncio
 async def test_two_subjects_do_not_share_an_environment_variable(
-    pg_url, tmp_path, monkeypatch,
+    clean_pg_url, tmp_path, monkeypatch,
 ) -> None:
     """`obtain` gives each call its OWN variable rather than borrowing the
     deployment's and putting it back.
@@ -186,10 +186,10 @@ async def test_two_subjects_do_not_share_an_environment_variable(
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://untouched/db")
 
     a = await obtain(SubjectSpec(
-        database_url=pg_url, workdir=tmp_path / "a", room=("signal", "g-a"),
+        database_url=clean_pg_url, workdir=tmp_path / "a", room=("signal", "g-a"),
     ))
     b = await obtain(SubjectSpec(
-        database_url=pg_url, workdir=tmp_path / "b", room=("signal", "g-b"),
+        database_url=clean_pg_url, workdir=tmp_path / "b", room=("signal", "g-b"),
     ))
     assert os.environ["DATABASE_URL"] == "postgresql+asyncpg://untouched/db"
     # The returned config NAMES NO VARIABLE. Each call used one of its own and deleted it,
@@ -198,7 +198,7 @@ async def test_two_subjects_do_not_share_an_environment_variable(
     # to read.
     assert a.cfg.store.database_url_env == ""
     assert b.cfg.store.database_url_env == ""
-    assert a.database_url == b.database_url == pg_url
+    assert a.database_url == b.database_url == clean_pg_url
     assert not [k for k in os.environ if k.startswith("NORA_SUBJECT_DATABASE_URL_")]
 
 
