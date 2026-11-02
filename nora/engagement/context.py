@@ -22,6 +22,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from datetime import datetime
 from typing import Any, NamedTuple, Protocol
 
@@ -34,6 +35,7 @@ from nora.agent.memory_search import (
 )
 from nora.agent.room import Room
 from nora.agent.standing_ledger import read_ledger
+from nora.domain.blocks import row_speaker
 from nora.domain.comprehend import ComprehendItem, Preview, preview_seeds
 from nora.domain.computer_context import ComputerView
 from nora.domain.culture import (
@@ -58,12 +60,14 @@ from nora.domain.notes import Note
 from nora.domain.observations import (
     SourceEvent,
     SourceScope,
+    TargetContext,
     coverage_label,
     handle_of,
     head_summary,
     object_handle,
     observation_summary,
     revision_label,
+    target_context,
 )
 from nora.domain.ports import (
     CultureReader,
@@ -100,6 +104,11 @@ log = logging.getLogger(__name__)
 #: bound on the most recently observed objects, not "every open poll
 #: forever" and not an arbitrary first-N of the scope.
 _SOURCE_OBJECT_MAX = 12
+
+#: Distinct affected messages one assembly resolves — one batched Record
+#: read, so the bound is on distinct targets, not on event count. A target
+#: past the cap shows `target_unresolved`, not a scan.
+_OBSERVATION_TARGET_MAX = 8
 
 
 class StandingNotesReader(Protocol):
@@ -1127,6 +1136,22 @@ class TranscriptInjection:
         # Preserve the store's last-write order; source clocks can be late
         # or wrong and must not evict a freshly changed object.
         heads = [h for h in heads if h.applied > 0]
+        shown = heads[: _SOURCE_OBJECT_MAX]
+        # The affected messages the shown events and heads name, resolved
+        # in two bounded reads through the room's own boundary — the
+        # event's `target` says what it acted on when that message is not
+        # in the transcript window (its words and author as labelled
+        # context, never the reactor's).
+        targets, head_targets = await self._observation_targets(
+            msg, scope, rows[:limit], [h.head_id for h in shown])
+        events = tuple(
+            replace(e, target=targets.get(e.target_message_id)
+                    if e.target_message_id is not None else None)
+            for e in events)
+        # Each shown head carries its newest applied row's affected
+        # message — the SAME resolved context the events carry.
+        head_ctx = {
+            hid: targets.get(mid) for hid, mid in head_targets.items()}
         objects = tuple(
             SourceEvent(
                 # `head_id` IS the newest applied row's id — naming the
@@ -1144,14 +1169,68 @@ class TranscriptInjection:
                 received_ms=h.received_ms,
                 revision=revision_label(h.position, h.scope),
                 coverage=coverage_label(h.coverage),
+                target_message_id=head_targets.get(h.head_id),
+                target=head_ctx.get(h.head_id),
             )
-            for h in heads[: _SOURCE_OBJECT_MAX]
+            for h in shown
         )
         return (
             events, objects, False,
             max(0, len(rows) - len(events)),
             max(0, len(heads) - len(objects)),
         )
+
+    async def _observation_targets(
+        self, msg: NormalizedMessage, scope: SourceScope,
+        rows: Sequence[Any], head_ids: Sequence[int],
+    ) -> tuple[dict[int, TargetContext], dict[int, int]]:
+        """The shown events'/heads' affected messages — `(target context by
+        message id, target id by newest applied row id)`.
+
+        TWO bounded reads, both inside the room's own boundary:
+        `observations.by_ids` maps each shown head's newest applied row to
+        its `target_message_id`, then `RecordStore.by_ids` resolves those
+        ids — same-room only, hidden rows absent, recorded deletes named.
+        A failed read resolves NOTHING (fail-soft and counted, like the
+        observation reads themselves): `target` stays absent rather than
+        guessed, and `target_unresolved` on the render says why.
+        """
+        try:
+            head_rows = (
+                await traced_read(
+                    "observations", "targets",
+                    self._observations.by_ids(
+                        scope=scope, ids=tuple(head_ids)))
+                if head_ids else ())
+            wanted = {r.target_message_id for r in rows}
+            wanted.update(r.target_message_id for r in head_rows)
+            wanted.discard(None)
+            if not wanted:
+                return {}, {}
+            found, gone = await traced_read(
+                "record", "targets",
+                self._audit.by_ids(
+                    conversation_id=msg.conversation_id,
+                    ids=tuple(sorted(wanted))[:_OBSERVATION_TARGET_MAX]))
+            named = self._persons.name_transcript(
+                list(found.values()), platform=msg.platform)
+            targets = {
+                mid: target_context(
+                    row, deleted=mid in gone, author=row_speaker(row))
+                for mid, row in zip(found, named, strict=True)
+            }
+            return (
+                targets,
+                {r.id: r.target_message_id for r in head_rows
+                 if r.target_message_id is not None},
+            )
+        except Exception:
+            log.exception(
+                "observation target read failed; continuing without it")
+            self._metrics.inc(
+                "nora_errors_total", stage="observations",
+                platform=msg.platform)
+            return {}, {}
 
     async def _memos(self, msg: NormalizedMessage) -> tuple[Memo, ...]:
         """The unit's kept memos for `<memos>` (DEC-306), keyed on the UNIT as

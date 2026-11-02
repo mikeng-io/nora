@@ -546,6 +546,12 @@ def _transcript_block(
     index_of = {row.id: i for i, row in enumerate(ctx.transcript, 1)}
 
     def _event(e: Any) -> str:
+        # The affected message, when the transcript does not already show
+        # it: `target_*` is the recorded row's own words and author as
+        # labelled context — bounded, roster-named, and never the event's
+        # actor's words. An `on=` row needs none of it (the target IS the
+        # shown row); a named-but-unresolvable target says so once.
+        shown = e.target is not None and e.target_message_id not in index_of
         return render_elements(
             [e], tag="source_event",
             attrs=lambda ev, _i: (
@@ -569,6 +575,19 @@ def _transcript_block(
                 ("object", ev.handle),
                 ("on", (f"{index_of[ev.target_message_id]}"
                         if ev.target_message_id in index_of else None)),
+                ("target_author", ev.target.author if shown else None),
+                ("target_at", age(ev.target.at_ms, now)
+                        if shown and ev.target.at_ms > 0 else None),
+                ("target_text", ev.target.text if shown else None),
+                ("target_edited", age(ev.target.edited_ms, now)
+                        if shown and ev.target.edited_ms else None),
+                ("target_was", ev.target.was if shown else None),
+                ("target_deleted", "yes"
+                        if shown and ev.target.deleted else None),
+                ("target_unresolved", "yes"
+                        if (ev.target_message_id is not None
+                            and ev.target_message_id not in index_of
+                            and ev.target is None) else None),
             ),
             body=lambda ev: ev.summary,
         )
@@ -969,6 +988,18 @@ def _standing_block(
         reaction_targets = {e.handle: annotated[e.target_message_id]
                             for e in ctx.source_events if e.kind == "reaction"
                             and e.target_message_id in annotated}
+        index_of = {row.id: i for i, row in enumerate(ctx.transcript, 1)}
+        # One expanded target per assembly: a `<source_event>` in the
+        # transcript already carrying `target_*` owns it for the handle —
+        # the object repeats the state, never the words.
+        event_targets = {e.handle for e in ctx.source_events
+                         if e.target is not None}
+
+        def _target_shown(e: Any) -> bool:
+            return (e.target is not None
+                    and e.target_message_id not in index_of
+                    and e.handle not in event_targets)
+
         objects = render_elements(
             ctx.source_objects, tag="source_object",
             attrs=lambda e, _i: (
@@ -999,6 +1030,24 @@ def _standing_block(
                  if now is not None and e.received_ms
                  and e.time_quality != "upstream"
                  else None),
+                # The affected message, as the `<source_event>` elements
+                # carry it — only when the transcript does not show it and
+                # no interleaved event already expanded this handle.
+                ("target_author", e.target.author if _target_shown(e) else None),
+                ("target_at", age(e.target.at_ms, now)
+                 if _target_shown(e) and now is not None
+                 and e.target.at_ms > 0 else None),
+                ("target_text", e.target.text if _target_shown(e) else None),
+                ("target_edited", age(e.target.edited_ms, now)
+                 if _target_shown(e) and now is not None
+                 and e.target.edited_ms else None),
+                ("target_was", e.target.was if _target_shown(e) else None),
+                ("target_deleted", "yes"
+                 if _target_shown(e) and e.target.deleted else None),
+                ("target_unresolved", "yes"
+                 if (e.target_message_id is not None
+                     and e.target_message_id not in index_of
+                     and e.target is None) else None),
             ),
             # The tally rides once, on the visible target row — `on` naming
             # it is the pointer, so the row's own body then repeats nothing.

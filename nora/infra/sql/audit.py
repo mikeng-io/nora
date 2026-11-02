@@ -558,6 +558,37 @@ class SqlRecordStore:
             states = await reaction_states(conn, [r.id for r in rows])
         return with_reactions([self._row(r) for r in rows], states)
 
+    async def by_ids(
+        self, *, conversation_id: str, ids: Sequence[int],
+    ) -> tuple[dict[int, TranscriptRow], frozenset[int]]:
+        """See `nora.domain.ports.RecordStore.by_ids`. The `media_rows` select
+        keyed by `id IN` instead of a `ts` window: `transcript_select` keeps
+        hidden rows absent, `reaction_states` folds reactions as `recent`
+        does, and `message_delete` names the ids whose delete is recorded —
+        returned separately so the caller, not the read, withholds words."""
+        wanted = {int(i) for i in ids}
+        if not wanted:
+            return {}, frozenset()
+        stmt = (
+            transcript_select()
+            .where(
+                MESSAGES.c.conversation_id == conversation_id,
+                MESSAGES.c.id.in_(wanted),
+            )
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+            states = await reaction_states(conn, [r.id for r in rows])
+            gone = frozenset(
+                r[0] for r in (
+                    await conn.execute(
+                        sa.select(MESSAGE_DELETE.c.message_id)
+                        .where(MESSAGE_DELETE.c.message_id.in_(
+                            [r.id for r in rows]))
+                        .distinct())).all())
+        found = with_reactions([self._row(r) for r in rows], states)
+        return {r.id: r for r in found}, gone
+
     async def recent_before(
         self, *, conversation_id: str, before_ts: int, limit: int,
     ) -> list[TranscriptRow]:

@@ -53,7 +53,7 @@ import mimetypes
 import re
 import urllib.parse
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta, timezone
@@ -215,6 +215,7 @@ from ..domain.observations import (
     ObjectKind,
     SourceEvent,
     SourceScope,
+    TargetContext,
     coverage_label,
     handle_of,
     head_detail,
@@ -223,6 +224,7 @@ from ..domain.observations import (
     observation_summary,
     parse_handle,
     revision_label,
+    target_context,
 )
 from ..domain.ports import (
     BrowserRunner,
@@ -2964,6 +2966,16 @@ def _source_event_item(
     }
     if on is not None:
         item["source_event"]["on"] = on
+    elif e.target_message_id is not None:
+        # The affected message the result does not otherwise show: the
+        # recorded row's own words and author as labelled `target` context
+        # — never the event actor's words — or `target_unresolved` when a
+        # named target cannot be shown (hidden, deleted elsewhere, or past
+        # the bound), never a guessed quote.
+        if e.target is not None:
+            item["source_event"]["target"] = _target_item(e.target, now=now)
+        else:
+            item["source_event"]["target_unresolved"] = True
     # `when` is the SOURCE's clock — it appears only when the source gave a
     # time. An unknown clock shows `time: unknown` plus `received` (the
     # bridge's own clock), never a receipt dressed as occurrence.
@@ -2981,6 +2993,24 @@ def _source_event_item(
         item["source_event"]["rev"] = e.revision
     if e.coverage:
         item["source_event"]["coverage"] = e.coverage
+    return item
+
+
+def _target_item(t: Any, *, now: datetime) -> dict:
+    """One resolved affected message as a `target` dict — the same keys a
+    message item carries (`sender`/`body`/`when`/`edited`/`was`), a deleted
+    row's words withheld under `deleted`. The author's NAME is what the
+    roster calls them, never the event's actor and never a raw id."""
+    item: dict[str, Any] = {"sender": t.author}
+    if t.at_ms > 0:
+        item["when"] = stamp(t.at_ms, now)
+    if t.deleted:
+        item["deleted"] = True
+    else:
+        item["body"] = _file_handles(t.text)
+        if t.edited_ms:
+            item["edited"] = stamp(t.edited_ms, now)
+            item["was"] = _file_handles(t.was)
     return item
 
 
@@ -3161,6 +3191,11 @@ _HISTORY_LIMIT = 50
 #: across the rooms it read — per-room bounds apply inside each room's
 #: own read; this bounds the merged list itself.
 _RECORD_SOURCE_MAX = 24
+#: The most distinct affected messages one result resolves — one batched
+#: Record read of THIS room (`RecordStore.by_ids`), so the bound is on
+#: distinct targets, not on event count. A target past the cap is
+#: `target_unresolved`, never a scan.
+_TARGET_MAX = 8
 
 _RECORD_QUERY_OFF = (
     "I can't search what was said right now. Say so; do not guess what was said."
@@ -3191,6 +3226,9 @@ _RECORD_QUERY_DELETED = (
 _RECORD_QUERY_NEAR = (
     "A message marked near has words close to these but not these words; do "
     "not quote it as saying them."
+)
+_RECORD_QUERY_AS_OF_TARGET = (
+    "An as-of read does not attach the affected message's current text."
 )
 
 
@@ -5862,6 +5900,49 @@ def build_tool_specs(
         found = persons.resolve(platform, ref) if persons is not None else None
         return found.name if found is not None else None
 
+    async def _resolve_targets(
+        platform: str, conversation_id: str, msg_ids: Iterable[int],
+    ) -> dict[int, TargetContext]:
+        """The affected messages these `target_message_id`s name, by id —
+        ONE bounded batched Record read of the ROOM THE EVENT WAS READ IN
+        (`by_ids`), named through the roster. A failed or unresolvable read
+        returns what's absent: the caller's `target_unresolved` says so,
+        and nothing is guessed or scanned."""
+        wanted = tuple(dict.fromkeys(i for i in msg_ids if i))
+        if not wanted:
+            return {}
+        try:
+            found, gone = await store.by_ids(
+                conversation_id=conversation_id,
+                ids=wanted[:_TARGET_MAX])
+        except Exception:
+            log.exception("record target read failed")
+            return {}
+        named = persons.name_transcript(
+            list(found.values()), platform=platform)
+        return {
+            mid: target_context(
+                row, deleted=mid in gone, author=_speaker(row))
+            for mid, row in zip(found, named, strict=True)
+        }
+
+    async def _head_target(scope: SourceScope, head: Any) -> dict | None:
+        """The affected message behind a folded head — through its newest
+        applied row's `target_message_id` — as a `target` dict;
+        `{"unresolved": True}` when the link exists but the row cannot be
+        shown (hidden, another room, or the bound), None when it names none."""
+        for row in await observations.by_ids(
+                scope=scope, ids=(head.head_id,)):
+            if row.target_message_id is None:
+                return None
+            targets = await _resolve_targets(
+                scope.platform, scope.conversation_id,
+                (row.target_message_id,))
+            t = targets.get(row.target_message_id)
+            return (_target_item(t, now=now_fn().astimezone(_HKT))
+                    if t is not None else {"unresolved": True})
+        return None
+
     async def _room_source_events(
         scope: SourceScope, *, since_ms: int, limit: int = 24,
     ) -> tuple[tuple[SourceEvent, ...], int] | None:
@@ -5914,8 +5995,21 @@ def build_tool_specs(
                     o.source_position, o.revision_scope),
                 coverage=coverage_label(o.coverage),
             )
-        return (tuple(event_of(r) for r in rows[:limit]),
-                max(0, len(rows) - limit))
+        shown = tuple(event_of(r) for r in rows[:limit])
+        # The affected messages the shown events name — one batched Record
+        # read of the room they were read in, fail-soft like the source
+        # read itself: an unresolvable target says `target_unresolved`,
+        # never a guess.
+        targets = await _resolve_targets(
+            scope.platform, scope.conversation_id,
+            (e.target_message_id for e in shown
+             if e.target_message_id is not None))
+        return (
+            tuple(replace(
+                e, target=targets.get(e.target_message_id)
+                if e.target_message_id is not None else None)
+                for e in shown),
+            max(0, len(rows) - limit))
 
     async def _observation_query(
         kind: str, object: str | None, history: bool, at_id: int | None,
@@ -5990,6 +6084,17 @@ def build_tool_specs(
                 note = ("The read cut off part-way through the object's "
                         "history — this is an earlier, partial state."
                         if more else None)
+                if folded is not None:
+                    # An as-of read is SOURCE history, not a historical
+                    # message read: the affected message's CURRENT text
+                    # must never attach to an earlier state (there is no
+                    # as-of message reader here), so the read says so.
+                    for row in await observations.by_ids(
+                            scope=scope, ids=(folded.head_id,)):
+                        if row.target_message_id is not None:
+                            note = " ".join(
+                                n for n in (note, _RECORD_QUERY_AS_OF_TARGET)
+                                if n)
                 _record(metrics, "record_query", "ok", kind=kind, as_of=True)
                 return _memory_result(
                     {"status": "ok", "kind": kind,
@@ -6001,6 +6106,10 @@ def build_tool_specs(
                 rows = await observations.history(
                     scope=scope, kind=kind, object_ref=head.object_ref,
                     limit=_HISTORY_LIMIT + 1)
+                targets = await _resolve_targets(
+                    scope.platform, scope.conversation_id,
+                    (r.target_message_id for r in rows[:_HISTORY_LIMIT]))
+                now = now_fn().astimezone(_HKT)
                 out = [{"event": f"platform_observation:{r.id}",
                         "op": r.observation.operation,
                         # `at_ms` is the source's own time ONLY — an
@@ -6019,7 +6128,15 @@ def build_tool_specs(
                         "summary": observation_summary(
                             r.observation,
                             name_of=lambda ref, o=r.observation:
-                                _source_name_of(o.scope.platform, ref))}
+                                _source_name_of(o.scope.platform, ref)),
+                        # The affected message, when the row names one:
+                        # its recorded words and author, or unresolved.
+                        **(
+                            {"target": _target_item(
+                                targets[r.target_message_id], now=now)}
+                            if r.target_message_id in targets else
+                            {"target_unresolved": True}
+                            if r.target_message_id is not None else {})}
                        for r in rows[:_HISTORY_LIMIT]]
                 _record(metrics, "record_query", "ok", kind=kind,
                         events=len(out))
@@ -6028,13 +6145,21 @@ def build_tool_specs(
                      "events": out,
                      **({"more": True} if len(rows) > _HISTORY_LIMIT
                         else {})})
+            detail = head_detail(
+                head,
+                name_of=lambda ref: _source_name_of(
+                    room.platform, ref))
+            # The object's affected message through its newest applied
+            # row: which message the reaction or pin touched — present
+            # only when the link exists (`unresolved` when it cannot be
+            # shown), never attached to a state that names none.
+            target = await _head_target(scope, head)
+            if target is not None:
+                detail["target"] = target
             _record(metrics, "record_query", "ok", kind=kind, detail=True)
             return _memory_result(
                 {"status": "ok", "kind": kind, "object": object,
-                 "detail": head_detail(
-                     head,
-                     name_of=lambda ref: _source_name_of(
-                         room.platform, ref))})
+                 "detail": detail})
         except Exception:
             log.exception("record_query observation branch failed")
             _record(metrics, "record_query", "unavailable", kind=kind)
@@ -6235,9 +6360,18 @@ def build_tool_specs(
                 src_pairs.sort(key=lambda el: el[0].at_ms)
                 shown, dropped = src_pairs[:_RECORD_SOURCE_MAX], \
                     src_pairs[_RECORD_SOURCE_MAX:]
+                # `on` is the hit's own item number when the affected
+                # message is one of this result's `messages` — the same
+                # link the transcript projection uses; off the list the
+                # event carries `target`/`target_unresolved` instead.
+                index_of = {h.row.id: i for i, h in enumerate(hits, 1)}
                 result["source_events"] = [
                     {"room": label,
-                     **_source_event_item(e, now=now)["source_event"]}
+                     **_source_event_item(
+                         e, now=now,
+                         on=index_of.get(e.target_message_id)
+                         if e.target_message_id is not None
+                         else None)["source_event"]}
                     for e, label in shown]
                 if dropped or src_more:
                     result["source_events_more"] = len(dropped) + src_more
@@ -6393,6 +6527,9 @@ def build_tool_specs(
             detail = head_detail(
                 head, name_of=lambda ref: _source_name_of(
                     room.platform, ref))
+            target = await _head_target(scope, head)
+            if target is not None:
+                detail["target"] = target
             _record(metrics, "poll_read", "ok")
             return _memory_result(
                 {"status": "ok", "poll": detail})
@@ -6428,10 +6565,13 @@ def build_tool_specs(
                     if shown > 4:
                         out[f"{kind}s_more"] = True
                         break
-                    entry = {"object": handle_of(h),
-                             "detail": head_detail(
-                                 h, name_of=lambda ref: _source_name_of(
-                                     room.platform, ref))}
+                    detail = head_detail(
+                        h, name_of=lambda ref: _source_name_of(
+                            room.platform, ref))
+                    target = await _head_target(scope, h)
+                    if target is not None:
+                        detail["target"] = target
+                    entry = {"object": handle_of(h), "detail": detail}
                     if h.ordering:
                         entry["ordering"] = h.ordering
                     cov = coverage_label(h.coverage)

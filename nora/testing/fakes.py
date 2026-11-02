@@ -418,6 +418,26 @@ class FakeRecordStore:
         matching.sort(key=lambda r: (r["ts"], r["id"]), reverse=True)
         return [self._transcript_row(r) for r in matching[:limit]]
 
+    async def by_ids(
+        self, *, conversation_id: str, ids: Sequence[int],
+    ) -> tuple[dict[int, TranscriptRow], frozenset[int]]:
+        """Mirrors `SqlRecordStore.by_ids`: one conversation's rows by id —
+        hidden rows absent, a recorded delete named in the second element,
+        reactions folded through the same `_transcript_row` as `recent`."""
+        if self.fail_on_recent:
+            raise RuntimeError("db down")
+        wanted = {int(i) for i in ids}
+        found = {
+            r["id"]: self._transcript_row(r)
+            for r in self.rows
+            if r["conversation_id"] == conversation_id
+            and r["id"] in wanted and r["id"] not in self.hidden_ids
+        }
+        gone = frozenset(
+            d["message_id"] for d in self.deletes
+            if d["message_id"] in found)
+        return found, gone
+
     async def recent_before(
         self, *, conversation_id: str, before_ts: int, limit: int,
     ) -> list[TranscriptRow]:

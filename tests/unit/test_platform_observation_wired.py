@@ -49,7 +49,10 @@ from nora.domain.observations import (
 )
 from nora.domain.ports import EngageDecision, EngagementRequest
 from nora.domain.stimuli import NewStimulus, WakePolicy
-from nora.engagement.context import TranscriptInjection
+from nora.engagement.context import (
+    _OBSERVATION_TARGET_MAX,
+    TranscriptInjection,
+)
 from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
@@ -385,12 +388,24 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
             from nora.domain.models import TranscriptRow
             from nora.domain.record_query import RecordHit, RecordRefHit
 
-            if ("messages", 9) not in refs or ("signal", CID) not in rooms:
+            if ("signal", CID) not in rooms:
                 return ()
-            row = TranscriptRow(9, "author", "Ada", NOW_MS,
-                                "This is the co-delivered utterance", False,
-                                "observed", None)
-            return (RecordRefHit("messages", 9, RecordHit("signal", CID, row)),)
+            hits = []
+            if ("messages", 9) in refs:
+                hits.append(RecordRefHit("messages", 9, RecordHit(
+                    "signal", CID,
+                    TranscriptRow(9, "author", "Ada", NOW_MS,
+                                  "This is the co-delivered utterance",
+                                  False, "observed", None))))
+            # The AFFECTED row — `target_message_id`, an older message the
+            # event acted on, independent of the co-delivered caption.
+            if ("messages", 8) in refs:
+                hits.append(RecordRefHit("messages", 8, RecordHit(
+                    "signal", CID,
+                    TranscriptRow(8, "author", "Ada", NOW_MS - 60_000,
+                                  "the affected words",
+                                  False, "observed", None))))
+            return tuple(hits)
 
         async def own_sends(self, rooms: Any, *, start_ms: int,
                             end_ms: int, limit: int) -> Any:
@@ -451,6 +466,13 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
     assert f'rev="{revision_label(3, "rev")}"' in prompt
     assert "closed" in prompt and "p1" not in prompt
     assert "This is the co-delivered utterance" in prompt
+    # The two links stay independent: the co-delivered utterance is a plain
+    # `<m>` sibling, the AFFECTED message a marked `target` row — labelled
+    # context, never a fresh utterance and never attributed to the actor.
+    affected = next(ln for ln in prompt.splitlines() if ln.startswith('<m n="8"'))
+    assert 'target="yes"' in affected and "the affected words" in affected
+    delivered = next(ln for ln in prompt.splitlines() if ln.startswith('<m n="9"'))
+    assert "target=" not in delivered
 
     # Consumed exactly once: a second tick with nothing new wakes nothing.
     clock_ms[0] += 120_000
@@ -849,7 +871,7 @@ async def test_old_target_reaction_union_reaches_standing_and_real_tools(outside
                     emoji="👍")))
 
     await react("first-actor", 120)
-    await store.append(
+    clear_id = await store.append(
         observation=_obs(kind="reaction", ref="msg:old-target", op="clear",
                          payload=ReactionPayload(), ago=60,
                          target=EditTarget(message_id="old-target")),
@@ -875,15 +897,45 @@ async def test_old_target_reaction_union_reaches_standing_and_real_tools(outside
     if outside_window:
         # Off-window the row keeps the plain source state in Standing.
         assert "on=" not in line
+        # …and the affected message's OWN words and author still reach the
+        # turn: labelled `target_*` context on the interleaved event —
+        # the target's author ("Ada"), never the reactor's actor field
+        # (this clear names none), and ONE expansion per assembly (the
+        # Standing object repeats the state, not the words).
+        ev = next(ln for ln in prompt.splitlines()
+                  if ln.startswith("<source_event")
+                  and 'kind="reaction"' in ln)
+        assert 'target_author="Ada"' in ev
+        assert 'target_text="an old target"' in ev
+        assert "target_author" not in line
     else:
         # In-window the tally annotates the target row ONCE: the row it is on
-        # repeats no `reactions: …` text of its own.
+        # repeats no `reactions: …` text of its own, and the event carries
+        # the `on` link, not a second copy of the words.
         assert "reactions: 👍=1" not in prompt
+        ev = next(ln for ln in prompt.splitlines()
+                  if ln.startswith("<source_event")
+                  and 'kind="reaction"' in ln)
+        assert "target_author" not in ev
     head = next(obj for obj in ctx.source_objects if obj.kind == "reaction")
     assert "👍=1" in head.state
     assert ("👍=1" in line) == outside_window
-    detail = await _call(_tools(audit, store), "record_query", object=head.handle)
+    tools = _tools(audit, store)
+    detail = await _call(tools, "record_query", object=head.handle)
     assert detail["status"] == "ok" and detail["detail"]["counts"] == {"👍": 1}
+    # The SAME affected message through the detail read — its current
+    # words and its author's roster name, never the reactor's.
+    target = detail["detail"]["target"]
+    assert target["sender"] == "Ada" and target["body"] == "an old target"
+    hist = await _call(tools, "record_query", object=head.handle, history=True)
+    assert any(e.get("target", {}).get("body") == "an old target"
+               for e in hist["events"])
+    # `at_id` is source history, not a historical message read: no target
+    # text attaches, and the note says so when the object names one.
+    asof = await _call(tools, "record_query", object=head.handle,
+                       at_id=clear_id)
+    assert asof["status"] == "ok" and "target" not in asof
+    assert "as-of" in asof["note"] and "current text" in asof["note"]
 
 
 async def test_typed_tools_refuse_wrong_handle_kind_and_unsupported_room_scope():
@@ -897,3 +949,143 @@ async def test_typed_tools_refuse_wrong_handle_kind_and_unsupported_room_scope()
     assert bad["status"] == "unavailable"
     broad = await _call(tools, "record_query", kind="poll", scope="all_rooms")
     assert broad["status"] == "unavailable"
+
+
+async def test_target_context_names_the_author_never_the_actor():
+    """A reaction's actor is not the affected message's author: the
+    `target_*` context carries the ROW's own author and words, labelled —
+    while the event keeps its own actor. And every unresolvable target
+    says `target_unresolved`, never a guessed quote."""
+    audit = FakeRecordStore()
+    store = FakeObservationStore(records=audit)
+    audit.observations = store
+    said = await audit.append(message=NormalizedMessage(
+        platform="signal", conversation_id=CID, conversation_type="group",
+        sender_id="author-1", sender_name="Author Name",
+        timestamp=NOW_MS - 200 * MIN, body="the reacted words", raw={}))
+    foreign = await audit.append(message=NormalizedMessage(
+        platform="signal", conversation_id="room-b", conversation_type="group",
+        sender_id="author-2", sender_name="Elsewhere",
+        timestamp=NOW_MS - 190 * MIN, body="not this room", raw={}))
+    hidden = await audit.append(message=NormalizedMessage(
+        platform="signal", conversation_id=CID, conversation_type="group",
+        sender_id="author-1", sender_name="Author Name",
+        timestamp=NOW_MS - 185 * MIN, body="taken back silently", raw={}))
+    assert await audit.hide_message(message_id=hidden, now_ms=NOW_MS) is True
+    gone = await audit.append(message=NormalizedMessage(
+        platform="signal", conversation_id=CID, conversation_type="group",
+        sender_id="author-1", sender_name="Author Name",
+        timestamp=NOW_MS - 180 * MIN, body="deleted words", raw={}))
+    await audit.append_delete(
+        message_id=gone, person_id=None,
+        message=NormalizedMessage(
+            platform="signal", conversation_id=CID,
+            conversation_type="group", sender_id="author-1",
+            sender_name=None, timestamp=NOW_MS - 179 * MIN,
+            body="", raw={}, touch=Touch(
+                kind="delete",
+                target=EditTarget(message_id="gone"))))
+    await _say(audit, 41)
+    # The SAME reactor on five different targets — a resolved one, and the
+    # four ways a named target cannot be shown.
+    for name, mid in (("said", said), ("foreign", foreign),
+                      ("hidden", hidden), ("gone", gone),
+                      ("dangling", 999999)):
+        await store.append(
+            observation=_obs(
+                kind="reaction", ref=f"msg:{name}", op="add",
+                payload=ReactionPayload(emoji="👍"), ago=5,
+                actor="+852111", actor_status="known"),
+            event_id=f"r-{name}", source_digest=f"r-{name}",
+            target_message_id=mid)
+
+    ctx = await _assembler(audit, store).assemble(request=_request())
+    prompt = _prompt(ctx)
+    lines = [ln for ln in prompt.splitlines()
+             if ln.startswith("<source_event")]
+    good = next(ln for ln in lines if 'target_text' in ln)
+    assert 'target_author="Author Name"' in good
+    assert 'target_text="the reacted words"' in good
+    # The event's OWN actor is the reactor ("Ada"), never lent the
+    # target's authorship.
+    assert 'actor="Ada"' in good and 'target_author="Ada"' not in good
+    withheld = [ln for ln in lines if 'target_unresolved' in ln]
+    assert len(withheld) == 3
+    assert "not this room" not in prompt
+    assert "taken back silently" not in prompt
+    deleted_line = next(ln for ln in lines if 'target_deleted="yes"' in ln)
+    assert "deleted words" not in prompt
+    assert 'target_text' not in deleted_line
+    assert "room-b" not in prompt
+
+    # The real tools carry the same projection: `target` resolves or is
+    # `target_unresolved`, and a detail read names the author, not the actor.
+    tools = _tools(audit, store)
+    out = await _call(tools, "load_transcript", limit=40)
+    events = [m["source_event"] for m in out["messages"] if "source_event" in m]
+    said_ev = next(e for e in events if e.get("target"))
+    assert said_ev["target"]["sender"] == "Author Name"
+    assert said_ev["target"]["body"] == "the reacted words"
+    assert said_ev["actor"] == "Ada"
+    assert sum(1 for e in events if e.get("target_unresolved")) == 3
+    gone_ev = next(e for e in events
+                   if e.get("target", {}).get("deleted"))
+    assert "body" not in gone_ev["target"]
+    detail = await _call(
+        tools, "record_query",
+        object=object_handle("reaction", "msg:said", account_key="acct"))
+    assert detail["status"] == "ok"
+    assert detail["detail"]["target"]["sender"] == "Author Name"
+
+
+async def test_repeated_and_over_bound_targets_stay_bounded_and_explicit():
+    """Several events on ONE affected message resolve it once and carry the
+    same context; more distinct targets than the bound leaves the rest
+    `target_unresolved` — a counted bound, never an unbounded scan."""
+    audit = FakeRecordStore()
+    store = FakeObservationStore(records=audit)
+    audit.observations = store
+    shared = await audit.append(message=NormalizedMessage(
+        platform="signal", conversation_id=CID, conversation_type="group",
+        sender_id="+852111", sender_name="Ada",
+        timestamp=NOW_MS - 220 * MIN, body="shared target", raw={}))
+    extras = []
+    for i in range(_OBSERVATION_TARGET_MAX + 1):
+        extras.append(await audit.append(message=NormalizedMessage(
+            platform="signal", conversation_id=CID,
+            conversation_type="group", sender_id="author-1",
+            sender_name="Author Name",
+            timestamp=NOW_MS - (200 - i) * MIN, body=f"extra {i}", raw={})))
+    await _say(audit, 41)
+    for i in range(3):
+        await store.append(
+            observation=_obs(kind="reaction", ref="msg:shared", op="add",
+                             payload=ReactionPayload(emoji="👍"), ago=10 - i),
+            event_id=f"d-{i}", source_digest=f"d-{i}",
+            target_message_id=shared)
+    for i, mid in enumerate(extras):
+        await store.append(
+            observation=_obs(
+                kind="pin", ref=f"set-{i}", op="add",
+                payload=PinPayload(message=EditTarget(message_id=f"t-{i}")),
+                ago=8 - i * 0.05),
+            event_id=f"p-{i}", source_digest=f"p-{i}",
+            target_message_id=mid)
+
+    ctx = await _assembler(audit, store).assemble(request=_request())
+    lines = [ln for ln in _prompt(ctx).splitlines()
+             if ln.startswith("<source_event")]
+    # The one shared target's words ride all three reaction events — the
+    # SAME resolved context, one Record read, no three different quotes.
+    assert sum('target_text="shared target"' in ln for ln in lines) == 3
+    # `_OBSERVATION_TARGET_MAX` distinct targets resolve; the bound cuts
+    # the rest, and the cut says so on each.
+    assert sum('target_unresolved' in ln for ln in lines) == 2
+
+    tools = _tools(audit, store)
+    hist = await _call(
+        tools, "record_query",
+        object=object_handle("reaction", "msg:shared", account_key="acct"),
+        history=True)
+    assert all(e.get("target", {}).get("body") == "shared target"
+               for e in hist["events"])

@@ -616,21 +616,30 @@ def build_grounder(
                 continue
             wanted.append((s, ref))
             wanted_rooms.add((s.platform, s.conversation_id))
-        # The utterance a typed source event was co-delivered as: the merged
-        # source obligation links it through the observation row's
-        # `delivered_message_id`, and it reads as its `messages:<id>` record
-        # through the same `by_refs` seam and the same room check — both
-        # evidence paths of the one event on the agenda, off one stimulus.
+        # The utterance a typed source event was co-delivered as AND the
+        # recorded message it affected: the merged source obligation links
+        # the first through `delivered_message_id`, and a reaction's target
+        # or a pinned row through `target_message_id` — independent ids, so
+        # a co-delivered caption and the older message it touched are two
+        # reads, not one. Both read as `messages:<id>` records through the
+        # same `by_refs` seam and the same room check — evidence paths of
+        # the one event on the agenda, off one stimulus.
         sibling_wanted: list[tuple[Stimulus, tuple[str, int]]] = []
         for s in pending:
             if (s.id not in claimed or s.kind != "observation"
                     or s.platform is None or s.conversation_id is None):
                 continue
             event = observations_out.get(s.ref)
-            if event is None or event.delivered_message_id is None:
+            if event is None:
                 continue
-            sibling_wanted.append((s, ("messages", event.delivered_message_id)))
-            wanted_rooms.add((s.platform, s.conversation_id))
+            for message_id in (
+                event.delivered_message_id, event.target_message_id,
+            ):
+                if message_id is not None:
+                    sibling_wanted.append((s, ("messages", message_id)))
+            if event.delivered_message_id is not None or (
+                    event.target_message_id is not None):
+                wanted_rooms.add((s.platform, s.conversation_id))
         found: dict[tuple[str, int], RecordRefHit] = {}
         refs = [r for _, r in wanted] + [r for _, r in sibling_wanted]
         if refs:

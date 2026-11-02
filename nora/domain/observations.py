@@ -1541,6 +1541,50 @@ class SourceEvent:
     #: covered grain ("guild", "pin_set"), its gaps and its partiality —
     #: never smoothed into a complete-looking fact.
     coverage: str = ""
+    #: The recorded message this event affected, resolved at read time
+    #: (`target_context`) — None while `target_message_id` is unset OR the
+    #: target cannot be shown (hidden, pruned, another room). Renderers
+    #: distinguish «named no target» (id None) from «could not be shown»
+    #: (id set, target None) and say the latter, never a guessed quote.
+    target: TargetContext | None = None
+
+
+#: The most text of one affected message a surface carries: a bounded quote,
+#: not a retransmission of the row.
+_TARGET_TEXT_MAX = 240
+
+
+@dataclass(frozen=True, slots=True)
+class TargetContext:
+    """The recorded message a source event affected, resolved and bounded.
+
+    `author` is the roster/profile name the caller already resolved — never a
+    raw id, and never the event's own actor (a reactor is not the target's
+    author). `at_ms` is the row's own time. `text` is the CURRENT words — the
+    newest edit folded in — or None when they may not be shown (a deleted
+    row). `edited_ms`/`was` say the row was edited and what it first said;
+    `deleted` says its words were taken back. Every field is a Record fact:
+    an unresolved target is simply absent, never reconstructed.
+    """
+
+    author: str
+    at_ms: int
+    text: str | None = None
+    edited_ms: int | None = None
+    was: str | None = None
+    deleted: bool = False
+
+
+def target_context(row: Any, *, deleted: bool, author: str) -> TargetContext:
+    """One resolved target's `TargetContext` — the Record row's own facts,
+    clipped, with a deleted row's words withheld rather than resurrected."""
+    return TargetContext(
+        author=author, at_ms=row.ts,
+        text=None if deleted else _clip(row.body or "", _TARGET_TEXT_MAX),
+        edited_ms=row.edit.ts if row.edit is not None else None,
+        was=(None if deleted or row.edit is None
+             else _clip(row.edit.was or "", _TARGET_TEXT_MAX)),
+        deleted=deleted)
 
 
 def _short_digest(text: str) -> str:

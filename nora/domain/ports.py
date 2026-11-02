@@ -846,6 +846,26 @@ class RecordStore(Protocol):
         """
         ...
 
+    async def by_ids(
+        self, *, conversation_id: str, ids: Sequence[int],
+    ) -> tuple[dict[int, TranscriptRow], frozenset[int]]:
+        """The messages these row ids name, as `(rows by id, deleted ids)` —
+        ONE bounded batched read for resolving a known reference (a source
+        event's `target_message_id`), never a room scan and never a lookup
+        of another room's row.
+
+        Only rows of `conversation_id` resolve; hidden (withdrawn) rows are
+        absent, as in every transcript read. A row whose delete is recorded
+        is present in the second element: its words still reach the caller,
+        who withholds them itself (`deleted` reads differently from hidden —
+        the touch stage's own order). Reactions are folded the same way
+        `recent` folds them; the newest edit is folded onto `body`. The
+        caller owns the `ids` bound; an empty one answers `({}, frozenset())`
+        without a query. One caller family: the platform-observation target
+        reads (`nora.engagement.context`, `nora.agent.tools`).
+        """
+        ...
+
     async def set_delivery_outcome(
         self, *, row_id: int, status: DeliveryStatus, ts: int | None = None
     ) -> None: ...

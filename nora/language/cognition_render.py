@@ -264,12 +264,15 @@ class _Row:
 
 
 def _message_row(
-    rec: RecordItem, cues: Sequence[str], *, now_ms: int, tz: tzinfo, message_chars: int,
+    rec: RecordItem, cues: Sequence[str], *, now_ms: int, tz: tzinfo,
+    message_chars: int, target: bool = False,
 ) -> _Row:
     """A person's message, an edit of one, a reaction to one or a deletion of
     one, as `<m n="<message id>" at from ...>words</m>`. `n` is the message's
     own id (`render_row_window` writes it first); a reaction's is the message
-    reacted to, and its `from` and words are that message's."""
+    reacted to, and its `from` and words are that message's. `target="yes"`
+    marks a row shown only because a source event affected it — context for
+    the event, never a fresh utterance."""
     when = _when(rec.at_ms, now_ms, tz)
     reacted = rec.kind == "reaction"
     deleted = rec.kind == "delete"
@@ -291,6 +294,7 @@ def _message_row(
             [rec], row_id=lambda r: r.message_id,
             attrs=lambda r: (
                 ("at", when), ("from", speaker_of(r.author)),
+                ("target", "yes" if target else None),
                 ("reaction", emoji_display(r.emoji or "?") if reacted else None),
                 ("reaction_removed", "yes" if reacted and r.removed else None),
                 (
@@ -604,20 +608,31 @@ def _item_rows(
             rec, s.cues, now_ms=now_ms, tz=tz, message_chars=message_chars,
         ))
     for s, event in linked:
-        # The message the event is about — for a merged source obligation
-        # the utterance it was co-delivered as — read beside the event so
-        # both evidence paths of the one source reach the session. A row
-        # already shown (its own stimulus, or a reaction's target) is not
-        # repeated; an absent one is absent, never a guess.
-        if event.delivered_message_id is None:
-            continue
-        rec = grounding.records.get(f"messages:{event.delivered_message_id}")
-        if rec is None or rec.room != item.room or rec.message_id in message_ids:
-            continue
-        message_ids.add(rec.message_id)
-        out.append(_message_row(
-            rec, s.cues, now_ms=now_ms, tz=tz, message_chars=message_chars,
-        ))
+        # The messages the event is about — for a merged source obligation
+        # the utterance it was co-delivered as (`delivered`), and the
+        # recorded row the event affected (`target`): a reaction's target,
+        # a pinned message, an edited row. Both read beside the event so
+        # each evidence path of the one source reaches the session. A row
+        # already shown (its own stimulus, or another event's) is not
+        # repeated; an absent one is absent, never a guess. The AFFECTED
+        # row is marked `target` so it reads as the event's context — not
+        # as a fresh utterance, and never the event actor's words.
+        for message_id in (
+            event.delivered_message_id, event.target_message_id,
+        ):
+            if message_id is None:
+                continue
+            rec = grounding.records.get(f"messages:{message_id}")
+            if (rec is None or rec.room != item.room
+                    or rec.message_id in message_ids):
+                continue
+            message_ids.add(rec.message_id)
+            out.append(_message_row(
+                rec, s.cues, now_ms=now_ms, tz=tz,
+                message_chars=message_chars,
+                target=(message_id == event.target_message_id
+                        and message_id != event.delivered_message_id),
+            ))
     for rec in own:
         if rec.room == item.room:
             out.append(_own_row(rec, now_ms=now_ms, tz=tz, message_chars=message_chars))

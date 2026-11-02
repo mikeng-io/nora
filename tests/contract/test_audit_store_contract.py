@@ -1031,3 +1031,55 @@ async def test_a_delete_is_recorded_and_the_message_still_reads(store):
     assert deletes == [(target, "", None, 7, {"touch": "delete", "ts": 7})]
     rows = await store.recent(conversation_id="g1", limit=10)
     assert [r.body for r in rows] == ["dinner at 8"]
+
+
+async def test_by_ids_resolves_named_rows_of_the_one_conversation(store):
+    """The platform-observation target read: a batched, same-room resolution
+    of known ids — `(rows by id, deleted ids)`, reactions folded as `recent`
+    folds them, hidden rows absent, another conversation's id resolving to
+    nothing, and an empty `ids` answering without a query."""
+    target = await store.append(message=_msg(body="the reacted words", ts=1))
+    plain = await store.append(message=_msg(body="plain", ts=2))
+    gone = await store.append(message=_msg(body="taken back", ts=3))
+    hidden = await store.append(message=_msg(body="withdrawn", ts=4))
+    other = await store.append(message=_msg(conv="g2", body="not this room", ts=5))
+    await store.append_reaction(
+        message_id=target, message=_touch("reaction", ts=6, emoji="👍"),
+        person_id="p2")
+    await store.append_delete(
+        message_id=gone, message=_touch("delete", ts=7, sender=""),
+        person_id=None)
+    assert await store.hide_message(message_id=hidden, now_ms=8) is True
+
+    found, deleted = await store.by_ids(
+        conversation_id="g1",
+        ids=(target, plain, gone, hidden, other, 999999))
+
+    assert set(found) == {target, plain, gone}
+    assert found[target].body == "the reacted words"
+    assert found[target].reactions is not None
+    assert found[target].reactions.counts == (("👍", 1),)
+    # The delete is named but its words still reach the CALLER — the read
+    # reports; the projection withholds (the same split `record_query`
+    # applies). A hidden row is absent entirely.
+    assert deleted == frozenset({gone})
+    assert hidden not in found and other not in found
+
+    assert await store.by_ids(conversation_id="g2", ids=(target,)) == (
+        {}, frozenset())
+    assert await store.by_ids(conversation_id="g1", ids=()) == (
+        {}, frozenset())
+
+
+async def test_by_ids_folds_the_newest_edit_as_recent_does(store):
+    """`by_ids` is `recent`'s read keyed by id, not a raw row dump: the
+    newest edit folds onto `body` and `row.edit` says it first said
+    otherwise — current supported text, never the stale one."""
+    target = await store.append(message=_msg(body="first words", ts=1))
+    await store.append_edit(
+        message_id=target,
+        message=_msg(body="edited words", ts=1))
+    found, _ = await store.by_ids(conversation_id="g1", ids=(target,))
+    assert found[target].body == "edited words"
+    assert found[target].edit is not None
+    assert found[target].edit.was == "first words"
