@@ -200,7 +200,7 @@ class _Sends:
     def __init__(self, hits=()):
         self._hits = list(hits)
 
-    async def own_sends(self, rooms, *, start_ms, end_ms, limit):
+    async def own_sends(self, rooms, *, start_ms, end_ms, limit, **kw):
         room_set = set(rooms)
         return tuple(
             h for h in self._hits

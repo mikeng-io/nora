@@ -179,7 +179,7 @@ async def test_a_failed_read_costs_the_block_not_the_session():
         return ()
 
     class _Records:
-        async def by_refs(self, refs, rooms):
+        async def by_refs(self, refs, rooms, **kw):
             return ()
 
         async def own_sends(self, *a, **kw):
@@ -206,7 +206,7 @@ async def test_the_grounder_hands_the_session_her_account():
         return ()
 
     class _Records:
-        async def by_refs(self, refs, rooms):
+        async def by_refs(self, refs, rooms, **kw):
             return ()
 
         async def own_sends(self, *a, **kw):

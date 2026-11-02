@@ -83,11 +83,11 @@ def _grounder(store: FakeObservationStore):
         return ()
 
     class _NoRecords:
-        async def by_refs(self, refs: Any, rooms: Any) -> Any:
+        async def by_refs(self, refs: Any, rooms: Any, **kw: Any) -> Any:
             return ()
 
         async def own_sends(self, rooms: Any, *, start_ms: int,
-                            end_ms: int, limit: int) -> Any:
+                            end_ms: int, limit: int, **kw: Any) -> Any:
             return ()
 
     return build_grounder(

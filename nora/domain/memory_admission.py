@@ -280,6 +280,7 @@ class AdmissionState:
             and r.status == "current"
             and r.layer in query.layers
             and (not query.relations or r.rel in query.relations)
+            and (query.known_at is None or r.asserted_at <= query.known_at)
             and (
                 query.valid_at is None
                 or (

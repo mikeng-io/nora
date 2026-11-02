@@ -184,8 +184,8 @@
   {
     "name": "runner: the grounder runs on the agenda BEFORE the skip (M1: indices shift, promoted items ungrounded)",
     "file": "nora/app/cognition_session.py",
-    "old": "            grounding = await self._grounder(unit, situation.agenda.items, pending)",
-    "new": "            grounding = await self._grounder(unit, build_situation(unit=unit, pending=view.pending, home_room=home_room, now_ms=now_ms, last_session_ms=last_looked_ms, max_items=self._max_items, strikes=view.carry).agenda.items, pending)",
+    "old": "            grounding = await self._grounder(\n                unit, situation.agenda.items, pending, now_ms)",
+    "new": "            grounding = await self._grounder(unit, build_situation(unit=unit, pending=view.pending, home_room=home_room, now_ms=now_ms, last_session_ms=last_looked_ms, max_items=self._max_items, strikes=view.carry).agenda.items, pending, now_ms)",
     "target": "tests/unit/test_cognition_grounding.py -k sorting_first"
   },
   {
@@ -268,8 +268,8 @@
   {
     "name": "runner: the grounder runs BEFORE the skip (M1: an item promoted from deferred is ungrounded)",
     "file": "nora/app/cognition_session.py",
-    "old": "            grounding = await self._grounder(unit, situation.agenda.items, pending)",
-    "new": "            grounding = await self._grounder(unit, build_situation(unit=unit, pending=view.pending, home_room=home_room, now_ms=now_ms, last_session_ms=last_looked_ms, max_items=self._max_items, strikes=view.carry).agenda.items, pending)",
+    "old": "            grounding = await self._grounder(\n                unit, situation.agenda.items, pending, now_ms)",
+    "new": "            grounding = await self._grounder(unit, build_situation(unit=unit, pending=view.pending, home_room=home_room, now_ms=now_ms, last_session_ms=last_looked_ms, max_items=self._max_items, strikes=view.carry).agenda.items, pending, now_ms)",
     "target": "tests/unit/test_cognition_grounding.py -k promoted"
   }
 ]

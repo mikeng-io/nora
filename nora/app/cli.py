@@ -47,6 +47,7 @@ import functools
 import json
 import os
 import sys
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -447,6 +448,39 @@ def add_subcommands(
         "--limit", type=int, default=10_000, help="at most this many rows per list",
     )
     places.set_defaults(func=cmd_memory_backfill_places)
+
+    # `memory unified-backfill` (27 §10, 29, 31 §6): the ONE chronological
+    # unified-memory backfill — historical sessions through the Cognition
+    # runner, oldest evidence first. Default is a dry-run census: zero
+    # writes, zero model calls. --apply requires explicit bounds.
+    unified = memory_sub.add_parser(
+        "unified-backfill", parents=[parent],
+        help="the chronological unified-memory backfill through the ONE "
+             "Cognition session (a dry-run census unless --apply)",
+    )
+    unified.add_argument(
+        "--unit", action="append",
+        help="one unit; repeatable. All units with a home room without it",
+    )
+    unified.add_argument("--from-ms", type=int, help="evidence time lower bound, epoch ms")
+    unified.add_argument("--until-ms", type=int, help="evidence time upper bound, epoch ms")
+    unified.add_argument(
+        "--batch-stimuli", type=int, default=40,
+        help="stimuli per historical session batch (default 40)",
+    )
+    unified.add_argument(
+        "--apply", action="store_true",
+        help="run the bounded historical lane; requires all three bounds",
+    )
+    unified.add_argument("--max-batches", type=int, help="at most this many batches (apply)")
+    unified.add_argument("--max-tokens", type=int, help="at most this many model tokens (apply)")
+    unified.add_argument("--max-seconds", type=float, help="at most this long, seconds (apply)")
+    unified.add_argument(
+        "--catch-up", action="store_true",
+        help="queue ONE real-clock time wake per unit whose history is "
+             "complete; a deliberate separate operation, never part of --apply",
+    )
+    unified.set_defaults(func=cmd_unified_backfill)
 
     # `assess run-nightly` (DEC-240): the Assess adaptor's deterministic
     # data-quality checks. WRITABLE engine, because `--record` (the default)
@@ -1203,6 +1237,176 @@ async def cmd_graph_project(args: argparse.Namespace) -> int:
         await engine.dispose()
     print(json.dumps(result,sort_keys=True))
     return 1 if args.apply and result["unprojected"] else 0
+
+
+async def cmd_unified_backfill(args: argparse.Namespace) -> int:
+    """`nora memory unified-backfill` (`nora.app.unified_backfill`): the ONE
+    chronological unified-memory backfill.
+
+    Default is a dry-run census on a READ-ONLY engine — zero writes, zero
+    model calls. `--apply` runs the bounded historical lane through the live
+    composition's session runner (`build_dependencies`, the app's own object
+    graph — nothing else wires it correctly) and REQUIRES
+    `--max-batches`/`--max-tokens`/`--max-seconds`. `--catch-up` queues one
+    real-clock `time` wake per complete unit — a separate operation, never
+    implied by `--apply`."""
+    import json
+    from datetime import UTC, datetime
+
+    from nora.app import unified_backfill
+    from nora.app.composition import build_dependencies, social_person_rooms
+    from nora.domain.cognition_session import Room
+    from nora.infra.sql.stimuli import SqlStimulusStore
+
+    cfg = _config(args)
+    allowlist = _policy(cfg)
+    units = args.unit or sorted(allowlist.home_rooms())
+    rooms_of_unit = lambda unit: {  # noqa: E731
+        (c.platform, cid) for c in allowlist.rooms()
+        if c.unit == unit and c.absorbed for cid in c.ids
+    }
+    room_units = {
+        (c.platform, cid): c.unit for c in allowlist.rooms() for cid in c.ids
+    }
+    unit_of = lambda platform, cid: room_units.get((platform, cid))  # noqa: E731
+    person_rooms = social_person_rooms(allowlist)
+    from_ms, until_ms = args.from_ms, args.until_ms
+
+    if args.apply:
+        import math
+
+        missing = [
+            n for n, v in (("--max-batches", args.max_batches),
+                           ("--max-tokens", args.max_tokens),
+                           ("--max-seconds", args.max_seconds)) if v is None
+        ]
+        if missing:
+            raise CliError(
+                f"--apply requires finite bounds: {', '.join(missing)}")
+        invalid = [
+            n for n, v in (
+                ("--max-batches", args.max_batches),
+                ("--max-tokens", args.max_tokens),
+                ("--max-seconds", args.max_seconds),
+                ("--batch-stimuli", args.batch_stimuli),
+            ) if not math.isfinite(v) or v <= 0
+        ]
+        if invalid:
+            raise CliError(
+                f"--apply requires positive finite values: {', '.join(invalid)}")
+        deps = await build_dependencies(cfg)
+        engine = create_sql_engine(_database_url(cfg))
+        try:
+            home_rooms = {
+                u: Room(c.platform, c.primary_id)
+                for u, c in allowlist.home_rooms().items()
+            }
+            result = await unified_backfill.apply(
+                engine, cfg=cfg, deps=deps, units=units,
+                home_rooms=home_rooms, rooms_of_unit=rooms_of_unit,
+                unit_of=unit_of, person_rooms=person_rooms,
+                self_ids=deps.registry.self_aliases(),
+                bounds=unified_backfill.Bounds(
+                    max_batches=args.max_batches,
+                    max_tokens=args.max_tokens,
+                    max_seconds=args.max_seconds,
+                ),
+                batch_stimuli=args.batch_stimuli,
+                from_ms=from_ms, until_ms=until_ms,
+            )
+        except ValueError as exc:
+            raise CliError(str(exc)) from exc
+        finally:
+            await engine.dispose()
+            for client in [deps.client, *deps.model_clients]:
+                with suppress(Exception):
+                    await client.close()
+        print(json.dumps(result, sort_keys=True, default=str))
+        bad = sum(
+            u.get("failures", 0) for u in result["units"].values()
+        ) + sum(
+            u.get("uncovered_stimuli", 0) for u in result["units"].values()
+        )
+        return 1 if bad else 0
+
+    if args.catch_up:
+        if args.from_ms is not None or args.until_ms is not None:
+            raise CliError(
+                "--catch-up gates on the whole unit; a --from-ms/--until-ms "
+                "window cannot certify completion")
+        deps = await build_dependencies(cfg)
+        engine = create_sql_engine(_database_url(cfg))
+        try:
+            live = deps.cognition_runner
+            if live is None or live.memory is None:
+                raise CliError(
+                    "catch-up requires the Cognition runner and unified "
+                    "memory lane wired ([cognition]/[dreamer] and "
+                    "[memory.graph]+[memory.graph.comprehend] enabled)")
+            grounder = unified_backfill.historical_grounder(
+                engine, cfg=cfg, deps=deps, units=units)
+            runner = unified_backfill.historical_runner(
+                live, grounder=grounder, agent_runner=live.agent_runner)
+            home_rooms = {
+                u: Room(c.platform, c.primary_id)
+                for u, c in allowlist.home_rooms().items()
+            }
+            result = await unified_backfill.catch_up(
+                engine,
+                stimulus_store=SqlStimulusStore(engine),
+                runner=runner, units=units, home_rooms=home_rooms,
+                rooms_of_unit=rooms_of_unit, unit_of=unit_of,
+                person_rooms=person_rooms,
+                self_ids=deps.registry.self_aliases(),
+                now_ms=int(datetime.now(UTC).timestamp() * 1000),
+                pending_reminds=(
+                    (lambda: deps.reminders.pending_of(cfg.honcho.ai_peer))
+                    if deps.reminders is not None else None),
+            )
+        finally:
+            await engine.dispose()
+            for client in [deps.client, *deps.model_clients]:
+                with suppress(Exception):
+                    await client.close()
+        print(json.dumps(result, sort_keys=True, default=str))
+        not_queued = [
+            u for u, r in result["units"].items()
+            if r["status"] not in ("queued", "already_queued")
+        ]
+        return 1 if not_queued else 0
+
+    # Dry-run census: a READ-ONLY engine; no writes, no model calls, and no
+    # `build_dependencies` either — the census reads enumeration state, not
+    # the wired graph. `self_ids=()` means her own reactions/deletes count as
+    # enumerable here (the apply lane skips them); reported as a caveat, not
+    # hidden.
+    engine = create_readonly_sql_engine(_database_url(cfg))
+    try:
+        result = await unified_backfill.census(
+            engine, units=units, rooms_of_unit=rooms_of_unit, unit_of=unit_of,
+            person_rooms=person_rooms, self_ids=(),
+            from_ms=from_ms, until_ms=until_ms,
+        )
+    finally:
+        await engine.dispose()
+    result["dry_run"] = True
+    result["flags"] = {
+        "memory.graph.enabled": cfg.memory.graph.enabled,
+        "memory.graph.comprehend.enabled": cfg.memory.graph.comprehend.enabled,
+        "cognition.enabled": cfg.cognition.enabled,
+        "dreamer.enabled": cfg.dreamer.enabled,
+        "memory.profile.write": cfg.memory.profile.write,
+        "memory.profile.read": cfg.memory.profile.read,
+        "profile_lane": (
+            "owned by the session"
+            if cfg.memory.profile.write and cfg.memory.profile.read
+            else "shadow (receipts only; not persisted to profiles)"),
+        "home_rooms": sorted(allowlist.home_rooms()),
+        "self_ids": "not resolved in dry-run; her own reaction/delete rows "
+                    "count in 'enumerated' (apply skips them)",
+    }
+    print(json.dumps(result, sort_keys=True, default=str))
+    return 0
 
 
 async def cmd_memory_rebuild(args: argparse.Namespace) -> int:

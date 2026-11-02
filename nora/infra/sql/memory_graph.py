@@ -62,6 +62,7 @@ WITH RECURSIVE paths(kind, id, depth, seen, edge) AS (
      AND (cardinality(CAST(:rels AS text[]))=0 OR r.rel=ANY(CAST(:rels AS text[])))
      AND (CAST(:at AS timestamptz) IS NULL OR
        ((r.valid_from IS NULL OR r.valid_from<=:at) AND (r.valid_to IS NULL OR :at<r.valid_to)))
+     AND (CAST(:known_at AS timestamptz) IS NULL OR r.asserted_at<=:known_at)
  )
  UNION ALL
  SELECT r.other_kind, r.other_id, p.depth+1,
@@ -84,6 +85,7 @@ WITH RECURSIVE paths(kind, id, depth, seen, edge) AS (
        AND (cardinality(CAST(:rels AS text[]))=0 OR rel=ANY(CAST(:rels AS text[])))
        AND (CAST(:at AS timestamptz) IS NULL OR
          ((valid_from IS NULL OR valid_from<=:at) AND (valid_to IS NULL OR :at<valid_to)))
+       AND (CAST(:known_at AS timestamptz) IS NULL OR asserted_at<=:known_at)
        AND (NOT EXISTS (SELECT 1 FROM entity e WHERE e.kind=other_kind AND e.id=other_id)
          OR EXISTS (SELECT 1 FROM entity e WHERE e.kind=other_kind AND e.id=other_id
              AND e.unit=:unit))
@@ -159,6 +161,11 @@ def walk_sql(query: Walk) -> tuple[str, dict[str, Any]]:
         + permitted("attribute_ev.source_kind", "attribute_ev.source_id")
         + ")"
     )
+    # The preview's as-of: a relation only walks if it was ASSERTED by the
+    # walk's instant — `valid_at` bounds when it held, this bounds when the
+    # graph knew it. A historical session must not see tomorrow's assertion.
+    conditions.append(
+        "(CAST(:known_at AS timestamptz) IS NULL OR r.asserted_at<=:known_at)")
     conditions.append("""(
         (CAST(:since_ms AS bigint) IS NULL OR extract(epoch FROM r.asserted_at)*1000>=:since_ms)
         AND (CAST(:until_ms AS bigint) IS NULL OR extract(epoch FROM r.asserted_at)*1000<=:until_ms)
@@ -214,6 +221,7 @@ def walk_parameters(seeds: tuple[Key, ...], query: Walk) -> dict[str, Any]:
         "layers": list(query.layers),
         "rels": list(query.relations),
         "at": query.valid_at,
+        "known_at": query.known_at,
         "fan": query.fan_out + 1,
         "depth": query.depth,
         "budget": max(1, query.nodes * (query.fan_out + 1) + len(seeds)),

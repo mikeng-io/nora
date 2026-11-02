@@ -425,7 +425,7 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
         return ()
 
     class _NoRecords:
-        async def by_refs(self, refs: Any, rooms: Any) -> Any:
+        async def by_refs(self, refs: Any, rooms: Any, **kw: Any) -> Any:
             from nora.domain.models import TranscriptRow
             from nora.domain.record_query import RecordHit, RecordRefHit
 
@@ -450,7 +450,7 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
             return tuple(hits)
 
         async def own_sends(self, rooms: Any, *, start_ms: int,
-                            end_ms: int, limit: int) -> Any:
+                            end_ms: int, limit: int, **kw: Any) -> Any:
             return ()
 
     grounder = build_grounder(
@@ -1321,11 +1321,11 @@ async def test_the_grounder_keeps_a_retained_poll_past_eight_newer_objects():
         return ()
 
     class _NoRecords:
-        async def by_refs(self, refs: Any, rooms: Any) -> Any:
+        async def by_refs(self, refs: Any, rooms: Any, **kw: Any) -> Any:
             return ()
 
         async def own_sends(self, rooms: Any, *, start_ms: int,
-                            end_ms: int, limit: int) -> Any:
+                            end_ms: int, limit: int, **kw: Any) -> Any:
             return ()
 
     grounder = build_grounder(
@@ -1456,9 +1456,9 @@ async def test_retained_sources_report_the_bound_and_never_read_another_room():
     async def index(unit):
         return await notes.standing(unit=unit)
     class NoRecords:
-        async def by_refs(self, refs, rooms):
+        async def by_refs(self, refs, rooms, **kw):
             return ()
-        async def own_sends(self, rooms, *, start_ms, end_ms, limit):
+        async def own_sends(self, rooms, *, start_ms, end_ms, limit, **kw):
             return ()
     async def no_events(unit, platform, cid):
         return ()

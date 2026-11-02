@@ -509,7 +509,8 @@ async def test_prepare_keeps_each_social_sources_real_provenance() -> None:
     state.shown_keys = set()
     state.items_by_index = {0: SimpleNamespace(
         stimulus_ids=(1, 2, 3, 4), room=SimpleNamespace(platform="signal", conversation_id=ROOM))}
-    stimuli = {i: SimpleNamespace(kind="social", ref="social:" + ref)
+    stimuli = {i: SimpleNamespace(kind="social", item="post", at_ms=NOW_MS,
+                                  ref="social:" + ref)
                for i, ref in enumerate(
                    ("insta:first", "insta:second", "insta:third", "insta:undated"), 1)}
     await memory.prepare(state, stimuli, SimpleNamespace(records={}))
