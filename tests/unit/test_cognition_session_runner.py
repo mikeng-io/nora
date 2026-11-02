@@ -289,7 +289,8 @@ async def test_cognition_09_backfill_withholds_act_tools():
     runner, store, fake = _runner(memory=wake_memory())
     await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
         last_activity_ms=None, last_wake=None), now_ms=NOW, historical=True)
-    assert {"memory_propose", "profile_revise", "close"} <= set(fake.last_tool_names)
+    assert {"memory_propose", "close"} <= set(fake.last_tool_names)
+    assert not {"profile_read", "profile_revise"} & set(fake.last_tool_names)
     forbidden = ("note_", "memo_", "event_", "lesson_", "topic_", "decision_",
                  "commitment_", "standing_", "wake_", "remind", "send_")
     assert not any(n.startswith(forbidden) for n in fake.last_tool_names)
@@ -910,7 +911,8 @@ async def test_inspection_renders_real_wake_clock_room_and_open_items_without_mo
     inspection = await runner.inspect(view=UnitView(
         unit="unit-1", pending=_pending("unit-1"), last_activity_ms=None, last_wake=None),
         now_ms=NOW)
-    assert set(inspection) == {"system", "agenda"}
+    assert set(inspection) == {"system", "agenda", "work"}
+    assert inspection["work"] == []
     assert "DOCTRINE" in inspection["system"]
     for value in ("Generated room", "I arrived", "Hand over generated gifts", "Generated dinner"):
         assert value in inspection["agenda"]
@@ -927,7 +929,8 @@ async def test_an_inspection_records_no_session_outcome_or_carry():
     view = UnitView(unit="unit-1", pending=_pending("unit-1"),
                     last_activity_ms=None, last_wake=None)
     inspection = await runner.inspect(view=view, now_ms=NOW)
-    assert inspection is not None and set(inspection) == {"system", "agenda"}
+    assert inspection is not None and set(inspection) == {"system", "agenda", "work"}
+    assert inspection["work"] == []
     assert store.sessions == []
     assert stimuli.outcomes == {}
     assert stimuli.carries == []

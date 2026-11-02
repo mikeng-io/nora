@@ -55,6 +55,7 @@ async def engine(_graph_db):
 def _message_row(mid: int, ts: int) -> dict[str, Any]:
     return {
         "id": mid, "platform": "signal", "conversation_id": "c1",
+        "conversation_type": "group",
         "sender_id": "+1", "sender_name": "A", "ts": ts, "body": f"body {mid}",
         "is_nora": False, "delivery_status": "sent", "raw_json": "{}",
         "quoted_ts": None, "media_json": None, "person_id": "p1",

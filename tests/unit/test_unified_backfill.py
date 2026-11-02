@@ -293,40 +293,43 @@ async def test_done_items_are_skipped_and_changed_input_reruns(
     out2 = await ub.run_units(
         _FakeEngine(object()), runner=runner2, **_run_kwargs())
     assert len(runner2.replay_calls) == 1
-    assert out2["units"]["u1"]["stopped"] == "unresolved"
+    assert out2["units"]["u1"]["stopped"] == "done"
+    assert out2["units"]["u1"]["failures"] == 0
 
 
 @pytest.mark.asyncio
 async def test_apply_stops_at_the_batch_bound_run_wide(monkeypatch: Any):
-    stimuli = [_s(i, i * 100, unit=u) for u in ("u1", "u2")
-               for i in range(1, 4)]
-    work = [[{"index": 0, "work_id": "stimuli:1,2,3", "input_hash": "h"}]] * 6
-    runner = _Runner(work_by_batch=work)
-    covered_by_replay: set[int] = set()
+    units = ["u1", "u2", "u3"]
+    stimuli = [_s(n * 3 + i, i * 100, unit=unit)
+               for n, unit in enumerate(units) for i in range(1, 4)]
+    runner = _Runner()
+    completed: set[tuple[str, str]] = set()
 
     async def _replay(view: Any, now_ms: int, historical: bool) -> Any:
-        covered_by_replay.update(s.id for s in view.pending)
+        runner.replay_calls.append(
+            (tuple(s.id for s in view.pending), now_ms, historical))
+        completed.update((f"input:{view.unit}:{s.id}", "h") for s in view.pending)
         return object()
 
     runner.replay = _replay  # type: ignore[assignment]
     _patch_sql(monkeypatch, stimuli=stimuli)
-    # Make each replay's items covered so batches keep flowing.
-    async def _covered(conn: Any, unit: str) -> set[int]:
-        return covered_by_replay
-    monkeypatch.setattr(ub, "covered_stimulus_ids", _covered)
-    async def _pairs(conn: Any, work_ids: Any) -> set[tuple[str, str]]:
-        return {(wid, "h") for wid in work_ids} if covered_by_replay else set()
-    monkeypatch.setattr(ub.sql, "readings_done", _pairs)
 
+    async def _pairs(conn: Any, work_ids: Any) -> set[tuple[str, str]]:
+        return {pair for pair in completed if pair[0] in set(work_ids)}
+
+    monkeypatch.setattr(ub.sql, "readings_done", _pairs)
     kw = _run_kwargs()
-    kw["units"] = ["u1", "u2"]
-    kw["home_rooms"] = {"u1": ROOM, "u2": ROOM}
+    kw["units"] = units
+    kw["home_rooms"] = dict.fromkeys(units, ROOM)
     kw["bounds"] = ub.Bounds(max_batches=2, max_tokens=10**9, max_seconds=3600)
     out = await ub.run_units(
         _FakeEngine(object()), runner=runner, batch_stimuli=3, **kw)
-    # max_batches is RUN-WIDE: two units each short of it still hit it.
-    # Each model batch inspects twice (original + filtered re-inspect).
-    assert len(runner.inspect_calls) == 4
+    assert [ids for ids, _, _ in runner.replay_calls] == [(1, 2, 3), (4, 5, 6)]
+    assert [ids for ids, _ in runner.inspect_calls] == [
+        (1, 2, 3), (1, 2, 3), (4, 5, 6), (4, 5, 6), (7, 8, 9)]
+    assert out["units"]["u1"]["stopped"] == "done"
+    assert out["units"]["u2"]["stopped"] == "done"
+    assert out["units"]["u3"]["stopped"] == "max_batches"
     assert out["model_batches"] == 2
     assert out["stopped"] == "max_batches"
 
