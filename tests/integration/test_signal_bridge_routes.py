@@ -426,7 +426,7 @@ async def test_attachment_custody(bridge_app):
     """Bounded key validation on both verbs; unknown vs bad key distinct;
     a conflicting same-key write is a 409 — immutable custody."""
     _, client, _ = bridge_app
-    bad = await client.get("/v1/attachments/bad.key", headers=AUTH)
+    bad = await client.get("/v1/attachments/bad..key", headers=AUTH)
     assert bad.status == 400
     missing = await client.get("/v1/attachments/nope1", headers=AUTH)
     assert missing.status == 404
@@ -439,6 +439,81 @@ async def test_attachment_custody(bridge_app):
     assert same.status == 201  # identical payload is a no-op, not a conflict
     got = await client.get("/v1/attachments/k1", headers=AUTH)
     assert got.status == 200 and (await got.read()) == b"one"
+
+
+async def test_attachment_custody_accepts_the_client_key_shape(bridge_app):
+    """App-minted outbound keys embed the action binding —
+    `out-<action_id>-<i>`, colons and hyphens included — so the custody
+    route must admit them; the alnum-only rule used to 400 every one."""
+    _, client, _ = bridge_app
+    key = "out-w-369:send:1-0"
+    put = await client.put(f"/v1/attachments/{key}", data=b"img",
+                           headers=AUTH)
+    assert put.status == 201
+    got = await client.get(f"/v1/attachments/{key}", headers=AUTH)
+    assert got.status == 200 and (await got.read()) == b"img"
+
+
+async def test_send_action_rehydrates_custody_and_decoration(bridge_app):
+    """The outbound half of the custody contract end-to-end: PUT stores the
+    bytes, the send action references the key, and the daemon receives the
+    attachment data-URI — plus the mention/style/quote the client
+    serializes. This is the path an `[image sha]` reply actually takes."""
+    bridge, client, daemon = bridge_app
+    put = await client.put("/v1/attachments/out-a-img-0", data=b"png-bytes",
+                           headers=AUTH)
+    assert put.status == 201
+    owner, _ = await _live_owner(bridge)
+    body = _send("a-img", owner, text="see this pic now")
+    body["request"].update({
+        "attachments": [{"key": "out-a-img-0", "file_name": "m.png",
+                         "media_type": "image/png"}],
+        "mentions": [{"start": 0, "length": 3, "recipient": SENDER,
+                      "handle": None}],
+        "styles": [{"start": 4, "length": 4, "style": "BOLD"},
+                   {"start": 0, "length": 1, "style": "NOTASTYLE"}],
+        "quote": {"ts": 1700000000000, "author_id": SENDER},
+    })
+    r = await client.post("/v1/actions", json=body, headers=AUTH)
+    assert (await r.json())["state"] == "confirmed"
+    assert len(daemon.sent) == 1
+    params = daemon.sent[0]["params"]
+    assert params["attachments"] == [
+        "data:image/png;filename=m.png;base64,"
+        "cG5nLWJ5dGVz"]
+    assert params["mention"] == [f"0:3:{SENDER}"]
+    # The unknown style is dropped, the valid one survives.
+    assert params["textStyle"] == ["4:4:BOLD"]
+    assert params["quoteTimestamp"] == 1700000000000
+    assert params["quoteAuthor"] == SENDER
+
+
+async def test_send_action_with_absent_custody_key_is_rejected(bridge_app):
+    """A send naming a key whose bytes never landed is REJECTED before the
+    wire — never a text-only delivery of a message that promised media."""
+    bridge, client, daemon = bridge_app
+    owner, _ = await _live_owner(bridge)
+    body = _send("a-noatt", owner)
+    body["request"]["attachments"] = [
+        {"key": "out-nowhere-0", "file_name": "m.png",
+         "media_type": "image/png"}]
+    r = await client.post("/v1/actions", json=body, headers=AUTH)
+    assert (await r.json())["state"] == "rejected"
+    assert len(daemon.sent) == 0
+
+
+async def test_dm_send_action_reaches_the_daemon(bridge_app):
+    """The app-side adapter runs the identity.toml DM check before the
+    action exists (`send_via_bridge`); the bridge holds no policy file, so
+    an admitted DM action must reach signal-cli — not re-refuse."""
+    bridge, client, daemon = bridge_app
+    owner, _ = await _live_owner(bridge, conversation_id="+00000000009")
+    body = _send("a-dm", owner)
+    body["request"]["target"] = {"id": "+00000000009", "kind": "dm"}
+    r = await client.post("/v1/actions", json=body, headers=AUTH)
+    assert (await r.json())["state"] == "confirmed"
+    assert len(daemon.sent) == 1
+    assert daemon.sent[0]["params"]["recipient"] == ["+00000000009"]
 
 
 async def test_auth_required(bridge_app):
