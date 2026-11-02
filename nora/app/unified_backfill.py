@@ -17,15 +17,21 @@ not enumerable (register kinds are the free projection lane's, pre-epoch
 "complete": coverage is stated as attempted/done/parked counts.
 
 **Apply is bounded and recoverable.** `--apply` requires explicit
-`--max-batches`, `--max-tokens` and `--max-seconds`; it stops cleanly at the
-first bound and reports which. Progress is what the session itself writes:
-an agenda item is DONE when `comprehend_result` holds a `readings` receipt
-for its `(work_id, input_hash)` — the same key `SqlComprehendRecords.readings`
-dedups on — so a restart never re-comprehends, an edit or a landed reading
-re-runs the item, and a failed session's stimuli are `fail_stimulus`-recorded
-and parked at five failures until an operator requeues them (29 §3's own
-mechanism — the historical lane never touches `cognition_wake`,
-`cognition_wake_outcome` or `cognition_wake_carry`).
+`--max-batches`, `--max-tokens` and `--max-seconds`; the bounds are run-wide
+and enforced at the session boundary (each batch's budget is clamped to
+what the run has left, and unknown usage is an ERROR, never a zero). A
+batch already comprehended costs only an `inspect` — never a model slot —
+so a bounded resume always reaches new work. Progress is what the session
+itself writes: an agenda item is DONE when `comprehend_result` holds a
+`readings` receipt for its exact `(work_id, input_hash)` — every admitted
+item of a multi-item proposal gets its own receipt — so a restart never
+re-comprehends and a changed input re-runs. A session that returns without
+comprehending (refused, unadmitted, raised) stops the chronological
+frontier: it is failure-receipted under this lane's ISOLATED
+`backfill-stimulus:` key (five parks it for operator requeue; the live
+wake's own `stimulus:` counters are untouched) and later history never
+runs while earlier work is unresolved. The lane never touches
+`cognition_wake*`, live stimuli or profile-writer retirement.
 
 **Historical does not act.** The runner is a variant of the live
 composition's with act verbs already refused by `historical`; this lane also
@@ -266,21 +272,68 @@ class Bounds:
     max_seconds: float
 
 
+class UnknownSpendError(RuntimeError):
+    """A session returned with NO readable usage. `CognitionRunResult.
+    total_tokens` is `None` for that, never zero — counting it as zero would
+    let paid sessions run past `--max-tokens` unbounded, so the run fails
+    closed instead."""
+
+
 class MeteredAgentRunner:
-    """The live agent runner plus a token meter, so `--max-tokens` bounds a
-    run's total model spend across sessions. It adds nothing else; failures
-    propagate as the wrapped runner's own (a session that cannot run is a
-    failure, never a silent pass)."""
+    """The live agent runner plus the run's spend meter and remaining
+    allowance, so `--max-tokens`/`--max-seconds` bound the WHOLE run, not a
+    precheck.
+
+    - A successful result with unknown usage raises `UnknownSpendError`
+      (ERROR, never a silent zero).
+    - A FAILED session's usage is read from `SESSION_TOKENS`, the holder the
+      session leaves for exactly this (a raised/timed-out loop is the
+      costliest kind and has no result to read).
+    - `remaining_tokens`/`remaining_seconds`, set by the loop before each
+      batch, CLAMP the session's own `AdaptorBudget`: the session cannot
+      spend or run past what the run has left."""
 
     def __init__(self, inner: Any) -> None:
         self._inner = inner
         self.total_tokens = 0
         self.calls = 0
+        self.remaining_tokens: int | None = None
+        self.remaining_seconds: float | None = None
 
     async def run(self, **kwargs: Any) -> Any:
-        result = await self._inner.run(**kwargs)
+        from dataclasses import replace
+
+        from nora.app.cognition_session import SESSION_TOKENS
+
+        budget = kwargs.get("budget")
+        if budget is not None:
+            kwargs = dict(kwargs, budget=replace(
+                budget,
+                total_tokens=(
+                    min(budget.total_tokens, self.remaining_tokens)
+                    if self.remaining_tokens is not None
+                    else budget.total_tokens),
+                timeout_seconds=(
+                    min(budget.timeout_seconds, self.remaining_seconds)
+                    if self.remaining_seconds is not None
+                    else budget.timeout_seconds),
+            ))
+        try:
+            result = await self._inner.run(**kwargs)
+        except BaseException:
+            spend = SESSION_TOKENS.get()
+            if spend is not None and spend.total:
+                self.total_tokens += spend.total
+            raise
         self.calls += 1
-        self.total_tokens += result.total_tokens or 0
+        total = result.total_tokens
+        if total is None:
+            spend = SESSION_TOKENS.get()
+            total = spend.total if spend is not None else None
+        if total is None:
+            raise UnknownSpendError(
+                "cognition session returned without readable token usage")
+        self.total_tokens += total
         return result
 
 
@@ -385,7 +438,7 @@ async def apply(
     metered = MeteredAgentRunner(live.agent_runner)
     runner = historical_runner(live, grounder=grounder, agent_runner=metered)
     return await run_units(
-        engine, runner=runner, records=live.memory.records,
+        engine, runner=runner,
         units=units, home_rooms=home_rooms, rooms_of_unit=rooms_of_unit,
         unit_of=unit_of, person_rooms=person_rooms, self_ids=self_ids,
         bounds=bounds, metered=metered, batch_stimuli=batch_stimuli,
@@ -440,7 +493,7 @@ def historical_grounder(engine: AsyncEngine, *, cfg: Any, deps: Any,
 
 
 async def run_units(
-    engine: AsyncEngine, *, runner: Any, records: Any,
+    engine: AsyncEngine, *, runner: Any,
     units: Sequence[str],
     home_rooms: Mapping[str, Room],
     rooms_of_unit: Any, unit_of: Any,
@@ -452,13 +505,21 @@ async def run_units(
 ) -> dict[str, Any]:
     """The historical lane's loop over one already-built runner — the part
     every test drives. `runner` answers `inspect`/`replay`/`max_items`;
-    `records` answers `fail_stimulus` (`SqlComprehendRecords`); `metered`
-    accumulates spend (a `MeteredAgentRunner`, or a test's own counter; a
-    bare namespace with `total_tokens`/`calls` ints works too)."""
+    failures are receipts written under this lane's isolated key
+    (`sql.fail_historical`, never the live `stimulus:` key); `metered`
+    accumulates spend and is told what the run has left before each batch
+    (a `MeteredAgentRunner`, or a test's own counter).
+
+    Ordering is a chronological FRONTIER: a batch that cannot be shown
+    comprehended after its session — refused, unadmitted or failed — stops
+    the unit (and the receipts record exactly which stimuli), so later
+    history never runs while earlier work is unresolved and a restart
+    resumes AT the failure instead of after it."""
     if metered is None:
         metered = type("_M", (), {"total_tokens": 0, "calls": 0})()
     started = time.monotonic()
-    report: dict[str, Any] = {"units": {}, "tokens": 0, "stopped": None}
+    report: dict[str, Any] = {
+        "units": {}, "tokens": 0, "stopped": None, "model_batches": 0}
     for unit in units:
         outcome = UnitOutcome(unit=unit)
         report["units"][unit] = outcome
@@ -466,6 +527,9 @@ async def run_units(
         if home is None:
             outcome.stopped = "no_home_room"
             continue
+        if time.monotonic() - started >= bounds.max_seconds:
+            outcome.stopped = report["stopped"] = "max_seconds"
+            break
         async with engine.connect() as conn:
             stimuli, _ = await enumerate_unit(
                 conn, unit, rooms=rooms_of_unit(unit), unit_of=unit_of,
@@ -482,14 +546,8 @@ async def run_units(
             pending_all, home, max_stimuli=batch_stimuli,
             max_items=runner.max_items,
         ):
-            if outcome.batches >= bounds.max_batches:
-                outcome.stopped = report["stopped"] = "max_batches"
-                break
             if time.monotonic() - started >= bounds.max_seconds:
                 outcome.stopped = report["stopped"] = "max_seconds"
-                break
-            if metered.total_tokens >= bounds.max_tokens:
-                outcome.stopped = report["stopped"] = "max_tokens"
                 break
             outcome.batches += 1
             now_ms = max(s.at_ms for s in batch)
@@ -507,26 +565,41 @@ async def run_units(
             except Exception:
                 log.exception("unified backfill: inspect failed for %s", unit)
                 for s in batch:
-                    await records.fail_stimulus(unit, s.id, None)
+                    await sql.fail_historical(engine, unit, s.id, None)
                 outcome.failures += 1
-                continue
+                outcome.stopped = "inspect_failed"
+                break
             if info is None:
                 last_ms = now_ms
                 continue
             work = info["work"]
             async with engine.connect() as conn:
-                done = await sql.readings_done(
+                done_pairs = await sql.readings_done(
                     conn, [w["work_id"] for w in work])
             done_sids = {
                 sid for w in work
-                if done.get(w["work_id"]) == w["input_hash"]
+                if (w["work_id"], w["input_hash"]) in done_pairs
                 for sid in work_id_sids(w["work_id"])
             }
             pending = [s for s in batch if s.id not in done_sids]
             if not pending:
+                # A completed-prefix scan costs nothing and consumes NO
+                # model-work slot — otherwise a bounded resume would burn
+                # its whole allowance re-checking done batches.
                 outcome.skipped_done += 1
                 last_ms = now_ms
                 continue
+            if report["model_batches"] >= bounds.max_batches:
+                outcome.stopped = report["stopped"] = "max_batches"
+                break
+            if metered.total_tokens >= bounds.max_tokens:
+                outcome.stopped = report["stopped"] = "max_tokens"
+                break
+            # The session is handed only what the run has LEFT.
+            metered.remaining_tokens = bounds.max_tokens - metered.total_tokens
+            metered.remaining_seconds = (
+                bounds.max_seconds - (time.monotonic() - started))
+            report["model_batches"] += 1
             view = UnitView(
                 unit=unit, pending=tuple(pending), last_activity_ms=None,
                 last_wake=None, last_session=view.last_session, carry={},
@@ -536,12 +609,38 @@ async def run_units(
             except Exception:
                 log.exception("unified backfill: session failed for %s", unit)
                 for s in pending:
-                    await records.fail_stimulus(unit, s.id, None)
+                    await sql.fail_historical(engine, unit, s.id, None)
                 outcome.failures += 1
-                continue
+                outcome.stopped = "session_failed"
+                break
             outcome.sessions += 1
+            # A normal return is NOT comprehension: re-read the durable
+            # receipts. Every agenda item must now be provably comprehended
+            # — its own exact (work_id, input_hash) pair — or, for one
+            # proposal consumed under another item's earlier receipt, all
+            # its sids covered. Whatever remains unresolved stops the
+            # frontier and is failure-receipted under this lane's key.
+            async with engine.connect() as conn:
+                done_pairs = await sql.readings_done(
+                    conn, [w["work_id"] for w in work])
+                covered = await covered_stimulus_ids(conn, unit)
+            unresolved = {
+                sid for w in work
+                for sid in work_id_sids(w["work_id"])
+                if (w["work_id"], w["input_hash"]) not in done_pairs
+                and sid not in covered
+            }
+            unresolved_pending = [s for s in pending if s.id in unresolved]
+            if unresolved_pending:
+                for s in unresolved_pending:
+                    await sql.fail_historical(engine, unit, s.id, None)
+                outcome.failures += 1
+                outcome.stopped = "unresolved"
+                break
             last_ms = now_ms
-        if report["stopped"]:
+        if report["stopped"] or outcome.stopped in (
+            "inspect_failed", "session_failed", "unresolved",
+        ):
             break
         outcome.stopped = outcome.stopped or "done"
     report["tokens"] = metered.total_tokens
@@ -557,51 +656,117 @@ async def run_units(
 async def catch_up(
     engine: AsyncEngine, *,
     stimulus_store: Any,
+    runner: Any,
     units: Sequence[str],
+    home_rooms: Mapping[str, Room],
     rooms_of_unit: Any, unit_of: Any,
     person_rooms: Mapping[tuple[str, str], tuple[str, str]],
     self_ids: Collection[str],
     now_ms: int,
-    from_ms: int | None = None, until_ms: int | None = None,
+    pending_reminds: Any = None,
 ) -> dict[str, Any]:
-    """One `time` stimulus per unit whose history is COMPLETE — every
-    enumerable stimulus either comprehended (any hash) or parked. An
-    incomplete unit is refused loudly with its remaining count; the
-    historical lane itself never fires this. The live wake evaluator owns
-    what happens next: a real-clock session, full tools, acts allowed."""
+    """One `time` stimulus per unit whose WHOLE history is complete — every
+    enumerable agenda item proven comprehended at its CURRENT input
+    identity (the exact `(work_id, input_hash)` receipts the apply loop
+    verifies, computed here without a model call via `runner.inspect`),
+    and no historical-parked or unresolved work. The gate always measures
+    the entire unit: a `--from/--until` window narrows a run, it can never
+    certify completion, so it is not an argument here. An incomplete unit
+    is refused loudly with what remains; the live wake evaluator owns what
+    happens next — a real-clock session whose own grounding selects the
+    still-open work (open notes via `open_note_titles`, pending reminders
+    and open events via `pending_reminds`/`events_in`, live read tools and
+    the graph at the real clock): the design's step-3 catch-up, never fired
+    by the historical lane."""
     from nora.domain.stimuli import NewStimulus
 
     out: dict[str, Any] = {"units": {}, "stopped": None}
-    async with engine.connect() as conn:
-        for unit in units:
+    open_count = (
+        len(await pending_reminds()) if pending_reminds is not None else None)
+    for unit in units:
+        home = home_rooms.get(unit)
+        if home is None:
+            out["units"][unit] = {"status": "no_home_room"}
+            continue
+        async with engine.connect() as conn:
             stimuli, _ = await enumerate_unit(
                 conn, unit, rooms=rooms_of_unit(unit), unit_of=unit_of,
-                person_rooms=person_rooms, self_ids=self_ids,
-                from_ms=from_ms, until_ms=until_ms)
-            covered = await covered_stimulus_ids(conn, unit)
+                person_rooms=person_rooms, self_ids=self_ids)
             failures = await sql.failure_counts(
                 conn, unit, [s.id for s in stimuli])
-            parked = {sid for sid, n in failures.items() if n >= sql.PARK_AFTER}
-            uncovered = [
-                s for s in stimuli
-                if s.id not in covered and s.id not in parked
-            ]
-            if uncovered:
-                out["units"][unit] = {
-                    "status": "incomplete",
-                    "uncovered_stimuli": len(uncovered),
-                }
-                continue
-            sid = await stimulus_store.append(
-                stimulus=NewStimulus(
-                    unit=unit, kind="time", item=CATCH_UP_ITEM,
-                    ref=f"{CATCH_UP_ITEM}:{unit}:{now_ms // 86_400_000}",
-                    at_ms=now_ms, due_ms=now_ms,
-                ),
-                recorded_at_ms=now_ms,
-            )
+        parked = {sid for sid, n in failures.items() if n >= sql.PARK_AFTER}
+        if parked:
             out["units"][unit] = {
-                "status": "queued" if sid is not None else "already_queued",
-                "stimulus_id": sid,
+                "status": "incomplete", "reason": "parked",
+                "parked_stimuli": sorted(parked),
             }
+            continue
+        failing = {sid: n for sid, n in failures.items() if n > 0}
+        if failing:
+            out["units"][unit] = {
+                "status": "incomplete", "reason": "unresolved_failures",
+                "failing_stimuli": failing,
+            }
+            continue
+        blocked: set[int] = set()
+        error: str | None = None
+        async with engine.connect() as conn:
+            covered = await covered_stimulus_ids(conn, unit)
+        for batch in form_batches(
+            stimuli, home, max_stimuli=DEFAULT_BATCH_STIMULI,
+            max_items=runner.max_items,
+        ):
+            now_ms_batch = max(s.at_ms for s in batch)
+            view = UnitView(
+                unit=unit, pending=batch, last_activity_ms=None,
+                last_wake=None, last_session=None, carry={},
+            )
+            try:
+                info = await runner.inspect(view=view, now_ms=now_ms_batch)
+            except Exception:
+                log.exception("catch-up gate: inspect failed for %s", unit)
+                error = "inspect_failed"
+                break
+            if info is None:
+                continue
+            work = info["work"]
+            async with engine.connect() as conn:
+                done_pairs = await sql.readings_done(
+                    conn, [w["work_id"] for w in work])
+            for w in work:
+                if (w["work_id"], w["input_hash"]) in done_pairs:
+                    continue
+                sids = work_id_sids(w["work_id"])
+                if sids and sids <= covered:
+                    # Comprehended inside an earlier multi-item proposal
+                    # whose own receipt names these stimuli.
+                    continue
+                blocked |= sids or {s.id for s in batch}
+        if error is not None:
+            out["units"][unit] = {"status": "error", "reason": error}
+            continue
+        if blocked:
+            out["units"][unit] = {
+                "status": "incomplete", "reason": "uncovered_or_stale_input",
+                "blocked_stimuli": sorted(blocked),
+            }
+            continue
+        sid = await stimulus_store.append(
+            stimulus=NewStimulus(
+                unit=unit, kind="time", item=CATCH_UP_ITEM,
+                ref=f"{CATCH_UP_ITEM}:{unit}:{now_ms // 86_400_000}",
+                at_ms=now_ms, due_ms=now_ms,
+            ),
+            recorded_at_ms=now_ms,
+        )
+        out["units"][unit] = {
+            "status": "queued" if sid is not None else "already_queued",
+            "stimulus_id": sid,
+            "still_open": {
+                # The selector the live session grounds on; reported, not
+                # asserted — the counts a real-clock session is about to
+                # review.
+                "pending_reminds": open_count,
+            },
+        }
     return out

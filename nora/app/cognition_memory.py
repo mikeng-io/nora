@@ -172,7 +172,17 @@ class WakeMemory:
         persons = frozenset(p for s in state.graph_fetched.sources.values() for p in s.persons)
         seeds = tuple(dict.fromkeys(anchors))
         graph = await self.graph.walk(seeds, Walk(unit=state.unit, persons=persons, depth=2,
-                                                layers=("record", "rollup", "notebook"),
+                                                # The `notebook` layer is
+                                                # Register heads — CURRENT
+                                                # text a historical session
+                                                # cannot read as-of. The
+                                                # relations themselves are
+                                                # `asserted_at`-bounded by
+                                                # the walk; this withholds
+                                                # the unversionable heads.
+                                                layers=(("record", "rollup")
+                                                        if state.historical else
+                                                        ("record", "rollup", "notebook")),
                                                 valid_at=at))
         if graph.status == "unavailable":
             raise RuntimeError("wake graph unavailable")
@@ -227,6 +237,18 @@ class WakeMemory:
         refused = [*[asdict(r) for r in result.refused], *local_refusals]
         if not refused:
             await self.records.readings(combined.work, state.session_id, combined, claims)
+            # A multi-item call ADMITS every named item, so every named item
+            # needs its own completion receipt under its real
+            # `(work_id, input_hash)` — `readings` is idempotent on that
+            # pair, the admission itself happened once through `combined`
+            # above, and these extra rows only mark which inputs were
+            # comprehended (a resume must not re-spend on them and the
+            # catch-up gate must be able to prove them). Claims are the same
+            # combined-evidence claims: they were judged against the union.
+            for i in items[1:]:
+                follower = state.memory_items[i]
+                await self.records.readings(
+                    follower.work, state.session_id, follower, claims)
             admitted = items
         seeds = tuple(dict.fromkeys(k for r in result.relations for k in (r.src, r.dst)))
         graph = await self.graph.walk(seeds, Walk(unit=state.unit, depth=1,

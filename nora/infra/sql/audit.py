@@ -102,7 +102,7 @@ def turn_id_for_message(messages: Any = MESSAGES) -> Any:
 
 
 def transcript_select(
-    *, edits_before: int | None = None, hidden_before: int | None = None,
+    *, edits_before: int | None = None,
 ) -> Any:
     """The columns every transcript read returns, with the newest edit
     folded in. ONE select for `recent`, `since`, `since_including_nora`,
@@ -110,22 +110,19 @@ def transcript_select(
     one and miss another; `transcript_row` is its mapping.
 
     **`hidden_at IS NULL`** (migration `0075_withdrawal`, step 2c): a message
-    `nora person forget` (removed) hid is excluded from every transcript this select
-    powers — a prompt block, a tool result, `record_query`, and the
-    snapshot's as-of read, which copies the historical row image (`hidden_at`
-    as it stood at T) into the sandbox and then reads it through this same
-    select, so a snapshot before a forget correctly shows the row unhidden.
-    `hidden_before` is the live read's equivalent for a session assembled
-    as-of T: a row hidden LATER than T still counts as visible at T, and
-    one hidden by T stays out — the same `hidden_at` timestamp rules the
-    image either way."""
+    `nora person forget` (removed) hid is excluded from every transcript this
+    select powers — a prompt block, a tool result, `record_query`, a
+    HISTORICAL session read, and the snapshot's as-of read. Withdrawal is
+    current, never re-readable: a row hidden after the evidence instant a
+    backfill session replays is still hidden — no as-of parameter can make a
+    withdrawn body visible again. The snapshot's as-of read copies the
+    historical row image (`hidden_at` as it stood at T) into the sandbox and
+    then reads it through this same select, so a snapshot before a forget
+    correctly shows the row unhidden; a production read never produces that
+    image."""
     latest = _latest_edit(edits_before=edits_before)
     turn_id = turn_id_for_message()
-    hidden = (
-        sa.or_(MESSAGES.c.hidden_at.is_(None), MESSAGES.c.hidden_at > hidden_before)
-        if hidden_before is not None
-        else MESSAGES.c.hidden_at.is_(None)
-    )
+    hidden = MESSAGES.c.hidden_at.is_(None)
     return sa.select(
         MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
         MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,

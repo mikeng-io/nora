@@ -1,12 +1,15 @@
 """The unified backfill driver (`nora.app.unified_backfill`): enumeration,
-batching, done-check, bounded apply, failure/parking and catch-up — all over
-GENERATED inputs. Every test would fail if its behavior regressed; the
-fakes answer like the real seams (a readings receipt only "exists" for the
-exact (work_id, input_hash) it was written for, a failed session records
-`fail_stimulus`, a parked stimulus is skipped)."""
+batching, exact-receipt progress, bounded apply, frontier semantics,
+isolated failure identity and catch-up — all over GENERATED inputs. Every
+test would fail if its behavior regressed; the fakes answer like the real
+seams (a readings receipt only "exists" for the exact (work_id, input_hash)
+pair it was written for; a failed/unadmitted session leaves stimuli
+uncovered; a historical failure lands under `backfill-stimulus:` and can
+never park a live `stimulus:` id)."""
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -103,13 +106,19 @@ def test_batches_are_chronological_prefixes_never_deferred():
 class _FakeEngine:
     """The engine seam `run_units`/`census` need: `connect()` yields a fake
     conn whose `execute` is never reached — `sql.*` helpers are patched to
-    return canned data in these tests, so a conn is a null object. A REAL
-    engine's connect would write nothing in these tests either way."""
+    return canned data in these tests. `begin()` yields the same, for the
+    (patched) failure writer."""
 
     def __init__(self, conn: Any) -> None:
         self._conn = conn
 
     def connect(self) -> Any:
+        return self._ctx()
+
+    def begin(self) -> Any:
+        return self._ctx()
+
+    def _ctx(self) -> Any:
         conn = self._conn
 
         class _Ctx:
@@ -126,16 +135,19 @@ class _Runner:
     """Answers like `CognitionSessionRunner` in the historical lane:
     `inspect` returns the per-item work digests `on_wake`'s inspect branch
     builds, `replay` records that it was asked `historical=True` — the flag
-    that withholds every act tool in the real runner."""
+    that withholds every act tool in the real runner. On `replay` it can be
+    scripted to make NOTHING covered (a normal return that admitted nothing —
+    the refusal shape) so the frontier check sees the truth."""
 
     def __init__(self, *, work_by_batch: list[list[dict[str, Any]]] | None = None,
-                 fail_on: set[int] | None = None) -> None:
+                 fail_on: set[int] | None = None,
+                 admit_on: set[int] | None = None) -> None:
         self.max_items = 12
         self.inspect_calls: list[tuple[tuple[int, ...], int]] = []
         self.replay_calls: list[tuple[tuple[int, ...], int, bool]] = []
         self._work = work_by_batch or []
         self._fail_on = fail_on or set()
-        self._n = 0
+        self._admit_on = admit_on or set()
 
     async def inspect(self, *, view: Any, now_ms: int) -> dict[str, Any] | None:
         self.inspect_calls.append((tuple(s.id for s in view.pending), now_ms))
@@ -151,34 +163,38 @@ class _Runner:
         return object()
 
 
-class _Records:
-    """`SqlComprehendRecords`' seam: `fail_stimulus` appends a durable
-    failure per stimulus — the parked mechanism `run_units` relies on."""
-
-    def __init__(self) -> None:
-        self.failures: list[tuple[str, int]] = []
-
-    async def fail_stimulus(self, unit: str, sid: int, session: Any) -> None:
-        self.failures.append((unit, sid))
-
-
 def _patch_sql(monkeypatch: Any, *, stimuli: list[Stimulus],
                failures: dict[int, int] | None = None,
-               readings: dict[str, str] | None = None) -> None:
+               pairs: set[tuple[str, str]] | None = None,
+               covered: set[int] | None = None,
+               fail_log: list[tuple[str, int]] | None = None) -> None:
     """`nora.infra.sql.unified_backfill`'s reads, answered over the canned
-    stimulus list — the same shapes the real functions return."""
+    stimulus list — the same shapes the real functions return — and the
+    failure writer, spied into `fail_log` (the REAL writer inserts a
+    `backfill-stimulus:` row; the pair- and coverage-reads never fabricate
+    one)."""
     async def _enum(conn: Any, unit: str, **kw: Any) -> tuple[list[Stimulus], dict[str, int]]:
         return [s for s in stimuli if s.unit == unit], {}
 
     async def _failures(conn: Any, unit: str, ids: Any) -> dict[int, int]:
         return {sid: (failures or {}).get(sid, 0) for sid in ids}
 
-    async def _done(conn: Any, work_ids: Any) -> dict[str, str]:
-        return {w: h for w, h in (readings or {}).items() if w in work_ids}
+    async def _pairs(conn: Any, work_ids: Any) -> set[tuple[str, str]]:
+        return {p for p in (pairs or set()) if p[0] in set(work_ids)}
+
+    async def _covered(conn: Any, unit: str) -> set[int]:
+        return set(covered or set())
+
+    async def _fail(engine: Any, unit: str, sid: int, session: Any) -> None:
+        assert session is None or isinstance(session, int)
+        if fail_log is not None:
+            fail_log.append((unit, sid))
 
     monkeypatch.setattr(ub, "enumerate_unit", _enum)
     monkeypatch.setattr(ub.sql, "failure_counts", _failures)
-    monkeypatch.setattr(ub.sql, "readings_done", _done)
+    monkeypatch.setattr(ub.sql, "readings_done", _pairs)
+    monkeypatch.setattr(ub, "covered_stimulus_ids", _covered)
+    monkeypatch.setattr(ub.sql, "fail_historical", _fail)
 
 
 def _run_kwargs() -> dict[str, Any]:
@@ -198,86 +214,202 @@ async def test_every_item_is_run_once_oldest_first_and_historical(
     work = [[{"index": 0, "work_id": "stimuli:1", "input_hash": "h1"}],
             [{"index": 0, "work_id": "stimuli:2,3", "input_hash": "h2"}]]
     runner = _Runner(work_by_batch=work)
-    records = _Records()
-    _patch_sql(monkeypatch, stimuli=stimuli)
+    fail_log: list[tuple[str, int]] = []
+    _patch_sql(monkeypatch, stimuli=stimuli, fail_log=fail_log)
     out = await ub.run_units(
-        _FakeEngine(object()), runner=runner, records=records,
+        _FakeEngine(object()), runner=runner,
         batch_stimuli=2, **_run_kwargs())
     assert [tuple(ids) for ids, _ in runner.inspect_calls] == [(1, 2), (3,)]
     # Sessions got the batch's evidence instant, oldest first.
     assert [ms for _, ms, h in runner.replay_calls] == [200, 300]
     assert all(h for _, _, h in runner.replay_calls)
-    assert records.failures == []
-    assert out["units"]["u1"]["sessions"] == 2
+    # Replay returned normally but NOTHING was comprehended → both batches
+    # are unresolved at the frontier, not done; receipts were written under
+    # the isolated historical key.
+    assert out["units"]["u1"]["stopped"] == "unresolved"
+    assert fail_log == [("u1", 1), ("u1", 2)]
+    assert out["units"]["u1"]["sessions"] == 1  # frontier stopped the second
 
 
 @pytest.mark.asyncio
 async def test_done_items_are_skipped_and_changed_input_reruns(
         monkeypatch: Any):
-    # Item 'stimuli:1,2' already has a readings receipt at the CURRENT
+    # The batch's item already has a readings receipt at the CURRENT
     # hash → its stimuli are dropped and no model call is spent on them.
     stimuli = [_s(1, 100), _s(2, 200)]
     work = [{"index": 0, "work_id": "stimuli:1,2", "input_hash": "hNEW"}]
     runner = _Runner(work_by_batch=[work])
     _patch_sql(monkeypatch, stimuli=stimuli,
-               readings={"stimuli:1,2": "hNEW"})
+               pairs={("stimuli:1,2", "hNEW")}, covered={1, 2})
     out = await ub.run_units(
-        _FakeEngine(object()), runner=runner, records=_Records(),
-        **_run_kwargs())
+        _FakeEngine(object()), runner=runner, **_run_kwargs())
     assert not runner.replay_calls
     assert out["units"]["u1"]["skipped_done"] == 1
+    # ...and a skipped batch consumed NO model-work slot (bounded resume).
+    assert out["model_batches"] == 0
 
-    # Same work id, receipt at an OLD hash (an edit landed, a reading
-    # arrived) → the item is not skipped: it runs again.
+    # Same work id, receipt only at an OLD hash (an edit landed) → not
+    # skipped: the item runs again, and afterwards it IS covered.
     runner2 = _Runner(work_by_batch=[work])
-    _patch_sql(monkeypatch, stimuli=stimuli,
-               readings={"stimuli:1,2": "hOLD"})
+    pairs = {("stimuli:1,2", "hOLD")}
+
+    async def _pairs2(conn: Any, work_ids: Any) -> set[tuple[str, str]]:
+        return {p for p in pairs if p[0] in set(work_ids)}
+
+    _patch_sql(monkeypatch, stimuli=stimuli, pairs=pairs, covered={1, 2})
+    monkeypatch.setattr(ub.sql, "readings_done", _pairs2)
+
+    # After replay the receipt pair lands at the new hash (a successful
+    # proposal writes it under the current input).
+    async def _replay_then_admit(*, view: Any, now_ms: int,
+                                 historical: bool) -> Any:
+        runner2.replay_calls.append(
+            (tuple(s.id for s in view.pending), now_ms, historical))
+        pairs.add(("stimuli:1,2", "hNEW"))
+        return object()
+
+    runner2.replay = _replay_then_admit  # type: ignore[assignment]
     out2 = await ub.run_units(
-        _FakeEngine(object()), runner=runner2, records=_Records(),
-        **_run_kwargs())
+        _FakeEngine(object()), runner=runner2, **_run_kwargs())
     assert len(runner2.replay_calls) == 1
-    assert out2["units"]["u1"]["sessions"] == 1
+    assert out2["units"]["u1"]["stopped"] == "done"
 
 
 @pytest.mark.asyncio
-async def test_apply_stops_at_the_batch_bound(monkeypatch: Any):
-    stimuli = [_s(i, i * 100) for i in range(1, 7)]
-    runner = _Runner(work_by_batch=[
-        [{"index": 0, "work_id": "stimuli:1,2", "input_hash": "h"}],
-        [{"index": 0, "work_id": "stimuli:3,4", "input_hash": "h"}],
-        [{"index": 0, "work_id": "stimuli:5,6", "input_hash": "h"}],
-    ])
+async def test_apply_stops_at_the_batch_bound_run_wide(monkeypatch: Any):
+    stimuli = [_s(i, i * 100, unit=u) for u in ("u1", "u2")
+               for i in range(1, 4)]
+    work = [[{"index": 0, "work_id": "stimuli:1,2,3", "input_hash": "h"}]] * 6
+    runner = _Runner(work_by_batch=work)
+    covered_by_replay: set[int] = set()
+
+    async def _replay(view: Any, now_ms: int, historical: bool) -> Any:
+        covered_by_replay.update(s.id for s in view.pending)
+        return object()
+
+    runner.replay = _replay  # type: ignore[assignment]
     _patch_sql(monkeypatch, stimuli=stimuli)
+    # Make each replay's items covered so batches keep flowing.
+    async def _covered(conn: Any, unit: str) -> set[int]:
+        return covered_by_replay
+    monkeypatch.setattr(ub, "covered_stimulus_ids", _covered)
+    async def _pairs(conn: Any, work_ids: Any) -> set[tuple[str, str]]:
+        return {(wid, "h") for wid in work_ids} if covered_by_replay else set()
+    monkeypatch.setattr(ub.sql, "readings_done", _pairs)
+
     kw = _run_kwargs()
-    kw["bounds"] = ub.Bounds(max_batches=1, max_tokens=10**9, max_seconds=3600)
+    kw["units"] = ["u1", "u2"]
+    kw["home_rooms"] = {"u1": ROOM, "u2": ROOM}
+    kw["bounds"] = ub.Bounds(max_batches=2, max_tokens=10**9, max_seconds=3600)
     out = await ub.run_units(
-        _FakeEngine(object()), runner=runner, records=_Records(),
-        batch_stimuli=2, **kw)
-    assert len(runner.replay_calls) == 1
+        _FakeEngine(object()), runner=runner, batch_stimuli=3, **kw)
+    # max_batches is RUN-WIDE: two units each short of it still hit it.
+    assert len(runner.inspect_calls) == 2
+    assert out["model_batches"] == 2
     assert out["stopped"] == "max_batches"
 
 
 @pytest.mark.asyncio
-async def test_a_failed_session_is_recovered_and_parked_at_five(
+async def test_a_failed_session_is_recovered_parked_and_frontier_stops(
         monkeypatch: Any):
-    stimuli = [_s(1, 100)]
-    records = _Records()
-    _patch_sql(monkeypatch, stimuli=stimuli)
+    stimuli = [_s(1, 100), _s(2, 200)]
+    fail_log: list[tuple[str, int]] = []
+    _patch_sql(monkeypatch, stimuli=stimuli, fail_log=fail_log)
     runner = _Runner(work_by_batch=[
         [{"index": 0, "work_id": "stimuli:1", "input_hash": "h"}]],
         fail_on={0})
     out = await ub.run_units(
-        _FakeEngine(object()), runner=runner, records=records, **_run_kwargs())
-    assert out["units"]["u1"]["failures"] == 1
-    assert records.failures == [("u1", 1)]
+        _FakeEngine(object()), runner=runner, **_run_kwargs())
+    assert out["units"]["u1"]["stopped"] == "inspect_failed"
+    assert fail_log == [("u1", 1)]
 
     # At the parked threshold the stimulus is never even inspected.
     runner2 = _Runner()
-    _patch_sql(monkeypatch, stimuli=stimuli, failures={1: ub.sql.PARK_AFTER})
+    _patch_sql(monkeypatch, stimuli=[_s(1, 100)],
+               failures={1: ub.sql.PARK_AFTER})
     out2 = await ub.run_units(
-        _FakeEngine(object()), runner=runner2, records=records, **_run_kwargs())
+        _FakeEngine(object()), runner=runner2, **_run_kwargs())
     assert not runner2.inspect_calls and not runner2.replay_calls
     assert out2["units"]["u1"]["parked"] == 1
+    assert out2["units"]["u1"]["stopped"] == "done"
+
+
+# -- isolated failure identity -------------------------------------------------
+
+
+def test_failure_key_never_matches_the_live_parked_key():
+    """Live parking counts `stimulus:{unit}:{sid}` work ids
+    (`WakeMemory.parked`); the historical lane writes
+    `backfill-stimulus:{unit}:{sid}` — the SAME receipt table, a disjoint
+    key, so five historical failures can never park a live stimulus."""
+    key = ub.sql.FAILURE_KEY.format(unit="u1", sid=5)
+    assert key == "backfill-stimulus:u1:5"
+    assert key != "stimulus:u1:5"
+    assert key.startswith("backfill-")
+
+
+# -- the meter -----------------------------------------------------------------
+
+
+class _InnerRunner:
+    """The agent-runner seam the meter wraps: answers a fixed result or
+    raises, optionally leaving spend in SESSION_TOKENS like
+    `LiveCognitionAgentRunner._leave_spend` does even on failure."""
+
+    def __init__(self, *, result: Any = None, error: Exception | None = None,
+                 spend: int | None = None) -> None:
+        self._result = result
+        self._error = error
+        self._spend = spend
+        self.budgets: list[Any] = []
+
+    async def run(self, *, budget: Any = None, **kw: Any) -> Any:
+        self.budgets.append(budget)
+        from nora.app.cognition_session import SESSION_TOKENS, TokenSpend
+        if self._spend is not None:
+            SESSION_TOKENS.set(TokenSpend(total=self._spend))
+        if self._error is not None:
+            raise self._error
+        return self._result
+
+
+def _budget(tokens: int = 10_000, seconds: float = 600.0) -> Any:
+    from nora.app.cognition_session import AdaptorBudget
+    return AdaptorBudget(turns=6, total_tokens=tokens, output_tokens=2_000,
+                         timeout_seconds=seconds)
+
+
+@pytest.mark.asyncio
+async def test_meter_counts_result_and_clamps_budget_to_remaining():
+    result = SimpleNamespace(total_tokens=400)
+    inner = _InnerRunner(result=result)
+    m = ub.MeteredAgentRunner(inner)
+    m.remaining_tokens = 150
+    m.remaining_seconds = 30.0
+    out = await m.run(budget=_budget(tokens=10_000, seconds=600.0))
+    assert out is result and m.total_tokens == 400 and m.calls == 1
+    assert inner.budgets[0].total_tokens == 150
+    assert inner.budgets[0].timeout_seconds == 30.0
+
+
+@pytest.mark.asyncio
+async def test_meter_reads_failed_spend_and_unknown_usage_is_error():
+    # A FAILED session's usage is still usage.
+    inner = _InnerRunner(error=RuntimeError("loop died"), spend=777)
+    m = ub.MeteredAgentRunner(inner)
+    with pytest.raises(RuntimeError, match="loop died"):
+        await m.run(budget=_budget())
+    assert m.total_tokens == 777
+
+    # A SUCCESSFUL session with unknown usage is an ERROR, never a zero.
+    inner2 = _InnerRunner(result=SimpleNamespace(total_tokens=None))
+    m2 = ub.MeteredAgentRunner(inner2)
+    with pytest.raises(ub.UnknownSpendError):
+        await m2.run(budget=_budget())
+    assert m2.total_tokens == 0
+
+
+# -- catch-up ------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -290,41 +422,73 @@ async def test_catch_up_refuses_incomplete_and_queues_one_time_wake(
             appended.append(stimulus)
             return 77
 
-    async def _covered(conn: Any, unit: str) -> set[int]:
-        return {1, 2}
-
-    async def _failures(conn: Any, unit: str, ids: Any) -> dict[int, int]:
-        return dict.fromkeys(ids, 0)
-
     stimuli = [_s(1, 100), _s(2, 200)]
+    work = [{"index": 0, "work_id": "stimuli:1,2", "input_hash": "h1"}]
+    runner = _Runner(work_by_batch=[work])
 
     async def _enum(conn: Any, unit: str, **kw: Any) -> tuple[list[Stimulus], dict]:
         return stimuli, {}
 
+    async def _failures(conn: Any, unit: str, ids: Any) -> dict[int, int]:
+        return dict.fromkeys(ids, 0)
+
+    async def _pairs(conn: Any, work_ids: Any) -> set[tuple[str, str]]:
+        return {("stimuli:1,2", "h1")} if "stimuli:1,2" in set(work_ids) else set()
+
+    async def _covered(conn: Any, unit: str) -> set[int]:
+        return {1, 2}
+
     monkeypatch.setattr(ub, "enumerate_unit", _enum)
-    monkeypatch.setattr(ub, "covered_stimulus_ids", _covered)
     monkeypatch.setattr(ub.sql, "failure_counts", _failures)
+    monkeypatch.setattr(ub.sql, "readings_done", _pairs)
+    monkeypatch.setattr(ub, "covered_stimulus_ids", _covered)
+
+    async def _pending() -> list[str]:
+        return ["r1", "r2"]
 
     out = await ub.catch_up(
-        _FakeEngine(object()), stimulus_store=_Stimuli(),
-        units=["u1"], rooms_of_unit=lambda u: set(), unit_of=lambda p, c: "u1",
-        person_rooms={}, self_ids=(), now_ms=86_400_000 * 10)
+        _FakeEngine(object()), stimulus_store=_Stimuli(), runner=runner,
+        units=["u1"], home_rooms={"u1": ROOM},
+        rooms_of_unit=lambda u: set(), unit_of=lambda p, c: "u1",
+        person_rooms={}, self_ids=(), now_ms=86_400_000 * 10,
+        pending_reminds=_pending)
     assert out["units"]["u1"]["status"] == "queued"
     assert appended and appended[0].kind == "time"
     assert appended[0].item == ub.CATCH_UP_ITEM
+    assert out["units"]["u1"]["still_open"]["pending_reminds"] == 2
 
-    # One uncovered stimulus → refused, nothing appended.
-    async def _covered_partial(conn: Any, unit: str) -> set[int]:
-        return {1}
+    # A stale-hash receipt: the pair exists at hOLD but the current input
+    # is hNEW → no false complete.
+    async def _stale_pairs(conn: Any, work_ids: Any) -> set[tuple[str, str]]:
+        return {("stimuli:1,2", "hOLD")} if "stimuli:1,2" in set(work_ids) else set()
 
-    monkeypatch.setattr(ub, "covered_stimulus_ids", _covered_partial)
+    async def _no_sids(conn: Any, unit: str) -> set[int]:
+        return set()
+
+    monkeypatch.setattr(ub.sql, "readings_done", _stale_pairs)
+    monkeypatch.setattr(ub, "covered_stimulus_ids", _no_sids)
     appended.clear()
     out2 = await ub.catch_up(
-        _FakeEngine(object()), stimulus_store=_Stimuli(),
-        units=["u1"], rooms_of_unit=lambda u: set(), unit_of=lambda p, c: "u1",
+        _FakeEngine(object()), stimulus_store=_Stimuli(), runner=runner,
+        units=["u1"], home_rooms={"u1": ROOM},
+        rooms_of_unit=lambda u: set(), unit_of=lambda p, c: "u1",
         person_rooms={}, self_ids=(), now_ms=86_400_000 * 10)
     assert out2["units"]["u1"]["status"] == "incomplete"
     assert not appended
+
+    # Parked work is incomplete, never "complete history".
+    async def _parked_failures(conn: Any, unit: str, ids: Any) -> dict[int, int]:
+        return dict.fromkeys(ids, ub.sql.PARK_AFTER)
+
+    monkeypatch.setattr(ub.sql, "failure_counts", _parked_failures)
+    monkeypatch.setattr(ub.sql, "readings_done", _pairs)
+    out3 = await ub.catch_up(
+        _FakeEngine(object()), stimulus_store=_Stimuli(), runner=runner,
+        units=["u1"], home_rooms={"u1": ROOM},
+        rooms_of_unit=lambda u: set(), unit_of=lambda p, c: "u1",
+        person_rooms={}, self_ids=(), now_ms=86_400_000 * 10)
+    assert out3["units"]["u1"]["status"] == "incomplete"
+    assert out3["units"]["u1"]["reason"] == "parked"
 
 
 # -- dry-run census ------------------------------------------------------------

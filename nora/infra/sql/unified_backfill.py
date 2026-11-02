@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import AsyncConnection
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.cues import cues_of
 from nora.domain.social_stream import SOCIAL_READ_REF, read_item
@@ -316,48 +316,52 @@ async def stimulus_keys(
 
 async def readings_done(
     conn: AsyncConnection, work_ids: Collection[str],
-) -> dict[str, str]:
-    """`work_id` -> the `input_hash` of its newest `readings` receipt: the
-    exact dedup key `SqlComprehendRecords.readings` writes and reads, so an
-    item comprehended at THIS input is done and an item whose input changed
-    (an edit, a landed reading) is not silently skipped."""
-    if not work_ids:
-        return {}
-    latest = (
-        sa.select(RESULT.c.work_id, RESULT.c.input_hash)
-        .where(RESULT.c.part == "readings", RESULT.c.work_id.in_(list(work_ids)))
-        .distinct(RESULT.c.work_id)
-        .order_by(RESULT.c.work_id, RESULT.c.id.desc())
-    )
-    return {str(r.work_id): str(r.input_hash) for r in (await conn.execute(latest)).all()}
-
-
-async def attempted(
-    conn: AsyncConnection, work_ids: Collection[str],
-) -> set[str]:
-    """The work_ids that have ANY `readings` receipt (any hash): the
-    catch-up gate's "was it ever comprehended" — a weaker check than
-    `readings_done`, which is the one apply runs."""
+) -> set[tuple[str, str]]:
+    """Every `(work_id, input_hash)` PAIR that has a `readings` receipt —
+    the exact dedup key `SqlComprehendRecords.readings` writes and reads.
+    All pairs, not the newest per work id: an older pair is real completion
+    even when a newer hash also holds a receipt."""
     if not work_ids:
         return set()
     rows = (await conn.execute(
-        sa.select(RESULT.c.work_id)
+        sa.select(RESULT.c.work_id, RESULT.c.input_hash)
         .where(RESULT.c.part == "readings", RESULT.c.work_id.in_(list(work_ids)))
         .distinct()
     )).all()
-    return {str(r.work_id) for r in rows}
+    return {(str(r.work_id), str(r.input_hash)) for r in rows}
+
+
+#: The isolated identity historical attempts write under — the SAME
+#: `comprehend_result` receipt mechanism `SqlComprehendRecords` owns, but a
+#: distinct `work_id` prefix so a historical failure can never count toward
+#: the live wake's parked rule (`stimulus:{unit}:{sid}`). An operator
+#: requeues by writing `stimulus_requeue` under the same namespaced key.
+FAILURE_KEY = "backfill-stimulus:{unit}:{sid}"
+
+
+async def fail_historical(
+    engine: AsyncEngine, unit: str, stimulus_id: int, session: int | None,
+) -> None:
+    """One historical-lane failure receipt — same row shape as
+    `SqlComprehendRecords.fail_stimulus`, isolated key (see `FAILURE_KEY`).
+    A live stimulus's own failure counter is untouched by definition."""
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(RESULT).values(
+            work_id=FAILURE_KEY.format(unit=unit, sid=stimulus_id),
+            input_hash="", session_id=session or 0,
+            part="stimulus_failure", payload={"state": "failed"}))
 
 
 async def failure_counts(
     conn: AsyncConnection, unit: str, stimulus_ids: Collection[int],
 ) -> dict[int, int]:
-    """Per-stimulus session-failure count since its newest requeue — the same
-    rule `SqlComprehendRecords.failures` computes one id at a time, batched
-    (`stimulus:{unit}:{sid}` work ids, `stimulus_failure` minus the last
-    `stimulus_requeue`)."""
+    """Per-stimulus HISTORICAL failure count since its newest requeue — the
+    same rule `SqlComprehendRecords.failures` computes one id at a time,
+    batched over this lane's own namespaced keys (never the live
+    `stimulus:` ones)."""
     if not stimulus_ids:
         return {}
-    keys = [f"stimulus:{unit}:{sid}" for sid in stimulus_ids]
+    keys = [FAILURE_KEY.format(unit=unit, sid=sid) for sid in stimulus_ids]
     requeue = (
         sa.select(RESULT.c.work_id, sa.func.max(RESULT.c.id).label("rid"))
         .where(RESULT.c.part == "stimulus_requeue", RESULT.c.work_id.in_(keys))

@@ -1004,6 +1004,10 @@ class CognitionSessionRunner:
                     "deferred_stimulus_ids": list(situation.agenda.deferred_stimulus_ids),
                     "skipped_stimulus_ids": sorted(skipped),
                     "retained_stimulus_ids": sorted(retained),
+                    # The lane the session ran in — the historical
+                    # (backfill) lane's sessions are counted apart from the
+                    # live one's for progress reporting.
+                    "lane": "historical" if historical else "live",
                 },
                 doctrine_sha256=doctrine_sha256, skill_versions=skill_versions,
                 config_revision_id=None, model_id=self._model_id,
@@ -3300,7 +3304,12 @@ class CognitionSessionRunner:
         if self._memory is not None:
             verbs = (memory_propose, profile_read, profile_revise, *verbs)
         if state.historical:
-            verbs = (memory_propose, profile_read, profile_revise, close)
+            # Profile verbs are withheld, not shadowed, in a historical
+            # session: `profile_read`/`profile_revise` see only CURRENT
+            # account heads (the store has no as-of view), so a session at
+            # T would read — or revise — the future. `memory_propose` and
+            # `close` stay: they are exactly what history is for.
+            verbs = (memory_propose, close)
         return [*read_tools, *(self._counted(v.__name__, v, state=state) for v in verbs)]
 
     # `created_by_session_id=None` on every pace move and cancel above, on

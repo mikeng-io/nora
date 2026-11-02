@@ -164,10 +164,13 @@ class SqlRecordQuery:
         ref that names nothing readable (hidden, another room, gone) simply has
         no hit; the caller counts it, it never guesses one.
 
-        `as_of_ms` reads the rows as they stood at that instant — the
+        `as_of_ms` reads the rows as they stood at that instant — WITH the
         historical session's evidence time: the newest edit no later than T,
-        deletes/hides recorded later than T not yet applied, reactions later
-        than T absent. None (every live caller) is the current state."""
+        platform deletes recorded later than T not yet applied, reactions
+        later than T absent. `hidden` is a CURRENT withdrawal, never an
+        event-time fold: a hidden row stays out at every instant (see
+        `transcript_select`). None (every live caller) is the current
+        state."""
         if not refs or not rooms:
             return ()
         in_rooms = sa.or_(*(
@@ -204,7 +207,7 @@ class SqlRecordQuery:
             if not message_ids:
                 return ()
             rows = (await conn.execute(
-                transcript_select(edits_before=as_of_ms, hidden_before=as_of_ms)
+                transcript_select(edits_before=as_of_ms)
                 .add_columns(MESSAGES.c.platform, MESSAGES.c.conversation_id)
                 .where(in_rooms, MESSAGES.c.id.in_(message_ids))
             )).all()
@@ -257,7 +260,7 @@ class SqlRecordQuery:
             for platform, cid in rooms
         ))
         stmt = (
-            transcript_select(edits_before=as_of_ms, hidden_before=as_of_ms)
+            transcript_select(edits_before=as_of_ms)
             .add_columns(MESSAGES.c.platform, MESSAGES.c.conversation_id)
             .where(
                 in_rooms, MESSAGES.c.ts >= start_ms, MESSAGES.c.ts < end_ms,

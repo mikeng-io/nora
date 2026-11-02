@@ -1273,6 +1273,8 @@ async def cmd_unified_backfill(args: argparse.Namespace) -> int:
     from_ms, until_ms = args.from_ms, args.until_ms
 
     if args.apply:
+        import math
+
         missing = [
             n for n, v in (("--max-batches", args.max_batches),
                            ("--max-tokens", args.max_tokens),
@@ -1281,6 +1283,17 @@ async def cmd_unified_backfill(args: argparse.Namespace) -> int:
         if missing:
             raise CliError(
                 f"--apply requires finite bounds: {', '.join(missing)}")
+        invalid = [
+            n for n, v in (
+                ("--max-batches", args.max_batches),
+                ("--max-tokens", args.max_tokens),
+                ("--max-seconds", args.max_seconds),
+                ("--batch-stimuli", args.batch_stimuli),
+            ) if not math.isfinite(v) or v <= 0
+        ]
+        if invalid:
+            raise CliError(
+                f"--apply requires positive finite values: {', '.join(invalid)}")
         deps = await build_dependencies(cfg)
         engine = create_sql_engine(_database_url(cfg))
         try:
@@ -1309,23 +1322,46 @@ async def cmd_unified_backfill(args: argparse.Namespace) -> int:
                 with suppress(Exception):
                     await client.close()
         print(json.dumps(result, sort_keys=True, default=str))
-        failed = sum(
+        bad = sum(
             u.get("failures", 0) for u in result["units"].values()
+        ) + sum(
+            u.get("uncovered_stimuli", 0) for u in result["units"].values()
         )
-        return 1 if failed else 0
+        return 1 if bad else 0
 
     if args.catch_up:
+        if args.from_ms is not None or args.until_ms is not None:
+            raise CliError(
+                "--catch-up gates on the whole unit; a --from-ms/--until-ms "
+                "window cannot certify completion")
         deps = await build_dependencies(cfg)
         engine = create_sql_engine(_database_url(cfg))
         try:
+            live = deps.cognition_runner
+            if live is None or live.memory is None:
+                raise CliError(
+                    "catch-up requires the Cognition runner and unified "
+                    "memory lane wired ([cognition]/[dreamer] and "
+                    "[memory.graph]+[memory.graph.comprehend] enabled)")
+            grounder = unified_backfill.historical_grounder(
+                engine, cfg=cfg, deps=deps, units=units)
+            runner = unified_backfill.historical_runner(
+                live, grounder=grounder, agent_runner=live.agent_runner)
+            home_rooms = {
+                u: Room(c.platform, c.primary_id)
+                for u, c in allowlist.home_rooms().items()
+            }
             result = await unified_backfill.catch_up(
                 engine,
                 stimulus_store=SqlStimulusStore(engine),
-                units=units, rooms_of_unit=rooms_of_unit, unit_of=unit_of,
+                runner=runner, units=units, home_rooms=home_rooms,
+                rooms_of_unit=rooms_of_unit, unit_of=unit_of,
                 person_rooms=person_rooms,
                 self_ids=deps.registry.self_aliases(),
                 now_ms=int(datetime.now(UTC).timestamp() * 1000),
-                from_ms=from_ms, until_ms=until_ms,
+                pending_reminds=(
+                    (lambda: deps.reminders.pending_of(cfg.honcho.ai_peer))
+                    if deps.reminders is not None else None),
             )
         finally:
             await engine.dispose()
@@ -1333,10 +1369,11 @@ async def cmd_unified_backfill(args: argparse.Namespace) -> int:
                 with suppress(Exception):
                     await client.close()
         print(json.dumps(result, sort_keys=True, default=str))
-        incomplete = [
-            u for u, r in result["units"].items() if r["status"] == "incomplete"
+        not_queued = [
+            u for u, r in result["units"].items()
+            if r["status"] not in ("queued", "already_queued")
         ]
-        return 1 if incomplete else 0
+        return 1 if not_queued else 0
 
     # Dry-run census: a READ-ONLY engine; no writes, no model calls, and no
     # `build_dependencies` either — the census reads enumeration state, not
