@@ -47,6 +47,7 @@ import functools
 import json
 import os
 import sys
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -1305,10 +1306,8 @@ async def cmd_unified_backfill(args: argparse.Namespace) -> int:
         finally:
             await engine.dispose()
             for client in [deps.client, *deps.model_clients]:
-                try:
+                with suppress(Exception):
                     await client.close()
-                except Exception:
-                    pass
         print(json.dumps(result, sort_keys=True, default=str))
         failed = sum(
             u.get("failures", 0) for u in result["units"].values()
@@ -1331,10 +1330,8 @@ async def cmd_unified_backfill(args: argparse.Namespace) -> int:
         finally:
             await engine.dispose()
             for client in [deps.client, *deps.model_clients]:
-                try:
+                with suppress(Exception):
                     await client.close()
-                except Exception:
-                    pass
         print(json.dumps(result, sort_keys=True, default=str))
         incomplete = [
             u for u, r in result["units"].items() if r["status"] == "incomplete"

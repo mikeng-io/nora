@@ -196,7 +196,7 @@ async def reaction_states(
     if not message_ids:
         return {}
     obs = PLATFORM_OBSERVATION
-    in_targets = MESSAGE_REACTION.c.message_id.in_(message_ids)
+    in_targets: sa.ColumnElement[bool] = MESSAGE_REACTION.c.message_id.in_(message_ids)
     in_obs = sa.and_(
         obs.c.kind == "reaction",
         obs.c.target_message_id.in_(message_ids))

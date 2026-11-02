@@ -7,8 +7,6 @@ exact (work_id, input_hash) it was written for, a failed session records
 
 from __future__ import annotations
 
-import dataclasses
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -238,6 +236,7 @@ async def test_done_items_are_skipped_and_changed_input_reruns(
         _FakeEngine(object()), runner=runner2, records=_Records(),
         **_run_kwargs())
     assert len(runner2.replay_calls) == 1
+    assert out2["units"]["u1"]["sessions"] == 1
 
 
 @pytest.mark.asyncio
@@ -295,7 +294,7 @@ async def test_catch_up_refuses_incomplete_and_queues_one_time_wake(
         return {1, 2}
 
     async def _failures(conn: Any, unit: str, ids: Any) -> dict[int, int]:
-        return {sid: 0 for sid in ids}
+        return dict.fromkeys(ids, 0)
 
     stimuli = [_s(1, 100), _s(2, 200)]
 
@@ -389,7 +388,7 @@ def test_historical_runner_withholds_every_read_and_keeps_collaborators():
     changes: dict[str, Any] = {}
 
     class _Live:
-        def with_collaborators(self, **kw: Any) -> "_Live":
+        def with_collaborators(self, **kw: Any) -> _Live:
             changes.update(kw)
             return self
 

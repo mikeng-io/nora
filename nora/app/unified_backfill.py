@@ -62,7 +62,8 @@ from nora.domain.cognition_session import Room, build_agenda
 from nora.domain.live import LiveMapping
 from nora.domain.stimuli import LastSession, Stimulus, UnitView
 from nora.infra.sql import unified_backfill as sql
-from nora.infra.sql.schema import COGNITION_SESSION, COMPREHEND_RESULT as RESULT
+from nora.infra.sql.schema import COGNITION_SESSION
+from nora.infra.sql.schema import COMPREHEND_RESULT as RESULT
 
 log = logging.getLogger(__name__)
 
@@ -347,7 +348,7 @@ def historical_runner(live: Any, *, grounder: Any, agent_runner: Any) -> Any:
     )
 
 
-async def apply(  # noqa: A002 — the command's own name
+async def apply(
     engine: AsyncEngine, *,
     cfg: Any, deps: Any,
     units: Sequence[str],
@@ -378,9 +379,6 @@ async def apply(  # noqa: A002 — the command's own name
         raise ValueError(
             "--apply requires --max-batches, --max-tokens and --max-seconds")
 
-    from nora.app.assembler import lineage_policy  # noqa: PLC0415
-    from nora.app.cognition_grounding import build_grounder  # noqa: PLC0415
-    from nora.infra.sql.record_query import SqlRecordQuery  # noqa: PLC0415
 
     grounder = historical_grounder(
         engine, cfg=cfg, deps=deps, units=units)
@@ -399,9 +397,9 @@ def historical_grounder(engine: AsyncEngine, *, cfg: Any, deps: Any,
     """The historical lane's grounder: the same `build_grounder` seam as live,
     with the current-head blocks withheld (none can be read as-of) and the
     reads bounded by the session's own `now_ms` the runner now passes."""
-    from nora.app.assembler import lineage_policy  # noqa: PLC0415
-    from nora.app.cognition_grounding import build_grounder  # noqa: PLC0415
-    from nora.infra.sql.record_query import SqlRecordQuery  # noqa: PLC0415
+    from nora.app.assembler import lineage_policy
+    from nora.app.cognition_grounding import build_grounder
+    from nora.infra.sql.record_query import SqlRecordQuery
 
     allowlist = deps.config_reload.policy
     cognition_unit_rooms = LiveMapping(lambda: {
@@ -571,7 +569,7 @@ async def catch_up(
     incomplete unit is refused loudly with its remaining count; the
     historical lane itself never fires this. The live wake evaluator owns
     what happens next: a real-clock session, full tools, acts allowed."""
-    from nora.domain.stimuli import NewStimulus  # noqa: PLC0415
+    from nora.domain.stimuli import NewStimulus
 
     out: dict[str, Any] = {"units": {}, "stopped": None}
     async with engine.connect() as conn:

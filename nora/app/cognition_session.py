@@ -66,7 +66,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta, tzinfo
-from typing import Any, Literal, Protocol
+from typing import Any, ClassVar, Literal, Protocol
 
 from nora.agent import cognition_pace as pace
 from nora.agent.dream_screen import offence
@@ -862,7 +862,7 @@ class CognitionSessionRunner:
     async def on_wake(
         self, *, unit: str, view: UnitView, now_ms: int, wake_id: int,
         replay: bool = False, historical: bool = False, inspect_only: bool = False,
-    ) -> CognitionSessionOutcome | dict[str, str] | None:
+    ) -> CognitionSessionOutcome | dict[str, Any] | None:
         """Called by the wake evaluator's hook on every wake it
         records (`WakeHook`). `inspect_only` returns the assembled model input
         before the model call; use it only in a disposable replay sandbox.
@@ -1053,7 +1053,7 @@ class CognitionSessionRunner:
         return await self.on_wake(unit=view.unit, view=view, now_ms=now_ms,
                                   wake_id=0, replay=True, historical=historical)
 
-    _CTOR_RENAMES = {
+    _CTOR_RENAMES: ClassVar[dict[str, str]] = {
         "stimulus_store": "_stimuli",
         "model_window_tokens": "_window_tokens",
         "overflow_window_fraction": "_window_fraction",
@@ -1075,7 +1075,7 @@ class CognitionSessionRunner:
     def max_items(self) -> int:
         return self._max_items
 
-    def with_collaborators(self, **changes: Any) -> "CognitionSessionRunner":
+    def with_collaborators(self, **changes: Any) -> CognitionSessionRunner:
         """A runner over THIS runner's collaborators with the named ones
         replaced. The historical (backfill) lane builds its runner this way
         from the live composition's: everything not named — stores, budgets,

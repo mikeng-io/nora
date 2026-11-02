@@ -20,8 +20,7 @@ never collide with a real row's.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Collection, Sequence
-from dataclasses import dataclass
+from collections.abc import Collection
 from datetime import UTC, datetime
 from typing import Any
 
@@ -33,7 +32,6 @@ from nora.domain.social_stream import SOCIAL_READ_REF, read_item
 from nora.domain.stimuli import Stimulus
 from nora.infra.sql.schema import (
     COGNITION_SESSION,
-    COMPREHEND_RESULT as RESULT,
     MESSAGE_DELETE,
     MESSAGE_EDIT,
     MESSAGE_REACTION,
@@ -41,6 +39,9 @@ from nora.infra.sql.schema import (
     PLATFORM_OBSERVATION,
     SOCIAL_ITEM,
     STIMULUS,
+)
+from nora.infra.sql.schema import (
+    COMPREHEND_RESULT as RESULT,
 )
 
 #: The stimulus kinds that are EVIDENCE: something a person or a source did.
@@ -136,10 +137,11 @@ async def fabricated_message_stimuli(
         sa.and_(MESSAGES.c.platform == p, MESSAGES.c.conversation_id == cid)
         for p, cid in rooms
     ))
-    bounds = lambda col: [  # noqa: E731
-        *([] if from_ms is None else [col >= from_ms]),
-        *([] if until_ms is None else [col < until_ms]),
-    ]
+    def bounds(col: Any) -> list[Any]:
+        return [
+            *([] if from_ms is None else [col >= from_ms]),
+            *([] if until_ms is None else [col < until_ms]),
+        ]
     out: list[Stimulus] = []
 
     messages = await conn.execute(
@@ -241,7 +243,7 @@ async def fabricated_social_stimuli(
     out: list[Stimulus] = []
     for r in (await conn.execute(stmt)).all():
         at_ms = _ms(r.taken_at)
-        item = read_item(list(zip(r.kinds, r.collabs)))
+        item = read_item(list(zip(r.kinds, r.collabs, strict=True)))
         for (person, unit), (platform, cid) in person_rooms.items():
             if person != r.person:
                 continue
@@ -371,7 +373,7 @@ async def failure_counts(
         )
         .group_by(RESULT.c.work_id)
     )).all()
-    out = {k: 0 for k in keys}
+    out = dict.fromkeys(keys, 0)
     out.update({str(r.work_id): int(r[1]) for r in rows})
     return {int(k.rsplit(":", 1)[1]): v for k, v in out.items()}
 
