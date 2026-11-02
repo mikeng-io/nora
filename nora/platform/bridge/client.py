@@ -201,7 +201,11 @@ class BridgeAdapter:
                 and target.conversation_id not in self._dm_recipients:
             return SendResult(ok=False)
         # Attachment bytes ride through custody first — the action request
-        # references keys, never inline bytes.
+        # references keys, never inline bytes. Each key consumes a `send`
+        # ordinal BEFORE the action's own id is minted below, so a key
+        # embeds `send:N` while its action is `send:N+k` — the binding is
+        # still deterministic per bound-owner retry, and a re-PUT with
+        # different bytes is a 409 (fail-closed), never a silent swap.
         keys = []
         for i, a in enumerate(attachments):
             key = f"out-{self._next_action_id('send')}-{i}"
