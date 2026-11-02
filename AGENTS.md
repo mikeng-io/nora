@@ -169,8 +169,11 @@ discussion.
 
 **Proceed unless blocked.** Before stopping to ask, answer two questions: is
 there a blocker, and is there a fact only the operator holds? If both are no,
-carry the work end to end (merge and deploy included, through the skills
-above). A decision you can make from the evidence is not input.
+carry the agreed work end to end through the skills above. Ordinary code changes
+land through merge; the release/image/Komodo pipeline owns normal deployment.
+Do not manually dispatch, rebuild or recreate services after an ordinary merge.
+Read back deployment only when acceptance requires live evidence. Manual deployment
+is for an explicit operator request, host config changes or failure recovery. A decision you can make from the evidence is not input.
 
 **REPORTING** — work finished, a check ran, a peer replied. Terse:
 
