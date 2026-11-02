@@ -380,7 +380,7 @@ class StreamReader:
         with bt.operation_span(
                 "claim", platform=self._platform, links=links,
                 event_id=envelope.event_id, stream_id=sid,
-                stream=self.stream, consumer=self._consumer):
+                stream=self.stream, consumer=self._consumer) as claim:
             async with self._store._engine.begin() as conn:
                 event_id, is_new = await self._store.register_event(
                     conn, event_id=envelope.event_id,
@@ -415,13 +415,13 @@ class StreamReader:
                 if not open_work:
                     with bt.operation_span(
                             "ack", platform=self._platform, links=links,
-                            event_id=event_id, stream_id=sid):
+                            event_id=event_id, stream_id=sid) as ack:
                         await self._redis.xack(
                             self.stream, CONSUMER_GROUP, sid)
                     bt.lifecycle(self._metrics, "acked",
                                  platform=self._platform,
                                  event_id=event_id, stream_id=sid,
-                                 stream=self.stream)
+                                 stream=self.stream, trace=bt.span_ref(ack))
         duplicate = (not is_new) or not open_work
         bt.lifecycle(
             self._metrics,
@@ -429,7 +429,8 @@ class StreamReader:
             else "reclaimed" if reclaimed else "claimed",
             platform=self._platform, event_id=event_id, stream_id=sid,
             stream=self.stream,
-            queue_wait_ms=max(0, _now_ms() - envelope.queued_ms))
+            queue_wait_ms=max(0, _now_ms() - envelope.queued_ms),
+            trace=bt.span_ref(claim))
 
     def stop(self) -> None:
         self._stop.set()
@@ -599,7 +600,7 @@ class WorkRunner:
                          platform=work.platform,
                          event_id=work.event_id or "", attempt_id=attempt_id,
                          attempts=work.attempts, queue_wait_ms=wait_ms,
-                         stream_id=work.payload.get("stream_id"))
+                         stream_id=work.payload.get("stream_id"), trace=rec)
             phase = asyncio.ensure_future(self._dispatch(work, key))
             heartbeat = asyncio.ensure_future(
                 self._lease_heartbeat(work, key))
@@ -733,9 +734,11 @@ class WorkRunner:
                 " WHERE id = :id AND generation = :g"
                 " AND state = 'running'"),
                 {"s": seconds, "id": work.id, "g": work.generation})
+        attempt = self._attempts.get(work.id)
         bt.lifecycle(self._metrics, "deferred", platform=work.platform,
                      event_id=work.event_id or "", reason=reason,
-                     attempt_id=bt.attempt_identity(work.id, work.generation))
+                     attempt_id=bt.attempt_identity(work.id, work.generation),
+                     trace=attempt[1] if attempt else None)
 
     def _attempt_patch(self, work: Any, state: str,
                        result: dict[str, Any] | None) -> dict[str, Any]:
@@ -768,7 +771,7 @@ class WorkRunner:
                      platform=work.platform,
                      event_id=work.event_id or "", outcome=state,
                      attempt_id=bt.attempt_identity(work.id, work.generation),
-                     duration_ms=duration)
+                     duration_ms=duration, trace=attempt[1] if attempt else None)
 
     async def _finish(self, work: Any, state: str,
                       result: dict[str, Any] | None = None) -> bool:
@@ -804,17 +807,18 @@ class WorkRunner:
         try:
             with bt.operation_span("ack", platform=work.platform,
                                    links=links, event_id=work.event_id or "",
-                                   stream_id=sid):
+                                   stream_id=sid) as sp:
                 await self._redis.xack(stream, CONSUMER_GROUP, sid)
         except Exception:  # noqa: BLE001 — durable state stands; pending entry is the recovery path
             bt.lifecycle(self._metrics, "ack_failed",
                          platform=work.platform,
-                         event_id=work.event_id or "", stream_id=sid)
+                         event_id=work.event_id or "", stream_id=sid,
+                         trace=bt.span_ref(sp))
             log.warning("work %s: xack failed; entry stays pending for "
                         "reclaim", work.id)
             return
         bt.lifecycle(self._metrics, "acked", platform=work.platform,
-                     event_id=work.event_id or "", stream_id=sid)
+                     event_id=work.event_id or "", stream_id=sid, trace=bt.span_ref(sp))
 
     # ---- ingest ---------------------------------------------------------
 
@@ -1102,10 +1106,12 @@ class WorkRunner:
             if retained_observation:
                 # The refusal's durable commit happened above; the bounded
                 # lifecycle line follows it, never precedes it.
+                attempt = self._attempts.get(work.id)
                 bt.lifecycle(self._metrics, "failed_retained",
                              platform=work.platform,
                              event_id=envelope.event_id,
-                             outcome="observation_refused")
+                             outcome="observation_refused",
+                             trace=attempt[1] if attempt else None)
             await self._ack(work)
 
     async def _stamp_ingest_ended(
@@ -1188,10 +1194,12 @@ class WorkRunner:
         if ok:
             self._emit_terminal(work, state)
             if retained_observation:
+                attempt = self._attempts.get(work.id)
                 bt.lifecycle(self._metrics, "failed_retained",
                              platform=work.platform,
                              event_id=envelope.event_id,
-                             outcome="observation_refused")
+                             outcome="observation_refused",
+                             trace=attempt[1] if attempt else None)
             await self._ack(work)
 
     async def _run_observation_ingest(

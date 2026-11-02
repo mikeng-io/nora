@@ -176,6 +176,18 @@ class TestSanitizedException:
 # --------------------------------------------------------------------------
 
 class TestLifecycleLog:
+    def test_explicit_operation_reference_correlates_without_ambient_parent(
+            self, caplog, exported_spans):
+        with bt.producer_span(PLATFORM) as carrier:
+            pass
+        with caplog.at_level(logging.INFO, "nora.platform.bridge.telemetry"):
+            bt.lifecycle(None, "enqueued", platform=PLATFORM, trace=carrier)
+        span = _finished(exported_spans, "queue.enqueue")
+        record = caplog.records[-1]
+        assert getattr(record, "trace_id", None) == f"{span.context.trace_id:032x}"
+        assert getattr(record, "span_id", None) == f"{span.context.span_id:016x}"
+        assert span.parent is None
+
     def test_allowlist_drops_everything_private(self, caplog):
         metrics = Metrics()
         with caplog.at_level(logging.INFO, "nora.platform.bridge.telemetry"):
