@@ -360,7 +360,13 @@ ReadToolsFor = Callable[[str, Sequence[Room]], list[Any]]
 #: agenda (`nora.domain.cognition_ground`): the Record rows that raised each
 #: stimulus and the Register index lines. RAISES when it cannot read: a session
 #: that could not be grounded must not run on the bare counts.
-Grounder = Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]
+#: The fourth argument is the session's own instant (`now_ms`): a live
+#: wake's clock or a historical session's evidence time, for reads that can
+#: be bounded as-of. `None` means "now".
+Grounder = Callable[
+    [str, Sequence[AgendaItem], Sequence[Stimulus], int | None],
+    Awaitable[Grounding],
+]
 SkillsFor = Callable[[Sequence[str]], str]
 #: The versions (content digests) of the skills `SkillsFor` would inject for
 #: these agenda kinds, recorded on the session row.
@@ -720,6 +726,10 @@ class CognitionSessionRunner:
         self._observations = observations
         check_home_rooms(units, home_rooms)
         check_session_timeouts(budget.timeout_seconds, session_timeout_seconds)
+        # Stored for `with_collaborators`: the two ctor arguments nothing else
+        # keeps, so a variant runner can be built without re-asking them.
+        self._units = units
+        self._session_timeout_seconds = session_timeout_seconds
         self._store = store
         self._notes = notes
         self._memos = memos
@@ -954,19 +964,36 @@ class CognitionSessionRunner:
             # fails raises here, so the wake is recorded `failed` and its
             # stimuli stay pending: a session never runs on bare counts it
             # cannot judge from.
-            grounding = await self._grounder(unit, situation.agenda.items, pending)
+            grounding = await self._grounder(
+                unit, situation.agenda.items, pending, now_ms)
             if inspect_only:
                 # BEFORE ANYTHING IS RECORDED: an inspection returns what a
                 # session would be run on and persists nothing — no session
                 # row, no outcome write, no stimulus consumption. The live
                 # path below records first and the replay path shares it.
-                _, _, system, agenda = await self._session_input(
+                # `work` names each agenda item's memory-work identity —
+                # `(work_id, input_hash)`, the dedup key
+                # `comprehend_result` records `readings` under — so a caller
+                # (the unified backfill's dry check) can tell, per item,
+                # whether THIS exact input was already comprehended without
+                # spending a model call to find out.
+                state, _, system, agenda = await self._session_input(
                     unit=unit, view=view, situation=situation, session_id=0,
                     wake_id=0, now_ms=now_ms, doctrine_text=doctrine_text,
                     skill_text=skill_text, grounding=grounding,
                     historical=historical,
                 )
-                return {"system": system, "agenda": agenda}
+                return {
+                    "system": system, "agenda": agenda,
+                    "work": [
+                        {
+                            "index": index,
+                            "work_id": item.work.id,
+                            "input_hash": item.work.input_hash,
+                        }
+                        for index, item in sorted(state.memory_items.items())
+                    ],
+                }
             session = NewCognitionSession(
                 unit=unit, mode="live", started_at_ms=now_ms,
                 from_stimulus_id=min(s.id for s in view.pending),
@@ -1026,9 +1053,51 @@ class CognitionSessionRunner:
         return await self.on_wake(unit=view.unit, view=view, now_ms=now_ms,
                                   wake_id=0, replay=True, historical=historical)
 
-    async def inspect(self, *, view: UnitView, now_ms: int) -> dict[str, str] | None:
+    _CTOR_RENAMES = {
+        "stimulus_store": "_stimuli",
+        "model_window_tokens": "_window_tokens",
+        "overflow_window_fraction": "_window_fraction",
+    }
+
+    @property
+    def agent_runner(self) -> CognitionAgentRunner:
+        return self._agent_runner
+
+    @property
+    def memory(self) -> Any:
+        return self._memory
+
+    @property
+    def observations(self) -> Any:
+        return self._observations
+
+    @property
+    def max_items(self) -> int:
+        return self._max_items
+
+    def with_collaborators(self, **changes: Any) -> "CognitionSessionRunner":
+        """A runner over THIS runner's collaborators with the named ones
+        replaced. The historical (backfill) lane builds its runner this way
+        from the live composition's: everything not named — stores, budgets,
+        doctrine/skill sources, clocks — is shared, so the two runners cannot
+        drift into different instructions or limits. The checks
+        `__init__` makes re-run for the changed values."""
+        spec: dict[str, Any] = {}
+        params = inspect.signature(CognitionSessionRunner.__init__).parameters
+        for name in params:
+            if name == "self" or params[name].kind in (
+                inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD,
+            ):
+                continue
+            spec[name] = getattr(self, self._CTOR_RENAMES.get(name, f"_{name}"))
+        spec.update(changes)
+        return CognitionSessionRunner(**spec)
+
+    async def inspect(self, *, view: UnitView, now_ms: int) -> dict[str, Any] | None:
         """The model input a session over `view` would be run on, through the same
-        assembly, stopping before the model call. For a disposable replay sandbox."""
+        assembly, stopping before the model call. For a disposable replay sandbox
+        and for the unified backfill's per-item dedup check (the `work` key it
+        also returns — `(work_id, input_hash)` per agenda item)."""
         result = await self.on_wake(unit=view.unit, view=view, now_ms=now_ms,
                                     wake_id=0, replay=True, inspect_only=True)
         return result if isinstance(result, dict) else None

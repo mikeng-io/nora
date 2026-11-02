@@ -101,7 +101,9 @@ def turn_id_for_message(messages: Any = MESSAGES) -> Any:
     )
 
 
-def transcript_select(*, edits_before: int | None = None) -> Any:
+def transcript_select(
+    *, edits_before: int | None = None, hidden_before: int | None = None,
+) -> Any:
     """The columns every transcript read returns, with the newest edit
     folded in. ONE select for `recent`, `since`, `since_including_nora`,
     `record_query` and the snapshot's as-of read, so the fold cannot reach
@@ -112,9 +114,18 @@ def transcript_select(*, edits_before: int | None = None) -> Any:
     powers — a prompt block, a tool result, `record_query`, and the
     snapshot's as-of read, which copies the historical row image (`hidden_at`
     as it stood at T) into the sandbox and then reads it through this same
-    select, so a snapshot before a forget correctly shows the row unhidden."""
+    select, so a snapshot before a forget correctly shows the row unhidden.
+    `hidden_before` is the live read's equivalent for a session assembled
+    as-of T: a row hidden LATER than T still counts as visible at T, and
+    one hidden by T stays out — the same `hidden_at` timestamp rules the
+    image either way."""
     latest = _latest_edit(edits_before=edits_before)
     turn_id = turn_id_for_message()
+    hidden = (
+        sa.or_(MESSAGES.c.hidden_at.is_(None), MESSAGES.c.hidden_at > hidden_before)
+        if hidden_before is not None
+        else MESSAGES.c.hidden_at.is_(None)
+    )
     return sa.select(
         MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
         MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
@@ -124,9 +135,7 @@ def transcript_select(*, edits_before: int | None = None) -> Any:
         turn_id.label("turn_id"),
         latest.c.ts.label("edit_ts"), latest.c.body.label("edit_body"),
         latest.c.raw_json.label("edit_raw_json"),
-    ).select_from(MESSAGES.outerjoin(latest, sa.true())).where(
-        MESSAGES.c.hidden_at.is_(None),
-    )
+    ).select_from(MESSAGES.outerjoin(latest, sa.true())).where(hidden)
 
 
 def _edit_mentions_json(message: NormalizedMessage) -> str | None:
@@ -147,7 +156,7 @@ REACTION_STATES_MAX = 512
 
 
 async def reaction_states(
-    conn: Any, message_ids: Sequence[int],
+    conn: Any, message_ids: Sequence[int], *, before_ms: int | None = None,
 ) -> dict[int, RowReactions]:
     """The reactions recorded against these messages, folded to each
     target's current state — one bounded statement for the whole window,
@@ -179,7 +188,11 @@ async def reaction_states(
     counts with older provenance or invalidate a cap's completeness
     check. A target with no recorded rows — on either table — stays
     absent, so `reactions=None` keeps meaning "nothing recorded".
-    """
+
+    `before_ms` bounds the fold by each row's own event time — the
+    as-of read a historical session makes (`record_query.by_refs`'s
+    `as_of_ms`): a reaction recorded later than T simply was not there
+    at T, on either table. Unbounded (None) is every live caller."""
     if not message_ids:
         return {}
     obs = PLATFORM_OBSERVATION
@@ -187,6 +200,12 @@ async def reaction_states(
     in_obs = sa.and_(
         obs.c.kind == "reaction",
         obs.c.target_message_id.in_(message_ids))
+    if before_ms is not None:
+        in_targets = sa.and_(in_targets, MESSAGE_REACTION.c.ts <= before_ms)
+        in_obs = sa.and_(
+            in_obs,
+            sa.func.coalesce(obs.c.occurred_ms, obs.c.received_ms) <= before_ms,
+        )
     meta = (
         sa.select(
             MESSAGE_REACTION.c.message_id,

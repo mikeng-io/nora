@@ -368,13 +368,13 @@ class _Records:
         self.own_asked: list[tuple[list[tuple[str, str]], int, int, int]] = []
 
     async def own_sends(self, rooms: Sequence[tuple[str, str]], *, start_ms: int, end_ms: int,
-                        limit: int) -> Sequence[RecordHit]:
+                        limit: int, **kw: Any) -> Sequence[RecordHit]:
         self.own_asked.append((list(rooms), start_ms, end_ms, limit))
         return [h for h in self.own if (h.platform, h.conversation_id) in set(rooms)
                 and start_ms <= h.row.ts < end_ms]
 
     async def by_refs(self, refs: Sequence[tuple[str, int]],
-                      rooms: Sequence[tuple[str, str]]) -> Sequence[RecordRefHit]:
+                      rooms: Sequence[tuple[str, str]], **kw: Any) -> Sequence[RecordRefHit]:
         self.asked.append((list(refs), list(rooms)))
         return self.hits
 

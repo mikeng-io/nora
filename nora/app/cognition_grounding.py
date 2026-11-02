@@ -116,10 +116,12 @@ class RecordRefSource(Protocol):
 
     async def by_refs(
         self, refs: Sequence[tuple[str, int]], rooms: Sequence[tuple[str, str]],
+        *, as_of_ms: int | None = None,
     ) -> Sequence[RecordRefHit]: ...
 
     async def own_sends(
-        self, rooms: Sequence[tuple[str, str]], *, start_ms: int, end_ms: int, limit: int,
+        self, rooms: Sequence[tuple[str, str]], *, start_ms: int, end_ms: int,
+        limit: int, as_of_ms: int | None = None,
     ) -> Sequence[RecordHit]: ...
 
 
@@ -350,7 +352,7 @@ async def _own_sends(
     for room, start in widest.items():
         read[room] = list(await records.own_sends(
             [(room.platform, room.conversation_id)], start_ms=start, end_ms=now_ms + 1,
-            limit=limit * counts[room],
+            limit=limit * counts[room], as_of_ms=now_ms,
         ))
     out: dict[int, tuple[RecordItem, ...]] = {}
     for index, (room, start) in windows.items():
@@ -642,7 +644,14 @@ def build_grounder(
 
     async def ground(
         unit: str, items: Sequence[AgendaItem], pending: Sequence[Stimulus],
+        now_ms: int | None = None,
     ) -> Grounding:
+        # `now_ms` is the SESSION's instant — a live wake's clock or a
+        # historical session's evidence time. Every read below that can be
+        # bounded by it is, so a session assembled for T shows what stood at
+        # T (edits, deletes, reactions, hides, her sends), not what stands
+        # now. None means "now" — the live callers' unchanged behavior.
+        session_ms = now_ms if now_ms is not None else int(clock() * 1000)
         allowed = set(unit_rooms(unit))
         claimed = {sid for item in items for sid in item.stimulus_ids}
         observations_out = await _observation_lines(
@@ -693,7 +702,8 @@ def build_grounder(
         found: dict[tuple[str, int], RecordRefHit] = {}
         refs = [r for _, r in wanted] + [r for _, r in sibling_wanted]
         if refs:
-            hits = await records.by_refs(refs, sorted(wanted_rooms))
+            hits = await records.by_refs(
+                refs, sorted(wanted_rooms), as_of_ms=session_ms)
             found = {(h.table, h.row_id): h for h in hits}
         rows = []
         pairs: list[tuple[Stimulus, tuple[str, int], RecordRefHit]] = []
@@ -746,7 +756,7 @@ def build_grounder(
         # item is what asks her to act on them): the anchor day passed or
         # the revisit date came, and a title that shares most of its words with
         # another open note's. Read off the rows the index already holds.
-        now_ms = int(clock() * 1000)
+        now_ms = session_ms
         now = datetime.fromtimestamp(now_ms / 1000, tz=tz)
         today = now.year * 10_000 + now.month * 100 + now.day
         indexed = list(await note_index(unit))
@@ -823,7 +833,7 @@ def build_grounder(
         )
         own_sends = await _own_sends(
             records, items, pending, allowed, ai_display_name,
-            now_ms=int(clock() * 1000), lookback_ms=int(own_send_lookback_seconds * 1000),
+            now_ms=session_ms, lookback_ms=int(own_send_lookback_seconds * 1000),
             limit=own_sends_max,
         )
         labels = {
