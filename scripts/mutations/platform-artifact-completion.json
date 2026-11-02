@@ -51,8 +51,8 @@
   {
     "name": "discord scheduled events drop the interested count",
     "file": "nora/platform/discord/parser.py",
-    "old": "    user_count = getattr(ev, \"user_count\", None)\n    if (isinstance(user_count, int) and not isinstance(user_count, bool)\n            and user_count >= 0):\n        fields[\"interested_count\"] = user_count",
-    "new": "    user_count = getattr(ev, \"user_count\", None)",
+    "old": "    user_count = source_user_count\n    if (isinstance(user_count, int) and not isinstance(user_count, bool)\n            and user_count >= 0):\n        fields[\"interested_count\"] = user_count",
+    "new": "    user_count = source_user_count",
     "target": "tests/unit/test_platform_observation_fixtures.py::test_scheduled_event_frames_reach_the_callback_and_parse"
   },
   {
@@ -103,5 +103,12 @@
     "old": "    if entry.get(\"artifact_kind\") == \"contact\" and not f.get(\"contacts\"):\n        bits.append(_contact_summary(f))\n    elif name:",
     "new": "    if name:",
     "target": "tests/unit/test_platform_observation_wired.py::test_a_retained_signal_contact_keeps_top_level_values"
+  },
+  {
+    "name": "SDK default count replaces absent raw scheduled event count",
+    "file": "nora/platform/discord/bridge_app.py",
+    "old": "                after, operation=op, account_key=ak, source_user_count=count)",
+    "new": "                after, operation=op, account_key=ak, source_user_count=getattr(after, \"user_count\", None))",
+    "target": "tests/unit/test_bridge_capture_review.py::test_scheduled_event_count_uses_wire_presence_not_sdk_default"
   }
 ]

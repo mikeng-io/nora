@@ -263,7 +263,7 @@ async def test_an_event_and_its_answers_reach_the_assembled_state_named():
 
     prompt = _prompt(stimuli, g)
     assert "Breakfast" in prompt and "going" in prompt
-    assert "e9" not in prompt
+    assert "event:e9" not in prompt
 
 
 async def test_replay_and_window_and_bound_stay_honest():

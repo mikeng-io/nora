@@ -621,7 +621,9 @@ def test_scheduled_event_frames_reach_the_callback_and_parse(
     # The hydrated object carries direct attrs — `guild`/`channel` are
     # cache-derived and may be None even here (PartialMessageable);
     # `guild_id`/`location`/`user_count`/`creator_id` are the stable ones.
-    obs = parse_discord_scheduled_event(ev, operation=op, account_key="acct")
+    obs = parse_discord_scheduled_event(
+        ev, operation=op, account_key="acct",
+        source_user_count=doc["payload"]["d"].get("user_count"))
     assert obs is not None, fixture
     assert obs.object_kind == "artifact" and obs.operation == op
     md = obs.payload.metadata  # type: ignore[attr-defined]
@@ -654,7 +656,8 @@ def test_a_full_after_update_declares_clears_and_a_real_zero() -> None:
     d["scheduled_end_time"] = None
     d["user_count"] = 0
     _, (_, ev) = _se_doc(doc)
-    obs = parse_discord_scheduled_event(ev, operation="revise", account_key="acct")
+    obs = parse_discord_scheduled_event(
+        ev, operation="revise", account_key="acct", source_user_count=d["user_count"])
     assert obs is not None
     md = obs.payload.metadata  # type: ignore[attr-defined]
     assert md["description"] is None

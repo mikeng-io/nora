@@ -978,7 +978,9 @@ _SCHEDULED_EVENT_FIELDS = (
 )
 
 
-def _scheduled_event_fields(ev: Any) -> dict[str, Any]:
+def _scheduled_event_fields(
+    ev: Any, *, source_user_count: int | None = None,
+) -> dict[str, Any]:
     """A `ScheduledEvent`'s readable fields as the typed room field dict —
     user-authored names/times/status only. The entity URL (an external join
     link) and the cover image are withheld, recorded as coverage gaps by the
@@ -1020,7 +1022,7 @@ def _scheduled_event_fields(ev: Any) -> dict[str, Any]:
     ch_name = getattr(channel, "name", None) if channel is not None else None
     if isinstance(ch_name, str) and ch_name:
         fields["channel_name"] = ch_name
-    user_count = getattr(ev, "user_count", None)
+    user_count = source_user_count
     if (isinstance(user_count, int) and not isinstance(user_count, bool)
             and user_count >= 0):
         fields["interested_count"] = user_count
@@ -1029,6 +1031,7 @@ def _scheduled_event_fields(ev: Any) -> dict[str, Any]:
 
 def parse_discord_scheduled_event(
     ev: Any, *, operation: Operation, account_key: str,
+    source_user_count: int | None = None,
 ) -> Observation | None:
     """A guild scheduled event's create/update/delete dispatch → an
     `artifact/event` observation on the GUILD scope (its configured rooms
@@ -1052,7 +1055,7 @@ def parse_discord_scheduled_event(
     if operation == "withdraw":
         metadata: dict[str, Any] = {"name": str(getattr(ev, "name", "") or "")}
     else:
-        fields = _scheduled_event_fields(ev)
+        fields = _scheduled_event_fields(ev, source_user_count=source_user_count)
         entity_type = str(fields.pop("entity_type", "") or "")
         metadata = {
             "name": fields.pop("name", ""),

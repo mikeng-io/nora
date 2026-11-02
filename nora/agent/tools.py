@@ -6102,6 +6102,9 @@ def build_tool_specs(
                 return _memory_result(
                     {"status": "ok", "kind": kind,
                      "object": object,
+                     "state": (head_summary(folded, name_of=lambda ref:
+                                            _source_name_of(scope.platform, ref))
+                               if folded else "no state"),
                      "detail": (head_detail(
                          folded, name_of=lambda ref: _source_name_of(
                              scope.platform, ref)) if folded else None),

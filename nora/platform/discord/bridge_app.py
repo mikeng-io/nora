@@ -799,7 +799,11 @@ class DiscordBridge:
             # Losing provenance under a storm is honest — the events fall to
             # the durable ledger; growing this dict without bound is not.
             self._frames.clear()
-        self._frames.setdefault(fp, []).append((session, s))
+        # ScheduledEvent.user_count defaults to zero in discord.py even
+        # when the wire omitted it. Keep presence at the existing frame join.
+        frame = ((session, s, d.get("user_count"))
+                 if t.startswith("GUILD_SCHEDULED_EVENT_") else (session, s))
+        self._frames.setdefault(fp, []).append(frame)
 
     def _pop_frame(
         self, fp: tuple[str, ...] | None,
@@ -812,7 +816,7 @@ class DiscordBridge:
         queue = self._frames.get(fp)
         if not queue:
             return None
-        session, s = queue.pop(0)
+        session, s, *_ = queue.pop(0)
         if not queue:
             self._frames.pop(fp, None)
         return session, s
@@ -1231,10 +1235,6 @@ class DiscordBridge:
             op: Operation = {"scheduled_event_create": "create",
                              "scheduled_event_update": "revise",
                              "scheduled_event_delete": "withdraw"}[kind]
-            obs = parse_discord_scheduled_event(
-                after, operation=op, account_key=ak)
-            if obs is None:
-                return ()
             eid = str(getattr(after, "id", "") or "")
             t = {"scheduled_event_create": "GUILD_SCHEDULED_EVENT_CREATE",
                  "scheduled_event_update": "GUILD_SCHEDULED_EVENT_UPDATE",
@@ -1256,6 +1256,12 @@ class DiscordBridge:
                 "entity_metadata": {
                     "location": getattr(after, "location", None)},
                 "channel_id": getattr(after, "channel_id", None)})
+            frames = self._frames.get(fp) or []
+            count = frames[0][2] if frames and len(frames[0]) > 2 else None
+            obs = parse_discord_scheduled_event(
+                after, operation=op, account_key=ak, source_user_count=count)
+            if obs is None:
+                return ()
             if op == "revise":
                 fallback = ("u:" + "|".join(fp)) if fp else f"u:se:revise:{eid}"
             else:

@@ -147,3 +147,9 @@ fixtures hydrate through the real `ConnectionState.parse_*` dispatch so a
 renamed callback or dropped attribute fails the suite, not production.
 Live guild-event delivery, cache warmth and account permissions remain
 unverified — upstream capability is not delivery.
+
+Scheduled-event subscriber counts use the existing raw-frame/SDK provenance join:
+`discord.py` defaults an omitted `user_count` to zero, so the public property
+alone cannot establish a reported zero. An unjoined/absent native count stays a
+coverage gap; an explicit native zero remains zero. No count is reconstructed
+from event-interest callbacks or treated as attendance.
