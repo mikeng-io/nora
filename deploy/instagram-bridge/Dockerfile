@@ -41,6 +41,8 @@ RUN go vet ./... && IG_BRIDGE_IMAGE_BUILD=1 go test ./... && \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/instagram-bridge ./cmd/instagram-bridge
 
 FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+ARG NORA_VERSION=""
+ENV OTEL_SERVICE_VERSION=${NORA_VERSION}
 
 # ca-certificates is not optional: every request to instagram.com is TLS and a
 # slim image ships no trust store, so without it the bridge fails at LoadIndex

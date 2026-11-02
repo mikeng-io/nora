@@ -26,13 +26,13 @@ two copies drift and the one that drifts is the one you did not read
 
 ## Accepted direction: self-hosted SigNoz
 
-**Decision accepted 2026-10-30; implemented, proven locally end-to-end, not
-yet deployed.** [ADR 0034](adr/0034-self-hosted-signoz-unifies-application-and-llm-observability.md)
+**Decision accepted 2026-10-30; backend and application cutover deployed
+2026-10-31. Migration acceptance remains open.** [ADR 0034](adr/0034-self-hosted-signoz-unifies-application-and-llm-observability.md)
 records why. [Issue #440](https://github.com/mikeng-io/nora/issues/440) tracks
 implementation and its evidence. This section owns the target design and
-acceptance; the sections below describe the existing Langfuse/Jaeger deployment
-until the replacement is deployed on the host — a read-back backend is not a
-running one until then.
+acceptance. The Langfuse/Jaeger procedures below remain historical readback
+references; the running endpoint, installed overlay and backend evidence decide
+which store to query. Moving the endpoint does not prove readable AI contents.
 
 **Local acceptance record (synthetic, Docker Desktop, `signoz:v0.148.1` +
 custom ingester `nora-signoz-ingester:v0.144.15`):** the repo's own
@@ -150,13 +150,21 @@ Keep Strands as the model instrumentation library. An isolated synthetic probe o
 installed Strands 1.50.2 verified that
 `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental,gen_ai_span_attributes_only`
 emits input/output message attributes while preserving input/output token counts.
-This is an SDK-format result, not proof of SigNoz UI compatibility or a changed
-runtime setting. Check system messages, tool arguments/results, cache fields,
+The SigNoz application overlay now selects that SDK-native format, including
+tool input/results; legacy event-only spans are stored but leave AI Thread
+empty. New source must still be installed and read back in the pinned UI.
+Check system messages, tool arguments/results, cache fields,
 errors and multi-call agents against the pinned collector/backend before enabling
 it. Existing content authorization and secret redaction remain; changing the
 backend does not decide the open field-level redaction questions in
 [the content investigation](../design/13-trace-content-and-redaction.md).
 No cloud export or additional content capture is implied.
+
+For retained event-only traces, open the model/tool span in Overview and read
+its Events: legacy `gen_ai.*.message` records carry inputs and `gen_ai.choice`
+carries outputs. Changing the SDK mode does not rewrite historical traces.
+System instructions remain in `gen_ai.system_instructions`; keep their existing
+redaction policy distinct from message formatting.
 
 Use the [documented GenAI attributes](https://signoz.io/docs/ai-observability-telemetry-requirements/)
 and one shared SDK/collector normalization boundary. The stock contrib collector

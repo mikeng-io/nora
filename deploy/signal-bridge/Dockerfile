@@ -48,6 +48,8 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY nora/ ./nora/
 COPY deploy/signal-bridge/wrapper.py /app/wrapper.py
+ARG NORA_VERSION=""
+ENV OTEL_SERVICE_VERSION=${NORA_VERSION}
 RUN uv sync --frozen --no-dev \
  && mkdir -p /data/bridge /data/signal-cli \
  && chown -R 1000:1000 /data /app

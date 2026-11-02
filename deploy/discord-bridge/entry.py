@@ -234,7 +234,7 @@ async def main() -> None:
         metrics=metrics))
 
     app = bridge.routes()
-    runner = web.AppRunner(app)
+    runner = web.AppRunner(app, access_log=None)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", PORT).start()  # noqa: S104 — private nora network, token-authed
     log.info("discord-bridge serving :%d (account_key=%s)", PORT, ACCOUNT_KEY)
@@ -297,6 +297,8 @@ def _bootstrap_obs(config_path: str) -> None:
             exporter=cfg.obs.tracing.exporter,
             endpoint=cfg.obs.tracing.endpoint,
             headers_env=cfg.obs.tracing.headers_env,
+            service_version=os.environ.get("OTEL_SERVICE_VERSION", ""),
+            environment=cfg.obs.errors.environment,
             credentials=cfg.credentials)
     except Exception as exc:  # noqa: BLE001 — tracing is never load-bearing
         log.warning("tracing setup failed; continuing without tracing: %s",

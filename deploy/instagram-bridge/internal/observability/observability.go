@@ -87,6 +87,9 @@ func SetupTracing(ctx context.Context) (func(context.Context) error, error) {
 	if err != nil {
 		return nil, err
 	}
+	if version := os.Getenv("OTEL_SERVICE_VERSION"); version != "" {
+		res = resource.NewSchemaless(append(res.Attributes(), attribute.String("service.version", version))...)
+	}
 	provider := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(res),
@@ -103,7 +106,12 @@ func SetupTracing(ctx context.Context) (func(context.Context) error, error) {
 func TraceHTTP(h http.Handler) http.Handler {
 	return otelhttp.NewHandler(h, ServiceName,
 		otelhttp.WithFilter(func(r *http.Request) bool {
-			return r.URL.Path != "/health" && r.URL.Path != "/events"
+			switch r.URL.Path {
+			case "/health", "/v1/health", "/v1/self", "/metrics", "/events":
+				return false
+			default:
+				return true
+			}
 		}),
 	)
 }

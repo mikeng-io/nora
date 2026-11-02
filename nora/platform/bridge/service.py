@@ -311,14 +311,14 @@ class JournalPublisher:
                         links=bt.carrier_links(env.trace),
                         event_id=env.event_id, kind=env.kind,
                         queued_ms=env.queued_ms,
-                    ):
+                    ) as carrier:
                         _sid, canonical_id = await self._producer.enqueue(env)
                     bt.lifecycle(
                         self._metrics,
                         "enqueued" if canonical_id == env.event_id
                         else "duplicate_suppressed",
                         platform=env.platform, event_id=env.event_id,
-                        stream_id=_sid, queued_ms=env.queued_ms)
+                        stream_id=_sid, queued_ms=env.queued_ms, trace=carrier)
                 except Exception:  # noqa: BLE001 — any enqueue failure stops the head
                     blocked = True
                     break
@@ -382,7 +382,7 @@ class JournalCaptureSink:
         self._journal.append(record)
         bt.lifecycle(self._metrics, "captured", platform=envelope.platform,
                      event_id=envelope.event_id, kind=envelope.kind,
-                     queued_ms=envelope.queued_ms)
+                     queued_ms=envelope.queued_ms, trace=envelope.trace)
         self._publisher.wake()
         return True
 
@@ -481,11 +481,11 @@ class DurableActionService:
         # The outbound effect is its own bounded root — never a child of an
         # ambient span (design 04 §delivery): it links to the producer
         # context only when the caller carries one (the receipt lane).
-        bt.lifecycle(self._metrics, "delivery_started",
-                     platform=self._platform, action_id=aid)
         with bt.operation_span("deliver", platform=self._platform,
                                links=list(links or []),
-                               action_id=aid):
+                               action_id=aid) as sp:
+            bt.lifecycle(self._metrics, "delivery_started",
+                         platform=self._platform, action_id=aid, trace=bt.span_ref(sp))
             reply = await self._execute(action)
             final = await self._terminal(
                 aid, reply.state, platform_ref=reply.platform_ref,
@@ -493,7 +493,7 @@ class DurableActionService:
                 platform_ms=reply.platform_ms,
                 error=({"kind": reply.kind, "message": reply.message}
                        if reply.kind else None))
-        self._delivery_outcome(aid, op, final)
+        self._delivery_outcome(aid, op, final, trace=bt.span_ref(sp))
         if final is None:
             # The effect ran but the outcome was NOT persisted — report the
             # retained ambiguity, never a terminal the ledger doesn't hold.
@@ -545,11 +545,12 @@ class DurableActionService:
             log.error("action store unavailable: %s", type(exc).__name__)
             return "unavailable"
         if verdict == "execute":
-            bt.lifecycle(self._metrics, "delivery_started",
-                         platform=self._platform, action_id=action_id)
             with bt.operation_span(
                     "deliver", platform=self._platform, links=links,
-                    action_id=action_id):
+                    action_id=action_id) as sp:
+                bt.lifecycle(self._metrics, "delivery_started",
+                             platform=self._platform, action_id=action_id,
+                             trace=bt.span_ref(sp))
                 reply = await self._execute({
                     "action_id": action_id, "op": op, "request": request,
                     "owner": {"kind": owner.kind, "id": owner.id,
@@ -559,7 +560,7 @@ class DurableActionService:
                     platform_ms=reply.platform_ms,
                     error=({"kind": reply.kind, "message": reply.message}
                            if reply.kind else None))
-            self._delivery_outcome(action_id, op, final)
+            self._delivery_outcome(action_id, op, final, trace=bt.span_ref(sp))
             return final or "unavailable"
         if verdict == "replay" and prior is not None:
             if prior["state"] == "started":
@@ -574,19 +575,20 @@ class DurableActionService:
         return verdict  # 'conflict' | 'unavailable'
 
     def _delivery_outcome(
-            self, action_id: str, op: str, final: str | None) -> None:
+            self, action_id: str, op: str, final: str | None, *,
+            trace: Mapping[str, Any] | None = None) -> None:
         """The closed vocabulary of persisted outcomes — logged and counted
         at the durable result boundary, never before it lands."""
         if final == "confirmed":
             bt.lifecycle(self._metrics, "delivery_confirmed",
-                         platform=self._platform, action_id=action_id)
+                         platform=self._platform, action_id=action_id, trace=trace)
         elif final != "rejected":
             # `None` (terminal write failed) and `uncertain` BOTH mean the
             # outcome is not provably delivered — the same WARNING event.
             # A persisted `rejected` IS provable: the counter carries it.
             bt.lifecycle(self._metrics, "delivery_uncertain",
                          platform=self._platform, action_id=action_id,
-                         reason=final or "terminal_write_failed")
+                         reason=final or "terminal_write_failed", trace=trace)
         # `unavailable`/`conflict` persisted terminals and a failed write
         # all mean "not provably delivered" — the counter's vocabulary is
         # the narrower one, so they land on `uncertain`, never a raise.
