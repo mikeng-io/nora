@@ -19,6 +19,7 @@ from aiohttp.test_utils import TestServer
 
 from nora.agent.guards import Deliverer
 from nora.doctrine.loader import Doctrine
+from nora.domain.actions import ActionOwner
 from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
@@ -226,6 +227,27 @@ async def test_a_multi_post_send_lands_every_native_id_for_a_later_reaction():
         persons=_persons(), metrics=Metrics())
     assert result.ending == "reaction_recorded"
     assert store.reactions[-1]["message_id"] == row.id
+
+
+@pytest.mark.parametrize("state", ["rejected", "uncertain"])
+async def test_an_unconfirmed_reply_exposes_no_native_handles(state: str):
+    """The real client enforces the send-result contract before delivery."""
+    server = await _server({
+        "state": state, "platform_ref": REF,
+        "platform_refs": [REF, "mid.$other"]})
+    adapter = BridgeAdapter(
+        "instagram",
+        BridgeEndpoint(str(server.make_url("")).rstrip("/"), "synthetic"),
+        owner=ActionOwner(kind="live_invocation", id="1"))
+    try:
+        result = await adapter.send(target=TARGET, text="see you at eight")
+        assert result.ok is False
+        assert result.uncertain is (state == "uncertain")
+        assert result.platform_message_id is None
+        assert result.platform_message_ids == ()
+    finally:
+        await adapter.close()
+        await server.close()
 
 
 @pytest.mark.parametrize("state", ["rejected", "uncertain"])

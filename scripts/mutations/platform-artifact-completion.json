@@ -56,11 +56,11 @@
     "target": "tests/unit/test_platform_observation_fixtures.py::test_scheduled_event_frames_reach_the_callback_and_parse"
   },
   {
-    "name": "an unconfirmed send still lands its claimed ids",
-    "file": "nora/agent/guards.py",
-    "old": "                platform_message_ids=(\n                    tuple(result.platform_message_ids)\n                    if result.ok else None),",
-    "new": "                platform_message_ids=(\n                    tuple(result.platform_message_ids)\n                    if result.platform_message_ids else None),",
-    "target": "tests/integration/test_bridge_send_native_identity.py::test_an_unconfirmed_send_writes_no_handle_list"
+    "name": "an uncertain bridge reply exposes unconfirmed native handles",
+    "file": "nora/platform/bridge/client.py",
+    "old": "            return SendResult(ok=False, uncertain=True)",
+    "new": "            return SendResult(ok=False, uncertain=True,\n                              platform_message_ids=tuple(data.get(\"platform_refs\") or ()))",
+    "target": "tests/integration/test_bridge_send_native_identity.py::test_an_unconfirmed_reply_exposes_no_native_handles"
   },
   {
     "name": "the bridge client ignores the platform_refs list",
