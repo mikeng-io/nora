@@ -59,6 +59,7 @@ import logging
 import time
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -160,6 +161,8 @@ def form_batches(
     no batch ever has deferred items — the next batch picks up where this one
     stopped. `build_agenda` is the same pure function the session uses, so the
     item check below is exactly the session's grouping."""
+    if max_stimuli < 1 or max_items < 1:
+        raise ValueError("batch and agenda limits must be positive")
     out: list[tuple[Stimulus, ...]] = []
     i = 0
     while i < len(stimuli):
@@ -179,6 +182,23 @@ def work_id_sids(work_id: str) -> set[int]:
     if not work_id.startswith("stimuli:"):
         return set()
     return {int(s) for s in work_id.removeprefix("stimuli:").split(",") if s}
+
+
+def input_pairs(work: Sequence[Mapping[str, Any]], unit: str) -> dict[int, tuple[str, str]]:
+    """Stable source identities, independent of the agenda's batch grouping."""
+    result: dict[int, tuple[str, str]] = {}
+    for item in work:
+        for sid, digest in item.get("inputs", {}).items():
+            result[int(sid)] = (f"input:{unit}:{sid}", digest)
+    return result
+
+
+async def completed_inputs(
+    conn: AsyncConnection, unit: str, work: Sequence[Mapping[str, Any]],
+) -> set[int]:
+    identities = input_pairs(work, unit)
+    done = await sql.readings_done(conn, [key for key, _ in identities.values()])
+    return {sid for sid, pair in identities.items() if pair in done}
 
 
 async def covered_stimulus_ids(conn: AsyncConnection, unit: str) -> set[int]:
@@ -272,6 +292,12 @@ class Bounds:
     max_tokens: int
     max_seconds: float
 
+    def __post_init__(self) -> None:
+        if not all(isfinite(value) and value > 0 for value in (
+            self.max_batches, self.max_tokens, self.max_seconds,
+        )):
+            raise ValueError("run limits must be finite and positive")
+
 
 class UnknownSpendError(RuntimeError):
     """A session returned with NO readable usage. `CognitionRunResult.
@@ -298,6 +324,7 @@ class MeteredAgentRunner:
         self._inner = inner
         self.total_tokens = 0
         self.calls = 0
+        self.usage_known = True
         self.remaining_tokens: int | None = None
         self.remaining_seconds: float | None = None
 
@@ -322,19 +349,22 @@ class MeteredAgentRunner:
                     if self.remaining_seconds is not None
                     else budget.timeout_seconds),
             ))
+        self.calls += 1
         try:
             result = await self._inner.run(**kwargs)
         except BaseException:
             spend = SESSION_TOKENS.get()
             if spend is not None and spend.total:
                 self.total_tokens += spend.total
+            else:
+                self.usage_known = False
             raise
-        self.calls += 1
         total = result.total_tokens
         if total is None:
             spend = SESSION_TOKENS.get()
             total = spend.total if spend is not None else None
         if total is None:
+            self.usage_known = False
             raise UnknownSpendError(
                 "cognition session returned without readable token usage")
         self.total_tokens += total
@@ -497,7 +527,32 @@ def historical_grounder(engine: AsyncEngine, *, cfg: Any, deps: Any,
     )
 
 
-async def run_units(
+async def run_units(engine: AsyncEngine, *, bounds: Bounds, **kwargs: Any) -> dict[str, Any]:
+    """One deadline encloses enumeration, inspection, model work and receipts."""
+    started = time.monotonic()
+    report: dict[str, Any] = {
+        "units": {}, "tokens": 0, "stopped": None, "model_batches": 0}
+    metered = kwargs.pop("metered", None) or MeteredAgentRunner(None)
+    try:
+        async with asyncio.timeout(bounds.max_seconds):
+            return await _run_units(
+                engine, bounds=bounds, metered=metered, started=started,
+                report=report, **kwargs)
+    except TimeoutError:
+        report["stopped"] = "max_seconds"
+        for outcome in report["units"].values():
+            if isinstance(outcome, UnitOutcome) and outcome.stopped is None:
+                outcome.stopped = "max_seconds"
+        report["usage_known"] = getattr(metered, "usage_known", True)
+        report["tokens"] = metered.total_tokens if report["usage_known"] else None
+        report["agent_invocations"] = metered.calls
+        report["units"] = {
+            unit: vars(outcome) if isinstance(outcome, UnitOutcome) else outcome
+            for unit, outcome in report["units"].items()}
+        return report
+
+
+async def _run_units(
     engine: AsyncEngine, *, runner: Any,
     units: Sequence[str],
     home_rooms: Mapping[str, Room],
@@ -507,6 +562,8 @@ async def run_units(
     bounds: Bounds, metered: Any = None,
     batch_stimuli: int = DEFAULT_BATCH_STIMULI,
     from_ms: int | None = None, until_ms: int | None = None,
+    started: float,
+    report: dict[str, Any],
 ) -> dict[str, Any]:
     """The historical lane's loop over one already-built runner — the part
     every test drives. `runner` answers `inspect`/`replay`/`max_items`;
@@ -522,9 +579,6 @@ async def run_units(
     resumes AT the failure instead of after it."""
     if metered is None:
         metered = type("_M", (), {"total_tokens": 0, "calls": 0})()
-    started = time.monotonic()
-    report: dict[str, Any] = {
-        "units": {}, "tokens": 0, "stopped": None, "model_batches": 0}
     for unit in units:
         outcome = UnitOutcome(unit=unit)
         report["units"][unit] = outcome
@@ -544,7 +598,7 @@ async def run_units(
                 conn, unit, [s.id for s in stimuli])
         parked = {sid for sid, n in failures.items() if n >= sql.PARK_AFTER}
         outcome.parked = len(parked)
-        pending_all = [s for s in stimuli if s.id not in parked]
+        pending_all = list(stimuli)
         outcome.stimuli = len(pending_all)
         last_ms: int | None = None
         for batch in form_batches(
@@ -575,17 +629,17 @@ async def run_units(
                 outcome.stopped = "inspect_failed"
                 break
             if info is None:
-                last_ms = now_ms
-                continue
+                outcome.failures += 1
+                outcome.stopped = "unresolved"
+                break
             work = info["work"]
             async with engine.connect() as conn:
-                done_pairs = await sql.readings_done(
-                    conn, [w["work_id"] for w in work])
-            done_sids = {
-                sid for w in work
-                if (w["work_id"], w["input_hash"]) in done_pairs
-                for sid in work_id_sids(w["work_id"])
-            }
+                done_sids = await completed_inputs(conn, unit, work)
+            omitted = {s.id for s in batch} - input_pairs(work, unit).keys()
+            if omitted:
+                outcome.failures += 1
+                outcome.stopped = "unresolved"
+                break
             pending = [s for s in batch if s.id not in done_sids]
             if not pending:
                 # A completed-prefix scan costs nothing and consumes NO
@@ -594,6 +648,10 @@ async def run_units(
                 outcome.skipped_done += 1
                 last_ms = now_ms
                 continue
+            if any(s.id in parked for s in pending):
+                outcome.failures += 1
+                outcome.stopped = "unresolved"
+                break
             if report["model_batches"] >= bounds.max_batches:
                 outcome.stopped = report["stopped"] = "max_batches"
                 break
@@ -629,14 +687,20 @@ async def run_units(
                 # A nonempty remainder forming no agenda item is
                 # ungroundable — count it, never silently certify.
                 outcome.skipped_empty += len(pending)
-                last_ms = now_ms
-                continue
+                outcome.failures += 1
+                outcome.stopped = "unresolved"
+                break
             work = invoked["work"]
+            if {s.id for s in pending} - input_pairs(work, unit).keys():
+                outcome.failures += 1
+                outcome.stopped = "unresolved"
+                break
+            metered.remaining_seconds = bounds.max_seconds - (time.monotonic() - started)
             report["model_batches"] += 1
             try:
                 await asyncio.wait_for(
                     runner.replay(view=view, now_ms=now_ms, historical=True),
-                    timeout=metered.remaining_seconds + 1)
+                    timeout=metered.remaining_seconds)
             except Exception:
                 log.exception("unified backfill: session failed for %s", unit)
                 for s in pending:
@@ -652,13 +716,8 @@ async def run_units(
             # cannot certify this input. Unresolved work stops the
             # frontier and is failure-receipted under this lane's key.
             async with engine.connect() as conn:
-                done_pairs = await sql.readings_done(
-                    conn, [w["work_id"] for w in work])
-            unresolved = {
-                sid for w in work
-                for sid in work_id_sids(w["work_id"])
-                if (w["work_id"], w["input_hash"]) not in done_pairs
-            }
+                done_sids = await completed_inputs(conn, unit, work)
+            unresolved = {s.id for s in pending} - done_sids
             unresolved_pending = [s for s in pending if s.id in unresolved]
             if unresolved_pending:
                 for s in unresolved_pending:
@@ -672,8 +731,9 @@ async def run_units(
         ):
             break
         outcome.stopped = outcome.stopped or "done"
-    report["tokens"] = metered.total_tokens
-    report["model_calls"] = metered.calls
+    report["usage_known"] = getattr(metered, "usage_known", True)
+    report["tokens"] = metered.total_tokens if report["usage_known"] else None
+    report["agent_invocations"] = metered.calls
     report["units"] = {u: vars(o) for u, o in report["units"].items()}
     return report
 
@@ -710,14 +770,17 @@ async def catch_up(
     from nora.domain.stimuli import NewStimulus
 
     out: dict[str, Any] = {"units": {}, "stopped": None}
-    remind_subjects = (
-        [str(getattr(r, "text", r)) for r in await pending_reminds()]
-        if pending_reminds is not None else [])
+    reminders = list(await pending_reminds()) if pending_reminds is not None else []
     for unit in units:
         home = home_rooms.get(unit)
         if home is None:
             out["units"][unit] = {"status": "no_home_room"}
             continue
+        unit_rooms = rooms_of_unit(unit)
+        remind_subjects = [
+            str(reminder.text) for reminder in reminders
+            if (reminder.platform, reminder.conversation_id) in unit_rooms
+        ]
         async with engine.connect() as conn:
             stimuli, _ = await enumerate_unit(
                 conn, unit, rooms=rooms_of_unit(unit), unit_of=unit_of,
@@ -725,12 +788,6 @@ async def catch_up(
             failures = await sql.failure_counts(
                 conn, unit, [s.id for s in stimuli])
         parked = {sid for sid, n in failures.items() if n >= sql.PARK_AFTER}
-        if parked:
-            out["units"][unit] = {
-                "status": "incomplete", "reason": "parked",
-                "parked_stimuli": sorted(parked),
-            }
-            continue
         # A recorded failure blocks ONLY while its stimulus is still
         # uncovered: a later successful retry at the exact current input
         # clears it (the receipt is the truth, not the attempt log). Parked
@@ -764,20 +821,16 @@ async def catch_up(
                 continue
             work = info["work"]
             async with engine.connect() as conn:
-                done_pairs = await sql.readings_done(
-                    conn, [w["work_id"] for w in work])
-            for w in work:
-                if (w["work_id"], w["input_hash"]) in done_pairs:
-                    continue
-                sids = work_id_sids(w["work_id"])
-                blocked |= sids or {s.id for s in batch}
-                failed_uncovered |= sids & failing
+                done_sids = await completed_inputs(conn, unit, work)
+            blocked.update(s.id for s in batch if s.id not in done_sids)
+            failed_uncovered |= blocked & failing
         if error is not None:
             out["units"][unit] = {"status": "error", "reason": error}
             continue
         if blocked:
             out["units"][unit] = {
-                "status": "incomplete", "reason": "uncovered_or_stale_input",
+                "status": "incomplete",
+                "reason": "parked" if blocked & parked else "uncovered_or_stale_input",
                 "blocked_stimuli": sorted(blocked),
                 "failing_uncovered": sorted(failed_uncovered),
             }

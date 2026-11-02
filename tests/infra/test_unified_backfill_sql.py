@@ -99,7 +99,9 @@ async def test_hidden_after_evidence_stays_out_of_as_of_read(engine):
 
 @pytest.mark.asyncio
 async def test_five_historical_failures_do_not_park_live(engine):
-    records = SqlComprehendRecords(engine)
+    records = SqlComprehendRecords(engine, media_join=None,
+        rooms_by_unit={"u1": [("signal", "c1"), ("signal", "c2")]},
+        persons_by_unit={"u1": {"p1"}})
     live_sid = 42
     for _ in range(backfill_sql.PARK_AFTER):
         await backfill_sql.fail_historical(engine, "u1", live_sid, None)
@@ -130,7 +132,7 @@ async def test_walk_omits_assertions_after_the_instant(engine):
     await load(graph, future)    # asserted T+1, must not leak at T
 
     at_t = await graph.walk(
-        (PERSON.key,), Walk("u1", frozenset({"p1"}), valid_at=NOW))
+        (PERSON.key,), Walk("u1", frozenset({"p1"}), valid_at=NOW, known_at=NOW))
     rels = {e.relation.id for e in at_t.relations}
     assert "r2" not in rels and "r1" in rels
     at_later = await graph.walk(
@@ -144,30 +146,85 @@ async def test_walk_omits_assertions_after_the_instant(engine):
 
 @pytest.mark.asyncio
 async def test_multi_item_receipt_covers_each_admitted_work(engine):
-    """The receipt contract the driver's done-check relies on: a combined
-    `memory_propose` call admits N items; each lands a `readings` row under
-    its OWN (work_id, input_hash) — `readings` is idempotent on the pair.
-    Exercised at the store level: writing the same receipt twice keeps one
-    row, and two distinct items keep two."""
-    records = SqlComprehendRecords(engine)
+    from types import SimpleNamespace
 
-    a = WorkItem("stimuli:1", ("stimulus", "(1,)"), "u1", "ha", NOW)
-    b = WorkItem("stimuli:2,3", ("stimulus", "(2,3)"), "u1", "hb", NOW)
-    item = ComprehendItem(
-        work=a, sources=(), platform="signal", room="c1",
-        snapshot={"messages": []})
+    from nora.agent.fetch_watch import GraphFetched
+    from nora.app.cognition_memory import WakeMemory
+    from nora.domain.memory_graph import Source
+    from nora.infra.sql.schema import EXTRACTION, EXTRACTION_CLAIM
 
-    await records.readings(a, 10, item, [{"text": "t"}])
-    await records.readings(b, 10, item, [{"text": "t"}])
-    await records.readings(a, 10, item, [{"text": "t"}])  # idempotent
-
+    async with engine.begin() as conn:
+        await _insert_message(conn, 1, BASE_MS)
+        await _insert_message(conn, 2, BASE_MS)
+        await conn.execute(MESSAGES.update().where(MESSAGES.c.id == 2).values(
+            conversation_id="c2"))
+    records = SqlComprehendRecords(engine, media_join=None,
+        rooms_by_unit={"u1": [("signal", "c1"), ("signal", "c2")]},
+        persons_by_unit={"u1": {"p1"}})
+    memory = WakeMemory(graph=SqlMemoryGraph(engine), records=records,
+                        metrics=None, content_checks=False)
+    items = {}
+    for sid in (1, 2):
+        work = WorkItem(f"stimuli:{sid}", ("stimulus", str(sid)), "u1", f"h{sid}", NOW)
+        row = {"id": sid, "body": f"body {sid}", "ts": BASE_MS,
+               "person_id": "p1", "mentions": []}
+        items[sid - 1] = ComprehendItem(work,
+            (Source(("message", str(sid)), "record", "u1", ("p1",), row["body"]),),
+            "signal", f"c{sid}", snapshot={"messages": [row], "context": [],
+                "source_keys": {str(sid): ["message", str(sid)]},
+                "stimulus_inputs": {str(sid): f"source-{sid}"}})
+    state = SimpleNamespace(unit="u1", session_id=10, historical=True,
+        memory_items=items, graph_fetched=GraphFetched(), shown_keys=set(),
+        admitted_indices=set(), admitted_relations={}, admitted_evidence=[])
+    claims = []
+    for ids in ([1], [1, 2]):
+        claims.append({"about": [], "what": " and ".join(f"body {i}" for i in ids),
+            "happened_at": {"source_id": 1, "expression": None}, "where": None,
+            "how": "stated", "source_ids": ids,
+            "evidence": [{"source_id": i, "quote": f"body {i}"} for i in ids]})
+    payload = {key: [] for key in ("entities", "relations", "evidence", "corrections")}
+    payload["readings"] = claims
+    for _ in range(2):
+        result = await memory.propose(state, items=[0, 1], payload=payload)
+        assert result["status"] == "ok"
     async with engine.connect() as conn:
-        pairs = await backfill_sql.readings_done(
-            conn, ["stimuli:1", "stimuli:2,3"])
-    assert ("stimuli:1", "ha") in pairs
-    assert ("stimuli:2,3", "hb") in pairs
-    async with engine.connect() as conn:
-        n = (await conn.execute(sa.select(sa.func.count()).select_from(
-            COMPREHEND_RESULT).where(
-                COMPREHEND_RESULT.c.part == "readings"))).scalar()
-    assert n == 2
+        extracts = (await conn.execute(sa.select(EXTRACTION))).mappings().all()
+        saved = (await conn.execute(sa.select(EXTRACTION_CLAIM)
+            .order_by(EXTRACTION_CLAIM.c.id))).mappings().all()
+        pairs = await backfill_sql.readings_done(conn, ["input:u1:1", "input:u1:2"])
+    assert len(extracts) == 1 and len(saved) == 2
+    assert {row["extraction_id"] for row in saved} == {extracts[0]["id"]}
+    assert [list(row["source_ids"]) for row in saved] == [[1], [1, 2]]
+    assert {row["origin_room"] for row in saved} == {"c1"}
+    assert extracts[0]["snapshot"]["source_keys"] == {
+        "1": ["message", "1"], "2": ["message", "2"]}
+    assert pairs == {("input:u1:1", "source-1"), ("input:u1:2", "source-2")}
+
+
+@pytest.mark.asyncio
+async def test_still_open_selects_graph_only_plan_and_excludes_closed_controls(engine):
+    from nora.infra.sql.schema import ENTITY, RELATION
+
+    async with engine.begin() as conn:
+        await conn.execute(ENTITY.insert(), [
+            {"id": "p1", "kind": "person", "unit": "u1", "name": "Generated Person"},
+            {"id": "e1", "kind": "event", "unit": "u1", "name": "Generated Event"},
+        ])
+        rows = []
+        for rid, unit, valid_to, status in (
+            ("open-plan", "u1", None, "current"),
+            ("closed-plan", "u1", NOW - timedelta(seconds=1), "current"),
+            ("retired-plan", "u1", None, "retired"),
+            ("foreign-plan", "u2", None, "current"),
+        ):
+            rows.append({"id": rid, "src_kind": "person", "src_id": "p1",
+                "dst_kind": "event", "dst_id": "e1", "rel": "plans",
+                "layer": "notebook", "unit": unit, "persons": ["p1"],
+                "asserted_at": NOW, "valid_from": NOW + timedelta(days=1),
+                "valid_to": valid_to, "status": status, "written_by": "generated"})
+        await conn.execute(RELATION.insert(), rows)
+        selected = await backfill_sql.still_open(conn, "u1", BASE_MS)
+    assert [row["id"] for row in selected["relations"]] == ["open-plan"]
+    assert selected["relations"][0]["persons"] == ["p1"]
+    assert selected["relations"][0]["dst"] == ["event", "e1"]
+    assert selected["commitments"] == [] and selected["events"] == []

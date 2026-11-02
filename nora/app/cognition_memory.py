@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -15,7 +15,16 @@ from nora.app.comprehend import GraphWrite, MemoryProposalAdmission, _shape_erro
 from nora.domain.comprehend import ComprehendItem, Preview, preview_seeds
 from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.domain.extraction import partition_claims
-from nora.domain.memory_graph import Key, Source, Walk, WorkItem
+from nora.domain.memory_graph import (
+    CATCH_UP_PREFIX,
+    ENTRY,
+    GraphNode,
+    Key,
+    Source,
+    Subgraph,
+    Walk,
+    WorkItem,
+)
 from nora.domain.profile import (
     Account,
     ProfileCitable,
@@ -27,6 +36,25 @@ from nora.language.comprehend_render import preview_text
 
 #: Characters of each row's body kept in the reading slot map.
 READING_CLIP = 160
+
+
+def historical_graph(graph: Subgraph, at: datetime) -> Subgraph:
+    """Keep asserted structure, withholding heads without historical versions."""
+    edges = tuple(
+        replace(edge, relation=replace(
+            edge.relation,
+            valid_to=(edge.relation.valid_to if edge.relation.valid_to is None
+                      or edge.relation.valid_to <= at else None),
+            created_at=None, superseded_by=None,
+        ), evidence_count=0, evidence=(), sources=())
+        for edge in graph.relations
+        if edge.relation.asserted_at <= at
+        and edge.relation.src[0] not in ENTRY
+        and edge.relation.dst[0] not in ENTRY
+    )
+    return Subgraph(graph.status, tuple(
+        GraphNode(node.key) for node in graph.nodes if node.key[0] not in ENTRY
+    ), edges)
 
 
 class WakeMemory:
@@ -75,13 +103,17 @@ class WakeMemory:
         """Freeze exactly what the agenda shows, including each non-message source."""
         at = datetime.fromtimestamp(state.now_ms / 1000, UTC)
         anchors: list[Key] = []
-        aliases = await self.graph.aliases(unit=state.unit)
+        aliases = {} if state.historical else await self.graph.aliases(unit=state.unit)
+        next_source_row = max(
+            [row.message_id for row in grounding.records.values()] + [0]) + 1
         for index, agenda in state.items_by_index.items():
-            sources = []
+            sources: list[Source] = []
+            stimulus_inputs: dict[str, str] = {}
             rows = []
             loaded_items = []
             for sid in agenda.stimulus_ids:
                 stimulus = stimuli[sid]
+                start = len(sources)
                 row = grounding.records.get(stimulus.ref)
                 if row is not None and row.text is not None:
                     sources.append(Source(("message", str(row.message_id)), "record", state.unit,
@@ -101,6 +133,8 @@ class WakeMemory:
                         rows.extend(loaded.snapshot.get("context", []))
                     rows.append({"id": row.message_id, "body": row.text, "ts": row.at_ms,
                                  "person_id": row.person_id, "mentions": []})
+                elif stimulus.kind == "message":
+                    continue
                 elif stimulus.kind in ("social", "play"):
                     kind, _, ref = stimulus.ref.partition(":")
                     work = WorkItem(f"stimulus:{sid}", (kind, ref), state.unit, "", at,
@@ -113,20 +147,37 @@ class WakeMemory:
                 else:
                     line = grounding.rollups.get(stimulus.ref)
                     text = json.dumps(asdict(line), default=str) if line else stimulus.ref
+                    source_persons = (stimulus.person_id,) if stimulus.person_id else ()
+                    if stimulus.kind == "time" and stimulus.item.startswith(CATCH_UP_PREFIX):
+                        selected = json.loads(stimulus.item.removeprefix(CATCH_UP_PREFIX))
+                        if selected["unit"] != state.unit:
+                            raise ValueError("catch-up selection is outside the unit")
+                        text = stimulus.item
+                        source_persons = tuple(sorted({
+                            person for relation in selected["relations"]
+                            for person in relation["persons"]}))
+                        anchors.extend(
+                            (str(key[0]), str(key[1]))
+                            for relation in selected["relations"]
+                            for key in (relation["src"], relation["dst"]))
                     sources.append(Source((stimulus.kind, str(sid)), "rollup", state.unit,
-                        (stimulus.person_id,) if stimulus.person_id else (), text))
+                                          source_persons, text))
+                stimulus_inputs[str(sid)] = hashlib.sha256(json.dumps(
+                    [state.unit, stimulus.kind, stimulus.item, stimulus.ref,
+                     stimulus.at_ms, [asdict(source) for source in sources[start:]]],
+                    sort_keys=True).encode()).hexdigest()
             sources = list({s.key: s for s in sources}.values())
             original_rows: dict[int, Any] = {}
             for r in rows:
                 original_rows[r["id"]] = {**r, **original_rows.get(r["id"], {})}
             rows = []
             source_keys = {}
-            next_id = max([int(s.key[1]) for s in sources if s.key[0] == "message"] + [0]) + 1
             for source in sources:
                 if source.layer != "record":
                     continue
-                row_id = int(source.key[1]) if source.key[0] == "message" else next_id
-                next_id += 1
+                row_id = int(source.key[1]) if source.key[0] == "message" else next_source_row
+                if source.key[0] != "message":
+                    next_source_row += 1
                 rows.append({**original_rows.get(row_id, {}), "id": row_id, "body": source.text,
                     "ts": original_rows.get(row_id, {}).get("ts", state.now_ms),
                     "person_id": original_rows.get(row_id, {}).get("person_id")
@@ -152,6 +203,7 @@ class WakeMemory:
                                                if r.get("person_id")), ""),
                                   snapshot={"messages": rows, "context": [],
                                             "source_keys": source_keys,
+                                            "stimulus_inputs": stimulus_inputs,
                                             "source_provenance": source_provenance})
             from dataclasses import replace
             if loaded_items:
@@ -172,20 +224,14 @@ class WakeMemory:
         persons = frozenset(p for s in state.graph_fetched.sources.values() for p in s.persons)
         seeds = tuple(dict.fromkeys(anchors))
         graph = await self.graph.walk(seeds, Walk(unit=state.unit, persons=persons, depth=2,
-                                                # The `notebook` layer is
-                                                # Register heads — CURRENT
-                                                # text a historical session
-                                                # cannot read as-of. The
-                                                # relations themselves are
-                                                # `asserted_at`-bounded by
-                                                # the walk; this withholds
-                                                # the unversionable heads.
-                                                layers=(("record", "rollup")
-                                                        if state.historical else
-                                                        ("record", "rollup", "notebook")),
-                                                valid_at=at))
+                                                # Unversioned heads are withheld below.
+                                                layers=("record", "rollup", "notebook"),
+                                                valid_at=at,
+                                                known_at=at if state.historical else None))
         if graph.status == "unavailable":
             raise RuntimeError("wake graph unavailable")
+        if state.historical:
+            graph = historical_graph(graph, at)
         # `shown_keys` is the renderer's own emitted-rows provenance: a row the
         # budget omits was never shown, whatever the walk returned.
         state.graph_text = preview_text(Preview(seeds, graph, (), (at, at)),
@@ -226,7 +272,15 @@ class WakeMemory:
         combined = replace(base, sources=tuple(s for v in inputs for s in v.sources), snapshot={
             "messages": [r for v in inputs for r in v.snapshot["messages"]], "context": [],
             "source_keys": {k: source for v in inputs
-                            for k, source in v.snapshot.get("source_keys", {}).items()}})
+                            for k, source in v.snapshot.get("source_keys", {}).items()},
+            "completion": [
+                {"work_id": v.work.id, "input_hash": v.work.input_hash,
+                 "inputs": v.snapshot.get("stimulus_inputs", {})}
+                for v in inputs],
+        })
+        combined = replace(combined, work=replace(combined.work, input_hash=hashlib.sha256(
+            json.dumps([asdict(source) for source in combined.sources],
+                       sort_keys=True).encode()).hexdigest()))
         claims, drops = partition_claims({"claims": [r.model_dump() for r in output.readings]},
                                          combined.snapshot)
         if drops:
@@ -237,25 +291,16 @@ class WakeMemory:
         refused = [*[asdict(r) for r in result.refused], *local_refusals]
         if not refused:
             await self.records.readings(combined.work, state.session_id, combined, claims)
-            # A multi-item call ADMITS every named item, so every named item
-            # needs its own completion receipt under its real
-            # `(work_id, input_hash)` — `readings` is idempotent on that
-            # pair, the admission itself happened once through `combined`
-            # above, and these extra rows only mark which inputs were
-            # comprehended (a resume must not re-spend on them and the
-            # catch-up gate must be able to prove them). Claims are the same
-            # combined-evidence claims: they were judged against the union.
-            for i in items[1:]:
-                follower = state.memory_items[i]
-                await self.records.readings(
-                    follower.work, state.session_id, follower, claims)
             admitted = items
         seeds = tuple(dict.fromkeys(k for r in result.relations for k in (r.src, r.dst)))
         graph = await self.graph.walk(seeds, Walk(unit=state.unit, depth=1,
             persons=frozenset(p for s in combined.sources for p in s.persons),
-            valid_at=combined.work.as_of))
+            valid_at=combined.work.as_of,
+            known_at=combined.work.as_of if state.historical else None))
         if graph.status == "unavailable":
             raise RuntimeError("connected graph unavailable")
+        if state.historical:
+            graph = historical_graph(graph, combined.work.as_of)
         state.shown_keys.update(n.key for n in graph.nodes)
         state.shown_keys.update(
             k for e in graph.relations for k in (e.relation.src, e.relation.dst))

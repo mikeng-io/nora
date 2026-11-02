@@ -990,6 +990,7 @@ class CognitionSessionRunner:
                             "index": index,
                             "work_id": item.work.id,
                             "input_hash": item.work.input_hash,
+                            "inputs": item.snapshot.get("stimulus_inputs", {}),
                         }
                         for index, item in sorted(state.memory_items.items())
                     ],

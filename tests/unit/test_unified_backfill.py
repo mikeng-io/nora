@@ -7,20 +7,8 @@ pair it was written for; a failed/unadmitted session leaves stimuli
 uncovered; a historical failure lands under `backfill-stimulus:` and can
 never park a live `stimulus:` id).
 
-Own mutation table — the exact old guard each named test catches:
-
-- hidden_before resurrects hidden rows        infra hidden_after_evidence_stays_out
-- walk drops the asserted_at bound            infra walk_omits_assertions_after_instant
-- propose writes only the combined receipt    infra multi_item_receipt + per_admitted_item
-- failure key reuses stimulus:{unit}:{sid}    failure_key_never_matches + infra five_historical
-- post-replay check uses pre-filter digests   every_item_is_run_once_oldest_first
-- replay normal-return treated as done        every_item_is_run_once_oldest_first
-- done-skip consumes a model slot             done_items_are_skipped_and_changed_input_reruns
-- max_batches counted per unit                apply_stops_at_the_batch_bound_run_wide
-- unknown token usage counted as zero         meter_reads_failed_spend_and_unknown_usage
-- catch-up queues on any-hash coverage        catch_up_refuses_incomplete_and_queues
-- catch-up item carries no still-open set     catch_up_refuses_incomplete_and_queues
-- records.load merges current text (hist)     infra hidden_after_evidence_stays_out
+Executable repair guards live in scripts/mutations/unified-memory-backfill.json.
+A table is a test plan; only admitted red/green execution supplies proof.
 """
 
 from __future__ import annotations
@@ -165,6 +153,7 @@ class _Runner:
         self._work = work_by_batch or []
         self._fail_on = fail_on or set()
         self._admit_on = admit_on or set()
+        self._seen: dict[tuple[int, ...], list[dict[str, Any]]] = {}
 
     async def inspect(
         self, *, view: Any, now_ms: int, historical: bool = False,
@@ -173,19 +162,17 @@ class _Runner:
         self.inspect_calls.append((tuple(s.id for s in view.pending), now_ms))
         if len(self.inspect_calls) - 1 in self._fail_on:
             raise RuntimeError("grounding failed")
-        if len(self.inspect_calls) - 1 < len(self._work):
-            work = self._work[len(self.inspect_calls) - 1]
-        elif view.pending:
-            # Default: the item the REAL session would form over THESE
-            # stimuli — a `stimuli:` work id naming them, so the test's
-            # digests always match the actually-invoked batch, never a
-            # canned list that drifts when the driver re-inspects the
-            # filtered pending.
-            ids = ",".join(str(s.id) for s in view.pending)
-            work = [{"index": 0, "work_id": f"stimuli:{ids}",
-                     "input_hash": "h"}]
-        else:
-            work = []
+        ids = tuple(stimulus.id for stimulus in view.pending)
+        if ids not in self._seen:
+            n = len(self._seen)
+            work = self._work[n] if n < len(self._work) else [
+                {"index": 0, "work_id": "stimuli:" + ",".join(map(str, ids)),
+                 "input_hash": "h"}]
+            self._seen[ids] = [dict(item, inputs=item.get("inputs", {
+                str(sid): item["input_hash"]
+                for sid in ub.work_id_sids(item["work_id"])
+            })) for item in work]
+        work = self._seen[ids]
         return {"system": "s", "agenda": "a", "work": work} if work else None
 
     async def replay(self, *, view: Any, now_ms: int, historical: bool) -> Any:
@@ -211,7 +198,10 @@ def _patch_sql(monkeypatch: Any, *, stimuli: list[Stimulus],
         return {sid: (failures or {}).get(sid, 0) for sid in ids}
 
     async def _pairs(conn: Any, work_ids: Any) -> set[tuple[str, str]]:
-        return {p for p in (pairs or set()) if p[0] in set(work_ids)}
+        rows = set(pairs or ())
+        rows.update((f"input:u1:{sid}", digest)
+                    for key, digest in pairs or () for sid in ub.work_id_sids(key))
+        return {pair for pair in rows if pair[0] in set(work_ids)}
 
     async def _covered(conn: Any, unit: str) -> set[int]:
         return set(covered or set())
@@ -283,7 +273,9 @@ async def test_done_items_are_skipped_and_changed_input_reruns(
     pairs = {("stimuli:1,2", "hOLD")}
 
     async def _pairs2(conn: Any, work_ids: Any) -> set[tuple[str, str]]:
-        return {p for p in pairs if p[0] in set(work_ids)}
+        rows = {(f"input:u1:{sid}", digest)
+                for key, digest in pairs for sid in ub.work_id_sids(key)}
+        return {pair for pair in rows if pair[0] in set(work_ids)}
 
     _patch_sql(monkeypatch, stimuli=stimuli, pairs=pairs, covered={1, 2})
     monkeypatch.setattr(ub.sql, "readings_done", _pairs2)
@@ -301,7 +293,7 @@ async def test_done_items_are_skipped_and_changed_input_reruns(
     out2 = await ub.run_units(
         _FakeEngine(object()), runner=runner2, **_run_kwargs())
     assert len(runner2.replay_calls) == 1
-    assert out2["units"]["u1"]["stopped"] == "done"
+    assert out2["units"]["u1"]["stopped"] == "unresolved"
 
 
 @pytest.mark.asyncio
@@ -359,9 +351,9 @@ async def test_a_failed_session_is_recovered_parked_and_frontier_stops(
                failures={1: ub.sql.PARK_AFTER})
     out2 = await ub.run_units(
         _FakeEngine(object()), runner=runner2, **_run_kwargs())
-    assert not runner2.inspect_calls and not runner2.replay_calls
+    assert runner2.inspect_calls and not runner2.replay_calls
     assert out2["units"]["u1"]["parked"] == 1
-    assert out2["units"]["u1"]["stopped"] == "done"
+    assert out2["units"]["u1"]["stopped"] == "unresolved"
 
 
 # -- isolated failure identity -------------------------------------------------
@@ -463,14 +455,15 @@ async def test_catch_up_refuses_incomplete_and_queues_one_time_wake(
         return dict.fromkeys(ids, 0)
 
     async def _pairs(conn: Any, work_ids: Any) -> set[tuple[str, str]]:
-        return {("stimuli:1,2", "h1")} if "stimuli:1,2" in set(work_ids) else set()
+        return {(key, "h1") for key in work_ids}
 
     async def _covered(conn: Any, unit: str) -> set[int]:
         return {1, 2}
 
     async def _still_open(conn: Any, unit: str, now_ms: int, *,
                           remind_subjects: Any = ()) -> dict[str, Any]:
-        return {"commitments": [{"subject": "pay invoice", "due_ms": now_ms}],
+        return {"unit": unit, "as_of_ms": now_ms, "relations": [],
+                "commitments": [{"subject": "pay invoice", "due_ms": now_ms}],
                 "events": [], "reminds": list(remind_subjects)}
 
     monkeypatch.setattr(ub, "enumerate_unit", _enum)
@@ -479,13 +472,14 @@ async def test_catch_up_refuses_incomplete_and_queues_one_time_wake(
     monkeypatch.setattr(ub, "covered_stimulus_ids", _covered)
     monkeypatch.setattr(ub.sql, "still_open", _still_open)
 
-    async def _pending() -> list[str]:
-        return ["r1", "r2"]
+    async def _pending() -> list[Any]:
+        return [SimpleNamespace(text=text, platform="signal", conversation_id="room-1")
+                for text in ("r1", "r2")]
 
     out = await ub.catch_up(
         _FakeEngine(object()), stimulus_store=_Stimuli(), runner=runner,
         units=["u1"], home_rooms={"u1": ROOM},
-        rooms_of_unit=lambda u: set(), unit_of=lambda p, c: "u1",
+        rooms_of_unit=lambda u: {("signal", "room-1")}, unit_of=lambda p, c: "u1",
         person_rooms={}, self_ids=(), now_ms=86_400_000 * 10,
         pending_reminds=_pending)
     assert out["units"]["u1"]["status"] == "queued"
@@ -493,13 +487,13 @@ async def test_catch_up_refuses_incomplete_and_queues_one_time_wake(
     # The stimulus's item IS the still-open selection: it renders verbatim
     # in the agenda and seeds the graph preview via aliases.
     assert "pay invoice" in appended[0].item
-    assert "pending reminder" in appended[0].item
+    assert "r1" in appended[0].item
     assert out["units"]["u1"]["still_open"]["reminds"] == ["r1", "r2"]
 
     # A stale-hash receipt: the pair exists at hOLD but the current input
     # is hNEW → no false complete.
     async def _stale_pairs(conn: Any, work_ids: Any) -> set[tuple[str, str]]:
-        return {("stimuli:1,2", "hOLD")} if "stimuli:1,2" in set(work_ids) else set()
+        return {(key, "hOLD") for key in work_ids}
 
     monkeypatch.setattr(ub.sql, "readings_done", _stale_pairs)
     # Old coverage of these SAME stimulus ids must not override a stale hash.
@@ -509,7 +503,7 @@ async def test_catch_up_refuses_incomplete_and_queues_one_time_wake(
         _FakeEngine(object()), stimulus_store=_Stimuli(),
         runner=_Runner(work_by_batch=[work]),
         units=["u1"], home_rooms={"u1": ROOM},
-        rooms_of_unit=lambda u: set(), unit_of=lambda p, c: "u1",
+        rooms_of_unit=lambda u: {("signal", "room-1")}, unit_of=lambda p, c: "u1",
         person_rooms={}, self_ids=(), now_ms=86_400_000 * 10)
     assert out2["units"]["u1"]["status"] == "incomplete"
     assert not appended
@@ -519,11 +513,11 @@ async def test_catch_up_refuses_incomplete_and_queues_one_time_wake(
         return dict.fromkeys(ids, ub.sql.PARK_AFTER)
 
     monkeypatch.setattr(ub.sql, "failure_counts", _parked_failures)
-    monkeypatch.setattr(ub.sql, "readings_done", _pairs)
+    monkeypatch.setattr(ub.sql, "readings_done", _stale_pairs)
     out3 = await ub.catch_up(
         _FakeEngine(object()), stimulus_store=_Stimuli(), runner=runner,
         units=["u1"], home_rooms={"u1": ROOM},
-        rooms_of_unit=lambda u: set(), unit_of=lambda p, c: "u1",
+        rooms_of_unit=lambda u: {("signal", "room-1")}, unit_of=lambda p, c: "u1",
         person_rooms={}, self_ids=(), now_ms=86_400_000 * 10)
     assert out3["units"]["u1"]["status"] == "incomplete"
     assert out3["units"]["u1"]["reason"] == "parked"
@@ -623,7 +617,7 @@ async def test_propose_writes_a_receipt_per_admitted_item():
     class _Records:
         async def readings(self, work: Any, session: int, item: Any,
                            claims: Any) -> None:
-            written.append((work.id, work.input_hash))
+            written.append(item.snapshot["completion"])
 
     class _Result:
         def __init__(self) -> None:
@@ -638,15 +632,15 @@ async def test_propose_writes_a_receipt_per_admitted_item():
 
     class _Graph:
         async def walk(self, seeds: Any, scope: Any) -> Any:
-            return SimpleNamespace(nodes=[], relations=[])
+            from nora.domain.memory_graph import Subgraph
+            return Subgraph("ok")
 
         async def aliases(self, *, unit: str) -> dict:
             return {}
 
-    memory = WakeMemory.__new__(WakeMemory)
-    memory.records = _Records()
+    memory = WakeMemory(records=_Records(), graph=_Graph(), metrics=None,
+                        content_checks=False)
     memory.admission = _Admission()
-    memory.graph = _Graph()
 
     now = datetime.now(UTC)
     a = WorkItem("stimuli:1", ("stimulus", "(1,)"), "u1", "ha", now)
@@ -659,8 +653,10 @@ async def test_propose_writes_a_receipt_per_admitted_item():
         memory_items={0: item_a, 1: item_b}, session_id=7, unit="u1",
         graph_fetched=SimpleNamespace(nodes=[], relations=[]),
         shown_keys=set(), admitted_relations={}, admitted_evidence=[],
-        admitted_indices=set(), graph_text="")
-    payload = {"readings": []}
+        admitted_indices=set(), graph_text="", historical=False)
+    payload = {key: [] for key in ("entities", "relations", "evidence", "corrections", "readings")}
     out = await memory.propose(state, items=[0, 1], payload=payload)
     assert out["status"] == "ok"
-    assert written == [("stimuli:1", "ha"), ("stimuli:2", "hb")]
+    assert len(written) == 1
+    assert [(v["work_id"], v["input_hash"]) for v in written[0]] == [
+        ("stimuli:1", "ha"), ("stimuli:2", "hb")]

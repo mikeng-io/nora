@@ -315,45 +315,35 @@ remains the operator's separate decision, with
 [70 §4](70-honcho-cutover.md#4-the-hold--14-days-00-sequence-step-9)'s
 14-day observation and the staged removal after it.
 
-**Backfill driver (delivered, `feat/unified-memory-backfill`).** The
-chronological unified-memory backfill now has a production entry point:
-`nora memory unified-backfill`. Default is a dry-run census on a read-only
-engine — zero writes, zero model calls — reporting per unit the recorded
-and fabricated evidence counts by kind, time bounds, attempted/covered/
-parked/uncovered stimulus counts, lane session/receipt totals, the
-unenumerable kinds by design (`time`/`self`/register/derived pre-stimulus),
-and the effective flags (`memory.graph`, `graph.comprehend`, `cognition`,
-`dreamer`, profile write/read with shadow marked). `--apply` requires all
-of `--max-batches`/`--max-tokens`/`--max-seconds`, and runs the ONE
-Cognition session — the live composition's own runner, variant-built via
-`with_collaborators` so doctrine, budgets and stores cannot drift — in
-`replay(historical=True)` over chronological batches. Historical reads are
-bounded as-of each batch's evidence instant: the grounder now takes the
-session's `now_ms`, `by_refs`/`own_sends` read edits, hides, deletes and
-reactions no later than it (`transcript_select`'s `hidden_before` +
-`reaction_states`' `before_ms` are the same fold's bound, live callers
-unbounded as before), and the memory lane's own `work.as_of` was already
-as-of. Blocks that cannot be read as-of — Register index heads, pending
-reminds, observation folded heads, presence stays, culture/profile heads,
-the SharedView — are withheld rather than shown from the future; the
-as-of graph preview (`valid_at`) carries context instead. Read tools are
-all withheld (none can be bounded as-of); media readings render at their
-latest fold, the same bound `records.load` applies (a `media_objects` read
-timestamp for stricter as-of does not exist — a stated ceiling, not a
-claim). Per-item progress is the session's own receipts: an item is done
-at `(work_id, input_hash)` in `comprehend_result.readings`, so a restart
-never re-comprehends, a changed input re-runs, a failed session marks
-`stimulus_failure` and five parks it for operator requeue — no queue,
-ledger or migration; `memory_work_item` stays retired. `--catch-up` is
-the explicit separate current-clock step: it refuses incomplete units
-and appends ONE `time` stimulus per complete unit, so the live evaluator
-runs a normal act-capable wake on the real clock; the historical lane
-never fires it and never touches `cognition_wake*` rows, live stimuli or
-profile-writer retirement. Unmet slice, stated not claimed: media
-readings are not bounded as-of; Register heads are withheld rather than
-as-of-rendered; semantic coverage/quality is unmeasured (the operator's
-ruling stands: production observes recall, staleness and correction on
-the authorized rollout — reachable engineering defects are the blockers,
-not population-wide proof); the unit tests (`tests/unit/
-test_unified_backfill.py`) prove the driver's mechanics over generated
-inputs; the gate was busy at handoff — parent owns its first green read.
+**Backfill driver (implementation candidate, PR #525).**
+`nora memory unified-backfill` uses the existing Cognition session; the
+Honcho-feed `memory backfill` command is unchanged. Default is a read-only,
+zero-model census. Apply requires positive finite batch/token/time limits;
+one deadline encloses enumeration, grounding, replay and receipts. Unknown
+model usage is ERROR, never a free run. Historical acts and profile tools
+are withheld. Current withdrawal remains effective at every replay instant.
+
+Completion is bound to each stimulus's rendered source digest, independent
+of agenda grouping, in the existing `comprehend_result` table. The validated
+union extraction and claims are written once; admitted inputs receive
+completion pointers to that same extraction in its transaction. Omitted,
+unadmitted and parked-but-uncovered input is incomplete. Historical failure
+keys are separate from live strikes; no worker queue or migration is added.
+
+Historical graph views separate validity from knowledge availability
+(`Walk.valid_at` / `known_at`). Both initial input and connected tool results
+withhold unversioned entity attributes, source text, evidence and Register
+heads. This is partial historical context, not a claim to reconstruct every
+past state. Media's latest fold remains a stated ceiling. Catch-up runs only
+by explicit command after exact whole-unit completion; it carries scoped
+still-open graph anchors, open ledger/Register work and unit-filtered
+reminders into the ordinary real-clock session. Undated open plans remain
+explicitly undated for that session to assess; no date is inferred.
+
+Two independent review rounds requested engineering repairs. Parent repairs
+and generated unit/SQL regressions plus the mutation table are present;
+behavioral execution and the final gate remain pending the serialized test
+window. No source acceptance, production backfill, flag flip or semantic PASS
+is claimed by this delivery note. Full semantic proof and public benchmarks
+are not cutover prerequisites: production observes useful recall, staleness
+and correction under the operator's bounded rollout and observation decision.

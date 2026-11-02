@@ -20,6 +20,7 @@ never collide with a real row's.
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
@@ -28,10 +29,12 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.cues import cues_of
+from nora.domain.memory_graph import CATCH_UP_PREFIX
 from nora.domain.social_stream import SOCIAL_READ_REF, read_item
 from nora.domain.stimuli import Stimulus
 from nora.infra.sql.schema import (
     COGNITION_SESSION,
+    ENTITY,
     EVENTS,
     LEDGER_COMMITMENT,
     MESSAGE_DELETE,
@@ -39,6 +42,7 @@ from nora.infra.sql.schema import (
     MESSAGE_REACTION,
     MESSAGES,
     PLATFORM_OBSERVATION,
+    RELATION,
     SOCIAL_ITEM,
     STIMULUS,
 )
@@ -327,7 +331,8 @@ async def readings_done(
         return set()
     rows = (await conn.execute(
         sa.select(RESULT.c.work_id, RESULT.c.input_hash)
-        .where(RESULT.c.part == "readings", RESULT.c.work_id.in_(list(work_ids)))
+        .where(RESULT.c.part.in_(("readings", "readings_input")),
+               RESULT.c.work_id.in_(list(work_ids)))
         .distinct()
     )).all()
     return {(str(r.work_id), str(r.input_hash)) for r in rows}
@@ -452,7 +457,33 @@ async def still_open(
                    EVENTS.c.when >= datetime.fromtimestamp(now_ms / 1000, tz=UTC)),
         ).order_by(EVENTS.c.when.asc().nulls_last()))
     ).all()
+    src, dst = ENTITY.alias("src"), ENTITY.alias("dst")
+    relations = (await conn.execute(sa.select(
+        RELATION, src.c.name.label("src_name"), dst.c.name.label("dst_name"),
+    ).select_from(RELATION.outerjoin(src, sa.and_(
+        src.c.id == RELATION.c.src_id, src.c.kind == RELATION.c.src_kind,
+        src.c.unit == unit,
+    )).outerjoin(dst, sa.and_(
+        dst.c.id == RELATION.c.dst_id, dst.c.kind == RELATION.c.dst_kind,
+        dst.c.unit == unit,
+    ))).where(
+        RELATION.c.unit == unit, RELATION.c.status == "current",
+        RELATION.c.valid_to.is_(None),
+        RELATION.c.asserted_at <= datetime.fromtimestamp(now_ms / 1000, tz=UTC),
+        sa.or_(RELATION.c.rel == "plans", RELATION.c.src_kind == "commitment",
+               RELATION.c.dst_kind == "commitment"),
+    ).order_by(RELATION.c.id))).mappings().all()
     return {
+        "unit": unit, "as_of_ms": now_ms,
+        "relations": [
+            {"id": row["id"], "rel": row["rel"],
+             "src": [row["src_kind"], row["src_id"]],
+             "dst": [row["dst_kind"], row["dst_id"]],
+             "src_name": row["src_name"], "dst_name": row["dst_name"],
+             "valid_from": None if row["valid_from"] is None
+             else row["valid_from"].isoformat(),
+             "persons": list(row["persons"])}
+            for row in relations],
         "commitments": [
             {"subject": str(r.subject),
              "due_ms": None if r.due_at is None else int(r.due_at)}
@@ -473,25 +504,4 @@ def still_open_item(open_work: Mapping[str, Any]) -> str:
     open work both appears in the session's input AND seeds its graph
     preview — the selection reaches the model through the ordinary assembly,
     not a bespoke prompt."""
-    parts: list[str] = []
-    if open_work["commitments"]:
-        shown = ", ".join(
-            c["subject"] for c in open_work["commitments"][:4])
-        more = len(open_work["commitments"]) - 4
-        parts.append(
-            f"{len(open_work['commitments'])} open commitment(s): {shown}"
-            + (f" +{more}" if more > 0 else ""))
-    if open_work["events"]:
-        shown = ", ".join(e["title"] for e in open_work["events"][:4])
-        more = len(open_work["events"]) - 4
-        parts.append(
-            f"{len(open_work['events'])} upcoming event(s): {shown}"
-            + (f" +{more}" if more > 0 else ""))
-    if open_work["reminds"]:
-        shown = ", ".join(open_work["reminds"][:4])
-        more = len(open_work["reminds"]) - 4
-        parts.append(
-            f"{len(open_work['reminds'])} pending reminder(s): {shown}"
-            + (f" +{more}" if more > 0 else ""))
-    return ("catch-up review of still-open work: " + "; ".join(parts)
-            if parts else "catch-up review: nothing still open")
+    return CATCH_UP_PREFIX + json.dumps(open_work, sort_keys=True)
