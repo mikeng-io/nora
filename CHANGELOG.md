@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.13.19](https://github.com/mikeng-io/nora/compare/v7.13.18...v7.13.19) (2026-11-02)
+
+
+### Maintenance
+
+* **assets:** anchor Mini Nora cinematic social artwork ([3b9f6de](https://github.com/mikeng-io/nora/commit/3b9f6dee58a6d02ce47a9664614e6061c98dcde2))
+
 ## [7.13.18](https://github.com/mikeng-io/nora/compare/v7.13.17...v7.13.18) (2026-11-02)
 
 
