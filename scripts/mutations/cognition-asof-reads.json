@@ -51,17 +51,17 @@
  {
   "name": "file_fetch reads a shared file's CURRENT content in a replay (unreconstructible private content presented as-of)",
   "file": "nora/agent/comprehend_tools.py",
-  "old": "    \"file_fetch\": \"This reads a file's content as it stands now — a shared \"\n                  \"document's body is whatever it says at fetch time, and \"\n                  \"what it said at this time cannot be read back.\",\n",
+  "old": "    \"file_fetch\": \"This reads a file's content as it stands now \u2014 a shared \"\n                  \"document's body is whatever it says at fetch time, and \"\n                  \"what it said at this time cannot be read back.\",\n",
   "new": "",
   "target": "tests/unit/test_historical_read_guard.py::test_every_unavailable_name_is_a_real_read_tool tests/unit/test_historical_read_guard.py::test_a_current_head_read_answers_unavailable_and_the_inner_tool_never_runs"
  },
  {
   "name": "the transcript rows a read showed never reach evidence custody (a proposal can cite nothing they contained)",
   "file": "nora/agent/tools.py",
-  "old": "            source_events=this_events,\n        )\n        if on_rows is not None:\n            on_rows(rows)\n",
-  "new": "            source_events=this_events,\n        )\n",
+  "old": "    if on_rows is not None:\n        on_rows([replace(row, body=item[\"body\"])\n                 for row, item in zip(rows, out, strict=True)])\n",
+  "new": "",
   "target": "tests/infra/test_a_cognition_sessions_read_tools_write_nothing.py::test_a_bound_clock_reads_the_record_as_it_then_stood tests/unit/test_cognition_session_runner.py::test_rows_a_read_shows_become_the_evidence_a_proposal_may_cite",
-  "note": "The real native transcript call must hand the bounded rows to on_rows; the SQL test observes that callback before the session-boundary proposal test checks its consumer."
+  "comment": "The real native transcript call must hand the bounded rows to on_rows; the SQL test observes that callback before the session-boundary proposal test checks its consumer."
  },
  {
   "name": "the status-free success envelope is kept on FAILED reads too (a failed read is kept as fetched rows)",
@@ -90,5 +90,19 @@
   "old": "        _state, tools, system_prompt, prompt = await self._session_input(\n            unit=unit, view=view, situation=situation, session_id=session_id,\n            wake_id=0, now_ms=now_ms, doctrine_text=doctrine_text,\n            skill_text=skill_text, grounding=Grounding(),\n        )",
   "new": "        state = _RunState(\n            session_id=session_id, wake_id=0, unit=unit, now_ms=now_ms,\n            items_by_index={0: item},\n            rooms={_room_key(item.room): (item.room.platform, item.room.conversation_id)},\n        )\n        tools = await self._build_tools(unit=unit, state=state, now_ms=now_ms)\n        system_prompt = doctrine_text + skill_text\n        prompt = render_agenda(\n            [item], reads_note=state.reads_note, now_ms=now_ms,\n            last_session_ms=None, tz=self._tz, budget=self._render_budget,\n        )",
   "target": "tests/unit/test_cognition_session_runner.py::test_probe_prepares_memory_and_uses_the_wakes_instruction"
+ },
+ {
+  "name": "the native Instagram person alias cannot bypass Cognition private-person screening",
+  "file": "nora/agent/comprehend_tools.py",
+  "old": "\"instagram_read\": (\"person\", \"handle\", \"link\", \"url\"),",
+  "new": "\"instagram_read\": (\"handle\", \"link\", \"url\"),",
+  "target": "tests/unit/test_instagram_read_tool.py::test_cognition_screens_native_person_alias_before_profile_dispatch"
+ },
+ {
+  "name": "citation custody keeps the renderer body instead of the raw file link",
+  "file": "nora/agent/tools.py",
+  "old": "replace(row, body=item[\"body\"])",
+  "new": "replace(row, body=row.body)",
+  "target": "tests/unit/test_cognition_session_runner.py::test_native_transcript_rendered_file_text_is_the_proposals_evidence tests/infra/test_a_cognition_sessions_read_tools_write_nothing.py::test_native_citation_rows_match_the_displayed_file_text"
  }
 ]

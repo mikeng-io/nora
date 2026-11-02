@@ -88,7 +88,7 @@ SCREENED_ARGS: Mapping[str, tuple[str, ...]] = MappingProxyType({
     "place_info": ("name", "address"),
     "media_fetch": ("url", "question"),
     "file_fetch": ("link", "url"),
-    "instagram_read": ("handle", "link", "url"),
+    "instagram_read": ("person", "handle", "link", "url"),
     "instagram_search": ("query",),
     "x_read": ("handle", "link", "url"),
     "x_search": ("query",),

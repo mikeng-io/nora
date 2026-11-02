@@ -77,8 +77,12 @@ class _Store:
                           quoted_ts=1000),
         ]
 
-    async def recent(self, *, conversation_id: str, limit: int):
+    async def recent(self, *, conversation_id: str, limit: int, as_of_ms=None):
         return self.rows[-limit:]
+
+    async def recent_before(self, *, conversation_id, before_ts, limit, as_of_ms=None):
+        bound = min(before_ts, as_of_ms + 1) if as_of_ms is not None else before_ts
+        return [row for row in self.rows if row.ts < bound][-limit:] if limit > 0 else []
 
 
 # `transit` is not what these tests are about — see `UNREACHABLE_TRANSIT` in

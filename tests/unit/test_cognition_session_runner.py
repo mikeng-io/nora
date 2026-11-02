@@ -1177,3 +1177,68 @@ async def test_identifier_graph_node_is_dropped_from_wake_input():
     memory.content_checks = False
     inspection = await runner.inspect(view=view, now_ms=NOW)
     assert identifier in inspection["agenda"]
+
+
+async def test_native_transcript_rendered_file_text_is_the_proposals_evidence():
+    from nora.agent.room import Room as ToolRoom
+    from nora.agent.tools import build_tool_specs
+    from nora.domain.models import NormalizedMessage
+    from nora.obs.metrics import Metrics
+    from nora.persons import Persons
+    from nora.testing import FakeMemoryStore, FakeRecordStore, FakeRosterSource
+    from tests.fakes import SinkSender
+
+    raw = "dinner plan https://docs.google.com/document/d/generatedfile123/edit"
+    store = FakeRecordStore()
+    message_id = await store.append(message=NormalizedMessage(
+        "signal", "home-room", "group", "generated-sender", "Ada", NOW - 1, raw, {}),
+        person_id="p_ada")
+    persons = Persons(by_person={}, index={})
+    room = ToolRoom(platform="signal", conversation_id="home-room", persons=persons,
+                    roster_source=FakeRosterSource())
+    memory = wake_memory()
+    from nora.domain.memory_graph import Entity, pointer_entity
+
+    person = pointer_entity("person", "unit-1", "p_ada", "Ada")
+    event = Entity("unit-1:event:generated-gala", "event", "unit-1", "generated gala")
+    memory.graph.entities.update({person.id: person, event.id: event})
+    responses = []
+
+    def reads(unit, rooms, **kw):
+        specs = build_tool_specs(
+            store=store, conversation_id="home-room", conversation_type="group",
+            persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+            metrics=Metrics(), room=room, transit_source=None,
+            clock=lambda: datetime.fromtimestamp(NOW / 1000, UTC),
+            on_rows=kw["on_rows"])
+        native = next(spec.call for spec in specs if spec.name == "load_transcript")
+
+        async def load_transcript():
+            answer = await native()
+            responses.append(answer)
+            return answer
+        return [load_transcript]
+
+    async def behave(by, tools):
+        await by["load_transcript"]()
+        shown = responses[-1]["messages"][0]["body"]
+        assert shown != raw and "docs.google.com" not in shown
+        for span, relation_id in ((shown, "shown-file"), (raw, "raw-file")):
+            payload = proposal()
+            payload["relations"] = [{
+                "id": relation_id, "src": list(person.key), "rel": "likes",
+                "dst": list(event.key), "persons": ["p_ada"]}]
+            payload["evidence"] = [{"source": ["message", str(message_id)],
+                                    "relation_id": relation_id, "span": span}]
+            answer = await by["memory_propose"](**payload)
+            responses.append(answer)
+
+    from tests.unit.cognition_rig import Script
+
+    runner, _, _ = _runner(
+        agent_runner=Script(behave), memory=memory, read_tools_for=reads,
+        read_only_tools=frozenset({"load_transcript"}))
+    await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
+        last_activity_ms=None, last_wake=None), now_ms=NOW)
+    assert responses[1]["admitted"] == [0], responses[1]
+    assert any(r["reason"] == "span_not_in_source" for r in responses[2]["refused"])

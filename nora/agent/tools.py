@@ -3020,6 +3020,7 @@ def _target_item(t: Any, *, now: datetime) -> dict:
 def _transcript_messages(
     rows: Sequence[TranscriptRow], *, now: datetime, with_ids: bool = False,
     source_events: Sequence[Any] | None = None,
+    on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
 ) -> tuple[list[dict], int]:
     """Stored rows as the model reads them in a tool result, and how many were
     threaded. ONE renderer for `load_transcript` and `room_read`: two tools
@@ -3093,6 +3094,9 @@ def _transcript_messages(
             item["reply_to"] = _speaker(parent)
             threaded += 1
         out.append(item)
+    if on_rows is not None:
+        on_rows([replace(row, body=item["body"])
+                 for row, item in zip(rows, out, strict=True)])
     # Typed source events of the same window, interleaved at their own
     # time — the same chronological merge the prompt's transcript does.
     # A message the source pinned an event to is named by its own item
@@ -5532,7 +5536,10 @@ def build_tool_specs(
                     "status": "unavailable", "messages": [],
                     "note": "The thread could not be read.",
                 })
-            return _memory_result({"status": "unavailable", "messages": []})
+            return _memory_result({
+                "status": "unavailable", "messages": [],
+                "note": "The conversation could not be read; this does not mean it was empty.",
+            })
         # A renderer of these rows beside the prefill's, under DEC-80.
         # `store.recent` returns rows straight from the
         # audit table, so `person_name` is unset on every one of them unless it is
@@ -5574,10 +5581,8 @@ def build_tool_specs(
                 this_events, this_events_more = found
         out, threaded = _transcript_messages(
             rows, now=now, with_ids=on_rows is not None,
-            source_events=this_events,
+            source_events=this_events, on_rows=on_rows,
         )
-        if on_rows is not None:
-            on_rows(rows)
         # `rows=0` is an ordinary `ok` — a conversation with nothing older in
         # it — so the count is the discriminator, not the status. Bodies are
         # never logged: this is the group's transcript.
@@ -5900,10 +5905,8 @@ def build_tool_specs(
                 target_events, target_events_more = found
         out, threaded = _transcript_messages(
             rows, now=now, with_ids=on_rows is not None,
-            source_events=target_events,
+            source_events=target_events, on_rows=on_rows,
         )
-        if on_rows is not None:
-            on_rows(rows)
         # Bodies are never logged: this is a group's transcript.
         _record(metrics, "room_read", "ok", limit=asked, rows=len(out),
                 threaded=threaded, before=before_ts is not None, older=older)
@@ -6368,11 +6371,6 @@ def build_tool_specs(
         ]
         if media_join is not None:
             rows = list(await media_join.enrich(rows, path="load_transcript"))
-        if on_rows is not None:
-            # The rows the result SHOWS are the evidence a session may cite:
-            # a deleted hit's words are withheld from it (`deleted` reads in
-            # their place), so a withheld body is never shown as fetched.
-            on_rows([r for h, r in zip(hits, rows, strict=True) if not h.deleted])
         out = _record_messages(hits, rows, rooms=rooms, near=near, now=now)
         notes = []
         if more:
@@ -6463,6 +6461,7 @@ def build_tool_specs(
             record_requirement(DisclosureRequirement(origin, (message_lineage(origin),)))
             item = _transcript_messages(
                 [row], now=now, with_ids=dream_adaptor == COGNITION_ADAPTOR,
+                on_rows=on_rows if not hit.deleted else None,
             )[0][0]
             item = {"room": names.get((hit.platform, hit.conversation_id), ""), **item}
             if hit.reactions:

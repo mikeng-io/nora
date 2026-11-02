@@ -185,7 +185,8 @@ async def _say(engine, *, platform: str, room: str, person: str, sender: str, ts
 class World:
     """The real registry and tool source over real stores, and the doubles."""
 
-    def __init__(self, engine, tmp_path, *, graph: bool = False) -> None:
+    def __init__(self, engine, tmp_path, *, graph: bool = False,
+                 room_directory: bool = False) -> None:
         (tmp_path / "policy.toml").write_text(_POLICY)
         (tmp_path / "identity.toml").write_text(_IDENTITY)
         self.policy = load_policy(tmp_path / "policy.toml")
@@ -210,7 +211,10 @@ class World:
             circle_id="c1", person_ids=frozenset({"p1", "p2"}),
             people=tuple(self.persons.by_person[p] for p in ("p1", "p2")),
         )
+        from nora.engagement.self_presence import PresenceReader
+
         registry = ToolRegistry(
+            rooms=PresenceReader(policy=self.policy, adapters={}) if room_directory else None,
             content_checks=not graph,
             record=SqlRecordQuery(engine),
             # The two Dreamer-only reads: a `rollup_read` that started a build or a
@@ -664,3 +668,32 @@ async def test_a_bound_clock_reads_the_record_as_it_then_stood(engine, world):
     live_dinner = next(
         m for m in now_dinner["messages"] if m.get("body") == "dinner at nine")
     assert live_dinner.get("reactions")            # the live fold carries it
+
+
+@pytest.mark.parametrize("name,args", [
+    ("load_transcript", {}),
+    ("room_read", {"room": "Room B"}),
+    ("record_query", {"start": "2026-01-01", "end": "2030-12-31"}),
+])
+async def test_native_citation_rows_match_the_displayed_file_text(
+    engine, world, tmp_path, name, args,
+):
+    world = World(engine, tmp_path, graph="memory_search" in world.surface.wired,
+                  room_directory=True)
+    raw = "dinner plan https://docs.google.com/document/d/generatedfile123/edit"
+    ids = []
+    for room, platform, sender in (("ROOM-A", "signal", ADA), ("ROOM-B", "discord", "1001")):
+        ids.append(await _say(engine, platform=platform, room=room, person="p1",
+                              sender=sender, ts=NOW_MS - 1, body=raw))
+    shown = []
+    tools = read_tools_for(world.source, names=frozenset({name}))(
+        "u1", [A, B], clock=lambda: datetime.fromtimestamp(NOW_MS / 1000, UTC),
+        on_rows=shown.extend)
+    answer = await _call(next(t for t in tools if t.tool_name == name),
+                         agenda_room="signal:ROOM-A", **args)
+    bodies = {m["body"] for m in answer["messages"] if m.get("body")}
+    assert bodies and raw not in bodies
+    assert all("docs.google.com" not in body for body in bodies)
+    assert shown and {row.body for row in shown} == bodies
+    file_rows = [row for row in shown if row.id in ids]
+    assert file_rows and all(row.person_id == "p1" for row in file_rows)

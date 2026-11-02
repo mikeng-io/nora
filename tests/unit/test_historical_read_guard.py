@@ -179,7 +179,7 @@ async def test_the_read_window_bounds_the_store_at_the_callers_instant():
     `as_of_ms` the window is `recent_before(T+1)` and the projection bound
     rides with it, so the store folds edits/reactions/deletes as-of too."""
     store = _RecordingStore()
-    t = 1_401_624_000_000  # 2014-06-01 20:00:00 HKT, epoch ms
+    t = 1_401_624_000_000  # evidence instant, epoch ms
     await _read_window(store, conversation_id="c", asked=5, before_ts=None,
                        as_of_ms=t)
     kind, call = store.calls[-1]

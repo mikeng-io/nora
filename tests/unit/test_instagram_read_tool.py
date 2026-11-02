@@ -644,3 +644,31 @@ def test_the_native_tool_row_is_complete_read_only_and_not_hot():
     assert row.source_tier == "web"
     assert (row.side_effect_state, row.idempotency, row.retry) == ("none", "idempotent", "safe")
     assert "instagram_read" not in HOT_TOOLS
+
+
+async def test_cognition_screens_native_person_alias_before_profile_dispatch(world):
+    from nora.agent.comprehend_tools import ComprehendRead, LookupState
+    from nora.agent.fetch_watch import GraphFetched, _result_of
+    from nora.agent.ports import ToolSpec, adapt
+    from nora.testing.comprehend import InMemoryComprehendRecords
+
+    fake, read = world(dream_adaptor="cognition")
+    state = LookupState(GraphFetched(), "generated-unit", 1,
+                        InMemoryComprehendRecords(), Metrics(), ("Quinn", "Q-bear"))
+    tool = ComprehendRead(adapt(ToolSpec(
+        name="instagram_read", description="", schema={}, call=read)), state)
+
+    async def call(person):
+        events = [e async for e in tool.stream(
+            {"toolUseId": "profile", "name": "instagram_read",
+             "input": {"what": "profile", "person": person}}, {})]
+        return _result_of(events[-1])
+
+    for private in ("Quinn", "Q-bear"):
+        answer = await call(private)
+        assert answer["status"] == "refused" and answer["reason"] == "private_person"
+    assert fake.calls == []
+    # A subject outside this private-name set still uses the real native route.
+    answer = await call("River")
+    assert answer["status"] == "ok"
+    assert fake.calls == [("GET", "/accounts/10000004")]

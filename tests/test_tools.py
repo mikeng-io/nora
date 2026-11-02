@@ -500,6 +500,22 @@ async def test_load_transcript_names_nora_the_same_way_in_reply_to_as_in_sender(
     assert rows[-1]["reply_to"] == "Nora"
 
 
+def _watch_transcript_limits(store, monkeypatch):
+    seen = []
+    recent, before = store.recent, store.recent_before
+
+    async def spy(*, conversation_id, limit, before_ts=None, as_of_ms=None):
+        seen.append(limit)
+        if before_ts is None:
+            return await recent(conversation_id=conversation_id, limit=limit, as_of_ms=as_of_ms)
+        return await before(conversation_id=conversation_id, before_ts=before_ts,
+                            limit=limit, as_of_ms=as_of_ms)
+
+    monkeypatch.setattr(store, "recent", spy)
+    monkeypatch.setattr(store, "recent_before", spy)
+    return seen
+
+
 async def test_load_transcript_clamps_a_hostile_limit(wiring, monkeypatch):
     """`limit` is a model-supplied argument. SQLite renders `LIMIT -1`
     as unbounded rather than zero — a full-conversation dump into context — and
@@ -508,14 +524,7 @@ async def test_load_transcript_clamps_a_hostile_limit(wiring, monkeypatch):
     asserts what `load_transcript` actually sends downstream — independent of
     whatever the store itself does with a non-positive limit — so it fails if
     the tool-level clamp regresses even though the store has its own guard."""
-    seen: list[int] = []
-    real_recent = wiring["store"].recent
-
-    async def spy(*, conversation_id, limit):
-        seen.append(limit)
-        return await real_recent(conversation_id=conversation_id, limit=limit)
-
-    monkeypatch.setattr(wiring["store"], "recent", spy)
+    seen = _watch_transcript_limits(wiring["store"], monkeypatch)
     for hostile in (-1, 0):
         rows = (await _call(wiring["tools"]["load_transcript"], limit=hostile))["messages"]
         assert len(rows) <= 1
@@ -534,14 +543,7 @@ async def test_load_transcript_clamps_the_top_end_to_the_declared_ceiling(wiring
     reaches the store, not what the tool returns, so it fails even on a
     conversation too short to notice the difference.
     """
-    seen: list[int] = []
-    real_recent = wiring["store"].recent
-
-    async def spy(*, conversation_id, limit):
-        seen.append(limit)
-        return await real_recent(conversation_id=conversation_id, limit=limit)
-
-    monkeypatch.setattr(wiring["store"], "recent", spy)
+    seen = _watch_transcript_limits(wiring["store"], monkeypatch)
     for greedy in (LOAD_TRANSCRIPT_MAX + 1, 200, 10_000):
         await _call(wiring["tools"]["load_transcript"], limit=greedy)
     # The ceiling plus the ONE probe row that says whether older rows exist
@@ -559,14 +561,7 @@ async def test_load_transcript_defaults_to_less_than_the_ceiling(wiring, monkeyp
     the prefill already gave it, not for the whole room — so the default is
     not the maximum. Strands fills an omitted argument from the signature's
     own default, so this is what an unqualified call really costs."""
-    seen: list[int] = []
-    real_recent = wiring["store"].recent
-
-    async def spy(*, conversation_id, limit):
-        seen.append(limit)
-        return await real_recent(conversation_id=conversation_id, limit=limit)
-
-    monkeypatch.setattr(wiring["store"], "recent", spy)
+    seen = _watch_transcript_limits(wiring["store"], monkeypatch)
     await _call(wiring["tools"]["load_transcript"])
     assert seen == [LOAD_TRANSCRIPT_DEFAULT + 1]   # plus the older-rows probe
     assert seen == [26]                       # the literal, for the same reason as above
@@ -740,8 +735,9 @@ async def test_a_tool_never_raises_into_the_agent_loop(wiring, monkeypatch):
         raise RuntimeError("db down")
 
     monkeypatch.setattr(wiring["store"], "recent", boom)
+    monkeypatch.setattr(wiring["store"], "recent_before", boom)
     dead = await _call(wiring["tools"]["load_transcript"], limit=40)
-    assert dead["messages"] == []
+    assert dead["messages"] == [] and dead["status"] == "unavailable"
 
 
 # ---- every tool call is counted, by outcome ---------------------------------
@@ -788,6 +784,7 @@ async def test_a_tool_that_could_not_answer_is_counted_apart_from_one_that_did(
 
     await _call(wiring["tools"]["load_transcript"], limit=40)
     monkeypatch.setattr(wiring["store"], "recent", boom)
+    monkeypatch.setattr(wiring["store"], "recent_before", boom)
     await _call(wiring["tools"]["load_transcript"], limit=40)
     assert metrics.get("nora_tool_calls_total", tool="load_transcript", status="ok") == 1
     assert metrics.get("nora_tool_calls_total", tool="load_transcript", status="unavailable") == 1
