@@ -252,8 +252,8 @@ wait is added here.
 
 **Source (merged, read back).** Two repairs landed 2026-11-01. #490
 (`ee58149`): the six Register create/revise verbs persist the
-session-shown explicit associations, an `explicit: []` or omitted revise
-preserves existing links, and retry re-links the same row by exact act key
+session-shown explicit associations; explicit `associations: []` clears
+selected links, while an omitted `associations` on revise preserves them, and retry re-links the same row by exact act key
 with the receipt in the same transaction — the F3 mechanism of
 [27 §17](27-the-memory-is-a-graph.md#17-implementation-findings-and-longitudinal-understanding-2026-10-30).
 Its full gate passed (20,426 tests) and its own 14-mutation table was fully
@@ -280,8 +280,8 @@ start or manual deployment is claimed or performed.
 **Evaluation (execution shown, capability unmeasured).** One bounded
 paired run — BEFORE `c537267a`, AFTER `78e9f4a`, n=1, an identical frozen
 four-stage trajectory with one sandbox per arm, both exit 0 — establishes
-execution with `SqlProfileStore` wired in AFTER, nothing more. Profile
-counts and revisions were unchanged in both arms. The `tool_names_seen`
+execution with `SqlProfileStore` wired in AFTER, nothing more. Profile-line
+and non-current-line totals were unchanged in both arms. The `tool_names_seen`
 extractor assumed a trace-message shape and swallowed capture errors, so
 its empty arrays cannot distinguish "writer never attempted" from
 "refused" or "not chosen"; no preserved trajectory shows a later answer
@@ -291,11 +291,11 @@ managed edge or support is not a supported Register control. The token
 counter covered only the first replay, so whole-trajectory cost is
 unknown. These are missing instruments — acceptance is UNAVAILABLE/ERROR,
 not a code or model FAIL and not a semantic PASS — and n=1 is directional
-only. The historical second judge's (`kmc/k3-256k`) quota error is no
-longer the blocker: the operator confirms the judge route already includes
-GLM-5.3; its effective identity and availability are read back at the
-next authorized run. No independent cross-vendor quality acceptance is
-established yet.
+only. The historical run's second judge (`kmc/k3-256k`) quota-errored.
+The operator now confirms the judge route includes GLM-5.3, so adding it
+is no longer pending work; effective identity and availability still need
+readback at the next authorized run. No independent cross-vendor quality
+acceptance is established yet.
 
 **Bounded next action (offline, unspent).** Reuse the existing
 `evals.backbone` capture seams (`_prefill_capture`, `_tools_called`,
