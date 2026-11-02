@@ -14,12 +14,6 @@ branch's worktree.
 
 ## 0. Pick the artifact
 
-An operator agreeing to a concrete fix authorizes continuing that work. Do not
-turn it into deferred work by filing an issue and stopping. Implement small,
-coherent changes directly; delegation follows `ORCHESTRATION.md`, not this
-skill. Record the result in the PR. An issue is only for actionable work that
-is explicitly deferred, never a substitute for delivery.
-
 | what you have | what to write |
 |---|---|
 | a defect you can fix in this session | nothing new: fix it; the PR is the record |
@@ -30,7 +24,7 @@ is explicitly deferred, never a substitute for delivery.
 
 ## 1. Filing an issue
 
-1. **Can you fix it now within the agreed slice?** Then fix it (gate, then `nora-prove-fix`). File only
+1. **Can you fix it now within the agreed slice?** Then implement it directly, validate by impact (`nora-land`), and use `nora-prove-fix` for code fixes. Operator agreement means continue; an issue is not delivery. File only
    what you have decided not to fix. A residue too small to act on goes in the
    PR body's limitations, not a new issue.
 2. **Look for a home first.**

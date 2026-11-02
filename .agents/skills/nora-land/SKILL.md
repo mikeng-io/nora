@@ -7,14 +7,10 @@ description: Lands a Nora change from first edit to merged master, covering a ne
 
 Worktree → impact-based validation → PR → applicable review → merge → read-back. Rules: `CONTRIBUTING.md`, `AGENTS.md`.
 Read logs/state after each step, not just its exit code; proceed unless blocked or missing an operator-only fact.
-Do small, coherent changes directly in the operator-facing session, including
-documents, agent skills and bounded edits across a few files. Delegate substantial
-implementation only when capacity/capability benefits outweigh briefing and
-context loss, or the operator asks; do not delegate merely because this skill
-uses builder/orchestrator roles. Independent review is selected separately by
-risk under `ORCHESTRATION.md`. For delegated work only, builders run named checks
-(1–2), commit (4–5), push/open PR (6) and STOP; the parent owns final validation
-(3), review, merge and read-back (7–9).
+Implement small changes directly; delegate substantial work only when the benefit
+outweighs context loss, or the operator asks (`ORCHESTRATION.md`). Review follows
+risk separately. Delegated builders run named checks, commit/push/open PR and
+stop; the parent owns final validation, review, merge and read-back.
 
 ```bash
 TYPE=<commit-type>; SLUG=<kebab-slug>; WT=<new-worktree-path>        # WT outside every checkout
@@ -40,11 +36,9 @@ git status -sb; git config core.hooksPath
 
 Check: `## <type>/<slug>...origin/master`, no ahead/behind; hooksPath ends `.githooks` (empty: `make hooks`).
 
-- Cut from `origin/master` after a fetch, never local `master`: it lags, and a
-  `reset --soft` onto the real tip commits a revert of the gap (2026-09-17,
-  #315). After a squash, `git show --stat HEAD` lists only files you touched.
-- Never edit in the primary checkout; one committing agent per worktree (an `--amend` landed on another's commit, 2026-09-22).
-- Never `cd "$WT" 2>/dev/null && ...`: a stale path runs in the old directory.
+- Cut from fetched `origin/master`, never stale local `master`; inspect the final diff.
+- One committing agent per worktree; never edit the primary checkout.
+- Never hide a failed `cd`; stop rather than run in the wrong directory.
 
 ## 2. Iterate
 
@@ -88,18 +82,14 @@ CI and `make full-gate` are always fresh, full-gate serial/unconditional.
 
 PASS: `GATE_RC=0`, then either fresh checks/reader results (three static steps for
 code), or the runner's validated matching success receipt. A changed candidate,
-base or execution context reruns acceptance. Receipt refreshes rerun nothing.
+base or execution context requires impact reassessment. Receipt refreshes rerun nothing.
 
 - Never `make gate | tail`: the rc is tail's (2026-09-22, merged a red master).
 - In the background read `$LOG/gate.rc`, not the notice (last command's rc).
   Kill only a PID you recorded, never `pkill -f`: it kills other sessions' gates.
 
-**Docs-only:** stage new docs if a selected reference check needs tracked files.
-Use only checks that measure the changed property; `make gate` document readers
-are optional, not a requirement for every wording edit. Runtime
-Markdown under `nora/`, `evals/`, `scripts/` and test data is not ordinary docs;
-under `tests/` only README guides outside fixtures use doc readers.
-An unmapped executable/shared-helper change still requires impact investigation.
+Runtime Markdown under `nora/`, `evals/`, `scripts/` and fixtures follows behavior
+risk. Stage new docs only if selected reference checks need tracked files.
 
 ## 4. Commit
 
@@ -120,14 +110,10 @@ git log -1 --format='%h %s'
 
 ## 5. The subject is the release note
 
-Every ordinary master push prepares patch/minor from complete reachability;
-only generated metadata auto-merges on its exact head. Application PRs retain explicit merges.
-
-- Subjects are changelog lines; hidden internal types still trigger PATCH.
-- PATCH includes existing-capability additions, even `feat`. A complete new product
-  capability or new/deprecated supported API/CLI gets footer `Release-Bump: minor`.
-- `!` / `BREAKING CHANGE:` stops automatic version writes. Major requires owner
-  dispatch at an exact full current SHA; no daily evaluator or release fragments.
+Follow `nora-release`: ordinary master pushes automatically prepare patch/minor;
+only generated metadata auto-merges. Application PRs retain explicit merges.
+PATCH is default; a complete new capability/supported API uses `Release-Bump: minor`.
+Breaking markers stop automatic writes; major requires owner dispatch at an exact SHA.
 
 ## 6. Merged tree, push, PR
 
@@ -144,12 +130,8 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
   focused checks run and the final gate as the orchestrator's, pending.
 - A bare `git merge origin/master` writes a default subject the hook refuses.
 - Title: append `(#N, DEC-M)` only when it closes an issue or lands a decision.
-- Body: the template headings exactly, in order: `What`, `Also`, `Gate on the
-  merged tree`, `Authored by`, `Closes`; delete what does not apply (`What`,
-  `Gate on the merged tree` and `Authored by` are required). `Authored by` names
-  human or agent, the tool and model for an agent, and who reviewed it. Labels and
-  the assignee are set by the PR triage workflow; do not set them by hand. Never
-  `Summary` or `Test plan`, both retired (still in 11 of the last 140 PRs).
+- Follow `.github/pull_request_template.md`; keep required headings and record
+  author/tool/model, actual review and validation. Triage owns labels/assignee.
 - Gate section: the real outcome (GATE_RC, pass count, origin/master sha merged
   in), the review level and, after step 7, the triage line; a pre-existing
   unrelated failure is named with its issue number. After the LAST push refresh
@@ -169,7 +151,7 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
   claims, evidence and prior findings. Check actual coverage, not just APPROVE.
 - Triage under the policy: bounded repair for defects, scoping for invalid intent;
   advice is not scope. Prove code fixes with `nora-prove-fix`, without unrelated repair.
-- Repair: focused checks, commit, gate, push and refresh the PR. No BLOCKER ends
+- Repair: validate the delta by impact, commit, push and refresh the PR. No BLOCKER ends
   review; the policy owns the two-round limit.
 
 ## 8. Merge: a real merge commit, authored message
@@ -194,10 +176,8 @@ gh pr merge <N> --merge --match-head-commit "$(git rev-parse HEAD)" \
 - Bring master in when conflicts or repository branch rules require it, push and
   read required hosted checks. Never bypass those rules. Do not reserve a local
   test slot merely to merge; ready PRs do not wait behind unrelated local gates.
-- Without `--subject`, `gh pr merge --merge` writes GitHub's default `Merge
-  pull request #N from ...` (99 of 137 PRs #321–#478). No hook sees a server-side
-  merge: the subject is `merge: ` plus the arc, the body says what the branch
-  set out to fix, what was measured, what shipped.
+- Author the merge subject (`merge: <the arc> (#N)`) and body; GitHub's default
+  subject does not follow this repository's convention.
 - `--merge` only, never `--squash` or `--rebase`.
 - Stacked PR: `gh pr edit <child> --base master` BEFORE merging its base with
   `--delete-branch`, or the child is closed (2026-09-23, #411 closed #413).
