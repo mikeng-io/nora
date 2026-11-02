@@ -1,0 +1,44 @@
+[
+  {
+    "name": "historical connected payload withholds current heads",
+    "file": "nora/app/cognition_memory.py",
+    "old": "            graph = historical_graph(graph, combined.work.as_of)",
+    "new": "            graph = graph",
+    "target": "tests/unit/test_unified_backfill_boundaries.py::test_historical_proposal_result_uses_safe_graph_payload"
+  },
+  {
+    "name": "catch-up reminders stay inside the target unit",
+    "file": "nora/app/unified_backfill.py",
+    "old": "            if (reminder.platform, reminder.conversation_id) in unit_rooms",
+    "new": "            if True",
+    "target": "tests/unit/test_unified_backfill_boundaries.py::test_catch_up_preserves_reminder_unit_scope_and_selected_graph_anchors"
+  },
+  {
+    "name": "every input needs exact completion",
+    "file": "nora/app/unified_backfill.py",
+    "old": "            omitted = {s.id for s in batch} - input_pairs(work, unit).keys()",
+    "new": "            omitted = set()",
+    "target": "tests/unit/test_unified_backfill_boundaries.py::test_omitted_stimulus_never_certifies_completion"
+  },
+  {
+    "name": "one deadline encloses source enumeration",
+    "file": "nora/app/unified_backfill.py",
+    "old": "        async with asyncio.timeout(bounds.max_seconds):",
+    "new": "        async with asyncio.timeout(None):",
+    "target": "tests/unit/test_unified_backfill_boundaries.py::test_run_deadline_encloses_each_phase"
+  },
+  {
+    "name": "completion pointers commit with the union extraction",
+    "file": "nora/infra/sql/comprehend.py",
+    "old": "            for completed in item.snapshot.get(\"completion\", []):",
+    "new": "            for completed in []:",
+    "target": "tests/infra/test_unified_backfill_sql.py::test_multi_item_receipt_covers_each_admitted_work"
+  },
+  {
+    "name": "catch-up selects graph-only plans",
+    "file": "nora/infra/sql/unified_backfill.py",
+    "old": "            for row in relations],",
+    "new": "            for row in []],",
+    "target": "tests/infra/test_unified_backfill_sql.py::test_still_open_selects_graph_only_plan_and_excludes_closed_controls"
+  }
+]

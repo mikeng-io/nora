@@ -101,20 +101,28 @@ def turn_id_for_message(messages: Any = MESSAGES) -> Any:
     )
 
 
-def transcript_select(*, edits_before: int | None = None) -> Any:
+def transcript_select(
+    *, edits_before: int | None = None,
+) -> Any:
     """The columns every transcript read returns, with the newest edit
     folded in. ONE select for `recent`, `since`, `since_including_nora`,
     `record_query` and the snapshot's as-of read, so the fold cannot reach
     one and miss another; `transcript_row` is its mapping.
 
     **`hidden_at IS NULL`** (migration `0075_withdrawal`, step 2c): a message
-    `nora person forget` (removed) hid is excluded from every transcript this select
-    powers — a prompt block, a tool result, `record_query`, and the
-    snapshot's as-of read, which copies the historical row image (`hidden_at`
-    as it stood at T) into the sandbox and then reads it through this same
-    select, so a snapshot before a forget correctly shows the row unhidden."""
+    `nora person forget` (removed) hid is excluded from every transcript this
+    select powers — a prompt block, a tool result, `record_query`, a
+    HISTORICAL session read, and the snapshot's as-of read. Withdrawal is
+    current, never re-readable: a row hidden after the evidence instant a
+    backfill session replays is still hidden — no as-of parameter can make a
+    withdrawn body visible again. The snapshot's as-of read copies the
+    historical row image (`hidden_at` as it stood at T) into the sandbox and
+    then reads it through this same select, so a snapshot before a forget
+    correctly shows the row unhidden; a production read never produces that
+    image."""
     latest = _latest_edit(edits_before=edits_before)
     turn_id = turn_id_for_message()
+    hidden = MESSAGES.c.hidden_at.is_(None)
     return sa.select(
         MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
         MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
@@ -124,9 +132,7 @@ def transcript_select(*, edits_before: int | None = None) -> Any:
         turn_id.label("turn_id"),
         latest.c.ts.label("edit_ts"), latest.c.body.label("edit_body"),
         latest.c.raw_json.label("edit_raw_json"),
-    ).select_from(MESSAGES.outerjoin(latest, sa.true())).where(
-        MESSAGES.c.hidden_at.is_(None),
-    )
+    ).select_from(MESSAGES.outerjoin(latest, sa.true())).where(hidden)
 
 
 def _edit_mentions_json(message: NormalizedMessage) -> str | None:
@@ -147,7 +153,7 @@ REACTION_STATES_MAX = 512
 
 
 async def reaction_states(
-    conn: Any, message_ids: Sequence[int],
+    conn: Any, message_ids: Sequence[int], *, before_ms: int | None = None,
 ) -> dict[int, RowReactions]:
     """The reactions recorded against these messages, folded to each
     target's current state — one bounded statement for the whole window,
@@ -179,14 +185,24 @@ async def reaction_states(
     counts with older provenance or invalidate a cap's completeness
     check. A target with no recorded rows — on either table — stays
     absent, so `reactions=None` keeps meaning "nothing recorded".
-    """
+
+    `before_ms` bounds the fold by each row's own event time — the
+    as-of read a historical session makes (`record_query.by_refs`'s
+    `as_of_ms`): a reaction recorded later than T simply was not there
+    at T, on either table. Unbounded (None) is every live caller."""
     if not message_ids:
         return {}
     obs = PLATFORM_OBSERVATION
-    in_targets = MESSAGE_REACTION.c.message_id.in_(message_ids)
+    in_targets: sa.ColumnElement[bool] = MESSAGE_REACTION.c.message_id.in_(message_ids)
     in_obs = sa.and_(
         obs.c.kind == "reaction",
         obs.c.target_message_id.in_(message_ids))
+    if before_ms is not None:
+        in_targets = sa.and_(in_targets, MESSAGE_REACTION.c.ts <= before_ms)
+        in_obs = sa.and_(
+            in_obs,
+            sa.func.coalesce(obs.c.occurred_ms, obs.c.received_ms) <= before_ms,
+        )
     meta = (
         sa.select(
             MESSAGE_REACTION.c.message_id,

@@ -82,6 +82,7 @@ RefusalReason = Literal[
     "missing_replacement",
 ]
 Key = tuple[str, str]
+CATCH_UP_PREFIX = "unified-backfill-catch-up:"
 ENTRY = (
     "note",
     "memo",
@@ -321,6 +322,7 @@ class Walk:
     relations: tuple[str, ...] = ()
 
     scope: MemoryScope | None = None
+    known_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if not 0 <= self.depth <= 4 or self.nodes < 1 or self.fan_out < 1:

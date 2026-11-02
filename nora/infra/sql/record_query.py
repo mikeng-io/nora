@@ -149,6 +149,7 @@ class SqlRecordQuery:
 
     async def by_refs(
         self, refs: Sequence[tuple[str, int]], rooms: Sequence[tuple[str, str]],
+        *, as_of_ms: int | None = None,
     ) -> tuple[RecordRefHit, ...]:
         """The messages the `(table, row id)` refs of message stimuli name
         (`messages`, `message_reaction`, `message_delete`), read for the
@@ -161,7 +162,15 @@ class SqlRecordQuery:
         room not listed is never selected), and the withdrawal cascade's hidden
         rows are excluded by the same `transcript_select` every read shares. A
         ref that names nothing readable (hidden, another room, gone) simply has
-        no hit; the caller counts it, it never guesses one."""
+        no hit; the caller counts it, it never guesses one.
+
+        `as_of_ms` reads the rows as they stood at that instant — WITH the
+        historical session's evidence time: the newest edit no later than T,
+        platform deletes recorded later than T not yet applied, reactions
+        later than T absent. `hidden` is a CURRENT withdrawal, never an
+        event-time fold: a hidden row stays out at every instant (see
+        `transcript_select`). None (every live caller) is the current
+        state."""
         if not refs or not rooms:
             return ()
         in_rooms = sa.or_(*(
@@ -198,13 +207,13 @@ class SqlRecordQuery:
             if not message_ids:
                 return ()
             rows = (await conn.execute(
-                transcript_select()
+                transcript_select(edits_before=as_of_ms)
                 .add_columns(MESSAGES.c.platform, MESSAGES.c.conversation_id)
                 .where(in_rooms, MESSAGES.c.id.in_(message_ids))
             )).all()
             ids = [r.id for r in rows]
-            reactions = await reaction_states(conn, ids)
-            gone = await self._deleted(conn, ids)
+            reactions = await reaction_states(conn, ids, before_ms=as_of_ms)
+            gone = await self._deleted(conn, ids, before_ms=as_of_ms)
         hits = {
             int(r.id): RecordHit(
                 platform=r.platform, conversation_id=r.conversation_id,
@@ -231,7 +240,8 @@ class SqlRecordQuery:
         return tuple(out)
 
     async def own_sends(
-        self, rooms: Sequence[tuple[str, str]], *, start_ms: int, end_ms: int, limit: int,
+        self, rooms: Sequence[tuple[str, str]], *, start_ms: int, end_ms: int,
+        limit: int, as_of_ms: int | None = None,
     ) -> tuple[RecordHit, ...]:
         """Nora's OWN delivered sends in these rooms over `[start_ms, end_ms)`,
         oldest first, at most the `limit` newest (D1, DEC-245): what a session's
@@ -239,7 +249,10 @@ class SqlRecordQuery:
         they are answering. Only rows `messages` marks hers and `sent` (a queued
         or failed send never reached the room); the same select as every
         transcript read, so a hidden row is absent and an unsent one is marked
-        deleted. The caller's rooms are the whole boundary, as for `query`."""
+        deleted. The caller's rooms are the whole boundary, as for `query`.
+        `as_of_ms` carries `by_refs`'s same bound into the edit/delete/
+        reaction/hidden folds; `end_ms` (the caller's session instant) still
+        bounds the window itself."""
         if not rooms or limit <= 0 or end_ms <= start_ms:
             return ()
         in_rooms = sa.or_(*(
@@ -247,7 +260,7 @@ class SqlRecordQuery:
             for platform, cid in rooms
         ))
         stmt = (
-            transcript_select()
+            transcript_select(edits_before=as_of_ms)
             .add_columns(MESSAGES.c.platform, MESSAGES.c.conversation_id)
             .where(
                 in_rooms, MESSAGES.c.ts >= start_ms, MESSAGES.c.ts < end_ms,
@@ -259,8 +272,8 @@ class SqlRecordQuery:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
             ids = [r.id for r in rows]
-            reactions = await reaction_states(conn, ids)
-            gone = await self._deleted(conn, ids)
+            reactions = await reaction_states(conn, ids, before_ms=as_of_ms)
+            gone = await self._deleted(conn, ids, before_ms=as_of_ms)
         return tuple(sorted(
             (
                 RecordHit(
@@ -277,12 +290,17 @@ class SqlRecordQuery:
         ))
 
     @staticmethod
-    async def _deleted(conn: Any, ids: list[int]) -> frozenset[int]:
+    async def _deleted(
+        conn: Any, ids: list[int], *, before_ms: int | None = None,
+    ) -> frozenset[int]:
         if not ids:
             return frozenset()
         rows = await conn.execute(
             sa.select(MESSAGE_DELETE.c.message_id)
-            .where(MESSAGE_DELETE.c.message_id.in_(ids))
+            .where(
+                MESSAGE_DELETE.c.message_id.in_(ids),
+                *([] if before_ms is None else [MESSAGE_DELETE.c.ts <= before_ms]),
+            )
             .distinct()
         )
         return frozenset(r[0] for r in rows)

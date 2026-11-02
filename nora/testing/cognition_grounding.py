@@ -15,6 +15,7 @@ from nora.domain.stimuli import Stimulus
 class EmptyGrounder:
     async def __call__(
         self, unit: str, items: Sequence[AgendaItem], pending: Sequence[Stimulus],
+        now_ms: int | None = None,
     ) -> Grounding:
         return Grounding()
 
@@ -23,12 +24,13 @@ class StaticGrounder:
     def __init__(self, grounding: Grounding, *, fail: bool = False) -> None:
         self.grounding = grounding
         self.fail = fail
-        self.calls: list[tuple[str, tuple[AgendaItem, ...], tuple[Stimulus, ...]]] = []
+        self.calls: list[tuple[str, tuple[AgendaItem, ...], tuple[Stimulus, ...], int | None]] = []
 
     async def __call__(
         self, unit: str, items: Sequence[AgendaItem], pending: Sequence[Stimulus],
+        now_ms: int | None = None,
     ) -> Grounding:
-        self.calls.append((unit, tuple(items), tuple(pending)))
+        self.calls.append((unit, tuple(items), tuple(pending), now_ms))
         if self.fail:
             raise RuntimeError("the Record could not be read")
         return self.grounding

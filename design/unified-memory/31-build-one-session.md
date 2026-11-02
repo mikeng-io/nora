@@ -314,3 +314,39 @@ measured bounded journeys and backfill/cost preparation, the switch
 remains the operator's separate decision, with
 [70 §4](70-honcho-cutover.md#4-the-hold--14-days-00-sequence-step-9)'s
 14-day observation and the staged removal after it.
+
+**Backfill driver (PR #525).**
+`nora memory unified-backfill` uses the existing Cognition session; the
+Honcho-feed `memory backfill` command is unchanged. Default is a read-only,
+zero-model census. Apply requires positive finite batch/token/time limits;
+one deadline encloses enumeration, grounding, replay and receipts. Unknown
+model usage is ERROR, never a free run. Historical acts and profile tools
+are withheld. Current withdrawal remains effective at every replay instant.
+
+Completion is bound to each stimulus's rendered source digest, independent
+of agenda grouping, in the existing `comprehend_result` table. The validated
+union extraction and claims are written once; admitted inputs receive
+completion pointers to that same extraction in its transaction. Omitted,
+unadmitted and parked-but-uncovered input is incomplete. Historical failure
+keys are separate from live strikes; no worker queue or migration is added.
+
+Historical graph views separate validity from knowledge availability
+(`Walk.valid_at` / `known_at`). Both initial input and connected tool results
+withhold unversioned entity attributes, source text, evidence and Register
+heads. This is partial historical context, not a claim to reconstruct every
+past state. Media's latest fold remains a stated ceiling. Catch-up runs only
+by explicit command after exact whole-unit completion; it carries scoped
+still-open graph anchors, open ledger/Register work and unit-filtered
+reminders into the ordinary real-clock session. Undated open plans remain
+explicitly undated for that session to assess; no date is inferred.
+
+Two independent review rounds requested engineering repairs. Parent repairs
+were exercised through generated unit/SQL regressions and named revert proofs.
+PR #525 records the revision-bound gate, its seven test/metadata failures,
+their passing repairs and the separately completed serial phase; the original
+failed receipt is retained. Upstream interaction assessment preserves unaffected
+evidence under the operator's impact-based validation ruling. This is source
+engineering evidence, not production backfill, a flag flip or semantic PASS.
+Full semantic proof and public benchmarks are not cutover prerequisites:
+production observes useful recall, staleness and correction under the operator's
+bounded rollout and observation decision.

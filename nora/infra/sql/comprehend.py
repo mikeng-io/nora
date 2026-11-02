@@ -561,61 +561,79 @@ class SqlComprehendRecords:
                 sa.text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
                 {"key": work.id + work.input_hash},
             )
-            if (
+            existing = (await conn.execute(sa.select(RESULT.c.payload).where(
+                RESULT.c.work_id == work.id,
+                RESULT.c.input_hash == work.input_hash,
+                RESULT.c.part == "readings",
+            ).order_by(RESULT.c.id).limit(1))).scalar_one_or_none()
+            if existing is not None:
+                extraction = existing["extraction_id"]
+            else:
+                source_keys = item.snapshot.get("source_keys", {})
+                contents = [
+                    {
+                        **c,
+                        "source_keys": source_keys,
+                        "writer": "cognition:comprehend",
+                        "session_id": session,
+                    }
+                    for c in claims
+                ]
+                extraction = (
+                    await conn.execute(
+                        sa.insert(EXTRACTION)
+                        .values(
+                            unit=work.unit,
+                            platform=item.platform,
+                            origin_room=item.room,
+                            source_ids=[int(s.key[1]) for s in item.sources
+                                        if s.key[0] == "message"],
+                            context_ids=[],
+                            snapshot=item.snapshot,
+                            version=READING_VERSION,
+                            model=self.model_id,
+                            state="done",
+                            built_at=datetime.now(UTC),
+                        )
+                        .returning(EXTRACTION.c.id)
+                    )
+                ).scalar_one()
+                await write_claims(
+                    conn,
+                    extraction_id=extraction,
+                    unit=work.unit,
+                    platform=item.platform,
+                    origin_room=item.room,
+                    claims=contents,
+                )
                 await conn.execute(
-                    sa.select(RESULT.c.id).where(
-                        RESULT.c.work_id == work.id,
-                        RESULT.c.input_hash == work.input_hash,
-                        RESULT.c.part == "readings",
+                    sa.insert(RESULT).values(
+                        work_id=work.id,
+                        input_hash=work.input_hash,
+                        session_id=session,
+                        part="readings",
+                        payload={"extraction_id": extraction},
                     )
                 )
-            ).first():
-                return
-            source_keys = item.snapshot.get("source_keys", {})
-            contents = [
-                {
-                    **c,
-                    "source_keys": source_keys,
-                    "writer": "cognition:comprehend",
-                    "session_id": session,
-                }
-                for c in claims
-            ]
-            extraction = (
-                await conn.execute(
-                    sa.insert(EXTRACTION)
-                    .values(
-                        unit=work.unit,
-                        platform=item.platform,
-                        origin_room=item.room,
-                        source_ids=[int(s.key[1]) for s in item.sources if s.key[0] == "message"],
-                        context_ids=[],
-                        snapshot=item.snapshot,
-                        version=READING_VERSION,
-                        model=self.model_id,
-                        state="done",
-                        built_at=datetime.now(UTC),
-                    )
-                    .returning(EXTRACTION.c.id)
-                )
-            ).scalar_one()
-            await write_claims(
-                conn,
-                extraction_id=extraction,
-                unit=work.unit,
-                platform=item.platform,
-                origin_room=item.room,
-                claims=contents,
-            )
-            await conn.execute(
-                sa.insert(RESULT).values(
-                    work_id=work.id,
-                    input_hash=work.input_hash,
-                    session_id=session,
-                    part="readings",
-                    payload={"extraction_id": extraction},
-                )
-            )
+
+            # Completion points to this ONE validated union extraction. It never
+            # rewrites union claims with a follower's room or source map.
+            for completed in item.snapshot.get("completion", []):
+                markers = [(completed["work_id"], completed["input_hash"], "readings")]
+                markers.extend(
+                    (f"input:{work.unit}:{sid}", digest, "readings_input")
+                    for sid, digest in completed.get("inputs", {}).items())
+                for work_id, digest, part in markers:
+                    exists = (await conn.execute(sa.select(RESULT.c.id).where(
+                        RESULT.c.work_id == work_id,
+                        RESULT.c.input_hash == digest,
+                        RESULT.c.part == part,
+                    ).limit(1))).first()
+                    if exists is None:
+                        await conn.execute(sa.insert(RESULT).values(
+                            work_id=work_id, input_hash=digest,
+                            session_id=session, part=part,
+                            payload={"extraction_id": extraction}))
 
     async def graph_write(self, work: WorkItem, session: int, admission: Admission) -> None:
         # Retain changed endpoints for reshape if its model fails after admission.
