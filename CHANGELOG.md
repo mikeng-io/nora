@@ -1,5 +1,49 @@
 # Changelog
 
+## [7.13.18](https://github.com/mikeng-io/nora/compare/v7.13.17...v7.13.18) (2026-11-02)
+
+
+### Features
+
+* **cognition:** shared cognitive state with resolved act identity and fire-time recheck ([208b3cb](https://github.com/mikeng-io/nora/commit/208b3cbc06f4f34ad3bd3ddafd2856f62ad7df0e))
+
+
+### Bug Fixes
+
+* **cognition:** Engagement decision_conclude producer, successful-record-only materialization, save-before-dispatch ([b0381c6](https://github.com/mikeng-io/nora/commit/b0381c6899da1bb4481aaf1781d3a9596babf0a5))
+* **cognition:** R2 readback repairs — disclosure parity, record-only debrief, unit arbitration, delivered facts, filtered fact read, resolved conclusion sources ([4565517](https://github.com/mikeng-io/nora/commit/45655177b266b2f5658aed073cc972fadea22177))
+* **cognition:** bound current facts and preserve source disclosure ([dbe39bf](https://github.com/mikeng-io/nora/commit/dbe39bfd34d85aec38e6e0e8a1c9632420db4691))
+* **cognition:** decision_conclude sources RESOLVE against the Record, not parse ([beab1ef](https://github.com/mikeng-io/nora/commit/beab1ef04362a57abe31bbf23495113f466bf1d5))
+* **cognition:** delivered_subject contract parity + native source-resolution test + spec source contract ([7972e76](https://github.com/mikeng-io/nora/commit/7972e76346dd51ef9c87cef3be753a33612c642c))
+* **cognition:** findings render source/bears_on; sections gate independently; Record keeps proposal fields + turn handle; unresolved honors item disclosure ([b15b356](https://github.com/mikeng-io/nora/commit/b15b3566c17293b2a85452181d56de51f00a80a3))
+* **cognition:** preserve faithful updates and queued turn release ([6887536](https://github.com/mikeng-io/nora/commit/6887536a16c99b2d9528b57c85b08a877e4a5afa))
+* **cognition:** preserve shared fact identity and rendering evidence ([a56b593](https://github.com/mikeng-io/nora/commit/a56b593c91dee8a59929d5aa136f77fa7a405f71))
+* **cognition:** resolve explicit writes against the canonical unit ([f4771d5](https://github.com/mikeng-io/nora/commit/f4771d54c8a3df4b0e257b74b371bc6f3e9ee1eb))
+* **cognition:** save-before-dispatch ordering + successful-record-only materialization ([b7ee548](https://github.com/mikeng-io/nora/commit/b7ee5481ca556a11423f7351352464cb7a0d0e9e))
+* **cognition:** shared-state R1 verification repairs — delivered-fact reads, cross-room arbitration, real disclosure ([6e7c74d](https://github.com/mikeng-io/nora/commit/6e7c74d8fb7477134504b6f56b793080f11bd87b))
+* **cognition:** shared-state rework for Codex R1 — disclosure, identity, atomic batch, delivered facts ([406801f](https://github.com/mikeng-io/nora/commit/406801f69423090989804588f1cc77b54106e778))
+* **cognition:** state when to record a settled choice ([054e1ec](https://github.com/mikeng-io/nora/commit/054e1ecf9119248cca2f7500d200eee3c120bed0))
+* **cognition:** structural current-fact projection + canonical source gates + keyed delivered check ([1177939](https://github.com/mikeng-io/nora/commit/11779396179ec815698b97adb6177d7213cd2566))
+* **cognition:** turn-Record conclusions, durable unresolved, faithful debrief, in-lock cross-room arbitration ([8fe5f03](https://github.com/mikeng-io/nora/commit/8fe5f031f102912805d03ec017e794bded84dfbe))
+* **cognition:** turn-fact read is a rare-fact projection, not a lifetime scan ([0cf9fb2](https://github.com/mikeng-io/nora/commit/0cf9fb224fb542d36d3e641cc2d06984f02490b1))
+* **cognition:** wired shared-read failure stays record-only; no-change revise is content-idempotent ([9b76302](https://github.com/mikeng-io/nora/commit/9b76302e6337096f345f4b9cef1f6cbbf5f3e261))
+* **db:** chain proactive subject index after bridge revision widening ([2f5e632](https://github.com/mikeng-io/nora/commit/2f5e63261f7e4f1a3f185b02ea0e602d9842acce))
+* **evals:** preserve the implicit Signal transport default ([1ccc329](https://github.com/mikeng-io/nora/commit/1ccc329a3949a2aad26c2580a3800d7c769f345e))
+* **evals:** preserve unit projection checks for withheld entries ([9326f23](https://github.com/mikeng-io/nora/commit/9326f2340f08e64b8361b1dbbd488a4a6675b608))
+* **standing:** cite every retained option line ([95a6231](https://github.com/mikeng-io/nora/commit/95a62311566d72453b3a294450de9337752dde2d))
+* **standing:** consolidate on one standing block updated after each loop ([9786d8a](https://github.com/mikeng-io/nora/commit/9786d8a4af2d9a7aaa09d7adc2421f26d2831dc4))
+* **standing:** declare unit output scope on the updater call ([b36b108](https://github.com/mikeng-io/nora/commit/b36b1083d9693d40903ecde47f298c3b99ed427b))
+* **standing:** finish the unit-fold contract — settled lifecycle, provenance, source gates ([db55c6b](https://github.com/mikeng-io/nora/commit/db55c6b7859083241f62c6c05aa5bb582843fab0))
+* **standing:** ground the updater example in recorded facts ([dd15beb](https://github.com/mikeng-io/nora/commit/dd15bebbfc63f64114c3f7d56e990e4bb2dbd14d))
+* **standing:** preserve batch targets and unresolved source gates ([d94ecf1](https://github.com/mikeng-io/nora/commit/d94ecf15cc880c2a82d47ce6b04872a3b79986e2))
+* **standing:** preserve notebook inventory and current act lifecycle ([0d15b81](https://github.com/mikeng-io/nora/commit/0d15b816335f8f446b00961cf7db7fc71068ca78))
+* **standing:** project pending reminder rows once ([49afa3d](https://github.com/mikeng-io/nora/commit/49afa3d41f2e96e444f67d330ccef6a72e557b0b))
+* **standing:** real contract conformance for the unit fold and record input ([92c17b5](https://github.com/mikeng-io/nora/commit/92c17b5cc6eafcfb09972a35dc3b46c55373ca0b))
+* **standing:** require unit entries from the automatic updater ([f14c3df](https://github.com/mikeng-io/nora/commit/f14c3df68b836eeb5ab6e4964de9400c30b62e7b))
+* **standing:** retain settled outcomes and align proactive coverage ([485ec27](https://github.com/mikeng-io/nora/commit/485ec27553a31ce91c72bd3e0488d225460694f8))
+* **standing:** retain the unit provenance of native Cognition activity ([882adc1](https://github.com/mikeng-io/nora/commit/882adc10c2762237b6e8aa8aa36d1af7f89ee041))
+* **standing:** unit-scoped fold, preserved fields, complete record input ([61ab7fb](https://github.com/mikeng-io/nora/commit/61ab7fb3de8a283f1418c2234b7cbf0c8b06942e))
+
 ## [7.13.17](https://github.com/mikeng-io/nora/compare/v7.13.16...v7.13.17) (2026-11-02)
 
 
