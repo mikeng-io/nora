@@ -46,6 +46,9 @@ wrong one. The classes, in order:
   select time (`_readers`), plus the universal doc-reference scan for a `.md`.
   A file read by a shared test helper is `ALL`. Byte-exact untracked Git LFS post-hooks
   are ignored as generated installation noise; modified/symlink/tracked hooks are not.
+* Canonical `.claude/skills/<name>` links to in-repo `.agents/skills/<name>`
+  select the agent-skill contract and the linked SKILL.md's document readers.
+  Missing, redirected or escaping links remain unclassified (`ALL`).
 * ANY path named in the `file` field of a `scripts/mutations/*.json` entry also
   selects `tests/architecture/test_mutation_tables_anchor_to_their_source.py`
   (read from the tables at select time, so a new table is covered with no edit
@@ -92,6 +95,7 @@ import argparse
 import ast
 import fnmatch
 import json
+import os
 import re
 import subprocess
 import sys
@@ -398,9 +402,29 @@ def _is_collectible_test_file(path: str) -> bool:
     return name.startswith("test_") and name.endswith(".py")
 
 
-def _is_doc_or_data(path: str) -> bool:
+def _agent_skill_document(path: str, repo: Path) -> str | None:
+    """Resolve only the repository's one-copy agent-skill directory links."""
+    parts = Path(path).parts
+    if len(parts) != 3 or parts[:2] != (".claude", "skills"):
+        return None
+    link = repo / path
+    document = repo / ".agents" / "skills" / parts[2] / "SKILL.md"
+    try:
+        if (link.is_symlink()
+                and os.readlink(link) == f"../../.agents/skills/{parts[2]}"
+                and document.is_file()
+                and document.resolve().is_relative_to(repo.resolve())):
+            return document.relative_to(repo).as_posix()
+    except (OSError, RuntimeError):
+        pass
+    return None
+
+
+def _is_doc_or_data(path: str, repo: Path = ROOT) -> bool:
     """A documentation or data file outside the code trees, so one that the
     reader scan can answer for."""
+    if _agent_skill_document(path, repo) is not None:
+        return True
     if path.startswith(_CODE_TREE_PREFIXES):
         return False
     if path.startswith("tests/"):
@@ -427,9 +451,13 @@ def select(changed: list[str], repo: Path = ROOT) -> list[str] | str:
     mutated = _mutation_files(repo)
 
     for path in changed:
+        skill_document = _agent_skill_document(path, repo)
+        if skill_document is not None:
+            targets.add("tests/architecture/test_agent_skills.py")
+            path = skill_document
         if path in mutated:
             targets.add(_MUTATION_ANCHOR_TEST)
-        if path.startswith("tests/") and not _is_doc_or_data(path):
+        if path.startswith("tests/") and not _is_doc_or_data(path, repo):
             # Not every path under tests/ is collectible (conftest.py,
             # builders.py, fixtures, ...) and a deleted or renamed-away test
             # cannot be run: both are ALL, never a target that collects nothing.
@@ -445,7 +473,7 @@ def select(changed: list[str], repo: Path = ROOT) -> list[str] | str:
                 return ALL
             targets.update({path, _META_TESTS, *readers, *importers})
             continue
-        if _is_doc_or_data(path):
+        if _is_doc_or_data(path, repo):
             if scan is None:
                 scan = _scan_tests(repo)
             readers, helper_reads = _readers(path, scan)

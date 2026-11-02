@@ -898,6 +898,8 @@ Generated probe: a new note about breakfast and an existing event produce zero n
 
 Smallest direction: carry an evidence-grounded association selected in the existing Cognition session into the Register write/link step, with current admission and retry ownership. Alias matching can assist discovery, but should not be the only mechanism that serializes the understood association. Do not mandate a breakfast-specific rule or infer a new independent event from the literal poll topic.
 
+**Disposition, recorded 2026-11-02.** The source-side repair merged in [#490](https://github.com/mikeng-io/nora/pull/490) (2026-11-01, `ee58149`): the six Register create/revise verbs persist the session-shown explicit associations, explicit `associations: []` clears selected links while an omitted `associations` on revise preserves them, and retry re-links the same Register row by its exact act key with the receipt in the same transaction. The probe text above remains the historical evidence that motivated the repair — it does not describe current source behaviour. Whether a later answer or correction actually uses a persisted association is a semantic property the source merge cannot prove; the unmeasured remainder is recorded in [31's dated snapshot](31-build-one-session.md#progress-evidence-and-next-bounded-action-2026-11-02).
+
 ### F4 — Unified profile curation does not yet feed the live profile surface
 
 **Five Cs: Completeness. Intentional rollout boundary, not an accidental failing write.**
@@ -909,6 +911,8 @@ Generated probe: a valid proposal returns `ok` with the explicit shadow note and
 Separate `ProfilePersonAdaptor` and collective adaptors still exist in composition and can write profile stores under their own configuration and evidence cycle (`nora/app/composition.py`, the `ProfilePersonAdaptor` construction). Consequently it would be wrong to report that Nora has no long-term profile system. The precise gap is that new unified-session reshape output is not automatically the profile read by later turns. The ratified session design explicitly stages this as a later surface switch.
 
 Smallest direction: verify the intended phase/promotion and its acceptance before claiming a closed learning loop. No silent flag flip or deployment is authorized by this audit. A graph relation may remain useful even while a free-text behavioural account is still shadow-only; assess both separately.
+
+**Disposition, recorded 2026-11-02.** The source handoff merged in [#495](https://github.com/mikeng-io/nora/pull/495) (2026-11-01, `78e9f4a`): the session's `profile_read`/`profile_revise` now read and write the existing typed Profile accounts through `SqlProfileStore`, with shown cited evidence, `relation:` premises, an atomic receipt, and shown-view invalidation on write; adaptor retirement and the session's replacement share one availability predicate covering Cognition and every unit's home room. The source slice's acceptance is closed and does not reopen without a reachable defect. What remains unproved is the operational activation — the authorized flag flip and a later live turn reading the persisted account — recorded in [31's dated snapshot](31-build-one-session.md#progress-evidence-and-next-bounded-action-2026-11-02). The probe text above stays historical evidence, and no flag change or deployment followed from it.
 
 ### F5 — Admission proves evidence custody, not the truth of social interpretation
 
@@ -968,6 +972,11 @@ not proven at that head. **F3 remains open, smaller than first described:**
 layer, so a semantic association is serializable through `memory_propose`,
 just not carried automatically. F4 stays intentionally staged; F5 is the
 documented evidence boundary; F6 stays parked by ruling.
+
+**2026-11-02:** F3's source repair merged as #490 and F4's source handoff
+as #495 — the dated dispositions under each finding now carry current
+state. F5 and F6 are unchanged, and no finding beyond F1–F4 is claimed
+closed.
 
 ### Repair and measurement order
 
