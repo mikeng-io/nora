@@ -1,5 +1,15 @@
 # Changelog
 
+## [7.14.1](https://github.com/mikeng-io/nora/compare/v7.14.0...v7.14.1) (2026-11-02)
+
+
+### Maintenance
+
+* **db:** distinguish server maintenance from leaked clients ([e30e976](https://github.com/mikeng-io/nora/commit/e30e97667f6e6929d89f6f4c9d52312496a02462))
+* **db:** expose composition cleanup to imported config consumers ([c543fc6](https://github.com/mikeng-io/nora/commit/c543fc6b6e7b60396d499717f5794b6ff2cab15f))
+* **db:** reset migrated module databases between ordinary cases ([32e33c4](https://github.com/mikeng-io/nora/commit/32e33c41fe4626d4b097d7adce0ef55a72183f04))
+* **db:** retain owning loops through lazy fixture cleanup ([fc67a25](https://github.com/mikeng-io/nora/commit/fc67a25d25eec808c3ae22cc6c4bc4c28156a8e1))
+
 ## [7.14.0](https://github.com/mikeng-io/nora/compare/v7.13.25...v7.14.0) (2026-11-02)
 
 
