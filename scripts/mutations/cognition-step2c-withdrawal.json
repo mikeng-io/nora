@@ -2,8 +2,8 @@
   {
     "name": "a hidden message actually stops reaching a transcript read",
     "file": "nora/infra/sql/audit.py",
-    "old": "    ).select_from(MESSAGES.outerjoin(latest, sa.true())).where(\n        MESSAGES.c.hidden_at.is_(None),\n    )",
-    "new": "    ).select_from(MESSAGES.outerjoin(latest, sa.true()))",
+    "old": "    hidden = MESSAGES.c.hidden_at.is_(None)",
+    "new": "    hidden = sa.true()",
     "target": "tests/infra/test_withdrawal.py -k test_hide_message"
   },
   {

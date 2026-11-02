@@ -315,7 +315,7 @@ remains the operator's separate decision, with
 [70 §4](70-honcho-cutover.md#4-the-hold--14-days-00-sequence-step-9)'s
 14-day observation and the staged removal after it.
 
-**Backfill driver (implementation candidate, PR #525).**
+**Backfill driver (PR #525).**
 `nora memory unified-backfill` uses the existing Cognition session; the
 Honcho-feed `memory backfill` command is unchanged. Default is a read-only,
 zero-model census. Apply requires positive finite batch/token/time limits;
@@ -341,9 +341,12 @@ reminders into the ordinary real-clock session. Undated open plans remain
 explicitly undated for that session to assess; no date is inferred.
 
 Two independent review rounds requested engineering repairs. Parent repairs
-and generated unit/SQL regressions plus the mutation table are present;
-behavioral execution and the final gate remain pending the serialized test
-window. No source acceptance, production backfill, flag flip or semantic PASS
-is claimed by this delivery note. Full semantic proof and public benchmarks
-are not cutover prerequisites: production observes useful recall, staleness
-and correction under the operator's bounded rollout and observation decision.
+were exercised through generated unit/SQL regressions and named revert proofs.
+PR #525 records the revision-bound gate, its seven test/metadata failures,
+their passing repairs and the separately completed serial phase; the original
+failed receipt is retained. Upstream interaction assessment preserves unaffected
+evidence under the operator's impact-based validation ruling. This is source
+engineering evidence, not production backfill, a flag flip or semantic PASS.
+Full semantic proof and public benchmarks are not cutover prerequisites:
+production observes useful recall, staleness and correction under the operator's
+bounded rollout and observation decision.

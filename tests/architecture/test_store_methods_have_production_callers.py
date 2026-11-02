@@ -268,6 +268,8 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "aclose", "append", "claim", "create", "delete", "fail",
         # Message targets and observation grounding have distinct by-id stores.
         "by_ids",
+        # The historical observation facade withholds the SQL store's current heads.
+        "heads", "head_for_handle",
         "describe", "enqueue", "get", "history", "lookup", "mark", "put", "read",
         "finish",  # RawSpanRecorder and the store both declare this verb.
         "recent", "record", "resolve", "rsvps_for", "save", "search",
