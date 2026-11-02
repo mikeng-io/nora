@@ -156,6 +156,27 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
 
 ## 8. Merge: a real merge commit, authored message
 
+Before merging, or enabling auto-merge, inspect the latest pushed head's checks,
+PR conversation comments, submitted reviews and inline review threads. Green CI
+alone does not clear bot findings (including secret scanners such as Gitleaks or
+GitGuardian). Read the actual finding and its current disposition, including
+findings reported only in comments or check annotations.
+
+- Triage each actionable finding against the current diff: fix it, or record
+  evidence that it is a false positive, superseded or outside this change.
+  Unresolved credible secret/security findings block merge; an inaccessible
+  report is unavailable evidence, never a clean result. Never copy secret values
+  into replies, logs or the PR body.
+- Re-read findings and check results after the final push and immediately before
+  merge/auto-merge. Do not resolve a thread merely to make the merge button green.
+  Record the disposition in the PR's existing gate section; no extra reviewer is
+  required merely to read scanner output.
+- GitHub required status checks and required conversation resolution provide
+  mechanical enforcement where configured. Conversation resolution covers review
+  threads, not every ordinary bot comment; the agent still reads both. Do not
+  enable auto-merge while actionable findings remain, or bypass required checks.
+
+
 ```bash
 git status -sb     # nothing ahead: pushed head == reviewed head
 git fetch origin && test "$(git rev-list --count HEAD..origin/master)" = 0 && echo NOT_BEHIND &&
