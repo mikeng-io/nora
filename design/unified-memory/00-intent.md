@@ -8,8 +8,14 @@
 > by ADR 0029; the current Notebook kinds are
 > [note, topic, lesson, profile, decision](../notebook-memory-types/00-design.md).
 
-Status: **proposed**, recorded 2026-10-14. Nothing here is built, and saving
-this bundle changes no runtime behaviour. No decision number is allocated.
+Status: **proposed**, recorded 2026-10-14 — the historical proposal status,
+kept as written. Parts of the bundle have since been built and delivered;
+dated current delivery, evidence and remaining readiness live in
+[31 §6](31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31)
+and its
+[dated progress snapshots](31-build-one-session.md#progress-evidence-and-next-bounded-action-2026-11-02),
+not in this overview. Saving this bundle still changes no runtime
+behaviour.
 
 ## What the operator asked for
 
