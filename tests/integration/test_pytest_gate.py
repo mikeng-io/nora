@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 import signal
 import subprocess
@@ -276,3 +277,20 @@ def test_helper_subprocesses_do_not_depend_on_caller_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     test_workers_retain_admission_after_controller_exit_and_reject_stale_generation(tmp_path)
     test_interrupt_stops_the_actual_child_and_releases_admission(tmp_path)
+
+
+@pytest.mark.parametrize("workers", [0, 2])
+def test_failed_run_keeps_a_cost_receipt_without_double_counting_workers(tmp_path, workers):
+    root, _ = _project(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    generated = root / "test_generated.py"
+    generated.write_text(generated.read_text() + "\n    assert attempt == 0\n")
+    result = _pytest(root, "-n", str(workers))
+    assert result.returncode == 1, result.stdout + result.stderr
+    receipt, = (root / ".git").glob("nora-test-cost-*.json")
+    phase, = json.loads(receipt.read_text())["phases"]
+    assert phase["rc"] == 1
+    assert phase["selected_count"] == 2
+    assert len(phase["selected_sha256"]) == 64
+    assert phase["outcome_counts"] == {"failed": 1, "passed": 1}
+    assert phase["servers"] == []

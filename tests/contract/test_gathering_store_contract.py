@@ -57,9 +57,9 @@ def _event(**overrides) -> Gathering:
 @pytest.fixture(params=["sql", "fake"])
 async def store(request):
     if request.param == "sql":
-        pg_url = request.getfixturevalue("pg_url")
-        run_migrations(pg_url)
-        s = SqlGatheringStore(create_sql_engine(pg_url))
+        clean_pg_url = request.getfixturevalue("clean_pg_url")
+        run_migrations(clean_pg_url)
+        s = SqlGatheringStore(create_sql_engine(clean_pg_url))
     else:
         s = FakeGatheringStore()
     yield s

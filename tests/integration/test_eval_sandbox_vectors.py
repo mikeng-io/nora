@@ -106,9 +106,9 @@ async def _states(engine: Any) -> dict[str, tuple]:
 
 
 @pytest.fixture
-async def source(pg_url):
+async def source(clean_pg_url):
     """The clone: rows as they stand NOW, the index built and embedded."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     await _write(engine, [
         ("dinner on friday at the noodle place", ()),
         ("see you at eight", ()),          # edited after the instant (was seven)
@@ -125,7 +125,7 @@ async def source(pg_url):
         f"sha:{BLANK}": ("failed", "empty"),
     })
     try:
-        yield pg_url, engine
+        yield clean_pg_url, engine
     finally:
         await engine.dispose()
 

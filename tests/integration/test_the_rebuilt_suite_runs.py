@@ -73,10 +73,12 @@ def _policy(*, proactive: bool, home_room_here: bool) -> str:
 
 
 async def _graded(
-    *, entry: str, expect: str, pg_url: str, pg_template: str, tmp_path: Any,
+    *, entry: str, expect: str, clean_pg_url: str, pg_template: str, tmp_path: Any,
     policy: str = "", input: str = "", metadata: dict[str, Any] | None = None,
 ) -> tuple[Any, dict[str, Any]]:
-    source = await seed_source(pg_url, tmp_path, _HISTORY, template=pg_template, policy=policy)
+    source = await seed_source(
+        clean_pg_url, tmp_path, _HISTORY, template=pg_template, policy=policy,
+    )
     case = Case(
         name=f"probe/{entry}", input=input,
         metadata={"expect": expect, "snapshot": source.snapshot, **(metadata or {})},
@@ -98,7 +100,7 @@ async def _graded(
 
 @pytest.mark.asyncio
 async def test_a_run_with_no_model_reports_error_not_a_verdict(
-    pg_url, pg_template, tmp_path, monkeypatch,
+    clean_pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
     """The two that need a model: ERROR, and therefore ungradable. Not FAIL —
     the grader returns the third answer rather than scoring an un-run case.
@@ -107,7 +109,7 @@ async def test_a_run_with_no_model_reports_error_not_a_verdict(
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     for entry, expect in (("gate", "no_go"), ("participation", "silence")):
         out, state = await _graded(
-            entry=entry, expect=expect, pg_url=pg_url, pg_template=pg_template,
+            entry=entry, expect=expect, clean_pg_url=clean_pg_url, pg_template=pg_template,
             tmp_path=tmp_path / entry,
             input="" if entry == "gate" else "when is the next Raft update?",
         )
@@ -115,7 +117,7 @@ async def test_a_run_with_no_model_reports_error_not_a_verdict(
         assert state["error"], entry
 
     out, state = await _graded(
-        entry="tag", expect="silence", pg_url=pg_url, pg_template=pg_template,
+        entry="tag", expect="silence", clean_pg_url=clean_pg_url, pg_template=pg_template,
         tmp_path=tmp_path / "tag", input="anyway what time is lunch",
     )
     assert out.label == PASS, f"an untagged line engaged her or errored: {out.reason} {state}"
@@ -123,7 +125,7 @@ async def test_a_run_with_no_model_reports_error_not_a_verdict(
 
 @pytest.mark.asyncio
 async def test_a_room_without_proactive_trust_is_an_error_not_silence(
-    pg_url, pg_template, tmp_path, monkeypatch,
+    clean_pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
     """INDUCED, not hoped for. The room's policy entry drops `proactive =
     true`, which is exactly the misconfiguration an operator makes. The screen
@@ -131,7 +133,7 @@ async def test_a_room_without_proactive_trust_is_an_error_not_silence(
     byte-identical to a correct silence — and this case expects silence."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     out, state = await _graded(
-        entry="proactive_act", expect="silence", pg_url=pg_url, pg_template=pg_template,
+        entry="proactive_act", expect="silence", clean_pg_url=clean_pg_url, pg_template=pg_template,
         tmp_path=tmp_path, policy=_policy(proactive=False, home_room_here=True),
         metadata={"row": {"note": "Raft update", "intent": "ask whether a date is out"}},
     )
@@ -156,7 +158,7 @@ async def test_a_room_without_proactive_trust_is_an_error_not_silence(
     ],
 )
 async def test_a_proactive_case_never_grades_on_a_wiring_refusal(
-    entry, expect, metadata, pg_url, pg_template, tmp_path, monkeypatch,
+    entry, expect, metadata, clean_pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
     """The two proactive paths, driven, with no provider reachable and the
     policy CORRECT. Every way these can end WITHOUT running produces an empty
@@ -165,7 +167,7 @@ async def test_a_proactive_case_never_grades_on_a_wiring_refusal(
     unreachable model is not."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     out, state = await _graded(
-        entry=entry, expect=expect, pg_url=pg_url, pg_template=pg_template,
+        entry=entry, expect=expect, clean_pg_url=clean_pg_url, pg_template=pg_template,
         tmp_path=tmp_path, policy=_policy(proactive=True, home_room_here=True),
         metadata=metadata,
     )
@@ -181,7 +183,7 @@ async def test_a_proactive_case_never_grades_on_a_wiring_refusal(
 
 @pytest.mark.asyncio
 async def test_a_graph_surface_sandbox_is_indexed_from_the_sources_vectors(
-    pg_url, pg_template, tmp_path, monkeypatch, capsys,
+    clean_pg_url, pg_template, tmp_path, monkeypatch, capsys,
 ) -> None:
     """The graph arm builds each sandbox's index and adopts the source's
     vectors through the SNAPSHOT path, which renumbers every row: matched on
@@ -194,7 +196,7 @@ async def test_a_graph_surface_sandbox_is_indexed_from_the_sources_vectors(
     from nora.subject import GraphIndexRefusedError
 
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    source = await seed_source(pg_url, tmp_path, _HISTORY, template=pg_template)
+    source = await seed_source(clean_pg_url, tmp_path, _HISTORY, template=pg_template)
     case = Case(name="probe/graph", input="anyway what time is lunch",
                 metadata={"expect": "silence", "snapshot": source.snapshot})
     spec = Spec(

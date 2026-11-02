@@ -35,7 +35,7 @@ async def store(request: Any) -> AsyncIterator[Any]:
     if request.param == "memory":
         yield FakeMobilityStore()
         return
-    engine = create_sql_engine(request.getfixturevalue("pg_url"))
+    engine = create_sql_engine(request.getfixturevalue("clean_pg_url"))
     try:
         yield SqlMobilityStore(engine)
     finally:

@@ -60,19 +60,27 @@ unconditionally (`AGENTS.md`, *Gate commands*).
 Disposable PostgreSQL reuse:
 
 - `pg_url` remains a fresh migrated database per test, with `DATABASE_URL`
-  exported. Integration restarts and migration/destructive tests keep it.
+  exported. Dedicated schema/downgrade/database-ownership tests keep it.
+- `clean_pg_url` is the ordinary SQL contract/adapter/composition/integration
+  fixture. It shares a migrated module clone per worker and exports `DATABASE_URL`.
+  Independent engines commit normally; a restart inside a case keeps its data.
+  After dependent engines and test-owned background work close, one catalogue-based
+  reset clears populated tables plus their FK closure, restores migration seeds
+  and changed sequence states, including increments from rolled-back transactions.
+  Empty tables are not unconditionally truncated. History capture is disabled
+  only in the reset transaction; schema/trigger/durability behavior is preserved.
+  A schema change, live old connection or failed reset stops subsequent reuse.
+  Deliberate schema/non-row-state cases use `@pytest.mark.fresh_database` to request
+  a dedicated migrated clone through the same caller fixtures. `empty_pg_url`
+  supplies an actually unmigrated database for bootstrap properties.
 - `pg_module_url` opts into one migrated clone per module **per worker**.
   It does not export `DATABASE_URL`. The caller must reset its own tables and
   dispose every engine; it is not a universal rollback or flush fixture.
   Culture, entries and memory-graph contracts retain their existing TRUNCATE
   resets (including the history-capture settings). Migration seeds, sequences,
   history outside those tables and non-row state are not globally reset.
-- `record_pg_url` opts media-fetch and tool-registry tests into a module clone.
-  Each requesting test resets messages (with dependent tables), memory nodes,
-  edges, projection retries and row history, including their owned sequences.
-  History capture is disabled only inside the reset transaction. Migration seeds
-  remain intact. This fixture is only for record-only consumers without schema
-  changes, extraction or graph-projection context; engines must be disposed.
+- `record_pg_url` remains the compatibility name for media-fetch/tool-registry
+  consumers and delegates to the same complete `clean_pg_url` baseline reset.
 - Schema parity uses a module clone for catalogue reads and CHECK probes whose
   SAVEPOINT always rolls back. Deliberate drift still uses scratch databases.
 - Make targets use `python -m scripts.pytest_gate`: up to two file-grouped
@@ -94,6 +102,17 @@ Disposable PostgreSQL reuse:
   with Testcontainers/Ryuk cleanup. No cross-run state, shared server, tmpfs,
   altered durability settings or FILE_COPY default is introduced. Pure tests
   need no Docker. A killed worker still relies on the existing Ryuk lifecycle.
+
+Each executed runner invocation keeps `nora-test-cost-<generation>.json` in its
+worktree's Git directory. It records phase exit status, selected-node digest/count,
+outcomes, shared-fixture setup counts and each owned PostgreSQL server's observed
+pre-teardown WAL/checkpoints/Docker block writes. Custom database-owner calls are
+not inferred from fixture counts. The macOS runner also reads the Docker VM process
+before/after; that window includes other daemon services and is not SSD/NAND usage.
+Unavailable counters stay unavailable. Worker collection is counted once; both
+functional and serial timing phases share one receipt. Collection-only runs create
+neither containers nor a cost receipt. This record includes failures and is separate
+from a reusable successful gate receipt; counters never grant a cached PASS.
 
 Local gate receipts:
 

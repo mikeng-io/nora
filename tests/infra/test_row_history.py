@@ -44,8 +44,8 @@ from nora.infra.sql.schema import METADATA
 
 
 @pytest.fixture
-async def engine(pg_url: str) -> AsyncIterator[Any]:
-    eng = create_sql_engine(pg_url)
+async def engine(clean_pg_url: str) -> AsyncIterator[Any]:
+    eng = create_sql_engine(clean_pg_url)
     try:
         yield eng
     finally:
@@ -172,10 +172,11 @@ async def test_capture_off_records_nothing(engine: Any) -> None:
     assert [r.image["conversation_id"] for r in chain] == ["g2"]
 
 
+@pytest.mark.fresh_database
 @pytest.mark.asyncio
-async def test_the_backfill_dates_what_each_row_proves(pg_url: str, engine: Any) -> None:
+async def test_the_backfill_dates_what_each_row_proves(clean_pg_url: str, engine: Any) -> None:
     """Rows written before `0068` get the versions their own columns prove."""
-    command.downgrade(alembic_config(pg_url), "0067_summons_message_key")
+    command.downgrade(alembic_config(clean_pg_url), "0067_summons_message_key")
     day = datetime(2026, 9, 1, tzinfo=UTC)
 
     def ms(d: datetime) -> int:
@@ -209,7 +210,7 @@ async def test_the_backfill_dates_what_each_row_proves(pg_url: str, engine: Any)
                 ":c, :d, :s, :f, :o)"
             ), {"id": rid, "c": day, "d": day + timedelta(hours=5), "s": state,
                 "f": fired, "o": "sent" if fired else None})
-    run_migrations(pg_url)
+    run_migrations(clean_pg_url)
 
     def at(hours: float) -> datetime:
         return day + timedelta(hours=hours)

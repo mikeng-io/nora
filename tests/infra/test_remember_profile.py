@@ -73,9 +73,9 @@ def persons(tmp_path: Any) -> Any:
 
 
 @pytest.fixture
-async def store(pg_url):
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+async def store(clean_pg_url):
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         yield SqlProfileStore(engine, screen=lambda _t: None)
     finally:

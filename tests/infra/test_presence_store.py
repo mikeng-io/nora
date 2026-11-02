@@ -27,13 +27,13 @@ def _fix(*, ts: int, person="p1", circle="c1", lat=22.44, lng=114.02,
 
 
 @pytest.fixture
-async def make_store(pg_url):
-    run_migrations(pg_url)
+async def make_store(clean_pg_url):
+    run_migrations(clean_pg_url)
     created = []
 
     def _make(*, retention_days=180):
         s = PresenceStore(
-            create_sql_engine(pg_url), retention_days=retention_days
+            create_sql_engine(clean_pg_url), retention_days=retention_days
         )
         created.append(s)
         return s

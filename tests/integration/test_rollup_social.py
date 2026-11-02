@@ -125,8 +125,8 @@ async def _posted(engine, build: int) -> dict[tuple[str, str], int | None]:
     return {(r["person_id"], r["local_date"]): r["items_posted"] for r in rows}
 
 
-async def test_items_are_counted_on_the_local_day_they_were_taken(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_items_are_counted_on_the_local_day_they_were_taken(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     await _seed(engine)
     # 23:30 and 00:30 Hong Kong time are an hour apart and on two days; in UTC
     # they fall on the 5th (15:30) and the 5th (16:30), so a UTC day count
@@ -140,8 +140,8 @@ async def test_items_are_counted_on_the_local_day_they_were_taken(pg_url):
     await engine.dispose()
 
 
-async def test_a_gone_or_hidden_item_is_not_counted(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_a_gone_or_hidden_item_is_not_counted(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     await _seed(engine)
     for item_id in ("kept", "gone", "hidden"):
         await _item(engine, "a", item_id, _at(5, 10))
@@ -153,8 +153,8 @@ async def test_a_gone_or_hidden_item_is_not_counted(pg_url):
     await engine.dispose()
 
 
-async def test_an_opted_out_person_has_no_items_and_no_count(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_an_opted_out_person_has_no_items_and_no_count(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     await _seed(engine)
     await _item(engine, "a", "mine", _at(5, 10))
     await _item(engine, "b", "theirs", _at(5, 10))
@@ -170,8 +170,8 @@ async def test_an_opted_out_person_has_no_items_and_no_count(pg_url):
     await engine.dispose()
 
 
-async def test_a_late_back_filled_item_lands_in_its_past_day(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_a_late_back_filled_item_lands_in_its_past_day(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     await _seed(engine)
     await _item(engine, "a", "fresh", _at(8, 10))
     runner = _runner(engine)
@@ -195,8 +195,8 @@ async def test_a_late_back_filled_item_lands_in_its_past_day(pg_url):
     await engine.dispose()
 
 
-async def test_an_item_recorded_after_the_watermark_is_not_read(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_an_item_recorded_after_the_watermark_is_not_read(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     await _seed(engine)
     await _item(engine, "a", "late", _at(7, 8), recorded=_at(11, 9), origin="backfill")
     posted = await _posted(engine, await _build(engine, _runner(engine), FIRST))
@@ -204,8 +204,8 @@ async def test_an_item_recorded_after_the_watermark_is_not_read(pg_url):
     await engine.dispose()
 
 
-async def test_none_is_not_an_input_and_zero_is_looked_and_none(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_none_is_not_an_input_and_zero_is_looked_and_none(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     await _seed(engine)
     await _message(engine, "a", _at(30, 15, month=9))  # before a was first observed
     await _poll(engine, "c", _at(3, 9), outcome="error")  # no answer: not an observation

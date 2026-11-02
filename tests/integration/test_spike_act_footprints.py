@@ -8,8 +8,8 @@ from scripts import memory_graph_spike as spike
 from tests.integration.test_snapshot_holds_what_was_held import APPEND, REVISE, ROWS
 
 
-async def test_every_generated_act_footprint_moves_invariant(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_every_generated_act_footprint_moves_invariant(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     try:
         async with engine.begin() as conn:
             for table in ("note", "events", "standing", "reminders"):

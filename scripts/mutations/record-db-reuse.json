@@ -16,8 +16,8 @@
   {
     "name": "committed record state is reset between consumers",
     "file": "tests/conftest.py",
-    "old": "\"TRUNCATE messages, memory_node, memory_edge, memory_projection_queue, \"\n            \"row_history RESTART IDENTITY CASCADE\"",
-    "new": "\"SELECT 1\"",
+    "old": "baseline.reset(conn)",
+    "new": "pass",
     "target": "tests/infra/test_pg_fixture_lifecycle.py::test_record_reuse_resets_committed_state"
   }
 ]

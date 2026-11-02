@@ -1,5 +1,5 @@
 """One suite, both implementations of `ComputerExportStore`. The shape of the
-event store's suite: the real Postgres `pg_url` fixture, migrated before the
+event store's suite: the real Postgres `clean_pg_url` fixture, migrated before the
 SQL store is built, parametrized alongside the in-memory fake.
 
 What is pinned: a row round-trips every field; `for_artifact` answers the
@@ -54,9 +54,9 @@ async def store(request):
     if request.param == "fake":
         yield FakeComputerExportStore()
         return
-    pg_url = request.getfixturevalue("pg_url")
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+    clean_pg_url = request.getfixturevalue("clean_pg_url")
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     yield SqlComputerExportStore(engine)
     await engine.dispose()
 
@@ -110,11 +110,11 @@ def test_a_link_row_without_its_url_is_refused_before_any_store():
         _export(media_type="image/svg+xml")
 
 
-async def test_the_table_refuses_a_change_to_a_row(pg_url):
+async def test_the_table_refuses_a_change_to_a_row(clean_pg_url):
     """Ownership is authorisation state: a mistaken UPDATE that moved a row
     to another room would hand that room the artifact."""
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         await SqlComputerExportStore(engine).record(_export())
         with pytest.raises(DBAPIError, match="append-only"):

@@ -55,9 +55,9 @@ def _event(place_id: str) -> Gathering:
     )
 
 
-async def test_a_dry_run_asks_nothing_and_apply_places_what_is_left_once(pg_url):
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+async def test_a_dry_run_asks_nothing_and_apply_places_what_is_left_once(clean_pg_url):
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     await SqlRecordStore(engine).append(
         message=NormalizedMessage("signal", "g1", "group", "+10000000001", "Member A", 1000,
                                   "dinner?", {}),
@@ -107,12 +107,12 @@ async def test_a_dry_run_asks_nothing_and_apply_places_what_is_left_once(pg_url)
     await engine.dispose()
 
 
-async def test_a_cached_geocodes_area_is_screened_before_it_is_written(pg_url):
+async def test_a_cached_geocodes_area_is_screened_before_it_is_written(clean_pg_url):
     """The R-28 screen a venue's areas pass also stands before the geocode
     cache: an area name that reads as a coordinate is dropped, and the rest
     is written."""
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     events, cache = SqlGatheringStore(engine), SqlGeocodeCacheStore(engine)
     await cache.put(lat_rounded=1.0, lng_rounded=2.0, address="cached")
     done = await backfill_places(

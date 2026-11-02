@@ -1,6 +1,6 @@
 """One suite, both implementations of `ToolCallLogStore`. Mirrors
 `tests/contract/test_compute_job_store_contract.py`'s own shape — the same
-real-Postgres `pg_url` fixture, migrated up before the SQL store is
+real-Postgres `clean_pg_url` fixture, migrated up before the SQL store is
 constructed, parametrized alongside the in-memory fake.
 """
 
@@ -35,9 +35,9 @@ async def store(request):
     if request.param == "fake":
         yield FakeToolCallLogStore()
         return
-    pg_url = request.getfixturevalue("pg_url")
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+    clean_pg_url = request.getfixturevalue("clean_pg_url")
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     yield SqlToolCallLogStore(engine)
     await engine.dispose()
 

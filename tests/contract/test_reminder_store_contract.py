@@ -49,9 +49,9 @@ def _row(**kw) -> Reminder:
 @pytest.fixture(params=["sql", "fake"])
 async def store(request):
     if request.param == "sql":
-        pg_url = request.getfixturevalue("pg_url")
-        run_migrations(pg_url)
-        s: ReminderStore = SqlReminderStore(create_sql_engine(pg_url))
+        clean_pg_url = request.getfixturevalue("clean_pg_url")
+        run_migrations(clean_pg_url)
+        s: ReminderStore = SqlReminderStore(create_sql_engine(clean_pg_url))
     else:
         s = FakeReminderStore()
     yield s
@@ -989,15 +989,15 @@ async def test_a_deliberate_two_room_batch_lands(store):
 
 @pytest.mark.parametrize("_unused", [0])
 async def test_concurrent_two_process_creates_cannot_split_the_act(
-    pg_url, _unused,
+    clean_pg_url, _unused,
 ):
     """Two writers, two processes' worth of connections, each prechecking an
     empty store: the advisory lock serialises them and the SECOND writer's
     in-lock conflict check must see the first's committed row — the act can
     never be silently split across rooms by a race."""
-    run_migrations(pg_url)
-    store_a = SqlReminderStore(create_sql_engine(pg_url))
-    store_b = SqlReminderStore(create_sql_engine(pg_url))
+    run_migrations(clean_pg_url)
+    store_a = SqlReminderStore(create_sql_engine(clean_pg_url))
+    store_b = SqlReminderStore(create_sql_engine(clean_pg_url))
     rooms = [("signal", "room-a"), ("signal", "room-b")]
     row_a = _subject(platform="signal", conversation_id="room-a",
                      subject_id="dec-1", action="ask-time")
@@ -1020,7 +1020,8 @@ async def test_concurrent_two_process_creates_cannot_split_the_act(
     assert len(list(rows)) == 1
 
 
-async def test_0144_index_downgrade_and_upgrade_preserve_populated_rows(pg_url):
+@pytest.mark.fresh_database
+async def test_0144_index_downgrade_and_upgrade_preserve_populated_rows(clean_pg_url):
     """A POPULATED table, not an index-only assertion: synthetic proactive
     rows with subject payloads survive `downgrade` (index dropped, data
     untouched) and `upgrade` (the unique index builds over populated data
@@ -1030,15 +1031,15 @@ async def test_0144_index_downgrade_and_upgrade_preserve_populated_rows(pg_url):
 
     from nora.infra.sql.migrations_runner import _migration_lock, alembic_config
 
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     store = SqlReminderStore(engine)
     row = _subject(subject_id="dec-9", action="ask-time",
                    conversation_id="conv-mig")
     await store.create(row)
 
-    with _migration_lock(pg_url):
-        command.downgrade(alembic_config(pg_url), "-1")
+    with _migration_lock(clean_pg_url):
+        command.downgrade(alembic_config(clean_pg_url), "-1")
     async with engine.connect() as conn:
         rows = (await conn.execute(
             sa.text("SELECT id FROM reminders WHERE id = :i"), {"i": row.id}
@@ -1048,8 +1049,8 @@ async def test_0144_index_downgrade_and_upgrade_preserve_populated_rows(pg_url):
         ).scalar()
     assert len(rows) == 1 and idx is None
 
-    with _migration_lock(pg_url):
-        command.upgrade(alembic_config(pg_url), "+1")
+    with _migration_lock(clean_pg_url):
+        command.upgrade(alembic_config(clean_pg_url), "+1")
     async with engine.connect() as conn:
         idx = (await conn.execute(sa.text(
             "SELECT to_regclass('uq_reminders_proactive_open_subject')"))

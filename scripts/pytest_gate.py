@@ -16,6 +16,8 @@ from typing import Any
 
 import pytest
 
+pytest_plugins = ["scripts.pytest_cost"]
+
 MAX_WORKERS = 2
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # ponytail: one advisory per-user/host lease, including pure tests; no cross-host scheduler.
@@ -107,6 +109,14 @@ def pytest_unconfigure(config: pytest.Config) -> None:
         held[0].__exit__(None, None, None)
 
 
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    from scripts import pytest_cost
+
+    held = session.config.stash.get(_LEASE, None)
+    if held is not None:
+        pytest_cost.finish(session.config, exitstatus, held[1])
+
+
 def partition(targets: Sequence[str]) -> tuple[list[str], list[str]]:
     """Keep selectors intact, moving only the selected timing files/nodes to serial."""
     serial: list[str] = []
@@ -171,6 +181,8 @@ def _run(command: list[str], env: dict[str, str], *, group: bool = False) -> int
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    from scripts import pytest_cost
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workers", type=int, choices=range(MAX_WORKERS + 1), default=MAX_WORKERS)
     parser.add_argument("targets", nargs="*")
@@ -180,11 +192,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         with host_lease(LOCK_PATH, generation) as token:
             env = {**os.environ, _GENERATION_ENV: token}
             commands = phases(args.targets, args.workers)
-            for command in commands:
-                print("test phase:", " ".join(command[3:]), flush=True)
-                rc = _run(command, env)
-                if rc != 0 and not (rc == 5 and len(commands) > 1 and command is commands[0]):
-                    return rc if rc > 0 else 128 - rc
+            before = pytest_cost.vm_snapshot()
+            try:
+                for command in commands:
+                    print("test phase:", " ".join(command[3:]), flush=True)
+                    rc = _run(command, env)
+                    if rc != 0 and not (rc == 5 and len(commands) > 1 and command is commands[0]):
+                        return rc if rc > 0 else 128 - rc
+            finally:
+                pytest_cost.attach_vm(PROJECT_ROOT, token, before)
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 2

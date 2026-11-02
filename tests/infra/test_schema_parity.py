@@ -311,8 +311,8 @@ def _normalise(dump: str) -> str:
     return "\n".join(sorted(keep))
 
 
-def _dbname_of(pg_url: str) -> str:
-    return sa.engine.make_url(pg_url).database or ""
+def _dbname_of(clean_pg_url: str) -> str:
+    return sa.engine.make_url(clean_pg_url).database or ""
 
 
 # ── the gate ─────────────────────────────────────────────────────────────────
@@ -597,7 +597,8 @@ def test_normalised_pg_dump_matches_the_checked_in_baseline(migrated, pg_admin):
     )
 
 
-def test_a_deliberate_column_type_drift_is_caught(pg_url, pg_admin):
+@pytest.mark.fresh_database
+def test_a_deliberate_column_type_drift_is_caught(clean_pg_url, pg_admin):
     """The instrument check for the test above, in this file's own idiom.
 
     `test_a_deliberate_drift_is_caught` exists because a gate that has never
@@ -653,7 +654,8 @@ def test_a_deliberate_column_type_drift_is_caught(pg_url, pg_admin):
             conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
 
 
-def test_a_deliberate_drift_is_caught(pg_url, pg_admin):
+@pytest.mark.fresh_database
+def test_a_deliberate_drift_is_caught(clean_pg_url, pg_admin):
     """The red-on-revert probe: drop the CHECK and flip the index to ASC,
     then confirm the two catalogue reads the gate relies on both report the
     drift — i.e. reverting the schema this way turns the gate red."""

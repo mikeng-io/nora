@@ -120,7 +120,7 @@ def _write_config(
 
 
 def _compose_run(
-    pg_url: str, redis_url: str, tmp_path: Path, *,
+    clean_pg_url: str, redis_url: str, tmp_path: Path, *,
     service: str, entry: Path, needs_config_mount: bool,
 ) -> tuple[dict, list[str]]:
     """`(env, argv)` for a host-side run of a deployed entry — the RENDERED
@@ -143,7 +143,7 @@ def _compose_run(
         if raw is None:
             continue
         if key == "DATABASE_URL":
-            env[key] = pg_url                       # fixture endpoint
+            env[key] = clean_pg_url                       # fixture endpoint
         elif key == "NORA_REDIS_URL":
             env[key] = redis_url                    # fixture endpoint
         elif key == "DISCORD_BOT_TOKEN":
@@ -177,9 +177,9 @@ def _run(argv: list[str], env: dict, *, timeout: float = 30) -> subprocess.Compl
 
 
 def test_signal_wrapper_refuses_without_account_key(
-        pg_url, _redis_container, tmp_path):
+        clean_pg_url, _redis_container, tmp_path):
     env, argv = _compose_run(
-        pg_url, _redis_url(_redis_container), tmp_path,
+        clean_pg_url, _redis_url(_redis_container), tmp_path,
         service="signal-bridge", entry=WRAPPER, needs_config_mount=False)
     del env["NORA_BRIDGE_ACCOUNT_KEY"]
     result = _run(argv, env)
@@ -188,13 +188,13 @@ def test_signal_wrapper_refuses_without_account_key(
 
 
 def test_signal_wrapper_reaches_the_cli_boundary(
-        pg_url, _redis_container, tmp_path):
+        clean_pg_url, _redis_container, tmp_path):
     """Full rendered env: journal preflight + replay spawn + bridge
     construction all succeed; the process stops at `/usr/local/bin/signal-cli`
     — the image's one real prerequisite — with the honest spawn error, never a
     config/import failure first."""
     env, argv = _compose_run(
-        pg_url, _redis_url(_redis_container), tmp_path,
+        clean_pg_url, _redis_url(_redis_container), tmp_path,
         service="signal-bridge", entry=WRAPPER, needs_config_mount=False)
     result = _run(argv, env)
     assert result.returncode == 1
@@ -206,10 +206,10 @@ def test_signal_wrapper_reaches_the_cli_boundary(
 
 
 def test_discord_entry_refuses_without_account_key(
-        pg_url, _redis_container, tmp_path, example_config_path):
+        clean_pg_url, _redis_container, tmp_path, example_config_path):
     _write_config(example_config_path, tmp_path / "config.toml")
     env, argv = _compose_run(
-        pg_url, _redis_url(_redis_container), tmp_path,
+        clean_pg_url, _redis_url(_redis_container), tmp_path,
         service="discord-bridge", entry=DISCORD_ENTRY, needs_config_mount=True)
     del env["NORA_BRIDGE_ACCOUNT_KEY"]
     result = _run(argv, env)
@@ -218,7 +218,7 @@ def test_discord_entry_refuses_without_account_key(
 
 
 def test_discord_entry_serves_v1_before_connecting(
-        pg_url, _redis_container, tmp_path, example_config_path):
+        clean_pg_url, _redis_container, tmp_path, example_config_path):
     """Rendered env + generated config + fake token: the /v1 site binds and
     answers (401 to an unauthenticated probe — auth middleware is live)
     BEFORE `bridge.start()` finishes its Discord connect attempt. A real
@@ -227,7 +227,7 @@ def test_discord_entry_serves_v1_before_connecting(
     site serves first."""
     _write_config(example_config_path, tmp_path / "config.toml")
     env, argv = _compose_run(
-        pg_url, _redis_url(_redis_container), tmp_path,
+        clean_pg_url, _redis_url(_redis_container), tmp_path,
         service="discord-bridge", entry=DISCORD_ENTRY, needs_config_mount=True)
     port = int(env["NORA_BRIDGE_PORT"])
     proc = subprocess.Popen(  # noqa: S603 — fixed argv, rendered env only
@@ -309,7 +309,7 @@ def _controller_app(record: list) -> web.Application:
 
 
 async def test_discord_entry_owns_the_voice_graph_from_the_deployed_config(
-        pg_url, _redis_container, tmp_path, aiohttp_client,
+        clean_pg_url, _redis_container, tmp_path, aiohttp_client,
         example_config_path):
     """Rendered compose env + generated config (discord bridge mode, music
     enabled, a `[speech.tts] sidecars` entry pointing at the fake
@@ -325,7 +325,7 @@ async def test_discord_entry_owns_the_voice_graph_from_the_deployed_config(
         sidecar_endpoint=str(controller.make_url("")).rstrip("/"),
         music_enabled=True)
     env, argv = _compose_run(
-        pg_url, _redis_url(_redis_container), tmp_path,
+        clean_pg_url, _redis_url(_redis_container), tmp_path,
         service="discord-bridge", entry=DISCORD_ENTRY, needs_config_mount=True)
     port = int(env["NORA_BRIDGE_PORT"])
     base = f"http://127.0.0.1:{port}"

@@ -94,8 +94,8 @@ def _item(item_id: str, caption: str, read_id: str) -> dict:
     }
 
 
-async def test_the_replay_preparation_indexes_the_restored_sandbox(pg_url, pg_template):
-    engine = create_sql_engine(pg_url)
+async def test_the_replay_preparation_indexes_the_restored_sandbox(clean_pg_url, pg_template):
+    engine = create_sql_engine(clean_pg_url)
     try:
         read_id = uuid4().hex
         # Everything the instant held: the read and its items, the stimuli and
@@ -162,7 +162,7 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(pg_url, pg_te
                 )
         source_acts = await spike.acts(engine)
 
-        async with sandbox_as_of(pg_url, at, template=pg_template) as (url, _):
+        async with sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, _):
             sandbox = create_sql_engine(url)
             try:
                 records = SqlComprehendRecords(
@@ -187,7 +187,7 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(pg_url, pg_te
                             index=SimpleNamespace(
                                 read=False, embed=False, embedder_model=MODEL_ID))),
                 )
-                built = await spike.index_replay_sandbox(subject, source_url=pg_url)
+                built = await spike.index_replay_sandbox(subject, source_url=clean_pg_url)
                 async with sandbox.connect() as conn:
                     assert await conn.scalar(sa.select(sa.func.count()).select_from(
                         MEMORY_NODE).where(MEMORY_NODE.c.kind == "social")) == 2, (

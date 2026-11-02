@@ -94,8 +94,8 @@ def _envelope(body: str, ts: int, *, sender: str = UNMAPPED_SENDER,
 
 
 @pytest.fixture
-async def bridge(pg_url, redis_client):
-    store = SqlBridgeStore(create_async_engine(pg_url))
+async def bridge(clean_pg_url, redis_client):
+    store = SqlBridgeStore(create_async_engine(clean_pg_url))
     stream = stream_name(PLATFORM, ACCOUNT)
     await ensure_group(redis_client, stream)
     yield store, redis_client, stream
@@ -539,7 +539,7 @@ _HONCHO_WORKSPACE = "it-ws"
 
 
 async def test_subprocess_kill_after_feed_acceptance_reposts_nothing(
-        bridge, redis_client, harness, tmp_path, pg_url, _redis_container):
+        bridge, redis_client, harness, tmp_path, clean_pg_url, _redis_container):
     """The real fault window, end to end: a separate PROCESS claims the feed
     work, its POST lands on the fake Honcho (server-side accepted), and the
     process is SIGKILLed before its finish commit — the response never
@@ -561,7 +561,7 @@ async def test_subprocess_kill_after_feed_acceptance_reposts_nothing(
             f"redis://{_redis_container.get_container_host_ip()}:"
             f"{_redis_container.get_exposed_port(6379)}")
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, str(script), pg_url, redis_url, url,
+            sys.executable, str(script), clean_pg_url, redis_url, url,
             _HONCHO_WORKSPACE)
         # The POST landing is the proof the process crossed the boundary:
         # the write is recorded server-side while its response is held.

@@ -9,6 +9,7 @@ from nora.domain.models import NormalizedMessage
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from tests.conftest import _pg_database
+from tests.infra.pg_baseline import PgBaseline
 
 
 def _row_and_sequence_state(conn):
@@ -125,3 +126,57 @@ def test_module_clone_isolation_and_exception_cleanup(pg_admin, pg_template):
         assert admin.execute(
             "SELECT datname FROM pg_database WHERE datname = %s", (pg_template,)
         ).fetchone() == (pg_template,)
+
+
+def test_complete_reset_restores_seeds_history_and_rolled_back_sequences(pg_admin, pg_template):
+    with psycopg.connect(pg_admin.dsn(pg_template)) as conn:
+        baseline = PgBaseline.capture(conn)
+        expected = _row_and_sequence_state(conn)
+    with _pg_database(pg_admin, pg_template) as url:
+        dsn = pg_admin.dsn(url.rsplit('/', 1)[1])
+        with psycopg.connect(dsn) as conn:
+            conn.execute("UPDATE memory_index_state SET status = 'building'")
+            conn.execute(
+                "INSERT INTO tag_debounce_state (platform, conversation_id, last_allowed_at) "
+                "VALUES ('signal', 'generated-reset-room', 1000)"
+            )
+        with psycopg.connect(dsn) as conn:
+            assert conn.execute("SELECT count(*) FROM row_history").fetchone()[0] > 0
+            conn.execute("SELECT nextval('messages_id_seq')")
+            conn.rollback()
+        with psycopg.connect(dsn) as conn:
+            assert baseline.reset(conn) > 0
+        with psycopg.connect(dsn) as conn:
+            assert _row_and_sequence_state(conn) == expected
+            assert conn.execute("SELECT current_setting('nora.row_history', true)").fetchone() != (
+                'off',
+            )
+            # No new physical table files or reset DDL for an already-clean DB.
+            assert baseline.reset(conn) == 0
+
+
+def test_reset_rejects_live_connections_and_schema_changes(pg_admin, pg_template):
+    with psycopg.connect(pg_admin.dsn(pg_template)) as conn:
+        baseline = PgBaseline.capture(conn)
+    with _pg_database(pg_admin, pg_template) as url:
+        dsn = pg_admin.dsn(url.rsplit('/', 1)[1])
+        with psycopg.connect(dsn) as live, psycopg.connect(dsn) as reset:
+            assert live.execute("SELECT 1").fetchone() == (1,)
+            with pytest.raises(RuntimeError, match="test-owned connections"):
+                baseline.reset(reset)
+        with psycopg.connect(dsn) as conn:
+            conn.execute("CREATE TABLE generated_reset_drift (id bigint)")
+        with (
+            psycopg.connect(dsn) as conn,
+            pytest.raises(RuntimeError, match="schema changed"),
+        ):
+            baseline.reset(conn)
+
+
+def test_empty_database_is_actually_unmigrated(empty_pg_url, pg_admin):
+    with psycopg.connect(pg_admin.dsn(empty_pg_url.rsplit('/', 1)[1])) as conn:
+        assert conn.execute("SELECT current_database()").fetchone()[0].startswith('t_')
+        assert conn.execute("SELECT to_regclass('public.alembic_version')").fetchone() == (None,)
+        assert conn.execute(
+            "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'"
+        ).fetchone() == (0,)

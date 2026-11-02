@@ -86,8 +86,8 @@ def _reminder(rid: UUID, text: str, *, created: int, due: int) -> Reminder:
 
 
 @pytest.fixture
-async def engine(pg_url: str) -> AsyncIterator[Any]:
-    eng = create_sql_engine(pg_url)
+async def engine(clean_pg_url: str) -> AsyncIterator[Any]:
+    eng = create_sql_engine(clean_pg_url)
     try:
         yield eng
     finally:
@@ -106,7 +106,7 @@ async def _say(engine: Any, body: str, *, at: int) -> int:
 
 @pytest.fixture
 async def source(
-    pg_url: str, pg_template: str, engine: Any, tmp_path: Any, monkeypatch: Any,
+    clean_pg_url: str, pg_template: str, engine: Any, tmp_path: Any, monkeypatch: Any,
 ) -> Source:
     """The room as it stood at `BEFORE_MS` — and as it stood AFTER, so the
     copy can be caught taking today's state instead of the instant's. Every
@@ -115,7 +115,7 @@ async def source(
     test."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     src = await seed_source(
-        pg_url, tmp_path, Knowledge(
+        clean_pg_url, tmp_path, Knowledge(
             transcript=(
                 Message(body="are we still on for friday", at_ms=BEFORE_MS - 10 * MINUTE),
                 # SAME display name, NO person: the only shape that tells
@@ -498,15 +498,15 @@ def _revision(pg_admin: Any, dbname: str) -> str:
 
 
 async def test_the_sandbox_database_exists_at_head_and_is_dropped_afterwards(
-    pg_url, pg_template, pg_admin,
+    clean_pg_url, pg_template, pg_admin,
 ) -> None:
     """Isolation by database is only isolation if the database is real, is the
     schema production runs, and goes away."""
     from sqlalchemy.engine import make_url
 
-    async with sandbox_database(pg_url, template=pg_template) as url:
+    async with sandbox_database(clean_pg_url, template=pg_template) as url:
         name = make_url(url).database
-        assert name and name != make_url(pg_url).database
+        assert name and name != make_url(clean_pg_url).database
         assert name in _databases(pg_admin)
         assert _revision(pg_admin, name) == _revision(pg_admin, pg_template)
         # Reachable through the URL it handed out — with the password in it.
@@ -778,7 +778,7 @@ async def test_a_hand_written_entity_anchored_note_seeds_through_create(sandbox)
 
 
 async def test_a_row_history_image_missing_the_new_hidden_at_key_restores_as_null(
-    pg_url: str, pg_template: str, engine: Any,
+    clean_pg_url: str, pg_template: str, engine: Any,
 ) -> None:
     """`messages.hidden_at` is nullable with no default, and existing
     `row_history` images were not rewritten to carry the key. So an OLDER
@@ -813,7 +813,7 @@ async def test_a_row_history_image_missing_the_new_hidden_at_key_restores_as_nul
         assert "hidden_at" not in image, "the fixture must simulate a pre-0075 image"
 
     at = datetime.now(UTC)
-    async with sandbox_as_of(pg_url, at, template=pg_template) as (sandbox_url, report):
+    async with sandbox_as_of(clean_pg_url, at, template=pg_template) as (sandbox_url, report):
         assert report.copied.get("messages", 0) >= 1
         sandbox_engine = create_sql_engine(sandbox_url)
         try:
@@ -832,7 +832,7 @@ async def test_a_row_history_image_missing_the_new_hidden_at_key_restores_as_nul
 
 
 async def test_an_image_from_before_a_dropped_backfill_restores_the_backfill(
-    pg_url: str, pg_template: str, engine: Any,
+    clean_pg_url: str, pg_template: str, engine: Any,
 ) -> None:
     """`compute_jobs.kind` and `.payload` are NOT NULL, added with a backfill
     default (`legacy`, `{}`) that was then DROPPED. An image recorded before
@@ -863,7 +863,7 @@ async def test_an_image_from_before_a_dropped_backfill_restores_the_backfill(
         )
 
     at = datetime.now(UTC)
-    async with sandbox_as_of(pg_url, at, template=pg_template) as (sandbox_url, report):
+    async with sandbox_as_of(clean_pg_url, at, template=pg_template) as (sandbox_url, report):
         assert report.copied.get("compute_jobs", 0) >= 1
         sandbox_engine = create_sql_engine(sandbox_url)
         try:

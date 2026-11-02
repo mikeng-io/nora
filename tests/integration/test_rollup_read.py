@@ -93,8 +93,8 @@ DAY0, DAY1 = "2026-09-21", "2026-09-22"
 
 
 @pytest.fixture
-async def engine(pg_url):
-    eng = create_sql_engine(pg_url)
+async def engine(clean_pg_url):
+    eng = create_sql_engine(clean_pg_url)
     try:
         yield eng
     finally:
