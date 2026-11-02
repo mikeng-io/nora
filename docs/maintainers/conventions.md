@@ -107,7 +107,7 @@ existing design's build sequence/open questions or an existing issue. File a
 GitHub issue on `mikeng-io/nora` only for actionable deferred work with no home;
 small residues belong in PR limitations. Never leave work only in chat or memory.
 When an issue is used, scope and task-specific deltas live there; evidence links
-the run/review record and Project status is the scheduling view of that issue.
+the run/review record; task readiness stays with that issue.
 **File through an issue form**
 (`.github/ISSUE_TEMPLATE/`); blank issues are disabled.
 
@@ -116,9 +116,9 @@ boundaries. Design docs own architecture, rationale, requirements and acceptance
 with links showing delivery coverage. Each issue owns one bounded outcome,
 scope/non-goals/delta and acceptance, or references revisioned design acceptance
 sections. “What's specified” below is an anchor plus the task's delta, never a
-copy of the full design. Project cards carry scheduling metadata and links:
-issue, status, priority, required execution/review tiers, run/evidence/unblock
-references. They are views of their issues, not separate task bodies. Keep
+copy of the full design. Roadmap cards expose capability/outcome issues, their horizon and lifecycle.
+Task readiness, required execution/review tiers and run/evidence/unblock links
+stay with the issue and run. Keep
 assignees, milestones, relationships and Development links native. Run/review
 records own actual worker/model/toolset/options, input revision and measured
 evidence; no checked-in task database or run records. Generic rules stay in the
@@ -244,8 +244,8 @@ reading would have caught it sooner.
 **When NOT to close.** A multi-PR design track stays open across incremental
 landings. Reference it as "issue #N" in those PR bodies, without the closing
 keyword. The design's delivery coverage links each requirement to its issue and
-accepted PR/evidence; the issue carries its remaining slice and the Project its
-scheduling status. The issue closes when the last piece lands, not the first.
+accepted PR/evidence; the issue carries its remaining slice and task readiness,
+and the roadmap carries outcome lifecycle. The issue closes when the last piece lands, not the first.
 
 **Linking, in both directions.** Each link exists so someone standing at one
 artifact can reach the others:
@@ -314,3 +314,41 @@ environment-only credential-source guidance; `*_env` references retain their nam
 Private `secret.toml` and generated delivery files never enter Git. Config and
 secret changes require validated controlled recreation; identity/policy retain
 their existing validated reload.
+
+
+## Roadmap
+
+[Universal Roadmap](https://github.com/users/mikeng-io/projects/9) is the portfolio;
+its **Nora Roadmap** view shows Nora capability/outcome issues. Nora Engineering
+is retired (operator, 2026-11-02). Ordinary bugs, maintenance and PRs remain in the
+repository backlog; there is no second execution board.
+
+A direction may be Proposed before it has a build plan. Its issue states the user
+benefit, canonical design links, known implemented parts, remaining scope and the
+next decision or evidence needed. Reuse an existing issue before adding a parent;
+use native sub-issues for actual deliverables. Do not copy a design into a card.
+Horizon Now / Next / Later is a planning order, not dispatch authority. Dates stay
+empty until committed. Review current source/merged receipts and dated design
+amendments before classifying delivery; stale frontmatter is not proof of absence.
+
+Use repository-native milestones only for an agreed delivery checkpoint. A
+cross-repository outcome links each repository's milestones; no universal
+milestone store or manually maintained completion percentage. Keep an umbrella
+outside its children's milestone unless it is itself a delivery item.
+
+Planning through `nora-decision` creates or updates the outcome issue, adds that
+same issue to the Project and sets Level=Outcome, Status and Horizon with a
+reason. Default an unscheduled new direction to Proposed / Later; retain existing
+commitments. Deliverables may appear in their own view with Level=Deliverable.
+Read back issue identity, native relations, membership and fields after writing.
+
+Completion through `nora-land` checks the linked outcome's remaining acceptance.
+Update Status only for evidenced progress: In progress for actual work, Validating
+for delivered work awaiting outcome evidence, Achieved only when the whole outcome
+is accepted. Reconcile partial work without closing the parent. Child closure and
+milestone percentage do not establish semantic quality or runtime deployment.
+Cancellation/supersession gets its reason and On hold or removal, never Achieved.
+Automatic sub-issue addition is convenience only: check Level on added children.
+No mirrored task statuses, new sync daemon, paid run, merge or deployment follows
+from roadmap membership. Reopen this allocation if measured coordination gaps
+require another execution view.
