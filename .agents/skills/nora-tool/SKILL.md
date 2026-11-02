@@ -149,7 +149,9 @@ What the tests enforce today (checked 2026-09-24, working tree):
 
 ## 8. After deploy: one real call
 
-A merged tool needs an image rebuild to be live (`nora-deploy`). Then:
+The release/image/Komodo pipeline builds and deploys a merged tool. Do not
+manually rebuild after merge. When acceptance requires live evidence, follow
+`nora-deploy` to read back the automatic deployment, then:
 1. Confirm the running process has it:
    `ssh nora-host 'cd ~/workspace/nora && python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T nora /app/.venv/bin/python -c "from nora.agent.tools import NATIVE_TOOLS; print(NATIVE_TOOLS[\"<name>\"].level)"'`
 2. Find a real call in Langfuse (`nora-readback`) and read its input and result.

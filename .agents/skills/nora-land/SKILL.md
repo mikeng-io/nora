@@ -154,6 +154,9 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
 
 ## 8. Merge: a real merge commit, authored message
 
+Before merge/auto-merge, read checks and all PR findings on the latest head;
+follow [scanner triage](reference.md#pre-merge-scanner-findings). Green CI alone is insufficient.
+
 ```bash
 git status -sb     # nothing ahead: pushed head == reviewed head
 git fetch origin && test "$(git rev-list --count HEAD..origin/master)" = 0 && echo NOT_BEHIND &&
@@ -172,7 +175,6 @@ gh pr merge <N> --merge --match-head-commit "$(git rev-parse HEAD)" \
 - `--merge` only, never `--squash` or `--rebase`.
 - Stacked PR: `gh pr edit <child> --base master` BEFORE merging its base with
   `--delete-branch`, or the child is closed (2026-09-23, #411 closed #413).
-
 ## 9. Read back
 
 ```bash
@@ -191,14 +193,12 @@ make decision-numbers > "$LOG/dn.txt" 2>&1; grep -vc '^==' "$LOG/dn.txt" # must 
 
 Reconcile original obligations with met/unmet/unavailable evidence; update design
 coverage and issue remaining scope, closing only a fully satisfied issue with a reason.
-For a linked roadmap outcome, follow [roadmap conventions](../../../docs/maintainers/conventions.md#roadmap):
-reconcile remaining acceptance, update evidenced lifecycle/horizon and read back
-fields. A merged child is not an Achieved parent; routine work needs no new card.
+For a linked outcome, follow [roadmap conventions](../../../docs/maintainers/conventions.md#roadmap): reconcile remaining acceptance,
+update evidenced lifecycle/horizon and read back fields. A merged child is not an Achieved parent; routine work needs no card.
 Report completed/unmet obligations separately; keep required read-back, add no extra
 research/deployment, and stop when the completion rule holds.
 The next change starts in a new worktree; cleanup: `docs/maintainers/conventions.md`. Deploying: nora-deploy.
 
 ## Tool notes
-Claude Code's rtk hook refuses every `git` call in a worktree-isolated
-subagent; the measured `vcs` workaround is in `nora-land/reference.md`.
+Claude Code's rtk hook refuses `git` in isolated subagents; the measured `vcs` workaround is in `nora-land/reference.md`.
 Claude Code commits end with a `Claude-Session:` footer.
