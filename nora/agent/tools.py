@@ -6548,8 +6548,7 @@ def build_tool_specs(
             return {"status": "unavailable", "note": _obs_off}
 
     async def room_state_read() -> dict:
-        """Read this group's recorded name, members and pins when somebody asks
-        about group changes.
+        """Read the recorded group name, members and pins when somebody asks.
 
         Returns scoped source state with times and coverage.
         Statuses: ok, nothing_found, unavailable."""
