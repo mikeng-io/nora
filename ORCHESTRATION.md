@@ -84,7 +84,10 @@ checks still apply. Runtime prompts, configuration and executable skill helpers
 follow their actual behavior/risk. For other changes, choose evidence by impact:
 state what changed, what could break and which check proves it. Investigate an
 unknown impact before selecting an expensive suite. The operator can require or
-waive checks/review explicitly. A missed first fix, scope surprise or
+waive checks/review explicitly. A moving master is not by itself a reason to
+repeat a local gate or review: assess upstream interactions, retain unaffected
+evidence and check changed dependencies only. Required hosted checks and branch
+rules still apply; an old exact-tree receipt is never relabelled as a new run. A missed first fix, scope surprise or
 unplanned gate repair raises review one tier (full is the ceiling) and prompts
 reassessment of execution capability. A light-review BLOCKER requires full review.
 

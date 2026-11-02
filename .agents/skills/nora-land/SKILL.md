@@ -133,7 +133,7 @@ only generated metadata auto-merges on its exact head. Application PRs retain ex
 
 ```bash
 git fetch origin; git rev-list --count HEAD..origin/master    # 0: branch is the merged tree
-git merge origin/master -m "merge: origin/master into $SLUG, <what came in>"   # if >0: focused checks; orchestrator gates
+git merge origin/master -m "merge: origin/master into $SLUG, <what came in>"   # if needed: inspect upstream delta; validate affected interactions
 git push -u origin HEAD
 cp .github/pull_request_template.md "$LOG/pr.md"   # fill in, delete the comments
 gh pr create --base master --title "<type(scope): description> (#N, DEC-M)" --body-file "$LOG/pr.md"
@@ -154,8 +154,8 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
   in), the review level and, after step 7, the triage line; a pre-existing
   unrelated failure is named with its issue number. After the LAST push refresh
   the body to `headRefOid` — a head review did not cover is named plus its
-  delta, never implied fully reviewed; a receipt refresh reruns nothing, a
-  changed tree re-runs step 3. Read it back: `gh pr view <N> --json body,headRefOid`.
+  delta, never implied fully reviewed; a receipt refresh reruns nothing.
+  A changed tree returns to impact selection, not an automatic full gate. Read it back: `gh pr view <N> --json body,headRefOid`.
 - A deployment bind-mounting `nora/doctrine` or `nora/dreamer` hot-reloads on
   mtime; mention this operator option when relevant.
 - `Closes #N` only when this PR fully resolves it; otherwise `issue #N`.
@@ -179,15 +179,21 @@ follow [scanner triage](reference.md#pre-merge-scanner-findings). Green CI alone
 
 ```bash
 git status -sb     # nothing ahead: pushed head == reviewed head
-git fetch origin && test "$(git rev-list --count HEAD..origin/master)" = 0 && echo NOT_BEHIND &&
+git fetch origin && # inspect upstream delta; update branch if required by repository rules
 gh pr merge <N> --merge --match-head-commit "$(git rev-parse HEAD)" \
   --subject "merge: <the arc> (#N)" --body-file "$LOG/merge-body.md"
 ```
 
-- `NOT_BEHIND` is read right before the merge, not at the gate: master moves
-  during a 6-minute gate (2026-09-25, #495 merged 3 behind). Chained, so a
-  failed fetch or a behind branch never reaches the merge. Behind: bring
-  master in, gate, push, re-check.
+- A moving master does not automatically invalidate passed validation. Inspect
+  `git diff <validated-base>..origin/master` for interactions with this change,
+  including shared dependencies/configuration; disjoint paths alone are not proof.
+  Preserve original evidence and record the upstream delta assessment. If no
+  relevant input changed, do not repeat the local gate or independent review.
+  If interactions changed, run only the relevant checks; broaden only when impact
+  cannot be bounded. This is an evidence assessment, not an exact-tree receipt hit.
+- Bring master in when conflicts or repository branch rules require it, push and
+  read required hosted checks. Never bypass those rules. Do not reserve a local
+  test slot merely to merge; ready PRs do not wait behind unrelated local gates.
 - Without `--subject`, `gh pr merge --merge` writes GitHub's default `Merge
   pull request #N from ...` (99 of 137 PRs #321–#478). No hook sees a server-side
   merge: the subject is `merge: ` plus the arc, the body says what the branch
