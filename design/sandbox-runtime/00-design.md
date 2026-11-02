@@ -9,6 +9,16 @@ status: partly-built
 
 # Nora's computer
 
+> **Current target, 2026-11-02 — NOT BUILT:** one microVM per policy unit or
+> canonical private-DM scope, with on-demand anonymous headed Chrome. Native
+> tools and Pi/ACP resolve the same scoped VM; the browser loop remains outside.
+> [The current browser contract](../browser-runtime/00-design.md#current-target--scoped-anonymous-browser-2026-11-02)
+> owns session/tab lifetime, direct screenshots, routed management/CDP,
+> concurrency and data-preserving migration acceptance. The shared-VM topology
+> and dated S-stage observations below are historical; the later
+> [unit workspace cutover](../computer-unit-scope/01-migration.md) shipped within
+> that shared VM. Neither that cutover nor this docs update built per-scope VMs.
+
 Status (2026-10-01): **partly built.** S0, S2a, S2b-1, S2b-2, S3a and S3b are
 merged and live (#631, #636, #639, #645, #649, #672). **S1 (Chromium RSS) and
 S4 (the browser, `computer_browse`) are not built.** Where a line below

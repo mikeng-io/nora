@@ -5,6 +5,15 @@
 > [cutover runbook](01-migration.md) for current evidence and operational limits.
 > The original proposal below is retained unchanged as historical design.
 
+> **Next topology (2026-11-02), NOT BUILT:** the shipped unit workspace and
+> room-to-unit migration remain the baseline. The
+> [scoped browser target](../browser-runtime/00-design.md#current-target--scoped-anonymous-browser-2026-11-02)
+> moves each policy unit to its own VM and each canonical private-DM scope to
+> a distinct VM; it does not rerun or undo this migration. Its routed
+> management/CDP and migration acceptance supersede the original proposal's
+> “no VM per unit” target only for future work. Historical login continuity
+> below does not include login implementation in the new anonymous slice.
+
 Status: proposed, 2026-10-21. Operator decisions are settled; implementation,
 migration and enablement are not delivered by this documentation change.
 Decision recorded at merge: take the number from origin/master when behaviour

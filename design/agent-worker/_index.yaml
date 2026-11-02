@@ -13,7 +13,10 @@ description: >
   is what makes the VM switchable later (sbx today; Cloudflare, other microVM
   services after). Model calls leave the VM only through a scoped relay, so
   no key enters it. The sub-agent stays Nora (Strands) and is the one caller.
-  Proposal, not built.
+  Proposal, not built. Current target: one VM per policy unit or canonical
+  private-DM scope, shared by native tools and Pi/ACP; anonymous headed Chrome
+  with in-memory task tabs. Routing and migration acceptance are in
+  ../browser-runtime/00-design.md; no runtime topology change is delivered.
 status: proposal
 governance: operator-directed
 timestamp: '2026-10-25'
