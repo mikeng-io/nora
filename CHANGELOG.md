@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.14.5](https://github.com/mikeng-io/nora/compare/v7.14.4...v7.14.5) (2026-11-02)
+
+
+### Bug Fixes
+
+* **discord:** refuse unresolved bridge identities at startup ([a9b08f0](https://github.com/mikeng-io/nora/commit/a9b08f0d52ecf5f703b927a2b9c0b31114dd9333))
+
 ## [7.14.4](https://github.com/mikeng-io/nora/compare/v7.14.3...v7.14.4) (2026-11-02)
 
 
