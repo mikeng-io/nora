@@ -5,10 +5,27 @@ test would fail if its behavior regressed; the fakes answer like the real
 seams (a readings receipt only "exists" for the exact (work_id, input_hash)
 pair it was written for; a failed/unadmitted session leaves stimuli
 uncovered; a historical failure lands under `backfill-stimulus:` and can
-never park a live `stimulus:` id)."""
+never park a live `stimulus:` id).
+
+Own mutation table — the exact old guard each named test catches:
+
+- hidden_before resurrects hidden rows        infra hidden_after_evidence_stays_out
+- walk drops the asserted_at bound            infra walk_omits_assertions_after_instant
+- propose writes only the combined receipt    infra multi_item_receipt + per_admitted_item
+- failure key reuses stimulus:{unit}:{sid}    failure_key_never_matches + infra five_historical
+- post-replay check uses pre-filter digests   every_item_is_run_once_oldest_first
+- replay normal-return treated as done        every_item_is_run_once_oldest_first
+- done-skip consumes a model slot             done_items_are_skipped_and_changed_input_reruns
+- max_batches counted per unit                apply_stops_at_the_batch_bound_run_wide
+- unknown token usage counted as zero         meter_reads_failed_spend_and_unknown_usage
+- catch-up queues on any-hash coverage        catch_up_refuses_incomplete_and_queues
+- catch-up item carries no still-open set     catch_up_refuses_incomplete_and_queues
+- records.load merges current text (hist)     infra hidden_after_evidence_stays_out
+"""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -156,8 +173,19 @@ class _Runner:
         self.inspect_calls.append((tuple(s.id for s in view.pending), now_ms))
         if len(self.inspect_calls) - 1 in self._fail_on:
             raise RuntimeError("grounding failed")
-        work = self._work[len(self.inspect_calls) - 1] \
-            if len(self.inspect_calls) - 1 < len(self._work) else []
+        if len(self.inspect_calls) - 1 < len(self._work):
+            work = self._work[len(self.inspect_calls) - 1]
+        elif view.pending:
+            # Default: the item the REAL session would form over THESE
+            # stimuli — a `stimuli:` work id naming them, so the test's
+            # digests always match the actually-invoked batch, never a
+            # canned list that drifts when the driver re-inspects the
+            # filtered pending.
+            ids = ",".join(str(s.id) for s in view.pending)
+            work = [{"index": 0, "work_id": f"stimuli:{ids}",
+                     "input_hash": "h"}]
+        else:
+            work = []
         return {"system": "s", "agenda": "a", "work": work} if work else None
 
     async def replay(self, *, view: Any, now_ms: int, historical: bool) -> Any:
@@ -214,24 +242,22 @@ def _run_kwargs() -> dict[str, Any]:
 async def test_every_item_is_run_once_oldest_first_and_historical(
         monkeypatch: Any):
     stimuli = [_s(1, 100), _s(2, 200), _s(3, 300)]
-    work = [[{"index": 0, "work_id": "stimuli:1", "input_hash": "h1"}],
-            [{"index": 0, "work_id": "stimuli:2,3", "input_hash": "h2"}]]
-    runner = _Runner(work_by_batch=work)
+    runner = _Runner()  # default work: stimuli:<invoked ids> — the real ids
     fail_log: list[tuple[str, int]] = []
     _patch_sql(monkeypatch, stimuli=stimuli, fail_log=fail_log)
     out = await ub.run_units(
         _FakeEngine(object()), runner=runner,
         batch_stimuli=2, **_run_kwargs())
-    assert [tuple(ids) for ids, _ in runner.inspect_calls] == [(1, 2), (3,)]
-    # Sessions got the batch's evidence instant, oldest first.
-    assert [ms for _, ms, h in runner.replay_calls] == [200, 300]
+    # Batch [1,2]: inspected, then re-inspected on the filtered pending —
+    # the replay is verified against the ACTUALLY-invoked digests.
+    assert [tuple(ids) for ids, _ in runner.inspect_calls] == [(1, 2), (1, 2)]
+    # Replay returned normally but NOTHING was comprehended → the batch is
+    # unresolved and the frontier stops before [3] is ever touched.
+    assert [ms for _, ms, h in runner.replay_calls] == [200]
     assert all(h for _, _, h in runner.replay_calls)
-    # Replay returned normally but NOTHING was comprehended → both batches
-    # are unresolved at the frontier, not done; receipts were written under
-    # the isolated historical key.
     assert out["units"]["u1"]["stopped"] == "unresolved"
     assert fail_log == [("u1", 1), ("u1", 2)]
-    assert out["units"]["u1"]["sessions"] == 1  # frontier stopped the second
+    assert out["units"]["u1"]["sessions"] == 1
 
 
 @pytest.mark.asyncio
@@ -253,7 +279,7 @@ async def test_done_items_are_skipped_and_changed_input_reruns(
 
     # Same work id, receipt only at an OLD hash (an edit landed) → not
     # skipped: the item runs again, and afterwards it IS covered.
-    runner2 = _Runner(work_by_batch=[work])
+    runner2 = _Runner(work_by_batch=[work, work])  # original + re-inspect
     pairs = {("stimuli:1,2", "hOLD")}
 
     async def _pairs2(conn: Any, work_ids: Any) -> set[tuple[str, str]]:
@@ -307,7 +333,8 @@ async def test_apply_stops_at_the_batch_bound_run_wide(monkeypatch: Any):
     out = await ub.run_units(
         _FakeEngine(object()), runner=runner, batch_stimuli=3, **kw)
     # max_batches is RUN-WIDE: two units each short of it still hit it.
-    assert len(runner.inspect_calls) == 2
+    # Each model batch inspects twice (original + filtered re-inspect).
+    assert len(runner.inspect_calls) == 4
     assert out["model_batches"] == 2
     assert out["stopped"] == "max_batches"
 
@@ -324,7 +351,7 @@ async def test_a_failed_session_is_recovered_parked_and_frontier_stops(
     out = await ub.run_units(
         _FakeEngine(object()), runner=runner, **_run_kwargs())
     assert out["units"]["u1"]["stopped"] == "inspect_failed"
-    assert fail_log == [("u1", 1)]
+    assert fail_log == [("u1", 1), ("u1", 2)]  # the whole batch fails together
 
     # At the parked threshold the stimulus is never even inspected.
     runner2 = _Runner()
@@ -441,10 +468,16 @@ async def test_catch_up_refuses_incomplete_and_queues_one_time_wake(
     async def _covered(conn: Any, unit: str) -> set[int]:
         return {1, 2}
 
+    async def _still_open(conn: Any, unit: str, now_ms: int, *,
+                          remind_subjects: Any = ()) -> dict[str, Any]:
+        return {"commitments": [{"subject": "pay invoice", "due_ms": now_ms}],
+                "events": [], "reminds": list(remind_subjects)}
+
     monkeypatch.setattr(ub, "enumerate_unit", _enum)
     monkeypatch.setattr(ub.sql, "failure_counts", _failures)
     monkeypatch.setattr(ub.sql, "readings_done", _pairs)
     monkeypatch.setattr(ub, "covered_stimulus_ids", _covered)
+    monkeypatch.setattr(ub.sql, "still_open", _still_open)
 
     async def _pending() -> list[str]:
         return ["r1", "r2"]
@@ -457,8 +490,11 @@ async def test_catch_up_refuses_incomplete_and_queues_one_time_wake(
         pending_reminds=_pending)
     assert out["units"]["u1"]["status"] == "queued"
     assert appended and appended[0].kind == "time"
-    assert appended[0].item == ub.CATCH_UP_ITEM
-    assert out["units"]["u1"]["still_open"]["pending_reminds"] == 2
+    # The stimulus's item IS the still-open selection: it renders verbatim
+    # in the agenda and seeds the graph preview via aliases.
+    assert "pay invoice" in appended[0].item
+    assert "pending reminder" in appended[0].item
+    assert out["units"]["u1"]["still_open"]["reminds"] == ["r1", "r2"]
 
     # A stale-hash receipt: the pair exists at hOLD but the current input
     # is hNEW → no false complete.
@@ -567,3 +603,64 @@ def test_historical_runner_withholds_every_read_and_keeps_collaborators():
                       "notes", "events", "standing", "reminders"):
         assert untouched not in changes
     assert runner is not None
+
+
+# -- per-item receipts through the real propose --------------------------------
+
+
+@pytest.mark.asyncio
+async def test_propose_writes_a_receipt_per_admitted_item():
+    """The completion contract end-to-end through `WakeMemory.propose`: a
+    multi-item call admits every named item, and each lands a `readings`
+    receipt under its OWN (work_id, input_hash) — reverting the follower
+    loop to a single combined receipt turns this red."""
+    from nora.app.cognition_memory import WakeMemory
+    from nora.domain.comprehend import ComprehendItem
+    from nora.domain.memory_graph import WorkItem
+
+    written: list[tuple[str, str]] = []
+
+    class _Records:
+        async def readings(self, work: Any, session: int, item: Any,
+                           claims: Any) -> None:
+            written.append((work.id, work.input_hash))
+
+    class _Result:
+        def __init__(self) -> None:
+            self.relations: list[Any] = []
+            self.evidence: list[Any] = []
+            self.refused: list[Any] = []
+
+    class _Admission:
+        async def _admit(self, work: Any, output: Any,
+                         fetched: Any, session: int) -> Any:
+            return _Result(), []
+
+    class _Graph:
+        async def walk(self, seeds: Any, scope: Any) -> Any:
+            return SimpleNamespace(nodes=[], relations=[])
+
+        async def aliases(self, *, unit: str) -> dict:
+            return {}
+
+    memory = WakeMemory.__new__(WakeMemory)
+    memory.records = _Records()
+    memory.admission = _Admission()
+    memory.graph = _Graph()
+
+    now = datetime.now(UTC)
+    a = WorkItem("stimuli:1", ("stimulus", "(1,)"), "u1", "ha", now)
+    b = WorkItem("stimuli:2", ("stimulus", "(2,)"), "u1", "hb", now)
+    item_a = ComprehendItem(work=a, sources=(), platform="signal",
+                            room="c1", snapshot={"messages": []})
+    item_b = ComprehendItem(work=b, sources=(), platform="signal",
+                            room="c1", snapshot={"messages": []})
+    state = SimpleNamespace(
+        memory_items={0: item_a, 1: item_b}, session_id=7, unit="u1",
+        graph_fetched=SimpleNamespace(nodes=[], relations=[]),
+        shown_keys=set(), admitted_relations={}, admitted_evidence=[],
+        admitted_indices=set(), graph_text="")
+    payload = {"readings": []}
+    out = await memory.propose(state, items=[0, 1], payload=payload)
+    assert out["status"] == "ok"
+    assert written == [("stimuli:1", "ha"), ("stimuli:2", "hb")]

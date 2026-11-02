@@ -86,14 +86,14 @@ class WakeMemory:
                 if row is not None and row.text is not None:
                     sources.append(Source(("message", str(row.message_id)), "record", state.unit,
                                           (row.person_id,) if row.person_id else (), row.text))
-                    try:
-                        loaded = await self.records.load(WorkItem(f"stimulus:{sid}",
-                            ("message", str(row.message_id)), state.unit, "", at,
-                            historical=state.historical))
-                    except NoResultFound:
-                        # Not projected yet: the message's own text above still stands.
-                        # ponytail: social and play stimuli still need their projection.
-                        loaded = None
+                    # `records.load` answers TODAY's projected source — its
+                    # text/reply/media fold can postdate the evidence instant
+                    # and would silently overwrite the as-of Source above on
+                    # dedup. A historical session takes the grounding's as-of
+                    # source alone (same ceiling as media: no as-of fold
+                    # exists to offer instead).
+                    loaded = None if state.historical else await _load_message(
+                        self.records, sid, row, state, at)
                     if loaded is not None:
                         loaded_items.append(loaded)
                         sources.extend(loaded.sources)
@@ -506,3 +506,18 @@ class WakeMemory:
             # next write requires a fresh profile_read.
             state.profile_accounts.pop(account.key, None)
         return out
+
+
+async def _load_message(
+    records: Any, sid: int, row: Any, state: Any, at: Any,
+) -> Any:
+    """`records.load` for one message stimulus — the LIVE path only
+    (`prepare` skips it for `state.historical`; see the call site). A
+    projection miss is ordinary (not yet projected): the grounding row's
+    own text still stands."""
+    try:
+        return await records.load(WorkItem(
+            f"stimulus:{sid}", ("message", str(row.message_id)),
+            state.unit, "", at, historical=state.historical))
+    except NoResultFound:
+        return None

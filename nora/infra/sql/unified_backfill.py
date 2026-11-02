@@ -20,7 +20,7 @@ never collide with a real row's.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Collection
+from collections.abc import Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -32,6 +32,8 @@ from nora.domain.social_stream import SOCIAL_READ_REF, read_item
 from nora.domain.stimuli import Stimulus
 from nora.infra.sql.schema import (
     COGNITION_SESSION,
+    EVENTS,
+    LEDGER_COMMITMENT,
     MESSAGE_DELETE,
     MESSAGE_EDIT,
     MESSAGE_REACTION,
@@ -412,3 +414,84 @@ async def lane_counts(conn: AsyncConnection, unit: str) -> dict[str, Any]:
         "last_ms": sessions.last,
         "parts": {str(r.part): int(r[1]) for r in parts},
     }
+
+
+async def still_open(
+    conn: AsyncConnection, unit: str, now_ms: int, *,
+    remind_subjects: Sequence[str] = (),
+) -> dict[str, Any]:
+    """The deterministic still-open selection a catch-up wake reviews,
+    from existing tables only — no engine, ledger or block of its own:
+
+    - `commitments`: ledger `standing_commitment` rows not closed
+      (`closed_at IS NULL`), each with its own `due_at` — the actual due
+      field, so expired-looking entries that were never closed still
+      surface (an overdue commitment is still open).
+    - `events`: `events` rows of the unit still proposed and not past
+      (`status='proposed'` and `when` unset or not before now), the same
+      rule `still_open_gatherings` applies to a room's list.
+    - `reminds`: the caller's pending-reminder subjects (the live
+      `pending_reminds` read the session itself grounds on).
+
+    `closed_at`/`due_at`/`when` are the row's own event-time fields, so the
+    set is provably still-open AT `now_ms` — never "anything current".
+    """
+    commits = (await conn.execute(
+        sa.select(LEDGER_COMMITMENT.c.subject, LEDGER_COMMITMENT.c.due_at)
+        .where(
+            LEDGER_COMMITMENT.c.unit == unit,
+            LEDGER_COMMITMENT.c.closed_at.is_(None),
+        ).order_by(LEDGER_COMMITMENT.c.due_at.asc().nulls_last()))
+    ).all()
+    events = (await conn.execute(
+        sa.select(EVENTS.c.title, EVENTS.c.when)
+        .where(
+            EVENTS.c.unit_id == unit,
+            EVENTS.c.status == "proposed",
+            sa.or_(EVENTS.c.when.is_(None),
+                   EVENTS.c.when >= datetime.fromtimestamp(now_ms / 1000, tz=UTC)),
+        ).order_by(EVENTS.c.when.asc().nulls_last()))
+    ).all()
+    return {
+        "commitments": [
+            {"subject": str(r.subject),
+             "due_ms": None if r.due_at is None else int(r.due_at)}
+            for r in commits],
+        "events": [
+            {"title": str(r.title),
+             "when": None if r.when is None else _ms(r.when)}
+            for r in events],
+        "reminds": list(remind_subjects),
+    }
+
+
+def still_open_item(open_work: Mapping[str, Any]) -> str:
+    """The `time` stimulus's `item` for a catch-up: a compact, deterministic
+    line of what is still open. `item` is the stimulus's own field rendered
+    verbatim by the agenda's declared `_summary` ("a time stimulus is due:
+    …") AND matched against `graph.aliases` by `preview_seeds`, so the named
+    open work both appears in the session's input AND seeds its graph
+    preview — the selection reaches the model through the ordinary assembly,
+    not a bespoke prompt."""
+    parts: list[str] = []
+    if open_work["commitments"]:
+        shown = ", ".join(
+            c["subject"] for c in open_work["commitments"][:4])
+        more = len(open_work["commitments"]) - 4
+        parts.append(
+            f"{len(open_work['commitments'])} open commitment(s): {shown}"
+            + (f" +{more}" if more > 0 else ""))
+    if open_work["events"]:
+        shown = ", ".join(e["title"] for e in open_work["events"][:4])
+        more = len(open_work["events"]) - 4
+        parts.append(
+            f"{len(open_work['events'])} upcoming event(s): {shown}"
+            + (f" +{more}" if more > 0 else ""))
+    if open_work["reminds"]:
+        shown = ", ".join(open_work["reminds"][:4])
+        more = len(open_work["reminds"]) - 4
+        parts.append(
+            f"{len(open_work['reminds'])} pending reminder(s): {shown}"
+            + (f" +{more}" if more > 0 else ""))
+    return ("catch-up review of still-open work: " + "; ".join(parts)
+            if parts else "catch-up review: nothing still open")

@@ -54,6 +54,7 @@ never acts itself.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Collection, Mapping, Sequence
@@ -380,6 +381,7 @@ class UnitOutcome:
     batches: int = 0
     sessions: int = 0
     skipped_done: int = 0
+    skipped_empty: int = 0
     failures: int = 0
     parked: int = 0
     stimuli: int = 0
@@ -602,13 +604,39 @@ async def run_units(
             metered.remaining_tokens = bounds.max_tokens - metered.total_tokens
             metered.remaining_seconds = (
                 bounds.max_seconds - (time.monotonic() - started))
-            report["model_batches"] += 1
             view = UnitView(
                 unit=unit, pending=tuple(pending), last_activity_ms=None,
                 last_wake=None, last_session=view.last_session, carry={},
             )
             try:
-                await runner.replay(view=view, now_ms=now_ms, historical=True)
+                # Re-inspect the FILTERED pending: dropping done stimuli
+                # regroups items, so this is the work the session actually
+                # gets invoked on — the digests the post-run check must
+                # verify, never the pre-filter batch's.
+                invoked = await asyncio.wait_for(
+                    runner.inspect(
+                        view=view, now_ms=now_ms, historical=True),
+                    timeout=metered.remaining_seconds)
+            except Exception:
+                log.exception("unified backfill: re-inspect failed for %s",
+                              unit)
+                for s in pending:
+                    await sql.fail_historical(engine, unit, s.id, None)
+                outcome.failures += 1
+                outcome.stopped = "inspect_failed"
+                break
+            if invoked is None or not invoked["work"]:
+                # A nonempty remainder forming no agenda item is
+                # ungroundable — count it, never silently certify.
+                outcome.skipped_empty += len(pending)
+                last_ms = now_ms
+                continue
+            work = invoked["work"]
+            report["model_batches"] += 1
+            try:
+                await asyncio.wait_for(
+                    runner.replay(view=view, now_ms=now_ms, historical=True),
+                    timeout=metered.remaining_seconds + 1)
             except Exception:
                 log.exception("unified backfill: session failed for %s", unit)
                 for s in pending:
@@ -618,9 +646,10 @@ async def run_units(
                 break
             outcome.sessions += 1
             # A normal return is NOT comprehension: re-read the durable
-            # receipts. Every agenda item must now be provably comprehended
-            # — its own exact (work_id, input_hash) pair. Coverage at a
-            # different hash cannot certify this input. Unresolved work stops the
+            # receipts. Every agenda item the session was invoked on must
+            # now be provably comprehended — its own exact
+            # (work_id, input_hash) pair. Coverage at a different hash
+            # cannot certify this input. Unresolved work stops the
             # frontier and is failure-receipted under this lane's key.
             async with engine.connect() as conn:
                 done_pairs = await sql.readings_done(
@@ -681,8 +710,9 @@ async def catch_up(
     from nora.domain.stimuli import NewStimulus
 
     out: dict[str, Any] = {"units": {}, "stopped": None}
-    open_count = (
-        len(await pending_reminds()) if pending_reminds is not None else None)
+    remind_subjects = (
+        [str(getattr(r, "text", r)) for r in await pending_reminds()]
+        if pending_reminds is not None else [])
     for unit in units:
         home = home_rooms.get(unit)
         if home is None:
@@ -701,14 +731,13 @@ async def catch_up(
                 "parked_stimuli": sorted(parked),
             }
             continue
-        failing = {sid: n for sid, n in failures.items() if n > 0}
-        if failing:
-            out["units"][unit] = {
-                "status": "incomplete", "reason": "unresolved_failures",
-                "failing_stimuli": failing,
-            }
-            continue
+        # A recorded failure blocks ONLY while its stimulus is still
+        # uncovered: a later successful retry at the exact current input
+        # clears it (the receipt is the truth, not the attempt log). Parked
+        # above already blocks.
+        failing = {sid for sid, n in failures.items() if n > 0}
         blocked: set[int] = set()
+        failed_uncovered: set[int] = set()
         error: str | None = None
         for batch in form_batches(
             stimuli, home, max_stimuli=DEFAULT_BATCH_STIMULI,
@@ -725,7 +754,13 @@ async def catch_up(
                 log.exception("catch-up gate: inspect failed for %s", unit)
                 error = "inspect_failed"
                 break
-            if info is None:
+            if info is None or not info["work"]:
+                # A nonempty batch that formed NO agenda item cannot be
+                # proven covered (ungrouped/ungroundable sources) — it
+                # blocks, never silently certifies.
+                blocked |= {s.id for s in batch}
+                failed_uncovered |= {
+                    s.id for s in batch if s.id in failing}
                 continue
             work = info["work"]
             async with engine.connect() as conn:
@@ -736,6 +771,7 @@ async def catch_up(
                     continue
                 sids = work_id_sids(w["work_id"])
                 blocked |= sids or {s.id for s in batch}
+                failed_uncovered |= sids & failing
         if error is not None:
             out["units"][unit] = {"status": "error", "reason": error}
             continue
@@ -743,11 +779,16 @@ async def catch_up(
             out["units"][unit] = {
                 "status": "incomplete", "reason": "uncovered_or_stale_input",
                 "blocked_stimuli": sorted(blocked),
+                "failing_uncovered": sorted(failed_uncovered),
             }
             continue
+        async with engine.connect() as conn:
+            open_work = await sql.still_open(
+                conn, unit, now_ms, remind_subjects=remind_subjects)
         sid = await stimulus_store.append(
             stimulus=NewStimulus(
-                unit=unit, kind="time", item=CATCH_UP_ITEM,
+                unit=unit, kind="time",
+                item=sql.still_open_item(open_work),
                 ref=f"{CATCH_UP_ITEM}:{unit}:{now_ms // 86_400_000}",
                 at_ms=now_ms, due_ms=now_ms,
             ),
@@ -756,11 +797,11 @@ async def catch_up(
         out["units"][unit] = {
             "status": "queued" if sid is not None else "already_queued",
             "stimulus_id": sid,
-            "still_open": {
-                # The selector the live session grounds on; reported, not
-                # asserted — the counts a real-clock session is about to
-                # review.
-                "pending_reminds": open_count,
-            },
+            # The deterministic still-open selection the session is about
+            # to review: open ledger commitments with due times, upcoming
+            # events, pending reminders. Closed/expired is out by the
+            # row's own fields; the `item` line renders it verbatim in the
+            # agenda and alias-seeds the graph preview.
+            "still_open": open_work,
         }
     return out
