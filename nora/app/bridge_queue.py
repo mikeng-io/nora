@@ -363,7 +363,8 @@ class StreamReader:
                 await self._register(stream_id, fields, reclaimed=True)
             batch: Any = await self._redis.xreadgroup(
                 CONSUMER_GROUP, self._consumer,
-                {self.stream: ">"}, count=50, block=5000)
+                # Leave headroom below redis-py's five-second socket timeout.
+                {self.stream: ">"}, count=50, block=1000)
             for _stream, entries in batch or ():
                 for stream_id, fields in entries:
                     await self._register(stream_id, fields)

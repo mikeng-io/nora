@@ -16,6 +16,8 @@ from dataclasses import replace
 
 import pytest
 import sqlalchemy as sa
+from redis.asyncio.retry import Retry
+from redis.backoff import NoBackoff
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from nora.app.bridge_queue import DbSpeakingLocks, StreamReader, WorkRunner, stream_name
@@ -96,6 +98,27 @@ async def _wait_event(store, event_id: str):
             return row
         await asyncio.sleep(0.1)
     raise TimeoutError(f"event {event_id} never registered")
+
+
+async def test_reader_survives_idle_socket_deadline_then_registers_event(bridge):
+    store, redis, stream = bridge
+    # A retry must not hide a healthy idle read hitting the socket deadline.
+    redis.set_retry(Retry(NoBackoff(), 0))
+    reader = _reader(redis, store, stream)
+    task = asyncio.create_task(reader._read())
+    try:
+        done, _ = await asyncio.wait({task}, timeout=6)
+        assert not done, "healthy idle stream must not terminate the reader"
+        env = _envelope("after idle", 1007)
+        sid = await _produce(redis, stream, env)
+        event = await _wait_event(store, env.event_id)
+        assert event["stream_id"] == sid
+        assert await _pending(redis, stream) == 1
+    finally:
+        reader.stop()
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 
 async def test_signal_event_flows_audit_work_and_xack(bridge, redis_client, harness):
