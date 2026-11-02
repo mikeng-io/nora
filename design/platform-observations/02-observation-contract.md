@@ -43,8 +43,9 @@ Internal IDs are scoped and private; model handles are resolved inside server sc
   choice constraints, anonymity, open/closed/unknown state, source close time if known.
   Option IDs stay stable; changed labels are not new options by positional guess.
 - **poll response:** delta for a specific option, replacement of one known voter's
-  selected set, or aggregate snapshot. Empty *complete voter selection* means a
-  withdrawn vote; omitted selection is unknown. Aggregate voters and option counts
+  selected set, or aggregate snapshot. A voter's selection is a set: repeated
+  option refs count once, including in a covered voter snapshot. Empty *complete
+  voter selection* means a withdrawn vote; omitted selection is unknown. Aggregate voters and option counts
   are separate; multi-select option counts cannot be summed into unique people.
   Retained per-voter selections report as their own labelled recorded-subset
   tally — never summed with a source aggregate and never read as a complete

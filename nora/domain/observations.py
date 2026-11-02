@@ -365,11 +365,11 @@ class PollPayload(ObservationPayload):
         object.__setattr__(self, "option_counts",
                          _pairs(dict(self.option_counts)))
         if self.selected is not None:
-            object.__setattr__(self, "selected", tuple(self.selected))
+            object.__setattr__(self, "selected", tuple(dict.fromkeys(self.selected)))
         if self.voters is not None:
             object.__setattr__(
                 self, "voters",
-                tuple((str(v), tuple(o)) for v, o in dict(self.voters).items()))
+                tuple((str(v), tuple(dict.fromkeys(o))) for v, o in dict(self.voters).items()))
 
     def validate(self, operation: Operation) -> None:
         if operation == "create" and not self.options:
@@ -1842,7 +1842,8 @@ def _member_standing(members: dict[str, Any]) -> dict[str, list[str]]:
     native active state counts as a member; pending and terminal states
     report under their own labels, and an unrecognized state is
     `unknown` — counted as neither present nor departed."""
-    standing = {"member": [], "pending": [], "departed": [], "unknown": []}
+    standing: dict[str, list[str]] = {
+        "member": [], "pending": [], "departed": [], "unknown": []}
     for subject, entry in members.items():
         state = str((entry or {}).get("state") or "")
         if state in _MEMBER_ACTIVE_STATES:

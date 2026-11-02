@@ -40,5 +40,19 @@
     "old": "        parts = [f\"{len(standing['member'])} member(s)\"]",
     "new": "        parts = [f\"{len(members)} member(s) recorded\"]",
     "target": "tests/unit/test_observation_projection.py::test_join_leave_rejoin_requested_project_only_active_members tests/unit/test_observation_projection.py::test_departed_members_report_as_departed_not_as_members tests/unit/test_observation_projection.py::test_an_unknown_member_state_is_neither_member_nor_departed"
+  },
+  {
+    "name": "a voter selection is a set rather than repeated option votes",
+    "file": "nora/domain/observations.py",
+    "old": "            object.__setattr__(self, \"selected\", tuple(dict.fromkeys(self.selected)))",
+    "new": "            object.__setattr__(self, \"selected\", tuple(self.selected))",
+    "target": "tests/unit/test_observation_projection.py::test_multiselect_counts_each_option_and_keeps_voters_distinct"
+  },
+  {
+    "name": "a voter snapshot counts each selected option only once",
+    "file": "nora/domain/observations.py",
+    "old": "                tuple((str(v), tuple(dict.fromkeys(o))) for v, o in dict(self.voters).items()))",
+    "new": "                tuple((str(v), tuple(o)) for v, o in dict(self.voters).items()))",
+    "target": "tests/unit/test_observation_projection.py::test_a_snapshot_empty_selection_is_a_withdrawal_not_a_voter"
   }
 ]

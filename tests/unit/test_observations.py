@@ -671,14 +671,15 @@ def test_complete_member_snapshot_replaces_with_native_states():
     its own states included (a `left` row the snapshot carries is kept as
     history, not dropped and not counted as a member)."""
     head = fold_observation(None, _member_delta("u1", "add", 1))
-    head = fold_observation(head, _stored(_obs(
+    snapshot = _obs(
         kind="membership", object_ref="channel:c1", operation="snapshot",
         payload=MembershipPayload(
             covered="channel",
             members=(MembershipEntry("u2", state="member"),
                      MembershipEntry("u3", state="requested"),
-                     MembershipEntry("u4", state="left")))),
-        coverage=Coverage(complete=True, covered="members")), 2)
+                     MembershipEntry("u4", state="left"))),
+        coverage=Coverage(complete=True, covered="members"))
+    head = fold_observation(head, _stored(snapshot, 2))
     members = head.state["members"]
     assert set(members) == {"u2", "u3", "u4"}   # u1 is out of the covered set
     assert members["u3"]["state"] == "requested"

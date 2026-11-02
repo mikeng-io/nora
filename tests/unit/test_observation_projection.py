@@ -118,7 +118,8 @@ def test_named_votes_report_a_labelled_subset_tally_without_aggregates():
 
 
 def test_multiselect_counts_each_option_and_keeps_voters_distinct():
-    head = _fold(_poll_create(), _select("u1", ("a", "b"), 2),
+    # A selection is a set: repeated refs from one voter cannot add votes.
+    head = _fold(_poll_create(), _select("u1", ("a", "b", "a"), 2),
                  _select("u2", ("b",), 3))
     detail = head_detail(head, name_of=_name_of)
     assert _tally_by_label(detail["recorded_tally"]) == {"yes": 1, "no": 2}
@@ -147,7 +148,7 @@ def test_a_snapshot_empty_selection_is_a_withdrawal_not_a_voter():
     head = _fold(_poll_create(), _vote("u1", "a", 2))
     head = fold_observation(head, _stored(_obs(
         operation="snapshot",
-        payload=PollPayload(voters=(("u1", ()), ("u2", ("b",)))),
+        payload=PollPayload(voters=(("u1", ()), ("u2", ("b", "b")))),
         coverage=Coverage(complete=True, covered="voters")), 3))
     assert head.state["votes"]["u1"] == []    # the withdrawal is retained
     detail = head_detail(head, name_of=_name_of)
