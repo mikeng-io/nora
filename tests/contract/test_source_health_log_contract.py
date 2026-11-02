@@ -23,7 +23,7 @@ NOW = 1_790_000_000_000
 
 
 @pytest.fixture(params=["memory", "sql"])
-async def log_and_rows(request: Any) -> AsyncIterator[tuple[Any, Any]]:
+async def log_and_rows(_pg_engine_scope, request: Any) -> AsyncIterator[tuple[Any, Any]]:
     if request.param == "memory":
         log = InMemorySourceHealthLog()
 

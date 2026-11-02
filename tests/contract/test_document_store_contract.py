@@ -37,7 +37,7 @@ def _rev(title: str = "Weekend", sha: str = SHA_A, **overrides: Any) -> Revision
 
 
 @pytest.fixture(params=["fake", "sql"])
-async def store(request):
+async def store(_pg_engine_scope, request):
     if request.param == "fake":
         s = FakeDocumentStore()
     else:
@@ -270,7 +270,9 @@ async def test_a_page_past_the_end_or_out_of_bounds_is_an_empty_page_on_both_sto
     )
 
 
-async def test_the_table_refuses_a_bad_media_element_and_an_oversized_spec(request):
+async def test_the_table_refuses_a_bad_media_element_and_an_oversized_spec(
+    _pg_engine_scope, request,
+):
     """SQL only: the CHECKs are the table's own bound, for a writer that is not the store."""
     import sqlalchemy as sa
     from sqlalchemy.exc import IntegrityError
@@ -564,7 +566,9 @@ async def test_set_state_on_an_unknown_id_is_false_and_writes_nothing(store):
     assert await store.set_state(document_id=uuid4(), state="deleted", set_by="ken") is False
 
 
-async def test_the_state_table_is_append_only_and_its_check_names_every_state(request):
+async def test_the_state_table_is_append_only_and_its_check_names_every_state(
+    _pg_engine_scope, request,
+):
     """SQL only: every change is a row (none updated), the latest wins, and the CHECK on
     `state` admits exactly `DOCUMENT_STATES` and refuses anything else."""
     import sqlalchemy as sa
@@ -632,7 +636,7 @@ async def _locked_holder(engine, doc):
     return conn, trans
 
 
-async def test_a_revision_waits_for_a_delete_in_flight_and_then_refuses(request):
+async def test_a_revision_waits_for_a_delete_in_flight_and_then_refuses(_pg_engine_scope, request):
     """SQL only, two real connections. A delete holds the identity-row lock and has
     written its state row but not committed; a revision that starts now must wait, and
     when the delete commits it must see `deleted` and write nothing."""
@@ -664,7 +668,7 @@ async def test_a_revision_waits_for_a_delete_in_flight_and_then_refuses(request)
         await engine.dispose()
 
 
-async def test_a_state_change_waits_for_a_revision_in_flight(request):
+async def test_a_state_change_waits_for_a_revision_in_flight(_pg_engine_scope, request):
     """SQL only: the other direction. A revision holds the lock; `set_state` waits for it
     rather than writing alongside it."""
     clean_pg_url = request.getfixturevalue("clean_pg_url")

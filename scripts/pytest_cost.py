@@ -24,9 +24,15 @@ def cost(config: pytest.Config) -> dict[str, Any]:
     value = config.stash.get(_COST, None)
     if value is None:
         value = {"fixture_setups": {}, "servers": [], "selected_nodes": [], "outcomes": {},
+                 "ordinary_resets": 0, "truncated_tables": 0,
                  "started_at": datetime.now(UTC).isoformat()}
         config.stash[_COST] = value
     return value
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    if not session.config.option.collectonly:
+        cost(session.config)  # controller timestamp precedes worker startup/aggregation
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -99,6 +105,8 @@ def pytest_testnodedown(node, error) -> None:
     for name, count in remote["fixture_setups"].items():
         local["fixture_setups"][name] = local["fixture_setups"].get(name, 0) + count
     local["servers"].extend(remote["servers"])
+    local["ordinary_resets"] += remote["ordinary_resets"]
+    local["truncated_tables"] += remote["truncated_tables"]
     local["outcomes"].update(remote["outcomes"])
     # xdist workers collect the same population; count that population once.
     local["selected_nodes"] = sorted(set(local["selected_nodes"]) | set(remote["selected_nodes"]))

@@ -69,6 +69,10 @@ Disposable PostgreSQL reuse:
   and changed sequence states, including increments from rolled-back transactions.
   Empty tables are not unconditionally truncated. History capture is disabled
   only in the reset transaction; schema/trigger/durability behavior is preserved.
+  The fixture owns real async engines, including partial construction failures,
+  and closes them on their owning loop before reset. A small `_pg_engine_scope`
+  dependency keeps that loop alive; lazy SQL/fake fixtures declare it before
+  dynamically requesting the URL, without starting Docker for the fake branch.
   A schema change, live old connection or failed reset stops subsequent reuse.
   Deliberate schema/non-row-state cases use `@pytest.mark.fresh_database` to request
   a dedicated migrated clone through the same caller fixtures. `empty_pg_url`
@@ -109,6 +113,7 @@ outcomes, shared-fixture setup counts and each owned PostgreSQL server's observe
 pre-teardown WAL/checkpoints/Docker block writes. Custom database-owner calls are
 not inferred from fixture counts. The macOS runner also reads the Docker VM process
 before/after; that window includes other daemon services and is not SSD/NAND usage.
+It measures the test runner, excluding static checks that preceded it.
 Unavailable counters stay unavailable. Worker collection is counted once; both
 functional and serial timing phases share one receipt. Collection-only runs create
 neither containers nor a cost receipt. This record includes failures and is separate

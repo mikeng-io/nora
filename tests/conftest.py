@@ -13,6 +13,7 @@ majority of the suite (which uses `FakeRecordStore`) pays nothing for it.
 
 from __future__ import annotations
 
+import asyncio
 import time
 import urllib.error
 import urllib.request
@@ -26,6 +27,7 @@ from typing import Any
 import boto3
 import psycopg
 import pytest
+from sqlalchemy import event
 from testcontainers.core.container import DockerContainer
 from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
@@ -338,7 +340,13 @@ def _pg_baseline(pg_admin: _PgAdmin, pg_template: str) -> PgBaseline:
 
 
 @pytest.fixture
-async def clean_pg_url(request, pg_admin: _PgAdmin, monkeypatch):
+async def _pg_engine_scope():
+    """Keep pytest's loop alive until dynamic synchronous URL teardown completes."""
+    yield asyncio.get_running_loop()
+
+
+@pytest.fixture
+def clean_pg_url(request, pg_admin: _PgAdmin, monkeypatch, _pg_engine_scope) -> Iterator[str]:
     """Real committed module DB, reset after all dependent engines/tasks close.
 
     A named fresh_database case changes schema or database-level state, so owns
@@ -357,7 +365,17 @@ async def clean_pg_url(request, pg_admin: _PgAdmin, monkeypatch):
 
     def create_owned(*args, **kwargs):
         engine = create(*args, **kwargs)
-        owned.append(engine)
+        state = {"engine": engine, "loop": None, "closed": False}
+
+        def connected(connection):
+            state.update(loop=asyncio.get_running_loop(), closed=False)
+
+        def disposed(sync_engine):
+            state["closed"] = True
+
+        event.listen(engine.sync_engine, "engine_connect", connected)
+        event.listen(engine.sync_engine, "engine_disposed", disposed)
+        owned.append((state, connected, disposed))
         return engine
 
     # Keep real engines/commits, but own even partially constructed graphs.
@@ -366,12 +384,28 @@ async def clean_pg_url(request, pg_admin: _PgAdmin, monkeypatch):
         yield url
     finally:
         try:
-            for engine in reversed(owned):
-                await engine.dispose()
+            for state, connected, disposed in reversed(owned):
+                engine = state["engine"]
+                if not state["closed"]:
+                    loop = state["loop"]
+                    if loop is None:
+                        engine.sync_engine.dispose()  # never connected
+                    elif loop.is_closed() or loop.is_running():
+                        raise RuntimeError("Close test-owned engines before their event loop ends")
+                    else:
+                        loop.run_until_complete(engine.dispose())
+                event.remove(engine.sync_engine, "engine_connect", connected)
+                event.remove(engine.sync_engine, "engine_disposed", disposed)
             with psycopg.connect(pg_admin.dsn(url.rsplit('/', 1)[1])) as conn:
-                baseline.reset(conn)
-        except Exception as exc:  # noqa: BLE001 — a failed reset must stop subsequent reuse
-            pytest.exit(f"Module DB reset unavailable: {exc}", returncode=2)
+                truncated = baseline.reset(conn)
+            from scripts.pytest_cost import cost
+
+            receipt = cost(request.config)
+            receipt["ordinary_resets"] += 1
+            receipt["truncated_tables"] += truncated
+        except Exception as exc:
+            request.session.shouldstop = f"Module DB reset unavailable: {exc}"
+            raise RuntimeError(request.session.shouldstop) from exc
 
 
 @pytest.fixture

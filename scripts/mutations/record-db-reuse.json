@@ -16,8 +16,22 @@
   {
     "name": "committed record state is reset between consumers",
     "file": "tests/conftest.py",
-    "old": "baseline.reset(conn)",
-    "new": "pass",
+    "old": "truncated = baseline.reset(conn)",
+    "new": "truncated = 0",
     "target": "tests/infra/test_pg_fixture_lifecycle.py::test_record_reuse_resets_committed_state"
+  },
+  {
+    "name": "complete reset restores migration seed rows",
+    "file": "tests/infra/pg_baseline.py",
+    "old": "for name in sorted(dirty & self.seeds.keys()):",
+    "new": "for name in ():",
+    "target": "tests/infra/test_pg_fixture_lifecycle.py::test_complete_reset_restores_seeds_history_and_rolled_back_sequences"
+  },
+  {
+    "name": "rolled-back sequence increments return to the baseline",
+    "file": "tests/infra/pg_baseline.py",
+    "old": "for name, state in self.sequences.items():",
+    "new": "for name, state in ():",
+    "target": "tests/infra/test_pg_fixture_lifecycle.py::test_complete_reset_restores_seeds_history_and_rolled_back_sequences"
   }
 ]

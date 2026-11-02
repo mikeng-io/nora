@@ -36,21 +36,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 async def owned_dependencies(clean_pg_url, monkeypatch):
-    from nora.__main__ import App
-
     build = build_dependencies
     owned = []
 
     async def build_owned(cfg, **kwargs):
         deps = await build(cfg, **kwargs)
-        owned.append(App(cfg=cfg, deps=deps))
+        owned.append(deps)
         return deps
 
     monkeypatch.setattr(sys.modules[__name__], "build_dependencies", build_owned)
     yield
-    for app in reversed(owned):
-        await app.deps.background.cancel_all()
-        await app.shutdown()
+    for deps in reversed(owned):
+        await deps.background.cancel_all()
+        await deps.audit.aclose()
 
 _HOME_POLICY = (
     'default = "deny"\n'

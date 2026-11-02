@@ -23,7 +23,7 @@ KEY = VideoReadingKey(
 
 
 @pytest.fixture(params=["fake", "sql"])
-async def store(request):
+async def store(_pg_engine_scope, request):
     if request.param == "fake":
         yield FakeVideoReadingStore()
         return

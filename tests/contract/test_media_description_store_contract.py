@@ -25,7 +25,7 @@ TOKEN = "sticker:8c6ce85a3156b8e498e1ba0e97bc6620:15"  # noqa: S105
 
 
 @pytest.fixture(params=["fake", "sql"])
-async def store(request):
+async def store(_pg_engine_scope, request):
     if request.param == "fake":
         yield FakeMediaDescriptionStore()
         return
