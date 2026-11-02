@@ -350,3 +350,16 @@ engineering evidence, not production backfill, a flag flip or semantic PASS.
 Full semantic proof and public benchmarks are not cutover prerequisites:
 production observes useful recall, staleness and correction under the operator's
 bounded rollout and observation decision.
+
+
+**Rollout checkpoint, 2026-11-02.** v7.14.0 is deployed. Rate-limited code
+projection completed with no excluded or queued sources; this is code-derived
+structure, not model-quality evidence. Seven historical sessions used 657,255
+reported tokens, with 42 distinct input completion receipts observed. Index and
+profile prompt-read flags remain off; catch-up and the 14-day switch observation
+have not started. The first inspect hit a recursive SQL timeout; a same-input
+zero-model retry passed. A separate two-process probe found equal canonical
+sources yielding different completion hashes through source/person iteration
+order. Paid continuation is stopped on that reproducible progress defect;
+[PR #545](https://github.com/mikeng-io/nora/pull/545) carries the bounded repair
+and its pending acceptance. No complete backfill or Honcho replacement is claimed.
