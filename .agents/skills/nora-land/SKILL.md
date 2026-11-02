@@ -16,7 +16,6 @@ PR (6) and STOP; the orchestrator gates (3), reviews, merges and reads back (7â€
 TYPE=<commit-type>; SLUG=<kebab-slug>; WT=<new-worktree-path>        # WT outside every checkout
 LOG=${TMPDIR:-/tmp}/land-$SLUG; mkdir -p "$LOG"   # fixed, OUTSIDE the worktree
 ```
-
 Shell state may not survive between calls: re-set `TYPE`/`SLUG`/`LOG` each call; carry results in files, not variables.
 
 ## 1. Start: intent, then a new worktree on a new branch
@@ -156,26 +155,8 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
 
 ## 8. Merge: a real merge commit, authored message
 
-Before merging, or enabling auto-merge, inspect the latest pushed head's checks,
-PR conversation comments, submitted reviews and inline review threads. Green CI
-alone does not clear bot findings (including secret scanners such as Gitleaks or
-GitGuardian). Read the actual finding and its current disposition, including
-findings reported only in comments or check annotations.
-
-- Triage each actionable finding against the current diff: fix it, or record
-  evidence that it is a false positive, superseded or outside this change.
-  Unresolved credible secret/security findings block merge; an inaccessible
-  report is unavailable evidence, never a clean result. Never copy secret values
-  into replies, logs or the PR body.
-- Re-read findings and check results after the final push and immediately before
-  merge/auto-merge. Do not resolve a thread merely to make the merge button green.
-  Record the disposition in the PR's existing gate section; no extra reviewer is
-  required merely to read scanner output.
-- GitHub required status checks and required conversation resolution provide
-  mechanical enforcement where configured. Conversation resolution covers review
-  threads, not every ordinary bot comment; the agent still reads both. Do not
-  enable auto-merge while actionable findings remain, or bypass required checks.
-
+Before merge/auto-merge, read checks and all PR findings on the latest head;
+follow [scanner triage](reference.md#pre-merge-scanner-findings). Green CI alone is insufficient.
 
 ```bash
 git status -sb     # nothing ahead: pushed head == reviewed head
@@ -195,7 +176,6 @@ gh pr merge <N> --merge --match-head-commit "$(git rev-parse HEAD)" \
 - `--merge` only, never `--squash` or `--rebase`.
 - Stacked PR: `gh pr edit <child> --base master` BEFORE merging its base with
   `--delete-branch`, or the child is closed (2026-09-23, #411 closed #413).
-
 ## 9. Read back
 
 ```bash
@@ -218,7 +198,6 @@ Report completed/unmet obligations separately; keep required read-back, add no e
 research/deployment, and stop when the completion rule holds.
 The next change starts in a new worktree. Cleanup:
 `docs/maintainers/conventions.md` Cleanup. Deploying: nora-deploy.
-
 ## Tool notes
 Claude Code's rtk hook refuses every `git` call in a worktree-isolated
 subagent; the measured `vcs` workaround is in `nora-land/reference.md`.
