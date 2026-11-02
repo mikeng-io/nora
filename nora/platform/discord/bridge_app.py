@@ -1507,6 +1507,8 @@ class DiscordBridge:
     # ---- identity / health ----------------------------------------------------
 
     async def get_self(self, req: web.Request) -> web.Response:
+        if not self.self_id:
+            return web.json_response({"error": "identity_unavailable"}, status=503)
         user = getattr(self._client, "user", None) if self._client else None
         return web.json_response({
             "platform": PLATFORM, "primary": self.self_id,

@@ -3,15 +3,64 @@
 import asyncio
 import gc
 import weakref
+from types import SimpleNamespace
 
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from nora.domain.actions import ActionOwner
-from nora.domain.models import ConversationTarget
-from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint
+from nora.domain.models import ConversationTarget, NormalizedMessage
+from nora.ingest.policy import MentionPolicy
+from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint, BridgeUnavailableError
+from nora.platform.discord.bridge_app import DiscordBridge
 from nora.platform.discord.bridge_control import BridgeControlClient, BridgeDiscordAdapter
+
+
+@pytest.mark.parametrize("body", [
+    {}, {"primary": ""}, {"primary": " "}, {"primary": None}, {"primary": 42},
+])
+async def test_bridge_identity_rejects_unusable_primary(body):
+    async def identity(request):
+        return web.json_response(body)
+
+    app = web.Application()
+    app.router.add_get("/v1/self", identity)
+    async with TestServer(app) as server:
+        adapter = BridgeAdapter("discord", BridgeEndpoint(
+            str(server.make_url("")).rstrip("/"), "synthetic"))
+        try:
+            with pytest.raises(BridgeUnavailableError, match="no usable primary identity"):
+                await adapter.resolve_identity()
+        finally:
+            await adapter.close()
+
+
+async def test_discord_identity_unavailable_until_ready_then_mention_engages():
+    bridge = DiscordBridge(
+        api_token="synthetic", account_key="generated-account",  # noqa: S106 — generated fixture
+        client=SimpleNamespace(user=None))
+    async with TestServer(bridge.routes()) as server:
+        adapter = BridgeAdapter("discord", BridgeEndpoint(
+            str(server.make_url("")).rstrip("/"), "synthetic"))
+        try:
+            with pytest.raises(BridgeUnavailableError, match="/v1/self -> 503"):
+                await adapter.resolve_identity()
+            bridge._client.user = SimpleNamespace(
+                id=123, name="generated-nora", discriminator="0")
+            await bridge.on_gateway_ready()
+            identity = await adapter.resolve_identity()
+            assert identity.primary == "123"
+            assert identity.aliases == frozenset({"123"})
+            message = NormalizedMessage(
+                platform="discord", conversation_id="generated/room",
+                conversation_type="group", sender_id="generated-sender",
+                sender_name=None, timestamp=1, body="@generated-nora", raw={},
+                mentions=frozenset({"123"}))
+            decision = await MentionPolicy(identity.aliases).should_engage(message=message)
+            assert decision.engage and decision.reason == "mention"
+        finally:
+            await adapter.close()
 
 
 async def test_absent_readback_does_not_reject_an_inflight_post():

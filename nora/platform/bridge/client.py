@@ -163,8 +163,11 @@ class BridgeAdapter:
 
     async def resolve_identity(self) -> PlatformIdentity:
         data = await self._get("/v1/self")
+        primary = data.get("primary")
+        if not isinstance(primary, str) or not primary.strip():
+            raise BridgeUnavailableError("/v1/self returned no usable primary identity")
         return PlatformIdentity(
-            platform=self.platform, primary=str(data["primary"]),
+            platform=self.platform, primary=primary,
             aliases=frozenset(data.get("aliases") or ()))
 
     async def listen(self, *, on_message: Callable[[NormalizedMessage],
