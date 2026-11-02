@@ -6048,7 +6048,10 @@ def build_tool_specs(
                     reverse=True)
                 more = len(heads) > _DISCOVERY_LIMIT
                 out = [{"object": handle_of(h),
-                        "state": head_summary(h), "ordering": h.ordering,
+                        "state": head_summary(
+                            h, name_of=lambda ref: _source_name_of(
+                                scope.platform, ref)),
+                        "ordering": h.ordering,
                         **({"time": h.observed_quality}
                            if h.observed_quality != "upstream" else {}),
                         **({"coverage": coverage_label(h.coverage)}
@@ -6099,7 +6102,9 @@ def build_tool_specs(
                 return _memory_result(
                     {"status": "ok", "kind": kind,
                      "object": object,
-                     "state": (head_summary(folded) if folded else "no state"),
+                     "detail": (head_detail(
+                         folded, name_of=lambda ref: _source_name_of(
+                             scope.platform, ref)) if folded else None),
                      "ordering": folded.ordering if folded else "",
                      **({"note": note} if note else {})})
             if history:

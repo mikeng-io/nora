@@ -28,6 +28,7 @@ from ...domain.observations import (
     MembershipPayload,
     MessageMetadataPayload,
     Observation,
+    Operation,
     PinPayload,
     PollPayload,
     ReactionPayload,
@@ -1020,21 +1021,24 @@ def _scheduled_event_fields(ev: Any) -> dict[str, Any]:
     if isinstance(ch_name, str) and ch_name:
         fields["channel_name"] = ch_name
     user_count = getattr(ev, "user_count", None)
-    if isinstance(user_count, int) and user_count > 0:
+    if (isinstance(user_count, int) and not isinstance(user_count, bool)
+            and user_count >= 0):
         fields["interested_count"] = user_count
     return fields
 
 
 def parse_discord_scheduled_event(
-    ev: Any, *, operation: str, account_key: str,
+    ev: Any, *, operation: Operation, account_key: str,
 ) -> Observation | None:
     """A guild scheduled event's create/update/delete dispatch → an
     `artifact/event` observation on the GUILD scope (its configured rooms
     bind downstream; a guild event is never a channel's audience).
 
-    create carries the full reported field set, update only the changed
-    fields (discord.py hands `before`/`after`; callers pass `after` and the
-    diff is computed against `before` when supplied), delete is `withdraw`.
+    create carries the full reported field set; update is handed the
+    COMPLETE `after` object, so a covered field absent from it is a
+    source-declared clear — serialized as explicit null metadata the fold
+    drops — while a field the object cannot report stays a coverage gap
+    (an absent `user_count` is unknown, never zero); delete is `withdraw`.
     The event URL/cover stay withheld — recorded as coverage gaps."""
     # `guild_id` is the direct payload field — `ev.guild` is a CACHE property
     # that is None whenever the guild dropped out of cache, and dropping the
@@ -1044,15 +1048,17 @@ def parse_discord_scheduled_event(
     if guild_id is None or not ev_id:
         return None
     object_ref = f"event:{ev_id}"
+    gaps = ["join_url", "image"]
     if operation == "withdraw":
         metadata: dict[str, Any] = {"name": str(getattr(ev, "name", "") or "")}
         op = "withdraw"
     else:
         fields = _scheduled_event_fields(ev)
+        entity_type = str(fields.pop("entity_type", "") or "")
         metadata = {
             "name": fields.pop("name", ""),
             "status": str(fields.pop("status", "") or ""),
-            "entity_type": str(fields.pop("entity_type", "") or ""),
+            "entity_type": entity_type,
             "description": str(fields.pop("description", "") or ""),
             "location_name": str(fields.pop("location_name", "") or ""),
             "channel_name": str(fields.pop("channel_name", "") or ""),
@@ -1063,7 +1069,27 @@ def parse_discord_scheduled_event(
             metadata["end_time_s"] = fields["end_ms"] // 1000
         if fields.get("interested_count") is not None:
             metadata["interested_count"] = fields["interested_count"]
-        metadata = {k: v for k, v in metadata.items() if v != "" and v is not None}
+        else:
+            gaps.append("interested_count")
+        if operation == "revise":
+            # `after` is the whole object: a covered field absent from it
+            # was REMOVED upstream — explicit None is the declared clear.
+            metadata = {k: v for k, v in metadata.items() if v != ""}
+            for key in ("name", "status", "entity_type", "description",
+                        "location_name", "start_time_s", "end_time_s"):
+                if key not in metadata:
+                    metadata[key] = None
+            # `channel` resolves through the guild cache: an uncached
+            # channel is UNKNOWN (a gap), never a clear — only a declared
+            # `external` entity proves the event has no channel.
+            if "channel_name" not in metadata:
+                if entity_type == "external":
+                    metadata["channel_name"] = None
+                else:
+                    gaps.append("channel_name")
+        else:
+            metadata = {k: v for k, v in metadata.items()
+                        if v != "" and v is not None}
         op = operation
     return Observation(
         object_kind="artifact",
@@ -1076,7 +1102,7 @@ def parse_discord_scheduled_event(
         actor_status="not_supplied", time_quality="unknown",
         coverage=Coverage(
             complete=False, covered="fields",
-            gaps=("join_url", "image"),
+            gaps=tuple(gaps),
             reason="external join URL and cover withheld by policy"))
 
 

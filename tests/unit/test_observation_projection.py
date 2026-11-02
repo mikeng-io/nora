@@ -25,6 +25,7 @@ from nora.domain.observations import (
     fold_observation,
     head_detail,
     head_summary,
+    observation_summary,
 )
 
 SCOPE = SourceScope(platform="signal", account_key="acct",
@@ -283,6 +284,64 @@ def test_artifact_projection_is_bounded_and_reports_unprojected_keys():
     assert entry["unprojected_fields"] == 2      # blob + join_url counted
     assert "some_native_blob" not in entry and "join_url" not in entry
     assert "internal.example" not in str(detail)
+
+
+def test_a_response_delta_names_the_actor_answer_and_its_retraction():
+    """The RSVP delta IS the observation's fact — actor, answer and extra
+    guests on the same line a history read emits; a source-declared
+    withdrawal says so; an answer the source marked unreadable is never
+    called a withdrawal."""
+    obs = _artifact({"response": "going", "extra_guest_count": 2},
+                    op="revise", actor="u1", actor_status="known")
+    line = observation_summary(obs, name_of=_name_of)
+    assert "Ana" in line and "going" in line and "2 extra" in line
+    obs = _artifact({"response": ""}, op="revise", actor="u1",
+                    actor_status="known")
+    assert "withdrew" in observation_summary(obs, name_of=_name_of)
+    obs = _artifact(
+        {"response": ""}, op="revise", actor="u1", actor_status="known",
+        coverage=Coverage(complete=False, covered="response",
+                          gaps=("response",)))
+    line = observation_summary(obs, name_of=_name_of)
+    assert "withdrew" not in line and "unknown" in line
+
+
+def test_a_declared_null_is_a_clear_not_a_stale_field():
+    """A full-after update reporting a field absent (explicit null) drops
+    the stale value in the fold — description, location and end time all
+    clear, while a reported `interested_count` of 0 stays a real zero."""
+    head = _fold(_stored(_artifact({
+        "name": "Breakfast", "description": "café", "location_name": "place",
+        "end_time_s": 1790003600, "interested_count": 4}), 1))
+    head = fold_observation(head, _stored(_artifact({
+        "description": None, "location_name": None, "end_time_s": None,
+        "interested_count": 0}, op="revise"), 2))
+    (entry,) = head_detail(head, name_of=_name_of)["artifacts"]
+    assert "description" not in entry and "location_name" not in entry
+    assert "end_time" not in entry
+    assert entry["interested_count"] == 0
+    assert entry["name"] == "Breakfast"
+
+
+def test_head_summary_names_artifact_status_responders_and_contacts():
+    """The standing label is the same bounded projection as the detail —
+    lifecycle status, who answered what and bounded contact fields all
+    survive the one-line render."""
+    head = _fold(_stored(_artifact({
+        "name": "Breakfast", "start_time_s": 1790000000,
+        "status": "canceled",
+        "contacts": [{"display_name": "Dee", "phones": ["+1 555"]}],
+        "contacts_more": 2},), 1))
+    head = fold_observation(head, _stored(_artifact(
+        {"response": "going"}, op="revise", actor="u1",
+        actor_status="known"), 2))
+    summary = head_summary(head, name_of=_name_of)
+    assert "Breakfast" in summary and "canceled" in summary
+    assert "Ana" in summary and "going" in summary
+    assert "Dee" in summary
+    (entry,) = head_detail(head, name_of=_name_of)["artifacts"]
+    assert entry["contacts_more"] == 2
+    assert entry["contacts"][0]["phones"] == ["+1 555"]
 
 
 def test_head_summary_names_an_event_with_its_time_and_cancellation():

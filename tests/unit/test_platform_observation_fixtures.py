@@ -636,6 +636,39 @@ def test_scheduled_event_update_records_status_transition() -> None:
     assert obs.payload.metadata["status"] == "canceled"  # type: ignore[attr-defined]
 
 
+def test_a_full_after_update_declares_clears_and_a_real_zero() -> None:
+    """`after` is the WHOLE event: a reported-null description, location
+    and end time serialize as explicit clears (None), `user_count` 0 is a
+    real zero — while a field the object cannot report stays a coverage
+    gap, never a stale keep or a fabricated clear."""
+    doc = _load(FIXTURES / "discord" / "guild_scheduled_event_update.json")
+    d = doc["payload"]["d"]
+    d["description"] = None
+    d["entity_metadata"] = {"location": None}
+    d["scheduled_end_time"] = None
+    d["user_count"] = 0
+    _, (_, ev) = _se_doc(doc)
+    obs = parse_discord_scheduled_event(ev, operation="revise", account_key="acct")
+    assert obs is not None
+    md = obs.payload.metadata  # type: ignore[attr-defined]
+    assert md["description"] is None
+    assert md["location_name"] is None
+    assert md["end_time_s"] is None
+    assert md["interested_count"] == 0
+    assert md["name"] == "fixture-event"
+
+
+def test_an_absent_user_count_is_a_gap_never_a_zero() -> None:
+    doc = _load(FIXTURES / "discord" / "guild_scheduled_event_update.json")
+    doc["payload"]["d"].pop("user_count", None)
+    _, (_, ev) = _se_doc(doc)
+    obs = parse_discord_scheduled_event(ev, operation="revise", account_key="acct")
+    assert obs is not None
+    md = obs.payload.metadata  # type: ignore[attr-defined]
+    assert "interested_count" not in md  # unknown ≠ cleared, ≠ 0
+    assert "interested_count" in obs.coverage.gaps
+
+
 @pytest.mark.parametrize(
     ("fixture", "added"),
     [

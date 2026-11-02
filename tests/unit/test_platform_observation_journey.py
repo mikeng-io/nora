@@ -214,6 +214,57 @@ async def test_the_mixed_journey_reads_back_from_append_to_agenda():
     assert "room-a" not in prompt and "acct" not in prompt  # R-18
 
 
+async def test_an_event_and_its_answers_reach_the_assembled_state_named():
+    """SOURCE → fold → the Standing a model reads: the event's own fields,
+    its lifecycle status and WHO answered what — named through the roster
+    by the one bounded projection — never a bare count, a raw stanza id,
+    or an answer the source took back."""
+    store = FakeObservationStore()
+
+    async def put(name: str, obs: Observation) -> None:
+        rid = await store.append(
+            observation=obs, event_id=f"evt-{name}",
+            source_digest=f"d-{name}")
+        assert rid is not None
+
+    await put("create", _obs(
+        kind="artifact", ref="event:e9", op="create",
+        payload=ArtifactPayload(
+            artifact_kind="event", custody="declared",
+            metadata={"name": "Breakfast", "status": "canceled",
+                      "start_time_s": NOW // 1000 + 3600}),
+        ago=30, actor="+852111", actor_status="known", position=1))
+    rid_going = await store.append(observation=_obs(
+        kind="artifact", ref="event:e9", op="revise",
+        payload=ArtifactPayload(
+            artifact_kind="event", custody="declared",
+            metadata={"response": "going", "extra_guest_count": 2}),
+        ago=10, actor="+852111", actor_status="known", position=2),
+        event_id="evt-going", source_digest="d-going")
+    assert rid_going is not None
+
+    stimuli = [_stim(9, rid_going, "artifact", 10)]
+    sit, ground = _grounding(store, stimuli)
+    g = await ground("u", sit.agenda.items, stimuli)
+
+    # The stimulus line: the delta names Ada and her answer.
+    obs = g.observations[f"platform_observation:{rid_going}"]
+    assert obs.actor == "Ada"
+    assert "going" in obs.summary and "2 extra" in obs.summary
+
+    # The Standing object's state line: the SAME projection — status, the
+    # named responder's answer, her guests — not "event (1 field)".
+    (obj,) = [o for o in g.source_objects["signal:room-a"]
+              if o.kind == "artifact"]
+    assert "Breakfast" in obj.state and "canceled" in obj.state
+    assert "Ada" in obj.state and "going" in obj.state
+    assert "e9" not in obj.state and "acct" not in obj.state
+
+    prompt = _prompt(stimuli, g)
+    assert "Breakfast" in prompt and "going" in prompt
+    assert "e9" not in prompt
+
+
 async def test_replay_and_window_and_bound_stay_honest():
     store = FakeObservationStore()
     ids = await _append_journey(store)

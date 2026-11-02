@@ -58,6 +58,7 @@ import aiohttp
 from aiohttp import typedefs, web
 
 from nora.domain.models import ConversationTarget
+from nora.domain.observations import Operation
 from nora.domain.ports import (
     Mention,
     MusicToolOutcome,
@@ -1227,9 +1228,9 @@ class DiscordBridge:
         if kind in ("scheduled_event_create", "scheduled_event_update",
                     "scheduled_event_delete"):
             after = payload[1] if kind == "scheduled_event_update" else payload
-            op = {"scheduled_event_create": "create",
-                  "scheduled_event_update": "revise",
-                  "scheduled_event_delete": "withdraw"}[kind]
+            op: Operation = {"scheduled_event_create": "create",
+                             "scheduled_event_update": "revise",
+                             "scheduled_event_delete": "withdraw"}[kind]
             obs = parse_discord_scheduled_event(
                 after, operation=op, account_key=ak)
             if obs is None:

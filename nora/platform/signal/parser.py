@@ -716,15 +716,16 @@ def parse_observations(
             # — nickname/given/middle/family/prefix/suffix — never a
             # preassembled `display` field. The readable name is the joined
             # components, or the nickname when no components are set.
-            name = contact.get("name") if isinstance(contact.get("name"), dict) else {}
+            raw_name = contact.get("name")
+            contact_name = raw_name if isinstance(raw_name, dict) else {}
             display = " ".join(
-                str(name[k]) for k in
+                str(contact_name[k]) for k in
                 ("prefix", "given", "middle", "family", "suffix")
-                if isinstance(name.get(k), str) and name[k])
+                if isinstance(contact_name.get(k), str) and contact_name[k])
             if not display:
-                display = name.get("nickname") if isinstance(
-                    name.get("nickname"), str) else ""
-            metadata = {
+                nickname = contact_name.get("nickname")
+                display = nickname if isinstance(nickname, str) else ""
+            metadata: dict[str, Any] = {
                 k: v for k, v in (
                     ("display_name", display or None),
                     ("organization", contact.get("organization")))

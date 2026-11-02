@@ -1236,7 +1236,9 @@ class TranscriptInjection:
                 time_quality=h.observed_quality,
                 actor=None, actor_status="not_applicable",
                 handle=handle_of(h),
-                summary="", state=head_summary(h), ordering=h.ordering,
+                summary="", ordering=h.ordering,
+                state=head_summary(
+                    h, name_of=lambda ref: name_of(msg.platform, ref)),
                 received_ms=h.received_ms,
                 revision=revision_label(h.position, h.scope),
                 coverage=coverage_label(h.coverage),
@@ -1312,8 +1314,10 @@ class TranscriptInjection:
                         time_quality=head.observed_quality,
                         actor=None, actor_status="not_applicable",
                         handle=handle_of(head),
-                        summary="", state=head_summary(head),
-                        ordering=head.ordering,
+                        summary="", ordering=head.ordering,
+                        state=head_summary(
+                            head, name_of=lambda ref, p=ref.platform:
+                            name_of(p, ref)),
                         received_ms=head.received_ms,
                         revision=revision_label(head.position, head.scope),
                         coverage=coverage_label(head.coverage))))

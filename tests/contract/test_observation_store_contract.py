@@ -293,6 +293,43 @@ async def test_stale_snapshot_never_overlays_newer_state(store):
     assert head.coverage.get("superseded_snapshots") == 1
 
 
+async def test_a_multi_post_native_id_resolves_through_its_alias(store):
+    """`platform_message_ids` is the row's alias set: a target naming a
+    NON-primary piece binds the same message row — inside its own room
+    only. On SQL this is `_resolve_target_row`'s jsonb-array containment
+    (the bare-string mutant binds nothing); on the fake it is
+    `find_edited`'s documented alias match."""
+    from nora.domain.ports import DeliveryStatus
+    from nora.infra.sql.observations import resolve_target_message_id
+    from nora.testing.fakes import FakeRecordStore
+
+    engine = getattr(store, "_engine", None)
+    records = FakeRecordStore() if engine is None else SqlRecordStore(engine)
+    row_id = await records.append(message=NormalizedMessage(
+        platform="whatsapp", conversation_id="g1",
+        conversation_type="group", sender_id="u1", sender_name=None,
+        timestamp=NOW, body="generated multi", raw={}))
+    await records.set_delivery_outcome(
+        row_id=row_id, status=DeliveryStatus.SENT,
+        platform_message_id="piece-1",
+        platform_message_ids=("piece-1", "piece-2"))
+    if engine is None:
+        found = await records.find_edited(
+            conversation_id="g1",
+            target=EditTarget(message_id="piece-2"), sender_id="")
+        assert found is not None and found.id == row_id
+        assert await records.find_edited(
+            conversation_id="g2",
+            target=EditTarget(message_id="piece-2"), sender_id="") is None
+        return
+    assert await resolve_target_message_id(
+        engine, platform="whatsapp", conversation_id="g1",
+        target=EditTarget(message_id="piece-2")) == row_id
+    assert await resolve_target_message_id(
+        engine, platform="whatsapp", conversation_id="g2",
+        target=EditTarget(message_id="piece-2")) is None
+
+
 async def test_timestamp_target_resolution_keeps_authors_separate(store):
     from nora.domain.observations import target_key
 

@@ -2,8 +2,8 @@
  {
   "name": "Signal shared contact reads a display field the serializer does not have",
   "file": "nora/platform/signal/parser.py",
-  "old": "            display = \" \".join(\n                str(name[k]) for k in\n                (\"prefix\", \"given\", \"middle\", \"family\", \"suffix\")\n                if isinstance(name.get(k), str) and name[k])",
-  "new": "            display = str(name.get(\"display\") or \"\")",
+  "old": "            display = \" \".join(\n                str(contact_name[k]) for k in\n                (\"prefix\", \"given\", \"middle\", \"family\", \"suffix\")\n                if isinstance(contact_name.get(k), str) and contact_name[k])",
+  "new": "            display = str(contact_name.get(\"display\") or \"\")",
   "target": "tests/unit/test_platform_observation_fixtures.py::test_signal_contacts_and_previews_are_artifacts"
  },
  {
@@ -46,12 +46,12 @@
   "file": "nora/infra/sql/observations.py",
   "old": "             MESSAGES.c.platform_message_ids_json.contains(\n                 sa.func.jsonb_build_array(target.message_id)))",
   "new": "             MESSAGES.c.platform_message_ids_json.contains(\n                 target.message_id))",
-  "target": "tests/contract/test_observation_store_contract.py -k sql"
+  "target": "tests/contract/test_observation_store_contract.py::test_a_multi_post_native_id_resolves_through_its_alias -k sql"
  },
  {
   "name": "discord scheduled events drop the interested count",
   "file": "nora/platform/discord/parser.py",
-  "old": "    user_count = getattr(ev, \"user_count\", None)\n    if isinstance(user_count, int) and user_count > 0:\n        fields[\"interested_count\"] = user_count",
+  "old": "    user_count = getattr(ev, \"user_count\", None)\n    if (isinstance(user_count, int) and not isinstance(user_count, bool)\n            and user_count >= 0):\n        fields[\"interested_count\"] = user_count",
   "new": "    user_count = getattr(ev, \"user_count\", None)",
   "target": "tests/unit/test_platform_observation_fixtures.py::test_scheduled_event_frames_reach_the_callback_and_parse"
  },

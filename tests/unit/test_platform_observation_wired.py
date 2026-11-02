@@ -347,6 +347,69 @@ async def test_record_query_and_the_task_reads_share_the_one_projection():
     assert (await _call(other, "poll_list"))["status"] == "nothing_found"
 
 
+async def test_the_artifact_delta_reads_the_same_in_every_surface():
+    """RSVP deltas through the REAL `build_tools`: the history line names
+    the responder and the answer (extra guests too), the as-of read holds
+    the bounded event state AT that row, and a later unreadable response
+    clears the standing attendee — one projection, no bare count, no
+    stale fact, no platform handle."""
+    store = FakeObservationStore()
+    rid_going = None
+    async def put(name: str, obs: Observation) -> int:
+        rid = await store.append(
+            observation=obs, event_id=f"evt-{name}", source_digest=f"d-{name}")
+        assert rid is not None
+        return rid
+
+    await put("create", _obs(
+        kind="artifact", ref="e9", op="create",
+        payload=ArtifactPayload(
+            artifact_kind="event", custody="declared",
+            metadata={"name": "Breakfast", "status": "scheduled",
+                      "start_time_s": NOW_MS // 1000 + 3600}),
+        ago=30, actor="+852111", actor_status="known", position=1))
+    rid_going = await put("going", _obs(
+        kind="artifact", ref="e9", op="revise",
+        payload=ArtifactPayload(
+            artifact_kind="event", custody="declared",
+            metadata={"response": "going", "extra_guest_count": 2}),
+        ago=20, actor="+852111", actor_status="known", position=2))
+    await put("unknown", _obs(
+        kind="artifact", ref="e9", op="revise",
+        payload=ArtifactPayload(
+            artifact_kind="event", custody="declared",
+            metadata={"response": ""}),
+        ago=10, actor="+852111", actor_status="known", position=3,
+        coverage=Coverage(complete=False, covered="response",
+                          gaps=("response",), reason="unknown")))
+
+    tools = _tools(FakeRecordStore(), store)
+    handle = object_handle("artifact", "e9", account_key="acct")
+
+    hist = await _call(tools, "record_query", kind="artifact",
+                       object=handle, history=True)
+    assert hist["status"] == "ok", hist
+    text = json.dumps(hist)
+    assert "going" in text and "2 extra" in text
+    # An answer the source marked unreadable is never a "withdrew".
+    assert "withdrew" not in text
+    assert "e9" not in text  # the platform ref never renders
+
+    # As-of at the response row: the answer was still readable then, and
+    # the read carries the event's own bounded fields.
+    as_of = await _call(tools, "record_query", kind="artifact",
+                        object=handle, at_id=rid_going)
+    assert as_of["status"] == "ok", as_of
+    body = json.dumps(as_of)
+    assert "going" in body and "Ada" in body and "Breakfast" in body
+    assert "e9" not in body and "acct" not in body
+
+    # Current state: the retracted response leaves NO stale attendee.
+    detail = await _call(tools, "record_query", kind="artifact", object=handle)
+    assert detail["status"] == "ok", detail
+    assert "going" not in json.dumps(detail)
+
+
 async def test_load_transcript_interleaves_the_same_source_events():
     """Tool parity: `load_transcript` hands back what the prompt renders —
     the same typed events at their own time, with the same handles."""

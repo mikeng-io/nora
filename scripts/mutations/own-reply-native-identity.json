@@ -2,7 +2,7 @@
  {
   "name": "a confirmed bridge send drops its platform_ref",
   "file": "nora/platform/bridge/client.py",
-  "old": "            return SendResult(\n                ok=True, timestamp=data.get(\"platform_ms\"),\n                platform_message_id=data.get(\"platform_ref\") or None)",
+  "old": "            return SendResult(\n                ok=True, timestamp=data.get(\"platform_ms\"),\n                platform_message_id=data.get(\"platform_ref\") or None,\n                platform_message_ids=tuple(\n                    str(r) for r in (data.get(\"platform_refs\") or ()) if r\n                ) or ((\n                    str(data[\"platform_ref\"]),)\n                    if data.get(\"platform_ref\") else ()))",
   "new": "            return SendResult(ok=True, timestamp=data.get(\"platform_ms\"))",
   "target": "tests/integration/test_bridge_send_native_identity.py::test_a_confirmed_send_lands_its_native_id_for_a_later_reaction"
  },

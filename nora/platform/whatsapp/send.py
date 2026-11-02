@@ -183,7 +183,7 @@ class WhatsAppSender:
             return SendResult(ok=False)
 
         if attachments:
-            result = SendResult(ok=True)
+            ids: list[str] = []
             for i, a in enumerate(attachments):
                 payload: dict[str, object] = {
                     "jid": target.conversation_id,
@@ -201,10 +201,20 @@ class WhatsAppSender:
                     "/send-media", payload, conversation_id=where,
                 )
                 if not result.ok:
-                    return result
+                    # Earlier pieces DID land: `ok=False` alone would invite
+                    # a whole-send retry that double-posts the confirmed
+                    # parts. `uncertain` is the honest state — and the
+                    # confirmed ids stay OUT of the result so nothing mints
+                    # handles a partial action cannot prove.
+                    return SendResult(ok=False, uncertain=True) if ids else result
+                if result.platform_message_id:
+                    ids.append(result.platform_message_id)
             log.info("sent %d attachment(s) to %s (id=%s)",
                      len(attachments), where, request_id)
-            return result
+            return SendResult(
+                ok=True, timestamp=result.timestamp,
+                platform_message_id=ids[-1] if ids else None,
+                platform_message_ids=tuple(dict.fromkeys(ids)))
 
         result = await self._post(
             "/send", {"jid": target.conversation_id, "text": text},
@@ -213,4 +223,9 @@ class WhatsAppSender:
         if result.ok:
             log.info("sent %d chars to %s (id=%s)",
                      len(text), where, request_id)
+            if result.platform_message_id:
+                return SendResult(
+                    ok=True, timestamp=result.timestamp,
+                    platform_message_id=result.platform_message_id,
+                    platform_message_ids=(result.platform_message_id,))
         return result

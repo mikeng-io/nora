@@ -265,6 +265,37 @@ export function stanzaObservations(msg, ctx = {}) {
   const content = getMessageContent(msg) || {};
   const out = [];
 
+  // A MESSAGE_EDIT protocol stanza carries the replacement under
+  // `protocolMessage.editedMessage`; `protocolMessage.key.id` is the
+  // ORIGINAL stanza's id (process-message.ts emits the same shape as a
+  // messages.update). The edit revises that artifact — never a create
+  // under the edit's own stanza id, never a second object.
+  const protoMsg = content.protocolMessage;
+  const editedContent = protoMsg?.editedMessage
+    ? getMessageContent({ message: protoMsg.editedMessage }) : null;
+  if (protoMsg?.key?.id && editedContent?.eventMessage) {
+    const sc = stanzaContext(msg, ctx);
+    const stanza = msg.key.id;
+    const editMs = toNumber(protoMsg.timestampMs) ?? timestampMs(msg.messageTimestamp);
+    const timeQ = editMs ? 'upstream' : 'unknown';
+    const obs = observationDict({
+      kind: 'artifact', scope: scopeDict(ctx, sc.conversationId),
+      objectRef: `artifact:${protoMsg.key.id}`,
+      operation: 'revise',
+      payload: artifactPayload({
+        artifact_kind: 'event',
+        metadata: eventEditMetadata(editedContent.eventMessage),
+        custody: 'declared',
+      }),
+      actorId: sc.actorId, actorStatus: sc.actorStatus,
+      occurredMs: editMs, timeQuality: timeQ,
+      sourceRevision: stanza,
+      coverage: { covered: 'fields' },
+    });
+    out.push(routed(ctx, sc, obs, `s:${stanza}:event_edit`, { sentMs: editMs, timeQuality: timeQ }));
+    return out;
+  }
+
   const poll = content.pollCreationMessage || content.pollCreationMessageV2
     || content.pollCreationMessageV3 || content.pollCreationMessageV5;
   if (poll) out.push(...pollCreation(msg, poll, ctx));
@@ -641,6 +672,46 @@ function sharedEvent(msg, event, ctx) {
   return [routed(ctx, sc, obs, `s:${stanza}:event`, { sentMs: occurred, timeQuality: timeQ })];
 }
 
+/** The metadata a native event EDIT carries — the complete EventMessage
+ * the client resubmits, so a covered field absent from it is a declared
+ * clear (explicit null; the fold drops the stale value), not an omission.
+ * A false `isCanceled`/`extraGuestsAllowed` likewise clears the flag. */
+function eventEditMetadata(ev) {
+  const loc = ev?.location || {};
+  return {
+    name: typeof ev?.name === 'string' && ev.name ? ev.name : null,
+    description: typeof ev?.description === 'string' && ev.description ? ev.description : null,
+    start_time_s: toNumber(ev?.startTime),
+    end_time_s: toNumber(ev?.endTime),
+    location_name: typeof loc.name === 'string' && loc.name ? loc.name : null,
+    address: typeof loc.address === 'string' && loc.address ? loc.address : null,
+    is_canceled: ev?.isCanceled === true ? true : null,
+    extra_guests_allowed: ev?.extraGuestsAllowed === true ? true : null,
+  };
+}
+
+// `EventResponseMessage.response` — the pinned protobuf enum (WAProto:
+// UNKNOWN=0 GOING=1 NOT_GOING=2 MAYBE=3), decoded here ONCE whether the
+// value arrives numeric (protobufjs) or as its enum-name string. `unknown`
+// is the source saying the responder's answer is not known: it is never a
+// confirmed response and never a withdrawal.
+const EVENT_RESPONSE_WORDS = { 0: 'unknown', 1: 'going', 2: 'not_going', 3: 'maybe' };
+const EVENT_RESPONSE_NAMES = {
+  UNKNOWN: 'unknown', GOING: 'going', NOT_GOING: 'not_going', MAYBE: 'maybe',
+};
+
+function eventResponseValue(msg) {
+  const raw = msg && typeof msg === 'object' ? msg.response : undefined;
+  if (raw === undefined || raw === null) return { kind: 'unavailable' };
+  const num = toNumber(raw);
+  let word = num !== null ? EVENT_RESPONSE_WORDS[num] : undefined;
+  if (word === undefined && typeof raw === 'string') {
+    word = EVENT_RESPONSE_NAMES[raw.trim().toUpperCase()];
+  }
+  if (word === 'unknown') return { kind: 'unknown' };
+  return { kind: word ? 'answer' : 'unrecognized', word };
+}
+
 // -- group stub notifications ------------------------------------------------
 
 const STUB_GROUP_CHANGE_SUBJECT = 21;
@@ -984,6 +1055,32 @@ export function messagesUpdateObservations({ key, update } = {}, ctx = {}) {
   const out = [];
   const stanza = key?.id || '';
 
+  // MESSAGE_EDIT's update carries the replacement under
+  // `message.editedMessage.message`, and `key.id` is already the ORIGINAL
+  // stanza's (process-message.ts re-keys it) — the edit revises the same
+  // artifact, never a second object under a fabricated id.
+  const edited = getMessageContent(update?.message ? { message: update.message } : null);
+  if (edited?.eventMessage && stanza) {
+    const editSec = toNumber(update.messageTimestamp);
+    const editMs = editSec !== null ? editSec * 1000 : null;
+    const timeQ = editMs ? 'upstream' : 'unknown';
+    const obs = observationDict({
+      kind: 'artifact', scope: scopeDict(ctx, convId),
+      objectRef: `artifact:${stanza}`,
+      operation: 'revise',
+      payload: artifactPayload({
+        artifact_kind: 'event',
+        metadata: eventEditMetadata(edited.eventMessage),
+        custody: 'declared',
+      }),
+      occurredMs: editMs, timeQuality: timeQ,
+      coverage: { covered: 'fields' },
+    });
+    out.push(routed(ctx, sc, obs,
+      `ue:${stanza}:edit:${editSec ?? 'na'}:${contentHash(edited)}`,
+      { senderId: '', sentMs: editMs, timeQuality: timeQ }));
+  }
+
   for (const pu of update?.pollUpdates || []) {
     const voter = resolveId(
       pu?.pollUpdateMessageKey?.participant || pu?.pollUpdateMessageKey?.remoteJid || '', ctx);
@@ -1051,28 +1148,77 @@ export function messagesUpdateObservations({ key, update } = {}, ctx = {}) {
       er?.eventResponseMessageKey?.participant || er?.eventResponseMessageKey?.remoteJid || '', ctx);
     const occurred = toNumber(er?.senderTimestampMs) || toNumber(er?.response?.timestampMs);
     const timeQ = occurred ? 'upstream' : 'unknown';
-    const resp = er?.response?.response;
-    const respName = typeof resp === 'string' ? resp.toLowerCase() : String(toNumber(resp) ?? '');
     const respStanza = er?.eventResponseMessageKey?.id || contentHash(er);
-    // `response` folds per-responder on the actor — one responder's RSVP
-    // never overwrites another's into a misleading last-response.
-    const metadata = { response: respName };
-    const guests = toNumber(er?.response?.extraGuestCount);
-    if (guests !== null) metadata.extra_guest_count = guests;
+    const decoded = eventResponseValue(er?.response);
+    const route = `er:${stanza}:${respStanza}`;
+    const send = { senderId: responder.id, sentMs: occurred, timeQuality: timeQ };
+    if (decoded.kind === 'answer') {
+      // `response` folds per-responder on the actor — one responder's RSVP
+      // never overwrites another's into a misleading last-response. A new
+      // answer without `extra_guest_count` clears a stale one: the decoded
+      // message is the responder's CURRENT answer, not a delta.
+      const metadata = { response: decoded.word };
+      const guests = toNumber(er?.response?.extraGuestCount);
+      if (guests !== null) metadata.extra_guest_count = guests;
+      const obs = observationDict({
+        kind: 'artifact', scope: scopeDict(ctx, convId),
+        objectRef: `artifact:${stanza}`,
+        target: targetDict(stanza),
+        operation: 'revise',
+        payload: artifactPayload({
+          artifact_kind: 'event', metadata, custody: 'declared',
+        }),
+        actorId: responder.id, actorStatus: responder.id ? 'known' : 'not_supplied',
+        occurredMs: occurred, timeQuality: timeQ,
+        sourceRevision: respStanza,
+        coverage: { covered: 'response' },
+      });
+      out.push(routed(ctx, sc, obs, route, send));
+      continue;
+    }
+    if (decoded.kind === 'unavailable') {
+      // Nothing readable arrived: the recorded state STANDS, only the
+      // coverage records that an update could not be read — never a
+      // guessed answer, never a guessed withdrawal.
+      const obs = observationDict({
+        kind: 'artifact', scope: scopeDict(ctx, convId),
+        objectRef: `artifact:${stanza}`,
+        target: targetDict(stanza),
+        operation: 'revise',
+        payload: artifactPayload({ artifact_kind: 'event', metadata: {}, custody: 'declared' }),
+        actorId: responder.id, actorStatus: responder.id ? 'known' : 'not_supplied',
+        occurredMs: occurred, timeQuality: timeQ,
+        sourceRevision: respStanza,
+        coverage: {
+          complete: false, covered: 'response', gaps: ['response'],
+          reason: 'event response unreadable',
+        },
+      });
+      out.push(routed(ctx, sc, obs, route, send));
+      continue;
+    }
+    // UNKNOWN (0) or an enum value outside the pinned vocabulary: the
+    // source says the answer is not readable — clear only that responder's
+    // recorded answer and guest count, and let coverage say why. This is
+    // NOT a confirmed answer and NOT a withdrawal.
     const obs = observationDict({
       kind: 'artifact', scope: scopeDict(ctx, convId),
       objectRef: `artifact:${stanza}`,
       target: targetDict(stanza),
       operation: 'revise',
       payload: artifactPayload({
-        artifact_kind: 'event', metadata, custody: 'declared',
+        artifact_kind: 'event', metadata: { response: '' }, custody: 'declared',
       }),
       actorId: responder.id, actorStatus: responder.id ? 'known' : 'not_supplied',
       occurredMs: occurred, timeQuality: timeQ,
       sourceRevision: respStanza,
-      coverage: { covered: 'response' },
+      coverage: {
+        complete: false, covered: 'response', gaps: ['response'],
+        reason: decoded.kind === 'unrecognized'
+          ? 'unrecognized event response value' : 'event response unknown',
+      },
     });
-    out.push(routed(ctx, sc, obs, `er:${stanza}:${respStanza}`, { senderId: responder.id, sentMs: occurred, timeQuality: timeQ }));
+    out.push(routed(ctx, sc, obs, route, send));
   }
   return out;
 }
