@@ -296,9 +296,22 @@ test('shared objects -> artifact creates; custody declared, withheld fields are 
   const [cev] = stanzaObservations(contact, baseCtx);
   assert.equal(cev.observation.kind, 'artifact');
   assert.equal(cev.observation.payload.artifact_kind, 'contact');
-  assert.equal(cev.observation.payload.metadata.display_name, 'Example Person');
+  assert.equal(cev.observation.payload.metadata.display_name, 'Two People');
   assert.equal(cev.observation.payload.custody, 'declared');
-  assert.deepEqual(cev.observation.coverage.gaps, ['vcard']);
+  // Every card parsed — 'vcard' is only a gap when a card yields nothing.
+  assert.deepEqual(cev.observation.coverage.gaps, []);
+  // contactsArrayMessage: every card parsed — folded lines joined, RFC
+  // 6350 escapes decoded (\, \; \n \\), a second card kept distinct.
+  assert.equal(cev.observation.payload.metadata.contact_count, 2);
+  const [c1, c2] = cev.observation.payload.metadata.contacts;
+  assert.equal(c1.formatted_name, 'Example, Person');
+  assert.equal(c1.name, 'Example X Person;Fam');
+  assert.equal(c1.organization, 'Acme;Inc Division');   // fold joins, \; data
+  assert.equal(c1.title, 'Owner');
+  assert.deepEqual(c1.phones, ['+85290000100']);
+  assert.deepEqual(c1.emails, ['ex@example.com']);
+  assert.equal(c2.formatted_name, 'Second Person');
+  assert.deepEqual(c2.phones, ['+85290000101']);
   const [lev] = stanzaObservations(location, baseCtx);
   assert.equal(lev.observation.payload.artifact_kind, 'location');
   assert.equal(lev.observation.payload.metadata.name, 'Example Cafe');

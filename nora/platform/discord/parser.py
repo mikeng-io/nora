@@ -1005,14 +1005,23 @@ def _scheduled_event_fields(ev: Any) -> dict[str, Any]:
     end = _ev_ms(getattr(ev, "end_time", None))
     if end is not None:
         fields["end_ms"] = end
-    meta = getattr(ev, "entity_metadata", None)
-    loc = getattr(meta, "location", None) if meta is not None else None
+    # discord.py unrolls `entity_metadata.location` onto the event itself;
+    # `entity_metadata` is not a public attr. `channel` is a cache-derived
+    # property that resolves through `guild` — None-safe via channel_id only
+    # when the guild is in cache.
+    loc = getattr(ev, "location", None)
     if isinstance(loc, str) and loc:
         fields["location_name"] = loc
-    channel = getattr(ev, "channel", None)
+    try:
+        channel = getattr(ev, "channel", None)
+    except Exception:
+        channel = None
     ch_name = getattr(channel, "name", None) if channel is not None else None
     if isinstance(ch_name, str) and ch_name:
         fields["channel_name"] = ch_name
+    user_count = getattr(ev, "user_count", None)
+    if isinstance(user_count, int) and user_count > 0:
+        fields["interested_count"] = user_count
     return fields
 
 
@@ -1027,9 +1036,12 @@ def parse_discord_scheduled_event(
     fields (discord.py hands `before`/`after`; callers pass `after` and the
     diff is computed against `before` when supplied), delete is `withdraw`.
     The event URL/cover stay withheld — recorded as coverage gaps."""
-    guild = getattr(ev, "guild", None)
+    # `guild_id` is the direct payload field — `ev.guild` is a CACHE property
+    # that is None whenever the guild dropped out of cache, and dropping the
+    # observation on it would silently lose live dispatches.
+    guild_id = getattr(ev, "guild_id", None) if ev is not None else None
     ev_id = str(getattr(ev, "id", "") or "")
-    if ev is None or guild is None or not ev_id:
+    if guild_id is None or not ev_id:
         return None
     object_ref = f"event:{ev_id}"
     if operation == "withdraw":
@@ -1049,13 +1061,15 @@ def parse_discord_scheduled_event(
             metadata["start_time_s"] = fields["start_ms"] // 1000
         if fields.get("end_ms") is not None:
             metadata["end_time_s"] = fields["end_ms"] // 1000
+        if fields.get("interested_count") is not None:
+            metadata["interested_count"] = fields["interested_count"]
         metadata = {k: v for k, v in metadata.items() if v != "" and v is not None}
         op = operation
     return Observation(
         object_kind="artifact",
         scope=SourceScope(
             platform="discord", account_key=account_key,
-            conversation_id=str(guild.id)),
+            conversation_id=str(guild_id)),
         object_ref=object_ref, operation=op,
         payload=ArtifactPayload(
             artifact_kind="event", metadata=metadata, custody="declared"),
@@ -1073,16 +1087,16 @@ def parse_discord_scheduled_event_user(
     carrying one responder's RSVP under `response` — folded per-responder,
     never a last-response scalar. Discord has one RSVP vocabulary
     (`interested`); a remove is a withdrawn response."""
-    guild = getattr(ev, "guild", None)
+    guild_id = getattr(ev, "guild_id", None) if ev is not None else None
     ev_id = str(getattr(ev, "id", "") or "")
     user_id = str(getattr(user, "id", "") or "")
-    if ev is None or guild is None or not ev_id or not user_id:
+    if guild_id is None or not ev_id or not user_id:
         return None
     return Observation(
         object_kind="artifact",
         scope=SourceScope(
             platform="discord", account_key=account_key,
-            conversation_id=str(guild.id)),
+            conversation_id=str(guild_id)),
         object_ref=f"event:{ev_id}", operation="revise",
         payload=ArtifactPayload(
             artifact_kind="event",

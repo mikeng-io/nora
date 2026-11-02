@@ -368,7 +368,11 @@ class InstagramSender:
         # computed_last.py`); this is the same shape one layer further out.
         text, mention_payload = _apply_mention_handles(text, mentions)
 
-        result = SendResult(ok=True)
+        # Every CONFIRMED piece's native handle — the text post and each
+        # media post are their own stanzas with their own ids, and the
+        # durable row's `platform_message_ids_json` holds the whole set.
+        ids: list[str] = []
+        last_ts: int | None = None
         # `or not attachments` so a text-less, attachment-less send still makes
         # the call and the bridge decides. Returning `ok=True` for a send that
         # never left the process would be a delivery status Nora invented.
@@ -384,6 +388,9 @@ class InstagramSender:
                 # put an image in the room with nothing explaining it, and
                 # would report the TEXT's failure as a success.
                 return result
+            if result.platform_message_id:
+                ids.append(result.platform_message_id)
+            last_ts = result.timestamp
             log.info("sent %d chars to %s (id=%s)",
                      len(text), target.conversation_id, request_id)
 
@@ -403,9 +410,19 @@ class InstagramSender:
                 conversation_id=target.conversation_id,
             )
             if not media_result.ok:
+                # Earlier pieces DID land. `ok=False` alone would let a
+                # caller retry the whole send and double-post the parts that
+                # already went out; `uncertain` is the honest state.
+                if ids:
+                    return SendResult(ok=False, uncertain=True)
                 return media_result
-            result = media_result
+            if media_result.platform_message_id:
+                ids.append(media_result.platform_message_id)
+            last_ts = media_result.timestamp
         if attachments:
             log.info("sent %d attachment(s) to %s (id=%s)",
                      len(attachments), target.conversation_id, request_id)
-        return result
+        return SendResult(
+            ok=True, timestamp=last_ts,
+            platform_message_id=ids[-1] if ids else None,
+            platform_message_ids=tuple(dict.fromkeys(ids)))

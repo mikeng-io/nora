@@ -264,3 +264,12 @@ longer holds the object. Retiring the matter retires its current references;
 closing the poll retires none of them. Interpretive matter relevance/retirement
 still belongs to the existing Standing/Notebook owners; recency selection is
 not evidence of semantic matter tracking or sincerity understanding.
+
+Artifact completion (2026-11-02): contact/event/shared-artifact heads read
+through the same injection points — a guild-scoped scheduled event or a
+shared contact is an `artifact` head whose detail is the ONE bounded
+projection ([03](03-model-projections.md#artifact-metadata-projection--the-one-read-model-as-built-2026-11-02)).
+`record_query` typed reads (`kind="artifact"`, current/history/`at_id`) carry
+the same projection; an `artifact` head's RSVP `responders` is per-responder
+recorded evidence, never a last-response scalar or an invented attendee set.
+No new block, tool or occasion follows from these objects.

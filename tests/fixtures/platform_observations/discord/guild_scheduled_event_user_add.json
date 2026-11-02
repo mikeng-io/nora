@@ -1,0 +1,34 @@
+{
+ "meta": {
+  "native": "discord-gateway",
+  "native_version": "discord.py 2.7.1",
+  "transport": "gateway",
+  "generated": true,
+  "dispatch": "GUILD_SCHEDULED_EVENT_USER_ADD",
+  "discord_py_parse": "parse_guild_scheduled_event_user_add",
+  "discord_py_event": "scheduled_event_user_add",
+  "upstream_source": "https://docs.discord.com/developers/events/gateway-events#guild-scheduled-event-user-add",
+  "case": "a member marks themselves interested"
+ },
+ "payload": {
+  "op": 0,
+  "t": "GUILD_SCHEDULED_EVENT_USER_ADD",
+  "s": 34,
+  "d": {
+   "guild_scheduled_event_id": "123456789012345700",
+   "user_id": "123456789012345801",
+   "guild_id": "123456789012345600"
+  }
+ },
+ "semantics": {
+  "object": "guild scheduled event",
+  "operation": "revise (responder adds)",
+  "room_ref": "d.guild_id",
+  "object_ref": "d.guild_scheduled_event_id",
+  "target_ref": null,
+  "actor": "d.user_id \u2014 the responder",
+  "source_time": "none \u2014 clockless interest transition, identity via ledger",
+  "notes": "Per-responder interest; Discord has one RSVP vocabulary (interested).",
+  "today": "no listener subscription \u2014 dropped"
+ }
+}

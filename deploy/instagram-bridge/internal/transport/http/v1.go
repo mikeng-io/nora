@@ -39,7 +39,7 @@ type ActionStore interface {
 	Reserve(ctx context.Context, actionID, ownerKind, ownerID string, ownerGeneration *int, op string, request json.RawMessage, requestHash string) (bridge.ReserveOutcome, *bridge.ActionRow, error)
 	Get(ctx context.Context, actionID string) (*bridge.ActionRow, error)
 	MarkStarted(ctx context.Context, actionID string, messageID *int64) (bool, error)
-	Finish(ctx context.Context, actionID, state, platformRef string, platformMS *int64, errKind, errMsg string) error
+	Finish(ctx context.Context, actionID, state, platformRef string, platformRefs []string, platformMS *int64, errKind, errMsg string) error
 	ValidateOwner(ctx context.Context, kind, id string, generation *int, targetID string) (*bridge.OwnerVerdict, error)
 }
 
@@ -76,6 +76,7 @@ type ActionResponse struct {
 	State       string          `json:"state"`
 	Outcome     any             `json:"outcome"`
 	PlatformRef *string         `json:"platform_ref"`
+	PlatformRefs []string       `json:"platform_refs"`
 	MessageID   *int64          `json:"message_id"`
 	Error       json.RawMessage `json:"error"`
 }
@@ -107,6 +108,7 @@ func actionResponse(row *bridge.ActionRow) ActionResponse {
 	return ActionResponse{
 		ActionID: row.ActionID, State: row.State,
 		Outcome: actionOutcome(row), PlatformRef: row.PlatformRef,
+		PlatformRefs: row.PlatformRefs,
 		MessageID: row.MessageID, Error: errRaw,
 	}
 }
@@ -253,7 +255,7 @@ func (v *V1) handleActions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !verdict.OK {
-		_ = v.Store.Finish(r.Context(), req.ActionID, bridge.ActionRejected, "", nil, "fenced", verdict.Reason)
+		_ = v.Store.Finish(r.Context(), req.ActionID, bridge.ActionRejected, "", nil, nil, "fenced", verdict.Reason)
 		v.Metrics.Count("action_rejected")
 		row, _ := v.Store.Get(r.Context(), req.ActionID)
 		writeJSON(w, http.StatusOK, actionResponse(row))
@@ -281,8 +283,8 @@ func (v *V1) handleActions(w http.ResponseWriter, r *http.Request) {
 func (v *V1) execute(w http.ResponseWriter, r *http.Request, req ActionRequest) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 45*time.Second)
 	defer cancel()
-	state, ref, ms, errKind, errMsg := v.runOp(ctx, req)
-	if err := v.Store.Finish(ctx, req.ActionID, state, ref, ms, errKind, errMsg); err != nil {
+	state, ref, refs, ms, errKind, errMsg := v.runOp(ctx, req)
+	if err := v.Store.Finish(ctx, req.ActionID, state, ref, refs, ms, errKind, errMsg); err != nil {
 		writeErrorEnvelope(w, http.StatusInternalServerError, "action_store", "action store unavailable")
 		return
 	}
@@ -304,7 +306,10 @@ func outcomeMetric(state, errKind string) string {
 }
 
 // runOp maps one op onto the platform calls and returns
-// (state, platformRef, platformMS, errorKind, errorMessage).
+// (state, platformRef, platformRefs, platformMS, errorKind, errorMessage).
+// platformRefs carries EVERY confirmed piece's native handle — a text post
+// and each media post are their own items; a rejected or uncertain outcome
+// reports none.
 //
 // Honest-outcome rules:
 //   - confirmed: the platform answered and named its handle;
@@ -312,12 +317,12 @@ func outcomeMetric(state, errKind string) string {
 //   - unsupported: no mechanism exists (edit on Instagram);
 //   - uncertain: the call may have landed and its answer is lost — NEVER
 //     blind-retried.
-func (v *V1) runOp(ctx context.Context, req ActionRequest) (string, string, *int64, string, string) {
-	reject := func(kind, msg string) (string, string, *int64, string, string) {
-		return bridge.ActionRejected, "", nil, kind, msg
+func (v *V1) runOp(ctx context.Context, req ActionRequest) (string, string, []string, *int64, string, string) {
+	reject := func(kind, msg string) (string, string, []string, *int64, string, string) {
+		return bridge.ActionRejected, "", nil, nil, kind, msg
 	}
-	uncertain := func(kind, msg string) (string, string, *int64, string, string) {
-		return bridge.ActionUncertain, "", nil, kind, msg
+	uncertain := func(kind, msg string) (string, string, []string, *int64, string, string) {
+		return bridge.ActionUncertain, "", nil, nil, kind, msg
 	}
 	switch req.Op {
 	case "send":
@@ -347,6 +352,7 @@ func (v *V1) runOp(ctx context.Context, req ActionRequest) (string, string, *int
 			dom = append(dom, domain.Mention{FBID: m.FBID, Offset: m.Offset, Length: m.Length})
 		}
 		var ref string
+		var refs []string
 		var sentMS *int64
 		if text != "" {
 			sent, err := v.App.SendText(ctx, room, text, dom, replyTo)
@@ -354,8 +360,11 @@ func (v *V1) runOp(ctx context.Context, req ActionRequest) (string, string, *int
 				return mapOpErr(err, reject, uncertain)
 			}
 			ref, sentMS = sent.ID, &sent.TimestampMS
+			if sent.ID != "" {
+				refs = append(refs, sent.ID)
+			}
 		}
-		for i, att := range in.Attachments {
+		for _, att := range in.Attachments {
 			rec, data, ok := v.Custody.Get(att.Key)
 			if !ok {
 				return reject("invalid", "attachment key not in custody")
@@ -374,19 +383,20 @@ func (v *V1) runOp(ctx context.Context, req ActionRequest) (string, string, *int
 			if err != nil {
 				// The text leg may already have landed: a media failure is
 				// uncertain, not a clean rejection.
-				if ref != "" {
+				if len(refs) > 0 {
 					return uncertain("partial", "text sent; attachment send outcome unknown")
 				}
 				return mapOpErr(err, reject, uncertain)
 			}
-			if i == len(in.Attachments)-1 {
-				ref, sentMS = sent.ID, &sent.TimestampMS
+			ref, sentMS = sent.ID, &sent.TimestampMS
+			if sent.ID != "" {
+				refs = append(refs, sent.ID)
 			}
 		}
 		if ref == "" && text == "" {
 			return reject("invalid", "send needs text or attachments")
 		}
-		return bridge.ActionConfirmed, ref, sentMS, "", ""
+		return bridge.ActionConfirmed, ref, refs, sentMS, "", ""
 
 	case "react":
 		var in reactRequest
@@ -416,7 +426,7 @@ func (v *V1) runOp(ctx context.Context, req ActionRequest) (string, string, *int
 			// the reaction path's measured uncertainty.
 			return uncertain("unconfirmed", "reaction accepted but post-state silent")
 		}
-		return bridge.ActionConfirmed, in.ToMessageID, nil, "", ""
+		return bridge.ActionConfirmed, in.ToMessageID, nil, nil, "", ""
 
 	case "typing":
 		var in v1TypingRequest
@@ -433,7 +443,7 @@ func (v *V1) runOp(ctx context.Context, req ActionRequest) (string, string, *int
 		if err := v.App.Typing(ctx, room, true); err != nil {
 			return mapOpErr(err, reject, uncertain)
 		}
-		return bridge.ActionConfirmed, "", nil, "", ""
+		return bridge.ActionConfirmed, "", nil, nil, "", ""
 
 	case "edit":
 		return reject("unsupported", "instagram has no outbound edit")
@@ -445,7 +455,7 @@ func (v *V1) runOp(ctx context.Context, req ActionRequest) (string, string, *int
 // `uncertain` ONLY when the platform call may already have landed — a lost
 // answer, a mid-call timeout. "Could not submit" (no client, validation,
 // checkpoint, upstream refusal) is rejected.
-func mapOpErr(err error, reject, uncertain func(string, string) (string, string, *int64, string, string)) (string, string, *int64, string, string) {
+func mapOpErr(err error, reject, uncertain func(string, string) (string, string, []string, *int64, string, string)) (string, string, []string, *int64, string, string) {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		return uncertain("timeout", "upstream answer lost")

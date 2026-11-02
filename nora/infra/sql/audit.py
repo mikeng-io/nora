@@ -755,8 +755,10 @@ class SqlRecordStore:
         if target.message_id:
             match = sa.or_(
                 MESSAGES.c.platform_message_id == target.message_id,
+                # `@>` needs a jsonb operand: `jsonb_build_array` binds
+                # '["id"]', a bare string would not parse as jsonb at all.
                 MESSAGES.c.platform_message_ids_json.contains(
-                    target.message_id))
+                    sa.func.jsonb_build_array(target.message_id)))
         elif target.sent_ts is not None and sender_id:
             # The ORIGINAL's sent-timestamp, OR one of its edits'. A second
             # edit of a Signal message can name the first edit's timestamp
@@ -975,8 +977,10 @@ class SqlRecordStore:
         if platform_message_id:
             values["platform_message_id"] = platform_message_id
         if platform_message_ids:
-            values["platform_message_ids_json"] = json.dumps(
-                list(dict.fromkeys(str(i) for i in platform_message_ids if i)))
+            # JSONB takes the LIST — `json.dumps` here would store a JSON
+            # STRING, and `@>` would stop matching every element inside it.
+            values["platform_message_ids_json"] = list(dict.fromkeys(
+                str(i) for i in platform_message_ids if i))
         stmt = sa.update(MESSAGES).where(MESSAGES.c.id == row_id).values(**values)
         async with self._engine.begin() as conn:
             await conn.execute(stmt)

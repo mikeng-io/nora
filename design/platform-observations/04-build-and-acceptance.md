@@ -245,3 +245,41 @@ retirement removes the note from `standing` and with it the refs — history
 stays readable through `read`; a poll `revise`→closed only changes source state
 and never retires the note. No semantic lifecycle or lossless model compression
 is established by this slice.
+
+## Artifact-completion controls (generated evidence, 2026-11-02)
+
+This pass closed the artifact/contact/event and multi-post identity cells.
+Deterministic guards that now exist (all generated fixtures, no production rows):
+
+- WhatsApp `.mjs` suite (`deploy/whatsapp-bridge`): contactsArrayMessage with
+  folded, escaped and multiple vCards → bounded per-card metadata; multi-post
+  send (`S1`,`S2`) → initial response, replay (no resend) and `GET` all return
+  the full `platform_refs` list; real-Postgres `bridge_action` DDL carries
+  `platform_refs` so store-level replay/CAS tests exercise the column.
+- Discord fixture suite (`test_platform_observation_fixtures.py`): generated
+  `GUILD_SCHEDULED_EVENT_*` frames hydrate through the real pinned
+  `ConnectionState.parse_*` dispatch — create/update/delete and user
+  add/remove — asserting callback names, `(before, after)` update args, the
+  SDK's uncached-guild/event/user drops, `EventStatus.canceled`, and the
+  parser's direct-attribute reads (`guild_id`, `location`, `user_count`).
+- Signal fixture: `shared_contact.json` uses the pinned serializer's real
+  `JsonContactName` component shape; the parser test pins the assembled
+  `display_name`, `organization` and `phones`.
+- Projection suite (`test_observation_projection.py`): event artifact
+  `start_time` ISO label, per-responder `responders`/withdrawal, bounded
+  whitelist and `unprojected_fields` counting.
+- Multi-post integration (`test_bridge_send_native_identity.py`): every
+  confirmed ref resolves the same audited row (fake store), a reaction to
+  ANY element records, wrong-room never resolves, and a `platform_refs`
+  list on a rejected/uncertain response mints nothing.
+- SQL fixes exercised by the existing contract suite: `platform_message_ids_json`
+  is written as a Python list (not a json-encoded string) and read via
+  `jsonb_build_array` containment in both `find_edited` and
+  `_resolve_target_row`; migration 0146 and the schema baseline carry both
+  new columns.
+
+Open acceptance evidence this pass does NOT supply: live Discord guild-event
+delivery/cache warmth and account permissions, live WhatsApp event/RSVP
+capture on a real account, the integrated candidate gate, independent
+review, and the tool-routing measurement named above. IG polls remain
+unsupported at the pinned transport.

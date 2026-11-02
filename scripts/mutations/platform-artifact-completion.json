@@ -1,0 +1,79 @@
+[
+ {
+  "name": "Signal shared contact reads a display field the serializer does not have",
+  "file": "nora/platform/signal/parser.py",
+  "old": "            display = \" \".join(\n                str(name[k]) for k in\n                (\"prefix\", \"given\", \"middle\", \"family\", \"suffix\")\n                if isinstance(name.get(k), str) and name[k])",
+  "new": "            display = str(name.get(\"display\") or \"\")",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_signal_contacts_and_previews_are_artifacts"
+ },
+ {
+  "name": "artifact time fields keep their stored suffix instead of projecting start_time",
+  "file": "nora/domain/observations.py",
+  "old": "    for key in _ARTIFACT_TIME_FIELDS:\n        if key in md and md[key] is not None:\n            out[key[:-2]] = _iso_s(md[key])",
+  "new": "    for key in _ARTIFACT_TIME_FIELDS:\n        if key in md and md[key] is not None:\n            out[key[:-1]] = _iso_s(md[key])",
+  "target": "tests/unit/test_observation_projection.py::test_event_artifact_projects_time_fields_and_per_responder_responses"
+ },
+ {
+  "name": "artifact RSVP responses collapse to one responder slot",
+  "file": "nora/domain/observations.py",
+  "old": "            key = obs.actor_id or f\"unattributed:{obs.source_revision or obs.object_ref}\"",
+  "new": "            key = \"responder\"",
+  "target": "tests/unit/test_observation_projection.py::test_event_artifact_projects_time_fields_and_per_responder_responses"
+ },
+ {
+  "name": "unprojected artifact metadata is silently dropped instead of counted",
+  "file": "nora/domain/observations.py",
+  "old": "    if stored > shown_keys:\n        out[\"unprojected_fields\"] = stored - shown_keys",
+  "new": "    if stored > shown_keys:\n        pass",
+  "target": "tests/unit/test_observation_projection.py::test_artifact_projection_is_bounded_and_reports_unprojected_keys"
+ },
+ {
+  "name": "a jsonb containment binds a bare string, matching nothing",
+  "file": "nora/infra/sql/audit.py",
+  "old": "                MESSAGES.c.platform_message_ids_json.contains(\n                    sa.func.jsonb_build_array(target.message_id)))",
+  "new": "                MESSAGES.c.platform_message_ids_json.contains(\n                    target.message_id))",
+  "target": "tests/contract/test_audit_store_contract.py::test_set_delivery_outcome_lands_every_native_id_of_a_multi_post_send -k sql"
+ },
+ {
+  "name": "multi-post ids are json-dumped into a jsonb column as a string",
+  "file": "nora/infra/sql/audit.py",
+  "old": "            values[\"platform_message_ids_json\"] = list(dict.fromkeys(\n                str(i) for i in platform_message_ids if i))",
+  "new": "            values[\"platform_message_ids_json\"] = json.dumps(list(dict.fromkeys(\n                str(i) for i in platform_message_ids if i)))",
+  "target": "tests/contract/test_audit_store_contract.py::test_a_multi_post_id_list_is_stored_as_json_not_a_json_string -k sql"
+ },
+ {
+  "name": "target resolution reads the list with a bare-string containment",
+  "file": "nora/infra/sql/observations.py",
+  "old": "             MESSAGES.c.platform_message_ids_json.contains(\n                 sa.func.jsonb_build_array(target.message_id)))",
+  "new": "             MESSAGES.c.platform_message_ids_json.contains(\n                 target.message_id))",
+  "target": "tests/contract/test_observation_store_contract.py -k sql"
+ },
+ {
+  "name": "discord scheduled events drop the interested count",
+  "file": "nora/platform/discord/parser.py",
+  "old": "    user_count = getattr(ev, \"user_count\", None)\n    if isinstance(user_count, int) and user_count > 0:\n        fields[\"interested_count\"] = user_count",
+  "new": "    user_count = getattr(ev, \"user_count\", None)",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_scheduled_event_frames_reach_the_callback_and_parse"
+ },
+ {
+  "name": "an unconfirmed send still lands its claimed ids",
+  "file": "nora/agent/guards.py",
+  "old": "                platform_message_ids=(\n                    tuple(result.platform_message_ids)\n                    if result.ok else None),",
+  "new": "                platform_message_ids=(\n                    tuple(result.platform_message_ids)\n                    if result.platform_message_ids else None),",
+  "target": "tests/integration/test_bridge_send_native_identity.py::test_an_unconfirmed_send_writes_no_handle_list"
+ },
+ {
+  "name": "the bridge client ignores the platform_refs list",
+  "file": "nora/platform/bridge/client.py",
+  "old": "                platform_message_ids=tuple(\n                    str(r) for r in (data.get(\"platform_refs\") or ()) if r\n                ) or ((",
+  "new": "                platform_message_ids=tuple(\n                    str(r) for r in () if r\n                ) or ((",
+  "target": "tests/integration/test_bridge_send_native_identity.py::test_a_multi_post_send_lands_every_native_id_for_a_later_reaction"
+ },
+ {
+  "name": "the action reply drops the stored ref list",
+  "file": "deploy/instagram-bridge/internal/transport/http/v1.go",
+  "old": "\t\tPlatformRefs: row.PlatformRefs,",
+  "new": "\t\tPlatformRefs: nil,",
+  "target": "go:deploy/instagram-bridge ./internal/transport/http -run ^TestV1SendMultiPostKeepsEveryRef"
+ }
+]

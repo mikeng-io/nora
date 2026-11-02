@@ -187,6 +187,66 @@ async def test_a_confirmed_send_without_a_ref_preserves_the_prior_behaviour():
         sender_id="") is None
 
 
+async def test_a_multi_post_send_lands_every_native_id_for_a_later_reaction():
+    """One send that produced several confirmed posts (text + captionless
+    media, carousel, multi-part) carries `platform_refs` end to end: the
+    audited own row keeps EVERY handle, and a touch naming ANY of them
+    resolves to it — while `platform_message_id` stays the last (compat)
+    handle."""
+    refs = ["mid.$synthetic-1", "mid.$synthetic-2"]
+    server = await _server({
+        "state": "confirmed", "platform_ref": refs[-1],
+        "platform_refs": refs, "platform_ms": 1754300000000})
+    store = FakeRecordStore()
+    try:
+        assert await _deliver_against(server, store) is True
+    finally:
+        await server.close()
+
+    # Every confirmed handle resolves to the same audited own row.
+    row = await store.find_edited(
+        conversation_id=ROOM, target=EditTarget(message_id=refs[0]),
+        sender_id="")
+    assert row is not None and row.is_nora
+    assert row.platform_message_id == refs[-1]
+    second = await store.find_edited(
+        conversation_id=ROOM, target=EditTarget(message_id=refs[1]),
+        sender_id="")
+    assert second is not None and second.id == row.id
+    # The list never leaks into another conversation.
+    assert await store.find_edited(
+        conversation_id="other-room", target=EditTarget(message_id=refs[0]),
+        sender_id="") is None
+
+    # A reaction naming the SECOND post's handle — not the compat one —
+    # records against the row.
+    message, touch = _reaction(refs[0])
+    result = await touch_stage.run(
+        message=message, touch=touch, audit=store,
+        persons=_persons(), metrics=Metrics())
+    assert result.ending == "reaction_recorded"
+    assert store.reactions[-1]["message_id"] == row.id
+
+
+@pytest.mark.parametrize("state", ["rejected", "uncertain"])
+async def test_an_unconfirmed_send_writes_no_handle_list(state: str):
+    """A bridge that answers rejected/uncertain while still naming ids
+    mints nothing: no single ref, no list — the send was not confirmed."""
+    server = await _server({
+        "state": state, "platform_ref": REF,
+        "platform_refs": [REF, "mid.$other"]})
+    store = FakeRecordStore()
+    try:
+        assert await _deliver_against(server, store) is False
+    finally:
+        await server.close()
+
+    for ref in (REF, "mid.$other"):
+        assert await store.find_edited(
+            conversation_id=ROOM, target=EditTarget(message_id=ref),
+            sender_id="") is None
+
+
 @pytest.mark.parametrize("state", ["rejected", "uncertain"])
 async def test_an_unconfirmed_send_writes_no_handle_and_stays_honest(state: str):
     """A rejected or uncertain send never minted the id it would claim —

@@ -136,7 +136,7 @@ func (f *fakeActionStore) MarkStarted(_ context.Context, id string, messageID *i
 	row.MessageID = messageID
 	return true, nil
 }
-func (f *fakeActionStore) Finish(_ context.Context, id, state, ref string, ms *int64, ek, em string) error {
+func (f *fakeActionStore) Finish(_ context.Context, id, state, ref string, refs []string, ms *int64, ek, em string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	row := f.rows[id]
@@ -146,6 +146,10 @@ func (f *fakeActionStore) Finish(_ context.Context, id, state, ref string, ms *i
 		row.PlatformRef = &ref
 	}
 	row.PlatformMS = ms
+	row.PlatformRefs = nil
+	if len(refs) > 0 {
+		row.PlatformRefs = append([]string{}, refs...)
+	}
 	if ek != "" {
 		row.Error, _ = json.Marshal(map[string]string{"kind": ek, "message": em})
 	}
@@ -290,6 +294,61 @@ func TestV1SendConfirmed(t *testing.T) {
 	}
 	if out["platform_ref"] != "mid-1" {
 		t.Fatalf("platform_ref = %v, want mid-1", out["platform_ref"])
+	}
+}
+
+// Text plus an attachment is TWO platform items — the action row keeps
+// every confirmed native id, and replay/readback return the same list.
+func TestV1SendMultiPostKeepsEveryRef(t *testing.T) {
+	store := newFakeActionStore()
+	store.gens["w-1"] = 7
+	custody, err := bridge.NewCustody(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := custody.Put("k1", bytes.NewReader([]byte("generated-bytes")),
+		"image/png", "a.png", "w-1"); err != nil {
+		t.Fatal(err)
+	}
+	ts := v1Server(t, store, &fakeMessaging{}, custody)
+	gen := 7
+	body := sendAction("w-1:send:0", &gen)
+	body["request"].(map[string]any)["attachments"] = []any{
+		map[string]any{"key": "k1", "file_name": "a.png", "media_type": "image/png"},
+	}
+	code, out := postAction(t, ts, body)
+	if code != 200 || out["state"] != "confirmed" {
+		t.Fatalf("multi-post send = %d %v", code, out)
+	}
+	refs, _ := out["platform_refs"].([]any)
+	if len(refs) != 2 || refs[0] != "mid-1" || refs[1] != "mid-2" {
+		t.Fatalf("platform_refs = %v, want [mid-1 mid-2]", out["platform_refs"])
+	}
+	if out["platform_ref"] != "mid-2" {
+		t.Fatalf("platform_ref = %v, want the last piece's id mid-2", out["platform_ref"])
+	}
+	// Replay returns the stored row — same full list, no second send.
+	code, out = postAction(t, ts, body)
+	if code != 200 || out["state"] != "confirmed" {
+		t.Fatalf("replay = %d %v", code, out)
+	}
+	refs, _ = out["platform_refs"].([]any)
+	if len(refs) != 2 || refs[0] != "mid-1" || refs[1] != "mid-2" {
+		t.Fatalf("replay platform_refs = %v, want [mid-1 mid-2]", out["platform_refs"])
+	}
+	// GET readback sees the same durable list.
+	req, _ := http.NewRequest("GET", ts.URL+"/v1/actions/w-1:send:0", nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var got map[string]any
+	json.NewDecoder(resp.Body).Decode(&got)
+	refs, _ = got["platform_refs"].([]any)
+	if len(refs) != 2 || refs[0] != "mid-1" || refs[1] != "mid-2" {
+		t.Fatalf("GET platform_refs = %v, want [mid-1 mid-2]", got["platform_refs"])
 	}
 }
 

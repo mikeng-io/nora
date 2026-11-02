@@ -362,6 +362,7 @@ const PG_DDL = `
     request_hash text NOT NULL,
     state text NOT NULL DEFAULT 'prepared',
     platform_ref text,
+    platform_refs jsonb,
     platform_ms bigint,
     error jsonb,
     message_id bigint REFERENCES messages(id),

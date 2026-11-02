@@ -712,10 +712,21 @@ def parse_observations(
         for i, contact in enumerate(data.get("contacts") or ()):
             if not isinstance(contact, dict):
                 continue
+            # signal-cli's JsonContactName (v0.14.7) carries name COMPONENTS
+            # — nickname/given/middle/family/prefix/suffix — never a
+            # preassembled `display` field. The readable name is the joined
+            # components, or the nickname when no components are set.
+            name = contact.get("name") if isinstance(contact.get("name"), dict) else {}
+            display = " ".join(
+                str(name[k]) for k in
+                ("prefix", "given", "middle", "family", "suffix")
+                if isinstance(name.get(k), str) and name[k])
+            if not display:
+                display = name.get("nickname") if isinstance(
+                    name.get("nickname"), str) else ""
             metadata = {
                 k: v for k, v in (
-                    ("display", (contact.get("name") or {}).get("display")
-                     if isinstance(contact.get("name"), dict) else None),
+                    ("display_name", display or None),
                     ("organization", contact.get("organization")))
                 if isinstance(v, str) and v}
             # Shared-contact user data — phones/emails a person chose to

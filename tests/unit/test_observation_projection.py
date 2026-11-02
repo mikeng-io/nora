@@ -223,6 +223,78 @@ def test_an_unknown_member_state_is_neither_member_nor_departed():
     assert head_summary(head) == "membership: 1 member(s); 1 unknown-state"
 
 
+# ── artifact: ONE bounded projection on summary and detail ───────────────
+
+from nora.domain.observations import ArtifactPayload  # noqa: E402
+
+
+def _artifact(md: dict, *, op: str = "create", actor: str = "",
+              actor_status: str = "not_supplied") -> Observation:
+    return _obs(kind="artifact", object_ref="event:e1", operation=op,
+                actor_id=actor, actor_status=actor_status,
+                payload=ArtifactPayload(
+                    artifact_kind="event", metadata=md,
+                    custody="declared"))
+
+
+def test_event_artifact_projects_time_fields_and_per_responder_responses():
+    """`start_time_s` lands under `start_time` (not the stored suffix),
+    each responder keeps their OWN recorded response, and a withdrawal
+    removes only that responder's row."""
+    head = _fold(_stored(_artifact({
+        "name": "Breakfast", "start_time_s": 1790000000,
+        "interested_count": 4}), 1))
+    head = fold_observation(head, _stored(_artifact(
+        {"response": "yes"}, op="revise", actor="u1",
+        actor_status="known"), 2))
+    head = fold_observation(head, _stored(_artifact(
+        {"response": "maybe"}, op="revise", actor="u2",
+        actor_status="known"), 3))
+    detail = head_detail(head, name_of=_name_of)
+    (entry,) = detail["artifacts"]
+    # Time renders as ISO text under `start_time` — never the raw epoch.
+    assert entry["start_time"].startswith("202")
+    assert "start_time_s" not in entry and "start_time_" not in entry
+    assert entry["interested_count"] == 4
+    # Per-responder: both answers survive, named, never a last-response scalar.
+    assert entry["responders"] == {"Ana": "yes", "Bo": "maybe"}
+    assert entry["recorded_responders"] == 2
+    assert entry["recorded_subset"] is True
+    head = fold_observation(head, _stored(_artifact(
+        {"response": ""}, op="revise", actor="u1",
+        actor_status="known"), 4))          # u1 withdraws
+    detail = head_detail(head, name_of=_name_of)
+    (entry,) = detail["artifacts"]
+    assert entry["responders"] == {"Bo": "maybe"}
+    assert entry["recorded_responders"] == 1
+
+
+def test_artifact_projection_is_bounded_and_reports_unprojected_keys():
+    """Nothing a parser stored leaves silently: a non-whitelisted key
+    reports as a COUNT on the detail surface, and no stored key value
+    escapes raw into either render."""
+    head = _fold(_stored(_artifact({
+        "name": "x" * 500,
+        "some_native_blob": {"deep": [1, 2, 3]},
+        "join_url": "https://internal.example/join"}), 1))
+    detail = head_detail(head, name_of=_name_of)
+    (entry,) = detail["artifacts"]
+    assert len(entry["name"]) <= 120
+    assert entry["unprojected_fields"] == 2      # blob + join_url counted
+    assert "some_native_blob" not in entry and "join_url" not in entry
+    assert "internal.example" not in str(detail)
+
+
+def test_head_summary_names_an_event_with_its_time_and_cancellation():
+    head = _fold(_stored(_artifact({
+        "name": "Breakfast", "start_time_s": 1790000000}), 1))
+    summary = head_summary(head)
+    assert "Breakfast" in summary and "at 202" in summary
+    head = fold_observation(head, _stored(_artifact(
+        {"is_canceled": True}, op="revise"), 2))
+    assert "canceled" in head_summary(head)
+
+
 def test_member_names_resolve_only_for_active_subjects():
     """The named-member list can no longer leak a departed subject's name:
     only currently active members resolve through `name_of`."""

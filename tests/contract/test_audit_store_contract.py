@@ -322,6 +322,42 @@ async def test_set_delivery_outcome_lands_the_platforms_message_id(store):
     ) is None, "a handle must never resolve across a conversation"
 
 
+async def test_set_delivery_outcome_lands_every_native_id_of_a_multi_post_send(store):
+    """One confirmed action can produce several native posts; every id must
+    resolve to the row — `find_edited` matches ANY element of the recorded
+    list, in this room only, while the compat single keeps the LAST id."""
+    row_id = await store.append(message=_msg(platform="whatsapp"), is_nora=True)
+    await store.set_delivery_outcome(
+        row_id=row_id, status=DeliveryStatus.SENT,
+        platform_message_id="3EB0F2",
+        platform_message_ids=("3EB0F1", "3EB0F2"),
+    )
+    for ref in ("3EB0F1", "3EB0F2"):
+        found = await store.find_edited(
+            conversation_id="g1", target=EditTarget(message_id=ref),
+            sender_id="")
+        assert found is not None and found.id == row_id, ref
+        assert found.platform_message_id == "3EB0F2"
+        assert await store.find_edited(
+            conversation_id="g2", target=EditTarget(message_id=ref),
+            sender_id="") is None
+
+
+async def test_a_multi_post_id_list_is_stored_as_json_not_a_json_string(store):
+    """`platform_message_ids_json` is a jsonb ARRAY column: a stored JSON
+    STRING (a double-encoded dump) still fails the element match — this is
+    the regression the Python-list write pins."""
+    row_id = await store.append(message=_msg(platform="whatsapp"), is_nora=True)
+    await store.set_delivery_outcome(
+        row_id=row_id, status=DeliveryStatus.SENT,
+        platform_message_ids=("3EB0F9",),
+    )
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(message_id="3EB0F9"),
+        sender_id="")
+    assert found is not None and found.id == row_id
+
+
 async def test_an_outcome_without_a_native_id_never_blanks_the_handle(store):
     """`None` leaves the column untouched: a platform that answered without
     an id stamps none, and a later outcome carrying none does not erase the

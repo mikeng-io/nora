@@ -189,3 +189,42 @@ be absent from a turn because of missing capture, projection, selection or rende
 record a bounded reason at the relevant existing seam. Aggregate coverage/outcomes
 belong in metrics; safe per-event correlation belongs in receipts/logs/traces under
 platform-bridges 04. No content/IDs in metric labels or raw payloads in telemetry.
+
+## Artifact metadata projection — the ONE read model (as built 2026-11-02)
+
+Artifact metadata reaches the model through a single normalized projection,
+`nora/domain/observations.py::_artifact_fields`, reused by every surface — no
+second formatter, no raw JSON dump:
+
+- `artifact_field_summary` renders it as the bounded `;`-joined line inside
+  `observation_summary` (per-observation change lines on the typed agenda).
+- `_artifact_meta_detail` returns the same dict for `head_detail` (tool detail
+  and assembled reads) and reports stored-but-not-projected keys as a
+  `unprojected_fields` COUNT — a stored key is never silently absent and its
+  value never escapes raw.
+- `_artifact_entry_label` derives the short `head_summary` label (kind +
+  identifying name + ISO start time + canceled + recorded-response count)
+  from the same stored entry.
+
+Bounds: `_ARTIFACT_TEXT_FIELDS` whitelist (name/display_name/formatted_name/
+title/description/organization/url/address/caption/location_name/
+channel_name/status/entity_type), list fields (`phones`/`emails`/`urls`,
+≤6 × 80 chars with a `+N` remainder), integer facts (contact_count,
+extra_guest_count, interested_count, unparsed), booleans (is_canceled,
+extra_guests_allowed, invalidated), epoch-seconds times rendered ISO under
+`start_time`/`end_time` (never a raw number), ≤8 contacts with per-field
+whitelist, ≤8 artifact entries in a head with `+N` and explicit counts.
+
+Per-responder RSVP fidelity: `responses` folds keyed by responder; the
+projection emits `responders` (roster-named → recorded response, ≤24),
+`responders_unnamed`, `recorded_responders` and `recorded_responses`
+(response→count). A remove/empty response withdraws only that responder's
+row — it is never an "uninterested" tally and never overwrites another
+responder's answer. Unattributed responses key on their source revision so
+two of them cannot merge.
+
+Identifiers, coordinates and credentials are absent from the declared
+metadata set by construction (admission keeps them out), so no projection
+needs to filter them at render. Malformed entries degrade to a clipped
+label, never a crash; `unprojected_fields` keeps what the whitelist did
+not show visible as a bounded omission.

@@ -483,6 +483,19 @@ function pinInChat(msg, pin, ctx) {
 function parseVcard(vcard) {
   const out = { phones: [], emails: [], urls: [] };
   if (typeof vcard !== 'string' || !vcard.trim()) return out;
+  // RFC 6350 escaping: \\ \, \; \n \N — unescape AFTER splitting on
+  // UNESCAPED separators, so an escaped semicolon in a name never breaks
+  // N/ORG's component split and an escaped comma stays a comma.
+  // One left-to-right pass: a "\\\\" pair is consumed atomically (data), so
+  // "\\n" never collapses into a newline; an unrecognized escape keeps its
+  // backslash rather than guessing.
+  const unesc = (v) => String(v).replace(/\\(.)/gs,
+    (m, c) => (c === "n" || c === "N" ? " "
+      : (c === "\\" || c === "," || c === ";" ? c : m)));
+  // A separator is a ";" preceded by an EVEN count of backslashes (each
+  // "\\" pair is data); an odd count escapes it.
+  const splitN = (raw) => raw.split(/(?<!\\)(?:\\\\)*;/)
+    .map((p) => unesc(p).trim());
   // Unfold continuation lines (RFC 6350: a line starting space/tab joins the
   // previous one), then read NAME[;params]:value.
   const lines = String(vcard).replace(/\r\n/g, '\n').replace(/\n[ \t]/g, '').split('\n');
@@ -491,14 +504,16 @@ function parseVcard(vcard) {
     const m = /^([A-Za-z0-9-]+)((?:;[^:]*)?):(.*)$/.exec(line.trim());
     if (!m) continue;
     const name = m[1].toUpperCase();
-    const value = m[3].trim();
-    if (name === 'FN') cap([], '', 0) || (out.formatted_name ||= value.slice(0, 80));
+    const raw = m[3].trim();
+    const value = unesc(raw).trim();
+    if (!value) continue;
+    if (name === 'FN') out.formatted_name ||= value.slice(0, 80);
     else if (name === 'N') {
-      const parts = value.split(';');
+      const parts = splitN(raw);
       const full = [parts[1], parts[0]].filter(Boolean).join(' ').trim();
       if (full && !out.name) out.name = full.slice(0, 80);
     } else if (name === 'ORG') {
-      out.organization ||= value.replace(/;$/, '').replace(/;/g, ' ').trim().slice(0, 80);
+      out.organization ||= splitN(raw).filter(Boolean).join(' ').slice(0, 80);
     } else if (name === 'TITLE') {
       out.title ||= value.slice(0, 80);
     } else if (name === 'TEL') cap(out.phones, value);

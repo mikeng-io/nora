@@ -257,6 +257,13 @@ coverage census. [02](02-observation-contract.md) specifies typed data and folds
 owns acceptance, delivery and how findings accumulate. These extend the overview where
 it previously deferred exact contract details. Recorded-reaction target annotations were delivered in PR #478; the broader poll/room and Standing enrichment contract remains proposed.
 
+2026-11-02 completion addendum: the artifact/contact/event and multi-post
+native-identity cells are pinned in [01](01-coverage.md#artifact--contact--event-completion-addendum-2026-11-02),
+outbound id ownership in [02](02-observation-contract.md#outbound-native-identity-multi-post-2026-11-02),
+the single artifact read model in [03](03-model-projections.md#artifact-metadata-projection--the-one-read-model-as-built-2026-11-02),
+and their generated guards plus open evidence in
+[04](04-build-and-acceptance.md#artifact-completion-controls-generated-evidence-2026-11-02).
+
 The existing bridge bundle owns transport/recovery and telemetry; unified-memory
 owns interpretation, graph admission and profile rollout. This bundle owns source
 observation semantics and consistent read projections across those owners.

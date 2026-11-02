@@ -1799,12 +1799,14 @@ def _who(ref: str, name_of: Any) -> str:
 _ARTIFACT_TEXT_FIELDS = (
     "name", "display_name", "formatted_name", "title", "description",
     "organization", "url", "address", "caption", "location_name",
+    "channel_name", "status", "entity_type",
 )
 #: Metadata keys holding a list of user-authored values (contact phones,
 #: emails, urls) — each entry clipped, the list bounded.
 _ARTIFACT_LIST_FIELDS = ("phones", "emails", "urls")
 #: Metadata keys holding a plain integer fact.
-_ARTIFACT_INT_FIELDS = ("contact_count", "extra_guest_count", "unparsed")
+_ARTIFACT_INT_FIELDS = ("contact_count", "extra_guest_count",
+                        "interested_count", "unparsed")
 #: Metadata keys holding epoch-SECONDS event times — rendered ISO, never
 #: as a raw number a model could misread.
 _ARTIFACT_TIME_FIELDS = ("start_time_s", "end_time_s")
@@ -1837,91 +1839,15 @@ def _contact_label(c: Any) -> str:
         or c.get("organization") or "a contact"), 40)
 
 
-def artifact_field_summary(
-    artifact_kind: str, metadata: dict[str, Any], *, name_of: Any = None,
-) -> str:
-    """The declared content fields of one artifact's stored metadata, as
-    one bounded `;`-joined summary — `""` when nothing declared is stored.
-    Internal identifiers, coordinates and credentials are never in the
-    declared set, so they cannot be rendered here."""
-    md = metadata if isinstance(metadata, dict) else {}
-    parts: list[str] = []
-    for key in _ARTIFACT_TEXT_FIELDS:
-        v = md.get(key)
-        if isinstance(v, str) and v:
-            parts.append(f"{key} “{_clip(v, 60)}”")
-    for key in _ARTIFACT_TIME_FIELDS:
-        if key in md and md[key] is not None:
-            parts.append(f"{key[:-2]} {_iso_s(md[key])}")
-    for key in _ARTIFACT_BOOL_FIELDS:
-        if isinstance(md.get(key), bool):
-            parts.append(key.replace("_", " ") if md[key]
-                         else f"not {key.replace('_', ' ')}")
-    for key in _ARTIFACT_LIST_FIELDS:
-        vals = [v for v in (md.get(key) or []) if isinstance(v, str) and v]
-        if vals:
-            shown = ", ".join(_clip(v, 40) for v in vals[:_ARTIFACT_LIST_MAX])
-            more = (f" (+{len(vals) - _ARTIFACT_LIST_MAX})"
-                    if len(vals) > _ARTIFACT_LIST_MAX else "")
-            parts.append(f"{key} {shown}{more}")
-    contacts = [c for c in (md.get("contacts") or []) if c]
-    if contacts:
-        shown = ", ".join(_contact_label(c)
-                          for c in contacts[:_ARTIFACT_CONTACTS_MAX])
-        more = (f" (+{len(contacts) - _ARTIFACT_CONTACTS_MAX})"
-                if len(contacts) > _ARTIFACT_CONTACTS_MAX else "")
-        parts.append(f"contacts {shown}{more}")
-    for key in _ARTIFACT_INT_FIELDS:
-        if isinstance(md.get(key), int) and not isinstance(md[key], bool):
-            parts.append(f"{key.replace('_', ' ')} {md[key]}")
-    responses = md.get("responses") or {}
-    if isinstance(responses, dict) and responses:
-        tallies: dict[str, int] = {}
-        for r in responses.values():
-            tallies[str(r)] = tallies.get(str(r), 0) + 1
-        named = [n for a in responses
-                 if not a.startswith("unattributed:")
-                 and (n := name_of(a) if name_of is not None else None)]
-        tail = ", ".join(f"{k} x{v}" for k, v in sorted(tallies.items())[:6])
-        parts.append(
-            f"recorded responses {tail} ({len(responses)} responder(s)"
-            + (f", {len(named)} named" if named else "") + ")")
-    guests = md.get("response_guests") or {}
-    if isinstance(guests, dict) and guests:
-        total = sum(int(v) for v in guests.values()
-                    if isinstance(v, int) and not isinstance(v, bool))
-        if total:
-            parts.append(f"recorded extra guests {total}")
-    return "; ".join(parts)
-
-
-def _artifact_entry_label(
-    artifact_kind: str, entry: dict[str, Any],
-) -> str:
-    """One stored artifact as a short label for `head_summary` —
-    kind plus its most identifying declared field."""
-    md = entry.get("metadata") or {}
-    name = next((str(md[k]) for k in
-                 ("name", "display_name", "formatted_name", "title",
-                  "organization", "url")
-                 if isinstance(md.get(k), str) and md[k]), "")
-    bits = [str(entry.get("artifact_kind") or artifact_kind or "object")]
-    if name:
-        bits.append(f"“{_clip(name, 40)}”")
-    if md.get("is_canceled"):
-        bits.append("canceled")
-    custody = entry.get("custody")
-    if custody and custody != "declared":
-        bits.append(str(custody))
-    return " ".join(bits)
-
-
-def _artifact_meta_detail(
-    entry: dict[str, Any], *, name_of: Any = None,
+def _artifact_fields(
+    md: dict[str, Any], *, name_of: Any = None,
 ) -> dict[str, Any]:
-    """One artifact's stored metadata as bounded structured detail —
-    the same declared-field whitelist `artifact_field_summary` reads."""
-    md = entry.get("metadata") or {}
+    """The ONE normalized view of an artifact's declared metadata —
+    the whitelist both `artifact_field_summary` and `_artifact_meta_detail`
+    render, values already bounded so no surface re-truncates. Per-responder
+    responses keep WHO said what: `responders` maps each roster-named
+    responder to their recorded response; `responders_unnamed` counts the
+    rest, so a response is never collapsed into a bare tally."""
     out: dict[str, Any] = {}
     for key in _ARTIFACT_TEXT_FIELDS:
         v = md.get(key)
@@ -1929,7 +1855,7 @@ def _artifact_meta_detail(
             out[key] = _clip(v, 120)
     for key in _ARTIFACT_TIME_FIELDS:
         if key in md and md[key] is not None:
-            out[key[:-1]] = _iso_s(md[key])
+            out[key[:-2]] = _iso_s(md[key])
     for key in _ARTIFACT_BOOL_FIELDS:
         if isinstance(md.get(key), bool):
             out[key] = md[key]
@@ -1939,7 +1865,9 @@ def _artifact_meta_detail(
             out[key] = [_clip(v, 80) for v in vals[:_ARTIFACT_LIST_MAX]]
             if len(vals) > _ARTIFACT_LIST_MAX:
                 out[f"{key}_more"] = len(vals) - _ARTIFACT_LIST_MAX
-    contacts = [c for c in (md.get("contacts") or []) if isinstance(c, dict)]
+    contacts = [
+        c if isinstance(c, dict) else {"display_name": _clip(str(c), 40)}
+        for c in (md.get("contacts") or []) if c]
     if contacts:
         out["contacts"] = [
             {k: ([_clip(x, 40) for x in v[:_ARTIFACT_LIST_MAX]
@@ -1959,14 +1887,18 @@ def _artifact_meta_detail(
     responses = md.get("responses") or {}
     if isinstance(responses, dict) and responses:
         tallies: dict[str, int] = {}
-        for r in responses.values():
+        named: dict[str, str] = {}
+        for actor, r in responses.items():
             tallies[str(r)] = tallies.get(str(r), 0) + 1
+            if str(actor).startswith("unattributed:"):
+                continue
+            n = name_of(actor) if name_of is not None else None
+            if n:
+                named[n] = _clip(str(r), 40)
         out["recorded_responses"] = dict(sorted(tallies.items())[:12])
-        named = [n for a in responses
-                 if not str(a).startswith("unattributed:")
-                 and (n := name_of(a) if name_of is not None else None)]
+        out["recorded_responders"] = len(responses)
         if named:
-            out["responders_named"] = named[:_NAMED_MAX]
+            out["responders"] = dict(list(named.items())[:_NAMED_MAX])
         out["responders_unnamed"] = len(responses) - len(named)
         out["recorded_subset"] = True
     guests = md.get("response_guests") or {}
@@ -1975,6 +1907,96 @@ def _artifact_meta_detail(
                     if isinstance(v, int) and not isinstance(v, bool))
         if total:
             out["recorded_extra_guests"] = total
+    return out
+
+
+def artifact_field_summary(
+    artifact_kind: str, metadata: dict[str, Any], *, name_of: Any = None,
+) -> str:
+    """The declared content fields of one artifact's stored metadata, as
+    one bounded `;`-joined summary — `""` when nothing declared is stored.
+    Internal identifiers, coordinates and credentials are never in the
+    declared set, so they cannot be rendered here."""
+    md = metadata if isinstance(metadata, dict) else {}
+    f = _artifact_fields(md, name_of=name_of)
+    parts: list[str] = []
+    for key in _ARTIFACT_TEXT_FIELDS:
+        if key in f:
+            parts.append(f"{key} “{_clip(f[key], 60)}”")
+    for key in _ARTIFACT_TIME_FIELDS:
+        if key[:-2] in f:
+            parts.append(f"{key[:-2]} {f[key[:-2]]}")
+    for key in _ARTIFACT_BOOL_FIELDS:
+        if key in f:
+            parts.append(key.replace("_", " ") if f[key]
+                         else f"not {key.replace('_', ' ')}")
+    for key in _ARTIFACT_LIST_FIELDS:
+        vals = f.get(key)
+        if vals:
+            shown = ", ".join(_clip(v, 40) for v in vals)
+            more = (f" (+{f[f'{key}_more']})"
+                    if f.get(f"{key}_more") else "")
+            parts.append(f"{key} {shown}{more}")
+    if f.get("contacts"):
+        shown = ", ".join(_contact_label(c) for c in f["contacts"])
+        more = (f" (+{f['contacts_more']})"
+                if f.get("contacts_more") else "")
+        parts.append(f"contacts {shown}{more}")
+    for key in _ARTIFACT_INT_FIELDS:
+        if key in f:
+            parts.append(f"{key.replace('_', ' ')} {f[key]}")
+    if f.get("recorded_responses"):
+        tail = ", ".join(f"{k} x{v}"
+                         for k, v in list(f["recorded_responses"].items())[:6])
+        resp = f.get("responders") or {}
+        shown = ", ".join(f"{n} {r}" for n, r in list(resp.items())[:6])
+        hidden = len(resp) - min(len(resp), 6)
+        unnamed = f.get("responders_unnamed", 0) + hidden
+        who = f"; {shown}" if shown else ""
+        who += f" (+{unnamed} unnamed)" if unnamed else ""
+        parts.append(
+            f"recorded responses {tail} "
+            f"({f['recorded_responders']} responder(s){who})")
+    if f.get("recorded_extra_guests"):
+        parts.append(f"recorded extra guests {f['recorded_extra_guests']}")
+    return "; ".join(parts)
+
+
+def _artifact_entry_label(
+    artifact_kind: str, entry: dict[str, Any],
+) -> str:
+    """One stored artifact as a short label for `head_summary` —
+    kind plus its most identifying declared field."""
+    md = entry.get("metadata") or {}
+    name = next((str(md[k]) for k in
+                 ("name", "display_name", "formatted_name", "title",
+                  "organization", "url")
+                 if isinstance(md.get(k), str) and md[k]), "")
+    bits = [str(entry.get("artifact_kind") or artifact_kind or "object")]
+    if name:
+        bits.append(f"“{_clip(name, 40)}”")
+    if md.get("start_time_s") is not None:
+        bits.append(f"at {_iso_s(md['start_time_s'])}")
+    if md.get("is_canceled"):
+        bits.append("canceled")
+    responses = md.get("responses")
+    if isinstance(responses, dict) and responses:
+        bits.append(f"{len(responses)} recorded response(s)")
+    custody = entry.get("custody")
+    if custody and custody != "declared":
+        bits.append(str(custody))
+    return " ".join(bits)
+
+
+def _artifact_meta_detail(
+    entry: dict[str, Any], *, name_of: Any = None,
+) -> dict[str, Any]:
+    """One artifact's stored metadata as bounded structured detail —
+    the SAME normalized projection `artifact_field_summary` renders.
+    Whatever the whitelist did not project is reported as a COUNT, so a
+    stored key is never silently absent and never dumped raw."""
+    md = entry.get("metadata") or {}
+    out = _artifact_fields(md, name_of=name_of)
     stored = len(md)
     shown_keys = (sum(1 for k in _ARTIFACT_TEXT_FIELDS + _ARTIFACT_TIME_FIELDS
                       + _ARTIFACT_BOOL_FIELDS + _ARTIFACT_LIST_FIELDS
