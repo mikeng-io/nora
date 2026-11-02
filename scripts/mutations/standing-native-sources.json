@@ -1,0 +1,30 @@
+[
+  {
+    "name": "native-cognition-activity-is-a-citable-unit-fact",
+    "file": "nora/app/cognition_session.py",
+    "old": "            record_requirement(DisclosureRequirement(\n                None, tuple(message(record_room_key(*room)) for room in state.rooms.values()),\n            ))",
+    "new": "            pass",
+    "target": "tests/unit/test_eval_standing_unit.py::test_native_activity_is_citable_without_erasing_unknown_sources"
+  },
+  {
+    "name": "a-withheld-unit-entry-is-still-projected",
+    "file": "nora/subject/standing_fold.py",
+    "old": "projected = {e.id for e in destination.entries} if destination else set()",
+    "new": "projected = {e.id for e in destination.entries if e.permitted} if destination else set()",
+    "target": "tests/unit/test_eval_standing_unit.py::test_a_withheld_destination_keeps_the_entry_without_disclosing_content"
+  },
+  {
+    "name": "the-unit-caller-declares-its-output-scope",
+    "file": "nora/engagement/stages/debrief.py",
+    "old": "                    unit=True,",
+    "new": "                    unit=False,",
+    "target": "tests/unit/test_debrief.py::test_the_cognition_fold_materializes_unit_scope_entries_under_cas"
+  },
+  {
+    "name": "platform-and-shared-state-have-one-standing-block",
+    "file": "nora/language/cognition_render.py",
+    "old": "            source_blocks = [b for b in blocks if b.name == \"standing\"]\n            shared_block = replace(shared_block, body=\"\\n\".join(\n                [shared_block.body, *(b.body for b in source_blocks)],\n            ))\n            blocks = [b for b in blocks if b.name != \"standing\"]\n",
+    "new": "",
+    "target": "tests/unit/test_platform_observation_wired.py::test_source_objects_and_shared_state_render_in_one_standing_block"
+  }
+]

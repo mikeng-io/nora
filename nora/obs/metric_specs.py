@@ -1453,9 +1453,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "a carry-forward past [standing]'s working-set TTL — the model "
         "re-stated an item whose found_at is too old to keep, and the write "
         "path refused it deterministically rather than writing it back and "
-        "resetting nothing. Distinct from the render-time TTL filter "
-        "(render_standing_working_set): this is the same rule enforced "
-        "where the row is WRITTEN, not just where it is read.",
+        "resetting nothing. Distinct from the read-time TTL filter on "
+        "finding entries in the `standing` view: this is the same rule "
+        "enforced where the row is WRITTEN, not just where it is read.",
     ),
     _CounterSpec(
         "nora_standing_working_set_overflow_refusals_total",

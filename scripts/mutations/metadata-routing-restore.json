@@ -2,8 +2,8 @@
   {
     "name": "routing corpora restore the Record their tools consume",
     "file": "evals/scenarios.py",
-    "old": "FULL_RESTORE_CORPORA: frozenset[str] = frozenset({\n    \"conversational_recall\", \"cognition_session\", \"tool_selection\", \"tool_selection_cognition\",\n})",
-    "new": "FULL_RESTORE_CORPORA: frozenset[str] = frozenset({\"conversational_recall\", \"cognition_session\"})",
+    "old": "FULL_RESTORE_CORPORA: frozenset[str] = frozenset({\n    \"conversational_recall\", \"cognition_session\", \"standing_unit\",\n    \"tool_selection\", \"tool_selection_cognition\",\n})",
+    "new": "FULL_RESTORE_CORPORA: frozenset[str] = frozenset({\"conversational_recall\", \"cognition_session\", \"standing_unit\"})",
     "target": "tests/unit/test_eval_full_restore.py::test_tool_routing_uses_the_full_record_restore"
   }
 ]

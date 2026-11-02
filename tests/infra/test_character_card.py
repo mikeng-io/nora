@@ -224,8 +224,7 @@ def test_migration_up_down_keeps_one_head_and_legacy_rows(pg_url):
         assert conn.execute(sa.select(PROFILE_LINE.c.text)).scalar_one() == "legacy prose"
     sync.dispose()
     from alembic.script import ScriptDirectory
-    # One head — the property, not this release's revision id, which drifts
-    # with every merged migration.
+# One head is the property, independent of the current revision name.
     heads = ScriptDirectory.from_config(cfg).get_heads()
     assert len(heads) == 1, heads
 

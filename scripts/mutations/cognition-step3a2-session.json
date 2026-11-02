@@ -247,16 +247,16 @@
  {
   "name": "cognition_session: a multi-room agenda actually needs a named room",
   "file": "nora/app/cognition_session.py",
-  "old": "    if len(state.rooms) == 1:\n        return next(iter(state.rooms.values()))",
-  "new": "    if True:\n        return next(iter(state.rooms.values()))",
-  "target": "tests/unit/test_cognition_session_lifecycle.py -k test_a_write_on_a_multi_room_agenda_without_a_room_is_refused_not_guessed"
+  "old": "    if len(state.rooms) == 1:\n        key = next(iter(state.rooms))\n        return _room_of(key, state)",
+  "new": "    if state.rooms:\n        key = next(iter(state.rooms))\n        return _room_of(key, state)",
+  "target": "tests/unit/test_cognition_live_writes.py::test_multi_room_agenda_keeps_explicit_destination_and_unit_boundary"
  },
  {
-  "name": "cognition_session: a room not on the agenda is actually refused",
+  "name": "cognition_session: a destination outside the unit is actually refused",
   "file": "nora/app/cognition_session.py",
-  "old": "        if found is None:\n            return {\n                \"status\": \"refused\", \"reason\": \"unknown_room\",",
-  "new": "        if False:\n            return {\n                \"status\": \"refused\", \"reason\": \"unknown_room\",",
-  "target": "tests/unit/test_cognition_session_lifecycle.py -k test_a_write_on_a_multi_room_agenda_without_a_room_is_refused_not_guessed"
+  "old": "        found = state.allowed_rooms.get(room)\n        if found is None:",
+  "new": "        found = state.allowed_rooms.get(room) or next(iter(state.allowed_rooms.values()))\n        if found is None:",
+  "target": "tests/unit/test_cognition_live_writes.py::test_multi_room_agenda_keeps_explicit_destination_and_unit_boundary"
  },
  {
   "name": "cognition_session: a read tool off the allowlist is actually refused",

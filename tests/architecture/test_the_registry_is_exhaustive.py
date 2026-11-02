@@ -57,12 +57,12 @@ def test_the_census_finds_the_five_occasions_it_used_to_list():
     } <= set(_OCCASIONS), sorted(_OCCASIONS)
 
 #: Imported name -> the ONE block name it always builds. Each lives in its
-#: own module (`nora.language.note_render`, `.standing_render`,
+#: own module (`nora.language.note_render`, `.shared_render`,
 #: `nora.domain.decision_log`, `nora.language.culture_render`) and is
 #: shared across occasions precisely because it is not parametrised on name.
 _SHARED_BUILDER_NAMES = {
+    "render_shared_state": "standing",
     "render_notes": "notes",
-    "render_standing": "standing",
     "render_decisions": "loop_decisions",
     "render_self": "self",
     # `nora.language.presence_render`: the tag

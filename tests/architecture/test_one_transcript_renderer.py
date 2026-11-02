@@ -92,11 +92,6 @@ _NOT_A_TRANSCRIPT = {
     # anybody sent, so the transcript rule does not apply; it is here because
     # "calls an element renderer" is the net this gate casts.
     "nora/skills/loader.py": "renders the skill catalogue, not a transcript",
-    # THE WORKING SET, not a transcript — one element per thing found and not yet given
-    # the room, through the same `render_elements` the transcripts use. `note_render.py`'s
-    # own reason one tier over: it renders no message, so the transcript rule does not
-    # apply.
-    "nora/language/standing_render.py": "renders the working set, not a transcript",
     # THE EVENT INDEX, not a transcript — one element per recorded event (id, status,
     # when, venue, revision, the title as content), through the same `render_elements` the
     # transcripts use. `note_render.py`'s own reason one index over: it renders no

@@ -2,8 +2,8 @@
   {
     "name": "#158: the store rule, as the contract suite states it (in-memory half)",
     "file": "nora/testing/reminders.py",
-    "old": "        if note_id is not None and any(",
-    "new": "        if False and any(",
+    "old": "        note_id = open_proactive_note(reminder)\n        if note_id is not None and any(",
+    "new": "        note_id = open_proactive_note(reminder)\n        if False and any(",
     "target": "tests/contract/test_reminder_store_contract.py -k fake"
   },
   {

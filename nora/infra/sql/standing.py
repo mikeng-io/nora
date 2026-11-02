@@ -79,10 +79,20 @@ def _derived(standing: Standing) -> dict[str, Any]:
             .scalar_subquery(),
             standing.updated_at,
         )
+    # The room's own defaults UNION the lineage the write actually carried:
+    # `standing.lineage` is where consumed Record requirements (and the
+    # prior's inherited gates) live — stamping only `own_room_lineage` would
+    # launder them away (design 20 §4, sources derived by code and carried
+    # to the write).
+    own = own_room_lineage(
+        room_key(standing.platform, standing.conversation_id), SECTIONS,
+    )
+    merged = Lineage.of({
+        s: tuple(dict.fromkeys((*own.section(s), *standing.lineage.section(s))))
+        for s in SECTIONS
+    })
     return {
-        "lineage": own_room_lineage(
-            room_key(standing.platform, standing.conversation_id), SECTIONS,
-        ).to_json(),
+        "lineage": merged.to_json(),
         "exclude_persons": list(standing.exclude_persons),
         "as_of": as_of,
     }

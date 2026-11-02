@@ -128,8 +128,8 @@
  {
   "name": "D7 the log honours since (sql)",
   "file": "nora/infra/sql/reminders.py",
-  "old": "                REMINDERS.c.created_at >= ensure_utc(since, field=\"since\"),",
-  "new": "                REMINDERS.c.created_at >= REMINDERS.c.created_at,",
+  "old": "    async def history(\n        self, *, requester_person_id: str, since: datetime, limit: int,\n    ) -> Sequence[Reminder]:\n        \"\"\"One requester's rows since `since`, every state, oldest first —\n        the decision log. Same per-row\n        decode discipline as `due()`: one undecodable row is skipped and\n        named, never a dead read.\"\"\"\n        stmt = (\n            sa.select(REMINDERS)\n            .where(\n                REMINDERS.c.requester_person_id == requester_person_id,\n                REMINDERS.c.created_at >= ensure_utc(since, field=\"since\"),\n            )\n            .order_by(REMINDERS.c.created_at.asc(), REMINDERS.c.id.asc())\n            .limit(check_limit(limit))\n        )\n        async with self._engine.connect() as conn:\n            rows = (await conn.execute(stmt)).all()\n        return self._decode_due(rows)\n",
+  "new": "    async def history(\n        self, *, requester_person_id: str, since: datetime, limit: int,\n    ) -> Sequence[Reminder]:\n        \"\"\"One requester's rows since `since`, every state, oldest first —\n        the decision log. Same per-row\n        decode discipline as `due()`: one undecodable row is skipped and\n        named, never a dead read.\"\"\"\n        stmt = (\n            sa.select(REMINDERS)\n            .where(\n                REMINDERS.c.requester_person_id == requester_person_id,\n                REMINDERS.c.created_at >= REMINDERS.c.created_at,\n            )\n            .order_by(REMINDERS.c.created_at.asc(), REMINDERS.c.id.asc())\n            .limit(check_limit(limit))\n        )\n        async with self._engine.connect() as conn:\n            rows = (await conn.execute(stmt)).all()\n        return self._decode_due(rows)\n",
   "target": "tests/contract/test_reminder_store_contract.py::test_history_honours_since_and_limit[sql]"
  },
  {
