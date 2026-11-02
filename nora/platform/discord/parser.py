@@ -1014,7 +1014,7 @@ def _scheduled_event_fields(ev: Any) -> dict[str, Any]:
         fields["location_name"] = loc
     try:
         channel = getattr(ev, "channel", None)
-    except Exception:
+    except AttributeError:
         channel = None
     ch_name = getattr(channel, "name", None) if channel is not None else None
     if isinstance(ch_name, str) and ch_name:

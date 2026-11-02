@@ -1876,7 +1876,7 @@ def _artifact_fields(
                  else _clip(str(v), 60))
              for k, v in c.items()
              if k in _ARTIFACT_TEXT_FIELDS + _ARTIFACT_LIST_FIELDS
-             and (isinstance(v, str) and v or isinstance(v, list) and v)}
+             and ((isinstance(v, str) and v) or (isinstance(v, list) and v))}
             for c in contacts[:_ARTIFACT_CONTACTS_MAX]
         ]
         if len(contacts) > _ARTIFACT_CONTACTS_MAX:
