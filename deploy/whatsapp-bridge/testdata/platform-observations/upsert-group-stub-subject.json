@@ -1,0 +1,22 @@
+{
+  "_fixture": {
+    "name": "group subject change stub (messageStubType GROUP_CHANGE_SUBJECT=21)",
+    "generated": true,
+    "native_event": "messages.upsert (type=notify), WebMessageInfo.messageStubType + messageStubParameters, no message body",
+    "capture_today": "captured — stub stanza routes stanzaObservations -> room revise observation (fields.title=stubParameters[0]); actor=key.participant",
+    "semantic": "Group changes arrive as stub notifications: messageStubType (GROUP_CHANGE_SUBJECT=21, DESCRIPTION=24, RESTRICT=25, ANNOUNCE=26, PARTICIPANT_ADD=27, REMOVE=28, PROMOTE=29, DEMOTE=30, LEAVE=32) plus opaque messageStubParameters (new value / subject JID / method). Actor = key.participant. The typed equivalent also surfaces via groups.update (unsubscribed). Stub parameters are positional and typed 'any' in Baileys — semantics come from the stub type table, not field names."
+  },
+  "payload": {
+    "key": {
+      "remoteJid": "12036123456789@g.us",
+      "fromMe": false,
+      "id": "3EB0STUB01",
+      "participant": "15550100011@s.whatsapp.net"
+    },
+    "messageTimestamp": 1780000000,
+    "messageStubType": 21,
+    "messageStubParameters": [
+      "Saturday planning"
+    ]
+  }
+}

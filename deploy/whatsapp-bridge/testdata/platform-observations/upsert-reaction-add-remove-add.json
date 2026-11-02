@@ -1,0 +1,74 @@
+{
+  "_fixture": {
+    "name": "add/remove/add reusing one reaction stanza id",
+    "generated": true,
+    "native_event": "messages.upsert (type=notify), three stanzas",
+    "capture_today": "captured — three transitions stay three: upstream r:{target}:{stanza}:{sender}:{add|remove}:{senderTimestampMs} now carries the reaction's own source clock; absent clock -> :na ambiguity retained",
+    "semantic": "actor+target+emoji is a state key, not an event identity. Three stanzas reusing one reaction stanza id are three upstream transitions, but TODAY's upstream identity r:{target}:{stanza}:{sender}:{add|remove} can only express two of them: the second 'add' reproduces the first's source key and dedupes as a replay. Measured: 3 stanzas -> 2 distinct upstreams. Design/04's 'add/remove/add stays three transitions' needs either a distinct stanza id per transition (upstream reality unverified — assert against a live delta before trusting) or an extra discriminator (senderTimestampMs / transition ledger) at the binding seam."
+  },
+  "payload": [
+    {
+      "key": {
+        "remoteJid": "12036123456789@g.us",
+        "fromMe": false,
+        "id": "3EB0RSEQ1",
+        "participant": "15550100022@s.whatsapp.net"
+      },
+      "message": {
+        "reactionMessage": {
+          "key": {
+            "remoteJid": "12036123456789@g.us",
+            "fromMe": false,
+            "id": "3EB0AAA100",
+            "participant": "15550100011@s.whatsapp.net"
+          },
+          "text": "❤️",
+          "senderTimestampMs": 1790000200000
+        }
+      },
+      "messageTimestamp": 1781200000
+    },
+    {
+      "key": {
+        "remoteJid": "12036123456789@g.us",
+        "fromMe": false,
+        "id": "3EB0RSEQ1",
+        "participant": "15550100022@s.whatsapp.net"
+      },
+      "message": {
+        "reactionMessage": {
+          "key": {
+            "remoteJid": "12036123456789@g.us",
+            "fromMe": false,
+            "id": "3EB0AAA100",
+            "participant": "15550100011@s.whatsapp.net"
+          },
+          "text": "",
+          "senderTimestampMs": 1790000300000
+        }
+      },
+      "messageTimestamp": 1781300000
+    },
+    {
+      "key": {
+        "remoteJid": "12036123456789@g.us",
+        "fromMe": false,
+        "id": "3EB0RSEQ1",
+        "participant": "15550100022@s.whatsapp.net"
+      },
+      "message": {
+        "reactionMessage": {
+          "key": {
+            "remoteJid": "12036123456789@g.us",
+            "fromMe": false,
+            "id": "3EB0AAA100",
+            "participant": "15550100011@s.whatsapp.net"
+          },
+          "text": "❤️",
+          "senderTimestampMs": 1790000400000
+        }
+      },
+      "messageTimestamp": 1781400000
+    }
+  ]
+}

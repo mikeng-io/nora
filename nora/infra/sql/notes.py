@@ -92,7 +92,9 @@ from nora.domain.notes import (
     NoteRevision,
     NoteSupersedeReason,
     RetiredNoteError,
+    SourceRef,
     StaleNoteHeadError,
+    merged_source_refs,
     note_handle,
     proactive_row_forwarded_is_moved,
     tag_path_progressed_since_wake,
@@ -131,7 +133,12 @@ def _row_to_note(r: Row[Any]) -> Note:
         uncertainty=r.uncertainty, closing_condition=r.closing_condition,
         established_in=r.established_in, created_at=r.created_at,
         head_revision_id=r.head_revision_id, anchor_date=r.anchor_date,
-        anchor_entity_ids=tuple(r.anchor_entity_ids), retired_at=r.retired_at,
+        anchor_entity_ids=tuple(r.anchor_entity_ids),
+        object_refs=tuple(
+            ref for ref in
+            (SourceRef.from_json(v) for v in (r.object_refs or ()))
+            if ref is not None),
+        retired_at=r.retired_at,
         replaced_by=r.replaced_by, retire_reason=r.retire_reason,
         revisit_at=r.revisit_at, strikes=r.strikes,
         last_wake_revision_id=r.last_wake_revision_id, event_id=r.event_id,
@@ -384,6 +391,10 @@ class SqlNoteStore:
         now_ms: int,
         anchor_date: int | None = None,
         anchor_entity_ids: tuple[str, ...] = (),
+        # The curated source-object pointers (design/platform-observations
+        # 03's retained lane). Validated by the writer against the shown
+        # objects; stored as head state like the anchors.
+        object_refs: tuple[SourceRef, ...] = (),
         # Passed through to the FIRST revision, and `None` from the tag path.
         # `note_create` has no instruction digest; the Cognition session's
         # writes may. See `0036_note_revision_provenance` for why the columns
@@ -413,6 +424,7 @@ class SqlNoteStore:
             established_in=established_in, created_at=now_ms,
             head_revision_id=revision_id, anchor_date=anchor_date,
             anchor_entity_ids=tuple(anchor_entity_ids),
+            object_refs=tuple(object_refs),
         )
         revision = NoteRevision(
             id=revision_id, note_id=note_id, body=body, parent_revision_id=None,
@@ -451,6 +463,7 @@ class SqlNoteStore:
             closing_condition=note.closing_condition,
             anchor_date=note.anchor_date,
             anchor_entity_ids=list(note.anchor_entity_ids),
+            object_refs=[r.to_json() for r in note.object_refs],
             established_in=note.established_in, created_at=note.created_at,
             head_revision_id=note.head_revision_id,
             # `create()`'s own `Note` never sets this (`revisit_at` defaults
@@ -594,6 +607,11 @@ class SqlNoteStore:
         instruction_sha256: str | None = None,
         model: str | None = None,
         evidence_room: str | None = None,
+        # `None` keeps the note's current pointer set; a tuple REPLACES it
+        # (`associations`' own semantics: the writer hands back the whole
+        # link set). CAS-covered with the head it names, so a ref update can
+        # never land on a note the caller did not read.
+        object_refs: tuple[SourceRef, ...] | None = None,
         receipt: Any = None,
     ) -> NoteRevision:
         """The compare-and-swap append. See the module docstring's (2): the
@@ -629,6 +647,7 @@ class SqlNoteStore:
         async with self._engine.begin() as conn:
             await self._append_on_conn(
                 conn, unit=unit, revision=revision, evidence_room=evidence_room,
+                object_refs=object_refs,
             )
             if receipt is not None:
                 await receipt(conn, revision)
@@ -638,6 +657,7 @@ class SqlNoteStore:
     async def _append_on_conn(
         conn: AsyncConnection, *, unit: str, revision: NoteRevision,
         evidence_room: str | None = None,
+        object_refs: tuple[SourceRef, ...] | None = None,
     ) -> None:
         """The CAS and the insert, on a connection the CALLER owns.
 
@@ -655,6 +675,8 @@ class SqlNoteStore:
         head = await _head_lineage(conn, unit=unit, note_id=note_id)
         derived: dict[str, Any] = {}
         head_values: dict[str, Any] = {"head_revision_id": revision_id}
+        if object_refs is not None:
+            head_values["object_refs"] = [r.to_json() for r in object_refs]
         if head is not None:
             origin, held, held_as_of = head
             lineage, cited_at = await _revision_lineage(
@@ -1050,6 +1072,14 @@ class SqlNoteStore:
         if reset_strikes:
             survivor_values["strikes"] = 0
         async with self._engine.begin() as conn:
+            ref_rows = (await conn.execute(sa.select(NOTE.c.id, NOTE.c.object_refs).where(
+                NOTE.c.unit == unit, NOTE.c.id.in_((survivor_id, duplicate_id)),
+            ))).all()
+            by_id = {r.id: tuple(ref for value in (r.object_refs or ())
+                                if (ref := SourceRef.from_json(value)) is not None)
+                     for r in ref_rows}
+            refs = merged_source_refs(by_id.get(survivor_id, ()), by_id.get(duplicate_id, ()))
+            survivor_values["object_refs"] = [r.to_json() for r in refs]
             # LINEAGE (migration `0073_lineage`): the survivor now rests on
             # everything either note rested on, and on what the folded body
             # cites.

@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "native": "signal-cli",
+    "native_version": "0.14.7",
+    "transport": "sse",
+    "upstream": "JsonDataMessage.pollVote",
+    "upstream_source": "https://github.com/AsamK/signal-cli/blob/v0.14.7/src/main/java/org/asamk/signal/json/JsonPollVote.java",
+    "case": "a member votes for one option of an open poll",
+    "generated": true
+  },
+  "payload": {
+    "envelope": {
+      "source": "+85212345679",
+      "sourceName": "Fixture Voter",
+      "timestamp": 1701,
+      "dataMessage": {
+        "pollVote": {
+          "author": "+85212345679",
+          "authorNumber": "+85212345679",
+          "authorUuid": "a2000000-0000-4000-8000-000000000000",
+          "targetSentTimestamp": 1700,
+          "optionIndexes": [
+            1
+          ],
+          "voteCount": 1
+        },
+        "groupInfo": {
+          "groupId": "Z3JvdXA=",
+          "groupName": "Example Group",
+          "revision": 3,
+          "type": "DELIVER"
+        },
+        "timestamp": 1701
+      }
+    },
+    "account": "+85290000100"
+  },
+  "semantics": {
+    "object": "poll-response",
+    "operation": "add",
+    "room_ref": "payload.envelope.dataMessage.groupInfo.groupId",
+    "object_ref": "poll addressed by (pollVote.author, pollVote.targetSentTimestamp) — the poll author's identity and the create message's sent-time",
+    "target_ref": "pollVote.targetSentTimestamp + pollVote.author*/authorNumber/authorUuid",
+    "actor": "envelope.source (the voter)",
+    "source_time_ms": "envelope.timestamp",
+    "native_fields": {
+      "author": "string, deprecated",
+      "authorNumber": "string|null",
+      "authorUuid": "string|null",
+      "targetSentTimestamp": "long",
+      "optionIndexes": "int[]",
+      "voteCount": "int"
+    },
+    "notes": "optionIndexes is the voter's complete selected set at send time — a replacement, not a delta. 'author' is the deprecated legacy identifier; authorNumber/authorUuid are the sealed-sender-safe forms.",
+    "today": "parse_event returns None — pollVote has no parse branch and no message text"
+  }
+}

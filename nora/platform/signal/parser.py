@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from ...domain.media import MediaRef, label_for, render_placeholder, resolve_media_type
 from ...domain.models import (
@@ -19,6 +20,17 @@ from ...domain.models import (
     NormalizedMessage,
     Quote,
     Touch,
+)
+from ...domain.observations import (
+    ArtifactPayload,
+    Coverage,
+    MessageMetadataPayload,
+    Observation,
+    PinPayload,
+    PollPayload,
+    RoomPayload,
+    SourceScope,
+    TimeQuality,
 )
 
 log = logging.getLogger("nora.signal.parser")
@@ -471,4 +483,282 @@ def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
         )
     except Exception:
         log.exception("unparseable envelope, skipping")
+        return None
+
+
+@dataclass(frozen=True)
+class ParsedObservations:
+    """The non-utterance facts one signal-cli envelope reported — poll
+    definitions and votes, pin transitions, room state, shared artifacts and
+    message metadata — as typed `Observation`s (design/platform-observations).
+
+    `conversation_id`/`sender_id`/`sender_name`/`timestamp` are the envelope's
+    own room/actor/sent-time so an observation-only event still carries real
+    admission fields; a `NormalizedMessage` is never fabricated for these.
+    `observations` is non-empty (an event with none answers None)."""
+
+    conversation_id: str
+    sender_id: str
+    sender_name: str | None
+    timestamp: int
+    observations: tuple[Observation, ...]
+
+
+def _source_ts(env: dict, data: dict) -> int:
+    return int(env.get("timestamp") or data.get("timestamp") or 0)
+
+
+def _target_author(fields: dict, *keys: str) -> str:
+    """The sealed-sender-safe author forms first, the deprecated plain id
+    last — the order `JsonPollVote`/`JsonPinMessage` consumers need."""
+    for key in keys:
+        value = fields.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def parse_observations(
+    event: dict, *, own_account: str, account_key: str,
+) -> ParsedObservations | None:
+    """signal-cli 0.14.7 `JsonDataMessage` → typed observations.
+
+    The observation sibling of `parse_event`, not a replacement: an
+    utterance still parses through `parse_event` and a dataMessage carrying
+    both (a text message with a link preview) answers from each function —
+    the bridge carries them on one envelope. What is captured here is
+    bridge-mode only: `PlatformAdapter` keeps the message API unchanged.
+
+    Field-by-field:
+
+    - `pollCreate` → `poll/create`: the object is the poll, keyed by the
+      creating message's sent-time — the same `(author, sent_ts)` Signal
+      votes name it by. Options are keyed by their positional index, the
+      identity a later `pollVote.optionIndexes` resolves against.
+    - `pollVote` → `poll/revise` with `voter_ref` + `selected`:
+      `optionIndexes` is the voter's COMPLETE selected set — a replacement,
+      never a per-option delta — and an empty set is a withdrawn vote. The
+      voter is the envelope source; the poll's author
+      (`author*`/`targetSentTimestamp`) is the TARGET, kept separate. A vote
+      naming no poll (no `targetSentTimestamp`) or no selection at all is
+      dropped — an absent `optionIndexes` is unknown, not a retracted vote.
+    - `pollTerminate` → `poll/revise` `state="closed"`: only the poll's
+      author may terminate, so `envelope.source` is both the actor and the
+      target's author.
+    - `pinMessage`/`unpinMessage` → `pin` add/remove on the room's pin set,
+      with the pinned message's `(author, sent_ts)` preserved as target and
+      `target_author_id`. `pinDurationSeconds` has no payload slot — it is
+      named as a coverage gap, not silently dropped.
+    - `adminDelete` → `room/revise` recording a moderation fact: the actor
+      is an admin who is NOT the target's author, so this is never the
+      author-only `remoteDelete` `Touch`. It is room-scoped moderation
+      metadata — no message-deletion authority is claimed.
+    - `groupInfo.type == "UPDATE"` → `room/revise` of the supplied `groupName`
+      with the group `revision` as the comparable source position. The wire
+      reports only the new name and revision — a membership or avatar delta
+      is never fabricated.
+    - `contacts[]`/`previews[]` → `artifact/create` per entry: a shared
+      card's display name and a link preview's url/title are metadata about
+      the share; the card's phone/email fields and the page's content are
+      not unconditionally stored.
+    - `expiresInSeconds`/`isViewOnce` → `message_metadata/create` on the
+      message itself.
+    """
+    try:
+        env = extract_envelope(event or {})
+        if env is None:
+            return None
+        data = _data_message(env)
+        if data is None:
+            return None
+        group_id = (data.get("groupInfo") or {}).get("groupId")
+        if not group_id:
+            return None                       # DM — parse_event's boundary
+        source = (env.get("source") or env.get("sourceNumber")
+                  or env.get("sourceUuid") or "")
+        if own_account and source == own_account:
+            return None
+        sent_ts = _source_ts(env, data)
+        occurred = sent_ts or None
+        time_quality: TimeQuality = "upstream" if occurred is not None else "unknown"
+        scope = SourceScope(
+            platform="signal", account_key=account_key,
+            conversation_id=str(group_id))
+        out: list[Observation] = []
+
+        def _ts(value: Any) -> int | None:
+            """A usable `targetSentTimestamp` — Signal's (author, ts)
+            addressing makes a non-positive or non-int one unresolvable."""
+            if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+                return value
+            return None
+
+        def _obs(**kwargs: Any) -> None:
+            # A sealed-sender event with all three source forms empty has no
+            # actor — `known` would demand an id there is not; the missing
+            # actor is explicit, never an empty-string identity.
+            out.append(Observation(
+                scope=scope, actor_id=source,
+                actor_status="known" if source else "not_supplied",
+                occurred_ms=occurred, time_quality=time_quality, **kwargs))
+
+        def _poll_ref(author: str, target_ts: int) -> str:
+            if author:
+                return f"poll:{author}:{target_ts}"
+            return f"poll:unresolved:{source}:{sent_ts}:{target_ts}"
+
+        poll = data.get("pollCreate")
+        if isinstance(poll, dict):
+            options = tuple((str(i), str(label) or "")
+                            for i, label in enumerate(
+                                poll.get("options") or ()))
+            if options and sent_ts:
+                _obs(object_kind="poll", object_ref=_poll_ref(source, sent_ts),
+                     operation="create",
+                     payload=PollPayload(
+                         question=str(poll.get("question") or ""),
+                         options=options,
+                         multi_select=bool(poll.get("allowMultiple")),
+                         anonymous=False, state="open",
+                         parent_ref=f"msg:{source}:{sent_ts}"),
+                     target=EditTarget(sent_ts=sent_ts),
+                     target_author_id=source)
+
+        vote = data.get("pollVote")
+        if isinstance(vote, dict):
+            target_ts = _ts(vote.get("targetSentTimestamp"))
+            indexes = vote.get("optionIndexes")
+            # `voter_ref` is the envelope source — a vote with no voter
+            # identity is not a vote, whatever its target names.
+            if (target_ts is not None and isinstance(indexes, list)
+                    and source):
+                author = _target_author(
+                    vote, "authorNumber", "authorUuid", "author")
+                _obs(object_kind="poll", object_ref=_poll_ref(author, target_ts),
+                     operation="revise",
+                     payload=PollPayload(
+                         voter_ref=source,
+                         selected=tuple(str(i) for i in indexes)),
+                     target=EditTarget(sent_ts=target_ts),
+                     target_author_id=author,
+                     coverage=Coverage(
+                         complete=bool(author),
+                         gaps=() if author else ("target_author",),
+                         reason="" if author else "poll author not supplied"))
+
+        term = data.get("pollTerminate")
+        if isinstance(term, dict):
+            target_ts = _ts(term.get("targetSentTimestamp"))
+            if target_ts is not None:
+                _obs(object_kind="poll", object_ref=_poll_ref(source, target_ts),
+                     operation="revise",
+                     payload=PollPayload(state="closed", close_ms=occurred),
+                     target=EditTarget(sent_ts=target_ts),
+                     target_author_id=source)
+
+        for key, op in (("pinMessage", "add"), ("unpinMessage", "remove")):
+            pin = data.get(key)
+            if not isinstance(pin, dict):
+                continue
+            target_ts = _ts(pin.get("targetSentTimestamp"))
+            if target_ts is None:
+                continue
+            duration = pin.get("pinDurationSeconds")
+            _obs(object_kind="pin", object_ref="pin_set", operation=op,
+                 payload=PinPayload(message=EditTarget(sent_ts=target_ts)),
+                 target=EditTarget(sent_ts=target_ts),
+                 target_author_id=_target_author(
+                     pin, "targetAuthorNumber", "targetAuthorUuid",
+                     "targetAuthor"),
+                 coverage=Coverage(
+                     complete=duration is None,
+                     gaps=(("pin_duration_seconds",)
+                           if duration is not None else ()),
+                     reason=("pinDurationSeconds is delivered but the pin"
+                             " payload has no expiry slot")
+                     if duration is not None else ""))
+
+        admin_delete = data.get("adminDelete")
+        if isinstance(admin_delete, dict):
+            target_ts = _ts(admin_delete.get("targetSentTimestamp"))
+            if target_ts is not None:
+                author = _target_author(
+                    admin_delete, "targetAuthorNumber", "targetAuthorUuid",
+                    "targetAuthor")
+                _obs(object_kind="room", object_ref="group",
+                     operation="revise",
+                     payload=RoomPayload(fields={
+                         "moderation.admin_delete": {
+                             "target_sent_ts": target_ts,
+                             "target_author": author}}),
+                     target=EditTarget(sent_ts=target_ts),
+                     target_author_id=author)
+
+        group = data.get("groupInfo")
+        if isinstance(group, dict) and group.get("type") == "UPDATE":
+            name = group.get("groupName")
+            revision = group.get("revision")
+            if isinstance(name, str) and name:
+                positioned = isinstance(revision, int) and not isinstance(
+                    revision, bool)
+                _obs(object_kind="room", object_ref="group",
+                     operation="revise",
+                     payload=RoomPayload(fields={"name": name}),
+                     source_revision=(str(revision) if positioned else None),
+                     source_position=(revision if positioned else None),
+                     revision_scope=("signal.group_revision"
+                                     if positioned else ""))
+
+        for i, contact in enumerate(data.get("contacts") or ()):
+            if not isinstance(contact, dict):
+                continue
+            metadata = {
+                k: v for k, v in (
+                    ("display", (contact.get("name") or {}).get("display")
+                     if isinstance(contact.get("name"), dict) else None),
+                    ("organization", contact.get("organization")))
+                if isinstance(v, str) and v}
+            _obs(object_kind="artifact",
+                 object_ref=f"contact:{source}:{sent_ts}:{i}", operation="create",
+                 payload=ArtifactPayload(
+                     artifact_kind="contact", metadata=metadata,
+                     custody="declared"),
+                 target=EditTarget(sent_ts=sent_ts),
+                 target_author_id=source)
+
+        for i, preview in enumerate(data.get("previews") or ()):
+            if not isinstance(preview, dict):
+                continue
+            metadata = {
+                k: v for k, v in (("url", preview.get("url")),
+                                  ("title", preview.get("title")))
+                if isinstance(v, str) and v}
+            _obs(object_kind="artifact",
+                 object_ref=f"preview:{source}:{sent_ts}:{i}", operation="create",
+                 payload=ArtifactPayload(
+                     artifact_kind="link_preview", metadata=metadata,
+                     custody="declared", preview=True),
+                 target=EditTarget(sent_ts=sent_ts),
+                 target_author_id=source)
+
+        expires = data.get("expiresInSeconds")
+        view_once = data.get("isViewOnce") is True
+        if (isinstance(expires, int) and not isinstance(expires, bool)
+                and expires > 0) or view_once:
+            _obs(object_kind="message_metadata",
+                 object_ref=f"msg:{source}:{sent_ts}", operation="create",
+                 payload=MessageMetadataPayload(
+                     expires_in_ms=(expires * 1000 if isinstance(
+                         expires, int) and not isinstance(expires, bool)
+                         and expires > 0 else None),
+                     view_once=True if view_once else None))
+
+        if not out:
+            return None
+        return ParsedObservations(
+            conversation_id=str(group_id), sender_id=source,
+            sender_name=env.get("sourceName") or None, timestamp=sent_ts,
+            observations=tuple(out))
+    except Exception:
+        log.exception("unparseable envelope observations, skipping")
         return None

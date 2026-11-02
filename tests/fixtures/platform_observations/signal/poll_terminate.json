@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "native": "signal-cli",
+    "native_version": "0.14.7",
+    "transport": "sse",
+    "upstream": "JsonDataMessage.pollTerminate",
+    "upstream_source": "https://github.com/AsamK/signal-cli/blob/v0.14.7/src/main/java/org/asamk/signal/json/JsonPollTerminate.java",
+    "case": "the poll author closes the poll",
+    "generated": true
+  },
+  "payload": {
+    "envelope": {
+      "source": "+85212345678",
+      "sourceName": "Fixture Sender",
+      "timestamp": 1730,
+      "dataMessage": {
+        "pollTerminate": {
+          "targetSentTimestamp": 1700
+        },
+        "groupInfo": {
+          "groupId": "Z3JvdXA=",
+          "groupName": "Example Group",
+          "revision": 3,
+          "type": "DELIVER"
+        },
+        "timestamp": 1730
+      }
+    },
+    "account": "+85290000100"
+  },
+  "semantics": {
+    "object": "poll",
+    "operation": "close",
+    "room_ref": "payload.envelope.dataMessage.groupInfo.groupId",
+    "object_ref": "the poll's create message, addressed by (envelope.source, pollTerminate.targetSentTimestamp)",
+    "target_ref": "pollTerminate.targetSentTimestamp (+ envelope.source as the poll author)",
+    "actor": "envelope.source — Signal only honours terminate from the poll's author",
+    "source_time_ms": "envelope.timestamp",
+    "native_fields": {
+      "targetSentTimestamp": "long"
+    },
+    "notes": "A close is a source event only. It never settles the matter the poll was about, and it carries no final tally — closing state must be reconciled with observed votes.",
+    "today": "parse_event returns None — no poll branch"
+  }
+}

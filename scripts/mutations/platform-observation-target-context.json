@@ -1,0 +1,44 @@
+[
+  {
+    "name": "off-window affected message is resolved rather than just counted",
+    "file": "nora/engagement/context.py",
+    "old": "            found, gone = await traced_read(\n                \"record\", \"targets\",\n                self._audit.by_ids(\n                    platform=msg.platform, conversation_id=msg.conversation_id,\n                    ids=tuple(sorted(wanted))[:_OBSERVATION_TARGET_MAX]))",
+    "new": "            found, gone = {}, frozenset()",
+    "target": "tests/unit/test_platform_observation_wired.py::test_old_target_reaction_union_reaches_standing_and_real_tools -k True"
+  },
+  {
+    "name": "target lookup cannot cross a platform with the same room id",
+    "file": "nora/infra/sql/audit.py",
+    "old": "                MESSAGES.c.platform == platform,\n                MESSAGES.c.conversation_id == conversation_id,\n                MESSAGES.c.id.in_(wanted),",
+    "new": "                MESSAGES.c.conversation_id == conversation_id,\n                MESSAGES.c.id.in_(wanted),",
+    "target": "tests/contract/test_audit_store_contract.py::test_by_ids_resolves_named_rows_of_the_one_conversation -k sql"
+  },
+  {
+    "name": "Cognition grounds the affected row as well as the delivered utterance",
+    "file": "nora/app/cognition_grounding.py",
+    "old": "                event.delivered_message_id, event.target_message_id,",
+    "new": "                event.delivered_message_id, event.delivered_message_id,",
+    "target": "tests/unit/test_platform_observation_wired.py::test_the_session_runner_assembles_and_consumes_an_observation_stimulus"
+  },
+  {
+    "name": "deleted affected target is explicitly marked in Cognition",
+    "file": "nora/app/cognition_grounding.py",
+    "old": "                    kind=\"delete\" if hit.hit.deleted else item.kind,",
+    "new": "                    kind=item.kind,",
+    "target": "tests/unit/test_platform_observation_wired.py::test_the_session_runner_assembles_and_consumes_an_observation_stimulus -k True"
+  },
+  {
+    "name": "affected-message words render file handles before clipping",
+    "file": "nora/domain/observations.py",
+    "old": "_clip(render_file_links(row.body or \"\"), _TARGET_TEXT_MAX)",
+    "new": "_clip(row.body or \"\", _TARGET_TEXT_MAX)",
+    "target": "tests/architecture/test_file_links_render_as_handles.py::test_affected_target_renders_links_before_its_text_cap"
+  },
+  {
+    "name": "affected-message original words render file handles before clipping",
+    "file": "nora/domain/observations.py",
+    "old": "_clip(render_file_links(row.edit.was or \"\"), _TARGET_TEXT_MAX)",
+    "new": "_clip(row.edit.was or \"\", _TARGET_TEXT_MAX)",
+    "target": "tests/architecture/test_file_links_render_as_handles.py::test_affected_target_renders_links_before_its_text_cap"
+  }
+]

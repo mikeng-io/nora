@@ -1,0 +1,22 @@
+{
+  "_fixture": {
+    "name": "GetThread member/pin snapshot (read route, not a delta)",
+    "generated": true,
+    "native_event": "poll read: GetThread -> ThreadInfoResponse (roster route's actual input shape)",
+    "capture_today": "available on demand via the existing member read; NOT a pushed event",
+    "semantic": "The current-state snapshot the roster route reads: users[] (members), admin_user_ids, pinned_messages, thread_title, is_group, thread_subtype (IGD_GROUP vs IG_ONLY_ONE_TO_ONE). Snapshot semantics: a member list is 'observed as of read time'; pinned_messages carries message ids. usersWithoutViewer exists only when listing threads; users is the member source."
+  },
+  "payload": {
+    "thread_info": {
+      "id": "1234567890123456", "thread_key": "999888777666555", "thread_fbid": "1234567890123456",
+      "thread_subtype": "IGD_GROUP", "is_group": true, "thread_title": "Saturday planning",
+      "admin_user_ids": ["901234567"],
+      "pinned_messages": ["mid.$a1"],
+      "users": [
+        { "id": "63123456700000011", "interop_messaging_user_fbid": "63123456700000011", "username": "member_a" },
+        { "id": "63987654300000022", "interop_messaging_user_fbid": "63987654300000022", "username": "member_b" },
+        { "id": "60123456700000033", "interop_messaging_user_fbid": "60123456700000033", "username": "member_c" } ],
+      "last_activity_timestamp_ms": "1790002800000"
+    }
+  }
+}

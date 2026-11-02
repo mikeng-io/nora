@@ -1,0 +1,14 @@
+{
+  "_fixture": {
+    "name": "reaction delta with sender_fbid 0 (unknown actor)",
+    "generated": true,
+    "native_event": "delta __typename=SlideUQPPCreateReaction",
+    "capture_today": "captured -> kind=reaction with empty sender_id (from_me=null when own fbid also unknown)",
+    "semantic": "sender_fbid '0' is no actor: normalizeReaction emits '' and normalizeTouch keeps sender_id ''. Not 'anonymous' — the source simply did not name the reactor; actor_status stays 'not supplied' (design/02)."
+  },
+  "payload": {
+    "__typename": "SlideUQPPCreateReaction", "uq_seq_id": "213", "thread_fbid": "1234567890123456",
+    "message_id": "mid.$a1",
+    "reaction": { "reaction": "👍", "sender_fbid": "0" }
+  }
+}

@@ -230,14 +230,9 @@ async def test_the_backfill_dates_what_each_row_proves(pg_url: str, engine: Any)
     assert states(await _held(engine, "reminders", at(6))) == {
         fired: "done", cancelled: "cancelled",
     }
-    # the head the chain ends on IS the live row, for every backfilled table,
-    # up to a key a LATER migration added without a row_history catch-up
-    # (0075_withdrawal's `unsupported_at`): such a key is ABSENT from `head`,
-    # not `null`, and the read side (`nora.infra.sql.snapshot_at._insert_sql`,
-    # `jsonb_populate_recordset`) treats an absent key as the column's own
-    # default, NULL here since the columns added since this backfill carry no
-    # server default. A key `head` is missing must therefore be NULL in `live`,
-    # never some other value.
+    # A later additive column is absent from the old image. Compare it using
+    # the actual PostgreSQL default the restore reads, not a blanket NULL:
+    # note.object_refs is NOT NULL with an empty-array default.
     async with engine.connect() as conn:
         for table in ("note", "reminders"):
             live_rows = (await conn.execute(sa.text(
@@ -252,9 +247,22 @@ async def test_the_backfill_dates_what_each_row_proves(pg_url: str, engine: Any)
             assert len(head) == len(live), table
             for h, live_row in zip(head, live, strict=True):
                 missing = set(live_row) - set(h)
-                assert all(live_row[k] is None for k in missing), (table, missing)
-                filled = {**dict.fromkeys(missing), **h}
-                assert filled == live_row, table
+                columns = (await conn.execute(sa.text(
+                    "SELECT column_name, column_default, is_nullable "
+                    "FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = :table"
+                ), {"table": table})).all()
+                defaults = {}
+                for column, expression, nullable in columns:
+                    if column not in missing:
+                        continue
+                    value = None
+                    if nullable == "NO" and expression is not None:
+                        assert not expression.startswith("nextval("), (table, column)
+                        # Expression read from PostgreSQL's catalog, never user input.
+                        value = (await conn.execute(sa.text(f"SELECT {expression}"))).scalar_one()
+                    defaults[column] = value
+                assert {**defaults, **h} == live_row, table
 
 
 @pytest.mark.asyncio

@@ -85,6 +85,7 @@ def build_assembler(
     profile: ProfileHeads | None = None,
     rosters: Mapping[str, RosterSource] | None = None,
     self_ids: frozenset[str] = frozenset(),
+    observations: object = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
@@ -148,4 +149,8 @@ def build_assembler(
         # write`, and in every harness that wires none — the turn then
         # renders the Honcho and prose-culture blocks it always has.
         profile=profile, rosters=rosters, self_ids=self_ids,
+        # The typed platform-observation Record: the room's source events
+        # (transcript) and folded object heads (standing slot). `None` in
+        # a harness renders neither — never a guessed source line.
+        observations=observations,
     )

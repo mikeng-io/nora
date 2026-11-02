@@ -45,7 +45,11 @@ from nora.platform.bridge.envelope import (
 )
 from nora.platform.bridge.journal import Journal, JournalError
 from nora.platform.bridge.queue import StreamProducer
-from nora.platform.bridge.rehydrate import message_from_dict, message_to_dict
+from nora.platform.bridge.rehydrate import (
+    message_from_dict,
+    message_to_dict,
+    observation_to_dict,
+)
 from nora.platform.bridge.service import (
     ActionReply,
     DurableActionService,
@@ -58,7 +62,7 @@ from nora.platform.bridge.service import (
     receipt_intent_ids,
     receipt_via,
 )
-from nora.platform.signal.parser import parse_event
+from nora.platform.signal.parser import parse_event, parse_observations
 from nora.platform.signal.react import SignalReactor
 from nora.platform.signal.send import SignalSender
 
@@ -281,19 +285,33 @@ class Bridge:
 
     async def _handle(self, event: dict) -> None:
         msg = parse_event(event, own_account=self.cfg.signal_account)
-        if msg is None:
+        parsed = parse_observations(
+            event, own_account=self.cfg.signal_account,
+            account_key=self.cfg.account_key)
+        observations = parsed.observations if parsed is not None else ()
+        if msg is None and not observations:
             return
         proj = self.load_projection()
-        if not _admitted(proj, msg.conversation_id, msg.sender_id,
-                         msg.conversation_type):
+        conversation_id = (msg.conversation_id if msg is not None
+                           else parsed.conversation_id)
+        sender_id = (msg.sender_id if msg is not None
+                     else parsed.sender_id)
+        conversation_type = (msg.conversation_type if msg is not None
+                             else "group")
+        if not _admitted(proj, conversation_id, sender_id,
+                         conversation_type):
             return  # denied room: no body, no attachment bytes, no capture
+        # A message and its first observation ride ONE envelope/obligation;
+        # any further observations are observation-only envelopes on their
+        # own upstream keys (a dataMessage carrying two previews).
         kind = ("message" if msg.edit_of is None and msg.touch is None
-                else ("edit" if msg.edit_of else msg.touch.kind))
+                else ("edit" if msg.edit_of else msg.touch.kind)
+                ) if msg is not None else observations[0].object_kind
         # The ONE short producer root for this capture — its context is
         # frozen onto the envelope BEFORE the journal append inside
         # `_sink.capture` (design 04 §producer).
         with bt.producer_span(PLATFORM, kind=kind) as carrier:
-            if msg.media:
+            if msg is not None and msg.media:
                 with bt.operation_span(
                         "custody", platform=PLATFORM,
                         links=bt.carrier_links(carrier)):
@@ -301,24 +319,31 @@ class Bridge:
             else:
                 attachments = []
             now = int(time.time() * 1000)
-            upstream = msg.timestamp or None
+            sent_ms = (msg.timestamp if msg is not None
+                       else parsed.timestamp) or None
+            base = (msg.message_id or f"{msg.sender_id}:{msg.timestamp}"
+                    if msg is not None
+                    else f"{parsed.sender_id}:{parsed.timestamp}")
             sk = canonical_source_key(
-                PLATFORM, self.cfg.account_key, msg.conversation_id, kind,
-                msg.message_id or f"{msg.sender_id}:{msg.timestamp}")
+                PLATFORM, self.cfg.account_key, conversation_id, kind, base)
             env = Envelope(
                 platform=PLATFORM, account_key=self.cfg.account_key,
                 kind=kind,
                 source_key=sk,
                 event_id=event_id(sk, key=self.cfg.correlation_key,
                                   key_version=self.cfg.key_version),
-                conversation_id=msg.conversation_id,
-                conversation_type=msg.conversation_type,
-                sender_id=msg.sender_id,
-                sender_name=msg.sender_name, sent_ms=upstream,
+                conversation_id=conversation_id,
+                conversation_type=conversation_type,
+                sender_id=sender_id,
+                sender_name=(msg.sender_name if msg is not None
+                             else parsed.sender_name), sent_ms=sent_ms,
                 received_ms=now,
                 queued_ms=now,
-                time_quality="upstream" if upstream else "bridge_local",
-                message=message_to_dict(msg),
+                time_quality="upstream" if sent_ms else "bridge_local",
+                message=(message_to_dict(msg) if msg is not None else None),
+                observation=(observation_to_dict(replace(
+                    observations[0], received_ms=now))
+                    if observations else None),
                 attachments=tuple(attachments),
                 trace=dict(carrier),
                 admission_rev=int(proj.get("revision") or 0),
@@ -329,6 +354,32 @@ class Bridge:
             # the publisher loop — the ONE writer to Redis, so a recovered
             # head can never be outrun by a new event.
             await self._sink.capture(env)
+            for i, obs in enumerate(observations[1:], start=1):
+                okind = obs.object_kind
+                osk = canonical_source_key(
+                    PLATFORM, self.cfg.account_key, conversation_id, okind,
+                    f"{base}:obs:{i}")
+                oenv = Envelope(
+                    platform=PLATFORM, account_key=self.cfg.account_key,
+                    kind=okind,
+                    source_key=osk,
+                    event_id=event_id(osk, key=self.cfg.correlation_key,
+                                      key_version=self.cfg.key_version),
+                    conversation_id=conversation_id,
+                    conversation_type=conversation_type,
+                    sender_id=obs.actor_id or sender_id,
+                    sender_name=None, sent_ms=sent_ms,
+                    received_ms=now,
+                    queued_ms=now,
+                    time_quality="upstream" if sent_ms else "bridge_local",
+                    message=None,
+                    observation=observation_to_dict(
+                        replace(obs, received_ms=now)),
+                    attachments=(),
+                    trace=dict(carrier),
+                    admission_rev=int(proj.get("revision") or 0),
+                )
+                await self._sink.capture(oenv)
         self._received.set()
 
     def _capture_intent(self, env: Envelope) -> dict[str, str] | None:
@@ -337,6 +388,8 @@ class Bridge:
         the journal record verbatim."""
         proj = self.load_projection()
         msg = env.message
+        if not msg:
+            return None  # observation-only envelopes carry no receipt intent
         if not receipt_via(
                 proj, conversation_id=env.conversation_id,
                 conversation_type=env.conversation_type,

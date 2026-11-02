@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import hashlib
+import itertools
 import json
 import re
 import time
@@ -82,10 +83,10 @@ from nora.domain.models import (
     RowEdit,
     TranscriptRow,
     UnattributedRow,
-    fold_reactions,
     mentions_json,
     parse_mentions_json,
 )
+from nora.domain.observations import fold_target_reactions, to_row_reactions
 from nora.domain.ports import (
     AdapterHealth,
     BlobDeletion,
@@ -180,6 +181,15 @@ class FakeRecordStore:
         self.fail_on_nora = False
         self.fail_on_recent = False
         self.closed = False
+        # The commit clock `created_at`/`recorded_at` share: the durable
+        # order `fold_target_reactions` merges by. A `FakeObservationStore`
+        # wired in stamps from the SAME counter — the fake's mirror of one
+        # database clock under the ingest lock.
+        self._clock = itertools.count(1)
+        # The typed side the union annotation reads — set when a
+        # `FakeObservationStore` is wired in; None keeps the annotation
+        # legacy-only, which is exactly what an unobserved room records.
+        self.observations: Any = None
 
     async def append(
         self,
@@ -328,6 +338,12 @@ class FakeRecordStore:
             ),
         })
 
+        if self.observations is not None:
+            original = next(r for r in self.rows if r["id"] == message_id)
+            self.observations._edit_arrived(
+                platform=original["platform"],
+                conversation_id=original["conversation_id"], sent_ts=message.timestamp)
+
     async def append_reaction(
         self, *, message_id: int, message: NormalizedMessage, person_id: str | None,
     ) -> int:
@@ -339,7 +355,10 @@ class FakeRecordStore:
             "emoji": touch.emoji if touch is not None else "",
             "removed": bool(touch.removed) if touch is not None else False,
             "ts": message.timestamp, "raw_json": json.dumps(message.raw),
+            "created_at": next(self._clock),
         })
+        if self.observations is not None:
+            self.observations._reaction_arrived(message_id, self.reactions[-1]["created_at"])
         return len(self.reactions)
 
     async def append_delete(
@@ -405,6 +424,26 @@ class FakeRecordStore:
         matching.sort(key=lambda r: (r["ts"], r["id"]), reverse=True)
         return [self._transcript_row(r) for r in matching[:limit]]
 
+    async def by_ids(
+        self, *, platform: str, conversation_id: str, ids: Sequence[int],
+    ) -> tuple[dict[int, TranscriptRow], frozenset[int]]:
+        """Mirrors `SqlRecordStore.by_ids`: one conversation's rows by id —
+        hidden rows absent, a recorded delete named in the second element,
+        reactions folded through the same `_transcript_row` as `recent`."""
+        if self.fail_on_recent:
+            raise RuntimeError("db down")
+        wanted = {int(i) for i in ids}
+        found = {
+            r["id"]: self._transcript_row(r)
+            for r in self.rows
+            if r["platform"] == platform and r["conversation_id"] == conversation_id
+            and r["id"] in wanted and r["id"] not in self.hidden_ids
+        }
+        gone = frozenset(
+            d["message_id"] for d in self.deletes
+            if d["message_id"] in found)
+        return found, gone
+
     async def recent_before(
         self, *, conversation_id: str, before_ts: int, limit: int,
     ) -> list[TranscriptRow]:
@@ -468,16 +507,26 @@ class FakeRecordStore:
         side by side, the edit fold included."""
         latest = self._latest_edit(r["id"])
         # Mirrors `SqlRecordStore`'s `reaction_states` + `with_reactions`:
-        # the SAME `fold_reactions` definition over the rows this fake holds,
-        # so a fake window annotates exactly what the SQL one would.
-        reactions = fold_reactions(
-            ReactionRow(
+        # the SAME union fold — legacy `message_reaction` deltas plus the
+        # typed reaction rows a wired `FakeObservationStore` holds — so a
+        # fake window annotates exactly what the SQL one would.
+        typed = [
+            s for s in (
+                self.observations._rows if self.observations is not None
+                else ())
+            if s.target_message_id == r["id"]
+            and s.observation.object_kind == "reaction"
+        ]
+        tr = fold_target_reactions(
+            (ReactionRow(
                 id=e["id"], message_id=e["message_id"],
                 sender_id=e["sender_id"], emoji=e["emoji"],
                 removed=bool(e["removed"]), ts=e["ts"],
-            )
-            for e in self.reactions if e["message_id"] == r["id"]
-        ).get(r["id"])
+                created_at=e.get("created_at"),
+            ) for e in self.reactions if e["message_id"] == r["id"]),
+            typed,
+        )
+        reactions = to_row_reactions(tr) if tr is not None else None
         return TranscriptRow(
             id=r["id"], sender_id=r["sender_id"], sender_name=r["sender_name"],
             ts=r["ts"], body=latest["body"] if latest else r["body"],

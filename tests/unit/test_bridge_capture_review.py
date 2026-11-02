@@ -1040,3 +1040,30 @@ class TestCollectorOutage:
         # export attempt failed afterwards.
         assert envs[0].trace.get("traceparent")
         provider.shutdown()
+
+
+async def test_guild_metadata_reaches_only_configured_room_scopes(tmp_path):
+    from nora.platform.bridge.rehydrate import observation_from_dict
+    from nora.platform.discord.parser import parse_discord_member_add
+
+    bridge, journal, _sink, _producer = _bridge(tmp_path)
+    member = SimpleNamespace(
+        id=int(MEMBER), guild=SimpleNamespace(id=int(GUILD)),
+        roles=[], joined_at=None)
+    observation = parse_discord_member_add(member, account_key=ACCT)
+    assert observation is not None
+    other_room = f"{GUILD}/another-room"
+    projection = {**PROJ, "rooms": [CONV, other_room, "other-guild/room"]}
+    captured = await bridge._emit_observation(
+        observation, upstream="native-member-add", proj=projection)
+    assert captured
+    envelopes = _envelopes(journal)
+    assert {e.conversation_id for e in envelopes} == {CONV, other_room}
+    for env in envelopes:
+        obs = observation_from_dict(env.observation)
+        assert obs.scope.conversation_id == env.conversation_id
+        assert obs.object_ref == f"guild:{GUILD}"
+        assert obs.coverage.covered.startswith("guild:")
+        assert obs.actor_status == "not_supplied" and not obs.actor_id
+        assert env.message is None
+    assert len({e.event_id for e in envelopes}) == 2

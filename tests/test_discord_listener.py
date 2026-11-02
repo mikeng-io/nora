@@ -251,3 +251,66 @@ async def test_raw_reactions_and_deletes_reach_the_touch_callback():
     await client.handlers["on_raw_message_delete"]("p3")
     assert seen == [("reaction_add", "p1"), ("reaction_remove", "p2"), ("delete", "p3")]
     assert listener.last_event_at == 5.0
+
+
+async def test_observation_dispatches_reach_the_observation_callback():
+    """Every non-utterance family the capture lane parses registers a real
+    handler — raw wherever discord.py offers one (cache independence), and
+    each forwards `(kind, payload)` to `on_observation_cb` without touching
+    the message callback's meaning."""
+    client = FakeClient()
+    listener = DiscordListener(client, "tok", clock=lambda: 5.0)
+    seen: list[tuple[str, object]] = []
+
+    async def on_message(_message):
+        pass
+
+    async def on_observation(kind, payload):
+        seen.append((kind, payload))
+
+    await listener.listen(on_message, None, None, on_observation)
+    expected = {
+        "on_raw_poll_vote_add": "poll_vote_add",
+        "on_raw_poll_vote_remove": "poll_vote_remove",
+        "on_raw_reaction_clear": "reaction_clear_all",
+        "on_raw_reaction_clear_emoji": "reaction_clear_emoji",
+        "on_guild_channel_pins_update": "pins_update",
+        "on_thread_create": "thread_create",
+        "on_raw_thread_update": "thread_update",
+        "on_raw_thread_delete": "thread_delete",
+        "on_member_join": "member_join",
+        "on_raw_member_remove": "member_remove",
+        "on_member_update": "member_update",
+        "on_guild_channel_update": "channel_update",
+        "on_guild_role_update": "role_update",
+    }
+    for name in expected:
+        assert name in client.handlers, name
+    await client.handlers["on_raw_poll_vote_add"]("pv")
+    await client.handlers["on_raw_reaction_clear"]("rc")
+    await client.handlers["on_guild_channel_pins_update"]("ch", "pin_ts")
+    await client.handlers["on_thread_create"]("th")
+    await client.handlers["on_raw_member_remove"]("mr")
+    await client.handlers["on_member_update"]("before", "after")
+    assert seen == [
+        ("poll_vote_add", "pv"),
+        ("reaction_clear_all", "rc"),
+        ("pins_update", ("ch", "pin_ts")),
+        ("thread_create", "th"),
+        ("member_remove", "mr"),
+        ("member_update", ("before", "after")),
+    ]
+    assert listener.last_event_at == 5.0
+
+
+async def test_observation_handlers_are_inert_without_the_callback():
+    """The adapter path passes no `on_observation_cb` — registration is
+    harmless and a dispatch wakes nothing."""
+    client = FakeClient()
+    listener = DiscordListener(client, "tok", clock=lambda: 5.0)
+
+    async def on_message(_message):
+        pass
+
+    await listener.listen(on_message)
+    await client.handlers["on_raw_poll_vote_add"]("pv")  # must not raise

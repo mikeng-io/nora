@@ -1483,3 +1483,56 @@ cases:
       tools: [room_read]
       not_tools: [standing_read, record_read]
       args_include: {room_read: [thread, th7]}
+
+  # --- platform-observation source reads (design/platform-observations 05) ---
+  # The task-shaped reads vs their siblings: a poll is a SOURCE OBJECT, not a
+  # message — «did the poll close» is `poll_list`/`poll_read`, never
+  # `record_query`'s message branch (whose `kind` branch exists but the task
+  # reads answer the shaped question directly). And the negative controls:
+  # what people SAID uses message or memory reads, never the object reads.
+  - name: route_poll_list_open_polls
+    entry: tag
+    expect: reply
+    mention: true
+    input: 呢個group有冇poll未close？
+    metadata:
+      tools: [poll_list]
+      not_tools: [who_said, record_query, room_state_read]
+    snapshot: *room_a
+
+  # No handle exists in this snapshot: discover first, never invent one.
+  # This measures discovery routing, not successful poll_read detail.
+  - name: route_poll_discover_result
+    entry: tag
+    expect: reply
+    mention: true
+    input: "The dinner poll — how did the vote split on ramen vs sushi?"
+    metadata:
+      tools: [poll_list, poll_read]
+      required_tools: [poll_list]
+      not_tools: [who_said, record_query]
+    snapshot: *room_a
+
+  - name: route_room_state_read_renamed
+    entry: tag
+    expect: reply
+    mention: true
+    input: 個group個名係咪改咗？
+    # The room's own recorded state, not the roster (`group_members`) and not
+    # the room catalogue (`room_list`).
+    metadata:
+      tools: [room_state_read]
+      not_tools: [group_members, room_list, record_query]
+    snapshot: *room_a
+
+  - name: route_message_words_not_poll
+    entry: tag
+    expect: reply
+    mention: true
+    input: 噚日邊個提過食拉麵？
+    # Yesterday can be outside the visible window. Accept the configured
+    # memory surface or a deeper transcript read; record_query is default-off.
+    metadata:
+      tools: [who_said, record_query, load_transcript, search_memory, memory_search]
+      not_tools: [poll_list, poll_read, room_state_read]
+    snapshot: *room_a

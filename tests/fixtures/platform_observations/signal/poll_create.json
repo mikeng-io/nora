@@ -1,0 +1,53 @@
+{
+  "meta": {
+    "native": "signal-cli",
+    "native_version": "0.14.7",
+    "transport": "sse",
+    "upstream": "JsonDataMessage.pollCreate",
+    "upstream_source": "https://github.com/AsamK/signal-cli/blob/v0.14.7/src/main/java/org/asamk/signal/json/JsonPollCreate.java",
+    "case": "a member opens a poll in an admitted group",
+    "generated": true
+  },
+  "payload": {
+    "envelope": {
+      "source": "+85212345678",
+      "sourceName": "Fixture Sender",
+      "timestamp": 1700,
+      "dataMessage": {
+        "pollCreate": {
+          "question": "Lunch on Saturday?",
+          "allowMultiple": false,
+          "options": [
+            "Noodles",
+            "Dim sum",
+            "Skip it"
+          ]
+        },
+        "groupInfo": {
+          "groupId": "Z3JvdXA=",
+          "groupName": "Example Group",
+          "revision": 3,
+          "type": "DELIVER"
+        },
+        "timestamp": 1700
+      }
+    },
+    "account": "+85290000100"
+  },
+  "semantics": {
+    "object": "poll",
+    "operation": "create",
+    "room_ref": "payload.envelope.dataMessage.groupInfo.groupId",
+    "object_ref": "the creating dataMessage itself — addressed by (envelope.source, envelope.timestamp); pollVote/pollTerminate name it through targetSentTimestamp",
+    "target_ref": null,
+    "actor": "envelope.source",
+    "source_time_ms": "envelope.timestamp",
+    "native_fields": {
+      "question": "string",
+      "allowMultiple": "bool",
+      "options": "string[]"
+    },
+    "notes": "Signal polls are not anonymous: every vote is a dataMessage from the voter, so the envelope source IS the voter.",
+    "today": "parse_event returns None — no message text and no poll branch, so the whole poll is dropped"
+  }
+}

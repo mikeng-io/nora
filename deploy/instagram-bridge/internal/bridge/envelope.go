@@ -28,6 +28,35 @@ const (
 	KindSummons  = "summons"
 )
 
+// Observation kinds (v2): a source event about an OBJECT, never an utterance
+// — a poll, a room/thread, a member set, a pin set, a shared artifact, a
+// message's own metadata. `reaction` is shared: v1 carries it as a touch on
+// a message row, v2 may also carry it as a typed observation.
+const (
+	KindMessageMetadata = "message_metadata"
+	KindPoll            = "poll"
+	KindRoom            = "room"
+	KindMembership      = "membership"
+	KindPin             = "pin"
+	KindArtifact        = "artifact"
+)
+
+var v1Kinds = map[string]bool{
+	KindMessage: true, KindEdit: true, KindDelete: true,
+	KindReaction: true, KindSummons: true,
+}
+
+// envelopeVersion is Envelope.version(): 2 when the record carries anything
+// a v1 reader cannot interpret — an observation sidecar or a kind outside
+// V1_KINDS — else 1. The version describes the SHAPE USED, not the library:
+// an old app keeps accepting ordinary messages through a mixed rollout.
+func envelopeVersion(kind string, observation map[string]any) int {
+	if observation != nil || !v1Kinds[kind] {
+		return 2
+	}
+	return 1
+}
+
 // TimeQuality says whose clock `sent_ms` is.
 const (
 	TimeUpstream    = "upstream"
@@ -81,24 +110,32 @@ type Attachment struct {
 // Envelope is the nora-bridge-wire v1 event. Field names are the contract's
 // and match the lead's `to_fields()` one for one.
 type Envelope struct {
-	V                int            `json:"v"`
-	Platform         string         `json:"platform"`
-	AccountKey       string         `json:"account_key"`
-	Kind             string         `json:"kind"`
-	SourceKey        string         `json:"source_key"`
-	EventID          string         `json:"event_id"`
-	ConversationID   string         `json:"conversation_id"`
-	ConversationType string         `json:"conversation_type"`
-	SenderID         string         `json:"sender_id"`
-	SenderName       *string        `json:"sender_name"`
-	SentMS           int64          `json:"sent_ms"`
-	ReceivedMS       int64          `json:"received_ms"`
-	QueuedMS         int64          `json:"queued_ms"`
-	TimeQuality      string         `json:"time_quality"`
-	Message          map[string]any `json:"message"`
-	Attachments      []Attachment   `json:"attachments"`
-	Trace            map[string]any `json:"trace"`
-	Receipt          map[string]any `json:"receipt"`
+	V                int     `json:"v"`
+	Platform         string  `json:"platform"`
+	AccountKey       string  `json:"account_key"`
+	Kind             string  `json:"kind"`
+	SourceKey        string  `json:"source_key"`
+	EventID          string  `json:"event_id"`
+	ConversationID   string  `json:"conversation_id"`
+	ConversationType string  `json:"conversation_type"`
+	SenderID         string  `json:"sender_id"`
+	SenderName       *string `json:"sender_name"`
+	// SentMS is `int | None`: the upstream author time, or null when the
+	// source carried none (a clockless observation emits null, never a
+	// fabricated zero).
+	SentMS      *int64         `json:"sent_ms"`
+	ReceivedMS  int64          `json:"received_ms"`
+	QueuedMS    int64          `json:"queued_ms"`
+	TimeQuality string         `json:"time_quality"`
+	Message     map[string]any `json:"message"`
+	// Observation is the serialized typed observation (rehydrate.py's
+	// observation form): the sidecar a source event carries next to or
+	// instead of an utterance. Null on v1 records; a pure observation
+	// envelope has message=null AND this set — never a fake speaker line.
+	Observation map[string]any `json:"observation"`
+	Attachments []Attachment   `json:"attachments"`
+	Trace       map[string]any `json:"trace"`
+	Receipt     map[string]any `json:"receipt"`
 	// AdmissionRev is the projection revision applied at capture. Provenance
 	// only; nil when capture ran without a validated projection (which the
 	// upstream gate otherwise prevents).

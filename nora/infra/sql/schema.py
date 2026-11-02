@@ -19,8 +19,10 @@ defaults are not.
 - `created_at`'s server default is `sa.text("now()::text")`. The column is
   `TEXT`, and a bare `now()` is `timestamptz` with no implicit cast into a
   `text` column (a `CREATE TABLE` type error). The format is harmless because
-  `created_at` is **write-only**: it is on no `TranscriptRow`/`UnattributedRow`,
-  is never `SELECT`ed, and ordering is on `ts`/`id` only.
+  it is only ever read CAST BACK to `timestamptz` — `reaction_states` and
+  `infra/sql/observations.py`'s union read order `message_reaction` against
+  `platform_observation.recorded_at` on that durable commit clock
+  (`fold_target_reactions`); it is still on no `TranscriptRow`/`UnattributedRow`.
 - `idx_messages_conv_ts` is `(conversation_id, ts DESC)`, the descending order
   declared with `sa.text("ts DESC")`. Autogenerate cannot see the per-column
   ordering (it compares the reflected plain column and reports permanent phantom
@@ -2357,6 +2359,11 @@ NOTE = sa.Table(
     sa.Column("anchor_date", sa.Integer),
     sa.Column("anchor_entity_ids", pg.ARRAY(sa.Text), nullable=False,
               server_default=sa.text("'{}'")),
+    # The curated source-object pointers (design/platform-observations 03's
+    # retained lane): [{platform, conversation_id, thread, handle}] — the
+    # objects this matter still concerns, resolved fresh at every assembly.
+    sa.Column("object_refs", pg.JSONB, nullable=False,
+              server_default=sa.text("'[]'::jsonb")),
     # A ROUTING key, never a filter: the unit is already the
     # disclosure boundary. This decides where a promoted `Event` lands, since
     # `Event` is conversation-scoped and a note is not.
@@ -3490,7 +3497,8 @@ STIMULUS = sa.Table(
     # Written out, not read from `nora.domain.stimuli.STIMULUS_KINDS`: the
     # migration hardcodes it, and the parity gate ties the two.
     sa.CheckConstraint(
-        "kind IN ('message', 'social', 'play', 'rollup', 'time', 'self')",
+        "kind IN ('message', 'social', 'play', 'rollup', 'time', 'self', "
+        "'observation')",
         name="ck_stimulus_kind",
     ),
 )
@@ -5546,3 +5554,149 @@ BRIDGE_ACTION = sa.Table(
 )
 sa.Index("idx_bridge_action_owner", BRIDGE_ACTION.c.owner_kind,
          BRIDGE_ACTION.c.owner_id)
+
+
+# ---- platform observations (design/platform-observations 02) --------------
+# The typed Record of what a source reported about an OBJECT — a poll, a
+# room/thread, a member set, a pin set, an artifact, a reaction's target or a
+# message's own metadata. `platform_observation` is the history: one row per
+# admitted source transition/snapshot, provenance held BY VALUE (event_id +
+# source_digest, no FK — `bridge_event` is the live queue journal and may not
+# outlive the durable record). `platform_object_state` is the fold's
+# compare-and-swap head — the same arrangement `events` keeps over
+# `event_revision`. Both change in place (`target_message_id` is re-linked
+# after the fact), so both keep `row_history` versions.
+
+PLATFORM_OBSERVATION = sa.Table(
+    "platform_observation", METADATA,
+    # Arrival order; the fold's honest fallback when no comparable source
+    # position exists (`nora.domain.observations.fold_observation`).
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("contract", sa.Integer, nullable=False),
+    sa.Column("kind", sa.Text, nullable=False),
+    # Source provenance by value — the bridge's public event alias and the
+    # key-version-independent source digest (the replay/dedupe identity).
+    sa.Column("event_id", sa.Text, nullable=False),
+    sa.Column("source_digest", sa.Text, nullable=False),
+    # Source scope: platform/account/room (+ thread span where the source
+    # scopes one).
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("account_key", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("thread", sa.Text, nullable=False, server_default=""),
+    # OBJECT identity — stable across the revisions that observe it.
+    sa.Column("object_ref", sa.Text, nullable=False),
+    sa.Column("operation", sa.Text, nullable=False),
+    # Affected parent/message: `target_key` is `observations.target_key`'s
+    # canonical form ("id:<platform message id>" | "ts:<sent_ts>");
+    # `target_message_id` is the resolved `messages.id`, NULL while the
+    # target is retained-unresolved.
+    sa.Column("target_key", sa.Text),
+    sa.Column("target_author_id", sa.Text),
+    sa.Column("target_message_id", sa.BigInteger,
+              sa.ForeignKey("messages.id",
+                            name="platform_observation_target_fkey",
+                            ondelete="SET NULL")),
+    # Actor/subject, per the source — '' / NULL are 'not supplied', never
+    # invented.
+    sa.Column("delivered_message_id", sa.BigInteger,
+              sa.ForeignKey("messages.id",
+                            name="platform_observation_delivered_fkey",
+                            ondelete="SET NULL")),
+    sa.Column("actor_id", sa.Text),
+    sa.Column("actor_status", sa.Text, nullable=False),
+    sa.Column("subject_ref", sa.Text),
+    sa.Column("occurred_ms", sa.BigInteger),
+    sa.Column("received_ms", sa.BigInteger, nullable=False),
+    sa.Column("time_quality", sa.Text, nullable=False),
+    # Order the source proved, only inside the declared scope — both NULL
+    # where upstream orders nothing (arrival order is then `id`).
+    sa.Column("source_revision", sa.Text),
+    sa.Column("source_position", sa.BigInteger),
+    sa.Column("revision_scope", sa.Text),
+    # The validated typed variant body and the observation's own coverage
+    # claim (partial/complete + named gaps) — never an inferred whole.
+    sa.Column("payload", pg.JSONB, nullable=False),
+    sa.Column("coverage", pg.JSONB, nullable=False),
+    _recorded_at(),
+    sa.UniqueConstraint("platform", "account_key", "source_digest",
+                        name="uq_platform_observation_source"),
+    sa.CheckConstraint(
+        "kind IN ('reaction','message_metadata','poll','room','membership',"
+        "'pin','artifact')",
+        name="ck_platform_observation_kind"),
+    sa.CheckConstraint(
+        "operation IN ('create','revise','withdraw','add','remove','clear',"
+        "'snapshot')",
+        name="ck_platform_observation_op"),
+    sa.CheckConstraint(
+        "actor_status IN ('known','anonymous','not_supplied','not_applicable')",
+        name="ck_platform_observation_actor"),
+    sa.CheckConstraint(
+        "time_quality IN ('upstream','bridge_local','unknown')",
+        name="ck_platform_observation_timeq"),
+)
+
+IDX_PLATFORM_OBSERVATION_OBJECT = sa.Index(
+    "idx_platform_observation_object",
+    PLATFORM_OBSERVATION.c.platform, PLATFORM_OBSERVATION.c.account_key,
+    PLATFORM_OBSERVATION.c.conversation_id, PLATFORM_OBSERVATION.c.kind,
+    PLATFORM_OBSERVATION.c.object_ref, PLATFORM_OBSERVATION.c.id,
+)
+
+IDX_PLATFORM_OBSERVATION_UNRESOLVED = sa.Index(
+    "idx_platform_observation_unresolved",
+    PLATFORM_OBSERVATION.c.platform, PLATFORM_OBSERVATION.c.account_key,
+    PLATFORM_OBSERVATION.c.conversation_id, PLATFORM_OBSERVATION.c.target_key,
+    postgresql_where=sa.text("target_message_id IS NULL"),
+)
+
+# The transcript-annotation union read: reaction rows against a bounded
+# `target_message_id IN (...)` window (`audit.reaction_states`).
+IDX_PLATFORM_OBSERVATION_TARGET = sa.Index(
+    "idx_platform_observation_target",
+    PLATFORM_OBSERVATION.c.kind, PLATFORM_OBSERVATION.c.target_message_id,
+)
+
+PLATFORM_OBJECT_STATE = sa.Table(
+    "platform_object_state", METADATA,
+    # The fold's current head per object — a compare-and-swap cache
+    # re-derivable from `platform_observation`; `row_history` keeps what it
+    # was at T.
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("account_key", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("thread", sa.Text, nullable=False, server_default=""),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("object_ref", sa.Text, nullable=False),
+    # Folded state (kind-specific JSON shape from the domain fold),
+    # the newest applied observation, and the fold's own flags.
+    sa.Column("state", pg.JSONB, nullable=False),
+    sa.Column("applied", sa.Integer, nullable=False, server_default="0"),
+    sa.Column("head_observation_id", sa.BigInteger),
+    sa.Column("source_position", sa.BigInteger),
+    sa.Column("revision_scope", sa.Text),
+    sa.Column("observed_ms", sa.BigInteger),
+    sa.Column("ordering", sa.Text, nullable=False,
+              server_default="arrival"),
+    sa.Column("coverage", pg.JSONB, nullable=False,
+              server_default=sa.text("'{}'::jsonb")),
+    sa.Column("projection_rev", sa.Integer, nullable=False,
+              server_default="1"),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.UniqueConstraint("platform", "account_key", "conversation_id",
+                        "thread", "kind", "object_ref",
+                        name="uq_platform_object_state_object"),
+    sa.CheckConstraint("ordering IN ('ordered','arrival','gap')",
+                       name="ck_platform_object_state_ordering"),
+)
+
+IDX_PLATFORM_OBJECT_STATE_ROOM = sa.Index(
+    "idx_platform_object_state_room",
+    PLATFORM_OBJECT_STATE.c.platform, PLATFORM_OBJECT_STATE.c.account_key,
+    PLATFORM_OBJECT_STATE.c.conversation_id, PLATFORM_OBJECT_STATE.c.kind,
+)

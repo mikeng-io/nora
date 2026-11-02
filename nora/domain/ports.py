@@ -196,6 +196,10 @@ from nora.domain.models import (
     UnattributedRow,
     WeatherObservation,
 )
+from nora.domain.observations import Observation as Observation
+from nora.domain.observations import ObservationHead as ObservationHead
+from nora.domain.observations import SourceScope as SourceScope
+from nora.domain.observations import StoredObservation as StoredObservation
 from nora.domain.parking import StreetParking as StreetParking
 from nora.domain.rollup import HealthRow as HealthRow
 from nora.domain.social_stream import Account as Account
@@ -842,6 +846,26 @@ class RecordStore(Protocol):
         """
         ...
 
+    async def by_ids(
+        self, *, platform: str, conversation_id: str, ids: Sequence[int],
+    ) -> tuple[dict[int, TranscriptRow], frozenset[int]]:
+        """The messages these row ids name, as `(rows by id, deleted ids)` —
+        ONE bounded batched read for resolving a known reference (a source
+        event's `target_message_id`), never a room scan and never a lookup
+        of another room's row.
+
+        Only rows of `(platform, conversation_id)` resolve; hidden rows are
+        absent, as in every transcript read. A row whose delete is recorded
+        is present in the second element: its words still reach the caller,
+        who withholds them itself (`deleted` reads differently from hidden —
+        the touch stage's own order). Reactions are folded the same way
+        `recent` folds them; the newest edit is folded onto `body`. The
+        caller owns the `ids` bound; an empty one answers `({}, frozenset())`
+        without a query. One caller family: the platform-observation target
+        reads (`nora.engagement.context`, `nora.agent.tools`).
+        """
+        ...
+
     async def set_delivery_outcome(
         self, *, row_id: int, status: DeliveryStatus, ts: int | None = None
     ) -> None: ...
@@ -1110,6 +1134,131 @@ class NewCognitionSessionClose:
     kind: str
     reason: str
     strike: int = 0
+
+
+@runtime_checkable
+class ObservationStore(Protocol):
+    """The typed platform-observation Record (design/platform-observations
+    02): `platform_observation` history plus the `platform_object_state`
+    fold head. One fold — `nora.domain.observations.fold_observation` —
+    backs the incremental head update, the as-of replay and the fake, so
+    both implementations agree by construction.
+
+    Implementations: `nora.infra.sql.observations.SqlObservationStore`,
+    `nora.testing.observations.FakeObservationStore`, bound by
+    `tests/contract/test_observation_store_contract.py`."""
+
+    async def append(
+        self,
+        *,
+        observation: Observation,
+        event_id: str,
+        source_digest: str,
+        target_message_id: int | None = None,
+        delivered_message_id: int | None = None,
+        tx_hook: Any = None,
+    ) -> int | None:
+        """Record one source observation and fold it into the object's head,
+        atomically. Returns the observation's `id`; returns None when this
+        `(platform, account_key, source_digest)` is already recorded — a
+        replayed source event changes nothing (`StimulusStore.append`'s
+        contract). `target_message_id` is the caller's resolution of the
+        observation's `target` to a `messages.id` when it already can —
+        `resolve_targets` re-links the rest when the target arrives.
+        `delivered_message_id` independently names the co-delivered utterance;
+        it can differ from the affected target and is never target-relinked.
+        `tx_hook`, when given, is called `(conn, observation_id)` INSIDE the
+        same transaction, the way `RecordStore.append` lets callers join its
+        write — the place a required stimulus or a second-store obligation
+        commits with the observation rather than arriving after it. The
+        hook may return an awaitable, which the implementation AWAITS inside
+        the transaction: an async downstream obligation joins the commit,
+        never runs detached."""
+        ...
+
+    async def current(
+        self, *, scope: SourceScope, kind: str, object_ref: str,
+    ) -> ObservationHead | None:
+        """The object's folded head, or None when nothing is recorded for
+        it — «nothing recorded», never a fabricated empty state."""
+        ...
+
+    async def heads(
+        self, *, scope: SourceScope, kind: str | None = None,
+        limit: int = 100,
+    ) -> list[ObservationHead]:
+        """The objects with recorded state in this scope, bounded — the
+        discovery read (a room's polls, its pin set)."""
+        ...
+
+    async def head_for_handle(
+        self, *, scope: SourceScope, handle: str,
+    ) -> ObservationHead | None:
+        """The one head `handle` names, or None — the EXACT resolution of
+        the handle a discovery read handed out (`kind:<digest>`), scope
+        and all. Never a scan of a bounded head page: an object older
+        than the page is a hit, not a `nothing_found`. A handle whose
+        digest matches nothing in `scope` resolves to None."""
+        ...
+
+    async def history(
+        self, *, scope: SourceScope, kind: str, object_ref: str,
+        after_id: int = 0, limit: int = 1000,
+    ) -> list[StoredObservation]:
+        """The object's retained observations with `id > after_id`,
+        ASCENDING — the replay input `rebuild_head`/`as_of` fold."""
+        ...
+
+    async def as_of(
+        self, *, scope: SourceScope, kind: str, object_ref: str,
+        through_id: int, limit: int = 1000,
+    ) -> tuple[ObservationHead | None, bool]:
+        """The object's state folded through observation `through_id` —
+        what the head held at that point in retained arrival history. The
+        same fold `current` uses, so the two agree by construction.
+
+        Returns `(head, more)`. `more` is True when more than `limit` rows
+        stand at or before `through_id`: the head then folds an earlier
+        point than requested and the caller must treat it as PARTIAL, never
+        as the as-of state it asked for."""
+        ...
+
+    async def recent(
+        self, *, scope: SourceScope, since_ms: int = 0, limit: int = 50,
+    ) -> list[StoredObservation]:
+        """The scope's newest retained observations at/after `since_ms`
+        (their own `occurred_ms`/`received_ms` clock), bounded — the
+        transcript-window read. Same scope-boundary rule as `by_ids`:
+        an empty `account_key` reads room-wide."""
+        ...
+
+    async def by_ids(
+        self, *, scope: SourceScope, ids: tuple[int, ...], limit: int = 200,
+    ) -> list[StoredObservation]:
+        """The rows `ids` names within `scope`, ascending by id, bounded —
+        the batch read a grounder makes for the stimuli its agenda names.
+        Scope is the read boundary: an id of another scope never resolves.
+        An EMPTY `account_key` reads room-wide (`platform` +
+        `conversation_id` + `thread`) — the boundary a unit holds when the
+        stimuli it grounds carry no account."""
+        ...
+
+    async def resolve_targets(
+        self, *, scope: SourceScope, target_key: str, message_id: int,
+    ) -> int:
+        """Re-link retained observations whose `target` is `target_key` to
+        the `messages.id` that just arrived — idempotent, returns how many
+        rows gained a link this call."""
+        ...
+
+    async def unresolved_targets(
+        self, *, scope: SourceScope, limit: int = 200,
+    ) -> list[StoredObservation]:
+        """Observations whose target the Record still cannot point at —
+        retained evidence, linkable, never dropped."""
+        ...
+
+    async def aclose(self) -> None: ...
 
 
 @runtime_checkable

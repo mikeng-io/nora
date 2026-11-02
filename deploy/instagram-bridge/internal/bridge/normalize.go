@@ -38,11 +38,6 @@ var mediaTypeByKind = map[string]string{
 // SourceKey/EventID, and the pending media fetch, if any.
 type Normalized struct {
 	Env *Envelope
-	// MediaURL is the signed CDN URL capture may copy into custody, "" when
-	// the event has no fetchable attachment.
-	MediaURL string
-	// MediaIndex is which message.media entry the URL belongs to.
-	MediaIndex int
 	// Transitions lists the last-state keys this event advanced, so capture
 	// can record them in the journal (reaction add/remove/add identity).
 	Transitions []Transition
@@ -142,6 +137,26 @@ func mediaLabel(mediaType string, sticker, onDemand bool) string {
 		return "file"
 	}
 	return label
+}
+
+// mediaEntries yields the event's attachment descriptors in order. A
+// `media_list` array carries full multiplicity (multi-media content); a bare
+// `media` object is the singular shape every other content type — and every
+// capture written before the list existed — emits.
+func mediaEntries(m map[string]any) []map[string]any {
+	if list, ok := m["media_list"].([]any); ok && len(list) > 0 {
+		out := make([]map[string]any, 0, len(list))
+		for _, it := range list {
+			if d, ok := it.(map[string]any); ok {
+				out = append(out, d)
+			}
+		}
+		return out
+	}
+	if media, ok := m["media"].(map[string]any); ok {
+		return []map[string]any{media}
+	}
+	return nil
 }
 
 // mediaRef builds the MediaRef dict from the event's `media` object.
@@ -281,6 +296,8 @@ func Normalize(ev any, accountKey string, key []byte, keyVersion int, receivedMS
 		return normalizeSummons(m, accountKey, key, keyVersion, receivedMS)
 	case KindMessage:
 		return normalizeMessage(m, accountKey, key, keyVersion, receivedMS)
+	case "observation":
+		return normalizeObservation(m, accountKey, key, keyVersion, receivedMS)
 	}
 	return nil, nil // heartbeat / dropped / typing / unknown kinds
 }
@@ -296,19 +313,34 @@ func normalizeMessage(m map[string]any, accountKey string, key []byte, keyVersio
 	}
 	shared, _ := m["shared"].(map[string]any)
 	sharedLineText, sharedKind, sharedLink := sharedLine(shared)
-	var ref map[string]any
-	if media, ok := m["media"].(map[string]any); ok {
-		ref = mediaRef(media)
+	entries := mediaEntries(m)
+	hasMedia := len(entries) > 0
+	var refs []map[string]any
+	for _, e := range entries {
+		ref := mediaRef(e)
+		if ref != nil && str(e, "url") == "" {
+			// The attachment was declared but carried no fetchable URL —
+			// the record says the bytes existed and custody could never
+			// reach them, rather than reading like an on-demand ref that
+			// simply was not fetched.
+			ref["unavailable"] = true
+			ref["unavailable_reason"] = "no_source_url"
+		}
+		refs = append(refs, ref)
 	}
-	if ref != nil && len(shared) > 0 {
+	if len(shared) > 0 {
 		// The media on a shared item is its THUMBNAIL. A linked post or reel
 		// drops it (the link reads the item itself); a story keeps its cover
 		// (the link reads the CURRENT story, which may no longer hold that
 		// frame); no link at all keeps it — the cover is all there is.
 		if sharedLink != "" && sharedKind != LinkStory {
-			ref = nil
+			refs = nil
 		} else {
-			ref["on_demand"] = true
+			for _, ref := range refs {
+				if ref != nil {
+					ref["on_demand"] = true
+				}
+			}
 		}
 	}
 	var parts []string
@@ -318,9 +350,11 @@ func normalizeMessage(m map[string]any, accountKey string, key []byte, keyVersio
 	if sharedLineText != "" {
 		parts = append(parts, sharedLineText)
 	}
-	if ref != nil {
-		label := mediaLabel(ref["media_type"].(string), boolVal(ref, "sticker"), boolVal(ref, "on_demand"))
-		parts = append(parts, "["+label+"]")
+	for _, ref := range refs {
+		if ref != nil {
+			label := mediaLabel(ref["media_type"].(string), boolVal(ref, "sticker"), boolVal(ref, "on_demand"))
+			parts = append(parts, "["+label+"]")
+		}
 	}
 	if len(parts) == 0 {
 		return nil, nil // neither text nor media — nothing to ingest
@@ -351,7 +385,7 @@ func normalizeMessage(m map[string]any, accountKey string, key []byte, keyVersio
 		"raw":               m,
 		"mentions":          mentionedIDs(m["mentions"]),
 		"quote":             quoteOf(m["reply_to"]),
-		"media":             refsList(ref),
+		"media":             refsList(refs),
 		"message_id":        messageID,
 		"media_blobs":       []any{},
 		"external_files":    []any{},
@@ -365,23 +399,28 @@ func normalizeMessage(m map[string]any, accountKey string, key []byte, keyVersio
 	if ts <= 0 {
 		sentMS, quality = receivedMS, TimeBridgeLocal
 	}
+	// A shared post is ALSO a typed artifact: the observation rides the
+	// same envelope as the utterance (one source transition, one wake),
+	// which lifts the record to v2 while the message stays byte-identical.
+	var observation map[string]any
+	if len(shared) > 0 {
+		// hasMedia (a thumbnail rode the delta), not ref: a linked reel's
+		// cover is dropped from message.media but still previewed the share.
+		observation = artifactObservation(
+			accountKey, room, messageID, sender, shared, ts, receivedMS, hasMedia)
+	}
 	sourceKey := SourceKey(Platform, accountKey, room, KindMessage, upstream)
 	env := &Envelope{
-		V: 1, Platform: Platform, AccountKey: accountKey, Kind: KindMessage,
+		V:        envelopeVersion(KindMessage, observation),
+		Platform: Platform, AccountKey: accountKey, Kind: KindMessage,
 		SourceKey: sourceKey, EventID: EventID(sourceKey, key, keyVersion),
 		ConversationID: room, ConversationType: convType,
 		SenderID: idForm(sender["fbid"]), SenderName: strOrNil(idForm(sender["username"])),
-		SentMS: sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
-		Message: message, Attachments: []Attachment{},
+		SentMS: &sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
+		Message: message, Observation: observation, Attachments: []Attachment{},
 		Trace: map[string]any{}, Receipt: nil,
 	}
-	n := &Normalized{Env: env, MediaIndex: 0}
-	if ref != nil {
-		if media, ok := m["media"].(map[string]any); ok {
-			n.MediaURL = str(media, "url")
-		}
-	}
-	return n, nil
+	return &Normalized{Env: env}, nil
 }
 
 // normalizeEdit is _parse_edit: a `kind:"edit"` event → an edit of the
@@ -415,7 +454,7 @@ func normalizeEdit(m map[string]any, accountKey string, key []byte, keyVersion i
 		SourceKey: sourceKey, EventID: EventID(sourceKey, key, keyVersion),
 		ConversationID: room, ConversationType: "group",
 		SenderID: "", SenderName: nil,
-		SentMS: sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
+		SentMS: &sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
 		Message: message, Attachments: []Attachment{}, Trace: map[string]any{}, Receipt: nil,
 	}}, nil
 }
@@ -506,7 +545,7 @@ func normalizeTouch(m map[string]any, accountKey string, key []byte, keyVersion 
 		SourceKey: sourceKey, EventID: EventID(sourceKey, key, keyVersion),
 		ConversationID: room, ConversationType: "group",
 		SenderID: sender, SenderName: nil,
-		SentMS: sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
+		SentMS: &sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
 		Message: message, Attachments: []Attachment{}, Trace: map[string]any{}, Receipt: nil,
 	}, Transitions: transitions}, nil
 }
@@ -539,9 +578,156 @@ func normalizeSummons(m map[string]any, accountKey string, key []byte, keyVersio
 		SourceKey: sourceKey, EventID: EventID(sourceKey, key, keyVersion),
 		ConversationID: room, ConversationType: "group",
 		SenderID: idForm(sender["fbid"]), SenderName: strOrNil(idForm(sender["username"])),
-		SentMS: sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
+		SentMS: &sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
 		Message: message, Attachments: []Attachment{}, Trace: map[string]any{}, Receipt: nil,
 	}}, nil
+}
+
+// normalizeObservation validates one `kind:"observation"` event — the
+// gateway's typed record of a source event about an OBJECT (pin set, room,
+// member set, artifact). The dict is the contract's own wire shape: it is
+// checked field-for-field (observationProblem) and scope-bound to this
+// envelope before it is allowed anywhere near the journal. A malformed or
+// out-of-scope observation returns an ERROR — a retained failure at the
+// boundary, not a dropped event and not a best-effort parse.
+//
+// `scope.account_key` is stamped HERE, never claimed by the gateway: the
+// account identity has exactly one owner (the capture side), the same
+// rule the wrong-scope control expresses in the other direction.
+func normalizeObservation(m map[string]any, accountKey string, key []byte, keyVersion int, receivedMS int64) (*Normalized, error) {
+	room := idForm(m["room_id"])
+	upstream := str(m, "upstream")
+	if room == "" || upstream == "" {
+		return nil, nil // an observation cannot route without room+identity
+	}
+	obs, _ := m["observation"].(map[string]any)
+	if obs == nil {
+		return nil, fmt.Errorf("observation event carries no observation")
+	}
+	scope, _ := obs["scope"].(map[string]any)
+	if scope == nil {
+		return nil, fmt.Errorf("observation carries no scope")
+	}
+	if p, _ := scope["platform"].(string); p != Platform {
+		return nil, fmt.Errorf("observation scope platform %q != %q", p, Platform)
+	}
+	if c, _ := scope["conversation_id"].(string); c != room {
+		return nil, fmt.Errorf("observation scope conversation %q != envelope room %q", c, room)
+	}
+	scope["account_key"] = accountKey // single owner stamps its own identity
+	obs["received_ms"] = receivedMS   // capture time, beside the envelope's
+	if problem := observationProblem(obs); problem != "" {
+		return nil, fmt.Errorf("observation invalid: %s", problem)
+	}
+	kind := str(obs, "kind")
+	sender := idForm(m["sender_fbid"])
+	// The envelope clock is the observation's own occurred_ms when the
+	// source supplied one; a clockless observation emits sent_ms=null and
+	// bridge_local — never a fabricated upstream time.
+	ts := intMS(m, "timestamp_ms")
+	var sentMS *int64
+	quality := TimeBridgeLocal
+	if ts > 0 {
+		sentMS = &ts
+		quality = TimeUpstream
+	}
+	var transitions []Transition
+	uqSeq := intMS(m, "upstream_seq")
+	switch kind {
+	case KindPin:
+		// Pin set transitions ride the same ledger as clockless reaction
+		// deltas: seq>0 is forward progress / redelivery suppression,
+		// seq==0 makes a re-transition unresolvable → ambiguous, journaled,
+		// never guessed.
+		if tgt, ok := obs["target"].(map[string]any); ok {
+			op := str(obs, "operation")
+			if id := str(tgt, "message_id"); id != "" && (op == "add" || op == "remove") {
+				transitions = append(transitions, Transition{
+					Key:         room + "|pin|" + id,
+					State:       op,
+					UpstreamSeq: uqSeq,
+				})
+			}
+		}
+	case "room":
+		// roomrev upstreams hash {fields, actor}: an A→B→A of the same
+		// fields reuses the A identity and would dedupe as a redelivery.
+		// The transition state is the FIELD content itself (actor is not
+		// room state) so the ledger, not the source key, decides.
+		if obj, ok := obs["payload"].(map[string]any); ok {
+			if fields, ok := obj["fields"].(map[string]any); ok && len(fields) > 0 {
+				transitions = append(transitions, Transition{
+					Key:         room + "|room|fields",
+					State:       "v:" + stateHash(fields),
+					UpstreamSeq: uqSeq,
+				})
+			}
+		}
+	case "membership":
+		obj, _ := obs["payload"].(map[string]any)
+		covered := str(obj, "covered")
+		switch covered {
+		case "members", "admins":
+			// Covered-set snapshots (join member set, admin igid set): the
+			// set content is the state — including the EMPTY set, which is
+			// still a committed state, not "no observation". A set that
+			// returns to an earlier membership without an upstream
+			// revision is unresolvable.
+			members, _ := obj["members"].([]any)
+			transitions = append(transitions, Transition{
+				Key:         room + "|" + covered,
+				State:       "v:" + stateHash(members),
+				UpstreamSeq: uqSeq,
+			})
+			// The snapshot also commits each reported subject's own state
+			// on a per-subject key: a leave→rejoin→leave then reads as
+			// remove→member→remove on that key, making the second
+			// departure honestly ambiguous instead of an identical repeat
+			// of the last committed state. Admin subjects ride their own
+			// namespace — admin_igids is the igid space and must never
+			// fold into member-fbid keys.
+			subjNS := "member"
+			if covered == "admins" {
+				subjNS = "admin"
+			}
+			for _, mb := range members {
+				d, _ := mb.(map[string]any)
+				if subj, st := str(d, "subject"), str(d, "state"); subj != "" && st != "" {
+					transitions = append(transitions, Transition{
+						Key:         room + "|" + subjNS + "|" + subj,
+						State:       st,
+						UpstreamSeq: uqSeq,
+					})
+				}
+			}
+		default:
+			// Per-subject deltas (memleave): key on the subject so a
+			// leave→rejoin→leave with no revision is ambiguous rather
+			// than a silent dedupe of the second departure.
+			if subject := str(obs, "subject_ref"); subject != "" {
+				state := str(obj, "state")
+				if state == "" {
+					state = str(obs, "operation")
+				}
+				transitions = append(transitions, Transition{
+					Key:         room + "|member|" + subject,
+					State:       str(obs, "operation") + "|" + state,
+					UpstreamSeq: uqSeq,
+				})
+			}
+		}
+	}
+	sourceKey := SourceKey(Platform, accountKey, room, kind, upstream)
+	return &Normalized{Env: &Envelope{
+		V: envelopeVersion(kind, obs), Platform: Platform, AccountKey: accountKey,
+		Kind:      kind,
+		SourceKey: sourceKey, EventID: EventID(sourceKey, key, keyVersion),
+		ConversationID: room, ConversationType: "group",
+		SenderID: sender, SenderName: nil,
+		SentMS: sentMS, ReceivedMS: receivedMS, TimeQuality: quality,
+		Message: nil, Observation: obs, Attachments: []Attachment{},
+		Trace: map[string]any{}, Receipt: nil,
+	}, Transitions: transitions}, nil
 }
 
 func nilIfEmpty(s string) any {
@@ -558,9 +744,22 @@ func strOrNil(s string) *string {
 	return &s
 }
 
-func refsList(ref map[string]any) []any {
-	if ref == nil {
-		return []any{}
+func refsList(refs []map[string]any) []any {
+	out := make([]any, 0, len(refs))
+	for _, ref := range refs {
+		if ref != nil {
+			out = append(out, ref)
+		}
 	}
-	return []any{ref}
+	return out
+}
+
+// stateHash renders a value-state for the transition ledger: canonical JSON
+// (map keys sorted by encoding/json) → sha256 hex. It only ever compares
+// equal/unequal, so the digest itself is the state — no separate encoding
+// of "which fields" is needed.
+func stateHash(v any) string {
+	raw, _ := json.Marshal(v)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:16])
 }

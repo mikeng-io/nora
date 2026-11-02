@@ -1,0 +1,14 @@
+{
+  "_fixture": {
+    "name": "reaction delete delta, no reaction clock",
+    "generated": true,
+    "native_event": "delta __typename=SlideUQPPDeleteReaction",
+    "capture_today": "captured -> kind=reaction removed=true; identity falls back to uq_seq_id (react:...:s{seq}), transition ledger keys room|target|reactor|emoji",
+    "semantic": "DeleteReactionEvent carries no reaction_timestamp_ms in the measured path — the uq_seq_id is the only revision. A clockless repeat of an already-committed state is journaled ambiguous, never deduped into a guessed sequence (capture.go resolveTransitions)."
+  },
+  "payload": {
+    "__typename": "SlideUQPPDeleteReaction", "uq_seq_id": "212", "thread_fbid": "1234567890123456",
+    "message_id": "mid.$a1",
+    "reaction": { "reaction": "❤️", "sender_fbid": "63987654300000022" }
+  }
+}

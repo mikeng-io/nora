@@ -7,27 +7,100 @@ real source-backed journeys accumulate after authorized use. Unknown model quali
 must be reported as unknown, not used to claim success or block all collection.
 Existing recorded-wake rules apply when claiming semantic evaluation results.
 
-## Ordered implementation within existing owners
+## Integrated metadata implementation map
 
-1. Rebase the coverage census onto the actual bridge implementation head. Pin
-   upstream dependency revisions; fill parser/wire/store/projection/exposure cells
-   for the first supported family. Preserve scope and ignored typing.
-2. Extend the bridge typed union and existing domain stores together for that family.
-   Prove source identity, replay, ordering, unresolved targets and coverage. Keep
-   current transport ownership and media custody; do not rebuild the bridge project.
-3. Implement the deterministic current projection, graph references and durable
-   downstream obligations. Read back the committed state and rebuild equivalence.
-4. Wire the same read model through enriched transcript, the existing Standing
-   presentation and existing/detail tools.
-   Prove assembled input, partial/unavailable behavior and no fake speaker lines.
-5. Broaden supported families after one complete journey, recording source evidence
-   and limitations in 01. Accumulate grounded histories for semantic evaluation;
-   Notebook interpretation and profile promotion stay with unified-memory owners.
+Operator direction, 2026-11-02: build one coherent metadata cluster across the
+existing owners. This supersedes the earlier family-by-family delivery order.
+The lanes below are internal dependencies of one implementation, not separate
+platform/family PRs, releases, gates or review rounds. This amendment is a build
+map; it delivers no new runtime behavior.
 
-Start with responses on known messages, using current reaction storage; Signal
-native polls and Discord poll callbacks are concrete next candidates. Select final
-order against actual bridge head and useful journeys, not platform-name priority.
-An unavailable source family stays explicitly unavailable while others progress.
+### Scope and source admission
+
+Include responses (the shipped reaction baseline and its missing semantics),
+collective-choice polls, shared posts/artifacts and conversation events
+(title/topic, membership/roles, pins and thread lifecycle). Each selected source
+mapping must reach durable state and its model-facing read paths in the same
+cluster; collection alone is not a completed family. Reuse the delivered reaction
+annotations rather than rebuilding them.
+
+Before implementation edits, refresh [01](01-coverage.md) against the actual build
+head and pinned bridge dependencies. Freeze the selected platform/account/room
+mode and payload/operation cells, their fixtures, limitations and acceptance in
+that existing matrix. Its older census is historical, not today's capability
+promise. Unknown source support requires inspection, not an unsupported label.
+Do not make all four platforms support identical native features a prerequisite
+for a useful integrated delivery. An unselected, unsupported or unavailable cell
+remains explicitly undelivered; it is not counted as passing by omission. A
+required selected cell that cannot be implemented returns to explicit scoping,
+not silent removal from acceptance.
+
+Source checkpoints read at `c537267ae4b5698110423f5b7c5c8f12b42fbf76`:
+`TranscriptInjection.assemble` already gathers transcript and Standing into
+TagContext; `CognitionSessionRunner._session_input` assembles the unified session;
+Cognition's `_BLOCKS` still has no Standing declaration; stimulus kinds remain
+message/social/play/rollup/time/self. These are integration seams, not proof the
+proposed observation path exists. [05](05-occasion-map.md) owns its occasion and
+tool map; its historical baseline must be refreshed before runtime edits.
+
+### Dependency lanes in the same implementation
+
+| Lane | Changes in existing owners | Required joined result |
+|---|---|---|
+| Capture and identity | Selected mappings in the four current bridges; typed wire/domain payloads under [02](02-observation-contract.md); explicit actor, source order, delta/snapshot and coverage semantics | Accepted observations survive the existing journal/queue path with stable identity; unsupported fields stay visible as gaps; no fake empty messages |
+| Record and current state | Existing domain stores/folds plus only the missing typed poll and room/history ownership; shared artifact refs retain existing custody/perception ownership; durable downstream obligations at the existing commit boundary | Replay changes nothing twice; unresolved targets remain linkable; current state and supported rebuild/as-of reads agree; no generic JSON event lake or second outbox |
+| Read model and presentation | One scoped read result for enriched transcript, relevant off-window Standing refs and detail reads; both Engagement and Cognition context assembly, with the reused Standing blocks explicitly declared for Cognition | A source object leaving the recent transcript stays available when relevant; later changes refresh its state; time/coverage/budget/dedup are consistent; no extra observation block |
+| Tools and attention | Reuse/extend Record/transcript and saved-artifact reads; implement only the missing poll/room tasks in [05](05-occasion-map.md); update Cognition allowlists/audit/room binding and the complete observation-stimulus lifecycle together | Nora can discover and inspect old/new evidence through automatic input and bounded tools; an event is not consumed just because its message sibling was; callbacks coalesce without a model call each |
+
+Normalize and serialize once before branching into these consumers. Sequence
+shared wire/domain/store edits before their dependants; disjoint source mappings
+can be developed together once that contract is fixed. An integrated cluster does
+not require multiple agents, concurrent edits to shared files or concurrent gates.
+Keep one integration owner and one candidate tree.
+
+### Family obligations within the cluster
+
+| Family | Transcript and continuity | Detail/attention obligations |
+|---|---|---|
+| Reaction | Reuse recorded target annotations; add only selected missing source identity/ordering/clear/snapshot/unresolved-target behavior; relevant old target can enter Standing | Existing Record reads and message/reaction agenda; coverage must distinguish the recorded subset from complete upstream state |
+| Poll | Typed definition/change/vote/close events and current head; relevant poll ref/current state survives the recent window in Standing | Discovery/detail/history under [05](05-occasion-map.md); anonymous counts never invent voters; poll closure never settles the related matter |
+| Shared post/artifact | Sharer's actual words, object ref, metadata and saved reading/bytes coverage; relevant off-window ref resolves through the same source read | Existing message/social stimuli and media/social/Record tools; no new feed crawler or blanket live-fetch authority |
+| Group event | Typed room/member/pin/thread changes, actual source/actor/time quality and relevant supported current state | Scoped state/member/history reads and observation agenda; guild scope is not channel audience; a snapshot does not invent change history |
+
+These obligations apply to the frozen source cells, not a claim every listed
+operation is available on every platform. Non-message poll and room evidence use
+one observation stimulus family as specified in [05](05-occasion-map.md), including
+storage constraints, grounding, rendering, proposal coverage, retries and replay.
+No per-platform stimulus or independent interpretation loop is introduced.
+
+### Integration, verification and stopping boundary
+
+Carry this map with the runtime changes on one integration branch and one PR.
+Do not land the lanes as half-wired scaffolding or open a separate PR merely to
+approve each family/map. In development, run the smallest meaningful checks for
+the changed seam. Once joined, prove one generated mixed journey: poll/share/group
+change, transcript-window eviction, later source update/closure, next Engagement
+and Cognition assembly, and detail tools reading the same supported revision.
+The controls below also cover the necessary ordering, anonymity, scope, budget,
+unavailable and recovery failure cases; a mixed happy path alone is insufficient.
+
+Run `make gate` once on the final integrated candidate, using the repository's
+affected-test/receipt rules and normal local admission. `make full-gate` is not an
+extra default step. Review the integrated change once at the applicable runtime
+review tier (full for changed prompts/tools/routing), with an independent vendor;
+[ORCHESTRATION.md](../../ORCHESTRATION.md) governs findings and the two-round ceiling.
+A real defect or changed candidate still requires its relevant checks and renewed
+final acceptance; batching is not a waiver of correctness. Hosted CI remains its
+own required check, not another agent-triggered local gate.
+
+Stop when every selected cell and joined acceptance obligation has evidence,
+required checks/review are clear and the agreed delivery state is read back.
+Source merge, deployment and authorized live acceptance remain separate receipts.
+Keep unrelated shutdown/restart exercises, collector work and HTTP-client cleanup
+outside this metadata cluster. A captured reaction that cannot link its target is
+relevant only where it demonstrates a selected metadata-path defect. Telegram
+adoption, new passive location/social collection and Notebook/profile semantic
+redesign require their own explicit scope; this cluster adds no such authority.
 
 ## Proposed deterministic controls
 
@@ -66,7 +139,7 @@ New data kinds need a useful journey and an owner, not automatically a new table
 tool, graph ontology or model call. A transport change updates the bridge contract
 by reference; semantic changes update unified-memory without duplicating that spec.
 
-This bundle is sufficient to brief an integrated first family; it does not claim
+This bundle briefs the integrated metadata cluster above; it does not claim
 complete platform coverage. Exact DDL, registered tool text, token allocation,
 installed collector changes and deployment evidence belong to implementation.
 
@@ -126,3 +199,49 @@ They specify future implementation checks, not a claim those families are built.
 - **Ownership:** transcript truncation or lost rendered text cannot delete canonical
   observations. Standing enrichment is derived from typed refs and source reads;
   no new model-driven ETL, Standing writer or operational-trace-to-social pipeline.
+
+
+## Candidate evidence boundary (2026-11-02)
+
+The integrated candidate implements the selected four-platform capture cells,
+typed durable history/current heads, transactional stimulus obligations,
+transcript/Standing projections and bounded task reads described in [01](01-coverage.md),
+[02](02-observation-contract.md) and the current-candidate map in
+[05](05-occasion-map.md). The original acceptance above remains binding; this is
+not a declaration that every proposed extension or semantic property is complete.
+
+Generated native fixtures, SQL/memory contracts, real WorkRunner recovery tests
+and actual session-input/consumption tests measure deterministic behavior. They do
+not prove real platform completeness, model tool choice, social interpretation or
+production deployment. The final candidate gate and independent full review remain
+the PR's acceptance evidence owners, not the lane reports.
+
+Tool-routing measurement has not run. The historical implicit-Signal-mode
+subject-config failure ([issue 480](https://github.com/mikeng-io/nora/issues/480))
+remains open, but a read-only deployment-config preflight found explicit bridge
+mode; that historical failure alone does not establish a blocker for this input.
+The official subject parity check remains required. Do not bypass parity, invent
+a detail handle or seed synthetic production history to make measurement pass. The
+new dinner-poll case requires discovery because its snapshot supplies no poll
+handle; it does not establish `poll_read` detail routing. A source-backed detail
+anchor and live routing evidence remain unmet. This does not waive the tool/eval
+procedures or authorize a claim of routing quality from deterministic tests.
+
+The candidate's automatic source-head working set is a bounded recency selection,
+with explicit omissions and exact-handle reads. Ongoing matter-linked selection
+is now implemented through the live matter owner: `Note.object_refs` carries
+typed `SourceRef` pointers (`platform`, `conversation_id`, model-safe `handle`,
+`thread`; at most 8, deduplicated) persisted on the note head and updated under
+the same revision CAS as the body. `note_create`/`note_revise` accept only object
+handles and resolve their shown source scope server-side; `note_read` returns
+handles for revision. References are
+validated fail-closed against the handles the session was actually shown in the
+same room and still resolving through `head_for_handle` — an unseen, forged,
+cross-scope or unresolvable ref is refused or `unavailable`, never silently
+kept. Both assemblies resolve the refs on every turn beside the bounded page
+(`head=None` renders `unresolved`, never a dropped row; a ref the page already
+shows is not duplicated; `matter` names the tracking note). `note_set_status`
+retirement removes the note from `standing` and with it the refs — history
+stays readable through `read`; a poll `revise`→closed only changes source state
+and never retires the note. No semantic lifecycle or lossless model compression
+is established by this slice.

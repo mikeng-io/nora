@@ -1,0 +1,16 @@
+{
+  "_fixture": {
+    "name": "message edit delta (no actor by design)",
+    "generated": true,
+    "native_event": "delta __typename=SlideUQPPEditMessage",
+    "capture_today": "captured -> kind=edit; from_me=null, sender unavailable",
+    "semantic": "message_id + new text_body + slide_edit_history_entry.timestamp_ms only — the event carries NO sender field, so editor identity is unavailable, never 'a member'. This is the actor_status=unavailable case for edits."
+  },
+  "payload": {
+    "__typename": "SlideUQPPEditMessage", "uq_seq_id": "220", "thread_fbid": "1234567890123456",
+    "message_id": "mid.$a1",
+    "text_body": "check this (edited)",
+    "igd_snippet": "Member A edited a message",
+    "slide_edit_history_entry": { "timestamp_ms": "1790002600000" }
+  }
+}

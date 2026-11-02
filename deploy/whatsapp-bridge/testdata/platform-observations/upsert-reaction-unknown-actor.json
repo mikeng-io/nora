@@ -1,0 +1,28 @@
+{
+  "_fixture": {
+    "name": "reaction stanza with no participant (unknown actor)",
+    "generated": true,
+    "native_event": "messages.upsert (type=notify), message.reactionMessage",
+    "capture_today": "captured -> kind=reaction; sender falls back to the room JID (unchanged v1 behavior — the utterance-level sender, not the observation actor header)",
+    "semantic": "In a group, an absent key.participant leaves actor unresolved: the source did not name who reacted. Design/02 wants actor_status recorded, not a guessed member. Target author likewise falls back to '' when the target key carries no participant and fromMe is false."
+  },
+  "payload": {
+    "key": {
+      "remoteJid": "12036123456789@g.us",
+      "fromMe": false,
+      "id": "3EB0RNOONE"
+    },
+    "message": {
+      "reactionMessage": {
+        "key": {
+          "remoteJid": "12036123456789@g.us",
+          "fromMe": false,
+          "id": "3EB0AAA100"
+        },
+        "text": "🙏",
+        "senderTimestampMs": 1790000500000
+      }
+    },
+    "messageTimestamp": 1780700000
+  }
+}

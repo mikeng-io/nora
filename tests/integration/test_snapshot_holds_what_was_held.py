@@ -298,6 +298,41 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "key": f"u#character:p{i}", "entity_kind": "human", "unit": "u",
         "revision": 1, "updated_at": MS0 + i,
     },
+    # 0144_platform_observation: the typed history, carrying BOTH message
+    # links the way production sets them — `delivered_message_id` the
+    # utterance that carried the fact and `target_message_id` the message it
+    # affects. `target_message_id` is SET NULL when its message is pruned,
+    # and re-linked in place by the resolve pass.
+    "platform_observation": lambda i: {
+        "id": 7000 + i, "contract": 1, "kind": "reaction",
+        "event_id": f"ev-{i}", "source_digest": f"digest-{i}",
+        "platform": "signal", "account_key": "acct",
+        "conversation_id": "g1", "object_ref": f"msg:s{i}:{MS0 + i}",
+        "operation": "add",
+        "target_key": f"ts:{MS0 + i}:author:s{i}",
+        "target_author_id": f"s{i}",
+        "target_message_id": 1000 + i, "delivered_message_id": 1000,
+        "actor_id": f"s{i}", "actor_status": "known",
+        "occurred_ms": MS0 + i, "received_ms": MS0 + i,
+        "time_quality": "upstream",
+        "payload": {"emoji": "👍", "covered_emojis": [], "covered_actors": [],
+                    "counts": {}, "reactors": None},
+        "coverage": {"complete": True, "covered": "event",
+                     "gaps": [], "reason": ""},
+    },
+    # The fold's compare-and-swap head over the same object.
+    "platform_object_state": lambda i: {
+        "id": 7100 + i, "platform": "signal", "account_key": "acct",
+        "conversation_id": "g1", "kind": "reaction",
+        "object_ref": f"msg:s{i}:{MS0 + i}",
+        "state": {"standing": {"👍": [f"s{i}"]}, "counts": {},
+                  "reactors": [f"s{i}"], "snapshot": False},
+        "applied": 1, "head_observation_id": 7000 + i,
+        "observed_ms": MS0 + i, "ordering": "arrival",
+        "coverage": {"complete": True, "covered": "event",
+                     "gaps": [], "reason": ""},
+        "projection_rev": 1,
+    },
 }
 
 #: The column each revision moves, and to what.
@@ -358,6 +393,13 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "rollup_tie": ("replies_ba", lambda i: 1 + i),
     "rollup_response": ("outcome", lambda i: "responded"),
     "events": ("status", lambda i: "confirmed"),
+    # 0144: the table's real in-place write — a retained observation's
+    # target re-linking (`resolve_targets`/`relink_arriving_targets`).
+    "platform_observation": ("target_message_id", lambda i: 1000),
+    # The fold's head re-folding (`_apply_head`'s UPDATE).
+    "platform_object_state": ("state", lambda i: {
+        "standing": {"👀": [f"s{i}"]}, "counts": {},
+        "reactors": [f"s{i}"], "snapshot": False}),
 }
 
 #: One append-only row, number `n`, citing the stable key-0 parents.

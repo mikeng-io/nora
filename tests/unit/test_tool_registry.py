@@ -318,6 +318,7 @@ def test_budgets_match_todays_table():
         # an interval, then a narrower
         # one, then one person.
         "record_query": 3,
+        "poll_list": 1, "poll_read": 2, "room_state_read": 1,
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
         "group_members": 1, "lookup_person": 4, "about": 4,
@@ -588,10 +589,11 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
         - {LOADER_TOOL, *SUBAGENT_TOOLS, *VIDEO_TOOLS, *WORKER_ONLY_TOOLS}
         # no index wired: the Honcho memory surface (DEC-316)
         - GRAPH_MEMORY_TOOLS
+        - {"poll_list", "poll_read", "room_state_read"}  # observation store unwired
     )
     assert set(agent.tool_names) == set(NATIVE_TOOL_BUDGETS) - {
         "skills", LOADER_TOOL, *SUBAGENT_TOOLS, *VIDEO_TOOLS, *WORKER_ONLY_TOOLS,
-        *GRAPH_MEMORY_TOOLS,
+        *GRAPH_MEMORY_TOOLS, "poll_list", "poll_read", "room_state_read",
     }
     assert "skills" in NATIVE_TOOL_BUDGETS
 
@@ -993,7 +995,7 @@ READ_ONLY = frozenset({
     # and stored messages, and write nothing.
     "room_list", "room_read",
     # a Record read under lineage.
-    "record_query",
+    "record_query", "poll_list", "poll_read", "room_state_read",
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
     "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
     # DEC-316: the graph surface's memory search, an index read

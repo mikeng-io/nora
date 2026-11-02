@@ -1,0 +1,38 @@
+{
+  "meta": {
+    "native": "discord-gateway",
+    "native_version": "discord.py 2.7.1",
+    "transport": "gateway",
+    "dispatch": "MESSAGE_POLL_VOTE_ADD",
+    "discord_py_parse": "parse_message_poll_vote_add",
+    "discord_py_event": "raw_poll_vote_add",
+    "upstream_source": "https://docs.discord.com/developers/events/gateway-events#message-poll-vote-add",
+    "case": "a poll vote in a DM — no guild_id",
+    "generated": true
+  },
+  "payload": {
+    "op": 0,
+    "t": "MESSAGE_POLL_VOTE_ADD",
+    "s": 33,
+    "d": {
+      "user_id": "123456789012345800",
+      "channel_id": "123456789012345602",
+      "message_id": "123456789012345700",
+      "answer_id": 1
+    }
+  },
+  "semantics": {
+    "object": "poll-response",
+    "operation": "add",
+    "room_ref": "absent — no guild_id",
+    "object_ref": "(d.message_id, d.answer_id, d.user_id)",
+    "target_ref": "d.message_id + d.answer_id",
+    "actor": "d.user_id",
+    "source_time": "none carried",
+    "native_fields": {
+      "guild_id": "absent — the DM marker"
+    },
+    "notes": "RawPollVoteActionEvent builds fine with guild_id=None; the admission boundary is the room-ref, not the SDK shape.",
+    "today": "no listener subscription; would be dropped at admission anyway"
+  }
+}

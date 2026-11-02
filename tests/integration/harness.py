@@ -39,6 +39,7 @@ from nora.engagement.slots import ConversationSlots
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
+from nora.infra.sql.observations import SqlObservationStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.ingest.policy import RelevanceGatePolicy
 from nora.obs.metrics import Metrics
@@ -495,6 +496,12 @@ async def build_handler(
         ),
         participation_runner=participation_runner,
         participation_clock=participation_clock,
+        # The typed platform-observation Record — the SAME `SqlObservationStore`
+        # `build_dependencies` always builds, over this harness's one engine, so
+        # a scenario that appends typed source evidence sees it where production
+        # would (transcript events, the standing slot, `record_query`'s kind
+        # branch). No scenario's ingest writes it today, so it reads empty.
+        observations=SqlObservationStore(engine),
     )
     handler = _HandlerView(dispatcher=dispatcher, engagement=engagement, adapter=adapter)
 

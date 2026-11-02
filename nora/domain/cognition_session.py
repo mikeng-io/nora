@@ -55,7 +55,8 @@ COGNITION_ADAPTOR = "cognition"
 #: home room. A message names the room it came from; a social read names a
 #: room of the unit that lists its author, the only rooms that may be shown
 #: it (`composition.social_person_rooms`), and one naming none binds home.
-_ROOM_BOUND_KINDS: frozenset[str] = frozenset({"message", "social"})
+_ROOM_BOUND_KINDS: frozenset[str] = frozenset(
+    {"message", "social", "observation"})
 #: The daily look ahead (DEC-303): a `time` stimulus the wake evaluator raises
 #: with each floor for a room holding an event that is coming up. Unlike the
 #: floor it names a room, and is bound to it, so the look reads and writes
@@ -207,6 +208,12 @@ def _summary(kind: str, room: Room, item: str, count: int) -> str:
         return f"a time stimulus is due: {item}"
     if kind == "self":
         return f"a self-wake is due: {item}"
+    if kind == "observation":
+        # The ONE source-event family: `item` is the OBJECT kind (poll,
+        # room, membership, pin, artifact) — a fact about what changed,
+        # never a fabricated utterance or an invented actor.
+        noun = "source event" if count == 1 else "source events"
+        return f"{count} {item} {noun} in this room"
     return f"{count} {kind} stimuli: {item}"
 
 

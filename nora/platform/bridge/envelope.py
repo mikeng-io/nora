@@ -1,6 +1,10 @@
-"""The v1 inbound envelope and canonical source identity.
+"""The inbound envelope (v1/v2) and canonical source identity.
 
-One envelope per upstream transition (message/edit/delete/reaction/summons).
+One envelope per upstream transition — a message/edit/delete/reaction/summons
+utterance, or a typed observation about an object (poll, room, member set,
+pin set, artifact, message metadata; see `KINDS` and
+`nora/domain/observations.py`). v2 envelopes may carry the observation
+sidecar next to or instead of a `NormalizedMessage`.
 `source_key` is the canonical, un-hashed source tuple — private, it never
 appears in telemetry labels or the API's public identifiers. `event_id` is the
 opaque public identity, HMAC-derived under a versioned correlation key so a key
@@ -15,8 +19,18 @@ import hmac
 from dataclasses import dataclass, field
 from typing import Any
 
-ENVELOPE_VERSION = 1
-KINDS = frozenset({"message", "edit", "delete", "reaction", "summons"})
+ENVELOPE_VERSION = 2
+#: v1 kinds — every one carries a `NormalizedMessage` in `message` (a summons
+#: message may be an empty shell; that is the utterance path's own rule).
+V1_KINDS = frozenset({"message", "edit", "delete", "reaction", "summons"})
+#: Observation kinds — a source event about an OBJECT, never an utterance:
+#: a poll (definition and response), a room/thread, a member set, a pin set,
+#: a shared artifact, a message's own metadata. `reaction` is shared: v1
+#: carries it as a touch on a message row, v2 also as a typed observation
+#: (delta/clear/snapshot) with no message.
+KINDS = V1_KINDS | frozenset({
+    "message_metadata", "poll", "room", "membership", "pin", "artifact",
+})
 _SEP = "\x1f"
 
 
@@ -62,7 +76,14 @@ class Envelope:
     received_ms: int  # bridge-local receive time
     queued_ms: int  # enqueue time (== received_ms unless journal replay)
     time_quality: str  # "upstream" | "bridge_local"
-    message: dict[str, Any]  # serialized NormalizedMessage fields
+    # Serialized NormalizedMessage fields, or None for a v2 envelope whose
+    # event is a pure observation — never a fake utterance or an empty
+    # speaker line.
+    message: dict[str, Any] | None
+    # Serialized typed `Observation` (rehydrate.py's observation form): the
+    # sidecar a source event carries next to (a poll created as a message)
+    # or instead of (a vote, a member join, a pin) an utterance.
+    observation: dict[str, Any] | None = None
     attachments: tuple[dict[str, Any], ...] = ()
     trace: dict[str, str] = field(default_factory=dict)  # traceparent/tracestate only
     receipt: dict[str, str] | None = None  # optional enqueue receipt {emoji}
@@ -70,9 +91,20 @@ class Envelope:
     # app re-checks CURRENT policy before acting — this is provenance, not authority.
     admission_rev: int | None = None
 
+    def version(self) -> int:
+        """The `v` `to_fields` emits: 2 when the record carries anything a v1
+        reader cannot interpret — an observation sidecar or a kind outside
+        `V1_KINDS` — else 1. The version describes the SHAPE USED, not the
+        library: an old app keeps accepting ordinary messages from a new
+        bridge through a mixed-version rollout, while a genuinely new record
+        fails retained at the old app's boundary instead of dropping."""
+        if self.observation is not None or self.kind not in V1_KINDS:
+            return 2
+        return 1
+
     def to_fields(self) -> dict[str, Any]:
         return {
-            "v": ENVELOPE_VERSION,
+            "v": self.version(),
             "platform": self.platform,
             "account_key": self.account_key,
             "kind": self.kind,
@@ -87,6 +119,7 @@ class Envelope:
             "queued_ms": self.queued_ms,
             "time_quality": self.time_quality,
             "message": self.message,
+            "observation": self.observation,
             "attachments": list(self.attachments),
             "trace": self.trace,
             "receipt": self.receipt,
@@ -95,10 +128,31 @@ class Envelope:
 
     @classmethod
     def from_fields(cls, fields: dict[str, Any]) -> Envelope:
-        if fields.get("v") != ENVELOPE_VERSION:
-            raise ValueError(f"unsupported envelope version {fields.get('v')!r}")
+        """`to_fields`' inverse — accepts every version the bridge has ever
+        emitted so an old journal still rehydrates after upgrade. `v == 1`
+        is the original shape (v1 kind, `message` required, no
+        `observation`); `v == 2` adds the observation kinds and the
+        `observation` sidecar, where `message` is required unless the
+        envelope carries an observation that stands alone — a pure
+        observation event has no utterance to serialize. Anything else is a
+        retained failure at the boundary, never a best-effort parse."""
+        v = fields.get("v")
+        if v == 1:
+            if fields.get("observation") is not None:
+                raise ValueError("v1 envelope cannot carry observation")
+            if not fields.get("message"):
+                raise ValueError("v1 envelope requires message")
+        elif v == 2:
+            if str(fields.get("kind")) not in KINDS:
+                raise ValueError(f"unknown bridge kind {fields.get('kind')!r}")
+            if fields.get("observation") is None and not fields.get("message"):
+                raise ValueError("v2 envelope needs message or observation")
+        else:
+            raise ValueError(f"unsupported envelope version {v!r}")
         trace = fields.get("trace") or {}
         trace = {k: v for k, v in trace.items() if k in ("traceparent", "tracestate")}
+        message = fields.get("message")
+        observation = fields.get("observation")
         return cls(
             platform=str(fields["platform"]),
             account_key=str(fields["account_key"]),
@@ -113,7 +167,8 @@ class Envelope:
             received_ms=int(fields["received_ms"]),
             queued_ms=int(fields["queued_ms"]),
             time_quality=str(fields.get("time_quality") or "bridge_local"),
-            message=dict(fields["message"]),
+            message=None if message is None else dict(message),
+            observation=None if observation is None else dict(observation),
             attachments=tuple(dict(a) for a in fields.get("attachments") or ()),
             trace=trace,
             receipt=fields.get("receipt"),

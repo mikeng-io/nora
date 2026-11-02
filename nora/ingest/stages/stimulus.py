@@ -175,6 +175,97 @@ async def run_typed(
         return ("failed", None, "exception")
 
 
+async def run_observation(
+    *,
+    observation_row_id: int, object_kind: str,
+    platform: str, conversation_id: str, unit: str | None,
+    at_ms: int, actor_person_id: str | None,
+    actor_id: str | None = None,
+    message: NormalizedMessage | None = None,
+    person_id: str | None = None,
+    wiring: Wiring, metrics: Any,
+    recorded_at_ms: int | None = None,
+) -> tuple[str, int | None, str | None]:
+    """The ONE source-event stimulus family (design/platform-observations
+    05): one `observation` stimulus per admitted `platform_observation` row
+    of a NON-message kind (poll, room, membership, pin, artifact,
+    message_metadata). A row's id IS its dedupe key —
+    `platform_observation:<id>` — so a retried obligation can never double
+    the stimulus, and one stimulus family covers every platform
+    (no per-platform kinds).
+
+    **The merged source obligation.** When the typed event was co-delivered
+    as an utterance (a message+sidecar envelope), the ONE durable
+    obligation carries the sibling `message` too, and this row is the
+    event's ONLY stimulus: the utterance's own cues, `waits` and person
+    ride it exactly as `_append` computes them for a message stimulus, so
+    one source event can never wake a unit twice and neither evidence path
+    is dropped. `person_id` is the sibling's resolved person; it wins over
+    `actor_person_id` (the two coincide in practice, and it is the
+    utterance's identity the row names).
+
+    `item` is the object kind, `ref` the observation row — the grounding
+    read the session makes for it (the sibling rides the observation row's
+    `delivered_message_id` link). `at_ms` is the observation's own clock:
+    its source `occurred_ms` when the source supplied one, else the bridge
+    receipt time — never a fabricated source time.
+
+    `run_typed`'s contract: `("written", sid, None)` / `("skipped", None,
+    reason)` / `("failed", None, reason)`; nothing propagates.
+
+    `unit` is the room's unit resolved at ingest, denormalized into the
+    obligation the way the message stimulus's payload denormalizes its own;
+    `None` (or an empty one) skips — an observation a unit never owned never
+    reaches an agenda. `actor_id` is the PLATFORM-level actor (the domain
+    `self_ids` covers — the echo rule checks it, never the resolved
+    `actor_person_id`, which names a different identity space and rides the
+    row instead)."""
+    try:
+        source_actor = message.sender_id if message is not None else actor_id
+        if source_actor and source_actor in wiring.self_ids:
+            return ("skipped", None, "self_authored")
+        if not unit:
+            return ("skipped", None, "no_unit")
+        ref = f"platform_observation:{observation_row_id}"
+        existing = await wiring.store.existing_id(
+            unit=unit, kind="observation", ref=ref)
+        if existing is not None:
+            return ("written", existing, None)
+        cues: tuple[str, ...] = ()
+        waits = False
+        if message is not None:
+            cues = cues_of(message.body)
+            answers = _answers_nora_at(
+                message, "message", None, wiring.self_ids)
+            at_for_reply = (
+                message.timestamp if message.timestamp > 0 else at_ms)
+            waits = (
+                answers is not None
+                and at_for_reply - answers <= wiring.reply_quiet_seconds * 1000
+            )
+        sid = await asyncio.wait_for(
+            wiring.store.append(
+                stimulus=NewStimulus(
+                    unit=unit, kind="observation", item=object_kind, ref=ref,
+                    at_ms=at_ms, platform=platform,
+                    conversation_id=conversation_id,
+                    person_id=person_id or actor_person_id,
+                    cues=cues, waits=waits),
+                recorded_at_ms=(
+                    recorded_at_ms if recorded_at_ms is not None
+                    else int(wiring.clock() * 1000))),
+            timeout=wiring.timeout_seconds)
+        for cue in cues or ("none",):
+            metrics.inc("nora_stimulus_total", kind="observation", cue=cue)
+        if sid is not None:
+            return ("written", sid, None)
+        return ("failed", None, "append_returned_none")
+    except Exception:
+        log.exception("observation stimulus stage failed")
+        metrics.inc("nora_errors_total", stage="stimulus", platform=platform)
+        return ("failed", None, "exception")
+
+
 async def _append(
     *, message: NormalizedMessage, item: MessageItem, row_id: int,
     person_id: str | None, wiring: Wiring, metrics: Any,

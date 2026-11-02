@@ -1,0 +1,52 @@
+{
+  "meta": {
+    "native": "signal-cli",
+    "native_version": "0.14.7",
+    "transport": "sse",
+    "upstream": "JsonDataMessage.previews",
+    "upstream_source": "https://github.com/AsamK/signal-cli/blob/v0.14.7/src/main/java/org/asamk/signal/json/JsonPreview.java",
+    "case": "a group message carrying a link preview",
+    "generated": true
+  },
+  "payload": {
+    "envelope": {
+      "source": "+85212345678",
+      "sourceName": "Fixture Sender",
+      "timestamp": 1780,
+      "dataMessage": {
+        "message": "take a look at this",
+        "previews": [
+          {
+            "url": "https://example.invalid/articles/1",
+            "title": "Fixture Article",
+            "description": "a generated preview",
+            "image": null
+          }
+        ],
+        "groupInfo": {
+          "groupId": "Z3JvdXA=",
+          "groupName": "Example Group",
+          "revision": 3,
+          "type": "DELIVER"
+        },
+        "timestamp": 1780
+      }
+    },
+    "account": "+85290000100"
+  },
+  "semantics": {
+    "object": "shared-artifact",
+    "operation": "create",
+    "room_ref": "payload.envelope.dataMessage.groupInfo.groupId",
+    "object_ref": "the previews[] entry on this dataMessage",
+    "target_ref": null,
+    "actor": "envelope.source",
+    "source_time_ms": "envelope.timestamp",
+    "native_fields": {
+      "message": "string",
+      "previews": "JsonPreview[] — url/title/description/image attachment"
+    },
+    "notes": "The message text DOES parse today; the preview object is silently dropped — a coverage gap on a parsed row, not a dropped row.",
+    "today": "parses as an ordinary message; previews is discarded"
+  }
+}

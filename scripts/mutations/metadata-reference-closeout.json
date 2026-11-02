@@ -1,0 +1,30 @@
+[
+  {
+    "name": "forwarded source identity stays opaque in real typed detail reads",
+    "file": "nora/domain/observations.py",
+    "old": "            k: _field_projection(k, v, name_of=name_of)\n            for k, v in list(fields.items())[:16]",
+    "new": "            k: v for k, v in list(fields.items())[:16]",
+    "target": "tests/unit/test_platform_observation_wired.py::test_forwarded_metadata_detail_projects_its_source_reference"
+  },
+  {
+    "name": "source origin uses the shared reference projection",
+    "file": "nora/domain/observations.py",
+    "old": "    if value is None or not (name.endswith(\"_id\") or name == \"forward_origin\"):",
+    "new": "    if value is None or not name.endswith(\"_id\"):",
+    "target": "tests/unit/test_platform_observation_wired.py::test_forwarded_metadata_detail_projects_its_source_reference"
+  },
+  {
+    "name": "ambiguous cross-room handles never choose the last shown source",
+    "file": "nora/app/cognition_session.py",
+    "old": "                shown_handles[handle] = None",
+    "new": "                shown_handles[handle] = room",
+    "target": "tests/unit/test_platform_observation_wired.py::test_a_handle_shown_for_two_rooms_cannot_silently_bind_the_last_room"
+  },
+  {
+    "name": "changed existing room-field redaction anchor remains guarded",
+    "file": "nora/domain/observations.py",
+    "old": "    if value is None or not (name.endswith(\"_id\") or name == \"forward_origin\"):",
+    "new": "    if True:",
+    "target": "tests/unit/test_platform_observation_fixtures.py::test_thread_lifecycle_observations"
+  }
+]

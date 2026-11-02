@@ -358,9 +358,16 @@ class ToolRegistry:
         # answers where `culture` would, so the tool reads the accounts the
         # prompt's `<profile>` blocks render; both `None` withholds the tool.
         profile_read: ProfileHeads | None = None,
+        # The typed platform-observation Record (`ObservationStore`):
+        # `record_query`'s `kind` branch reads through it (poll discovery,
+        # room state, member and pin reads, object history). `None`
+        # answers those branches `unavailable`; the message branch is the
+        # Record read's own and does not consult it.
+        observations: Any = None,
         content_checks: bool = True,
     ) -> None:
         self._content_checks = content_checks
+        self._observations = observations
         self._budget_overrides = dict(budget_overrides or {})
         self._profile = profile
         self._profile_read = profile_read
@@ -390,6 +397,8 @@ class ToolRegistry:
                else frozenset({"character_read"}))
             | (frozenset() if social_items is not None else frozenset({"social_read"}))
             | (frozenset() if memos is not None else frozenset({"memo_read"}))
+            | (frozenset() if observations is not None
+               else frozenset({"poll_list", "poll_read", "room_state_read"}))
             | (frozenset() if computer is not None else COMPUTER_TOOLS)
             | (frozenset() if browser is not None else frozenset({"computer_browse"}))
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)
@@ -1153,6 +1162,7 @@ class ToolRegistry:
             relay=self._relay,
             rooms=self._rooms,
             record=self._record,
+            observations=self._observations,
             memory_retrieval=self._memory_search,
             profile=self._profile,
             lineage=self._lineage,

@@ -1,0 +1,39 @@
+{
+  "meta": {
+    "native": "discord-gateway",
+    "native_version": "discord.py 2.7.1",
+    "transport": "gateway",
+    "dispatch": "CHANNEL_PINS_UPDATE",
+    "discord_py_parse": "parse_channel_pins_update",
+    "discord_py_event": "guild_channel_pins_update",
+    "upstream_source": "https://docs.discord.com/developers/events/gateway-events#channel-pins-update",
+    "case": "the pin set on a channel changed",
+    "generated": true
+  },
+  "payload": {
+    "op": 0,
+    "t": "CHANNEL_PINS_UPDATE",
+    "s": 21,
+    "d": {
+      "guild_id": "123456789012345600",
+      "channel_id": "123456789012345601",
+      "last_pin_timestamp": "2026-11-02T09:30:00+00:00"
+    }
+  },
+  "semantics": {
+    "object": "pin",
+    "operation": "snapshot",
+    "room_ref": "d.guild_id/d.channel_id",
+    "object_ref": "the channel's pin set as of d.last_pin_timestamp",
+    "target_ref": "none — the event names NO message",
+    "actor": "none — the event does not say who pinned/unpinned",
+    "source_time": "d.last_pin_timestamp — the most recent pin's time only",
+    "native_fields": {
+      "channel_id": "snowflake",
+      "guild_id": "snowflake",
+      "last_pin_timestamp": "ISO8601|null (null when the last pin was removed)"
+    },
+    "notes": "A scoped snapshot hint, not a transition: which message changed, who did it and whether it was pin or unpin all require a channel.pins() read — or the type-6 CHANNEL_PINNED_MESSAGE system message that accompanies a pin. last_pin_timestamp null means the set went empty. Coverage is partial by construction.",
+    "today": "no listener subscription — dropped"
+  }
+}

@@ -46,6 +46,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Iterable, Mapping
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 from urllib.parse import urlsplit
@@ -73,7 +74,7 @@ from nora.platform.bridge.envelope import (
     event_id,
 )
 from nora.platform.bridge.journal import Journal
-from nora.platform.bridge.rehydrate import message_to_dict
+from nora.platform.bridge.rehydrate import message_to_dict, observation_to_dict
 from nora.platform.bridge.service import (
     ActionReply,
     JournalPublisher,
@@ -96,10 +97,25 @@ from .music_manager import MusicPlayerManager
 from .music_notify import ResolveMusicChannel
 from .music_tool_bridge import DiscordMusicToolBridge
 from .parser import (
+    parse_discord_channel_update,
     parse_discord_delete,
     parse_discord_edit,
+    parse_discord_member_add,
+    parse_discord_member_remove,
+    parse_discord_member_update,
     parse_discord_message,
+    parse_discord_message_metadata,
+    parse_discord_pin_message,
+    parse_discord_pins_update,
+    parse_discord_poll_close,
+    parse_discord_poll_definition,
+    parse_discord_poll_vote,
     parse_discord_reaction,
+    parse_discord_reaction_clear,
+    parse_discord_role_update,
+    parse_discord_thread_create,
+    parse_discord_thread_delete,
+    parse_discord_thread_update,
 )
 from .react import DiscordReactor
 from .roster import DiscordRoster
@@ -137,19 +153,99 @@ def _emoji_key(e: Any) -> str:
     return f"{name}:{eid}" if eid else name
 
 
-def _reaction_frame_key(t: str, d: Mapping[str, Any]) -> tuple[str, ...] | None:
-    """The FIFO join key between a raw Gateway frame and the parsed
-    `RawReactionActionEvent` it dispatched — exactly the fields that make
-    two reaction dispatches differ."""
+def _iso_ms(value: Any) -> str:
+    """An ISO-8601 string or datetime normalized to epoch-ms — so the wire
+    frame's `last_pin_timestamp` and the parsed callback's datetime join on
+    the SAME fingerprint."""
+    try:
+        if hasattr(value, "timestamp"):
+            return str(int(value.timestamp() * 1000))
+        s = str(value or "")
+        if not s:
+            return ""
+        return str(int(datetime.fromisoformat(
+            s.replace("Z", "+00:00")).timestamp() * 1000))
+    except (ValueError, TypeError, OverflowError):
+        return ""
+
+
+def _frame_key(t: str, d: Mapping[str, Any]) -> tuple[str, ...] | None:
+    """The FIFO join key between a raw Gateway frame and the parsed dispatch
+    it produced — exactly the fields that make two dispatches of a type
+    differ. State-bearing updates (member/channel/role) fold a few AFTER
+    fields into the key so a frame whose dispatch the SDK cache dropped can
+    never be claimed by a later DIFFERENT-state update — at worst an
+    identical-state redelivery joins an earlier sibling, which is the same
+    transition's effect twice and therefore harmless."""
     channel_id = str(d.get("channel_id") or "")
     message_id = str(d.get("message_id") or "")
     user_id = str(d.get("user_id") or "")
-    emoji = _emoji_key(d.get("emoji"))
-    if not (channel_id and message_id and user_id and emoji):
-        return None
-    rtype = d.get("type")
-    return (t, channel_id, message_id, user_id, emoji,
-            str(rtype if rtype is not None else 0))
+    if t in ("MESSAGE_REACTION_ADD", "MESSAGE_REACTION_REMOVE"):
+        emoji = _emoji_key(d.get("emoji"))
+        if not (channel_id and message_id and user_id and emoji):
+            return None
+        rtype = d.get("type")
+        return (t, channel_id, message_id, user_id, emoji,
+                str(rtype if rtype is not None else 0))
+    if t in ("MESSAGE_POLL_VOTE_ADD", "MESSAGE_POLL_VOTE_REMOVE"):
+        answer = d.get("answer_id")
+        if not (channel_id and message_id and user_id and answer is not None):
+            return None
+        return (t, channel_id, message_id, user_id, str(answer))
+    if t == "MESSAGE_REACTION_REMOVE_ALL":
+        if not (channel_id and message_id):
+            return None
+        return (t, channel_id, message_id)
+    if t == "MESSAGE_REACTION_REMOVE_EMOJI":
+        emoji = _emoji_key(d.get("emoji"))
+        if not (channel_id and message_id and emoji):
+            return None
+        return (t, channel_id, message_id, emoji)
+    if t == "CHANNEL_PINS_UPDATE":
+        if not channel_id:
+            return None
+        return (t, channel_id, _iso_ms(d.get("last_pin_timestamp")))
+    if t == "MESSAGE_UPDATE":
+        mid = str(d.get("id") or "")
+        return (t, mid) if mid else None
+    if t == "THREAD_UPDATE":
+        oid = str(d.get("id") or "")
+        if not oid:
+            return None
+        meta = d.get("thread_metadata") or {}
+        return (t, oid, str(d.get("name") or ""),
+                str(meta.get("archived")), str(meta.get("locked")),
+                str(meta.get("auto_archive_duration")))
+    if t in ("THREAD_CREATE", "THREAD_DELETE"):
+        oid = str(d.get("id") or "")
+        return (t, oid) if oid else None
+    if t == "CHANNEL_UPDATE":
+        oid = str(d.get("id") or "")
+        if not oid:
+            return None
+        return (t, oid, str(d.get("name") or ""), str(d.get("topic") or ""),
+                str(d.get("position")), str(d.get("parent_id")))
+    if t in ("GUILD_MEMBER_ADD", "GUILD_MEMBER_REMOVE"):
+        uid = str((d.get("user") or {}).get("id") or "")
+        if not uid:
+            return None
+        return (t, str(d.get("guild_id") or ""), uid)
+    if t == "GUILD_MEMBER_UPDATE":
+        uid = str((d.get("user") or {}).get("id") or "")
+        if not uid:
+            return None
+        return (t, str(d.get("guild_id") or ""), uid,
+                str(d.get("nick") or ""),
+                ",".join(str(r) for r in d.get("roles") or ()))
+    if t == "GUILD_ROLE_UPDATE":
+        role = d.get("role") or {}
+        rid = str(role.get("id") or "")
+        if not rid:
+            return None
+        return (t, str(d.get("guild_id") or ""), rid,
+                str(role.get("name") or ""),
+                str(role.get("permissions") or ""))
+    return None
 
 
 def disabled_projection() -> dict[str, Any]:
@@ -494,6 +590,7 @@ class DiscordBridge:
         )
         await self._listener.listen(
             self._capture_message, self._capture_edit, self._capture_touch,
+            self._capture_observation,
         )
 
     async def on_gateway_ready(self) -> None:
@@ -560,17 +657,69 @@ class DiscordBridge:
 
     async def _capture_message(self, raw: Any) -> None:
         msg = parse_discord_message(raw, own_id=self.self_id)
-        if msg is None:
+        # Message-carried observations ride the utterance's own envelope —
+        # ONE durable source obligation, one wake: a poll created as a
+        # message, a forward's origin metadata.
+        carried: list[Any] = []
+        if msg is not None:
+            poll_obs = parse_discord_poll_definition(
+                raw, own_id=self.self_id, account_key=self._account_key)
+            if poll_obs is not None:
+                carried.append(poll_obs)
+            meta_obs = parse_discord_message_metadata(
+                raw, account_key=self._account_key)
+            if meta_obs is not None:
+                carried.append(meta_obs)
+        # A type-6 CHANNEL_PINNED_MESSAGE parses to no utterance — the pin
+        # observation IS the event, on the notice message's own snowflake.
+        pin_obs = parse_discord_pin_message(
+            raw, own_id=self.self_id, account_key=self._account_key)
+        if msg is None and pin_obs is None:
             return
         async with self._capture_lock:
-            await self._journal_and_enqueue(msg, raw)
+            if msg is not None:
+                await self._journal_and_enqueue(msg, raw, carried)
+            if pin_obs is not None:
+                with bt.producer_span(
+                        PLATFORM, kind=pin_obs.object_kind) as carrier:
+                    await self._emit_observation(
+                        pin_obs, upstream=str(raw.id),
+                        trace=dict(carrier))
 
     async def _capture_edit(self, raw_message: Any) -> None:
         msg = parse_discord_edit(raw_message, own_id=self.self_id)
-        if msg is None:
+        closes = parse_discord_poll_close(
+            raw_message, account_key=self._account_key)
+        # EVERY MESSAGE_UPDATE dispatch must consume its own wire frame —
+        # a fingerprint FIFO stays aligned only when a non-edit update pops
+        # its frame too, even when nothing is captured from it.
+        fp = _frame_key("MESSAGE_UPDATE",
+                        {"id": str(getattr(raw_message, "id", "") or "")})
+        frame = self._pop_frame(fp)
+        if msg is None and not closes:
             return
         async with self._capture_lock:
-            await self._journal_and_enqueue(msg, raw_message)
+            if msg is not None:
+                await self._journal_and_enqueue(msg, raw_message)
+            if closes:
+                with bt.producer_span(PLATFORM, kind="poll") as carrier:
+                    for i, obs in enumerate(closes):
+                        o = obs
+                        if frame is not None:
+                            session, s = frame
+                            upstream = (
+                                f"g:{session}:{s}"
+                                + (f":obs:{i}" if i else ""))
+                            o = dataclasses.replace(
+                                o, source_position=s,
+                                revision_scope=f"discord.gateway_s.{session}",
+                                source_revision=upstream)
+                        else:
+                            upstream = (
+                                "u:poll_close:"
+                                f"{getattr(raw_message, 'id', '')}:{i}")
+                        await self._emit_observation(
+                            o, upstream=upstream, trace=dict(carrier))
 
     async def _capture_touch(self, kind: str, payload: Any) -> None:
         channel_id = str(getattr(payload, "channel_id", "") or "")
@@ -604,7 +753,7 @@ class DiscordBridge:
         if not isinstance(payload, Mapping):
             return
         t = payload.get("t")
-        if t not in ("MESSAGE_REACTION_ADD", "MESSAGE_REACTION_REMOVE"):
+        if not isinstance(t, str):
             return
         d = payload.get("d")
         s = payload.get("s")
@@ -612,7 +761,7 @@ class DiscordBridge:
         session = str(getattr(ws, "session_id", "") or "") if ws is not None else ""
         if not isinstance(d, Mapping) or not isinstance(s, int) or not session:
             return
-        fp = _reaction_frame_key(t, d)
+        fp = _frame_key(t, d)
         if fp is None:
             return
         if len(self._frames) >= _MAX_FRAME_FINGERPRINTS:
@@ -620,6 +769,22 @@ class DiscordBridge:
             # the durable ledger; growing this dict without bound is not.
             self._frames.clear()
         self._frames.setdefault(fp, []).append((session, s))
+
+    def _pop_frame(
+        self, fp: tuple[str, ...] | None,
+    ) -> tuple[str, int] | None:
+        """The `(session_id, s)` this dispatch's frame carried, FIFO per
+        fingerprint — or None when the socket never recorded it (debug
+        events off, or a synthetic caller)."""
+        if fp is None:
+            return None
+        queue = self._frames.get(fp)
+        if not queue:
+            return None
+        session, s = queue.pop(0)
+        if not queue:
+            self._frames.pop(fp, None)
+        return session, s
 
     def _wire_identity(self, kind: str, payload: Any) -> str | None:
         """The `g:{session}:{s}` identity for a parsed reaction event, from
@@ -635,17 +800,13 @@ class DiscordBridge:
             "type": getattr(getattr(payload, "type", 0), "value",
                             getattr(payload, "type", 0)),
         }
-        fp = _reaction_frame_key(
+        fp = _frame_key(
             "MESSAGE_REACTION_REMOVE" if kind == "reaction_remove"
             else "MESSAGE_REACTION_ADD", d)
-        if fp is None:
+        frame = self._pop_frame(fp)
+        if frame is None:
             return None
-        queue = self._frames.get(fp)
-        if not queue:
-            return None
-        session, s = queue.pop(0)
-        if not queue:
-            self._frames.pop(fp, None)
+        session, s = frame
         return f"g:{session}:{s}"
 
     # ---- upstream transition identity (design 00 §upstream identity) ---------
@@ -723,7 +884,9 @@ class DiscordBridge:
             return f"e:{msg.edit_of.message_id}:{msg.timestamp}", None
         return msg.message_id or f"{msg.sender_id}:{msg.timestamp}", None
 
-    async def _journal_and_enqueue(self, msg: Any, raw: Any) -> None:
+    async def _journal_and_enqueue(
+        self, msg: Any, raw: Any, carried: Iterable[Any] = (),
+    ) -> None:
         """Admission → custody → the injected `CaptureSink`. The room gate
         is the projection's (`enabled` + `rooms`) — denied rooms produce
         no bytes anywhere. With NO sink wired the admitted event is
@@ -741,6 +904,7 @@ class DiscordBridge:
             "message" if msg.edit_of is None and msg.touch is None
             else ("edit" if msg.edit_of is not None else msg.touch.kind)
         )
+        carried = list(carried)
         # The ONE short producer root for this capture — created at the
         # boundary, its context frozen onto the envelope BEFORE the
         # journal append inside `capture` (design 04 §producer).
@@ -781,6 +945,9 @@ class DiscordBridge:
                 received_ms=now, queued_ms=now,
                 time_quality="upstream" if msg.timestamp else "bridge_local",
                 message=message_to_dict(msg), attachments=(),
+                observation=(observation_to_dict(
+                    dataclasses.replace(carried[0], received_ms=now))
+                    if carried else None),
                 trace=dict(carrier),
                 admission_rev=_admission_rev(proj),
             )
@@ -788,8 +955,323 @@ class DiscordBridge:
             ok = (await self._capture_sink.capture(
                 env, transition=transition) if transition is not None
                 else await self._capture_sink.capture(env))
+            # The envelope's message slot is taken — further observations
+            # this ONE source event produced travel obs-only under
+            # deterministic sub-keys of the event's proven identity.
+            for i, obs in enumerate(carried[1:], start=1):
+                await self._emit_observation(
+                    obs, upstream=f"{upstream}:obs:{i}",
+                    trace=dict(carrier), proj=proj)
         if not ok:
             log.warning("capture sink refused an admitted event (kind=%s)", kind)
+
+    # ---- platform observations (design/platform-observations) ---------------
+
+    async def _emit_observation(
+        self, obs: Any, *, upstream: str,
+        transition: dict[str, Any] | None = None,
+        trace: Mapping[str, Any] | None = None,
+        proj: Mapping[str, Any] | None = None,
+    ) -> bool:
+        """One typed observation → an obs-only v2 envelope → the capture
+        sink — the SAME admission → journal → ACK pipeline a message takes.
+        Admission binds to the observation's own scope: a `guild/channel`
+        conv must be an admitted room. Native guild facts are bound to the
+        configured rooms of that guild with their guild source grain intact;
+        the guild object is never presented as a channel's audience."""
+        if proj is None:
+            proj = self._projection()
+        if not proj.get("enabled") or self._capture_sink is None:
+            return False
+        conv = str(obs.scope.conversation_id)
+        rooms = {str(r) for r in (proj.get("rooms") or ())}
+        if "/" not in conv:
+            # The app admits configured conversations, not a new bare-guild
+            # room. Bind the native guild fact to each permitted room while
+            # preserving its guild object identity and declared source grain.
+            accepted = False
+            for room in sorted(r for r in rooms if r.startswith(f"{conv}/")):
+                scoped = dataclasses.replace(
+                    obs,
+                    scope=dataclasses.replace(obs.scope, conversation_id=room),
+                    coverage=dataclasses.replace(
+                        obs.coverage, covered=f"guild:{obs.coverage.covered}"),
+                )
+                sent = await self._emit_observation(
+                    scoped, upstream=upstream, transition=transition,
+                    trace=trace, proj=proj)
+                accepted = accepted or sent
+            return accepted
+        if conv not in rooms:
+            return False
+        now = int(time.time() * 1000)
+        o = dataclasses.replace(obs, received_ms=now)
+        sk = canonical_source_key(
+            PLATFORM, self._account_key, conv, obs.object_kind, upstream)
+        env = Envelope(
+            platform=PLATFORM, account_key=self._account_key,
+            kind=obs.object_kind, source_key=sk,
+            event_id=event_id(
+                sk, key=self._correlation_key,
+                key_version=self._key_version),
+            conversation_id=conv, conversation_type="group",
+            sender_id=obs.actor_id or "", sender_name=None,
+            sent_ms=obs.occurred_ms,
+            received_ms=now, queued_ms=now,
+            time_quality="upstream" if obs.occurred_ms else "bridge_local",
+            message=None,
+            observation=observation_to_dict(o), attachments=(),
+            trace=dict(trace or {}),
+            admission_rev=_admission_rev(proj),
+        )
+        ok = (await self._capture_sink.capture(env, transition=transition)
+              if transition is not None
+              else await self._capture_sink.capture(env))
+        if not ok:
+            log.warning(
+                "capture sink refused an admitted event (kind=%s)",
+                obs.object_kind)
+        return ok
+
+    def _observation_events(
+        self, kind: str, payload: Any,
+    ) -> tuple[tuple[Any, dict[str, Any]], ...]:
+        """Parse + an identity spec per observation a dispatch carries.
+
+        `spec` is `{"fp", "ledger_key", "state", "fallback"}`: the
+        fingerprint joins the wire frame that dispatched the event
+        (upstream `g:{session}:{s}`); `ledger_key`+`state` let a
+        frame-less same-state redelivery re-resolve under its recorded
+        identity; `fallback` is the deterministic content key for
+        updates that carry their whole AFTER state (an identical
+        redelivery collapses onto the same key — a stale cached frame
+        can never be claimed by a different-state update)."""
+        ak = self._account_key
+
+        def _room(channel_id: Any) -> str | None:
+            cid = str(channel_id or "")
+            return (self._channels.parent_channel(channel_id=cid)
+                    if cid else None)
+
+        if kind in ("poll_vote_add", "poll_vote_remove"):
+            added = kind == "poll_vote_add"
+            obs = parse_discord_poll_vote(
+                payload, own_id=self.self_id, account_key=ak, added=added,
+                room_channel_id=_room(getattr(payload, "channel_id", None)))
+            if obs is None:
+                return ()
+            fp = _frame_key(
+                "MESSAGE_POLL_VOTE_ADD" if added
+                else "MESSAGE_POLL_VOTE_REMOVE",
+                {"channel_id": getattr(payload, "channel_id", None),
+                 "message_id": getattr(payload, "message_id", None),
+                 "user_id": getattr(payload, "user_id", None),
+                 "answer_id": getattr(payload, "answer_id", None)})
+            ledger = (
+                f"pv:{obs.scope.conversation_id}"
+                f":{getattr(payload, 'message_id', '')}"
+                f":{getattr(payload, 'user_id', '')}"
+                f":{getattr(payload, 'answer_id', '')}")
+            return ((obs, {"fp": fp, "ledger_key": ledger,
+                           "state": "add" if added else "remove"}),)
+        if kind in ("reaction_clear_all", "reaction_clear_emoji"):
+            by_emoji = kind == "reaction_clear_emoji"
+            emoji = (str(getattr(payload, "emoji", "") or "")
+                     if by_emoji else "")
+            obs = parse_discord_reaction_clear(
+                payload, account_key=ak, emoji=emoji,
+                room_channel_id=_room(getattr(payload, "channel_id", None)))
+            if obs is None:
+                return ()
+            fp = _frame_key(
+                "MESSAGE_REACTION_REMOVE_EMOJI" if by_emoji
+                else "MESSAGE_REACTION_REMOVE_ALL",
+                {"channel_id": getattr(payload, "channel_id", None),
+                 "message_id": getattr(payload, "message_id", None),
+                 "emoji": getattr(payload, "emoji", None)})
+            ledger = (f"rc:{obs.scope.conversation_id}"
+                      f":{getattr(payload, 'message_id', '')}"
+                      f":{emoji or 'all'}")
+            return ((obs, {"fp": fp, "ledger_key": ledger,
+                           "state": "clear"}),)
+        if kind == "pins_update":
+            channel, last_pin = payload
+            obs = parse_discord_pins_update(
+                channel, last_pin, account_key=ak)
+            if obs is None:
+                return ()
+            fp = _frame_key("CHANNEL_PINS_UPDATE", {
+                "channel_id": getattr(channel, "id", None),
+                "last_pin_timestamp": last_pin})
+            cid = str(getattr(channel, "id", "") or "")
+            return ((obs, {"fp": fp,
+                           "fallback": f"u:pins:{cid}:{_iso_ms(last_pin)}"}),)
+        if kind == "thread_create":
+            obs = parse_discord_thread_create(payload, account_key=ak)
+            if obs is None:
+                return ()
+            tid = str(getattr(payload, "id", "") or "")
+            fp = _frame_key("THREAD_CREATE", {"id": tid})
+            return ((obs, {"fp": fp, "fallback": f"u:tcreate:{tid}"}),)
+        if kind == "thread_update":
+            data = getattr(payload, "data", None)
+            obs = parse_discord_thread_update(data, account_key=ak)
+            if obs is None:
+                return ()
+            fp = _frame_key("THREAD_UPDATE", data or {})
+            return ((obs, {"fp": fp,
+                           "fallback": ("u:" + "|".join(fp))
+                                      if fp else "u:tupdate:?"}),)
+        if kind == "thread_delete":
+            obs = parse_discord_thread_delete(payload, account_key=ak)
+            if obs is None:
+                return ()
+            tid = str(getattr(payload, "thread_id", "") or "")
+            fp = _frame_key("THREAD_DELETE", {"id": tid})
+            return ((obs, {"fp": fp, "fallback": f"u:tdelete:{tid}"}),)
+        if kind == "member_join":
+            obs = parse_discord_member_add(payload, account_key=ak)
+            if obs is None:
+                return ()
+            gid = str(getattr(getattr(payload, "guild", None), "id", "") or "")
+            uid = str(getattr(payload, "id", "") or "")
+            fp = _frame_key("GUILD_MEMBER_ADD",
+                            {"guild_id": gid, "user": {"id": uid}})
+            return ((obs, {"fp": fp, "ledger_key": f"member:{gid}:{uid}",
+                           "state": "join"}),)
+        if kind == "member_remove":
+            obs = parse_discord_member_remove(payload, account_key=ak)
+            if obs is None:
+                return ()
+            gid = str(getattr(payload, "guild_id", "") or "")
+            uid = str(getattr(getattr(payload, "user", None), "id", "") or "")
+            fp = _frame_key("GUILD_MEMBER_REMOVE",
+                            {"guild_id": gid, "user": {"id": uid}})
+            return ((obs, {"fp": fp, "ledger_key": f"member:{gid}:{uid}",
+                           "state": "leave"}),)
+        if kind == "member_update":
+            _before, after = payload
+            obs = parse_discord_member_update(after, account_key=ak)
+            if obs is None:
+                return ()
+            gid = str(getattr(getattr(after, "guild", None), "id", "") or "")
+            uid = str(getattr(after, "id", "") or "")
+            fp = _frame_key("GUILD_MEMBER_UPDATE", {
+                "guild_id": gid, "user": {"id": uid},
+                "nick": getattr(after, "nick", None) or "",
+                "roles": [str(getattr(r, "id", r)) for r in
+                          getattr(after, "roles", ()) or ()]})
+            return ((obs, {"fp": fp,
+                           "fallback": ("u:" + "|".join(fp))
+                                      if fp else f"u:mupdate:{uid}"}),)
+        if kind == "channel_update":
+            _before, after = payload
+            obs = parse_discord_channel_update(after, account_key=ak)
+            if obs is None:
+                return ()
+            fp = _frame_key("CHANNEL_UPDATE", {
+                "id": getattr(after, "id", None),
+                "name": getattr(after, "name", None),
+                "topic": getattr(after, "topic", None),
+                "position": getattr(after, "position", None),
+                "parent_id": getattr(after, "parent_id", None)})
+            return ((obs, {"fp": fp,
+                           "fallback": ("u:" + "|".join(fp))
+                                      if fp else "u:cupdate:?"}),)
+        if kind == "role_update":
+            _before, after = payload
+            obs = parse_discord_role_update(after, account_key=ak)
+            if obs is None:
+                return ()
+            gid = str(getattr(getattr(after, "guild", None), "id", "") or "")
+            fp = _frame_key("GUILD_ROLE_UPDATE", {
+                "guild_id": gid,
+                "role": {"id": getattr(after, "id", None),
+                         "name": getattr(after, "name", None),
+                         "permissions": str(getattr(
+                             getattr(after, "permissions", None),
+                             "value", "") or "")}})
+            return ((obs, {"fp": fp,
+                           "fallback": ("u:" + "|".join(fp))
+                                      if fp else "u:rupdate:?"}),)
+        return ()
+
+    def _observation_identity(
+        self, obs: Any, spec: dict[str, Any],
+    ) -> tuple[str | None, dict[str, Any] | None, Any]:
+        """`(upstream, transition|ambiguous, obs)` — the wire `s` when the
+        frame joined, the durable ledger's recorded identity for a
+        frame-less same-state redelivery, the deterministic content key
+        for self-describing updates. `(None, record, obs)` means
+        ambiguous: retained as evidence, never deduped under a guess."""
+        frame = self._pop_frame(spec.get("fp"))
+        ledger_key = spec.get("ledger_key")
+        if frame is not None:
+            session, s = frame
+            upstream = f"g:{session}:{s}"
+            obs = dataclasses.replace(
+                obs, source_position=s,
+                revision_scope=f"discord.gateway_s.{session}",
+                source_revision=upstream)
+            if ledger_key and self._journal is not None:
+                return upstream, commit_transition(
+                    self._journal, ledger_key, spec["state"], upstream), obs
+            return upstream, None, obs
+        if ledger_key and self._journal is not None:
+            identity, transition = resolve_clockless_transition(
+                self._journal, ledger_key, spec["state"])
+            if identity is not None:
+                return identity, transition, obs
+            reason = ("no upstream sequence; cannot distinguish a new"
+                      " transition from reconnect replay")
+        elif ledger_key:
+            reason = "no upstream sequence and no durable transition ledger"
+        else:
+            return spec["fallback"], None, obs
+        return None, {
+            "kind": obs.object_kind, "platform": PLATFORM,
+            "conversation_id": obs.scope.conversation_id,
+            "target": str(getattr(obs.target, "message_id", "") or ""),
+            "state": spec.get("state", obs.operation),
+            "received_ms": int(time.time() * 1000),
+            "reason": reason}, obs
+
+    async def _capture_observation(self, kind: str, payload: Any) -> None:
+        """One non-utterance dispatch → typed observation envelope(s) —
+        the listener's `on_observation_cb`. Never a `NormalizedMessage`:
+        observation-only envelopes carry `message=None` + a typed
+        `observation`, and each resolves its upstream identity through
+        the wire frame or the durable transition ledger."""
+        try:
+            events = self._observation_events(kind, payload)
+        except Exception as exc:  # noqa: BLE001 — parse boundary; logged by type
+            log.error("%s observation parse raised: %s",
+                      kind, type(exc).__name__)
+            return
+        if not events:
+            return
+        proj = self._projection()
+        if not proj.get("enabled") or self._capture_sink is None:
+            return
+        async with self._capture_lock:
+            with bt.producer_span(
+                    PLATFORM, kind=events[0][0].object_kind) as carrier:
+                for obs, spec in events:
+                    upstream, transition, obs = self._observation_identity(
+                        obs, spec)
+                    if upstream is None:
+                        note = getattr(
+                            self._capture_sink, "note_ambiguous", None)
+                        if note is not None:
+                            note(transition or {})
+                        else:
+                            log.warning(
+                                "capture sink cannot retain an ambiguous"
+                                " event (kind=%s)", obs.object_kind)
+                        continue
+                    await self._emit_observation(
+                        obs, upstream=upstream, transition=transition,
+                        trace=dict(carrier), proj=proj)
 
     async def _capture_attachments(self, msg: Any, raw: Any) -> None:
         """Custody the message's attachments under their `platform_id` keys —
