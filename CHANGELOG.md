@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.14.6](https://github.com/mikeng-io/nora/compare/v7.14.5...v7.14.6) (2026-11-02)
+
+
+### Bug Fixes
+
+* **bridges:** keep idle stream reads below the Redis socket deadline ([1f2d96f](https://github.com/mikeng-io/nora/commit/1f2d96f3d71e054170807da218b78f0a10b436c4))
+
 ## [7.14.5](https://github.com/mikeng-io/nora/compare/v7.14.4...v7.14.5) (2026-11-02)
 
 
