@@ -390,13 +390,16 @@ class BridgeDiscordAdapter:
         self._delegate = delegate
         self._control = control
         self._speaker = speaker
+        self._owns_control = True
         self._own_handle: str | None = None
         self._handle_fetched = False
 
     def bind_owner(self, owner: ActionOwner | None) -> BridgeDiscordAdapter:
-        return BridgeDiscordAdapter(
+        bound = BridgeDiscordAdapter(
             delegate=self._delegate.bind_owner(owner),
             control=self._control, speaker=self._speaker)
+        bound._owns_control = False
+        return bound
 
     @property
     def action_owner(self) -> ActionOwner | None:
@@ -413,7 +416,8 @@ class BridgeDiscordAdapter:
 
     async def close(self) -> None:
         await self._delegate.close()
-        await self._control.close()
+        if self._owns_control:
+            await self._control.close()
 
     async def resolve_identity(self) -> PlatformIdentity:
         return await self._delegate.resolve_identity()
