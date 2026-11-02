@@ -252,11 +252,17 @@ ATTACHMENT_TIMEOUT_SECONDS = 60.0
 class SignalSender:
     def __init__(
         self, base_url: str, *, timeout: float = 10.0,
-        dm_recipients: Set[str] = frozenset(),
+        dm_recipients: Set[str] | None = frozenset(),
     ) -> None:
         # The direct-message addresses this sender may reach: every Signal id
         # in `identity.toml` (`Persons.direct_addresses`). Empty by default, so
         # a sender nobody handed the set to refuses every direct message.
+        # `None` lifts the check entirely — the bridge's case: the bridge
+        # holds no policy file, so a second check here could only refuse with
+        # an empty set. The app-side check in `send_via_bridge` is the real
+        # guard, and it only fires when the app's set is POPULATED — an
+        # empty-set deployment admits every DM the action owner gate admits,
+        # which is the accepted trust shape on every other bridge platform.
         self._dm_recipients = dm_recipients
         self._base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout)
@@ -306,7 +312,8 @@ class SignalSender:
         where = target.conversation_id
         if target.conversation_type == "dm":
             where = "dm"
-            if target.conversation_id not in self._dm_recipients:
+            if (self._dm_recipients is not None
+                    and target.conversation_id not in self._dm_recipients):
                 log.error("refusing a direct message to an address not in identity.toml")
                 return SendResult(ok=False)
             params: dict[str, object] = {

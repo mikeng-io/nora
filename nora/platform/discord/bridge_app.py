@@ -84,6 +84,7 @@ from nora.platform.bridge.service import (
     commit_transition,
     resolve_clockless_transition,
 )
+from nora.platform.bridge.wire import attachment_key_ok
 
 from . import music_messages as m
 from .adapter import DiscordAdapter
@@ -1735,6 +1736,8 @@ class DiscordBridge:
         if self._custody_dir is None:
             return web.json_response({"error": "custody disabled"}, status=404)
         key = req.match_info["key"]
+        if not attachment_key_ok(key):
+            return web.json_response({"error": "bad key"}, status=400)
         data = await req.read()
         if len(data) > MAX_ATTACHMENT_BYTES:
             return web.json_response({"error": "too large"}, status=413)
@@ -1744,7 +1747,10 @@ class DiscordBridge:
     async def get_attachment(self, req: web.Request) -> web.Response:
         if self._custody_dir is None:
             return web.json_response({"error": "custody disabled"}, status=404)
-        p = self._custody_dir / req.match_info["key"]
+        key = req.match_info["key"]
+        if not attachment_key_ok(key):
+            return web.json_response({"error": "bad key"}, status=400)
+        p = self._custody_dir / key
         if not p.is_file():
             return web.json_response({"error": "unknown"}, status=404)
         return web.Response(body=p.read_bytes())
