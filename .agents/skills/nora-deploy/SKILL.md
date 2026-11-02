@@ -1,9 +1,15 @@
 ---
 name: nora-deploy
-description: Puts merged Nora code, doctrine or config live and proves it. Selects the installed checkout or Komodo deployment mode, serializes deployment, validates config and reads back owned services. Load for deploy, ship, rebuild, recreate, restart or live config edits. Not for trace/metric/row evidence (nora-readback).
+description: Follows automatic Nora deployment and verifies it when required; handles explicit manual deployment, host config changes and failure recovery. Selects the installed checkout or Komodo deployment mode, serializes deployment, validates config and reads back owned services. Load for deploy, ship, rebuild, recreate, restart or live config edits. Not for trace/metric/row evidence (nora-readback).
 ---
 
 # nora-deploy
+
+Ordinary merged code, doctrine, Dreamer and runtime skills ship through the
+release/image/Komodo pipeline. Do not add a manual deploy to the landing flow.
+Use deployment read-back when acceptance requires live evidence. Manual dispatch,
+rebuild or recreation is reserved for an explicit operator request, host config
+changes or failure recovery; the procedures below do not expand task scope.
 
 Examples: SSH alias `nora-host`, checkout `~/workspace/nora`; substitute installed paths.
 Background: `AGENTS.md`, `docs/maintainers/conventions-rationale.md`, `docs/runbook.md` (§3/3b).
@@ -74,7 +80,8 @@ merging the source does not install it. Preserve formal releases' existing
 proof of deployment; an identical-source rerun is refused without claiming success.
 
 The enabled `nora-release-poll` Procedure calls `DeployStackIfChanged` every ten
-minutes. Wait for it, or run native `DeployStack` on `nora-releases` manually.
+minutes. Let it apply ordinary releases. Use native `DeployStack` manually only
+for an explicit operator request, host config changes or failure recovery.
 The installed wrapper holds the shared deploy lock, validates config, reconciles
 changed services through native Compose and verifies the whole owned cohort, then
 writes `release-deploy.json`. A complete bundle can reuse proven unchanged adapter

@@ -16,7 +16,6 @@ PR (6) and STOP; the orchestrator gates (3), reviews, merges and reads back (7â€
 TYPE=<commit-type>; SLUG=<kebab-slug>; WT=<new-worktree-path>        # WT outside every checkout
 LOG=${TMPDIR:-/tmp}/land-$SLUG; mkdir -p "$LOG"   # fixed, OUTSIDE the worktree
 ```
-
 Shell state may not survive between calls: re-set `TYPE`/`SLUG`/`LOG` each call; carry results in files, not variables.
 
 ## 1. Start: intent, then a new worktree on a new branch
@@ -156,6 +155,9 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
 
 ## 8. Merge: a real merge commit, authored message
 
+Before merge/auto-merge, read checks and all PR findings on the latest head;
+follow [scanner triage](reference.md#pre-merge-scanner-findings). Green CI alone is insufficient.
+
 ```bash
 git status -sb     # nothing ahead: pushed head == reviewed head
 git fetch origin && test "$(git rev-list --count HEAD..origin/master)" = 0 && echo NOT_BEHIND &&
@@ -174,7 +176,6 @@ gh pr merge <N> --merge --match-head-commit "$(git rev-parse HEAD)" \
 - `--merge` only, never `--squash` or `--rebase`.
 - Stacked PR: `gh pr edit <child> --base master` BEFORE merging its base with
   `--delete-branch`, or the child is closed (2026-09-23, #411 closed #413).
-
 ## 9. Read back
 
 ```bash
@@ -197,7 +198,6 @@ Report completed/unmet obligations separately; keep required read-back, add no e
 research/deployment, and stop when the completion rule holds.
 The next change starts in a new worktree. Cleanup:
 `docs/maintainers/conventions.md` Cleanup. Deploying: nora-deploy.
-
 ## Tool notes
 Claude Code's rtk hook refuses every `git` call in a worktree-isolated
 subagent; the measured `vcs` workaround is in `nora-land/reference.md`.
