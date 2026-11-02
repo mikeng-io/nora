@@ -8,7 +8,7 @@ status: proposed
 timestamp: '2026-10-21'
 governance: operator-directed
 origin: Operator rulings on cross-platform continuity, default platform admission and private computer work.
-revision: '2026-10-25: reads across the units that list the person, writes anchored, the laundering rule (06). 2026-10-21; shipped unit scope is satisfied; owner-map and backup omission/reconciliation repairs remain unbuilt; backup policy archives every regular file.'
+revision: '2026-11-02: canonical DM scope gets a distinct VM; anonymous browser target remains unbuilt. 2026-10-25: reads across the units that list the person, writes anchored, the laundering rule (06). 2026-10-21; shipped unit scope is satisfied; owner-map and backup omission/reconciliation repairs remain unbuilt; backup policy archives every regular file.'
 docs:
   - 00-contract.md
   - 01-current-flow.md

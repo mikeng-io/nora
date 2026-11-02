@@ -58,3 +58,25 @@ service, a hosted sandbox). What a provider must give for the port:
 `tests/contract/test_sandbox_runtime_contract.py` already holds the fake and
 computerd to one suite; `spawn` joins it, and a new provider is an adapter
 that passes it. Only the sbx adapter ships in this bundle.
+
+## 4. Scoped VM routing (2026-11-02; NOT BUILT)
+
+[Issue #520](https://github.com/mikeng-io/nora/issues/520) includes the
+[current scoped browser contract](../browser-runtime/00-design.md#current-target--scoped-anonymous-browser-2026-11-02).
+One policy unit or canonical person+anchor-unit DM scope resolves one microVM;
+Pi first and ACP later run inside the same VM used by that scope's native
+computer tools. Resolve scope once from the admitted job and carry it through
+spawn, file/state operations, process handles, cancellation, browser tabs and
+management/CDP routing. A worker never selects its own VM or falls back to the
+shared computer. Nora/subagent identities, external browser loop and model relay
+remain as designed. This changes VM cardinality, not the later-provider boundary.
+
+The existing `job:<id>` lease does not exclude a unit turn or another job.
+Browser task ownership must isolate tabs and serialize operations on the same
+tab for both native and worker paths; workspace filesystem exclusion is not
+newly promised. Routing/negative/concurrency and migration acceptance are in the
+linked browser contract and join the existing contract/corpus checks in
+[50](50-verification-and-migration.md). A process handle from another scope or
+VM instance is refused. Resource admission failure is unavailable, never a
+shared-VM fallback. Do not replace the shipped unit migration or claim private-DM
+prerequisites are complete. No worker or host operation follows from this doc.

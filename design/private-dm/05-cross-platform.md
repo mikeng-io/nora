@@ -66,6 +66,19 @@ history or retargets queued work. Existing unit publications keep their anchor.
 
 ## 3. Computer, browser and export are in the first slice
 
+**Topology amendment, 2026-11-02 — NOT BUILT:** the
+[scoped browser target](../browser-runtime/00-design.md#current-target--scoped-anonymous-browser-2026-11-02)
+assigns this canonical person+anchor-unit DM scope its own microVM. Reuse
+`dm_scope_id` and the DM hash below; do not invent a global person-only VM or
+share the anchor unit's VM. Native tools and workers resolve that same DM VM.
+The first browser slice is anonymous, with in-memory continuation and separate
+task tabs; no login or restart persistence is promised. Existing private bytes
+and profiles must be preserved during migration, without importing authenticated
+profiles into the anonymous browser. The owner-allocation, backup, budget,
+admission and publication prerequisites below remain required, not satisfied
+by this topology amendment. Permitted unit-file reads/publications cross VMs
+through the existing privileged, scope-checked contract; no shared disk mount.
+
 Ordinary authorised DM turns may use computer tools and launch subagents in the
 first integrated PR. This reverses the earlier deferral of computer/export and
 unsolicited private jobs: a completed requested job may now initiate its deferred

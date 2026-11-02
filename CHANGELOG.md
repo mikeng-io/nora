@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.13.25](https://github.com/mikeng-io/nora/compare/v7.13.24...v7.13.25) (2026-11-02)
+
+
+### Maintenance
+
+* **computer:** clarify baseline and record scope amendments ([ffa8332](https://github.com/mikeng-io/nora/commit/ffa8332e693ecc5f5306fce4a86234647ee4042e))
+* **computer:** define scoped VMs and anonymous browser acceptance ([2d49124](https://github.com/mikeng-io/nora/commit/2d49124e960ecc6e02e94d32fbbf6f3975819aa0))
+
 ## [7.13.24](https://github.com/mikeng-io/nora/compare/v7.13.23...v7.13.24) (2026-11-02)
 
 
