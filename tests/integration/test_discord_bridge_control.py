@@ -745,6 +745,7 @@ async def test_speech_is_bounded_and_actions_use_the_real_sender(bridge):
         }}, headers=auth)
     body = await resp.json()
     assert body["state"] == "confirmed"
+    assert body["platform_ref"] == "777000111"
     # The post went to the THREAD's channel id, as DiscordSender routes it.
     channel_id, _req = world["rest_state"]["posts"][-1]
     assert channel_id == "999888"

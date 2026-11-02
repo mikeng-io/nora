@@ -1790,7 +1790,8 @@ class DiscordRestActionService:
                 )
                 if result.ok:
                     return ActionReply(
-                        "confirmed", platform_ms=result.timestamp)
+                        "confirmed", platform_ms=result.timestamp,
+                        platform_ref=result.platform_message_id)
                 return ActionReply(
                     "rejected",
                     kind="rate_limited" if result.retryable else "send_failed",

@@ -14,7 +14,7 @@ already existed.
 from __future__ import annotations
 
 import pytest
-from aiohttp import web
+from aiohttp import ClientSession, web
 from aiohttp.test_utils import TestServer
 
 from nora.agent.guards import Deliverer
@@ -64,7 +64,21 @@ def _persons() -> Persons:
 
 async def _server(reply: dict) -> TestServer:
     async def post(request: web.Request) -> web.Response:
-        await request.json()
+        body = await request.json()
+        action = body.get("request") or {}
+        target = action.get("target") or {}
+        owner = body.get("owner") or {}
+        if not (
+            request.headers.get("Authorization") == "Bearer synthetic"
+            and body.get("op") == "send"
+            and body.get("action_id")
+            and target.get("kind") == "group"
+            and target.get("id") == ROOM
+            and action.get("text") == "see you at eight"
+            and owner.get("kind") == "live_invocation"
+            and owner.get("id") == "1"
+        ):
+            return web.json_response({"state": "rejected"}, status=400)
         return web.json_response(reply)
 
     app = web.Application()
@@ -82,6 +96,37 @@ async def _deliver_against(server: TestServer, store: FakeRecordStore) -> bool:
         return await _deliverer(store, adapter).deliver("see you at eight")
     finally:
         await adapter.close()
+
+
+@pytest.mark.parametrize("wrong_field", ["op", "room", "text", "owner"])
+async def test_the_fake_bridge_rejects_wrong_action_requests(wrong_field: str):
+    server = await _server({"state": "confirmed", "platform_ref": REF})
+    body = {
+        "action_id": "synthetic-send",
+        "owner": {"kind": "live_invocation", "id": "1"},
+        "op": "send",
+        "request": {
+            "target": {"kind": "group", "id": ROOM},
+            "text": "see you at eight",
+        },
+    }
+    if wrong_field == "op":
+        body["op"] = "react"
+    elif wrong_field == "room":
+        body["request"]["target"]["id"] = "other-room"
+    elif wrong_field == "text":
+        body["request"]["text"] = "different message"
+    else:
+        body["owner"]["id"] = "9999"
+    try:
+        async with (
+            ClientSession(headers={"Authorization": "Bearer synthetic"}) as client,
+            client.post(server.make_url("/v1/actions"), json=body) as response,
+        ):
+            assert response.status == 400
+            assert (await response.json())["state"] == "rejected"
+    finally:
+        await server.close()
 
 
 def _reaction(target_id: str) -> tuple[NormalizedMessage, Touch]:
