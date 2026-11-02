@@ -27,7 +27,7 @@ review_tiers:
     capabilities:
       - Read the diff for scope and reconcile the gate and read-back with acceptance.
     required_evidence:
-      - Orchestrator records the applicable review row, green final gate and read-back.
+      - Orchestrator records the applicable review row, appropriate validation and read-back.
   - id: light
     capabilities:
       - Independently check a bounded change and its named acceptance paths.
@@ -67,7 +67,7 @@ execution tier that covers the task's ambiguity and the cost of a miss; critical
 boundaries require critical capability even in a small diff.
 
 Select review depth when scoping; confirm the highest applicable row against the
-final diff after the gate is green:
+final diff after the selected validation:
 
 | Change | Minimum review |
 |---|---|
@@ -76,14 +76,21 @@ final diff after the gate is green:
 | Live behavior on merge: defaults, prompts, doctrine, tool text, routing or model settings | full |
 | Disclosure, security, locks/concurrency, hot-table migrations or new model spending | full, with critical execution capability |
 
-None still requires the gate, orchestrator's diff read and read-back. The operator
-can require or waive review explicitly. A missed first fix, scope surprise or
+For small documents, agent-skill wording and image-only changes with no runtime,
+security or executable-tooling effect, read the diff and validate only the changed
+property (content, links, image readability or references). No local gate or
+independent reviewer is required; commit, PR, merge and read back. Required hosted
+checks still apply. Runtime prompts, configuration and executable skill helpers
+follow their actual behavior/risk. For other changes, choose evidence by impact:
+state what changed, what could break and which check proves it. Investigate an
+unknown impact before selecting an expensive suite. The operator can require or
+waive checks/review explicitly. A missed first fix, scope surprise or
 unplanned gate repair raises review one tier (full is the ceiling) and prompts
 reassessment of execution capability. A light-review BLOCKER requires full review.
 
 | Tier | Inspection and stopping boundary |
 |---|---|
-| none | Orchestrator checks the agreed slice, actual diff, applicable gate and required read-back; no independent reviewer is launched. |
+| none | Orchestrator checks the agreed slice, actual diff, selected evidence and required read-back; no independent reviewer is launched. |
 | light | Independent reviewer checks the changed behavior, direct affected callers and named acceptance/regression paths. |
 | full | Independent reviewer traces affected flows through inputs, outputs, failure paths and relevant trust/cost boundaries; this is not a repository-wide audit. |
 
@@ -97,7 +104,10 @@ unverified limits as well as findings; a tier name or APPROVE alone is insuffici
 Before editing, identify the requested outcome, scope/non-goals, acceptance and
 evidence obligations in the existing issue/design or direct operator brief. Pin
 the relevant revision; for direct work the PR records the brief. Do not create
-an issue, task database or separate contract file merely to repeat it.
+an issue, task database or separate contract file merely to repeat it. Agreement
+to a concrete proposed fix means continue implementing it; filing an issue is
+not completion. File only actionable work explicitly deferred from the current
+slice, after checking for an existing home.
 Carry that same intent through implementation, review and closure: comprehend
 once, measure each obligation, serialize the result in existing artifacts.
 
@@ -122,10 +132,16 @@ result only on new evidence or an explicit change of requirement.
 
 ## Resolve a worker at launch
 
-The operator-facing session orchestrates: it scopes, briefs, admits, launches,
-reads evidence, triages, lands and reports. The builder implements the brief;
-it does not become its own reviewer. The orchestrator may do a light read-back
-itself. Keep one committing agent per isolated worktree and reviews read-only
+The operator-facing session owns the outcome and directly implements small,
+coherent changes, including documents, agent skills and bounded edits across a
+few files. Delegate substantial implementation only when a separate worker
+provides useful capacity or capability that outweighs briefing and context loss,
+or when the operator explicitly requests it. File count alone does not justify
+a delegate. When delegating, the session scopes, briefs, admits, launches, reads
+evidence, triages, lands and reports; the builder implements its bounded brief.
+Direct implementation does not waive the applicable independent review tier;
+the author never becomes its own independent reviewer. The orchestrator may do
+a light read-back itself. Keep one committing agent per isolated worktree and reviews read-only
 in their own checkout of the exact head. Request `pwd`, head and clean status;
 read those states back instead of trusting the worker's claim.
 

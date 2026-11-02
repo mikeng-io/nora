@@ -5,10 +5,16 @@ description: Lands a Nora change from first edit to merged master, covering a ne
 
 # nora-land
 
-Worktree → checks → gate → PR → review → merge → read-back. Rules: `CONTRIBUTING.md`, `AGENTS.md`.
+Worktree → impact-based validation → PR → applicable review → merge → read-back. Rules: `CONTRIBUTING.md`, `AGENTS.md`.
 Read logs/state after each step, not just its exit code; proceed unless blocked or missing an operator-only fact.
-Under `ORCHESTRATION.md`, builders run named checks (1–2), commit (4–5), push/open
-PR (6) and STOP; the orchestrator gates (3), reviews, merges and reads back (7–9).
+Do small, coherent changes directly in the operator-facing session, including
+documents, agent skills and bounded edits across a few files. Delegate substantial
+implementation only when capacity/capability benefits outweigh briefing and
+context loss, or the operator asks; do not delegate merely because this skill
+uses builder/orchestrator roles. Independent review is selected separately by
+risk under `ORCHESTRATION.md`. For delegated work only, builders run named checks
+(1–2), commit (4–5), push/open PR (6) and STOP; the parent owns final validation
+(3), review, merge and read-back (7–9).
 
 ```bash
 TYPE=<commit-type>; SLUG=<kebab-slug>; WT=<new-worktree-path>        # WT outside every checkout
@@ -21,12 +27,14 @@ Shell state may not survive: re-set `TYPE`/`SLUG`/`LOG`; carry results in files.
 
 Read `ORCHESTRATION.md` «Intent, evidence and completion»: pin the brief/design's
 outcome, scope, obligations and stopping boundary; inspect existing code and carry that intent.
+An operator agreeing to the proposed fix means implement it, not create a
+planning issue and stop. Only explicitly deferred work needs an issue.
 
 ```bash
 git fetch origin
 git worktree add -b "$TYPE/$SLUG" "$WT" origin/master
 cd "$WT" || exit 1
-uv sync --extra evals        # = make setup; without it pytest dies at COLLECTION
+uv sync --extra evals        # only when selected Python checks need it
 git status -sb; git config core.hooksPath
 ```
 
@@ -49,7 +57,18 @@ make test-all                       # explicit full serial suite, when needed
 Incremental entries compare staged/unstaged/untracked work to HEAD, or HEAD~1 when clean; `BASE=<ref>` overrides auto. Only exact generated untracked LFS post-hooks are ignored.
 Unknown/shared-helper changes or errors run ALL; read base/scope. Workers default to two; timing contracts stay serial. Gate is final, not the loop.
 
-## 3. Gate — once per candidate tree
+## 3. Select validation before running it
+
+State what changed, what could break and what evidence proves it. For small
+non-runtime documents, agent-skill wording and images, read the diff/content and
+check only relevant links, image readability or references; no local gate or
+independent reviewer is required. Commit, PR, merge and read back, subject to
+required hosted checks. Do not set up dependencies or wait for a runtime test
+slot just for these edits. Runtime prompts/config and executable skill helpers
+follow their actual behavior/risk. Investigate unknown impact first; do not use
+a full suite as a substitute for understanding. Keep explicit acceptance intact.
+
+For code/mixed changes that need the gate, run it once per candidate tree:
 
 ```bash
 make gate > "$LOG/gate.log" 2>&1; GATE_RC=$?; echo "GATE_RC=$GATE_RC" > "$LOG/gate.rc"
@@ -75,11 +94,12 @@ base or execution context reruns acceptance. Receipt refreshes rerun nothing.
 - In the background read `$LOG/gate.rc`, not the notice (last command's rc).
   Kill only a PID you recorded, never `pkill -f`: it kills other sessions' gates.
 
-**Docs-only:** stage new docs so tracked-reference readers see them, then use
-`make gate` as above. It selects document readers and omits static steps. Runtime
+**Docs-only:** stage new docs if a selected reference check needs tracked files.
+Use only checks that measure the changed property; `make gate` document readers
+are optional, not a requirement for every wording edit. Runtime
 Markdown under `nora/`, `evals/`, `scripts/` and test data is not ordinary docs;
 under `tests/` only README guides outside fixtures use doc readers.
-Never hand-pick readers; an unmapped/shared-helper path remains broad.
+An unmapped executable/shared-helper change still requires impact investigation.
 
 ## 4. Commit
 

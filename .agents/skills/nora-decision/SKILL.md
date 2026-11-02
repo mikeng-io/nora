@@ -14,6 +14,12 @@ branch's worktree.
 
 ## 0. Pick the artifact
 
+An operator agreeing to a concrete fix authorizes continuing that work. Do not
+turn it into deferred work by filing an issue and stopping. Implement small,
+coherent changes directly; delegation follows `ORCHESTRATION.md`, not this
+skill. Record the result in the PR. An issue is only for actionable work that
+is explicitly deferred, never a substitute for delivery.
+
 | what you have | what to write |
 |---|---|
 | a defect you can fix in this session | nothing new: fix it; the PR is the record |

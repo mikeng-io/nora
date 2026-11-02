@@ -406,7 +406,10 @@ keeps this table and that directory in step.
 **[ORCHESTRATION.md](ORCHESTRATION.md) is the canonical engineering-agent policy**
 (operator ruling, 2026-10-27): capability/evidence tiers, adaptive worker admission,
 artifact ownership, independent review and its two-round limit. The operator-facing
-session orchestrates; the builder implements its bounded brief. Use isolated
+session directly implements small, coherent changes; delegate substantial
+implementation only when its capacity/capability benefit outweighs briefing and
+context loss, or when the operator asks. A delegated builder implements its
+bounded brief. Independent review follows the applicable risk tier. Use isolated
 worktrees, read back the actual head/results, and keep the reviewer independent
 of both builder and brief-author, with a different model vendor from the builder.
 No fixed positive provider/model routing applies. Explicit operator constraints
@@ -436,8 +439,13 @@ Historical paths and deprecated tiers: `docs/maintainers/conventions-rationale.m
 ## Gate commands
 
 Load **`nora-land`** for setup, the fast loop, final gate and rc read-back.
-Run the final gate once on the final head; use focused tests while iterating.
-Docs-only changes use its affected-test procedure, never hand-picked readers.
+Choose validation by impact: what changed, what could break, what evidence proves
+it. Small document, agent-skill wording and image-only changes with no runtime or
+executable-tooling effect need a diff/content read and relevant file/reference
+checks, not a local gate or independent reviewer. Commit, PR, merge and read back;
+required hosted checks remain. Runtime prompts/config and executable helpers follow
+their behavior/risk. When a gate is needed, run it once on the final candidate;
+use focused checks while iterating. See `ORCHESTRATION.md` for the boundary.
 `make test` is incremental; `make test-fast` and `make test-affected` are aliases.
 They compare staged, unstaged and untracked changes against HEAD, or the last
 commit (HEAD~1) when clean. Only exact generated untracked LFS post-hooks are
