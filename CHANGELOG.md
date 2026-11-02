@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.13.17](https://github.com/mikeng-io/nora/compare/v7.13.16...v7.13.17) (2026-11-02)
+
+
+### Bug Fixes
+
+* **ci:** restore allowlisted setup-buildx pin for release images ([9562cbb](https://github.com/mikeng-io/nora/commit/9562cbb57a6d5b829c76565ec0fcfbf67a1137fe))
+
 ## [7.13.16](https://github.com/mikeng-io/nora/compare/v7.13.15...v7.13.16) (2026-11-02)
 
 
