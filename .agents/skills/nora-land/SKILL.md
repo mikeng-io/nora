@@ -17,8 +17,6 @@ TYPE=<commit-type>; SLUG=<kebab-slug>; WT=<new-worktree-path>        # WT outsid
 LOG=${TMPDIR:-/tmp}/land-$SLUG; mkdir -p "$LOG"   # fixed, OUTSIDE the worktree
 ```
 
-Shell state may not survive: re-set `TYPE`/`SLUG`/`LOG`; carry results in files.
-
 ## 1. Start: intent, then a new worktree on a new branch
 
 Read `ORCHESTRATION.md` «Intent, evidence and completion»: pin the brief/design's
@@ -126,8 +124,6 @@ gh pr create --base master --title "<type(scope): description> (#N, DEC-M)" --bo
 gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-parse HEAD
 ```
 
-- A builder under a brief STOPS at its handoff: the Gate section names the
-  focused checks run and the final gate as the orchestrator's, pending.
 - A bare `git merge origin/master` writes a default subject the hook refuses.
 - Title: append `(#N, DEC-M)` only when it closes an issue or lands a decision.
 - Follow `.github/pull_request_template.md`; keep required headings and record
@@ -138,8 +134,6 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
   the body to `headRefOid` — a head review did not cover is named plus its
   delta, never implied fully reviewed; a receipt refresh reruns nothing.
   A changed tree returns to impact selection, not an automatic full gate. Read it back: `gh pr view <N> --json body,headRefOid`.
-- A deployment bind-mounting `nora/doctrine` or `nora/dreamer` hot-reloads on
-  mtime; mention this operator option when relevant.
 - `Closes #N` only when this PR fully resolves it; otherwise `issue #N`.
 - A fix reports its mutation result (`docs/maintainers/conventions.md` Proving a fix).
 
@@ -205,6 +199,4 @@ Report completed/unmet obligations separately; keep required read-back, add no e
 research/deployment, and stop when the completion rule holds.
 The next change starts in a new worktree; cleanup: `docs/maintainers/conventions.md`. Deploying: nora-deploy.
 
-## Tool notes
-Claude Code's rtk hook refuses `git` in isolated subagents; the measured `vcs` workaround is in `nora-land/reference.md`.
-Claude Code commits end with a `Claude-Session:` footer.
+Tool-specific workarounds and Claude commit footers: `nora-land/reference.md`.
