@@ -10,6 +10,7 @@ inner tool was (or was not) called with.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any, ClassVar
 
 import pytest
@@ -213,9 +214,9 @@ def test_the_source_binds_the_clock_through_the_registrys_own_seam():
             self.swapped.append(clock)
             return self
 
-        def surface(self, **kw: Any) -> tuple:
+        def surface(self, **kw: Any) -> Any:
             self.surfaces += 1
-            return ()
+            return SimpleNamespace(tools=())
 
     registry = _Registry()
     source = RegistryToolSource(

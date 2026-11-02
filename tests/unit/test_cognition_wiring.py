@@ -186,7 +186,13 @@ def test_read_tools_carry_the_sessions_clock_to_the_source():
     """The historical lane's seam: `clock` reaches `RegistryToolSource.build`
     per room — the per-occasion bind the registry's injected clock is swapped
     through — and a live call passes `None`, never a second tool source."""
-    source = _Source()
+    from nora.app.cognition_agent_runner import as_strands_tools
+
+    class RoutedSource(_Source):
+        def build(self, **kw: Any) -> list[Any]:
+            return as_strands_tools(super().build(**kw))
+
+    source = RoutedSource()
     build = read_tools_for(source, names=frozenset({"record_query"}))
     as_of = datetime.fromtimestamp(NOW / 1000, UTC)
 
