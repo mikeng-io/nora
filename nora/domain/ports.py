@@ -239,6 +239,12 @@ class SendResult:
     only handle. Meaningful only on `ok=True`; a failed or `uncertain` send
     carries none.
 
+    `platform_message_ids` carries EVERY confirmed native handle when one
+    send produced several posts (text plus attachments as their own
+    stanzas) — `platform_message_id` stays the single-post handle for
+    callers that only ever read one. Same rule: confirmed sends only,
+    never on failed or uncertain.
+
     `uncertain` marks a send whose upstream effect is UNKNOWN — the request
     may have landed. Callers must never treat it as an ordinary failure and
     retry or fall back to a second send: the durable action row holds the
@@ -251,6 +257,7 @@ class SendResult:
     timestamp: int | None = None
     uncertain: bool = False
     platform_message_id: str | None = None
+    platform_message_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -881,6 +888,7 @@ class RecordStore(Protocol):
     async def set_delivery_outcome(
         self, *, row_id: int, status: DeliveryStatus, ts: int | None = None,
         platform_message_id: str | None = None,
+        platform_message_ids: tuple[str, ...] | None = None,
     ) -> None: ...
 
     async def find_edited(

@@ -96,6 +96,7 @@ export function actionResponse(row) {
     state,
     outcome,
     platform_ref: row.platform_ref ?? null,
+    platform_refs: row.platform_refs ?? null,
     platform_ms: row.platform_ms ?? null,
     message_id: row.message_id ?? null,
     error: row.error ?? null,
@@ -306,19 +307,21 @@ export class ActionStore {
    * bridge's platform/account and CAS'd on a live reservation — a late
    * finish cannot overwrite a row that already reached a verdict.
    */
-  async finish(actionId, state, { platformRef = null, platformMs = null, error = null } = {}) {
+  async finish(actionId, state, { platformRef = null, platformMs = null, error = null, platformRefs = null } = {}) {
     if (state === 'prepared' || !['started', ...TERMINAL].includes(state)) {
       throw new Error(`bad action state ${state}`);
     }
     const res = await this.pool.query(
       `UPDATE bridge_action
          SET state=$4, platform_ref=$5, platform_ms=$6, error=$7,
+             platform_refs=COALESCE($8, platform_refs),
              started_at = COALESCE(started_at, now()),
              completed_at = CASE WHEN $4 <> 'started' THEN now() ELSE completed_at END
        WHERE action_id = $1 AND platform = $2 AND account_key = $3
              AND state IN ('prepared','started')`,
       [actionId, this.platform, this.accountKey, state, platformRef, platformMs,
-        error ? JSON.stringify(error) : null],
+        error ? JSON.stringify(error) : null,
+        platformRefs ? JSON.stringify(platformRefs) : null],
     );
     return res.rowCount;
   }

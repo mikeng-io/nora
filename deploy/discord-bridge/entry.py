@@ -132,6 +132,7 @@ def _client() -> Any:
     intents.message_content = True
     intents.members = True          # privileged; the roster/member reads need it
     intents.presences = True        # privileged; member_presence needs it
+    intents.guild_scheduled_events = True  # scheduled-event observations
     # `socket_raw_receive` — the boundary where the Gateway dispatch
     # sequence (`s`) is still attached; the bridge reads it for the
     # clockless reaction identities Discord's parsed events drop.

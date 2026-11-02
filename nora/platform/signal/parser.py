@@ -718,6 +718,20 @@ def parse_observations(
                      if isinstance(contact.get("name"), dict) else None),
                     ("organization", contact.get("organization")))
                 if isinstance(v, str) and v}
+            # Shared-contact user data — phones/emails a person chose to
+            # share on the card — kept as structured content fields, the
+            # same facts a reader would want back. Internal platform ids
+            # never ride these fields.
+            phones = [str(p.get("value")) for p in
+                      contact.get("phone") or ()
+                      if isinstance(p, dict) and p.get("value")][:8]
+            if phones:
+                metadata["phones"] = phones
+            emails = [str(e.get("value")) for e in
+                      contact.get("email") or ()
+                      if isinstance(e, dict) and e.get("value")][:8]
+            if emails:
+                metadata["emails"] = emails
             _obs(object_kind="artifact",
                  object_ref=f"contact:{source}:{sent_ts}:{i}", operation="create",
                  payload=ArtifactPayload(

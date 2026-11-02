@@ -114,6 +114,8 @@ from .parser import (
     parse_discord_reaction,
     parse_discord_reaction_clear,
     parse_discord_role_update,
+    parse_discord_scheduled_event,
+    parse_discord_scheduled_event_user,
     parse_discord_thread_create,
     parse_discord_thread_delete,
     parse_discord_thread_update,
@@ -1195,6 +1197,39 @@ class DiscordBridge:
             return ((obs, {"fp": fp,
                            "fallback": ("u:" + "|".join(fp))
                                       if fp else "u:rupdate:?"}),)
+        if kind in ("scheduled_event_create", "scheduled_event_update",
+                    "scheduled_event_delete"):
+            after = payload[1] if kind == "scheduled_event_update" else payload
+            op = {"scheduled_event_create": "create",
+                  "scheduled_event_update": "revise",
+                  "scheduled_event_delete": "withdraw"}[kind]
+            obs = parse_discord_scheduled_event(
+                after, operation=op, account_key=ak)
+            if obs is None:
+                return ()
+            eid = str(getattr(after, "id", "") or "")
+            t = {"scheduled_event_create": "GUILD_SCHEDULED_EVENT_CREATE",
+                 "scheduled_event_update": "GUILD_SCHEDULED_EVENT_UPDATE",
+                 "scheduled_event_delete": "GUILD_SCHEDULED_EVENT_DELETE"}[kind]
+            fp = _frame_key(t, {"id": getattr(after, "id", None)})
+            return ((obs, {"fp": fp, "fallback": f"u:se:{op}:{eid}"}),)
+        if kind in ("scheduled_event_user_add", "scheduled_event_user_remove"):
+            ev, user = payload
+            obs = parse_discord_scheduled_event_user(
+                ev, user, added=kind == "scheduled_event_user_add",
+                account_key=ak)
+            if obs is None:
+                return ()
+            uid = str(getattr(user, "id", "") or "")
+            eid = str(getattr(ev, "id", "") or "")
+            t = ("GUILD_SCHEDULED_EVENT_USER_ADD"
+                 if kind == "scheduled_event_user_add"
+                 else "GUILD_SCHEDULED_EVENT_USER_REMOVE")
+            fp = _frame_key(t, {"guild_scheduled_event_id": getattr(ev, "id", None),
+                                "user_id": getattr(user, "id", None)})
+            return ((obs, {"fp": fp,
+                           "ledger_key": f"se:{eid}:{uid}",
+                           "state": "add" if "add" in kind else "remove"}),)
         return ()
 
     def _observation_identity(

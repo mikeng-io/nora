@@ -276,6 +276,10 @@ export function stanzaObservations(msg, ctx = {}) {
 
   if (content.pinInChatMessage) out.push(...pinInChat(msg, content.pinInChatMessage, ctx));
 
+  if (content.contactMessage) {
+    const one = content.contactMessage;
+    out.push(...sharedContacts(msg, { displayName: one.displayName, contacts: [one] }, ctx));
+  }
   if (content.contactsArrayMessage) out.push(...sharedContacts(msg, content.contactsArrayMessage, ctx));
   if (content.locationMessage) out.push(...sharedLocation(msg, content.locationMessage, ctx));
   if (content.eventMessage) out.push(...sharedEvent(msg, content.eventMessage, ctx));
@@ -469,30 +473,86 @@ function pinInChat(msg, pin, ctx) {
   return [routed(ctx, sc, obs, `pin:${targetId}:${op}:${stanza}`, { sentMs: occurred, timeQuality: timeQ })];
 }
 
+/**
+ * One vCard → its useful user-authored fields. Contact phones/emails/names
+ * are shared contact CONTENT (a person chose to send this card), not the
+ * platform's internal ids — JIDs never come from a vcard field anyway.
+ * Parsed once here; the record keeps the structured fields, never the raw
+ * vcard bytes. A field the parse cannot supply is simply absent.
+ */
+function parseVcard(vcard) {
+  const out = { phones: [], emails: [], urls: [] };
+  if (typeof vcard !== 'string' || !vcard.trim()) return out;
+  // Unfold continuation lines (RFC 6350: a line starting space/tab joins the
+  // previous one), then read NAME[;params]:value.
+  const lines = String(vcard).replace(/\r\n/g, '\n').replace(/\n[ \t]/g, '').split('\n');
+  const cap = (list, v, n = 8) => { if (v && list.length < n) list.push(v.slice(0, 120)); };
+  for (const line of lines) {
+    const m = /^([A-Za-z0-9-]+)((?:;[^:]*)?):(.*)$/.exec(line.trim());
+    if (!m) continue;
+    const name = m[1].toUpperCase();
+    const value = m[3].trim();
+    if (name === 'FN') cap([], '', 0) || (out.formatted_name ||= value.slice(0, 80));
+    else if (name === 'N') {
+      const parts = value.split(';');
+      const full = [parts[1], parts[0]].filter(Boolean).join(' ').trim();
+      if (full && !out.name) out.name = full.slice(0, 80);
+    } else if (name === 'ORG') {
+      out.organization ||= value.replace(/;$/, '').replace(/;/g, ' ').trim().slice(0, 80);
+    } else if (name === 'TITLE') {
+      out.title ||= value.slice(0, 80);
+    } else if (name === 'TEL') cap(out.phones, value);
+    else if (name === 'EMAIL') cap(out.emails, value);
+    else if (name === 'URL') cap(out.urls, value);
+  }
+  return out;
+}
+
 function sharedContacts(msg, contacts, ctx) {
   const sc = stanzaContext(msg, ctx);
   const stanza = msg.key.id;
   const occurred = timestampMs(msg.messageTimestamp);
   const timeQ = occurred ? 'upstream' : 'unknown';
   const list = Array.isArray(contacts.contacts) ? contacts.contacts : [];
+  const parsed = [];
+  let unparsed = 0;
+  for (const c of list) {
+    const fields = parseVcard(c?.vcard);
+    if (!fields.formatted_name && !fields.name && !fields.phones.length && !fields.emails.length) {
+      unparsed += 1;
+      continue;
+    }
+    const entry = { display_name: String(c?.displayName || '') };
+    for (const k of ['formatted_name', 'name', 'organization', 'title']) {
+      if (fields[k]) entry[k] = fields[k];
+    }
+    for (const k of ['phones', 'emails', 'urls']) {
+      if (fields[k].length) entry[k] = fields[k];
+    }
+    parsed.push(entry);
+  }
+  const metadata = {
+    display_name: String(contacts.displayName || ''),
+    contact_count: list.length,
+  };
+  if (parsed.length) metadata.contacts = parsed.slice(0, 8);
+  if (parsed.length > 8) metadata.contacts_more = parsed.length - 8;
+  if (unparsed) metadata.unparsed = unparsed;
   const obs = observationDict({
     kind: 'artifact', scope: scopeDict(ctx, sc.conversationId),
     objectRef: `artifact:${stanza}`,
     operation: 'create',
     payload: artifactPayload({
       artifact_kind: 'contact',
-      metadata: {
-        display_name: String(contacts.displayName || ''),
-        contact_count: list.length,
-      },
+      metadata,
       custody: 'declared',
     }),
     actorId: sc.actorId, actorStatus: sc.actorStatus,
     occurredMs: occurred, timeQuality: timeQ,
     sourceRevision: stanza,
     coverage: {
-      gaps: list.length ? ['vcard'] : [],
-      reason: list.length ? 'vcard payloads carry identifiers; withheld from the record' : '',
+      gaps: unparsed ? ['vcard'] : [],
+      reason: unparsed ? `${unparsed} vcard(s) yielded no readable fields` : '',
     },
   });
   return [routed(ctx, sc, obs, `s:${stanza}:contact`, { sentMs: occurred, timeQuality: timeQ })];
@@ -540,6 +600,14 @@ function sharedEvent(msg, event, ctx) {
   if (start !== null) metadata.start_time_s = start;
   const end = toNumber(event.endTime);
   if (end !== null) metadata.end_time_s = end;
+  // The venue's sender-authored name/address is content; coordinates are
+  // withheld below, never stored.
+  if (event.location) {
+    const locName = String(event.location.name || '');
+    const locAddr = String(event.location.address || '');
+    if (locName) metadata.location_name = locName;
+    if (locAddr) metadata.address = locAddr;
+  }
   const obs = observationDict({
     kind: 'artifact', scope: scopeDict(ctx, sc.conversationId),
     objectRef: `artifact:${stanza}`,
@@ -971,7 +1039,9 @@ export function messagesUpdateObservations({ key, update } = {}, ctx = {}) {
     const resp = er?.response?.response;
     const respName = typeof resp === 'string' ? resp.toLowerCase() : String(toNumber(resp) ?? '');
     const respStanza = er?.eventResponseMessageKey?.id || contentHash(er);
-    const metadata = { event_response: respName };
+    // `response` folds per-responder on the actor — one responder's RSVP
+    // never overwrites another's into a misleading last-response.
+    const metadata = { response: respName };
     const guests = toNumber(er?.response?.extraGuestCount);
     if (guests !== null) metadata.extra_guest_count = guests;
     const obs = observationDict({

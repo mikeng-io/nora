@@ -23,6 +23,7 @@ from typing import Any, Protocol
 from ...domain.media import MediaRef, label_for, render_placeholder
 from ...domain.models import EditTarget, NormalizedMessage, Quote, Touch
 from ...domain.observations import (
+    ArtifactPayload,
     Coverage,
     MembershipPayload,
     MessageMetadataPayload,
@@ -960,3 +961,132 @@ def parse_discord_member_update(
         payload=MembershipPayload(role=roles, state="member"),
         subject_ref=user_id,
         actor_status="not_supplied", time_quality="unknown")
+
+
+def _ev_ms(value: Any) -> int | None:
+    """A scheduled-event datetime as epoch ms, or None."""
+    try:
+        return int(value.timestamp() * 1000) if value is not None else None
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return None
+
+
+_SCHEDULED_EVENT_FIELDS = (
+    "name", "description", "entity_type", "status", "location_name",
+    "channel_name",
+)
+
+
+def _scheduled_event_fields(ev: Any) -> dict[str, Any]:
+    """A `ScheduledEvent`'s readable fields as the typed room field dict —
+    user-authored names/times/status only. The entity URL (an external join
+    link) and the cover image are withheld, recorded as coverage gaps by the
+    caller."""
+    fields: dict[str, Any] = {}
+    name = getattr(ev, "name", None)
+    if isinstance(name, str) and name:
+        fields["name"] = name
+    desc = getattr(ev, "description", None)
+    if isinstance(desc, str) and desc:
+        fields["description"] = desc
+    et = getattr(ev, "entity_type", None)
+    et_name = getattr(et, "name", None) or (
+        str(et) if et is not None else "")
+    if et_name:
+        fields["entity_type"] = et_name
+    status = getattr(ev, "status", None)
+    st_name = getattr(status, "name", None) or (
+        str(status) if status is not None else "")
+    if st_name:
+        fields["status"] = st_name
+    start = _ev_ms(getattr(ev, "start_time", None))
+    if start is not None:
+        fields["start_ms"] = start
+    end = _ev_ms(getattr(ev, "end_time", None))
+    if end is not None:
+        fields["end_ms"] = end
+    meta = getattr(ev, "entity_metadata", None)
+    loc = getattr(meta, "location", None) if meta is not None else None
+    if isinstance(loc, str) and loc:
+        fields["location_name"] = loc
+    channel = getattr(ev, "channel", None)
+    ch_name = getattr(channel, "name", None) if channel is not None else None
+    if isinstance(ch_name, str) and ch_name:
+        fields["channel_name"] = ch_name
+    return fields
+
+
+def parse_discord_scheduled_event(
+    ev: Any, *, operation: str, account_key: str,
+) -> Observation | None:
+    """A guild scheduled event's create/update/delete dispatch → an
+    `artifact/event` observation on the GUILD scope (its configured rooms
+    bind downstream; a guild event is never a channel's audience).
+
+    create carries the full reported field set, update only the changed
+    fields (discord.py hands `before`/`after`; callers pass `after` and the
+    diff is computed against `before` when supplied), delete is `withdraw`.
+    The event URL/cover stay withheld — recorded as coverage gaps."""
+    guild = getattr(ev, "guild", None)
+    ev_id = str(getattr(ev, "id", "") or "")
+    if ev is None or guild is None or not ev_id:
+        return None
+    object_ref = f"event:{ev_id}"
+    if operation == "withdraw":
+        metadata: dict[str, Any] = {"name": str(getattr(ev, "name", "") or "")}
+        op = "withdraw"
+    else:
+        fields = _scheduled_event_fields(ev)
+        metadata = {
+            "name": fields.pop("name", ""),
+            "status": str(fields.pop("status", "") or ""),
+            "entity_type": str(fields.pop("entity_type", "") or ""),
+            "description": str(fields.pop("description", "") or ""),
+            "location_name": str(fields.pop("location_name", "") or ""),
+            "channel_name": str(fields.pop("channel_name", "") or ""),
+        }
+        if fields.get("start_ms") is not None:
+            metadata["start_time_s"] = fields["start_ms"] // 1000
+        if fields.get("end_ms") is not None:
+            metadata["end_time_s"] = fields["end_ms"] // 1000
+        metadata = {k: v for k, v in metadata.items() if v != "" and v is not None}
+        op = operation
+    return Observation(
+        object_kind="artifact",
+        scope=SourceScope(
+            platform="discord", account_key=account_key,
+            conversation_id=str(guild.id)),
+        object_ref=object_ref, operation=op,
+        payload=ArtifactPayload(
+            artifact_kind="event", metadata=metadata, custody="declared"),
+        actor_status="not_supplied", time_quality="unknown",
+        coverage=Coverage(
+            complete=False, covered="fields",
+            gaps=("join_url", "image"),
+            reason="external join URL and cover withheld by policy"))
+
+
+def parse_discord_scheduled_event_user(
+    ev: Any, user: Any, *, added: bool, account_key: str,
+) -> Observation | None:
+    """`scheduled_event_user_add`/`remove` → an `artifact/event` revise
+    carrying one responder's RSVP under `response` — folded per-responder,
+    never a last-response scalar. Discord has one RSVP vocabulary
+    (`interested`); a remove is a withdrawn response."""
+    guild = getattr(ev, "guild", None)
+    ev_id = str(getattr(ev, "id", "") or "")
+    user_id = str(getattr(user, "id", "") or "")
+    if ev is None or guild is None or not ev_id or not user_id:
+        return None
+    return Observation(
+        object_kind="artifact",
+        scope=SourceScope(
+            platform="discord", account_key=account_key,
+            conversation_id=str(guild.id)),
+        object_ref=f"event:{ev_id}", operation="revise",
+        payload=ArtifactPayload(
+            artifact_kind="event",
+            metadata={"response": "interested" if added else ""},
+            custody="declared"),
+        actor_id=user_id, actor_status="known",
+        time_quality="unknown", coverage=Coverage(covered="response"))

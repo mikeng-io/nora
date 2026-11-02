@@ -678,7 +678,9 @@ async def _resolve_target_row(
     edited_at = sa.exists().where(
         MESSAGE_EDIT.c.message_id == MESSAGES.c.id,
         MESSAGE_EDIT.c.ts == target.sent_ts)
-    match = (MESSAGES.c.platform_message_id == target.message_id
+    match = (sa.or_(
+             MESSAGES.c.platform_message_id == target.message_id,
+             MESSAGES.c.platform_message_ids_json.contains(target.message_id))
              if target.message_id else
              sa.or_(MESSAGES.c.ts == target.sent_ts, edited_at))
     where = sa.and_(MESSAGES.c.platform == platform,

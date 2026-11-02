@@ -112,12 +112,17 @@ export const executors = {
     const cached = quotedId && ctx.recentMessages ? ctx.recentMessages.get(quotedId) : null;
     const opts = cached?.raw ? { quoted: cached.raw } : {};
 
+    const refs = [];
     let last = null;
     for (const payload of payloads) {
       last = await ctx.sendWithTimeout(jid, payload, opts);
-      if (last?.key?.id && ctx.recentMessages) ctx.recentMessages.remember(last);
+      if (last?.key?.id) {
+        refs.push(String(last.key.id));
+        if (ctx.recentMessages) ctx.recentMessages.remember(last);
+      }
     }
-    return { platform_ref: last?.key?.id || null, platform_ms: timestampMs(last?.messageTimestamp) };
+    return { platform_ref: last?.key?.id || null, platform_refs: refs,
+      platform_ms: timestampMs(last?.messageTimestamp) };
   },
 
   async react(request, ctx) {

@@ -111,6 +111,7 @@ class ActionReply:
         self, state: str, *, kind: str = "", message: str = "",
         platform_ref: str | None = None, platform_ms: int | None = None,
         message_id: int | None = None,
+        platform_refs: tuple[str, ...] = (),
     ) -> None:
         self.state = state
         self.kind = kind
@@ -118,6 +119,7 @@ class ActionReply:
         self.platform_ref = platform_ref
         self.platform_ms = platform_ms
         self.message_id = message_id
+        self.platform_refs = tuple(platform_refs)
 
 
 class _Executor(Protocol):
@@ -163,6 +165,7 @@ def action_response(action_id: str, reply: ActionReply) -> dict[str, Any]:
     return {
         "action_id": action_id, "state": reply.state, "outcome": outcome,
         "platform_ref": reply.platform_ref,
+        "platform_refs": list(reply.platform_refs) or None,
         "platform_ms": reply.platform_ms,
         "message_id": reply.message_id,
         "error": (
@@ -177,6 +180,7 @@ def _reply_from_row(row: Mapping[str, Any]) -> ActionReply:
         str(row["state"]), kind=str(error.get("kind") or ""),
         message=str(error.get("message") or ""),
         platform_ref=row.get("platform_ref"),
+        platform_refs=tuple(row.get("platform_refs") or ()),
         platform_ms=row.get("platform_ms"),
         message_id=row.get("message_id"))
 
@@ -485,6 +489,7 @@ class DurableActionService:
             reply = await self._execute(action)
             final = await self._terminal(
                 aid, reply.state, platform_ref=reply.platform_ref,
+                platform_refs=reply.platform_refs,
                 platform_ms=reply.platform_ms,
                 error=({"kind": reply.kind, "message": reply.message}
                        if reply.kind else None))
@@ -497,7 +502,8 @@ class DurableActionService:
                 message="terminal write failed")
         return ActionReply(
             final, kind=reply.kind, message=reply.message,
-            platform_ref=reply.platform_ref, platform_ms=reply.platform_ms)
+            platform_ref=reply.platform_ref, platform_ms=reply.platform_ms,
+            platform_refs=reply.platform_refs)
 
     async def get(self, action_id: str) -> dict[str, Any] | None:
         """`GET /v1/actions/{id}` — the persisted truth, scoped: another
@@ -593,6 +599,7 @@ class DurableActionService:
     async def _terminal(
         self, action_id: str, state: str, *,
         platform_ref: str | None = None, platform_ms: int | None = None,
+        platform_refs: tuple[str, ...] = (),
         error: dict[str, Any] | None = None,
     ) -> str | None:
         """started→terminal CAS. Returns the persisted state — an already-
@@ -603,7 +610,8 @@ class DurableActionService:
             async with self._store._engine.begin() as conn:
                 return await self._store.action_state(
                     conn, action_id, state, platform_ref=platform_ref,
-                    platform_ms=platform_ms, error=error)
+                    platform_ms=platform_ms, error=error,
+                    platform_refs=list(platform_refs) or None)
         except Exception as exc:  # noqa: BLE001 — boundary catch; logged by type
             log.error("terminal write failed: %s", type(exc).__name__)
             return None
