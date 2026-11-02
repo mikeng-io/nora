@@ -33,5 +33,19 @@
     "old": "for name, state in self.sequences.items():",
     "new": "for name, state in ():",
     "target": "tests/infra/test_pg_fixture_lifecycle.py::test_complete_reset_restores_seeds_history_and_rolled_back_sequences"
+  },
+  {
+    "name": "server autovacuum is not a leaked test connection",
+    "file": "tests/infra/pg_baseline.py",
+    "old": "AND backend_type = 'client backend' ",
+    "new": "",
+    "target": "tests/infra/test_pg_fixture_lifecycle.py::test_reset_does_not_mistake_autovacuum_for_a_test_connection"
+  },
+  {
+    "name": "cost receipts distinguish unexpected pass from expected failure",
+    "file": "scripts/pytest_cost.py",
+    "old": "\"xfailed\" if report.skipped else \"xpassed\"",
+    "new": "\"xfailed\"",
+    "target": "tests/integration/test_pytest_gate.py::test_failed_run_keeps_a_cost_receipt_without_double_counting_workers"
   }
 ]

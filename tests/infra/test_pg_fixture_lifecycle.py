@@ -1,5 +1,7 @@
 """Real PostgreSQL clone ownership and isolation, including committed state."""
 
+import time
+
 import psycopg
 import pytest
 from psycopg import sql
@@ -180,3 +182,46 @@ def test_empty_database_is_actually_unmigrated(empty_pg_url, pg_admin):
         assert conn.execute(
             "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'"
         ).fetchone() == (0,)
+
+
+def test_reset_does_not_mistake_autovacuum_for_a_test_connection(pg_admin, pg_template):
+    maintenance = pg_admin.dsn(pg_admin.maintenance_db)
+    with psycopg.connect(maintenance, autocommit=True) as admin:
+        prior = admin.execute("SHOW autovacuum_naptime").fetchone()[0]
+        # Only this worker's disposable server; make the real background owner observable.
+        admin.execute("ALTER SYSTEM SET autovacuum_naptime = '1s'")
+        admin.execute("SELECT pg_reload_conf()")
+    try:
+        with _pg_database(pg_admin, pg_template) as url:
+            dsn = pg_admin.dsn(url.rsplit('/', 1)[1])
+            with psycopg.connect(dsn) as conn:
+                conn.execute(
+                    "CREATE TABLE generated_vacuum (id bigint) WITH ("
+                    "autovacuum_vacuum_threshold=0, autovacuum_vacuum_scale_factor=0, "
+                    "autovacuum_vacuum_cost_delay=100, autovacuum_vacuum_cost_limit=1)"
+                )
+            with psycopg.connect(dsn) as conn:
+                baseline = PgBaseline.capture(conn)
+                conn.execute("INSERT INTO generated_vacuum SELECT generate_series(1, 10000)")
+                conn.execute("DELETE FROM generated_vacuum")
+            with psycopg.connect(dsn) as conn:
+                deadline = time.monotonic() + 20
+                while True:
+                    conn.execute("SELECT pg_stat_clear_snapshot()")
+                    observed = conn.execute(
+                        "SELECT pid FROM pg_stat_activity WHERE datname = current_database() "
+                        "AND backend_type = 'autovacuum worker'"
+                    ).fetchall()
+                    if observed:
+                        break
+                    assert time.monotonic() < deadline, "Real autovacuum worker was not observed"
+                    conn.commit()
+                    time.sleep(0.1)
+                # Positive control above: a real server worker is alive at the reset boundary.
+                assert baseline.reset(conn) == 0
+    finally:
+        with psycopg.connect(maintenance, autocommit=True) as admin:
+            admin.execute(sql.SQL("ALTER SYSTEM SET autovacuum_naptime = {}").format(
+                sql.Literal(prior)
+            ))
+            admin.execute("SELECT pg_reload_conf()")

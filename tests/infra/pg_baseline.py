@@ -110,11 +110,14 @@ class PgBaseline:
         if schema_state(conn) != self.schema:
             raise RuntimeError("Reusable test DB schema changed; use the fresh_database marker")
         others = conn.execute(
-            "SELECT count(*) FROM pg_stat_activity "
-            "WHERE datname = current_database() AND pid <> pg_backend_pid()"
-        ).fetchone()[0]
+            "SELECT pid, backend_type, state, wait_event_type, wait_event FROM pg_stat_activity "
+            "WHERE datname = current_database() AND backend_type = 'client backend' "
+            "AND pid <> pg_backend_pid()"
+        ).fetchall()
         if others:
-            raise RuntimeError("Reusable test DB has test-owned connections; close them first")
+            raise RuntimeError(
+                f"Reusable test DB has test-owned connections; close them first: {others}"
+            )
         dirty = {
             name for name, exists in conn.execute(sql.SQL(" UNION ALL ").join(
                 sql.SQL("SELECT {}, EXISTS (SELECT 1 FROM {})").format(

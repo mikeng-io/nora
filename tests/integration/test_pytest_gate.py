@@ -284,13 +284,27 @@ def test_failed_run_keeps_a_cost_receipt_without_double_counting_workers(tmp_pat
     root, _ = _project(tmp_path)
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
     generated = root / "test_generated.py"
-    generated.write_text(generated.read_text() + "\n    assert attempt == 0\n")
+    generated.write_text(generated.read_text() + textwrap.dedent("""
+            assert attempt == 0
+
+        @pytest.mark.xfail(reason='generated expected failure')
+        def test_xfail():
+            assert False
+
+        @pytest.mark.xfail(reason='generated unexpected pass')
+        def test_xpass():
+            assert True
+
+        @pytest.mark.xfail(reason='generated strict unexpected pass', strict=True)
+        def test_strict_xpass():
+            assert True
+    """))
     result = _pytest(root, "-n", str(workers))
     assert result.returncode == 1, result.stdout + result.stderr
     receipt, = (root / ".git").glob("nora-test-cost-*.json")
     phase, = json.loads(receipt.read_text())["phases"]
     assert phase["rc"] == 1
-    assert phase["selected_count"] == 2
+    assert phase["selected_count"] == 5
     assert len(phase["selected_sha256"]) == 64
-    assert phase["outcome_counts"] == {"failed": 1, "passed": 1}
+    assert phase["outcome_counts"] == {"failed": 2, "passed": 1, "xfailed": 1, "xpassed": 1}
     assert phase["servers"] == []

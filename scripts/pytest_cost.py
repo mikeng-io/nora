@@ -92,7 +92,9 @@ def pytest_runtest_makereport(item, call):
     if report.when == "call" or report.failed or report.skipped:
         outcomes = cost(item.config)["outcomes"]
         if outcomes.get(report.nodeid) != "failed":
-            outcomes[report.nodeid] = "xfailed" if hasattr(report, "wasxfail") else report.outcome
+            outcomes[report.nodeid] = (
+                "xfailed" if report.skipped else "xpassed"
+            ) if hasattr(report, "wasxfail") and not report.failed else report.outcome
 
 
 @pytest.hookimpl(optionalhook=True)
