@@ -543,6 +543,12 @@ class Deliverer:
                         if getattr(result, "uncertain", False)
                         else DeliveryStatus.FAILED),
                 ts=result.timestamp,          # the platform's stamp, not ours
+                # The platform's own handle for the message — what a later
+                # inbound reaction/edit/quote names it by (`find_edited`'s
+                # `platform_message_id` match). Only on a CONFIRMED send: a
+                # failed or uncertain one never minted the id it would claim.
+                platform_message_id=(
+                    result.platform_message_id if result.ok else None),
             )
         except Exception:
             log.exception("delivery_status update failed (tag=%s)", self._tag_id)

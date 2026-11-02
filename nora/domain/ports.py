@@ -76,6 +76,9 @@ version reintroduces the bug it avoids:
 - `set_delivery_outcome` takes an optional `ts` and is NOT a second write —
   `nora.infra.sql.audit` documents why the platform's timestamp must land on
   this already-existing update. `ts=None` leaves the row's timestamp alone.
+  `platform_message_id` rides the same write for the same reason: the native
+  handle exists only after the platform answers, so it lands on the outcome
+  row; `None` leaves the column untouched, never blanking a known id.
 
 - `RecordStore.append` has **no `max_per_conversation` parameter**. Retention
   window size is a policy decided at the store's construction, not a value
@@ -228,6 +231,14 @@ class SendResult:
     `timestamp` is the PLATFORM's own sent-timestamp, and it is what a later
     reply's quote points at. `None` = the platform supplied none.
 
+    `platform_message_id` is the platform's own handle for the sent message —
+    a `mid.$…`, a wamid, a snowflake — the same handle an inbound reaction,
+    edit or quote later names it by (`messages.platform_message_id`). `None`
+    where the platform gave none or has no such handle: Signal addresses a
+    message by its author and sent-timestamp, so its `timestamp` stays the
+    only handle. Meaningful only on `ok=True`; a failed or `uncertain` send
+    carries none.
+
     `uncertain` marks a send whose upstream effect is UNKNOWN — the request
     may have landed. Callers must never treat it as an ordinary failure and
     retry or fall back to a second send: the durable action row holds the
@@ -239,6 +250,7 @@ class SendResult:
     retry_after: float | None = None
     timestamp: int | None = None
     uncertain: bool = False
+    platform_message_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -867,7 +879,8 @@ class RecordStore(Protocol):
         ...
 
     async def set_delivery_outcome(
-        self, *, row_id: int, status: DeliveryStatus, ts: int | None = None
+        self, *, row_id: int, status: DeliveryStatus, ts: int | None = None,
+        platform_message_id: str | None = None,
     ) -> None: ...
 
     async def find_edited(

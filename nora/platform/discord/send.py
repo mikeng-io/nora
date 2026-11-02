@@ -265,4 +265,5 @@ class DiscordSender:
         return SendResult(
             ok=True,
             timestamp=timestamp_ms(int(message_id)) if message_id is not None else None,
+            platform_message_id=str(message_id) if message_id is not None else None,
         )

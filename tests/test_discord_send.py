@@ -61,6 +61,16 @@ async def test_send_returns_the_platform_sent_timestamp(rest_server):
     assert result.timestamp == timestamp_ms(999999999999999999)
 
 
+async def test_send_returns_the_platforms_message_id(rest_server):
+    """The snowflake a later reaction, edit or quote names the sent message
+    by — landed on the audited row by `Deliverer`."""
+    sender = DiscordSender("tok", base_url=str(rest_server.make_url("")).rstrip("/"))
+
+    result = await sender.send(TARGET, "hello")
+
+    assert result.platform_message_id == "999999999999999999"
+
+
 async def test_send_refuses_a_non_group_conversation_type(rest_server):
     dm_target = ConversationTarget("discord", "1/2", "dm")
     sender = DiscordSender("tok", base_url=str(rest_server.make_url("")).rstrip("/"))
