@@ -56,7 +56,7 @@ making one roadmap card per file.
 
 | Changed group | Treatment |
 |---|---|
-| unified-memory, cognition-loop, culture-tier, self-growth | Memory/Cognition outcome. Later one-session amendments supersede old separate adaptors; historical persona/vector/identity phases remain provenance. |
+| unified-memory, cognition-loop, culture-tier, self-growth | Memory/Cognition outcome. Later one-session amendments supersede old separate adaptors; historical profile/vector/identity phases remain provenance. |
 | notebook-memory-types, standing-ledger, dreamer-agent-loop | Continuity outcome. Retired dreamer/adaptor descriptions are history; one Standing owns current presentation. |
 | agent-worker, subagent | Pi/computer-work outcome. Existing subagent and existing microVM are baseline, not the new work. |
 | personalisation; removed fit and recommendations | One personalisation outcome. Renames do not create additional initiatives. |

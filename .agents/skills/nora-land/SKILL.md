@@ -5,10 +5,8 @@ description: Lands a Nora change from first edit to merged master, covering a ne
 
 # nora-land
 
-Worktree → focused checks → gate → PR → review → merge → read-back.
-Rules: `CONTRIBUTING.md`, `AGENTS.md`. Every step ends in a check:
-the log or the read-back, never an exit code alone. Go end to end; stop only
-for a blocker or a fact only the operator holds (a decision is not input).
+Worktree → checks → gate → PR → review → merge → read-back. Rules: `CONTRIBUTING.md`, `AGENTS.md`.
+Read logs/state after each step, not just its exit code; proceed unless blocked or missing an operator-only fact.
 Under `ORCHESTRATION.md`, builders run named checks (1–2), commit (4–5), push/open
 PR (6) and STOP; the orchestrator gates (3), reviews, merges and reads back (7–9).
 
@@ -18,6 +16,7 @@ LOG=${TMPDIR:-/tmp}/land-$SLUG; mkdir -p "$LOG"   # fixed, OUTSIDE the worktree
 ```
 
 Shell state may not survive: re-set `TYPE`/`SLUG`/`LOG`; carry results in files.
+
 ## 1. Start: intent, then a new worktree on a new branch
 
 Read `ORCHESTRATION.md` «Intent, evidence and completion»: pin the brief/design's
