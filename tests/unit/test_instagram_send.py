@@ -102,6 +102,16 @@ async def test_the_platforms_own_sent_timestamp_is_reported(bridge):
     assert result.timestamp == _OK_BODY["timestamp_ms"]
 
 
+async def test_the_platforms_own_message_id_is_reported(bridge):
+    """The `mid.$…` a later reaction, edit or `reply_to` names the sent
+    message by — landed on the audited row by `Deliverer`."""
+    _box, sender = bridge
+
+    result = await sender.send(GROUP, "hello")
+
+    assert result.platform_message_id == _OK_BODY["id"]
+
+
 async def test_a_missing_timestamp_does_not_turn_a_delivered_send_into_a_failure(bridge):
     box, sender = bridge
     box["body"] = {"id": _OK_BODY["id"]}

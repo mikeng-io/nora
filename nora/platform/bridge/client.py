@@ -234,7 +234,12 @@ class BridgeAdapter:
             data = await self._reconcile(action_id)
         state = data["state"]
         if state == "confirmed":
-            return SendResult(ok=True, timestamp=data.get("platform_ms"))
+            # `platform_ref` is the platform's own handle for the sent
+            # message — `Deliverer` lands it on the audited row so a later
+            # reaction, edit or quote naming it resolves.
+            return SendResult(
+                ok=True, timestamp=data.get("platform_ms"),
+                platform_message_id=data.get("platform_ref") or None)
         if state == "rejected":
             return SendResult(ok=False)
         if state == "uncertain":
