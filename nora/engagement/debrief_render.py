@@ -850,6 +850,7 @@ def system_prompt(
 def fold_prompt(
     *, instructions: str, rendered: str, max_chars: int,
     working_set_max_items: int, working_set_max_chars: int,
+    unit: bool = False,
 ) -> tuple[str, str]:
     """`(system, user)` — the objective and its length rule in the SYSTEM
     role, the turn being folded in the USER role.
@@ -859,14 +860,18 @@ def fold_prompt(
     written by a member would sit in the same role as the operator's, and
     nothing downstream could tell which is which.
     """
-    return (
-        system_prompt(
-            instructions=instructions, max_chars=max_chars,
-            working_set_max_items=working_set_max_items,
-            working_set_max_chars=working_set_max_chars,
-        ),
-        rendered,
+    system = system_prompt(
+        instructions=instructions, max_chars=max_chars,
+        working_set_max_items=working_set_max_items,
+        working_set_max_chars=working_set_max_chars,
     )
+    if unit:
+        system += (
+            "\n\nScope of this call: UNIT. Return JSON containing the required "
+            "items list using the unit entry schema above. Expressed state "
+            "needs entries even when the prior is empty."
+        )
+    return system, rendered
 
 
 def consolidate_prompt(

@@ -152,6 +152,7 @@ async def test_unit_input_preview_makes_no_call_and_writes_no_record(monkeypatch
     result = await standing_unit(subject, case, now_ms=2000)
     assert "no model" in result.error
     assert "standing_ledger_prior" in result.shown
+    assert "Scope of this call: UNIT." in result.shown
     assert "scheduled" in result.shown
     assert not calls
     assert await target.by_tag(tag_id=case.metadata["tag_id"]) is None

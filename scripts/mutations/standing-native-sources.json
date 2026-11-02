@@ -12,5 +12,12 @@
     "old": "projected = {e.id for e in destination.entries} if destination else set()",
     "new": "projected = {e.id for e in destination.entries if e.permitted} if destination else set()",
     "target": "tests/unit/test_eval_standing_unit.py::test_a_withheld_destination_keeps_the_entry_without_disclosing_content"
+  },
+  {
+    "name": "the-unit-caller-declares-its-output-scope",
+    "file": "nora/engagement/stages/debrief.py",
+    "old": "                    unit=True,",
+    "new": "                    unit=False,",
+    "target": "tests/unit/test_debrief.py::test_the_cognition_fold_materializes_unit_scope_entries_under_cas"
   }
 ]

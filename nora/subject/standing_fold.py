@@ -514,6 +514,7 @@ async def fold_recorded_unit(
         instructions=wiring.objective.objective_body("standing-debrief"),
         rendered=rendered, max_chars=DEFAULT_STANDING_MAX_CHARS,
         working_set_max_items=0, working_set_max_chars=0,
+        unit=True,
     )
     shown = f"SYSTEM\n{system}\nINPUT\n{prompt}"
     if not call_model:

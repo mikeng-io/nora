@@ -1636,6 +1636,8 @@ async def _unit_fold(*, ledger, trace=None, items=(), status="stop",
         display_name="Nora", timeout_seconds=5.0,
         store_timeout_seconds=5.0, now_ms=2000,
     )
+    if client.prompts:
+        assert "Scope of this call: UNIT." in client.prompts[0]
     return ledger, metrics
 
 

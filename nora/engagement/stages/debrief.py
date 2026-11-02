@@ -607,6 +607,7 @@ async def fold_unit(
                     instructions=instructions, rendered=rendered,
                     max_chars=DEFAULT_STANDING_MAX_CHARS,
                     working_set_max_items=0, working_set_max_chars=0,
+                    unit=True,
                 ),
             ),
             timeout=timeout_seconds,
