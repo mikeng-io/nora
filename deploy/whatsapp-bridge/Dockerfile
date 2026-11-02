@@ -1,5 +1,7 @@
 FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea
 WORKDIR /app
+ARG NORA_VERSION=""
+ENV OTEL_SERVICE_VERSION=${NORA_VERSION}
 # curl is load-bearing, not decoration: node:24-trixie-slim ships neither curl nor
 # wget, and the compose healthcheck curls /health. Without it the container
 # boots but reports unhealthy forever (design 01; review B1).

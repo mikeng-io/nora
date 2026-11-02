@@ -52,6 +52,61 @@ def test_bridge_producer_scrapes_use_the_effective_api_bearer():
         {"targets": ["bridge-projection:8091"]}]
     assert "signoz" in OVERLAY["services"]["bridge-projection"]["networks"]
 
+
+def test_deployed_strands_spans_have_readable_model_agent_and_tool_contents(monkeypatch):
+    """Exercise the actual SDK using the deployed environment, not a flag assertion."""
+    import json
+
+    import strands.telemetry.tracer as st
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    from strands.agent.agent_result import AgentResult
+    from strands.telemetry.metrics import EventLoopMetrics
+
+    env = dict(v.split("=", 1) for v in OVERLAY["services"]["nora"].get("environment", []))
+    monkeypatch.setenv("OTEL_SEMCONV_STABILITY_OPT_IN",
+                       env.get("OTEL_SEMCONV_STABILITY_OPT_IN", ""))
+    provider = TracerProvider()
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(st.trace_api, "get_tracer_provider", lambda: provider)
+    tracer = st.Tracer()
+    messages = [{"role": "user", "content": [{"text": "synthetic input"}]}]
+    answer = {"role": "assistant", "content": [{"text": "synthetic output"}]}
+    agent = tracer.start_agent_span(messages=messages, agent_name="synthetic")
+    model = tracer.start_model_invoke_span(
+        messages=messages, model_id="synthetic-model", parent_span=agent,
+        system_prompt="synthetic system instructions")
+    tracer.end_model_invoke_span(
+        model, answer, {"inputTokens": 7, "outputTokens": 3, "totalTokens": 10},
+        {"latencyMs": 1}, "end_turn")
+    tool = tracer.start_tool_call_span(
+        {"name": "synthetic_tool", "toolUseId": "synthetic-call", "input": {"value": 4}},
+        parent_span=agent)
+    tracer.end_tool_call_span(tool, {
+        "toolUseId": "synthetic-call", "status": "success",
+        "content": [{"text": "synthetic tool result"}],
+    })
+    tracer.end_agent_span(agent, AgentResult(
+        stop_reason="end_turn", message=answer, metrics=EventLoopMetrics(), state={}))
+    spans = {s.name: s for s in exporter.get_finished_spans()}
+    for name in ("chat", "invoke_agent synthetic", "execute_tool synthetic_tool"):
+        attrs = spans[name].attributes
+        assert json.loads(attrs["gen_ai.input.messages"])
+        assert json.loads(attrs["gen_ai.output.messages"])
+    model_attrs = spans["chat"].attributes
+    assert json.loads(model_attrs["gen_ai.system_instructions"])[0]["content"] == (
+        "synthetic system instructions")
+    assert model_attrs["gen_ai.usage.input_tokens"] == 7
+    assert model_attrs["gen_ai.usage.output_tokens"] == 3
+    tool_attrs = spans["execute_tool synthetic_tool"].attributes
+    assert json.loads(tool_attrs["gen_ai.input.messages"])[0]["parts"][0]["arguments"] == {
+        "value": 4}
+    assert "synthetic tool result" in tool_attrs["gen_ai.output.messages"]
+    assert spans["chat"].parent.span_id == agent.get_span_context().span_id
+    provider.shutdown()
+
 _FOR = re.compile(r"for (\d+)m")
 def _comparisons_without_bool(query: str) -> list[str]:
     """PromQL comparisons OUTSIDE label selectors — `{x!="y"}` is a matcher,
@@ -68,7 +123,7 @@ def test_every_rule_declares_its_hold_or_is_a_page():
     """`for Nm` -> all_the_times + matching window + min_points covering the
     whole window (60s eval step); `for 0m`/no-for -> `last`. The only
     exception is the logs-based probe rule, whose intent is page-on-any."""
-    assert len(RULES) == 20
+    assert len(RULES) == 25
     for rule in RULES:
         port = rule["port"]
         hold = _FOR.search(port)
@@ -227,6 +282,10 @@ def test_journald_is_the_one_log_source_scoped_to_owned_producers():
     assert set(tags) == _OWNED_LOG_PRODUCERS
     assert any(m.get("SYSLOG_IDENTIFIER") == "nora-session-probe"
                for m in receivers["journald/nora"]["matches"])
+    assert {
+        "type": "copy", "from": 'attributes["container.name"]',
+        "to": 'resource["service.name"]',
+    } in receivers["journald/nora"]["operators"]
 
 
 def test_the_compose_mount_and_overlay_match_the_journald_source():

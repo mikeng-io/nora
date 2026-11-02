@@ -50,5 +50,9 @@ export class Metrics {
  * must only contain the values the module docstring allows.
  */
 export function jlog(event, fields = {}) {
-  console.log(JSON.stringify({ ts: Date.now(), event, ...fields }));
+  const failed = event === 'capture.halt' || event === 'capture.drain_error';
+  console.log(JSON.stringify({
+    ts: new Date().toISOString(), event, ...fields,
+    level: failed ? 'WARNING' : 'INFO', severity_number: failed ? 13 : 9,
+  }));
 }

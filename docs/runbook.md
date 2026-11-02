@@ -653,6 +653,19 @@ pipeline cannot say»): nothing says so if the SigNoz backend itself stops —
 
 ## 4e. The platform bridges and the admission projection
 
+SigNoz's bridge rules page on retained work or uncertain actions immediately,
+and on waiting/pending age above 300 seconds sustained for five minutes.
+Repeated unavailable queue inspections must also persist for five minutes.
+These use the existing queue gauges and inspection counter, not stream length
+or metrics-endpoint health as a proxy for completed work. Read the retained
+work/action before retrying; an uncertain action may already have taken effect.
+
+SigNoz deployment identity comes from each bridge image's baked
+`OTEL_SERVICE_VERSION`; reused images retain their own build version. The
+backend's private `NORA_DEPLOYMENT_ENVIRONMENT` names the deployment environment
+for otherwise unstamped spans. Set it from the deployed configuration, never
+from the latest application release number.
+
 `bridge-projection` is the independent publisher every bridge reads before
 capturing a message body or attachment. It is one container (`entry.py --all`)
 writing `/bridge-projection/{platform}.json` into the named volume all four

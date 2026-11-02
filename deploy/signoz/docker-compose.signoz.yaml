@@ -40,6 +40,8 @@
 # host journal keeps the durable history either way.
 services:
   nora:
+    environment:
+    - OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental,gen_ai_span_attributes_only
     networks:
     - signoz
     logging:

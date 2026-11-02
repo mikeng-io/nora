@@ -511,6 +511,8 @@ def publish_image(args, commit: str, previous: dict) -> None:
                 extra = ['--build-arg', f'NORA_VERSION={args.version}',
                          '--build-arg', f'NORA_GIT_SHA={commit}',
                          '--build-arg', f'NORA_BUILT_AT={stamp["built_at"]}']
+            elif name in {'signal-bridge', 'discord-bridge', 'instagram-bridge', 'whatsapp-bridge'}:
+                extra = ['--build-arg', f'NORA_VERSION={args.version}']
             for filename in external:
                 (root / context / filename).write_bytes((Path(context) / filename).read_bytes())
             metadata = args.directory.resolve() / f'{name}.metadata.json'

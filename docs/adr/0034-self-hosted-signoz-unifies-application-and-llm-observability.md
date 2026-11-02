@@ -1,6 +1,7 @@
 # 0034 Self-hosted SigNoz unifies application and LLM observability
 
-- **Status**: accepted (operator, 2026-10-30); implementation pending
+- **Status**: accepted (operator, 2026-10-30); backend cutover deployed 2026-10-31,
+  migration acceptance remains open in issue #440
 - **Date**: 2026-10-30
 - **Amends on implementation**: R-76 and DEC-143 backend/root-selection policy;
   retains DEC-141's context ownership and single execution trace

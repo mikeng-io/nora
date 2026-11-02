@@ -408,7 +408,8 @@ def operation_span(op: QueueOp, *, platform: str,
 # ---------------------------------------------------------------------------
 
 def lifecycle(metrics: Any, event: LifecycleEvent, *, platform: str,
-              level: int | None = None, **fields: object) -> None:
+              level: int | None = None, trace: Mapping[str, Any] | None = None,
+              **fields: object) -> None:
     """One allowlisted JSON line + one `nora_bridge_queue_events_total` tick.
 
     The line and the counter answer different questions — the line is the
@@ -424,6 +425,10 @@ def lifecycle(metrics: Any, event: LifecycleEvent, *, platform: str,
         # `queue_event` carries the vocabulary name through the pipeline.
         safe: dict[str, object] = {"queue_event": event,
                                    "platform": platform}
+        ctx = remote_context((trace or {}).get("traceparent"),
+                             (trace or {}).get("tracestate"))
+        if ctx is not None:
+            safe.update(trace_id=f"{ctx.trace_id:032x}", span_id=f"{ctx.span_id:016x}")
         for key, value in fields.items():
             if key not in _SAFE_LOG_FIELDS or value is None:
                 continue
