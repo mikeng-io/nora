@@ -30,6 +30,9 @@ revisions. Actor+target+emoji is a state key, not sufficient event dedupe for
 add/remove/add. Use bridge sequence/replay ambiguity rules when source revisions
 are absent. No invented timestamp/body hash turns ambiguous replay into a new fact.
 Internal IDs are scoped and private; model handles are resolved inside server scope.
+Native room-field references such as parent/owner IDs remain in Record. Projection
+uses the resolved owner name when available, otherwise an opaque reference; source
+facts are retained without presenting raw identifiers to the model.
 
 ## Payload union
 

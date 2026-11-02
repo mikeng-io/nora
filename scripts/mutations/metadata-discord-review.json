@@ -96,5 +96,12 @@
   "old": "        object_ref=f\"pin_set:{channel.id}\", operation=\"snapshot\",",
   "new": "        object_ref=\"pin_set\", operation=\"snapshot\",",
   "target": "tests/unit/test_platform_observation_fixtures.py::test_a_thread_pins_update_keeps_its_own_pin_set_in_the_parent_room"
+ },
+ {
+  "name": "thread owner and parent source ids never reach a model projection raw",
+  "file": "nora/domain/observations.py",
+  "old": "    if value is None or not name.endswith(\"_id\"):",
+  "new": "    if True:",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_thread_lifecycle_observations"
  }
 ]

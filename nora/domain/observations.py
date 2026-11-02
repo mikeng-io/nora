@@ -1729,10 +1729,21 @@ def _field_value(value: Any) -> str:
     return "changed"
 
 
-def _fields_summary(fields: dict[str, Any]) -> str:
+def _field_projection(name: str, value: Any, *, name_of: Any = None) -> Any:
+    """Source reference fields keep their raw value only inside Record."""
+    if value is None or not name.endswith("_id"):
+        return value
+    if name == "owner_id" and name_of is not None:
+        owner = name_of(str(value))
+        if owner:
+            return owner
+    return _grain_label(f"{name}:{value}")
+
+
+def _fields_summary(fields: dict[str, Any], *, name_of: Any = None) -> str:
     out = []
     for name in sorted(fields):
-        value = fields[name]
+        value = _field_projection(name, fields[name], name_of=name_of)
         if value is None:
             out.append(f"{name} cleared")
         else:
@@ -1792,7 +1803,7 @@ def observation_summary(
                 for k, v in list(p.option_counts)[:8]))
         return f"poll {op}"
     if isinstance(p, RoomPayload):
-        return _clip(f"room {op}: {_fields_summary(p.fields)}")
+        return _clip(f"room {op}: {_fields_summary(p.fields, name_of=name_of)}")
     if isinstance(p, MembershipPayload):
         if p.members:
             return _clip(f"membership {op}: {len(p.members)} members "
@@ -2055,7 +2066,8 @@ def head_detail(head: ObservationHead, *, name_of: Any = None) -> dict[str, Any]
     if head.kind == "room":
         fields = s.get("fields") or {}
         out["fields"] = {
-            k: v for k, v in list(fields.items())[:32]
+            k: _field_projection(k, v, name_of=name_of)
+            for k, v in list(fields.items())[:32]
             if isinstance(v, (str, int, float, bool)) or v is None
         }
         # Structured field values (permission sets, participant maps) are

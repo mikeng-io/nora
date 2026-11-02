@@ -54,6 +54,11 @@ from nora.domain.observations import (
     Observation,
     PinPayload,
     PollPayload,
+    StoredObservation,
+    fold_observation,
+    head_detail,
+    head_summary,
+    observation_summary,
 )
 from nora.platform.discord.parser import (
     parse_discord_channel_update,
@@ -792,6 +797,16 @@ def test_thread_lifecycle_observations() -> None:
     assert obs.scope.thread == ""
     assert obs.actor_id == d["owner_id"]  # creator, not the bot join in `member`
     assert obs.payload.fields["parent_id"] == d["parent_id"]  # type: ignore[attr-defined]
+    head = fold_observation(None, StoredObservation(
+        id=1, event_id="thread-created", source_digest="thread-created", observation=obs))
+    # Native identifiers stay in source storage, never in any model projection.
+    for rendered in (observation_summary(obs), head_summary(head), str(head_detail(head))):
+        assert d["owner_id"] not in rendered
+        assert d["parent_id"] not in rendered
+    def name_of(ref):
+        return "Thread Creator" if ref == d["owner_id"] else None
+    assert head_detail(head, name_of=name_of)["fields"]["owner_id"] == "Thread Creator"
+    assert "Thread Creator" in observation_summary(obs, name_of=name_of)
 
     d = _load(FIXTURES / "discord" / "thread_update.json")["payload"]["d"]
     obs = parse_discord_thread_update(
