@@ -1,5 +1,25 @@
 # Changelog
 
+## [7.14.4](https://github.com/mikeng-io/nora/compare/v7.14.3...v7.14.4) (2026-11-02)
+
+
+### Features
+
+* **observations:** project artifact fields, contacts, scheduled events and multi-post native ids ([9ae2e7e](https://github.com/mikeng-io/nora/commit/9ae2e7e57bc1dcacbd6b497a08ae92f4ee262c60))
+
+
+### Bug Fixes
+
+* **platform:** complete artifact projection and multi-post native-id flow ([8900ac2](https://github.com/mikeng-io/nora/commit/8900ac21c137c7bdcf26308fccc9cc579a4ae55f))
+* **platforms:** bind artifact names and retain honest partial-send outcomes ([31f5640](https://github.com/mikeng-io/nora/commit/31f5640bb9bcbec52194d307298d3b7f59373f2f))
+* **platforms:** bind event counts to native field presence ([51d450a](https://github.com/mikeng-io/nora/commit/51d450acdef6d7dd59389fd809a07ff94664600f))
+* **platforms:** declare native reference columns outside blob custody ([aa6ba59](https://github.com/mikeng-io/nora/commit/aa6ba5927deaf0d2871084e5097c140510eb3cde))
+* **platforms:** keep contact values and event guests in retained state ([26e5036](https://github.com/mikeng-io/nora/commit/26e5036d9a259186e72bd430da14ad5c426902f5))
+* **platforms:** preserve Signal contact fields in retained summaries ([2cd1040](https://github.com/mikeng-io/nora/commit/2cd1040f586ca04e9e82576294da5545c43e1999))
+* **platforms:** repair artifact projection, event lifecycle and multi-post identity ([11ad35c](https://github.com/mikeng-io/nora/commit/11ad35c82474c1b362557b35b0532c70f4ff62f7))
+* **platforms:** report bounded contact field omissions ([7845848](https://github.com/mikeng-io/nora/commit/784584871e9bd73327c335cfa3258010d5fe7814))
+* **platforms:** satisfy artifact lint and narrow cache lookup failure ([2d494f3](https://github.com/mikeng-io/nora/commit/2d494f37ff5c2494adca4a29feaa81243eefd771))
+
 ## [7.14.3](https://github.com/mikeng-io/nora/compare/v7.14.2...v7.14.3) (2026-11-02)
 
 
