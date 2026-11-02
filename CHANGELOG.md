@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.13.22](https://github.com/mikeng-io/nora/compare/v7.13.21...v7.13.22) (2026-11-02)
+
+
+### Maintenance
+
+* **roadmap:** connect capability planning to skills and retire Engineering ([2422fcb](https://github.com/mikeng-io/nora/commit/2422fcb63d95f7921086f34d10f6a0cff2a79325))
+* **roadmap:** keep Engineering retirement within planning scope ([1a454ab](https://github.com/mikeng-io/nora/commit/1a454ab67ca21fd0d8eef16824dfdff3226a0447))
+* **roadmap:** satisfy skill length and historical vocabulary readers ([f54cf01](https://github.com/mikeng-io/nora/commit/f54cf0132eef964dcc11fad92c0fca4f363a20d9))
+
 ## [7.13.21](https://github.com/mikeng-io/nora/compare/v7.13.20...v7.13.21) (2026-11-02)
 
 
