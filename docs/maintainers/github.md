@@ -271,6 +271,11 @@ verify the live check after merge. Keep manual dispatch on master.
 
 ## Engineering admission pilot
 
+> Historical board-dependent pilot: Nora Engineering was retired on 2026-11-02.
+> The controller and its admission format remain unchanged. Do not use the retired
+> board to admit new work; any future pilot revival needs a separately scoped
+> decision. [Roadmap conventions](conventions.md#roadmap) govern outcome planning.
+
 `Engineering dispatch` runs only trusted `master` source, using API JSON. PR
 ready/synchronize/reopen events are read-only review intake; completed CI events
 are notifications requiring explicit owner admission. Neither launches paid work.

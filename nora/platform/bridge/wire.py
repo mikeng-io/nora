@@ -12,6 +12,7 @@ been) and its result could not be determined — never resolved to success.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -21,7 +22,21 @@ from nora.domain.actions import OWNER_KINDS, ActionOwner
 # (nora.domain.actions) so layers below platform may share it; existing
 # `wire.ActionOwner` references keep working.
 __all__ = ["OWNER_KINDS", "ActionOwner", "ActionRequest", "ActionResponse",
-           "ActionState", "Outcome"]
+           "ActionState", "Outcome", "attachment_key_ok"]
+
+#: The `{opaque_key}` grammar both custody verbs enforce — the SAME charset
+#: the whatsapp bridge's `KEY_RE` and the instagram bridge's `custodyKeyRE`
+#: implement natively. Inbound keys are sha256 hex; app-minted outbound keys
+#: embed the action binding (`out-<action_id>-<i>`: colons and hyphens), so
+#: an alnum-only rule refuses every key the client can mint. `/` is excluded
+#: by the charset and `..` by the check below, so no key can name a path
+#: outside the custody dir.
+ATTACHMENT_KEY_RE = re.compile(r"[A-Za-z0-9._~:-]{1,128}\Z")
+
+
+def attachment_key_ok(key: str) -> bool:
+    return bool(key) and bool(ATTACHMENT_KEY_RE.fullmatch(key)) \
+        and ".." not in key
 
 Outcome = Literal["confirmed", "rejected", "unsupported", "uncertain"]
 ActionState = Literal["prepared", "started", "confirmed", "rejected", "uncertain"]

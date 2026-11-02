@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -32,7 +33,9 @@ import (
 // send route's own bound).
 const MaxAttachmentBytes = 32 << 20
 
-var custodyKeyRE = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+// The shared {opaque_key} grammar — the same charset the whatsapp bridge's
+// KEY_RE and the python bridges' attachment_key_ok enforce.
+var custodyKeyRE = regexp.MustCompile(`^[A-Za-z0-9._~:-]{1,128}$`)
 
 // CustodyRecord is the metadata beside each object.
 type CustodyRecord struct {
@@ -67,7 +70,11 @@ func AttachmentKey(eventID string, i int) string {
 }
 
 // ValidKey reports whether a caller-supplied key is safe to store under.
-func ValidKey(key string) bool { return custodyKeyRE.MatchString(key) }
+// `..` is refused on top of the charset even though filepath.Base already
+// neutralizes it — the refusal is the contract every bridge shares.
+func ValidKey(key string) bool {
+	return custodyKeyRE.MatchString(key) && !strings.Contains(key, "..")
+}
 
 // ErrKeyConflict is a PUT reusing a key for different bytes.
 var ErrKeyConflict = errors.New("attachment key already held for different bytes")

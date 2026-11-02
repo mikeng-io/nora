@@ -35,6 +35,14 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from nora.domain.actions import ActionOwner
 from nora.domain.models import ConversationTarget
+from nora.domain.ports import (
+    LinkPreview,
+    Mention,
+    OutboundAttachment,
+    OutboundQuote,
+    Style,
+    TextStyle,
+)
 from nora.infra.sql.bridge_store import SqlBridgeStore
 from nora.obs.metrics import Metrics
 from nora.platform.bridge import telemetry as bt
@@ -62,6 +70,7 @@ from nora.platform.bridge.service import (
     receipt_intent_ids,
     receipt_via,
 )
+from nora.platform.bridge.wire import attachment_key_ok
 from nora.platform.signal.parser import parse_event, parse_observations
 from nora.platform.signal.react import SignalReactor
 from nora.platform.signal.send import SignalSender
@@ -138,9 +147,11 @@ class _SignalExecutor:
     answer that is not a definitive `retryable` refusal is `uncertain` — the
     dropped-answer case may still have landed."""
 
-    def __init__(self, sender: SignalSender, reactor: SignalReactor) -> None:
+    def __init__(self, sender: SignalSender, reactor: SignalReactor,
+                 attach_dir: Path | None = None) -> None:
         self._sender = sender
         self._reactor = reactor
+        self._attach_dir = attach_dir
 
     async def __call__(self, action: dict[str, Any]) -> ActionReply:
         aid = str(action.get("action_id") or "")
@@ -151,8 +162,38 @@ class _SignalExecutor:
             str((r.get("target") or {}).get("kind") or ""))
         try:
             if op == "send":
+                # Custody bytes are resolved HERE, at effect time — the same
+                # rehydration `DiscordRestActionService` runs. An attachment
+                # whose key never landed is a REJECTED send, not a text-only
+                # delivery of a message that promised an image.
+                attachments: list[OutboundAttachment] = []
+                for att in r.get("attachments") or ():
+                    resolved = self._attachment(att)
+                    if resolved is None:
+                        return ActionReply(
+                            "rejected", kind="attachment_missing",
+                            message="custody key absent")
+                    attachments.append(resolved)
                 res = await self._sender.send(
-                    target, str(r.get("text") or ""), request_id=aid)
+                    target, str(r.get("text") or ""),
+                    mentions=tuple(
+                        Mention(
+                            start=int(m.get("start") or 0),
+                            length=int(m.get("length") or 0),
+                            recipient=str(m.get("recipient") or ""),
+                            handle=m.get("handle"))
+                        for m in r.get("mentions") or ()),
+                    styles=tuple(
+                        TextStyle(
+                            start=int(s.get("start") or 0),
+                            length=int(s.get("length") or 0),
+                            style=Style(str(s.get("style") or "")))
+                        for s in r.get("styles") or ()
+                        if str(s.get("style") or "") in _STYLE_VALUES),
+                    preview=self._preview(r.get("preview")),
+                    attachments=tuple(attachments),
+                    quote=self._quote(r.get("quote")),
+                    request_id=aid)
                 # `retryable` marks a definitive upstream refusal (429);
                 # every other ok=False includes the dropped-answer/timeout
                 # case the sender itself says may still have landed.
@@ -173,9 +214,58 @@ class _SignalExecutor:
             return ActionReply(
                 "uncertain", kind="transport", message=type(exc).__name__)
 
+    def _attachment(self, att: Any) -> OutboundAttachment | None:
+        """Custody bytes live under `/v1/attachments/{key}` — read them back
+        so the send carries real bytes, not a stale ref. A miss returns None
+        and the whole send is REJECTED upstream — deliberately NOT
+        `DiscordRestActionService._attachment`'s policy, which drops the
+        attachment and delivers text-only (whatsapp rejects the same way
+        this does)."""
+        if self._attach_dir is None or not isinstance(att, dict):
+            return None
+        key = str(att.get("key") or "")
+        path = self._attach_dir / key
+        if not attachment_key_ok(key) or not path.is_file():
+            return None
+        return OutboundAttachment(
+            content=path.read_bytes(),
+            media_type=str(att.get("media_type")
+                           or "application/octet-stream"),
+            filename=str(att.get("file_name") or "attachment"))
 
-def _attach_key_ok(key: str) -> bool:
-    return bool(key) and key.isalnum() and len(key) <= 128
+    @staticmethod
+    def _quote(q: Any) -> OutboundQuote | None:
+        """Signal threads on `ts` + `author_id` — a request missing either
+        sends unthreaded, never a half quote signal-cli must refuse."""
+        if not isinstance(q, dict) or not q.get("ts") \
+                or not q.get("author_id"):
+            return None
+        return OutboundQuote(
+            ts=int(q["ts"]), author_id=str(q["author_id"]),
+            platform_message_id=(str(q["platform_message_id"])
+                                 if q.get("platform_message_id") else None))
+
+    @staticmethod
+    def _preview(p: Any) -> LinkPreview | None:
+        """`url` + `title` are mandatory on the wire; a request carrying
+        less sends plain, exactly as `OpenGraphPreviewSource` decides it."""
+        if not isinstance(p, dict) or not p.get("url") or not p.get("title"):
+            return None
+        return LinkPreview(
+            url=str(p["url"]), title=str(p["title"]),
+            description=str(p.get("description") or ""),
+            image_data_uri=(str(p["image_data_uri"])
+                            if p.get("image_data_uri") else None))
+
+
+#: Wire values `Style` accepts — a request naming anything else drops the
+#: style, never the send (the same refusal `Style(...)` would cost the
+#: whole action inside the executor's try).
+_STYLE_VALUES = frozenset(s.value for s in Style)
+
+#: Outbound custody PUT bound — the "bounded bytes" clause of the wire
+#: contract, at the whatsapp bridge's figure (discord/instagram run 32 MiB).
+MAX_ATTACHMENT_BYTES = 64 * 1024 * 1024
 
 
 class Bridge:
@@ -202,7 +292,14 @@ class Bridge:
         self.store = store or SqlBridgeStore(
             create_async_engine(cfg.database_url))
         self.journal = Journal(cfg.journal_path)
-        self.sender = sender or SignalSender(cfg.signal_http)
+        # `dm_recipients=None`: the identity.toml DM check lives app-side in
+        # `send_via_bridge` — the bridge holds no policy file to re-check
+        # against, and every other bridge platform trusts the app the same
+        # way. CAVEAT: that check only fires when the app's set is POPULATED
+        # (`send_via_bridge` skips it on an empty set, and the owner gate is
+        # what still stands between a DM action and the wire).
+        self.sender = sender or SignalSender(
+            cfg.signal_http, dm_recipients=None)
         self.reactor = reactor or SignalReactor(cfg.signal_http)
         self._rpc = rpc_client or self._rpc_http
         self._received: asyncio.Event = asyncio.Event()
@@ -213,7 +310,8 @@ class Bridge:
         # ONE journal→stream writer, the capture sink that freezes receipt
         # intent + appends + wakes it, and the ledger-fenced action service
         # the /v1/actions route and the receipt lane both run through.
-        self._executor = _SignalExecutor(self.sender, self.reactor)
+        self._executor = _SignalExecutor(
+            self.sender, self.reactor, attach_dir=cfg.attach_dir)
         self._publisher = JournalPublisher(
             journal=self.journal, producer=self.producer,
             on_enqueued=self._receipt_step,
@@ -592,9 +690,11 @@ class Bridge:
 
     async def put_attachment(self, req: web.Request) -> web.Response:
         key = req.match_info["key"]
-        if not _attach_key_ok(key):
+        if not attachment_key_ok(key):
             return web.json_response({"error": "bad key"}, status=400)
         body = await req.read()
+        if len(body) > MAX_ATTACHMENT_BYTES:
+            return web.json_response({"error": "too large"}, status=413)
         path = self.cfg.attach_dir / key
         if path.is_file() and path.read_bytes() != body:
             # Immutable custody: a key names ONE payload; a different body
@@ -606,7 +706,7 @@ class Bridge:
 
     async def get_attachment(self, req: web.Request) -> web.Response:
         key = req.match_info["key"]
-        if not _attach_key_ok(key):
+        if not attachment_key_ok(key):
             return web.json_response({"error": "bad key"}, status=400)
         path = self.cfg.attach_dir / key
         if not path.is_file():
