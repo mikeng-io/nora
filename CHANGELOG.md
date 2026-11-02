@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.13.15](https://github.com/mikeng-io/nora/compare/v7.13.14...v7.13.15) (2026-11-02)
+
+
+### Maintenance
+
+* **memory:** clarify clearing and measured evaluation limits ([913d620](https://github.com/mikeng-io/nora/commit/913d6208bf333bb9ee2a456b1d3dffac97dc7c2c))
+* **unified-memory:** record 2026-11-02 delivery snapshot and F3/F4 dispositions ([8f162a4](https://github.com/mikeng-io/nora/commit/8f162a46106eb7b83129518efbe801e0a2262e37))
+
 ## [7.13.14](https://github.com/mikeng-io/nora/compare/v7.13.13...v7.13.14) (2026-11-01)
 
 
