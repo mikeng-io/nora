@@ -1067,3 +1067,29 @@ async def test_guild_metadata_reaches_only_configured_room_scopes(tmp_path):
         assert obs.actor_status == "not_supplied" and not obs.actor_id
         assert env.message is None
     assert len({e.event_id for e in envelopes}) == 2
+
+
+@pytest.mark.parametrize("reported_count", [None, 0, 4])
+async def test_scheduled_event_count_uses_wire_presence_not_sdk_default(
+        tmp_path, reported_count):
+    bridge, journal, _, _ = _bridge(tmp_path)
+    data = {"id": "55555", "guild_id": GUILD}
+    if reported_count is not None:
+        data["user_count"] = reported_count
+    await bridge._record_wire_frame({
+        "t": "GUILD_SCHEDULED_EVENT_CREATE", "s": 500, "d": data})
+    # discord.py supplies 0 even if user_count never appeared on the wire.
+    event = SimpleNamespace(
+        id=55555, guild_id=int(GUILD), name="Example Event", user_count=0,
+        status=SimpleNamespace(name="scheduled", value=1),
+        entity_type=SimpleNamespace(name="external", value=3),
+        start_time=datetime(2026, 11, 10, tzinfo=UTC), end_time=None,
+        description=None, location=None, channel=None, channel_id=None)
+    await bridge._capture_observation("scheduled_event_create", event)
+    (envelope,) = _envelopes(journal)
+    metadata = envelope.observation["payload"]["metadata"]
+    if reported_count is None:
+        assert "interested_count" not in metadata
+        assert "interested_count" in envelope.observation["coverage"]["gaps"]
+    else:
+        assert metadata["interested_count"] == reported_count

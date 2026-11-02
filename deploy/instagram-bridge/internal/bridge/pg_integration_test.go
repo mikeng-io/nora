@@ -84,6 +84,7 @@ CREATE TABLE bridge_action (
   request_hash text NOT NULL,
   state text NOT NULL DEFAULT 'prepared',
   platform_ref text,
+  platform_refs jsonb,
   platform_ms bigint,
   error jsonb,
   message_id bigint,
@@ -217,7 +218,7 @@ func TestPGReserveCAS(t *testing.T) {
 				mu.Lock()
 				upstreamCalls++
 				mu.Unlock()
-				_ = store.Finish(ctx, "w-1:send:0", ActionConfirmed, "ref-1", nil, "", "")
+				_ = store.Finish(ctx, "w-1:send:0", ActionConfirmed, "ref-1", nil, nil, "", "")
 			}
 		}()
 	}

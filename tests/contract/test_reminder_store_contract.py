@@ -1021,7 +1021,7 @@ async def test_concurrent_two_process_creates_cannot_split_the_act(
 
 
 @pytest.mark.fresh_database
-async def test_0144_index_downgrade_and_upgrade_preserve_populated_rows(clean_pg_url):
+async def test_0145_index_downgrade_and_upgrade_preserve_populated_rows(clean_pg_url):
     """A POPULATED table, not an index-only assertion: synthetic proactive
     rows with subject payloads survive `downgrade` (index dropped, data
     untouched) and `upgrade` (the unique index builds over populated data
@@ -1039,7 +1039,7 @@ async def test_0144_index_downgrade_and_upgrade_preserve_populated_rows(clean_pg
     await store.create(row)
 
     with _migration_lock(clean_pg_url):
-        command.downgrade(alembic_config(clean_pg_url), "-1")
+        command.downgrade(alembic_config(clean_pg_url), "0144_platform_observation")
     async with engine.connect() as conn:
         rows = (await conn.execute(
             sa.text("SELECT id FROM reminders WHERE id = :i"), {"i": row.id}
@@ -1050,7 +1050,7 @@ async def test_0144_index_downgrade_and_upgrade_preserve_populated_rows(clean_pg
     assert len(rows) == 1 and idx is None
 
     with _migration_lock(clean_pg_url):
-        command.upgrade(alembic_config(clean_pg_url), "+1")
+        command.upgrade(alembic_config(clean_pg_url), "head")
     async with engine.connect() as conn:
         idx = (await conn.execute(sa.text(
             "SELECT to_regclass('uq_reminders_proactive_open_subject')"))

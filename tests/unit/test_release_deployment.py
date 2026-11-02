@@ -723,6 +723,9 @@ def test_complete_image_build_uses_selected_source_version_and_channel(
         assert built[-1][built[-1].index('-t') + 1] == f'{bundle.REGISTRY}{name}:{identity}'
         assert f'org.opencontainers.image.revision={selected["commit"]}' in built[-1]
         assert f'org.opencontainers.image.version={selected["version"]}' in built[-1]
+        if name in {'signal-bridge', 'discord-bridge', 'instagram-bridge', 'whatsapp-bridge'}:
+            assert ['--build-arg', f'NORA_VERSION={selected["version"]}'] in [
+                built[-1][i:i + 2] for i in range(len(built[-1]) - 1)]
     assert prepared == ['signal-cli'] and len(built) == len(bundle.BUILDS)
     stamp = json.loads(Path('nora/version.json').read_text())
     assert (stamp['version'], stamp['commit']) == (selected['version'], selected['commit'])

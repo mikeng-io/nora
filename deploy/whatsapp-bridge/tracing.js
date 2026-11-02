@@ -138,6 +138,8 @@ export function initTracing({ serviceName, endpoint, exporter, env } = {}) {
   const provider = new NodeTracerProvider({
     resource: resourceFromAttributes({
       [ATTR_SERVICE_NAME]: serviceName || env?.OTEL_SERVICE_NAME || 'whatsapp-bridge',
+      ...((env || process.env).OTEL_SERVICE_VERSION
+        ? { 'service.version': (env || process.env).OTEL_SERVICE_VERSION } : {}),
     }),
     spanProcessors: [new BatchSpanProcessor(exporter || new OTLPTraceExporter({ url }))],
   });

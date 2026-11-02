@@ -125,3 +125,31 @@ block, feed crawler or trace-to-social collector is introduced.
 Source merge, deployment, live platform delivery and model-routing measurement
 are separate obligations. None is established by the generated fixtures or the
 current implementation mapping.
+
+## Artifact / contact / event completion addendum (2026-11-02)
+
+Selected cells pinned in this completion pass; the column vocabulary is the
+stage table above. "Bound" means implemented in the candidate tree, not
+delivered or live-verified.
+
+| Cell | Selected binding | Pinned boundary |
+|---|---|---|
+| WA `contactsArrayMessage` + `contactMessage` | → `artifact/contact` on `platform_observation`; per-card bounded `contacts[]` metadata (`display_name`, `formatted_name`, `name`, `organization`, `title`, `phones`, `emails`, `urls`); `contact_count`/`unparsed` recorded | vCard parsed under RFC 6350 — folded continuation lines joined, `\\` `\,` `\;` `\n` `\N` decoded, `N`/`ORG` split on unescaped `;` only (an even backslash count does not escape). Raw vcard bytes never stored; a card yielding no readable field is a `vcard` coverage gap |
+| WA `eventMessage` create / edit / `isCanceled` | → `artifact/event` create / revise on the ORIGINAL `artifact:{stanza}` — `messages.update`'s `editedMessage.message` and an upsert `protocolMessage.editedMessage` are the same full-replacement edit (reschedule/cancel), keyed by the pinned process-message `key.id` re-key | `encEventResponseMessage` → per-responder `revise` carrying `response` keyed by the responder's actor. The protobuf enum decodes once (`GOING`/`NOT_GOING`/`MAYBE` recorded; `UNKNOWN` or an out-of-vocabulary value clears only that responder's recorded answer and guests as unreadable — coverage says why — never a confirmed answer nor a claimed withdrawal; `NOT_GOING` is an answer, not a withdrawal). A source-declared empty response withdraws that responder's row only — never a tally against others |
+| Signal `JsonSharedContact` (signal-cli v0.14.7) | → `artifact/contact`; `display_name` assembled from `JsonContactName` components (`prefix` `given` `middle` `family` `suffix`, nickname fallback) | The pinned serializer exposes NO `display` field — a guessed read previously stored nothing. `phones`/`emails` come from `JsonContactPhone.value`/`JsonContactEmail.value` |
+| Discord `GUILD_SCHEDULED_EVENT_*` (discord.py 2.7.1) | `artifact/event` on the GUILD scope — a guild event is never a channel audience | create/delete dispatch one `ScheduledEvent`; update dispatches `(before, after)`; user add/remove dispatch `(event, user)`. The SDK discards frames whose guild/event/user is uncached BEFORE any callback — parser admission must not repeat the drop on `ev.guild`/`ev.channel`, which are cache-derived properties and stay `None` even post-dispatch. `guild_id`, `channel_id`, `location` (unrolled from `entity_metadata`), `user_count` and `creator_id` are the direct attributes read. `status` is the SDK enum (`EventStatus.canceled` spelling) |
+| Discord interest add/remove | `artifact/event` `revise` with `response` = `interested` / `""`, actor = responder | Clockless transitions keep per-responder identity through the durable transition ledger (`se:{event}:{user}`) — an add→remove→add on one member resolves through the ledger or stays honestly ambiguous; never a content-hash collapse |
+| Multi-post outbound native identity | `platform_refs` (`bridge_action`, `ActionReply`, wire) / `platform_message_ids` (`SendResult`, `messages.platform_message_ids_json`) carry EVERY confirmed post id; `platform_ref`/`platform_message_id` remain the last-handle compat single | Failed, rejected and uncertain sends mint NO ids on any surface. A `platform_refs` list on an unconfirmed response is ignored end to end |
+| IG polls | unchanged | Unsupported at pinned mautrix-meta `v0.2609.0` — `unavailable`, never `nothing_found`, no invented `UnknownEvent` mapping |
+
+Discord scheduled-event support is pinned to the INSTALLED SDK: the generated
+fixtures hydrate through the real `ConnectionState.parse_*` dispatch so a
+renamed callback or dropped attribute fails the suite, not production.
+Live guild-event delivery, cache warmth and account permissions remain
+unverified — upstream capability is not delivery.
+
+Scheduled-event subscriber counts use the existing raw-frame/SDK provenance join:
+`discord.py` defaults an omitted `user_count` to zero, so the public property
+alone cannot establish a reported zero. An unjoined/absent native count stays a
+coverage gap; an explicit native zero remains zero. No count is reconstructed
+from event-interest callbacks or treated as attendance.

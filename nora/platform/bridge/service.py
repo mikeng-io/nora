@@ -111,6 +111,7 @@ class ActionReply:
         self, state: str, *, kind: str = "", message: str = "",
         platform_ref: str | None = None, platform_ms: int | None = None,
         message_id: int | None = None,
+        platform_refs: tuple[str, ...] = (),
     ) -> None:
         self.state = state
         self.kind = kind
@@ -118,6 +119,7 @@ class ActionReply:
         self.platform_ref = platform_ref
         self.platform_ms = platform_ms
         self.message_id = message_id
+        self.platform_refs = tuple(platform_refs)
 
 
 class _Executor(Protocol):
@@ -163,6 +165,7 @@ def action_response(action_id: str, reply: ActionReply) -> dict[str, Any]:
     return {
         "action_id": action_id, "state": reply.state, "outcome": outcome,
         "platform_ref": reply.platform_ref,
+        "platform_refs": list(reply.platform_refs) or None,
         "platform_ms": reply.platform_ms,
         "message_id": reply.message_id,
         "error": (
@@ -177,6 +180,7 @@ def _reply_from_row(row: Mapping[str, Any]) -> ActionReply:
         str(row["state"]), kind=str(error.get("kind") or ""),
         message=str(error.get("message") or ""),
         platform_ref=row.get("platform_ref"),
+        platform_refs=tuple(row.get("platform_refs") or ()),
         platform_ms=row.get("platform_ms"),
         message_id=row.get("message_id"))
 
@@ -307,14 +311,14 @@ class JournalPublisher:
                         links=bt.carrier_links(env.trace),
                         event_id=env.event_id, kind=env.kind,
                         queued_ms=env.queued_ms,
-                    ):
+                    ) as carrier:
                         _sid, canonical_id = await self._producer.enqueue(env)
                     bt.lifecycle(
                         self._metrics,
                         "enqueued" if canonical_id == env.event_id
                         else "duplicate_suppressed",
                         platform=env.platform, event_id=env.event_id,
-                        stream_id=_sid, queued_ms=env.queued_ms)
+                        stream_id=_sid, queued_ms=env.queued_ms, trace=carrier)
                 except Exception:  # noqa: BLE001 — any enqueue failure stops the head
                     blocked = True
                     break
@@ -378,7 +382,7 @@ class JournalCaptureSink:
         self._journal.append(record)
         bt.lifecycle(self._metrics, "captured", platform=envelope.platform,
                      event_id=envelope.event_id, kind=envelope.kind,
-                     queued_ms=envelope.queued_ms)
+                     queued_ms=envelope.queued_ms, trace=envelope.trace)
         self._publisher.wake()
         return True
 
@@ -477,18 +481,19 @@ class DurableActionService:
         # The outbound effect is its own bounded root — never a child of an
         # ambient span (design 04 §delivery): it links to the producer
         # context only when the caller carries one (the receipt lane).
-        bt.lifecycle(self._metrics, "delivery_started",
-                     platform=self._platform, action_id=aid)
         with bt.operation_span("deliver", platform=self._platform,
                                links=list(links or []),
-                               action_id=aid):
+                               action_id=aid) as sp:
+            bt.lifecycle(self._metrics, "delivery_started",
+                         platform=self._platform, action_id=aid, trace=bt.span_ref(sp))
             reply = await self._execute(action)
             final = await self._terminal(
                 aid, reply.state, platform_ref=reply.platform_ref,
+                platform_refs=reply.platform_refs,
                 platform_ms=reply.platform_ms,
                 error=({"kind": reply.kind, "message": reply.message}
                        if reply.kind else None))
-        self._delivery_outcome(aid, op, final)
+        self._delivery_outcome(aid, op, final, trace=bt.span_ref(sp))
         if final is None:
             # The effect ran but the outcome was NOT persisted — report the
             # retained ambiguity, never a terminal the ledger doesn't hold.
@@ -497,7 +502,8 @@ class DurableActionService:
                 message="terminal write failed")
         return ActionReply(
             final, kind=reply.kind, message=reply.message,
-            platform_ref=reply.platform_ref, platform_ms=reply.platform_ms)
+            platform_ref=reply.platform_ref, platform_ms=reply.platform_ms,
+            platform_refs=reply.platform_refs)
 
     async def get(self, action_id: str) -> dict[str, Any] | None:
         """`GET /v1/actions/{id}` — the persisted truth, scoped: another
@@ -539,11 +545,12 @@ class DurableActionService:
             log.error("action store unavailable: %s", type(exc).__name__)
             return "unavailable"
         if verdict == "execute":
-            bt.lifecycle(self._metrics, "delivery_started",
-                         platform=self._platform, action_id=action_id)
             with bt.operation_span(
                     "deliver", platform=self._platform, links=links,
-                    action_id=action_id):
+                    action_id=action_id) as sp:
+                bt.lifecycle(self._metrics, "delivery_started",
+                             platform=self._platform, action_id=action_id,
+                             trace=bt.span_ref(sp))
                 reply = await self._execute({
                     "action_id": action_id, "op": op, "request": request,
                     "owner": {"kind": owner.kind, "id": owner.id,
@@ -553,7 +560,7 @@ class DurableActionService:
                     platform_ms=reply.platform_ms,
                     error=({"kind": reply.kind, "message": reply.message}
                            if reply.kind else None))
-            self._delivery_outcome(action_id, op, final)
+            self._delivery_outcome(action_id, op, final, trace=bt.span_ref(sp))
             return final or "unavailable"
         if verdict == "replay" and prior is not None:
             if prior["state"] == "started":
@@ -568,19 +575,20 @@ class DurableActionService:
         return verdict  # 'conflict' | 'unavailable'
 
     def _delivery_outcome(
-            self, action_id: str, op: str, final: str | None) -> None:
+            self, action_id: str, op: str, final: str | None, *,
+            trace: Mapping[str, Any] | None = None) -> None:
         """The closed vocabulary of persisted outcomes — logged and counted
         at the durable result boundary, never before it lands."""
         if final == "confirmed":
             bt.lifecycle(self._metrics, "delivery_confirmed",
-                         platform=self._platform, action_id=action_id)
+                         platform=self._platform, action_id=action_id, trace=trace)
         elif final != "rejected":
             # `None` (terminal write failed) and `uncertain` BOTH mean the
             # outcome is not provably delivered — the same WARNING event.
             # A persisted `rejected` IS provable: the counter carries it.
             bt.lifecycle(self._metrics, "delivery_uncertain",
                          platform=self._platform, action_id=action_id,
-                         reason=final or "terminal_write_failed")
+                         reason=final or "terminal_write_failed", trace=trace)
         # `unavailable`/`conflict` persisted terminals and a failed write
         # all mean "not provably delivered" — the counter's vocabulary is
         # the narrower one, so they land on `uncertain`, never a raise.
@@ -593,6 +601,7 @@ class DurableActionService:
     async def _terminal(
         self, action_id: str, state: str, *,
         platform_ref: str | None = None, platform_ms: int | None = None,
+        platform_refs: tuple[str, ...] = (),
         error: dict[str, Any] | None = None,
     ) -> str | None:
         """started→terminal CAS. Returns the persisted state — an already-
@@ -603,7 +612,8 @@ class DurableActionService:
             async with self._store._engine.begin() as conn:
                 return await self._store.action_state(
                     conn, action_id, state, platform_ref=platform_ref,
-                    platform_ms=platform_ms, error=error)
+                    platform_ms=platform_ms, error=error,
+                    platform_refs=list(platform_refs) or None)
         except Exception as exc:  # noqa: BLE001 — boundary catch; logged by type
             log.error("terminal write failed: %s", type(exc).__name__)
             return None

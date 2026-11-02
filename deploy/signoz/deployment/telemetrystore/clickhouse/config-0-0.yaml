@@ -1,5 +1,7 @@
 asynchronous_metric_log:
   ttl: event_date + INTERVAL 1 DAY DELETE
+backups:
+  allowed_path: /var/lib/clickhouse/backups/
 dictionaries_config: '*_dictionary.xml'
 display_name: cluster
 distributed_ddl:

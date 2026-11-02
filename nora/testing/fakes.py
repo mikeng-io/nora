@@ -270,7 +270,9 @@ class FakeRecordStore:
         included; pinned for both by the contract suite."""
         if target.message_id:
             def match(r: dict[str, Any]) -> bool:
-                return r["platform_message_id"] == target.message_id
+                return (r["platform_message_id"] == target.message_id
+                        or target.message_id
+                        in (r.get("platform_message_ids") or ()))
         elif target.sent_ts is not None and sender_id:
             def match(r: dict[str, Any]) -> bool:
                 # Mirrors the SQL: the original's ts, or one of its edits'.
@@ -545,6 +547,7 @@ class FakeRecordStore:
     async def set_delivery_outcome(
         self, *, row_id: int, status: DeliveryStatus, ts: int | None = None,
         platform_message_id: str | None = None,
+        platform_message_ids: tuple[str, ...] | None = None,
     ) -> None:
         """Mirrors `SqlRecordStore.set_delivery_outcome`, `ts=None` included:
         a platform that returned no timestamp must leave the row's own alone,
@@ -558,6 +561,10 @@ class FakeRecordStore:
                     row["ts"] = ts
                 if platform_message_id:
                     row["platform_message_id"] = platform_message_id
+                if platform_message_ids:
+                    row["platform_message_ids"] = list(
+                        dict.fromkeys(str(i) for i in platform_message_ids
+                                      if i))
                 return
 
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]:

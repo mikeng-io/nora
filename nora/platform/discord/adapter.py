@@ -161,6 +161,7 @@ class DiscordAdapter:
         intents.guilds = True
         intents.members = True          # privileged; the roster read needs it
         intents.presences = True        # privileged; presence intent
+        intents.guild_scheduled_events = True  # scheduled-event observations
         client = discord.Client(intents=intents)
         self._current_client = client
 

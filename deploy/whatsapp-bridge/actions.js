@@ -112,12 +112,17 @@ export const executors = {
     const cached = quotedId && ctx.recentMessages ? ctx.recentMessages.get(quotedId) : null;
     const opts = cached?.raw ? { quoted: cached.raw } : {};
 
+    const refs = [];
     let last = null;
     for (const payload of payloads) {
       last = await ctx.sendWithTimeout(jid, payload, opts);
-      if (last?.key?.id && ctx.recentMessages) ctx.recentMessages.remember(last);
+      if (last?.key?.id) {
+        refs.push(String(last.key.id));
+        if (ctx.recentMessages) ctx.recentMessages.remember(last);
+      }
     }
-    return { platform_ref: last?.key?.id || null, platform_ms: timestampMs(last?.messageTimestamp) };
+    return { platform_ref: last?.key?.id || null, platform_refs: refs,
+      platform_ms: timestampMs(last?.messageTimestamp) };
   },
 
   async react(request, ctx) {
@@ -183,7 +188,7 @@ export async function runAction({ store, ctx, actionId, owner, op, request, metr
 async function runActionInner({ store, ctx, actionId, owner, op, request, metrics }) {
   if (!store) {
     return { action_id: actionId, state: 'unavailable', outcome: null,
-      platform_ref: null, platform_ms: null,
+      platform_ref: null, platform_refs: null, platform_ms: null,
       error: { kind: 'store_unavailable', message: 'bridge_action store not configured' }, _status: 503 };
   }
   if (ctx.connected && !ctx.connected()) {
@@ -191,7 +196,7 @@ async function runActionInner({ store, ctx, actionId, owner, op, request, metric
     // row pretends the upstream call may have happened. The caller treats
     // this as transport-unavailable (retryable upstream), not a rejection.
     return { action_id: actionId, state: 'unavailable', outcome: null,
-      platform_ref: null, platform_ms: null,
+      platform_ref: null, platform_refs: null, platform_ms: null,
       error: { kind: 'not_connected', message: 'upstream socket is not connected' }, _status: 503 };
   }
   let verdict;
@@ -201,13 +206,13 @@ async function runActionInner({ store, ctx, actionId, owner, op, request, metric
     // The reservation never landed — nothing ran, safe to say unavailable.
     metrics?.inc('bridge_action_total', { op, state: 'unavailable' });
     return { action_id: actionId, state: 'unavailable', outcome: null,
-      platform_ref: null, platform_ms: null,
+      platform_ref: null, platform_refs: null, platform_ms: null,
       error: { kind: 'store_unavailable', message: sanitizeError(err, 'store').message }, _status: 503 };
   }
   if (verdict.verdict === 'conflict') {
     metrics?.inc('bridge_action_total', { op, state: 'conflict' });
     return { action_id: actionId, state: 'rejected', outcome: 'rejected',
-      platform_ref: null, platform_ms: null,
+      platform_ref: null, platform_refs: null, platform_ms: null,
       error: { kind: 'conflict', message: 'action_id reused with a different request' } };
   }
   if (verdict.verdict === 'replay') {
@@ -223,23 +228,25 @@ async function runActionInner({ store, ctx, actionId, owner, op, request, metric
   try {
     const out = await executors[op](request, ctx);
     await store.finish(actionId, 'confirmed', {
-      platformRef: out.platform_ref, platformMs: out.platform_ms });
+      platformRef: out.platform_ref, platformMs: out.platform_ms,
+      platformRefs: out.platform_refs });
     metrics?.inc('bridge_action_total', { op, state: 'confirmed' });
     return { action_id: actionId, state: 'confirmed', outcome: 'confirmed',
-      platform_ref: out.platform_ref, platform_ms: out.platform_ms, error: null };
+      platform_ref: out.platform_ref, platform_refs: out.platform_refs ?? null,
+      platform_ms: out.platform_ms, error: null };
   } catch (err) {
     if (err instanceof ActionRejected) {
       const error = { kind: err.kind, message: sanitizeError(err).message };
       await store.finish(actionId, 'rejected', { error });
       metrics?.inc('bridge_action_total', { op, state: 'rejected' });
       return { action_id: actionId, state: 'rejected', outcome: 'rejected',
-        platform_ref: null, platform_ms: null, error };
+        platform_ref: null, platform_refs: null, platform_ms: null, error };
     }
     const error = sanitizeError(err);
     await store.finish(actionId, 'uncertain', { error });
     metrics?.inc('bridge_action_total', { op, state: 'uncertain' });
     return { action_id: actionId, state: 'uncertain', outcome: 'uncertain',
-      platform_ref: null, platform_ms: null, error };
+      platform_ref: null, platform_refs: null, platform_ms: null, error };
   }
 }
 
@@ -266,7 +273,8 @@ export function createV1(deps) {
           }
           if (typeof op !== 'string' || !ACTION_OPS.has(op) || !executors[op]) {
             return sendJson(res, 200, { action_id: actionId, state: 'rejected',
-              outcome: 'unsupported', platform_ref: null, platform_ms: null,
+              outcome: 'unsupported', platform_ref: null, platform_refs: null,
+              platform_ms: null,
               error: { kind: 'unsupported', message: String(op).slice(0, 40) } });
           }
           if (typeof request !== 'object' || request === null || Array.isArray(request)) {

@@ -1,7 +1,7 @@
-"""Release every ordinary change reachable since the preceding stable tag.
+"""Release shipped changes reachable since the preceding stable tag.
 
-Only generated version metadata is excluded, to avoid a release loop. Git read
-failures remain errors; internal work qualifies even when hidden in the notes.
+Non-runtime paths and generated metadata are excluded. Unknown paths qualify;
+git read failures remain errors and explicit release declarations remain visible.
 """
 
 from __future__ import annotations
@@ -20,6 +20,45 @@ METADATA_FILES = frozenset(
         "uv.lock",
     }
 )
+NON_RUNTIME_PREFIXES = (
+    "docs/",
+    "design/",
+    "tests/",
+    ".agents/",
+    ".codex/",
+    "openwiki/",
+    ".claude/",
+    ".githooks/",
+    ".github/",
+    ".vscode/",
+    ".idea/",
+)
+NON_RUNTIME_FILES = frozenset(
+    {
+        "AGENTS.md",
+        "CLAUDE.md",
+        "README.md",
+        "ARCHITECTURE.md",
+        "CONTRIBUTING.md",
+        "DESIGN.md",
+        "ORCHESTRATION.md",
+        "LICENSE",
+        ".mcp.json",
+        ".openwikiignore",
+        "REVIEW.md",
+        "SECURITY.md",
+        "SECURITY_MODEL.md",
+        "CODE_OF_CONDUCT.md",
+        "GLOSSARY.md",
+        "THIRD_PARTY_NOTICES.md",
+        ".gitignore",
+        ".editorconfig",
+        ".pre-commit-config.yaml",
+    }
+)
+DECLARATION = re.compile(
+    r"^(?:[a-z]+(?:\([^)]*\))?!: |BREAKING[ -]CHANGE:|Release-Bump: minor[ \t]*$)", re.M
+)
 GENERATED = re.compile(
     r"^(?:chore\(master\): release \d+\.\d+\.\d+|"
     r"merge: prepare release v\d+\.\d+\.\d+ \(#\d+\))$"
@@ -31,28 +70,38 @@ def git(*args: str) -> str:
 
 
 def releasable(base: str, head: str = "HEAD") -> Iterator[tuple[str, str]]:
-    """Yield the complete reachable range, except generated release metadata.
+    """Yield reachable shipped changes, preserving explicit release declarations.
 
     Dates and commit types never restrict eligibility. Include merges so a
     breaking declaration in a merge message cannot be hidden from the planner.
     """
     for row in git("log", "--format=%H %s", f"{base}..{head}").splitlines():
         sha, subject = row.split(" ", 1)
-        if GENERATED.fullmatch(subject):
-            paths = set(
-                git(
-                    "diff-tree",
-                    "--root",
-                    "--no-commit-id",
-                    "--name-only",
-                    "-r",
-                    "--diff-merges=first-parent",
-                    sha,
-                ).splitlines()
+        paths = set(
+            git(
+                "diff-tree",
+                "--root",
+                "--no-commit-id",
+                "--name-only",
+                "-z",
+                "--no-renames",
+                "-r",
+                "--diff-merges=first-parent",
+                sha,
             )
-            message = git("show", "-s", "--format=%B", sha)
-            if paths == METADATA_FILES and not re.search(r"^BREAKING[ -]CHANGE:", message, re.M):
-                continue
+            .rstrip("\0")
+            .split("\0")
+        ) - {""}
+        message = git("show", "-s", "--format=%B", sha)
+        if DECLARATION.search(message):
+            yield sha, subject
+            continue
+        if GENERATED.fullmatch(subject) and paths == METADATA_FILES:
+            continue
+        if paths and all(
+            p in NON_RUNTIME_FILES or p.startswith(NON_RUNTIME_PREFIXES) for p in paths
+        ):
+            continue
         yield sha, subject
 
 

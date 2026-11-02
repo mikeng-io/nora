@@ -396,7 +396,8 @@ class SqlBridgeStore:
                            state: str, *, expected: str | None = "started",
                            platform_ref: str | None = None,
                            platform_ms: int | None = None,
-                           error: dict[str, Any] | None = None) -> str:
+                           error: dict[str, Any] | None = None,
+                           platform_refs: list[str] | None = None) -> str:
         """Terminal CAS: moves `expected → state` in one update. An already-
         terminal row is never overwritten — its persisted state wins and is
         returned, so a late/duplicate completion cannot rewrite the outcome."""
@@ -407,6 +408,7 @@ class SqlBridgeStore:
             pred &= BRIDGE_ACTION.c.state == expected
         res = await conn.execute(sa.update(BRIDGE_ACTION).where(pred).values(
             state=state, platform_ref=platform_ref, platform_ms=platform_ms,
+            platform_refs=platform_refs,
             error=error, started_at=sa.func.coalesce(
                 BRIDGE_ACTION.c.started_at, sa.func.now()),
             completed_at=sa.func.now() if state != "started" else None))

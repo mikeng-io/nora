@@ -1,0 +1,48 @@
+{
+ "meta": {
+  "native": "discord-gateway",
+  "native_version": "discord.py 2.7.1",
+  "transport": "gateway",
+  "generated": true,
+  "dispatch": "GUILD_SCHEDULED_EVENT_UPDATE",
+  "discord_py_parse": "parse_guild_scheduled_event_update",
+  "discord_py_event": "scheduled_event_update",
+  "upstream_source": "https://docs.discord.com/developers/events/gateway-events#guild-scheduled-event-update",
+  "case": "the event is rescheduled and its description edited"
+ },
+ "payload": {
+  "op": 0,
+  "t": "GUILD_SCHEDULED_EVENT_UPDATE",
+  "s": 32,
+  "d": {
+   "id": "123456789012345700",
+   "guild_id": "123456789012345600",
+   "channel_id": "123456789012345601",
+   "creator_id": "123456789012345800",
+   "name": "fixture-event",
+   "description": "weekly fixture meetup \u2014 moved",
+   "scheduled_start_time": "2026-12-06T10:00:00+00:00",
+   "scheduled_end_time": null,
+   "privacy_level": 2,
+   "status": 1,
+   "entity_type": 2,
+   "entity_id": null,
+   "entity_metadata": null,
+   "user_count": 3
+  }
+ },
+ "semantics": {
+  "object": "guild scheduled event",
+  "operation": "revise",
+  "room_ref": "d.guild_id",
+  "object_ref": "d.id",
+  "target_ref": null,
+  "actor": "none \u2014 the update frame names no editor",
+  "source_time": "none",
+  "native_fields": {
+   "same set as create": "the AFTER state \u2014 a diff is ours to compute"
+  },
+  "notes": "status transitions ride this same frame (scheduled\u2192active\u2192completed, and canceled as status=4).",
+  "today": "no listener subscription \u2014 dropped"
+ }
+}

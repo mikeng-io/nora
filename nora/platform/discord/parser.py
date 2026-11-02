@@ -23,10 +23,12 @@ from typing import Any, Protocol
 from ...domain.media import MediaRef, label_for, render_placeholder
 from ...domain.models import EditTarget, NormalizedMessage, Quote, Touch
 from ...domain.observations import (
+    ArtifactPayload,
     Coverage,
     MembershipPayload,
     MessageMetadataPayload,
     Observation,
+    Operation,
     PinPayload,
     PollPayload,
     ReactionPayload,
@@ -960,3 +962,172 @@ def parse_discord_member_update(
         payload=MembershipPayload(role=roles, state="member"),
         subject_ref=user_id,
         actor_status="not_supplied", time_quality="unknown")
+
+
+def _ev_ms(value: Any) -> int | None:
+    """A scheduled-event datetime as epoch ms, or None."""
+    try:
+        return int(value.timestamp() * 1000) if value is not None else None
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return None
+
+
+_SCHEDULED_EVENT_FIELDS = (
+    "name", "description", "entity_type", "status", "location_name",
+    "channel_name",
+)
+
+
+def _scheduled_event_fields(
+    ev: Any, *, source_user_count: int | None = None,
+) -> dict[str, Any]:
+    """A `ScheduledEvent`'s readable fields as the typed room field dict —
+    user-authored names/times/status only. The entity URL (an external join
+    link) and the cover image are withheld, recorded as coverage gaps by the
+    caller."""
+    fields: dict[str, Any] = {}
+    name = getattr(ev, "name", None)
+    if isinstance(name, str) and name:
+        fields["name"] = name
+    desc = getattr(ev, "description", None)
+    if isinstance(desc, str) and desc:
+        fields["description"] = desc
+    et = getattr(ev, "entity_type", None)
+    et_name = getattr(et, "name", None) or (
+        str(et) if et is not None else "")
+    if et_name:
+        fields["entity_type"] = et_name
+    status = getattr(ev, "status", None)
+    st_name = getattr(status, "name", None) or (
+        str(status) if status is not None else "")
+    if st_name:
+        fields["status"] = st_name
+    start = _ev_ms(getattr(ev, "start_time", None))
+    if start is not None:
+        fields["start_ms"] = start
+    end = _ev_ms(getattr(ev, "end_time", None))
+    if end is not None:
+        fields["end_ms"] = end
+    # discord.py unrolls `entity_metadata.location` onto the event itself;
+    # `entity_metadata` is not a public attr. `channel` is a cache-derived
+    # property that resolves through `guild` — None-safe via channel_id only
+    # when the guild is in cache.
+    loc = getattr(ev, "location", None)
+    if isinstance(loc, str) and loc:
+        fields["location_name"] = loc
+    try:
+        channel = getattr(ev, "channel", None)
+    except AttributeError:
+        channel = None
+    ch_name = getattr(channel, "name", None) if channel is not None else None
+    if isinstance(ch_name, str) and ch_name:
+        fields["channel_name"] = ch_name
+    user_count = source_user_count
+    if (isinstance(user_count, int) and not isinstance(user_count, bool)
+            and user_count >= 0):
+        fields["interested_count"] = user_count
+    return fields
+
+
+def parse_discord_scheduled_event(
+    ev: Any, *, operation: Operation, account_key: str,
+    source_user_count: int | None = None,
+) -> Observation | None:
+    """A guild scheduled event's create/update/delete dispatch → an
+    `artifact/event` observation on the GUILD scope (its configured rooms
+    bind downstream; a guild event is never a channel's audience).
+
+    create carries the full reported field set; update is handed the
+    COMPLETE `after` object, so a covered field absent from it is a
+    source-declared clear — serialized as explicit null metadata the fold
+    drops — while a field the object cannot report stays a coverage gap
+    (an absent `user_count` is unknown, never zero); delete is `withdraw`.
+    The event URL/cover stay withheld — recorded as coverage gaps."""
+    # `guild_id` is the direct payload field — `ev.guild` is a CACHE property
+    # that is None whenever the guild dropped out of cache, and dropping the
+    # observation on it would silently lose live dispatches.
+    guild_id = getattr(ev, "guild_id", None) if ev is not None else None
+    ev_id = str(getattr(ev, "id", "") or "")
+    if guild_id is None or not ev_id:
+        return None
+    object_ref = f"event:{ev_id}"
+    gaps = ["join_url", "image"]
+    if operation == "withdraw":
+        metadata: dict[str, Any] = {"name": str(getattr(ev, "name", "") or "")}
+    else:
+        fields = _scheduled_event_fields(ev, source_user_count=source_user_count)
+        entity_type = str(fields.pop("entity_type", "") or "")
+        metadata = {
+            "name": fields.pop("name", ""),
+            "status": str(fields.pop("status", "") or ""),
+            "entity_type": entity_type,
+            "description": str(fields.pop("description", "") or ""),
+            "location_name": str(fields.pop("location_name", "") or ""),
+            "channel_name": str(fields.pop("channel_name", "") or ""),
+        }
+        if fields.get("start_ms") is not None:
+            metadata["start_time_s"] = fields["start_ms"] // 1000
+        if fields.get("end_ms") is not None:
+            metadata["end_time_s"] = fields["end_ms"] // 1000
+        if fields.get("interested_count") is not None:
+            metadata["interested_count"] = fields["interested_count"]
+        else:
+            gaps.append("interested_count")
+        if operation == "revise":
+            # `after` is the whole object: a covered field absent from it
+            # was REMOVED upstream — explicit None is the declared clear.
+            metadata = {k: v for k, v in metadata.items() if v != ""}
+            for key in ("name", "status", "entity_type", "description",
+                        "location_name", "start_time_s", "end_time_s"):
+                if key not in metadata:
+                    metadata[key] = None
+            # `channel` resolves through the guild cache: an uncached
+            # channel is UNKNOWN (a gap), never a clear — only a declared
+            # `external` entity proves the event has no channel.
+            if "channel_name" not in metadata:
+                if entity_type == "external":
+                    metadata["channel_name"] = None
+                else:
+                    gaps.append("channel_name")
+        else:
+            metadata = {k: v for k, v in metadata.items()
+                        if v != "" and v is not None}
+    return Observation(
+        object_kind="artifact",
+        scope=SourceScope(
+            platform="discord", account_key=account_key,
+            conversation_id=str(guild_id)),
+        object_ref=object_ref, operation=operation,
+        payload=ArtifactPayload(
+            artifact_kind="event", metadata=metadata, custody="declared"),
+        actor_status="not_supplied", time_quality="unknown",
+        coverage=Coverage(
+            complete=False, covered="fields",
+            gaps=tuple(gaps),
+            reason="external join URL and cover withheld by policy"))
+
+
+def parse_discord_scheduled_event_user(
+    ev: Any, user: Any, *, added: bool, account_key: str,
+) -> Observation | None:
+    """`scheduled_event_user_add`/`remove` → an `artifact/event` revise
+    carrying one responder's RSVP under `response` — folded per-responder,
+    never a last-response scalar. Discord has one RSVP vocabulary
+    (`interested`); a remove is a withdrawn response."""
+    guild_id = getattr(ev, "guild_id", None) if ev is not None else None
+    ev_id = str(getattr(ev, "id", "") or "")
+    user_id = str(getattr(user, "id", "") or "")
+    if guild_id is None or not ev_id or not user_id:
+        return None
+    return Observation(
+        object_kind="artifact",
+        scope=SourceScope(
+            platform="discord", account_key=account_key,
+            conversation_id=str(guild_id)),
+        object_ref=f"event:{ev_id}", operation="revise",
+        payload=ArtifactPayload(
+            artifact_kind="event",
+            metadata={"response": "interested" if added else ""},
+            custody="declared"),
+        actor_id=user_id, actor_status="known",
+        time_quality="unknown", coverage=Coverage(covered="response"))

@@ -296,9 +296,22 @@ test('shared objects -> artifact creates; custody declared, withheld fields are 
   const [cev] = stanzaObservations(contact, baseCtx);
   assert.equal(cev.observation.kind, 'artifact');
   assert.equal(cev.observation.payload.artifact_kind, 'contact');
-  assert.equal(cev.observation.payload.metadata.display_name, 'Example Person');
+  assert.equal(cev.observation.payload.metadata.display_name, 'Two People');
   assert.equal(cev.observation.payload.custody, 'declared');
-  assert.deepEqual(cev.observation.coverage.gaps, ['vcard']);
+  // Every card parsed — 'vcard' is only a gap when a card yields nothing.
+  assert.deepEqual(cev.observation.coverage.gaps, []);
+  // contactsArrayMessage: every card parsed — folded lines joined, RFC
+  // 6350 escapes decoded (\, \; \n \\), a second card kept distinct.
+  assert.equal(cev.observation.payload.metadata.contact_count, 2);
+  const [c1, c2] = cev.observation.payload.metadata.contacts;
+  assert.equal(c1.formatted_name, 'Example, Person');
+  assert.equal(c1.name, 'Example X Person;Fam');
+  assert.equal(c1.organization, 'Acme;Inc Division');   // fold joins, \; data
+  assert.equal(c1.title, 'Owner');
+  assert.deepEqual(c1.phones, ['+85290000100']);
+  assert.deepEqual(c1.emails, ['ex@example.com']);
+  assert.equal(c2.formatted_name, 'Second Person');
+  assert.deepEqual(c2.phones, ['+85290000101']);
   const [lev] = stanzaObservations(location, baseCtx);
   assert.equal(lev.observation.payload.artifact_kind, 'location');
   assert.equal(lev.observation.payload.metadata.name, 'Example Cafe');
@@ -845,4 +858,141 @@ test('a creation key in a different room finds no secret at all', () => {
   msg.message.pollUpdateMessage.pollCreationMessageKey.remoteJid = '999999999@g.us';
   const [ev] = stanzaObservations(msg, { ...baseCtx, recentCache: cache });
   assert.equal(ev.observation.coverage.reason, 'poll_secret_unavailable');
+});
+
+// -- native event edits (finding: edits were silently dropped) ----------------
+
+test('a messages.update event edit revises the ORIGINAL stanza artifact', () => {
+  const obs = messagesUpdateObservations({
+    key: { id: 'EVTSTANZA9', remoteJid: GROUP },
+    update: {
+      message: { editedMessage: { message: { eventMessage: {
+        name: 'Moved breakfast', startTime: 1790100000, isCanceled: true,
+      } } } },
+      messageTimestamp: 1790009000,
+    },
+  }, baseCtx);
+  assert.equal(obs.length, 1);
+  const [ev] = obs;
+  assertWireObservation(ev.observation, 'event edit');
+  assert.equal(ev.observation.object_ref, 'artifact:EVTSTANZA9');
+  assert.equal(ev.observation.operation, 'revise');
+  const md = ev.observation.payload.metadata;
+  assert.equal(md.name, 'Moved breakfast');
+  assert.equal(md.is_canceled, true);
+  // The edit is the whole event: absent covered fields are declared
+  // clears, not omissions — the fold drops the stale value on null.
+  assert.equal(md.description, null);
+  assert.equal(md.end_time_s, null);
+  assert.equal(md.location_name, null);
+  assert.equal(ev.observation.occurred_ms, 1790009000000);
+});
+
+test('a second distinct edit on the same event keeps its own identity', () => {
+  const upd = (name, sec) => messagesUpdateObservations({
+    key: { id: 'EVTSTANZA9', remoteJid: GROUP },
+    update: {
+      message: { editedMessage: { message: { eventMessage: {
+        name, startTime: 1790100000 } } } },
+      messageTimestamp: sec,
+    },
+  }, baseCtx);
+  const [a] = upd('Breakfast v2', 1790009000);
+  const [b] = upd('Breakfast v3', 1790009050);
+  const [replay] = upd('Breakfast v2', 1790009000);
+  assert.notEqual(a.upstream, b.upstream, 'distinct edits must not dedupe');
+  assert.equal(a.upstream, replay.upstream, 'same edit, same identity');
+  assert.equal(b.observation.object_ref, 'artifact:EVTSTANZA9');
+});
+
+test('an upsert protocolMessage.editedMessage event edit routes to the original artifact', () => {
+  const [ev] = stanzaObservations({
+    key: {
+      id: 'EDITSTANZA2', remoteJid: GROUP,
+      participant: '15550100011@s.whatsapp.net', fromMe: false,
+    },
+    messageTimestamp: 1790009050,
+    message: { protocolMessage: {
+      type: 'MESSAGE_EDIT',
+      key: { id: 'EVTSTANZA9', remoteJid: GROUP },
+      timestampMs: 1790009050000,
+      editedMessage: { eventMessage: {
+        name: 'Later breakfast', startTime: 1790200000,
+      } },
+    } },
+  }, baseCtx);
+  assert.ok(ev, 'the protocol edit yields an observation');
+  assertWireObservation(ev.observation, 'protocol edit');
+  assert.equal(ev.observation.object_ref, 'artifact:EVTSTANZA9');
+  assert.equal(ev.observation.operation, 'revise');
+  assert.equal(ev.observation.payload.metadata.name, 'Later breakfast');
+  // The edit stanza's own id never becomes the object identity.
+  assert.notEqual(ev.observation.object_ref, 'artifact:EDITSTANZA2');
+});
+
+// -- native event responses (numeric protobuf enum) ---------------------------
+
+const RSVP = (resp, { id, participant, guests } = {}) => ({
+  eventResponseMessageKey: {
+    id: id || `er-${participant}`, participant: `${participant}@s.whatsapp.net`,
+    remoteJid: GROUP,
+  },
+  senderTimestampMs: 1790000100000,
+  response: resp === null ? null : {
+    response: resp, timestampMs: 1790000100000,
+    ...(guests !== undefined ? { extraGuestCount: guests } : {}),
+  },
+});
+
+const rsvpUpdate = (...responses) => messagesUpdateObservations({
+  key: { id: 'EVTRSVP', remoteJid: GROUP },
+  update: { eventResponses: responses },
+}, baseCtx);
+
+test('numeric event responses decode once — per responder, never "1"/"2"/"3"', () => {
+  const obs = rsvpUpdate(
+    RSVP(1, { participant: '15550100011', guests: 2 }),
+    RSVP(2, { participant: '15550100022' }),
+    RSVP(3, { participant: '15550100033' }),
+  );
+  assert.equal(obs.length, 3);
+  const byActor = Object.fromEntries(
+    obs.map((e) => [e.observation.actor_id, e.observation]));
+  assert.deepEqual(Object.keys(byActor).sort(), [
+    '+15550100011', '+15550100022', '+15550100033',
+  ]);
+  assert.equal(byActor['+15550100011'].payload.metadata.response, 'going');
+  assert.equal(byActor['+15550100011'].payload.metadata.extra_guest_count, 2);
+  // not_going is an ANSWER — never coerced to a withdrawal.
+  assert.equal(byActor['+15550100022'].payload.metadata.response, 'not_going');
+  assert.equal(byActor['+15550100022'].payload.metadata.extra_guest_count, undefined);
+  assert.equal(byActor['+15550100033'].payload.metadata.response, 'maybe');
+  for (const [i, e] of obs.entries()) {
+    assert.equal(e.observation.object_ref, 'artifact:EVTRSVP');
+    assert.equal(e.observation.operation, 'revise');
+    assert.equal(e.observation.coverage.covered, 'response');
+    assertWireObservation(e.observation, `rsvp ${i}`);
+  }
+});
+
+test('UNKNOWN (0) and out-of-vocabulary responses are coverage-stated, never confirmed', () => {
+  const obs = rsvpUpdate(
+    RSVP(0, { participant: '15550100011' }),
+    RSVP(9, { participant: '15550100022' }),
+    RSVP(null, { participant: '15550100033' }),
+  );
+  assert.equal(obs.length, 3);
+  const byActor = Object.fromEntries(
+    obs.map((e) => [e.observation.actor_id, e.observation]));
+  // UNKNOWN: the source retracts readability — the responder's recorded
+  // answer clears (''), coverage says why; never a confirmed responder.
+  assert.equal(byActor['+15550100011'].payload.metadata.response, '');
+  assert.equal(byActor['+15550100011'].coverage.complete, false);
+  assert.deepEqual(byActor['+15550100011'].coverage.gaps, ['response']);
+  // Out-of-vocabulary enum: same clear, its own reason.
+  assert.equal(byActor['+15550100022'].payload.metadata.response, '');
+  assert.match(byActor['+15550100022'].coverage.reason, /unrecognized/);
+  // No decoded response at all: state untouched (no response key), gap said.
+  assert.equal('response' in byActor['+15550100033'].payload.metadata, false);
+  assert.equal(byActor['+15550100033'].coverage.complete, false);
 });

@@ -62,6 +62,7 @@ class ActionResponse:
     state: ActionState
     outcome: Outcome | None
     platform_ref: str | None = None
+    platform_refs: tuple[str, ...] = ()
     # The pending outbound audit row the action bound at start — the
     # reconciliation handle a client uses to resolve ITS messages row when
     # the POST answer was lost; null on receipts and pre-binding rows.
@@ -71,4 +72,5 @@ class ActionResponse:
     def to_dict(self) -> dict[str, Any]:
         return {"action_id": self.action_id, "state": self.state,
                 "outcome": self.outcome, "platform_ref": self.platform_ref,
+                "platform_refs": list(self.platform_refs) or None,
                 "message_id": self.message_id, "error": self.error}

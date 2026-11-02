@@ -641,7 +641,7 @@ func (f *fakeActions) MarkStarted(_ context.Context, id string, _ *int64) (bool,
 	r.State = ActionStarted
 	return true, nil
 }
-func (f *fakeActions) Finish(_ context.Context, id, state, ref string, ms *int64, ek, em string) error {
+func (f *fakeActions) Finish(_ context.Context, id, state, ref string, refs []string, ms *int64, ek, em string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.failFinish > 0 {
@@ -652,6 +652,9 @@ func (f *fakeActions) Finish(_ context.Context, id, state, ref string, ms *int64
 	r.State = state
 	if ref != "" {
 		r.PlatformRef = &ref
+	}
+	if len(refs) > 0 {
+		r.PlatformRefs = append([]string{}, refs...)
 	}
 	return nil
 }

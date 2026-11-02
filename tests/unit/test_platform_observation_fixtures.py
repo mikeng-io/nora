@@ -77,6 +77,8 @@ from nora.platform.discord.parser import (
     parse_discord_reaction,
     parse_discord_reaction_clear,
     parse_discord_role_update,
+    parse_discord_scheduled_event,
+    parse_discord_scheduled_event_user,
     parse_discord_thread_create,
     parse_discord_thread_delete,
     parse_discord_thread_update,
@@ -334,6 +336,18 @@ def test_signal_contacts_and_previews_are_artifacts() -> None:
     (contact,) = _signal_observations("shared_contact.json")
     assert contact.object_kind == "artifact" and contact.operation == "create"
     assert contact.payload.artifact_kind == "contact"  # type: ignore[attr-defined]
+    md = contact.payload.metadata  # type: ignore[attr-defined]
+    # JsonContactName (signal-cli 0.14.7) carries COMPONENTS, never a
+    # `display` field — the card's readable name is assembled from them.
+    assert md["display_name"] == "Fixture Contact"
+    assert md["organization"] == "Example Org"
+    assert md["phones"] == ["+85200000002"]
+    head = fold_observation(None, StoredObservation(
+        id=1, event_id="contact-event", source_digest="contact-digest",
+        observation=contact))
+    summary = head_summary(head)
+    assert "Fixture Contact" in summary and "Example Org" in summary
+    assert md["phones"][0] in summary
 
     (preview,) = _signal_observations("link_preview.json")
     assert preview.object_kind == "artifact" and preview.operation == "create"
@@ -537,6 +551,169 @@ def test_discord_poll_definition_is_typed() -> None:
     assert obs.actor_id == d["author"]["id"]
     assert obs.scope.conversation_id == f"{d['guild_id']}/{d['channel_id']}"
     assert obs.scope.thread == ""
+
+
+# ── Discord scheduled events, hydrated through the REAL pinned dispatch ─────
+
+
+def _se_doc(doc: dict) -> tuple[str, tuple[Any, ...]]:
+    """Run the frame through the pinned `ConnectionState.parse_<dispatch>`
+    and return `(dispatch_name, callback_args)`. The guild must be cached
+    first — the SDK silently discards frames for an uncached guild (the
+    same drop `_handle_scheduled_event` must not repeat on `ev.guild`,
+    which the cache can still leave None). user_add/remove additionally
+    require the event object in `guild._scheduled_events` and the user in
+    `state._users` — both primed from the frame's own ids."""
+    state = _gateway_state()
+    guild = _guild_for(state, doc["payload"]["d"]["guild_id"])
+    d = doc["payload"]["d"]
+    if "guild_scheduled_event_id" in d or doc["meta"]["dispatch"] in (
+            "GUILD_SCHEDULED_EVENT_UPDATE",):
+        # Update and user frames reach the callback only when the SDK
+        # already hydrated the event — update dispatches (before, after)
+        # from the cached copy; user frames also need the user cached.
+        eid = int(d.get("id") or d["guild_scheduled_event_id"])
+        guild._scheduled_events[eid] = discord.ScheduledEvent(
+            state=state, data=_EVENT_D | {"id": str(eid),
+                                        "guild_id": d["guild_id"]})
+        if "guild_scheduled_event_id" in d:
+            # `state._users` is a WEAK map — the user must stay referenced
+            # through the dispatch or it is collected before the lookup.
+            cached_user = discord.User(
+                state=state, data={"id": d["user_id"], "username": "fixture-user",
+                                   "discriminator": "0",
+                                   "global_name": "Fixture User",
+                                   "avatar": None})
+            state._users[int(d["user_id"])] = cached_user
+    dispatched: list[tuple[Any, ...]] = []
+    state.dispatch = lambda *a: dispatched.append(a)
+    getattr(state, doc["meta"]["discord_py_parse"])(d)
+    assert len(dispatched) == 1, f"{doc['meta']['dispatch']}: SDK did not dispatch"
+    return str(dispatched[0][0]), tuple(dispatched[0][1:])
+
+
+def _se(fixture: str) -> tuple[str, tuple[Any, ...]]:
+    return _se_doc(_load(FIXTURES / "discord" / fixture))
+
+
+#: The create fixture's own `d` — reused to seed `guild._scheduled_events`
+#: for the user frames, which carry no event body of their own.
+_EVENT_D = _load(FIXTURES / "discord" / "guild_scheduled_event_create.json")[
+    "payload"]["d"]
+
+
+@pytest.mark.parametrize(
+    ("fixture", "op", "want_status"),
+    [
+        ("guild_scheduled_event_create.json", "create", "scheduled"),
+        ("guild_scheduled_event_update.json", "revise", "scheduled"),
+        ("guild_scheduled_event_delete.json", "withdraw", "scheduled"),
+    ],
+)
+def test_scheduled_event_frames_reach_the_callback_and_parse(
+    fixture: str, op: str, want_status: str
+) -> None:
+    doc = _load(FIXTURES / "discord" / fixture)
+    event_name, args = _se(fixture)
+    ev = args[-1]  # update dispatches (before, after); create/delete (after,)
+    # The SDK's dispatch name is the Client callback spelling minus `on_`.
+    assert event_name == doc["meta"]["discord_py_event"]
+    # The hydrated object carries direct attrs — `guild`/`channel` are
+    # cache-derived and may be None even here (PartialMessageable);
+    # `guild_id`/`location`/`user_count`/`creator_id` are the stable ones.
+    obs = parse_discord_scheduled_event(
+        ev, operation=op, account_key="acct",
+        source_user_count=doc["payload"]["d"].get("user_count"))
+    assert obs is not None, fixture
+    assert obs.object_kind == "artifact" and obs.operation == op
+    md = obs.payload.metadata  # type: ignore[attr-defined]
+    assert md["name"] == "fixture-event"
+    if op != "withdraw":
+        assert md.get("status") == want_status
+        assert md["interested_count"] == doc["payload"]["d"]["user_count"]
+    assert obs.scope.conversation_id == doc["payload"]["d"]["guild_id"]
+
+
+def test_scheduled_event_update_records_status_transition() -> None:
+    doc = _load(FIXTURES / "discord" / "guild_scheduled_event_update.json")
+    doc["payload"]["d"]["status"] = 4  # canceled while still listed
+    _, (_, ev) = _se_doc(doc)  # update dispatches (before, after)
+    obs = parse_discord_scheduled_event(ev, operation="revise", account_key="acct")
+    assert obs is not None
+    # The SDK's own spelling: EventStatus.canceled (en-US).
+    assert obs.payload.metadata["status"] == "canceled"  # type: ignore[attr-defined]
+
+
+def test_a_full_after_update_declares_clears_and_a_real_zero() -> None:
+    """`after` is the WHOLE event: a reported-null description, location
+    and end time serialize as explicit clears (None), `user_count` 0 is a
+    real zero — while a field the object cannot report stays a coverage
+    gap, never a stale keep or a fabricated clear."""
+    doc = _load(FIXTURES / "discord" / "guild_scheduled_event_update.json")
+    d = doc["payload"]["d"]
+    d["description"] = None
+    d["entity_metadata"] = {"location": None}
+    d["scheduled_end_time"] = None
+    d["user_count"] = 0
+    _, (_, ev) = _se_doc(doc)
+    obs = parse_discord_scheduled_event(
+        ev, operation="revise", account_key="acct", source_user_count=d["user_count"])
+    assert obs is not None
+    md = obs.payload.metadata  # type: ignore[attr-defined]
+    assert md["description"] is None
+    assert md["location_name"] is None
+    assert md["end_time_s"] is None
+    assert md["interested_count"] == 0
+    assert md["name"] == "fixture-event"
+
+
+def test_an_absent_user_count_is_a_gap_never_a_zero() -> None:
+    doc = _load(FIXTURES / "discord" / "guild_scheduled_event_update.json")
+    doc["payload"]["d"].pop("user_count", None)
+    _, (_, ev) = _se_doc(doc)
+    obs = parse_discord_scheduled_event(ev, operation="revise", account_key="acct")
+    assert obs is not None
+    md = obs.payload.metadata  # type: ignore[attr-defined]
+    assert "interested_count" not in md  # unknown ≠ cleared, ≠ 0
+    assert "interested_count" in obs.coverage.gaps
+
+
+@pytest.mark.parametrize(
+    ("fixture", "added"),
+    [
+        ("guild_scheduled_event_user_add.json", True),
+        ("guild_scheduled_event_user_remove.json", False),
+    ],
+)
+def test_scheduled_event_user_frames_reach_the_callback_and_parse(
+    fixture: str, added: bool
+) -> None:
+    doc = _load(FIXTURES / "discord" / fixture)
+    event_name, (ev, user) = _se(fixture)
+    assert event_name == doc["meta"]["discord_py_event"]
+    obs = parse_discord_scheduled_event_user(
+        ev, user, added=added, account_key="acct")
+    assert obs is not None, fixture
+    assert obs.object_kind == "artifact" and obs.operation == "revise"
+    md = obs.payload.metadata  # type: ignore[attr-defined]
+    # The responder is the actor; the response is per-person — never a
+    # tally. A remove is a withdrawn response (""), not "uninterested".
+    assert obs.actor_id == doc["payload"]["d"]["user_id"]
+    assert md["response"] == ("interested" if added else "")
+    assert obs.scope.conversation_id == doc["payload"]["d"]["guild_id"]
+
+
+def test_scheduled_event_frame_for_an_uncached_guild_is_dropped_by_the_sdk() -> None:
+    """`parse_guild_scheduled_event_create` requires the guild in the
+    state's cache — with none, the SDK discards the frame before any
+    callback. Documented so the app's own admission never duplicates the
+    drop on `ev.guild` (which the cache leaves None even post-dispatch)."""
+    doc = _load(FIXTURES / "discord" / "guild_scheduled_event_create.json")
+    state = _gateway_state()  # no _guild_for: the guild is uncached
+    dispatched: list[tuple[Any, ...]] = []
+    state.dispatch = lambda *a: dispatched.append(a)
+    state.parse_guild_scheduled_event_create(doc["payload"]["d"])
+    assert dispatched == []
 
 
 def test_a_poll_created_inside_a_thread_scopes_the_parent_room() -> None:
