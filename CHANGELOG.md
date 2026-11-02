@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.13.21](https://github.com/mikeng-io/nora/compare/v7.13.20...v7.13.21) (2026-11-02)
+
+
+### Bug Fixes
+
+* **bridges:** converge custody grammar on instagram and bound signal PUT ([09298b0](https://github.com/mikeng-io/nora/commit/09298b0a253f07c0976682d4994fde0d77c04165))
+* **bridges:** let signal bridge sends carry attachments and decoration ([e0cb1da](https://github.com/mikeng-io/nora/commit/e0cb1daaf8e4bb7bd07ad82c5bce8176ce237939))
+
 ## [7.13.20](https://github.com/mikeng-io/nora/compare/v7.13.19...v7.13.20) (2026-11-02)
 
 
