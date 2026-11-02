@@ -194,3 +194,41 @@ async def test_historical_proposal_result_uses_safe_graph_payload():
     assert result["status"] == "ok"
     assert "future-private-name" not in str(result)
     assert result["connected"]["nodes"][0]["key"] == ["event", "e1"]
+
+
+@pytest.mark.asyncio
+async def test_prepared_input_hash_ignores_source_and_person_iteration_order():
+    from nora.domain.comprehend import ComprehendItem
+    from nora.domain.memory_graph import Source, WorkItem
+    from nora.testing.comprehend import InMemoryComprehendRecords
+    from nora.testing.memory_graph import FakeMemoryGraph
+
+    async def prepare(reverse=False, text="Generated first source", persons=("p1", "p2")):
+        sources = [Source(("social", "first"), "record", "u1", persons, text),
+                   Source(("social", "second"), "record", "u1", persons, "Generated second")]
+        if reverse:
+            sources = [replace(source, persons=tuple(reversed(source.persons)))
+                       for source in reversed(sources)]
+        records = InMemoryComprehendRecords()
+        records.items["social", "generated-read"] = ComprehendItem(
+            WorkItem("read", ("social", "generated-read"), "u1", "", AT),
+            tuple(sources), "signal", "room-1")
+        memory = WakeMemory(graph=FakeMemoryGraph(), records=records,
+                            metrics=None, content_checks=False)
+        state = SimpleNamespace(unit="u1", session_id=1, historical=True,
+            now_ms=int(AT.timestamp() * 1000), memory_items={},
+            graph_fetched=GraphFetched(), shown_keys=set(),
+            items_by_index={0: SimpleNamespace(stimulus_ids=(1,),
+                                               room=Room("signal", "room-1"))})
+        await memory.prepare(state, {1: _s(1, state.now_ms, kind="social", item="post",
+                                           ref="social:generated-read")},
+                             SimpleNamespace(records={}))
+        return state.memory_items[0]
+
+    first, reordered = await prepare(), await prepare(reverse=True)
+    assert first.sources != reordered.sources
+    assert first.work.input_hash == reordered.work.input_hash
+    assert first.snapshot["stimulus_inputs"] == reordered.snapshot["stimulus_inputs"]
+    for changed in (await prepare(text="Changed evidence"), await prepare(persons=("p1",))):
+        assert first.work.input_hash != changed.work.input_hash
+        assert first.snapshot["stimulus_inputs"] != changed.snapshot["stimulus_inputs"]
