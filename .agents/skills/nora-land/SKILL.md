@@ -5,38 +5,38 @@ description: Lands a Nora change from first edit to merged master, covering a ne
 
 # nora-land
 
-Worktree → checks → gate → PR → review → merge → read-back. Rules: `CONTRIBUTING.md`, `AGENTS.md`.
+Worktree → impact-based validation → PR → applicable review → merge → read-back. Rules: `CONTRIBUTING.md`, `AGENTS.md`.
 Read logs/state after each step, not just its exit code; proceed unless blocked or missing an operator-only fact.
-Under `ORCHESTRATION.md`, builders run named checks (1–2), commit (4–5), push/open
-PR (6) and STOP; the orchestrator gates (3), reviews, merges and reads back (7–9).
+Implement small changes directly; delegate substantial work only when the benefit
+outweighs context loss, or the operator asks (`ORCHESTRATION.md`). Review follows
+risk separately. Delegated builders run named checks, commit/push/open PR and
+stop; the parent owns final validation, review, merge and read-back.
 
 ```bash
 TYPE=<commit-type>; SLUG=<kebab-slug>; WT=<new-worktree-path>        # WT outside every checkout
 LOG=${TMPDIR:-/tmp}/land-$SLUG; mkdir -p "$LOG"   # fixed, OUTSIDE the worktree
 ```
 
-Shell state may not survive: re-set `TYPE`/`SLUG`/`LOG`; carry results in files.
-
 ## 1. Start: intent, then a new worktree on a new branch
 
 Read `ORCHESTRATION.md` «Intent, evidence and completion»: pin the brief/design's
 outcome, scope, obligations and stopping boundary; inspect existing code and carry that intent.
+An operator agreeing to the proposed fix means implement it, not create a
+planning issue and stop. Only explicitly deferred work needs an issue.
 
 ```bash
 git fetch origin
 git worktree add -b "$TYPE/$SLUG" "$WT" origin/master
 cd "$WT" || exit 1
-uv sync --extra evals        # = make setup; without it pytest dies at COLLECTION
+uv sync --extra evals        # only when selected Python checks need it
 git status -sb; git config core.hooksPath
 ```
 
 Check: `## <type>/<slug>...origin/master`, no ahead/behind; hooksPath ends `.githooks` (empty: `make hooks`).
 
-- Cut from `origin/master` after a fetch, never local `master`: it lags, and a
-  `reset --soft` onto the real tip commits a revert of the gap (2026-09-17,
-  #315). After a squash, `git show --stat HEAD` lists only files you touched.
-- Never edit in the primary checkout; one committing agent per worktree (an `--amend` landed on another's commit, 2026-09-22).
-- Never `cd "$WT" 2>/dev/null && ...`: a stale path runs in the old directory.
+- Cut from fetched `origin/master`, never stale local `master`; inspect the final diff.
+- One committing agent per worktree; never edit the primary checkout.
+- Never hide a failed `cd`; stop rather than run in the wrong directory.
 
 ## 2. Iterate
 
@@ -49,7 +49,18 @@ make test-all                       # explicit full serial suite, when needed
 Incremental entries compare staged/unstaged/untracked work to HEAD, or HEAD~1 when clean; `BASE=<ref>` overrides auto. Only exact generated untracked LFS post-hooks are ignored.
 Unknown/shared-helper changes or errors run ALL; read base/scope. Workers default to two; timing contracts stay serial. Gate is final, not the loop.
 
-## 3. Gate — once per candidate tree
+## 3. Select validation before running it
+
+State what changed, what could break and what evidence proves it. For small
+non-runtime documents, agent-skill wording and images, read the diff/content and
+check only relevant links, image readability or references; no local gate or
+independent reviewer is required. Commit, PR, merge and read back, subject to
+required hosted checks. Do not set up dependencies or wait for a runtime test
+slot just for these edits. Runtime prompts/config and executable skill helpers
+follow their actual behavior/risk. Investigate unknown impact first; do not use
+a full suite as a substitute for understanding. Keep explicit acceptance intact.
+
+For code/mixed changes that need the gate, run it once per candidate tree:
 
 ```bash
 make gate > "$LOG/gate.log" 2>&1; GATE_RC=$?; echo "GATE_RC=$GATE_RC" > "$LOG/gate.rc"
@@ -69,17 +80,14 @@ CI and `make full-gate` are always fresh, full-gate serial/unconditional.
 
 PASS: `GATE_RC=0`, then either fresh checks/reader results (three static steps for
 code), or the runner's validated matching success receipt. A changed candidate,
-base or execution context reruns acceptance. Receipt refreshes rerun nothing.
+base or execution context requires impact reassessment. Receipt refreshes rerun nothing.
 
 - Never `make gate | tail`: the rc is tail's (2026-09-22, merged a red master).
 - In the background read `$LOG/gate.rc`, not the notice (last command's rc).
   Kill only a PID you recorded, never `pkill -f`: it kills other sessions' gates.
 
-**Docs-only:** stage new docs so tracked-reference readers see them, then use
-`make gate` as above. It selects document readers and omits static steps. Runtime
-Markdown under `nora/`, `evals/`, `scripts/` and test data is not ordinary docs;
-under `tests/` only README guides outside fixtures use doc readers.
-Never hand-pick readers; an unmapped/shared-helper path remains broad.
+Runtime Markdown under `nora/`, `evals/`, `scripts/` and fixtures follows behavior
+risk. Stage new docs only if selected reference checks need tracked files.
 
 ## 4. Commit
 
@@ -100,44 +108,32 @@ git log -1 --format='%h %s'
 
 ## 5. The subject is the release note
 
-Every ordinary master push prepares patch/minor from complete reachability;
-only generated metadata auto-merges on its exact head. Application PRs retain explicit merges.
-
-- Subjects are changelog lines; hidden internal types still trigger PATCH.
-- PATCH includes existing-capability additions, even `feat`. A complete new product
-  capability or new/deprecated supported API/CLI gets footer `Release-Bump: minor`.
-- `!` / `BREAKING CHANGE:` stops automatic version writes. Major requires owner
-  dispatch at an exact full current SHA; no daily evaluator or release fragments.
+Follow `nora-release`: ordinary master pushes automatically prepare patch/minor;
+only generated metadata auto-merges. Application PRs retain explicit merges.
+PATCH is default; a complete new capability/supported API uses `Release-Bump: minor`.
+Breaking markers stop automatic writes; major requires owner dispatch at an exact SHA.
 
 ## 6. Merged tree, push, PR
 
 ```bash
 git fetch origin; git rev-list --count HEAD..origin/master    # 0: branch is the merged tree
-git merge origin/master -m "merge: origin/master into $SLUG, <what came in>"   # if >0: focused checks; orchestrator gates
+git merge origin/master -m "merge: origin/master into $SLUG, <what came in>"   # if needed: inspect upstream delta; validate affected interactions
 git push -u origin HEAD
 cp .github/pull_request_template.md "$LOG/pr.md"   # fill in, delete the comments
 gh pr create --base master --title "<type(scope): description> (#N, DEC-M)" --body-file "$LOG/pr.md"
 gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-parse HEAD
 ```
 
-- A builder under a brief STOPS at its handoff: the Gate section names the
-  focused checks run and the final gate as the orchestrator's, pending.
 - A bare `git merge origin/master` writes a default subject the hook refuses.
 - Title: append `(#N, DEC-M)` only when it closes an issue or lands a decision.
-- Body: the template headings exactly, in order: `What`, `Also`, `Gate on the
-  merged tree`, `Authored by`, `Closes`; delete what does not apply (`What`,
-  `Gate on the merged tree` and `Authored by` are required). `Authored by` names
-  human or agent, the tool and model for an agent, and who reviewed it. Labels and
-  the assignee are set by the PR triage workflow; do not set them by hand. Never
-  `Summary` or `Test plan`, both retired (still in 11 of the last 140 PRs).
+- Follow `.github/pull_request_template.md`; keep required headings and record
+  author/tool/model, actual review and validation. Triage owns labels/assignee.
 - Gate section: the real outcome (GATE_RC, pass count, origin/master sha merged
   in), the review level and, after step 7, the triage line; a pre-existing
   unrelated failure is named with its issue number. After the LAST push refresh
   the body to `headRefOid` — a head review did not cover is named plus its
-  delta, never implied fully reviewed; a receipt refresh reruns nothing, a
-  changed tree re-runs step 3. Read it back: `gh pr view <N> --json body,headRefOid`.
-- A deployment bind-mounting `nora/doctrine` or `nora/dreamer` hot-reloads on
-  mtime; mention this operator option when relevant.
+  delta, never implied fully reviewed; a receipt refresh reruns nothing.
+  A changed tree returns to impact selection, not an automatic full gate. Read it back: `gh pr view <N> --json body,headRefOid`.
 - `Closes #N` only when this PR fully resolves it; otherwise `issue #N`.
 - A fix reports its mutation result (`docs/maintainers/conventions.md` Proving a fix).
 
@@ -149,7 +145,7 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
   claims, evidence and prior findings. Check actual coverage, not just APPROVE.
 - Triage under the policy: bounded repair for defects, scoping for invalid intent;
   advice is not scope. Prove code fixes with `nora-prove-fix`, without unrelated repair.
-- Repair: focused checks, commit, gate, push and refresh the PR. No BLOCKER ends
+- Repair: validate the delta by impact, commit, push and refresh the PR. No BLOCKER ends
   review; the policy owns the two-round limit.
 
 ## 8. Merge: a real merge commit, authored message
@@ -159,19 +155,23 @@ follow [scanner triage](reference.md#pre-merge-scanner-findings). Green CI alone
 
 ```bash
 git status -sb     # nothing ahead: pushed head == reviewed head
-git fetch origin && test "$(git rev-list --count HEAD..origin/master)" = 0 && echo NOT_BEHIND &&
+git fetch origin && # inspect upstream delta; update branch if required by repository rules
 gh pr merge <N> --merge --match-head-commit "$(git rev-parse HEAD)" \
   --subject "merge: <the arc> (#N)" --body-file "$LOG/merge-body.md"
 ```
 
-- `NOT_BEHIND` is read right before the merge, not at the gate: master moves
-  during a 6-minute gate (2026-09-25, #495 merged 3 behind). Chained, so a
-  failed fetch or a behind branch never reaches the merge. Behind: bring
-  master in, gate, push, re-check.
-- Without `--subject`, `gh pr merge --merge` writes GitHub's default `Merge
-  pull request #N from ...` (99 of 137 PRs #321–#478). No hook sees a server-side
-  merge: the subject is `merge: ` plus the arc, the body says what the branch
-  set out to fix, what was measured, what shipped.
+- A moving master does not automatically invalidate passed validation. Inspect
+  `git diff <validated-base>..origin/master` for interactions with this change,
+  including shared dependencies/configuration; disjoint paths alone are not proof.
+  Preserve original evidence and record the upstream delta assessment. If no
+  relevant input changed, do not repeat the local gate or independent review.
+  If interactions changed, run only the relevant checks; broaden only when impact
+  cannot be bounded. This is an evidence assessment, not an exact-tree receipt hit.
+- Bring master in when conflicts or repository branch rules require it, push and
+  read required hosted checks. Never bypass those rules. Do not reserve a local
+  test slot merely to merge; ready PRs do not wait behind unrelated local gates.
+- Author the merge subject (`merge: <the arc> (#N)`) and body; GitHub's default
+  subject does not follow this repository's convention.
 - `--merge` only, never `--squash` or `--rebase`.
 - Stacked PR: `gh pr edit <child> --base master` BEFORE merging its base with
   `--delete-branch`, or the child is closed (2026-09-23, #411 closed #413).
@@ -199,6 +199,4 @@ Report completed/unmet obligations separately; keep required read-back, add no e
 research/deployment, and stop when the completion rule holds.
 The next change starts in a new worktree; cleanup: `docs/maintainers/conventions.md`. Deploying: nora-deploy.
 
-## Tool notes
-Claude Code's rtk hook refuses `git` in isolated subagents; the measured `vcs` workaround is in `nora-land/reference.md`.
-Claude Code commits end with a `Claude-Session:` footer.
+Tool-specific workarounds and Claude commit footers: `nora-land/reference.md`.
