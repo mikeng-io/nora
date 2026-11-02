@@ -1,0 +1,34 @@
+{
+ "meta": {
+  "native": "discord-gateway",
+  "native_version": "discord.py 2.7.1",
+  "transport": "gateway",
+  "generated": true,
+  "dispatch": "GUILD_SCHEDULED_EVENT_USER_REMOVE",
+  "discord_py_parse": "parse_guild_scheduled_event_user_remove",
+  "discord_py_event": "scheduled_event_user_remove",
+  "upstream_source": "https://docs.discord.com/developers/events/gateway-events#guild-scheduled-event-user-remove",
+  "case": "the same member withdraws their interest"
+ },
+ "payload": {
+  "op": 0,
+  "t": "GUILD_SCHEDULED_EVENT_USER_REMOVE",
+  "s": 35,
+  "d": {
+   "guild_scheduled_event_id": "123456789012345700",
+   "user_id": "123456789012345801",
+   "guild_id": "123456789012345600"
+  }
+ },
+ "semantics": {
+  "object": "guild scheduled event",
+  "operation": "revise (responder withdraws)",
+  "room_ref": "d.guild_id",
+  "object_ref": "d.guild_scheduled_event_id",
+  "target_ref": null,
+  "actor": "d.user_id",
+  "source_time": "none",
+  "notes": "A remove is a withdrawn response \u2014 never an 'uninterested' tally against other responders.",
+  "today": "no listener subscription \u2014 dropped"
+ }
+}

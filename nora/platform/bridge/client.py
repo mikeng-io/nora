@@ -250,7 +250,12 @@ class BridgeAdapter:
             # reaction, edit or quote naming it resolves.
             return SendResult(
                 ok=True, timestamp=data.get("platform_ms"),
-                platform_message_id=data.get("platform_ref") or None)
+                platform_message_id=data.get("platform_ref") or None,
+                platform_message_ids=tuple(
+                    str(r) for r in (data.get("platform_refs") or ()) if r
+                ) or ((
+                    str(data["platform_ref"]),)
+                    if data.get("platform_ref") else ()))
         if state == "rejected":
             return SendResult(ok=False)
         if state == "uncertain":

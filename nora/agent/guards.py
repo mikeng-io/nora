@@ -549,6 +549,9 @@ class Deliverer:
                 # failed or uncertain one never minted the id it would claim.
                 platform_message_id=(
                     result.platform_message_id if result.ok else None),
+                platform_message_ids=(
+                    tuple(result.platform_message_ids)
+                    if result.ok else None),
             )
         except Exception:
             log.exception("delivery_status update failed (tag=%s)", self._tag_id)

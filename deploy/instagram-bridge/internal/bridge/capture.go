@@ -69,7 +69,7 @@ type Enqueuer interface {
 type ActionWriter interface {
 	Reserve(ctx context.Context, actionID, ownerKind, ownerID string, ownerGeneration *int, op string, request json.RawMessage, requestHash string) (ReserveOutcome, *ActionRow, error)
 	MarkStarted(ctx context.Context, actionID string, messageID *int64) (bool, error)
-	Finish(ctx context.Context, actionID, state, platformRef string, platformMS *int64, errKind, errMsg string) error
+	Finish(ctx context.Context, actionID, state, platformRef string, platformRefs []string, platformMS *int64, errKind, errMsg string) error
 }
 
 // Sink is the EventSink the gateway emits into; it also fans the confirmed
@@ -1008,7 +1008,7 @@ func (s *Sink) doReceipt(ctx context.Context, env *Envelope, canonicalID string)
 	if err != nil {
 		errMsg = "receipt failed"
 	}
-	if ferr := s.actions.Finish(ctx, actionID, state, messageIDOf(env), nil, errKind, errMsg); ferr != nil {
+	if ferr := s.actions.Finish(ctx, actionID, state, messageIDOf(env), nil, nil, errKind, errMsg); ferr != nil {
 		// The action row is still `started` and the journal has no phase:
 		// retry — the replay reads `started` and lands on uncertain, which
 		// is the honest state for a possibly-fired reaction.

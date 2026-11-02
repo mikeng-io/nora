@@ -130,7 +130,8 @@ function fakePg() {
         actions.set(action_id, {
           action_id, platform, account_key, owner_kind, owner_id, owner_generation,
           op, request, request_hash, state: 'prepared',
-          platform_ref: null, platform_ms: null, error: null, message_id: null,
+          platform_ref: null, platform_refs: null,
+          platform_ms: null, error: null, message_id: null,
         });
       }
       return { rows: [], rowCount: 0 };
@@ -181,7 +182,7 @@ function fakePg() {
       return { rows: [], rowCount: 1 };
     }
     if (/^UPDATE bridge_action\n?\s*SET state=\$4/.test(sql)) {
-      const [id, platform, account, state, ref, ms, error] = params;
+      const [id, platform, account, state, ref, ms, error, refs] = params;
       const row = actions.get(id);
       const ok = row && row.platform === platform && row.account_key === account
         && (row.state === 'prepared' || row.state === 'started');
@@ -190,6 +191,7 @@ function fakePg() {
         row.platform_ref = ref;
         row.platform_ms = ms;
         row.error = error ? JSON.parse(error) : null;
+        if (refs != null) row.platform_refs = JSON.parse(refs);
       }
       return { rows: [], rowCount: ok ? 1 : 0 };
     }
@@ -475,6 +477,39 @@ test('runAction executes once and answers confirmed with the stanza ref', async 
   assert.equal(ctx.calls.length, 1);
   assert.deepEqual(ctx.calls[0][1], '85290000100@s.whatsapp.net');
   assert.deepEqual(ctx.calls[0][2], { text: 'hi' });
+});
+
+test('multi-post send keeps every stanza ref — initial, replay and GET agree', async () => {
+  const pg = fakePg();
+  const store = new ActionStore(pg, { platform: 'whatsapp', accountKey: 'a' });
+  const ctx = fakeCtx();
+  pg.works.set('1', workRow(4));
+  ctx.custody.set('aud1', Buffer.from('generated-audio'));
+  // Text plus a captionless audio attachment: the text goes out as its own
+  // stanza first, so ONE action produces TWO native message ids.
+  const req = { ...REQ,
+    attachments: [{ key: 'aud1', media_type: 'audio/ogg', file_name: 'a.ogg' }] };
+
+  const res = await runAction({ store, ctx, actionId: 'm1',
+    owner: { kind: 'work', id: 'w-1', generation: 4 }, op: 'send', request: req });
+  assert.equal(res.state, 'confirmed');
+  assert.equal(ctx.calls.length, 2);
+  assert.deepEqual(res.platform_refs, ['S1', 'S2']);
+  assert.equal(res.platform_ref, 'S2');              // last stanza, compat field
+
+  const replay = await runAction({ store, ctx, actionId: 'm1',
+    owner: { kind: 'work', id: 'w-1', generation: 4 }, op: 'send', request: req });
+  assert.equal(replay.state, 'confirmed');
+  assert.deepEqual(replay.platform_refs, ['S1', 'S2']);
+  assert.equal(ctx.calls.length, 2);                 // replayed, not re-sent
+
+  const v1 = createV1({ store, ctx, attachments: null,
+    self: () => null, health: () => ({}), metrics: null });
+  const hit = fakeRes();
+  await v1(fakeReq('GET', '/v1/actions/m1'), hit, new URL('http://b/v1/actions/m1'));
+  assert.equal(hit.json.state, 'confirmed');
+  assert.deepEqual(hit.json.platform_refs, ['S1', 'S2']);
+  assert.equal(hit.json.platform_ref, 'S2');
 });
 
 test('a stalemated generation fence rejects before any upstream bytes', async () => {

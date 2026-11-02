@@ -712,12 +712,38 @@ def parse_observations(
         for i, contact in enumerate(data.get("contacts") or ()):
             if not isinstance(contact, dict):
                 continue
-            metadata = {
+            # signal-cli's JsonContactName (v0.14.7) carries name COMPONENTS
+            # — nickname/given/middle/family/prefix/suffix — never a
+            # preassembled `display` field. The readable name is the joined
+            # components, or the nickname when no components are set.
+            raw_name = contact.get("name")
+            contact_name = raw_name if isinstance(raw_name, dict) else {}
+            display = " ".join(
+                str(contact_name[k]) for k in
+                ("prefix", "given", "middle", "family", "suffix")
+                if isinstance(contact_name.get(k), str) and contact_name[k])
+            if not display:
+                nickname = contact_name.get("nickname")
+                display = nickname if isinstance(nickname, str) else ""
+            metadata: dict[str, Any] = {
                 k: v for k, v in (
-                    ("display", (contact.get("name") or {}).get("display")
-                     if isinstance(contact.get("name"), dict) else None),
+                    ("display_name", display or None),
                     ("organization", contact.get("organization")))
                 if isinstance(v, str) and v}
+            # Shared-contact user data — phones/emails a person chose to
+            # share on the card — kept as structured content fields, the
+            # same facts a reader would want back. Internal platform ids
+            # never ride these fields.
+            phones = [str(p.get("value")) for p in
+                      contact.get("phone") or ()
+                      if isinstance(p, dict) and p.get("value")][:8]
+            if phones:
+                metadata["phones"] = phones
+            emails = [str(e.get("value")) for e in
+                      contact.get("email") or ()
+                      if isinstance(e, dict) and e.get("value")][:8]
+            if emails:
+                metadata["emails"] = emails
             _obs(object_kind="artifact",
                  object_ref=f"contact:{source}:{sent_ts}:{i}", operation="create",
                  payload=ArtifactPayload(

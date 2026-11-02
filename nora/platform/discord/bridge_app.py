@@ -58,6 +58,7 @@ import aiohttp
 from aiohttp import typedefs, web
 
 from nora.domain.models import ConversationTarget
+from nora.domain.observations import Operation
 from nora.domain.ports import (
     Mention,
     MusicToolOutcome,
@@ -114,6 +115,8 @@ from .parser import (
     parse_discord_reaction,
     parse_discord_reaction_clear,
     parse_discord_role_update,
+    parse_discord_scheduled_event,
+    parse_discord_scheduled_event_user,
     parse_discord_thread_create,
     parse_discord_thread_delete,
     parse_discord_thread_update,
@@ -246,6 +249,33 @@ def _frame_key(t: str, d: Mapping[str, Any]) -> tuple[str, ...] | None:
         return (t, str(d.get("guild_id") or ""), rid,
                 str(role.get("name") or ""),
                 str(role.get("permissions") or ""))
+    if t in ("GUILD_SCHEDULED_EVENT_CREATE",
+             "GUILD_SCHEDULED_EVENT_DELETE"):
+        oid = str(d.get("id") or "")
+        return (t, oid) if oid else None
+    if t == "GUILD_SCHEDULED_EVENT_UPDATE":
+        oid = str(d.get("id") or "")
+        if not oid:
+            return None
+        # State-bearing like the other updates: fold the AFTER fields so a
+        # dispatch the SDK cache dropped is never claimed by a different
+        # update to the same event.
+        return (t, oid,
+                str(d.get("name") or ""),
+                str(d.get("status") or ""),
+                str(d.get("entity_type") or ""),
+                _iso_ms(d.get("scheduled_start_time")),
+                _iso_ms(d.get("scheduled_end_time")),
+                str(d.get("description") or ""),
+                str((d.get("entity_metadata") or {}).get("location") or ""),
+                str(d.get("channel_id") or ""))
+    if t in ("GUILD_SCHEDULED_EVENT_USER_ADD",
+             "GUILD_SCHEDULED_EVENT_USER_REMOVE"):
+        eid = str(d.get("guild_scheduled_event_id") or "")
+        uid = str(d.get("user_id") or "")
+        if not (eid and uid):
+            return None
+        return (t, eid, uid)
     return None
 
 
@@ -769,7 +799,11 @@ class DiscordBridge:
             # Losing provenance under a storm is honest — the events fall to
             # the durable ledger; growing this dict without bound is not.
             self._frames.clear()
-        self._frames.setdefault(fp, []).append((session, s))
+        # ScheduledEvent.user_count defaults to zero in discord.py even
+        # when the wire omitted it. Keep presence at the existing frame join.
+        frame = ((session, s, d.get("user_count"))
+                 if t.startswith("GUILD_SCHEDULED_EVENT_") else (session, s))
+        self._frames.setdefault(fp, []).append(frame)
 
     def _pop_frame(
         self, fp: tuple[str, ...] | None,
@@ -782,7 +816,7 @@ class DiscordBridge:
         queue = self._frames.get(fp)
         if not queue:
             return None
-        session, s = queue.pop(0)
+        session, s, *_ = queue.pop(0)
         if not queue:
             self._frames.pop(fp, None)
         return session, s
@@ -1195,6 +1229,61 @@ class DiscordBridge:
             return ((obs, {"fp": fp,
                            "fallback": ("u:" + "|".join(fp))
                                       if fp else "u:rupdate:?"}),)
+        if kind in ("scheduled_event_create", "scheduled_event_update",
+                    "scheduled_event_delete"):
+            after = payload[1] if kind == "scheduled_event_update" else payload
+            op: Operation = {"scheduled_event_create": "create",
+                             "scheduled_event_update": "revise",
+                             "scheduled_event_delete": "withdraw"}[kind]
+            eid = str(getattr(after, "id", "") or "")
+            t = {"scheduled_event_create": "GUILD_SCHEDULED_EVENT_CREATE",
+                 "scheduled_event_update": "GUILD_SCHEDULED_EVENT_UPDATE",
+                 "scheduled_event_delete": "GUILD_SCHEDULED_EVENT_DELETE"}[kind]
+            # The frame's `d` and this dict must name the SAME fields the
+            # same way: wire `status`/`entity_type` ints ↔ the SDK's
+            # `.value`s, ISO times ↔ the SDK's datetimes, wire
+            # `entity_metadata.location` ↔ the SDK's unrolled `location`.
+            fp = _frame_key(t, {
+                "id": getattr(after, "id", None),
+                "name": getattr(after, "name", None),
+                "status": getattr(getattr(after, "status", None),
+                                  "value", None),
+                "entity_type": getattr(getattr(after, "entity_type", None),
+                                       "value", None),
+                "scheduled_start_time": getattr(after, "start_time", None),
+                "scheduled_end_time": getattr(after, "end_time", None),
+                "description": getattr(after, "description", None),
+                "entity_metadata": {
+                    "location": getattr(after, "location", None)},
+                "channel_id": getattr(after, "channel_id", None)})
+            frames = self._frames.get(fp) or []
+            count = frames[0][2] if frames and len(frames[0]) > 2 else None
+            obs = parse_discord_scheduled_event(
+                after, operation=op, account_key=ak, source_user_count=count)
+            if obs is None:
+                return ()
+            if op == "revise":
+                fallback = ("u:" + "|".join(fp)) if fp else f"u:se:revise:{eid}"
+            else:
+                fallback = f"u:se:{op}:{eid}"
+            return ((obs, {"fp": fp, "fallback": fallback}),)
+        if kind in ("scheduled_event_user_add", "scheduled_event_user_remove"):
+            ev, user = payload
+            obs = parse_discord_scheduled_event_user(
+                ev, user, added=kind == "scheduled_event_user_add",
+                account_key=ak)
+            if obs is None:
+                return ()
+            uid = str(getattr(user, "id", "") or "")
+            eid = str(getattr(ev, "id", "") or "")
+            t = ("GUILD_SCHEDULED_EVENT_USER_ADD"
+                 if kind == "scheduled_event_user_add"
+                 else "GUILD_SCHEDULED_EVENT_USER_REMOVE")
+            fp = _frame_key(t, {"guild_scheduled_event_id": getattr(ev, "id", None),
+                                "user_id": getattr(user, "id", None)})
+            return ((obs, {"fp": fp,
+                           "ledger_key": f"se:{eid}:{uid}",
+                           "state": "add" if "add" in kind else "remove"}),)
         return ()
 
     def _observation_identity(
@@ -1797,7 +1886,11 @@ class DiscordRestActionService:
                 if result.ok:
                     return ActionReply(
                         "confirmed", platform_ms=result.timestamp,
-                        platform_ref=result.platform_message_id)
+                        platform_ref=result.platform_message_id,
+                        platform_refs=(result.platform_message_ids
+                                       or ((result.platform_message_id,)
+                                           if result.platform_message_id
+                                           else ())))
                 return ActionReply(
                     "rejected",
                     kind="rate_limited" if result.retryable else "send_failed",

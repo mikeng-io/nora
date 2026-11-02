@@ -1,72 +1,72 @@
 [
-  {
-    "name": "target uniqueness uses the full author-filtered match",
-    "file": "nora/infra/sql/observations.py",
-    "old": "async def _resolve_target_row(\n    conn: AsyncConnection, *, platform: str, conversation_id: str,\n    target: EditTarget, target_author_id: str = \"\",\n) -> int | None:\n    \"\"\"The ONE target\u2192row rule, callable inside an open transaction: the row\n    the target PROVABLY names, or None. Zero matches is an unresolved target;\n    several is an ambiguous one \u2014 an arbitrary same-timestamp pick would bind\n    evidence to a row it may not name (design 02: ambiguity stays unresolved).\n    The author's identity is preserved separately from the actor's (commit\n    `38b4a157f`): an author-qualified target resolves only a row that author\n    sent, and only when that author sent exactly one.\"\"\"\n    if not target.message_id and target.sent_ts is None:\n        return None\n    # `SqlRecordStore`'s edit-target rule: a second edit can name the first\n    # edit's timestamp, so a timestamp target matches the message OR one of\n    # its edits.\n    edited_at = sa.exists().where(\n        MESSAGE_EDIT.c.message_id == MESSAGES.c.id,\n        MESSAGE_EDIT.c.ts == target.sent_ts)\n    match = (MESSAGES.c.platform_message_id == target.message_id\n             if target.message_id else\n             sa.or_(MESSAGES.c.ts == target.sent_ts, edited_at))\n    where = sa.and_(MESSAGES.c.platform == platform,\n                    MESSAGES.c.conversation_id == conversation_id, match)\n    if target_author_id:\n        where = sa.and_(where, MESSAGES.c.sender_id == target_author_id)\n    rows = (await conn.execute(\n        sa.select(MESSAGES.c.id).where(where).limit(2))).all()\n    if len(rows) != 1:\n        return None\n    return int(rows[0].id)",
-    "new": "async def _resolve_target_row(\n    conn: AsyncConnection, *, platform: str, conversation_id: str,\n    target: EditTarget, target_author_id: str = \"\",\n) -> int | None:\n    \"\"\"The ONE target\u2192row rule, callable inside an open transaction: the row\n    the target PROVABLY names, or None. Zero matches is an unresolved target;\n    several is an ambiguous one \u2014 an arbitrary same-timestamp pick would bind\n    evidence to a row it may not name (design 02: ambiguity stays unresolved).\n    The author's identity is preserved separately from the actor's (commit\n    `38b4a157f`): an author-qualified target resolves only a row that author\n    sent, and only when that author sent exactly one.\"\"\"\n    if target.message_id:\n        row = (await conn.execute(\n            sa.select(MESSAGES.c.id).where(\n                MESSAGES.c.platform == platform,\n                MESSAGES.c.conversation_id == conversation_id,\n                MESSAGES.c.platform_message_id == target.message_id)\n            .order_by(MESSAGES.c.id).limit(1))).first()\n        return int(row[0]) if row is not None else None\n    if target.sent_ts is None:\n        return None\n    # `SqlRecordStore`'s edit-target rule: a second edit can name the first\n    # edit's timestamp, so a timestamp target matches the message OR one of\n    # its edits.\n    edited_at = sa.exists().where(\n        MESSAGE_EDIT.c.message_id == MESSAGES.c.id,\n        MESSAGE_EDIT.c.ts == target.sent_ts)\n    rows = (await conn.execute(\n        sa.select(MESSAGES.c.id, MESSAGES.c.sender_id).where(\n            MESSAGES.c.platform == platform,\n            MESSAGES.c.conversation_id == conversation_id,\n            sa.or_(MESSAGES.c.ts == target.sent_ts, edited_at))\n        .order_by(MESSAGES.c.id).limit(20))).all()\n    if target_author_id:\n        rows = [r for r in rows if r.sender_id == target_author_id]\n    if len(rows) != 1:\n        return None\n    return int(rows[0].id)",
-    "target": "tests/integration/test_platform_observation_ingest.py::test_target_uniqueness_is_measured_after_author_filtering"
-  },
-  {
-    "name": "late target relinking does not issue one query per observation",
-    "file": "nora/infra/sql/observations.py",
-    "old": "async def relink_arriving_targets(\n    conn: AsyncConnection, *, scope: SourceScope,\n    platform_message_id: str | None, sent_ts: int | None,\n    sender_id: str | None,\n) -> int:\n    \"\"\"Re-link retained observations whose target names a message or edit\n    now being recorded \u2014 called INSIDE that arrival's transaction so\n    the link lands with it, never after it (the port's \"resolve_targets\n    re-links the rest when the target arrives\").\n\n    The arriving message generates every target key it could answer \u2014 `id:`\n    its platform handle, `ts:` its timestamp plain and author-qualified \u2014\n    and each unresolved row carrying one is re-resolved through the SAME\n    fail-closed rule `_resolve_target_row` uses: an ambiguous same-timestamp\n    target stays unresolved rather than binding to whichever row happened to\n    arrive. Returns how many rows gained a link this call.\"\"\"\n    keys: list[str] = []\n    if platform_message_id:\n        keys.append(f\"id:{platform_message_id}\")\n    if sent_ts is not None:\n        keys.append(f\"ts:{sent_ts}\")\n        if sender_id:\n            keys.append(f\"ts:{sent_ts}:author:{sender_id}\")\n    if not keys:\n        return 0\n    pending = sa.and_(_scope_where(scope), OBS.c.target_key.in_(keys),\n                      OBS.c.target_message_id.is_(None))\n    if not (await conn.execute(sa.select(sa.exists().where(pending)))).scalar_one():\n        return 0\n    linked = 0\n    # Resolve each address once, not once per retained vote/reaction row.\n    # There are at most three addresses; author-qualified native ids share\n    # an address with bare ids, so those need their own unique-match read.\n    for key in keys:\n        authors = (\"\", sender_id) if key.startswith(\"id:\") and sender_id else (\"\",)\n        for author in authors:\n            qualified_author = (\n                sender_id or \"\" if \":author:\" in key else author)\n            target = target_from_key(key)\n            if target is None:\n                continue\n            resolved = await _resolve_target_row(\n                conn, platform=scope.platform,\n                conversation_id=scope.conversation_id,\n                target=target, target_author_id=qualified_author)\n            if resolved is None:\n                continue\n            author_match = (OBS.c.target_author_id == qualified_author\n                            if qualified_author else\n                            sa.or_(OBS.c.target_author_id.is_(None),\n                                   OBS.c.target_author_id == \"\"))\n            result = await conn.execute(\n                sa.update(PLATFORM_OBSERVATION).where(\n                    pending, OBS.c.target_key == key, author_match)\n                .values(target_message_id=resolved))\n            linked += result.rowcount\n    return linked",
-    "new": "async def relink_arriving_targets(\n    conn: AsyncConnection, *, scope: SourceScope,\n    platform_message_id: str | None, sent_ts: int | None,\n    sender_id: str | None,\n) -> int:\n    \"\"\"Re-link retained observations whose target names a message or edit\n    now being recorded \u2014 called INSIDE that arrival's transaction so\n    the link lands with it, never after it (the port's \"resolve_targets\n    re-links the rest when the target arrives\").\n\n    The arriving message generates every target key it could answer \u2014 `id:`\n    its platform handle, `ts:` its timestamp plain and author-qualified \u2014\n    and each unresolved row carrying one is re-resolved through the SAME\n    fail-closed rule `_resolve_target_row` uses: an ambiguous same-timestamp\n    target stays unresolved rather than binding to whichever row happened to\n    arrive. Returns how many rows gained a link this call.\"\"\"\n    keys: list[str] = []\n    if platform_message_id:\n        keys.append(f\"id:{platform_message_id}\")\n    if sent_ts is not None:\n        keys.append(f\"ts:{sent_ts}\")\n        if sender_id:\n            keys.append(f\"ts:{sent_ts}:author:{sender_id}\")\n    if not keys:\n        return 0\n    rows = (await conn.execute(\n        sa.select(OBS.c.id, OBS.c.target_key, OBS.c.target_author_id).where(\n            _scope_where(scope), OBS.c.target_key.in_(keys),\n            OBS.c.target_message_id.is_(None)))).mappings().all()\n    linked = 0\n    for row in rows:\n        resolved = await _resolve_target_row(\n            conn, platform=scope.platform,\n            conversation_id=scope.conversation_id,\n            target=target_from_key(row[\"target_key\"]),\n            target_author_id=row[\"target_author_id\"] or \"\")\n        if resolved is None:\n            continue\n        await conn.execute(\n            sa.update(OBS).where(\n                OBS.c.id == row[\"id\"], OBS.c.target_message_id.is_(None))\n            .values(target_message_id=resolved))\n        linked += 1\n    return linked",
-    "target": "tests/integration/test_platform_observation_ingest.py::test_late_target_relinks_history_without_a_query_per_observation"
-  },
-  {
-    "name": "recorded reaction outcome reaches the durable sidecar handoff",
-    "file": "nora/ingest/pipeline.py",
-    "old": "return IngestResult(message=None, decision=None, outcome=done.ending)",
-    "new": "return IngestResult(message=None, decision=None)",
-    "target": "tests/integration/test_platform_observation_ingest.py::test_reaction_sibling_does_not_consume_its_sidecar"
-  },
-  {
-    "name": "current state does not inherit an earlier occurrence clock",
-    "file": "nora/domain/observations.py",
-    "old": "    observed = obs.occurred_ms if applied else head.observed_ms\n    if applied:\n        coverage[\"observed_quality\"] = obs.time_quality",
-    "new": "    observed = head.observed_ms\n    if obs.occurred_ms is not None and (\n        observed is None or obs.occurred_ms > observed\n    ):\n        observed = obs.occurred_ms\n        coverage[\"observed_quality\"] = obs.time_quality",
-    "target": "tests/unit/test_platform_observation_wired.py::test_clockless_update_does_not_inherit_the_previous_source_clock"
-  },
-  {
-    "name": "current source revision survives a source scope transition",
-    "file": "nora/domain/observations.py",
-    "old": "    if applied:\n        position, scope = obs.source_position, obs.revision_scope",
-    "new": "    if obs.source_position is not None and obs.revision_scope and (\n        position is None or cmp > 0\n    ) and (position is None or obs.revision_scope == scope):\n        position, scope = obs.source_position, obs.revision_scope",
-    "target": "tests/unit/test_observations.py::test_current_head_revision_tracks_a_changed_source_scope_without_global_order"
-  },
-  {
-    "name": "partial head coverage stays visible to the model",
-    "file": "nora/domain/observations.py",
-    "old": "    complete = bool(get(\"complete\", True)) and not get(\"partial\", False)",
-    "new": "    complete = bool(get(\"complete\", True))",
-    "target": "tests/unit/test_observations.py::test_partial_snapshot_grain_survives_model_facing_current_state"
-  },
-  {
-    "name": "current head retains source grain instead of implying channel audience",
-    "file": "nora/domain/observations.py",
-    "old": "        if obs.coverage.covered != \"event\":\n            coverage[\"covered\"] = obs.coverage.covered\n",
-    "new": "",
-    "target": "tests/unit/test_observations.py::test_partial_snapshot_grain_survives_model_facing_current_state"
-  },
-  {
-    "name": "missing Instagram member set cannot erase the roster",
-    "file": "deploy/instagram-bridge/internal/gateway/instameow/observations.go",
-    "old": "\"complete\": memberSetListed && missingFBID == 0, \"covered\": \"members\",",
-    "new": "\"complete\": missingFBID == 0, \"covered\": \"members\",",
-    "target": "go:deploy/instagram-bridge ./internal/gateway/instameow -run ^TestJoinEmptyUsersEmitsEmptySnapshot$ -count=1"
-  },
-  {
-    "name": "Instagram snapshot admits a changed set with unchanged members",
-    "file": "deploy/instagram-bridge/internal/bridge/capture.go",
-    "old": "\t\tcase t.State == st.Last:\n\t\t\tcontinue",
-    "new": "\t\tcase t.State == st.Last:\n\t\t\treturn false, \"\"",
-    "target": "go:deploy/instagram-bridge ./internal/bridge -run ^TestObservationMemberSnapshotABA$ -count=1"
-  },
-  {
-    "name": "Signal polls at one timestamp retain creator identity",
-    "file": "nora/platform/signal/parser.py",
-    "old": "return f\"poll:{author}:{target_ts}\"",
-    "new": "return f\"poll:{target_ts}\"",
-    "target": "tests/unit/test_platform_observation_fixtures.py::test_signal_same_timestamp_polls_keep_their_creators_separate"
-  }
+ {
+  "name": "target uniqueness uses the full author-filtered match",
+  "file": "nora/infra/sql/observations.py",
+  "old": "async def _resolve_target_row(\n    conn: AsyncConnection, *, platform: str, conversation_id: str,\n    target: EditTarget, target_author_id: str = \"\",\n) -> int | None:\n    \"\"\"The ONE target\u2192row rule, callable inside an open transaction: the row\n    the target PROVABLY names, or None. Zero matches is an unresolved target;\n    several is an ambiguous one \u2014 an arbitrary same-timestamp pick would bind\n    evidence to a row it may not name (design 02: ambiguity stays unresolved).\n    The author's identity is preserved separately from the actor's (commit\n    `38b4a157f`): an author-qualified target resolves only a row that author\n    sent, and only when that author sent exactly one.\"\"\"\n    if not target.message_id and target.sent_ts is None:\n        return None\n    # `SqlRecordStore`'s edit-target rule: a second edit can name the first\n    # edit's timestamp, so a timestamp target matches the message OR one of\n    # its edits.\n    edited_at = sa.exists().where(\n        MESSAGE_EDIT.c.message_id == MESSAGES.c.id,\n        MESSAGE_EDIT.c.ts == target.sent_ts)\n    match = (sa.or_(\n             MESSAGES.c.platform_message_id == target.message_id,\n             MESSAGES.c.platform_message_ids_json.contains(\n                 sa.func.jsonb_build_array(target.message_id)))\n             if target.message_id else\n             sa.or_(MESSAGES.c.ts == target.sent_ts, edited_at))\n    where = sa.and_(MESSAGES.c.platform == platform,\n                    MESSAGES.c.conversation_id == conversation_id, match)\n    if target_author_id:\n        where = sa.and_(where, MESSAGES.c.sender_id == target_author_id)\n    rows = (await conn.execute(\n        sa.select(MESSAGES.c.id).where(where).limit(2))).all()\n    if len(rows) != 1:\n        return None\n    return int(rows[0].id)",
+  "new": "async def _resolve_target_row(\n    conn: AsyncConnection, *, platform: str, conversation_id: str,\n    target: EditTarget, target_author_id: str = \"\",\n) -> int | None:\n    \"\"\"The ONE target\u2192row rule, callable inside an open transaction: the row\n    the target PROVABLY names, or None. Zero matches is an unresolved target;\n    several is an ambiguous one \u2014 an arbitrary same-timestamp pick would bind\n    evidence to a row it may not name (design 02: ambiguity stays unresolved).\n    The author's identity is preserved separately from the actor's (commit\n    `38b4a157f`): an author-qualified target resolves only a row that author\n    sent, and only when that author sent exactly one.\"\"\"\n    if target.message_id:\n        row = (await conn.execute(\n            sa.select(MESSAGES.c.id).where(\n                MESSAGES.c.platform == platform,\n                MESSAGES.c.conversation_id == conversation_id,\n                MESSAGES.c.platform_message_id == target.message_id)\n            .order_by(MESSAGES.c.id).limit(1))).first()\n        return int(row[0]) if row is not None else None\n    if target.sent_ts is None:\n        return None\n    # `SqlRecordStore`'s edit-target rule: a second edit can name the first\n    # edit's timestamp, so a timestamp target matches the message OR one of\n    # its edits.\n    edited_at = sa.exists().where(\n        MESSAGE_EDIT.c.message_id == MESSAGES.c.id,\n        MESSAGE_EDIT.c.ts == target.sent_ts)\n    rows = (await conn.execute(\n        sa.select(MESSAGES.c.id, MESSAGES.c.sender_id).where(\n            MESSAGES.c.platform == platform,\n            MESSAGES.c.conversation_id == conversation_id,\n            sa.or_(MESSAGES.c.ts == target.sent_ts, edited_at))\n        .order_by(MESSAGES.c.id).limit(20))).all()\n    if target_author_id:\n        rows = [r for r in rows if r.sender_id == target_author_id]\n    if len(rows) != 1:\n        return None\n    return int(rows[0].id)",
+  "target": "tests/integration/test_platform_observation_ingest.py::test_target_uniqueness_is_measured_after_author_filtering"
+ },
+ {
+  "name": "late target relinking does not issue one query per observation",
+  "file": "nora/infra/sql/observations.py",
+  "old": "async def relink_arriving_targets(\n    conn: AsyncConnection, *, scope: SourceScope,\n    platform_message_id: str | None, sent_ts: int | None,\n    sender_id: str | None,\n) -> int:\n    \"\"\"Re-link retained observations whose target names a message or edit\n    now being recorded \u2014 called INSIDE that arrival's transaction so\n    the link lands with it, never after it (the port's \"resolve_targets\n    re-links the rest when the target arrives\").\n\n    The arriving message generates every target key it could answer \u2014 `id:`\n    its platform handle, `ts:` its timestamp plain and author-qualified \u2014\n    and each unresolved row carrying one is re-resolved through the SAME\n    fail-closed rule `_resolve_target_row` uses: an ambiguous same-timestamp\n    target stays unresolved rather than binding to whichever row happened to\n    arrive. Returns how many rows gained a link this call.\"\"\"\n    keys: list[str] = []\n    if platform_message_id:\n        keys.append(f\"id:{platform_message_id}\")\n    if sent_ts is not None:\n        keys.append(f\"ts:{sent_ts}\")\n        if sender_id:\n            keys.append(f\"ts:{sent_ts}:author:{sender_id}\")\n    if not keys:\n        return 0\n    pending = sa.and_(_scope_where(scope), OBS.c.target_key.in_(keys),\n                      OBS.c.target_message_id.is_(None))\n    if not (await conn.execute(sa.select(sa.exists().where(pending)))).scalar_one():\n        return 0\n    linked = 0\n    # Resolve each address once, not once per retained vote/reaction row.\n    # There are at most three addresses; author-qualified native ids share\n    # an address with bare ids, so those need their own unique-match read.\n    for key in keys:\n        authors = (\"\", sender_id) if key.startswith(\"id:\") and sender_id else (\"\",)\n        for author in authors:\n            qualified_author = (\n                sender_id or \"\" if \":author:\" in key else author)\n            target = target_from_key(key)\n            if target is None:\n                continue\n            resolved = await _resolve_target_row(\n                conn, platform=scope.platform,\n                conversation_id=scope.conversation_id,\n                target=target, target_author_id=qualified_author)\n            if resolved is None:\n                continue\n            author_match = (OBS.c.target_author_id == qualified_author\n                            if qualified_author else\n                            sa.or_(OBS.c.target_author_id.is_(None),\n                                   OBS.c.target_author_id == \"\"))\n            result = await conn.execute(\n                sa.update(PLATFORM_OBSERVATION).where(\n                    pending, OBS.c.target_key == key, author_match)\n                .values(target_message_id=resolved))\n            linked += result.rowcount\n    return linked",
+  "new": "async def relink_arriving_targets(\n    conn: AsyncConnection, *, scope: SourceScope,\n    platform_message_id: str | None, sent_ts: int | None,\n    sender_id: str | None,\n) -> int:\n    \"\"\"Re-link retained observations whose target names a message or edit\n    now being recorded \u2014 called INSIDE that arrival's transaction so\n    the link lands with it, never after it (the port's \"resolve_targets\n    re-links the rest when the target arrives\").\n\n    The arriving message generates every target key it could answer \u2014 `id:`\n    its platform handle, `ts:` its timestamp plain and author-qualified \u2014\n    and each unresolved row carrying one is re-resolved through the SAME\n    fail-closed rule `_resolve_target_row` uses: an ambiguous same-timestamp\n    target stays unresolved rather than binding to whichever row happened to\n    arrive. Returns how many rows gained a link this call.\"\"\"\n    keys: list[str] = []\n    if platform_message_id:\n        keys.append(f\"id:{platform_message_id}\")\n    if sent_ts is not None:\n        keys.append(f\"ts:{sent_ts}\")\n        if sender_id:\n            keys.append(f\"ts:{sent_ts}:author:{sender_id}\")\n    if not keys:\n        return 0\n    rows = (await conn.execute(\n        sa.select(OBS.c.id, OBS.c.target_key, OBS.c.target_author_id).where(\n            _scope_where(scope), OBS.c.target_key.in_(keys),\n            OBS.c.target_message_id.is_(None)))).mappings().all()\n    linked = 0\n    for row in rows:\n        resolved = await _resolve_target_row(\n            conn, platform=scope.platform,\n            conversation_id=scope.conversation_id,\n            target=target_from_key(row[\"target_key\"]),\n            target_author_id=row[\"target_author_id\"] or \"\")\n        if resolved is None:\n            continue\n        await conn.execute(\n            sa.update(OBS).where(\n                OBS.c.id == row[\"id\"], OBS.c.target_message_id.is_(None))\n            .values(target_message_id=resolved))\n        linked += 1\n    return linked",
+  "target": "tests/integration/test_platform_observation_ingest.py::test_late_target_relinks_history_without_a_query_per_observation"
+ },
+ {
+  "name": "recorded reaction outcome reaches the durable sidecar handoff",
+  "file": "nora/ingest/pipeline.py",
+  "old": "return IngestResult(message=None, decision=None, outcome=done.ending)",
+  "new": "return IngestResult(message=None, decision=None)",
+  "target": "tests/integration/test_platform_observation_ingest.py::test_reaction_sibling_does_not_consume_its_sidecar"
+ },
+ {
+  "name": "current state does not inherit an earlier occurrence clock",
+  "file": "nora/domain/observations.py",
+  "old": "    observed = obs.occurred_ms if applied else head.observed_ms\n    if applied:\n        coverage[\"observed_quality\"] = obs.time_quality",
+  "new": "    observed = head.observed_ms\n    if obs.occurred_ms is not None and (\n        observed is None or obs.occurred_ms > observed\n    ):\n        observed = obs.occurred_ms\n        coverage[\"observed_quality\"] = obs.time_quality",
+  "target": "tests/unit/test_platform_observation_wired.py::test_clockless_update_does_not_inherit_the_previous_source_clock"
+ },
+ {
+  "name": "current source revision survives a source scope transition",
+  "file": "nora/domain/observations.py",
+  "old": "    if applied:\n        position, scope = obs.source_position, obs.revision_scope",
+  "new": "    if obs.source_position is not None and obs.revision_scope and (\n        position is None or cmp > 0\n    ) and (position is None or obs.revision_scope == scope):\n        position, scope = obs.source_position, obs.revision_scope",
+  "target": "tests/unit/test_observations.py::test_current_head_revision_tracks_a_changed_source_scope_without_global_order"
+ },
+ {
+  "name": "partial head coverage stays visible to the model",
+  "file": "nora/domain/observations.py",
+  "old": "    complete = bool(get(\"complete\", True)) and not get(\"partial\", False)",
+  "new": "    complete = bool(get(\"complete\", True))",
+  "target": "tests/unit/test_observations.py::test_partial_snapshot_grain_survives_model_facing_current_state"
+ },
+ {
+  "name": "current head retains source grain instead of implying channel audience",
+  "file": "nora/domain/observations.py",
+  "old": "        if obs.coverage.covered != \"event\":\n            coverage[\"covered\"] = obs.coverage.covered\n",
+  "new": "",
+  "target": "tests/unit/test_observations.py::test_partial_snapshot_grain_survives_model_facing_current_state"
+ },
+ {
+  "name": "missing Instagram member set cannot erase the roster",
+  "file": "deploy/instagram-bridge/internal/gateway/instameow/observations.go",
+  "old": "\"complete\": memberSetListed && missingFBID == 0, \"covered\": \"members\",",
+  "new": "\"complete\": missingFBID == 0, \"covered\": \"members\",",
+  "target": "go:deploy/instagram-bridge ./internal/gateway/instameow -run ^TestJoinEmptyUsersEmitsEmptySnapshot$ -count=1"
+ },
+ {
+  "name": "Instagram snapshot admits a changed set with unchanged members",
+  "file": "deploy/instagram-bridge/internal/bridge/capture.go",
+  "old": "\t\tcase t.State == st.Last:\n\t\t\tcontinue",
+  "new": "\t\tcase t.State == st.Last:\n\t\t\treturn false, \"\"",
+  "target": "go:deploy/instagram-bridge ./internal/bridge -run ^TestObservationMemberSnapshotABA$ -count=1"
+ },
+ {
+  "name": "Signal polls at one timestamp retain creator identity",
+  "file": "nora/platform/signal/parser.py",
+  "old": "return f\"poll:{author}:{target_ts}\"",
+  "new": "return f\"poll:{target_ts}\"",
+  "target": "tests/unit/test_platform_observation_fixtures.py::test_signal_same_timestamp_polls_keep_their_creators_separate"
+ }
 ]

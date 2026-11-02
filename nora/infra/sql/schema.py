@@ -198,6 +198,11 @@ MESSAGES = sa.Table(
     # sent-timestamp instead). A column so an EDIT, which names its target by
     # this handle, can find it.
     sa.Column("platform_message_id", sa.Text),
+    # ALL confirmed native handles when one send produced several posts —
+    # a JSON array text like `mentions_json`; `platform_message_id` keeps
+    # its single-handle meaning, this carries the rest so an inbound
+    # reaction/edit to ANY piece resolves (`find_edited`).
+    sa.Column("platform_message_ids_json", pg.JSONB),
     # The ids this message @-mentioned, as the parser produced them: a JSON
     # array, sorted, or NULL on a row stored before the column existed. Read
     # for ONE question — did the version an edit replaced already address
@@ -5558,6 +5563,9 @@ BRIDGE_ACTION = sa.Table(
     sa.Column("request_hash", sa.Text, nullable=False),
     sa.Column("state", sa.Text, nullable=False, server_default="prepared"),
     sa.Column("platform_ref", sa.Text),
+    # Every confirmed native ref a multi-post action produced; the single
+    # `platform_ref` stays the one-handle compat form.
+    sa.Column("platform_refs", pg.JSONB),
     sa.Column("platform_ms", sa.BigInteger),
     sa.Column("error", pg.JSONB),
     # The pending outbound `messages` row a live invocation links against.

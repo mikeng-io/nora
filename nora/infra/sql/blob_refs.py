@@ -64,6 +64,12 @@ _TRACE = "a log of what a turn or session was shown; nothing reads bytes through
 #: Columns that look like a key, or are JSON that could hold one under
 #: another name, and name no blob that must stay, and why.
 NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
+    ("messages", "platform_message_ids_json"): (
+        "confirmed native message identifiers; media_json owns attachment custody"
+    ),
+    ("bridge_action", "platform_refs"): (
+        "confirmed native action result identifiers, never attachment addresses"
+    ),
     ("notebook_entry_revision", "content"): (
         "entry prose and evidence keys; source rows own blob custody"
     ),

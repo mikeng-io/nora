@@ -64,6 +64,7 @@ type ActionRow struct {
 	RequestHash     string
 	State           string
 	PlatformRef     *string
+	PlatformRefs    []string
 	PlatformMS      *int64
 	Error           json.RawMessage // {"kind","message"} or NULL
 	MessageID       *int64          // bound pending outbound audit row, if any
@@ -245,12 +246,12 @@ func (s *ActionStore) Get(ctx context.Context, actionID string) (*ActionRow, err
 	var r ActionRow
 	err := s.pool.QueryRow(ctx,
 		`SELECT action_id, owner_kind, owner_id, owner_generation, op, request, request_hash,
-		        state, platform_ref, platform_ms, error, message_id
+		        state, platform_ref, platform_refs, platform_ms, error, message_id
 		 FROM bridge_action WHERE action_id=$1 AND platform=$2 AND account_key=$3`,
 		actionID, s.platform, s.accountKey).
 		Scan(&r.ActionID, &r.OwnerKind, &r.OwnerID, &r.OwnerGeneration, &r.Op,
-			&r.Request, &r.RequestHash, &r.State, &r.PlatformRef, &r.PlatformMS, &r.Error,
-			&r.MessageID)
+			&r.Request, &r.RequestHash, &r.State, &r.PlatformRef, &r.PlatformRefs,
+			&r.PlatformMS, &r.Error, &r.MessageID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -276,7 +277,7 @@ func (s *ActionStore) MarkStarted(ctx context.Context, actionID string, messageI
 // Finish writes the terminal result (tenant-scoped). `uncertain` is a
 // stored terminal too: the platform call may have landed and nobody may
 // blind-retry it.
-func (s *ActionStore) Finish(ctx context.Context, actionID, state, platformRef string, platformMS *int64, errKind, errMsg string) error {
+func (s *ActionStore) Finish(ctx context.Context, actionID, state, platformRef string, platformRefs []string, platformMS *int64, errKind, errMsg string) error {
 	var errJSON any
 	if errKind != "" {
 		errJSON = map[string]any{"kind": errKind, "message": errMsg}
@@ -285,11 +286,16 @@ func (s *ActionStore) Finish(ctx context.Context, actionID, state, platformRef s
 	if platformRef != "" {
 		ref = platformRef
 	}
+	var refs any
+	if len(platformRefs) > 0 {
+		b, _ := json.Marshal(platformRefs)
+		refs = json.RawMessage(b)
+	}
 	_, err := s.pool.Exec(ctx,
-		`UPDATE bridge_action SET state=$2, platform_ref=$3, platform_ms=$4,
-		        error=$5, completed_at=now()
-		 WHERE action_id=$1 AND platform=$6 AND account_key=$7`,
-		actionID, state, ref, platformMS, errJSON, s.platform, s.accountKey)
+		`UPDATE bridge_action SET state=$2, platform_ref=$3, platform_refs=$4,
+		        platform_ms=$5, error=$6, completed_at=now()
+		 WHERE action_id=$1 AND platform=$7 AND account_key=$8`,
+		actionID, state, ref, refs, platformMS, errJSON, s.platform, s.accountKey)
 	return err
 }
 

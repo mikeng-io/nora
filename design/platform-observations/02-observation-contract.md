@@ -356,3 +356,29 @@ truncated, unattributable or unorderable state withholds exact counts. Database
 insertion stamps define the recorded-arrival fallback across these two tables.
 They are not transaction commit timestamps and prove no upstream ordering;
 source revisions remain scoped to the native stream that supplied them.
+
+### Outbound native identity (multi-post, 2026-11-02)
+
+One confirmed outbound action can produce several native posts (WhatsApp text
+plus captionless audio/media, Instagram multi-part, Discord single). Ownership:
+
+- `bridge_action.platform_refs` (jsonb) and the action wire's `platform_refs`
+  carry EVERY confirmed native id in send order; `platform_ref` stays the last
+  confirmed id for single-ref consumers. Replay (`POST` repeat on the same
+  `action_id`) and `GET /v1/actions/{id}` return the same recorded list without
+  re-sending — the bridge-side fix forwards the executor's `platform_refs`
+  through `store.finish`; unavailable/rejected/uncertain states carry `null`.
+- `SendResult.platform_message_ids` / `ActionReply.platform_refs` preserve the
+  list through the Python client and Deliverer; `messages.platform_message_id`
+  remains the compat single (last id) and `messages.platform_message_ids_json`
+  stores the Python list — never a JSON-encoded string inside the jsonb column.
+- Every native-target reader (`find_edited`, `_resolve_target_row`, audit touch
+  resolution, the fake) resolves ANY element of the list via
+  `jsonb_build_array(id)` containment — a bare string is not a valid jsonb
+  containment operand. A list never resolves across a conversation.
+- A failed, rejected or uncertain send writes no ids: a `platform_refs` payload
+  on an unconfirmed response is ignored at the client (`confirmed` only),
+  and Deliverer passes ids to the store only on `result.ok`. The store persists
+  the supplied confirmed handles; it is not a separate outcome validator.
+  An uncertain multi-post send
+  claims no delivered count and no audited handles.

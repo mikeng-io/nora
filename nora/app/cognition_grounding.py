@@ -545,6 +545,10 @@ async def _source_objects(
         # The store orders by last write, independently of source clocks.
         heads = [h for h in heads if h.applied > 0]
         events: list[SourceEvent] = []
+
+        def name_of(ref: str, platform: str = room.platform) -> str | None:
+            found = persons.resolve(platform, ref)
+            return found.name if found is not None else None
         for h in heads[:limit]:
             events.append(SourceEvent(
                 # `head_id` IS the newest applied row's id — the head is
@@ -556,7 +560,8 @@ async def _source_objects(
                 time_quality=h.observed_quality,
                 actor=None, actor_status="not_applicable",
                 handle=handle_of(h),
-                summary="", state=head_summary(h), ordering=h.ordering,
+                summary="", ordering=h.ordering,
+                state=head_summary(h, name_of=name_of),
                 received_ms=h.received_ms,
                 revision=revision_label(h.position, h.scope),
                 coverage=coverage_label(h.coverage)))
@@ -592,8 +597,8 @@ async def _source_objects(
                     time_quality=head.observed_quality,
                     actor=None, actor_status="not_applicable",
                     handle=handle_of(head),
-                    summary="", state=head_summary(head),
-                    ordering=head.ordering,
+                    summary="", ordering=head.ordering,
+                    state=head_summary(head, name_of=name_of),
                     received_ms=head.received_ms,
                     revision=revision_label(head.position, head.scope),
                     coverage=coverage_label(head.coverage))))

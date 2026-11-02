@@ -200,6 +200,23 @@ class DiscordListener:
         async def on_guild_role_update(before: Any, after: Any) -> None:
             await _observation("role_update", (before, after))
 
+        # Guild scheduled events — a guild-scoped object, never a channel's
+        # audience; the observation bind keeps that grain.
+        async def on_scheduled_event_create(scheduled_event: Any) -> None:
+            await _observation("scheduled_event_create", scheduled_event)
+
+        async def on_scheduled_event_update(before: Any, after: Any) -> None:
+            await _observation("scheduled_event_update", (before, after))
+
+        async def on_scheduled_event_delete(scheduled_event: Any) -> None:
+            await _observation("scheduled_event_delete", scheduled_event)
+
+        async def on_scheduled_event_user_add(scheduled_event: Any, user: Any) -> None:
+            await _observation("scheduled_event_user_add", (scheduled_event, user))
+
+        async def on_scheduled_event_user_remove(scheduled_event: Any, user: Any) -> None:
+            await _observation("scheduled_event_user_remove", (scheduled_event, user))
+
         async def on_disconnect() -> None:
             self.connected = False
             log.warning("discord gateway disconnected")
@@ -226,5 +243,10 @@ class DiscordListener:
         self._client.event(on_member_update)
         self._client.event(on_guild_channel_update)
         self._client.event(on_guild_role_update)
+        self._client.event(on_scheduled_event_create)
+        self._client.event(on_scheduled_event_update)
+        self._client.event(on_scheduled_event_delete)
+        self._client.event(on_scheduled_event_user_add)
+        self._client.event(on_scheduled_event_user_remove)
         self._client.event(on_disconnect)
         await self._client.start(self._token)
