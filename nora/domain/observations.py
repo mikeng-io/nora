@@ -1290,14 +1290,28 @@ def _apply_poll(
             else:
                 for v, o in p.voters:
                     votes[v] = list(o)
-        if p.option_counts:
-            counts = dict(state["option_counts"])
-            for ref, n in p.option_counts:
-                counts[ref] = n
-            state["option_counts"] = counts
-        if p.voter_count is not None:
+        if obs.coverage.complete and "option_counts" in (
+                obs.coverage.covered or ""):
+            # The covered count table replaces EXACTLY — including the
+            # covered empty table a source reports for "no recorded
+            # votes" — never a merge that resurrects counts it omitted.
+            # A field the covered table does not carry is unknown inside
+            # the same set, not the older snapshot's leftover.
+            state["option_counts"] = dict(p.option_counts)
             state["voter_count"] = p.voter_count
-        state["counts_complete"] = bool(obs.coverage.complete)
+            state["counts_complete"] = True
+        else:
+            if p.option_counts:
+                # Counts outside a complete covered claim are partial
+                # evidence: they merge, never erase omitted options, and
+                # a voters-only coverage leaves the whole table alone.
+                counts = dict(state["option_counts"])
+                for ref, n in p.option_counts:
+                    counts[ref] = n
+                state["option_counts"] = counts
+                state["counts_complete"] = False
+            if p.voter_count is not None:
+                state["voter_count"] = p.voter_count
     state["votes"] = votes
     return state
 
@@ -1811,6 +1825,37 @@ def observation_summary(
     return f"{obs.object_kind} {op}"
 
 
+#: The folded member states that still mean "is a member now" — the
+#: native vocabulary's only active claim. Everything else a delta or
+#: snapshot recorded is HISTORY under its own label, never membership.
+_MEMBER_ACTIVE_STATES = frozenset({"member"})
+#: Not-yet-member states the source vocabulary carries — a join request
+#: awaiting approval, an invite not yet accepted.
+_MEMBER_PENDING_STATES = frozenset({"requested", "invited", "pending"})
+#: Terminal non-member states — a departure/removal or a closed request.
+_MEMBER_DEPARTED_STATES = frozenset(
+    {"left", "removed", "kicked", "banned", "withdrawn", "rejected"})
+
+
+def _member_standing(members: dict[str, Any]) -> dict[str, list[str]]:
+    """Split the folded member collection by CURRENT standing. Only a
+    native active state counts as a member; pending and terminal states
+    report under their own labels, and an unrecognized state is
+    `unknown` — counted as neither present nor departed."""
+    standing = {"member": [], "pending": [], "departed": [], "unknown": []}
+    for subject, entry in members.items():
+        state = str((entry or {}).get("state") or "")
+        if state in _MEMBER_ACTIVE_STATES:
+            standing["member"].append(subject)
+        elif state in _MEMBER_PENDING_STATES:
+            standing["pending"].append(subject)
+        elif state in _MEMBER_DEPARTED_STATES:
+            standing["departed"].append(subject)
+        else:
+            standing["unknown"].append(subject)
+    return standing
+
+
 def head_summary(head: ObservationHead) -> str:
     """The object's folded CURRENT state as one bounded fact line —
     a poll's open/closed and recorded tallies, a room's named fields, a
@@ -1824,25 +1869,36 @@ def head_summary(head: ObservationHead) -> str:
                                   thread=head.thread))
     if head.kind == "poll":
         state = s.get("state") or "unknown"
-        votes = s.get("votes") or {}
+        ballots = _poll_ballots(s)
         counts = s.get("option_counts") or {}
         q = s.get("question")
         parts = [f"poll {state}"]
         if q:
             parts.append(f"“{_clip(q, 60)}”")
-        if votes:
-            parts.append(f"{len(votes)} recorded vote(s)")
         if counts:
             parts.append("totals " + ", ".join(
                 f"{opt(k)}={v}" for k, v in list(counts.items())[:8]))
+        if ballots:
+            tally = _poll_subset_tally(ballots)
+            parts.append("recorded subset " + ", ".join(
+                f"{opt(k)}={v}" for k, v in list(tally.items())[:8])
+                + f" ({len(ballots)} voter(s))")
         return _clip("; ".join(parts))
     if head.kind == "room":
         return _clip("room: " + (_fields_summary(s.get("fields") or {})
                                  or "no fields recorded"))
     if head.kind == "membership":
         members = s.get("members") or {}
+        standing = _member_standing(members)
         covered = f" ({_grain_label(s['covered'])})" if s.get("covered") else ""
-        return _clip(f"membership: {len(members)} member(s) recorded{covered}")
+        parts = [f"{len(standing['member'])} member(s)"]
+        if standing["pending"]:
+            parts.append(f"{len(standing['pending'])} pending")
+        if standing["departed"]:
+            parts.append(f"{len(standing['departed'])} departed")
+        if standing["unknown"]:
+            parts.append(f"{len(standing['unknown'])} unknown-state")
+        return _clip("membership: " + "; ".join(parts) + covered)
     if head.kind == "pin":
         return _clip(f"pin set: {len(s.get('pins') or ())} pin(s)")
     if head.kind == "artifact":
@@ -1862,6 +1918,26 @@ def head_summary(head: ObservationHead) -> str:
 
 _NAMED_MAX = 24
 _OPTIONS_MAX = 16
+
+
+def _poll_ballots(state: dict[str, Any]) -> dict[str, list[str]]:
+    """The retained per-voter selections that still cast a vote — a voter
+    whose recorded selection is empty (a withdrawal, or a snapshot's
+    covered empty selection) contributes no tally entry."""
+    return {v: list(sel) for v, sel in (state.get("votes") or {}).items()
+            if sel}
+
+
+def _poll_subset_tally(ballots: dict[str, list[str]]) -> dict[str, int]:
+    """The RECORDED-SUBSET option tally: one count per option per recorded
+    voter — a multi-select voter counts toward each option it selected.
+    This is the recorded subset only: never a source aggregate, never a
+    sum of an aggregate and named voters."""
+    tally: dict[str, int] = {}
+    for selected in ballots.values():
+        for ref in selected:
+            tally[ref] = tally.get(ref, 0) + 1
+    return dict(sorted(tally.items()))
 
 
 def _merged_counts(state: dict[str, Any]) -> dict[str, int]:
@@ -1945,16 +2021,31 @@ def head_detail(head: ObservationHead, *, name_of: Any = None) -> dict[str, Any]
                 out["tally_more"] = len(counts) - _OPTIONS_MAX
         if s.get("voter_count") is not None:
             out["voter_count"] = s["voter_count"]
-        votes = s.get("votes") or {}
-        if votes:
-            out["recorded_votes"] = sum(len(v) for v in votes.values())
-            named = [n for v in votes
+        ballots = _poll_ballots(s)
+        if ballots:
+            subset = _poll_subset_tally(ballots)
+            # The recorded subset: named-voter selections as their own
+            # labelled tally — never the upstream total and never summed
+            # with a source aggregate.
+            out["recorded_tally"] = [
+                {"option": _option_handle(
+                    ref, account_key=head.account_key, thread=head.thread),
+                 "label": (s.get("options") or {}).get(ref, {}).get("label")
+                          or "",
+                 "count": n}
+                for ref, n in list(subset.items())[:_OPTIONS_MAX]]
+            if len(subset) > _OPTIONS_MAX:
+                out["recorded_tally_more"] = len(subset) - _OPTIONS_MAX
+            out["recorded_voters"] = len(ballots)
+            out["recorded_selections"] = sum(
+                len(v) for v in ballots.values())
+            named = [n for v in ballots
                      if (n := name_of(v) if name_of is not None else None)]
             if named:
                 out["voters_named"] = named[:_NAMED_MAX]
                 if len(named) > _NAMED_MAX:
                     out["voters_named_more"] = len(named) - _NAMED_MAX
-            out["voters_unnamed"] = len(votes) - len(named)
+            out["voters_unnamed"] = len(ballots) - len(named)
         if s.get("anonymous") is not None:
             out["anonymous"] = s["anonymous"]
         if s.get("counts_complete") is not None:
@@ -1975,14 +2066,27 @@ def head_detail(head: ObservationHead, *, name_of: Any = None) -> dict[str, Any]
         return out
     if head.kind == "membership":
         members = s.get("members") or {}
-        out["member_count"] = len(members)
-        named = [n for m in members
+        standing = _member_standing(members)
+        active = standing["member"]
+        out["member_count"] = len(active)
+        named = [n for m in active
                  if (n := name_of(m) if name_of is not None else None)]
         if named:
             out["members_named"] = named[:_NAMED_MAX]
             if len(named) > _NAMED_MAX:
                 out["members_named_more"] = len(named) - _NAMED_MAX
-        out["members_unnamed"] = len(members) - len(named)
+        out["members_unnamed"] = len(active) - len(named)
+        for bucket in ("pending", "departed"):
+            subjects = standing[bucket]
+            if not subjects:
+                continue
+            out[f"{bucket}_count"] = len(subjects)
+            names = [n for m in subjects
+                     if (n := name_of(m) if name_of is not None else None)]
+            if names:
+                out[f"{bucket}_named"] = names[:_NAMED_MAX]
+        if standing["unknown"]:
+            out["unknown_state_count"] = len(standing["unknown"])
         if s.get("covered"):
             out["covered"] = _grain_label(s["covered"])
         return out

@@ -46,6 +46,9 @@ Internal IDs are scoped and private; model handles are resolved inside server sc
   selected set, or aggregate snapshot. Empty *complete voter selection* means a
   withdrawn vote; omitted selection is unknown. Aggregate voters and option counts
   are separate; multi-select option counts cannot be summed into unique people.
+  Retained per-voter selections report as their own labelled recorded-subset
+  tally — never summed with a source aggregate and never read as a complete
+  upstream total.
 - **room change:** changed typed title/topic/permissions/thread lifecycle fields;
   absent fields unchanged, explicit null follows source semantics.
 - **membership:** subject account, role/state delta or scoped snapshot. Actor/cause
@@ -224,7 +227,14 @@ record, `contract` versioned separately from the envelope's `v`:
   `pollVote.optionIndexes` maps here — a per-voter set replacement, not a
   per-option delta). `snapshot` carries `option_counts`, `voter_count` and
   optionally a covered `voters` map — aggregates never synthesize voter
-  identities. `clear` empties the recorded vote set in covered scope.
+  identities. A COMPLETE snapshot replaces exactly its covered set: a
+  covered `option_counts` claim replaces the whole count table — a covered
+  EMPTY table (e.g. WA `pollResultSnapshot` with `voters={}`,
+  `voter_count=0`) is a real "no recorded votes", never a merge with
+  earlier counts. Counts supplied outside a complete covered claim merge
+  as partial evidence and never erase omitted options; a `voters`-only
+  coverage leaves the aggregate table untouched. `clear` empties the
+  recorded vote set in covered scope.
 - **reaction:** `add`/`remove` per-actor deltas; `clear` with covered
   emoji/actor scopes (empty scope = all observed); `snapshot` of
   `counts`/`reactors`. Deltas with unknown actors accumulate as unattributed
@@ -235,7 +245,11 @@ record, `contract` versioned separately from the envelope's `v`:
   never fold into a channel audience. `add`/`remove`/`revise` are subject
   deltas (`subject_ref` + payload `role`/`state`); `snapshot` carries the
   `members` set with `covered` — complete replaces the collection, partial
-  merges and never removes omitted accounts.
+  merges and never removes omitted accounts. The folded collection keeps
+  every recorded native state (`member`, `left`, `invited`, `banned`,
+  `unknown`, and request states a source reports); CURRENT membership is
+  derived from the native active state only — pending, departed and
+  unrecognized states report under their own labels, never as members.
 - **room:** `object_ref` names the channel or thread; `revise`/`create`
   patch only reported `fields` (absent field = unchanged, explicit `null` =
   cleared; Signal `groupInfo` name/revision lands here — it is not member

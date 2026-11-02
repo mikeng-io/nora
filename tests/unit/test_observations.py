@@ -549,3 +549,137 @@ def test_partial_snapshot_grain_survives_model_facing_current_state():
     assert detail["member_count"] == 1
     assert detail["coverage"]["partial"] is True
     assert "source-id" not in str(detail)
+
+
+def _poll_counts_snapshot(counts, id: int, *, voter_count=None,
+                          covered="option_counts", complete=True):
+    return _stored(_obs(
+        operation="snapshot",
+        payload=PollPayload(option_counts=counts, voter_count=voter_count),
+        coverage=Coverage(complete=complete, covered=covered)), id)
+
+
+def _member_delta(subject: str, op: str, id: int, *,
+                  state: str = "", role: str = "") -> StoredObservation:
+    return _stored(_obs(
+        kind="membership", object_ref="channel:c1", operation=op,
+        subject_ref=subject,
+        payload=MembershipPayload(role=role, state=state)), id)
+
+
+# ── poll aggregate snapshots: the covered count set ──────────────────────
+
+def test_complete_counts_snapshot_replaces_including_the_empty_table():
+    """A COMPLETE `option_counts` coverage replaces the whole count table —
+    a covered EMPTY table (the WA `pollResultSnapshot` "no recorded votes"
+    shape) leaves zero counts behind, never the older nonzero ones."""
+    head = fold_observation(None, _poll_create(1))
+    head = fold_observation(head, _poll_counts_snapshot(
+        {"a": 3, "b": 2}, 2, voter_count=5))
+    assert head.state["option_counts"] == {"a": 3, "b": 2}
+    assert head.state["voter_count"] == 5
+    assert head.state["counts_complete"] is True
+    head = fold_observation(head, _poll_counts_snapshot(
+        {}, 3, voter_count=0))
+    assert head.state["option_counts"] == {}
+    assert head.state["voter_count"] == 0
+    assert head.state["counts_complete"] is True
+
+
+def test_omitted_options_die_only_under_a_complete_claim():
+    """Complete replaces the covered set — an omitted option is no longer in
+    it. Partial merges: it updates what it reports and leaves the rest."""
+    head = fold_observation(None, _poll_create(1))
+    head = fold_observation(head, _poll_counts_snapshot(
+        {"a": 3, "b": 2}, 2, voter_count=5))
+    head = fold_observation(head, _poll_counts_snapshot(
+        {"a": 4}, 3, complete=False))
+    assert head.state["option_counts"] == {"a": 4, "b": 2}
+    assert head.state["counts_complete"] is False
+    assert head.state["voter_count"] == 5  # untouched partial evidence
+    head = fold_observation(head, _poll_counts_snapshot(
+        {"a": 5}, 4))
+    assert head.state["option_counts"] == {"a": 5}
+    # The covered table carries no voter total: unknown, not the old 5.
+    assert head.state["voter_count"] is None
+    assert head.state["counts_complete"] is True
+
+
+def test_voters_only_coverage_preserves_aggregate_evidence():
+    """A complete `voters` snapshot owns the voter set; the aggregate count
+    table is a different facet and survives it exactly."""
+    head = fold_observation(None, _poll_create(1))
+    head = fold_observation(head, _poll_counts_snapshot(
+        {"a": 5, "b": 2}, 2, voter_count=7))
+    head = fold_observation(head, _stored(_obs(
+        operation="snapshot",
+        payload=PollPayload(voters=(("u1", ("a",)), ("u2", ("a", "b")))),
+        coverage=Coverage(complete=True, covered="voters")), 3))
+    assert head.state["votes"] == {"u1": ["a"], "u2": ["a", "b"]}
+    assert head.state["option_counts"] == {"a": 5, "b": 2}
+    assert head.state["voter_count"] == 7
+    assert head.state["counts_complete"] is True
+
+
+def test_counts_outside_their_covered_claim_merge_as_partial():
+    """Counts a complete snapshot supplies under a DIFFERENT covered claim
+    are partial evidence: they merge, flip `counts_complete` off, and keep
+    the options they omitted."""
+    head = fold_observation(None, _poll_create(1))
+    head = fold_observation(head, _poll_counts_snapshot(
+        {"a": 5, "b": 2}, 2, voter_count=7))
+    head = fold_observation(head, _poll_counts_snapshot(
+        {"a": 9}, 3, covered="voters"))
+    assert head.state["option_counts"] == {"a": 9, "b": 2}
+    assert head.state["counts_complete"] is False
+    # voter_count was supplied on neither the covered claim nor the merge.
+    assert head.state["voter_count"] == 7
+
+
+def test_empty_voter_set_under_complete_voters_coverage_is_a_mass_withdrawal():
+    head = fold_observation(None, _poll_create(1))
+    head = fold_observation(head, _poll_vote("u1", "a", 2))
+    head = fold_observation(head, _poll_vote("u2", "b", 3))
+    head = fold_observation(head, _stored(_obs(
+        operation="snapshot", payload=PollPayload(voters=()),
+        coverage=Coverage(complete=True, covered="voters")), 4))
+    assert head.state["votes"] == {}
+
+
+# ── membership standing vocabulary ───────────────────────────────────────
+
+def test_member_join_leave_rejoin_requested_fold_their_own_states():
+    """join → leave → rejoin → requested: every recorded standing keeps its
+    own state in the folded map — removal records, never erases."""
+    head = fold_observation(None, _member_delta("u1", "add", 1))
+    assert head.state["members"]["u1"]["state"] == "member"
+    head = fold_observation(head, _member_delta("u1", "remove", 2))
+    assert head.state["members"]["u1"]["state"] == "left"
+    head = fold_observation(head, _member_delta("u1", "add", 3))
+    assert head.state["members"]["u1"]["state"] == "member"
+    head = fold_observation(head, _member_delta(
+        "u2", "add", 4, state="requested"))
+    assert head.state["members"]["u2"]["state"] == "requested"
+    head = fold_observation(head, _member_delta(
+        "u3", "revise", 5, state="banned"))
+    assert head.state["members"]["u3"]["state"] == "banned"
+    assert set(head.state["members"]) == {"u1", "u2", "u3"}
+
+
+def test_complete_member_snapshot_replaces_with_native_states():
+    """A covered-complete member snapshot replaces the whole collection —
+    its own states included (a `left` row the snapshot carries is kept as
+    history, not dropped and not counted as a member)."""
+    head = fold_observation(None, _member_delta("u1", "add", 1))
+    head = fold_observation(head, _stored(_obs(
+        kind="membership", object_ref="channel:c1", operation="snapshot",
+        payload=MembershipPayload(
+            covered="channel",
+            members=(MembershipEntry("u2", state="member"),
+                     MembershipEntry("u3", state="requested"),
+                     MembershipEntry("u4", state="left")))),
+        coverage=Coverage(complete=True, covered="members")), 2)
+    members = head.state["members"]
+    assert set(members) == {"u2", "u3", "u4"}   # u1 is out of the covered set
+    assert members["u3"]["state"] == "requested"
+    assert members["u4"]["state"] == "left"

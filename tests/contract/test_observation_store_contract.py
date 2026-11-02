@@ -361,3 +361,80 @@ async def test_by_ids_reads_only_inside_the_scope(store):
     # The other scope's id never resolves through this scope's read.
     assert [r.id for r in rows] == [i1]
     assert await store.by_ids(scope=SCOPE, ids=()) == []
+
+
+async def _counts_snapshot(store: Any, counts: dict, upstream: str, *,
+                           voter_count=None, covered="option_counts",
+                           complete=True):
+    return await _append(store, _obs(
+        operation="snapshot",
+        payload=PollPayload(option_counts=counts, voter_count=voter_count),
+        coverage=Coverage(complete=complete, covered=covered)), upstream)
+
+
+async def test_complete_empty_counts_snapshot_replaces_the_covered_set(store):
+    """The WA `pollResultSnapshot` "no recorded votes" shape: a covered
+    `option_counts` COMPLETE snapshot carrying an empty table replaces
+    the stored counts exactly — it never merges with the older nonzero
+    ones."""
+    await _append(store, _obs(), "u1")
+    await _counts_snapshot(store, {"a": 3, "b": 2}, "u2", voter_count=5)
+    head = await store.current(scope=SCOPE, kind="poll", object_ref="poll-1")
+    assert head.state["option_counts"] == {"a": 3, "b": 2}
+    await _counts_snapshot(store, {}, "u3", voter_count=0)
+    head = await store.current(scope=SCOPE, kind="poll", object_ref="poll-1")
+    assert head.state["option_counts"] == {}
+    assert head.state["voter_count"] == 0
+    assert head.state["counts_complete"] is True
+
+
+async def test_omitted_options_die_only_under_a_complete_claim(store):
+    await _append(store, _obs(), "u1")
+    await _counts_snapshot(store, {"a": 3, "b": 2}, "u2", voter_count=5)
+    await _counts_snapshot(store, {"a": 4}, "u3", complete=False)
+    head = await store.current(scope=SCOPE, kind="poll", object_ref="poll-1")
+    assert head.state["option_counts"] == {"a": 4, "b": 2}
+    assert head.state["counts_complete"] is False
+    await _counts_snapshot(store, {"a": 5}, "u4")
+    head = await store.current(scope=SCOPE, kind="poll", object_ref="poll-1")
+    assert head.state["option_counts"] == {"a": 5}
+    assert head.state["counts_complete"] is True
+
+
+async def test_voters_only_snapshot_keeps_the_aggregate_table(store):
+    """A complete `voters` snapshot owns the voter set only: aggregate
+    option counts are a separate evidence facet and survive it."""
+    await _append(store, _obs(), "u1")
+    await _counts_snapshot(store, {"a": 5, "b": 2}, "u2", voter_count=7)
+    await _append(store, _obs(
+        operation="snapshot",
+        payload=PollPayload(voters=(("v1", ("a",)), ("v2", ("b",)))),
+        coverage=Coverage(complete=True, covered="voters")), "u3")
+    head = await store.current(scope=SCOPE, kind="poll", object_ref="poll-1")
+    assert head.state["votes"] == {"v1": ["a"], "v2": ["b"]}
+    assert head.state["option_counts"] == {"a": 5, "b": 2}
+    assert head.state["voter_count"] == 7
+
+
+async def test_member_standing_states_retain_and_project_currently(store):
+    """Member, requested and left rows are ALL retained in the fold; the
+    model-facing detail counts only the native active state as current
+    members — pending and departed report under their own labels."""
+    from nora.domain.observations import head_detail
+    await _append(store, _obs(
+        kind="membership", object_ref="channel:c1", operation="add",
+        subject_ref="u0", payload=MembershipPayload(state="member")), "u1")
+    await _append(store, _obs(
+        kind="membership", object_ref="channel:c1", operation="add",
+        subject_ref="u2", payload=MembershipPayload(state="requested")), "u2")
+    await _append(store, _obs(
+        kind="membership", object_ref="channel:c1", operation="remove",
+        subject_ref="u3", payload=MembershipPayload()), "u3")
+    head = await store.current(scope=SCOPE, kind="membership",
+                               object_ref="channel:c1")
+    assert set(head.state["members"]) == {"u0", "u2", "u3"}
+    assert head.state["members"]["u3"]["state"] == "left"
+    detail = head_detail(head)
+    assert detail["member_count"] == 1
+    assert detail["pending_count"] == 1
+    assert detail["departed_count"] == 1
