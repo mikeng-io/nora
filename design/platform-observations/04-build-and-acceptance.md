@@ -229,5 +229,17 @@ procedures or authorize a claim of routing quality from deterministic tests.
 
 The candidate's automatic source-head working set is a bounded recency selection,
 with explicit omissions and exact-handle reads. Ongoing matter-linked selection
-and retirement must be verified against the Standing owner's actual typed refs;
-no semantic lifecycle or lossless model compression is established by this slice.
+is now implemented through the live matter owner: `Note.object_refs` carries
+typed `SourceRef` pointers (`platform`, `conversation_id`, model-safe `handle`,
+`thread`; at most 8, deduplicated) persisted on the note head and updated under
+the same revision CAS as the body. `note_create`/`note_revise` accept the refs,
+validated fail-closed against the handles the session was actually shown in the
+same room and still resolving through `head_for_handle` — an unseen, forged,
+cross-scope or unresolvable ref is refused or `unavailable`, never silently
+kept. Both assemblies resolve the refs on every turn beside the bounded page
+(`head=None` renders `unresolved`, never a dropped row; a ref the page already
+shows is not duplicated; `matter` names the tracking note). `note_set_status`
+retirement removes the note from `standing` and with it the refs — history
+stays readable through `read`; a poll `revise`→closed only changes source state
+and never retires the note. No semantic lifecycle or lossless model compression
+is established by this slice.

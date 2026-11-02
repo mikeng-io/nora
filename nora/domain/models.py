@@ -795,6 +795,13 @@ class TagContext:
     source_reads_failed: bool = False
     source_events_more: int = 0
     source_objects_more: int = 0
+    # `retained_sources` is the retained lane (design/platform-observations
+    # 03): `RetainedSource`s — this room's open notes' curated `object_refs`
+    # resolved against the store NOW, each with its CURRENT folded head or an
+    # explicit unresolved marker. An object an ongoing matter tracks stays in
+    # view after the recency page above would have evicted it; the state is
+    # read fresh here, never copied onto the note.
+    retained_sources: tuple[Any, ...] = ()
     # The room's CULTURE head — an account of what this room is and why it
     # became so. Beside `standing` because both are
     # room-scoped and both are her own output, and apart from it on the one

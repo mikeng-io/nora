@@ -35,6 +35,7 @@ from nora.app.cognition_session import (
 from nora.app.wake import WakeEvaluator
 from nora.domain.cognition_session import Room
 from nora.domain.models import EditTarget, NormalizedMessage, PersonRef, Touch
+from nora.domain.notes import SourceRef
 from nora.domain.observations import (
     ArtifactPayload,
     Coverage,
@@ -51,6 +52,7 @@ from nora.domain.ports import EngageDecision, EngagementRequest
 from nora.domain.stimuli import NewStimulus, WakePolicy
 from nora.engagement.context import (
     _OBSERVATION_TARGET_MAX,
+    _SOURCE_OBJECT_MAX,
     TranscriptInjection,
 )
 from nora.infra.transit import TransitClient
@@ -60,8 +62,10 @@ from nora.platform.bridge.rehydrate import (
     observation_from_dict,
     observation_to_dict,
 )
+from nora.policy import Conversation, Policy
 from nora.testing import FakeMemoryStore, FakeRecordStore
 from nora.testing.cognition_store import InMemoryCognitionStore
+from nora.testing.note_store import InMemoryNoteStore
 from nora.testing.observations import FakeObservationStore
 from nora.testing.stimuli import InMemoryStimulusStore
 from tests.fakes import SinkSender
@@ -1096,3 +1100,233 @@ async def test_repeated_and_over_bound_targets_stay_bounded_and_explicit():
         history=True)
     assert all(e.get("target", {}).get("body") == "shared target"
                for e in hist["events"])
+
+
+# ---------------------------------------------------------------------------
+# The retained lane (blocker5, metadata-standing-continuity): an open note's
+# curated `object_refs` resolve beside the bounded page, in BOTH assemblies.
+# Written at the real seams; NOT RUN here — the parent owns execution.
+
+_POLL_HANDLE = object_handle("poll", "p1", account_key="acct", thread="")
+
+
+def _policy(unit: str = "u1") -> Policy:
+    convo = Conversation(
+        platform="signal", ids=frozenset({CID}), persons=None,
+        primary_id=CID, unit=unit)
+    return Policy(conversations=(convo,), _by_id={("signal", CID): convo})
+
+
+async def _note_with_ref(
+    notes: InMemoryNoteStore, handle: str, *, room: str = CID,
+) -> Any:
+    return await notes.create(
+        unit="u1", title="Dinner venue still open",
+        description="the poll is not settled",
+        uncertainty="which venue wins", closing_condition="poll closes",
+        established_in=room,
+        body="## Decided\n- nothing\n## Open\n- venue",
+        established_by="test", now_ms=NOW_MS,
+        object_refs=(SourceRef(
+            platform="signal", conversation_id=room, handle=handle),))
+
+
+async def _newer_heads(store: FakeObservationStore, n: int) -> None:
+    for i in range(n):
+        assert await store.append(
+            observation=_obs(
+                kind="pin", ref=f"unrelated-{i}", op="add",
+                payload=PinPayload(message=EditTarget(message_id=f"m-{i}")),
+                ago=1),
+            event_id=f"unrelated-{i}", source_digest=f"unrelated-{i}",
+        ) is not None
+
+
+def _assembler_with_notes(
+    audit: FakeRecordStore, observations: Any, notes: Any,
+) -> TranscriptInjection:
+    return TranscriptInjection(
+        audit=audit, memory=FakeMemoryStore(), persons=PERSONS,
+        context_window=40, metrics=Metrics(), observations=observations,
+        notes=notes, policy=_policy())
+
+
+async def test_a_retained_poll_survives_newer_unrelated_objects_in_the_assembler():
+    """blocker5's shape: the tracked poll falls off the recency page but
+    stays in view through the note's ref — resolved NOW, marked `matter`,
+    shown exactly once."""
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    await _seed(store)  # the poll, closed at position 3
+    await _newer_heads(store, _SOURCE_OBJECT_MAX + 1)
+    notes = InMemoryNoteStore()
+    await _note_with_ref(notes, _POLL_HANDLE)
+
+    ctx = await _assembler_with_notes(audit, store, notes).assemble(
+        request=_request())
+
+    assert len(ctx.source_objects) == _SOURCE_OBJECT_MAX
+    assert _POLL_HANDLE not in {o.handle for o in ctx.source_objects}
+    retained = [r for r in ctx.retained_sources if r.ref.handle == _POLL_HANDLE]
+    assert len(retained) == 1
+    assert retained[0].head is not None
+    assert "closed" in (retained[0].head.state or "")
+    assert retained[0].matter == "Dinner venue still open"
+    prompt = _prompt(ctx)
+    assert prompt.count(f'object="{_POLL_HANDLE}"') == 1  # no duplicate fragment
+    assert 'matter="Dinner venue still open"' in prompt
+
+
+async def test_a_late_vote_refreshes_the_retained_polls_current_state():
+    """A vote landing after the note was written re-reads the object NOW:
+    the retained row carries the NEW tally, not the state the note saw."""
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    await _seed(store)
+    await _newer_heads(store, _SOURCE_OBJECT_MAX + 1)
+    notes = InMemoryNoteStore()
+    await _note_with_ref(notes, _POLL_HANDLE)
+    assert await store.append(
+        observation=_obs(kind="poll", ref="p1", op="add",
+                         payload=PollPayload(voter_ref="v2", option_ref="sushi"),
+                         ago=1, position=4),
+        event_id="late-vote", source_digest="late-vote") is not None
+
+    ctx = await _assembler_with_notes(audit, store, notes).assemble(
+        request=_request())
+
+    retained = next(r for r in ctx.retained_sources
+                    if r.ref.handle == _POLL_HANDLE)
+    assert retained.head is not None
+    assert "sushi" in (retained.head.state or "")
+
+
+async def test_closing_the_poll_does_not_retire_the_matter():
+    """A poll `revise` → closed is source-object state only: the note stays
+    open in the index and its ref still resolves the now-closed head."""
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    await _seed(store)
+    notes = InMemoryNoteStore()
+    note = await _note_with_ref(notes, _POLL_HANDLE)
+
+    ctx = await _assembler_with_notes(audit, store, notes).assemble(
+        request=_request())
+
+    assert note.id in {n.id for n in ctx.notes}
+    assert any(r.ref.handle == _POLL_HANDLE and r.head is not None
+               and "closed" in (r.head.state or "")
+               for r in ctx.retained_sources)
+
+
+async def test_retiring_the_matter_retires_its_reference_but_keeps_history():
+    """`note_set_status`'s supersede removes the note from `standing` — its
+    ref resolves nowhere — while `read` still returns the retired row."""
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    await _seed(store)
+    notes = InMemoryNoteStore()
+    note = await _note_with_ref(notes, _POLL_HANDLE)
+    retired = await notes.supersede(
+        key="u1", target=note.id, replaced_by=None,
+        because="retired_closed", source="test", now_ms=NOW_MS,
+        expected_head=None)
+
+    assert retired == 1
+    ctx = await _assembler_with_notes(audit, store, notes).assemble(
+        request=_request())
+    assert ctx.retained_sources == ()
+    assert note.id not in {n.id for n in ctx.notes}
+    found = await notes.read(unit="u1", note_id=note.id)
+    assert found is not None
+    assert found[0].object_refs[0].handle == _POLL_HANDLE
+
+
+async def test_scope_invalid_and_unresolvable_refs_are_explicit_never_dropped():
+    """A ref naming ANOTHER room resolves nothing here (the boundary is the
+    scope check); a well-formed handle the store does not hold comes back
+    `unresolved`, not silently absent."""
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    await _seed(store)
+    notes = InMemoryNoteStore()
+    await _note_with_ref(notes, _POLL_HANDLE, room="room-b")
+    ghost = object_handle("poll", "p-ghost", account_key="acct", thread="")
+    await _note_with_ref(notes, ghost)
+
+    ctx = await _assembler_with_notes(audit, store, notes).assemble(
+        request=_request())
+
+    assert not [r for r in ctx.retained_sources if r.ref.conversation_id == "room-b"]
+    unresolved = [r for r in ctx.retained_sources if r.head is None]
+    assert [r.ref.handle for r in unresolved] == [ghost]
+    prompt = _prompt(ctx)
+    assert 'unresolved="yes"' in prompt
+
+
+async def test_the_grounder_keeps_a_retained_poll_past_eight_newer_objects():
+    """The Cognition seam: `build_grounder` resolves the note's ref beside
+    the 8-head discovery page — the retained object keeps its CURRENT state
+    and never doubles a head the page already shows."""
+    obs_store = FakeObservationStore()
+    await _seed(obs_store)
+    await _newer_heads(obs_store, 9)
+    notes = InMemoryNoteStore()
+    await _note_with_ref(notes, _POLL_HANDLE)
+
+    async def _index(unit: str) -> Any:
+        return await notes.standing(unit=unit)
+
+    async def _no_events(unit: str, platform: str, cid: str) -> Any:
+        return ()
+
+    class _NoRecords:
+        async def by_refs(self, refs: Any, rooms: Any) -> Any:
+            return ()
+
+        async def own_sends(self, rooms: Any, *, start_ms: int,
+                            end_ms: int, limit: int) -> Any:
+            return ()
+
+    grounder = build_grounder(
+        records=_NoRecords(), persons=PERSONS, media_join=None,
+        note_index=_index, events_in=_no_events,
+        lineage=LineagePolicy(rooms=(), mode="off"),
+        unit_rooms=lambda unit: {("signal", CID)},
+        observations=obs_store)
+    from nora.domain.cognition_session import AgendaItem
+    item = AgendaItem(
+        kind="message", room=Room("signal", CID), summary="",
+        stimulus_ids=(), cues=(), surprise=0.0)
+
+    grounding = await grounder("u1", [item], [])
+
+    key = f"signal:{CID}"
+    assert len(grounding.source_objects.get(key, ())) == 8
+    assert _POLL_HANDLE not in {
+        o.handle for o in grounding.source_objects.get(key, ())}
+    retained = grounding.retained_objects.get(key, ())
+    assert len(retained) == 1
+    assert retained[0].head is not None
+    assert "closed" in (retained[0].head.state or "")
+    assert retained[0].matter == "Dinner venue still open"
+
+
+async def test_note_revision_replaces_object_refs_atomically():
+    """`append_revision` with a supplied `object_refs` replaces the pointer
+    set under the same CAS as the body; `None` keeps the existing set —
+    the semantics `note_revise` relies on."""
+    notes = InMemoryNoteStore()
+    note = await _note_with_ref(notes, _POLL_HANDLE)
+    other = object_handle("pin", "pins", account_key="acct", thread="")
+
+    rev = await notes.append_revision(
+        unit="u1", note_id=note.id, body="## Decided\n- x\n## Open\n- y",
+        parent_revision_id=note.head_revision_id,
+        established_by="test", now_ms=NOW_MS,
+        object_refs=(SourceRef(platform="signal", conversation_id=CID,
+                               handle=other),))
+    found = await notes.read(unit="u1", note_id=note.id)
+    assert [r.handle for r in found[0].object_refs] == [other]
+
+    await notes.append_revision(
+        unit="u1", note_id=note.id, body="## Decided\n- x\n## Open\n- y2",
+        parent_revision_id=rev.id,
+        established_by="test", now_ms=NOW_MS)
+    found = await notes.read(unit="u1", note_id=note.id)
+    assert [r.handle for r in found[0].object_refs] == [other]

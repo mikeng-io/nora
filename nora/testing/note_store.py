@@ -65,6 +65,7 @@ from nora.domain.notes import (
     NoteRevision,
     NoteSupersedeReason,
     RetiredNoteError,
+    SourceRef,
     StaleNoteHeadError,
     note_handle,
     proactive_row_forwarded_is_moved,
@@ -191,6 +192,7 @@ class InMemoryNoteStore:
         now_ms: int,
         anchor_date: int | None = None,
         anchor_entity_ids: tuple[str, ...] = (),
+        object_refs: tuple[SourceRef, ...] = (),
         # Passed through to the FIRST revision, and `None` from the tag path.
         # `note_create` has no instruction digest; the Cognition session's
         # writes may. See
@@ -209,6 +211,7 @@ class InMemoryNoteStore:
             established_in=established_in, created_at=now_ms,
             head_revision_id=revision_id, anchor_date=anchor_date,
             anchor_entity_ids=tuple(anchor_entity_ids),
+            object_refs=tuple(object_refs),
         )
         revision = NoteRevision(
             id=revision_id, note_id=note_id, body=body, parent_revision_id=None,
@@ -290,6 +293,7 @@ class InMemoryNoteStore:
         instruction_sha256: str | None = None,
         model: str | None = None,
         evidence_room: str | None = None,
+        object_refs: tuple[SourceRef, ...] | None = None,
         receipt: Any = None,
     ) -> NoteRevision:
         """The compare-and-swap — the refusal in the module docstring's (1).
@@ -327,7 +331,11 @@ class InMemoryNoteStore:
             instruction_sha256=instruction_sha256, model=model,
         )
         self.revisions[revision.id] = revision
-        self.notes[note_id] = replace(note, head_revision_id=revision.id)
+        self.notes[note_id] = replace(
+            note, head_revision_id=revision.id,
+            object_refs=(
+                tuple(object_refs)
+                if object_refs is not None else note.object_refs))
         if receipt is not None:
             await receipt(None, revision)
         return revision

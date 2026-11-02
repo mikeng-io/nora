@@ -1,0 +1,51 @@
+[
+  {
+    "name": "a retired note still feeds the retained lane",
+    "file": "nora/engagement/context.py",
+    "old": "        for note in notes:\n            if len(out) >= _SOURCE_OBJECT_MAX:\n                break",
+    "new": "        for note in notes[:0]:\n            if len(out) >= _SOURCE_OBJECT_MAX:\n                break",
+    "target": "tests/unit/test_platform_observation_wired.py::test_a_retained_poll_survives_newer_unrelated_objects_in_the_assembler"
+  },
+  {
+    "name": "retained resolution falls back to the recency page it replaces",
+    "file": "nora/engagement/context.py",
+    "old": "                    head = await traced_read(\n                        \"observations\", \"retained\",\n                        self._observations.head_for_handle(",
+    "new": "                    head = await traced_read(\n                        \"observations\", \"retained\",\n                        self._observations.recent(",
+    "target": "tests/unit/test_platform_observation_wired.py::test_a_late_vote_refreshes_the_retained_polls_current_state"
+  },
+  {
+    "name": "an unresolved retained ref is silently dropped instead of marked",
+    "file": "nora/engagement/context.py",
+    "old": "                except Exception:\n                    log.exception(\"retained source read failed for %s\",\n                                  ref.handle[:16])\n                    self._metrics.inc(\n                        \"nora_errors_total\", stage=\"observations\",\n                        platform=msg.platform)\n                    head = None\n                out.append(RetainedSource(",
+    "new": "                except Exception:\n                    log.exception(\"retained source read failed for %s\",\n                                  ref.handle[:16])\n                    self._metrics.inc(\n                        \"nora_errors_total\", stage=\"observations\",\n                        platform=msg.platform)\n                    continue\n                if head is None:\n                    continue\n                out.append(RetainedSource(",
+    "target": "tests/unit/test_platform_observation_wired.py::test_scope_invalid_and_unresolvable_refs_are_explicit_never_dropped"
+  },
+  {
+    "name": "the grounder drops the retained lane",
+    "file": "nora/app/cognition_grounding.py",
+    "old": "        rows: list[RetainedSource] = []\n        for ref, matter in retained.get(key, ()):",
+    "new": "        rows: list[RetainedSource] = []\n        for ref, matter in retained.get(key, ())[:0]:",
+    "target": "tests/unit/test_platform_observation_wired.py::test_the_grounder_keeps_a_retained_poll_past_eight_newer_objects"
+  },
+  {
+    "name": "a ref shown in a different room is retained anyway",
+    "file": "nora/app/cognition_session.py",
+    "old": "                shown_room = state.shown_handles.get(handle)\n                if shown_room is None or shown_room != (platform, cid):",
+    "new": "                shown_room = state.shown_handles.get(handle)\n                if shown_room is None:",
+    "target": "tests/unit/test_platform_observation_wired.py::test_scope_invalid_and_unresolvable_refs_are_explicit_never_dropped"
+  },
+  {
+    "name": "append_revision with object_refs=None clears the pointer set",
+    "file": "nora/testing/note_store.py",
+    "old": "            object_refs=(\n                tuple(object_refs)\n                if object_refs is not None else note.object_refs))",
+    "new": "            object_refs=())",
+    "target": "tests/unit/test_platform_observation_wired.py::test_note_revision_replaces_object_refs_atomically"
+  },
+  {
+    "name": "the object_refs cap is unenforced",
+    "file": "nora/domain/notes.py",
+    "old": "        if len(self.object_refs) > NOTE_OBJECT_REFS_MAX:",
+    "new": "        if False and len(self.object_refs) > NOTE_OBJECT_REFS_MAX:",
+    "target": "tests/unit/test_platform_observation_wired.py::test_note_revision_replaces_object_refs_atomically"
+  }
+]

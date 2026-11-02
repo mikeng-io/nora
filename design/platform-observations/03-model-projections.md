@@ -97,6 +97,21 @@ working set without deleting its history. An open poll is not an instruction to
 keep it in every prompt forever. Budget omissions, unavailable reads and missing
 history remain explicit; no guessed zeros and no claim of lossless model prose.
 
+**As built (metadata-standing-continuity lane).** The retained lane lives on the
+live matter owner, the `Note`: `object_refs` is a bounded set (≤8) of typed
+`SourceRef`s — `(platform, conversation_id, handle, thread)` with the model-safe
+opaque handle — persisted on the note head and swapped under the revision CAS.
+The Cognition session's existing `note_create`/`note_revise` verbs carry them
+(no new model occasion); each ref must name an object handle that session was
+shown in the same room and still resolve through `head_for_handle`, else the
+write is refused/`unavailable`. Both assemblies (Engagement `TagContext.
+retained_sources`, Cognition `Grounding.retained_objects`) resolve the refs
+fresh on every turn, mark each row with the tracking note's title as `matter`,
+report `unresolved` for a ref the store no longer holds, and never repeat a
+head the discovery page already shows. Note retirement (`note_set_status` →
+`supersede`) drops the note from `standing`, retiring its refs with it while
+the row and revisions stay readable; a poll closing changes only source state.
+
 ### Authority, deduplication and budgets
 
 Label source state (tally, membership/pin status, as-of and coverage) separately

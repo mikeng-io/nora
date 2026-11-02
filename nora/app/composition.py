@@ -5041,6 +5041,7 @@ async def build_dependencies(
                     model_id=dream_model, model_route=cfg.endpoint("dreamer")[0],
                     budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),
                     result_caps=TOOL_RESULT_CAPS,
+                    observations=observation_store,
                 )
             except (InstructionError, PreludeMissingError, SkillNotInstalledError) as exc:
                 # A missing or malformed `cognition` objective, a prelude it resolved

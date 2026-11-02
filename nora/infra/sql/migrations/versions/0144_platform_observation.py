@@ -149,8 +149,18 @@ def upgrade() -> None:
         "kind IN ('message', 'social', 'play', 'rollup', 'time', 'self', "
         "'observation')")
 
+    # The retained lane's curated pointers (design/platform-observations 03):
+    # a note keeps the platform objects its matter still concerns — scope +
+    # handle, resolved fresh at every assembly. Head state like the anchors;
+    # the revisions keep the note's history.
+    op.add_column(
+        "note",
+        sa.Column("object_refs", pg.JSONB, nullable=False,
+                  server_default=sa.text("'[]'::jsonb")))
+
 
 def downgrade() -> None:
+    op.drop_column("note", "object_refs")
     op.drop_constraint("ck_stimulus_kind", "stimulus", type_="check")
     op.create_check_constraint(
         "ck_stimulus_kind", "stimulus",

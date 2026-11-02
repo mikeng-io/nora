@@ -36,6 +36,7 @@ from nora.domain.cognition_session import Room
 from nora.domain.culture import CultureRevision
 from nora.domain.memo import Memo
 from nora.domain.models import RowReactions
+from nora.domain.notes import RetainedSource
 from nora.domain.observations import SourceEvent
 from nora.domain.profile import ProfileView
 from nora.domain.stimuli import Stimulus
@@ -314,6 +315,13 @@ class Grounding:
     #: confirmed exist beyond those shown in `source_objects` — a lower
     #: bound, never a silently complete-looking list.
     source_objects_more: Mapping[str, int] = field(default_factory=dict)
+    #: `room_key` → the room's RETAINED lane (`RetainedSource`s): curated
+    #: `object_refs` of the unit's open notes, resolved through
+    #: `head_for_handle` at read time — the CURRENT folded head of an
+    #: object a matter still tracks, present even when the recency page
+    #: above evicted it. `head=None` is the explicit unresolved marker.
+    retained_objects: Mapping[str, tuple[RetainedSource, ...]] = field(
+        default_factory=dict)
     #: Nora's own sends inside each item's window, by the item's index in the
     #: agenda that was grounded (D1): what the room's messages may be answering.
     own_sends: Mapping[int, tuple[RecordItem, ...]] = field(default_factory=dict)
@@ -373,6 +381,11 @@ class Grounding:
                  "target_message_id": e.target_message_id,
                  "delivered_message_id": e.delivered_message_id}
                 for e in self.observations.values()
+            ],
+            # Retained refs by handle and room — the pointer, never state.
+            "retained": [
+                {"room": key, "handle": r.ref.handle, "resolved": r.head is not None}
+                for key, rows in self.retained_objects.items() for r in rows
             ],
             # Her own sends by message id and time; never the words.
             "own_sends": {

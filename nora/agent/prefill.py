@@ -37,6 +37,7 @@ from ..domain.framing import (
     ContextHeader,
 )
 from ..domain.models import TagContext, TranscriptRow
+from ..domain.observations import SourceEvent, parse_handle
 from ..domain.profile import ProfileView
 from ..domain.prompt import age, escape
 from ..domain.quote_window import first_by_ts
@@ -1064,6 +1065,51 @@ def _standing_block(
             block = ContextBlock(name="standing", body=objects)
         else:
             block = replace(block, body="\n".join((block.body, objects)))
+    # The retained lane (design/platform-observations 03): an ongoing
+    # matter's curated `object_refs`, resolved NOW through the store — an
+    # old tracked poll keeps its CURRENT state in view after the recency
+    # page above evicted it. `matter` says which note tracks it, and a ref
+    # the store no longer resolves shows `unresolved`, never a dropped row.
+    if ctx.retained_sources:
+        retained_rows = []
+        for r in ctx.retained_sources:
+            e = r.head
+            if e is None:
+                e = SourceEvent(
+                    ref="", kind=parse_handle(r.ref.handle)[0] or "object",
+                    operation="state", at_ms=0, time_quality="unknown",
+                    actor=None, actor_status="not_applicable",
+                    handle=r.ref.handle, summary="")
+
+            def _retained_attrs(_e: Any, _i: int, _r: Any = r,
+                                ) -> tuple[tuple[str, Any], ...]:
+                return (
+                    ("kind", _e.kind or None), ("object", _e.handle),
+                    ("matter", _r.matter or None),
+                    ("unresolved", "yes" if _r.head is None else None),
+                    ("ordering", _e.ordering or None),
+                    ("coverage", _e.coverage or None),
+                    ("rev", _e.revision or None),
+                    ("time", _e.time_quality if _e.time_quality != "upstream"
+                            else None),
+                    ("observed",
+                     age(_e.at_ms, now) if now is not None and _e.at_ms > 0
+                     and _e.time_quality != "unknown" else None),
+                    ("received",
+                     age(_e.received_ms, now)
+                     if now is not None and _e.received_ms
+                     and _e.time_quality != "upstream" else None),
+                )
+
+            retained_rows.append(render_elements(
+                [e], tag="source_object",
+                attrs=_retained_attrs,
+                body=lambda _e: _e.state or _e.summary))
+        retained = "\n".join(retained_rows)
+        if block is None:
+            block = ContextBlock(name="standing", body=retained)
+        else:
+            block = replace(block, body="\n".join((block.body, retained)))
     return block
 
 

@@ -6474,6 +6474,15 @@ def build_tool_specs(
                         {"label": o.get("label")} for o in detail["options"]]
                 if detail.get("tally"):
                     entry["tally"] = detail["tally"]
+                # The recorded subset stays beside, never inside, the source's
+                # own aggregate (`tally` above): same separation `poll_read`
+                # keeps.
+                for subset_key in (
+                    "recorded_tally", "recorded_tally_more",
+                    "recorded_voters", "recorded_selections",
+                ):
+                    if detail.get(subset_key):
+                        entry[subset_key] = detail[subset_key]
                 if h.ordering:
                     entry["ordering"] = h.ordering
                 cov = coverage_label(h.coverage)
@@ -14506,6 +14515,10 @@ Returns `status`: ok (`members`, `scope`) or unavailable (`note`)."""
             # latch has no use for: it is here so a revision can be discussed
             # («this changed since I read it»), not so it can be passed back.
             "revision_id": head.id,
+            # The source objects this note tracks (note_create's
+            # `object_refs`), so a revise can keep or replace them.
+            **({"object_refs": [r.to_json() for r in note.object_refs]}
+               if note.object_refs else {}),
         }
 
     async def note_search(query: str) -> dict:

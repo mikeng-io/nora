@@ -49,7 +49,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Awaitable, Callable, Collection, Sequence
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, tzinfo
 from typing import Any, Protocol
@@ -85,7 +85,7 @@ from nora.domain.culture import CultureRevision, nora_character_key
 from nora.domain.gatherings import Gathering
 from nora.domain.memo import Memo
 from nora.domain.mobility_forecast import detect_stay_anomalies, place_words
-from nora.domain.notes import Note, likely_duplicates
+from nora.domain.notes import Note, RetainedSource, SourceRef, likely_duplicates
 from nora.domain.observations import (
     SourceEvent,
     SourceScope,
@@ -505,19 +505,34 @@ async def _observation_lines(
 
 async def _source_objects(
     agenda_rooms: Sequence[Room], allowed: set[tuple[str, str]],
-    observations: Any | None, persons: Any, *, limit: int = 8,
-) -> tuple[dict[str, tuple[SourceEvent, ...]], dict[str, int]]:
+    observations: Any | None, persons: Any, *,
+    retained: Mapping[str, Sequence[tuple[SourceRef, str]]] | None = None,
+    limit: int = 8,
+) -> tuple[dict[str, tuple[SourceEvent, ...]], dict[str, int],
+           dict[str, tuple[RetainedSource, ...]]]:
     """The agenda rooms' folded source-object heads — `(room_key → at most
     `limit` of the newest, room_key → how many more the read confirmed)` —
-    the Standing block's typed input. A room the unit does not own
-    contributes nothing; an unwired store reads as no objects, never as a
-    failed guess. The read takes `limit + 1` so the `more` count is a real
-    lower bound, not a silently complete-looking list."""
+    the Standing block's typed input, plus the retained lane.
+
+    `retained` is `room_key → (SourceRef, matter)` pairs the unit's shown
+    open notes curated. Each resolves through `head_for_handle` under the
+    ref's OWN scope — the CURRENT folded head of an object the page may
+    have evicted, never a copied tally. A ref a page head already shows is
+    not repeated; one the store no longer resolves comes back `head=None`,
+    the explicit marker the render names.
+
+    A room the unit does not own contributes nothing; an unwired store
+    reads as no objects, never as a failed guess. The read takes `limit + 1`
+    so the `more` count is a real lower bound, not a silently complete-
+    looking list."""
     out: dict[str, tuple[SourceEvent, ...]] = {}
     more: dict[str, int] = {}
+    kept: dict[str, tuple[RetainedSource, ...]] = {}
     if observations is None:
-        return out, more
+        return out, more, kept
+    retained = retained or {}
     for room in agenda_rooms:
+        key = f"{room.platform}:{room.conversation_id}"
         if (room.platform, room.conversation_id) not in allowed:
             continue
         heads = await observations.heads(
@@ -543,11 +558,42 @@ async def _source_objects(
                 revision=revision_label(h.position, h.scope),
                 coverage=coverage_label(h.coverage)))
         if events:
-            key = f"{room.platform}:{room.conversation_id}"
             out[key] = tuple(events)
             if len(heads) > len(events):
                 more[key] = len(heads) - len(events)
-    return out, more
+        shown = {e.handle for e in events}
+        rows: list[RetainedSource] = []
+        for ref, matter in retained.get(key, ()):
+            if ref.platform != room.platform or (
+                    ref.conversation_id != room.conversation_id):
+                # A ref naming another room resolves nothing here — the
+                # scope check is the boundary, not a filter.
+                continue
+            if ref.handle in shown or len(rows) >= limit:
+                continue
+            shown.add(ref.handle)
+            head = await observations.head_for_handle(
+                SourceScope(platform=ref.platform, account_key="",
+                            conversation_id=ref.conversation_id,
+                            thread=ref.thread),
+                handle=ref.handle)
+            rows.append(RetainedSource(
+                ref=ref, matter=matter,
+                head=None if head is None else SourceEvent(
+                    ref=f"platform_observation:{head.head_id}",
+                    kind=head.kind, operation="state",
+                    at_ms=head.observed_ms or 0,
+                    time_quality=head.observed_quality,
+                    actor=None, actor_status="not_applicable",
+                    handle=handle_of(head),
+                    summary="", state=head_summary(head),
+                    ordering=head.ordering,
+                    received_ms=head.received_ms,
+                    revision=revision_label(head.position, head.scope),
+                    coverage=coverage_label(head.coverage))))
+        if rows:
+            kept[key] = tuple(rows)
+    return out, more, kept
 
 
 def build_grounder(
@@ -706,6 +752,7 @@ def build_grounder(
         # `remind_cancel` refuse a row whose room is not, so naming it here would
         # point at an id the session cannot act on.
         on_agenda = {(r.platform, r.conversation_id) for r in agenda_rooms}
+        retained_refs: dict[str, list[tuple[SourceRef, str]]] = {}
         held: dict[str, list[str]] = {}
         for r in (await pending_reminds()) if pending_reminds is not None else ():
             note_id = (r.payload or {}).get("note_id")
@@ -730,6 +777,15 @@ def build_grounder(
                 may_duplicate=twins.get(n.id),
                 reminds="; ".join(held[n.id]) if n.id in held else None,
             ))
+            # The note's curated source refs join the retained lane only
+            # where the note itself is shown (a note lineage withheld keeps
+            # its pointers to itself too) and only for an agenda room the
+            # unit owns — `_source_objects` re-checks each ref's own scope.
+            for oref in n.object_refs:
+                if (oref.platform, oref.conversation_id) in on_agenda:
+                    retained_refs.setdefault(
+                        f"{oref.platform}:{oref.conversation_id}", [],
+                    ).append((oref, n.title))
         notes = tuple(notes_out)
         # Turn citations carry their recorded requirements into the index too.
         # A failed read raises like the note index's.
@@ -808,13 +864,16 @@ def build_grounder(
                 None if self_account is None else self_account(unit),
                 stage="cognition_self", platform="cognition", metrics=metrics,
             )
-        source_objects, source_objects_more = await _source_objects(
-            agenda_rooms, allowed, observations, persons)
+        source_objects, source_objects_more, retained_objects = (
+            await _source_objects(
+                agenda_rooms, allowed, observations, persons,
+                retained=retained_refs))
         return Grounding(
             records=records_out, notes=notes, memos=memos, events=tuple(events),
             rollups=rollups, socials=_social_lines(pending, claimed, persons),
             observations=observations_out, source_objects=source_objects,
             source_objects_more=source_objects_more,
+            retained_objects=retained_objects,
             own_sends=own_sends, room_labels=labels, self_account=account,
             self_profile=profile_view, profile_names=profile_names,
         )

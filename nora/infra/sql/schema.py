@@ -2359,6 +2359,11 @@ NOTE = sa.Table(
     sa.Column("anchor_date", sa.Integer),
     sa.Column("anchor_entity_ids", pg.ARRAY(sa.Text), nullable=False,
               server_default=sa.text("'{}'")),
+    # The curated source-object pointers (design/platform-observations 03's
+    # retained lane): [{platform, conversation_id, thread, handle}] — the
+    # objects this matter still concerns, resolved fresh at every assembly.
+    sa.Column("object_refs", pg.JSONB, nullable=False,
+              server_default=sa.text("'[]'::jsonb")),
     # A ROUTING key, never a filter: the unit is already the
     # disclosure boundary. This decides where a promoted `Event` lands, since
     # `Event` is conversation-scoped and a note is not.

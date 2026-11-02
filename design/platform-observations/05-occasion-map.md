@@ -254,6 +254,12 @@ untrusted source timestamps. Events describe changes; Standing describes current
 state, rather than a second event count. A visible message's recorded reaction
 annotation is the tally's presentation owner; Standing references that transcript
 annotation instead of repeating its tally. Off-window reactions retain source
-state in Standing. Interpretive matter relevance/retirement still belongs to the
-existing Standing/Notebook owners; recency selection is not evidence of semantic
-matter tracking or sincerity understanding.
+state in Standing. Matter-linked objects outlive the recency page through the
+Notebook's own typed refs: an open note's `object_refs` (validated at write
+against same-room shown handles, at most 8) resolve each assembly through
+`head_for_handle` under the ref's own scope, render with the note title as
+`matter`, and report `unresolved` rather than vanishing when the store no
+longer holds the object. Retiring the matter retires its current references;
+closing the poll retires none of them. Interpretive matter relevance/retirement
+still belongs to the existing Standing/Notebook owners; recency selection is
+not evidence of semantic matter tracking or sincerity understanding.

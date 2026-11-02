@@ -60,6 +60,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, tzinfo
+from typing import Any
 
 from nora.domain.blocks import (
     BlockKey,
@@ -83,7 +84,7 @@ from nora.domain.cognition_ground import (
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.external_files import render_file_links
 from nora.domain.models import REACTION_LABEL_MAX, emoji_display
-from nora.domain.observations import SourceEvent
+from nora.domain.observations import SourceEvent, parse_handle
 from nora.domain.prompt import ago, clip, escape, legal, one_line
 from nora.domain.social_stream import describe_read
 from nora.domain.stimuli import Stimulus
@@ -793,6 +794,55 @@ def _register(
             "room_objects",
             [("room", room_label(room, grounding.room_labels)),
              ("not_listed", str(left) if left else None)],
+            "\n".join(rows),
+        ))
+    # The retained lane (design 03): an open matter's curated refs, each
+    # resolved NOW off the recency page — `matter` names the note tracking
+    # it, and an unresolved ref says so rather than vanishing.
+    for room in rooms:
+        retained = grounding.retained_objects.get(room_key(room), ())
+        if not retained:
+            continue
+        rows = []
+        for r in retained[: budget.register_lines]:
+            e = r.head
+            if e is None:
+                e = SourceEvent(
+                    ref="", kind=parse_handle(r.ref.handle)[0] or "object",
+                    operation="state", at_ms=0, time_quality="unknown",
+                    actor=None, actor_status="not_applicable",
+                    handle=r.ref.handle, summary="")
+
+            def _retained_attrs(_e: Any, _i: int, _r: Any = r,
+                                ) -> tuple[tuple[str, Any], ...]:
+                return (
+                    ("kind", _e.kind or None), ("object", _e.handle),
+                    ("matter", _r.matter or None),
+                    ("unresolved", "yes" if _r.head is None else None),
+                    ("ordering", _e.ordering or None),
+                    ("coverage", _e.coverage or None),
+                    ("rev", _e.revision or None),
+                    ("state", _e.state or None),
+                    ("time", _e.time_quality if _e.time_quality != "upstream"
+                            else None),
+                    ("observed", _when(_e.at_ms, now_ms, tz)
+                            if _e.at_ms > 0
+                            and _e.time_quality != "unknown" else None),
+                    ("received", _when(_e.received_ms, now_ms, tz)
+                            if _e.received_ms
+                            and _e.time_quality != "upstream" else None),
+                )
+
+            rows.append(render_elements(
+                [e], tag="source_object",
+                attrs=_retained_attrs,
+                body=lambda _e: "",
+            ))
+        standing_groups.append(render_group(
+            "retained_objects",
+            [("room", room_label(room, grounding.room_labels)),
+             ("not_listed",
+              str(len(retained) - len(rows)) if len(retained) > len(rows) else None)],
             "\n".join(rows),
         ))
     if standing_groups:

@@ -56,7 +56,7 @@ from nora.domain.models import (
     TagContext,
     TranscriptRow,
 )
-from nora.domain.notes import Note
+from nora.domain.notes import Note, RetainedSource
 from nora.domain.observations import (
     SourceEvent,
     SourceScope,
@@ -382,6 +382,10 @@ class TranscriptInjection:
         shown = self._shown(transcript, msg)
         lookup = tuple(transcript) if len(shown) < len(transcript) else ()
         recalled = self._recalled(prefetch, msg, shown)
+        # The retained lane is a post-gather read: it needs the note index
+        # (which refs exist) and the shown heads (what NOT to resolve again).
+        retained = await self._retained_sources(
+            msg, notes, frozenset(o.handle for o in source_objects))
 
         return TagContext(
             tag_id=request.tag_id,
@@ -401,6 +405,7 @@ class TranscriptInjection:
             source_reads_failed=source_failed,
             source_events_more=source_events_more,
             source_objects_more=source_objects_more,
+            retained_sources=retained,
             presence=presence,
             culture=culture,
             character=character,
@@ -1179,6 +1184,69 @@ class TranscriptInjection:
             max(0, len(rows) - len(events)),
             max(0, len(heads) - len(objects)),
         )
+
+    async def _retained_sources(
+        self, msg: NormalizedMessage, notes: tuple[Note, ...],
+        shown_handles: frozenset[str],
+    ) -> tuple[RetainedSource, ...]:
+        """This room's retained lane: the `object_refs` open notes of the
+        unit curated, resolved through `head_for_handle` under each ref's
+        OWN scope — never the recency page.
+
+        A ref naming another room contributes nothing here (the digest binds
+        account and thread, and the room check is the boundary); one the
+        page already shows contributes nothing twice. A ref the store no
+        longer resolves comes back `head=None` — the explicit unresolved
+        marker the render names, never a dropped row. Fail-soft and
+        counted like the sibling read: a failed resolve is one marker,
+        not a failed turn."""
+        if self._observations is None:
+            return ()
+        out: list[RetainedSource] = []
+        seen: set[str] = set(shown_handles)
+        for note in notes:
+            if len(out) >= _SOURCE_OBJECT_MAX:
+                break
+            for ref in note.object_refs:
+                if len(out) >= _SOURCE_OBJECT_MAX:
+                    break
+                if (ref.platform, ref.conversation_id) != (
+                        msg.platform, msg.conversation_id):
+                    continue
+                if ref.handle in seen:
+                    continue
+                seen.add(ref.handle)
+                try:
+                    head = await traced_read(
+                        "observations", "retained",
+                        self._observations.head_for_handle(
+                            scope=SourceScope(
+                                platform=ref.platform, account_key="",
+                                conversation_id=ref.conversation_id,
+                                thread=ref.thread),
+                            handle=ref.handle))
+                except Exception:
+                    log.exception("retained source read failed for %s",
+                                  ref.handle[:16])
+                    self._metrics.inc(
+                        "nora_errors_total", stage="observations",
+                        platform=msg.platform)
+                    head = None
+                out.append(RetainedSource(
+                    ref=ref, matter=note.title,
+                    head=None if head is None else SourceEvent(
+                        ref=f"platform_observation:{head.head_id}",
+                        kind=head.kind, operation="state",
+                        at_ms=head.observed_ms or 0,
+                        time_quality=head.observed_quality,
+                        actor=None, actor_status="not_applicable",
+                        handle=handle_of(head),
+                        summary="", state=head_summary(head),
+                        ordering=head.ordering,
+                        received_ms=head.received_ms,
+                        revision=revision_label(head.position, head.scope),
+                        coverage=coverage_label(head.coverage))))
+        return tuple(out)
 
     async def _observation_targets(
         self, msg: NormalizedMessage, scope: SourceScope,

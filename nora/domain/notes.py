@@ -33,11 +33,18 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from xml.sax.saxutils import unescape
 
 from nora.domain.lineage import Lineage
 from nora.domain.note_body import citations_in
 from nora.domain.prompt import one_line
+
+if TYPE_CHECKING:
+    # Annotation-only: `observations` imports `models`, which imports this
+    # module — a runtime import here closes a cycle (`RetainedSource.head`
+    # is the only use, and `from_json` defers `parse_handle` to the call).
+    from nora.domain.observations import SourceEvent
 
 #: The injected index carries one line per note on EVERY tag, so these are
 #: prompt-budget decisions, not cosmetic ones. They are enforced in
@@ -46,6 +53,11 @@ from nora.domain.prompt import one_line
 #: what exists.
 TITLE_MAX_CHARS = 60
 DESCRIPTION_MAX_CHARS = 200
+#: How many platform objects one note may keep a pointer to. The retained
+#: lane is how a still-relevant object survives the Standing block's recency
+#: page (design/platform-observations 03), so it must stay a pointer set, not
+#: a second store: a note may not pin the room's whole object state.
+NOTE_OBJECT_REFS_MAX = 8
 #: The OPERATING body cap: what a writer should produce. Not configurable:
 #: it is enforced in the TYPE, where a refusal is reviewable and names the cap,
 #: and `__post_init__` cannot see config. Enforced in
@@ -269,6 +281,76 @@ def _required(value: str, what: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceRef:
+    """One curated pointer to a platform object, scope and all — the typed
+    half of «this matter still concerns that object».
+
+    The `handle` is the model-safe `kind:digest` name an assembly rendered;
+    `(platform, conversation_id, thread)` is the room scope it resolved under
+    when the pointer was written, so a later read names the SAME object by
+    `head_for_handle` — no recency page, no scan. A ref whose scope is not
+    the reader's resolves nothing (fail-closed); the digest itself binds the
+    account and thread, so a handle minted elsewhere cannot collide here.
+    """
+
+    platform: str
+    conversation_id: str
+    handle: str
+    thread: str = ""
+
+    def to_json(self) -> dict[str, str]:
+        return {
+            "platform": self.platform,
+            "conversation_id": self.conversation_id,
+            "thread": self.thread,
+            "handle": self.handle,
+        }
+
+    @staticmethod
+    def from_json(value: object) -> SourceRef | None:
+        """A stored entry back, or `None` when it is not one — a malformed
+        row carries no pointer and resolves exactly nothing, the same
+        refusal as a scope that does not match."""
+        if not isinstance(value, dict):
+            return None
+        platform = value.get("platform")
+        conversation_id = value.get("conversation_id")
+        handle = value.get("handle")
+        if not (isinstance(platform, str) and platform
+                and isinstance(conversation_id, str) and conversation_id
+                and isinstance(handle, str) and handle):
+            return None
+        # Deferred: `observations` sits behind `models` in this import cycle.
+        from nora.domain.observations import parse_handle
+        kind, _digest = parse_handle(handle)
+        if not kind:
+            return None
+        thread = value.get("thread")
+        return SourceRef(
+            platform=platform, conversation_id=conversation_id,
+            handle=handle,
+            thread=thread if isinstance(thread, str) else "",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RetainedSource:
+    """A note's `SourceRef` resolved against the observation Record — the
+    Standing presentation's typed input for the retained lane.
+
+    `head` is the object's CURRENT folded head as a `SourceEvent`, filled
+    when the ref resolves; `None` means the ref stood but the store resolves
+    nothing in its scope — an explicit unresolved marker, never a guessed
+    state and never silently dropped. `matter` is the human name of the note
+    whose ref this was — which ongoing matter tracks it, not a second copy
+    of it."""
+
+    ref: SourceRef
+    head: SourceEvent | None
+    matter: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class Note:
     """One tracked uncertainty, scoped to a unit.
 
@@ -295,6 +377,13 @@ class Note:
     head_revision_id: str
     anchor_date: int | None = None
     anchor_entity_ids: tuple[str, ...] = ()
+    # The platform objects this matter still concerns, as resolved pointers
+    # (design/platform-observations 03's retained lane): while the note is
+    # open, Standing presents their CURRENT state even when the recency page
+    # would have evicted them. Pointers, never copied state — a closed poll
+    # does not close the note, and a retired note's refs retire with it while
+    # the row stays readable.
+    object_refs: tuple[SourceRef, ...] = ()
     retired_at: int | None = None
     replaced_by: str | None = None
     # WHY it was retired: `NoteSupersedeReason`'s vocabulary, written by
@@ -344,6 +433,12 @@ class Note:
         if self.anchor_date is not None and self.anchor_date < _MIN_ANCHOR_DATE:
             raise ValueError(
                 f"anchor_date is a YYYYMMDD calendar day, got {self.anchor_date}"
+            )
+        if len(self.object_refs) > NOTE_OBJECT_REFS_MAX:
+            raise ValueError(
+                f"a note keeps at most {NOTE_OBJECT_REFS_MAX} object refs "
+                f"(got {len(self.object_refs)}) — it is a pointer set, "
+                "not a second store"
             )
         if self.replaced_by is not None and self.retired_at is None:
             raise ValueError(

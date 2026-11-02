@@ -514,6 +514,7 @@ def build_cognition_runner(
     budget: Any,
     result_caps: Mapping[str, int],
     memos: Any = None,
+    observations: Any = None,
 ) -> Any:
     """The session runner. Imported lazily: `LiveCognitionAgentRunner` (and
     with it Strands) is loaded only when a session will actually run."""
@@ -600,6 +601,10 @@ def build_cognition_runner(
         overflow_window_fraction=cfg.cognition.overflow_window_fraction,
         roster_of=roster_of, nora_names=nora_names,
         content_checks=cfg.content_checks.enabled,
+        # The observation Record `object_refs` validates a retained source
+        # against: no store, no ref write (`unavailable`, never accepted
+        # unchecked).
+        observations=observations,
     )
 
 
