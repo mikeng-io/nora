@@ -507,7 +507,8 @@ when there is no `[units]`. History and drift-check limits: `docs/maintainers/co
 
 Load **`nora-release`**. The operator's latest 2026-10-28 ruling reverses the
 manual/daily cadence: every ordinary master push automatically handles patch/minor
-releases, including docs, CI, config and maintenance. Generated metadata is
+releases for shipped changes. Docs, tests, CI, agent tooling and repository-only
+maintenance paths are excluded; unknown paths still qualify. Generated metadata is
 excluded to prevent loops. `scripts/release_plan.py` uses complete git reachability;
 release-please alone tags/publishes. One generated metadata PR may auto-merge
 with an authored subject and exact-head guard after required checks; strict branch
