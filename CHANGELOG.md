@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.13.24](https://github.com/mikeng-io/nora/compare/v7.13.23...v7.13.24) (2026-11-02)
+
+
+### Bug Fixes
+
+* **bridges:** preserve Discord send identity and validate regression requests ([f91bf8c](https://github.com/mikeng-io/nora/commit/f91bf8c7bf764472809c4008e0acbcffe41f70c8))
+* **delivery:** land the platform's own message id on the audited own row ([009dcc9](https://github.com/mikeng-io/nora/commit/009dcc9a72be9895a97a8a635b1b0acb2bf755a1))
+
 ## [7.13.23](https://github.com/mikeng-io/nora/compare/v7.13.22...v7.13.23) (2026-11-02)
 
 
