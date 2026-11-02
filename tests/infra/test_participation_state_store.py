@@ -69,7 +69,10 @@ async def engine(_participation_db: str) -> AsyncIterator[Any]:
             # (nora.infra.sql.history.CAPTURE_SETTING).
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(
-                sa.text("truncate participation_window_state, messages, message_edit, "
+                # `platform_observation` references `messages` (target and
+                # delivered links), so it must truncate in the same statement.
+                sa.text("truncate platform_observation, platform_object_state, "
+                        "participation_window_state, messages, message_edit, "
                         "message_reaction, message_delete, extraction_queue, "
                         "bridge_action")
             )

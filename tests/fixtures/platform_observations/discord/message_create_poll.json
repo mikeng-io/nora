@@ -1,0 +1,120 @@
+{
+  "meta": {
+    "native": "discord-gateway",
+    "native_version": "discord.py 2.7.1",
+    "transport": "gateway",
+    "dispatch": "MESSAGE_CREATE",
+    "discord_py_parse": "parse_message_create",
+    "discord_py_event": "message",
+    "upstream_source": "https://docs.discord.com/developers/events/gateway-events#message-create",
+    "case": "a member posts a native Discord poll in a guild channel",
+    "generated": true
+  },
+  "payload": {
+    "op": 0,
+    "t": "MESSAGE_CREATE",
+    "s": 17,
+    "d": {
+      "id": "123456789012345700",
+      "channel_id": "123456789012345601",
+      "guild_id": "123456789012345600",
+      "author": {
+        "id": "123456789012345801",
+        "username": "fixture_sender",
+        "discriminator": "0",
+        "global_name": "Fixture Sender",
+        "avatar": null,
+        "bot": false
+      },
+      "member": {
+        "roles": [
+          "123456789012345900"
+        ],
+        "joined_at": "2026-01-01T00:00:00+00:00",
+        "deaf": false,
+        "mute": false,
+        "flags": 0
+      },
+      "content": "",
+      "timestamp": "2026-11-02T09:00:00.000000+00:00",
+      "edited_timestamp": null,
+      "tts": false,
+      "mention_everyone": false,
+      "mentions": [],
+      "mention_roles": [],
+      "attachments": [],
+      "embeds": [],
+      "pinned": false,
+      "type": 0,
+      "flags": 0,
+      "poll": {
+        "question": {
+          "text": "Lunch on Saturday?"
+        },
+        "answers": [
+          {
+            "answer_id": 1,
+            "poll_media": {
+              "text": "Noodles"
+            }
+          },
+          {
+            "answer_id": 2,
+            "poll_media": {
+              "text": "Dim sum"
+            }
+          },
+          {
+            "answer_id": 3,
+            "poll_media": {
+              "text": "Skip it"
+            }
+          }
+        ],
+        "expiry": "2026-11-03T09:00:00.000000+00:00",
+        "allow_multiselect": false,
+        "layout_type": 1,
+        "results": {
+          "is_finalized": false,
+          "answer_counts": [
+            {
+              "id": 1,
+              "count": 1,
+              "me_voted": false
+            },
+            {
+              "id": 2,
+              "count": 0,
+              "me_voted": false
+            },
+            {
+              "id": 3,
+              "count": 0,
+              "me_voted": false
+            }
+          ]
+        }
+      }
+    }
+  },
+  "semantics": {
+    "object": "poll",
+    "operation": "create",
+    "room_ref": "d.guild_id/d.channel_id",
+    "object_ref": "the poll is the message — poll ref == message snowflake; votes name it by message_id",
+    "target_ref": null,
+    "actor": "d.author.id",
+    "source_time": "d.timestamp (and the message snowflake)",
+    "native_fields": {
+      "poll.question.text": "string",
+      "poll.answers[].answer_id": "int",
+      "poll.answers[].poll_media.text": "string",
+      "poll.allow_multiselect": "bool",
+      "poll.expiry": "ISO8601",
+      "poll.results.is_finalized": "bool",
+      "poll.results.answer_counts[]": "{id,count,me_voted}"
+    },
+    "notes": "Discord polls are not anonymous: every vote event carries user_id. Multiselect produces one vote event per answer, so option counts cannot be summed into unique people.",
+    "today": "parse_discord_message renders '[poll]' and discards the whole object — definition, options, tally and expiry never reach a typed store"
+  }
+}

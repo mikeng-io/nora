@@ -14,8 +14,9 @@ sends, not a substring of it:
 * the row-id window, where `n` is the REAL row id and each caller keeps its own
   attribute set and order.
 
-Nothing here regenerates a golden. Changing one is a model-visible change and
-belongs in a step that says so.
+The platform-metadata amendment changed only the Standing type description and
+field glosses in these captures; every original body and layout byte is retained.
+Changing a capture is a model-visible change, never an automatic regeneration.
 """
 
 from __future__ import annotations

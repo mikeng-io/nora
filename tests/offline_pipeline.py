@@ -71,6 +71,7 @@ def build_offline_pipeline(
     notes: StandingNotesReader | None = None,
     standing: StandingStore | None = None,
     ledger: StandingLedger | None = None,
+    observations: Any = None,
     media_join: MediaJoin | None = None,
     quote_window: QuoteWindow | None = None,
     participation: ParticipationTrigger | None = None,
@@ -177,6 +178,14 @@ def build_offline_pipeline(
         # `<recalled>`, the pre-fetch — `None`: no memory index here; the live
         # eval subject builds the real search through composition.
         memory_search=None,
+        # The typed platform-observation Record (design/platform-observations
+        # 04/05): the transcript window's source events and the standing
+        # slot's folded object heads. `None` renders neither — the honest
+        # shape an eval without the store is graded against. A case that
+        # wants them passes its own generated store (`nora.testing.
+        # observations.FakeObservationStore`), the same seam `notes`/
+        # `standing` use.
+        observations=observations,
         # The wall clock, as the rest of this harness reads it.
         clock=None,
     )

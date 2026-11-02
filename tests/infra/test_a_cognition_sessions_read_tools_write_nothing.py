@@ -48,6 +48,14 @@ from nora.app.cognition_wiring import (
 from nora.app.gatherings import GatheringService
 from nora.domain.cognition_session import Room
 from nora.domain.media_join import MediaJoin
+from nora.domain.models import EditTarget
+from nora.domain.observations import (
+    Observation,
+    PinPayload,
+    PollPayload,
+    SourceScope,
+    handle_of,
+)
 from nora.domain.social_stream import MediaItem, SocialItem
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
@@ -58,6 +66,7 @@ from nora.infra.sql.memory_graph import SqlMemoryGraph
 from nora.infra.sql.memory_read import SqlMemoryIndex
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.notes import SqlNoteStore
+from nora.infra.sql.observations import SqlObservationStore
 from nora.infra.sql.record_query import SqlRecordQuery
 from nora.infra.sql.rollup_read import SqlRollupRead
 from nora.infra.sql.social_stream import SqlSocialStreamStore
@@ -210,6 +219,12 @@ class World:
             # `social_read`: a read that perceived or fetched an item would be
             # a write this test must see.
             social_items=SqlSocialStreamStore(engine),
+            # The observation Record's reads (`poll_list`, `poll_read`,
+            # `room_state_read`, `record_query`'s kind branch): the REAL SQL
+            # store — a read that appended or re-folded a head would be a
+            # write this test must see, and an unwired one would only ever
+            # answer `unavailable`, which is not running the tool at all.
+            observations=SqlObservationStore(engine),
             lineage=LineagePolicy.from_policy(self.policy, circles=(circle,), mode="on"),
             notes=self.notes, memos=self.memos,
             # The memory graph's surface (DEC-316): `memory_search` over the
@@ -294,6 +309,14 @@ CALLS: dict[str, list[dict[str, Any]]] = {
         {"query": "dinner", "person": "Ada", "since": "2026-09-01", "until": "2026-10-30",
          "kinds": ["messages", "places"]},
     ],
+    # The room roster read: no args at all (DEC-24).
+    "group_members": [{}],
+    # The observation Record's task reads: `POLL` is the seeded poll's real
+    # handle, filled at call time; the second `poll_read` names a well-formed
+    # handle nothing holds, so the miss branch runs too.
+    "poll_list": [{}],
+    "poll_read": [{"object": "POLL"}, {"object": "poll:000000000000"}],
+    "room_state_read": [{}],
 }
 
 
@@ -319,6 +342,43 @@ async def world(request, engine, tmp_path):
         mode="told", established_by="cognition:u1", model=None, now_ms=NOW_MS,
     )
     w.memo_id = memo.id
+    # Generated observation rows — hand-built from typed payloads, the same
+    # shape the bridge's `append` writes (never production rows). An open poll
+    # in ROOM-A gives `poll_list`/`poll_read` a hit; a pin gives
+    # `room_state_read` one. `append` is what folds the head, so the reads run
+    # against `platform_object_state` as production's do.
+    obs_store = SqlObservationStore(engine)
+    obs_scope = SourceScope(
+        platform="signal", account_key="", conversation_id="ROOM-A")
+    for obs in (
+        Observation(
+            object_kind="poll", scope=obs_scope, object_ref="p1",
+            operation="create",
+            payload=PollPayload(
+                question="Dinner Friday?",
+                options=(("r", "ramen"), ("s", "sushi")), state="open",
+            ),
+            actor_id=ADA, actor_status="known",
+            occurred_ms=NOW_MS - 120 * 60_000,
+            received_ms=NOW_MS - 120 * 60_000 + 5,
+            time_quality="upstream", source_position=1, revision_scope="rev",
+        ),
+        Observation(
+            object_kind="pin", scope=obs_scope, object_ref="pins",
+            operation="add",
+            payload=PinPayload(message=EditTarget(message_id="m-1")),
+            actor_id=ADA, actor_status="known",
+            occurred_ms=NOW_MS - 100 * 60_000,
+            received_ms=NOW_MS - 100 * 60_000 + 5,
+            time_quality="upstream", source_position=2, revision_scope="rev",
+        ),
+    ):
+        await obs_store.append(
+            observation=obs,
+            event_id=f"evt-{obs.object_kind}", source_digest=f"d-{obs.object_kind}",
+        )
+    w.poll_handle = handle_of(
+        await obs_store.current(scope=obs_scope, kind="poll", object_ref="p1"))
     # One recorded post of Ada's, so `social_read` reaches its SQL with a hit.
     taken = datetime.fromtimestamp(NOW_MS / 1000 - 86_400, tz=UTC)
     await SqlSocialStreamStore(engine).insert_item(
@@ -376,7 +436,8 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
             # Independent coverage probes, each with its own turn's read budget/cache.
             tools = world.tools([A])
             answer = await _call(tools[name], **{
-                k: world.memo_id if v == "MEMO" else world.memory_id if v == "MEMORY" else v
+                k: world.memo_id if v == "MEMO" else world.memory_id if v == "MEMORY"
+                else world.poll_handle if v == "POLL" else v
                 for k, v in arguments.items()
             })
             results.setdefault(name, []).append(str(answer.get("status")))
@@ -387,13 +448,20 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
     }
     # A tool that answered `unavailable` for a wiring gap was never really run.
     reached = {"note_search", "note_read", "record_query", "event_search",
-               "rollup_read", "standing_read", "memo_read", "social_read"}
+               "rollup_read", "standing_read", "memo_read", "social_read",
+               "group_members", "poll_list", "poll_read", "room_state_read"}
     for name in reached:
         assert set(results[name]) <= {"ok", "nothing_found"}, (name, results[name])
     assert "nothing_found" in results["note_search"] and "ok" in results["note_search"]
     assert "ok" in results["record_query"] and "ok" in results["note_read"]
     assert results["memo_read"] == ["ok", "nothing_found"]
     assert results["social_read"] == ["ok", "nothing_found"]
+    # The observation reads ran against the seeded heads, and `poll_read`'s
+    # well-formed-but-absent handle is a real `nothing_found`, not a refusal.
+    assert results["poll_list"] == ["ok"]
+    assert results["poll_read"] == ["ok", "nothing_found"]
+    assert results["room_state_read"] == ["ok"]
+    assert results["group_members"] == ["ok"]
     # the derived-presence reads reached their SQL (a current build exists)
     assert not {"unavailable"} & set(results["where_been"] + results["routine_read"]), results
     # No counter that feeds a decision moved, and Honcho was only ever read.

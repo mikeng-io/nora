@@ -1,0 +1,58 @@
+[
+  {
+    "name": "blocker: a covered count table merges instead of replacing",
+    "file": "nora/domain/observations.py",
+    "old": "        if obs.coverage.complete and \"option_counts\" in (\n                obs.coverage.covered or \"\"):",
+    "new": "        if p.option_counts:",
+    "target": "tests/unit/test_observations.py::test_complete_counts_snapshot_replaces_including_the_empty_table tests/unit/test_observations.py::test_omitted_options_die_only_under_a_complete_claim tests/unit/test_observations.py::test_counts_outside_their_covered_claim_merge_as_partial tests/unit/test_observation_projection.py::test_complete_empty_snapshot_empties_the_reported_totals tests/contract/test_observation_store_contract.py::test_complete_empty_counts_snapshot_replaces_the_covered_set tests/contract/test_observation_store_contract.py::test_omitted_options_die_only_under_a_complete_claim"
+  },
+  {
+    "name": "blocker: retained selections yield no option tally",
+    "file": "nora/domain/observations.py",
+    "old": "    for selected in ballots.values():",
+    "new": "    for selected in ():",
+    "target": "tests/unit/test_observation_projection.py::test_named_votes_report_a_labelled_subset_tally_without_aggregates tests/unit/test_observation_projection.py::test_multiselect_counts_each_option_and_keeps_voters_distinct tests/unit/test_observation_projection.py::test_aggregate_and_named_selections_report_separately_never_summed"
+  },
+  {
+    "name": "blocker: a withdrawn voter still counts as a recorded voter",
+    "file": "nora/domain/observations.py",
+    "old": "    return {v: list(sel) for v, sel in (state.get(\"votes\") or {}).items()\n            if sel}",
+    "new": "    return {v: list(sel) for v, sel in (state.get(\"votes\") or {}).items()}",
+    "target": "tests/unit/test_observation_projection.py::test_a_snapshot_empty_selection_is_a_withdrawal_not_a_voter"
+  },
+  {
+    "name": "blocker: the member count counts every recorded state",
+    "file": "nora/domain/observations.py",
+    "old": "        if state in _MEMBER_ACTIVE_STATES:",
+    "new": "        if True:",
+    "target": "tests/unit/test_observation_projection.py::test_join_leave_rejoin_requested_project_only_active_members tests/unit/test_observation_projection.py::test_departed_members_report_as_departed_not_as_members tests/unit/test_observation_projection.py::test_an_unknown_member_state_is_neither_member_nor_departed tests/contract/test_observation_store_contract.py::test_member_standing_states_retain_and_project_currently"
+  },
+  {
+    "name": "blocker: the detail member count is every stored entry",
+    "file": "nora/domain/observations.py",
+    "old": "        active = standing[\"member\"]",
+    "new": "        active = list(members)",
+    "target": "tests/unit/test_observation_projection.py::test_join_leave_rejoin_requested_project_only_active_members tests/unit/test_observation_projection.py::test_departed_members_report_as_departed_not_as_members tests/unit/test_observation_projection.py::test_member_names_resolve_only_for_active_subjects tests/contract/test_observation_store_contract.py::test_member_standing_states_retain_and_project_currently"
+  },
+  {
+    "name": "blocker: the summary member count is every stored entry",
+    "file": "nora/domain/observations.py",
+    "old": "        parts = [f\"{len(standing['member'])} member(s)\"]",
+    "new": "        parts = [f\"{len(members)} member(s) recorded\"]",
+    "target": "tests/unit/test_observation_projection.py::test_join_leave_rejoin_requested_project_only_active_members tests/unit/test_observation_projection.py::test_departed_members_report_as_departed_not_as_members tests/unit/test_observation_projection.py::test_an_unknown_member_state_is_neither_member_nor_departed"
+  },
+  {
+    "name": "a voter selection is a set rather than repeated option votes",
+    "file": "nora/domain/observations.py",
+    "old": "            object.__setattr__(self, \"selected\", tuple(dict.fromkeys(self.selected)))",
+    "new": "            object.__setattr__(self, \"selected\", tuple(self.selected))",
+    "target": "tests/unit/test_observation_projection.py::test_multiselect_counts_each_option_and_keeps_voters_distinct"
+  },
+  {
+    "name": "a voter snapshot counts each selected option only once",
+    "file": "nora/domain/observations.py",
+    "old": "                tuple((str(v), tuple(dict.fromkeys(o))) for v, o in dict(self.voters).items()))",
+    "new": "                tuple((str(v), tuple(o)) for v, o in dict(self.voters).items()))",
+    "target": "tests/unit/test_observation_projection.py::test_a_snapshot_empty_selection_is_a_withdrawal_not_a_voter"
+  }
+]

@@ -1,0 +1,50 @@
+{
+  "meta": {
+    "native": "signal-cli",
+    "native_version": "0.14.7",
+    "transport": "sse",
+    "upstream": "JsonDataMessage.unpinMessage",
+    "upstream_source": "https://github.com/AsamK/signal-cli/blob/v0.14.7/src/main/java/org/asamk/signal/json/JsonUnpinMessage.java",
+    "case": "a member unpins the same earlier group message",
+    "generated": true
+  },
+  "payload": {
+    "envelope": {
+      "source": "+85212345678",
+      "sourceName": "Fixture Sender",
+      "timestamp": 1720,
+      "dataMessage": {
+        "unpinMessage": {
+          "targetAuthor": "+85212345679",
+          "targetAuthorNumber": "+85212345679",
+          "targetAuthorUuid": "a2000000-0000-4000-8000-000000000000",
+          "targetSentTimestamp": 1600
+        },
+        "groupInfo": {
+          "groupId": "Z3JvdXA=",
+          "groupName": "Example Group",
+          "revision": 3,
+          "type": "DELIVER"
+        },
+        "timestamp": 1720
+      }
+    },
+    "account": "+85290000100"
+  },
+  "semantics": {
+    "object": "pin",
+    "operation": "remove",
+    "room_ref": "payload.envelope.dataMessage.groupInfo.groupId",
+    "object_ref": "the unpin transition",
+    "target_ref": "(unpinMessage.targetAuthor*/authorNumber/authorUuid, unpinMessage.targetSentTimestamp)",
+    "actor": "envelope.source",
+    "source_time_ms": "envelope.timestamp",
+    "native_fields": {
+      "targetAuthorNumber": "string|null",
+      "targetAuthorUuid": "string|null",
+      "targetSentTimestamp": "long"
+    },
+    "notes": "Pin removal is a named transition, not an inferred expiry.",
+    "today": "parse_event returns None — no pin branch"
+  }
+}

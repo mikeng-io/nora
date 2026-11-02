@@ -141,6 +141,7 @@ from nora.testing.fakes import (
     transcript_rows,
 )
 from nora.testing.note_store import InMemoryNoteStore
+from nora.testing.observations import FakeObservationStore
 from nora.testing.online import (
     FakeDiscordPresenceSource,
     FakeSteamPresenceProvider,
@@ -189,6 +190,7 @@ __all__ = [
     "FakeMediaObjectStore",
     "FakeMediaSource",
     "FakeMemoryStore",
+    "FakeObservationStore",
     "FakeRecordStore",
     "FakeReverseGeocoder",
     "FakeRosterSource",

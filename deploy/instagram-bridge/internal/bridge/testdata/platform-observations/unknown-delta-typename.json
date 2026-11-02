@@ -1,0 +1,14 @@
+{
+  "_fixture": {
+    "name": "unmapped delta typename (library fallback)",
+    "generated": true,
+    "native_event": "delta __typename=SlideUQPPPollCreated (HYPOTHETICAL: no IG poll typename is measured; any unmapped name decodes identically)",
+    "capture_today": "DROPPED — slidetypes decodes it as UnknownEvent (raw map retained on Delta.Raw) and emitDelta's switch has no default emit",
+    "semantic": "This is how an Instagram DM poll — or any new upstream mutation — arrives at v0.2609.0: a raw map on the library floor, decoded but never reaching the sink. IG polls have NO typed slide event and NO message-content typename in this SDK version; 'unsupported by pinned transport' is the honest cell, not 'unsupported by Instagram'. SlideUQPPNotYetImplementedMutation/NoOpMutation/Create1To1Thread/UserReachabilityStatus decode to IgnoredEvent one level earlier."
+  },
+  "payload": {
+    "__typename": "SlideUQPPPollCreated", "uq_seq_id": "222", "thread_fbid": "1234567890123456",
+    "poll_id": "poll.$p1", "question_text": "Lunch tomorrow?",
+    "options": [ { "option_id": "o1", "text": "In" }, { "option_id": "o2", "text": "Out" } ]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "_fixture": {
+    "name": "read receipt + inbox thread-pin deltas (ignored surfaces)",
+    "generated": true,
+    "native_event": "delta __typename=SlideUQPPReadReceipt / SlideUQPPPinnedThread",
+    "capture_today": "DROPPED — no emit branches; receipts are not social evidence, inbox pin is not a room-message pin",
+    "semantic": "ReadReceiptEvent{read_receipt{...}} gives reader+timestamp but the design forbids expanding read receipts into stored social evidence. PinThreadEvent{is_pinned} is the user's own inbox pin ordering, not a room-level message pin — different object, silently dropped today like every other unhandled delta."
+  },
+  "payload": [
+    { "__typename": "SlideUQPPReadReceipt", "uq_seq_id": "223", "thread_fbid": "1234567890123456",
+      "read_receipt": { "item_id": "mid.$a1", "read_timestamp_ms": "1790002700000", "user_fbid": "63987654300000022" } },
+    { "__typename": "SlideUQPPPinnedThread", "uq_seq_id": "224", "thread_fbid": "1234567890123456", "is_pinned": true }
+  ]
+}

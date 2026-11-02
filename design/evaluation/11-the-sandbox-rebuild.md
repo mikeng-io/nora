@@ -1026,3 +1026,23 @@ how the previous one hid its own coverage.
 3. Rebuilds are frozen. Does a changed doctrine/objective invalidate every
    existing rebuild at once, or do they coexist with their recorded
    `instruction_sha256` until moved by hand?
+
+### Tool-routing source stores
+
+`tool_selection` and `tool_selection_cognition` use the existing full-restore
+path for the entire corpus, alongside recall and Cognition sessions. Routing
+must read the stores the selected tool uses: the legacy snapshot holds no typed
+platform observations, and its direct Note query cannot read a newly added
+field from a source clone predating that migration. Full restore reads recorded
+row history before subject composition, and requires the source and target to
+have the same migration revision. Schema defaults fill missing keys in older
+row images; they do not waive this revision check. If the candidate is ahead,
+make a separately named, disposable copy of the refreshed source under the
+eval lock, migrate only that private copy with the candidate, and supply it
+through the existing `--source-url` option. Verify the shared source and blank
+template remain unchanged, and validate restoration without a model call
+before measuring. Drop the private copy and its blank template after the run.
+Source freshness still requires the normal locked refresh; no synthetic poll,
+handle or vote is seeded to obtain a
+successful tool result. The existing full-restore reader/geocoder restrictions
+remain in effect. Other corpora retain their selected path.

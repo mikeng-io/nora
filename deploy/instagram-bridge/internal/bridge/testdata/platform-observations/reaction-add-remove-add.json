@@ -1,0 +1,17 @@
+{
+  "_fixture": {
+    "name": "add/remove/add across rising uq_seq_id",
+    "generated": true,
+    "native_event": "three deltas (Create, Delete, Create)",
+    "capture_today": "three distinct transitions; identical redelivery of seq 101/105/109 reproduces the same source_key and dedupes",
+    "semantic": "The sequence proves add/remove/add stays three transitions on one room|target|reactor|emoji key. uq_seq_id orders them upstream — never wall clock."
+  },
+  "payload": [
+    { "__typename": "SlideUQPPCreateReaction", "uq_seq_id": "301", "thread_fbid": "1234567890123456", "message_id": "mid.$b1",
+      "reaction": { "reaction": "😂", "sender_fbid": "60123456700000033", "reaction_timestamp_ms": "1790003000000" } },
+    { "__typename": "SlideUQPPDeleteReaction", "uq_seq_id": "305", "thread_fbid": "1234567890123456", "message_id": "mid.$b1",
+      "reaction": { "reaction": "😂", "sender_fbid": "60123456700000033" } },
+    { "__typename": "SlideUQPPCreateReaction", "uq_seq_id": "309", "thread_fbid": "1234567890123456", "message_id": "mid.$b1",
+      "reaction": { "reaction": "😂", "sender_fbid": "60123456700000033", "reaction_timestamp_ms": "1790003300000" } }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "native": "discord-gateway",
+    "native_version": "discord.py 2.7.1",
+    "transport": "gateway",
+    "dispatch": "GUILD_MEMBER_REMOVE",
+    "discord_py_parse": "parse_guild_member_remove",
+    "discord_py_event": "raw_member_remove",
+    "upstream_source": "https://docs.discord.com/developers/events/gateway-events#guild-member-remove",
+    "case": "a member leaves or is removed from the guild",
+    "generated": true
+  },
+  "payload": {
+    "op": 0,
+    "t": "GUILD_MEMBER_REMOVE",
+    "s": 27,
+    "d": {
+      "guild_id": "123456789012345600",
+      "user": {
+        "id": "123456789012345801",
+        "username": "fixture_joiner",
+        "discriminator": "0",
+        "global_name": "Fixture Joiner",
+        "avatar": null,
+        "bot": false
+      }
+    }
+  },
+  "semantics": {
+    "object": "membership",
+    "operation": "remove",
+    "room_ref": "d.guild_id",
+    "object_ref": "the membership of d.user.id in d.guild_id",
+    "target_ref": "d.user.id (the subject)",
+    "actor": "none — departure, kick and ban are indistinguishable here",
+    "source_time": "none carried — receipt time only",
+    "native_fields": {
+      "user.id": "snowflake"
+    },
+    "notes": "Removal does not establish voluntary departure or a relationship change — a kick, a ban and a self-leave produce the same event. Only the audit log could distinguish, at extra privilege.",
+    "today": "no listener subscription — dropped"
+  }
+}

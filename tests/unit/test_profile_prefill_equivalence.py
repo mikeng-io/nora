@@ -1,4 +1,6 @@
-"""The default prefill matches its capture, including the shared turn-record gloss."""
+"""The default prefill matches its capture. The metadata amendment changes only
+shared transcript type text; original messages, order and framing stay pinned.
+"""
 import json
 from dataclasses import replace
 from datetime import UTC, datetime

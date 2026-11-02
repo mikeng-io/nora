@@ -1,0 +1,39 @@
+{
+  "meta": {
+    "native": "discord-gateway",
+    "native_version": "discord.py 2.7.1",
+    "transport": "gateway",
+    "dispatch": "MESSAGE_REACTION_REMOVE_ALL",
+    "discord_py_parse": "parse_message_reaction_remove_all",
+    "discord_py_event": "raw_reaction_clear",
+    "upstream_source": "https://docs.discord.com/developers/events/gateway-events#message-reaction-remove-all",
+    "case": "all reactions are cleared off a message at once (moderator or integration action)",
+    "generated": true
+  },
+  "payload": {
+    "op": 0,
+    "t": "MESSAGE_REACTION_REMOVE_ALL",
+    "s": 19,
+    "d": {
+      "channel_id": "123456789012345601",
+      "message_id": "123456789012345700",
+      "guild_id": "123456789012345600"
+    }
+  },
+  "semantics": {
+    "object": "reaction",
+    "operation": "clear",
+    "room_ref": "d.guild_id/d.channel_id",
+    "object_ref": "the clear on d.message_id, covering the whole reaction set",
+    "target_ref": "d.message_id",
+    "actor": "none — the event does not say who cleared",
+    "source_time": "none carried",
+    "native_fields": {
+      "message_id": "snowflake",
+      "channel_id": "snowflake",
+      "guild_id": "snowflake"
+    },
+    "notes": "A scoped CLEAR of the whole set — never a fabricated per-user removal history. Coverage: applies to every emoji/actor on the target as of the event.",
+    "today": "no listener subscription, no parser branch — dropped"
+  }
+}

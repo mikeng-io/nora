@@ -426,7 +426,12 @@ CORPUS_ENTRY: dict[str, str] = {
 #: because the snapshot path seeds messages without `media_json` (she sees a
 #: bare `[image …]` handle and `media_objects` is empty) and holds no events,
 #: memos, presence or Rollup at all, which are exactly what recall rests on.
-FULL_RESTORE_CORPORA: frozenset[str] = frozenset({"conversational_recall", "cognition_session"})
+#: Tool routing likewise needs the stores its tools actually read, including
+#: typed observations and retained Note references. Its sandbox is restored
+#: before composition; the read-only source is never migrated.
+FULL_RESTORE_CORPORA: frozenset[str] = frozenset({
+    "conversational_recall", "cognition_session", "tool_selection", "tool_selection_cognition",
+})
 
 #: S2 — graded on WHICH TOOL ran, not on whether she replied. One grader only:
 #: `sample_read` groups every evaluator's labels under one case, so adding

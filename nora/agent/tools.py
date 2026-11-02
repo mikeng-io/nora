@@ -53,7 +53,7 @@ import mimetypes
 import re
 import urllib.parse
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta, timezone
@@ -209,6 +209,22 @@ from ..domain.notes import (
     StaleNoteHeadError,
     has_duplicate_open_title,
     note_handle,
+)
+from ..domain.observations import (
+    UNSUPPORTED_KINDS,
+    ObjectKind,
+    SourceEvent,
+    SourceScope,
+    TargetContext,
+    coverage_label,
+    handle_of,
+    head_detail,
+    head_summary,
+    object_handle,
+    observation_summary,
+    parse_handle,
+    revision_label,
+    target_context,
 )
 from ..domain.ports import (
     BrowserRunner,
@@ -911,6 +927,28 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                source_tier="remembered", read_only=True,
                                side_effect_state="none", idempotency="idempotent",
                                retry="safe", output_contract="three_state", level=2),
+    # The task-shaped source-object reads (design/platform-observations 05):
+    # each is ONE bounded SELECT over the observation Record's scoped heads —
+    # `poll_list` this room's polls, `poll_read` one poll by its handle,
+    # `room_state_read` the room/member/pin heads. Withheld when the store
+    # is unwired, so an offered one can answer. `remembered`: recorded
+    # source evidence, like `record_query`. ADR 0015 level 1: what, returns.
+    "poll_list": NativeTool(1,
+                            source_tier="remembered", read_only=True,
+                            side_effect_state="none", idempotency="idempotent",
+                            retry="safe", output_contract="three_state",
+                            level=1),
+    "poll_read": NativeTool(2,
+                            source_tier="remembered", read_only=True,
+                            side_effect_state="none", idempotency="idempotent",
+                            retry="safe", output_contract="three_state",
+                            level=1),
+    "room_state_read": NativeTool(1,
+                                  source_tier="remembered", read_only=True,
+                                  side_effect_state="none",
+                                  idempotency="idempotent",
+                                  retry="safe", output_contract="three_state",
+                                  level=1),
     # `rollup_read`: the Rollup's typed rows over an interval, for the Cognition session and
     # a person's tag turn (`nora.agent.surface.TAG_READABLE_LOOP_TOOLS`), never
     # a fire turn or an adaptor. 4, the same currency as `where_been`:
@@ -2910,8 +2948,75 @@ def _file_handles(text: str | None) -> str | None:
     return render_file_links(text) if text else text
 
 
+def _source_event_item(
+    e: Any, *, now: datetime, on: int | None = None,
+) -> dict:
+    """One typed source event as a tool result item, interleaved into a
+    transcript by its own time — the SAME projection the prompt's
+    `<source_event>` elements carry: kind, op, which clock, the actor the
+    source names (a roster name or nothing), the object's opaque handle,
+    coverage and revision. Never a speaker line, never a raw ref. `on` is
+    the message's own item number when the source pinned the event to a
+    message this result shows — a link, never an invented quote."""
+    item: dict[str, Any] = {
+        "source_event": {
+            "kind": e.kind, "op": e.operation,
+            "object": e.handle, "summary": e.summary,
+        },
+    }
+    if on is not None:
+        item["source_event"]["on"] = on
+    elif e.target_message_id is not None:
+        # The affected message the result does not otherwise show: the
+        # recorded row's own words and author as labelled `target` context
+        # — never the event actor's words — or `target_unresolved` when a
+        # named target cannot be shown (hidden, deleted elsewhere, or past
+        # the bound), never a guessed quote.
+        if e.target is not None:
+            item["source_event"]["target"] = _target_item(e.target, now=now)
+        else:
+            item["source_event"]["target_unresolved"] = True
+    # `when` is the SOURCE's clock — it appears only when the source gave a
+    # time. An unknown clock shows `time: unknown` plus `received` (the
+    # bridge's own clock), never a receipt dressed as occurrence.
+    if e.at_ms > 0 and e.time_quality != "unknown":
+        item["source_event"]["when"] = stamp(e.at_ms, now)
+    if e.time_quality != "upstream":
+        item["source_event"]["time"] = e.time_quality or "unknown"
+    if e.received_ms and e.time_quality != "upstream":
+        item["source_event"]["received"] = stamp(e.received_ms, now)
+    if e.actor:
+        item["source_event"]["actor"] = e.actor
+    elif e.actor_status == "anonymous":
+        item["source_event"]["actor"] = "anonymous"
+    if e.revision:
+        item["source_event"]["rev"] = e.revision
+    if e.coverage:
+        item["source_event"]["coverage"] = e.coverage
+    return item
+
+
+def _target_item(t: Any, *, now: datetime) -> dict:
+    """One resolved affected message as a `target` dict — the same keys a
+    message item carries (`sender`/`body`/`when`/`edited`/`was`), a deleted
+    row's words withheld under `deleted`. The author's NAME is what the
+    roster calls them, never the event's actor and never a raw id."""
+    item: dict[str, Any] = {"sender": t.author}
+    if t.at_ms > 0:
+        item["when"] = stamp(t.at_ms, now)
+    if t.deleted:
+        item["deleted"] = True
+    else:
+        item["body"] = _file_handles(t.text)
+        if t.edited_ms:
+            item["edited"] = stamp(t.edited_ms, now)
+            item["was"] = _file_handles(t.was)
+    return item
+
+
 def _transcript_messages(
     rows: Sequence[TranscriptRow], *, now: datetime, with_ids: bool = False,
+    source_events: Sequence[Any] | None = None,
 ) -> tuple[list[dict], int]:
     """Stored rows as the model reads them in a tool result, and how many were
     threaded. ONE renderer for `load_transcript` and `room_read`: two tools
@@ -2985,6 +3090,23 @@ def _transcript_messages(
             item["reply_to"] = _speaker(parent)
             threaded += 1
         out.append(item)
+    # Typed source events of the same window, interleaved at their own
+    # time — the same chronological merge the prompt's transcript does.
+    # A message the source pinned an event to is named by its own item
+    # number: `on` counts only message items (1-based), the same positional
+    # handle the prompt's `on="n"` gives the `#n` index.
+    if source_events:
+        index_of = {r.id: i for i, r in enumerate(rows, 1)}
+        merged: list[dict] = []
+        i = 0
+        for e in sorted(source_events, key=lambda e: e.at_ms):
+            while i < len(rows) and rows[i].ts <= e.at_ms:
+                merged.append(out[i])
+                i += 1
+            merged.append(_source_event_item(
+                e, now=now, on=index_of.get(e.target_message_id)))
+        merged.extend(out[i:])
+        out = merged
     return out, threaded
 
 
@@ -3055,6 +3177,26 @@ def _before_bound(before: str | None, now: datetime) -> int | None:
 
 
 #: `record_query`'s notes (ADR 0015 §3: interpretation lives in the result).
+#: The source-object kinds `record_query`'s `kind` branch reads
+#: (design/platform-observations 05): everything the observation Record
+#: folds a head for, and nothing else — a poll, the room itself, its
+#: member set, the pin set, a shared artifact.
+_OBSERVATION_KINDS = ("poll", "room", "membership", "pin", "artifact",
+                      "reaction", "message_metadata")
+#: Bounds on every observation-branch read — discovery page, retained
+#: history page. `more`/`note` carry the cut; nothing here is unbounded.
+_DISCOVERY_LIMIT = 20
+_HISTORY_LIMIT = 50
+#: The most typed source events `record_query`'s message result merges
+#: across the rooms it read — per-room bounds apply inside each room's
+#: own read; this bounds the merged list itself.
+_RECORD_SOURCE_MAX = 24
+#: The most distinct affected messages one result resolves — one batched
+#: Record read of THIS room (`RecordStore.by_ids`), so the bound is on
+#: distinct targets, not on event count. A target past the cap is
+#: `target_unresolved`, never a scan.
+_TARGET_MAX = 8
+
 _RECORD_QUERY_OFF = (
     "I can't search what was said right now. Say so; do not guess what was said."
 )
@@ -3085,17 +3227,19 @@ _RECORD_QUERY_NEAR = (
     "A message marked near has words close to these but not these words; do "
     "not quote it as saying them."
 )
+_RECORD_QUERY_AS_OF_TARGET = (
+    "An as-of read does not attach the affected message's current text."
+)
 
 
 #: The reaction annotation's interpretation (ADR 0015 §3: interpretation
 #: lives in the result, paid only when the keys appear) — shared by the three
 #: tools `_transcript_messages` annotates.
 _REACTIONS_NOTE = (
-    "A message's reaction counts come from recorded transitions only: a "
-    "count is what was recorded, not the whole upstream set (an upstream "
-    "clear, a snapshot or a reaction the capture missed is absent). "
-    "`reactions_removed` means every recorded reaction was taken back, "
-    "`reactions_partial` that the state could not be fully read, "
+    "Reaction counts fold recorded changes, including captured clears and "
+    "snapshots. They are not the complete upstream set; uncaptured changes "
+    "remain unknown. `reactions_removed` means no recorded reaction remains; "
+    "`reactions_partial` means incomplete or unproven state with counts withheld, "
     "`reactions_more` how many standing reactions were left out, and "
     "`reactions_at` the newest recorded reaction event's time."
 )
@@ -4945,6 +5089,10 @@ def build_tool_specs(
     # the policy is, `nora.app.assembler.lineage_policy`). `None` for either
     # (offline, eval, every test that does not care) answers `unavailable`.
     record: RecordQuerySource | None = None,
+    # The typed platform-observation Record (`ObservationStore`), for
+    # `record_query`'s `kind` branch: `None` answers it `unavailable`,
+    # never an empty list that reads as «no such objects».
+    observations: Any = None,
     lineage: LineagePolicy | None = None,
     # `rollup_read`'s Rollup read and `standing_read`'s Standing head.
     # `None` (offline, eval, every tag
@@ -5384,8 +5532,18 @@ def build_tool_specs(
         # `_speaker` (shared with `who_said`), `reply_to` and the edit keys in
         # ONE renderer, because a second tool handing back transcript lines is
         # exactly how DEC-80's three-disagreeing-renderers bug gets a fourth.
+        this_events: tuple[SourceEvent, ...] | None = None
+        this_events_more = 0
+        if observations is not None and rows:
+            found = await _room_source_events(
+                SourceScope(platform=room.platform, account_key="",
+                            conversation_id=bound_conversation_id),
+                since_ms=min(r.ts for r in rows))
+            if found is not None:
+                this_events, this_events_more = found
         out, threaded = _transcript_messages(
             rows, now=now, with_ids=on_rows is not None,
+            source_events=this_events,
         )
         if on_rows is not None:
             on_rows(rows)
@@ -5399,6 +5557,12 @@ def build_tool_specs(
         # `before` read means left the description and ride here, each only
         # when it applies to THIS answer.
         notes = []
+        if observations is not None and rows and this_events is None:
+            notes.append("The room's recorded source events could not be "
+                         "read; the messages below are complete.")
+        if this_events_more:
+            notes.append("More source events are recorded for this window "
+                         "than are interleaved here.")
         if any("was" in m for m in out):
             notes.append(
                 "A message with `was` was edited after sending: `body` is what it "
@@ -5686,8 +5850,21 @@ def build_tool_specs(
             # `LOAD_TRANSCRIPT_MAX` rows), and this is the same class, read by
             # the same renderer. A second label would split one class in two.
             rows = list(await media_join.enrich(rows, path="load_transcript"))
+        # The TARGET room's typed source events of the same window, same
+        # projection — a read of a room carries what the source did there,
+        # not only what was said.
+        target_events: tuple[SourceEvent, ...] | None = None
+        target_events_more = 0
+        if observations is not None:
+            found = await _room_source_events(
+                SourceScope(platform=target.platform, account_key="",
+                            conversation_id=target.conversation_id),
+                since_ms=min(r.ts for r in rows))
+            if found is not None:
+                target_events, target_events_more = found
         out, threaded = _transcript_messages(
             rows, now=now, with_ids=on_rows is not None,
+            source_events=target_events,
         )
         if on_rows is not None:
             on_rows(rows)
@@ -5703,6 +5880,12 @@ def build_tool_specs(
             "messages": out,
         }
         notes = []
+        if observations is not None and target_events is None:
+            notes.append("The room's recorded source events could not be "
+                         "read; the messages below are complete.")
+        if target_events_more:
+            notes.append("More source events are recorded for this window "
+                         "than are interleaved here.")
         if any("reactions_source" in m for m in out):
             notes.append(_REACTIONS_NOTE)
         if older:
@@ -5711,20 +5894,295 @@ def build_tool_specs(
             result["note"] = " ".join(notes)
         return _memory_result(result)
 
+    def _source_name_of(platform: str, ref: str) -> str | None:
+        """A subject's roster name, or None — a raw ref never reaches a
+        tool result (R-18)."""
+        found = persons.resolve(platform, ref) if persons is not None else None
+        return found.name if found is not None else None
+
+    async def _resolve_targets(
+        platform: str, conversation_id: str, msg_ids: Iterable[int],
+    ) -> dict[int, TargetContext]:
+        """The affected messages these `target_message_id`s name, by id —
+        ONE bounded batched Record read of the ROOM THE EVENT WAS READ IN
+        (`by_ids`), named through the roster. A failed or unresolvable read
+        returns what's absent: the caller's `target_unresolved` says so,
+        and nothing is guessed or scanned."""
+        wanted = tuple(dict.fromkeys(i for i in msg_ids if i))
+        if not wanted:
+            return {}
+        try:
+            found, gone = await store.by_ids(
+                platform=platform, conversation_id=conversation_id,
+                ids=wanted[:_TARGET_MAX])
+        except Exception:
+            log.exception("record target read failed")
+            return {}
+        named = persons.name_transcript(
+            list(found.values()), platform=platform)
+        return {
+            mid: target_context(
+                row, deleted=mid in gone, author=_speaker(row))
+            for mid, row in zip(found, named, strict=True)
+        }
+
+    async def _head_target(scope: SourceScope, head: Any) -> dict | None:
+        """The affected message behind a folded head — through its newest
+        applied row's `target_message_id` — as a `target` dict;
+        `{"unresolved": True}` when the link exists but the row cannot be
+        shown (hidden, another room, or the bound), None when it names none."""
+        for row in await observations.by_ids(
+                scope=scope, ids=(head.head_id,)):
+            if row.target_message_id is None:
+                return None
+            targets = await _resolve_targets(
+                scope.platform, scope.conversation_id,
+                (row.target_message_id,))
+            t = targets.get(row.target_message_id)
+            return (_target_item(t, now=now_fn().astimezone(_HKT))
+                    if t is not None else {"unresolved": True})
+        return None
+
+    async def _room_source_events(
+        scope: SourceScope, *, since_ms: int, limit: int = 24,
+    ) -> tuple[tuple[SourceEvent, ...], int] | None:
+        """The room's typed source events at/after `since_ms`, projected —
+        `(events, more)` where `more` counts what the bound cut — or None
+        when the read failed (the caller says so in its result: a failed
+        read is `unavailable`, never an empty list, and a bounded one never
+        reads as complete)."""
+        try:
+            rows = await observations.recent(
+                scope=scope, since_ms=since_ms, limit=limit + 1)
+            poll_heads = {
+                (h.object_ref, h.account_key, h.thread): h
+                for h in await observations.heads(
+                    scope=scope, kind="poll", limit=32)}
+        except Exception:  # noqa: BLE001 — any read failure is `unavailable`
+            return None
+
+        def option_label(r: Any, ref: str) -> str | None:
+            h = poll_heads.get((
+                r.observation.object_ref, r.observation.scope.account_key,
+                r.observation.scope.thread))
+            entry = (h.state.get("options") or {}).get(ref) if h else None
+            return (entry or {}).get("label")
+
+        def event_of(r: Any) -> SourceEvent:
+            o = r.observation
+            actor = None
+            if o.actor_id and o.actor_status == "known":
+                actor = _source_name_of(o.scope.platform, o.actor_id)
+            return SourceEvent(
+                ref=f"platform_observation:{r.id}",
+                kind=o.object_kind, operation=o.operation,
+                at_ms=(o.occurred_ms if o.occurred_ms is not None
+                       else o.received_ms),
+                time_quality=o.time_quality,
+                actor=actor, actor_status=o.actor_status,
+                handle=object_handle(
+                    o.object_kind, o.object_ref,
+                    account_key=o.scope.account_key,
+                    thread=o.scope.thread),
+                summary=observation_summary(
+                    o,
+                    name_of=lambda ref, o=o: _source_name_of(
+                        o.scope.platform, ref),
+                    option_label=lambda ref, r=r: option_label(r, ref)),
+                target_message_id=r.target_message_id,
+                received_ms=o.received_ms,
+                revision=revision_label(
+                    o.source_position, o.revision_scope),
+                coverage=coverage_label(o.coverage),
+            )
+        shown = tuple(event_of(r) for r in rows[:limit])
+        # The affected messages the shown events name — one batched Record
+        # read of the room they were read in, fail-soft like the source
+        # read itself: an unresolvable target says `target_unresolved`,
+        # never a guess.
+        targets = await _resolve_targets(
+            scope.platform, scope.conversation_id,
+            (e.target_message_id for e in shown
+             if e.target_message_id is not None))
+        return (
+            tuple(replace(
+                e, target=targets.get(e.target_message_id)
+                if e.target_message_id is not None else None)
+                for e in shown),
+            max(0, len(rows) - limit))
+
+    async def _observation_query(
+        kind: str, object: str | None, history: bool, at_id: int | None,
+    ) -> dict:
+        """The typed `kind` branch of `record_query`: ONE bounded, scoped
+        read of the observation Record — discovery (`heads`) with no
+        `object`, the object's folded head with one, its retained history
+        or an as-of point when asked. R-27 holds: an unwired store is
+        `unavailable`, a scope with no such object is `nothing_found`,
+        and a bounded `as_of` that cut its history says `partial`."""
+        # A kind this platform's pinned bridge cannot supply at all is
+        # `unavailable`, never `nothing_found`: «the source cannot tell
+        # me» and «there is none» are different answers (design 01's
+        # coverage cells — an Instagram poll at the pinned bridge is a
+        # known-absent capability).
+        if kind in UNSUPPORTED_KINDS.get(room.platform, frozenset()):
+            _record(metrics, "record_query", "unavailable",
+                    kind=kind, reason="unsupported")
+            return {"status": "unavailable",
+                    "note": f"This source cannot report {kind}s here — "
+                            "the platform does not carry them to the bridge."}
+        scope = SourceScope(
+            platform=room.platform, account_key="",
+            conversation_id=bound_conversation_id)
+        try:
+            if object is None and not history and at_id is None:
+                # DISCOVERY: this room's objects of the kind (its polls,
+                # its pin set) — model-safe handles + folded state, the
+                # most recently observed first, `more` counted when the
+                # page cut the scope's head set.
+                heads = await observations.heads(
+                    scope=scope, kind=kind, limit=_DISCOVERY_LIMIT + 1)
+                heads = sorted(
+                    (h for h in heads if h.applied > 0),
+                    key=lambda h: max(h.observed_ms or 0, h.received_ms),
+                    reverse=True)
+                more = len(heads) > _DISCOVERY_LIMIT
+                out = [{"object": handle_of(h),
+                        "state": head_summary(h), "ordering": h.ordering,
+                        **({"time": h.observed_quality}
+                           if h.observed_quality != "upstream" else {}),
+                        **({"coverage": coverage_label(h.coverage)}
+                           if coverage_label(h.coverage) else {})}
+                       for h in heads[: _DISCOVERY_LIMIT]]
+                if not out:
+                    _record(metrics, "record_query", "nothing_found",
+                            kind=kind)
+                    return {"status": "nothing_found",
+                            "note": f"No {kind} objects are recorded "
+                                    f"for this room."}
+                _record(metrics, "record_query", "ok", kind=kind,
+                        objects=len(out), more=more)
+                return _memory_result(
+                    {"status": "ok", "kind": kind, "objects": out,
+                     **({"more": True} if more else {}),
+                     "note": "Objects are named by opaque handles; pass one "
+                             "back as `object` for its detail."})
+            # DETAIL: resolve the handle EXACTLY — `head_for_handle` digs
+            # the digest against the whole scoped head set, so an object
+            # older than any page still resolves; a digest it invented is
+            # a real `nothing_found`, never an accidental first-page miss.
+            head = await observations.head_for_handle(scope=scope, handle=object)
+            if head is None or head.kind != kind:
+                _record(metrics, "record_query", "nothing_found",
+                        kind=kind, handle=bool(object))
+                return {"status": "nothing_found",
+                        "note": "No recorded object has that handle here."}
+            if at_id is not None:
+                folded, more = await observations.as_of(
+                    scope=scope, kind=kind, object_ref=head.object_ref,
+                    through_id=at_id)
+                note = ("The read cut off part-way through the object's "
+                        "history — this is an earlier, partial state."
+                        if more else None)
+                if folded is not None:
+                    # An as-of read is SOURCE history, not a historical
+                    # message read: the affected message's CURRENT text
+                    # must never attach to an earlier state (there is no
+                    # as-of message reader here), so the read says so.
+                    for row in await observations.by_ids(
+                            scope=scope, ids=(folded.head_id,)):
+                        if row.target_message_id is not None:
+                            note = " ".join(
+                                n for n in (note, _RECORD_QUERY_AS_OF_TARGET)
+                                if n)
+                _record(metrics, "record_query", "ok", kind=kind, as_of=True)
+                return _memory_result(
+                    {"status": "ok", "kind": kind,
+                     "object": object,
+                     "state": (head_summary(folded) if folded else "no state"),
+                     "ordering": folded.ordering if folded else "",
+                     **({"note": note} if note else {})})
+            if history:
+                rows = await observations.history(
+                    scope=scope, kind=kind, object_ref=head.object_ref,
+                    limit=_HISTORY_LIMIT + 1)
+                targets = await _resolve_targets(
+                    scope.platform, scope.conversation_id,
+                    (r.target_message_id for r in rows[:_HISTORY_LIMIT]))
+                now = now_fn().astimezone(_HKT)
+                out = [{"event": f"platform_observation:{r.id}",
+                        "op": r.observation.operation,
+                        # `at_ms` is the source's own time ONLY — an
+                        # unknown clock reports no `at_ms` and states the
+                        # receipt under `received_ms` instead.
+                        **({"at_ms": r.observation.occurred_ms}
+                           if r.observation.occurred_ms is not None
+                           and r.observation.time_quality != "unknown"
+                           else {}),
+                        "time": r.observation.time_quality,
+                        **({"received_ms": r.observation.received_ms}
+                           if r.observation.received_ms
+                           and r.observation.time_quality != "upstream"
+                           else {}),
+                        "coverage": coverage_label(r.observation.coverage),
+                        "summary": observation_summary(
+                            r.observation,
+                            name_of=lambda ref, o=r.observation:
+                                _source_name_of(o.scope.platform, ref)),
+                        # The affected message, when the row names one:
+                        # its recorded words and author, or unresolved.
+                        **(
+                            {"target": _target_item(
+                                targets[r.target_message_id], now=now)}
+                            if r.target_message_id in targets else
+                            {"target_unresolved": True}
+                            if r.target_message_id is not None else {})}
+                       for r in rows[:_HISTORY_LIMIT]]
+                _record(metrics, "record_query", "ok", kind=kind,
+                        events=len(out))
+                return _memory_result(
+                    {"status": "ok", "kind": kind, "object": object,
+                     "events": out,
+                     **({"more": True} if len(rows) > _HISTORY_LIMIT
+                        else {})})
+            detail = head_detail(
+                head,
+                name_of=lambda ref: _source_name_of(
+                    room.platform, ref))
+            # The object's affected message through its newest applied
+            # row: which message the reaction or pin touched — present
+            # only when the link exists (`unresolved` when it cannot be
+            # shown), never attached to a state that names none.
+            target = await _head_target(scope, head)
+            if target is not None:
+                detail["target"] = target
+            _record(metrics, "record_query", "ok", kind=kind, detail=True)
+            return _memory_result(
+                {"status": "ok", "kind": kind, "object": object,
+                 "detail": detail})
+        except Exception:
+            log.exception("record_query observation branch failed")
+            _record(metrics, "record_query", "unavailable", kind=kind)
+            return {"status": "unavailable", "note": _RECORD_QUERY_OFF}
+
     async def record_query(
-        start: str,
+        start: str = "",
         end: str | None = None,
         scope: Literal["this_room", "all_rooms"] = "this_room",
         author: str | None = None,
         text: str | None = None,
+        kind: ObjectKind | None = None,
+        object: str | None = None,
+        history: bool = False,
+        at_id: int | None = None,
     ) -> dict:
-        """Search this group's recorded messages over a time span, by author
-        or words. Call this when someone asks what was said on a day or who
-        mentioned something.
+        """Search recorded messages and source objects when somebody asks what
+        was said.
 
-        SHOULD: give `text` as the words were written, not a paraphrase.
-        Returns `messages` oldest first, each with `room`, `sender`, `body`
-        and `when`. Statuses: ok, nothing_found, ambiguous, unavailable.
+        SHOULD: give `text` as the words were written.
+        Message queries return `messages` oldest first with room, sender,
+        body and time. Object queries return objects, state or history.
+        Statuses: ok, nothing_found, ambiguous, unavailable.
 
         Args:
             start: From this Hong Kong time, "YYYY-MM-DD HH:MM", or a date
@@ -5735,7 +6193,42 @@ def build_tool_specs(
             author: Only messages by this person, a name used in this
                 conversation.
             text: Only messages containing these words.
+            kind: One of poll, room, membership, pin, artifact, reaction,
+                message_metadata, switches the query to the room's recorded
+                source objects of that kind.
+            object: An object handle a `kind` call returned, for its detail.
+            history: With `object`, the object's retained source events.
+            at_id: With `object`, the object's folded state through that
+                observation id (partial when the bound cut the history).
         """
+        if (kind is not None or object is not None) and scope != "this_room":
+            _record(metrics, "record_query", "unavailable", reason="object_scope")
+            return {"status": "unavailable",
+                    "note": "Source object reads are bound to this room. "
+                            "Choose the authorized room before reading its objects."}
+        if kind is not None or object is not None:
+            # The typed source-object branch: the observation Record's own
+            # read, not the message query's, it does not consult `record`
+            # or `lineage`, and an unwired store is `unavailable` (R-27).
+            if observations is None or (
+                    kind is not None and kind not in _OBSERVATION_KINDS):
+                _record(metrics, "record_query", "unavailable",
+                        reason="unwired" if observations is None else "kind")
+                return {"status": "unavailable",
+                        "note": _RECORD_QUERY_OFF if observations is None else
+                        f"`kind` must be one of {', '.join(_OBSERVATION_KINDS)}."}
+            # `object` without `kind`: the handle NAMES its kind, an
+            # opaque `<kind>:<digest>` parses, anything else is a real
+            # `nothing_found`, never a defaulted `poll` that could
+            # misroute a pin's handle.
+            parsed = parse_handle(object) if object else ("", "")
+            if object is not None and kind is None and not parsed[0]:
+                _record(metrics, "record_query", "nothing_found",
+                        reason="handle")
+                return {"status": "nothing_found",
+                        "note": "No recorded object has that handle here."}
+            return await _observation_query(
+                kind or parsed[0], object, history, at_id)
         # LINEAGE FIRST, before any read: the rooms this call may touch are the ones
         # whose `message` lineage passes for THIS room (DEC-225), so
         # another room's words never reach the process for a room that may
@@ -5836,6 +6329,52 @@ def build_tool_specs(
         _record(metrics, "record_query", "ok", rows=len(out), more=more,
                 rooms=len(rooms), withheld=withheld, near=len(near))
         result: dict = {"status": "ok", "messages": out}
+        # The AUTHORIZED rooms' typed source events of the SAME interval,
+        # same projection, the query reads what was said AND what the
+        # source did there. `_readable_rooms` is the whole authority: an
+        # event is read per authorized room and labelled with that room's
+        # own name, so `all_rooms` attributes each one correctly and never
+        # reaches past what the message read itself was allowed.
+        if observations is not None:
+            src_pairs: list[tuple[SourceEvent, str]] = []
+            src_failed = False
+            src_more = 0
+            for rf in rooms:
+                label = rf.label or platform_name(rf.platform)
+                for cid in sorted(rf.ids):
+                    found = await _room_source_events(
+                        SourceScope(platform=rf.platform, account_key="",
+                                    conversation_id=cid),
+                        since_ms=start_ms)
+                    if found is None:
+                        src_failed = True
+                        continue
+                    ev, source_more = found
+                    src_more += source_more
+                    src_pairs += [(e, label) for e in ev
+                                  if e.at_ms <= end_ms]
+            if src_failed:
+                notes.append("Some rooms' recorded source events could "
+                             "not be read; the messages are complete.")
+            if src_pairs:
+                src_pairs.sort(key=lambda el: el[0].at_ms)
+                shown, dropped = src_pairs[:_RECORD_SOURCE_MAX], \
+                    src_pairs[_RECORD_SOURCE_MAX:]
+                # `on` is the hit's own item number when the affected
+                # message is one of this result's `messages` — the same
+                # link the transcript projection uses; off the list the
+                # event carries `target`/`target_unresolved` instead.
+                index_of = {h.row.id: i for i, h in enumerate(hits, 1)}
+                result["source_events"] = [
+                    {"room": label,
+                     **_source_event_item(
+                         e, now=now,
+                         on=index_of.get(e.target_message_id)
+                         if e.target_message_id is not None
+                         else None)["source_event"]}
+                    for e, label in shown]
+                if dropped or src_more:
+                    result["source_events_more"] = len(dropped) + src_more
         if notes:
             result["note"] = " ".join(notes)
         return _memory_result(result)
@@ -5879,6 +6418,185 @@ def build_tool_specs(
                 item["near"] = True
             out.append(item)
         return out
+
+    # ---- poll_list / poll_read / room_state_read ----
+    #
+    # The task-shaped source-object reads (design/platform-observations 05):
+    # `record_query`'s `kind` branch carries history and as-of reads, but a
+    # model asking «what polls are open» or «is this room's name what it was»
+    # should not have to know a kind name. These three wrap the same scoped,
+    # bounded reads the observation Record already owns; `record_query` stays
+    # the compatible history/as-of path. All three answer `unavailable` on
+    # an unwired store (R-27), never an empty list read as «none».
+
+    _obs_off = "I can't read what the source recorded right now. Say so."
+
+    async def poll_list() -> dict:
+        """List this room's recorded polls when somebody asks.
+
+        Returns poll handles (for `poll_read`), questions, lifecycle state,
+        choices, recorded tallies and coverage.
+        Statuses: ok, nothing_found, unavailable."""
+        if observations is None:
+            _record(metrics, "poll_list", "unavailable", reason="unwired")
+            return {"status": "unavailable", "note": _obs_off}
+        # The pinned bridge does not carry this platform's polls at all —
+        # «cannot tell», never «none» (design 01's coverage cells).
+        if "poll" in UNSUPPORTED_KINDS.get(room.platform, frozenset()):
+            _record(metrics, "poll_list", "unavailable",
+                    reason="unsupported")
+            return {"status": "unavailable",
+                    "note": "This source cannot report polls — the platform "
+                            "does not carry them to the bridge."}
+        scope = SourceScope(
+            platform=room.platform, account_key="",
+            conversation_id=bound_conversation_id)
+        try:
+            heads = await observations.heads(
+                scope=scope, kind="poll", limit=_DISCOVERY_LIMIT + 1)
+            heads = sorted(
+                (h for h in heads if h.applied > 0),
+                key=lambda h: max(h.observed_ms or 0, h.received_ms),
+                reverse=True)
+            more = len(heads) > _DISCOVERY_LIMIT
+            polls = []
+            for h in heads[: _DISCOVERY_LIMIT]:
+                detail = head_detail(
+                    h, name_of=lambda ref: _source_name_of(
+                        room.platform, ref))
+                entry: dict[str, Any] = {
+                    "object": handle_of(h),
+                    "question": detail.get("question"),
+                    "status": detail.get("state") or "unknown",
+                }
+                if detail.get("options"):
+                    entry["options"] = [
+                        {"label": o.get("label")} for o in detail["options"]]
+                if detail.get("tally"):
+                    entry["tally"] = detail["tally"]
+                # The recorded subset stays beside, never inside, the source's
+                # own aggregate (`tally` above): same separation `poll_read`
+                # keeps.
+                for subset_key in (
+                    "recorded_tally", "recorded_tally_more",
+                    "recorded_voters", "recorded_selections",
+                ):
+                    if detail.get(subset_key):
+                        entry[subset_key] = detail[subset_key]
+                if h.ordering:
+                    entry["ordering"] = h.ordering
+                cov = coverage_label(h.coverage)
+                if cov:
+                    entry["coverage"] = cov
+                polls.append(entry)
+        except Exception:
+            log.exception("poll_list failed")
+            _record(metrics, "poll_list", "unavailable")
+            return {"status": "unavailable", "note": _obs_off}
+        if not polls:
+            _record(metrics, "poll_list", "nothing_found")
+            return {"status": "nothing_found",
+                    "note": "No polls are recorded for this room."}
+        _record(metrics, "poll_list", "ok", polls=len(polls))
+        return _memory_result(
+            {"status": "ok", "polls": polls,
+             **({"more": True} if more else {})})
+
+    async def poll_read(object: str) -> dict:
+        """Read a poll by its handle when you have one.
+
+        Returns poll state, supported voters, times and coverage.
+        Statuses: ok, nothing_found, unavailable.
+
+        Args:
+            object: A poll handle returned by poll_list or the transcript."""
+        if observations is None:
+            _record(metrics, "poll_read", "unavailable", reason="unwired")
+            return {"status": "unavailable", "note": _obs_off}
+        if "poll" in UNSUPPORTED_KINDS.get(room.platform, frozenset()):
+            _record(metrics, "poll_read", "unavailable",
+                    reason="unsupported")
+            return {"status": "unavailable",
+                    "note": "This source cannot report polls — the platform "
+                            "does not carry them to the bridge."}
+        if parse_handle(object)[0] != "poll":
+            _record(metrics, "poll_read", "unavailable", reason="handle_kind")
+            return {"status": "unavailable",
+                    "note": "Use a recorded poll handle from poll_list or the transcript."}
+        scope = SourceScope(
+            platform=room.platform, account_key="",
+            conversation_id=bound_conversation_id)
+        try:
+            head = await observations.head_for_handle(
+                scope=scope, handle=object)
+            if head is None:
+                _record(metrics, "poll_read", "nothing_found")
+                return {"status": "nothing_found",
+                        "note": "No recorded poll has that handle here."}
+            detail = head_detail(
+                head, name_of=lambda ref: _source_name_of(
+                    room.platform, ref))
+            target = await _head_target(scope, head)
+            if target is not None:
+                detail["target"] = target
+            _record(metrics, "poll_read", "ok")
+            return _memory_result(
+                {"status": "ok", "poll": detail})
+        except Exception:
+            log.exception("poll_read failed")
+            _record(metrics, "poll_read", "unavailable")
+            return {"status": "unavailable", "note": _obs_off}
+
+    async def room_state_read() -> dict:
+        """Read the recorded group name, members and pins when somebody asks.
+
+        Returns scoped source state with times and coverage.
+        Statuses: ok, nothing_found, unavailable."""
+        if observations is None:
+            _record(metrics, "room_state_read", "unavailable",
+                    reason="unwired")
+            return {"status": "unavailable", "note": _obs_off}
+        scope = SourceScope(
+            platform=room.platform, account_key="",
+            conversation_id=bound_conversation_id)
+        try:
+            out: dict[str, Any] = {}
+            for kind in ("room", "membership", "pin"):
+                # One head past what is shown: the `{kind}s_more` marker
+                # keeps a fuller room state from reading as complete.
+                heads = await observations.heads(
+                    scope=scope, kind=kind, limit=5)
+                shown = 0
+                for h in heads:
+                    if h.applied <= 0:
+                        continue
+                    shown += 1
+                    if shown > 4:
+                        out[f"{kind}s_more"] = True
+                        break
+                    detail = head_detail(
+                        h, name_of=lambda ref: _source_name_of(
+                            room.platform, ref))
+                    target = await _head_target(scope, h)
+                    if target is not None:
+                        detail["target"] = target
+                    entry = {"object": handle_of(h), "detail": detail}
+                    if h.ordering:
+                        entry["ordering"] = h.ordering
+                    cov = coverage_label(h.coverage)
+                    if cov:
+                        entry["coverage"] = cov
+                    out.setdefault(kind + "s", []).append(entry)
+        except Exception:
+            log.exception("room_state_read failed")
+            _record(metrics, "room_state_read", "unavailable")
+            return {"status": "unavailable", "note": _obs_off}
+        if not out:
+            _record(metrics, "room_state_read", "nothing_found")
+            return {"status": "nothing_found",
+                    "note": "Nothing about the room itself is recorded."}
+        _record(metrics, "room_state_read", "ok")
+        return _memory_result({"status": "ok", **out})
 
     # ---- rollup_read and standing_read ----
     #
@@ -6363,14 +7081,15 @@ def build_tool_specs(
     # already placed in this room.
 
     async def group_members() -> dict:
-        """Who is in this conversation right now. Call this when somebody asks
-who is here, how many are in it, or whether a particular person is around.
+        """Who is in this conversation. Call this when somebody asks who is
+here.
 
 SHOULD: call it rather than guess from the transcript. People who have not
-spoken lately are still here, and people named in a message may not be. It
-covers only THIS conversation.
+spoken lately are still here, and people named in a message may not be. `scope`
+says what the platform's roster actually covers; on Discord the member list is
+the whole server's, which can exceed this channel's audience.
 
-Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
+Returns `status`: ok (`members`, `scope`) or unavailable (`note`)."""
         view = await room.members()
         if not view.available:
             _record_room(metrics, "group_members", "unavailable")
@@ -6390,6 +7109,17 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # accounts is a phone number or an ACI, and those are what R-18
             # exists to keep off the wire.
             "members_i_have_no_name_for": view.unnamed,
+            # What the platform's roster actually IS. Discord has no
+            # "who is in this channel" endpoint — `nora.platform.discord.
+            # roster` reads the GUILD's member list, which may exceed this
+            # channel's audience (the safe direction: it can only over-report,
+            # never drop somebody a disclosure would have excluded). The model
+            # must not read "in this conversation" as exactly this channel.
+            "scope": (
+                "this Discord server's member list, which can exceed this "
+                "channel's audience"
+                if room.platform == "discord" else "this conversation"
+            ),
         }
 
     async def lookup_person(name: str) -> dict:
@@ -13785,6 +14515,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # latch has no use for: it is here so a revision can be discussed
             # («this changed since I read it»), not so it can be passed back.
             "revision_id": head.id,
+            # The source objects this note tracks (note_create's
+            # `object_refs`), so a revise can keep or replace them.
+            **({"object_refs": [r.handle for r in note.object_refs]}
+               if note.object_refs else {}),
         }
 
     async def note_search(query: str) -> dict:
@@ -17052,6 +17786,9 @@ Args:
         _spec("room_list", room_list),
         _spec("room_read", room_read),
         _spec("record_query", record_query),
+        _spec("poll_list", poll_list),
+        _spec("poll_read", poll_read),
+        _spec("room_state_read", room_state_read),
         _spec("rollup_read", rollup_read),
         _spec("standing_read", standing_read),
         _spec("character_read", character_read),
@@ -17346,6 +18083,10 @@ def build_tools(
     standing_head: StandingHeadSource | None = None,
     ledger: StandingLedger | None = None,
     culture: CultureReader | None = None,
+    # The typed platform-observation Record: `record_query`'s `kind` branch,
+    # `poll_list`/`poll_read`/`room_state_read` and the source events a
+    # transcript read carries. `None` answers those `unavailable`.
+    observations: Any = None,
     # `social_read`'s read of the social stream's Record. `None` answers
     # `unavailable`; the registry withholds the tool before that matters.
     social_items: SocialItemsSource | None = None,
@@ -17410,6 +18151,7 @@ def build_tools(
         rollup=rollup,
         standing_head=standing_head, ledger=ledger,
         culture=culture,
+        observations=observations,
         social_items=social_items,
         subagent=subagent,
         video=video, video_ref_kinds=video_ref_kinds,

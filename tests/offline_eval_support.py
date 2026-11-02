@@ -70,6 +70,7 @@ from nora.testing import (
     CannedTransitSource,
     CannedWeatherProvider,
     FakeAdapter,
+    FakeObservationStore,
     FakeRosterSource,
     InMemoryNoteStore,
     InMemoryStandingStore,
@@ -313,6 +314,7 @@ def build_live_participation_runner(
 def build_eval_tool_registry(
     *, notes: Any | None = None, note_unit: str = _EVAL_UNIT,
     reminders: Any | None = None, clock: Any | None = None,
+    observations: Any | None = None,
 ) -> ToolRegistry:
     """A `ToolRegistry` wired with the canned eval backends (F4): `weather`,
     `web_search`, `place_info`, `route`, `transit`, `where_is` and `saved_places`
@@ -357,6 +359,12 @@ def build_eval_tool_registry(
         circles=(Circle(circle_id=EVAL_CIRCLE_ID, person_ids=frozenset({_EVAL_PERSON_ID})),),
         notes=notes,
         note_unit=(lambda _platform, _conv: note_unit) if notes else None,
+        # The observation Record's reads (`poll_list`, `poll_read`,
+        # `room_state_read`, `record_query`'s kind branch): wired whenever the
+        # caller holds a store — production always does — so a live run's
+        # routing is measured against the same wired surface, `nothing_found`
+        # over an empty room rather than `unavailable` for a missing seam.
+        observations=observations,
         reminders=reminders,
         reminder_caps=ReminderCaps() if reminders is not None else None,
         **extra,
@@ -1111,7 +1119,12 @@ async def run_proactive_act_case(
         persons=_EVAL_PERSONS, records=records, memory=FakeMemoryStore(),
         doctrine_store=doctrine, metrics=metrics, runner=runner,
         adapters={"signal": cast(Any, adapter)},
-        registry=build_eval_tool_registry(notes=note_store),
+        registry=build_eval_tool_registry(
+            notes=note_store,
+            # Production's FirePath registry always holds the observation
+            # Record, so this eval surface must too — empty, since nothing
+            # seeds one, which is `nothing_found` rather than a withheld tool.
+            observations=FakeObservationStore()),
         canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         ai_peer="nora", context_window=cfg.store.context_window,
         limits=factory.build_limits(

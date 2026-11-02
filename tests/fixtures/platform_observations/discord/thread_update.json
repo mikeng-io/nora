@@ -1,0 +1,53 @@
+{
+  "meta": {
+    "native": "discord-gateway",
+    "native_version": "discord.py 2.7.1",
+    "transport": "gateway",
+    "dispatch": "THREAD_UPDATE",
+    "discord_py_parse": "parse_thread_update",
+    "discord_py_event": "thread_update",
+    "upstream_source": "https://docs.discord.com/developers/events/gateway-events#thread-update",
+    "case": "the thread is archived (lifecycle change on an existing thread)",
+    "generated": true
+  },
+  "payload": {
+    "op": 0,
+    "t": "THREAD_UPDATE",
+    "s": 24,
+    "d": {
+      "id": "123456789012345610",
+      "type": 11,
+      "guild_id": "123456789012345600",
+      "name": "fixture-thread",
+      "parent_id": "123456789012345601",
+      "owner_id": "123456789012345800",
+      "last_message_id": "123456789012345701",
+      "rate_limit_per_user": 0,
+      "thread_metadata": {
+        "archived": true,
+        "auto_archive_duration": 1440,
+        "archive_timestamp": "2026-11-03T09:40:00+00:00",
+        "locked": false
+      },
+      "message_count": 5,
+      "member_count": 2,
+      "total_message_sent": 5
+    }
+  },
+  "semantics": {
+    "object": "thread",
+    "operation": "revise",
+    "room_ref": "d.guild_id/d.parent_id",
+    "object_ref": "d.id",
+    "target_ref": "d.parent_id",
+    "actor": "none — thread_metadata does not say who archived or renamed",
+    "source_time": "d.thread_metadata.archive_timestamp",
+    "native_fields": {
+      "thread_metadata.archived": "bool",
+      "thread_metadata.locked": "bool",
+      "name": "string — rename shows as a new value, not a delta"
+    },
+    "notes": "Carries only the AFTER state of the thread — 'what changed' is a diff against captured state, not a field of the event.",
+    "today": "no listener subscription — dropped"
+  }
+}

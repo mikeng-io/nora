@@ -1,0 +1,39 @@
+{
+  "meta": {
+    "native": "discord-gateway",
+    "native_version": "discord.py 2.7.1",
+    "transport": "gateway",
+    "dispatch": "MESSAGE_DELETE",
+    "discord_py_parse": "parse_message_delete",
+    "discord_py_event": "raw_message_delete",
+    "upstream_source": "https://docs.discord.com/developers/events/gateway-events#message-delete",
+    "case": "a message is deleted — the already-captured baseline family",
+    "generated": true
+  },
+  "payload": {
+    "op": 0,
+    "t": "MESSAGE_DELETE",
+    "s": 34,
+    "d": {
+      "id": "123456789012345700",
+      "channel_id": "123456789012345601",
+      "guild_id": "123456789012345600"
+    }
+  },
+  "semantics": {
+    "object": "message",
+    "operation": "withdraw",
+    "room_ref": "d.guild_id/d.channel_id",
+    "object_ref": "d.id",
+    "target_ref": "d.id",
+    "actor": "none — author delete vs moderator delete are indistinguishable",
+    "source_time": "none carried",
+    "native_fields": {
+      "id": "snowflake",
+      "channel_id": "snowflake",
+      "guild_id": "snowflake"
+    },
+    "notes": "Baseline reference: parse_discord_delete produces Touch(kind='delete') with sender_id='' — the record does not assert who deleted.",
+    "today": "captured — delete Touch hides the recorded row"
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "native": "discord-gateway",
+    "native_version": "discord.py 2.7.1",
+    "transport": "gateway",
+    "dispatch": "GUILD_MEMBER_UPDATE",
+    "discord_py_parse": "parse_guild_member_update",
+    "discord_py_event": "member_update",
+    "upstream_source": "https://docs.discord.com/developers/events/gateway-events#guild-member-update",
+    "case": "a member's roles or nickname change",
+    "generated": true
+  },
+  "payload": {
+    "op": 0,
+    "t": "GUILD_MEMBER_UPDATE",
+    "s": 28,
+    "d": {
+      "guild_id": "123456789012345600",
+      "user": {
+        "id": "123456789012345800",
+        "username": "fixture_member",
+        "discriminator": "0",
+        "global_name": "Fixture Member",
+        "avatar": null,
+        "bot": false
+      },
+      "roles": [
+        "123456789012345900",
+        "123456789012345901"
+      ],
+      "nick": "fixture-nick",
+      "joined_at": "2026-01-01T00:00:00+00:00",
+      "premium_since": null,
+      "deaf": false,
+      "mute": false,
+      "pending": false,
+      "avatar": null,
+      "communication_disabled_until": null
+    }
+  },
+  "semantics": {
+    "object": "membership",
+    "operation": "revise",
+    "room_ref": "d.guild_id",
+    "object_ref": "the membership of d.user.id in d.guild_id",
+    "target_ref": "d.user.id (the subject)",
+    "actor": "none — the event carries the AFTER state only",
+    "source_time": "none carried",
+    "native_fields": {
+      "roles": "snowflake[] — complete current set, not a delta",
+      "nick": "string|null",
+      "communication_disabled_until": "ISO8601|null — timeout state"
+    },
+    "notes": "The wire carries the AFTER member object: a role GAIN or LOSS is only a diff against captured state — 'member update' semantics are snapshot-shaped. discord.py's member_update gives (before, after) from its cache; the raw event alone cannot say which role changed.",
+    "today": "no listener subscription — dropped"
+  }
+}

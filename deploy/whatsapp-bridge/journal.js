@@ -182,6 +182,10 @@ export class Journal {
     const pendingIds = new Set(this.plan(records).work.map((w) => w.envelope.event_id));
     return records.filter((r) => {
       if (r && r.ambiguous) return true;
+      // A record carrying committed transition states IS the durable
+      // transition ledger — drop it and a restart could not tell a stale
+      // redelivery from a genuine re-transition.
+      if (r && Array.isArray(r.transitions) && r.transitions.length) return true;
       if (r && r.envelope) return pendingIds.has(r.envelope.event_id);
       const id = (r && r.enqueued && r.enqueued.event_id)
         || (r && r.receipted && r.receipted.event_id);

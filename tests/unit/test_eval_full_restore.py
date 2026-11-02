@@ -381,7 +381,7 @@ def test_the_registry_names_the_recall_corpus_and_experiment_for_threads_it(monk
     from evals import scenarios
 
     assert frozenset({
-        "conversational_recall", "cognition_session",
+        "conversational_recall", "cognition_session", "tool_selection", "tool_selection_cognition",
     }) == scenarios.FULL_RESTORE_CORPORA
     assert set(scenarios.CORPUS_ENTRY) >= scenarios.FULL_RESTORE_CORPORA
     assert "conversational_recall" in scenarios.JUDGED_CORPORA
@@ -601,3 +601,17 @@ def test_a_self_closed_block_never_swallows_the_next_one() -> None:
     doubled = '<memos a="1"/>\n\n<memos a="2">\nreal\n</memos>'
     [only] = list(_CONTEXT_BLOCK.finditer(doubled))
     assert only.group(0).startswith('<memos a="2">')
+
+
+@pytest.mark.parametrize("corpus", ["tool_selection", "tool_selection_cognition"])
+async def test_tool_routing_uses_the_full_record_restore(corpus, seams, monkeypatch):
+    from evals import scenarios
+    captured=[]
+    monkeypatch.setattr(scenarios, "nora_task", lambda spec: captured.append(spec))
+    scenarios.experiment_for(corpus, source_url=_SOURCE)
+    [selected] = captured
+    assert selected.full_restore, "routing must seed the actual stores its tools read"
+    await backbone._drive(_case("tool-record"), _spec(full_restore=selected.full_restore))
+    assert seams["sandbox_as_of"] == [(_SOURCE, _NOW, "the_blank")]
+    assert seams["sandbox_from_snapshot"] == []
+    assert seams["restored_room"] == [{"source_url":_SOURCE,"before_ms":_SHOT["before_ms"]}]

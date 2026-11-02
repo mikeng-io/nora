@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "native": "discord-gateway",
+    "native_version": "discord.py 2.7.1",
+    "transport": "gateway",
+    "dispatch": "CHANNEL_UPDATE",
+    "discord_py_parse": "parse_channel_update",
+    "discord_py_event": "guild_channel_update",
+    "upstream_source": "https://docs.discord.com/developers/events/gateway-events#channel-update",
+    "case": "a channel's topic and name change",
+    "generated": true
+  },
+  "payload": {
+    "op": 0,
+    "t": "CHANNEL_UPDATE",
+    "s": 29,
+    "d": {
+      "id": "123456789012345601",
+      "type": 0,
+      "guild_id": "123456789012345600",
+      "name": "general-east",
+      "topic": "new fixture topic",
+      "position": 1,
+      "parent_id": "123456789012345602",
+      "permission_overwrites": [
+        {
+          "id": "123456789012345900",
+          "type": 0,
+          "allow": "1024",
+          "deny": "0"
+        }
+      ],
+      "nsfw": false,
+      "rate_limit_per_user": 0,
+      "last_message_id": "123456789012345701"
+    }
+  },
+  "semantics": {
+    "object": "room",
+    "operation": "revise",
+    "room_ref": "d.guild_id/d.id",
+    "object_ref": "d.id — the channel",
+    "target_ref": null,
+    "actor": "none — the AFTER object only",
+    "source_time": "none carried",
+    "native_fields": {
+      "name": "string",
+      "topic": "string|null",
+      "permission_overwrites[]": "{id, type(0 role|1 member), allow, deny}",
+      "parent_id": "snowflake|null — category"
+    },
+    "notes": "Title/topic/permission changes arrive as the whole new channel object — typed change detection is a diff against the captured channel. permission_overwrites are part of channel audience computation, which guild membership alone cannot answer.",
+    "today": "no listener subscription; discord.py's own channel cache updates but nothing records the change"
+  }
+}

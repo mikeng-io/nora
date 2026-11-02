@@ -49,7 +49,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Awaitable, Callable, Collection, Sequence
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, tzinfo
 from typing import Any, Protocol
@@ -76,6 +76,7 @@ from nora.domain.cognition_ground import (
     RollupLine,
     SocialLine,
     StayDeviation,
+    observation_ref,
     parse_rollup_ref,
     record_ref,
 )
@@ -84,7 +85,17 @@ from nora.domain.culture import CultureRevision, nora_character_key
 from nora.domain.gatherings import Gathering
 from nora.domain.memo import Memo
 from nora.domain.mobility_forecast import detect_stay_anomalies, place_words
-from nora.domain.notes import Note, likely_duplicates
+from nora.domain.notes import Note, RetainedSource, SourceRef, likely_duplicates
+from nora.domain.observations import (
+    SourceEvent,
+    SourceScope,
+    coverage_label,
+    handle_of,
+    head_summary,
+    object_handle,
+    observation_summary,
+    revision_label,
+)
 from nora.domain.profile import ProfileLine, ProfileView
 from nora.domain.record_query import RecordHit, RecordRefHit
 from nora.domain.reminders import Reminder
@@ -423,6 +434,172 @@ def unit_self_profile_reader(
     return gated
 
 
+async def _observation_lines(
+    pending: Sequence[Stimulus], claimed: set[int],
+    observations: Any | None, allowed: set[tuple[str, str]], persons: Any,
+) -> dict[str, SourceEvent]:
+    """The readable `observation` stimuli of the agenda, by `ref`, each a
+    typed source event with its actor's roster name when the source names
+    one and the roster knows them. A stimulus whose observation row the
+    Record does not hold, or whose room is not one of the unit's, has no
+    entry — counted unreadable, never rendered as a guess."""
+    out: dict[str, SourceEvent] = {}
+    if observations is None:
+        return out
+    wanted: list[tuple[Stimulus, int]] = []
+    for s in pending:
+        if s.id not in claimed or s.kind != "observation":
+            continue
+        row_id = observation_ref(s)
+        if row_id is None or (s.platform, s.conversation_id) not in allowed:
+            continue
+        wanted.append((s, row_id))
+    by_scope: dict[tuple[str, str], list[int]] = {}
+    for s, row_id in wanted:
+        if s.platform is None or s.conversation_id is None:
+            continue
+        by_scope.setdefault((s.platform, s.conversation_id), []).append(row_id)
+    found: dict[int, Any] = {}
+    for (platform, cid), ids in by_scope.items():
+        # Room-wide scope: the stimuli carry the room's boundary; the rows
+        # must match it (another account's room never resolves).
+        for row in await observations.by_ids(
+            scope=SourceScope(platform=platform, account_key="",
+                              conversation_id=cid),
+            ids=tuple(ids)):
+            found[row.id] = row
+    for s, row_id in wanted:
+        row = found.get(row_id)
+        if row is None:
+            continue
+        obs = row.observation
+        actor: str | None = None
+        if obs.actor_id and obs.actor_status == "known":
+            ref = persons.resolve(obs.scope.platform, obs.actor_id)
+            actor = ref.name if ref is not None else None
+
+        def name_of(subject: str, *, platform: str = obs.scope.platform,
+                    _p: Any = persons) -> str | None:
+            r = _p.resolve(platform, subject)
+            return r.name if r is not None else None
+
+        out[s.ref] = SourceEvent(
+            ref=s.ref, kind=obs.object_kind, operation=obs.operation,
+            at_ms=(obs.occurred_ms if obs.occurred_ms is not None
+                   else obs.received_ms),
+            time_quality=obs.time_quality,
+            actor=actor, actor_status=obs.actor_status,
+            handle=object_handle(
+                obs.object_kind, obs.object_ref,
+                account_key=obs.scope.account_key, thread=obs.scope.thread),
+            summary=observation_summary(obs, name_of=name_of),
+            target_message_id=row.target_message_id,
+            delivered_message_id=row.delivered_message_id,
+            received_ms=obs.received_ms,
+            revision=revision_label(
+                obs.source_position, obs.revision_scope),
+            coverage=coverage_label(obs.coverage),
+        )
+    return out
+
+
+async def _source_objects(
+    agenda_rooms: Sequence[Room], allowed: set[tuple[str, str]],
+    observations: Any | None, persons: Any, *,
+    retained: Mapping[str, Sequence[tuple[SourceRef, str]]] | None = None,
+    limit: int = 8,
+) -> tuple[dict[str, tuple[SourceEvent, ...]], dict[str, int],
+           dict[str, tuple[RetainedSource, ...]], dict[str, int]]:
+    """The agenda rooms' folded source-object heads — `(room_key → at most
+    `limit` of the newest, room_key → how many more the read confirmed)` —
+    the Standing block's typed input, plus the retained lane.
+
+    `retained` is `room_key → (SourceRef, matter)` pairs the unit's shown
+    open notes curated. Each resolves through `head_for_handle` under the
+    ref's OWN scope — the CURRENT folded head of an object the page may
+    have evicted, never a copied tally. A ref a page head already shows is
+    not repeated; one the store no longer resolves comes back `head=None`,
+    the explicit marker the render names.
+
+    A room the unit does not own contributes nothing; an unwired store
+    reads as no objects, never as a failed guess. The read takes `limit + 1`
+    so the `more` count is a real lower bound, not a silently complete-
+    looking list."""
+    out: dict[str, tuple[SourceEvent, ...]] = {}
+    more: dict[str, int] = {}
+    kept: dict[str, tuple[RetainedSource, ...]] = {}
+    kept_more: dict[str, int] = {}
+    if observations is None:
+        return out, more, kept, kept_more
+    retained = retained or {}
+    for room in agenda_rooms:
+        key = f"{room.platform}:{room.conversation_id}"
+        if (room.platform, room.conversation_id) not in allowed:
+            continue
+        heads = await observations.heads(
+            scope=SourceScope(platform=room.platform, account_key="",
+                              conversation_id=room.conversation_id),
+            limit=limit + 1)
+        # The store orders by last write, independently of source clocks.
+        heads = [h for h in heads if h.applied > 0]
+        events: list[SourceEvent] = []
+        for h in heads[:limit]:
+            events.append(SourceEvent(
+                # `head_id` IS the newest applied row's id — the head is
+                # named by the same `platform_observation:<id>` ref the
+                # agenda's stimulus row carries, so an object already shown
+                # as an `<observation>` is recognisably the same thing.
+                ref=f"platform_observation:{h.head_id}", kind=h.kind,
+                operation="state", at_ms=h.observed_ms or 0,
+                time_quality=h.observed_quality,
+                actor=None, actor_status="not_applicable",
+                handle=handle_of(h),
+                summary="", state=head_summary(h), ordering=h.ordering,
+                received_ms=h.received_ms,
+                revision=revision_label(h.position, h.scope),
+                coverage=coverage_label(h.coverage)))
+        if events:
+            out[key] = tuple(events)
+            if len(heads) > len(events):
+                more[key] = len(heads) - len(events)
+        shown = {e.handle for e in events}
+        rows: list[RetainedSource] = []
+        for ref, matter in retained.get(key, ()):
+            if ref.platform != room.platform or (
+                    ref.conversation_id != room.conversation_id):
+                # A ref naming another room resolves nothing here — the
+                # scope check is the boundary, not a filter.
+                continue
+            if ref.handle in shown:
+                continue
+            shown.add(ref.handle)
+            if len(rows) >= limit:
+                kept_more[key] = kept_more.get(key, 0) + 1
+                continue
+            head = await observations.head_for_handle(
+                scope=SourceScope(platform=ref.platform, account_key="",
+                            conversation_id=ref.conversation_id,
+                            thread=ref.thread),
+                handle=ref.handle)
+            rows.append(RetainedSource(
+                ref=ref, matter=matter,
+                head=None if head is None else SourceEvent(
+                    ref=f"platform_observation:{head.head_id}",
+                    kind=head.kind, operation="state",
+                    at_ms=head.observed_ms or 0,
+                    time_quality=head.observed_quality,
+                    actor=None, actor_status="not_applicable",
+                    handle=handle_of(head),
+                    summary="", state=head_summary(head),
+                    ordering=head.ordering,
+                    received_ms=head.received_ms,
+                    revision=revision_label(head.position, head.scope),
+                    coverage=coverage_label(head.coverage))))
+        if rows:
+            kept[key] = tuple(rows)
+    return out, more, kept, kept_more
+
+
 def build_grounder(
     *,
     records: RecordRefSource,
@@ -445,6 +622,7 @@ def build_grounder(
     metrics: Any = None,
     memo_index: Callable[[str], Awaitable[Sequence[Memo]]] | None = None,
     pending_reminds: Callable[[], Awaitable[Sequence[Reminder]]] | None = None,
+    observations: Any | None = None,
 ) -> Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]:
     """The session's `Grounder` (`nora.app.cognition_session.Grounder`).
 
@@ -467,6 +645,8 @@ def build_grounder(
     ) -> Grounding:
         allowed = set(unit_rooms(unit))
         claimed = {sid for item in items for sid in item.stimulus_ids}
+        observations_out = await _observation_lines(
+            pending, claimed, observations, allowed, persons)
         wanted: list[tuple[Stimulus, tuple[str, int]]] = []
         wanted_rooms: set[tuple[str, str]] = set()
         for s in pending:
@@ -486,13 +666,38 @@ def build_grounder(
                 continue
             wanted.append((s, ref))
             wanted_rooms.add((s.platform, s.conversation_id))
+        # The utterance a typed source event was co-delivered as AND the
+        # recorded message it affected: the merged source obligation links
+        # the first through `delivered_message_id`, and a reaction's target
+        # or a pinned row through `target_message_id` — independent ids, so
+        # a co-delivered caption and the older message it touched are two
+        # reads, not one. Both read as `messages:<id>` records through the
+        # same `by_refs` seam and the same room check — evidence paths of
+        # the one event on the agenda, off one stimulus.
+        sibling_wanted: list[tuple[Stimulus, tuple[str, int]]] = []
+        for s in pending:
+            if (s.id not in claimed or s.kind != "observation"
+                    or s.platform is None or s.conversation_id is None):
+                continue
+            event = observations_out.get(s.ref)
+            if event is None:
+                continue
+            for message_id in (
+                event.delivered_message_id, event.target_message_id,
+            ):
+                if message_id is not None:
+                    sibling_wanted.append((s, ("messages", message_id)))
+            if event.delivered_message_id is not None or (
+                    event.target_message_id is not None):
+                wanted_rooms.add((s.platform, s.conversation_id))
         found: dict[tuple[str, int], RecordRefHit] = {}
-        if wanted:
-            hits = await records.by_refs([r for _, r in wanted], sorted(wanted_rooms))
+        refs = [r for _, r in wanted] + [r for _, r in sibling_wanted]
+        if refs:
+            hits = await records.by_refs(refs, sorted(wanted_rooms))
             found = {(h.table, h.row_id): h for h in hits}
         rows = []
         pairs: list[tuple[Stimulus, tuple[str, int], RecordRefHit]] = []
-        for s, ref in wanted:
+        for s, ref in wanted + sibling_wanted:
             hit = found.get(ref)
             # The row must be in the room the stimulus named.
             if hit is None or (hit.hit.platform, hit.hit.conversation_id) != (
@@ -513,9 +718,16 @@ def build_grounder(
                 ai_display_name if row.is_nora
                 else speaker_name(row.person_name, row.sender_name)
             )
-            records_out[s.ref] = _record_item(
-                s, ref, hit, body=row.body, author=author,
-            )
+            item = _record_item(s, ref, hit, body=row.body, author=author)
+            if s.kind == "observation":
+                # A sibling record answers to its OWN record ref: the
+                # observation stimulus's `platform_observation:<id>` names
+                # the event, never the row the event rode in on.
+                item = replace(
+                    item, ref=f"{ref[0]}:{ref[1]}", person_id=row.person_id,
+                    kind="delete" if hit.hit.deleted else item.kind,
+                )
+            records_out[item.ref] = item
 
         agenda_rooms = list(dict.fromkeys(i.room for i in items))
         targets = [
@@ -544,6 +756,7 @@ def build_grounder(
         # `remind_cancel` refuse a row whose room is not, so naming it here would
         # point at an id the session cannot act on.
         on_agenda = {(r.platform, r.conversation_id) for r in agenda_rooms}
+        retained_refs: dict[str, list[tuple[SourceRef, str]]] = {}
         held: dict[str, list[str]] = {}
         for r in (await pending_reminds()) if pending_reminds is not None else ():
             note_id = (r.payload or {}).get("note_id")
@@ -568,6 +781,15 @@ def build_grounder(
                 may_duplicate=twins.get(n.id),
                 reminds="; ".join(held[n.id]) if n.id in held else None,
             ))
+            # The note's curated source refs join the retained lane only
+            # where the note itself is shown (a note lineage withheld keeps
+            # its pointers to itself too) and only for an agenda room the
+            # unit owns — `_source_objects` re-checks each ref's own scope.
+            for oref in n.object_refs:
+                if (oref.platform, oref.conversation_id) in on_agenda:
+                    retained_refs.setdefault(
+                        f"{oref.platform}:{oref.conversation_id}", [],
+                    ).append((oref, n.title))
         notes = tuple(notes_out)
         # Turn citations carry their recorded requirements into the index too.
         # A failed read raises like the note index's.
@@ -646,9 +868,17 @@ def build_grounder(
                 None if self_account is None else self_account(unit),
                 stage="cognition_self", platform="cognition", metrics=metrics,
             )
+        source_objects, source_objects_more, retained_objects, retained_more = (
+            await _source_objects(
+                agenda_rooms, allowed, observations, persons,
+                retained=retained_refs))
         return Grounding(
             records=records_out, notes=notes, memos=memos, events=tuple(events),
             rollups=rollups, socials=_social_lines(pending, claimed, persons),
+            observations=observations_out, source_objects=source_objects,
+            source_objects_more=source_objects_more,
+            retained_objects=retained_objects,
+            retained_objects_more=retained_more,
             own_sends=own_sends, room_labels=labels, self_account=account,
             self_profile=profile_view, profile_names=profile_names,
         )

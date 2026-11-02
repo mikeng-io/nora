@@ -2,8 +2,8 @@
  {
   "name": "a cut target folds from truncated standing rows",
   "file": "nora/infra/sql/audit.py",
-  "old": "        recorded=recorded, observed=observed, partial=partial,",
-  "new": "        recorded=recorded, observed=observed, partial=(),",
+  "old": "            partial=partial)",
+  "new": "            partial=False)",
   "target": "tests/unit/test_reaction_annotations.py::test_the_reaction_read_reduces_in_sql_and_bounds_what_it_transfers"
  },
  {

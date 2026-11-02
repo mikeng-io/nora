@@ -1,0 +1,50 @@
+{
+  "meta": {
+    "native": "signal-cli",
+    "native_version": "0.14.7",
+    "transport": "sse",
+    "upstream": "JsonDataMessage.adminDelete",
+    "upstream_source": "https://github.com/AsamK/signal-cli/blob/v0.14.7/src/main/java/org/asamk/signal/json/JsonAdminDelete.java",
+    "case": "a group admin deletes another member's message",
+    "generated": true
+  },
+  "payload": {
+    "envelope": {
+      "source": "+85212345678",
+      "sourceName": "Fixture Sender",
+      "timestamp": 1725,
+      "dataMessage": {
+        "adminDelete": {
+          "targetAuthor": "+85212345679",
+          "targetAuthorNumber": "+85212345679",
+          "targetAuthorUuid": "a2000000-0000-4000-8000-000000000000",
+          "targetSentTimestamp": 1600
+        },
+        "groupInfo": {
+          "groupId": "Z3JvdXA=",
+          "groupName": "Example Group",
+          "revision": 3,
+          "type": "DELIVER"
+        },
+        "timestamp": 1725
+      }
+    },
+    "account": "+85290000100"
+  },
+  "semantics": {
+    "object": "message",
+    "operation": "withdraw",
+    "room_ref": "payload.envelope.dataMessage.groupInfo.groupId",
+    "object_ref": "the deleted message at (adminDelete.targetAuthor*, adminDelete.targetSentTimestamp)",
+    "target_ref": "(adminDelete.targetAuthor*/authorNumber/authorUuid, adminDelete.targetSentTimestamp)",
+    "actor": "envelope.source — the admin, who is NOT the deleted message's author",
+    "source_time_ms": "envelope.timestamp",
+    "native_fields": {
+      "targetAuthorNumber": "string|null",
+      "targetAuthorUuid": "string|null",
+      "targetSentTimestamp": "long"
+    },
+    "notes": "Distinct from remoteDelete (self-delete): the actor is a moderator. Ingest's author-only delete rule (_AUTHOR_ONLY_DELETES) would refuse this shape if it arrived under remoteDelete semantics — it needs its own observation path, not the delete Touch.",
+    "today": "parse_event returns None — adminDelete is unread, so a moderation delete is invisible"
+  }
+}

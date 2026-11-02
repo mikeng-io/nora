@@ -44,6 +44,7 @@ from nora.domain.notes import (
     NoteRevision,
     NoteSupersedeReason,
     RetiredNoteError,
+    SourceRef,
     StaleNoteHeadError,
 )
 from nora.infra.sql.engine import create_sql_engine
@@ -71,6 +72,7 @@ class _NoteStore(Protocol):
         closing_condition: str, established_in: str, body: str,
         established_by: str, now_ms: int, anchor_date: int | None = ...,
         anchor_entity_ids: tuple[str, ...] = ...,
+        object_refs: tuple[SourceRef, ...] = ...,
     ) -> Note: ...
     async def standing(self, *, unit: str) -> tuple[Note, ...]: ...
     async def read(
@@ -79,6 +81,7 @@ class _NoteStore(Protocol):
     async def append_revision(
         self, *, unit: str, note_id: str, body: str,
         parent_revision_id: str, established_by: str, now_ms: int,
+        object_refs: tuple[SourceRef, ...] | None = ...,
     ) -> NoteRevision: ...
     async def search(
         self, *, unit: str, query: str, limit: int,
@@ -186,6 +189,7 @@ async def _make(
     now_ms: int = NOW,
     anchor_date: int | None = 20260919,
     anchor_entity_ids: tuple[str, ...] = (),
+    object_refs: tuple[SourceRef, ...] = (),
 ) -> Note:
     return await store.create(
         unit=unit,
@@ -199,6 +203,7 @@ async def _make(
         now_ms=now_ms,
         anchor_date=anchor_date,
         anchor_entity_ids=anchor_entity_ids,
+        object_refs=object_refs,
     )
 
 
@@ -1086,3 +1091,58 @@ async def test_the_revision_chain_is_readable_oldest_first_and_unit_scoped(
     assert chain[1].parent_revision_id == note.head_revision_id
     assert await notes.store.revision_chain(unit=OTHER_WS, note_id=note.id) == ()
     assert await notes.store.revision_chain(unit=WS, note_id="not-a-uuid") == ()
+
+
+async def test_object_refs_persist_and_replace_under_the_note_head_cas(notes: _Harness):
+    from nora.domain.observations import object_handle
+    ref = SourceRef("signal", "generated-room", object_handle("poll", "generated-poll"))
+    note = await notes.store.create(
+        unit=WS, title="Tracked poll", description="where to eat", uncertainty="venue",
+        closing_condition="a booking", established_in="generated-room", body="Open venue",
+        established_by="generated", now_ms=NOW, anchor_date=20261003,
+        object_refs=(ref,))
+    assert (await notes.store.read(unit=WS, note_id=note.id))[0].object_refs == (ref,)
+    revision = await notes.store.append_revision(
+        unit=WS, note_id=note.id, body="Still open", parent_revision_id=note.head_revision_id,
+        established_by="generated", now_ms=NOW+1)
+    assert (await notes.store.read(unit=WS, note_id=note.id))[0].object_refs == (ref,)
+    with pytest.raises(StaleNoteHeadError):
+        await notes.store.append_revision(
+            unit=WS, note_id=note.id, body="Stale clear", parent_revision_id=note.head_revision_id,
+            established_by="generated", now_ms=NOW+2, object_refs=())
+    assert (await notes.store.read(unit=WS, note_id=note.id))[0].object_refs == (ref,)
+    replacement = SourceRef("signal", "generated-room", object_handle("pin", "generated-pins"))
+    revision = await notes.store.append_revision(
+        unit=WS, note_id=note.id, body="Different source", parent_revision_id=revision.id,
+        established_by="generated", now_ms=NOW+3, object_refs=(replacement,))
+    assert (await notes.store.read(unit=WS, note_id=note.id))[0].object_refs == (replacement,)
+    await notes.store.append_revision(
+        unit=WS, note_id=note.id, body="Finished tracking", parent_revision_id=revision.id,
+        established_by="generated", now_ms=NOW+4, object_refs=())
+    assert (await notes.store.read(unit=WS, note_id=note.id))[0].object_refs == ()
+
+
+async def test_merging_matters_preserves_their_source_refs_or_refuses_overflow(notes: _Harness):
+    from nora.domain.observations import object_handle
+    refs = tuple(SourceRef("signal", "generated-room", object_handle("poll", f"poll-{i}"))
+                 for i in range(10))
+    survivor = await _make(notes.store, title="Survivor", object_refs=refs[:6])
+    duplicate = await _make(notes.store, title="Duplicate", object_refs=refs[6:])
+    args = {"unit": WS, "survivor_id": survivor.id, "survivor_head": survivor.head_revision_id,
+            "duplicate_id": duplicate.id, "duplicate_head": duplicate.head_revision_id,
+            "body": "The same ongoing matter", "anchor_date": 20261003,
+            "revisit_at": NOW+1000, "reset_strikes": False,
+            "established_by": "generated", "now_ms": NOW+1}
+    with pytest.raises(ValueError, match="at most"):
+        await notes.store.merge_into(**args)
+    assert len(await notes.store.standing(unit=WS)) == 2
+    assert (await notes.store.read(unit=WS, note_id=survivor.id))[0].object_refs == refs[:6]
+    revision = await notes.store.append_revision(
+        unit=WS, note_id=duplicate.id, body="Two refs still relevant",
+        parent_revision_id=duplicate.head_revision_id,
+        established_by="generated", now_ms=NOW+2, object_refs=refs[6:8])
+    await notes.store.merge_into(**{**args, "duplicate_head": revision.id})
+    kept = (await notes.store.read(unit=WS, note_id=survivor.id))[0]
+    assert kept.object_refs == refs[:8]
+    assert (await notes.store.read(unit=WS, note_id=duplicate.id))[0].object_refs == refs[6:8]
+    assert [n.id for n in await notes.store.standing(unit=WS)] == [survivor.id]
