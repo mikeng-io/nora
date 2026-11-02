@@ -1489,7 +1489,7 @@ cases:
   # message — «did the poll close» is `poll_list`/`poll_read`, never
   # `record_query`'s message branch (whose `kind` branch exists but the task
   # reads answer the shaped question directly). And the negative controls:
-  # what people SAID is `who_said`/`record_query`, never the object reads.
+  # what people SAID uses message or memory reads, never the object reads.
   - name: route_poll_list_open_polls
     entry: tag
     expect: reply
@@ -1525,13 +1525,14 @@ cases:
       not_tools: [group_members, room_list, record_query]
     snapshot: *room_a
 
-  - name: route_record_query_words_not_poll
+  - name: route_message_words_not_poll
     entry: tag
     expect: reply
     mention: true
     input: 噚日邊個提過食拉麵？
-    # The control: words people said are the Record's, never the object reads.
+    # Yesterday can be outside the visible window. Accept the configured
+    # memory surface or a deeper transcript read; record_query is default-off.
     metadata:
-      tools: [who_said, record_query]
+      tools: [who_said, record_query, load_transcript, search_memory, memory_search]
       not_tools: [poll_list, poll_read, room_state_read]
     snapshot: *room_a
