@@ -279,14 +279,15 @@ eligibility; malformed/unsupported events and failed manual measurements remain
 `unavailable` with rc 1. A notification is not an admission or review result.
 There is no issue-comment command, Project event trigger, PR-code execution,
 CLI integration, board writer, auto-enrollment, approval, merge or Done action.
-GitHub Issues remain canonical and Project 8 is their scheduling view.
+GitHub Issues remain canonical. Nora Engineering was retired on 2026-11-02;
+the outcome roadmap is not a dispatch queue.
 
 All flags default off when absent. After independent review, the parent owns
 activation: `ENGINEERING_REPOSITORY=mikeng-io/nora`, the configured secret
 `DEVIN_API_KEY`, variable `DEVIN_ORG_ID`, and `ENGINEERING_CI_ENABLED=true` for
 session spending. No Project PAT or copied GitHub credential is needed. Actions
 uses its ordinary `GH_TOKEN` for repository facts and native linked-issue reads;
-it does not read the private Project. Also configure
+it does not read Projects. Also configure
 `DEVIN_SECURITY_PROFILE_ID` for a dedicated organization-owned profile, created
 by the parent after review without changing org defaults. Before claim and
 immediately before creation, the controller reads the official v3beta1 profile
@@ -305,16 +306,13 @@ permission. GitHub's built-in `GITHUB_TRIGGERING_ACTOR` must also be the owner,
 including on reruns; the original actor/event alone is insufficient. Forks, bots
 and non-owner collaborators are outside this initial
 ceiling. Exactly one native closing-issue link must resolve to an open nonempty
-issue. Immediately before dispatch, the orchestrator uses its existing connected
-`gh` authentication to verify that same issue's live membership in owner Project
-8 and read its current Status, Priority, Execution tier and Review tier. No token
-is copied into Actions and no local executor, daemon or signing layer is added.
-The owner's explicit dispatch confirms that scheduling snapshot. Actions validates
-its canonical shape and binds its issue/head, but **does not revalidate live
-Project membership or fields**. CI requires admitted Ready; review candidates
-require admitted Ready or Review and a non-none review tier. A Project change
-after the orchestrator's readback is outside this controller's measurement.
-Labels, titles, PR body assertions and Project membership alone grant nothing.
+issue. Immediately before dispatch, the orchestrator reads that issue's current
+scope, acceptance, readiness, priority and execution/review tiers. The owner's
+explicit dispatch confirms those facts at the issue revision. Actions validates
+the canonical shape and binds its issue/head; it does not interpret the prose.
+CI requires admitted Ready; review candidates require Ready or Review and a
+non-none review tier. No Project membership is required. Labels, titles, PR body
+assertions and roadmap membership alone grant nothing.
 
 Dispatch **on master**, with `action=investigate` or `repair`, `number`, the full
 current PR `head`, the current failed CI `check_run_id`, and an `admission` JSON
@@ -324,9 +322,8 @@ object. The object has these keys (no copied task/design body):
 |---|---|
 | `head` | Same exact input head as the dispatch |
 | `issue_updated_at` | Current canonical issue GraphQL `updatedAt` |
-| `project_ref` | Exactly `https://github.com/users/mikeng-io/projects/8` |
-| `project_issue_ref` | Exact same native canonical issue URL read by Actions |
-| `status`, `priority`, `execution_tier`, `review_tier` | Current Project readback via existing `gh`; values from the root schema, semantic classification resolved |
+| `issue_ref` | Exact same native canonical issue URL read by Actions |
+| `status`, `priority`, `execution_tier`, `review_tier` | Current issue readiness readback via existing `gh`; values from the root schema, semantic classification resolved |
 | `scope_ref` | Current issue section bounds paths, non-goals and investigation or repair authority |
 | `acceptance_ref` | Current issue section gives acceptance or revisioned design acceptance pointer |
 | `prerequisites_ref` | Current issue section records resolved dependencies, environment and permission prerequisites |
@@ -342,13 +339,13 @@ revision/head and the owner-confirmed scheduling fields; repeated API reads befo
 claim and immediately before dispatch cover the current issue, base, paths and
 CI evidence only. After its own receipt comment, comparison ignores only issue
 `updatedAt` and still binds the body digest and other repository facts. Actual
-issue body changes block launch. Project classification/status changes require
-fresh orchestrator admission; they are not detected by an Actions Project query.
+issue body changes block launch. Readiness/classification changes require an issue update and fresh orchestrator
+admission; the body digest binds them before launch.
 Investigation is read-only; repair needs its own explicit admitted scope and
 produces a local patch/evidence only. The parent owns push and landing. The
 already-read issue body, paths and base are ephemeral session input, never a
 tracked task copy. Missing logs/check tooling must be reported unavailable.
-Operator confirmation covers external workers and Project status; controller
+Operator confirmation covers external workers and issue readiness; controller
 receipts are the machine-measured ownership signal in Actions.
 
 CI must be a completed failure from the GitHub Actions App, the current latest
@@ -401,7 +398,7 @@ This exclusion does not assign tiers or override an unresolved semantic decision
 
 The operator configures Review Console themselves. For each qualified candidate:
 
-1. Recheck its exact head, current issue acceptance, non-none Project review tier
+1. Recheck its exact head, current issue acceptance, non-none issue review tier
    and absence of another active reviewer before selecting that PR in Console.
 2. Verify **automatic-review** enrollment scope and the budget mechanism applicable
    to that route; avoid blanket repository enrollment/every-push review. Console

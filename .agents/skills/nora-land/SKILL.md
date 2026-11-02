@@ -17,8 +17,7 @@ TYPE=<commit-type>; SLUG=<kebab-slug>; WT=<new-worktree-path>        # WT outsid
 LOG=${TMPDIR:-/tmp}/land-$SLUG; mkdir -p "$LOG"   # fixed, OUTSIDE the worktree
 ```
 
-Shell state may not survive between calls: re-set `TYPE`/`SLUG`/`LOG` each call; carry results in files, not variables.
-
+Shell state may not survive: re-set `TYPE`/`SLUG`/`LOG`; carry results in files.
 ## 1. Start: intent, then a new worktree on a new branch
 
 Read `ORCHESTRATION.md` «Intent, evidence and completion»: pin the brief/design's
@@ -193,10 +192,12 @@ make decision-numbers > "$LOG/dn.txt" 2>&1; grep -vc '^==' "$LOG/dn.txt" # must 
 
 Reconcile original obligations with met/unmet/unavailable evidence; update design
 coverage and issue remaining scope, closing only a fully satisfied issue with a reason.
+For a linked roadmap outcome, follow [roadmap conventions](../../../docs/maintainers/conventions.md#roadmap):
+reconcile remaining acceptance, update evidenced lifecycle/horizon and read back
+fields. A merged child is not an Achieved parent; routine work needs no new card.
 Report completed/unmet obligations separately; keep required read-back, add no extra
 research/deployment, and stop when the completion rule holds.
-The next change starts in a new worktree. Cleanup:
-`docs/maintainers/conventions.md` Cleanup. Deploying: nora-deploy.
+The next change starts in a new worktree; cleanup: `docs/maintainers/conventions.md`. Deploying: nora-deploy.
 
 ## Tool notes
 Claude Code's rtk hook refuses every `git` call in a worktree-isolated

@@ -47,11 +47,14 @@ The operator's ruling of 2026-10-27 replaces fixed positive vendor/model routing
 The schema and examples below describe an interoperable contract. The
 [engineering controller](docs/maintainers/github.md#engineering-admission-pilot)
 adds default-off owner-admitted CI sessions and a review candidate selector;
-general worker dispatch, automatic paid intake and live board enforcement remain
-unbuilt. There is no checked-in task database.
+general worker dispatch and automatic paid intake remain unbuilt. There is no
+checked-in task database.
 The broader evaluation remains open in [issue #277](https://github.com/mikeng-io/nora/issues/277).
-The [Project](https://github.com/users/mikeng-io/projects/8) is a scheduling view;
-adopting this file does not update its fields or launch work.
+Nora Engineering was retired by the operator on 2026-11-02. Task readiness lives
+in the canonical issue and run, not a second execution board. The
+[Nora Roadmap view](https://github.com/users/mikeng-io/projects/9) tracks capability
+directions and outcomes; [roadmap conventions](docs/maintainers/conventions.md#roadmap)
+own admission and progress updates. Membership never launches work.
 
 ## Capability and review requirements
 
@@ -201,20 +204,23 @@ of an applicable requirement remains the operator's decision.
 | This root policy | Generic assignment, capabilities, review and ownership rules | Schema, skills and source guidance |
 | Design / ADR | Architecture, rationale, requirements and acceptance; design lifecycle | Requirement-to-issue/PR/evidence delivery coverage, not a second live task queue |
 | Issue | One bounded outcome, task-specific scope/non-goals/delta and acceptance, dependencies/prerequisites | Revisioned design acceptance sections instead of copied specs; run/review evidence |
-| Project card | Issue reference, status, priority, required execution/review tiers and links | Acceptance, run, evidence or unblock record; no issue body or resolved worker assignment |
+| Roadmap card | Capability/outcome issue, horizon and outcome lifecycle | Design, child issues and native milestones; no second execution queue |
 | Run / review receipt | Actual provider/model/toolset/options, fit justification, run reference, input revision and evidence | Issue/contract snapshot, catalogue/probe, exact source head/base and checks; review links the build it checks |
 
 An issue-backed Project card is a view of that same issue, not another task body.
 Keep assignees, milestones, relationships and Development links native in GitHub;
-do not duplicate them as custom fields. The Project's execution tier replaces
-vendor-valued Worker lane. The issue can state acceptance directly for a small
+do not duplicate them as custom fields. Task execution/review tiers are recorded
+with the issue's readiness and run brief,
+not as vendor-valued lanes. The issue can state acceptance directly for a small
 slice or point to revisioned design acceptance; “What's specified” is a pointer
 plus delta, never a full specification copy. Design coverage links show which
-requirements are delivered and which remain; task status stays on the Project,
-task scope on the issue, measured results in receipts/PR checks. Keep receipts
+requirements are delivered and which remain; task readiness and remaining scope
+stay on the issue, outcome progress on the
+roadmap, and measured results in receipts/PR checks. Keep receipts
 in the run/evidence system, not committed run files or a new task database.
 
-The orchestrator checks references and admission before changing status:
+The following task states describe issue/run readiness, not required Project
+fields. The orchestrator checks references and admission before changing them:
 
 - **Inbox** may be incomplete; blank tiers mean unclassified, not review none.
 - **Ready** has an issue with a bounded outcome/scope, resolvable acceptance,
