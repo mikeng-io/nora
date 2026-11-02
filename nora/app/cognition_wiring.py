@@ -98,16 +98,14 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
 #:   holds no person identity to read through. Offering the name would
 #:   advertise a read that can only fail closed or, worse, authorize with a
 #:   guessed identity. Excluded until a read is genuinely authorized.
-#: * `linkedin_read`/`linkedin_search`: LinkedIn reads are refused on every
-#:   Dreamer surface (`dream_adaptor`-unasked — the provider's own boundary,
-#:   not a wiring gap), and no Cognition occasion is authorized to ask.
-#:   Excluded, per the same provider boundary the tag path honors.
+#: * `linkedin_read`/`linkedin_search`: the existing unasked-turn rule protects
+#:   profile-view notifications and search quota; Cognition has no asked turn.
 
 #: The side-effect audit of every tool in the catalogue
 #: (`tests/unit/test_cognition_wiring.py` holds its keys equal to
 #: `COGNITION_READ_CATALOGUE`, so a tool added to the catalogue without an
-#: audited line fails the gate): a READ tool writes nothing, so a session's
-#: writes are only its own verbs'.
+#: audited line fails the gate). These are native reads; ComprehendRead may
+#: separately serialize fetched Record evidence, but no Notebook judgement or act.
 #:
 #: Counters (`nora_tool_calls_total`, `nora_recall_total`, `nora_room_lookups_
 #: total`) are observability, read by a person and never by a decision, and are
@@ -161,7 +159,7 @@ READ_TOOL_AUDIT: Mapping[str, str] = {
     "memory_search": "SQL reads of the memory index and graph (`SqlMemoryIndex`, which "
                      "writes nothing) and one query embedding; counters only. "
                      "No write.",
-    "room_read": "The room directory's read of one room's live state; "
+    "room_read": "Unit room resolution and bounded SQL transcript/media reads; "
                  "counters only. No write.",
     "load_transcript": "SQL read of recorded rows through `ledger.span_rows`/"
                        "`store.recent`, rendered through the shared media join; "

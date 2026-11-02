@@ -364,53 +364,36 @@ order. Paid continuation is stopped on that reproducible progress defect;
 [PR #545](https://github.com/mikeng-io/nora/pull/545) carries the bounded repair
 and its pending acceptance. No complete backfill or Honcho replacement is claimed.
 
-**One read surface for both lanes (2026-11-03, pending merge).** The read
-catalogue the Cognition session declares is completed, and the historical lane
-stops blanking it: `historical_runner` no longer replaces `read_tools_for` /
-`read_only_tools`, so the replay reads the same declared surface a live wake
-does, built through the same `RegistryToolSource` + `cognition_grant` path.
-Both lanes keep one surface under the same flags and withholding rules — no
-second catalogue, no historical-only tool list.
+**One read surface for both lanes (2026-11-03, pending merge).**
+`historical_runner` keeps the live runner's `read_tools_for` and
+`read_only_tools`, built through `RegistryToolSource` and `cognition_grant`.
+The previous lane suppressed every read, leaving only `memory_propose` and
+`close`. Both lanes now use the same permitted catalogue and deployment
+flags, with historical availability enforced by the existing source seams.
 
-Before: the live catalogue carried 21 read names (the warehouse queries, the
-tiers' reads, the Honcho memory verbs or the graph pair under DEC-316) and the
-historical runner suppressed every one of them — a replay held only
-`memory_propose` and `close`. After: the catalogue also declares the 17 memory,
-room and enrichment reads the registry already built but the catalogue
-excluded — `room_read`, `load_transcript`, `who_said`, `lookup_person`,
-`media_fetch`, `media_search`, `file_fetch`, `document_read`, `web_search`,
-`web_fetch`, `place_info`, `instagram_read`, `instagram_search`, `x_read`,
-`x_search`, `linkedin_read`, `linkedin_search`. A read with no wired provider
-stays present-but-inert and answers `unavailable`, as on the tag path.
+The catalogue adds 14 existing registry reads: `room_read`,
+`load_transcript`, `who_said`, `lookup_person`, `media_fetch`, `media_search`,
+`file_fetch`, `web_search`, `web_fetch`, `place_info`, `instagram_read`,
+`instagram_search`, `x_read` and `x_search`. `document_read` remains excluded
+because it requires a person authorization that a background session does
+not hold; LinkedIn reads retain the existing unasked-view/quota boundary.
+Instagram post/story opening retains its existing asked-turn restriction;
+exposure does not override it. These are explicit capability limits, not
+restored paths. An otherwise permitted read with an unwired backend returns
+`unavailable`.
 
-How a historical session honours the instant: `historical` makes the runner
-build every read under the batch's evidence instant — the registry's injected
-clock swapped per occasion by `with_clock` (the same copy-seam as
-`with_memory_search`) — and wraps the built tools in `HistoricalRead`. Inside
-that wrap: `load_transcript`/`room_read` have `before` bound at the instant
-(absent or at-or-after reads «the newest»; the store cannot be trusted to be
-empty); `record_query`'s messages branch is bounded by the instant, while its
-object fold/history branches and `scope="all_rooms"` answer `unavailable`
-(they read today's folds and member lists); a named table of current-head
-reads — Honcho and graph memory reads, notebook/memo/standing/rollup/event/
-culture/routine/presence heads, roster and room-state reads, `social_read`,
-`media_search` — answers `unavailable` with the limitation, never
-`nothing_found`; public enrichment and stored-object reads
-(`web_*`, the social providers', `place_info`, `media_fetch`, `file_fetch`,
-`document_read`) pass through — a fetch keeps its real fetch time and
-provenance, a stored object is the same artifact at every instant. Nothing
-here widens scope: unit and room/lineage boundaries, the egress screen and
-the fetched-evidence receipts (`ComprehendRead`/`watch_reads`) apply in the
-replay exactly as live, and `unavailable` early-returns never enter the
-citable set.
+Historical native message reads carry the evidence instant into row selection
+and edit/reaction/delete/source-event projection. `HistoricalRead` returns
+`unavailable` for current-only heads and private file contents that cannot be
+reconstructed, and for record-object/all-room branches without an as-of seam.
+Public enrichment retains actual fetch time and citable source custody.
+It cannot establish private attendance merely by finding a public event.
 
-Honest limits, stated rather than worked around: `memory_search`/`memory_read`
-cannot be read back as-of (the grounding's `valid_at` preview carries the
-as-of context instead); `index.read=false`/`profile.read=false` remain the
-rollout state — nothing here flips a flag; `media_objects` latest-fold state
-is unchanged; current withdrawal stays effective at every replay instant.
-Acts, profile verbs, sends and reminders stay withheld as before; the lane's
-only write is still `memory_propose`.
+`index.read=false` and `profile.read=false` remain unchanged. Media readings
+retain their documented latest-fold ceiling; current withdrawal remains
+effective. Historical sends, reminders, profile and Register act verbs stay
+withheld. Semantic graph changes go through `memory_propose`; the existing
+fetch wrapper may serialize a fetched page as Record evidence.
 
 **Review repair, same change (2026-11-03, pending merge).** An independent
 full review of the first drop found the mechanism above was a display-clock
@@ -442,7 +425,7 @@ at wall clock — plus five more classes. The repair, in the same branch:
   param table admits both. Unknown/missing `agenda_room` is refused.
 - **Authorized capability only.** `document_read` (its read is person-scoped;
   a session holds no person identity) and `linkedin_read`/`linkedin_search`
-  (the provider refuses every Dreamer surface) are named as excluded in the
+  (the existing unasked-turn boundary) are named as excluded in the
   catalogue comments and absent from `COGNITION_READ_CATALOGUE` and
   `READ_TOOL_AUDIT` — not advertised as restored reads. The egress screen
   (`SCREENED_ARGS`) already names every outbound argument the newly reachable
@@ -450,9 +433,9 @@ at wall clock — plus five more classes. The repair, in the same branch:
   and screens unconditionally; a refused outbound call never reaches the
   provider.
 - **Optional protocol, honoured.** `clock`/`on_rows` reach a source only when
-  given AND declared — `_guarded_read_tools`, `read_tools_for` and
-  `DreamerRuntime` signature-check before forwarding, so a narrower source
-  (tag-path closures, test doubles) still builds.
+  given and declared in `_guarded_read_tools` and `read_tools_for`;
+  `DreamerRuntime` omits `on_rows` when the adaptor has no `saw` consumer.
+  Narrower source implementations still build.
 
 **Eval contract repair (operator amendment, same drop).** The tool-selection
 corpus's hand-copied catalogue is replaced by `SESSION_VERB_NAMES |
@@ -460,8 +443,9 @@ COGNITION_READ_CATALOGUE` — the same constants the occasion is built from —
 and `probe` now runs the wake's own `_session_input` (same instruction, same
 render) over an honestly empty `UnitView`/`Grounding` rather than a partial
 rebuild that skipped `SESSION_INSTRUCTION`, memory preparation and the
-graph/shared blocks. A zero-model regression drives `probe` and asserts every
-verb the corpus names is among the tools the real assembly offers. The
+graph/shared blocks. Zero-model regressions compare the probe and wake's
+actual descriptions/schemas against canonical native specs, check the corpus's
+offered verbs, and exercise memory preparation and the shared instruction. The
 corpus's `[dreamer] model` header stands: the runner runs
 `route_model("dreamer", cfg.dreamer_model())` and no `[cognition] model` key
 exists — checked against `nora/app/composition.py`, the audit's claim was
