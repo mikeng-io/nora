@@ -44,13 +44,13 @@ class _Clock:
 
 
 @pytest.fixture
-async def env(pg_url):
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+async def env(clean_pg_url):
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     store = SqlLessonStore(engine)
     book = LessonBook(store=store, law=lambda: LAW, screen=offence, clock_ms=_Clock())
     try:
-        yield SimpleNamespace(engine=engine, store=store, book=book, url=pg_url)
+        yield SimpleNamespace(engine=engine, store=store, book=book, url=clean_pg_url)
     finally:
         await engine.dispose()
 

@@ -55,16 +55,16 @@ OVERRIDES = {"culture.enabled": True}
 
 
 @pytest.fixture
-async def source(pg_url: str, pg_template: str, tmp_path: Any, monkeypatch: Any) -> Source:
+async def source(clean_pg_url: str, pg_template: str, tmp_path: Any, monkeypatch: Any) -> Source:
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     src = await seed_source(
-        pg_url, tmp_path, Knowledge(transcript=(
+        clean_pg_url, tmp_path, Knowledge(transcript=(
             Message(body="anyone up for friday", at_ms=BEFORE_MS - 10 * MINUTE),
             Message(body="yes, if it stays dry", at_ms=BEFORE_MS - 5 * MINUTE),
         )),
         template=pg_template, before_ms=BEFORE_MS, policy=POLICY, identity=IDENTITY,
     )
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         store = SqlCultureStore(engine)
 

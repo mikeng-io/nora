@@ -50,7 +50,7 @@ async def _count(conn, table, *where) -> int:
     return int((await conn.execute(stmt)).scalar_one())
 
 
-async def test_receipt_boundary_crash_restart_retry_does_not_duplicate(pg_url):
+async def test_receipt_boundary_crash_restart_retry_does_not_duplicate(clean_pg_url):
 
     from nora.app.cognition_memory import WakeMemory
     from nora.domain.cognition_ground import Grounding
@@ -58,7 +58,7 @@ async def test_receipt_boundary_crash_restart_retry_does_not_duplicate(pg_url):
     from nora.domain.memory_graph import Source
     from nora.testing.cognition_grounding import StaticGrounder
 
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         records = SqlComprehendRecords(
             engine, media_join=None,
@@ -134,13 +134,13 @@ async def test_receipt_boundary_crash_restart_retry_does_not_duplicate(pg_url):
         await engine.dispose()
 
 
-async def test_revision_receipt_commits_inside_the_append_transaction(pg_url):
+async def test_revision_receipt_commits_inside_the_append_transaction(clean_pg_url):
     """A revision's receipt rides the same append transaction: a crash leaves
     the head unmoved and no receipt; the retry writes revision + receipt."""
     from nora.infra.sql.notes import SqlNoteStore
     from nora.infra.sql.schema import NOTE, NOTE_REVISION
 
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         notes = SqlNoteStore(engine)
         records = SqlComprehendRecords(

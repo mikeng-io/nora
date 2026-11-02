@@ -47,9 +47,9 @@ KEY = ("signal", "g-synthetic", 2_000)
 
 
 @pytest.fixture
-async def source(pg_url):
+async def source(clean_pg_url):
     """The clone, its index built and every input embedded but the empty file."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     await _write(engine, ROWS, READINGS)
     await memory_index.rebuild(engine)
     await _embed(engine, {
@@ -60,7 +60,7 @@ async def source(pg_url):
         f"sha:{BLANK}": ("failed", "empty"),
     })
     try:
-        yield pg_url, engine
+        yield clean_pg_url, engine
     finally:
         await engine.dispose()
 

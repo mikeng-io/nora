@@ -83,9 +83,9 @@ def _reply(rid: int, ts: int, person: str = "ada", body: str = "yes!") -> Transc
 
 
 @pytest.fixture
-async def env(pg_url: str) -> Any:
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+async def env(clean_pg_url: str) -> Any:
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         yield engine
     finally:

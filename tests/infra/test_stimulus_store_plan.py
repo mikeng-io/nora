@@ -32,8 +32,8 @@ async def _plan(engine, stmt) -> str:
     return "\n".join(r[0] for r in rows)
 
 
-async def test_the_pending_and_activity_reads_plan_onto_indexes(pg_url):
-    engine = create_sql_engine(pg_url)
+async def test_the_pending_and_activity_reads_plan_onto_indexes(clean_pg_url):
+    engine = create_sql_engine(clean_pg_url)
     try:
         pending = await _plan(engine, pending_query(
             unit="nora", through_id=10, through_ms=NOW, now_ms=NOW + 1, limit=100))

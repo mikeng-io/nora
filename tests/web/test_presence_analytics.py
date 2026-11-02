@@ -240,14 +240,14 @@ async def test_analytics_unknown_subjects_are_empty_and_not_read(aiohttp_client)
     assert mobility.route_windows == []
 
 
-async def test_no_rollup_build_yet_answers_503_not_an_empty_200(aiohttp_client, pg_url):
+async def test_no_rollup_build_yet_answers_503_not_an_empty_200(aiohttp_client, clean_pg_url):
     """Before the first build is current the portal says «unavailable», not
     «no places, no rhythm, no routes». The real SQL store on a fresh database;
     the same endpoints answer 200 once a build is current."""
     from nora.infra.sql import create_sql_engine
     from nora.infra.sql.mobility import SqlMobilityStore
 
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         mobility = SqlMobilityStore(engine)
         client = await aiohttp_client(_app(presence=object(), mobility=mobility))  # type: ignore[arg-type]

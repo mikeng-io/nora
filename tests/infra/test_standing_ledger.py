@@ -407,12 +407,13 @@ async def test_thread_spans_are_code_computed_and_touch_does_not_promote(ledger,
     assert [r.id for r in rows] == [a]
 
 
-def test_migration_round_trip_preserves_legacy_and_matches_metadata(pg_url):
+@pytest.mark.fresh_database
+def test_migration_round_trip_preserves_legacy_and_matches_metadata(clean_pg_url):
     from nora.infra.sql.migrations_runner import sync_url_for
 
-    cfg = alembic_config(pg_url)
+    cfg = alembic_config(clean_pg_url)
     command.downgrade(cfg, "0132_turn_records")
-    engine = sa.create_engine(sync_url_for(pg_url))
+    engine = sa.create_engine(sync_url_for(clean_pg_url))
     with engine.begin() as conn:
         conn.execute(
             sa.text(

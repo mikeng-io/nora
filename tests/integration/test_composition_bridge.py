@@ -51,7 +51,7 @@ def _fake_bridge(routes: dict[str, dict]) -> web.Application:
 
 
 @pytest.fixture
-async def env(tmp_path, monkeypatch, aiohttp_server, pg_url,
+async def env(tmp_path, monkeypatch, aiohttp_server, clean_pg_url,
               _redis_container, example_config_path):
     """An all-bridge deployment: signal + discord both `mode = "bridge"`,
     real disposable Postgres and Redis behind the env vars composition

@@ -1,6 +1,6 @@
 """One suite, both implementations of `ComputeJobStore` (Nora Compute spec
 §4). Mirrors `tests/contract/test_reminder_store_contract.py`'s own shape —
-the same real-Postgres `pg_url` fixture, migrated up before the SQL store is
+the same real-Postgres `clean_pg_url` fixture, migrated up before the SQL store is
 constructed, parametrized alongside the in-memory fake.
 """
 
@@ -32,13 +32,13 @@ def _job(**overrides):
 
 
 @pytest.fixture(params=["fake", "sql"])
-async def store(request):
+async def store(_pg_engine_scope, request):
     if request.param == "fake":
         s = FakeComputeJobStore()
     else:
-        pg_url = request.getfixturevalue("pg_url")
-        run_migrations(pg_url)
-        s = SqlComputeJobStore(create_sql_engine(pg_url))
+        clean_pg_url = request.getfixturevalue("clean_pg_url")
+        run_migrations(clean_pg_url)
+        s = SqlComputeJobStore(create_sql_engine(clean_pg_url))
     yield s
     await s.aclose()
 

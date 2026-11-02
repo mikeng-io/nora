@@ -81,10 +81,10 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-async def bridge(pg_url, redis_client):
+async def bridge(clean_pg_url, redis_client):
     """The same `bridge` fixture test_bridge_queue defines — a real
     SqlBridgeStore on a fresh database plus the stream's consumer group."""
-    store = SqlBridgeStore(create_async_engine(pg_url))
+    store = SqlBridgeStore(create_async_engine(clean_pg_url))
     stream = stream_name(PLATFORM, ACCOUNT)
     await ensure_group(redis_client, stream)
     yield store, redis_client, stream

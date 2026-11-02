@@ -41,9 +41,9 @@ user_id = "123456789012345678"
 
 
 @pytest.fixture
-async def store(pg_url):
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+async def store(clean_pg_url):
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         yield SqlOtpStore(engine)
     finally:

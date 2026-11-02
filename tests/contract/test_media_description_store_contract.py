@@ -25,13 +25,13 @@ TOKEN = "sticker:8c6ce85a3156b8e498e1ba0e97bc6620:15"  # noqa: S105
 
 
 @pytest.fixture(params=["fake", "sql"])
-async def store(request):
+async def store(_pg_engine_scope, request):
     if request.param == "fake":
         yield FakeMediaDescriptionStore()
         return
-    pg_url = request.getfixturevalue("pg_url")
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+    clean_pg_url = request.getfixturevalue("clean_pg_url")
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     yield SqlMediaDescriptionStore(engine)
     await engine.dispose()
 
@@ -111,15 +111,15 @@ async def test_remember_moves_all_three_co_dependent_columns_together(store):
     assert await store.resolve(platform="signal", token=TOKEN) == second
 
 
-async def test_an_empty_token_writes_the_description_but_no_junk_index_row(pg_url):
+async def test_an_empty_token_writes_the_description_but_no_junk_index_row(clean_pg_url):
     """`media_fetch` (`VisionCache.aput`) has no platform-side sticker
     identity for a handle-pointed image — it calls `remember` with
     `platform=""`, `token=""`. SQL-only: without the `if token:` guard this
     would insert one `sticker_index` row keyed `("", "")` that every
     `media_fetch` write fights over, carrying whichever hash wrote last. The
     description row must still land."""
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     store = SqlMediaDescriptionStore(engine)
     try:
         await store.remember(

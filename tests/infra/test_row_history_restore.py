@@ -2,7 +2,7 @@
 succeeds against a freshly migrated database (migration `0072`).
 
 Against two REAL Postgres databases in the shared testcontainer, never a
-mock: the source is `pg_url` (already migrated, already exercising the
+mock: the source is `clean_pg_url` (already migrated, already exercising the
 trigger the same way `test_row_history.py`'s upsert test does), the target
 is a second database cloned from the SAME migrated `pg_template` so it
 carries the identical table/function/trigger shape with no rows of its own.
@@ -55,7 +55,7 @@ def _restore(pg_admin: Any, dbname: str, dump: str) -> subprocess.CompletedProce
 
 @pytest.fixture
 def second_db(pg_admin: Any, pg_template: str) -> Iterator[str]:
-    """A second database cloned from the SAME migrated template as `pg_url`
+    """A second database cloned from the SAME migrated template as `clean_pg_url`
     -- the restore target: identical schema (tables, `nora_row_history()`,
     its triggers), no rows of its own to confuse the read-back with."""
     dbname = "t_" + uuid.uuid4().hex
@@ -78,11 +78,12 @@ def second_db(pg_admin: Any, pg_template: str) -> Iterator[str]:
             conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
 
 
+@pytest.mark.fresh_database
 @pytest.mark.asyncio
 async def test_a_data_only_dump_restores_into_a_freshly_migrated_database(
-    pg_url: str, pg_admin: Any, second_db: str,
+    clean_pg_url: str, pg_admin: Any, second_db: str,
 ) -> None:
-    source_engine = create_sql_engine(pg_url)
+    source_engine = create_sql_engine(clean_pg_url)
     try:
         async with source_engine.begin() as conn:
             await conn.execute(sa.text(
@@ -92,7 +93,7 @@ async def test_a_data_only_dump_restores_into_a_freshly_migrated_database(
     finally:
         await source_engine.dispose()
 
-    source_dbname = pg_url.rsplit("/", 1)[-1]
+    source_dbname = clean_pg_url.rsplit("/", 1)[-1]
     dump = _dump_data_only(pg_admin, source_dbname, "tag_debounce_state")
     result = _restore(pg_admin, second_db, dump)
     assert result.returncode == 0, result.stderr
