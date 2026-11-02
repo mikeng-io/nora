@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from typing import Any
@@ -55,6 +56,11 @@ def historical_graph(graph: Subgraph, at: datetime) -> Subgraph:
     return Subgraph(graph.status, tuple(
         GraphNode(node.key) for node in graph.nodes if node.key[0] not in ENTRY
     ), edges)
+
+
+def _source_payload(sources: Iterable[Source]) -> list[dict[str, Any]]:
+    rows = [{**asdict(source), "persons": sorted(source.persons)} for source in sources]
+    return sorted(rows, key=lambda row: json.dumps(row, sort_keys=True, default=str))
 
 
 class WakeMemory:
@@ -164,7 +170,7 @@ class WakeMemory:
                                           source_persons, text))
                 stimulus_inputs[str(sid)] = hashlib.sha256(json.dumps(
                     [state.unit, stimulus.kind, stimulus.item, stimulus.ref,
-                     stimulus.at_ms, [asdict(source) for source in sources[start:]]],
+                     stimulus.at_ms, _source_payload(sources[start:])],
                     sort_keys=True).encode()).hexdigest()
             sources = list({s.key: s for s in sources}.values())
             original_rows: dict[int, Any] = {}
@@ -184,7 +190,7 @@ class WakeMemory:
                     or (source.persons[0] if len(source.persons) == 1 else ""),
                     "mentions": original_rows.get(row_id, {}).get("mentions", [])})
                 source_keys[str(row_id)] = list(source.key)
-            digest = hashlib.sha256(json.dumps([asdict(s) for s in sources],
+            digest = hashlib.sha256(json.dumps(_source_payload(sources),
                                               sort_keys=True).encode()).hexdigest()
             work = WorkItem(f"stimuli:{','.join(map(str, agenda.stimulus_ids))}",
                             ("stimulus", str(agenda.stimulus_ids)), state.unit, digest, at,
@@ -279,7 +285,7 @@ class WakeMemory:
                 for v in inputs],
         })
         combined = replace(combined, work=replace(combined.work, input_hash=hashlib.sha256(
-            json.dumps([asdict(source) for source in combined.sources],
+            json.dumps(_source_payload(combined.sources),
                        sort_keys=True).encode()).hexdigest()))
         claims, drops = partition_claims({"claims": [r.model_dump() for r in output.readings]},
                                          combined.snapshot)

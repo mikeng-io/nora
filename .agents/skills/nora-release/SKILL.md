@@ -17,8 +17,10 @@ not planned). Do not invoke or re-enable it.
 
 ## 1. Author the product bump
 
-Default PATCH includes routine maintenance, docs, tests, config, CI and small
-additions within an existing capability. `feat` alone never requires minor.
+Default PATCH includes shipped maintenance, runtime config and small additions
+within an existing capability. Docs, tests, CI, agent tooling and repository-only
+maintenance paths do not trigger a release; unknown paths still qualify. Runtime
+Markdown remains eligible. Explicit breaking/minor declarations remain visible. `feat` alone never requires minor.
 For a complete new product capability or a new/deprecated documented supported
 integration API/CLI, put this explicit footer in the authored commit message:
 
