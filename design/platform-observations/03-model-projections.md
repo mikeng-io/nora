@@ -101,8 +101,9 @@ history remain explicit; no guessed zeros and no claim of lossless model prose.
 live matter owner, the `Note`: `object_refs` is a bounded set (≤8) of typed
 `SourceRef`s — `(platform, conversation_id, handle, thread)` with the model-safe
 opaque handle — persisted on the note head and swapped under the revision CAS.
-The Cognition session's existing `note_create`/`note_revise` verbs carry them
-(no new model occasion); each ref must name an object handle that session was
+The Cognition session's existing `note_create`/`note_revise` verbs accept only
+shown object handles (no new model occasion); source scope stays server-side,
+and `note_read` returns handles for revision; each ref must name an object handle that session was
 shown in the same room and still resolve through `head_for_handle`, else the
 write is refused/`unavailable`. Both assemblies (Engagement `TagContext.
 retained_sources`, Cognition `Grounding.retained_objects`) resolve the refs
@@ -111,6 +112,8 @@ report `unresolved` for a ref the store no longer holds, and never repeat a
 head the discovery page already shows. Note retirement (`note_set_status` →
 `supersede`) drops the note from `standing`, retiring its refs with it while
 the row and revisions stay readable; a poll closing changes only source state.
+Merging duplicate matters preserves both pointer sets; a union exceeding the
+existing cap is refused before either note changes, requiring explicit revision.
 
 ### Authority, deduplication and budgets
 

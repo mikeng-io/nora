@@ -1,16 +1,16 @@
 [
   {
-    "name": "a retired note still feeds the retained lane",
+    "name": "curated source refs survive eviction from the discovery page",
     "file": "nora/engagement/context.py",
-    "old": "        for note in notes:\n            if len(out) >= _SOURCE_OBJECT_MAX:\n                break",
-    "new": "        for note in notes[:0]:\n            if len(out) >= _SOURCE_OBJECT_MAX:\n                break",
+    "old": "        for note in notes:\n            for ref in note.object_refs:",
+    "new": "        for note in notes[:0]:\n            for ref in note.object_refs:",
     "target": "tests/unit/test_platform_observation_wired.py::test_a_retained_poll_survives_newer_unrelated_objects_in_the_assembler"
   },
   {
-    "name": "retained resolution falls back to the recency page it replaces",
+    "name": "retained state resolves fresh instead of being treated as missing",
     "file": "nora/engagement/context.py",
-    "old": "                    head = await traced_read(\n                        \"observations\", \"retained\",\n                        self._observations.head_for_handle(",
-    "new": "                    head = await traced_read(\n                        \"observations\", \"retained\",\n                        self._observations.recent(",
+    "old": "                    head = await traced_read(\n                        \"observations\", \"retained\",\n                        self._observations.head_for_handle(\n                            scope=SourceScope(\n                                platform=ref.platform, account_key=\"\",\n                                conversation_id=ref.conversation_id,\n                                thread=ref.thread),\n                            handle=ref.handle))",
+    "new": "                    head = None",
     "target": "tests/unit/test_platform_observation_wired.py::test_a_late_vote_refreshes_the_retained_polls_current_state"
   },
   {
@@ -28,11 +28,11 @@
     "target": "tests/unit/test_platform_observation_wired.py::test_the_grounder_keeps_a_retained_poll_past_eight_newer_objects"
   },
   {
-    "name": "a ref shown in a different room is retained anyway",
+    "name": "an existing but unshown object cannot be retained by a verb",
     "file": "nora/app/cognition_session.py",
-    "old": "                shown_room = state.shown_handles.get(handle)\n                if shown_room is None or shown_room != (platform, cid):",
-    "new": "                shown_room = state.shown_handles.get(handle)\n                if shown_room is None:",
-    "target": "tests/unit/test_platform_observation_wired.py::test_scope_invalid_and_unresolvable_refs_are_explicit_never_dropped"
+    "old": "                shown_room = state.shown_handles.get(handle)",
+    "new": "                shown_room = state.shown_handles.get(handle) or next(iter(state.shown_handles.values()), None)",
+    "target": "tests/unit/test_platform_observation_wired.py::test_retained_ref_verbs_accept_shown_handles_and_refuse_unseen_objects"
   },
   {
     "name": "append_revision with object_refs=None clears the pointer set",
@@ -46,6 +46,55 @@
     "file": "nora/domain/notes.py",
     "old": "        if len(self.object_refs) > NOTE_OBJECT_REFS_MAX:",
     "new": "        if False and len(self.object_refs) > NOTE_OBJECT_REFS_MAX:",
-    "target": "tests/unit/test_platform_observation_wired.py::test_note_revision_replaces_object_refs_atomically"
+    "target": "tests/unit/test_platform_observation_wired.py::test_retained_sources_report_the_bound_and_never_read_another_room"
+  },
+  {
+    "name": "withheld notes cannot leak titles through source refs",
+    "file": "nora/engagement/context.py",
+    "old": "        if self._lineage is not None and self._lineage.mode == \"on\":",
+    "new": "        if False and self._lineage is not None and self._lineage.mode == \"on\":",
+    "target": "tests/unit/test_platform_observation_wired.py::test_a_withheld_note_does_not_leak_its_title_through_retained_sources"
+  },
+  {
+    "name": "SQL note reads retain curated source pointers",
+    "file": "nora/infra/sql/notes.py",
+    "old": "            (SourceRef.from_json(v) for v in (r.object_refs or ()))",
+    "new": "            (SourceRef.from_json(v) for v in ())",
+    "target": "tests/contract/test_note_store_contract.py::test_object_refs_persist_and_replace_under_the_note_head_cas"
+  },
+  {
+    "name": "SQL CAS writes replace the source pointer set",
+    "file": "nora/infra/sql/notes.py",
+    "old": "            head_values[\"object_refs\"] = [r.to_json() for r in object_refs]",
+    "new": "            head_values[\"object_refs\"] = []",
+    "target": "tests/contract/test_note_store_contract.py::test_object_refs_persist_and_replace_under_the_note_head_cas"
+  },
+  {
+    "name": "note_read exposes only object handles, never raw source scope ids",
+    "file": "nora/agent/tools.py",
+    "old": "            **({\"object_refs\": [r.handle for r in note.object_refs]}",
+    "new": "            **({\"object_refs\": [r.to_json() for r in note.object_refs]}",
+    "target": "tests/unit/test_platform_observation_wired.py::test_note_read_returns_only_the_retained_handles"
+  },
+  {
+    "name": "the retained lane reports omitted source objects",
+    "file": "nora/engagement/context.py",
+    "old": "                    more += 1\n                    continue",
+    "new": "                    continue",
+    "target": "tests/unit/test_platform_observation_wired.py::test_retained_sources_report_the_bound_and_never_read_another_room"
+  },
+  {
+    "name": "merging notes preserves both source reference sets",
+    "file": "nora/domain/notes.py",
+    "old": "    refs = tuple(dict.fromkeys(ref for group in groups for ref in group))",
+    "new": "    refs = tuple(dict.fromkeys(groups[0]))",
+    "target": "tests/contract/test_note_store_contract.py::test_merging_matters_preserves_their_source_refs_or_refuses_overflow"
+  },
+  {
+    "name": "a merged source reference set cannot silently exceed the note cap",
+    "file": "nora/domain/notes.py",
+    "old": "    if len(refs) > NOTE_OBJECT_REFS_MAX:",
+    "new": "    if False and len(refs) > NOTE_OBJECT_REFS_MAX:",
+    "target": "tests/contract/test_note_store_contract.py::test_merging_matters_preserves_their_source_refs_or_refuses_overflow"
   }
 ]

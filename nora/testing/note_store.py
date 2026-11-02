@@ -67,6 +67,7 @@ from nora.domain.notes import (
     RetiredNoteError,
     SourceRef,
     StaleNoteHeadError,
+    merged_source_refs,
     note_handle,
     proactive_row_forwarded_is_moved,
     tag_path_progressed_since_wake,
@@ -501,10 +502,11 @@ class InMemoryNoteStore:
                     observed_head=None,
                 )
         survivor = self.notes[survivor_id]
+        refs = merged_source_refs(survivor.object_refs, self.notes[duplicate_id].object_refs)
         self.revisions[revision.id] = revision
         self.notes[survivor_id] = replace(
             survivor, head_revision_id=revision.id, anchor_date=anchor_date,
-            revisit_at=revisit_at,
+            object_refs=refs, revisit_at=revisit_at,
             strikes=0 if reset_strikes else survivor.strikes,
         )
         self.notes[duplicate_id] = replace(

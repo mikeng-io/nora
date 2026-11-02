@@ -509,7 +509,7 @@ async def _source_objects(
     retained: Mapping[str, Sequence[tuple[SourceRef, str]]] | None = None,
     limit: int = 8,
 ) -> tuple[dict[str, tuple[SourceEvent, ...]], dict[str, int],
-           dict[str, tuple[RetainedSource, ...]]]:
+           dict[str, tuple[RetainedSource, ...]], dict[str, int]]:
     """The agenda rooms' folded source-object heads — `(room_key → at most
     `limit` of the newest, room_key → how many more the read confirmed)` —
     the Standing block's typed input, plus the retained lane.
@@ -528,8 +528,9 @@ async def _source_objects(
     out: dict[str, tuple[SourceEvent, ...]] = {}
     more: dict[str, int] = {}
     kept: dict[str, tuple[RetainedSource, ...]] = {}
+    kept_more: dict[str, int] = {}
     if observations is None:
-        return out, more, kept
+        return out, more, kept, kept_more
     retained = retained or {}
     for room in agenda_rooms:
         key = f"{room.platform}:{room.conversation_id}"
@@ -569,11 +570,14 @@ async def _source_objects(
                 # A ref naming another room resolves nothing here — the
                 # scope check is the boundary, not a filter.
                 continue
-            if ref.handle in shown or len(rows) >= limit:
+            if ref.handle in shown:
                 continue
             shown.add(ref.handle)
+            if len(rows) >= limit:
+                kept_more[key] = kept_more.get(key, 0) + 1
+                continue
             head = await observations.head_for_handle(
-                SourceScope(platform=ref.platform, account_key="",
+                scope=SourceScope(platform=ref.platform, account_key="",
                             conversation_id=ref.conversation_id,
                             thread=ref.thread),
                 handle=ref.handle)
@@ -593,7 +597,7 @@ async def _source_objects(
                     coverage=coverage_label(head.coverage))))
         if rows:
             kept[key] = tuple(rows)
-    return out, more, kept
+    return out, more, kept, kept_more
 
 
 def build_grounder(
@@ -864,7 +868,7 @@ def build_grounder(
                 None if self_account is None else self_account(unit),
                 stage="cognition_self", platform="cognition", metrics=metrics,
             )
-        source_objects, source_objects_more, retained_objects = (
+        source_objects, source_objects_more, retained_objects, retained_more = (
             await _source_objects(
                 agenda_rooms, allowed, observations, persons,
                 retained=retained_refs))
@@ -874,6 +878,7 @@ def build_grounder(
             observations=observations_out, source_objects=source_objects,
             source_objects_more=source_objects_more,
             retained_objects=retained_objects,
+            retained_objects_more=retained_more,
             own_sends=own_sends, room_labels=labels, self_account=account,
             self_profile=profile_view, profile_names=profile_names,
         )

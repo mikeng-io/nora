@@ -1105,6 +1105,10 @@ def _standing_block(
                 [e], tag="source_object",
                 attrs=_retained_attrs,
                 body=lambda _e: _e.state or _e.summary))
+        if ctx.retained_sources_more:
+            retained_rows.append(render_elements(
+                [ctx.retained_sources_more], tag="source_objects_more",
+                attrs=lambda count, _: (("count", str(count)),), body=lambda _: ""))
         retained = "\n".join(retained_rows)
         if block is None:
             block = ContextBlock(name="standing", body=retained)

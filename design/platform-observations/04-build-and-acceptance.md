@@ -232,7 +232,9 @@ with explicit omissions and exact-handle reads. Ongoing matter-linked selection
 is now implemented through the live matter owner: `Note.object_refs` carries
 typed `SourceRef` pointers (`platform`, `conversation_id`, model-safe `handle`,
 `thread`; at most 8, deduplicated) persisted on the note head and updated under
-the same revision CAS as the body. `note_create`/`note_revise` accept the refs,
+the same revision CAS as the body. `note_create`/`note_revise` accept only object
+handles and resolve their shown source scope server-side; `note_read` returns
+handles for revision. References are
 validated fail-closed against the handles the session was actually shown in the
 same room and still resolving through `head_for_handle` — an unseen, forged,
 cross-scope or unresolvable ref is refused or `unavailable`, never silently

@@ -14517,7 +14517,7 @@ Returns `status`: ok (`members`, `scope`) or unavailable (`note`)."""
             "revision_id": head.id,
             # The source objects this note tracks (note_create's
             # `object_refs`), so a revise can keep or replace them.
-            **({"object_refs": [r.to_json() for r in note.object_refs]}
+            **({"object_refs": [r.handle for r in note.object_refs]}
                if note.object_refs else {}),
         }
 

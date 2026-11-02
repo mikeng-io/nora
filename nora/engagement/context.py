@@ -28,7 +28,7 @@ from typing import Any, NamedTuple, Protocol
 
 from nora.agent.clock import local_now
 from nora.agent.egress import scan_identifiers
-from nora.agent.lineage import LineagePolicy, profile_lines_for
+from nora.agent.lineage import LineagePolicy, derived_view, profile_lines_for
 from nora.agent.memory_search import (
     PREFETCH_TOKENS,
     MemorySearch,
@@ -384,7 +384,7 @@ class TranscriptInjection:
         recalled = self._recalled(prefetch, msg, shown)
         # The retained lane is a post-gather read: it needs the note index
         # (which refs exist) and the shown heads (what NOT to resolve again).
-        retained = await self._retained_sources(
+        retained, retained_more = await self._retained_sources(
             msg, notes, frozenset(o.handle for o in source_objects))
 
         return TagContext(
@@ -406,6 +406,7 @@ class TranscriptInjection:
             source_events_more=source_events_more,
             source_objects_more=source_objects_more,
             retained_sources=retained,
+            retained_sources_more=retained_more,
             presence=presence,
             culture=culture,
             character=character,
@@ -1188,7 +1189,7 @@ class TranscriptInjection:
     async def _retained_sources(
         self, msg: NormalizedMessage, notes: tuple[Note, ...],
         shown_handles: frozenset[str],
-    ) -> tuple[RetainedSource, ...]:
+    ) -> tuple[tuple[RetainedSource, ...], int]:
         """This room's retained lane: the `object_refs` open notes of the
         unit curated, resolved through `head_for_handle` under each ref's
         OWN scope — never the recency page.
@@ -1201,21 +1202,26 @@ class TranscriptInjection:
         counted like the sibling read: a failed resolve is one marker,
         not a failed turn."""
         if self._observations is None:
-            return ()
+            return (), 0
+        if self._lineage is not None and self._lineage.mode == "on":
+            notes = derived_view(
+                notes=notes, standing=None, culture=None,
+                target=self._lineage.render_room(
+                    platform=msg.platform, conversation_id=msg.conversation_id)).notes
         out: list[RetainedSource] = []
+        more = 0
         seen: set[str] = set(shown_handles)
         for note in notes:
-            if len(out) >= _SOURCE_OBJECT_MAX:
-                break
             for ref in note.object_refs:
-                if len(out) >= _SOURCE_OBJECT_MAX:
-                    break
                 if (ref.platform, ref.conversation_id) != (
                         msg.platform, msg.conversation_id):
                     continue
                 if ref.handle in seen:
                     continue
                 seen.add(ref.handle)
+                if len(out) >= _SOURCE_OBJECT_MAX:
+                    more += 1
+                    continue
                 try:
                     head = await traced_read(
                         "observations", "retained",
@@ -1246,7 +1252,7 @@ class TranscriptInjection:
                         received_ms=head.received_ms,
                         revision=revision_label(head.position, head.scope),
                         coverage=coverage_label(head.coverage))))
-        return tuple(out)
+        return tuple(out), more
 
     async def _observation_targets(
         self, msg: NormalizedMessage, scope: SourceScope,

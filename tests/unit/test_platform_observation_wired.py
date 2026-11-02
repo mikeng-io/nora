@@ -124,7 +124,7 @@ async def _seed(store: FakeObservationStore) -> dict[str, int]:
         ago=120, actor="+852111", actor_status="known", position=1))
     await put("vote", _obs(
         kind="poll", ref="p1", op="add",
-        payload=PollPayload(voter_ref="v1", option_ref="ramen"),
+        payload=PollPayload(voter_ref="v1", option_ref="r"),
         ago=60, position=2))
     await put("close", _obs(
         kind="poll", ref="p1", op="revise",
@@ -381,9 +381,12 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
     ledger = InMemoryCognitionStore()
     stimuli = InMemoryStimulusStore(ledger=ledger)
     agent = _CaptureAgent()
+    notes = InMemoryNoteStore()
+    await _note_with_ref(notes, _POLL_HANDLE)
+    await _newer_heads(obs_store, 9)
 
     async def no_notes(unit: str) -> Any:
-        return ()
+        return await notes.standing(unit=unit)
 
     async def no_events(unit: str, platform: str, cid: str) -> Any:
         return ()
@@ -465,6 +468,8 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
 
     assert agent.calls == 1
     (prompt,) = agent.prompts
+    assert '<retained_objects' in prompt
+    assert f'object="{_POLL_HANDLE}" matter="Dinner venue still open"' in prompt
     assert "<observation" in prompt and 'kind="poll"' in prompt
     for kind in ("pin", "artifact", "membership"):
         assert f'kind="{kind}"' in prompt
@@ -1126,29 +1131,32 @@ async def _note_with_ref(
         uncertainty="which venue wins", closing_condition="poll closes",
         established_in=room,
         body="## Decided\n- nothing\n## Open\n- venue",
-        established_by="test", now_ms=NOW_MS,
+        established_by="test", now_ms=NOW_MS, anchor_date=20261003,
         object_refs=(SourceRef(
             platform="signal", conversation_id=room, handle=handle),))
 
 
-async def _newer_heads(store: FakeObservationStore, n: int) -> None:
+async def _newer_heads(
+    store: FakeObservationStore, n: int, *, prefix: str = "unrelated",
+) -> None:
     for i in range(n):
         assert await store.append(
             observation=_obs(
-                kind="pin", ref=f"unrelated-{i}", op="add",
+                kind="pin", ref=f"{prefix}-{i}", op="add",
                 payload=PinPayload(message=EditTarget(message_id=f"m-{i}")),
                 ago=1),
-            event_id=f"unrelated-{i}", source_digest=f"unrelated-{i}",
+            event_id=f"{prefix}-{i}", source_digest=f"{prefix}-{i}",
         ) is not None
 
 
 def _assembler_with_notes(
     audit: FakeRecordStore, observations: Any, notes: Any,
+    lineage: LineagePolicy | None = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
         audit=audit, memory=FakeMemoryStore(), persons=PERSONS,
         context_window=40, metrics=Metrics(), observations=observations,
-        notes=notes, policy=_policy())
+        notes=notes, policy=_policy(), lineage=lineage)
 
 
 async def test_a_retained_poll_survives_newer_unrelated_objects_in_the_assembler():
@@ -1172,7 +1180,8 @@ async def test_a_retained_poll_survives_newer_unrelated_objects_in_the_assembler
     assert "closed" in (retained[0].head.state or "")
     assert retained[0].matter == "Dinner venue still open"
     prompt = _prompt(ctx)
-    assert prompt.count(f'object="{_POLL_HANDLE}"') == 1  # no duplicate fragment
+    assert sum(f'object="{_POLL_HANDLE}"' in line
+               for line in prompt.splitlines() if line.startswith("<source_object")) == 1
     assert 'matter="Dinner venue still open"' in prompt
 
 
@@ -1186,9 +1195,10 @@ async def test_a_late_vote_refreshes_the_retained_polls_current_state():
     await _note_with_ref(notes, _POLL_HANDLE)
     assert await store.append(
         observation=_obs(kind="poll", ref="p1", op="add",
-                         payload=PollPayload(voter_ref="v2", option_ref="sushi"),
+                         payload=PollPayload(voter_ref="v2", option_ref="s"),
                          ago=1, position=4),
         event_id="late-vote", source_digest="late-vote") is not None
+    await _newer_heads(store, _SOURCE_OBJECT_MAX + 1, prefix="after-vote")
 
     ctx = await _assembler_with_notes(audit, store, notes).assemble(
         request=_request())
@@ -1204,6 +1214,7 @@ async def test_closing_the_poll_does_not_retire_the_matter():
     open in the index and its ref still resolves the now-closed head."""
     audit, store = FakeRecordStore(), FakeObservationStore()
     await _seed(store)
+    await _newer_heads(store, _SOURCE_OBJECT_MAX + 1)
     notes = InMemoryNoteStore()
     note = await _note_with_ref(notes, _POLL_HANDLE)
 
@@ -1221,11 +1232,12 @@ async def test_retiring_the_matter_retires_its_reference_but_keeps_history():
     ref resolves nowhere — while `read` still returns the retired row."""
     audit, store = FakeRecordStore(), FakeObservationStore()
     await _seed(store)
+    await _newer_heads(store, _SOURCE_OBJECT_MAX + 1)
     notes = InMemoryNoteStore()
     note = await _note_with_ref(notes, _POLL_HANDLE)
     retired = await notes.supersede(
         key="u1", target=note.id, replaced_by=None,
-        because="retired_closed", source="test", now_ms=NOW_MS,
+        because="retired-closed", source=None, now_ms=NOW_MS,
         expected_head=None)
 
     assert retired == 1
@@ -1330,3 +1342,131 @@ async def test_note_revision_replaces_object_refs_atomically():
         established_by="test", now_ms=NOW_MS)
     found = await notes.read(unit="u1", note_id=note.id)
     assert [r.handle for r in found[0].object_refs] == [other]
+
+
+async def test_retained_ref_verbs_accept_shown_handles_and_refuse_unseen_objects():
+    from nora.domain.cognition_ground import Grounding
+    from nora.testing.cognition_grounding import StaticGrounder
+    from tests.unit.cognition_rig import GOOD_BODY, NOTE, RECORDS, session
+
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    await _seed(store)
+    ctx = await _assembler(audit, store).assemble(request=_request())
+    grounding = Grounding(
+        records=dict(RECORDS), source_objects={f"signal:{CID}": ctx.source_objects})
+    answers = []
+    forged = object_handle("poll", "unseen", account_key="acct")
+    await store.append(
+        observation=_obs(kind="poll", ref="unseen", op="create", ago=1,
+                         payload=PollPayload(question="Unshown question", options=(("a", "A"),))),
+        event_id="unshown", source_digest="unshown")
+
+    async def behave(by, tools):
+        # The model needs only the object handle, never internal room/account ids.
+        for refs in ([{"handle": _POLL_HANDLE, "conversation_id": CID}],
+                     [_POLL_HANDLE, _POLL_HANDLE], [_POLL_HANDLE] * 9):
+            denied = await by["note_create"](body=GOOD_BODY, object_refs=refs, **NOTE)
+            assert denied["status"] == "refused"
+            assert await stores.notes.standing(unit="u") == ()
+        answers.append(await by["note_create"](
+            body=GOOD_BODY, object_refs=[_POLL_HANDLE], **NOTE))
+        if answers[-1]["status"] != "ok":
+            return
+        nid = answers[-1]["note_id"]
+        note, revision = await stores.notes.read(unit="u", note_id=nid)
+        assert note.object_refs == (SourceRef("signal", CID, _POLL_HANDLE),)
+        answers.append(await by["note_revise"](
+            note_id=nid, body=GOOD_BODY, parent_revision_id=revision.id,
+            object_refs=[forged]))
+        assert answers[-1]["status"] == "refused"
+        assert (await stores.notes.read(unit="u", note_id=nid))[1].id == revision.id
+        answers.append(await by["note_revise"](
+            note_id=nid, body=GOOD_BODY, parent_revision_id=revision.id,
+            object_refs=[]))
+        assert answers[-1]["status"] == "ok"
+        assert (await stores.notes.read(unit="u", note_id=nid))[0].object_refs == ()
+
+    from tests.unit.cognition_rig import Stores
+    stores = Stores()
+    await session(behave, stores=stores, runner_kwargs={
+        "grounder": StaticGrounder(grounding), "observations": store})
+    assert answers and answers[0]["status"] == "ok", answers
+
+
+async def test_retained_sources_report_the_bound_and_never_read_another_room():
+    from nora.domain.cognition_session import AgendaItem
+    from nora.domain.notes import NOTE_OBJECT_REFS_MAX
+    from nora.domain.observations import handle_of
+    from nora.language.cognition_render import render_agenda
+    audit, store, notes = FakeRecordStore(), FakeObservationStore(), InMemoryNoteStore()
+    handles = []
+    for i in range(14):
+        rid = await store.append(
+            observation=_obs(kind="poll", ref=f"tracked-{i}", op="create", ago=1,
+                             payload=PollPayload(question=f"Tracked question {i}",
+                                                 options=(("a", "A"),))),
+            event_id=f"tracked-{i}", source_digest=f"tracked-{i}")
+        assert rid
+        head = await store.current(scope=SCOPE, kind="poll", object_ref=f"tracked-{i}")
+        handles.append(handle_of(head))
+    for i in range(0, len(handles), NOTE_OBJECT_REFS_MAX):
+        note = await _note_with_ref(notes, handles[i])
+        await notes.append_revision(
+            unit="u1", note_id=note.id, body="tracked questions", now_ms=NOW_MS,
+            parent_revision_id=note.head_revision_id, established_by="test",
+            object_refs=tuple(SourceRef("signal", CID, h)
+                              for h in handles[i:i+NOTE_OBJECT_REFS_MAX]))
+    await _newer_heads(store, 14)
+    ctx = await _assembler_with_notes(audit, store, notes).assemble(request=_request())
+    assert len(ctx.retained_sources) == 12 and ctx.retained_sources_more == 2
+    assert '<source_objects_more count="2"' in _prompt(ctx)
+    async def index(unit):
+        return await notes.standing(unit=unit)
+    class NoRecords:
+        async def by_refs(self, refs, rooms):
+            return ()
+        async def own_sends(self, rooms, *, start_ms, end_ms, limit):
+            return ()
+    async def no_events(unit, platform, cid):
+        return ()
+    grounder = build_grounder(
+        records=NoRecords(), persons=PERSONS, media_join=None, note_index=index,
+        events_in=no_events, lineage=LineagePolicy(rooms=(), mode="off"),
+        unit_rooms=lambda unit: {("signal", CID)}, observations=store)
+    item = AgendaItem(kind="message", room=Room("signal", CID), summary="",
+                      stimulus_ids=(), cues=(), surprise=0.0)
+    grounded = await grounder("u1", [item], [])
+    assert len(grounded.retained_objects[f"signal:{CID}"]) == 8
+    assert grounded.retained_objects_more[f"signal:{CID}"] == 6
+    prompt = render_agenda([item], stimuli={}, grounding=grounded, now_ms=NOW_MS)
+    assert '<retained_objects' in prompt and 'not_listed="6"' in prompt
+    note = (await notes.standing(unit="u1"))[0]
+    with pytest.raises(ValueError, match="at most"):
+        dataclasses.replace(note, object_refs=tuple(SourceRef("signal", CID, h)
+                            for h in handles[:NOTE_OBJECT_REFS_MAX+1]))
+
+
+async def test_a_withheld_note_does_not_leak_its_title_through_retained_sources():
+    audit, store, notes = FakeRecordStore(), FakeObservationStore(), InMemoryNoteStore()
+    await _seed(store)
+    await _newer_heads(store, 14)
+    note = await _note_with_ref(notes, _POLL_HANDLE)
+    notes.notes[note.id] = dataclasses.replace(note, established_in="another-room")
+    ctx = await _assembler_with_notes(
+        audit, store, notes,
+        lineage=LineagePolicy.from_policy(_policy(), mode="on")).assemble(request=_request())
+    prompt = _prompt(ctx)
+    assert "Dinner Friday?" in prompt  # This room's source evidence still surfaces.
+    assert "Dinner venue still open" not in prompt
+    assert not ctx.retained_sources
+
+
+async def test_note_read_returns_only_the_retained_handles():
+    from tests.test_note_tools import _tools as note_tools
+    notes = InMemoryNoteStore()
+    note = await _note_with_ref(notes, _POLL_HANDLE)
+    out = await note_tools(notes=notes, unit="u1", conversation_id=CID)["note_read"](
+        title=note.title)
+    assert out["status"] == "ok"
+    assert out["object_refs"] == [_POLL_HANDLE]
+    assert CID not in json.dumps(out)

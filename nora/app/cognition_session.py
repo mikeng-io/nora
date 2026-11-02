@@ -1593,65 +1593,45 @@ class CognitionSessionRunner:
             return targets
 
         async def _object_refs(raw: Any) -> tuple[SourceRef, ...] | dict[str, object]:
-            """The `object_refs` argument, held to the same shown-evidence
-            discipline as `associations`: every ref must be a typed
-            `{platform, conversation_id, handle, thread}` naming an `object`
-            handle this session was SHOWN in the same room the ref declares,
-            deduplicated, under the cap, and still resolving through the
-            observation Record — a curated pointer at source evidence, never
-            a copied tally. Retained refs surface the object's CURRENT folded
-            state in later assemblies even after newer objects push it out of
-            the recency window."""
+            """Resolve only shown object handles; source room ids stay server-side."""
             if not isinstance(raw, list):
-                return _refused("bad_object_refs", "object_refs is a list")
+                return _refused("bad_object_refs", "object_refs is a list of object handles")
             if not raw:
-                # Clearing the ref set needs nothing resolved.
                 return ()
             if self._observations is None:
                 return {"status": "unavailable", "reason": "no_observation_store",
                         "detail": "object_refs retention is not wired in this session"}
+            if len(raw) > NOTE_OBJECT_REFS_MAX:
+                return _refused(
+                    "too_many_object_refs",
+                    f"at most {NOTE_OBJECT_REFS_MAX} object_refs per note")
             out: list[SourceRef] = []
             seen: set[str] = set()
-            for entry in raw:
-                if not isinstance(entry, dict):
-                    return _refused("bad_object_refs", "each object_ref is an object")
-                platform = entry.get("platform")
-                cid = entry.get("conversation_id")
-                handle = entry.get("handle")
-                thread = entry.get("thread") or ""
-                if (not isinstance(platform, str) or not platform
-                        or not isinstance(cid, str) or not cid
-                        or not isinstance(handle, str) or not handle
-                        or not isinstance(thread, str)):
-                    return _refused(
-                        "bad_object_refs",
-                        "each object_ref needs platform, conversation_id, handle "
-                        "(and optional thread), all strings")
-                if not parse_handle(handle)[0]:
-                    return _refused("bad_object_refs", f"{handle[:16]!r} is not an object handle")
+            for handle in raw:
+                if not isinstance(handle, str) or not parse_handle(handle)[0]:
+                    return _refused("bad_object_refs", "each object_ref is an object handle")
                 if handle in seen:
-                    return _refused("duplicate_object_ref", f"{handle[:16]!r} is listed twice")
+                    return _refused("duplicate_object_ref", "an object handle is listed twice")
                 seen.add(handle)
                 shown_room = state.shown_handles.get(handle)
-                if shown_room is None or shown_room != (platform, cid):
+                if shown_room is None:
                     return _refused(
-                        "unseen_object_ref",
-                        f"{handle[:16]!r} is not an object this session was shown "
-                        "in that room; read it first",
-                    )
-                head = await self._observations.head_for_handle(
-                    SourceScope(platform=platform, account_key="",
-                                conversation_id=cid, thread=thread), handle)
+                        "unseen_object_ref", "that object was not shown in this session")
+                platform, cid = shown_room
+                try:
+                    head = await self._observations.head_for_handle(
+                        scope=SourceScope(platform=platform, account_key="",
+                                          conversation_id=cid), handle=handle)
+                except Exception:
+                    log.exception("retained object validation read failed")
+                    return {"status": "unavailable", "reason": "object_ref_unreadable",
+                            "detail": "the source object could not be checked"}
                 if head is None:
                     return {"status": "unavailable", "reason": "object_ref_unresolved",
-                            "detail": f"{handle[:16]!r} no longer resolves in that room"}
-                if len(out) >= NOTE_OBJECT_REFS_MAX:
-                    return _refused(
-                        "too_many_object_refs",
-                        f"at most {NOTE_OBJECT_REFS_MAX} object_refs per note")
+                            "detail": "the source object no longer resolves in its shown room"}
                 out.append(SourceRef(
                     platform=platform, conversation_id=cid,
-                    handle=handle, thread=thread))
+                    handle=handle, thread=head.thread))
             return tuple(out)
 
         established_by = f"{COGNITION_PATH_PREFIX}{unit}"
@@ -1716,7 +1696,7 @@ class CognitionSessionRunner:
             body: str, anchor_date: str | None = None,
             anchor_entities: list[str] | None = None, room: str = "", item: int | None = None,
             associations: list[list[str]] | None = None,
-            object_refs: list[dict[str, str]] | None = None,
+            object_refs: list[str] | None = None,
         ) -> dict[str, object]:
             """Start carrying an open question that nothing here settles yet.
             Call this when a room is chewing on something that outlives this
@@ -1759,12 +1739,10 @@ class CognitionSessionRunner:
                     that names it.
                 associations: Optional. Existing matters this note concerns, as
                     [kind, id] node keys from the graph you were shown.
-                object_refs: Optional. Source objects the matter tracks, as
-                    {platform, conversation_id, handle, thread} — an `object`
-                    handle this session was shown, in the room you name it
-                    under (at most 8). The note keeps the object's CURRENT
-                    state in view even after newer objects push it out of the
-                    reads window; the record stays in the source store.
+                object_refs: Optional. Up to 8 `object` handles shown in this
+                    session. Keep these source objects in view while this matter
+                    remains open. Their room scope is resolved by the server;
+                    current state is read fresh, never copied into the note.
             """
             resolved = _write_target(room, item, state)
             if isinstance(resolved, dict):
@@ -1818,7 +1796,7 @@ class CognitionSessionRunner:
             note_id: str, body: str, parent_revision_id: str,
             room: str = "", item: int | None = None,
             associations: list[list[str]] | None = None,
-            object_refs: list[dict[str, str]] | None = None,
+            object_refs: list[str] | None = None,
         ) -> dict[str, object]:
             """Revise a note. Call this when a note's content changes: a detail
             settles, a plan moves. Give back the WHOLE note with your change
@@ -1846,9 +1824,9 @@ class CognitionSessionRunner:
                 associations: Optional. The matters this note now concerns, as
                     [kind, id] node keys from the graph you were shown; they
                     replace the note's current semantic links.
-                object_refs: Optional. The source objects the matter now
-                    tracks (note_create's shape); a supplied list REPLACES the
-                    note's current refs, an omitted one keeps them.
+                object_refs: Optional. Shown object handles the matter now
+                    tracks; a supplied list replaces the current refs, an
+                    omitted one keeps them. An empty list clears them.
             """
             resolved = _write_target(room, item, state)
             if isinstance(resolved, dict):
@@ -1944,6 +1922,8 @@ class CognitionSessionRunner:
             this when two open notes track the same uncertainty. The survivor
             gets `body` as its new contents, the duplicate is retired pointing
             at it, and a reminder held on either note follows the survivor.
+            Source references from both notes survive; if their combined set
+            exceeds 8, revise the references before merging.
 
             Returns `status`: ok, refused or unavailable, with a `reason` and
             `detail` when it is not ok.

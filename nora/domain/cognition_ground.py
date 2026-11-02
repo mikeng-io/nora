@@ -322,6 +322,7 @@ class Grounding:
     #: above evicted it. `head=None` is the explicit unresolved marker.
     retained_objects: Mapping[str, tuple[RetainedSource, ...]] = field(
         default_factory=dict)
+    retained_objects_more: Mapping[str, int] = field(default_factory=dict)
     #: Nora's own sends inside each item's window, by the item's index in the
     #: agenda that was grounded (D1): what the room's messages may be answering.
     own_sends: Mapping[int, tuple[RecordItem, ...]] = field(default_factory=dict)
@@ -387,6 +388,7 @@ class Grounding:
                 {"room": key, "handle": r.ref.handle, "resolved": r.head is not None}
                 for key, rows in self.retained_objects.items() for r in rows
             ],
+            "retained_more": dict(self.retained_objects_more),
             # Her own sends by message id and time; never the words.
             "own_sends": {
                 str(i): [{"message_id": m.message_id, "at_ms": m.at_ms,

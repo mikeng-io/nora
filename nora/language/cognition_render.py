@@ -838,11 +838,12 @@ def _register(
                 attrs=_retained_attrs,
                 body=lambda _e: "",
             ))
+        omitted = len(retained) - len(rows) + grounding.retained_objects_more.get(room_key(room), 0)
         standing_groups.append(render_group(
             "retained_objects",
             [("room", room_label(room, grounding.room_labels)),
              ("not_listed",
-              str(len(retained) - len(rows)) if len(retained) > len(rows) else None)],
+              str(omitted) if omitted else None)],
             "\n".join(rows),
         ))
     if standing_groups:

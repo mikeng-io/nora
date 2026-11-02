@@ -325,12 +325,23 @@ class SourceRef:
         kind, _digest = parse_handle(handle)
         if not kind:
             return None
-        thread = value.get("thread")
+        thread = value.get("thread", "")
+        if not isinstance(thread, str):
+            return None
         return SourceRef(
             platform=platform, conversation_id=conversation_id,
             handle=handle,
-            thread=thread if isinstance(thread, str) else "",
+            thread=thread,
         )
+
+
+def merged_source_refs(*groups: Iterable[SourceRef]) -> tuple[SourceRef, ...]:
+    """Preserve each matter's pointers in order; overflow needs explicit curation."""
+    refs = tuple(dict.fromkeys(ref for group in groups for ref in group))
+    if len(refs) > NOTE_OBJECT_REFS_MAX:
+        raise ValueError(
+            f"a note keeps at most {NOTE_OBJECT_REFS_MAX} object refs; revise them first")
+    return refs
 
 
 @dataclass(frozen=True, slots=True)

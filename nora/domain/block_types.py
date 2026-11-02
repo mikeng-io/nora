@@ -283,6 +283,8 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        source_object="the object's recorded current state; rev/time/coverage label "
                      "its source and limits; on points at a shown message, otherwise "
                      "target_* supplies its older affected message or marks it unreadable",
+       matter="the open note retaining this source object's reference",
+       unresolved="the retained reference could not be resolved; current state is unknown",
        source_objects_more="some current objects were omitted to fit, never absent upstream",
        **{k: _SHARED[k] for k in ("op", "actor", "time", "received", "rev", "coverage", "object")}),
     _t("standing_ledger",

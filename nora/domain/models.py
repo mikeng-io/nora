@@ -802,6 +802,7 @@ class TagContext:
     # view after the recency page above would have evicted it; the state is
     # read fresh here, never copied onto the note.
     retained_sources: tuple[Any, ...] = ()
+    retained_sources_more: int = 0
     # The room's CULTURE head — an account of what this room is and why it
     # became so. Beside `standing` because both are
     # room-scoped and both are her own output, and apart from it on the one

@@ -94,6 +94,7 @@ from nora.domain.notes import (
     RetiredNoteError,
     SourceRef,
     StaleNoteHeadError,
+    merged_source_refs,
     note_handle,
     proactive_row_forwarded_is_moved,
     tag_path_progressed_since_wake,
@@ -1071,6 +1072,14 @@ class SqlNoteStore:
         if reset_strikes:
             survivor_values["strikes"] = 0
         async with self._engine.begin() as conn:
+            ref_rows = (await conn.execute(sa.select(NOTE.c.id, NOTE.c.object_refs).where(
+                NOTE.c.unit == unit, NOTE.c.id.in_((survivor_id, duplicate_id)),
+            ))).all()
+            by_id = {r.id: tuple(ref for value in (r.object_refs or ())
+                                if (ref := SourceRef.from_json(value)) is not None)
+                     for r in ref_rows}
+            refs = merged_source_refs(by_id.get(survivor_id, ()), by_id.get(duplicate_id, ()))
+            survivor_values["object_refs"] = [r.to_json() for r in refs]
             # LINEAGE (migration `0073_lineage`): the survivor now rests on
             # everything either note rested on, and on what the folded body
             # cites.
