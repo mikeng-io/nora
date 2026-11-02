@@ -4,7 +4,7 @@
 
 Operator brief: review the preceding one to two weeks of design, surface useful
 capability/business directions, connect planning and completion skills, and
-retire Nora Engineering. This changes planning and engineering admission only;
+retire Nora Engineering. This changes planning documents and Project metadata only;
 it implements none of the capabilities below, starts no paid model/benchmark run,
 and changes no production flag, account, private configuration or data.
 
@@ -89,10 +89,9 @@ not outcome acceptance. Start/Target dates remain uncommitted.
 
 Retire Nora Engineering by closing it, preserving its cards and history. Update
 its README and links in the benchmark parent/milestone and portfolio README.
-The engineering pilot's owner-confirmed admission binds directly to the exact
-canonical issue URL/revision instead of the retired Project. Its owner/head,
-open linked issue, scope/prerequisite/capability references, status/tier checks,
-CI evidence, security profile, spending flag and duplicate-claim rules remain.
+The engineering controller and its tests remain unchanged. Its historical
+board-dependent pilot is outside the roadmap flow; documentation marks it as
+retired for new admission rather than introducing a replacement dispatch format.
 No pilot flag is enabled and no worker is dispatched by this change.
 
 ## Five-C assessment
@@ -102,9 +101,9 @@ Consistency: reuse native milestones/sub-issues and the existing two skills.
 Conformance: follow the operator's Pi correction, high-level roadmap scope and
 Engineering retirement; preserve no-spend/no-config boundaries.
 Correctness: source-bound design review and live Project readback establish
-planning state only; code checks/review establish the admission change separately.
+planning state only; document checks establish mechanical conformance.
 Completeness: all changed design groups are disposed above, and retirement sweeps
-policy, skills, pilot, linked planning text and the live board. This holds unless
+policy, skills, historical pilot documentation, linked planning text and the live board. This holds unless
 new delivery evidence or an operator scope change requires a different grouping.
 
 ## Changed design path inventory

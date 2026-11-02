@@ -46,8 +46,9 @@ This is the canonical policy for agents **building Nora**, not Nora's runtime.
 The operator's ruling of 2026-10-27 replaces fixed positive vendor/model routing.
 The schema and examples below describe an interoperable contract. The
 [engineering controller](docs/maintainers/github.md#engineering-admission-pilot)
-adds default-off owner-admitted CI sessions and a review candidate selector;
-general worker dispatch and automatic paid intake remain unbuilt. There is no
+retains a historical board-dependent admission format; it is outside the new
+roadmap flow and is unchanged by the retirement. General worker dispatch,
+automatic paid intake and live board enforcement remain unbuilt. There is no
 checked-in task database.
 The broader evaluation remains open in [issue #277](https://github.com/mikeng-io/nora/issues/277).
 Nora Engineering was retired by the operator on 2026-11-02. Task readiness lives

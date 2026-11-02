@@ -1,7 +1,7 @@
 > Historical study. Operator amendment, 2026-11-02: Nora Engineering is retired.
 > [Roadmap conventions](conventions.md#roadmap) own outcome planning;
-> [the pilot](github.md#engineering-admission-pilot) now binds admission directly
-> to the canonical issue revision. Project 8 routing below is historical.
+> [the pilot](github.md#engineering-admission-pilot) retains its historical
+> board-dependent format unchanged. Project 8 routing below is historical.
 
 # AI engineering workflow proposal
 

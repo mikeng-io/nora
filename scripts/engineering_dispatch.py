@@ -19,6 +19,7 @@ from pathlib import Path
 
 REPOSITORY = "mikeng-io/nora"
 OWNER = REPOSITORY.split("/")[0]
+PROJECT_URL = f"https://github.com/users/{OWNER}/projects/8"
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = json.loads((ROOT / ".agents/orchestration.schema.json").read_text())["$defs"]
 WORKFLOW = ".github/workflows/engineering-dispatch.yml"
@@ -247,8 +248,9 @@ class Controller:
             data["issue_updated_at"] == snapshot["issue"]["updatedAt"], "issue revision changed"
         )
         issue_url = snapshot["issue"]["url"]
-        # The owner confirms task readiness in the revision-bound canonical issue.
-        require(data.get("issue_ref") == issue_url, "wrong/missing canonical issue reference")
+        # Scheduling is the owner's current gh readback, not a live Actions measurement.
+        require(data.get("project_ref") == PROJECT_URL, "wrong/missing Project reference")
+        require(data.get("project_issue_ref") == issue_url, "Project issue reference mismatch")
         for field in ("status", "priority", "execution_tier", "review_tier"):
             require(data.get(field) in SCHEMA[field]["enum"], f"unknown/missing {field}")
         require(
