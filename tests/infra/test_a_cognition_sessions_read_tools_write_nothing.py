@@ -185,7 +185,8 @@ async def _say(engine, *, platform: str, room: str, person: str, sender: str, ts
 class World:
     """The real registry and tool source over real stores, and the doubles."""
 
-    def __init__(self, engine, tmp_path, *, graph: bool = False) -> None:
+    def __init__(self, engine, tmp_path, *, graph: bool = False,
+                 room_directory: bool = False) -> None:
         (tmp_path / "policy.toml").write_text(_POLICY)
         (tmp_path / "identity.toml").write_text(_IDENTITY)
         self.policy = load_policy(tmp_path / "policy.toml")
@@ -210,7 +211,10 @@ class World:
             circle_id="c1", person_ids=frozenset({"p1", "p2"}),
             people=tuple(self.persons.by_person[p] for p in ("p1", "p2")),
         )
+        from nora.engagement.self_presence import PresenceReader
+
         registry = ToolRegistry(
+            rooms=PresenceReader(policy=self.policy, adapters={}) if room_directory else None,
             content_checks=not graph,
             record=SqlRecordQuery(engine),
             # The two Dreamer-only reads: a `rollup_read` that started a build or a
@@ -317,6 +321,32 @@ CALLS: dict[str, list[dict[str, Any]]] = {
     "poll_list": [{}],
     "poll_read": [{"object": "POLL"}, {"object": "poll:000000000000"}],
     "room_state_read": [{}],
+    # The room/people reads: `load_transcript` reaches the seeded rows and
+    # answers `ok`; `lookup_person` reaches the roster view; `who_said` and
+    # `room_read` answer `unavailable` here (no shown window, no rooms
+    # directory) — called anyway, so an unwired answer is not a non-run.
+    "load_transcript": [{"limit": 5}],
+    "who_said": [{"words": "dinner"}],
+    "lookup_person": [{"name": "Ada"}],
+    "room_read": [{"room": "Room A", "limit": 1}],
+    # The stored-object reads: providers/stores are not wired in this world,
+    # so each answers `unavailable` — still called, still counted, still
+    # writes nothing.
+    "media_fetch": [{"code": "generated-code"}],
+    "media_search": [{"query": "dinner"}],
+    "file_fetch": [{"code": "generated-code"}],
+    # The public enrichment reads, inert by config here (no search provider,
+    # no social bridge, no route source): each answers `unavailable` without
+    # a packet leaving the host. LinkedIn is not on the surface at all —
+    # the bridge only reads its own user's private feed there, which no
+    # public occasion may egress, so the tools were never catalogued.
+    "web_search": [{"query": "ramen"}],
+    "web_fetch": [{"url": "https://example.invalid/"}],
+    "place_info": [{"name": "generated-place"}],
+    "instagram_read": [{"handle": "generated-handle", "what": "profile"}],
+    "instagram_search": [{"query": "ramen"}],
+    "x_read": [{"handle": "generated-handle", "what": "profile"}],
+    "x_search": [{"query": "ramen"}],
 }
 
 
@@ -462,6 +492,23 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
     assert results["poll_read"] == ["ok", "nothing_found"]
     assert results["room_state_read"] == ["ok"]
     assert results["group_members"] == ["ok"]
+    # `load_transcript` is the one tool whose contract carries no `status`
+    # (ADR 0009 §2): the `messages` list IS the answer, so the success check
+    # is that the call reached the seeded rows and returned the contract's
+    # shape — not a `status` it never claims.
+    lt = await _call(world.tools([A])["load_transcript"], limit=5)
+    assert {"dinner plans number 0", "dinner plans number 1"} <= {
+        row.get("body") for row in lt["messages"]
+    }
+    assert "status" not in lt
+    assert results["lookup_person"] == ["ok"]
+    # The inert-by-config reads were still CALLED (coverage), and every one of
+    # them answered the honest state rather than a silent nothing.
+    for name in ("who_said", "room_read", "media_fetch", "media_search",
+                 "file_fetch", "web_search", "web_fetch", "place_info",
+                 "instagram_read", "instagram_search", "x_read", "x_search"):
+        if name in results:
+            assert set(results[name]) == {"unavailable"}, (name, results[name])
     # the derived-presence reads reached their SQL (a current build exists)
     assert not {"unavailable"} & set(results["where_been"] + results["routine_read"]), results
     # No counter that feeds a decision moved, and Honcho was only ever read.
@@ -510,15 +557,15 @@ async def test_a_two_room_agenda_reads_each_room_through_itself_and_cannot_read_
     tools = world.tools([A, B])
     record = tools["record_query"]
     interval = {"start": "2026-09-01", "end": "2026-10-30"}
-    in_a = await _call(record, room="signal:ROOM-A", **interval)
-    in_b = await _call(record, room="discord:ROOM-B", **interval)
+    in_a = await _call(record, agenda_room="signal:ROOM-A", **interval)
+    in_b = await _call(record, agenda_room="discord:ROOM-B", **interval)
     assert in_a["status"] == in_b["status"] == "ok"
     assert {m["body"] for m in in_a["messages"]} == {"dinner plans number 0",
                                                      "dinner plans number 1"}
     assert {m["body"] for m in in_b["messages"]} == {"dinner plans number 2"}
     # A room of the unit that is not on THIS agenda cannot be read, and the
     # unit's home room is not a fallback for a missing `room`.
-    refused = await _call(record, room="whatsapp:ROOM-C", **interval)
+    refused = await _call(record, agenda_room="whatsapp:ROOM-C", **interval)
     assert refused["status"] == "refused" and refused["reason"] == "unknown_room"
     missing = await _call(record, **interval)
     assert missing["status"] == "refused" and missing["reason"] == "room_required"
@@ -530,5 +577,123 @@ async def test_the_two_room_reads_write_nothing_either(engine, world):
     for name in sorted(world.surface.wired):
         for arguments in CALLS[name]:
             for room in ("signal:ROOM-A", "discord:ROOM-B"):
-                await _call(tools[name], room=room, **arguments)
+                # `agenda_room` is the router's binding selector (R-99's
+                # rename): a read's own `room` argument — `room_read`'s
+                # destination — still rides in `arguments`, untouchable.
+                await _call(tools[name], agenda_room=room, **arguments)
     assert _live(await _counts(engine)) == _live(before)
+
+
+# ---- the historical lane's one bound, at the SQL seam --------------------------
+
+async def test_a_bound_clock_reads_the_record_as_it_then_stood(engine, world):
+    """`clock=` is the same `read_tools_for` call the session makes for
+    `historical`. A read bound to NOW_MS sees rows only as they stood then:
+    a row posted after it is absent, an edit and a reaction recorded after
+    it are folded out, and a message deleted after it still stands (its
+    words still match `text`, because at the instant they were not yet
+    taken back). The unbound build beside it reads the live fold, so the
+    bound itself — not an empty room — is what did the narrowing."""
+    past = NOW_MS - 3_600_000
+    after = NOW_MS + 3_600_000
+    edited = await _say(engine, platform="signal", room="ROOM-A", person="p1",
+                        sender=ADA, ts=past, body="dinner at seven")
+    pier = await _say(engine, platform="signal", room="ROOM-A", person="p1",
+                      sender=ADA, ts=past, body="meet at the pier")
+    await _say(engine, platform="signal", room="ROOM-A", person="p1",
+               sender=ADA, ts=after, body="words from after the instant")
+    async with engine.begin() as conn:
+        await conn.execute(sa.text(
+            "INSERT INTO message_edit (message_id, ts, body) "
+            "VALUES (:i, :ts, :b)"), {"i": edited, "ts": after, "b": "dinner at nine"})
+        await conn.execute(sa.text(
+            "INSERT INTO message_reaction (message_id, sender_id, person_id, "
+            "emoji, ts) VALUES (:i, :s, :p, :e, :ts)"),
+            {"i": edited, "s": BEN, "p": "p2", "e": "👍", "ts": after})
+        await conn.execute(sa.text(
+            "INSERT INTO message_delete (message_id, sender_id, person_id, ts) "
+            "VALUES (:i, :s, :p, :ts)"),
+            {"i": pier, "s": ADA, "p": "p1", "ts": after})
+
+    at = datetime.fromtimestamp(NOW_MS / 1000, UTC)
+    stored = await SqlRecordStore(engine).recent(
+        conversation_id=A.conversation_id, limit=10, as_of_ms=NOW_MS,
+    )
+    assert all(row.ts <= NOW_MS for row in stored)
+    old = next(row for row in stored if row.id == edited)
+    assert old.body == "dinner at seven" and not old.reactions
+    shown = []
+    bound = {
+        t.tool_name: t
+        for t in read_tools_for(
+            world.source,
+            names=frozenset({"load_transcript", "record_query"}),
+        )("u1", [A], clock=lambda: at, on_rows=shown.extend)
+    }
+    live_at = datetime.fromtimestamp((after + 1_000) / 1000, UTC)
+    live = {
+        t.tool_name: t
+        for t in read_tools_for(
+            world.source,
+            names=frozenset({"load_transcript", "record_query"}),
+        )("u1", [A], clock=lambda: live_at)
+    }
+
+    transcript = await _call(bound["load_transcript"], limit=10)
+    bodies = [m.get("body") for m in transcript["messages"]]
+    assert "dinner at seven" in bodies            # the edit had not happened yet
+    assert "dinner at nine" not in bodies
+    assert "meet at the pier" in bodies           # and the delete had not either
+    assert "words from after the instant" not in bodies
+    assert any(r.id == edited and r.body == "dinner at seven" for r in shown)
+    assert all(r.ts <= NOW_MS for r in shown)
+
+    live_transcript = await _call(live["load_transcript"], limit=10)
+    live_bodies = [m.get("body") for m in live_transcript["messages"]]
+    assert "dinner at nine" in live_bodies        # the live fold moved on
+    assert "words from after the instant" in live_bodies
+
+    interval = {"start": "2026-01-01", "end": "2030-12-31"}
+    asof = await _call(bound["record_query"], text="pier", **interval)
+    assert asof["status"] == "ok"                  # still said, at the instant
+    pier = next(m for m in asof["messages"] if m.get("body") == "meet at the pier")
+    assert "deleted" not in pier
+    now = await _call(live["record_query"], text="pier", **interval)
+    assert now["status"] == "nothing_found"        # a deleted message never matches
+
+    asof_dinner = await _call(bound["record_query"], text="dinner", **interval)
+    dinner = next(m for m in asof_dinner["messages"] if m.get("body") == "dinner at seven")
+    assert "reactions" not in dinner               # the reaction had not landed yet
+    now_dinner = await _call(live["record_query"], text="dinner", **interval)
+    live_dinner = next(
+        m for m in now_dinner["messages"] if m.get("body") == "dinner at nine")
+    assert live_dinner.get("reactions")            # the live fold carries it
+
+
+@pytest.mark.parametrize("name,args", [
+    ("load_transcript", {}),
+    ("room_read", {"room": "Room B"}),
+    ("record_query", {"start": "2026-01-01", "end": "2030-12-31"}),
+])
+async def test_native_citation_rows_match_the_displayed_file_text(
+    engine, world, tmp_path, name, args,
+):
+    world = World(engine, tmp_path, graph="memory_search" in world.surface.wired,
+                  room_directory=True)
+    raw = "dinner plan https://docs.google.com/document/d/generatedfile123/edit"
+    ids = []
+    for room, platform, sender in (("ROOM-A", "signal", ADA), ("ROOM-B", "discord", "1001")):
+        ids.append(await _say(engine, platform=platform, room=room, person="p1",
+                              sender=sender, ts=NOW_MS - 1, body=raw))
+    shown = []
+    tools = read_tools_for(world.source, names=frozenset({name}))(
+        "u1", [A, B], clock=lambda: datetime.fromtimestamp(NOW_MS / 1000, UTC),
+        on_rows=shown.extend)
+    answer = await _call(next(t for t in tools if t.tool_name == name),
+                         agenda_room="signal:ROOM-A", **args)
+    bodies = {m["body"] for m in answer["messages"] if m.get("body")}
+    assert bodies and raw not in bodies
+    assert all("docs.google.com" not in body for body in bodies)
+    assert shown and {row.body for row in shown} == bodies
+    file_rows = [row for row in shown if row.id in ids]
+    assert file_rows and all(row.person_id == "p1" for row in file_rows)

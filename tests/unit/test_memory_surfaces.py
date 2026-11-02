@@ -77,8 +77,8 @@ EXPECTED: dict[str, dict[bool, frozenset[str]]] = {
     },
     "cognition": {
         False: frozenset({"ask_memory", "search_memory", "search_memory_workspace",
-                          "about"}),
-        True: frozenset({"memory_search", "memory_read"}),
+                          "about", "who_said", "load_transcript"}),
+        True: frozenset({"memory_search", "memory_read", "load_transcript"}),
     },
     CULTURE_ADAPTOR_NAME: {
         False: frozenset({"ask_memory", "search_memory", "about"}),

@@ -102,6 +102,7 @@ class StandingLedger(Protocol):
         *,
         limit: int,
         before_ts: int | None = None,
+        as_of_ms: int | None = None,
     ) -> list[TranscriptRow]: ...
 
     async def history(self, *, unit: str, kind: LedgerKind, id: str) -> tuple[LedgerEntry, ...]: ...

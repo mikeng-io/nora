@@ -15,8 +15,9 @@ here rather than derived from `read_only_tools()`, because a session that
 quietly gained every read tool the registry ever adds is a change nobody decided;
 `read_surface` says which of the named tools are wired and which are missing (a
 named tool the tree does not have is a fact the boot log states, never a silent
-gap). The live social reads (`instagram_*`, `x_*`, `linkedin_*`) are not in it:
-they stay on the tag path.
+gap). The public enrichment reads (`web_*`, the social providers', `place_info`)
+ARE in it: they fetch public content, never the unit's own speech, so the tag
+path's having them first is no reason the session stays blind to them.
 
 **Who they read through.** The read tools are built by the SAME
 `RegistryToolSource` every other Dreamer adaptor reads through, under
@@ -27,9 +28,11 @@ path already runs; this module builds no read of its own.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from types import MappingProxyType
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -77,13 +80,32 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     # the graph surface's (DEC-316): built instead of the Honcho memory verbs
     # above while `[memory.index] read`, never beside them
     "memory_search", "memory_read",
+    # the room's own rows, roster and people (platform-observations 05)
+    "room_read", "load_transcript", "who_said", "lookup_person",
+    # the stored-object reads: a media object, a shared file, the
+    # generated-image library
+    "media_fetch", "media_search", "file_fetch",
+    # the public enrichment reads (their providers live on the tag path too;
+    # an unwired one is `withheld` or answers `unavailable`, never absent)
+    "web_search", "web_fetch", "place_info",
+    "instagram_read", "instagram_search", "x_read", "x_search",
 })
+#: Named deliberately ABSENT — an exclusion is a decision the catalogue
+#: states, not a gap it hides:
+#:
+#: * `document_read`: `DocumentsService.read` is PERSON-scoped — `may_read`
+#:   admits a named member of the document's room — and a Cognition session
+#:   holds no person identity to read through. Offering the name would
+#:   advertise a read that can only fail closed or, worse, authorize with a
+#:   guessed identity. Excluded until a read is genuinely authorized.
+#: * `linkedin_read`/`linkedin_search`: the existing unasked-turn rule protects
+#:   profile-view notifications and search quota; Cognition has no asked turn.
 
 #: The side-effect audit of every tool in the catalogue
 #: (`tests/unit/test_cognition_wiring.py` holds its keys equal to
 #: `COGNITION_READ_CATALOGUE`, so a tool added to the catalogue without an
-#: audited line fails the gate): a READ tool writes nothing, so a session's
-#: writes are only its own verbs'.
+#: audited line fails the gate). These are native reads; ComprehendRead may
+#: separately serialize fetched Record evidence, but no Notebook judgement or act.
 #:
 #: Counters (`nora_tool_calls_total`, `nora_recall_total`, `nora_room_lookups_
 #: total`) are observability, read by a person and never by a decision, and are
@@ -137,6 +159,31 @@ READ_TOOL_AUDIT: Mapping[str, str] = {
     "memory_search": "SQL reads of the memory index and graph (`SqlMemoryIndex`, which "
                      "writes nothing) and one query embedding; counters only. "
                      "No write.",
+    "room_read": "Unit room resolution and bounded SQL transcript/media reads; "
+                 "counters only. No write.",
+    "load_transcript": "SQL read of recorded rows through `ledger.span_rows`/"
+                       "`store.recent`, rendered through the shared media join; "
+                       "counters only. No write.",
+    "who_said": "In-memory read of the shown transcript window; counters only. "
+                "No write.",
+    "lookup_person": "Person registry read (`persons`); counters only. No write.",
+    "media_fetch": "Stored media-object reads and optional blob/vision fetch; "
+                   "counters only. No write.",
+    "media_search": "SQL read of the generated-image library (`media_store`); "
+                    "counters only. No write.",
+    "file_fetch": "Stored shared-file read (`external_files`); counters only. "
+                  "No write.",
+    "place_info": "Geocoder place lookup; counters only. No write.",
+    "web_search": "Search provider query; result screening and provenance at "
+                  "`ComprehendRead`; counters only. No write.",
+    "web_fetch": "One page fetch; the bounded text lands as a `web_page` Record "
+                 "source via `ComprehendRead`; counters only. No write.",
+    "instagram_read": "Instagram read through the social provider; counters "
+                      "only. No write.",
+    "instagram_search": "Instagram search through the social provider; counters "
+                        "only. No write.",
+    "x_read": "X read through the social provider; counters only. No write.",
+    "x_search": "X search through the social provider; counters only. No write.",
 }
 
 #: Tools withheld while their flag is off. `record_query` is offered only with
@@ -201,7 +248,11 @@ def cognition_budget(b: Any) -> Any:
     )
 
 
-ReadTools = Callable[[str, Sequence[Room]], list[Any]]
+#: `CognitionSessionRunner`'s `read_tools_for` collaborator: `(unit, rooms,
+#: *, clock=None)`. `clock` binds every built tool's `now_fn` to a session
+#: instant — the historical lane's evidence time — rather than the process's
+#: wall clock; a live session passes `None`.
+ReadTools = Callable[..., list[Any]]
 
 
 def read_tools_for(
@@ -216,29 +267,61 @@ def read_tools_for(
     `unavailable`, never an empty answer read as «nothing there».
 
     ONE room: that room's tools, untouched. SEVERAL: each room's tools are
-    built by the same source and laid under one tool per name that takes a
-    `room` argument (`nora.agent.room_routing`), so each read resolves
-    through the room it names; a `room` argument that is not on the agenda is
-    refused. That binds WHICH room a read is resolved through (its roster and
-    lineage), not which rooms' data a tool may reach: `record_query
+    built by the same source and laid under one tool per name that takes an
+    `agenda_room` argument (`nora.agent.room_routing`), so each read resolves
+    through the room it names; an `agenda_room` argument that is not on the
+    agenda is refused. That binds WHICH room a read is resolved through (its
+    roster and lineage), not which rooms' data a tool may reach: `record_query
     scope="all_rooms"` and `search_memory_workspace` read the unit's OTHER
     rooms too, because the unit is the read boundary (DEC-231). The unit's home
-    room is never substituted for an item's room."""
-    allowance = grant if grant is not None else cognition_grant()
+    room is never substituted for an item's room.
 
-    def build_for(room: Room) -> list[Any]:
+    `clock` is forwarded to the source's per-occasion bind (the registry's
+    injected clock, swapped by copy the way `with_memory_search` swaps the
+    reader): every `now_fn()` the built tools call then reads that instant.
+    `on_rows` is the transcript rows' evidence callback (what the reads hand
+    out, kept for citation); both are forwarded only when given — they are
+    optional on the source protocol, and an argument a narrower source does
+    not declare is never sent."""
+    allowance = grant if grant is not None else cognition_grant()
+    try:
+        _build_params: Mapping[str, inspect.Parameter] = inspect.signature(
+            source.build).parameters
+    except (TypeError, ValueError):
+        _build_params = {}
+    _accepts_kw = any(
+        p.kind == inspect.Parameter.VAR_KEYWORD
+        for p in _build_params.values())
+
+    def build_for(
+        room: Room, clock: Callable[[], datetime] | None = None,
+        on_rows: Callable[..., None] | None = None,
+    ) -> list[Any]:
+        extra: dict[str, Any] = {
+            **({"clock": clock}
+               if clock is not None and (_accepts_kw or "clock" in _build_params)
+               else {}),
+            **({"on_rows": on_rows}
+               if on_rows is not None and (_accepts_kw or "on_rows" in _build_params)
+               else {}),
+        }
         return source.build(
             key=room.conversation_id, names=names, unit=None,
-            adaptor=COGNITION_ADAPTOR_NAME, grant=allowance,
+            adaptor=COGNITION_ADAPTOR_NAME, grant=allowance, **extra,
         )
 
-    def build(unit: str, rooms: Sequence[Room]) -> list[Any]:
+    def build(
+        unit: str, rooms: Sequence[Room], *,
+        clock: Callable[[], datetime] | None = None,
+        on_rows: Callable[..., None] | None = None,
+    ) -> list[Any]:
         if len(rooms) == 1:
-            return build_for(rooms[0])
+            return build_for(rooms[0], clock, on_rows)
         from nora.agent.room_routing import route_reads
 
         return route_reads({
-            f"{room.platform}:{room.conversation_id}": build_for(room) for room in rooms
+            f"{room.platform}:{room.conversation_id}": build_for(room, clock, on_rows)
+            for room in rooms
         })
 
     return build
@@ -531,11 +614,12 @@ def build_cognition_runner(
         # the tag path's `note_create`, `note_revise` and `remind`, whose
         # arguments differ from the session's own verbs of the same names
         # (`room`, `at`, ...), and R-99 would veto every call to them.
-        # Plus `room`: the routed tools of an agenda spanning several rooms
-        # take it (`nora.agent.room_routing`), and R-99 would veto an
-        # argument the table does not list.
+        # Plus `agenda_room` and `room`: the routed tools of an agenda spanning
+        # several rooms take `agenda_room` (`nora.agent.room_routing`), and a
+        # routed `room_read` still takes its own `room` destination — R-99
+        # would veto an argument the table does not list.
         param_names={
-            n: frozenset(names) | {"room"}
+            n: frozenset(names) | {"agenda_room", "room"}
             for n, names in tools.tool_param_names().items() if n in surface.wired
         },
         result_caps=result_caps,

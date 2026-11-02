@@ -757,6 +757,18 @@ class ToolRegistry:
         scoped._withheld = (self._withheld - GRAPH_MEMORY_TOOLS) | HONCHO_MEMORY_TOOLS
         return scoped
 
+    def with_clock(self, clock: Callable[[], datetime]) -> ToolRegistry:
+        """This registry with the one injected clock swapped, for an occasion
+        whose reads must see a fixed instant rather than the process's wall
+        clock (the historical lane's evidence time). A copy, the same seam as
+        `with_memory_search`: collaborators, withheld set and budgets are the
+        shared ones."""
+        from copy import copy
+
+        scoped = copy(self)
+        scoped._clock = clock
+        return scoped
+
     def withheld_tools(self) -> frozenset[str]:
         """The tools no occasion in this process is offered: a read with no
         store wired, and the memory surface not selected (DEC-316). The ONE

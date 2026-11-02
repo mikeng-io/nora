@@ -122,11 +122,17 @@ class _StoreWithOlderRows:
             *WINDOW,
         )
 
-    async def recent(self, *, conversation_id: str, limit: int):
+    async def recent(self, *, conversation_id: str, limit: int, as_of_ms=None):
         self.calls.append({"conversation_id": conversation_id, "limit": limit})
         if conversation_id != CONV:
             return []
         return list(self._rows[-limit:]) if limit > 0 else []
+
+    async def recent_before(self, *, conversation_id, before_ts, limit, as_of_ms=None):
+        rows = await self.recent(conversation_id=conversation_id, limit=len(self._rows),
+                                 as_of_ms=as_of_ms)
+        bound = min(before_ts, as_of_ms + 1) if as_of_ms is not None else before_ts
+        return [row for row in rows if row.ts < bound][-limit:] if limit > 0 else []
 
 
 @pytest.fixture
@@ -529,8 +535,14 @@ class _StoreOf:
     def __init__(self, rows) -> None:
         self._rows = tuple(rows)
 
-    async def recent(self, *, conversation_id: str, limit: int):
+    async def recent(self, *, conversation_id: str, limit: int, as_of_ms=None):
         return list(self._rows[-limit:]) if conversation_id == CONV and limit > 0 else []
+
+    async def recent_before(self, *, conversation_id, before_ts, limit, as_of_ms=None):
+        rows = await self.recent(conversation_id=conversation_id, limit=len(self._rows),
+                                 as_of_ms=as_of_ms)
+        bound = min(before_ts, as_of_ms + 1) if as_of_ms is not None else before_ts
+        return [row for row in rows if row.ts < bound][-limit:] if limit > 0 else []
 
 
 async def test_load_transcript_says_a_message_was_edited_and_what_it_first_said(persons):

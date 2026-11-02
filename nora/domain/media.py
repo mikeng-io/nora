@@ -588,15 +588,20 @@ async def room_sightings(
     resolver `media_fetch`, `computer_import`, room search and the documents'
     Image resolver share."""
     days = max(1, min(days, ROOM_MEDIA_DAYS))
+    # `now_ms` is also the projection bound: a caller whose instant is
+    # earlier (a session replaying an evidence time) sees no row posted after
+    # it and no edit/reaction recorded after it — the resolver answers as of
+    # its own instant, never as of the live one.
     rows = {
         r.id: r
-        for r in (await store.recent(conversation_id=conversation_id, limit=window)
-                  if window > 0 else [])
+        for r in (await store.recent(
+            conversation_id=conversation_id, limit=window, as_of_ms=now_ms)
+            if window > 0 else [])
     }
     # Over-fetch by one: a full answer means there may be more behind it.
     fetched = await store.media_rows(
         conversation_id=conversation_id, since_ts=now_ms - days * _MS_PER_DAY,
-        limit=ROOM_MEDIA_ROWS + 1,
+        limit=ROOM_MEDIA_ROWS + 1, as_of_ms=now_ms,
     )
     truncated = len(fetched) > ROOM_MEDIA_ROWS
     for r in fetched[:ROOM_MEDIA_ROWS]:

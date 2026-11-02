@@ -44,6 +44,7 @@ class InMemoryStandingLedger:
 
     async def span_rows(
         self, span: ThreadSpan, *, limit: int, before_ts: int | None = None,
+        as_of_ms: int | None = None,
     ) -> list[TranscriptRow]:
         return []
 

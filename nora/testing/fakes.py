@@ -258,9 +258,14 @@ class FakeRecordStore:
                 raise
         return row_id
 
-    def _latest_edit(self, row_id: int) -> dict[str, Any] | None:
-        """Mirrors `audit._latest_edit`: newest by arrival (`id`)."""
-        mine = [e for e in self.edits if e["message_id"] == row_id]
+    def _latest_edit(self, row_id: int, *, before_ms: int | None = None) -> dict[str, Any] | None:
+        """Mirrors `audit._latest_edit`: newest by arrival (`id`), optionally
+        only among edits recorded at or before `before_ms` — the
+        `edits_before` bound the SQL fold carries."""
+        mine = [
+            e for e in self.edits if e["message_id"] == row_id
+            and (before_ms is None or e["ts"] <= before_ms)
+        ]
         return max(mine, key=lambda e: e["id"]) if mine else None
 
     async def find_edited(
@@ -382,16 +387,22 @@ class FakeRecordStore:
         self.hidden_ids.add(message_id)
         return True
 
-    async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]:
+    async def recent(
+        self, *, conversation_id: str, limit: int, as_of_ms: int | None = None,
+    ) -> list[TranscriptRow]:
         if self.fail_on_recent:
             raise RuntimeError("db down")
-        matching = [r for r in self.rows if r["conversation_id"] == conversation_id]
+        matching = [
+            r for r in self.rows if r["conversation_id"] == conversation_id
+            and (as_of_ms is None or r["ts"] < as_of_ms + 1)
+        ]
         matching.sort(key=lambda r: (r["ts"], r["id"]))
         window = matching[-limit:] if limit > 0 else []
-        return [self._transcript_row(r) for r in window]
+        return [self._transcript_row(r, as_of_ms=as_of_ms) for r in window]
 
     async def media_rows(
         self, *, conversation_id: str, since_ts: int, limit: int,
+        as_of_ms: int | None = None,
     ) -> list[TranscriptRow]:
         """Mirrors `SqlRecordStore.media_rows`: this conversation's human rows
         that hold media, `ts >= since_ts`, newest first. Raises when
@@ -403,13 +414,15 @@ class FakeRecordStore:
         matching = [
             r for r in self.rows
             if r["conversation_id"] == conversation_id and r["ts"] >= since_ts
+            and (as_of_ms is None or r["ts"] < as_of_ms + 1)
             and not r["is_nora"] and r["media_json"] is not None
         ]
         matching.sort(key=lambda r: (r["ts"], r["id"]), reverse=True)
-        return [self._transcript_row(r) for r in matching[:limit]]
+        return [self._transcript_row(r, as_of_ms=as_of_ms) for r in matching[:limit]]
 
     async def external_file_rows(
         self, *, conversation_id: str, since_ts: int, limit: int,
+        as_of_ms: int | None = None,
     ) -> list[TranscriptRow]:
         """Mirrors `SqlRecordStore.external_file_rows`, hidden rows excluded;
         raises when `fail_on_recent` is set."""
@@ -420,44 +433,52 @@ class FakeRecordStore:
         matching = [
             r for r in self.rows
             if r["conversation_id"] == conversation_id and r["ts"] >= since_ts
+            and (as_of_ms is None or r["ts"] < as_of_ms + 1)
             and not r["is_nora"] and r.get("external_files_json") is not None
             and r["id"] not in self.hidden_ids
         ]
         matching.sort(key=lambda r: (r["ts"], r["id"]), reverse=True)
-        return [self._transcript_row(r) for r in matching[:limit]]
+        return [self._transcript_row(r, as_of_ms=as_of_ms) for r in matching[:limit]]
 
     async def by_ids(
         self, *, platform: str, conversation_id: str, ids: Sequence[int],
+        as_of_ms: int | None = None,
     ) -> tuple[dict[int, TranscriptRow], frozenset[int]]:
         """Mirrors `SqlRecordStore.by_ids`: one conversation's rows by id —
         hidden rows absent, a recorded delete named in the second element,
-        reactions folded through the same `_transcript_row` as `recent`."""
+        reactions folded through the same `_transcript_row` as `recent`.
+        `as_of_ms` bounds the edit/reaction/delete folds at the caller's
+        instant, as the SQL read's does."""
         if self.fail_on_recent:
             raise RuntimeError("db down")
         wanted = {int(i) for i in ids}
         found = {
-            r["id"]: self._transcript_row(r)
+            r["id"]: self._transcript_row(r, as_of_ms=as_of_ms)
             for r in self.rows
             if r["platform"] == platform and r["conversation_id"] == conversation_id
             and r["id"] in wanted and r["id"] not in self.hidden_ids
         }
         gone = frozenset(
             d["message_id"] for d in self.deletes
-            if d["message_id"] in found)
+            if d["message_id"] in found
+            and (as_of_ms is None or d["ts"] <= as_of_ms))
         return found, gone
 
     async def recent_before(
         self, *, conversation_id: str, before_ts: int, limit: int,
+        as_of_ms: int | None = None,
     ) -> list[TranscriptRow]:
         """Mirrors `SqlRecordStore.recent_before`: `recent` over the rows with
-        `ts < before_ts` only."""
+        `ts < before_ts` only, edit/reaction folds bounded by `as_of_ms` and
+        the window capped at it too, as the SQL `_newest` does."""
         if self.fail_on_recent:
             raise RuntimeError("db down")
         matching = [r for r in self.rows
-                    if r["conversation_id"] == conversation_id and r["ts"] < before_ts]
+                    if r["conversation_id"] == conversation_id and r["ts"] < before_ts
+                    and (as_of_ms is None or r["ts"] < as_of_ms + 1)]
         matching.sort(key=lambda r: (r["ts"], r["id"]))
         window = matching[-limit:] if limit > 0 else []
-        return [self._transcript_row(r) for r in window]
+        return [self._transcript_row(r, as_of_ms=as_of_ms) for r in window]
 
     async def depth_to(self, *, conversation_id: str, ts: int) -> int | None:
         """Mirrors `SqlRecordStore.depth_to`: `None` when no row in this
@@ -503,11 +524,15 @@ class FakeRecordStore:
         rows.sort(key=lambda r: r["id"])
         return [self._transcript_row(r) for r in rows[:limit]]
 
-    def _transcript_row(self, r: dict[str, Any]) -> TranscriptRow:
+    def _transcript_row(
+        self, r: dict[str, Any], *, as_of_ms: int | None = None,
+    ) -> TranscriptRow:
         """The shared row -> `TranscriptRow` mapping for `recent` and
         `since` — mirrors `SqlRecordStore._row` so the two stay legible
-        side by side, the edit fold included."""
-        latest = self._latest_edit(r["id"])
+        side by side, the edit fold included. `as_of_ms` folds the row's
+        edits and reactions only from what was recorded at or before it —
+        the `edits_before`/`before_ms` bounds the SQL reads carry."""
+        latest = self._latest_edit(r["id"], before_ms=as_of_ms)
         # Mirrors `SqlRecordStore`'s `reaction_states` + `with_reactions`:
         # the SAME union fold — legacy `message_reaction` deltas plus the
         # typed reaction rows a wired `FakeObservationStore` holds — so a
@@ -518,6 +543,8 @@ class FakeRecordStore:
                 else ())
             if s.target_message_id == r["id"]
             and s.observation.object_kind == "reaction"
+            and (as_of_ms is None or (s.observation.occurred_ms if s.observation.occurred_ms
+                                      is not None else s.observation.received_ms) <= as_of_ms)
         ]
         tr = fold_target_reactions(
             (ReactionRow(
@@ -525,7 +552,8 @@ class FakeRecordStore:
                 sender_id=e["sender_id"], emoji=e["emoji"],
                 removed=bool(e["removed"]), ts=e["ts"],
                 created_at=e.get("created_at"),
-            ) for e in self.reactions if e["message_id"] == r["id"]),
+            ) for e in self.reactions if e["message_id"] == r["id"]
+            and (as_of_ms is None or e["ts"] <= as_of_ms)),
             typed,
         )
         reactions = to_row_reactions(tr) if tr is not None else None

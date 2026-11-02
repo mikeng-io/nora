@@ -12,6 +12,7 @@ import dataclasses
 from collections.abc import Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any, ClassVar
 
@@ -57,16 +58,31 @@ FLAGS_ON = {"record_query.enabled", "culture.enabled"}
 
 # ---- the read catalogue ------------------------------------------------------
 
-def test_the_catalogue_is_the_designs_and_names_no_live_social_read():
-    """The warehouse queries and the tiers' reads. The live
-    `instagram_*`, `x_*` and `linkedin_*` reads stay on the tag path."""
+def test_the_catalogue_is_the_designs_and_names_the_enrichment_reads():
+    """The warehouse queries, the tiers' reads, the room/people reads, the
+    stored-object reads and the public enrichment reads (`web_*`, social
+    providers', `place_info`) — public fetches the tag path already made,
+    now on the session's own surface too."""
     assert {
         "record_query", "note_read", "about", "event_search",
         "group_members", "poll_list", "poll_read", "room_state_read",
+        "room_read", "load_transcript", "who_said", "lookup_person",
+        "media_fetch", "media_search", "file_fetch",
+        "web_search", "web_fetch", "place_info",
+        "instagram_read", "instagram_search", "x_read", "x_search",
     } <= COGNITION_READ_CATALOGUE
-    live_social = {n for n in NATIVE_TOOLS if n.startswith(("instagram_", "x_", "linkedin_"))}
-    assert live_social, "positive control: the tool table has live social reads"
-    assert not (COGNITION_READ_CATALOGUE & live_social)
+    live_social = {n for n in NATIVE_TOOLS if n.startswith(("instagram_", "x_"))}
+    assert live_social <= COGNITION_READ_CATALOGUE
+
+
+def test_the_catalogues_named_exclusions_stay_excluded():
+    """`linkedin_*` is Dreamer-refused on every surface and `document_read`
+    authorizes only through a named person — offering either name here would
+    advertise a read that can only fail closed or authorize on a guessed
+    identity, so the catalogue states the exclusion rather than listing a
+    tool that cannot lawfully run."""
+    assert not {n for n in COGNITION_READ_CATALOGUE
+                if n.startswith("linkedin_") or n == "document_read"}
 
 
 def test_every_tool_the_session_would_wire_exists_and_is_read_only():
@@ -173,6 +189,32 @@ def test_read_tools_are_built_for_the_agenda_room_under_the_cognition_grant():
     assert call["key"] == "g1" and call["unit"] is None       # scope-resolved: the room's own
     assert call["adaptor"] == "cognition"
     assert call["grant"] == cognition_grant() == AdaptorGrant(home_room=True)
+
+
+def test_read_tools_carry_the_sessions_clock_to_the_source():
+    """The historical lane's seam: `clock` reaches `RegistryToolSource.build`
+    per room — the per-occasion bind the registry's injected clock is swapped
+    through — and a live call omits the optional clock, never a second tool source."""
+    from nora.app.cognition_agent_runner import as_strands_tools
+
+    class RoutedSource(_Source):
+        def build(self, **kw: Any) -> list[Any]:
+            return as_strands_tools(super().build(**kw))
+
+    source = RoutedSource()
+    build = read_tools_for(source, names=frozenset({"record_query"}))
+    as_of = datetime.fromtimestamp(NOW / 1000, UTC)
+
+    def clock() -> datetime:
+        return as_of
+
+    build("friends", [Room("signal", "g1")], clock=clock)
+    assert source.calls[-1]["clock"] is clock
+    # several agenda rooms: the same instant reaches every per-room build
+    build("friends", [Room("signal", "g1"), Room("discord", "g2")], clock=clock)
+    assert all(c["clock"] is clock for c in source.calls[1:])
+    build("friends", [Room("signal", "g1")])
+    assert "clock" not in source.calls[-1]
 
 
 # ---- what the runner does with them ------------------------------------------
@@ -286,7 +328,7 @@ async def test_an_agenda_spanning_rooms_asks_for_each_rooms_reads_and_never_the_
     """DEC-231: each item's reads resolve through
     that item's room. The session hands the source EVERY agenda room, in agenda
     order, and never substitutes the unit's home room for an item's; the prompt
-    says the reads take a `room` and lists them."""
+    says the reads take an `agenda_room` and lists them."""
     asked: list[list[Room]] = []
 
     def reads(unit: str, rooms: Sequence[Room]) -> list[Any]:
@@ -301,7 +343,8 @@ async def test_an_agenda_spanning_rooms_asks_for_each_rooms_reads_and_never_the_
     assert asked == [[OTHER, third]]              # once, both rooms, agenda order
     assert HOME not in asked[0]
     assert (
-        "take a `room`, one of: `discord:other` («The Other Room»), `whatsapp:third` («Third»)"
+        "take an `agenda_room`, one of: `discord:other` («The Other Room»), "
+        "`whatsapp:third` («Third»)"
         in agent.prompts[0]
     )
     assert "look through room" not in agent.prompts[0]

@@ -59,10 +59,15 @@ class SqlRecordQuery:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
-    async def query(self, q: RecordQuery) -> tuple[tuple[RecordHit, ...], bool, frozenset[int]]:
+    async def query(
+        self, q: RecordQuery, *, as_of_ms: int | None = None,
+    ) -> tuple[tuple[RecordHit, ...], bool, frozenset[int]]:
         """The hits, oldest first; whether more matched than were returned;
         and the ids of hits that only NEAR-match `q.text` (no literal
-        containment). No rooms, or a non-positive limit, reads nothing."""
+        containment). No rooms, or a non-positive limit, reads nothing.
+        `as_of_ms` folds edits, reactions and deletes at the caller's instant
+        and caps the window at it — the same bound `by_refs` carries, for the
+        one `record_query` branch a session's bound clock replays."""
         limit = max(0, min(q.limit, RECORD_QUERY_MAX))
         if not q.rooms or limit == 0 or q.end_ms <= q.start_ms:
             return (), False, frozenset()
@@ -71,32 +76,40 @@ class SqlRecordQuery:
             for platform, cid in q.rooms
         ))
         stmt = (
-            transcript_select()
+            transcript_select(edits_before=as_of_ms)
             .add_columns(MESSAGES.c.platform, MESSAGES.c.conversation_id)
             .where(in_rooms, MESSAGES.c.ts >= q.start_ms, MESSAGES.c.ts < q.end_ms)
         )
+        if as_of_ms is not None:
+            stmt = stmt.where(MESSAGES.c.ts < as_of_ms + 1)
         if q.person_id is not None:
             stmt = stmt.where(MESSAGES.c.person_id == q.person_id)
         needle = (q.text or "").strip()
         contains: Any = None
         if needle:
-            # WHAT IS SAID NOW, and only by a message still standing. A text
+            # WHAT IS SAID NOW (or as of `as_of_ms`), and only by a message
+            # still standing. A text
             # match is a claim about the words: matched against an earlier
             # version of an edited message, or against a deleted one, a hit
             # would prove the words were there even with the body withheld.
             # So the current text is the newest
             # edit's, or the body when there is none, and a deleted message
             # never matches.
-            edited = sa.exists().where(MESSAGE_EDIT.c.message_id == MESSAGES.c.id)
+            edit_seen = [MESSAGE_EDIT.c.message_id == MESSAGES.c.id]
+            delete_seen = [MESSAGE_DELETE.c.message_id == MESSAGES.c.id]
+            if as_of_ms is not None:
+                edit_seen.append(MESSAGE_EDIT.c.ts <= as_of_ms)
+                delete_seen.append(MESSAGE_DELETE.c.ts <= as_of_ms)
+            edited = sa.exists().where(*edit_seen)
             newest_edit = (
                 sa.select(MESSAGE_EDIT.c.body)
-                .where(MESSAGE_EDIT.c.message_id == MESSAGES.c.id)
+                .where(*edit_seen)
                 .order_by(MESSAGE_EDIT.c.id.desc())
                 .limit(1)
                 .scalar_subquery()
             )
             current = sa.func.coalesce(newest_edit, MESSAGES.c.body)
-            deleted = sa.exists().where(MESSAGE_DELETE.c.message_id == MESSAGES.c.id)
+            deleted = sa.exists().where(*delete_seen)
             # Each half is written against `messages.body` where it can be, so
             # `idx_messages_body_trgm` serves the unedited majority.
             contains = sa.or_(
@@ -128,8 +141,8 @@ class SqlRecordQuery:
             more = len(rows) > limit
             rows = rows[:limit]
             ids = [r.id for r in rows]
-            reactions = await reaction_states(conn, ids)
-            gone = await self._deleted(conn, ids)
+            reactions = await reaction_states(conn, ids, before_ms=as_of_ms)
+            gone = await self._deleted(conn, ids, before_ms=as_of_ms)
         near = frozenset(r.id for r in rows if needle and not r.contains)
         hits = sorted(
             (

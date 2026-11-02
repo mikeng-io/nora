@@ -363,3 +363,93 @@ sources yielding different completion hashes through source/person iteration
 order. Paid continuation is stopped on that reproducible progress defect;
 [PR #545](https://github.com/mikeng-io/nora/pull/545) carries the bounded repair
 and its pending acceptance. No complete backfill or Honcho replacement is claimed.
+
+**One read surface for both lanes (2026-11-03, pending merge).**
+`historical_runner` keeps the live runner's `read_tools_for` and
+`read_only_tools`, built through `RegistryToolSource` and `cognition_grant`.
+The previous lane suppressed every read, leaving only `memory_propose` and
+`close`. Both lanes now use the same permitted catalogue and deployment
+flags, with historical availability enforced by the existing source seams.
+
+The catalogue adds 14 existing registry reads: `room_read`,
+`load_transcript`, `who_said`, `lookup_person`, `media_fetch`, `media_search`,
+`file_fetch`, `web_search`, `web_fetch`, `place_info`, `instagram_read`,
+`instagram_search`, `x_read` and `x_search`. `document_read` remains excluded
+because it requires a person authorization that a background session does
+not hold; LinkedIn reads retain the existing unasked-view/quota boundary.
+Instagram post/story opening retains its existing asked-turn restriction;
+exposure does not override it. These are explicit capability limits, not
+restored paths. An otherwise permitted read with an unwired backend returns
+`unavailable`.
+
+Historical native message reads carry the evidence instant into row selection
+and edit/reaction/delete/source-event projection. `HistoricalRead` returns
+`unavailable` for current-only heads and private file contents that cannot be
+reconstructed, and for record-object/all-room branches without an as-of seam.
+Public enrichment retains actual fetch time and citable source custody.
+It cannot establish private attendance merely by finding a public event.
+
+`index.read=false` and `profile.read=false` remain unchanged. Media readings
+retain their documented latest-fold ceiling; current withdrawal remains
+effective. Historical sends, reminders, profile and Register act verbs stay
+withheld. Semantic graph changes go through `memory_propose`; the existing
+fetch wrapper may serialize a fetched page as Record evidence.
+
+**Review repair, same change (2026-11-03, pending merge).** An independent
+full review of the first drop found the mechanism above was a display-clock
+illusion — `before=T+1ms` never reached the store, so the «as-of» reads folded
+at wall clock — plus five more classes. The repair, in the same branch:
+
+- **The bound is real.** `load_transcript`, `room_read` and `record_query`
+  derive `as_of_ms` from their injected clock and hand it to the store:
+  `recent_before(before_ts, as_of_ms)`/`recent`, `SqlRecordQuery.query`, and
+  `transcript_select(edits_before)`/`reaction_states(before_ms)`/delete and
+  source-event queries fold edits, reactions, deletes and typed source state
+  AT the instant. `_read_window` caps the page end at `as_of_ms + 1`.
+  `HistoricalRead` no longer rewrites `before` — it refuses only what is
+  irreducibly current (`file_fetch` joins that table: a shared file's content
+  at fetch time is the only content it has). A Postgres regression seeds an
+  old row, a post-T row/edit/reaction/delete and reads both clocks.
+- **Evidence custody is real.** `load_transcript`/`room_read`/`record_query`
+  invoke the optional `on_rows` with the exact projected rows they show;
+  the session maps shown, non-`None` bodies to `("message", id)` `Source`s in
+  `graph_fetched`, so `memory_propose` admits shown evidence and refuses
+  `unseen_source` otherwise. `load_transcript` keeps its status-free success
+  contract (`{"messages": [...]}`) and failures now carry
+  `status:"unavailable"` + `messages:[]` — `RoomFetched.take` keeps rows on
+  status-free success and drops any status'd result.
+- **`agenda_room` is the routing selector.** `room` was the selector AND
+  `room_read`'s own destination — one argument silently overwrote the other.
+  The multi-room wrapper now takes `agenda_room` (required, enum of agenda
+  rooms), the inner tool's own `room` argument survives intact, and the R-99
+  param table admits both. Unknown/missing `agenda_room` is refused.
+- **Authorized capability only.** `document_read` (its read is person-scoped;
+  a session holds no person identity) and `linkedin_read`/`linkedin_search`
+  (the existing unasked-turn boundary) are named as excluded in the
+  catalogue comments and absent from `COGNITION_READ_CATALOGUE` and
+  `READ_TOOL_AUDIT` — not advertised as restored reads. The egress screen
+  (`SCREENED_ARGS`) already names every outbound argument the newly reachable
+  reads take — social queries/handles, `place_info`, media/file fetches —
+  and screens unconditionally; a refused outbound call never reaches the
+  provider.
+- **Optional protocol, honoured.** `clock`/`on_rows` reach a source only when
+  given and declared in `_guarded_read_tools` and `read_tools_for`;
+  `DreamerRuntime` omits `on_rows` when the adaptor has no `saw` consumer.
+  Narrower source implementations still build.
+
+**Eval contract repair (operator amendment, same drop).** The tool-selection
+corpus's hand-copied catalogue is replaced by `SESSION_VERB_NAMES |
+COGNITION_READ_CATALOGUE` — the same constants the occasion is built from —
+and `probe` now runs the wake's own `_session_input` (same instruction, same
+render) over an honestly empty `UnitView`/`Grounding` rather than a partial
+rebuild that skipped `SESSION_INSTRUCTION`, memory preparation and the
+graph/shared blocks. Zero-model regressions compare the probe and wake's
+actual descriptions/schemas against canonical native specs, check the corpus's
+offered verbs, and exercise memory preparation and the shared instruction. The
+corpus's `[dreamer] model` header stands: the runner runs
+`route_model("dreamer", cfg.dreamer_model())` and no `[cognition] model` key
+exists — checked against `nora/app/composition.py`, the audit's claim was
+mistaken. The six same-named Cognition write contracts (`note_create`/`revise`,
+`event_propose`/`revise`/`set_status`, `remind`) are pre-existing, genuinely
+distinct surfaces (different params and authority from the tag path's); they
+are reported as such, not collapsed.

@@ -86,13 +86,16 @@ def _runner(
     store: InMemoryCognitionStore | None = None,
     stimuli: InMemoryStimulusStore | None = None,
     memory: Any = None, grounder: Any = None,
+    read_tools_for: Any = None, read_only_tools: frozenset[str] = frozenset(),
 ) -> tuple[CognitionSessionRunner, InMemoryCognitionStore, FakeCognitionAgentRunner]:
     store = store or InMemoryCognitionStore()
     fake = agent_runner or FakeCognitionAgentRunner()
     runner = CognitionSessionRunner(
         store=store, stimulus_store=stimuli or _seeded(), memory=memory,
         agent_runner=fake, units=("unit-1",), session_timeout_seconds=900.0,
-        home_rooms={"unit-1": HOME}, read_tools_for=lambda unit, rooms: [],
+        home_rooms={"unit-1": HOME},
+        read_tools_for=read_tools_for or (lambda unit, rooms, **kw: []),
+        read_only_tools=read_only_tools,
         skill_text_for=lambda kinds: "", grounder=grounder or EmptyGrounder(),
         doctrine_text="DOCTRINE",
         doctrine_sha256="sha", open_note_titles=_async_const(()),
@@ -295,6 +298,125 @@ async def test_cognition_09_backfill_withholds_act_tools():
                  "commitment_", "standing_", "wake_", "remind", "send_")
     assert not any(n.startswith(forbidden) for n in fake.last_tool_names)
     assert not store.paces
+
+
+class _StubRead:
+    """A read-tool-shaped stand-in (`tool_name`/`tool_spec`/`stream`), the
+    shape `as_of_reads` recognises and wraps."""
+
+    tool_name = "memory_search"
+    tool_type = "python"
+    tool_spec: ClassVar = {"name": "memory_search", "description": "generated search",
+                 "inputSchema": {"json": {"type": "object", "properties": {}}}}
+
+    async def stream(self, tool_use: Any, invocation_state: Any, **kw: Any) -> Any:
+        yield tool_use
+
+
+async def test_cognition_backfill_reads_the_same_surface_as_of_the_evidence_instant():
+    """`historical` no longer blanks the read surface: the session asks the
+    SAME `read_tools_for` a live wake does — with a `clock` bound to the
+    evidence instant, and every returned tool wrapped in `HistoricalRead` —
+    so a shared read reaches the model through one code path."""
+    from nora.agent.comprehend_tools import HistoricalRead
+
+    seen: dict[str, Any] = {}
+
+    def reads(unit: str, rooms: Any, **kw: Any) -> list[Any]:
+        seen.update(kw)
+        return [_StubRead()]
+
+    class _Agent:
+        built: ClassVar[list[Any]] = []
+
+        async def run(self, *, tools: list[Any], **kw: Any) -> CognitionRunResult:
+            _Agent.built = list(tools)
+            return CognitionRunResult(stop_reason="end_turn")
+
+    runner, _, _ = _runner(agent_runner=_Agent(), read_tools_for=reads,
+                           read_only_tools=frozenset({"memory_search"}))
+    view = UnitView(unit="unit-1", pending=_pending("unit-1"),
+                    last_activity_ms=None, last_wake=None)
+    await runner.replay(view=view, now_ms=NOW, historical=True)
+    (record,) = (t for t in _Agent.built if isinstance(t, HistoricalRead))
+    assert record.tool_name == "memory_search"
+    assert seen["clock"]() == datetime.fromtimestamp(NOW / 1000, UTC)
+
+    # A live wake asks the same source, clockless, with nothing wrapped.
+    seen.clear()
+    await runner.replay(view=view, now_ms=NOW)
+    assert "clock" not in seen
+    assert not [t for t in _Agent.built if isinstance(t, HistoricalRead)]
+
+
+async def test_rows_a_read_shows_become_the_evidence_a_proposal_may_cite():
+    """The `on_rows` custody path, end to end at the session boundary: the
+    rows a transcript read actually handed out become `("message", id)`
+    Sources in `graph_fetched` — so `memory_propose` admits evidence that
+    cites a shown row and refuses `unseen_source` for one the read never
+    exposed (the withheld body the tool kept out of its result)."""
+    from nora.domain.models import DeliveryStatus, TranscriptRow
+
+    memory = wake_memory()
+    _seed_event(memory, "u:event:generated-gala")
+    shown = TranscriptRow(
+        id=101, sender_id="+85200000001", sender_name="Ada", ts=NOW,
+        body="dinner at eight", is_nora=False,
+        delivery_status=DeliveryStatus.SENT, raw_json=None, person_id="p_ada")
+    withheld = TranscriptRow(
+        id=102, sender_id="+85200000002", sender_name="Bob", ts=NOW,
+        body=None, is_nora=False,
+        delivery_status=DeliveryStatus.SENT, raw_json=None, person_id="p_bob")
+
+    def reads(unit: str, rooms: Any, **kw: Any) -> list[Any]:
+        on_rows = kw.get("on_rows")
+
+        async def load_transcript(**_args: Any) -> dict[str, Any]:
+            on_rows([shown, withheld])
+            return {"messages": [{"sender": "Ada", "body": "dinner at eight"}]}
+        return [load_transcript]
+
+    def proposing(cited: str, relation_id: str) -> dict[str, Any]:
+        payload = proposal()
+        payload["relations"] = [
+            {"id": relation_id, "src": ["reading", "generated-r"], "rel": "about",
+             "dst": ["event", "u:event:generated-gala"], "persons": ["p_ada"]}]
+        payload["evidence"] = [{"source": ["message", cited], "relation_id": relation_id}]
+        return payload
+
+    fake = FakeCognitionAgentRunner(script=[
+        ("load_transcript", {}),
+        ("memory_propose", proposing("101", "r-shown")),
+        ("memory_propose", proposing("102", "r-withheld")),
+    ])
+    runner, _, _ = _runner(
+        agent_runner=fake, memory=memory, read_tools_for=reads,
+        read_only_tools=frozenset({"load_transcript"}))
+    await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
+        last_activity_ms=None, last_wake=None), now_ms=NOW)
+    shown_refused = {r["reason"] for r in fake.results[1]["refused"]}
+    withheld_refused = {r["reason"] for r in fake.results[2]["refused"]}
+    assert "unseen_source" not in shown_refused
+    assert "unseen_source" in withheld_refused
+
+
+async def test_probe_prepares_memory_and_uses_the_wakes_instruction():
+    from nora.language.comprehend_render import SESSION_INSTRUCTION
+
+    class Capture(FakeCognitionAgentRunner):
+        async def run(self, **kwargs):
+            self.system_prompt = kwargs["system_prompt"]
+            return await super().run(**kwargs)
+
+    agent = Capture(script=[("memory_propose", {
+        "items": [0], "readings": [], "entities": [], "relations": [],
+        "evidence": [], "corrections": [],
+    })])
+    memory = wake_memory()
+    runner, _, _ = _runner(agent_runner=agent, memory=memory)
+    await runner.probe(unit="unit-1", summary="a generated review", now_ms=NOW)
+    assert SESSION_INSTRUCTION in agent.system_prompt
+    assert agent.results[0]["status"] == "ok"
 
 
 @pytest.mark.parametrize("admit", [False, True])
@@ -1055,3 +1177,68 @@ async def test_identifier_graph_node_is_dropped_from_wake_input():
     memory.content_checks = False
     inspection = await runner.inspect(view=view, now_ms=NOW)
     assert identifier in inspection["agenda"]
+
+
+async def test_native_transcript_rendered_file_text_is_the_proposals_evidence():
+    from nora.agent.room import Room as ToolRoom
+    from nora.agent.tools import build_tool_specs
+    from nora.domain.models import NormalizedMessage
+    from nora.obs.metrics import Metrics
+    from nora.persons import Persons
+    from nora.testing import FakeMemoryStore, FakeRecordStore, FakeRosterSource
+    from tests.fakes import SinkSender
+
+    raw = "dinner plan https://docs.google.com/document/d/generatedfile123/edit"
+    store = FakeRecordStore()
+    message_id = await store.append(message=NormalizedMessage(
+        "signal", "home-room", "group", "generated-sender", "Ada", NOW - 1, raw, {}),
+        person_id="p_ada")
+    persons = Persons(by_person={}, index={})
+    room = ToolRoom(platform="signal", conversation_id="home-room", persons=persons,
+                    roster_source=FakeRosterSource())
+    memory = wake_memory()
+    from nora.domain.memory_graph import Entity, pointer_entity
+
+    person = pointer_entity("person", "unit-1", "p_ada", "Ada")
+    event = Entity("unit-1:event:generated-gala", "event", "unit-1", "generated gala")
+    memory.graph.entities.update({person.id: person, event.id: event})
+    responses = []
+
+    def reads(unit, rooms, **kw):
+        specs = build_tool_specs(
+            store=store, conversation_id="home-room", conversation_type="group",
+            persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+            metrics=Metrics(), room=room, transit_source=None,
+            clock=lambda: datetime.fromtimestamp(NOW / 1000, UTC),
+            on_rows=kw["on_rows"])
+        native = next(spec.call for spec in specs if spec.name == "load_transcript")
+
+        async def load_transcript():
+            answer = await native()
+            responses.append(answer)
+            return answer
+        return [load_transcript]
+
+    async def behave(by, tools):
+        await by["load_transcript"]()
+        shown = responses[-1]["messages"][0]["body"]
+        assert shown != raw and "docs.google.com" not in shown
+        for span, relation_id in ((shown, "shown-file"), (raw, "raw-file")):
+            payload = proposal()
+            payload["relations"] = [{
+                "id": relation_id, "src": list(person.key), "rel": "likes",
+                "dst": list(event.key), "persons": ["p_ada"]}]
+            payload["evidence"] = [{"source": ["message", str(message_id)],
+                                    "relation_id": relation_id, "span": span}]
+            answer = await by["memory_propose"](**payload)
+            responses.append(answer)
+
+    from tests.unit.cognition_rig import Script
+
+    runner, _, _ = _runner(
+        agent_runner=Script(behave), memory=memory, read_tools_for=reads,
+        read_only_tools=frozenset({"load_transcript"}))
+    await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
+        last_activity_ms=None, last_wake=None), now_ms=NOW)
+    assert responses[1]["admitted"] == [0], responses[1]
+    assert any(r["reason"] == "span_not_in_source" for r in responses[2]["refused"])

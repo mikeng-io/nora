@@ -51,8 +51,8 @@
  {
   "name": "session runner: a spanning agenda binds the reads to the home room, not each item's room",
   "file": "nora/app/cognition_session.py",
-  "old": "        read_tools = watch_reads(self._guarded_read_tools(unit, rooms), state.fetched, keys)",
-  "new": "        read_tools = watch_reads(self._guarded_read_tools(unit, [self._home_rooms[unit]]), state.fetched, keys)",
+  "old": "                unit, rooms, clock=historical_clock,\n                on_rows=on_rows if self._memory is not None else None),",
+  "new": "                unit, [self._home_rooms[unit]], clock=historical_clock,\n                on_rows=on_rows if self._memory is not None else None),",
   "target": "tests/unit/test_cognition_wiring.py -k spanning_rooms_asks"
  },
  {

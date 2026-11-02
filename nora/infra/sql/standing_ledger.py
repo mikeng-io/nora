@@ -233,8 +233,9 @@ class SqlStandingLedger:
         *,
         limit: int,
         before_ts: int | None = None,
+        as_of_ms: int | None = None,
     ) -> list[TranscriptRow]:
-        stmt = transcript_select().where(
+        stmt = transcript_select(edits_before=as_of_ms).where(
             MESSAGES.c.platform == span.platform,
             MESSAGES.c.conversation_id == span.conversation_id,
             sa.tuple_(MESSAGES.c.ts, MESSAGES.c.id) >= (span.first_at, span.first_id),
@@ -242,13 +243,15 @@ class SqlStandingLedger:
         )
         if before_ts is not None:
             stmt = stmt.where(MESSAGES.c.ts < before_ts)
+        if as_of_ms is not None:
+            stmt = stmt.where(MESSAGES.c.ts < as_of_ms + 1)
         async with self._engine.connect() as conn:
             rows = (
                 await conn.execute(
                     stmt.order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc()).limit(limit + 1)
                 )
             ).all()
-            states = await reaction_states(conn, [r.id for r in rows])
+            states = await reaction_states(conn, [r.id for r in rows], before_ms=as_of_ms)
         return with_reactions([transcript_row(r) for r in reversed(rows)], states)
 
     async def history(self, *, unit: str, kind: LedgerKind, id: str) -> tuple[LedgerEntry, ...]:

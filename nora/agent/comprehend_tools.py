@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import Any
 from urllib.parse import unquote
 
@@ -74,6 +75,28 @@ class LookupState:
     used: dict[str, int] = field(default_factory=dict)
 
 
+#: The outbound arguments `egress_reason` screens before a provider is called,
+#: per tool name. The session's mandatory private/identifier screen applied to
+#: the web pair's `query`/`url` from the start; the newly reachable provider
+#: reads carry the same outbound text on different argument names, and a
+#: handle, query or link is the same disclosure on any provider. A screen
+#: refusal happens before `inner` runs — the provider is never called.
+#: `state.limits` (the per-call COUNT cap) still binds only the web pair.
+SCREENED_ARGS: Mapping[str, tuple[str, ...]] = MappingProxyType({
+    "web_search": ("query",),
+    "web_fetch": ("url",),
+    "place_info": ("name", "address"),
+    "media_fetch": ("url", "question"),
+    "file_fetch": ("link", "url"),
+    "instagram_read": ("person", "handle", "link", "url"),
+    "instagram_search": ("query",),
+    "x_read": ("handle", "link", "url"),
+    "x_search": ("query",),
+    "linkedin_read": ("handle", "link", "url"),
+    "linkedin_search": ("query",),
+})
+
+
 class ComprehendRead(AgentTool):
     def __init__(self, inner: Any, state: LookupState) -> None:
         super().__init__()
@@ -103,15 +126,21 @@ class ComprehendRead(AgentTool):
     ) -> AsyncGenerator[Any, None]:
         state, name = self._state, self.tool_name
         args = tool_use.get("input") or {}
-        if name in state.limits:
-            value = args.get("query" if name == "web_search" else "url")
-            reason = (
-                "bad_arguments"
-                if not isinstance(value, str)
-                else egress_reason(value, state.private_names)
-            )
-            if reason is None and state.used.get(name, 0) >= state.limits[name]:
-                reason = "lookup_cap"
+        if name in SCREENED_ARGS:
+            reason = None
+            for arg in SCREENED_ARGS[name]:
+                value = args.get(arg)
+                if not isinstance(value, str) or not value.strip():
+                    continue
+                reason = egress_reason(value, state.private_names)
+                if reason is not None:
+                    break
+            if reason is None and name in state.limits:
+                value = args.get("query" if name == "web_search" else "url")
+                if not isinstance(value, str):
+                    reason = "bad_arguments"
+                elif state.used.get(name, 0) >= state.limits[name]:
+                    reason = "lookup_cap"
             if reason:
                 if reason not in EGRESS_REASONS:
                     raise ValueError("unknown egress refusal")
@@ -127,7 +156,8 @@ class ComprehendRead(AgentTool):
                 )
                 return
             # No await between checking and increment: parallel tool calls share the cap.
-            state.used[name] = state.used.get(name, 0) + 1
+            if name in state.limits:
+                state.used[name] = state.used.get(name, 0) + 1
             state.metrics.inc("nora_comprehend_web_lookups_total", tool=name)
         async for event in self._inner.stream(tool_use, invocation_state, **kwargs):
             answer = _result_of(event)
@@ -177,3 +207,157 @@ class ComprehendRead(AgentTool):
                 yield self._event(tool_use, answer)
             else:
                 yield event
+
+
+#: The reads a session replaying an earlier instant cannot answer honestly:
+#: each answers from a fold of the CURRENT state — a notebook or roster head,
+#: a live index, a built view — and no evidence-time seam exists for it to
+#: read that state back as it then stood. The tool stays on the surface, so
+#: its schema and its catalogue entry still hold, and answers `unavailable`
+#: with the limitation, never `nothing_found`: a fold that cannot be read
+#: as-of is not a fold that was empty. What the session was already shown —
+#: its grounding — carries the as-of view these reads cannot give.
+HISTORICAL_READ_UNAVAILABLE: Mapping[str, str] = MappingProxyType({
+    "about": "This reads a person's profile as it stands now, not as of this "
+             "time; what was already gathered shows what was known then.",
+    "ask_memory": "This reasons over memory as it stands now, not as of this "
+                  "time; what was already gathered shows what was known then.",
+    "search_memory": "This searches memory as it stands now, not as of this "
+                     "time; what was already gathered shows what was known then.",
+    "search_memory_workspace": "This searches memory as it stands now, not as "
+                               "of this time; what was already gathered shows "
+                               "what was known then.",
+    "memory_search": "This searches the memory graph's current heads; it "
+                     "cannot be read back as of this time. What was already "
+                     "gathered shows the graph as of it.",
+    "memory_read": "This reads the memory graph's current heads; it cannot be "
+                   "read back as of this time. What was already gathered "
+                   "shows the graph as of it.",
+    "who_said": "This checks the transcript in front of a live turn; a reading "
+                "of an earlier time has no such window. `record_query` and "
+                "`load_transcript` read the record instead.",
+    "lookup_person": "This reads who is known as it stands now; who was known "
+                     "then cannot be read back.",
+    "group_members": "This reads the member list as it stands now, not as of "
+                     "this time.",
+    "room_state_read": "This reads the room's folded objects as they stand "
+                       "now, not as of this time.",
+    "poll_list": "This reads polls' folded state as it stands now, not as of "
+                 "this time.",
+    "poll_read": "This reads a poll's folded state as it stands now, not as "
+                 "of this time.",
+    "event_search": "This reads gatherings' open folds as they stand now, "
+                    "not what was open then.",
+    "rollup_read": "This reads a rollup built now; what it would have read "
+                   "then cannot be rebuilt here.",
+    "standing_read": "This reads standing as it stands now, not as of this "
+                     "time.",
+    "character_read": "This reads culture as it stands now, not as of this "
+                      "time.",
+    "routine_read": "This reads a routine computed on the current state, not "
+                    "as of this time.",
+    "where_been": "This reads presence derived from the current state, not "
+                  "as of this time.",
+    "note_read": "This reads the notebook as it stands now, not as of this "
+                 "time.",
+    "note_search": "This searches the notebook as it stands now, not as of "
+                   "this time.",
+    "memo_read": "This reads a memo as it stands now, not as of this time.",
+    "social_read": "This reads the social stream's items as they stand now; "
+                   "an interval reaching past this time would show items not "
+                   "yet posted.",
+    "media_search": "This searches the image library as it stands now, "
+                    "including work made after this time.",
+    "file_fetch": "This reads a file's content as it stands now — a shared "
+                  "document's body is whatever it says at fetch time, and "
+                  "what it said at this time cannot be read back.",
+})
+
+#: `record_query` branches a replay cannot answer honestly: the typed
+#: source-object read (`kind`/`object`/`history`/`at_id`) folds and lists as
+#: they stand now, and `scope="all_rooms"` checks today's member lists —
+#: neither can be read back as of the evidence instant. The messages branch
+#: stays: its interval is already bounded at the instant the session's clock
+#: is bound to.
+_RECORD_OBJECT_UNAVAILABLE = (
+    "A source object's fold and event history are read as they stand now; "
+    "this time has no anchor for them."
+)
+_RECORD_ALL_ROOMS_UNAVAILABLE = (
+    "Reading every room checks the member list as it stands now; who was in "
+    "each room then cannot be checked, so this read stays to this room."
+)
+
+
+class HistoricalRead(AgentTool):
+    """`inner` under the historical lane's temporal rule: same schema, same
+    answers, with every read bound to the session's evidence instant.
+
+    The BOUND itself is not here: it is the session's clock, which every
+    built read tool derives its as-of ceiling from (`ToolRegistry.with_clock`
+    binds `now_fn`, and `load_transcript`/`room_read`/`record_query` fold
+    rows, edits, reactions, deletes and source events at it — so a `before`
+    at or after the instant, or absent, can never mean «the live newest»).
+    What this wrapper adds is the honest boundary the record cannot give:
+    the tools in `HISTORICAL_READ_UNAVAILABLE` answer `unavailable` with
+    their limitation before `inner` runs — nothing was read, so nothing is
+    recorded as fetched. Everything else passes through untouched: public
+    fetches keep their real fetch time and the stored-object reads the
+    immutable artifact."""
+
+    def __init__(self, inner: Any) -> None:
+        super().__init__()
+        self._inner = inner
+
+    @property
+    def tool_name(self) -> str:
+        return str(self._inner.tool_name)
+
+    @property
+    def tool_spec(self) -> ToolSpec:
+        return self._inner.tool_spec
+
+    @property
+    def tool_type(self) -> str:
+        return "python"
+
+    @staticmethod
+    def _event(use: ToolUse, answer: dict[str, Any]) -> ToolResultEvent:
+        envelope: dict[str, Any] = {"toolUseId": use["toolUseId"],
+                                    "content": [{"json": answer}],
+                                    "status": "success"}
+        return ToolResultEvent(envelope)  # type: ignore[arg-type]
+
+    def _unavailable(self, name: str, args: Mapping[str, Any]) -> str | None:
+        note = HISTORICAL_READ_UNAVAILABLE.get(name)
+        if note is not None:
+            return note
+        if name == "record_query":
+            if args.get("kind") is not None or args.get("object") is not None:
+                return _RECORD_OBJECT_UNAVAILABLE
+            if args.get("scope") == "all_rooms":
+                return _RECORD_ALL_ROOMS_UNAVAILABLE
+        return None
+
+    async def stream(
+        self, tool_use: ToolUse, invocation_state: dict[str, Any], **kwargs: Any
+    ) -> AsyncGenerator[Any, None]:
+        name = self.tool_name
+        args = tool_use.get("input") or {}
+        note = self._unavailable(name, args)
+        if note is not None:
+            yield self._event(tool_use, {"status": "unavailable", "note": note})
+            return
+        async for event in self._inner.stream(tool_use, invocation_state, **kwargs):
+            yield event
+
+
+def as_of_reads(tools: list[Any]) -> list[Any]:
+    """A session's read tools under the historical lane's temporal rule
+    (`HistoricalRead`). Tools that are not Strands tool objects pass through
+    as they are — a caller's hand-built stand-in keeps its own behavior."""
+    return [
+        HistoricalRead(tool)
+        if hasattr(tool, "stream") and hasattr(tool, "tool_spec") else tool
+        for tool in tools
+    ]

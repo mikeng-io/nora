@@ -76,6 +76,7 @@ import logging
 import time
 from collections.abc import Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Literal, Protocol, TypeVar, get_args
 
 from ..domain.errors import AccountNotRecordableError
@@ -477,6 +478,7 @@ class DreamToolSource(Protocol):
         self, *, key: str, names: frozenset[str], unit: str | None = None,
         adaptor: str = "", grant: AdaptorGrant | None = None,
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> list[Any]: ...
 
     # R-99: `DreamGuard` needs the same accepted-argument table `ReplyGuard` reads
@@ -912,6 +914,7 @@ class RegistryToolSource:
         self, *, key: str, names: frozenset[str], unit: str | None = None,
         adaptor: str = "", grant: AdaptorGrant | None = None,
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> list[Any]:
         from .room import Room
 
@@ -977,7 +980,10 @@ class RegistryToolSource:
                 platform="", conversation_id=key, roster_source=None,
                 persons=self._persons,
             )
-        return self._registry.surface(
+        registry = (
+            self._registry if clock is None else self._registry.with_clock(clock)
+        )
+        return registry.surface(
             # The adaptor's ceiling, applied by the SAME scope every loop's tools
             # pass through.
             grant=wanted,
@@ -1329,6 +1335,14 @@ class DreamerRuntime:
             # tool) resolves through its own key, which names no room, so every
             # room-scoped verb is closed to it.
             tool_room = getattr(adaptor, "tool_room", None)
+            # Only for an adaptor that grounds on what it loaded (`saw`) —
+            # and only PRESENT then: `on_rows` is optional on the source
+            # protocol, so a build that does not need it never passes it
+            # (an argument a narrower source does not declare must not be
+            # sent, `None` or not).
+            extra: dict[str, Any] = (
+                {"on_rows": loaded.extend} if saw is not None else {}
+            )
             tools = self._tools.build(
                 key=(tool_room(key) or key) if tool_room is not None else key,
                 names=frozenset(adaptor.tools),
@@ -1338,8 +1352,7 @@ class DreamerRuntime:
                 # adaptor supplies nothing and its tools resolve through the room.
                 unit=key if adaptor.key_kind == "unit" else None,
                 adaptor=adaptor.name, grant=grant,
-                # Only for an adaptor that grounds on what it loaded (`saw`).
-                **({"on_rows": loaded.extend} if saw is not None else {}),
+                **extra,
             )
             # THE ADAPTOR'S OWN WRITE VERBS (`character_revise`): typed closures
             # that VALIDATE a write as the model makes it and answer a refusal it

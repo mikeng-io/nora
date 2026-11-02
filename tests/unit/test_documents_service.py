@@ -69,7 +69,8 @@ class _Transcript:
         self.history = history or {}
         self.filler = filler
 
-    async def recent(self, *, conversation_id: str, limit: int) -> list[_Row]:
+    async def recent(self, *, conversation_id: str, limit: int,
+                     as_of_ms: int | None = None) -> list[_Row]:
         if self.fail:
             raise RuntimeError("db down")
         rows = [
@@ -78,7 +79,8 @@ class _Transcript:
         ]
         return rows[-limit:]
 
-    async def media_rows(self, *, conversation_id: str, since_ts: int, limit: int) -> list[_Row]:
+    async def media_rows(self, *, conversation_id: str, since_ts: int, limit: int,
+                         as_of_ms: int | None = None) -> list[_Row]:
         if self.fail:
             raise RuntimeError("db down")
         rows = [
