@@ -1,6 +1,6 @@
 ---
 name: nora-runtime-skill
-description: Adds, changes or retires one of Nora's own runtime skills in nora/skills/ under ADR 0016, covering placement, the reach and cost tests from Langfuse, description and body limits, the enforcing tests, and the image rebuild that deploys it. Load when a task touches a SKILL.md under nora/skills or asks why her skill did not load. Not for the agents' skills in .agents/skills, or tools (nora-tool).
+description: Adds, changes or retires one of Nora's own runtime skills in nora/skills/ under ADR 0016, covering placement, the reach and cost tests from Langfuse, description and body limits, the enforcing tests, and automatic image deployment. Load when a task touches a SKILL.md under nora/skills or asks why her skill did not load. Not for the agents' skills in .agents/skills, or tools (nora-tool).
 ---
 
 # Adding or changing one of Nora's runtime skills
@@ -140,8 +140,10 @@ the skill covers, second person, judgement only, RFC 2119 register.
 
 `nora/skills` is copied into the image (`COPY nora/` in the `Dockerfile`), and
 `docker-compose.yml` bind-mounts only `nora/doctrine` and `nora/dreamer`. A skill
-edit is live only after a rebuild and recreate (`nora-deploy`); editing the file
-on the host deploys nothing and reports nothing. Read it back:
+edit becomes live through the release/image/Komodo pipeline. Do not manually
+rebuild or recreate after merge; editing the file on the host deploys nothing.
+When acceptance requires live evidence, read back the automatic deployment
+(`nora-deploy`) and compare the skill:
 
 ```bash
 git fetch origin master && git show origin/master:nora/skills/<name>/SKILL.md | shasum -a 256
