@@ -242,3 +242,75 @@ adaptors write. The result receipt rides the write's own transaction, so an
 identical retried call replays its recorded result. Ceilings unchanged: the
 flag flip, backfill and the read-back in a later live turn are operator-held;
 generated fixtures prove code guarantees only.
+
+### Progress, evidence and next bounded action (2026-11-02)
+
+A dated snapshot of what is delivered, what is observed and what remains.
+Intent and acceptance above are unchanged; #429–#431 under #435 stay
+parallel quality work, not prerequisites, and no waiver or volume/parity
+wait is added here.
+
+**Source (merged, read back).** Two repairs landed 2026-11-01. #490
+(`ee58149`): the six Register create/revise verbs persist the
+session-shown explicit associations; explicit `associations: []` clears
+selected links, while an omitted `associations` on revise preserves them, and retry re-links the same row by exact act key
+with the receipt in the same transaction — the F3 mechanism of
+[27 §17](27-the-memory-is-a-graph.md#17-implementation-findings-and-longitudinal-understanding-2026-10-30).
+Its full gate passed (20,426 tests) and its own 14-mutation table was fully
+caught under independent full and delta review; an earlier broader
+mutation sweep remains incomplete and is not asserted done. #495
+(`78e9f4a`, head `d5ff469`): the F4 handoff above — typed
+`profile_read`/`profile_revise` with shown cited evidence, `relation:`
+premises, atomic receipt, shown-view invalidation, and retirement and
+replacement under one availability predicate covering Cognition and every
+unit's home room. Its full gate passed (20,482 tests), nine mutations
+caught, FULL review then a repair-delta APPROVE. Both source slices'
+acceptance is closed and does not reopen without a reachable defect. A
+green gate is a code receipt, never a semantic or live-promotion PASS.
+
+**Runtime (as-of observation, not a deploy claim).** A read-only look at
+the running Nora at 2026-11-02T04:39:56Z found v7.13.8 (`f4368520`)
+healthy with zero restarts; that build includes #490's source and predates
+#495's. Its mounted flags then read `profile.write=true`,
+`profile.read=false`, `index.read=false`, `cognition.enabled=true`.
+Overall deployment receipts were not readable, so this is one as-of
+observation, not a current-everywhere status; no switch, observation-window
+start or manual deployment is claimed or performed.
+
+**Evaluation (execution shown, capability unmeasured).** One bounded
+paired run — BEFORE `c537267a`, AFTER `78e9f4a`, n=1, an identical frozen
+four-stage trajectory with one sandbox per arm, both exit 0 — establishes
+execution with `SqlProfileStore` wired in AFTER, nothing more. Profile-line
+and non-current-line totals were unchanged in both arms. The `tool_names_seen`
+extractor assumed a trace-message shape and swallowed capture errors, so
+its empty arrays cannot distinguish "writer never attempted" from
+"refused" or "not chosen"; no preserved trajectory shows a later answer
+or correction drawing on a newly persisted account. Graph row growth with
+zero observed `relation_evidence` and no identified target Register row,
+managed edge or support is not a supported Register control. The token
+counter covered only the first replay, so whole-trajectory cost is
+unknown. These are missing instruments — acceptance is UNAVAILABLE/ERROR,
+not a code or model FAIL and not a semantic PASS — and n=1 is directional
+only. The historical run's second judge (`kmc/k3-256k`) quota-errored.
+The operator now confirms the judge route includes GLM-5.3, so adding it
+is no longer pending work; effective identity and availability still need
+readback at the next authorized run. No independent cross-vendor quality
+acceptance is established yet.
+
+**Bounded next action (offline, unspent).** Reuse the existing
+`evals.backbone` capture seams (`_prefill_capture`, `_tools_called`,
+`_tool_inputs`, `_tool_results`, `_model_calls`) to retain per-stage model
+inputs, tool calls and results, model usage, and the persisted
+account/Register relation with its source evidence while the sandbox
+exists; a missing capture is ERROR, and no new parser, counter or grader
+is built. Freeze a real chronological journey — a supported write
+opportunity followed by a later correction — with as-of availability
+established before answers are seen. Existing induced-evidence rules
+stand: no invented higher threshold, and no seeding the desired
+conclusion labelled as acquisition; an injected starting account may
+calibrate the correction path, reported separately as calibration. This
+snapshot authorizes no paid rerun, flag change or deployment: after
+measured bounded journeys and backfill/cost preparation, the switch
+remains the operator's separate decision, with
+[70 §4](70-honcho-cutover.md#4-the-hold--14-days-00-sequence-step-9)'s
+14-day observation and the staged removal after it.

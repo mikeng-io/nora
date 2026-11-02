@@ -38,7 +38,7 @@ description: >
   the web, reshapes profiles and decides (separate profile adaptors retire),
   one time-ordered backfill with acting off, an Apache AGE spike, and
   graph-shaped queries; supersedes 18.
-status: proposed
+status: in-progress
 governance: operator-directed
 timestamp: '2026-10-14'
 origin: >
