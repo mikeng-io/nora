@@ -1862,7 +1862,9 @@ def _contact_summary(c: Any) -> str:
             shown = [v for v in vals if isinstance(v, str) and v]
             if shown:
                 tail = ", ".join(_clip(v, 24) for v in shown[:2])
-                rest = len(shown) - 2
+                omitted = c.get(f"{key}_more", 0)
+                rest = max(0, len(shown) - 2) + (
+                    omitted if isinstance(omitted, int) else 0)
                 bits.append(f"{key} {tail}" + (f" +{rest}" if rest > 0 else ""))
     return "; ".join(bits)
 
@@ -1907,6 +1909,11 @@ def _artifact_fields(
              and ((isinstance(v, str) and v) or (isinstance(v, list) and v))}
             for c in contacts[:_ARTIFACT_CONTACTS_MAX]
         ]
+        for source, projected in zip(contacts, out["contacts"], strict=False):
+            for key in _ARTIFACT_LIST_FIELDS:
+                values = source.get(key)
+                if isinstance(values, list) and len(values) > _ARTIFACT_LIST_MAX:
+                    projected[f"{key}_more"] = len(values) - _ARTIFACT_LIST_MAX
         more = md.get("contacts_more")
         if not isinstance(more, int) or isinstance(more, bool):
             more = max(0, len(contacts) - _ARTIFACT_CONTACTS_MAX)

@@ -377,3 +377,13 @@ def test_contact_current_summary_keeps_shared_contact_values():
     summary = head_summary(head)
     assert "Example Contact" in summary and "Example Org" in summary
     assert "extension 41" in summary and "example@example.invalid" in summary
+
+
+def test_contact_nested_field_caps_report_omitted_values():
+    head = _fold(_stored(_artifact({"contacts": [{
+        "display_name": "Example Contact",
+        "phones": [f"extension {i}" for i in range(9)]}]}), 1))
+    contact = head_detail(head)["artifacts"][0]["contacts"][0]
+    assert len(contact["phones"]) == 6
+    assert contact["phones_more"] == 3
+    assert "+7" in head_summary(head)
