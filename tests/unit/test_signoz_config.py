@@ -93,6 +93,8 @@ def test_deployed_strands_spans_have_readable_model_agent_and_tool_contents(monk
     spans = {s.name: s for s in exporter.get_finished_spans()}
     for name in ("chat", "invoke_agent synthetic", "execute_tool synthetic_tool"):
         attrs = spans[name].attributes
+        assert attrs.get("gen_ai.input.messages"), name
+        assert attrs.get("gen_ai.output.messages"), name
         assert json.loads(attrs["gen_ai.input.messages"])
         assert json.loads(attrs["gen_ai.output.messages"])
     model_attrs = spans["chat"].attributes
