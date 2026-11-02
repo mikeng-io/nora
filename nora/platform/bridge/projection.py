@@ -674,7 +674,7 @@ class ProjectionPublisher:
         app.router.add_get("/health", self._health)
         app.router.add_get("/live", _live)
         app.router.add_get("/metrics", self._metrics)
-        runner = web.AppRunner(app)
+        runner = web.AppRunner(app, access_log=None)
         await runner.setup()
         # All interfaces: this endpoint is read by a healthcheck from OUTSIDE
         # the container (compose), never published to the host.
@@ -752,7 +752,7 @@ async def _serve_fleet_health(
     if metrics is not None:
         app.router.add_get(
             "/metrics", lambda _req: web.Response(text=metrics.render()))
-    runner = web.AppRunner(app)
+    runner = web.AppRunner(app, access_log=None)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port)  # noqa: S104
     await site.start()

@@ -53,6 +53,11 @@ exporters:
       queue_size: 1000
       storage: file_storage/collector
 processors:
+  resource/deployment:
+    attributes:
+    - key: deployment.environment
+      action: insert
+      value: ${env:NORA_DEPLOYMENT_ENVIRONMENT}
   memory_limiter:
     check_interval: 5s
     limit_percentage: 70
@@ -299,6 +304,9 @@ receivers:
     - type: move
       from: body.MESSAGE
       to: body
+    - type: copy
+      from: attributes["container.name"]
+      to: resource["service.name"]
     - type: json_parser
       parse_to: attributes
       if: body matches "^{"
@@ -385,6 +393,7 @@ service:
       - metadataexporter
       processors:
       - memory_limiter
+      - resource/deployment
       - signozspanmetrics/delta
       - tail_sampling
       - transform/normalize_llm

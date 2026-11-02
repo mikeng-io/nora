@@ -24,9 +24,29 @@ import { createPipeline } from './pipeline.js';
 import { Journal } from './journal.js';
 import { AttachmentStore } from './media.js';
 import { runAction } from './actions.js';
-import { Metrics } from './obs.js';
+import { Metrics, jlog } from './obs.js';
 
 const tmpDir = () => mkdtempSync(path.join(tmpdir(), 'wa-trace-'));
+
+test('owned lifecycle logs declare severity and retain the artifact version', async () => {
+  const lines = [];
+  const original = console.log;
+  console.log = (line) => lines.push(JSON.parse(line));
+  try {
+    jlog('capture.replay', { outcome: 'enqueued' });
+    jlog('capture.drain_error', { reason: 'drain_failed' });
+  } finally { console.log = original; }
+  assert.equal(lines[0].level, 'INFO');
+  assert.equal(lines[0].severity_number, 9);
+  assert.equal(lines[1].level, 'WARNING');
+  assert.equal(lines[1].severity_number, 13);
+  const exporter = new InMemorySpanExporter();
+  const tracer = initTracing({ exporter, env: { OTEL_SERVICE_VERSION: 'synthetic-artifact' } });
+  tracer.startSpan('synthetic').end();
+  await tracer.flush();
+  assert.equal(exporter.getFinishedSpans()[0].resource.attributes['service.version'], 'synthetic-artifact');
+  await tracer.shutdown();
+});
 
 const EVENT = {
   type: 'message', id: '3EB0F1', chat_jid: '152099@g.us', is_group: true,

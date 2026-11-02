@@ -53,6 +53,59 @@ defaults:
   channel: nora-alerts
   frequency: "1m"
 rules:
+  - name: BridgeWaitingTooOld
+    port: "oldest undelivered bridge entry above 300 seconds for 5m"
+    query: nora_bridge_queue_waiting_oldest_seconds
+    op: above
+    target: 300
+    match: all_the_times
+    window: "5m"
+    min_points: 6
+    severity: warning
+    summary: "{{ $labels.platform }} bridge intake is not being drained"
+    description: "Read the queue inspection and consumer health; do not trim retained work."
+  - name: BridgePendingTooOld
+    port: "oldest unacknowledged bridge delivery above 300 seconds for 5m"
+    query: nora_bridge_queue_pending_oldest_seconds
+    op: above
+    target: 300
+    match: all_the_times
+    window: "5m"
+    min_points: 6
+    severity: warning
+    summary: "{{ $labels.platform }} bridge delivery remains unacknowledged"
+    description: "Read the pending entry and durable work before reclaiming it."
+  - name: BridgeRetainedFailure
+    port: "retained failed or uncertain bridge work for 0m"
+    query: sum by (platform) (nora_bridge_retained_work_entries)
+    op: above
+    target: 0
+    match: last
+    window: "1m"
+    severity: warning
+    summary: "{{ $labels.platform }} has retained bridge work needing attention"
+    description: "Read the durable failure reason and settle or requeue the work."
+  - name: BridgeUncertainAction
+    port: "uncertain bridge side effect for 0m"
+    query: sum by (platform) (nora_bridge_retained_actions)
+    op: above
+    target: 0
+    match: last
+    window: "1m"
+    severity: warning
+    summary: "{{ $labels.platform }} has a bridge action with unknown delivery"
+    description: "Reconcile the persisted action before retrying; an effect may already exist."
+  - name: BridgeInspectionUnavailable
+    port: "bridge queue inspection repeatedly unavailable for 5m"
+    query: sum by (platform) (increase(nora_bridge_inspections_total{result="unavailable"}[5m]))
+    op: above
+    target: 0
+    match: all_the_times
+    window: "5m"
+    min_points: 6
+    severity: warning
+    summary: "{{ $labels.platform }} queue inspection cannot establish its state"
+    description: "Backlog is unknown; inspect Redis and database access, not a guessed zero."
   # ---- nora-liveness (7) ----
   - name: TargetDown
     port: "up == 0 for 3m"
