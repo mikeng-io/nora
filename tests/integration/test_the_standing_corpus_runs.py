@@ -88,14 +88,16 @@ _FOLDED = BEFORE_MS + 800
 
 
 async def _seed(
-    pg_url: str, pg_template: str, tmp_path: Any, *, prior: bool, folded: bool = True,
+    clean_pg_url: str, pg_template: str, tmp_path: Any, *, prior: bool, folded: bool = True,
     phantom_row: bool = False, later_chain: bool = False,
 ) -> Any:
     # ANOTHER ROOM FIRST, so the probe room's rows start at a source id the
     # sandbox will not reuse. Without the offset, source and sandbox ids agree
     # by accident and a missing translation would pass.
     await seed_source(
-        pg_url, tmp_path / "other", Knowledge(transcript=("a", "b", "c")),  # type: ignore[arg-type]
+        clean_pg_url, tmp_path / "other", Knowledge(
+            transcript=("a", "b", "c"),
+        ),  # type: ignore[arg-type]
         template=pg_template, room=("signal", "elsewhere"),
     )
     rows = (
@@ -107,10 +109,10 @@ async def _seed(
         Message(body="row-7", name="Nora", is_nora=True, at_ms=_REPLY_AT),
     )
     source = await seed_source(
-        pg_url, tmp_path / "room", Knowledge(transcript=rows),
+        clean_pg_url, tmp_path / "room", Knowledge(transcript=rows),
         template=pg_template,
     )
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         records = SqlRecordStore(engine)
         seeded = await records.recent(conversation_id=ROOM[1], limit=10)
@@ -208,11 +210,11 @@ async def _run(
 
 @pytest.mark.asyncio
 async def test_the_rendered_fold_input_is_measurable(
-    pg_url, pg_template, tmp_path, monkeypatch,
+    clean_pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
     """`--print-input`'s path: the fold's whole input, no model called."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    source = await _seed(pg_url, pg_template, tmp_path, prior=True)
+    source = await _seed(clean_pg_url, pg_template, tmp_path, prior=True)
     out, data = await _run(source, metadata={"print_input": True})
 
     shown = state_of(data, NORA_SHOWN) or ""
@@ -246,14 +248,14 @@ async def test_the_rendered_fold_input_is_measurable(
 
 @pytest.mark.asyncio
 async def test_the_judge_reads_the_record_not_the_folds_input(
-    pg_url, pg_template, tmp_path, monkeypatch,
+    clean_pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
     """The judge is handed `Outcome.evidence` — the prior, the rows the fold
     read and every step at full size — never `Outcome.shown`, which differs
     between arms by design. A fold that DID write is graded on the judge's
     verdict, and a PASS carries its reason."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    source = await _seed(pg_url, pg_template, tmp_path, prior=True)
+    source = await _seed(clean_pg_url, pg_template, tmp_path, prior=True)
 
     async def written(subject: Any, turn: Any, *, rows: Any, call_model: bool = True) -> Folded:
         return Folded(
@@ -286,13 +288,13 @@ async def test_the_judge_reads_the_record_not_the_folds_input(
 
 @pytest.mark.asyncio
 async def test_the_verdict_chain_is_seeded_as_of_the_turn(
-    pg_url, pg_template, tmp_path, monkeypatch,
+    clean_pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
     """The fold re-derives off `turn_verdict`; its arm reproduces
     production only if the sandbox holds the verdicts that stood BEFORE the
     turn — and not the one this turn's own fold wrote."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    source = await _seed(pg_url, pg_template, tmp_path, prior=True)
+    source = await _seed(clean_pg_url, pg_template, tmp_path, prior=True)
     async with sandbox_database(source.url, template=source.template) as sandbox:
         subject = await obtain(SubjectSpec(
             database_url=sandbox, workdir=tmp_path / "subject", room=ROOM,
@@ -325,12 +327,12 @@ async def test_the_verdict_chain_is_seeded_as_of_the_turn(
 
 @pytest.mark.asyncio
 async def test_a_standing_case_with_no_model_reports_error_not_a_verdict(
-    pg_url, pg_template, tmp_path, monkeypatch,
+    clean_pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
     """The fold's provider is unreachable and so is the judge's. The fold
     writes nothing, and nothing is exactly what a `stale` case would pass on."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    source = await _seed(pg_url, pg_template, tmp_path, prior=True)
+    source = await _seed(clean_pg_url, pg_template, tmp_path, prior=True)
     out, data = await _run(
         source, metadata={},
         judge=Judge(base_url="http://127.0.0.1:9/v1", samples=1, timeout_seconds=5),
@@ -341,13 +343,13 @@ async def test_a_standing_case_with_no_model_reports_error_not_a_verdict(
 
 @pytest.mark.asyncio
 async def test_a_turn_with_no_prior_before_it_is_refused_not_folded_against_a_blank(
-    pg_url, pg_template, tmp_path, monkeypatch,
+    clean_pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
     """No revision before the turn — what every turn before the 0059 chain
     reads as. Refused BEFORE the fold: no model call is made, and nothing
     renders «no position yet» for a room whose position simply went unrecorded."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    source = await _seed(pg_url, pg_template, tmp_path, prior=False)
+    source = await _seed(clean_pg_url, pg_template, tmp_path, prior=False)
     out, data = await _run(source, metadata={"print_input": True})
     assert out.label == ERROR, out.reason
     assert "no standing revision stood before this turn" in str(state_of(data, NORA_ERROR))
@@ -356,12 +358,12 @@ async def test_a_turn_with_no_prior_before_it_is_refused_not_folded_against_a_bl
 
 @pytest.mark.asyncio
 async def test_an_anchor_at_the_turns_own_instant_is_refused(
-    pg_url, pg_template, tmp_path, monkeypatch,
+    clean_pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
     """Anchored at `created_at`, the sandbox holds a room without her reply —
     not the room production's fold read. Only the fold's instant is accepted."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    source = await _seed(pg_url, pg_template, tmp_path, prior=True)
+    source = await _seed(clean_pg_url, pg_template, tmp_path, prior=True)
     out, data = await _run(source, metadata={"print_input": True}, before_ms=BEFORE_MS)
     assert out.label == ERROR, out.reason
     assert "not the instant production folded" in str(state_of(data, NORA_ERROR))
@@ -369,12 +371,12 @@ async def test_an_anchor_at_the_turns_own_instant_is_refused(
 
 @pytest.mark.asyncio
 async def test_a_turn_production_never_folded_is_refused(
-    pg_url, pg_template, tmp_path, monkeypatch,
+    clean_pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
     """No revision after the turn: the instant its fold read the room at is
     unrecorded, and a guessed cut is a guessed room."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    source = await _seed(pg_url, pg_template, tmp_path, prior=True, folded=False)
+    source = await _seed(clean_pg_url, pg_template, tmp_path, prior=True, folded=False)
     out, data = await _run(source, metadata={"print_input": True}, before_ms=BEFORE_MS)
     assert out.label == ERROR, out.reason
     assert "wrote no standing revision after" in str(state_of(data, NORA_ERROR))
@@ -382,12 +384,12 @@ async def test_a_turn_production_never_folded_is_refused(
 
 @pytest.mark.asyncio
 async def test_a_row_id_the_sandbox_cannot_translate_is_an_error(
-    pg_url, pg_template, tmp_path, monkeypatch,
+    clean_pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
     """A trace row the snapshot did not seed has no sandbox id; guessing one
     folds a different stretch than production read."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    source = await _seed(pg_url, pg_template, tmp_path, prior=True, phantom_row=True)
+    source = await _seed(clean_pg_url, pg_template, tmp_path, prior=True, phantom_row=True)
     out, data = await _run(source, metadata={"print_input": True})
     assert out.label == ERROR, out.reason
     assert "was not seeded with" in str(state_of(data, NORA_ERROR)), state_of(data, NORA_ERROR)
@@ -399,7 +401,7 @@ async def test_a_row_id_the_sandbox_cannot_translate_is_an_error(
 
 @pytest.mark.asyncio
 async def test_an_absent_prior_renders_no_position_yet_and_reads_no_revision(
-    pg_url, pg_template, tmp_path, monkeypatch,
+    clean_pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
     """The declared counterfactual: the fold is given no prior, and no revision
     — not even the chain's first, written long after — reaches it. Every
@@ -407,7 +409,7 @@ async def test_an_absent_prior_renders_no_position_yet_and_reads_no_revision(
     reply landed, so the fold still reads the reply and the search."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     source = await _seed(
-        pg_url, pg_template, tmp_path, prior=False, folded=False, later_chain=True,
+        clean_pg_url, pg_template, tmp_path, prior=False, folded=False, later_chain=True,
     )
     read: list[Any] = []
     real_read_as_of = SqlStandingStore.read_as_of
@@ -431,13 +433,13 @@ async def test_an_absent_prior_renders_no_position_yet_and_reads_no_revision(
 
 @pytest.mark.asyncio
 async def test_a_counterfactual_prior_where_the_chain_holds_one_is_refused(
-    pg_url, pg_template, tmp_path, monkeypatch,
+    clean_pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
     """The counterfactual never stands in for a real prior: the chain holds a
     revision before this turn, so declaring it absent is refused — before the
     fold renders anything."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    source = await _seed(pg_url, pg_template, tmp_path, prior=True, folded=False)
+    source = await _seed(clean_pg_url, pg_template, tmp_path, prior=True, folded=False)
     out, data = await _run(source, metadata={"print_input": True, **_COUNTERFACTUAL},
                            before_ms=_REPLY_AT)
     assert out.label == ERROR, out.reason
@@ -447,14 +449,14 @@ async def test_a_counterfactual_prior_where_the_chain_holds_one_is_refused(
 
 @pytest.mark.asyncio
 async def test_a_counterfactual_is_anchored_where_her_reply_landed(
-    pg_url, pg_template, tmp_path, monkeypatch,
+    clean_pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
     """No revision dates a pre-chain fold, so the anchor is her reply's
     instant. Cut at the turn's own `created_at`, the room would lack the reply
     the property is graded against."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     source = await _seed(
-        pg_url, pg_template, tmp_path, prior=False, folded=False, later_chain=True,
+        clean_pg_url, pg_template, tmp_path, prior=False, folded=False, later_chain=True,
     )
     out, data = await _run(source, metadata={"print_input": True, **_COUNTERFACTUAL},
                            before_ms=BEFORE_MS)
@@ -464,14 +466,14 @@ async def test_a_counterfactual_is_anchored_where_her_reply_landed(
 
 @pytest.mark.asyncio
 async def test_the_counterfactuals_judge_sees_the_search_and_the_delivered_reply(
-    pg_url, pg_template, tmp_path, monkeypatch,
+    clean_pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
     """To tell SENT from UNSENT the judge needs both the search result and the
     reply the room received — which, on a `recovered` turn, lands after the
     turn's record closes — and it is told the prior was withheld by design."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     source = await _seed(
-        pg_url, pg_template, tmp_path, prior=False, folded=False, later_chain=True,
+        clean_pg_url, pg_template, tmp_path, prior=False, folded=False, later_chain=True,
     )
 
     async def written(subject: Any, turn: Any, *, rows: Any, call_model: bool = True) -> Folded:

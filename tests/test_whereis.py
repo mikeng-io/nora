@@ -67,9 +67,9 @@ def persons(tmp_path):
 
 
 @pytest.fixture
-async def store(pg_url):
-    run_migrations(pg_url)
-    s = PresenceStore(create_sql_engine(pg_url))
+async def store(clean_pg_url):
+    run_migrations(clean_pg_url)
+    s = PresenceStore(create_sql_engine(clean_pg_url))
     yield s
     await s.aclose()
 

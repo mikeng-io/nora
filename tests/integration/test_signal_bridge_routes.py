@@ -177,10 +177,10 @@ async def _teardown(bridge, publisher, client) -> None:
 
 
 @pytest.fixture
-async def bridge_app(pg_url, redis_client, tmp_path, daemon):
+async def bridge_app(clean_pg_url, redis_client, tmp_path, daemon):
     _projection(tmp_path)
     cfg = _cfg(tmp_path, signal_http=daemon.url,
-               redis_url=_redis_url(redis_client), database_url=pg_url)
+               redis_url=_redis_url(redis_client), database_url=clean_pg_url)
     bridge, publisher, client = await _spawn(cfg)
     yield bridge, client, daemon
     await _teardown(bridge, publisher, client)
@@ -546,7 +546,7 @@ async def test_media_custody_roundtrips_through_the_app_source(bridge_app):
 
 
 async def test_capture_binds_custody_handles_before_the_journal_handoff(
-        pg_url, redis_client, tmp_path):
+        clean_pg_url, redis_client, tmp_path):
     """Finding 3 at the real boundary: an attachment event captured through
     the REAL SSE daemon path lands in the journal with
     `MediaRef.platform_id` already rebound to the custody hash key — and
@@ -563,7 +563,7 @@ async def test_capture_binds_custody_handles_before_the_journal_handoff(
     daemon.url = str(daemon_client.make_url("")).rstrip("/")
     _projection(tmp_path)
     cfg = _cfg(tmp_path, signal_http=daemon.url,
-               redis_url=_redis_url(redis_client), database_url=pg_url)
+               redis_url=_redis_url(redis_client), database_url=clean_pg_url)
     # `supervise`'s own order — the custody dir exists before capture.
     cfg.attach_dir.mkdir(parents=True, exist_ok=True)
     bridge, publisher, client = await _spawn(cfg)
@@ -601,7 +601,7 @@ async def test_capture_binds_custody_handles_before_the_journal_handoff(
 
 
 async def test_capture_publishes_in_order_through_redis_outage(
-        redis_client, pg_url, tmp_path, daemon):
+        redis_client, clean_pg_url, tmp_path, daemon):
     """Real outage: Redis refused, capture keeps receiving into the journal,
     nothing is published, the head is never skipped. On recovery the head
     drains in FIFO order and a NEW capture (arriving during recovery) still
@@ -612,7 +612,7 @@ async def test_capture_publishes_in_order_through_redis_outage(
     await proxy.start()
     cfg = _cfg(tmp_path, signal_http=daemon.url,
                redis_url=f"redis://127.0.0.1:{proxy.port}/0",
-               database_url=pg_url)
+               database_url=clean_pg_url)
     bridge, publisher, client = await _spawn(cfg)
     try:
         proxy.set_up(False)
@@ -736,7 +736,7 @@ async def test_journal_entry_without_intent_stays_silent(bridge_app):
 
 
 async def test_revoked_intent_suppresses_queued_receipt(
-        redis_client, pg_url, tmp_path, daemon):
+        redis_client, clean_pg_url, tmp_path, daemon):
     """Intent frozen at capture is still re-checked against CURRENT
     projection at effect time: disabling receipts while the head is blocked
     suppresses the queued reaction entirely."""
@@ -746,7 +746,7 @@ async def test_revoked_intent_suppresses_queued_receipt(
     await proxy.start()
     cfg = _cfg(tmp_path, signal_http=daemon.url,
                redis_url=f"redis://127.0.0.1:{proxy.port}/0",
-               database_url=pg_url)
+               database_url=clean_pg_url)
     bridge, publisher, client = await _spawn(cfg)
     try:
         proxy.set_up(False)
@@ -765,15 +765,15 @@ async def test_revoked_intent_suppresses_queued_receipt(
 
 
 async def test_receipt_reserve_failure_retries_without_restart(
-        redis_client, pg_url, tmp_path, daemon):
+        redis_client, clean_pg_url, tmp_path, daemon):
     """Enqueue succeeds while the action ledger is down: the receipt stays
     PENDING in the publisher's retry set — it lands when Postgres returns,
     no restart, exactly one effect."""
     _projection(tmp_path)
-    gated = GatedEngine(pg_url)
+    gated = GatedEngine(clean_pg_url)
     gated.down = True
     cfg = _cfg(tmp_path, signal_http=daemon.url,
-               redis_url=_redis_url(redis_client), database_url=pg_url)
+               redis_url=_redis_url(redis_client), database_url=clean_pg_url)
     bridge, publisher, client = await _spawn(
         cfg, store=SqlBridgeStore(gated))
     try:

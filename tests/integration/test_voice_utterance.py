@@ -64,7 +64,7 @@ def bridge_token(monkeypatch):
 
 
 @pytest.fixture
-async def client(tmp_path, monkeypatch, pg_url, aiohttp_client):
+async def client(tmp_path, monkeypatch, clean_pg_url, aiohttp_client):
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     persons_path = tmp_path / "identity.toml"
     persons_path.write_text(
@@ -154,7 +154,7 @@ async def test_a_posted_utterance_lands_as_an_ingest_row_and_a_memory_feed(clien
 
 
 async def test_an_utterance_from_an_unmarked_guild_records_nothing(
-    tmp_path, monkeypatch, pg_url, aiohttp_client
+    tmp_path, monkeypatch, clean_pg_url, aiohttp_client
 ):
     """The refusal path, through the endpoint, against the REAL policy file —
     `build_offline_pipeline` hardcodes a PERMISSIVE allowlist, so this test

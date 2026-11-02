@@ -686,9 +686,9 @@ async def _clock(engine: Any) -> datetime:
 
 @pytest.mark.asyncio
 async def test_a_snapshot_at_each_moment_holds_exactly_what_was_held(
-    pg_url: str, pg_template: str,
+    clean_pg_url: str, pg_template: str,
 ) -> None:
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     tables = [t for t in copied_tables() if t in HISTORY_TABLES]
     try:
         async with engine.begin() as conn:  # before t1
@@ -740,7 +740,7 @@ async def test_a_snapshot_at_each_moment_holds_exactly_what_was_held(
         return {json.loads(r)["id"] for r in held["message_edit"]}
 
     assert PRUNED_EDIT in edits(held_t1) and PRUNED_EDIT not in edits(held_t2)
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         async with engine.connect() as conn:
             hidden = (await conn.execute(sa.text(
@@ -753,7 +753,7 @@ async def test_a_snapshot_at_each_moment_holds_exactly_what_was_held(
     assert hidden == "delete"  # the cascade was recorded: hidden, and kept
 
     for at, held in ((t1, held_t1), (t2, held_t2)):
-        async with sandbox_as_of(pg_url, at, template=pg_template) as (url, report):
+        async with sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, report):
             restored_engine = create_sql_engine(url)
             try:
                 restored = await _held(restored_engine)
@@ -766,7 +766,7 @@ async def test_a_snapshot_at_each_moment_holds_exactly_what_was_held(
 
 @pytest.mark.asyncio
 async def test_a_history_version_missing_a_later_column_restores_it_as_null(
-    pg_url: str, pg_template: str,
+    clean_pg_url: str, pg_template: str,
 ) -> None:
     """0075_withdrawal added `hidden_at` to `messages` with no row_history
     catch-up: a version recorded before that migration has no `hidden_at` key in
@@ -774,7 +774,7 @@ async def test_a_history_version_missing_a_later_column_restores_it_as_null(
     such a version must still produce a row — with `hidden_at` NULL, the column's
     own default for a row nothing ever hid — not an error and not a
     spuriously-hidden one."""
-    engine = create_sql_engine(pg_url)
+    engine = create_sql_engine(clean_pg_url)
     try:
         async with engine.begin() as conn:
             await _write(conn, "messages", 0)
@@ -792,7 +792,7 @@ async def test_a_history_version_missing_a_later_column_restores_it_as_null(
     finally:
         await engine.dispose()
 
-    async with sandbox_as_of(pg_url, t1, template=pg_template) as (url, report):
+    async with sandbox_as_of(clean_pg_url, t1, template=pg_template) as (url, report):
         restored_engine = create_sql_engine(url)
         try:
             async with restored_engine.connect() as conn:

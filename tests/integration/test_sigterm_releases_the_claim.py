@@ -138,11 +138,11 @@ def _claim(url: str) -> dict[str, Any]:
     return asyncio.run(read())
 
 
-def test_sigterm_cancels_a_running_session_inside_the_grace_and_releases_its_claim(pg_url):
-    probe = _Probe(pg_url, mode="block", grace=1.5)
+def test_sigterm_cancels_a_running_session_inside_the_grace_and_releases_its_claim(clean_pg_url):
+    probe = _Probe(clean_pg_url, mode="block", grace=1.5)
     try:
         probe.wait_for("READY")
-        before = _claim(pg_url)
+        before = _claim(clean_pg_url)
         # CONTROL: a session is running, its wake is open, and it holds its unit.
         assert (before["wakes"], before["outcome"], before["in_flight"]) == (1, None, True)
 
@@ -152,7 +152,7 @@ def test_sigterm_cancels_a_running_session_inside_the_grace_and_releases_its_cla
         assert probe.proc.returncode == 0                       # a handled stop, not a kill
         assert "STOPPED" in probe.seen                          # `shutdown` ran, to the end
         assert 1.3 <= elapsed < 15, elapsed                     # waited its grace, then cancelled
-        after = _claim(pg_url)
+        after = _claim(clean_pg_url)
         assert after["outcome"] == "cancelled" and after["cause"] == "none"
         assert is_restart_detail(after["detail"])
         assert after["in_flight"] is False                      # the claim is RELEASED
@@ -161,23 +161,23 @@ def test_sigterm_cancels_a_running_session_inside_the_grace_and_releases_its_cla
         probe.close()
 
 
-def test_a_session_that_finishes_inside_the_grace_is_allowed_to(pg_url):
-    probe = _Probe(pg_url, mode="finish", grace=20.0)
+def test_a_session_that_finishes_inside_the_grace_is_allowed_to(clean_pg_url):
+    probe = _Probe(clean_pg_url, mode="finish", grace=20.0)
     try:
         probe.wait_for("READY")
         started = probe.stop_with(signal.SIGTERM)
         elapsed = probe.exit_within(started, timeout=30)
         assert probe.proc.returncode == 0 and "STOPPED" in probe.seen
         assert elapsed < 10, elapsed                            # it did not wait out the 20 s
-        after = _claim(pg_url)
+        after = _claim(clean_pg_url)
         assert after["outcome"] == "closed" and after["cause"] == "none"
         assert after["in_flight"] is False and after["failures"] == 0
     finally:
         probe.close()
 
 
-def test_a_second_signal_ends_the_process_at_once(pg_url):
-    probe = _Probe(pg_url, mode="block", grace=60.0)
+def test_a_second_signal_ends_the_process_at_once(clean_pg_url):
+    probe = _Probe(clean_pg_url, mode="block", grace=60.0)
     try:
         probe.wait_for("READY")
         probe.stop_with(signal.SIGTERM)
@@ -191,16 +191,16 @@ def test_a_second_signal_ends_the_process_at_once(pg_url):
         probe.close()
 
 
-def test_without_a_handler_sigterm_kills_the_process_and_leaves_the_wake_open(pg_url):
+def test_without_a_handler_sigterm_kills_the_process_and_leaves_the_wake_open(clean_pg_url):
     """THE CONTROL: `main()` without `run_until_stopped`. Same process, same signal."""
-    probe = _Probe(pg_url, mode="block", grace=1.5, legacy=True)
+    probe = _Probe(clean_pg_url, mode="block", grace=1.5, legacy=True)
     try:
         probe.wait_for("READY")
         started = probe.stop_with(signal.SIGTERM)
         probe.exit_within(started, timeout=30)
         assert probe.proc.returncode == -signal.SIGTERM         # killed by the signal
         assert "STOPPED" not in probe.seen                      # `shutdown` never ran
-        after = _claim(pg_url)
+        after = _claim(clean_pg_url)
         assert after["outcome"] is None and after["in_flight"] is True   # held, with no owner
     finally:
         probe.close()

@@ -84,8 +84,8 @@ def _envelope(body: str, ts: int, *, trace: dict | None = None,
 
 
 @pytest.fixture
-async def bridge(pg_url, redis_client):
-    store = SqlBridgeStore(create_async_engine(pg_url))
+async def bridge(clean_pg_url, redis_client):
+    store = SqlBridgeStore(create_async_engine(clean_pg_url))
     stream = stream_name(PLATFORM, ACCOUNT)
     await ensure_group(redis_client, stream)
     yield store, redis_client, stream

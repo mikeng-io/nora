@@ -54,8 +54,8 @@ def _envelope(body: str, ts: int, *, dedupe_suffix: str | None = None,
 
 
 @pytest.fixture
-async def bridge(pg_url, redis_client):
-    store = SqlBridgeStore(create_async_engine(pg_url))
+async def bridge(clean_pg_url, redis_client):
+    store = SqlBridgeStore(create_async_engine(clean_pg_url))
     stream = stream_name(PLATFORM, ACCOUNT)
     await ensure_group(redis_client, stream)
     yield store, redis_client, stream
@@ -453,7 +453,7 @@ class _CommitGateStore(SqlBridgeStore):
 
 
 async def test_claim_cancelled_while_receipt_in_flight_reparks_committed_row(
-        bridge, redis_client, harness, pg_url):
+        bridge, redis_client, harness, clean_pg_url):
     """A cancel inside the claim commit used to orphan the row `running`
     under a dead owner until lease expiry: `work` bound only AFTER the
     await returned, so the receipt was unreachable. The claim must instead
@@ -467,7 +467,7 @@ async def test_claim_cancelled_while_receipt_in_flight_reparks_committed_row(
                      "stream_id": "1-1"})
 
     gate = asyncio.Event()
-    gated = _CommitGateStore(create_async_engine(pg_url), gate=gate)
+    gated = _CommitGateStore(create_async_engine(clean_pg_url), gate=gate)
     try:
         runner = _runner(gated, redis_client, harness)
         task = asyncio.ensure_future(

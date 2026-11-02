@@ -44,8 +44,8 @@ _EXPECT = {"gate": "no_go", "participation": "silence"}
 _INPUT = {"gate": "", "participation": "when is the next Raft update?"}
 
 
-async def _driven(entry: str, pg_url: str, pg_template: str, tmp_path) -> dict:
-    source = await seed_source(pg_url, tmp_path, _HISTORY[entry], template=pg_template)
+async def _driven(entry: str, clean_pg_url: str, pg_template: str, tmp_path) -> dict:
+    source = await seed_source(clean_pg_url, tmp_path, _HISTORY[entry], template=pg_template)
     case = Case(
         name=f"probe/{entry}",
         input=_INPUT[entry],
@@ -60,10 +60,12 @@ async def _driven(entry: str, pg_url: str, pg_template: str, tmp_path) -> dict:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("entry", ["gate", "participation"])
-async def test_one_runner_drives_both(entry, pg_url, pg_template, tmp_path, monkeypatch) -> None:
+async def test_one_runner_drives_both(
+    entry, clean_pg_url, pg_template, tmp_path, monkeypatch,
+) -> None:
     """One call, two maximally unalike entry points."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    result = await _driven(entry, pg_url, pg_template, tmp_path)
+    result = await _driven(entry, clean_pg_url, pg_template, tmp_path)
     data = EvaluationData(input="", actual_environment_state=result["environment_state"])
     error = str(state_of(data, NORA_ERROR) or "")
     # It got far enough to TRY. A composition failure is a different error and
@@ -83,7 +85,7 @@ async def test_one_runner_drives_both(entry, pg_url, pg_template, tmp_path, monk
 @pytest.mark.asyncio
 @pytest.mark.parametrize("entry", ["gate", "participation"])
 async def test_an_unreachable_model_is_an_error_and_never_a_verdict(
-    entry, pg_url, pg_template, tmp_path, monkeypatch,
+    entry, clean_pg_url, pg_template, tmp_path, monkeypatch,
 ) -> None:
     """ERROR is not FAIL and is never PASS — on BOTH entry points.
 
@@ -94,7 +96,7 @@ async def test_an_unreachable_model_is_an_error_and_never_a_verdict(
     having reached no model at all.
     """
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    result = await _driven(entry, pg_url, pg_template, tmp_path)
+    result = await _driven(entry, clean_pg_url, pg_template, tmp_path)
     data = EvaluationData(
         input="", actual_output=result["output"],
         actual_environment_state=result["environment_state"],

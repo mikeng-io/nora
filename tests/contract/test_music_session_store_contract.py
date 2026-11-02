@@ -17,11 +17,11 @@ T0 = datetime(2026, 8, 24, 12, 0, tzinfo=UTC)
 
 
 @pytest.fixture(params=["sql", "fake"])
-async def store(request):
+async def store(_pg_engine_scope, request):
     if request.param == "sql":
-        pg_url = request.getfixturevalue("pg_url")
-        run_migrations(pg_url)
-        s: MusicSessionStore = SqlMusicSessionStore(create_sql_engine(pg_url))
+        clean_pg_url = request.getfixturevalue("clean_pg_url")
+        run_migrations(clean_pg_url)
+        s: MusicSessionStore = SqlMusicSessionStore(create_sql_engine(clean_pg_url))
     else:
         s = FakeMusicSessionStore()
     yield s

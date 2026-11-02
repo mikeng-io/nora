@@ -428,7 +428,7 @@ async def test_render_on_person_and_unit_inputs_use_profile_rooms_without_legacy
 
 
 async def test_history_cli_receipts_and_explicit_rerun_preserve_claims(
-    env, pg_url, monkeypatch, capsys
+    env, clean_pg_url, monkeypatch, capsys
 ):
     import json
     from argparse import Namespace
@@ -457,7 +457,7 @@ async def test_history_cli_receipts_and_explicit_rerun_preserve_claims(
         ],
     )
     monkeypatch.setattr(cli, "_config", lambda _: SimpleNamespace())
-    monkeypatch.setattr(cli, "_database_url", lambda _: pg_url)
+    monkeypatch.setattr(cli, "_database_url", lambda _: clean_pg_url)
     monkeypatch.setattr(cli, "_policy", lambda _: SimpleNamespace(
         conversations=(), rooms=lambda: ()))
     monkeypatch.setattr(cli, "_persons", lambda _: Persons(by_person={}, index={}))

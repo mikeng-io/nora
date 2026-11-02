@@ -72,8 +72,8 @@ def _photo_sha(index: int) -> str:
 
 
 @pytest.fixture
-async def engine(pg_url: str) -> AsyncIterator[Any]:
-    eng = create_sql_engine(pg_url)
+async def engine(clean_pg_url: str) -> AsyncIterator[Any]:
+    eng = create_sql_engine(clean_pg_url)
     try:
         yield eng
     finally:
@@ -81,7 +81,7 @@ async def engine(pg_url: str) -> AsyncIterator[Any]:
 
 
 async def _seed(
-    pg_url: str, pg_template: str, engine: Any, tmp_path: Any,
+    clean_pg_url: str, pg_template: str, engine: Any, tmp_path: Any,
     extra: Callable[[Any, dict[str, Any]], Awaitable[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     """A room with a described photo, a dated note, and two outings of the
@@ -89,7 +89,7 @@ async def _seed(
     instant, read off the database's own clock."""
     seeded_until = int(time.time() * 1000) - 5 * MINUTE
     await seed_source(
-        pg_url, tmp_path, Knowledge(
+        clean_pg_url, tmp_path, Knowledge(
             transcript=(
                 Message(body="anyone up for friday", at_ms=seeded_until - 30 * MINUTE),
                 Message(
@@ -154,10 +154,10 @@ def _spec(url: str, tmp_path: Any, at_ms: int, room: tuple[str, str] = ROOM) -> 
 
 @pytest.mark.asyncio
 async def test_a_full_restore_hands_the_drive_an_identity_map_and_the_evidence_at_the_instant(
-    pg_url: str, pg_template: str, engine: Any, tmp_path: Any, monkeypatch: Any,
+    clean_pg_url: str, pg_template: str, engine: Any, tmp_path: Any, monkeypatch: Any,
 ) -> None:
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    seed = await _seed(pg_url, pg_template, engine, tmp_path)
+    seed = await _seed(clean_pg_url, pg_template, engine, tmp_path)
     at_ms = seed["at_ms"]
     # The source moves on after the instant: a late line in the room.
     async with engine.begin() as conn:
@@ -168,10 +168,10 @@ async def test_a_full_restore_hands_the_drive_an_identity_map_and_the_evidence_a
         ), {"ts": at_ms + MINUTE})).scalar_one())
 
     at = datetime.fromtimestamp(at_ms / 1000, tz=UTC)
-    async with sandbox_as_of(pg_url, at, template=pg_template) as (url, _report):
+    async with sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, _report):
         subject = await obtain(_spec(url, tmp_path, at_ms))
         try:
-            seeded = await restored_room(subject, source_url=pg_url, before_ms=at_ms)
+            seeded = await restored_room(subject, source_url=clean_pg_url, before_ms=at_ms)
             assert seeded.now_ms == at_ms
             assert seeded.rows == {i: i for i in seed["ids"]}, "ids are copied verbatim"
             assert late not in seeded.rows
@@ -236,30 +236,30 @@ async def test_a_full_restore_hands_the_drive_an_identity_map_and_the_evidence_a
             finally:
                 await sandbox.dispose()
             with pytest.raises(ValueError, match="identity"):
-                await restored_room(subject, source_url=pg_url, before_ms=at_ms)
+                await restored_room(subject, source_url=clean_pg_url, before_ms=at_ms)
         finally:
             await _close(subject)
 
 
 @pytest.mark.asyncio
 async def test_a_full_restore_refuses_a_room_that_held_nothing_and_a_clock_off_the_instant(
-    pg_url: str, pg_template: str, engine: Any, tmp_path: Any, monkeypatch: Any,
+    clean_pg_url: str, pg_template: str, engine: Any, tmp_path: Any, monkeypatch: Any,
 ) -> None:
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    seed = await _seed(pg_url, pg_template, engine, tmp_path)
+    seed = await _seed(clean_pg_url, pg_template, engine, tmp_path)
     at_ms = seed["at_ms"]
     at = datetime.fromtimestamp(at_ms / 1000, tz=UTC)
-    async with sandbox_as_of(pg_url, at, template=pg_template) as (url, _report):
+    async with sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, _report):
         empty = await obtain(_spec(url, tmp_path, at_ms, room=("signal", "g2")))
         try:
             with pytest.raises(ValueError, match="held no row"):
-                await restored_room(empty, source_url=pg_url, before_ms=at_ms)
+                await restored_room(empty, source_url=clean_pg_url, before_ms=at_ms)
         finally:
             await _close(empty)
         subject = await obtain(_spec(url, tmp_path, at_ms))
         try:
             with pytest.raises(ValueError, match="clock"):
-                await restored_room(subject, source_url=pg_url, before_ms=at_ms - 1)
+                await restored_room(subject, source_url=clean_pg_url, before_ms=at_ms - 1)
             with pytest.raises(ValueError, match="own database"):
                 await restored_room(subject, source_url=url, before_ms=at_ms)
         finally:
@@ -327,7 +327,7 @@ async def _refusal_extras(conn: Any, seed: dict[str, Any]) -> dict[str, Any]:
 
 @pytest.mark.asyncio
 async def test_every_scope_and_screen_on_the_evidence_holds(
-    pg_url: str, pg_template: str, engine: Any, tmp_path: Any, monkeypatch: Any,
+    clean_pg_url: str, pg_template: str, engine: Any, tmp_path: Any, monkeypatch: Any,
 ) -> None:
     """Each refusal `evidence_at` makes, against a record that exists and was
     held at the instant, so only the check itself stands between it and the
@@ -336,11 +336,11 @@ async def test_every_scope_and_screen_on_the_evidence_holds(
     a reading holding an identifier is withheld. An event is rendered in the
     deployment's timezone with its distance from the moment."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    seed = await _seed(pg_url, pg_template, engine, tmp_path, extra=_refusal_extras)
+    seed = await _seed(clean_pg_url, pg_template, engine, tmp_path, extra=_refusal_extras)
     at_ms = seed["at_ms"]
     events = seed["events"]
     at = datetime.fromtimestamp(at_ms / 1000, tz=UTC)
-    async with sandbox_as_of(pg_url, at, template=pg_template) as (url, _report):
+    async with sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, _report):
         subject = await obtain(_spec(url, tmp_path, at_ms))
         try:
             async def facts(evidence: dict[str, Any]) -> str:
@@ -379,7 +379,7 @@ async def test_every_scope_and_screen_on_the_evidence_holds(
 
 @pytest.mark.asyncio
 async def test_a_rollup_with_two_current_builds_answers_no_outing(
-    pg_url: str, pg_template: str, engine: Any, tmp_path: Any, monkeypatch: Any,
+    clean_pg_url: str, pg_template: str, engine: Any, tmp_path: Any, monkeypatch: Any,
 ) -> None:
     """Two builds current at the instant is a Rollup no one answer describes:
     neither a window nor a named outing is read from it.
@@ -391,10 +391,10 @@ async def test_a_rollup_with_two_current_builds_answers_no_outing(
     a repaired or imported history takes, and the only one that reaches the
     read."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    seed = await _seed(pg_url, pg_template, engine, tmp_path)
+    seed = await _seed(clean_pg_url, pg_template, engine, tmp_path)
     at_ms = seed["at_ms"]
     at = datetime.fromtimestamp(at_ms / 1000, tz=UTC)
-    async with sandbox_as_of(pg_url, at, template=pg_template) as (url, _report):
+    async with sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, _report):
         subject = await obtain(_spec(url, tmp_path, at_ms))
         try:
             for evidence in ({"rollup_window_days": 7}, {"rollup_outings": [seed["inside"]]}):

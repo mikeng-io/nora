@@ -1,6 +1,6 @@
 """One suite, both implementations of `ComputerEventStore`.
 Mirrors `tests/contract/test_tool_call_log_store_contract.py`: the
-real-Postgres `pg_url` fixture, migrated up before the SQL store is
+real-Postgres `clean_pg_url` fixture, migrated up before the SQL store is
 constructed, parametrized alongside the in-memory fake.
 """
 
@@ -45,13 +45,13 @@ def _event(**overrides):
 
 
 @pytest.fixture(params=["fake", "sql"])
-async def store(request):
+async def store(_pg_engine_scope, request):
     if request.param == "fake":
         yield FakeComputerEventStore()
         return
-    pg_url = request.getfixturevalue("pg_url")
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+    clean_pg_url = request.getfixturevalue("clean_pg_url")
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     yield SqlComputerEventStore(engine)
     await engine.dispose()
 
@@ -118,9 +118,9 @@ def test_an_unknown_actor_or_path_is_refused_at_construction():
 
 
 @pytest.fixture
-async def sql_engine(pg_url):
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+async def sql_engine(clean_pg_url):
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
     yield engine
     await engine.dispose()
 
