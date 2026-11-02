@@ -24,7 +24,7 @@ branch's worktree.
 
 ## 1. Filing an issue
 
-1. **Can you fix it now within the agreed slice?** Then fix it (gate, then `nora-prove-fix`). File only
+1. **Can you fix it now within the agreed slice?** Then implement it directly, validate by impact (`nora-land`), and use `nora-prove-fix` for code fixes. Operator agreement means continue; an issue is not delivery. File only
    what you have decided not to fix. A residue too small to act on goes in the
    PR body's limitations, not a new issue.
 2. **Look for a home first.**

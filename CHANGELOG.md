@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.13.23](https://github.com/mikeng-io/nora/compare/v7.13.22...v7.13.23) (2026-11-02)
+
+
+### Bug Fixes
+
+* **bridge:** keep bound facade sessions owned by the root adapter ([5ff3bca](https://github.com/mikeng-io/nora/commit/5ff3bcac0e91f03c5dbcfc566ec7505e2d6fa0f9))
+
 ## [7.13.22](https://github.com/mikeng-io/nora/compare/v7.13.21...v7.13.22) (2026-11-02)
 
 

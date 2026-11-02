@@ -11,8 +11,9 @@
 
 ## Gate on the merged tree
 
-<!-- Run make gate once on the final head. Record its actual exit code and
-     summary; name failures explicitly. make full-gate is the full suite.
+<!-- Record impact-based validation and why it is sufficient. Small non-runtime
+     docs/skill wording/images need no local gate or independent review. When a
+     gate is selected, record actual exit code/summary; name failures explicitly.
      Map original obligations to met/unmet/unavailable evidence and remaining scope.
      Then the review level (none / light / full), actual coverage and the triage line,
      e.g. "light; 1 BLOCKER fixed, 2 FIX-IF-CHEAP, 1 ISSUE #N, 2 DROP". -->
