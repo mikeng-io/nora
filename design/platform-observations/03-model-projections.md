@@ -223,8 +223,9 @@ row — it is never an "uninterested" tally and never overwrites another
 responder's answer. Unattributed responses key on their source revision so
 two of them cannot merge.
 
-Identifiers, coordinates and credentials are absent from the declared
-metadata set by construction (admission keeps them out), so no projection
-needs to filter them at render. Malformed entries degrade to a clipped
+Raw platform identifiers, coordinates and credentials have no field in this
+declared projection; native addressing stays on the typed references. Shared
+contact values are intentional artifact content, projected within these bounds.
+Malformed entries degrade to a clipped
 label, never a crash; `unprojected_fields` keeps what the whitelist did
 not show visible as a bounded omission.

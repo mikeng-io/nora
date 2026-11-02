@@ -248,7 +248,7 @@ is established by this slice.
 
 ## Artifact-completion controls (generated evidence, 2026-11-02)
 
-This pass closed the artifact/contact/event and multi-post identity cells.
+This pass implements the selected artifact/contact/event and multi-post identity cells.
 Deterministic guards that now exist (all generated fixtures, no production rows):
 
 - WhatsApp `.mjs` suite (`deploy/whatsapp-bridge`): contactsArrayMessage with
@@ -278,8 +278,13 @@ Deterministic guards that now exist (all generated fixtures, no production rows)
   `_resolve_target_row`; migration 0146 and the schema baseline carry both
   new columns.
 
+Execution receipts and the two independent review rounds are recorded in
+[PR 541](https://github.com/mikeng-io/nora/pull/541), with each result bound to
+its revision and scope. A failed gate stays failed when its named failures and
+unreached checks are subsequently repaired; retained passes are not relabelled
+as a new full-gate run.
+
 Open acceptance evidence this pass does NOT supply: live Discord guild-event
 delivery/cache warmth and account permissions, live WhatsApp event/RSVP
-capture on a real account, the integrated candidate gate, independent
-review, and the tool-routing measurement named above. IG polls remain
+capture on a real account, and the tool-routing measurement named above. IG polls remain
 unsupported at the pinned transport.

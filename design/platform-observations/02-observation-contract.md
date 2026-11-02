@@ -378,5 +378,7 @@ plus captionless audio/media, Instagram multi-part, Discord single). Ownership:
   containment operand. A list never resolves across a conversation.
 - A failed, rejected or uncertain send writes no ids: a `platform_refs` payload
   on an unconfirmed response is ignored at the client (`confirmed` only),
-  Deliverer (`result.ok` only) and store layers. An uncertain multi-post send
+  and Deliverer passes ids to the store only on `result.ok`. The store persists
+  the supplied confirmed handles; it is not a separate outcome validator.
+  An uncertain multi-post send
   claims no delivered count and no audited handles.
