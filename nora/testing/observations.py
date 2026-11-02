@@ -277,12 +277,15 @@ class FakeObservationStore:
 
     async def recent(
         self, *, scope: SourceScope, since_ms: int = 0, limit: int = 50,
+        before_ms: int | None = None,
     ) -> list[StoredObservation]:
         def at(r: StoredObservation) -> int:
             o = r.observation
             return o.occurred_ms if o.occurred_ms is not None else o.received_ms
-        out = sorted((r for r in self._scoped_rows(scope) if at(r) >= since_ms),
-                     key=lambda r: (at(r), r.id), reverse=True)
+        out = sorted(
+            (r for r in self._scoped_rows(scope) if at(r) >= since_ms
+             and (before_ms is None or at(r) <= before_ms)),
+            key=lambda r: (at(r), r.id), reverse=True)
         return out[: max(limit, 0)]
 
     async def by_ids(

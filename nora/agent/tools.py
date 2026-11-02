@@ -2761,10 +2761,13 @@ class RoomDirectory(Protocol):
 class RecordQuerySource(Protocol):
     """The Record read `record_query` runs (`nora.infra.sql.record_query.
     SqlRecordQuery`, the one implementation). Returns the hits oldest first,
-    whether more matched, and the ids that only near-match the text."""
+    whether more matched, and the ids that only near-match the text.
+    `as_of_ms` folds edits, reactions and deletes at the caller's own instant
+    — `now_fn()`'s — so a session replaying an earlier time reads the record
+    as it then stood; `None` is the live fold."""
 
     async def query(
-        self, q: RecordQuery,
+        self, q: RecordQuery, *, as_of_ms: int | None = None,
     ) -> tuple[tuple[RecordHit, ...], bool, frozenset[int]]: ...
 
 
@@ -3447,11 +3450,19 @@ _BEFORE_UNREADABLE = (
 
 async def _read_window(
     store: Any, *, conversation_id: str, asked: int, before_ts: int | None,
+    as_of_ms: int | None = None,
 ) -> tuple[list[TranscriptRow], bool]:
     """The newest `asked` rows (ending before `before_ts` when given), and
     whether older rows exist beyond them. Asks the store for ONE more than it
     returns, so «there is more» is read from the record, never guessed from a
     full window.
+
+    `as_of_ms` is the caller's own instant, always given: a `before` that is
+    absent or at/after the instant maps to no bound of its own, and without
+    `as_of_ms` «the newest» would mean the LIVE newest — a session whose
+    clock is bound to an earlier instant would read rows from after it.
+    The store bounds the window AND the edit/reaction folds at it, so a
+    replayed instant reads what was then said as it then read.
 
     **A page never ends inside a group of rows sharing one `ts`.** The next
     page's cursor is exclusive at the oldest kept row's `ts`, so a same-`ts`
@@ -3462,11 +3473,15 @@ async def _read_window(
     larger than a whole page (`asked` rows in one timestamp) is kept whole, and
     then the rows of it that did not fit are not reachable by paging."""
     fetch = asked + 1
-    if before_ts is None:
+    bound = before_ts
+    if as_of_ms is not None:
+        bound = as_of_ms + 1 if bound is None else min(bound, as_of_ms + 1)
+    if bound is None:
         rows = await store.recent(conversation_id=conversation_id, limit=fetch)
     else:
         rows = await store.recent_before(
-            conversation_id=conversation_id, before_ts=before_ts, limit=fetch,
+            conversation_id=conversation_id, before_ts=bound, limit=fetch,
+            as_of_ms=as_of_ms,
         )
     return _trim_window(rows, asked=asked)
 
@@ -5412,7 +5427,7 @@ def build_tool_specs(
 
     async def _thread_window(
         handle: str, *, platform: str, conversation_id: str,
-        asked: int, before_ts: int | None,
+        asked: int, before_ts: int | None, as_of_ms: int | None = None,
     ) -> tuple[list[TranscriptRow], bool]:
         if ledger is None or lineage is None:
             raise RuntimeError("thread reader is unavailable")
@@ -5436,7 +5451,8 @@ def build_tool_specs(
                      and s.conversation_id == conversation_id), None)
         if span is None:
             return [], False
-        rows = await ledger.span_rows(span, limit=asked, before_ts=before_ts)
+        rows = await ledger.span_rows(
+            span, limit=asked, before_ts=before_ts, as_of_ms=as_of_ms)
         return _trim_window(rows, asked=asked)
 
     async def load_transcript(
@@ -5470,24 +5486,36 @@ def build_tool_specs(
         # conversation into context) and Postgres rejects a negative LIMIT
         # outright. Either way the clamp, not the backend, owns the bound.
         now = now_fn().astimezone(_HKT)
+        # The read's own instant as the projection bound: a session whose
+        # clock is bound earlier replays the record as it then stood — no row
+        # posted after it, no edit/reaction/delete recorded after it — and a
+        # live clock makes it a no-op bound. `as_of_ms` is what `_before_bound`
+        # alone could never give: «the newest» under a bound clock means the
+        # newest AS OF the bound, not the live newest.
+        as_of_ms = int(now.timestamp() * 1000)
         try:
             before_ts = _before_bound(before, now)
         except (ValueError, OverflowError):
             # Not memory content, so not stamped `untrusted`; still `messages`,
-            # the one key this tool's contract carries on every return.
+            # the one key this tool's contract carries on every return. The
+            # status marks it a FAILED read: success keeps the legacy
+            # status-free envelope, so `messages` alone never means `ok`.
             _record(metrics, "load_transcript", "unavailable", reason="before")
-            return {"messages": [], "note": _BEFORE_UNREADABLE}
+            return {
+                "status": "unavailable", "messages": [], "note": _BEFORE_UNREADABLE,
+            }
         asked = LOAD_TRANSCRIPT_DEFAULT
         try:
             asked = max(1, min(int(limit), LOAD_TRANSCRIPT_MAX))
             if thread is not None:
                 rows, older = await _thread_window(
                     thread, platform=room.platform, conversation_id=bound_conversation_id,
-                    asked=asked, before_ts=before_ts,
+                    asked=asked, before_ts=before_ts, as_of_ms=as_of_ms,
                 )
             else:
                 rows, older = await _read_window(
-                    store, conversation_id=bound_conversation_id, asked=asked, before_ts=before_ts,
+                    store, conversation_id=bound_conversation_id, asked=asked,
+                    before_ts=before_ts, as_of_ms=as_of_ms,
                 )
         except Exception:
             log.exception("load_transcript failed")
@@ -5495,13 +5523,16 @@ def build_tool_specs(
             # Still the envelope, and still stamped: `messages` is present on
             # every return of this tool, so the model reads ONE shape here
             # rather than a dict on the happy path and something else on the
-            # sad one. Non-thread reads keep the legacy status-free envelope.
+            # sad one. A FAILED read says so: `status` is present exactly on
+            # the failure returns (the thread branch already carried it), so
+            # the status-free success envelope cannot read as `ok` on a
+            # failure, and no failure fabricates evidence.
             if thread is not None:
                 return _memory_result({
                     "status": "unavailable", "messages": [],
                     "note": "The thread could not be read.",
                 })
-            return _memory_result({"messages": []})
+            return _memory_result({"status": "unavailable", "messages": []})
         # A renderer of these rows beside the prefill's, under DEC-80.
         # `store.recent` returns rows straight from the
         # audit table, so `person_name` is unset on every one of them unless it is
@@ -5538,7 +5569,7 @@ def build_tool_specs(
             found = await _room_source_events(
                 SourceScope(platform=room.platform, account_key="",
                             conversation_id=bound_conversation_id),
-                since_ms=min(r.ts for r in rows))
+                since_ms=min(r.ts for r in rows), as_of_ms=as_of_ms)
             if found is not None:
                 this_events, this_events_more = found
         out, threaded = _transcript_messages(
@@ -5799,6 +5830,10 @@ def build_tool_specs(
                         "for the names; do not guess.",
             }
         now = now_fn().astimezone(_HKT)
+        # `load_transcript`'s bound, on the destination room's read: the
+        # record answers as of the caller's instant — never rows, edits,
+        # reactions or deletes recorded after it.
+        as_of_ms = int(now.timestamp() * 1000)
         try:
             # After the room resolves, so a name nobody has is still told
             # first; another unit's room and no room at all took the SAME
@@ -5813,11 +5848,12 @@ def build_tool_specs(
             if thread is not None:
                 rows, older = await _thread_window(
                     thread, platform=target.platform, conversation_id=target.conversation_id,
-                    asked=asked, before_ts=before_ts,
+                    asked=asked, before_ts=before_ts, as_of_ms=as_of_ms,
                 )
             else:
                 rows, older = await _read_window(
-                    store, conversation_id=target.conversation_id, asked=asked, before_ts=before_ts,
+                    store, conversation_id=target.conversation_id, asked=asked,
+                    before_ts=before_ts, as_of_ms=as_of_ms,
                 )
         except Exception:
             log.exception("room_read failed")
@@ -5859,7 +5895,7 @@ def build_tool_specs(
             found = await _room_source_events(
                 SourceScope(platform=target.platform, account_key="",
                             conversation_id=target.conversation_id),
-                since_ms=min(r.ts for r in rows))
+                since_ms=min(r.ts for r in rows), as_of_ms=as_of_ms)
             if found is not None:
                 target_events, target_events_more = found
         out, threaded = _transcript_messages(
@@ -5902,6 +5938,7 @@ def build_tool_specs(
 
     async def _resolve_targets(
         platform: str, conversation_id: str, msg_ids: Iterable[int],
+        *, as_of_ms: int | None = None,
     ) -> dict[int, TargetContext]:
         """The affected messages these `target_message_id`s name, by id —
         ONE bounded batched Record read of the ROOM THE EVENT WAS READ IN
@@ -5914,7 +5951,7 @@ def build_tool_specs(
         try:
             found, gone = await store.by_ids(
                 platform=platform, conversation_id=conversation_id,
-                ids=wanted[:_TARGET_MAX])
+                ids=wanted[:_TARGET_MAX], as_of_ms=as_of_ms)
         except Exception:
             log.exception("record target read failed")
             return {}
@@ -5945,19 +5982,25 @@ def build_tool_specs(
 
     async def _room_source_events(
         scope: SourceScope, *, since_ms: int, limit: int = 24,
+        as_of_ms: int | None = None,
     ) -> tuple[tuple[SourceEvent, ...], int] | None:
         """The room's typed source events at/after `since_ms`, projected —
         `(events, more)` where `more` counts what the bound cut — or None
         when the read failed (the caller says so in its result: a failed
         read is `unavailable`, never an empty list, and a bounded one never
-        reads as complete)."""
+        reads as complete). `as_of_ms` bounds the event window AND the poll
+        labels at the caller's instant: a head folded after it (an option
+        renamed, a vote recorded later) is not the label the event then
+        carried, so it is withheld rather than shown."""
         try:
             rows = await observations.recent(
-                scope=scope, since_ms=since_ms, limit=limit + 1)
+                scope=scope, since_ms=since_ms, limit=limit + 1,
+                before_ms=as_of_ms)
             poll_heads = {
                 (h.object_ref, h.account_key, h.thread): h
                 for h in await observations.heads(
-                    scope=scope, kind="poll", limit=32)}
+                    scope=scope, kind="poll", limit=32)
+                if as_of_ms is None or h.received_ms <= as_of_ms}
         except Exception:  # noqa: BLE001 — any read failure is `unavailable`
             return None
 
@@ -6003,7 +6046,7 @@ def build_tool_specs(
         targets = await _resolve_targets(
             scope.platform, scope.conversation_id,
             (e.target_message_id for e in shown
-             if e.target_message_id is not None))
+             if e.target_message_id is not None), as_of_ms=as_of_ms)
         return (
             tuple(replace(
                 e, target=targets.get(e.target_message_id)
@@ -6254,6 +6297,12 @@ def build_tool_specs(
             _record(metrics, "record_query", "unavailable", reason="room")
             return {"status": "unavailable", "note": _RECORD_QUERY_OFF}
         now = now_fn().astimezone(_HKT)
+        # The read's own instant bounds the projection: an `end`-less read
+        # already lands at `now`, and `as_of_ms` makes the FOLDS agree — a
+        # session whose clock is bound earlier sees no edit, reaction or
+        # delete recorded after it, and no row its window would only reach
+        # because that time had not yet passed.
+        as_of_ms = int(now.timestamp() * 1000)
         try:
             start_ms, end_ms = _record_interval(start, end, now)
         except (ValueError, OverflowError):
@@ -6299,7 +6348,7 @@ def build_tool_specs(
                 start_ms=start_ms, end_ms=end_ms, person_id=person_id,
                 text=text.strip() if text and text.strip() else None,
                 limit=RECORD_QUERY_MAX,
-            ))
+            ), as_of_ms=as_of_ms)
         except Exception:
             log.exception("record_query failed")
             _record(metrics, "record_query", "unavailable")
@@ -6319,6 +6368,11 @@ def build_tool_specs(
         ]
         if media_join is not None:
             rows = list(await media_join.enrich(rows, path="load_transcript"))
+        if on_rows is not None:
+            # The rows the result SHOWS are the evidence a session may cite:
+            # a deleted hit's words are withheld from it (`deleted` reads in
+            # their place), so a withheld body is never shown as fetched.
+            on_rows([r for h, r in zip(hits, rows, strict=True) if not h.deleted])
         out = _record_messages(hits, rows, rooms=rooms, near=near, now=now)
         notes = []
         if more:
@@ -6353,7 +6407,7 @@ def build_tool_specs(
                     found = await _room_source_events(
                         SourceScope(platform=rf.platform, account_key="",
                                     conversation_id=cid),
-                        since_ms=start_ms)
+                        since_ms=start_ms, as_of_ms=as_of_ms)
                     if found is None:
                         src_failed = True
                         continue

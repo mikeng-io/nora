@@ -349,6 +349,57 @@ async def test_cognition_backfill_reads_the_same_surface_as_of_the_evidence_inst
     assert not [t for t in _Agent.built if isinstance(t, HistoricalRead)]
 
 
+async def test_rows_a_read_shows_become_the_evidence_a_proposal_may_cite():
+    """The `on_rows` custody path, end to end at the session boundary: the
+    rows a transcript read actually handed out become `("message", id)`
+    Sources in `graph_fetched` — so `memory_propose` admits evidence that
+    cites a shown row and refuses `unseen_source` for one the read never
+    exposed (the withheld body the tool kept out of its result)."""
+    from nora.domain.models import DeliveryStatus, TranscriptRow
+
+    memory = wake_memory()
+    _seed_event(memory, "u:event:generated-gala")
+    shown = TranscriptRow(
+        id=101, sender_id="+85200000001", sender_name="Ada", ts=NOW,
+        body="dinner at eight", is_nora=False,
+        delivery_status=DeliveryStatus.SENT, raw_json=None, person_id="p_ada")
+    withheld = TranscriptRow(
+        id=102, sender_id="+85200000002", sender_name="Bob", ts=NOW,
+        body=None, is_nora=False,
+        delivery_status=DeliveryStatus.SENT, raw_json=None, person_id="p_bob")
+
+    def reads(unit: str, rooms: Any, **kw: Any) -> list[Any]:
+        on_rows = kw.get("on_rows")
+
+        async def load_transcript(**_args: Any) -> dict[str, Any]:
+            on_rows([shown, withheld])
+            return {"messages": [{"sender": "Ada", "body": "dinner at eight"}]}
+        return [load_transcript]
+
+    def proposing(cited: str, relation_id: str) -> dict[str, Any]:
+        payload = proposal()
+        payload["relations"] = [
+            {"id": relation_id, "src": ["reading", "generated-r"], "rel": "about",
+             "dst": ["event", "u:event:generated-gala"], "persons": ["p_ada"]}]
+        payload["evidence"] = [{"source": ["message", cited], "relation_id": relation_id}]
+        return payload
+
+    fake = FakeCognitionAgentRunner(script=[
+        ("load_transcript", {}),
+        ("memory_propose", proposing("101", "r-shown")),
+        ("memory_propose", proposing("102", "r-withheld")),
+    ])
+    runner, _, _ = _runner(
+        agent_runner=fake, memory=memory, read_tools_for=reads,
+        read_only_tools=frozenset({"load_transcript"}))
+    await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
+        last_activity_ms=None, last_wake=None), now_ms=NOW)
+    shown_refused = {r["reason"] for r in fake.results[1]["refused"]}
+    withheld_refused = {r["reason"] for r in fake.results[2]["refused"]}
+    assert "unseen_source" not in shown_refused
+    assert "unseen_source" in withheld_refused
+
+
 @pytest.mark.parametrize("admit", [False, True])
 async def test_stimulus_consumed_only_by_admitted_proposal_or_explicit_empty(admit):
     stimuli = _seeded()

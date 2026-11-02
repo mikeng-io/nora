@@ -117,7 +117,7 @@ from nora.domain.memo import (
     screened_parts,
     title_carries_value,
 )
-from nora.domain.memory_graph import ENTITY_KINDS, ENTRY
+from nora.domain.memory_graph import ENTITY_KINDS, ENTRY, Source
 from nora.domain.note_body import (
     NORA_NAMES,
     NoteBodyError,
@@ -1129,11 +1129,13 @@ class CognitionSessionRunner:
     ) -> CognitionRunResult:
         """One session over ONE hand-written agenda item: the seam the
         `tool_selection_cognition` corpus drives (`evals.rebuilt.entry`), whose
-        cases are agenda-item sentences and not stimuli. It builds the same
-        tools, holds the same instruction and calls the same agent runner as a
-        wake's session, and it stops there: no wake, so no outcome, no carry
-        and no fired self-wake; the session row and its writes go to the
-        stores it was handed (a snapshot's or a sandbox's database)."""
+        cases are agenda-item sentences and not stimuli. It runs the SAME
+        assembly a wake's session runs (`_session_input`) — the same
+        instruction, the same tools, the same render — over an empty view and
+        grounding, so the model faces exactly the contract a real session
+        poses; and it stops there: no wake, so no outcome, no carry and no
+        fired self-wake; the session row and its writes go to the stores it
+        was handed (a snapshot's or a sandbox's database)."""
         home = self._home_rooms.get(unit)
         if home is None:
             raise MissingHomeRoomError(f"no home room configured for unit {unit!r}")
@@ -1158,18 +1160,25 @@ class CognitionSessionRunner:
             ),
             recorded_at_ms=now_ms,
         )
-        state = _RunState(
-            session_id=session_id, wake_id=0, unit=unit, now_ms=now_ms,
-            items_by_index={0: item},
-            rooms={_room_key(item.room): (item.room.platform, item.room.conversation_id)},
+        # One hand-written item is the whole input — so the assembly is the
+        # wake's own `_session_input`, not a parallel partial copy of it: the
+        # SAME instruction (SESSION_INSTRUCTION, doctrine, skill), the SAME
+        # tools built the same way, the SAME `render_agenda` call — over a
+        # view and grounding that are honestly EMPTY (no stimuli, no observed
+        # objects, nothing fetched yet), because a probe item is a sentence,
+        # not a stimulus. Nothing is invented to fill them: an empty Grounding
+        # renders exactly what a wake with no readable evidence renders, which
+        # is what "synthetic" means here — it is a real session's shape over
+        # one agenda line, never a chronological journey's.
+        view = UnitView(
+            unit=unit, pending=(), last_activity_ms=None, last_wake=None)
+        _state, tools, system_prompt, prompt = await self._session_input(
+            unit=unit, view=view, situation=situation, session_id=session_id,
+            wake_id=0, now_ms=now_ms, doctrine_text=doctrine_text,
+            skill_text=skill_text, grounding=Grounding(),
         )
-        tools = await self._build_tools(unit=unit, state=state, now_ms=now_ms)
         return await self._agent_runner.run(
-            system_prompt=doctrine_text + skill_text,
-            prompt=render_agenda(
-                [item], reads_note=state.reads_note, now_ms=now_ms,
-                last_session_ms=None, tz=self._tz, budget=self._render_budget,
-            ),
+            system_prompt=system_prompt, prompt=prompt,
             tools=tools, budget=self._budget,
             trace_attributes={"cognition.unit": unit, "cognition.session_id": str(session_id)},
         )
@@ -1605,15 +1614,30 @@ class CognitionSessionRunner:
     def _guarded_read_tools(
         self, unit: str, rooms: Sequence[Room],
         *, clock: HistoricalClock | None = None,
+        on_rows: Callable[..., None] | None = None,
     ) -> list[Any]:
         """`read_tools_for`'s result, refused unless every tool is on the
         read-only allowlist and none shadows a session verb. The session's
         ceiling is «may look, may not write»; a read-tool source that ever
         returned a write is stopped here, not trusted."""
-        tools = (
-            self._read_tools_for(unit, rooms) if clock is None
-            else self._read_tools_for(unit, rooms, clock=clock)
-        )
+        # `clock` and `on_rows` are an OPTIONAL protocol: a source declares
+        # them (the registry's does) or it does not, and one that does not is
+        # never handed them. Value and signature are both checked, so a
+        # narrower source — a test double, a tag-path closure — still builds.
+        try:
+            params: Mapping[str, inspect.Parameter] = inspect.signature(
+                self._read_tools_for).parameters
+        except (TypeError, ValueError):
+            params = {}
+        accepts_kw = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+        extra = {
+            **({"clock": clock}
+               if clock is not None and (accepts_kw or "clock" in params) else {}),
+            **({"on_rows": on_rows}
+               if on_rows is not None and (accepts_kw or "on_rows" in params) else {}),
+        }
+        tools = self._read_tools_for(unit, rooms, **extra)
         seen: set[str] = set()
         for tool in tools:
             name = getattr(tool, "tool_name", None) or getattr(tool, "__name__", None)
@@ -1643,13 +1667,14 @@ class CognitionSessionRunner:
         # returns ONE tool per name (a tool name is one tool: Strands keeps the
         # LAST of two silently, which read one
         # room's Record through another room's binding without a word), and
-        # each takes a `room` argument routing the read through that room's
-        # own build; a `room` value not on the agenda is refused. The unit is the
+        # each takes an `agenda_room` argument routing the read through that
+        # room's own build; an `agenda_room` value not on the agenda is refused.
+        # The unit is the
         # boundary the session may read across (DEC-231: `record_query
         # scope="all_rooms"` and `search_memory_workspace` read the unit's other
-        # rooms), the `room` argument picks the binding (roster, lineage) a read
-        # resolves through. The agenda's rooms are never replaced by the unit's
-        # home room.
+        # rooms), the `agenda_room` argument picks the binding (roster, lineage)
+        # a read resolves through. The agenda's rooms are never replaced by
+        # the unit's home room.
         rooms = list(dict.fromkeys(item.room for item in state.items_by_index.values()))
         keys = [_room_key(r) for r in rooms]
         # The prompt calls a room by its LABEL; the id is what a tool's
@@ -1659,7 +1684,7 @@ class CognitionSessionRunner:
         state.reads_note = (
             f"Your read tools look through room {named[0]}."
             if len(keys) == 1
-            else "Your read tools take a `room`, one of: "
+            else "Your read tools take an `agenda_room`, one of: "
             + ", ".join(f"`{k}` ({n})" for k, n in zip(keys, named, strict=True))
             + ". Each read resolves through the room you name and shows only what that "
             "room may be shown; a room that is not listed is refused."
@@ -1672,28 +1697,46 @@ class CognitionSessionRunner:
                 persons=tuple({p for v in state.memory_items.values()
                                for source in v.sources for p in source.persons}),
                 shown_keys=state.shown_keys)
+
+            def on_rows(rows: Sequence[Any]) -> None:
+                """A transcript read's handed-out rows, kept as the citable
+                `("message", id)` evidence `memory_propose` admits on: what
+                the tool showed is the bounded, as-of-projected row — a row
+                the session was never shown cannot become evidence, and a
+                row whose body the read withheld (deleted, redacted) carries
+                no text to cite, so it registers nothing either."""
+                for r in rows:
+                    if r.body is None:
+                        continue
+                    state.graph_fetched.show(Source(
+                        ("message", str(r.id)), "record", unit,
+                        (r.person_id,) if r.person_id else (),
+                        r.body))
+
         # A historical session reads as of its evidence instant: every built
         # tool's `now_fn` is bound to it (the registry's injected clock, the
         # same seam `with_memory_search` uses), so an end-less or before-less
-        # read lands at the instant the same way it lands at «now» live.
+        # read lands at the instant the same way it lands at «now» live —
+        # and the reads themselves fold rows, edits, reactions, deletes and
+        # source events AT that instant, never at the wall clock's.
         historical_clock: HistoricalClock | None = None
-        historical_as_of: datetime | None = None
         if state.historical:
-            historical_as_of = datetime.fromtimestamp(now_ms / 1000, UTC)
-            historical_clock = _as_clock(historical_as_of)
+            historical_clock = _as_clock(datetime.fromtimestamp(now_ms / 1000, UTC))
         # The reads that hand out citable rows are watched: what they return is
         # what a note may cite besides the agenda's own rows.
         read_tools = watch_reads(
-            self._guarded_read_tools(unit, rooms, clock=historical_clock),
+            self._guarded_read_tools(
+                unit, rooms, clock=historical_clock,
+                on_rows=on_rows if self._memory is not None else None),
             state.fetched, keys)
 
         if self._memory is not None:
             read_tools = [ComprehendRead(t, lookups) if hasattr(t, "stream") else t
                           for t in read_tools]
 
-        if historical_as_of is not None:
+        if historical_clock is not None:
             from nora.agent.comprehend_tools import as_of_reads
-            read_tools = as_of_reads(read_tools, as_of=historical_as_of)
+            read_tools = as_of_reads(read_tools)
 
         async def shown_for(
             platform: str, conversation_id: str, body: str,

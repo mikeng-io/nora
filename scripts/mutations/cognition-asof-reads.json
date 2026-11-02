@@ -1,0 +1,80 @@
+[
+ {
+  "name": "the as-of ceiling never reaches the window: an absent or too-new `before` reads the LIVE newest",
+  "file": "nora/agent/tools.py",
+  "old": "    fetch = asked + 1\n    bound = before_ts\n    if as_of_ms is not None:\n        bound = as_of_ms + 1 if bound is None else min(bound, as_of_ms + 1)\n    if bound is None:\n",
+  "new": "    fetch = asked + 1\n    bound = before_ts\n    if bound is None:\n",
+  "target": "tests/unit/test_historical_read_guard.py::test_the_read_window_bounds_the_store_at_the_callers_instant tests/unit/test_historical_read_guard.py::test_an_earlier_before_stays_the_windows_own_end tests/unit/test_historical_read_guard.py::test_a_live_read_uses_the_same_path_with_its_own_clock"
+ },
+ {
+  "name": "record_query's interval bounds rows but not the fold: the store gets no as-of instant",
+  "file": "nora/agent/tools.py",
+  "old": "            ), as_of_ms=as_of_ms)",
+  "new": "            ))",
+  "target": "tests/unit/test_cognition_record_query_ids.py::test_the_record_read_is_bounded_by_the_calls_own_instant"
+ },
+ {
+  "name": "the newest window's row set is not capped at the instant (a post-T row is selected)",
+  "file": "nora/infra/sql/audit.py",
+  "old": "        if before_ts is not None:\n            where.append(MESSAGES.c.ts < before_ts)\n        if as_of_ms is not None:\n            where.append(MESSAGES.c.ts < as_of_ms + 1)\n        stmt = (\n            transcript_select(edits_before=as_of_ms)\n",
+  "new": "        if before_ts is not None:\n            where.append(MESSAGES.c.ts < before_ts)\n        stmt = (\n            transcript_select(edits_before=as_of_ms)\n",
+  "target": "tests/infra/test_a_cognition_sessions_read_tools_write_nothing.py::test_a_bound_clock_reads_the_record_as_it_then_stood"
+ },
+ {
+  "name": "the newest window's edit fold is unbounded (a post-T edit body is shown)",
+  "file": "nora/infra/sql/audit.py",
+  "old": "            transcript_select(edits_before=as_of_ms)\n            .where(*where)\n            .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())\n            # OVER-FETCH BY ONE",
+  "new": "            transcript_select()\n            .where(*where)\n            .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())\n            # OVER-FETCH BY ONE",
+  "target": "tests/infra/test_a_cognition_sessions_read_tools_write_nothing.py::test_a_bound_clock_reads_the_record_as_it_then_stood"
+ },
+ {
+  "name": "the newest window's reaction fold is unbounded (a post-T reaction is shown)",
+  "file": "nora/infra/sql/audit.py",
+  "old": "            states = await reaction_states(conn, [r.id for r in kept], before_ms=as_of_ms)",
+  "new": "            states = await reaction_states(conn, [r.id for r in kept])",
+  "target": "tests/infra/test_a_cognition_sessions_read_tools_write_nothing.py::test_a_bound_clock_reads_the_record_as_it_then_stood"
+ },
+ {
+  "name": "record_query's delete fold is unbounded (a deleted message's words match `text` at T)",
+  "file": "nora/infra/sql/record_query.py",
+  "old": "            delete_seen = [MESSAGE_DELETE.c.message_id == MESSAGES.c.id]\n            if as_of_ms is not None:\n                edit_seen.append(MESSAGE_EDIT.c.ts <= as_of_ms)\n                delete_seen.append(MESSAGE_DELETE.c.ts <= as_of_ms)",
+  "new": "            delete_seen = [MESSAGE_DELETE.c.message_id == MESSAGES.c.id]",
+  "target": "tests/infra/test_a_cognition_sessions_read_tools_write_nothing.py::test_a_bound_clock_reads_the_record_as_it_then_stood"
+ },
+ {
+  "name": "the multi-room router's selector overwrites the read's own `room` argument (room_read's destination is silently replaced)",
+  "file": "nora/agent/room_routing.py",
+  "old": "ROOM_ARG = \"agenda_room\"",
+  "new": "ROOM_ARG = \"room\"",
+  "target": "tests/unit/test_cognition_room_reads.py::test_the_schema_the_model_reads_lists_the_agenda_rooms_and_requires_one tests/unit/test_cognition_room_reads.py::test_a_two_room_agenda_reads_each_room_through_itself tests/infra/test_a_cognition_sessions_read_tools_write_nothing.py::test_a_two_room_agenda_reads_each_room_through_itself_and_cannot_read_another"
+ },
+ {
+  "name": "file_fetch reads a shared file's CURRENT content in a replay (unreconstructible private content presented as-of)",
+  "file": "nora/agent/comprehend_tools.py",
+  "old": "    \"file_fetch\": \"This reads a file's content as it stands now — a shared \"\n                  \"document's body is whatever it says at fetch time, and \"\n                  \"what it said at this time cannot be read back.\",\n",
+  "new": "",
+  "target": "tests/unit/test_historical_read_guard.py::test_every_unavailable_name_is_a_real_read_tool tests/unit/test_historical_read_guard.py::test_a_current_head_read_answers_unavailable_and_the_inner_tool_never_runs"
+ },
+ {
+  "name": "the transcript rows a read showed never reach evidence custody (a proposal can cite nothing they contained)",
+  "file": "nora/agent/tools.py",
+  "old": "        if on_rows is not None:\n            on_rows(rows)",
+  "new": "        pass",
+  "target": "tests/unit/test_cognition_session_runner.py::test_rows_a_read_shows_become_the_evidence_a_proposal_may_cite",
+  "note": "the load_transcript site; the mutation is the omitted custody call, whichever return path it sits on"
+ },
+ {
+  "name": "the status-free success envelope is kept on FAILED reads too (a failed read is kept as fetched rows)",
+  "file": "nora/agent/fetch_watch.py",
+  "old": "        if tool == \"load_transcript\":\n            # The status-free envelope: `messages` alone IS the successful\n            # read, and every failure return now says so (`status` present\n            # exactly on failures). A failure here keeps nothing.\n            if result.get(\"status\") is not None:\n                return\n",
+  "new": "        if tool == \"load_transcript\":\n            pass\n",
+  "target": "tests/unit/test_cognition_record_query_ids.py::test_the_watcher_reads_the_status_free_contract_and_no_other"
+ },
+ {
+  "name": "every adaptor's build is handed on_rows unconditionally (a narrower source TypeErrors; the optional protocol is broken)",
+  "file": "nora/agent/dreamer.py",
+  "old": "            extra: dict[str, Any] = (\n                {\"on_rows\": loaded.extend} if saw is not None else {}\n            )",
+  "new": "            extra: dict[str, Any] = {\"on_rows\": loaded.extend}",
+  "target": "tests/unit/test_dreamer_runtime.py::test_rows_a_tool_loaded_reach_the_adaptor_before_accept tests/unit/test_dreamer_runtime.py::test_an_adaptor_with_no_saw_gets_the_unchanged_build"
+ }
+]

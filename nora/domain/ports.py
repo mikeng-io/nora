@@ -780,10 +780,13 @@ class RecordStore(Protocol):
         tx_hook: Any = None,
     ) -> int: ...
 
-    async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]: ...
+    async def recent(
+        self, *, conversation_id: str, limit: int, as_of_ms: int | None = None,
+    ) -> list[TranscriptRow]: ...
 
     async def media_rows(
         self, *, conversation_id: str, since_ts: int, limit: int,
+        as_of_ms: int | None = None,
     ) -> list[TranscriptRow]:
         """The rows of ONE conversation that carry media Nora holds, sent by
         somebody other than her, with `ts >= since_ts`, NEWEST first, at most
@@ -793,26 +796,34 @@ class RecordStore(Protocol):
         argument. Raises when the database cannot be read (a caller maps that
         to `unavailable`); a non-positive `limit` answers `[]` without a
         query. Hidden (withdrawn) rows are excluded, as in every transcript
-        read."""
+        read. `as_of_ms` bounds the row window and its edit/reaction folds at
+        the caller's instant — a read replaying an earlier time sees neither
+        a row posted later nor a later revision of an earlier row."""
         ...
 
     async def external_file_rows(
         self, *, conversation_id: str, since_ts: int, limit: int,
+        as_of_ms: int | None = None,
     ) -> list[TranscriptRow]:
         """`media_rows` for shared file links: the rows of ONE conversation
         whose `external_files_json` is set, sent by somebody other than her,
         with `ts >= since_ts`, NEWEST first, at most `limit`. Raises when the
         database cannot be read; a non-positive `limit` answers `[]` without a query.
-        Hidden rows are excluded. The one caller is
+        Hidden rows are excluded; `as_of_ms` bounds window and folds as
+        `media_rows` describes. The one caller is
         `nora.domain.external_files.resolve_file_code`."""
         ...
 
     async def recent_before(
         self, *, conversation_id: str, before_ts: int, limit: int,
+        as_of_ms: int | None = None,
     ) -> list[TranscriptRow]:
         """`recent`, ending before a moment: the newest `limit` rows with
         `ts < before_ts`, returned oldest-first, with the same over-fetch, edit
-        fold and `limit <= 0` rule as `recent`.
+        fold and `limit <= 0` rule as `recent`. `as_of_ms` bounds the edit and
+        reaction folds at the caller's instant (the same bound
+        `SqlRecordQuery.by_refs` carries): an earlier `before_ts` stays the
+        window's own end.
 
         One caller family: the transcript tools' `before`, which reads
         «yesterday» in a room that has said more than a window's worth since.
@@ -867,11 +878,13 @@ class RecordStore(Protocol):
 
     async def by_ids(
         self, *, platform: str, conversation_id: str, ids: Sequence[int],
+        as_of_ms: int | None = None,
     ) -> tuple[dict[int, TranscriptRow], frozenset[int]]:
         """The messages these row ids name, as `(rows by id, deleted ids)` —
         ONE bounded batched read for resolving a known reference (a source
         event's `target_message_id`), never a room scan and never a lookup
-        of another room's row.
+        of another room's row. `as_of_ms` bounds the edit/reaction/delete
+        folds at the caller's instant; the row set is the named ids.
 
         Only rows of `(platform, conversation_id)` resolve; hidden rows are
         absent, as in every transcript read. A row whose delete is recorded
@@ -1246,10 +1259,13 @@ class ObservationStore(Protocol):
 
     async def recent(
         self, *, scope: SourceScope, since_ms: int = 0, limit: int = 50,
+        before_ms: int | None = None,
     ) -> list[StoredObservation]:
         """The scope's newest retained observations at/after `since_ms`
         (their own `occurred_ms`/`received_ms` clock), bounded — the
-        transcript-window read. Same scope-boundary rule as `by_ids`:
+        transcript-window read. `before_ms` bounds the window at the
+        caller's instant, so a read replaying an earlier time sees only what
+        the source had recorded by then. Same scope-boundary rule as `by_ids`:
         an empty `account_key` reads room-wide."""
         ...
 

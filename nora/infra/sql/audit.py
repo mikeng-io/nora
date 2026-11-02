@@ -515,7 +515,9 @@ class SqlRecordStore:
             await memory_index.project(conn, "message", row_id, metrics=self._metrics)
         return row_id
 
-    async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]:
+    async def recent(
+        self, *, conversation_id: str, limit: int, as_of_ms: int | None = None,
+    ) -> list[TranscriptRow]:
         """Newest `limit` rows for one conversation, returned oldest-first.
 
         A non-positive `limit` short-circuits to `[]` rather than reaching
@@ -523,71 +525,94 @@ class SqlRecordStore:
         treats as unbounded, not zero. `FakeRecordStore.recent` already
         returns `[]` for `limit <= 0`; this keeps both implementations
         agreeing (see `tests/contract/test_audit_store_contract.py`).
+
+        `as_of_ms` bounds the projection, not the window: rows posted later
+        are still excluded by the caller's own bound, but edits, reactions
+        and deletes recorded after the instant are folded back out, and the
+        window itself is cut at `as_of_ms` so no newer row is selected. The
+        one bound `by_refs`'s `as_of_ms` already folds for `record_query`
+        carries here, so a transcript read bound to a clock says what it
+        says as of that clock.
         """
-        return await self._newest(conversation_id=conversation_id, limit=limit)
+        return await self._newest(
+            conversation_id=conversation_id, limit=limit, as_of_ms=as_of_ms,
+        )
 
     async def media_rows(
         self, *, conversation_id: str, since_ts: int, limit: int,
+        as_of_ms: int | None = None,
     ) -> list[TranscriptRow]:
         """See `nora.domain.ports.RecordStore.media_rows`. One indexed seek on
-        `idx_messages_conv_ts` bounded by `since_ts`; `media_json IS NOT NULL`
+        `idx_messages_conv_ts` bounded by `since_ts` (and by `as_of_ms` when
+        given — the caller's instant, so a read replaying an earlier time
+        sees no row posted or edited after it); `media_json IS NOT NULL`
         is the column's own «Nora holds something for this row» (NULL, never
         `[]`). Raises on a database error, unlike the swallowing reads: the
         caller is a tool that must say `unavailable`, not «no photos»."""
         if limit <= 0:
             return []
+        where = [
+            MESSAGES.c.conversation_id == conversation_id,
+            MESSAGES.c.ts >= since_ts,
+            MESSAGES.c.is_nora == 0,
+            MESSAGES.c.media_json.is_not(None),
+        ]
+        if as_of_ms is not None:
+            where.append(MESSAGES.c.ts < as_of_ms + 1)
         stmt = (
-            transcript_select()
-            .where(
-                MESSAGES.c.conversation_id == conversation_id,
-                MESSAGES.c.ts >= since_ts,
-                MESSAGES.c.is_nora == 0,
-                MESSAGES.c.media_json.is_not(None),
-            )
+            transcript_select(edits_before=as_of_ms)
+            .where(*where)
             .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
             .limit(limit)
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-            states = await reaction_states(conn, [r.id for r in rows])
+            states = await reaction_states(conn, [r.id for r in rows], before_ms=as_of_ms)
         return with_reactions([self._row(r) for r in rows], states)
 
     async def external_file_rows(
         self, *, conversation_id: str, since_ts: int, limit: int,
+        as_of_ms: int | None = None,
     ) -> list[TranscriptRow]:
         """See `nora.domain.ports.RecordStore.external_file_rows`. The
         `media_rows` query with the other column; raises on a database error."""
         if limit <= 0:
             return []
+        where = [
+            MESSAGES.c.conversation_id == conversation_id,
+            MESSAGES.c.ts >= since_ts,
+            MESSAGES.c.is_nora == 0,
+            MESSAGES.c.external_files_json.is_not(None),
+        ]
+        if as_of_ms is not None:
+            where.append(MESSAGES.c.ts < as_of_ms + 1)
         stmt = (
-            transcript_select()
-            .where(
-                MESSAGES.c.conversation_id == conversation_id,
-                MESSAGES.c.ts >= since_ts,
-                MESSAGES.c.is_nora == 0,
-                MESSAGES.c.external_files_json.is_not(None),
-            )
+            transcript_select(edits_before=as_of_ms)
+            .where(*where)
             .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
             .limit(limit)
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-            states = await reaction_states(conn, [r.id for r in rows])
+            states = await reaction_states(conn, [r.id for r in rows], before_ms=as_of_ms)
         return with_reactions([self._row(r) for r in rows], states)
 
     async def by_ids(
         self, *, platform: str, conversation_id: str, ids: Sequence[int],
+        as_of_ms: int | None = None,
     ) -> tuple[dict[int, TranscriptRow], frozenset[int]]:
         """See `nora.domain.ports.RecordStore.by_ids`. The `media_rows` select
         keyed by `id IN` instead of a `ts` window: `transcript_select` keeps
         hidden rows absent, `reaction_states` folds reactions as `recent`
         does, and `message_delete` names the ids whose delete is recorded —
-        returned separately so the caller, not the read, withholds words."""
+        returned separately so the caller, not the read, withholds words.
+        `as_of_ms` bounds the edit/reaction/delete folds at the caller's
+        instant; the row set itself is the named ids, unchanged."""
         wanted = {int(i) for i in ids}
         if not wanted:
             return {}, frozenset()
         stmt = (
-            transcript_select()
+            transcript_select(edits_before=as_of_ms)
             .where(
                 MESSAGES.c.platform == platform,
                 MESSAGES.c.conversation_id == conversation_id,
@@ -596,38 +621,49 @@ class SqlRecordStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-            states = await reaction_states(conn, [r.id for r in rows])
+            states = await reaction_states(conn, [r.id for r in rows], before_ms=as_of_ms)
             gone = frozenset(
                 r[0] for r in (
                     await conn.execute(
                         sa.select(MESSAGE_DELETE.c.message_id)
-                        .where(MESSAGE_DELETE.c.message_id.in_(
-                            [r.id for r in rows]))
+                        .where(
+                            MESSAGE_DELETE.c.message_id.in_([r.id for r in rows]),
+                            *([] if as_of_ms is None
+                              else [MESSAGE_DELETE.c.ts <= as_of_ms]),
+                        )
                         .distinct())).all())
         found = with_reactions([self._row(r) for r in rows], states)
         return {r.id: r for r in found}, gone
 
     async def recent_before(
         self, *, conversation_id: str, before_ts: int, limit: int,
+        as_of_ms: int | None = None,
     ) -> list[TranscriptRow]:
         """See `nora.domain.ports.RecordStore.recent_before`."""
         return await self._newest(
             conversation_id=conversation_id, limit=limit, before_ts=before_ts,
+            as_of_ms=as_of_ms,
         )
 
     async def _newest(
         self, *, conversation_id: str, limit: int, before_ts: int | None = None,
+        as_of_ms: int | None = None,
     ) -> list[TranscriptRow]:
         """`recent` and `recent_before`'s one query: the newest `limit` rows,
         optionally ending before `before_ts`, oldest-first. One body, so the
-        two reads cannot drift in their over-fetch, tie-break or edit fold."""
+        two reads cannot drift in their over-fetch, tie-break or edit fold.
+        `as_of_ms` folds edits and reactions as of the caller's instant and
+        caps the window at it — a `before_ts` that reads «the newest» cannot
+        mean the live newest when the caller's clock is bound."""
         if limit <= 0:
             return []
         where = [MESSAGES.c.conversation_id == conversation_id]
         if before_ts is not None:
             where.append(MESSAGES.c.ts < before_ts)
+        if as_of_ms is not None:
+            where.append(MESSAGES.c.ts < as_of_ms + 1)
         stmt = (
-            transcript_select()
+            transcript_select(edits_before=as_of_ms)
             .where(*where)
             .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
             # OVER-FETCH BY ONE (`nora.domain.bounds`). This window is what
@@ -647,7 +683,7 @@ class SqlRecordStore:
             kept = cut(
                 rows, limit=limit, site="audit.recent", metrics=self._metrics,
             )
-            states = await reaction_states(conn, [r.id for r in kept])
+            states = await reaction_states(conn, [r.id for r in kept], before_ms=as_of_ms)
         return with_reactions([self._row(r) for r in reversed(kept)], states)
 
     async def depth_to(self, *, conversation_id: str, ts: int) -> int | None:

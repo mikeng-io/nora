@@ -65,9 +65,11 @@ async def test_a_two_room_agenda_reads_each_room_through_itself():
     calls: list[Any] = []
     tools = _routed(calls)
     assert set(tools) == {"note_read", "record_query"}           # ONE per name
-    assert (await _call(tools["record_query"], room="signal:room-a", query="x"))["through"] == (
+    assert (await _call(
+        tools["record_query"], agenda_room="signal:room-a", query="x"))["through"] == (
         "signal:room-a")
-    assert (await _call(tools["record_query"], room="discord:room-b", query="y"))["through"] == (
+    assert (await _call(
+        tools["record_query"], agenda_room="discord:room-b", query="y"))["through"] == (
         "discord:room-b")
     assert calls == [
         ("record_query", "signal:room-a", {"query": "x"}),
@@ -78,7 +80,7 @@ async def test_a_two_room_agenda_reads_each_room_through_itself():
 async def test_a_room_not_on_the_agenda_is_refused_and_reads_nothing():
     calls: list[Any] = []
     tools = _routed(calls)
-    answer = await _call(tools["note_read"], room="whatsapp:room-c", query="x")
+    answer = await _call(tools["note_read"], agenda_room="whatsapp:room-c", query="x")
     assert answer["status"] == "refused" and answer["reason"] == "unknown_room"
     assert "signal:room-a" in answer["detail"] and "whatsapp:room-c" in answer["detail"]
     assert calls == []
@@ -95,8 +97,8 @@ async def test_a_call_that_names_no_room_is_refused_never_guessed_from_the_first
 def test_the_schema_the_model_reads_lists_the_agenda_rooms_and_requires_one():
     spec = _routed([])["note_read"].tool_spec
     schema = spec["inputSchema"]["json"]
-    assert schema["properties"]["room"]["enum"] == ["signal:room-a", "discord:room-b"]
-    assert "room" in schema["required"] and "query" in schema["required"]
+    assert schema["properties"]["agenda_room"]["enum"] == ["signal:room-a", "discord:room-b"]
+    assert "agenda_room" in schema["required"] and "query" in schema["required"]
     assert schema["properties"]["query"]                          # the tool's own arguments kept
     assert spec["name"] == "note_read"
 
@@ -116,9 +118,9 @@ async def test_a_name_one_room_does_not_hold_is_refused_for_that_room_only():
         "signal:room-a": [_tool_for("note_read", A, calls), _tool_for("record_query", A, calls)],
         "discord:room-b": [_tool_for("note_read", B, calls)],
     })}
-    ok = await _call(tools["record_query"], room="signal:room-a", query="x")
+    ok = await _call(tools["record_query"], agenda_room="signal:room-a", query="x")
     assert ok["status"] == "ok"
-    answer = await _call(tools["record_query"], room="discord:room-b", query="x")
+    answer = await _call(tools["record_query"], agenda_room="discord:room-b", query="x")
     assert answer["status"] == "refused" and answer["reason"] == "unavailable"
 
 
@@ -139,10 +141,10 @@ def test_one_room_gets_the_registrys_tools_untouched_and_several_get_routed_ones
     source = _Source()
     build = read_tools_for(source, names=frozenset({"note_read"}))
     (single,) = build("u", [A])
-    assert "room" not in single.tool_spec["inputSchema"]["json"]["properties"]
+    assert "agenda_room" not in single.tool_spec["inputSchema"]["json"]["properties"]
     routed = build("u", [A, B])
     assert [t.tool_name for t in routed] == ["note_read"]
-    assert "room" in routed[0].tool_spec["inputSchema"]["json"]["properties"]
+    assert "agenda_room" in routed[0].tool_spec["inputSchema"]["json"]["properties"]
     # each agenda room was built through the registry's own source, scope-keyed by ITS id
     assert [c["key"] for c in source.calls] == ["room-a", "room-a", "room-b"]
     assert {c["adaptor"] for c in source.calls} == {"cognition"}
@@ -152,5 +154,6 @@ def test_one_room_gets_the_registrys_tools_untouched_and_several_get_routed_ones
 async def test_the_routed_reads_of_the_wiring_reach_the_room_they_name_and_not_the_home_room():
     source = _Source()
     (tool,) = read_tools_for(source, names=frozenset({"note_read"}))("u", [A, B])
-    assert (await _call(tool, room="discord:room-b", query="x"))["through"] == "discord:room-b"
+    assert (await _call(tool, agenda_room="discord:room-b", query="x")
+            )["through"] == "discord:room-b"
     assert [b[1] for b in source.built] == ["discord:room-b"]

@@ -333,7 +333,9 @@ CALLS: dict[str, list[dict[str, Any]]] = {
     "file_fetch": [{"code": "generated-code"}],
     # The public enrichment reads, inert by config here (no search provider,
     # no social bridge, no route source): each answers `unavailable` without
-    # a packet leaving the host.
+    # a packet leaving the host. LinkedIn is not on the surface at all —
+    # the bridge only reads its own user's private feed there, which no
+    # public occasion may egress, so the tools were never catalogued.
     "web_search": [{"query": "ramen"}],
     "web_fetch": [{"url": "https://example.invalid/"}],
     "place_info": [{"name": "generated-place"}],
@@ -341,8 +343,6 @@ CALLS: dict[str, list[dict[str, Any]]] = {
     "instagram_search": [{"query": "ramen"}],
     "x_read": [{"handle": "generated-handle", "what": "profile"}],
     "x_search": [{"query": "ramen"}],
-    "linkedin_read": [{"handle": "generated-handle", "what": "profile"}],
-    "linkedin_search": [{"query": "ramen"}],
 }
 
 
@@ -489,14 +489,19 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
     assert results["poll_read"] == ["ok", "nothing_found"]
     assert results["room_state_read"] == ["ok"]
     assert results["group_members"] == ["ok"]
-    assert results["load_transcript"] == ["ok"]
+    # `load_transcript` is the one tool whose contract carries no `status`
+    # (ADR 0009 §2): the `messages` list IS the answer, so the success check
+    # is that the call reached the seeded rows and returned the contract's
+    # shape — not a `status` it never claims.
+    lt = await _call(world.tools([A])["load_transcript"], limit=5)
+    assert lt["messages"]
+    assert "status" not in lt
     assert results["lookup_person"] == ["ok"]
     # The inert-by-config reads were still CALLED (coverage), and every one of
     # them answered the honest state rather than a silent nothing.
     for name in ("who_said", "room_read", "media_fetch", "media_search",
                  "file_fetch", "web_search", "web_fetch", "place_info",
-                 "instagram_read", "instagram_search", "x_read", "x_search",
-                 "linkedin_read", "linkedin_search"):
+                 "instagram_read", "instagram_search", "x_read", "x_search"):
         if name in results:
             assert set(results[name]) == {"unavailable"}, (name, results[name])
     # the derived-presence reads reached their SQL (a current build exists)
@@ -547,15 +552,15 @@ async def test_a_two_room_agenda_reads_each_room_through_itself_and_cannot_read_
     tools = world.tools([A, B])
     record = tools["record_query"]
     interval = {"start": "2026-09-01", "end": "2026-10-30"}
-    in_a = await _call(record, room="signal:ROOM-A", **interval)
-    in_b = await _call(record, room="discord:ROOM-B", **interval)
+    in_a = await _call(record, agenda_room="signal:ROOM-A", **interval)
+    in_b = await _call(record, agenda_room="discord:ROOM-B", **interval)
     assert in_a["status"] == in_b["status"] == "ok"
     assert {m["body"] for m in in_a["messages"]} == {"dinner plans number 0",
                                                      "dinner plans number 1"}
     assert {m["body"] for m in in_b["messages"]} == {"dinner plans number 2"}
     # A room of the unit that is not on THIS agenda cannot be read, and the
     # unit's home room is not a fallback for a missing `room`.
-    refused = await _call(record, room="whatsapp:ROOM-C", **interval)
+    refused = await _call(record, agenda_room="whatsapp:ROOM-C", **interval)
     assert refused["status"] == "refused" and refused["reason"] == "unknown_room"
     missing = await _call(record, **interval)
     assert missing["status"] == "refused" and missing["reason"] == "room_required"
@@ -567,5 +572,78 @@ async def test_the_two_room_reads_write_nothing_either(engine, world):
     for name in sorted(world.surface.wired):
         for arguments in CALLS[name]:
             for room in ("signal:ROOM-A", "discord:ROOM-B"):
-                await _call(tools[name], room=room, **arguments)
+                # `agenda_room` is the router's binding selector (R-99's
+                # rename): a read's own `room` argument — `room_read`'s
+                # destination — still rides in `arguments`, untouchable.
+                await _call(tools[name], agenda_room=room, **arguments)
     assert _live(await _counts(engine)) == _live(before)
+
+
+# ---- the historical lane's one bound, at the SQL seam --------------------------
+
+async def test_a_bound_clock_reads_the_record_as_it_then_stood(engine, world):
+    """`clock=` is the same `read_tools_for` call the session makes for
+    `historical`. A read bound to NOW_MS sees rows only as they stood then:
+    a row posted after it is absent, an edit and a reaction recorded after
+    it are folded out, and a message deleted after it still stands (its
+    words still match `text`, because at the instant they were not yet
+    taken back). The unbound build beside it reads the live fold, so the
+    bound itself — not an empty room — is what did the narrowing."""
+    past = NOW_MS - 3_600_000
+    after = NOW_MS + 3_600_000
+    edited = await _say(engine, platform="signal", room="ROOM-A", person="p1",
+                        sender=ADA, ts=past, body="dinner at seven")
+    pier = await _say(engine, platform="signal", room="ROOM-A", person="p1",
+                      sender=ADA, ts=past, body="meet at the pier")
+    await _say(engine, platform="signal", room="ROOM-A", person="p1",
+               sender=ADA, ts=after, body="words from after the instant")
+    async with engine.begin() as conn:
+        await conn.execute(sa.text(
+            "INSERT INTO message_edit (message_id, ts, body) "
+            "VALUES (:i, :ts, :b)"), {"i": edited, "ts": after, "b": "dinner at nine"})
+        await conn.execute(sa.text(
+            "INSERT INTO message_reaction (message_id, sender_id, person_id, "
+            "emoji, ts) VALUES (:i, :s, :p, :e, :ts)"),
+            {"i": edited, "s": BEN, "p": "p2", "e": "👍", "ts": after})
+        await conn.execute(sa.text(
+            "INSERT INTO message_delete (message_id, sender_id, person_id, ts) "
+            "VALUES (:i, :s, :p, :ts)"),
+            {"i": pier, "s": ADA, "p": "p1", "ts": after})
+
+    at = datetime.fromtimestamp(NOW_MS / 1000, UTC)
+    bound = {
+        t.tool_name: t
+        for t in read_tools_for(
+            world.source,
+            names=frozenset({"load_transcript", "record_query"}),
+        )("u1", [A], clock=lambda: at)
+    }
+    live = world.tools([A])
+
+    transcript = await _call(bound["load_transcript"], limit=10)
+    bodies = [m.get("body") for m in transcript["messages"]]
+    assert "dinner at seven" in bodies            # the edit had not happened yet
+    assert "dinner at nine" not in bodies
+    assert "meet at the pier" in bodies           # and the delete had not either
+    assert "words from after the instant" not in bodies
+
+    live_transcript = await _call(live["load_transcript"], limit=10)
+    live_bodies = [m.get("body") for m in live_transcript["messages"]]
+    assert "dinner at nine" in live_bodies        # the live fold moved on
+    assert "words from after the instant" in live_bodies
+
+    interval = {"start": "2026-01-01", "end": "2030-12-31"}
+    asof = await _call(bound["record_query"], text="pier", **interval)
+    assert asof["status"] == "ok"                  # still said, at the instant
+    pier = next(m for m in asof["messages"] if m.get("body") == "meet at the pier")
+    assert "deleted" not in pier
+    now = await _call(live["record_query"], text="pier", **interval)
+    assert now["status"] == "nothing_found"        # a deleted message never matches
+
+    asof_dinner = await _call(bound["record_query"], text="dinner", **interval)
+    dinner = next(m for m in asof_dinner["messages"] if m.get("body") == "dinner at seven")
+    assert "reactions" not in dinner               # the reaction had not landed yet
+    now_dinner = await _call(live["record_query"], text="dinner", **interval)
+    live_dinner = next(
+        m for m in now_dinner["messages"] if m.get("body") == "dinner at nine")
+    assert live_dinner.get("reactions")            # the live fold carries it

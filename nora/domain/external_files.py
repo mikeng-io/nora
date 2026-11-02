@@ -588,9 +588,12 @@ async def resolve_file_code(
         return FileCodeLookup("nothing_found")
     days = max(1, min(days, ROOM_MEDIA_DAYS))
     try:
+        # `now_ms` bounds the rows AND their edit folds — the resolver
+        # answers as of its own instant, `room_sightings`' rule.
         rows = await store.external_file_rows(
             conversation_id=conversation_id,
             since_ts=now_ms - days * 86_400_000, limit=ROOM_MEDIA_ROWS + 1,
+            as_of_ms=now_ms,
         )
     except Exception:  # noqa: BLE001 — an unreadable record is `unavailable` (R-27)
         return FileCodeLookup("unavailable")

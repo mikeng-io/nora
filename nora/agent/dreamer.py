@@ -1335,6 +1335,14 @@ class DreamerRuntime:
             # tool) resolves through its own key, which names no room, so every
             # room-scoped verb is closed to it.
             tool_room = getattr(adaptor, "tool_room", None)
+            # Only for an adaptor that grounds on what it loaded (`saw`) —
+            # and only PRESENT then: `on_rows` is optional on the source
+            # protocol, so a build that does not need it never passes it
+            # (an argument a narrower source does not declare must not be
+            # sent, `None` or not).
+            extra: dict[str, Any] = (
+                {"on_rows": loaded.extend} if saw is not None else {}
+            )
             tools = self._tools.build(
                 key=(tool_room(key) or key) if tool_room is not None else key,
                 names=frozenset(adaptor.tools),
@@ -1344,8 +1352,7 @@ class DreamerRuntime:
                 # adaptor supplies nothing and its tools resolve through the room.
                 unit=key if adaptor.key_kind == "unit" else None,
                 adaptor=adaptor.name, grant=grant,
-                # Only for an adaptor that grounds on what it loaded (`saw`).
-                on_rows=loaded.extend if saw is not None else None,
+                **extra,
             )
             # THE ADAPTOR'S OWN WRITE VERBS (`character_revise`): typed closures
             # that VALIDATE a write as the model makes it and answer a refusal it

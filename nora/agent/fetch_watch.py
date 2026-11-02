@@ -48,7 +48,9 @@ from nora.domain.note_body import cited_ids_in, rollup_key
 from nora.domain.turn_record import turn_handles_in
 
 #: The read tools whose results hand out citable rows.
-WATCHED_TOOLS: frozenset[str] = frozenset({"note_read", "record_query", "rollup_read"})
+WATCHED_TOOLS: frozenset[str] = frozenset({
+    "note_read", "record_query", "rollup_read", "load_transcript", "room_read",
+})
 
 
 @dataclass
@@ -65,14 +67,22 @@ class RoomFetched:
 
     def take(self, tool: str, result: Any) -> None:
         """Keep what `result`, the answer of read tool `tool`, handed out."""
-        if not isinstance(result, dict) or result.get("status") != "ok":
+        if not isinstance(result, dict):
+            return
+        if tool == "load_transcript":
+            # The status-free envelope: `messages` alone IS the successful
+            # read, and every failure return now says so (`status` present
+            # exactly on failures). A failure here keeps nothing.
+            if result.get("status") is not None:
+                return
+        elif result.get("status") != "ok":
             return
         if tool == "note_read":
             body = result.get("body")
             if isinstance(body, str):
                 self.carried_ids |= cited_ids_in(body)
                 self.turn_handles |= turn_handles_in(body)
-        elif tool == "record_query":
+        elif tool in ("record_query", "load_transcript", "room_read"):
             for row in result.get("messages") or ():
                 n = row.get("n") if isinstance(row, dict) else None
                 sender = row.get("sender") if isinstance(row, dict) else None

@@ -67,13 +67,22 @@ def test_the_catalogue_is_the_designs_and_names_the_enrichment_reads():
         "record_query", "note_read", "about", "event_search",
         "group_members", "poll_list", "poll_read", "room_state_read",
         "room_read", "load_transcript", "who_said", "lookup_person",
-        "media_fetch", "media_search", "file_fetch", "document_read",
+        "media_fetch", "media_search", "file_fetch",
         "web_search", "web_fetch", "place_info",
         "instagram_read", "instagram_search", "x_read", "x_search",
-        "linkedin_read", "linkedin_search",
     } <= COGNITION_READ_CATALOGUE
-    live_social = {n for n in NATIVE_TOOLS if n.startswith(("instagram_", "x_", "linkedin_"))}
+    live_social = {n for n in NATIVE_TOOLS if n.startswith(("instagram_", "x_"))}
     assert live_social <= COGNITION_READ_CATALOGUE
+
+
+def test_the_catalogues_named_exclusions_stay_excluded():
+    """`linkedin_*` is Dreamer-refused on every surface and `document_read`
+    authorizes only through a named person — offering either name here would
+    advertise a read that can only fail closed or authorize on a guessed
+    identity, so the catalogue states the exclusion rather than listing a
+    tool that cannot lawfully run."""
+    assert not {n for n in COGNITION_READ_CATALOGUE
+                if n.startswith("linkedin_") or n == "document_read"}
 
 
 def test_every_tool_the_session_would_wire_exists_and_is_read_only():

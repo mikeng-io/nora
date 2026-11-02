@@ -376,11 +376,13 @@ class MeteredAgentRunner:
 
 
 class _AsOfObservations:
-    """The observation store in the historical lane. `by_ids` resolves the
-    immutable event rows (the observation's own record, unchanged since it
-    was written — as-of safe). `heads`/`head_for_handle` answer TODAY's
-    folded object state — withheld: a historical session must not read the
-    future fold."""
+    """The observation store in the historical lane's GROUNDER. `by_ids`
+    resolves the immutable event rows (the observation's own record,
+    unchanged since it was written — as-of safe). `heads`/`head_for_handle`
+    answer TODAY's folded object state — withheld: a historical session must
+    not read the future fold. (`recent` is not delegated: the grounder never
+    calls it, and the read tools' own bounded path does not come through
+    here.)"""
 
     def __init__(self, store: Any) -> None:
         self._store = store

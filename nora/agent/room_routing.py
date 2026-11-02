@@ -12,11 +12,15 @@ each item's room-scoped reads must resolve through that item's room.
 always does (`RegistryToolSource.build`, so lineage, the roster guard and the
 record read's room rules are the room's own). This module lays ONE tool over
 the per-room copies of a name: its model-facing schema is the underlying one
-plus a required `room` (an enum of the agenda's rooms, `platform:
-conversation_id`), and a call is routed to that room's copy with `room`
-removed from its arguments. A call with no `room` or a room that is not on the
+plus a required `agenda_room` (an enum of the agenda's rooms,
+`platform:conversation_id`), and a call is routed to that room's copy with
+`agenda_room` removed from its arguments. The name is `agenda_room`, not
+`room`, on purpose: a routed read may itself take `room` (`room_read`'s
+destination — which room to READ), and one argument cannot be both the
+binding and the destination without the second silently overwriting the
+first. A call with no `agenda_room` or a room that is not on the
 agenda is REFUSED with a result the model can read, never guessed from the
-first item and never widened. The `room` picks the BINDING a read resolves
+first item and never widened. The `agenda_room` picks the BINDING a read resolves
 through (its roster and lineage); it does not fence the data: `record_query
 scope="all_rooms"` and `search_memory_workspace` read the unit's other rooms
 too, because the unit is the read boundary (DEC-231).
@@ -35,7 +39,7 @@ from typing import Any
 from strands.types._events import ToolResultEvent
 from strands.types.tools import AgentTool, ToolSpec, ToolUse
 
-ROOM_ARG = "room"
+ROOM_ARG = "agenda_room"
 _ENVELOPE_STATUS = "status"
 
 
@@ -60,10 +64,12 @@ class RoomRoutedTool(AgentTool):
             "type": "string",
             "enum": list(rooms),
             "description": (
-                "The room to read through, as `platform:conversation_id` from the "
-                "agenda. Required: this agenda spans several rooms, and each read "
-                "resolves through exactly one of them and shows only what that "
-                "room may be shown."
+                "Which agenda room to read through, as `platform:conversation_id` "
+                "from the agenda. Required: this agenda spans several rooms, and "
+                "each read resolves through exactly one of them and shows only "
+                "what that room may be shown. This is the room the read runs "
+                "through; a tool that takes its own `room` argument still names "
+                "the room to read about separately."
             ),
         }
         schema["properties"] = properties
@@ -105,7 +111,7 @@ class RoomRoutedTool(AgentTool):
             yield self._refusal(
                 use_id, "room_required",
                 f"this agenda spans {len(self._rooms)} rooms; name the one this read is "
-                f"about as `room`, one of {list(self._rooms)}",
+                f"about as `agenda_room`, one of {list(self._rooms)}",
             )
             return
         if not isinstance(room, str) or room not in self._rooms:

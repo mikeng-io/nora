@@ -58,9 +58,16 @@ phone = "+85200000001"
 
 
 class _Record:
-    """The Record read, with one recorded message in the room."""
+    """The Record read, with one recorded message in the room. `last_as_of`
+    keeps the bound the last call was made under, so a test can see the read
+    was really bounded rather than merely offered a clock."""
 
-    async def query(self, q: Any) -> tuple[tuple[RecordHit, ...], bool, frozenset[int]]:
+    last_as_of: int | str | None = "unset"
+
+    async def query(
+        self, q: Any, *, as_of_ms: int | None = None,
+    ) -> tuple[tuple[RecordHit, ...], bool, frozenset[int]]:
+        type(self).last_as_of = as_of_ms
         row = TranscriptRow(
             id=MESSAGE_ID, sender_id="+85200000001", sender_name="Ada",
             ts=int(NOW.timestamp() * 1000) - 3_600_000, body="we are going",
@@ -127,6 +134,16 @@ async def test_the_cognition_sessions_record_query_rows_carry_their_number(polic
     assert row["n"] == MESSAGE_ID and row["sender"] == "Ada"
 
 
+async def test_the_record_read_is_bounded_by_the_calls_own_instant(policy, persons):
+    """The bound is a store argument, not a display trick: `record_query`
+    hands `query` the instant its own clock says — what the historical lane
+    binds — so a read that stopped passing it leaves `last_as_of` at `None`,
+    not at the instant."""
+    _Record.last_as_of = "unset"
+    await _stream(_cognition_tool(policy, persons), start="2026-09-28")
+    assert isinstance(_Record.last_as_of, int) and _Record.last_as_of > 0
+
+
 async def test_what_the_real_record_query_returns_is_what_the_watcher_keeps(policy, persons):
     """The end of the chain: the REAL tool's output, through the watcher, is a
     citable id with its sender."""
@@ -146,3 +163,20 @@ async def test_a_tag_turns_record_query_prints_no_ids(policy, persons):
     assert str(MESSAGE_ID) not in json.dumps(answer)
 
 
+
+
+def test_the_watcher_reads_the_status_free_contract_and_no_other():
+    """`load_transcript`'s `messages` envelope IS the answer on success — the
+    watcher keeps its rows; on failure the same envelope now carries `status`,
+    which the watcher reads as «the read failed» and keeps nothing of, rows
+    or no rows."""
+    from nora.agent.fetch_watch import RoomFetched
+
+    fetched = RoomFetched()
+    fetched.take("load_transcript", {
+        "messages": [{"n": 7, "sender": "Ada", "body": "x"}]})
+    assert fetched.messages == {7: "Ada"}
+    fetched.take("load_transcript", {
+        "status": "unavailable",
+        "messages": [{"n": 9, "sender": "Bob"}]})
+    assert fetched.messages == {7: "Ada"}

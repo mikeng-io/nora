@@ -609,11 +609,15 @@ class SqlObservationStore:
 
     async def recent(
         self, *, scope: SourceScope, since_ms: int = 0, limit: int = 50,
+        before_ms: int | None = None,
     ) -> list[StoredObservation]:
         at = sa.func.coalesce(OBS.c.occurred_ms, OBS.c.received_ms)
+        where = [_scope_where(scope), at >= since_ms]
+        if before_ms is not None:
+            where.append(at <= before_ms)
         async with self._engine.connect() as conn:
             rows = (await conn.execute(
-                sa.select(OBS).where(_scope_where(scope), at >= since_ms)
+                sa.select(OBS).where(*where)
                 .order_by(at.desc(), OBS.c.id.desc())
                 .limit(max(limit, 0)))).mappings().all()
         return [_row_to_stored(r) for r in rows]
