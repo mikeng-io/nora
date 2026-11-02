@@ -120,6 +120,32 @@ async def test_a_missing_destination_projection_is_not_shared_state_success(monk
 
 
 @pytest.mark.asyncio
+async def test_a_withheld_destination_keeps_the_entry_without_disclosing_content(monkeypatch):
+    from nora.language.shared_render import render_shared_state
+
+    subject, case, calls, _ = await _setup(monkeypatch)
+    checked = []
+
+    async def withheld(occasion, ref):
+        view = await subject.deps.cognition_runner._shared(
+            unit="generated-unit", now_ms=2000,
+            room=(occasion.platform, occasion.conversation_id), permit=lambda _: False,
+        )
+        assert view.entries and all(not e.permitted for e in view.entries)
+        block = render_shared_state(view, now_ms=2000)
+        assert block is not None and "withheld" in block.body.lower()
+        assert "generated pending check" not in block.body
+        checked.append(occasion.platform)
+        return view
+
+    subject.deps.fire_path._read_shared = withheld
+    result = await standing_unit(subject, case, now_ms=2000)
+    assert len(calls) == 1 and result.error is None
+    assert checked == ["signal", "discord"]
+    assert "generated pending check" in result.position
+
+
+@pytest.mark.asyncio
 async def test_unit_input_preview_makes_no_call_and_writes_no_record(monkeypatch):
     subject, case, calls, target = await _setup(monkeypatch)
     case = replace(case, metadata={**case.metadata, "print_input": True})

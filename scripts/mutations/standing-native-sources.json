@@ -5,5 +5,12 @@
     "old": "            record_requirement(DisclosureRequirement(\n                None, tuple(message(record_room_key(*room)) for room in state.rooms.values()),\n            ))",
     "new": "            pass",
     "target": "tests/unit/test_eval_standing_unit.py::test_native_activity_is_citable_without_erasing_unknown_sources"
+  },
+  {
+    "name": "a-withheld-unit-entry-is-still-projected",
+    "file": "nora/subject/standing_fold.py",
+    "old": "projected = {e.id for e in destination.entries} if destination else set()",
+    "new": "projected = {e.id for e in destination.entries if e.permitted} if destination else set()",
+    "target": "tests/unit/test_eval_standing_unit.py::test_a_withheld_destination_keeps_the_entry_without_disclosing_content"
   }
 ]

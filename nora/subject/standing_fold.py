@@ -539,9 +539,12 @@ async def fold_recorded_unit(
     for platform, cid in rooms:
         destination = await fire._read_shared(
             participation_occasion(platform=platform, conversation_id=cid), ref=None)
-        visible = {e.id for e in destination.entries if e.permitted} if destination else set()
-        if not {e.id for e in ledger_entries} <= visible:
-            raise LookupError("unit state is missing or withheld in a bound destination")
+        # The common view retains a withheld entry's existence. Disclosure
+        # governs its content; it does not require every room to see it.
+        projected = {e.id for e in destination.entries} if destination else set()
+        if (destination is None or destination.unit != subject.unit
+                or not {e.id for e in ledger_entries} <= projected):
+            raise LookupError("unit state is missing in a bound destination")
     block = render_shared_state(dataclasses.replace(view, entries=ledger_entries), now_ms=now_ms)
     if block is None:
         raise LookupError("unit Standing projection unavailable")
