@@ -1,6 +1,6 @@
 ---
 name: nora-decision
-description: Records a Nora decision the repo's way, choosing the next DEC, R or ADR number from origin/master at merge time, writing the decision-index row with its enforcing test, an ADR in Nygard form, or an issue. Load when a task mentions DEC, R-, a decision row, an ADR, filing an issue, superseding or reversing a decision, or citing one. Not for tool text (nora-tool) or landing the PR (nora-land).
+description: Records Nora decisions, ADRs, issues and roadmap directions. Allocates DEC/R/ADR numbers from origin/master at merge time and checks duplicates. Load for filing, planning, citing or reversing them; nora-land owns landing and nora-tool owns tool text.
 ---
 
 # Recording a decision
@@ -55,6 +55,19 @@ branch's worktree.
    Apply the selected form's shape label: `bug`, `enhancement`, `design-anchored`
    or `freeform`. When reformatting, remove conflicting shape labels and preserve
    every other label. Check the read-back body and labels match the selected form.
+
+## Roadmap planning
+
+For capability/business-direction planning, follow [roadmap conventions](../../../docs/maintainers/conventions.md#roadmap).
+Read the current design and later amendments; check existing issues and merged
+receipts before calling work unbuilt. Reuse the outcome's issue, or create one
+through step 1 with benefit, design pointers, delivered/remaining scope and the
+next decision/evidence. Add the SAME issue to Universal Roadmap's Nora view as
+Level=Outcome; set lifecycle/horizon with a reason (new unscheduled directions:
+Proposed/Later). Keep delivery children native, and use milestones only for an
+agreed checkpoint. Read back membership/fields/relations. Planning grants no
+implementation, spending or deployment authority. Ordinary issue filing does not
+require a roadmap card. `nora-land` reconciles progress at completion.
 
 ## 2. Writing an ADR
 

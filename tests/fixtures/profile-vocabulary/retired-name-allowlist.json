@@ -356,6 +356,12 @@
       "persona": 4
     }
   },
+  "docs/maintainers/roadmap-review-2026-11-02.md": {
+    "reason": "Dated design-change inventory preserves two historical source filenames; neither is an active tier or new runtime identifier.",
+    "matches": {
+      "persona": 2
+    }
+  },
   "evals/PROFILE_COVERAGE.md": {
     "reason": "Exact historical file citations retained after the rename; no runtime identifier alias.",
     "matches": {
