@@ -149,7 +149,10 @@ class _Runner:
         self._fail_on = fail_on or set()
         self._admit_on = admit_on or set()
 
-    async def inspect(self, *, view: Any, now_ms: int) -> dict[str, Any] | None:
+    async def inspect(
+        self, *, view: Any, now_ms: int, historical: bool = False,
+    ) -> dict[str, Any] | None:
+        assert historical
         self.inspect_calls.append((tuple(s.id for s in view.pending), now_ms))
         if len(self.inspect_calls) - 1 in self._fail_on:
             raise RuntimeError("grounding failed")
@@ -462,14 +465,13 @@ async def test_catch_up_refuses_incomplete_and_queues_one_time_wake(
     async def _stale_pairs(conn: Any, work_ids: Any) -> set[tuple[str, str]]:
         return {("stimuli:1,2", "hOLD")} if "stimuli:1,2" in set(work_ids) else set()
 
-    async def _no_sids(conn: Any, unit: str) -> set[int]:
-        return set()
-
     monkeypatch.setattr(ub.sql, "readings_done", _stale_pairs)
-    monkeypatch.setattr(ub, "covered_stimulus_ids", _no_sids)
+    # Old coverage of these SAME stimulus ids must not override a stale hash.
+    monkeypatch.setattr(ub, "covered_stimulus_ids", _covered)
     appended.clear()
     out2 = await ub.catch_up(
-        _FakeEngine(object()), stimulus_store=_Stimuli(), runner=runner,
+        _FakeEngine(object()), stimulus_store=_Stimuli(),
+        runner=_Runner(work_by_batch=[work]),
         units=["u1"], home_rooms={"u1": ROOM},
         rooms_of_unit=lambda u: set(), unit_of=lambda p, c: "u1",
         person_rooms={}, self_ids=(), now_ms=86_400_000 * 10)

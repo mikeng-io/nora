@@ -1097,13 +1097,16 @@ class CognitionSessionRunner:
         spec.update(changes)
         return CognitionSessionRunner(**spec)
 
-    async def inspect(self, *, view: UnitView, now_ms: int) -> dict[str, Any] | None:
+    async def inspect(
+        self, *, view: UnitView, now_ms: int, historical: bool = False,
+    ) -> dict[str, Any] | None:
         """The model input a session over `view` would be run on, through the same
         assembly, stopping before the model call. For a disposable replay sandbox
         and for the unified backfill's per-item dedup check (the `work` key it
         also returns — `(work_id, input_hash)` per agenda item)."""
         result = await self.on_wake(unit=view.unit, view=view, now_ms=now_ms,
-                                    wake_id=0, replay=True, inspect_only=True)
+                                    wake_id=0, replay=True, inspect_only=True,
+                                    historical=historical)
         return result if isinstance(result, dict) else None
 
     async def probe(

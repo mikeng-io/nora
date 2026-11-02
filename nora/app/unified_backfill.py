@@ -305,6 +305,9 @@ class MeteredAgentRunner:
 
         from nora.app.cognition_session import SESSION_TOKENS
 
+        spend = SESSION_TOKENS.get()
+        if spend is not None:
+            spend.total = None
         budget = kwargs.get("budget")
         if budget is not None:
             kwargs = dict(kwargs, budget=replace(
@@ -561,7 +564,7 @@ async def run_units(
                 carry={},
             )
             try:
-                info = await runner.inspect(view=view, now_ms=now_ms)
+                info = await runner.inspect(view=view, now_ms=now_ms, historical=True)
             except Exception:
                 log.exception("unified backfill: inspect failed for %s", unit)
                 for s in batch:
@@ -616,19 +619,16 @@ async def run_units(
             outcome.sessions += 1
             # A normal return is NOT comprehension: re-read the durable
             # receipts. Every agenda item must now be provably comprehended
-            # — its own exact (work_id, input_hash) pair — or, for one
-            # proposal consumed under another item's earlier receipt, all
-            # its sids covered. Whatever remains unresolved stops the
+            # — its own exact (work_id, input_hash) pair. Coverage at a
+            # different hash cannot certify this input. Unresolved work stops the
             # frontier and is failure-receipted under this lane's key.
             async with engine.connect() as conn:
                 done_pairs = await sql.readings_done(
                     conn, [w["work_id"] for w in work])
-                covered = await covered_stimulus_ids(conn, unit)
             unresolved = {
                 sid for w in work
                 for sid in work_id_sids(w["work_id"])
                 if (w["work_id"], w["input_hash"]) not in done_pairs
-                and sid not in covered
             }
             unresolved_pending = [s for s in pending if s.id in unresolved]
             if unresolved_pending:
@@ -710,8 +710,6 @@ async def catch_up(
             continue
         blocked: set[int] = set()
         error: str | None = None
-        async with engine.connect() as conn:
-            covered = await covered_stimulus_ids(conn, unit)
         for batch in form_batches(
             stimuli, home, max_stimuli=DEFAULT_BATCH_STIMULI,
             max_items=runner.max_items,
@@ -722,7 +720,7 @@ async def catch_up(
                 last_wake=None, last_session=None, carry={},
             )
             try:
-                info = await runner.inspect(view=view, now_ms=now_ms_batch)
+                info = await runner.inspect(view=view, now_ms=now_ms_batch, historical=True)
             except Exception:
                 log.exception("catch-up gate: inspect failed for %s", unit)
                 error = "inspect_failed"
@@ -737,10 +735,6 @@ async def catch_up(
                 if (w["work_id"], w["input_hash"]) in done_pairs:
                     continue
                 sids = work_id_sids(w["work_id"])
-                if sids and sids <= covered:
-                    # Comprehended inside an earlier multi-item proposal
-                    # whose own receipt names these stimuli.
-                    continue
                 blocked |= sids or {s.id for s in batch}
         if error is not None:
             out["units"][unit] = {"status": "error", "reason": error}
