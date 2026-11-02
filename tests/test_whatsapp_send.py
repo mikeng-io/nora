@@ -61,7 +61,7 @@ async def test_a_200_without_a_timestamp_degrades_to_none(aiohttp_server):
     app.router.add_post("/send", handler)
     server = await aiohttp_server(app)
     result = await _sender(server).send(TARGET, "hello")
-    assert result == SendResult(ok=True, timestamp=None)
+    assert result == SendResult(ok=True, timestamp=None, platform_message_id="3EB0F1")
 
 
 async def test_a_dm_to_a_jid_not_in_identity_toml_is_refused_without_an_http_call(bridge):

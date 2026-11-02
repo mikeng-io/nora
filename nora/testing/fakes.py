@@ -543,17 +543,21 @@ class FakeRecordStore:
         )
 
     async def set_delivery_outcome(
-        self, *, row_id: int, status: DeliveryStatus, ts: int | None = None
+        self, *, row_id: int, status: DeliveryStatus, ts: int | None = None,
+        platform_message_id: str | None = None,
     ) -> None:
         """Mirrors `SqlRecordStore.set_delivery_outcome`, `ts=None` included:
         a platform that returned no timestamp must leave the row's own alone,
-        not blank it. Both halves are pinned for both stores by
-        `tests/contract/test_audit_store_contract.py`."""
+        not blank it — and an absent `platform_message_id` leaves the row's
+        handle untouched the same way. Both halves are pinned for both stores
+        by `tests/contract/test_audit_store_contract.py`."""
         for row in self.rows:
             if row["id"] == row_id:
                 row["delivery_status"] = status
                 if ts is not None:
                     row["ts"] = ts
+                if platform_message_id:
+                    row["platform_message_id"] = platform_message_id
                 return
 
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]:

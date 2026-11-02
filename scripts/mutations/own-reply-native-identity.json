@@ -1,0 +1,30 @@
+[
+  {
+    "name": "a confirmed bridge send drops its platform_ref",
+    "file": "nora/platform/bridge/client.py",
+    "old": "            return SendResult(\n                ok=True, timestamp=data.get(\"platform_ms\"),\n                platform_message_id=data.get(\"platform_ref\") or None)",
+    "new": "            return SendResult(ok=True, timestamp=data.get(\"platform_ms\"))",
+    "target": "tests/integration/test_bridge_send_native_identity.py::test_a_confirmed_send_lands_its_native_id_for_a_later_reaction"
+  },
+  {
+    "name": "the deliverer withholds the native id from the outcome write",
+    "file": "nora/agent/guards.py",
+    "old": "                platform_message_id=(\n                    result.platform_message_id if result.ok else None),\n",
+    "new": "",
+    "target": "tests/integration/test_bridge_send_native_identity.py::test_a_confirmed_send_lands_its_native_id_for_a_later_reaction"
+  },
+  {
+    "name": "the outcome write skips the native id column",
+    "file": "nora/infra/sql/audit.py",
+    "old": "        if platform_message_id:\n            values[\"platform_message_id\"] = platform_message_id\n",
+    "new": "",
+    "target": "tests/contract/test_audit_store_contract.py::test_set_delivery_outcome_lands_the_platforms_message_id"
+  },
+  {
+    "name": "the Discord action executor drops the sender native id",
+    "file": "nora/platform/discord/bridge_app.py",
+    "old": "                        \"confirmed\", platform_ms=result.timestamp,\n                        platform_ref=result.platform_message_id)",
+    "new": "                        \"confirmed\", platform_ms=result.timestamp)",
+    "target": "tests/integration/test_discord_bridge_control.py::test_speech_is_bounded_and_actions_use_the_real_sender"
+  }
+]

@@ -932,7 +932,8 @@ class SqlRecordStore:
         await self._engine.dispose()
 
     async def set_delivery_outcome(
-        self, *, row_id: int, status: DeliveryStatus, ts: int | None = None
+        self, *, row_id: int, status: DeliveryStatus, ts: int | None = None,
+        platform_message_id: str | None = None,
     ) -> None:
         """Close out one recorded send: its status, and the PLATFORM's own
         timestamp for it.
@@ -949,6 +950,12 @@ class SqlRecordStore:
         statement — one write for the outcome and the corrected timestamp
         together, not two.
 
+        `platform_message_id` rides that same write: the platform's own handle
+        (`mid.$…`, a wamid, a snowflake) exists only after the send answers,
+        and it is what `find_edited` matches an inbound reaction's, edit's or
+        quote's `target.message_id` against. An absent one leaves the column
+        untouched — `None` never blanks a known handle.
+
         `ts=None` leaves the timestamp alone. A platform that answered without
         one is a thinner transcript; a row stamped 0 or NULL is a corrupt one,
         and `recent` orders on that column.
@@ -961,6 +968,8 @@ class SqlRecordStore:
         values: dict[str, Any] = {"delivery_status": status.value}
         if ts is not None:
             values["ts"] = ts
+        if platform_message_id:
+            values["platform_message_id"] = platform_message_id
         stmt = sa.update(MESSAGES).where(MESSAGES.c.id == row_id).values(**values)
         async with self._engine.begin() as conn:
             await conn.execute(stmt)

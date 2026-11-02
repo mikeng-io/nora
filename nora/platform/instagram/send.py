@@ -13,15 +13,13 @@ failure is the envelope `{"error": {code, message}}`, and only its STATUS is
 read here. The bodies are pinned by `tests/fixtures/instagram_bridge/messages_*`,
 which the bridge's own handlers generate.
 
-**What is read from a 200: `timestamp_ms`, and nothing else.** It is the
+**What is read from a 200: `timestamp_ms` and `id`.** The timestamp is the
 platform's own sent-timestamp, which `Deliverer` records and a later reply's
-quote resolves against. The bridge also returns the sent message's `id`
-(`mid.$…`), and nothing in Nora reads it: `SendResult` has no field for
-it, a `reply_to` is taken from an INGESTED row's own `mid.$…` (someone else's
-message, off `/events`; the parser drops Nora's own echoes as `from_me`), and
-no Nora code reacts to or unsends her own Instagram message. The bridge keeps
-`id` in the body and its tests pin it, so the first caller that needs it has
-it.
+quote resolves against. `id` is the sent message's `mid.$…`, which lands on
+the audited row (`messages.platform_message_id`) so an inbound reaction,
+edit or quote that names it resolves. A `reply_to` still comes from an
+INGESTED row's own `mid.$…` (someone else's message, off `/events`; the
+parser drops Nora's own echoes as `from_me`).
 
 Mirrors `nora.platform.whatsapp.send.WhatsAppSender`'s contract — same session
 construction, same "log and return" discipline — because the reader who has
@@ -170,6 +168,18 @@ def _sent_timestamp(body: object) -> int | None:
     return value
 
 
+def _sent_message_id(body: object) -> str | None:
+    """`id` out of the bridge's `{id, timestamp_ms}` result — the `mid.$…`
+    a later reaction, edit or quote (`reply_to`) names the sent message by.
+    Anything absent or not a string degrades to None, `_sent_timestamp`'s
+    rule: a send that reached the group must never be reported as failed
+    over a missing field."""
+    if not isinstance(body, dict):
+        return None
+    value = body.get("id")
+    return value if isinstance(value, str) and value else None
+
+
 def _apply_mention_handles(
     text: str, mentions: tuple[Mention, ...],
 ) -> tuple[str, list[dict[str, object]]]:
@@ -276,7 +286,10 @@ class InstagramSender:
                 ) as resp,
             ):
                 if resp.status == 200:
-                    return SendResult(ok=True, timestamp=_sent_timestamp(await resp.json()))
+                    body = await resp.json()
+                    return SendResult(
+                        ok=True, timestamp=_sent_timestamp(body),
+                        platform_message_id=_sent_message_id(body))
                 if resp.status == 409:
                     # A CHECKPOINT. Explicitly NOT retryable: the session is
                     # challenged and only a human can clear it, and hammering
