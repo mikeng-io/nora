@@ -41,10 +41,10 @@ REUSE_RECIPES = {
     'stt': '0f909a02fd4c8d484501ecf6f5ce85dd2b5ffed5481065fcec75dbb638c53ad0',
     'voice-sidecar': '69f0ecc9a3efc00732f6c4c364c6441014dba5355667f8b57fe60f39a71f8ba5',
     'voice-wake': 'fd5ee73065eab7b09c4bf08805c21573bce5296cc1bbdf7b7bf5b1218fe9449b',
-    'signal-bridge': 'ae18043c4c190b4e4214488bfdce245bb2351981686f488f83666e846e17af38',
-    'discord-bridge': '26bb19f47cbb265e8126873623f41e321db54f2729ff1a687bcc6627a52ee9f7',
-    'whatsapp-bridge': '3e4b665c72b2b969107fa67caa5680b666b6e6a8940cc25237385634b7c22d4c',
-    'instagram-bridge': '92a0e637d9c9a699f903bb745fdc753d366badb9186ed19d41e5a312dcf923c7',
+    'signal-bridge': 'b5431893d60b9a2a732b7027358bb93724e7312b62904941b13c71587020a4e2',
+    'discord-bridge': '3cc65dcaa72c4aed758f0feb217cac20dff60c7f23e09a7cf62ae2486bd9f787',
+    'whatsapp-bridge': '87c1750d428b4b95dabd2a3fb4e1f06926611e1044fce330b93d40ba0f131bfc',
+    'instagram-bridge': '05604eae52ed58fae938b6044f0915f94369ae46e23697af53ed6dcc4c5039cf',
     'bridge-projection': 'a462cc260c45ee373a39d1af772daa24da76b030463a79217dba5bada41a2c85',
 }
 
