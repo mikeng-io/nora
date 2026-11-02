@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.14.2](https://github.com/mikeng-io/nora/compare/v7.14.1...v7.14.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* **build:** admit the versioned bridge recipes for artifact reuse ([cc18ac3](https://github.com/mikeng-io/nora/commit/cc18ac363443737eff48c6e0caba599182589637))
+* **obs:** correlate deferred work and require deployment identity ([5feb854](https://github.com/mikeng-io/nora/commit/5feb854bc8f327cee6d9d1059f2eb2cf3d3bdaed))
+* **obs:** restore readable AI threads and bridge failure visibility ([ca0d22d](https://github.com/mikeng-io/nora/commit/ca0d22d4d69a5bb9521f85658edb2c21632255e6))
+
 ## [7.14.1](https://github.com/mikeng-io/nora/compare/v7.14.0...v7.14.1) (2026-11-02)
 
 
