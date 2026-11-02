@@ -612,6 +612,12 @@ async def test_a_bound_clock_reads_the_record_as_it_then_stood(engine, world):
             {"i": pier, "s": ADA, "p": "p1", "ts": after})
 
     at = datetime.fromtimestamp(NOW_MS / 1000, UTC)
+    stored = await SqlRecordStore(engine).recent(
+        conversation_id=A.conversation_id, limit=10, as_of_ms=NOW_MS,
+    )
+    assert all(row.ts <= NOW_MS for row in stored)
+    old = next(row for row in stored if row.id == edited)
+    assert old.body == "dinner at seven" and not old.reactions
     shown = []
     bound = {
         t.tool_name: t

@@ -400,6 +400,25 @@ async def test_rows_a_read_shows_become_the_evidence_a_proposal_may_cite():
     assert "unseen_source" in withheld_refused
 
 
+async def test_probe_prepares_memory_and_uses_the_wakes_instruction():
+    from nora.language.comprehend_render import SESSION_INSTRUCTION
+
+    class Capture(FakeCognitionAgentRunner):
+        async def run(self, **kwargs):
+            self.system_prompt = kwargs["system_prompt"]
+            return await super().run(**kwargs)
+
+    agent = Capture(script=[("memory_propose", {
+        "items": [0], "readings": [], "entities": [], "relations": [],
+        "evidence": [], "corrections": [],
+    })])
+    memory = wake_memory()
+    runner, _, _ = _runner(agent_runner=agent, memory=memory)
+    await runner.probe(unit="unit-1", summary="a generated review", now_ms=NOW)
+    assert SESSION_INSTRUCTION in agent.system_prompt
+    assert agent.results[0]["status"] == "ok"
+
+
 @pytest.mark.parametrize("admit", [False, True])
 async def test_stimulus_consumed_only_by_admitted_proposal_or_explicit_empty(admit):
     stimuli = _seeded()

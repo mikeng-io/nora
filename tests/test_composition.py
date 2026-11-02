@@ -1697,9 +1697,8 @@ async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluato
     # `remind`/`note_create`, whose arguments differ from the session's own
     # verbs of those names, and R-99 would veto every call to them.
     assert agent._param_names is not None and "note_read" in agent._param_names
-    # R-99 must accept the `room` argument the routed tools of a multi-room agenda take,
-    # for every read tool held.
-    assert all("room" in names for names in agent._param_names.values())
+    # R-99 admits the agenda binding independently of a read's own room destination.
+    assert all({"agenda_room", "room"} <= names for names in agent._param_names.values())
     assert set(agent._param_names) <= runner._read_only_tools
     # The session's instruction is the Dreamer's objective for it, read from
     # the bind-mounted corpus, its own prelude first (not the shared doctrine),

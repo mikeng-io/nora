@@ -76,7 +76,6 @@ def test_every_unavailable_name_is_a_real_read_tool():
                 "standing_read", "character_read", "routine_read", "where_been",
                 "media_search", "file_fetch", "ask_memory", "search_memory",
                 "search_memory_workspace")
-    if n in HISTORICAL_READ_UNAVAILABLE
 ))
 async def test_a_current_head_read_answers_unavailable_and_the_inner_tool_never_runs(name):
     """Fail-closed, named, and nothing read: `unavailable` with the real

@@ -83,5 +83,12 @@
   "old": "        if name in SCREENED_ARGS:",
   "new": "        if name in state.limits:",
   "target": "tests/unit/test_comprehend.py::test_outbound_arguments_are_screened_before_the_tool_runs"
+ },
+ {
+  "name": "the eval probe cannot bypass the production memory preparation and instruction",
+  "file": "nora/app/cognition_session.py",
+  "old": "        _state, tools, system_prompt, prompt = await self._session_input(\n            unit=unit, view=view, situation=situation, session_id=session_id,\n            wake_id=0, now_ms=now_ms, doctrine_text=doctrine_text,\n            skill_text=skill_text, grounding=Grounding(),\n        )",
+  "new": "        state = _RunState(\n            session_id=session_id, wake_id=0, unit=unit, now_ms=now_ms,\n            items_by_index={0: item},\n            rooms={_room_key(item.room): (item.room.platform, item.room.conversation_id)},\n        )\n        tools = await self._build_tools(unit=unit, state=state, now_ms=now_ms)\n        system_prompt = doctrine_text + skill_text\n        prompt = render_agenda(\n            [item], reads_note=state.reads_note, now_ms=now_ms,\n            last_session_ms=None, tz=self._tz, budget=self._render_budget,\n        )",
+  "target": "tests/unit/test_cognition_session_runner.py::test_probe_prepares_memory_and_uses_the_wakes_instruction"
  }
 ]
