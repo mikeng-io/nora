@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.14.8](https://github.com/mikeng-io/nora/compare/v7.14.7...v7.14.8) (2026-11-03)
+
+
+### Performance
+
+* **release:** read a commit's bridge inputs through one batched git process ([b0ef43e](https://github.com/mikeng-io/nora/commit/b0ef43ed1d377d1d8ab9632ffc33c8965a5e11bf))
+
 ## [7.14.7](https://github.com/mikeng-io/nora/compare/v7.14.6...v7.14.7) (2026-11-03)
 
 
