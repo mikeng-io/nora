@@ -313,6 +313,7 @@ class WakeMemory:
         if not refused and (not drops or claims or result.relations or result.corrections):
             await self.records.readings(combined.work, state.session_id, combined, claims)
             admitted = items
+            state.admitted_indices.update(admitted)
         refused.extend({"kind": "reading", "reason": reason} for reason in drops)
         seeds = tuple(dict.fromkeys(k for r in result.relations for k in (r.src, r.dst)))
         graph = await self.graph.walk(seeds, Walk(unit=state.unit, depth=1,
@@ -327,7 +328,6 @@ class WakeMemory:
         state.shown_keys.update(
             k for e in graph.relations for k in (e.relation.src, e.relation.dst))
         state.shown_keys.update(k for r in result.relations for k in (r.src, r.dst))
-        state.admitted_indices.update(admitted)
         state.admitted_relations.update({r.id: r for r in result.relations})
         state.admitted_evidence.extend(result.evidence)
         # Admission commits the clean parts in the same call, so a refusal can

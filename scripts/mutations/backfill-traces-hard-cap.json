@@ -1,0 +1,51 @@
+[
+  {
+    "name": "CLI initializes the existing trace exporter",
+    "file": "nora/app/cli.py",
+    "old": "        _profile_tracing(cfg)\n        deps = await build_dependencies(cfg)\n        engine = create_sql_engine(_database_url(cfg))",
+    "new": "        deps = await build_dependencies(cfg)\n        engine = create_sql_engine(_database_url(cfg))",
+    "target": "tests/unit/test_backfill_limits_and_traces.py::test_cli_root_contains_session_and_generation_spans"
+  },
+  {
+    "name": "one backfill root parents the sessions",
+    "file": "nora/app/unified_backfill.py",
+    "old": "    with span(\"memory:unified-backfill\", **{\n        TRACE_KIND: \"generation\", \"nora.backfill.max_batches\": bounds.max_batches,\n        \"nora.backfill.max_tokens\": bounds.max_tokens,\n        \"nora.backfill.max_seconds\": bounds.max_seconds,\n        \"nora.backfill.from_ms\": kwargs.get(\"from_ms\"),\n        \"nora.backfill.until_ms\": kwargs.get(\"until_ms\"),\n        \"nora.backfill.units\": \",\".join(kwargs.get(\"units\", ())),\n    }):",
+    "new": "    from contextlib import nullcontext\n    with nullcontext():",
+    "target": "tests/unit/test_backfill_limits_and_traces.py::test_cli_root_contains_session_and_generation_spans"
+  },
+  {
+    "name": "model call reservation is enforced",
+    "file": "nora/agent/token_reservation.py",
+    "old": "        if self.total + reserved > self.limit:",
+    "new": "        if self.total >= self.limit:",
+    "target": "tests/unit/test_backfill_limits_and_traces.py::test_run_reserves_each_call_and_pins_residual"
+  },
+  {
+    "name": "historical sessions enable call reservations",
+    "file": "nora/app/cognition_session.py",
+    "old": "budget=replace(self._budget, reserve_tokens=historical)",
+    "new": "budget=self._budget",
+    "target": "tests/unit/test_backfill_limits_and_traces.py::test_historical_session_applies_reservation_before_first_call"
+  },
+  {
+    "name": "backfill rereads committed inputs after a session exception",
+    "file": "nora/app/unified_backfill.py",
+    "old": "                # A limit or a later tool failure cannot undo committed readings.\n                # The exact input receipts below decide which stimuli still failed.\n                pass",
+    "new": "                for s in pending:\n                    await sql.fail_historical(engine, unit, s.id, None)\n                outcome.failures += 1\n                outcome.stopped = \"session_failed\"\n                break",
+    "target": "tests/unit/test_backfill_limits_and_traces.py::test_committed_inputs_survive_session_limit"
+  },
+  {
+    "name": "session failure excludes admitted stimuli",
+    "file": "nora/app/cognition_session.py",
+    "old": "            committed.update(sid for i, item in state.items_by_index.items()\n                             if i in state.admitted_indices for sid in item.stimulus_ids)",
+    "new": "            committed.clear()",
+    "target": "tests/unit/test_backfill_limits_and_traces.py::test_session_failure_receipts_exclude_committed_inputs"
+  },
+  {
+    "name": "admission is recorded before the connected graph read",
+    "file": "nora/app/cognition_memory.py",
+    "old": "            admitted = items\n            state.admitted_indices.update(admitted)",
+    "new": "            admitted = items",
+    "target": "tests/unit/test_backfill_limits_and_traces.py::test_session_failure_receipts_exclude_committed_inputs[graph_failure]"
+  }
+]
