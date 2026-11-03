@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.14.14](https://github.com/mikeng-io/nora/compare/v7.14.13...v7.14.14) (2026-11-03)
+
+
+### Bug Fixes
+
+* **memory:** keep interrupted model spend unknown ([9c1ddb8](https://github.com/mikeng-io/nora/commit/9c1ddb8246804e3df7bec6ae7e71d75086eac596))
+* **memory:** preserve cognition tracing and budget wiring contracts ([d8dd46d](https://github.com/mikeng-io/nora/commit/d8dd46decf99e97354cb1b6fd1c7d9c188c2eaff))
+* **memory:** trace historical runs and reserve calls before spending ([b82aa41](https://github.com/mikeng-io/nora/commit/b82aa41c2dd5c43621f7c2150885165fda172166))
+
 ## [7.14.13](https://github.com/mikeng-io/nora/compare/v7.14.12...v7.14.13) (2026-11-03)
 
 
