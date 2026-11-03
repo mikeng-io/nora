@@ -1,5 +1,18 @@
 # Changelog
 
+## [7.14.7](https://github.com/mikeng-io/nora/compare/v7.14.6...v7.14.7) (2026-11-03)
+
+
+### Features
+
+* **cognition:** one read surface for live and historical sessions ([cb62c2c](https://github.com/mikeng-io/nora/commit/cb62c2c51444d0478be4ca5c89cd6588844f7820))
+
+
+### Bug Fixes
+
+* **cognition:** real as-of bound, evidence custody, and routing parity for the one read surface ([e8345b6](https://github.com/mikeng-io/nora/commit/e8345b63b3296ea6c96c32c568fe6bca97537508))
+* **cognition:** screen native person inputs and cite rendered transcript text ([a2b22ec](https://github.com/mikeng-io/nora/commit/a2b22ec161f92ab9f0f384a958f78778ec8119d7))
+
 ## [7.14.6](https://github.com/mikeng-io/nora/compare/v7.14.5...v7.14.6) (2026-11-02)
 
 
