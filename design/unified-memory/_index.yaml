@@ -58,6 +58,7 @@ members:
   - 29-one-cognition-session.md
   - 31-build-one-session.md
   - 32-platform-observations.md
+  - 33-orient-kind-table.md
   - 30-identity-and-character.md
   - 35-persona.md
   - 45-persona-adaptor.md
@@ -91,6 +92,10 @@ open_questions:
     status: decided
     decision: "Readings are per batch, with the surrounding conversation as context, as Honcho does: a reply like “me too” only means something in context, and this uses fewer calls. Every claim in a reading is still tied to its own source message ids, so per-message citation and the visibility retirement rule are unchanged."
 edges:
+  - {src: 33-orient-kind-table, dst: 29-one-cognition-session, rel: amends, provenance: operator-requested}
+  - {src: 33-orient-kind-table, dst: 27-the-memory-is-a-graph, rel: depends_on, provenance: asserted}
+  - {src: 33-orient-kind-table, dst: ../notebook-memory-types/00-design.md, rel: extends, provenance: asserted}
+  - {src: 33-orient-kind-table, dst: ../ambient-loop/01-stages-and-seams.md, rel: relates_to, provenance: asserted}
   - {src: 32-platform-observations, dst: 27-the-memory-is-a-graph, rel: extends, provenance: operator-requested}
   - {src: 32-platform-observations, dst: 29-one-cognition-session, rel: extends, provenance: operator-requested}
   - {src: 32-platform-observations, dst: ../platform-bridges/02-wire-and-platforms.md, rel: amends, provenance: proposed}
