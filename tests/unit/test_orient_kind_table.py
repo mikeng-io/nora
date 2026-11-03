@@ -232,3 +232,25 @@ async def test_a_withheld_social_stimulus_is_skipped_not_a_failed_wake():
     await runner.replay(view=UnitView(unit="unit-1", pending=(*_pending("unit-1"), social),
                                       last_activity_ms=None, last_wake=None), now_ms=NOW)
     assert fake.results and fake.results[0]["status"] == "ok"
+
+
+@pytest.mark.parametrize("wrote,closes", [(True, "ok"), (False, "refused")])
+async def test_an_admitted_memory_write_backs_a_written_close(monkeypatch, wrote, closes):
+    """Option B: memory is a write, so an item whose admitted proposal wrote
+    something closes `written`; an empty proposal still cannot claim it."""
+    memory = wake_memory()
+
+    async def admitted(state, *, items, payload):
+        state.admitted_indices.update(items)  # as WakeMemory.propose records it
+        return {"status": "ok", "admitted": items, "refused": [], "committed": [],
+                "connected": {"status": "ok", "nodes": [], "relations": []}}
+    monkeypatch.setattr(memory, "propose", admitted)
+    payload = proposal()
+    if wrote:
+        payload["readings"] = [_reading("I have a spare controller")]
+    fake = FakeCognitionAgentRunner(script=[
+        ("memory_propose", payload), ("close", {"item_index": 0, "reason": "written"})])
+    runner, _, _ = _runner(agent_runner=fake, memory=memory)
+    await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
+                                      last_activity_ms=None, last_wake=None), now_ms=NOW)
+    assert fake.results[1]["status"] == closes, fake.results[1]

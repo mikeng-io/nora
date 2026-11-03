@@ -1,9 +1,10 @@
 ---
 name: cognition-register
 kind: skill
-version: 6
+version: 7
 applies_to: [cognition_session]
 description: >-
+  Version 7: «most need no note» is scoped to notes; Orient still records.
   Version 6: the open-corner test belongs only to the note kind in Act,
   never to Orient readings, entities or relations.
   The note, event and reminder judgement the Cognition session writes with,
@@ -37,7 +38,7 @@ unsettled. One person's plan counts when it has an open corner, even before anyo
 Not a new open note: something settled with nothing left open; something with no way to tell it is
 finished; a remark nobody picked up («we should go away sometime»); a thing asked, suggested
 or wanted that nobody has taken on; a plan that hangs on an «if» or is called off in the same
-breath. Most of what a group says about the future never becomes a plan, and its Act step may close `no_change`. Orient still records what fits another memory kind.
+breath. Most of what a group says about the future never becomes a plan, so most items need no note; that is about notes only. Orient still records what each item states.
 
 ## Note, memo or event
 

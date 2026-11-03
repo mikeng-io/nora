@@ -3331,6 +3331,13 @@ class CognitionSessionRunner:
             result: dict[str, Any] = await self._memory.propose(state, items=items, payload={
                 "readings": readings, "entities": entities, "relations": relations,
                 "evidence": evidence, "corrections": corrections})
+            # An admitted memory write backs `close(reason="written")` for its items,
+            # as a notebook write does: memory is a write, not a no-change.
+            if result.get("admitted") and (readings or entities or relations or corrections):
+                for index in result["admitted"]:
+                    item = state.items_by_index.get(index)
+                    if item is not None:
+                        state.written.add((_room_key(item.room), index))
             return result
 
         async def profile_read(

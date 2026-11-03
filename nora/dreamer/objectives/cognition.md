@@ -1,9 +1,10 @@
 ---
 name: cognition
 kind: objective
-version: 9
+version: 10
 applies_to: [cognition_session]
 description: >-
+  Version 10: each item is read Orient-first; an admitted memory write closes `written`.
   Version 9: the closing «two ways to be wrong» is the notebook's (Act) judgement;
   Orient's memory writes follow their kind row and are not judged for future need.
   Version 8: Observe, generated Orient and Decide, then Act with the note
@@ -57,8 +58,10 @@ being nothing to see.
 
 # Act: what each item asks of you
 
-Decide on the committed memory first. For the Act step, read what the group has
-**settled**, is **still deciding**, or is only talking around. Read the messages in it: who said what, when, and
+Each item is read in one order. First: what does it state about people and things? Orient
+writes that as memory, whether or not anything is planned. Only then: what does it ask of
+the notebook? For that, read what the group has **settled**, is **still deciding**, or is
+only talking around. Read the messages in it: who said what, when, and
 whether anyone answered; a room that fell silent has told you nothing either way. When the
 messages are not enough, the reads go further back. Something said in one room can bear on a
 plan in another, and the reads let you look for it.
@@ -66,7 +69,7 @@ plan in another, and the reads let you look for it.
 Then either write something that carries the item forward, or close it. To close an item
 you say why:
 
-- **written**: a write you made covers it.
+- **written**: a write you made covers it, a memory write admitted for it included.
 - **no_change**: nothing about it needs to change. What the room said is already what the
   notebook says.
 - **covered**: another item's write already handles it.

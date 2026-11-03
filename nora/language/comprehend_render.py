@@ -289,7 +289,8 @@ The open-corner test belongs to the note row alone.
 Whether a write will matter later is not Orient's question: when a row's «create when»
 holds, write it. What matters is decided when memory is read, not when it is written.
 A statement about a person that no relation holds is a reading, even when it describes
-a passing moment: keep its time and how it was said.
+a passing moment: keep its time and how it was said. A reading records what was said and
+how; it asserts nothing as true, so it is never noise.
 
 """ + render_kind_table() + "\n\n" + COMPREHEND + """
 # When code answers
