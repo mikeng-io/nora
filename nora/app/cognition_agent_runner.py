@@ -40,6 +40,7 @@ from nora.agent.token_reservation import TokenReservation
 from nora.agent.turn_recording import TurnRecording
 from nora.app.agent_runner import DEFAULT_MAX_TRACE_CHARS
 from nora.app.cognition_session import SESSION_TOKENS, AdaptorBudget, CognitionRunResult
+from nora.domain.stimuli import LIMIT_STOP_REASONS
 from nora.domain.turn_deadline import turn_deadline
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import TRACE_KIND, annotate, span
@@ -155,7 +156,9 @@ class LiveCognitionAgentRunner:
             except Exception:
                 annotate(**{"nora.outcome": "failed"})
                 raise
-            annotate(**{"nora.outcome": result.stop_reason or "ok",
+            annotate(**{"nora.outcome": (
+                "failed" if result.stop_reason in LIMIT_STOP_REASONS else "ok")})
+            annotate(**{"nora.cognition.stop_reason": result.stop_reason,
                         "nora.cognition.tokens": result.total_tokens,
                         "nora.cognition.usage_known": result.total_tokens is not None})
         return result
