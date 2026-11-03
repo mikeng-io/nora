@@ -23,7 +23,8 @@ reserves ceil(1.1 * estimated input) plus its output ceiling before starting.
 Residual overshoot is the final call's actual input above that allowance
 (assuming the provider honours its output cap); it is measured on the call
 cycle span, not claimed bounded for arbitrary estimation error. Unknown
-usage is an ERROR, never a zero. A batch already comprehended costs only an `inspect` — never a model slot —
+usage is an ERROR, never a zero. A batch already comprehended costs only an
+`inspect` — never a model slot —
 so a bounded resume always reaches new work. Progress is what the session
 itself writes: an agenda item is DONE when `comprehend_result` holds a
 `readings` receipt for its exact `(work_id, input_hash)` — every admitted
