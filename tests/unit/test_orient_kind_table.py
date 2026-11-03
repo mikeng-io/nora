@@ -216,3 +216,19 @@ async def test_only_invalid_reading_leaves_the_item_pending():
     assert result["refused"] == [{"kind": "reading", "reason": "evidence_absent"}]
     assert not state.admitted_indices
     assert not memory.records.claims
+
+
+async def test_a_withheld_social_stimulus_is_skipped_not_a_failed_wake():
+    """Node 33 audit: one hidden social item no longer fails the whole wake."""
+    from nora.domain.stimuli import Stimulus, UnitView
+
+    social = Stimulus(id=2, unit="unit-1", kind="social", item="post",
+                      ref="social:instagram:generated-hidden", at_ms=NOW, recorded_at_ms=NOW,
+                      platform="signal", conversation_id="home-room")
+    memory = wake_memory()
+    memory.records.withheld.add(("social", "instagram:generated-hidden"))
+    fake = FakeCognitionAgentRunner(script=[("memory_propose", proposal())])
+    runner, _, _ = _runner(agent_runner=fake, memory=memory)
+    await runner.replay(view=UnitView(unit="unit-1", pending=(*_pending("unit-1"), social),
+                                      last_activity_ms=None, last_wake=None), now_ms=NOW)
+    assert fake.results and fake.results[0]["status"] == "ok"

@@ -16,6 +16,7 @@ from nora.app.comprehend import GraphWrite, MemoryProposalAdmission, _shape_erro
 from nora.domain.comprehend import (
     ComprehendItem,
     Preview,
+    WithheldSourceError,
     item_window,
     preview_seeds,
     resolution_candidates,
@@ -151,7 +152,10 @@ class WakeMemory:
                     kind, _, ref = stimulus.ref.partition(":")
                     work = WorkItem(f"stimulus:{sid}", (kind, ref), state.unit, "", at,
                                     historical=state.historical)
-                    loaded = await self.records.load(work)
+                    try:
+                        loaded = await self.records.load(work)
+                    except WithheldSourceError:
+                        continue  # gone or hidden: never read, never cited
                     loaded_items.append(loaded)
                     sources.extend(loaded.sources)
                     rows.extend(loaded.snapshot.get("messages", []))

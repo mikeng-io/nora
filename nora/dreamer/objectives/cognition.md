@@ -1,9 +1,11 @@
 ---
 name: cognition
 kind: objective
-version: 8
+version: 9
 applies_to: [cognition_session]
 description: >-
+  Version 9: the closing «two ways to be wrong» is the notebook's (Act) judgement;
+  Orient's memory writes follow their kind row and are not judged for future need.
   Version 8: Observe, generated Orient and Decide, then Act with the note
   skill. The memory kind table is rendered into the declared Orient slot.
   The Cognition session (design/cognition-loop/30-cognition.md, DEC-244): one
@@ -111,10 +113,14 @@ yourself, and never one a person set.
 
 <!-- cognition-act-skill -->
 
-# Two ways to be wrong, and both cost
+# Two ways to be wrong in the notebook, and both cost
 
-Writing down what was never really said, or a settled thing nobody will need again, clutters
-a notebook the group reads every day; a settled thing the group will need again is a memo,
+This is the Act step's judgement. Orient's memory writes follow their kind's row: a reading
+or relation is not clutter because nobody needs it yet, and whether it matters is decided
+when it is read, not here.
+
+In the notebook, writing down what was never really said, or a settled thing nobody will
+need again, clutters what the group reads every day; a settled thing the group will need again is a memo,
 never a note. Missing what a room is in the middle of leaves them to rebuild it from
 scratch, or lose it. An empty pass is right only when the agenda genuinely holds nothing that
 needs writing, and then closing each item with its reason is the answer. «I could not tell»
