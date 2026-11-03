@@ -244,7 +244,7 @@ class WakeMemory:
             raise RuntimeError("wake graph unavailable")
         if state.historical:
             graph = historical_graph(graph, at)
-        candidates = []
+        candidates: list[Subgraph] = []
         for item in state.memory_items.values():
             candidates.extend(await resolution_candidates(
                 self.graph, item, aliases, seeds, item_window(item.text, at)))
