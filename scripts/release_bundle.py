@@ -17,6 +17,7 @@ import tarfile
 import tempfile
 import tomllib
 from pathlib import Path
+from typing import IO, cast
 
 import yaml
 
@@ -295,11 +296,46 @@ def _module_names(source: str, current: str) -> tuple[set[str], set[str]]:
     return required, speculative
 
 
-def _bridge_input_blob(commit: str, path: str) -> str:
+class _Tree:
+    """One commit's tracked object ids and lazily read texts, over two Git processes.
+
+    `text` decodes exactly as `run('git', 'show', ...)` did (locale encoding,
+    universal newlines, stripped), so fingerprints are unchanged by batching.
+    """
+
+    def __init__(self, commit: str, *paths: str) -> None:
+        listing = subprocess.check_output(  # noqa: S603
+            ['git', 'ls-tree', '-r', '-z', commit, '--', *paths])  # noqa: S607
+        self.oids: dict[str, str] = {}
+        for record in filter(None, listing.split(b'\0')):
+            meta, path = record.split(b'\t', 1)
+            self.oids[path.decode()] = meta.split()[2].decode()
+        self._batch = subprocess.Popen(
+            ['git', 'cat-file', '--batch'],  # noqa: S607
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        self._in = cast(IO[bytes], self._batch.stdin)
+        self._out = cast(IO[bytes], self._batch.stdout)
+
+    def text(self, path: str) -> str:
+        self._in.write(self.oids[path].encode() + b'\n')
+        self._in.flush()
+        header = self._out.readline().split()
+        if len(header) != 3:
+            raise ValueError(f'git cat-file could not read {path}')
+        raw = self._out.read(int(header[2]) + 1)[:-1]
+        return io.TextIOWrapper(io.BytesIO(raw)).read().strip()
+
+    def close(self) -> None:
+        self._in.close()
+        if self._batch.wait() != 0:
+            raise subprocess.CalledProcessError(self._batch.returncode, 'git cat-file --batch')
+
+
+def _bridge_input_blob(tree: _Tree, path: str) -> str:
     """Exclude generated app versions, retaining code and dependency inputs."""
     if path not in {'nora/__init__.py', 'pyproject.toml', 'uv.lock'}:
-        return run('git', 'rev-parse', f'{commit}:{path}')
-    text = run('git', 'show', f'{commit}:{path}')
+        return tree.oids[path]
+    text = tree.text(path)
     if path == 'nora/__init__.py':
         content = re.sub(r'(?m)^(__version__ = )"[^"\n]+"$',
                          r'\1"<app-release>"', text, count=1)
@@ -335,9 +371,15 @@ def _closure_fingerprint(commit: str, entry: str) -> str:
     fails closed: refusing to fingerprint is how a missing dependency
     becomes a build refusal instead of a silently stale bridge.
     """
-    tracked = set(run('git', 'ls-tree', '-r', '--name-only', commit,
-                      '--', *_LOCAL_ROOTS, 'pyproject.toml', 'uv.lock'
-                      ).splitlines())
+    tree = _Tree(commit, *_LOCAL_ROOTS, 'pyproject.toml', 'uv.lock')
+    try:
+        return _closure_digest(tree, entry)
+    finally:
+        tree.close()
+
+
+def _closure_digest(tree: _Tree, entry: str) -> str:
+    tracked = set(tree.oids)
     entry_dir = entry.rsplit('/', 1)[0]
     reached = set()
     data_dirs = {entry_dir}
@@ -347,7 +389,7 @@ def _closure_fingerprint(commit: str, entry: str) -> str:
         if path in reached or path not in tracked:
             continue
         reached.add(path)
-        text = run('git', 'show', f'{commit}:{path}')
+        text = tree.text(path)
         # Path(__file__).resolve().parent / "migrations"-style bindings: the
         # one mechanism by which a package reads data beside its code.
         own_dir = path.rsplit('/', 1)[0] if '/' in path else ''
@@ -382,7 +424,7 @@ def _closure_fingerprint(commit: str, entry: str) -> str:
     reached |= {p for p in tracked
                 if any(p == d or p.startswith(d + '/') for d in data_dirs)}
     blob = '\n'.join(
-        f'{p}:{_bridge_input_blob(commit, p)}' for p in sorted(reached))
+        f'{p}:{_bridge_input_blob(tree, p)}' for p in sorted(reached))
     return 'closure:' + hashlib.sha256(blob.encode()).hexdigest()
 
 
