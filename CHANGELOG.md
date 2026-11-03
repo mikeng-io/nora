@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.14.13](https://github.com/mikeng-io/nora/compare/v7.14.12...v7.14.13) (2026-11-03)
+
+
+### Bug Fixes
+
+* **memory:** surface unavailable automatic graph recall ([a15d0dc](https://github.com/mikeng-io/nora/commit/a15d0dc9c304d0a0620c069d9b80933456f70c1e))
+
 ## [7.14.12](https://github.com/mikeng-io/nora/compare/v7.14.11...v7.14.12) (2026-11-03)
 
 
