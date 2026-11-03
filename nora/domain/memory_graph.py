@@ -218,7 +218,8 @@ MEMORY_KINDS: tuple[MemoryKind, ...] = (
                             if rule.sources == ("person",) and rule.layer == "notebook")),
                "Orient", "close / supersede / dispute; never deleted"),
     MemoryKind("reading", "semantic",
-               "an item states something about a person or thing that no relation above can hold",
+               "an item states something about a person or thing (a preference, a habit, "
+               "a possession, what they did or will do) that no relation above can hold",
                "Record; exact span", _relations_for("reading"), "Orient", "superseded on re-read"),
     MemoryKind("profile line", "semantic", "an entity's relations changed in this session",
                "the relations it draws_on, and their evidence",

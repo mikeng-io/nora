@@ -286,6 +286,10 @@ correct what it contradicts, and enrich it if public and thin. Then make one
 memory_propose. A new entity must be the end of an admitted relation, not an orphan.
 The kind table defines what each write is for; an item fitting no row is silence.
 The open-corner test belongs to the note row alone.
+Whether a write will matter later is not Orient's question: when a row's «create when»
+holds, write it. What matters is decided when memory is read, not when it is written.
+A statement about a person that no relation holds is a reading, even when it describes
+a passing moment: keep its time and how it was said.
 
 """ + render_kind_table() + "\n\n" + COMPREHEND + """
 # When code answers

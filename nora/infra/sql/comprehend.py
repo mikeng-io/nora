@@ -151,7 +151,7 @@ class SqlComprehendRecords:
                 .first()
             )
             if node is None and kind == "social" and await _social_withheld(conn, ref):
-                raise WithheldSourceError("social item is gone, hidden or never recorded")
+                raise WithheldSourceError("social item is gone or hidden")
             if node is None:
                 # Not projected yet: fail so the wake retries (NoResultFound, as before).
                 raise NoResultFound("No row was found when one was required")
@@ -671,11 +671,13 @@ class SqlComprehendRecords:
 
 
 async def _social_withheld(conn: Any, ref: str) -> bool:
-    """Whether the social item's own row withholds it: gone, hidden or never recorded."""
+    """Whether the social item's own row withholds it: a recorded `gone`/`hidden` state.
+
+    An absent row is unknown, not withheld: the caller fails closed (NoResultFound)."""
     from nora.infra.sql.memory_index import _hidden
 
     network, _, item_id = ref.partition(":")
-    visible = (await conn.execute(sa.select(SOCIAL_ITEM.c.item_id).where(
+    hidden = (await conn.execute(sa.select(SOCIAL_ITEM.c.item_id).where(
         SOCIAL_ITEM.c.network == network, SOCIAL_ITEM.c.item_id == item_id,
-        ~_hidden(SOCIAL_ITEM)))).first()
-    return visible is None
+        _hidden(SOCIAL_ITEM)))).first()
+    return hidden is not None

@@ -309,7 +309,7 @@ async def test_a_withheld_social_item_is_skipped_but_projection_lag_still_fails(
 
     with pytest.raises(WithheldSourceError):
         await records.load(work(("social", "instagram:generated-hidden")))
-    with pytest.raises(WithheldSourceError):
+    with pytest.raises(NoResultFound):  # absent is unknown, never withheld
         await records.load(work(("social", "instagram:never-recorded")))
     with pytest.raises(NoResultFound):
         await records.load(work(("social", "instagram:generated-visible")))
