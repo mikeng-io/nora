@@ -174,6 +174,70 @@ for _rel in ("concerns", "settles", "serves", "fulfils", "cancels"):
 
 
 @dataclass(frozen=True)
+class MemoryKind:
+    kind: str
+    memory_type: str
+    create_when: str
+    evidence: str
+    relates_by: tuple[str, ...]
+    writer: str
+    corrected_by: str
+
+
+def _relations_for(kind: str) -> tuple[str, ...]:
+    return tuple(sorted(
+        name for name, rule in RELATION_RULES.items()
+        if kind in (*rule.sources, *rule.targets)
+        and (rule.layer == "notebook" or name in ("located_in", "stayed_at", "attached_to"))
+    ))
+
+
+# The rows describe judgement; pointers and Record/Rollup writers keep their contracts.
+MEMORY_KINDS: tuple[MemoryKind, ...] = (
+    MemoryKind("event", "episodic",
+               "an item states something that happens at a time: a plan, an RSVP, an occurrence",
+               "Record (message, social item, stay)", _relations_for("event"), "Orient",
+               "supersede; attended needs evidence beyond the person's own plan"),
+    MemoryKind("place", "semantic", "a named place is mentioned or tagged and no candidate matches",
+               "Record; a fetched page for public detail", _relations_for("place"),
+               "Orient; Rollup for stays", "supersede; same_as"),
+    MemoryKind("work", "semantic", "a specific game, show, artist, product or song is named",
+               "Record; a fetched page", _relations_for("work"), "Orient", "same_as"),
+    MemoryKind("organisation", "semantic", "an employer, school, venue operator or team is named",
+               "Record; a fetched page", _relations_for("organisation"), "Orient",
+               "supersede; same_as"),
+    MemoryKind("topic", "interests",
+               "a subject recurs across conversations and nothing would complete it",
+               "Record; weight counted by code from interested_in evidence",
+               _relations_for("topic"), "Orient (anchor); Decide (account)",
+               "active to dormant and back; retired"),
+    MemoryKind("person relation", "semantic",
+               "an item states or repeatedly shows a person's preference for one specific thing, "
+               "a workplace, residence or membership", "Record, never a Notebook entry",
+               tuple(sorted(name for name, rule in RELATION_RULES.items()
+                            if rule.sources == ("person",) and rule.layer == "notebook")),
+               "Orient", "close / supersede / dispute; never deleted"),
+    MemoryKind("reading", "semantic",
+               "an item states something about a person or thing that no relation above can hold",
+               "Record; exact span", _relations_for("reading"), "Orient", "superseded on re-read"),
+    MemoryKind("profile line", "semantic", "an entity's relations changed in this session",
+               "the relations it draws_on, and their evidence",
+               (*_relations_for("profile_line"), "draws_on"), "Decide (reshape)",
+               "supersede; profile_dispute"),
+    MemoryKind("note", "prospective",
+               "somebody has decided to do something and a corner is still open; "
+               "you can say what would close it", "Record", (*_relations_for("note"), "cites"),
+               "Act", "open to pending to ended / kept"),
+    MemoryKind("lesson", "procedural", "a closed response episode teaches how Nora should act",
+               "the episodes", (*_relations_for("lesson"), "cites"), "Decide", "retired"),
+    MemoryKind("decision", "working",
+               "Nora's own reasoning on one question the Record cannot give back",
+               "Record, links to entries", (*_relations_for("decision"), "links"),
+               "Act", "closed, with Reopen if"),
+)
+
+
+@dataclass(frozen=True)
 class Entity:
     id: str
     kind: str

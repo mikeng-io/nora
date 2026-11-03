@@ -1307,10 +1307,9 @@ class CognitionSessionRunner:
         tools = await self._build_tools(
             unit=unit, state=state, now_ms=now_ms, labels=grounding.room_labels,
         )
-        from nora.language.comprehend_render import SESSION_INSTRUCTION
-        system_prompt = doctrine_text + skill_text
-        if self._memory is not None:
-            system_prompt += SESSION_INSTRUCTION
+        from nora.language.comprehend_render import render_session_system
+        system_prompt = render_session_system(
+            doctrine_text, skill_text, memory=self._memory is not None)
         shared_view = None
         if self._shared is not None:
             try:
@@ -3316,7 +3315,8 @@ class CognitionSessionRunner:
             """Admit understanding. Call this when agenda items are understood.
 
             Returns admitted items, refusals with reasons and the connected subgraph.
-            Empty lists explicitly record nothing to understand.
+            Empty lists record that no item fits a memory kind.
+            A bad reading citation refuses that reading; valid parts commit.
 
             Args:
                 readings: Grounded readings of the shown sources.

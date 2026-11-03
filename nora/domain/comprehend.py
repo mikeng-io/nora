@@ -113,6 +113,15 @@ async def build_preview(graph: MemoryGraph, item: ComprehendItem) -> Preview:
     nearby = await graph.walk(tuple(seeds), scope)
     if nearby.status == "unavailable":
         raise RuntimeError("graph preview unavailable")
+    resolved = await resolution_candidates(graph, item, aliases, seeds, window)
+    return Preview(tuple(seeds), nearby, resolved, window)
+
+
+async def resolution_candidates(
+    graph: MemoryGraph, item: ComprehendItem, aliases: Mapping[str, Key],
+    seeds: tuple[Key, ...], window: tuple[datetime, datetime],
+) -> tuple[Subgraph, ...]:
+    work = item.work
     text = item.text.casefold()
     named = (*item.urls, *item.accounts, item.place)
     resolved = []
@@ -130,11 +139,12 @@ async def build_preview(graph: MemoryGraph, item: ComprehendItem) -> Preview:
                     (entity.key,),
                     Walk(
                         unit=work.unit,
-                        persons=scope.persons,
+                        persons=frozenset(p for s in item.sources for p in s.persons),
                         depth=1,
                         nodes=6,
                         fan_out=3,
                         valid_at=work.as_of,
+                        known_at=work.as_of if work.historical else None,
                     ),
                 )
                 if candidate.status == "unavailable":
@@ -153,7 +163,7 @@ async def build_preview(graph: MemoryGraph, item: ComprehendItem) -> Preview:
                         status="partial" if len(candidate.relations) > 3 else candidate.status,
                     )
                 )
-    return Preview(tuple(seeds), nearby, tuple(resolved), window)
+    return tuple(resolved)
 
 
 def card_facts(graph: Subgraph, entity: Key, *, max_chars: int = 1600) -> str:
