@@ -580,9 +580,11 @@ def _dump_exchanges(exporter: InMemorySpanExporter, case: str) -> None:
 
     keys = ("gen_ai.system_instructions", "gen_ai.input.messages", "gen_ai.output.messages",
             "gen_ai.tool.name")
+    # Strands puts message content on span EVENTS as well as attributes (see `_tool_inputs`).
     calls = [
         {"name": span.name, **{k: (span.attributes or {}).get(k) for k in keys
-                               if k in (span.attributes or {})}}
+                               if k in (span.attributes or {})},
+         "events": [{"name": e.name, **dict(e.attributes or {})} for e in span.events or ()]}
         for span in sorted(exporter.get_finished_spans(), key=lambda s: s.start_time or 0)
         if span.name == "chat" or "gen_ai.tool.name" in (span.attributes or {})
     ]

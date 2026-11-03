@@ -676,6 +676,7 @@ def test_exchanges_are_written_privately_only_when_asked(tmp_path, monkeypatch):
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     with provider.get_tracer("t").start_as_current_span("chat") as span:
         span.set_attribute("gen_ai.output.messages", "generated output")
+        span.add_event("gen_ai.choice", {"message": "generated reasoning"})
     with provider.get_tracer("t").start_as_current_span("plumbing"):
         pass
     out = tmp_path / "exchanges"
@@ -687,4 +688,5 @@ def test_exchanges_are_written_privately_only_when_asked(tmp_path, monkeypatch):
     [path] = list(out.iterdir())
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert json.loads(path.read_text()) == [
-        {"name": "chat", "gen_ai.output.messages": "generated output"}]
+        {"name": "chat", "gen_ai.output.messages": "generated output",
+         "events": [{"name": "gen_ai.choice", "message": "generated reasoning"}]}]
