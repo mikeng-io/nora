@@ -9,7 +9,7 @@
  {
   "name": "5: the live runner reads no usage",
   "file": "nora/app/cognition_agent_runner.py",
-  "old": "            total_tokens=_total_tokens(result),",
+  "old": "            total_tokens=reservation.spent if reservation is not None else _total_tokens(result),",
   "new": "            total_tokens=None,",
   "target": "tests/unit/test_cognition_agent_runner.py -k tokens_the_loop_spent"
  },

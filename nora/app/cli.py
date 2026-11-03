@@ -1033,10 +1033,14 @@ def _profile_tracing(cfg: Config) -> None:
     """Use the daemon's existing trace destination for explicitly requested model work."""
     if cfg.obs.tracing.enabled:
         from nora.agent.telemetry import setup_agent_tracing
+        from nora.infra.version import VersionManifest
         from nora.obs.tracing import build_sampler
+        entry = VersionManifest().current().entry
         setup_agent_tracing(sampler=build_sampler(), service_name="nora",
             exporter=cfg.obs.tracing.exporter, endpoint=cfg.obs.tracing.endpoint,
-            headers_env=cfg.obs.tracing.headers_env)
+            headers_env=cfg.obs.tracing.headers_env, credentials=cfg.credentials,
+            service_version=entry.version if entry is not None else "",
+            environment=cfg.obs.errors.environment)
 
 
 async def cmd_profile_window(args: argparse.Namespace) -> int:
@@ -1294,6 +1298,7 @@ async def cmd_unified_backfill(args: argparse.Namespace) -> int:
         if invalid:
             raise CliError(
                 f"--apply requires positive finite values: {', '.join(invalid)}")
+        _profile_tracing(cfg)
         deps = await build_dependencies(cfg)
         engine = create_sql_engine(_database_url(cfg))
         try:
@@ -1321,6 +1326,10 @@ async def cmd_unified_backfill(args: argparse.Namespace) -> int:
             for client in [deps.client, *deps.model_clients]:
                 with suppress(Exception):
                     await client.close()
+            from opentelemetry import trace
+            provider = trace.get_tracer_provider()
+            if hasattr(provider, "force_flush"):
+                provider.force_flush()
         print(json.dumps(result, sort_keys=True, default=str))
         bad = sum(
             u.get("failures", 0) for u in result["units"].values()

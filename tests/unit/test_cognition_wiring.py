@@ -122,7 +122,8 @@ def test_the_session_budget_carries_every_field_the_dreamer_budget_gives_it():
     """A field added to one side and not the other would be dropped in silence
     (`_adaptor_budget`'s own reason). The two per-pass call ceilings are the
     exception on purpose (DEC-247): the session carries none, so the Dreamer
-    budget's values for them never reach it."""
+    budget's values for them never reach it. Historical call reservation is
+    selected by the session, not deployment config; its default stays off."""
     configured = DreamBudgetConfig(
         turns=7, total_tokens=11, output_tokens=13, timeout_seconds=17.0,
         max_memory_calls=3, max_tool_calls=19,
@@ -130,7 +131,9 @@ def test_the_session_budget_carries_every_field_the_dreamer_budget_gives_it():
     got = cognition_budget(configured)
     assert isinstance(got, AdaptorBudget)
     for f in dataclasses.fields(AdaptorBudget):
-        if f.name in {"max_memory_calls", "max_tool_calls"}:
+        if f.name == "reserve_tokens":
+            assert getattr(got, f.name) is False
+        elif f.name in {"max_memory_calls", "max_tool_calls"}:
             assert getattr(got, f.name) is None, f.name
         else:
             assert getattr(got, f.name) == getattr(configured, f.name), f.name

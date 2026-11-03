@@ -36,9 +36,11 @@ from nora.agent import factory
 from nora.agent.dream_guard import DreamGuard
 from nora.agent.ports import ToolSpec, adapt
 from nora.agent.tag_trace_extract import extract_tag_trace
+from nora.agent.token_reservation import TokenReservation
 from nora.agent.turn_recording import TurnRecording
 from nora.app.agent_runner import DEFAULT_MAX_TRACE_CHARS
 from nora.app.cognition_session import SESSION_TOKENS, AdaptorBudget, CognitionRunResult
+from nora.domain.stimuli import LIMIT_STOP_REASONS
 from nora.domain.turn_deadline import turn_deadline
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import TRACE_KIND, annotate, span
@@ -154,7 +156,11 @@ class LiveCognitionAgentRunner:
             except Exception:
                 annotate(**{"nora.outcome": "failed"})
                 raise
-            annotate(**{"nora.outcome": "ok"})
+            annotate(**{"nora.outcome": (
+                "failed" if result.stop_reason in LIMIT_STOP_REASONS else "ok")})
+            annotate(**{"nora.cognition.stop_reason": result.stop_reason,
+                        "nora.cognition.tokens": result.total_tokens,
+                        "nora.cognition.usage_known": result.total_tokens is not None})
         return result
 
     def _guard(self, tool_names: list[str]) -> DreamGuard:
@@ -178,11 +184,12 @@ class LiveCognitionAgentRunner:
         budget: AdaptorBudget, trace_attributes: Mapping[str, str],
     ) -> CognitionRunResult:
         recording = TurnRecording()
+        reservation = TokenReservation(budget.total_tokens) if budget.reserve_tokens else None
         agent = factory.create_dream_agent(
             model=self._models.create(), system_prompt=system_prompt, tools=tools,
             guard=guard, trace_attributes=dict(trace_attributes), retry=self._retry,
             agent_name=self._agent_name,
-            tool_hooks=(recording,),
+            tool_hooks=(recording, reservation) if reservation is not None else (recording,),
         )
         baseline = len(getattr(agent, "messages", ()))
         # A failure or a timeout is RAISED, never returned as a normal result:
@@ -213,6 +220,12 @@ class LiveCognitionAgentRunner:
             raise
         finally:
             _leave_spend(agent)
+            if reservation is not None:
+                spend = SESSION_TOKENS.get()
+                if spend is not None:
+                    spend.total = reservation.spent
+                annotate(**{"nora.cognition.tokens": reservation.spent,
+                            "nora.cognition.usage_known": reservation.spent is not None})
             trace = extract_tag_trace(
                 agent, baseline=baseline, tag_id=trace_attributes.get("cognition.session_id", ""),
                 conversation_id="", transcript=(), outcome="silent",
@@ -223,7 +236,8 @@ class LiveCognitionAgentRunner:
                 spend.messages = trace.messages
                 spend.requirements = recording.to_json()
         return CognitionRunResult(
-            stop_reason=getattr(result, "stop_reason", None),
-            total_tokens=_total_tokens(result),
+            stop_reason=("limit_total_tokens" if reservation is not None and reservation.stopped
+                         else getattr(result, "stop_reason", None)),
+            total_tokens=reservation.spent if reservation is not None else _total_tokens(result),
             messages=trace.messages, requirements=recording.to_json(),
         )

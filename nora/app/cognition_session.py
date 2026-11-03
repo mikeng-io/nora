@@ -286,6 +286,7 @@ class AdaptorBudget:
     #: reads: the memory cluster and every verb together. `None` is no ceiling.
     max_memory_calls: int | None = None
     max_tool_calls: int | None = None
+    reserve_tokens: bool = False
 
 
 @dataclass(frozen=True)
@@ -893,6 +894,7 @@ class CognitionSessionRunner:
         #: that records this wake's outcome, so a failed, timed-out or cancelled
         #: session's spend is as durable as a closed one's.
         spend = TokenSpend()
+        committed: set[int] = set()
         try:
             home_room = self._home_rooms.get(unit)
             if home_room is None:
@@ -1036,7 +1038,7 @@ class CognitionSessionRunner:
                 unit=unit, view=view, situation=situation, session_id=session_id,
                 wake_id=wake_id, now_ms=now_ms, doctrine_text=doctrine_text,
                 skill_text=skill_text, grounding=grounding, retained=sorted(retained),
-                spend=spend, replay=replay, historical=historical,
+                spend=spend, committed=committed, replay=replay, historical=historical,
             )
         except asyncio.CancelledError:
             # Only a process shutdown cancels a session (`shutdown`,
@@ -1052,12 +1054,14 @@ class CognitionSessionRunner:
             raise
         except SessionTimeoutError as exc:
             if self._memory is not None and not replay:
-                await self._memory.failed(unit, [s.id for s in view.pending], session_id)
+                await self._memory.failed(
+                    unit, [s.id for s in view.pending if s.id not in committed], session_id)
             await self._finish(wake_id, unit, session_id, "timeout", str(exc))
             raise
         except Exception as exc:
             if self._memory is not None and not replay:
-                await self._memory.failed(unit, [s.id for s in view.pending], session_id)
+                await self._memory.failed(
+                    unit, [s.id for s in view.pending if s.id not in committed], session_id)
             log.exception("cognition session failed (unit=%s wake=%s)", unit, wake_id)
             await self._finish(
                 wake_id, unit, session_id, "failed", f"{type(exc).__name__}: {exc}"[:500],
@@ -1339,7 +1343,8 @@ class CognitionSessionRunner:
     async def _run_session(
         self, *, unit: str, view: UnitView, situation: Situation, session_id: int,
         wake_id: int, now_ms: int, doctrine_text: str, skill_text: str,
-        grounding: Grounding, spend: TokenSpend, retained: Sequence[int] = (),
+        grounding: Grounding, spend: TokenSpend, committed: set[int],
+        retained: Sequence[int] = (),
         replay: bool = False, historical: bool = False,
     ) -> CognitionSessionOutcome:
         items = situation.agenda.items
@@ -1357,6 +1362,7 @@ class CognitionSessionRunner:
                 self._run_agent(
                     unit=unit, pending_ids=frozenset(s.id for s in view.pending),
                     system_prompt=system_prompt, prompt=prompt, tools=tools,
+                    historical=historical,
                     trace_attributes={
                         "cognition.unit": unit, "cognition.session_id": str(session_id),
                         # The agenda's size, for the trace (no call ceiling
@@ -1372,6 +1378,8 @@ class CognitionSessionRunner:
                 f"the session ran past its {self._budget.timeout_seconds:g}s wall clock",
             ) from exc
         finally:
+            committed.update(sid for i, item in state.items_by_index.items()
+                             if i in state.admitted_indices for sid in item.stimulus_ids)
             SESSION_TOKENS.reset(token)
             from nora.domain.tag_trace import TagTrace
             trace = TagTrace(
@@ -1467,7 +1475,7 @@ class CognitionSessionRunner:
 
     async def _run_agent(
         self, *, unit: str, pending_ids: frozenset[int], system_prompt: str, prompt: str,
-        tools: list[Any], trace_attributes: dict[str, str],
+        tools: list[Any], trace_attributes: dict[str, str], historical: bool = False,
     ) -> CognitionRunResult:
         """The model loop, with ONE translation: a context overflow PROVEN to be
         the agenda's (`prove_overflow_is_the_agenda`: no transport evidence, the
@@ -1478,7 +1486,8 @@ class CognitionSessionRunner:
         try:
             return await self._agent_runner.run(
                 system_prompt=system_prompt, prompt=prompt, tools=tools,
-                budget=self._budget, trace_attributes=trace_attributes,
+                budget=replace(self._budget, reserve_tokens=historical),
+                trace_attributes=trace_attributes,
             )
         except Exception as exc:
             if not is_context_overflow(exc):

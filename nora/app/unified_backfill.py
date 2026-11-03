@@ -18,19 +18,24 @@ not enumerable (register kinds are the free projection lane's, pre-epoch
 
 **Apply is bounded and recoverable.** `--apply` requires explicit
 `--max-batches`, `--max-tokens` and `--max-seconds`; the bounds are run-wide
-and enforced at the session boundary (each batch's budget is clamped to
-what the run has left, and unknown usage is an ERROR, never a zero). A
-batch already comprehended costs only an `inspect` — never a model slot —
+and each batch's budget is clamped to what the run has left. Each model call
+reserves ceil(1.1 * estimated input) plus its output ceiling before starting.
+Residual overshoot is the final call's actual input above that allowance
+(assuming the provider honours its output cap); it is measured on the call
+cycle span, not claimed bounded for arbitrary estimation error. Unknown
+usage is an ERROR, never a zero. A batch already comprehended costs only an
+`inspect` — never a model slot —
 so a bounded resume always reaches new work. Progress is what the session
 itself writes: an agenda item is DONE when `comprehend_result` holds a
 `readings` receipt for its exact `(work_id, input_hash)` — every admitted
 item of a multi-item proposal gets its own receipt — so a restart never
-re-comprehends and a changed input re-runs. A session that returns without
-comprehending (refused, unadmitted, raised) stops the chronological
+re-comprehends and a changed input re-runs. A session that leaves inputs without
+comprehension receipts (refused, unadmitted, raised) stops the chronological
 frontier: it is failure-receipted under this lane's ISOLATED
 `backfill-stimulus:` key (five parks it for operator requeue; the live
-wake's own `stimulus:` counters are untouched) and later history never
-runs while earlier work is unresolved. The lane never touches
+wake's own `stimulus:` counters are untouched). Committed inputs remain done
+even if a later call hits a limit; only unresolved inputs are failure-receipted,
+and later history never runs while earlier work is unresolved. The lane never touches
 `cognition_wake*`, live stimuli or profile-writer retirement.
 
 **Historical does not act.** The runner is a variant of the live
@@ -76,6 +81,7 @@ from nora.domain.stimuli import LastSession, Stimulus, UnitView
 from nora.infra.sql import unified_backfill as sql
 from nora.infra.sql.schema import COGNITION_SESSION
 from nora.infra.sql.schema import COMPREHEND_RESULT as RESULT
+from nora.obs.tracing import TRACE_KIND, annotate, span
 
 log = logging.getLogger(__name__)
 
@@ -322,7 +328,7 @@ class MeteredAgentRunner:
       costliest kind and has no result to read).
     - `remaining_tokens`/`remaining_seconds`, set by the loop before each
       batch, CLAMP the session's own `AdaptorBudget`: the session cannot
-      spend or run past what the run has left."""
+      admit a call beyond the run remainder (subject to input-estimation residual)."""
 
     def __init__(self, inner: Any) -> None:
         self._inner = inner
@@ -358,7 +364,7 @@ class MeteredAgentRunner:
             result = await self._inner.run(**kwargs)
         except BaseException:
             spend = SESSION_TOKENS.get()
-            if spend is not None and spend.total:
+            if spend is not None and spend.total is not None:
                 self.total_tokens += spend.total
             else:
                 self.usage_known = False
@@ -537,6 +543,24 @@ def historical_grounder(engine: AsyncEngine, *, cfg: Any, deps: Any,
 
 
 async def run_units(engine: AsyncEngine, *, bounds: Bounds, **kwargs: Any) -> dict[str, Any]:
+    with span("memory:unified-backfill", **{
+        TRACE_KIND: "generation", "nora.backfill.max_batches": bounds.max_batches,
+        "nora.backfill.max_tokens": bounds.max_tokens,
+        "nora.backfill.max_seconds": bounds.max_seconds,
+        "nora.backfill.from_ms": kwargs.get("from_ms"),
+        "nora.backfill.until_ms": kwargs.get("until_ms"),
+        "nora.backfill.units": ",".join(kwargs.get("units", ())),
+    }):
+        result = await _bounded_run_units(engine, bounds=bounds, **kwargs)
+        annotate(**{"nora.backfill.tokens": result["tokens"],
+                    "nora.backfill.usage_known": result["usage_known"],
+                    "nora.backfill.stopped": result["stopped"] or "done"})
+        return result
+
+
+async def _bounded_run_units(
+    engine: AsyncEngine, *, bounds: Bounds, **kwargs: Any,
+) -> dict[str, Any]:
     """One deadline encloses enumeration, inspection, model work and receipts."""
     started = time.monotonic()
     report: dict[str, Any] = {
@@ -712,11 +736,9 @@ async def _run_units(
                     timeout=metered.remaining_seconds)
             except Exception:
                 log.exception("unified backfill: session failed for %s", unit)
-                for s in pending:
-                    await sql.fail_historical(engine, unit, s.id, None)
-                outcome.failures += 1
-                outcome.stopped = "session_failed"
-                break
+                # A limit or a later tool failure cannot undo committed readings.
+                # The exact input receipts below decide which stimuli still failed.
+                pass
             outcome.sessions += 1
             # A normal return is NOT comprehension: re-read the durable
             # receipts. Every agenda item the session was invoked on must
@@ -733,6 +755,10 @@ async def _run_units(
                     await sql.fail_historical(engine, unit, s.id, None)
                 outcome.failures += 1
                 outcome.stopped = "unresolved"
+                break
+            if not getattr(metered, "usage_known", True):
+                outcome.failures += 1
+                outcome.stopped = "session_failed"
                 break
             last_ms = now_ms
         if report["stopped"] or outcome.stopped in (
