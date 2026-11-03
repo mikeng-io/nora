@@ -1,0 +1,44 @@
+[
+  {
+    "name": "prefetch expands beyond legacy search seeds",
+    "file": "nora/engagement/context.py",
+    "old": "                    query=query, depth=2, person_id=None, target=target,",
+    "new": "                    query=query, depth=0, person_id=None, target=target,",
+    "target": "tests/unit/test_memory_prefetch.py::test_prefetch_injects_new_graph_about_without_shared_words"
+  },
+  {
+    "name": "read false preserves the Honcho recall surface",
+    "file": "nora/app/composition.py",
+    "old": "        if cfg.memory.index.read else None\n",
+    "new": "        if True else None\n",
+    "target": "tests/test_composition.py::test_the_prefetch_holds_the_tools_search_only_on_the_graph_surface"
+  },
+  {
+    "name": "unavailable graph reaches assembled input",
+    "file": "nora/engagement/context.py",
+    "old": "        if prefetch.found[\"status\"] == \"unavailable\":\n            return ({\"status\": \"unavailable\", \"text\": \"Memory could not be checked.\"},)",
+    "new": "        if prefetch.found[\"status\"] == \"unavailable\":\n            return ()",
+    "target": "tests/unit/test_memory_prefetch.py::test_a_graph_that_is_unavailable_is_counted_not_a_dead_turn"
+  },
+  {
+    "name": "prefetch uses the room unit boundary",
+    "file": "nora/agent/memory_search.py",
+    "old": "            unit = target.room.unit\n",
+    "new": "            unit = \"outside\"\n",
+    "target": "tests/unit/test_memory_prefetch.py::test_prefetch_injects_new_graph_about_without_shared_words"
+  },
+  {
+    "name": "timeout reaches assembled input as unavailable",
+    "file": "nora/engagement/context.py",
+    "old": "            return _Prefetch(target, {\"status\": \"unavailable\"}, None, now)",
+    "new": "            return None",
+    "target": "tests/unit/test_memory_prefetch.py::test_a_search_past_its_bound_is_unavailable_and_counted"
+  },
+  {
+    "name": "render failure remains unavailable",
+    "file": "nora/engagement/context.py",
+    "old": "            return ({\"status\": \"unavailable\", \"text\": \"Memory could not be checked.\"},)\n\n    def _render_recalled(",
+    "new": "            return ()\n\n    def _render_recalled(",
+    "target": "tests/unit/test_memory_prefetch.py::test_a_preview_render_failure_is_unavailable"
+  }
+]

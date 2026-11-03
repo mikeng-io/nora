@@ -2151,6 +2151,24 @@ async def test_the_prefetch_holds_the_tools_search_only_on_the_graph_surface(cfg
     search = deps.engagement._tool_registry._memory_search
     assert deps.engagement._context._memory_search is search
     assert (search is not None) is graph
+    from nora.agent.prefill import build_prefill
+    from nora.domain.models import TagContext
+
+    message = NormalizedMessage(
+        platform="signal", conversation_id="g1", conversation_type="group",
+        sender_id="generated-sender", sender_name="Generated", timestamp=1000,
+        body="generated recall probe", raw={},
+    )
+    context = deps.engagement._context
+    prefetched = await context._prefetch(message, None)
+    assert (prefetched is not None) is graph
+    if not graph:
+        baseline = TagContext("generated-tag", message, None, (), (), 0.0)
+        from dataclasses import replace
+
+        actual = replace(baseline, recalled=context._recalled(prefetched, message, ()))
+        assert build_prefill(actual, display_name="Nora", context_window=10) == build_prefill(
+            baseline, display_name="Nora", context_window=10)
 
 
 @pytest.mark.parametrize("graph", [False, True])
