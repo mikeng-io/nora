@@ -1,3 +1,3 @@
 """Nora: A private ambient Signal group agent (Strands-based)."""
 
-__version__ = "7.14.8"
+__version__ = "7.14.9"
