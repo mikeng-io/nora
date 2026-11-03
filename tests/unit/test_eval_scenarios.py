@@ -658,3 +658,35 @@ def test_the_spec_carries_the_arm_and_a_disagreeing_subject_is_refused(monkeypat
         refuse_a_memory_surface_mismatch("honcho", True)
     with pytest.raises(ValueError, match="disagree"):
         refuse_a_memory_surface_mismatch("graph", False)
+
+
+def test_exchanges_are_written_privately_only_when_asked(tmp_path, monkeypatch):
+    """A FAIL is read from its saved model calls, never re-drawn; off by default."""
+    import json
+    import stat
+
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    from evals.backbone import EXCHANGES_ENV, _dump_exchanges
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    with provider.get_tracer("t").start_as_current_span("chat") as span:
+        span.set_attribute("gen_ai.output.messages", "generated output")
+        span.add_event("gen_ai.choice", {"message": "generated reasoning"})
+    with provider.get_tracer("t").start_as_current_span("plumbing"):
+        pass
+    out = tmp_path / "exchanges"
+    monkeypatch.delenv(EXCHANGES_ENV, raising=False)
+    _dump_exchanges(exporter, "generated-case")
+    assert not out.exists()
+    monkeypatch.setenv(EXCHANGES_ENV, str(out))
+    _dump_exchanges(exporter, "generated-case")
+    [path] = list(out.iterdir())
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert json.loads(path.read_text()) == [
+        {"name": "chat", "gen_ai.output.messages": "generated output",
+         "events": [{"name": "gen_ai.choice", "message": "generated reasoning"}]}]

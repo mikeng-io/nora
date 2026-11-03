@@ -226,7 +226,7 @@
  {
   "name": "minor 3: the objective omits the `written` close reason",
   "file": "nora/dreamer/objectives/cognition.md",
-  "old": "- **written**: a write you made covers it.\n",
+  "old": "- **written**: a write you made covers it, a memory write admitted for it included.\n",
   "new": "",
   "target": "tests/unit/test_cognition_wiring.py::test_the_objective_names_every_close_reason_the_session_closes_with"
  },

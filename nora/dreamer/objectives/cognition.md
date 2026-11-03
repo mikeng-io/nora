@@ -1,9 +1,12 @@
 ---
 name: cognition
 kind: objective
-version: 8
+version: 10
 applies_to: [cognition_session]
 description: >-
+  Version 10: each item is read Orient-first; an admitted memory write closes `written`.
+  Version 9: the closing «two ways to be wrong» is the notebook's (Act) judgement;
+  Orient's memory writes follow their kind row and are not judged for future need.
   Version 8: Observe, generated Orient and Decide, then Act with the note
   skill. The memory kind table is rendered into the declared Orient slot.
   The Cognition session (design/cognition-loop/30-cognition.md, DEC-244): one
@@ -55,8 +58,10 @@ being nothing to see.
 
 # Act: what each item asks of you
 
-Decide on the committed memory first. For the Act step, read what the group has
-**settled**, is **still deciding**, or is only talking around. Read the messages in it: who said what, when, and
+Each item is read in one order. First: what does it state about people and things? Orient
+writes that as memory, whether or not anything is planned. Only then: what does it ask of
+the notebook? For that, read what the group has **settled**, is **still deciding**, or is
+only talking around. Read the messages in it: who said what, when, and
 whether anyone answered; a room that fell silent has told you nothing either way. When the
 messages are not enough, the reads go further back. Something said in one room can bear on a
 plan in another, and the reads let you look for it.
@@ -64,7 +69,7 @@ plan in another, and the reads let you look for it.
 Then either write something that carries the item forward, or close it. To close an item
 you say why:
 
-- **written**: a write you made covers it.
+- **written**: a write you made covers it, a memory write admitted for it included.
 - **no_change**: nothing about it needs to change. What the room said is already what the
   notebook says.
 - **covered**: another item's write already handles it.
@@ -111,10 +116,14 @@ yourself, and never one a person set.
 
 <!-- cognition-act-skill -->
 
-# Two ways to be wrong, and both cost
+# Two ways to be wrong in the notebook, and both cost
 
-Writing down what was never really said, or a settled thing nobody will need again, clutters
-a notebook the group reads every day; a settled thing the group will need again is a memo,
+This is the Act step's judgement. Orient's memory writes follow their kind's row: a reading
+or relation is not clutter because nobody needs it yet, and whether it matters is decided
+when it is read, not here.
+
+In the notebook, writing down what was never really said, or a settled thing nobody will
+need again, clutters what the group reads every day; a settled thing the group will need again is a memo,
 never a note. Missing what a room is in the middle of leaves them to rebuild it from
 scratch, or lose it. An empty pass is right only when the agenda genuinely holds nothing that
 needs writing, and then closing each item with its reason is the answer. «I could not tell»

@@ -20,6 +20,8 @@ class InMemoryComprehendRecords:
         self.shadows: list[dict[str, Any]] = []
         self.receipts: list[dict[str, Any]] = []
         self.fail_on: set[str] = set()
+        #: Sources whose own row withholds them (gone, hidden), as the SQL store reads.
+        self.withheld: set[Key] = set()
 
     async def act_result(self, key: str, session: int, result: Any = None) -> Any:
         if not hasattr(self, "act_results"):
@@ -49,6 +51,10 @@ class InMemoryComprehendRecords:
     async def load(self, work: WorkItem) -> Any:
         if "load" in self.fail_on:
             raise RuntimeError("source unavailable")
+        if work.source in self.withheld:
+            from nora.domain.comprehend import WithheldSourceError
+
+            raise WithheldSourceError("source is gone or hidden")
         if work.source not in self.items:
             # The SQL store's exact-key read: an unprojected source has no row.
             from sqlalchemy.exc import NoResultFound

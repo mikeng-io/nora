@@ -12,9 +12,10 @@ from typing import Any
 from uuid import uuid4
 
 import sqlalchemy as sa
+from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.comprehend import ComprehendItem
+from nora.domain.comprehend import ComprehendItem, WithheldSourceError
 from nora.domain.memory_graph import Admission, Key, Layer, Source, WorkItem
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.infra.sql.extraction import link_replies, source_rows
@@ -105,8 +106,14 @@ class SqlComprehendRecords:
                     .where(SOCIAL_ITEM.c.read_id == ref))).all()
             if not ids:
                 raise ValueError("social read has no recorded items")
-            items = [await self.load(replace(work, source=("social", f"{n}:{i}")))
-                     for n, i in ids]
+            items = []
+            for n, i in ids:
+                try:
+                    items.append(await self.load(replace(work, source=("social", f"{n}:{i}"))))
+                except WithheldSourceError:
+                    continue
+            if not items:
+                raise WithheldSourceError("every item of the social read is withheld")
             return replace(items[0], work=work,
                 sources=tuple({s.key: s for item in items for s in item.sources}.values()))
         if kind == "message_batch":
@@ -141,8 +148,13 @@ class SqlComprehendRecords:
                     )
                 )
                 .mappings()
-                .one()
+                .first()
             )
+            if node is None and kind == "social" and await _social_withheld(conn, ref):
+                raise WithheldSourceError("social item is gone or hidden")
+            if node is None:
+                # Not projected yet: fail so the wake retries (NoResultFound, as before).
+                raise NoResultFound("No row was found when one was required")
             if kind in ("social", "social_media", "social_location") and (
                 set(node["persons"]) & self.social_off_ids
             ):
@@ -657,3 +669,15 @@ class SqlComprehendRecords:
             {"entity": list(entity), "would_writes": proposals, "parent_session": parent},
         )
 
+
+async def _social_withheld(conn: Any, ref: str) -> bool:
+    """Whether the social item's own row withholds it: a recorded `gone`/`hidden` state.
+
+    An absent row is unknown, not withheld: the caller fails closed (NoResultFound)."""
+    from nora.infra.sql.memory_index import _hidden
+
+    network, _, item_id = ref.partition(":")
+    hidden = (await conn.execute(sa.select(SOCIAL_ITEM.c.item_id).where(
+        SOCIAL_ITEM.c.network == network, SOCIAL_ITEM.c.item_id == item_id,
+        _hidden(SOCIAL_ITEM)))).first()
+    return hidden is not None

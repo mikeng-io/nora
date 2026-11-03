@@ -74,6 +74,13 @@ def item_window(text: str, at: datetime) -> tuple[datetime, datetime]:
     return day, day + timedelta(days=1)
 
 
+class WithheldSourceError(LookupError):
+    """A source whose own recorded row says it is gone or hidden: deliberately unread.
+
+    Distinct from a projection that has not landed yet (`NoResultFound`), which
+    fails the wake so it retries; a withheld source is skipped and never read."""
+
+
 def preview_seeds(item: ComprehendItem, aliases: Mapping[str, Key]) -> tuple[Key, ...]:
     """Structural and explicit anchors shared by automatic graph readers."""
     work = item.work

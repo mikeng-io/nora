@@ -565,6 +565,35 @@ _TOOL_INPUT_EVENT = "gen_ai.tool.message"
 _INPUT_MESSAGES = "gen_ai.input.messages"
 
 
+
+#: A private directory on the deploy host (never a checkout): when set, each draw's
+#: model calls (system, input, output) are written there so a FAIL can be read, not
+#: re-drawn. Unset by default; nothing is written and nothing is printed.
+EXCHANGES_ENV = "NORA_EVAL_EXCHANGES"
+
+
+def _dump_exchanges(exporter: InMemorySpanExporter, case: str) -> None:
+    raw = os.environ.get(EXCHANGES_ENV, "").strip()
+    if not raw:
+        return
+    import uuid
+
+    keys = ("gen_ai.system_instructions", "gen_ai.input.messages", "gen_ai.output.messages",
+            "gen_ai.tool.name")
+    # Strands puts message content on span EVENTS as well as attributes (see `_tool_inputs`).
+    calls = [
+        {"name": span.name, **{k: (span.attributes or {}).get(k) for k in keys
+                               if k in (span.attributes or {})},
+         "events": [{"name": e.name, **dict(e.attributes or {})} for e in span.events or ()]}
+        for span in sorted(exporter.get_finished_spans(), key=lambda s: s.start_time or 0)
+        if span.name == "chat" or "gen_ai.tool.name" in (span.attributes or {})
+    ]
+    folder = Path(raw).expanduser()
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = folder / f"{case}-{uuid.uuid4().hex[:8]}.json"
+    path.write_text(json.dumps(calls, ensure_ascii=False, default=str), encoding="utf-8")
+    path.chmod(0o600)
+
 def _tool_inputs(exporter: InMemorySpanExporter) -> tuple[tuple[str, str], ...]:
     """`(tool, input)` per executed tool, in start order (see `NORA_TOOL_INPUTS`).
     An input Strands did not record is an empty string, which a grader must
@@ -1686,6 +1715,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             tools_called = _tools_called(exporter)
             tool_results = _tool_results(exporter)
             tool_inputs = _tool_inputs(exporter)
+            _dump_exchanges(exporter, case.name)
             shown_now = _shown_now(exporter)
             # `agent=agent_name`: the turn's own render, never the relevance
             # gate's (`_shown_transcript`'s own docstring).

@@ -278,3 +278,43 @@ async def test_register_retry_retains_existing_row_id(store):
     result = {"status": "ok", "note_id": "generated-existing-note"}
     await records.act_result("act:generated", 0, result)
     assert await records.act_result("act:generated", 1) == result
+
+
+async def test_a_withheld_social_item_is_skipped_but_projection_lag_still_fails(store):
+    """Node 33 audit: a hidden social item has no projection by design and is
+    withheld (skipped, never read); a visible item that is not projected yet
+    still fails so the wake retries. SQL only: the fake has no social rows."""
+    records, engine = store
+    if engine is None:
+        pytest.skip("social rows exist only in the SQL store")
+    from sqlalchemy.exc import NoResultFound
+
+    from nora.domain.comprehend import WithheldSourceError
+    from nora.domain.memory_graph import WorkItem
+    from nora.infra.sql.schema import SOCIAL_ITEM, SOCIAL_ITEM_STATE
+
+    read = str(uuid4())
+    at = datetime(2026, 1, 2, tzinfo=UTC)
+    async with engine.begin() as conn:
+        for item in ("generated-visible", "generated-hidden"):
+            await conn.execute(sa.insert(SOCIAL_ITEM).values(
+                network="instagram", item_id=item, person="generated-person",
+                account="generated-account", kind="post", taken_at=at, seen_at=at,
+                origin="poll", read_id=read))
+        await conn.execute(sa.insert(SOCIAL_ITEM_STATE).values(
+            network="instagram", item_id="generated-hidden", state="hidden"))
+
+    def work(source):
+        return WorkItem("generated-social-work", source, UNIT, "generated-hash", WORK.as_of)
+
+    with pytest.raises(WithheldSourceError):
+        await records.load(work(("social", "instagram:generated-hidden")))
+    with pytest.raises(NoResultFound):  # absent is unknown, never withheld
+        await records.load(work(("social", "instagram:never-recorded")))
+    with pytest.raises(NoResultFound):
+        await records.load(work(("social", "instagram:generated-visible")))
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(SOCIAL_ITEM).where(
+            SOCIAL_ITEM.c.item_id == "generated-visible").values(read_id=None))
+    with pytest.raises(WithheldSourceError):
+        await records.load(work(("social_read", read)))
