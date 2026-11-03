@@ -1,5 +1,15 @@
 # Changelog
 
+## [7.14.12](https://github.com/mikeng-io/nora/compare/v7.14.11...v7.14.12) (2026-11-03)
+
+
+### Bug Fixes
+
+* **cognition:** Orient writes what a row holds; relevance is judged at read ([ee4d87c](https://github.com/mikeng-io/nora/commit/ee4d87c1b077041c87056f39ef1291e08f4d35c7))
+* **cognition:** read each item Orient-first and count memory as a write ([be8d8e3](https://github.com/mikeng-io/nora/commit/be8d8e3bcbac1f1e7cbaf5a53fbcf5e55b21dc59))
+* **cognition:** skip a withheld social item instead of failing the whole wake ([6a58119](https://github.com/mikeng-io/nora/commit/6a58119649799800d83787a65da48a834c8b697e))
+* **evals:** save span events with each draw's model calls ([06071b7](https://github.com/mikeng-io/nora/commit/06071b7f8849fd49c2210b18c538752300b394af))
+
 ## [7.14.11](https://github.com/mikeng-io/nora/compare/v7.14.10...v7.14.11) (2026-11-03)
 
 
