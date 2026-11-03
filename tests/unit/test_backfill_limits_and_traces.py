@@ -44,7 +44,7 @@ def exported(monkeypatch):
         provider.shutdown()
 
 
-def model_runner(monkeypatch, actual_input=110, *, unknown=False, hang=False):
+def model_runner(monkeypatch, actual_input=110, *, unknown=False, hang=False, started=None):
     calls = []
 
     async def answer(request):
@@ -52,6 +52,8 @@ def model_runner(monkeypatch, actual_input=110, *, unknown=False, hang=False):
         body = json.loads(request.content)
         assert body["max_tokens"] == 20
         calls.append(body)
+        if started is not None:
+            started.set()
         if hang:
             await asyncio.sleep(30)
         delta = {"role": "assistant", "tool_calls": [{"index": 0, "id": "generated-call",
@@ -300,14 +302,17 @@ async def test_historical_session_applies_reservation_before_first_call(monkeypa
 async def test_cancelled_in_flight_call_has_unknown_spend(monkeypatch):
     from nora.app.cognition_session import SESSION_TOKENS, TokenSpend
 
-    live, calls, client = model_runner(monkeypatch, hang=True)
+    started = asyncio.Event()
+    live, calls, client = model_runner(monkeypatch, hang=True, started=started)
     metered = ub.MeteredAgentRunner(live)
-    metered.remaining_seconds = 0.05
     spend = TokenSpend()
     token = SESSION_TOKENS.set(spend)
     try:
-        with pytest.raises(TimeoutError):
-            await run_model(metered, 1000)
+        task = asyncio.create_task(run_model(metered, 1000))
+        await asyncio.wait_for(started.wait(), timeout=10)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
         assert len(calls) == 1
         assert spend.total is None
         assert metered.usage_known is False
