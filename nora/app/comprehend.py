@@ -17,7 +17,9 @@ from nora.agent.fetch_watch import GraphFetched
 from nora.app.extraction import ExtractionClaim
 from nora.domain.comprehend import PARTS, REFUSAL_REASONS
 from nora.domain.memory_graph import (
+    MEMORY_KINDS,
     POINTER_KINDS,
+    PROPOSED_KINDS,
     Admission,
     Correction,
     Entity,
@@ -175,6 +177,10 @@ class MemoryProposalAdmission:
         for e in output.entities:
             if e.kind in ("person", "room", "unit", "nora"):
                 await refuse("entity", "identity_pointer")
+            elif e.kind not in PROPOSED_KINDS or not any(
+                    row.kind == e.kind for row in MEMORY_KINDS):
+                # A Notebook row (note, lesson, …) names a kind, never a graph entity.
+                await refuse("entity", "vocabulary")
             else:
                 entities.append(
                     Entity(e.id, e.kind, work.unit, e.name, tuple(e.aliases), e.attributes)
@@ -199,6 +205,9 @@ class MemoryProposalAdmission:
         )
         relations = []
         for r in output.relations:
+            if not any(r.rel in row.relates_by for row in MEMORY_KINDS):
+                await refuse("relation", "vocabulary")
+                continue
             src, dst = _endpoint(r.src, work.unit), _endpoint(r.dst, work.unit)
             cited = [
                 sources[e.source]

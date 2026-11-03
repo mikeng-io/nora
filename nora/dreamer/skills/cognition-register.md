@@ -1,9 +1,11 @@
 ---
 name: cognition-register
 kind: skill
-version: 5
+version: 6
 applies_to: [cognition_session]
 description: >-
+  Version 6: the open-corner test belongs only to the note kind in Act,
+  never to Orient readings, entities or relations.
   The note, event and reminder judgement the Cognition session writes with,
   injected after its instruction for every agenda kind it maps
   (`nora.app.cognition_wiring.AGENDA_SKILLS`; 30-cognition.md §4). Distilled
@@ -24,18 +26,18 @@ description: >-
 change_policy: operator-only
 ---
 
-## What belongs in the notebook
+## What belongs in a note
 
-An entry is anything that has not finished its job: an arrangement with a decided half and
-an undecided one, a commitment someone made, something someone owes, a plan that could still
-change. A new note needs both: somebody has decided to do it, and some corner of it is still
+The open-corner test is the note kind's Act rule only. Orient writes memory by each
+kind's own rule, even when nothing is unfinished.
+
+A new note needs both: somebody has decided to do it, and some corner of it is still
 unsettled. One person's plan counts when it has an open corner, even before anyone answers.
 
-Not an entry: something settled with nothing left open; something with no way to tell it is
+Not a new open note: something settled with nothing left open; something with no way to tell it is
 finished; a remark nobody picked up («we should go away sometime»); a thing asked, suggested
 or wanted that nobody has taken on; a plan that hangs on an «if» or is called off in the same
-breath. Most of what a group says about the future never becomes a plan, and an item holding
-only that closes `no_change`: the ordinary answer, not a miss.
+breath. Most of what a group says about the future never becomes a plan, and its Act step may close `no_change`. Orient still records what fits another memory kind.
 
 ## Note, memo or event
 

@@ -13,7 +13,13 @@ from sqlalchemy.exc import NoResultFound
 
 from nora.agent.egress import scan_identifiers
 from nora.app.comprehend import GraphWrite, MemoryProposalAdmission, _shape_errors
-from nora.domain.comprehend import ComprehendItem, Preview, preview_seeds
+from nora.domain.comprehend import (
+    ComprehendItem,
+    Preview,
+    item_window,
+    preview_seeds,
+    resolution_candidates,
+)
 from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.domain.extraction import partition_claims
 from nora.domain.memory_graph import (
@@ -238,9 +244,15 @@ class WakeMemory:
             raise RuntimeError("wake graph unavailable")
         if state.historical:
             graph = historical_graph(graph, at)
+        candidates: list[Subgraph] = []
+        for item in state.memory_items.values():
+            candidates.extend(await resolution_candidates(
+                self.graph, item, aliases, seeds, item_window(item.text, at)))
+        if state.historical:
+            candidates = [historical_graph(candidate, at) for candidate in candidates]
         # `shown_keys` is the renderer's own emitted-rows provenance: a row the
         # budget omits was never shown, whatever the walk returned.
-        state.graph_text = preview_text(Preview(seeds, graph, (), (at, at)),
+        state.graph_text = preview_text(Preview(seeds, graph, tuple(candidates), (at, at)),
                                         shown_keys=state.shown_keys)
         # The slot map the model cites by row id. The agenda already renders the
         # text, so each body is clipped to identify the row, never repeat it.
@@ -289,15 +301,15 @@ class WakeMemory:
                        sort_keys=True).encode()).hexdigest()))
         claims, drops = partition_claims({"claims": [r.model_dump() for r in output.readings]},
                                          combined.snapshot)
-        if drops:
-            return {"status": "refused", "admitted": [],
-                    "refused": [{"reason": r} for r in drops]}
+        for reason in drops:
+            await self.admission._refuse(state.session_id, "reading", reason)
         result, local_refusals = await self.admission._admit(
             combined.work, output, state.graph_fetched, state.session_id)
         refused = [*[asdict(r) for r in result.refused], *local_refusals]
-        if not refused:
+        if not refused and (not drops or claims or result.relations or result.corrections):
             await self.records.readings(combined.work, state.session_id, combined, claims)
             admitted = items
+        refused.extend({"kind": "reading", "reason": reason} for reason in drops)
         seeds = tuple(dict.fromkeys(k for r in result.relations for k in (r.src, r.dst)))
         graph = await self.graph.walk(seeds, Walk(unit=state.unit, depth=1,
             persons=frozenset(p for s in combined.sources for p in s.persons),
@@ -318,9 +330,11 @@ class WakeMemory:
         # still have saved relations: say so rather than read as nothing saved.
         committed = [r.id for r in result.relations]
         note = "Read the connected state before deciding whether to act."
-        if refused and committed:
+        if refused and committed and not admitted:
             note = ("Some relations were saved (see committed); the item is not "
                     "admitted until a proposal has no refusals. " + note)
+        if admitted and drops:
+            note = "Valid parts were saved; correct and re-propose refused readings. " + note
         return {"status": "ok" if admitted else "refused", "admitted": admitted,
                 "refused": refused, "committed": committed,
                 "connected": json.loads(json.dumps(asdict(graph), default=str)),

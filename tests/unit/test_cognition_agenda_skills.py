@@ -104,7 +104,7 @@ def test_the_digest_is_over_exactly_the_text_injected():
 
     skill = _skill()
     assert skill.sha256 == hashlib.sha256(skill.instructions.encode("utf-8")).hexdigest()
-    assert skill.instructions.startswith("## What belongs in the notebook")
+    assert skill.instructions.startswith("## What belongs in a note")
 
 
 # -- (b) `time` is mapped, so the daily floors wake a notebook review --------------------
@@ -217,7 +217,7 @@ async def test_the_session_row_records_the_skill_it_ran_with():
     assert [s.skill_versions for _id, s, _at in store.sessions] == [
         {REGISTER_SKILL: skill.sha256},
     ]
-    assert spy.system_prompt.endswith(f"# Skill: {REGISTER_SKILL}\n\n{skill.instructions}\n")
+    assert f"# Skill: {REGISTER_SKILL}\n\n{skill.instructions}\n" in spy.system_prompt
 
 
 async def test_the_probe_an_eval_arm_drives_records_the_skill_it_injects():
@@ -300,6 +300,7 @@ async def real_names() -> tuple[set[str], str, str]:
     # the prelude's body: after its opening tag (whose name is markup, not prose)
     prelude = spy.system_prompt.split("</dreamer_doctrine>")[0].split(">\n", 1)[1]
     skill = spy.system_prompt.split(f"# Skill: {REGISTER_SKILL}")[1]
+    skill = skill.split("# Two ways to be wrong")[0]
     return names, prelude, skill
 
 
@@ -582,7 +583,8 @@ async def test_a_reload_during_grounding_leaves_the_digest_over_the_text_the_mod
 
     assert moving.generation == 1, "the reload happened during the session setup"
     [(_id, session, _at)] = store.sessions
-    read = spy.system_prompt.split(f"# Skill: {REGISTER_SKILL}\n\n")[1].strip("\n")
+    read = spy.system_prompt.split(f"# Skill: {REGISTER_SKILL}\n\n")[1]
+    read = read.split("# Two ways to be wrong")[0].strip("\n")
     assert session.skill_versions == {REGISTER_SKILL: hashlib.sha256(read.encode()).hexdigest()}
 
 
