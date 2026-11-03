@@ -18,7 +18,8 @@ import pytest
 
 pytest_plugins = ["scripts.pytest_cost"]
 
-MAX_WORKERS = 2
+# Two on a shared developer host; a dedicated CI runner raises it to its own vCPUs.
+MAX_WORKERS = int(os.environ.get("NORA_TEST_MAX_WORKERS", "2"))
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # ponytail: one advisory per-user/host lease, including pure tests; no cross-host scheduler.
 LOCK_PATH = Path.home() / ".cache/nora/pytest.lock"
