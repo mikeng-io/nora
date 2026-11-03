@@ -495,10 +495,10 @@ class TranscriptInjection:
                 count=lambda r: sum(len(g.nodes) for _, g in cache.get("_subgraphs", [])
                                     if g is not None),
             ), timeout=PREFETCH_TIMEOUT_SECONDS)
-        except Exception:  # noqa: BLE001 — the bound, or anything else: no block, counted
-            log.warning("memory pre-fetch did not answer; continuing without it")
+        except Exception:  # noqa: BLE001 — the bound, or anything else: unavailable, counted
+            log.warning("memory pre-fetch did not answer; reporting unavailable")
             self._metrics.inc("nora_errors_total", stage="tag_prefetch", platform=msg.platform)
-            return None
+            return _Prefetch(target, {"status": "unavailable"}, None, now)
         if found["status"] == "unavailable":
             self._metrics.inc("nora_errors_total", stage="tag_prefetch", platform=msg.platform)
         graphs = [g for _, g in cache.get("_subgraphs", []) if g is not None]
@@ -509,14 +509,18 @@ class TranscriptInjection:
         shown: Sequence[TranscriptRow],
     ) -> tuple[dict[str, Any], ...]:
         """Render the scoped graph, omitting transcript bodies already shown."""
-        if prefetch is None or prefetch.found["status"] not in ("ok", "partial"):
+        if prefetch is None:
+            return ()
+        if prefetch.found["status"] == "unavailable":
+            return ({"status": "unavailable", "text": "Memory could not be checked."},)
+        if prefetch.found["status"] not in ("ok", "partial"):
             return ()
         try:
             return self._render_recalled(prefetch, msg, shown)
         except Exception:
-            log.exception("memory pre-fetch render failed; continuing without it")
+            log.exception("memory pre-fetch render failed; reporting unavailable")
             self._metrics.inc("nora_errors_total", stage="tag_prefetch", platform=msg.platform)
-            return ()
+            return ({"status": "unavailable", "text": "Memory could not be checked."},)
 
     def _render_recalled(
         self, prefetch: _Prefetch, msg: NormalizedMessage,

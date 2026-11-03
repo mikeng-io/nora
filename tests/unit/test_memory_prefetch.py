@@ -205,13 +205,14 @@ async def test_a_room_outside_the_policy_is_never_searched() -> None:
     assert ctx.recalled == () and index.calls == []
 
 
-async def test_a_failed_search_renders_nothing_and_is_counted() -> None:
-    """R-27: «I could not check» is no block and a counted error, never a
-    block (or an absence) that reads as «nothing is held»."""
+async def test_a_failed_search_renders_unavailable_and_is_counted() -> None:
+    """R-27: failed retrieval is visible to the model, never an empty success."""
     metrics = Metrics()
     index = FakeMemoryIndex(fail=RuntimeError("index down"))
     ctx = await _assemble(index, _msg(), metrics=metrics)
-    assert ctx.recalled == ()
+    assert ctx.recalled == ({"status": "unavailable", "text": "Memory could not be checked."},)
+    body = build_prefill(ctx, display_name="Nora", context_window=10)[1]["content"][0]["text"]
+    assert "unavailable" in body and "nothing_found" not in body
     assert metrics.get("nora_errors_total", stage="tag_prefetch") == 1
     assert metrics.get("nora_memory_search_total", status="unavailable") == 1
 
@@ -385,7 +386,9 @@ async def test_a_graph_that_is_unavailable_is_counted_not_a_dead_turn() -> None:
         persons=_PERSONS, context_window=10, metrics=metrics, policy=_policy(),
         lineage=LineagePolicy.from_policy(_policy()), memory_search=search)
     ctx = await assembler.assemble(request=_request(_msg()))
-    assert ctx.recalled == ()
+    assert ctx.recalled == ({"status": "unavailable", "text": "Memory could not be checked."},)
+    body = build_prefill(ctx, display_name="Nora", context_window=10)[1]["content"][0]["text"]
+    assert "unavailable" in body and "nothing_found" not in body
     assert metrics.get("nora_errors_total", stage="tag_prefetch") == 1
 
 
@@ -401,7 +404,7 @@ async def test_the_prefetch_preview_keeps_the_sources_time() -> None:
     assert str(int((at - timedelta(days=2)).timestamp() * 1000)) in ctx.recalled[0]["text"]
 
 
-async def test_a_search_past_its_bound_is_no_block_and_counted(monkeypatch: Any) -> None:
+async def test_a_search_past_its_bound_is_unavailable_and_counted(monkeypatch: Any) -> None:
     import asyncio
 
     from nora.engagement import context
@@ -413,7 +416,9 @@ async def test_a_search_past_its_bound_is_no_block_and_counted(monkeypatch: Any)
     monkeypatch.setattr(context, "PREFETCH_TIMEOUT_SECONDS", 0.05)
     metrics = Metrics()
     ctx = await _assemble(_Stuck([]), _msg(), metrics=metrics)
-    assert ctx.recalled == ()
+    assert ctx.recalled == ({"status": "unavailable", "text": "Memory could not be checked."},)
+    body = build_prefill(ctx, display_name="Nora", context_window=10)[1]["content"][0]["text"]
+    assert "unavailable" in body and "nothing_found" not in body
     assert metrics.get("nora_errors_total", stage="tag_prefetch") == 1
 
 
@@ -439,6 +444,11 @@ async def test_prefetch_injects_new_graph_about_without_shared_words() -> None:
     graph.indexed[hidden.key] = hidden
     graph.relations["hidden"] = Relation("hidden", hidden.key, "about", event.key,
         "notebook", "u1", ("miles",), asserted_at=at)
+    target = LineagePolicy.from_policy(_policy()).render_room(
+        platform="signal", conversation_id="g1")
+    legacy = await search.search(query="breakfast", person_id=None, target=target,
+                                 now_ms=int(at.timestamp() * 1000), social_off=())
+    assert {hit.node.key for hit in legacy.hits} == {("reading", "breakfast")}
     assembler = TranscriptInjection(audit=FakeRecordStore(), memory=_Memory(),
         persons=_PERSONS, context_window=10, metrics=metrics, policy=_policy(),
         lineage=LineagePolicy.from_policy(_policy()), memory_search=search)
