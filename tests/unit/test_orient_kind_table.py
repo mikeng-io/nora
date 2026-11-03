@@ -97,6 +97,21 @@ async def test_admission_uses_the_kind_constant(monkeypatch, removed, part):
     assert not result.entities if part == "entity" else not result.relations
 
 
+@pytest.mark.parametrize("kind", ["note", "lesson", "reading", "profile line"])
+async def test_a_notebook_row_is_refused_as_an_entity_kind(kind):
+    """A kind-table row that is not a graph entity kind refuses; it never reaches the store."""
+    memory = wake_memory()
+    state = _state(memory)
+    payload = _payload()
+    payload["entities"] = [{"id": "generated-entry", "kind": kind, "name": "Generated"}]
+    payload["relations"], payload["evidence"] = [], []
+    result, local = await memory.admission._admit(
+        state.memory_items[0].work, GraphWrite.model_validate(payload),
+        state.graph_fetched, state.session_id)
+    assert {"kind": "entity", "reason": "vocabulary"} in local
+    assert not result.entities
+
+
 async def test_bad_reading_keeps_valid_reading_and_graph():
     memory = wake_memory()
     state = _state(memory)

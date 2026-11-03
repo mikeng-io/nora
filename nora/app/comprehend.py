@@ -19,6 +19,7 @@ from nora.domain.comprehend import PARTS, REFUSAL_REASONS
 from nora.domain.memory_graph import (
     MEMORY_KINDS,
     POINTER_KINDS,
+    PROPOSED_KINDS,
     Admission,
     Correction,
     Entity,
@@ -176,7 +177,9 @@ class MemoryProposalAdmission:
         for e in output.entities:
             if e.kind in ("person", "room", "unit", "nora"):
                 await refuse("entity", "identity_pointer")
-            elif not any(row.kind == e.kind for row in MEMORY_KINDS):
+            elif e.kind not in PROPOSED_KINDS or not any(
+                    row.kind == e.kind for row in MEMORY_KINDS):
+                # A Notebook row (note, lesson, …) names a kind, never a graph entity.
                 await refuse("entity", "vocabulary")
             else:
                 entities.append(
