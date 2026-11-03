@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.14.9](https://github.com/mikeng-io/nora/compare/v7.14.8...v7.14.9) (2026-11-03)
+
+
+### Maintenance
+
+* **release:** re-anchor the bridge stamp mutation to the batched tree reads ([353de94](https://github.com/mikeng-io/nora/commit/353de94f88f69e1d8e2cb8991dd382b1f328f053))
+
 ## [7.14.8](https://github.com/mikeng-io/nora/compare/v7.14.7...v7.14.8) (2026-11-03)
 
 
