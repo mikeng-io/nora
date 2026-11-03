@@ -47,5 +47,12 @@
     "old": "            admitted = items\n            state.admitted_indices.update(admitted)",
     "new": "            admitted = items",
     "target": "tests/unit/test_backfill_limits_and_traces.py::test_session_failure_receipts_exclude_committed_inputs[graph_failure]"
+  },
+  {
+    "name": "cancelled in-flight model usage remains unknown",
+    "file": "nora/agent/token_reservation.py",
+    "old": "        return None if self._in_flight else self.total",
+    "new": "        return self.total",
+    "target": "tests/unit/test_backfill_limits_and_traces.py::test_cancelled_in_flight_call_has_unknown_spend"
   }
 ]

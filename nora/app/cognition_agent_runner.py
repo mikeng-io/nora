@@ -220,9 +220,9 @@ class LiveCognitionAgentRunner:
             if reservation is not None:
                 spend = SESSION_TOKENS.get()
                 if spend is not None:
-                    spend.total = reservation.total
-                annotate(**{"nora.cognition.tokens": reservation.total,
-                            "nora.cognition.usage_known": reservation.total is not None})
+                    spend.total = reservation.spent
+                annotate(**{"nora.cognition.tokens": reservation.spent,
+                            "nora.cognition.usage_known": reservation.spent is not None})
             trace = extract_tag_trace(
                 agent, baseline=baseline, tag_id=trace_attributes.get("cognition.session_id", ""),
                 conversation_id="", transcript=(), outcome="silent",
@@ -235,6 +235,6 @@ class LiveCognitionAgentRunner:
         return CognitionRunResult(
             stop_reason=("limit_total_tokens" if reservation is not None and reservation.stopped
                          else getattr(result, "stop_reason", None)),
-            total_tokens=reservation.total if reservation is not None else _total_tokens(result),
+            total_tokens=reservation.spent if reservation is not None else _total_tokens(result),
             messages=trace.messages, requirements=recording.to_json(),
         )

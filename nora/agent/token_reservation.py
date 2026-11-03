@@ -26,6 +26,11 @@ class TokenReservation(HookProvider):
         self._input_allowance = 0
         self._in_flight = False
 
+    @property
+    def spent(self) -> int | None:
+        # Cancellation can bypass AfterModelCallEvent while the provider is billing.
+        return None if self._in_flight else self.total
+
     def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
         registry.add_callback(BeforeModelCallEvent, self.before)
         registry.add_callback(AfterModelCallEvent, self.after)

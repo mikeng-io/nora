@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -43,14 +44,16 @@ def exported(monkeypatch):
         provider.shutdown()
 
 
-def model_runner(monkeypatch, actual_input=110, *, unknown=False):
+def model_runner(monkeypatch, actual_input=110, *, unknown=False, hang=False):
     calls = []
 
-    def answer(request):
+    async def answer(request):
         assert request.url.path == "/v1/chat/completions"
         body = json.loads(request.content)
         assert body["max_tokens"] == 20
         calls.append(body)
+        if hang:
+            await asyncio.sleep(30)
         delta = {"role": "assistant", "tool_calls": [{"index": 0, "id": "generated-call",
             "type": "function", "function": {"name": "read_more", "arguments": "{}"}}]}
         chunks = [{"id": "generated-response", "object": "chat.completion.chunk",
@@ -291,4 +294,23 @@ async def test_historical_session_applies_reservation_before_first_call(monkeypa
             await runner.replay(view=view, now_ms=NOW, historical=True)
         assert len(calls) == 1
     finally:
+        await client.close()
+
+
+async def test_cancelled_in_flight_call_has_unknown_spend(monkeypatch):
+    from nora.app.cognition_session import SESSION_TOKENS, TokenSpend
+
+    live, calls, client = model_runner(monkeypatch, hang=True)
+    metered = ub.MeteredAgentRunner(live)
+    metered.remaining_seconds = 0.05
+    spend = TokenSpend()
+    token = SESSION_TOKENS.set(spend)
+    try:
+        with pytest.raises(TimeoutError):
+            await run_model(metered, 1000)
+        assert len(calls) == 1
+        assert spend.total is None
+        assert metered.usage_known is False
+    finally:
+        SESSION_TOKENS.reset(token)
         await client.close()
