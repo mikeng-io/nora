@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.14.10](https://github.com/mikeng-io/nora/compare/v7.14.9...v7.14.10) (2026-11-03)
+
+
+### Bug Fixes
+
+* **cognition:** orient memory writes by kind before notebook actions ([ced7c67](https://github.com/mikeng-io/nora/commit/ced7c67dd7c71212253fc65cb6cb66861cc5c6e3))
+* **cognition:** type the restored candidate subgraphs ([e5627a7](https://github.com/mikeng-io/nora/commit/e5627a783343d181a42b7817fd0690ab1c342625))
+* **memory:** refuse a Notebook row named as a graph entity kind ([6e6bfea](https://github.com/mikeng-io/nora/commit/6e6bfea24ce4c5e85388138c73893b8af5a90ebc))
+
 ## [7.14.9](https://github.com/mikeng-io/nora/compare/v7.14.8...v7.14.9) (2026-11-03)
 
 
