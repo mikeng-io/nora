@@ -143,8 +143,8 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
    ssh nora-host bash -s <<'EOF'
    exec 9>/tmp/nora-eval.lock; flock -w 900 9 || { echo "LOCK_TIMEOUT" > /tmp/eval-<arm>.rc; exit 75; }
    cd ~/workspace/nora-wt-eval-rebuild || exit 1
-   set -a; . ~/workspace/nora/.env; set +a; export NORA_EVAL_PSEUDONYM_MAP=~/.config/nora/eval-pseudonyms.txt   # .env is the legacy env layer; the default --source-url also resolves secret.toml
-   ~/.local/bin/uv run python -m evals relevance_gate --sample 5 \
+   export NORA_EVAL_PSEUDONYM_MAP=~/.config/nora/eval-pseudonyms.txt   # credentials: the deployment's source() (env > .env > secret.toml); .env alone lacks moved ones
+   python3 -c "import os,sys;from pathlib import Path as P;R=P.home()/'workspace/nora';sys.path.insert(0,str(R));from scripts.secret_delivery import source;os.execvpe(str(P.home()/'.local/bin/uv'),['uv','run','python','-m','evals','relevance_gate','--sample','5'],{**os.environ,**source(R)})" \
      > /tmp/eval-<arm>.log 2>&1; echo "RC=$?" > /tmp/eval-<arm>.rc
    EOF
    ssh nora-host 'cat /tmp/eval-<arm>.rc; grep -E "spend:|PASS|FAIL|ERROR|UNSTABLE" /tmp/eval-<arm>.log'

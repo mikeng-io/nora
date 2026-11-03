@@ -428,3 +428,141 @@ cases:
     why: No private clone has been inspected for this case. No anchor is asserted.
     returns_when: Privately confirm scenario 13 in the eval clone, add its pseudonymised snapshot
       and anchor-specific argument checks, then remove parked.
+- name: r01_owed_possession_is_read
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: recorded wake replay
+  expected_output: 'Node 33 miss 1: the batch states someone needs an item returned; Orient records it
+    as a reading.'
+  snapshot:
+    platform: signal
+    conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+    before_ms: 1793627411166
+  metadata:
+    wake: 823
+    held_out: false
+    tools:
+    - memory_propose
+    required_tools: []
+    not_tools: []
+    args_include:
+      memory_propose:
+      - source_ids
+- name: r02_restored_backup_is_read
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: recorded wake replay
+  expected_output: 'Node 33 miss 2: the batch states who restored and holds a game backup; Orient records
+    it.'
+  snapshot:
+    platform: signal
+    conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+    before_ms: 1793631263579
+  metadata:
+    wake: 824
+    held_out: false
+    tools:
+    - memory_propose
+    required_tools: []
+    not_tools: []
+    args_include:
+      memory_propose:
+      - source_ids
+- name: r03_repeated_preference_is_read
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: recorded wake replay
+  expected_output: 'Node 33 miss 3: a member restates a brand preference; a reading (no relation admits
+    a brand).'
+  snapshot:
+    platform: signal
+    conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+    before_ms: 1793676844113
+  metadata:
+    wake: 843
+    held_out: false
+    tools:
+    - memory_propose
+    required_tools: []
+    not_tools: []
+    args_include:
+      memory_propose:
+      - source_ids
+- name: r04_tentative_purchase_keeps_its_mode
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: recorded wake replay
+  expected_output: 'Node 33 borderline: repair-or-rebuy is weighed, not decided; any reading keeps a tentative
+    how, never a purchase.'
+  snapshot:
+    platform: signal
+    conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+    before_ms: 1793681527377
+  metadata:
+    wake: 847
+    held_out: false
+    tools:
+    - memory_propose
+    required_tools: []
+    not_tools: []
+- name: r05_banter_stays_silent
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: recorded wake replay
+  expected_output: 'Node 33 control: the batch states nothing durable about anyone; no reading, no note.'
+  snapshot:
+    platform: signal
+    conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+    before_ms: 1793636850757
+  metadata:
+    wake: 831
+    held_out: false
+    tools:
+    - memory_propose
+    required_tools: []
+    not_tools:
+    - note_create
+    - note_revise
+    - note_set_status
+    - event_propose
+    - event_revise
+    - event_set_status
+    - remind
+    - send_reply
+    args_exclude:
+      memory_propose:
+      - source_ids
+- name: r06_second_banter_stays_silent
+  entry: dreamer
+  category: cognition
+  expect: reply
+  input: recorded wake replay
+  expected_output: 'Node 33 control: a second batch stating nothing durable about anyone; no reading,
+    no note.'
+  snapshot:
+    platform: signal
+    conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+    before_ms: 1793671855486
+  metadata:
+    wake: 839
+    held_out: false
+    tools:
+    - memory_propose
+    required_tools: []
+    not_tools:
+    - note_create
+    - note_revise
+    - note_set_status
+    - event_propose
+    - event_revise
+    - event_set_status
+    - remind
+    - send_reply
+    args_exclude:
+      memory_propose:
+      - source_ids
