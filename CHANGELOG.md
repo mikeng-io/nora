@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.14.11](https://github.com/mikeng-io/nora/compare/v7.14.10...v7.14.11) (2026-11-03)
+
+
+### Maintenance
+
+* **evals:** anchor six recorded-wake replays for the Orient kind table ([a3d6e75](https://github.com/mikeng-io/nora/commit/a3d6e75cf3a3a17525b82c032c7990aaa55aa7b1))
+
 ## [7.14.10](https://github.com/mikeng-io/nora/compare/v7.14.9...v7.14.10) (2026-11-03)
 
 
