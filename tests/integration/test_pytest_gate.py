@@ -97,8 +97,13 @@ def _project(tmp_path: Path) -> tuple[Path, Path]:
 
 def _pytest(
     root: Path, *args: str, generation: str | None = None, cwd: Path | None = None,
+    max_workers: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     env = {**os.environ, "PYTHONPATH": str(ROOT), "PYTEST_ADDOPTS": ""}
+    # The default cap is the subject unless a case sets the CI runner's override.
+    env.pop("NORA_TEST_MAX_WORKERS", None)
+    if max_workers is not None:
+        env["NORA_TEST_MAX_WORKERS"] = max_workers
     if generation is not None:
         env["_NORA_PYTEST_GENERATION"] = generation
     return subprocess.run(  # noqa: S603 — this interpreter, generated pytest project
@@ -184,6 +189,8 @@ def test_raw_pytest_cannot_bypass_worker_cap_or_parallelize_timing_contracts(tmp
     capped = _pytest(root, "-n", "3")
     assert capped.returncode == 4 and "at most 2" in capped.stderr
     assert not list(root.glob("ran-*"))
+    raised = _pytest(root, "-n", "3", max_workers="4")
+    assert raised.returncode == 0, raised.stderr
     timing = root / gate.TIMING_TESTS[0]
     timing.parent.mkdir(parents=True)
     timing.write_text("def test_timing():\n    assert True\n")
