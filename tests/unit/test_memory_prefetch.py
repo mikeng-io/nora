@@ -454,10 +454,10 @@ async def test_prefetch_injects_new_graph_about_without_shared_words() -> None:
         lineage=LineagePolicy.from_policy(_policy()), memory_search=search)
     ctx = await assembler.assemble(request=_request(_msg("breakfast")))
     block = build_prefill(ctx, display_name="Nora", context_window=10)[1]["content"][0]["text"]
-    assert "Generated stargazing expedition" in block
-    assert "judgement" in block
     assert "Forbidden expedition" not in block
     assert "Forbidden room reading" not in block
+    assert "Generated stargazing expedition" in block
+    assert "judgement" in block
     assert sum(estimate_tokens(json.dumps(i)) for i in ctx.recalled) <= PREFETCH_TOKENS
 
 
@@ -520,3 +520,16 @@ async def test_graph_prefetch_and_shared_state_reach_the_same_turn() -> None:
     assert "ramen crawl graph evidence" in body
     assert "generated pending follow-up" in body
     assert "<recalled" in body and "<standing" in body
+
+
+async def test_a_preview_render_failure_is_unavailable(monkeypatch: Any) -> None:
+    from nora.engagement import context
+
+    def broken_preview(*args: Any, **kwargs: Any) -> str:
+        raise ValueError("generated render failure")
+
+    monkeypatch.setattr(context, "preview_text", broken_preview)
+    index = FakeMemoryIndex([
+        IndexedNode("message", "1", "ramen crawl", OLD, origin_room=ROOM)], embed_model=MODEL)
+    ctx = await _assemble(index, _msg())
+    assert ctx.recalled == ({"status": "unavailable", "text": "Memory could not be checked."},)

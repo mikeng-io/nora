@@ -33,5 +33,12 @@
     "old": "            return _Prefetch(target, {\"status\": \"unavailable\"}, None, now)",
     "new": "            return None",
     "target": "tests/unit/test_memory_prefetch.py::test_a_search_past_its_bound_is_unavailable_and_counted"
+  },
+  {
+    "name": "render failure remains unavailable",
+    "file": "nora/engagement/context.py",
+    "old": "            return ({\"status\": \"unavailable\", \"text\": \"Memory could not be checked.\"},)\n\n    def _render_recalled(",
+    "new": "            return ()\n\n    def _render_recalled(",
+    "target": "tests/unit/test_memory_prefetch.py::test_a_preview_render_failure_is_unavailable"
   }
 ]
