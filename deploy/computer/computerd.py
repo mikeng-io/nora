@@ -766,6 +766,17 @@ class Browser:
         self._startup_id = 0
         self._startup_session: str | None = None
         self._startup_reply: asyncio.Future[dict[str, Any]] | None = None
+        # The page targets that existed when target discovery was armed
+        # (`Target.getTargets` at start), plus every target born since:
+        # `Target.targetCreated` replays existing targets, so a targetId
+        # here is never re-closed, and a born-while-attached one is the
+        # admitted client's to own.
+        self._page_targets: set[str] = set()
+        # CDP calls computerd makes for itself after publication: negative
+        # ids cannot collide with a client's, and their replies are
+        # consumed here, never forwarded to the websocket.
+        self._own_next = 0
+        self._own_pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
 
     @property
     def alive(self) -> bool:
@@ -816,6 +827,21 @@ class Browser:
                             if not self._startup_reply.done():
                                 self._startup_reply.set_result(reply)
                             continue
+                    # computerd's own calls and the target events discovery
+                    # armed are parsed here — events are small; command
+                    # replies (screenshot bodies included) carry no
+                    # `"method"` and no negative `"id"`, so they are never
+                    # parsed, only forwarded.
+                    if (b'"id":-' in message or b'"id": -' in message
+                            or b'"method"' in message):
+                        try:
+                            frame = json.loads(message)
+                        except (ValueError, UnicodeDecodeError):
+                            frame = None
+                        if isinstance(frame, dict):
+                            if self._route_own_reply(frame):
+                                continue
+                            self._route_target_event(frame)
                     client = self.client
                     if client is not None and not client.closed:
                         with contextlib.suppress(ConnectionResetError, RuntimeError):
@@ -824,6 +850,10 @@ class Browser:
             os.close(fd)
             if self._startup_reply is not None and not self._startup_reply.done():
                 self._startup_reply.set_exception(OSError("Chrome closed its startup pipe"))
+            for pending in self._own_pending.values():
+                if not pending.done():
+                    pending.set_exception(OSError("Chrome closed its pipe"))
+            self._own_pending.clear()
 
     async def _startup_command(
         self, method: str, params: dict[str, Any] | None = None, session: str | None = None,
@@ -845,6 +875,74 @@ class Browser:
             return reply["result"]
         finally:
             self._startup_reply = None
+
+    def _route_own_reply(self, frame: dict[str, Any]) -> bool:
+        """Match a reply to a call computerd made for itself: its negative
+        id resolves the waiting future and the frame is consumed — never
+        forwarded to the websocket client, which never asked for it."""
+        mid = frame.get("id")
+        if not isinstance(mid, int) or mid not in self._own_pending:
+            return False
+        pending = self._own_pending.pop(mid)
+        if not pending.done():
+            pending.set_result(frame)
+        return True
+
+    def _route_target_event(self, frame: dict[str, Any]) -> None:
+        """Page-target supervision for the browser's WHOLE retained
+        lifetime: `Target.setDiscoverTargets` armed at start keeps events
+        flowing on the pipe with or without a websocket client, so a page
+        target born while none is attached — a timer's popup between
+        objectives — is seen here, not on a later sweep.
+
+        A page with no client is an orphan: nothing can own it on the one
+        admitted connection, so it is closed at birth — the orphan rule
+        and the four-target cap hold between objectives. While a client
+        IS attached its own reconcile/adopt watch owns the decision, and
+        computerd only records the birth."""
+        method = frame.get("method")
+        params = frame.get("params")
+        if not isinstance(params, dict):
+            return
+        if method == "Target.targetDestroyed":
+            self._page_targets.discard(str(params.get("targetId") or ""))
+            return
+        if method != "Target.targetCreated":
+            return
+        info = params.get("targetInfo")
+        if not isinstance(info, dict) or info.get("type") != "page":
+            return
+        target_id = str(info.get("targetId") or "")
+        if not target_id or target_id in self._page_targets:
+            return  # replay of a target discovery already listed
+        self._page_targets.add(target_id)
+        if self.client is not None and not self.client.closed:
+            return  # the admitted client's own watch owns popups and the cap
+        asyncio.ensure_future(self._close_orphan(target_id))
+
+    async def _close_orphan(self, target_id: str) -> None:
+        try:
+            await self._own_command("Target.closeTarget", {"targetId": target_id})
+        except Exception as exc:  # noqa: BLE001 - a failed close retries at the next sweep
+            print(f"computerd: orphan page target {target_id} close failed: {exc}",
+                  flush=True)
+
+    async def _own_command(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """One CDP call on the pipe that is not a client's: a negative id
+        cannot collide with the client's stream, the reply routes back to
+        this future, and the write shares the one pipe lock."""
+        self._own_next -= 1
+        mid = self._own_next
+        reply: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+        self._own_pending[mid] = reply
+        try:
+            await self.send(json.dumps({"id": mid, "method": method, "params": params}))
+            answered = await asyncio.wait_for(reply, CHROME_START_SECONDS)
+            if "error" in answered:
+                raise OSError(f"Chrome: {method} failed")
+            return answered.get("result") or {}
+        finally:
+            self._own_pending.pop(mid, None)
 
     async def activate_tls(self) -> None:
         """Require this Chrome's live CRLSet enforcement before exposing CDP.
@@ -1139,6 +1237,18 @@ class Browsers:
         try:
             async with asyncio.timeout(CHROME_TLS_SECONDS):
                 await browser.activate_tls()
+                # Arm page-target supervision for the browser's whole
+                # retained lifetime: discovery replays every EXISTING
+                # target, so the set is seeded first — otherwise the
+                # replay of the tabs activation legitimately opened would
+                # read as orphans born while no client is attached and be
+                # closed at birth.
+                targets = await browser._startup_command("Target.getTargets")
+                browser._page_targets.update(
+                    str(t.get("targetId")) for t in targets.get("targetInfos", [])
+                    if isinstance(t, dict) and t.get("type") == "page")
+                await browser._startup_command(
+                    "Target.setDiscoverTargets", {"discover": True})
         except BaseException as exc:
             await browser.stop()
             if isinstance(exc, (TimeoutError, ValueError, KeyError, TypeError)):
@@ -1458,10 +1568,15 @@ def create_app(
         request must carry `X-Computerd-Instance` equal to this boot's id —
         reconnecting to the same URL after the VM was replaced is not
         authorization, and the registry's record is not proof the process
-        answering now is the one it named. An unbound computerd (the
+        answering now is the one it named. A scoped computerd that cannot
+        name its own boot serves NOTHING effectful: an empty identity is
+        never authorization, and a client can only refuse the unstamped
+        answer after the effect already ran. An unbound computerd (the
         shared-VM shape) is untouched."""
-        if computer.bound_scope is None or not boot_id:
+        if computer.bound_scope is None:
             return True
+        if not boot_id:
+            return False
         return request.headers.get("X-Computerd-Instance") == boot_id
 
     _instance_deny = {"status": "denied", "reason": "the VM instance changed"}

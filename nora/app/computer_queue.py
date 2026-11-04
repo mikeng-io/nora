@@ -597,9 +597,15 @@ class ComputerQueueRunner:
                 await self._ack(stream, mid)
                 continue
             # Re-check at the queue head: cancelled or past-deadline never
-            # starts — and a queued cancel is still DELIVERED.
-            if (row.deadline_at is not None and row.deadline_at <= self._clock()
-                    ) or row.cancel_requested_at is not None:
+            # starts — and a queued cancel is still DELIVERED. A
+            # `maintenance` row is claimed by its own submitter in the same
+            # call it was written: still `queued` here means the submitter
+            # died between the two, so the row is closed, never started —
+            # it has no dispatcher and must not sit at the head forever.
+            if (row.kind == "maintenance"
+                    or (row.deadline_at is not None
+                        and row.deadline_at <= self._clock())
+                    or row.cancel_requested_at is not None):
                 cancelled = await self._tasks.request_cancel(row.id, now=self._clock())
                 await self._note(row, "cancelled")
                 await self._settle(stream, mid, cancelled or row)

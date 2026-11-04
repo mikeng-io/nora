@@ -32,13 +32,38 @@ THIRD = computer_scope("signal", "room-c")
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 FAKE_CHROME = """#!{python}
-import json, os, sys, time
+import json, os, sys, threading, time
 argv = sys.argv[1:]
 mode = os.environ.get("FAKE_TLS_MODE", "ready")
 updated, probes = False, 0
 history = []
 log = os.path.join(os.environ["FAKE_X11_DIR"], "chrome-%d.jsonl" % os.getpid())
 inbox, outbox = os.fdopen(3, "rb", buffering=0), os.fdopen(4, "wb", buffering=0)
+pages = {{"initial": True}}
+
+def emit(event):
+    outbox.write(json.dumps(event).encode() + b"\\0")
+    outbox.flush()
+
+# Page targets a page script/timer creates on a clock — FAKE_POPUPS is a
+# comma list of targetIds (or `type:id` for a non-page target), fired
+# FAKE_POPUP_DELAY seconds after Chrome starts: the popup that lands while
+# NO websocket client is attached.
+popups = os.environ.get("FAKE_POPUPS", "")
+if popups:
+    def _fire():
+        time.sleep(float(os.environ.get("FAKE_POPUP_DELAY", "0.5")))
+        for raw in popups.split(","):
+            if not raw:
+                continue
+            kind, _, tid = raw.partition(":")
+            if not tid:
+                kind, tid = "page", kind
+            if kind == "page":
+                pages[tid] = True
+            emit({{"method": "Target.targetCreated",
+                  "params": {{"targetInfo": {{"targetId": tid, "type": kind}}}}}})
+    threading.Thread(target=_fire, daemon=True).start()
 buffer = b""
 while True:
     chunk = inbox.read(65536)
@@ -95,7 +120,13 @@ while True:
                       else {{"result": {{"value": True}}}})
         elif method in ("IO.close", "Target.disposeBrowserContext", "x"):
             result = {{}}
+        elif method == "Target.getTargets":
+            result = {{"targetInfos": [{{"targetId": tid, "type": "page"}}
+                                      for tid in pages]}}
+        elif method == "Target.setDiscoverTargets":
+            result = {{}}
         elif method == "Target.closeTarget":
+            pages.pop(p["targetId"], None)
             result = {{"success": True}}
         elif method == "Browser.getVersion":
             result = {{"argv": argv, "display": os.environ.get("DISPLAY"),
@@ -578,3 +609,89 @@ async def test_an_unframed_flood_from_the_pipe_kills_that_browser_not_computerd(
         assert srv.app["browsers"].running == {}
     finally:
         await srv.close()
+
+
+def _chrome_commands(fakes: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every CDP message computerd sent Chrome, from the fake's own log."""
+    return [json.loads(line) for path in fakes["x11"].glob("chrome-*.jsonl")
+            for line in path.read_text().splitlines()]
+
+
+async def test_a_page_target_born_while_no_client_is_attached_is_closed(fakes, monkeypatch):
+    """Chrome outlives its websocket: a page target a timer creates AFTER
+    the client disconnects is supervised inside the browser's own
+    lifetime — computerd saw the target event on the pipe and closed the
+    orphan, so the four-target cap holds between objectives, never only
+    inside `acquire` or on the 30s sweep."""
+    monkeypatch.setenv("FAKE_POPUPS", "popup-1,popup-2,popup-3,popup-4,popup-5")
+    monkeypatch.setenv("FAKE_POPUP_DELAY", "1.0")
+    srv = await _serve(fakes)
+    try:
+        async with ClientSession() as session:
+            async with session.ws_connect(
+                    srv.make_url(f"/v1/browser?scope={SCOPE}"), headers=AUTH) as ws:
+                await ws.send_str(json.dumps({"id": 7, "method": "Browser.getVersion"}))
+                assert (await ws.receive(timeout=10)).type is WSMsgType.TEXT
+            # Past the popup delay, with the client detached: five new page
+            # targets — MORE than the cap — were born ownerless.
+            await asyncio.sleep(2.0)
+    finally:
+        await srv.close()
+    closes = [c["params"]["targetId"] for c in _chrome_commands(fakes)
+              if c["method"] == "Target.closeTarget"]
+    for n in range(1, 6):
+        assert f"popup-{n}" in closes, closes
+
+
+async def test_a_page_target_born_while_attached_is_the_clients_to_own(
+        fakes, monkeypatch):
+    """Attached, the one client's own watch owns popups: the event is
+    relayed to it, and computerd does NOT close behind its back."""
+    monkeypatch.setenv("FAKE_POPUPS", "popup-a")
+    monkeypatch.setenv("FAKE_POPUP_DELAY", "1.0")
+    srv = await _serve(fakes)
+    try:
+        async with ClientSession() as session:
+            async with session.ws_connect(
+                    srv.make_url(f"/v1/browser?scope={SCOPE}"), headers=AUTH) as ws:
+                await ws.send_str(json.dumps({"id": 7, "method": "Browser.getVersion"}))
+                assert (await ws.receive(timeout=10)).type is WSMsgType.TEXT
+                seen = None
+                for _ in range(25):
+                    try:
+                        msg = await ws.receive(timeout=1)
+                    except TimeoutError:
+                        continue
+                    if msg.type is not WSMsgType.TEXT:
+                        continue
+                    frame = json.loads(msg.data)
+                    if frame.get("method") == "Target.targetCreated":
+                        seen = frame
+                        break
+                assert seen is not None  # the event WAS relayed to the client
+                assert seen["params"]["targetInfo"]["targetId"] == "popup-a"
+    finally:
+        await srv.close()
+    closes = [c["params"]["targetId"] for c in _chrome_commands(fakes)
+              if c["method"] == "Target.closeTarget"]
+    assert "popup-a" not in closes
+
+
+async def test_a_non_page_target_born_clientless_is_not_a_popup(fakes, monkeypatch):
+    """The cap counts PAGE targets: a worker/other target born clientless
+    is nobody's tab and is left alone."""
+    monkeypatch.setenv("FAKE_POPUPS", "worker:worker-1")
+    monkeypatch.setenv("FAKE_POPUP_DELAY", "1.0")
+    srv = await _serve(fakes)
+    try:
+        async with ClientSession() as session:
+            async with session.ws_connect(
+                    srv.make_url(f"/v1/browser?scope={SCOPE}"), headers=AUTH) as ws:
+                await ws.send_str(json.dumps({"id": 7, "method": "Browser.getVersion"}))
+                assert (await ws.receive(timeout=10)).type is WSMsgType.TEXT
+            await asyncio.sleep(2.0)
+    finally:
+        await srv.close()
+    closes = [c["params"]["targetId"] for c in _chrome_commands(fakes)
+              if c["method"] == "Target.closeTarget"]
+    assert "worker-1" not in closes

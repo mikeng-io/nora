@@ -1885,6 +1885,7 @@ async def build_dependencies(
             audit=_queue_audit)
         browser_manager = ScopeBrowserManager(
             runtime=computer, tabs=browser_tabs, tasks=computer_tasks,
+            segments=computer_admission,
             token=computer_token, clock=clock,
             idle_after=timedelta(seconds=scoped_cfg.browser_idle_seconds),
             on_event=_browser_event)

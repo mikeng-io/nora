@@ -288,3 +288,39 @@ async def test_claim_waits_on_an_uncommitted_running_row(
         assert fresh is not None and fresh.status == "queued"
     finally:
         await engine.dispose()
+
+
+# --- the maintenance kind (migration 0148) ------------------------------------
+# These use their OWN scope: tests above can leave committed rows (the
+# uncommitted-claim probe commits a `running` one outside the fixture's
+# truncate), and a third scope keeps this proof free of their leftovers.
+
+MAINT_SCOPE = "fe" * 16
+
+
+async def test_a_maintenance_row_is_a_real_claimable_row(tasks: Any) -> None:
+    """`maintenance` passes the kind CHECK, claims the scope through the
+    same `try_claim_head` election, and blocks successors while it runs —
+    the sweep is an owner, not a second admission path."""
+    sweep_row = _task(scope=MAINT_SCOPE, kind="maintenance")
+    behind = _task(scope=MAINT_SCOPE, created=T0 + timedelta(seconds=1))
+    await tasks.enqueue(sweep_row)
+    await tasks.enqueue(behind)
+    claimed = await tasks.try_claim_head(sweep_row.id, now=T0)
+    assert claimed is not None and claimed.kind == "maintenance"
+    # While cleanup owns the scope a real submit cannot be granted.
+    assert await tasks.try_claim_head(behind.id, now=T0) is None
+    await tasks.finish(sweep_row.id, status="done",
+                       result={"expired": 0}, now=T0)
+    assert await tasks.try_claim_head(behind.id, now=T0) is not None
+
+
+async def test_a_running_row_blocks_the_cleanup_claim_too(tasks: Any) -> None:
+    """The boundary holds the other way as well: a `running` row refuses
+    the maintenance claim — cleanup cannot overlap a live owner."""
+    running = _task(scope=MAINT_SCOPE, status="running")
+    sweep_row = _task(scope=MAINT_SCOPE, kind="maintenance",
+                      created=T0 + timedelta(seconds=1))
+    await tasks.enqueue(running)
+    await tasks.enqueue(sweep_row)
+    assert await tasks.try_claim_head(sweep_row.id, now=T0) is None

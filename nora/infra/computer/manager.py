@@ -29,10 +29,13 @@ the next segment sees the browser).
 
 Lifecycle: authorized activity touches `last_activity_at` (page timers do
 not — only manager calls move it); `sweep` closes the targets of idle rows
-on their scope's own serialized path — the guest effect confirmed BEFORE
-the row expires, a failed close left open for the next pass — and when no
-open tab remains, asks computerd to stop Chrome/Xvfb and confirms the exit
-through `state`. A scope mid-attach is skipped, never raced.
+from INSIDE the scope's elected owner — a `maintenance` segment claimed
+through the same `try_claim_head` every execution segment uses, so
+cleanup never runs beside a live owner and no successor is granted while
+it runs — with the guest effect confirmed BEFORE the row expires, a
+failed close left open for the next pass — and when no open tab remains,
+asks computerd to stop Chrome/Xvfb and confirms the exit through `state`.
+A scope mid-attach is skipped, never raced.
 """
 
 from __future__ import annotations
@@ -58,6 +61,7 @@ from nora.domain.browser_tasks import (
     BrowserTabStore,
 )
 from nora.domain.computer import SandboxStatus
+from nora.domain.computer_tasks import QUEUED, ComputerTask, current_segment
 from nora.infra.computer.browser import (
     BrowserError,
     BrowserPage,
@@ -72,6 +76,12 @@ __all__ = ["BoundTab", "CapturedImage", "ScopeBrowserManager"]
 
 #: Sweep cadence: how often idle tabs are reaped (driven by the caller's loop).
 SWEEP_SECONDS = 30.0
+
+#: The deadline on a maintenance segment: the owner row a cleanup claim
+#: holds while it reconciles targets, closes idle tabs and stops the
+#: browser. Past it the watchdog cancels the executor — a hung sweep
+#: never wedges the scope's queue.
+MAINTENANCE_LEASE = timedelta(seconds=300)
 
 
 class TabUnavailable(Exception):  # noqa: N818 - the name IS the outcome word
@@ -113,10 +123,14 @@ class ScopeBrowserManager:
         self, *, runtime: ScopedComputerdRuntime, tabs: BrowserTabStore,
         token: str, clock: Callable[[], datetime], idle_after: timedelta,
         observer: Any = None,
-        # The execution-owner store ([computer.scoped]): browser cleanup
-        # joins the same owner as segments — a scope with a `running` row
-        # is an active owner and its browser is never stopped under it.
+        # The execution-owner machinery ([computer.scoped]): `tasks` is the
+        # durable `computer_tasks` store and `segments` the
+        # `ComputerAdmission` that runs a claimed row through the shared
+        # executor registry. Both wired, cleanup claims the SAME elected
+        # scope owner every segment holds — a `running` row blocks the
+        # claim, and cleanup's own running row blocks every other claim.
         tasks: Any = None,
+        segments: Any = None,
         # Lifecycle events to the existing audit facilities:
         # `(scope, transition, subject)` — `tab_expired`, `browser_stopped`,
         # `popup_closed`. None keeps cleanup silent.
@@ -129,6 +143,7 @@ class ScopeBrowserManager:
         self._idle_after = idle_after
         self._observer = observer
         self._tasks = tasks
+        self._segments = segments
         self._on_event = on_event
         #: The task currently holding a live attach per scope — the owner any
         #: unbound page target found during its attach is assigned to.
@@ -362,15 +377,89 @@ class ScopeBrowserManager:
                 target_id=bound.page.target_id, url=url, title=title,
                 partial=partial, captured_at=now)
 
+    async def _owns(self, scope: str) -> bool:
+        """Is the caller already INSIDE a segment owning this scope? Then
+        the grant is held and guest effects are made directly — a re-claim
+        would see its own `running` row and refuse itself."""
+        if self._tasks is None:
+            return False
+        segment = current_segment.get()
+        if segment is None:
+            return False
+        try:
+            owner = await self._tasks.get(segment)
+        except Exception:  # noqa: BLE001 - an unreadable store is never proof of ownership
+            return False
+        return (owner is not None and owner.scope == scope
+                and owner.status == "running")
+
+    async def _claim_maintenance(self, scope: str) -> ComputerTask | None:
+        """Claim the scope's EXECUTION owner for a cleanup pass — the same
+        `computer_tasks` row and `try_claim_head` election every segment
+        goes through (advisory lock, oldest-queued, no-running). None when
+        an owner is mid-segment, the store cannot prove quiet, or real
+        work precedes: cleanup never jumps the FIFO, never races a
+        segment, and never leaves a `maintenance` row parked in the
+        queue — a failed claim is cancelled in the same call.
+
+        A claim that lands runs through `run_segment`, so the shared
+        registry sees the executor and the terminal row closes on the
+        same rules as every other segment."""
+        if self._tasks is None or self._segments is None:
+            return None
+        try:
+            open_rows = await self._tasks.open_for_scope(scope, limit=20)
+        except Exception:  # noqa: BLE001 - an unreadable owner store is never a quiet scope
+            return None
+        if open_rows:
+            # A `running` row is an owner mid-segment; a `queued` row is
+            # work ahead of ours — either way the claim below could only
+            # add a never-head row, so the pass is skipped WITHOUT writing
+            # one. (A running row past the page is impossible: it claimed
+            # before every queued sibling, so it sorts first.)
+            return None
+        now = self._clock()
+        row = ComputerTask(
+            id=uuid.uuid4(), scope=scope, kind="maintenance", status=QUEUED,
+            payload={"maintenance": "browser_lifecycle"}, origin={},
+            created_at=now, updated_at=now,
+            deadline_at=now + MAINTENANCE_LEASE)
+        try:
+            await self._tasks.enqueue(row)
+            claimed = await self._tasks.try_claim_head(row.id, now=self._clock())
+        except Exception:  # noqa: BLE001 - the owner store is the boundary; it must answer
+            with contextlib.suppress(Exception):
+                await self._tasks.request_cancel(row.id, now=self._clock())
+            return None
+        if claimed is None:
+            # A competitor's row landed between the read and the claim:
+            # close ours at once — a maintenance row never waits its turn.
+            with contextlib.suppress(Exception):
+                await self._tasks.request_cancel(row.id, now=self._clock())
+            return None
+        return claimed
+
     async def browser_stop(self, scope: str) -> bool:
         """Ask computerd to stop the scope's browser and confirm, through
         `state`, that it is gone. False when the VM could not answer or the
         browser is still up.
 
-        The stop joins the scope's EXECUTION owner, not just the manager
-        lock: a `running` task row (a native or worker segment, which may
-        be about to attach) makes the scope busy, and a store that cannot
-        prove quiet is never a stop."""
+        The stop runs INSIDE the scope's elected execution owner, not just
+        under the manager lock: it claims a `maintenance` segment through
+        the same `try_claim_head` every segment uses, so a `running` row —
+        a native or worker segment, which may be about to attach — makes
+        the claim fail and the browser is never stopped under it. Called
+        inside a segment that already owns the scope (the sweep's own),
+        the guest call is made directly."""
+        if await self._owns(scope):
+            return await self._browser_stop_guest(scope)
+        claimed = await self._claim_maintenance(scope)
+        if claimed is not None:
+            reply = await self._segments.run_segment(
+                claimed, self._stop_owned(scope))
+            return bool(reply.get("stopped"))
+        if self._segments is not None:
+            return False  # owned path wired and the scope was not claimable
         if self._tasks is not None:
             try:
                 busy = any(
@@ -380,6 +469,17 @@ class ScopeBrowserManager:
                 return False
             if busy:
                 return False
+        return await self._browser_stop_guest(scope)
+
+    async def _stop_owned(self, scope: str) -> dict[str, Any]:
+        stopped = await self._browser_stop_guest(scope)
+        return {"status": "ok" if stopped else "nothing_found",
+                "stopped": stopped}
+
+    async def _browser_stop_guest(self, scope: str) -> bool:
+        """The guest half of `browser_stop`: POST the stop, then confirm
+        through `state` that the browser is gone. Caller holds the scope's
+        owner."""
         binding = await self._runtime.binding(scope)
         if binding is None:
             return False
@@ -418,8 +518,8 @@ class ScopeBrowserManager:
         return bool(state.browser.get("running"))
 
     async def _sweep_scope(self, scope: str, now: datetime) -> int:
-        """One scope's reconcile and idle close, serialized against its
-        own attaches.
+        """One scope's reconcile and idle close, run INSIDE the scope's
+        elected execution owner when one is wired.
 
         Rows on a DEAD instance expire outright (their targets went with the
         VM). Rows on the live instance are closed on the scope's own CDP
@@ -427,83 +527,129 @@ class ScopeBrowserManager:
         a refused close leaves the row open for the next pass, never
         silently leaked, and a busy scope is skipped, never raced.
 
-        While the browser is up at all, the pass reconciles the ACTUAL
-        target list with `owner=None`: a popup a page timer created while
-        no client was attached (computerd drops target events with none)
-        is unbound and is closed here — the four-target cap holds for the
-        browser's whole retained lifetime, not only inside `acquire`."""
-        lock = self._lock(scope)
-        if lock.locked():
-            return 0  # mid-attach: next pass retries
-        async with lock:
+        The pass claims a `maintenance` segment through the same
+        `try_claim_head` election a native or browse segment holds: a
+        `running` row blocks the pass outright (the read-before-write that
+        once let a stop land under a mid-segment owner is gone — the claim
+        IS the check), a `queued` row makes the pass wait for real work,
+        and while the pass holds its row no successor can be granted. A
+        scope with nothing open and no live browser is left untouched —
+        an empty tick never writes a maintenance row."""
+        binding = await self._runtime.binding(scope)
+        if binding is None:
+            return 0  # no verified VM: nothing safe to do this pass
+        try:
+            rows = await self._tabs.for_scope(scope, limit=200)
+        except Exception:
+            log.exception("browser tab sweep read failed")
+            return 0
+        open_rows = [r for r in rows if r.status == OPEN]
+        browser_up = await self._browser_running(scope)
+        if not open_rows and browser_up is not True:
+            return 0  # nothing bound and no live browser to stop
+        if self._segments is None or self._tasks is None:
+            # The un-owned half (no execution owner wired): the in-process
+            # lock is the only boundary the scope has.
+            lock = self._lock(scope)
+            if lock.locked():
+                return 0  # mid-attach: next pass retries
+            async with lock:
+                return await self._sweep_owned(scope, binding, open_rows,
+                                               browser_up, now)
+        claimed = await self._claim_maintenance(scope)
+        if claimed is None:
+            return 0  # an owner holds the scope, or real work precedes
+        reply = await self._segments.run_segment(
+            claimed, self._sweep_segment(scope, now))
+        try:
+            return int(reply.get("expired") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    async def _sweep_segment(self, scope: str, now: datetime) -> dict[str, Any]:
+        """The maintenance segment's work: the full pass, re-read under
+        the grant so what was true at claim time is re-verified inside the
+        owner."""
+        async with self._lock(scope):
             binding = await self._runtime.binding(scope)
             if binding is None:
-                return 0  # no verified VM: nothing safe to do this pass
-            idle_before = now - self._idle_after
+                return {"status": "unavailable", "expired": 0}
             try:
                 rows = await self._tabs.for_scope(scope, limit=200)
             except Exception:
                 log.exception("browser tab sweep read failed")
-                return 0
+                return {"status": "unavailable", "expired": 0}
             open_rows = [r for r in rows if r.status == OPEN]
             browser_up = await self._browser_running(scope)
-            if not open_rows and browser_up is not True:
-                return 0  # nothing bound and no live browser to stop
-            dead = [r for r in open_rows if r.instance != binding.instance]
-            live_rows = [r for r in open_rows if r.instance == binding.instance]
-            candidates = [r for r in live_rows
-                          if r.last_activity_at < idle_before
-                          and r.task_id != self._active.get(scope)]
-            expired = 0
-            now2 = self._clock()
-            for row in dead:
-                with contextlib.suppress(Exception):
-                    await self._tabs.set_status(row.id, status="expired", now=now2)
-                    expired += 1
-                    self._note(scope, "tab_expired", row.id)
-            if candidates or browser_up is True:
-                try:
-                    async with connect_browser_cdp(
-                        base_url=binding.endpoint.base_url,
-                        token=self._token, scope=scope,
-                        instance=binding.instance,
-                    ) as cdp:
-                        await self._reconcile(scope, binding, cdp, now=now2,
-                                              owner=None)
-                        for row in candidates:
-                            # Re-read idle inside the lock: an attach that
-                            # touched it while we waited is spared.
-                            fresh = await self._tabs.get(row.id)
-                            if (fresh is None or fresh.status != OPEN
-                                    or fresh.last_activity_at >= idle_before):
-                                continue
-                            try:
-                                await cdp.call("Target.closeTarget",
-                                               {"targetId": row.target_id})
-                            except BrowserError as exc:
-                                if "gone" not in str(exc).lower():
-                                    continue  # guest effect unconfirmed: retry next pass
-                            with contextlib.suppress(Exception):
-                                await self._tabs.set_status(
-                                    row.id, status="expired", now=self._clock())
-                                expired += 1
-                                self._note(scope, "tab_expired", row.id)
-                except BrowserError:
-                    # No connection: every close stays pending, retried; the
-                    # binding itself is suspect — re-verify before next pass.
-                    self._runtime.invalidate(scope)
+            expired = await self._sweep_owned(scope, binding, open_rows,
+                                              browser_up, now)
+            return {"status": "ok", "expired": expired}
+
+    async def _sweep_owned(
+        self, scope: str, binding: ScopeBinding, open_rows: list[BrowserTab],
+        browser_up: bool | None, now: datetime,
+    ) -> int:
+        """The pass itself, caller holding the scope's owner (the
+        maintenance grant, or — un-owned mode — just the manager lock)."""
+        idle_before = now - self._idle_after
+        dead = [r for r in open_rows if r.instance != binding.instance]
+        live_rows = [r for r in open_rows if r.instance == binding.instance]
+        candidates = [r for r in live_rows
+                      if r.last_activity_at < idle_before
+                      and r.task_id != self._active.get(scope)]
+        expired = 0
+        now2 = self._clock()
+        for row in dead:
+            with contextlib.suppress(Exception):
+                await self._tabs.set_status(row.id, status="expired", now=now2)
+                expired += 1
+                self._note(scope, "tab_expired", row.id)
+        if candidates or browser_up is True:
             try:
-                left = await self._tabs.open_for_scope(scope, instance=binding.instance)
-            except Exception:
-                log.exception("browser tab open-row read failed")
-                return expired
-            # Stop the browser only once nothing open remains AND the
-            # machine still says it runs — or the last row just expired
-            # this pass. A failed stop stays retryable: the registry keeps
-            # this scope in `sweep`'s discovery while its browser runs.
-            if not left and (browser_up is True or open_rows):
-                await self.browser_stop(scope)
+                async with connect_browser_cdp(
+                    base_url=binding.endpoint.base_url,
+                    token=self._token, scope=scope,
+                    instance=binding.instance,
+                ) as cdp:
+                    await self._reconcile(scope, binding, cdp, now=now2,
+                                          owner=None)
+                    for row in candidates:
+                        # Re-read idle inside the lock: an attach that
+                        # touched it while we waited is spared.
+                        fresh = await self._tabs.get(row.id)
+                        if (fresh is None or fresh.status != OPEN
+                                or fresh.last_activity_at >= idle_before):
+                            continue
+                        try:
+                            await cdp.call("Target.closeTarget",
+                                           {"targetId": row.target_id})
+                        except BrowserError as exc:
+                            if "gone" not in str(exc).lower():
+                                continue  # guest effect unconfirmed: retry next pass
+                        with contextlib.suppress(Exception):
+                            await self._tabs.set_status(
+                                row.id, status="expired", now=self._clock())
+                            expired += 1
+                            self._note(scope, "tab_expired", row.id)
+            except BrowserError:
+                # No connection: every close stays pending, retried; the
+                # binding itself is suspect — re-verify before next pass.
+                self._runtime.invalidate(scope)
+        try:
+            left = await self._tabs.open_for_scope(scope, instance=binding.instance)
+        except Exception:
+            log.exception("browser tab open-row read failed")
             return expired
+        # Stop the browser only once nothing open remains AND the
+        # machine still says it runs — or the last row just expired
+        # this pass. A failed stop stays retryable: the registry keeps
+        # this scope in `sweep`'s discovery while its browser runs.
+        # `browser_stop` dispatches: inside this maintenance segment the
+        # grant is already held (`_owns`), in un-owned mode its busy
+        # check is the boundary.
+        if not left and (browser_up is True or open_rows):
+            await self.browser_stop(scope)
+        return expired
 
     async def sweep(self, *, now: datetime | None = None) -> int:
         """Expire tabs idle past `idle_after`, scopes one at a time;

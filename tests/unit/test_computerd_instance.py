@@ -17,6 +17,7 @@ What is covered, against the real server and real subprocesses:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib.util
 import sys
 import time
@@ -115,6 +116,77 @@ async def test_client_sends_the_header_and_refuses_an_unstamped_answer(
     try:
         pinned = ComputerdRuntime(base_url=url, token=TOKEN, instance=BOOT)
         assert (await pinned.state(scope=SCOPE)).status is SandboxStatus.UNAVAILABLE
+    finally:
+        await runner.cleanup()
+
+
+async def test_a_scoped_computerd_with_no_boot_identity_serves_nothing(
+        computerd, tmp_path) -> None:
+    """A scoped computerd that cannot name its boot fails CLOSED, before
+    the effect: the request is denied and the guest executes nothing — a
+    client can only refuse an unstamped ANSWER after it already ran."""
+    app = computerd.create_app(
+        root=tmp_path / "root", token=TOKEN, isolate_scopes=False,
+        tmux_root=tmp_path / "tmux", proc_root=tmp_path,
+        bound_scope=SCOPE, boot_id="")
+    url, runner = await _serve(app)
+    try:
+        async with aiohttp.ClientSession() as s:
+            auth = {"Authorization": f"Bearer {TOKEN}",
+                    "X-Computerd-Instance": "anything"}
+            # An effectful write: denied BEFORE the file can be created.
+            async with s.post(f"{url}/v1/put?scope={SCOPE}&path=made.txt",
+                              headers=auth, data=b"payload") as r:
+                assert r.status == 409
+            # A guest command: denied BEFORE anything can run.
+            async with s.post(f"{url}/v1/run", headers=auth, json={
+                    "scope": SCOPE, "timeout_s": 2,
+                    "command": "echo ran > ran.txt"}) as r:
+                assert r.status == 409
+            # The identity read still answers — it is how the client
+            # learns the VM cannot be pinned — but nothing else runs.
+            async with s.get(f"{url}/v1/identity", headers=auth) as r:
+                assert r.status == 200
+                assert (await r.json())["instance"] == ""
+    finally:
+        await runner.cleanup()
+    # Negative control, independent of the HTTP status: no file exists,
+    # no command ran.
+    assert not (tmp_path / "root" / SCOPE / "made.txt").exists()
+    assert not (tmp_path / "root" / SCOPE / "ran.txt").exists()
+
+
+async def test_a_lost_http_connection_kills_the_guest_command(
+        computerd, tmp_path) -> None:
+    """The REAL disconnect path: the HTTP client goes away mid-command
+    over the actual transport — not a synthetic flag — so `is_closing`
+    fires, the process group is killed, and the late completion marker
+    can never land. The guest is then quiet and owns the next segment."""
+    url, runner = await _serve(_app(computerd, tmp_path))
+    try:
+        marker = tmp_path / "root" / SCOPE / "marker"
+        auth = {"Authorization": f"Bearer {TOKEN}",
+                "X-Computerd-Instance": BOOT}
+        async with aiohttp.ClientSession() as s:
+            pending = asyncio.ensure_future(s.post(
+                f"{url}/v1/run", headers=auth, json={
+                    "scope": SCOPE, "timeout_s": 10,
+                    "command": "sleep 3; echo late > marker"}))
+            await asyncio.sleep(0.5)  # the command is running on the guest
+            await s.close()  # REAL connection loss: nobody can collect the answer
+            with contextlib.suppress(Exception):
+                await pending
+        # Past the sleep: a surviving command would have written its marker.
+        await asyncio.sleep(3.5)
+        assert not marker.exists()
+        # The scope is quiet and serves the NEXT segment.
+        async with aiohttp.ClientSession() as s:
+            async with s.post(f"{url}/v1/run", headers=auth, json={
+                    "scope": SCOPE, "timeout_s": 5,
+                    "command": "echo ok > next"}) as r:
+                assert r.status == 200
+                assert (await r.json())["status"] == "ok"
+        assert (tmp_path / "root" / SCOPE / "next").read_text() == "ok\n"
     finally:
         await runner.cleanup()
 

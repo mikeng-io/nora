@@ -2,8 +2,11 @@
 
 `computer_tasks` (migration `0147`) is ONE execution segment on one scope's
 VM: a native mutation (`computer_run`/`write`/`edit`/`put`), a browser
-objective, a direct capture, or a worker's job. It is written BEFORE the
-stream entry that announces it (`XADD nq:computer:<scope>`), so a publish gap
+objective, a direct capture, a worker's job, or a `maintenance` segment —
+the background cleanup (the browser lifecycle sweep) holding the SAME
+transactionally-elected scope owner, never a second admission path. It is
+written BEFORE the stream entry that announces it (`XADD
+nq:computer:<scope>`), so a publish gap
 is reconcilable — an unannounced `queued` row is re-published, never lost —
 and it is the segment's ONLY state: a stream entry is a pointer, never the
 record (`Redis stream delivery is not execution exclusion`).
@@ -60,7 +63,8 @@ DONE, FAILED, CANCELLED, UNAVAILABLE, INTERRUPTED = (
 TASK_STATUSES: frozenset[str] = frozenset(
     {QUEUED, RUNNING, DONE, FAILED, CANCELLED, UNAVAILABLE, INTERRUPTED})
 TERMINAL: frozenset[str] = frozenset({DONE, FAILED, CANCELLED, UNAVAILABLE, INTERRUPTED})
-TASK_KINDS: frozenset[str] = frozenset({"native", "browse", "capture", "worker"})
+TASK_KINDS: frozenset[str] = frozenset(
+    {"native", "browse", "capture", "worker", "maintenance"})
 
 #: The segment this context is executing, when inside one. A child call
 #: made here inherits the parent's admission (`nora.app.computer_queue.

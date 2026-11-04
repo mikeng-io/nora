@@ -323,7 +323,7 @@ class _Rig:
     runtime: _FakeScopedRuntime
 
 
-def _wired(monkeypatch, *, instance="boot-1") -> _Rig:
+def _wired(monkeypatch, *, instance="boot-1", tasks=None, segments=None) -> _Rig:
     """A manager whose CDP/browser seams are the in-memory pair above."""
     cdp = _Cdp()
     endpoints = FakeScopeEndpoints()
@@ -348,7 +348,7 @@ def _wired(monkeypatch, *, instance="boot-1") -> _Rig:
     monkeypatch.setattr(mgr_mod, "open_browser_tab", fake_tab)
     return _Rig(
         manager=ScopeBrowserManager(
-            runtime=runtime, tabs=tabs,
+            runtime=runtime, tabs=tabs, tasks=tasks, segments=segments,
             token="t",  # noqa: S106 - a test token
             clock=clock(), idle_after=timedelta(minutes=10)),
         tabs=tabs, cdp=cdp, runtime=runtime)
@@ -1059,3 +1059,146 @@ async def test_context_marks_a_dead_instances_tab_expired(monkeypatch) -> None:
     assert view is not None and view.tabs
     assert view.instance == "boot-2"
     assert all(t.status == "expired" for t in view.tabs)
+
+
+# --- cleanup joins the execution owner ----------------------------------------
+
+
+async def test_cleanup_claims_the_scopes_elected_owner(monkeypatch) -> None:
+    """The sweep runs INSIDE the same owner every segment holds: a
+    `maintenance` row claimed by `try_claim_head`, executed through
+    `run_segment`, and closed `done` — the cleanup is a segment, not a
+    second admission path beside the FIFO."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    rig = _wired(monkeypatch, tasks=store, segments=admission)
+    _register(rig.runtime)
+    # An idle OPEN row gives the pass real work.
+    async with rig.manager.acquire(SCOPE, uuid.uuid4()):
+        pass
+    for row in list(rig.tabs.rows.values()):
+        rig.tabs.rows[row.id] = replace(
+            row, last_activity_at=NOW - timedelta(minutes=11))
+    expired = await rig.manager.sweep(now=NOW)
+    assert expired == 1 and rig.cdp.closed
+    maintenance = [r for r in store.rows.values() if r.kind == "maintenance"]
+    assert len(maintenance) == 1
+    assert maintenance[0].status == "done"
+    assert maintenance[0].result.get("expired") == 1
+    # No room was named: the row is delivered, never queued for a reply.
+    assert maintenance[0].delivered_at is not None
+
+
+async def test_cleanup_never_runs_beside_a_live_owner(monkeypatch) -> None:
+    """A `running` row IS an owner: the sweep's claim fails and no guest
+    effect runs — no tab close, no browser stop — and no `maintenance`
+    row is left parked in the queue either."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    rig = _wired(monkeypatch, tasks=store, segments=admission)
+    _register(rig.runtime)
+    rig.runtime.browser_running = True  # cleanup-worthy state
+    owner = task()
+    await store.enqueue(owner)
+    assert await store.try_claim_head(owner.id, now=NOW) is not None
+    expired = await rig.manager.sweep(now=NOW)
+    assert expired == 0
+    assert rig.cdp.closed == []
+    assert not [r for r in store.rows.values() if r.kind == "maintenance"]
+    # The live owner is untouched.
+    assert (await store.get(owner.id)).status == "running"
+
+
+async def test_cleanup_waits_behind_queued_work_never_jumps_the_fifo(
+        monkeypatch) -> None:
+    """Queued real work outranks housekeeping: with rows ahead, the sweep
+    claims nothing and writes nothing — cleanup never waits in line."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    rig = _wired(monkeypatch, tasks=store, segments=admission)
+    _register(rig.runtime)
+    rig.runtime.browser_running = True
+    ahead = task()
+    await store.enqueue(ahead)  # queued, unclaimed
+    assert await rig.manager.sweep(now=NOW) == 0
+    assert not [r for r in store.rows.values() if r.kind == "maintenance"]
+    assert (await store.get(ahead.id)).status == "queued"
+
+
+async def test_a_submit_waits_for_cleanup_then_takes_the_scope(
+        monkeypatch) -> None:
+    """The coordination a bare read could never give: while cleanup HOLDS
+    the maintenance row a real submit stays queued; once the segment
+    closes, that same row can be granted — the successor runs only after
+    the cleanup owner released the scope."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    rig = _wired(monkeypatch, tasks=store, segments=admission)
+    _register(rig.runtime)
+    rig.runtime.browser_running = True
+    # Stall the pass mid-segment: its first guest read hangs.
+    stall = asyncio.Event()
+    orig_call = rig.cdp.call
+
+    async def gated_call(method, params=None):
+        await stall.wait()
+        return await orig_call(method, params)
+
+    rig.cdp.call = gated_call
+    stall.clear()
+    sweep_task = asyncio.ensure_future(rig.manager.sweep(now=NOW))
+    try:
+        for _ in range(200):
+            maintenance = next(
+                (r for r in store.rows.values() if r.kind == "maintenance"), None)
+            if maintenance is not None and maintenance.status == "running":
+                break
+            await asyncio.sleep(0.01)
+        maintenance = next(
+            r for r in store.rows.values() if r.kind == "maintenance")
+        assert maintenance.status == "running"
+        queued = await admission.submit(scope=SCOPE, kind="native",
+                                        payload={}, origin={})
+        # The maintenance owner blocks the successor — the SAME claim, not
+        # a second check that could see a stale state.
+        assert not queued.granted
+    finally:
+        stall.set()
+    assert await sweep_task == 0
+    maintenance = await store.get(maintenance.id)
+    assert maintenance is not None and maintenance.status in (
+        "done", "unavailable")
+    # The successor can now be granted and run its own segment.
+    assert await store.try_claim_head(queued.task.id, now=NOW) is not None
+
+
+async def test_a_leaked_queued_maintenance_row_is_closed_never_started() -> None:
+    """A `maintenance` row is claimed by its own submitter in the same
+    call it was written: still `queued` when the runner sees it means the
+    submitter died between the two — the runner closes it, never
+    executes it, and the queued work behind it proceeds."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    leaked = task(kind="maintenance")
+    behind = task(created=NOW + timedelta(seconds=1))
+    await store.enqueue(leaked)
+    await store.enqueue(behind)
+    await redis.xadd(_stream(SCOPE), {"task": str(leaked.id)})
+    await redis.xadd(_stream(SCOPE), {"task": str(behind.id)})
+    ran: list[str] = []
+
+    async def executor(row: ComputerTask) -> dict:
+        ran.append("native")
+        return {"status": "ok"}
+
+    runner = ComputerQueueRunner(
+        tasks=store, redis=redis, clock=clock(), watch_seconds=0.01,
+        dispatch={"native": executor})
+    assert await runner.tick() >= 0
+    leaked_row = await store.get(leaked.id)
+    assert leaked_row is not None and leaked_row.status == "cancelled"
+    for _ in range(50):
+        if (await store.get(behind.id)).status == "done":
+            break
+        await asyncio.sleep(0.01)
+    assert (await store.get(behind.id)).status == "done"
+    assert ran == ["native"]

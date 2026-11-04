@@ -173,6 +173,11 @@ class ComputerContextReader:
             except Exception:
                 log.exception("computer tasks read failed")
                 task_rows = []
+        # Housekeeping is not the room's work: a `maintenance` segment (the
+        # browser lifecycle sweep claiming the scope's owner) is neither a
+        # task the model can act on nor proof of activity, so it never
+        # renders and never alone keeps the block alive.
+        task_rows = [t for t in task_rows if t.kind != "maintenance"]
         sessions = await self._sessions.for_scope(
             scope=scope, limit=SESSIONS_READ,
         )
