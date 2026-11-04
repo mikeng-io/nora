@@ -103,7 +103,7 @@ PINNED: dict[str, tuple[int, str]] = {
         1, "b3c17e1505b551b01f88313e447674ed1f7f6d6bc3700da8d066d2dfd3ea8f63",
     ),
     "participation-conduct": (
-        3, "0b32ac7724ffe0ddf2ab9fa771a704a9aaec967dae58ea550268f6727475272e",
+        4, "66f7c4fdee793f28d6946edd1a301a166195400b91b327aa312cd85a75c21f88",
     ),
     "constraints": (13, "eb71a2acd9b663cdcadac1b9f8e5191acf02242e6b0140ce3347536e666c392c"),
     # The constraints for room occasions, ordered right after `constraints`.
@@ -115,7 +115,7 @@ PINNED: dict[str, tuple[int, str]] = {
     "public-voice": (4, "d555d8540e3e7e55dd341145760c46eb3463c3ea6a0638c7ebd3f4ca96dc8312"),
     "public-conduct": (11, "c7d08af0b7084a6dba34d383fe21c4ecf795edb3fcc7fd445cb8033cd5c4d3ef"),
     "public-constraints": (
-        2, "04533c61a9bdebafa288e7a3710dc43f9aabbc342527f75dcfb32c6444cb71d5",
+        3, "ade23a6bfb329edc9c66c4bda950d9b5923ba11877119941c400d8b3d69bdbc6",
     ),
 }
 

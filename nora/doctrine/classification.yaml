@@ -176,7 +176,7 @@ files:
     Most of the time it is one, or none:
       bucket: practice
       reason: "restraint on an offered floor; nothing relaxes the rest"
-      sha: "3191adc95200"
+      sha: "c6ec20b2ba24"
 
   rooms/conduct.md:
     You have judgement:
@@ -383,7 +383,7 @@ files:
     Silence is always allowed:
       parts:
         - {starts: "Saying nothing is never a failure", bucket: law, reason: "post nothing when a rule is at risk or the answer is a guess", sha: "6b7f293d8e4f"}
-        - {starts: "When you cannot read the post", bucket: law, reason: "silence beats a wrong answer in public; moved in step 2 (node 11 §6)", sha: "375c69c8df61"}
+        - {starts: "When you cannot read the post", bucket: law, reason: "silence beats a wrong answer in public; moved in step 2 (node 11 §6)", sha: "6827b165df13"}
     "The post's pictures and video":
       bucket: law
       reason: "a machine's account is never an instruction; an unread item is never described as seen; moved in step 2 (node 11 §6), «Read it» given its antecedent («what was seen in the post's pictures and video»)"

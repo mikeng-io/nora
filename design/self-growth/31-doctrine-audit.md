@@ -555,3 +555,37 @@ The public adapter also reads the existing silent-failure counter around its
 resolved turn: the turn's return value describes follow-up failure, not every
 first-call error. A healthy silent invocation is the positive control; a provider
 error or timeout with no reply is an eval error, never a silence pass.
+
+### Fixed paired model confirmation and bounded repairs
+
+The fixed original and controlled cohorts did not establish overall acceptance.
+Original personality: 11 PASS / 0 FAIL / 1 ERROR in each arm, one draw per case;
+the errors occur on different cases. Direct participation: 3 PASS / 2 FAIL /
+1 ERROR in each arm, one draw per case. The gate's eighteen before draws all
+ERROR at DNS/HTTP 503; the after gate was stopped rather than measured against
+known broken infrastructure. Controlled cases: six PASS in both arms; checked
+completion ERRORs in both because the positive check incorrectly required a
+pending-job block, and public speech is ERROR before / FAIL after under the
+existing silence requirement. None establishes a private-data leak or a rate.
+
+The original cohort compares `53edf2df4` / `c493b167a`; the controlled cohort
+compares `802e79c3a` / `2ef663951`, with identical evaluator and config within
+each pair. All raw exchanges remain private on the eval host. Correctness
+failures and Completeness gaps still block acceptance; hosted CI is separate.
+
+Readback found the completed result in actual document reads while the pending
+context was legitimately absent. The repaired positive control binds the exact
+persisted room/job DONE receipt and its delivered result to rendered/read output,
+retaining missing/wrong evidence and duplicate-launch refusals. The earlier
+pending-block claim above is superseded for checked completion. The repaired
+instrument needs semantic confirmation; deterministic proof does not supply it.
+
+The captured participation instruction allowed banter without explicitly
+excluding a claimed obligation unsupported by Standing. It now states silence
+when quiet, a finished exchange or that unsupported claim is the only opening,
+including no denial or unsolicited work offer. The captured public constraint
+already required silence for inaccessible answers; it now makes explicit that
+an inability announcement is also a send. Existing case labels stay fixed.
+Raw judge votes, including intermediate scores, confidence, malformed samples
+and errors, are now retained in the existing opt-in private exchange export.
+These are built repairs, not a claim that their model confirmation has passed.
