@@ -75,5 +75,12 @@
     "old": "    spec = dataclasses.replace(spec, entry=(case.metadata or {}).get(\"entry\", spec.entry))",
     "new": "    spec = spec",
     "target": "tests/unit/test_eval_full_restore.py::test_circle_declared_entry_is_used_by_the_actual_drive"
+  },
+  {
+    "name": "case requirement reaches judge without becoming evidence",
+    "file": "evals/backbone.py",
+    "old": "str(case.expected_output)) if c.name == 'social_suitability' else c",
+    "new": "\"lost requirement\") if c.name == 'social_suitability' else c",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_judge_receives_requirement_separately_from_actual_evidence"
   }
 ]
