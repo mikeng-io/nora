@@ -403,13 +403,13 @@ assembly and a common real background anchor; invented lines are not historical
 messages. The `social_suitability` judge grades intent, useful substance,
 attribution, action honesty and restraint rather than prose quotas.
 
-Controlled tool-state cases remain visibly unanchored in
+At the earlier source checkpoint, controlled tool-state cases remained unanchored in
 `evals/corpora/tool_reporting.yaml`: `circle_work_running`,
 `circle_work_checked_complete`, `circle_reaction_unavailable`,
 `circle_reaction_held`, `circle_gif_unavailable`, `circle_memory_partial`,
 `circle_memory_unavailable`, `circle_public_private_boundary`.
-The existing rebuild cannot inject these controlled outcomes/audiences from a
-real anchor. A member saying a job finished does not fill that seam. These are
+At that checkpoint the rebuild could not inject these controlled outcomes/audiences from a
+real anchor; the later controlled-state amendment below supersedes this barrier. A member saying a job finished does not fill that seam. These are
 UNAVAILABLE model acceptance, not parked successes. Current deterministic
 assembly/completion checks measure wiring only. Cognition's replacement prelude,
 tool-free judges, speech formatter and worker retain their distinct ownership.
@@ -425,8 +425,8 @@ record-evidence contract these cases do not satisfy. The brief-fact/explanation
 pair is self-contained in the invented arriving line. No judge should infer a
 write receipt, current preference or completed job from doctrine prose.
 
-The current tag outcome counts authored message rows, not reaction-only receipt
-state. Thus `circle_acknowledgement` and `circle_banter` cannot establish
+At that earlier checkpoint the tag outcome counted authored message rows, not reaction-only
+receipt state; the integrated receipt patch now carries confirmed reactions separately. Thus `circle_acknowledgement` and `circle_banter` cannot establish
 reaction-only suitability with this grader; their text-response observations
 alone are insufficient acceptance. Existing `tests/unit/test_reaction_send.py`
 controls delivery/held/unavailable mechanics separately. Model acceptance of
@@ -446,3 +446,50 @@ not proven absent. Settled group facts belong to later scoped processing, not
 person facts. These are wording corrections against actual consumers, not
 advisory approval or measured model acceptance. Updated classification and
 rendered-section/header pins carry the intentional text changes.
+
+### Controlled-state and audience validation support — 2026-11-05
+
+The eight #575 cases in `tool_reporting.yaml` now carry explicit generated
+scenario overlays on the existing background anchor. The overlay describes the
+draw sandbox, never an assertion about the real anchored room. None is parked or
+an unanchored placeholder. They use the existing subject, context assembly,
+tools, Outcome and judge; no doctrine, runtime grant, routing or deployment
+setting changes in this validation slice.
+
+| Case | Actual input seam and positive execution control |
+|---|---|
+| `circle_work_running` | Typed pending subagent job in the SQL outbox, with its handle registered in the sandbox recorder. The existing subagents reader renders running state; the existing desk/read tool must execute. No checked output or send receipt exists. |
+| `circle_work_checked_complete` | The same lifecycle creates and validates a generated comparison document, reads its persisted title/body back, sends its generated report through the sandbox Deliverer, and records DONE only after that send succeeds. Existing context and desk/read expose the report and completion receipt. Re-launching fails the case. |
+| `circle_reaction_unavailable` | A draw-owned RPC endpoint rejects a valid reaction through the actual SignalReactor. Wrong methods/arguments receive a different refusal. Captured reaction tool result must be unavailable, exactly once; an unconfirmed reaction is never completion. |
+| `circle_reaction_held` | Actual participation entry with the existing send permission false. Expect silence, with an executed held reaction as positive control. Text/GIF substitution or retry is refused by grading; all media still pass the real Deliverer hold. |
+| `circle_gif_unavailable` | Explicit absence at the existing GifSource boundary. Actual search must return unavailable with its existing words-instead guidance; an invented candidate cannot be sent. This covers unavailable provider wiring, not a timed-out Giphy service. |
+| `circle_memory_partial` | Generated typed source bodies, author/time, admitted preference and superseding correction in the existing contract-tested graph/index implementations. The ordinary MemorySearch read and declared recalled block expose partial evidence. The question asks for a preference without asserting its hidden value. |
+| `circle_memory_unavailable` | The same generated sources exist, but index reads fail and the graph is unavailable. Neither source body joins the transcript. Actual recalled/tool capture must report unavailable, not absence or a guessed preference. |
+| `circle_public_private_boundary` | The corrected private graph exists in the draw sandbox, while the existing public summons turn receives a generated resolved public context, public doctrine, the existing PUBLIC_GRANT and a fresh narrow registry. Actual public chat input must be captured; group blocks cannot substitute for it. |
+
+The loader now retains a case's declared entry and the existing drive selects
+it, so the held/public cases cannot silently execute as tag cases. Reply cases
+require the existing semantic judge. The suitability criterion receives the
+case's acceptance requirement explicitly as a requirement, not source evidence;
+actual captured blocks and tool results remain its evidence. Missing controlled
+execution or missing public/model-source capture is ERROR, never a silence PASS.
+Held outcomes are graded deterministically on the executed result and absence
+of bypass, without paying for a judge to grade nonexistent text.
+
+Focused checks use generated sources only. They read back running/done state,
+output document and sandbox delivery, corrected graph evidence and its rendered
+recalled block, plus the public occasion's real invocation arguments, public
+blocks, empty private prefill and restricted tools. Room/unit refusal controls
+read a valid same-room result first, then require another-room/unit reads to
+return nothing. The RPC endpoint also has a wrong-request control. Mutation
+anchors and named targets are in `scripts/mutations/eval_circle_controlled.json`.
+
+The public adapter starts at the existing resolved summons turn; bridge card
+admission, bridge discovery and public publication are not measured. Job
+completion proves a generated checked document and sandbox send, not that a real
+worker or platform completed a task. The memory fixture measures existing graph
+admission, correction, scope and read/render behavior over shared-contract-tested
+stores; it does not claim production index coverage. No model suitability,
+platform delivery, spend, latency, deploy or issue completion follows from these
+deterministic receipts. Parent-owned paired model confirmation and independent
+review remain separate requirements.
