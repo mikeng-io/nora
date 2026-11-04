@@ -30,8 +30,8 @@
   {
     "name": "catalogue retains the list versus named-read discrimination",
     "file": "nora/agent/tools.py",
-    "old": "Check running and published versions or history when somebody asks about upgrades.",
-    "new": "Check running and published versions when somebody asks about upgrades.",
+    "old": "List running and published history when somebody asks about upgrades or changes to you.",
+    "new": "Check running and published versions when asked about upgrades or changes to yourself.",
     "target": "tests/unit/test_tool_catalogue.py::test_confusable_pairs_are_discriminated_in_the_catalogue_itself"
   },
   {

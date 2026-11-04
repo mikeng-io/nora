@@ -15393,9 +15393,10 @@ Args:
         return {"status": "ok", "title": note.title}
 
     async def version_list(history: bool = False) -> dict:
-        """Check running and published versions or history when somebody asks about upgrades.
+        """List running and published history when somebody asks about upgrades or changes to you.
 
-        Use version_read for a named release's notes.
+        For an unnamed upgrade, discover its version here, then use version_read for its notes.
+        For a known or named version, use version_read directly instead.
         Returns `status`: ok or unavailable, with reporting guidance.
 
         Args:
@@ -15419,6 +15420,8 @@ Args:
                             "prove deployment or available capabilities. Unknown means no "
                             "verified version ordering. History is bounded to twenty releases; "
                             "read intervening release notes for a cross-version change summary. "
+                            "For a change question, read the relevant version_read notes "
+                            "before answering. "
                             "When unavailable, report each component by its own status."}
         if current is None or current.status != "ok" or current.entry is None:
             _record(metrics, "version_list", "unavailable")
