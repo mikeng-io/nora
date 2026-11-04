@@ -833,12 +833,14 @@ async def test_circle_job_lifecycle_is_read_by_real_context_and_desk(monkeypatch
     rendered = render_subagents(view).body
     assert 'Generated comparison' in rendered
     overlay = circle.CircleOverlay(job=state)
+    job = await store.get(UUID(job_id))
+    binding = {'job': job, 'room': subject.room}
     assert backbone._circle_execution_problem(
-        overlay, (), (('subagents', rendered),), (),
+        overlay, (), (('subagents', rendered),), (), **binding,
     ) is None
     assert backbone._circle_execution_problem(overlay, (), (), ())
     assert backbone._circle_execution_problem(
-        overlay, (), (('subagents', rendered),), ('subagent_create',),
+        overlay, (), (('subagents', rendered),), ('subagent_create',), **binding,
     )
     assert view.lines[0].state == ('running' if state == 'running' else 'done')
     assert view.lines[0].delivered == (state == 'checked_complete')
@@ -847,6 +849,38 @@ async def test_circle_job_lifecycle_is_read_by_real_context_and_desk(monkeypatch
         assert len(adapter.sent) == 1
         assert len(docs._rooms) == 1
         assert len(audit.rows) == 1
+        # FirePath legitimately omits the pending-only subagents block. Capture the
+        # real generated document as document_read returns it, with no new job/read.
+        import dataclasses
+        import json
+
+        doc = await docs.get(document_id=UUID(job.result_document_ids[0]))
+        capture = (('document_read', json.dumps([{'text': json.dumps({
+            'status': 'ok', 'document_id': str(doc.summary.id), 'title': doc.summary.title,
+            'spec': doc.spec,
+        })}])),)
+        assert backbone._circle_execution_problem(overlay, capture, (), (), **binding) is None
+        from html import escape
+        rendered_doc = (('documents', escape(
+            str(doc.summary.id) + '\n' + doc.text)),)
+        assert backbone._circle_execution_problem(
+            overlay, (), rendered_doc, (), **binding) is None
+        assert backbone._circle_execution_problem(overlay, (), (), (), **binding)
+        assert backbone._circle_execution_problem(
+            overlay, capture, (), ('subagent_create',), **binding)
+        for wrong in (
+            dataclasses.replace(job, result_document_ids=('wrong-document',)),
+            dataclasses.replace(job, result_report='Wrong generated result'),
+            dataclasses.replace(job, conversation_id='another-unit'),
+            dataclasses.replace(job, state=circle.ComputeJobState.PENDING),
+            dataclasses.replace(job, completed_at=None),
+        ):
+            assert backbone._circle_execution_problem(
+                overlay, capture, (), (), job=wrong, room=subject.room)
+        missing_result = (('document_read', json.dumps([{'text': json.dumps({
+            'status': 'ok', 'document_id': str(doc.summary.id), 'title': doc.summary.title,
+        })}])),)
+        assert backbone._circle_execution_problem(overlay, missing_result, (), (), **binding)
     else:
         assert not adapter.sent and not audit.rows and not docs._rooms
     assert await reader.read(platform='signal', conversation_id='another-room',
