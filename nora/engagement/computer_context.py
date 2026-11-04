@@ -42,6 +42,7 @@ from nora.domain.computer_context import (
     TaskLine,
 )
 from nora.domain.computer_events import ComputerEvent, ComputerEventStore
+from nora.domain.computer_tasks import ComputerTask
 from nora.domain.computer_sessions import (
     COMMAND_CHARS,
     EXPIRED,
@@ -69,6 +70,12 @@ class ComputerContextReader:
         runtime: SandboxRuntime, caps: ComputerContextCaps,
         clock: Callable[[], datetime], metrics: object,
         unit_for: Callable[[str, str], str | None] | None = None,
+        # The canonical scope resolver the whole scoped feature shares
+        # ([computer.scoped]): `(platform, conversation_id, conversation_type)`
+        # → the workspace key — a group to its unit, a DM to its `(person,
+        # anchor unit)` scope. When set it WINS over `unit_for`, so the block
+        # a DM room renders is its own scope's, never a group unit's.
+        scope_for: Callable[[str, str, str], str] | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         # The scoped runtime's queue and tab stores ([computer.scoped]):
         # when wired, the block carries queued/running tasks and task-owned
@@ -77,6 +84,7 @@ class ComputerContextReader:
         browser_idle_after: timedelta | None = None,
     ) -> None:
         self._unit_for = unit_for
+        self._scope_for = scope_for
         self._sessions = sessions
         self._events = events
         self._runtime = runtime
@@ -115,25 +123,49 @@ class ComputerContextReader:
         self._cache[scope] = (self._monotonic(), state)
         return state
 
-    async def read(self, *, platform: str, conversation_id: str) -> ComputerView | None:
+    def invalidate(self, scope: str) -> None:
+        """Drop a cached machine read: a mutating segment landed on `scope`,
+        so the next turn's block re-reads, not serves what it had."""
+        self._cache.pop(scope, None)
+
+    async def read(self, *, platform: str, conversation_id: str,
+                   conversation_type: str = "group") -> ComputerView | None:
         try:
-            return await self._read(platform, conversation_id)
+            return await self._read(platform, conversation_id, conversation_type)
         except Exception:
             log.exception("computer context read failed; rendering no block")
             self._inc("nora_errors_total", stage="computer_context", platform=platform)
             return None
 
-    async def _read(self, platform: str, conversation_id: str) -> ComputerView | None:
+    def _scope(self, platform: str, conversation_id: str,
+               conversation_type: str) -> str:
+        if self._scope_for is not None:
+            try:
+                return self._scope_for(platform, conversation_id, conversation_type) or ""
+            except Exception:
+                log.exception("computer scope resolution failed")
+                return ""
         unit = self._unit_for(platform, conversation_id) if self._unit_for else None
-        if not unit:
+        return computer_unit_scope(unit) if unit else ""
+
+    async def _read(self, platform: str, conversation_id: str,
+                    conversation_type: str) -> ComputerView | None:
+        scope = self._scope(platform, conversation_id, conversation_type)
+        if not scope:
             return None
-        scope = computer_unit_scope(unit)
         now = self._clock()
         caps = self._caps
         rows = await self._events.for_scope(
             scope=scope, since=now - timedelta(days=caps.active_days), limit=EVENTS_READ,
         )
         used = any(r.actor != "sweeper" for r in rows)
+        task_rows: list[ComputerTask] = []
+        if self._tasks is not None:
+            try:
+                task_rows = await self._tasks.open_for_scope(scope, limit=8)
+            except Exception:
+                log.exception("computer tasks read failed")
+                task_rows = []
         sessions = await self._sessions.for_scope(
             scope=scope, limit=SESSIONS_READ,
         )
@@ -143,7 +175,9 @@ class ComputerContextReader:
             if s.status == EXPIRED and s.expired_at is not None
             and now - s.expired_at <= caps.lapsed_visible
         ]
-        if not used and not open_rows and not lapsed_rows:
+        # A live queue row IS activity: a room with a running segment sees
+        # the block even before its first audit event lands.
+        if not used and not task_rows and not open_rows and not lapsed_rows:
             return None
         state = await self._state(scope)
         machine_read = state is not None
@@ -182,9 +216,10 @@ class ComputerContextReader:
         tabs: tuple[TabLine, ...] | None = None
         if self._tasks is not None:
             try:
-                task_rows = await self._tasks.open_for_scope(scope, limit=8)
                 tasks = tuple(TaskLine(
-                    task_id=str(t.id)[:8], kind=t.kind, status=t.status,
+                    # The FULL id: `task=` on computer_browse/capture/cancel
+                    # parses the whole UUID — a cut handle answers not-a-task.
+                    task_id=str(t.id), kind=t.kind, status=t.status,
                     created=t.created_at,
                     note=cut(str(t.result.get("note") or t.result.get("reason") or ""),
                              60)) for t in task_rows)
@@ -196,7 +231,7 @@ class ComputerContextReader:
                 tab_rows = await self._tabs.for_scope(scope, limit=8)
                 idle = self._browser_idle_after
                 tabs = tuple(TabLine(
-                    task_id=str(t.task_id)[:8], url=cut(t.last_url, 80),
+                    task_id=str(t.task_id), url=cut(t.last_url, 80),
                     title=cut(t.last_title, 60), status=t.status, via=t.via,
                     last_activity=t.last_activity_at,
                     expires_in=((t.last_activity_at + idle - now).total_seconds()
@@ -205,13 +240,20 @@ class ComputerContextReader:
             except Exception:
                 log.exception("browser tabs read failed")
                 tabs = None
+        instance: str | None = None
+        instance_read = getattr(self._runtime, "instance", None)
+        if instance_read is not None:
+            try:
+                instance = await instance_read(scope)
+            except Exception:  # noqa: BLE001 - an unreadable identity is absent, never raised
+                instance = None
         return ComputerView(
             now=now, caps=caps, open_sessions=tuple(open_lines),
             lapsed_sessions=tuple(lapsed_lines),
             tmux=tmux, processes=processes,
             processes_truncated=state.processes_truncated if state is not None else False,
             files=files, runs=_runs(rows), links=_links(rows),
-            tasks=tasks, tabs=tabs,
+            tasks=tasks, tabs=tabs, instance=instance,
             machine_read=machine_read,
         )
 

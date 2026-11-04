@@ -829,6 +829,7 @@ class TranscriptInjection:
             return None
         return await traced_read("computer", "read", self._computer_reader.read(
             platform=msg.platform, conversation_id=msg.conversation_id,
+            conversation_type=msg.conversation_type,
         ))
 
     async def _documents(

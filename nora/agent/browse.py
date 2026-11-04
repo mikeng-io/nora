@@ -331,7 +331,8 @@ class BrowseAgentRunner:
                    task_id: UUID | None) -> BrowseOutcome:
         if self._manager is not None:
             owner = task_id or uuid.uuid4()
-            async with self._manager.acquire(scope, owner) as bound:
+            async with self._manager.acquire(
+                    scope, owner, must_exist=task_id is not None) as bound:
                 return await self._drive(
                     bound.page, objective, start_url,
                     task_id=str(owner), tab=bound.tab.target_id)

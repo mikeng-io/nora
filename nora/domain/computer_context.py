@@ -127,4 +127,8 @@ class ComputerView:
     links: tuple[LinkLine, ...] = ()
     tasks: tuple[TaskLine, ...] | None = None
     tabs: tuple[TabLine, ...] | None = None
+    #: The VM instance the block's state and tabs were verified against —
+    #: typed provenance: an `instance` change means every handle in this
+    #: block was minted on a dead VM.
+    instance: str | None = None
     machine_read: bool = True

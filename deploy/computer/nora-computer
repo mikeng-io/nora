@@ -167,16 +167,26 @@ sys.exit(0 if any((p.get("host_ip"), p.get("host_port")) == want for p in ports)
         "$HOST_IP" "$HOST_PORT"
 }
 
-sandbox_state() {
-    sbx ls --json </dev/null | python3 -c '
+sandbox_state_for() {
+    # `sbx ls --json` is the installed contract (measured on the deploy host).
+    # Prints the sandbox's status, `absent` when sbx lists it as not there,
+    # and `unknown` when the read itself cannot be trusted — an unreadable
+    # answer is NEVER reported as absent, because callers act on `absent`.
+    sbx ls --json </dev/null 2>/dev/null | python3 -c '
 import json, sys
 name = sys.argv[1]
-for s in json.load(sys.stdin)["sandboxes"]:
-    if s["name"] == name:
-        print(s["status"]); break
+try:
+    sandboxes = json.load(sys.stdin)["sandboxes"]
+except (ValueError, KeyError, TypeError):
+    print("unknown"); sys.exit(0)
+for s in sandboxes:
+    if s.get("name") == name:
+        print(s.get("status") or "unknown"); break
 else:
-    print("absent")' "$NAME"
+    print("absent")' "$1"
 }
+
+sandbox_state() { sandbox_state_for "$NAME"; }
 
 load_token() {
     COMPUTERD_TOKEN=$(python3 - "$ENV_FILE" <<'TOKEN_PY'
@@ -807,18 +817,26 @@ cmd_destroy() {
 # `nora-computer scope provision <scope>` creates (or verifies) the scope's
 # own sandbox `nora-computer-<first 12 of scope>`, publishes computerd's port
 # on the same docker0 address the shared VM uses, applies the SAME egress
-# policy and writes `<SCOPE_REGISTRY>/<scope>.json` — the record
-# `FileScopeEndpoints` resolves. `scope serve <scope>` runs that scope's
-# computerd bound to the scope (`COMPUTERD_SCOPE`), so a packet for another
-# scope is refused inside the VM as well as unrouted on the host.
+# policy — denies BEFORE the wildcard allow, read back — and writes
+# `<SCOPE_REGISTRY>/<scope>.json` ONLY once that read-back passes: a failed
+# or unknown policy publishes nothing. `scope serve <scope>` verifies the
+# policy again and runs that scope's computerd bound to the scope
+# (`COMPUTERD_SCOPE`), so a packet for another scope is refused inside the
+# VM as well as unrouted on the host. `scope observe <scope>` is the
+# readiness phase: it asks the running VM its own /v1/identity and writes
+# the OBSERVED instance (boot_id) into the record — the two-phase contract
+# keeps an unobserved record's `instance` empty, and an empty instance
+# authorizes nothing. Re-observe after every serve/restart so the record
+# names the current boot.
 #
 # Ownership is the registry record: a live sandbox with no record, or a
 # record whose sandbox is gone or whose scope mismatches, is a CONFLICT —
-# provision refuses rather than adopt or replace it. `scope revoke` removes
-# only a record whose sandbox is already gone; it never destroys a live VM
-# and never touches /workspace. Backups per scope stay the operator's `sbx`
-# calls (one sandbox, one disk); the shared VM's backup flow does not read a
-# scope's disk.
+# provision refuses rather than adopt or replace it, and never deletes or
+# recreates a sandbox to escape a refusal. `scope revoke` removes only a
+# record whose sandbox is verifiably gone; it never destroys a live VM and
+# never touches /workspace. `scope backup`/`scope restore` are the
+# one-sandbox-one-disk data flow for a scope's own /workspace — restore
+# extracts over, never wipes — which the shared VM's backup does not read.
 
 scope_valid() {
     case "${1:-}" in
@@ -838,12 +856,84 @@ scope_port() { printf '%d' $((24000 + (16#${1:0:8} % 20000))); }
 scope_record() { printf '%s/%s.json' "$SCOPE_REGISTRY" "$1"; }
 
 scope_state() {
-    # like sandbox_state but for the scope's sandbox.
-    sbx state "$(scope_sandbox "$1")" 2>/dev/null || echo absent
+    # The scope's sandbox status through the same installed `sbx ls --json`
+    # contract as `sandbox_state` — `absent` only when the list is readable
+    # AND the sandbox is not in it; anything unreadable is `unknown`, and
+    # every caller below treats `unknown` as fail-closed, never as absent.
+    sandbox_state_for "$(scope_sandbox "$1")"
+}
+
+scope_egress() {
+    # Apply and read back the DEC-289 policy against the scope's sandbox, the
+    # same fail-closed pair `serve` runs for the shared VM: denies BEFORE the
+    # wildcard allow, and both halves read back. Exit is `egress_apply`'s /
+    # `egress_check`'s: 0 in place, 1 a violation, 2 an unreadable verdict —
+    # and an unreadable verdict is NOT a pass.
+    local NAME_saved=$NAME
+    NAME=$1
+    egress_apply && egress_check >/dev/null
+    local rc=$?
+    NAME=$NAME_saved
+    return "$rc"
+}
+
+scope_observe() {
+    # The two-phase readiness contract's second half. `provision` publishes
+    # the record with an EMPTY instance — not yet authorized; `observe` asks
+    # the running VM its own /v1/identity and writes the observed instance
+    # (its boot_id) and ready_at into the record. `FileScopeEndpoints` hands
+    # the record to `ScopedComputerdRuntime`, which refuses an empty or
+    # mismatched instance, so ONLY an observed VM ever serves the scope.
+    # Re-running observe on a changed boot_id REWRITES the instance — the
+    # record then names the new boot, and every stale tab row is expired by
+    # `expire_instance` on the Nora side. Exit: 0 published, 1 the VM's
+    # identity does not match the scope (a foreign VM answers), 2 the VM
+    # does not answer (not serving, or the port is dead).
+    local scope=${1:-} box record endpoint body instance now
+    scope_valid "$scope" || { echo "usage: nora-computer scope observe SCOPE" >&2; exit 2; }
+    record=$(scope_record "$scope")
+    [ -f "$record" ] || { echo "scope: no record for $scope — provision first" >&2; exit 6; }
+    box=$(scope_sandbox "$scope")
+    load_token
+    endpoint=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("endpoint",""))' "$record" 2>/dev/null)
+    [ -n "$endpoint" ] || { echo "scope: $record has no endpoint" >&2; exit 4; }
+    body=$(curl -s -m 5 -H "Authorization: Bearer $COMPUTERD_TOKEN" "$endpoint/v1/identity") \
+        || { echo "scope: $endpoint does not answer /v1/identity" >&2; exit 2; }
+    instance=$(SCOPE="$scope" BODY="$body" python3 - <<'EOF'
+import json, os, sys
+try:
+    ident = json.loads(os.environ["BODY"])
+except ValueError:
+    sys.exit(9)
+if ident.get("scope") != os.environ["SCOPE"]:
+    sys.exit(1)
+instance = (ident.get("instance") or ident.get("boot_id") or "").strip()
+if not instance:
+    sys.exit(9)
+print(instance)
+EOF
+    ) || { rc=$?
+        [ "$rc" = 1 ] && echo "scope: the VM answers for a DIFFERENT scope — refusing" >&2
+        [ "$rc" = 9 ] && echo "scope: /v1/identity is unreadable or has no instance" >&2
+        exit "$rc"; }
+    now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    python3 - "$record" "$instance" "$now" <<'EOF'
+import json, sys
+record, instance, now = sys.argv[1:4]
+with open(record) as f:
+    r = json.load(f)
+r["instance"] = instance
+r["ready_at"] = now
+with open(record, "w") as f:
+    json.dump(r, f)
+    f.write("\n")
+EOF
+    record_event scope_observe ok scope="$scope" instance="$instance"
+    printf '%s\n' "$record"
 }
 
 scope_provision() {
-    local scope=${1:-} box port record out
+    local scope=${1:-} box port record out rc
     scope_valid "$scope" || { echo "usage: nora-computer scope provision SCOPE (lowercase hex, 16-64)" >&2; exit 2; }
     box=$(scope_sandbox "$scope"); port=$(scope_port "$scope")
     record=$(scope_record "$scope")
@@ -858,14 +948,28 @@ scope_provision() {
         if [ "$known_name" != "$box" ]; then
             echo "scope: $record names $known_name, not $box — conflicting ownership" >&2; exit 4
         fi
-        # Idempotent: record and sandbox agree; verify the endpoint answers.
-        if [ "$(scope_state "$scope")" = absent ]; then
+        # Idempotent: record and sandbox agree. The sandbox must READ as
+        # alive (`unknown` fails closed: the state could not be measured),
+        # and the egress policy must read back BEFORE the record is handed
+        # out as ready — an existing record is no proof either holds.
+        local state
+        state=$(scope_state "$scope")
+        if [ "$state" = absent ]; then
             echo "scope: record exists but sandbox $box is absent — stale record; revoke it first" >&2; exit 4
+        elif [ "$state" != running ]; then
+            echo "scope: sandbox $box is $state (not verifiably running)" >&2; exit 4
         fi
+        scope_egress "$box" || {
+            echo "scope: the egress policy is NOT in place or does not read back on $box" >&2; exit 4; }
         printf '%s\n' "$record"; exit 0
     fi
-    if [ "$(scope_state "$scope")" != absent ]; then
-        echo "scope: sandbox $box exists with no record — refusing to adopt unknown ownership" >&2; exit 4
+    local state
+    state=$(scope_state "$scope")
+    if [ "$state" != absent ]; then
+        # `running`, stopped, or `unknown` alike: a readable non-absent state
+        # is unknown ownership to refuse; `unknown` is a read that cannot
+        # prove the name is free — refusing is never a deletion to escape it.
+        echo "scope: sandbox $box is $state with no record — refusing to adopt unknown ownership" >&2; exit 4
     fi
     mkdir -p "$UNUSED_WORKSPACE-$box" && chmod 700 "$UNUSED_WORKSPACE-$box" || exit 5
     log "creating scope sandbox $box for $scope (detached)"
@@ -877,29 +981,40 @@ scope_provision() {
         exit 6
     fi
     record_event scope_create ok scope="$scope" name="$box" port="$port"
-    # The same DEC-289 policy, scoped to this sandbox by sbx itself.
-    local NAME_saved=$NAME
-    NAME=$box
-    { egress_apply && egress_check >/dev/null; } \
-        || log "egress: the policy is NOT in place or does not read back; run: nora-computer egress check (against $box)"
-    NAME=$NAME_saved
+    # The egress contract is a PRECONDITION to publication: the record Nora
+    # resolves is only written after every deny reads back before the
+    # wildcard allow. On failure the sandbox stays (nothing is deleted or
+    # recreated to escape the refusal) and NO record exists to resolve.
+    if ! scope_egress "$box"; then
+        rc=$?
+        record_event scope_provision refused scope="$scope" rc="$rc"
+        echo "scope: the egress policy is NOT in place or does not read back on $box — no record published" >&2
+        exit 4
+    fi
     python3 - "$record" "$scope" "http://$HOST_IP:$port" "$box" <<'EOF'
 import json, sys
 record, scope, endpoint, name = sys.argv[1:5]
 with open(record, "w") as f:
+    # `instance` stays EMPTY until `scope observe` publishes the VM's own
+    # /v1/identity — an empty instance authorizes nothing (fail-closed).
     json.dump({"scope": scope, "endpoint": endpoint, "name": name, "instance": ""}, f)
     f.write("\n")
 EOF
+    record_event scope_provision ok scope="$scope" name="$box" port="$port"
     printf '%s\n' "$record"
 }
 
 scope_serve() {
-    local scope=${1:-} box record
+    local scope=${1:-} box record state
     scope_valid "$scope" || { echo "usage: nora-computer scope serve SCOPE" >&2; exit 2; }
     record=$(scope_record "$scope")
     [ -f "$record" ] || { log "no record for $scope: run nora-computer scope provision $scope"; exit 6; }
     box=$(scope_sandbox "$scope")
-    [ "$(scope_state "$scope")" != absent ] || { log "sandbox $box is absent; provision first"; exit 6; }
+    state=$(scope_state "$scope")
+    [ "$state" != absent ] || { log "sandbox $box is absent; provision first"; exit 6; }
+    # computerd only serves behind the policy it publishes under: verify the
+    # denies read back BEFORE starting — `unknown` is not a pass.
+    scope_egress "$box" || { log "sandbox $box is $state and its egress policy does not read back; refusing to serve"; exit 4; }
     load_token
     sbx exec -u root "$box" pkill -f /opt/computerd/computerd.py </dev/null >/dev/null 2>&1 || true
     record_event scope_computerd_start ok scope="$scope" name="$box"
@@ -931,12 +1046,58 @@ EOF
     done
 }
 
+# One scope, one sandbox, one disk: the scope's own archive is a tar of the
+# sandbox's whole /workspace, written to `$BACKUP_DIR/<scope>-<ts>.tar.gz`
+# next to the shared VM's archives. Restore EXTRACTS OVER the existing
+# workspace — data-preserving by construction: files the archive does not
+# name are untouched, so a restore never widens into a wipe.
+scope_backup() {
+    local scope=${1:-} box state file
+    scope_valid "$scope" || { echo "usage: nora-computer scope backup SCOPE" >&2; exit 2; }
+    [ -f "$(scope_record "$scope")" ] || { echo "scope: no record for $scope — nothing owns this backup" >&2; exit 6; }
+    box=$(scope_sandbox "$scope")
+    state=$(scope_state "$scope")
+    [ "$state" = running ] || { log "scope backup: $box is $state, not running; skipped (a stopped disk is unchanged, and sbx exec would start it)"; exit 0; }
+    mkdir -p "$BACKUP_DIR" || exit 5
+    file="$BACKUP_DIR/$scope-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+    if ! sbx exec -u root "$box" sh -c 'tar czf - -C /workspace .' </dev/null >"$file"; then
+        rm -f "$file"
+        log "scope backup: archiving $box failed"
+        exit 6
+    fi
+    record_event scope_backup ok scope="$scope" file="$file"
+    printf '%s\n' "$file"
+}
+
+scope_restore() {
+    local scope=${1:-} file=${2:-} box state
+    scope_valid "$scope" || { echo "usage: nora-computer scope restore SCOPE FILE" >&2; exit 2; }
+    [ -f "$file" ] || { echo "scope restore: no archive $file" >&2; exit 2; }
+    [ -f "$(scope_record "$scope")" ] || { echo "scope: no record for $scope" >&2; exit 6; }
+    box=$(scope_sandbox "$scope")
+    state=$(scope_state "$scope")
+    [ "$state" = running ] || { echo "scope restore: $box is $state, not running — start the scope's sandbox first" >&2; exit 6; }
+    # tar -x over /workspace: restores every file the archive names and keeps
+    # every file it does not — the migration path a recreated scope needs.
+    if ! sbx cp "$file" "$box:/tmp/nora-scope-restore.tar.gz" </dev/null; then
+        echo "scope restore: could not copy the archive into $box" >&2; exit 6
+    fi
+    if ! sbx exec -u root "$box" sh -c \
+            'tar xzf /tmp/nora-scope-restore.tar.gz -C /workspace && rm -f /tmp/nora-scope-restore.tar.gz' \
+            </dev/null; then
+        echo "scope restore: extraction failed; the archive may still sit at /tmp/nora-scope-restore.tar.gz in $box" >&2
+        exit 6
+    fi
+    record_event scope_restore ok scope="$scope" file="$file"
+}
+
 scope_revoke() {
-    local scope=${1:-} box
+    local scope=${1:-} box state
     scope_valid "$scope" || { echo "usage: nora-computer scope revoke SCOPE" >&2; exit 2; }
     box=$(scope_sandbox "$scope")
-    if [ "$(scope_state "$scope")" != absent ]; then
-        echo "scope: sandbox $box is still alive; destroy it explicitly (sbx rm --force $box) before revoking — its /workspace may hold data" >&2
+    state=$(scope_state "$scope")
+    if [ "$state" != absent ]; then
+        echo "scope: sandbox $box reads as $state, not gone; destroy it explicitly (sbx rm --force $box) before revoking — its /workspace may hold data" >&2
         exit 4
     fi
     rm -f "$(scope_record "$scope")"
@@ -946,11 +1107,14 @@ scope_revoke() {
 cmd_scope() {
     case "${1:-}" in
         provision) shift; scope_provision "$@" ;;
+        observe) shift; scope_observe "$@" ;;
         serve) shift; scope_serve "$@" ;;
         resolve) shift; scope_resolve "$@" ;;
         list) scope_list ;;
+        backup) shift; scope_backup "$@" ;;
+        restore) shift; scope_restore "$@" ;;
         revoke) shift; scope_revoke "$@" ;;
-        *) echo "usage: nora-computer scope provision|serve|resolve|list|revoke" >&2; exit 2 ;;
+        *) echo "usage: nora-computer scope provision|observe|serve|resolve|list|backup|restore|revoke" >&2; exit 2 ;;
     esac
 }
 

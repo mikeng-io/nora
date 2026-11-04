@@ -1,34 +1,37 @@
 """The per-scope computer FIFO: durable admission, one segment at a time.
 
 `ComputerAdmission.submit` is the only way work reaches a scope's VM. It
-writes the `computer_tasks` row FIRST — the durable intent — then:
+writes the `computer_tasks` row FIRST — the durable intent, carrying the
+typed request (`payload.tool` + `payload.args`) and the delivery provenance
+(`origin`) — then:
 
 - **Fast path.** The row is claimed head-of-queue in the same call
-  (`try_claim_head`: still `queued`, no `running` row and no earlier
-  `queued` row of the scope). The CALLER executes its segment inline and
-  finishes the row itself. No stream entry is needed at all.
+  (`try_claim_head`: still `queued`, the scope's oldest `queued` row, and NO
+  `running` row). The CALLER executes its segment through `run_segment` — a
+  child task the registry can cancel — and the terminal row is marked
+  `delivered` when the reply reached the caller.
 - **Queued.** The row is not head: a stream pointer goes on
-  `nq:computer:<scope>` (a dedicated computer stream, never a bridge lane)
-  and the caller may wait a bounded window for the grant, or hand its
-  continuation to a background task — the conversation slot is never held
-  while queued, and completion reaches the origin room through the existing
-  deferred delivery (`compute_jobs`, `ComputeJobPoller`).
+  `nq:computer:<scope>` and `ComputerQueueRunner` claims and EXECUTES it,
+  rebuilding the call from the durable payload through `dispatch` under
+  `current_segment` — so a restart loses nothing the row held, and the
+  rebuild re-runs the tool's own admission path (fresh policy) rather than
+  replaying a captured closure. Completion reaches the origin room through
+  the existing deferred delivery (`compute_jobs`, `ComputeJobPoller`),
+  retried until `delivered_at` lands.
+- **Worker.** A sub-agent's job is a `kind="worker"` segment its own
+  backend submits and waits on (`wait_for_grant`): the runner never
+  executes it (no dispatcher for the kind), the job task executes under
+  `current_segment`, and its nested computer calls inherit the parent's
+  slot instead of enqueueing behind it.
 
-`ComputerQueueRunner` is the GRANTER and the WATCHDOG, not the executor:
-segments always run in their submitter's context, so a segment's effect can
-never be double-run by the queue. Its tick grants the head row of each
-scope's stream (`try_claim_head` — the one atomic rule, shared with the
-submitter's fast path), then a per-row watcher waits for the finisher:
-deadline passed while queued means the row never starts; past it while
-`running`, or an owner that died without finishing, closes the row
-`interrupted` — uncertain effects are NEVER replayed. The terminal row is
-written before the stream ack, so a lost ack replays a pointer to a closed
-row only.
-
-`current_segment` marks code running inside a granted slot: a nested call
-made under it (a worker's own computer use) inherits the parent's admission
-and runs inline — it never enqueues behind its own parent, the deadlock the
-design rules out.
+`ComputerQueueRunner` is granter, dispatcher and watchdog. A `running` row
+whose executor is not in the registry is owner-lost: before any successor
+is granted, `reconcile` reads the VM's actual process state — quiet closes
+the row `interrupted` (uncertain effects are NEVER replayed); busy or
+unknown keeps the scope blocked (an idle timeout is not proof the old
+command stopped), bounded by `ORPHAN_AFTER`. The terminal row is written
+before the stream ack; a delivery failure leaves the pointer pending, so
+delivery is retried, never dropped.
 """
 
 from __future__ import annotations
@@ -46,6 +49,7 @@ from uuid import UUID
 from nora.domain.computer_tasks import (
     QUEUED,
     RUNNING,
+    TASK_KINDS,
     TERMINAL,
     ComputerTask,
     ComputerTaskStore,
@@ -60,17 +64,25 @@ CONSUMER = "nora"
 #: A `running` row with no deadline that stays unfinished this long is
 #: orphaned: its owner died mid-segment. Never re-run — close `interrupted`.
 ORPHAN_AFTER = timedelta(minutes=45)
+#: How long a cancellation waits for the executor to stop on its own before
+#: the row is closed `interrupted` — its effects could not be confirmed.
+DRAIN_SECONDS = 10.0
+#: The most of a tool reply persisted in `result`: the typed payload the
+#: delivery path and `poll` read back.
+RESULT_CHARS = 20000
+
 
 @dataclass(frozen=True, slots=True)
 class SubmittedTask:
     """What `submit` answers.
 
     `granted`: the row is `running` FOR THIS CALLER — execute the segment
-    now and `finish` it. `inherited`: the caller is inside a parent's slot —
-    run inline, no row was made. `result`: the row reached a terminal state
-    while the caller waited (only a cancel can land before execution — the
-    caller is the only executor). Otherwise the task is queued and its
-    completion is delivered, not answered now."""
+    through `run_segment`. `inherited`: the caller is inside a parent's
+    slot — run inline, no row was made. `result`: the row reached a
+    terminal state while the caller waited. Otherwise the task is queued
+    and its completion is delivered, not answered now. `granted` is never
+    set for a row the RUNNER claimed — a claim grants execution to exactly
+    the claimer."""
 
     task: ComputerTask
     granted: bool = False
@@ -82,15 +94,76 @@ def _stream(scope: str) -> str:
     return f"{STREAM_PREFIX}{scope}"
 
 
+def row_status(reply: Mapping[str, Any]) -> str:
+    """The terminal status a tool reply maps to: `unavailable` and
+    `cancelled` pass through, an answered refusal is `failed` (the segment
+    ran; the work did not land), every other answer is `done`."""
+    status = str(reply.get("status") or "unavailable")
+    if status in ("unavailable", "cancelled"):
+        return status
+    if status in ("ok", "nothing_found", "ambiguous"):
+        return "done"
+    return "failed"
+
+
+def cut_result(reply: Mapping[str, Any]) -> dict[str, Any]:
+    """The reply dict persisted as the row's `result`, kept whole but for
+    over-long string leaves (stdout bodies, page text) — provenance fields
+    (path, sha256, task, tab) are short and always survive."""
+    import json as _json
+
+    def trimmed(value: Any) -> Any:
+        if isinstance(value, str) and len(value) > RESULT_CHARS:
+            return value[:RESULT_CHARS]
+        if isinstance(value, Mapping):
+            return {str(k): trimmed(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [trimmed(v) for v in value]
+        return value
+
+    out: dict[str, Any] = trimmed(dict(reply))
+    try:
+        _json.dumps(out, default=str)
+    except (TypeError, ValueError):
+        out = {"status": str(reply.get("status") or "unavailable"),
+               "note": "the result could not be persisted whole"}
+    return out
+
+
+class SegmentRegistry:
+    """The in-process executors holding granted segments: `task_id` → the
+    asyncio task actually running it. Shared by `ComputerAdmission` (the
+    submitter-side fast path and worker jobs) and `ComputerQueueRunner` (the
+    deferred dispatch), so a cancel or a watchdog can reach the real work —
+    a `running` row with no registered executor is owner-lost, never
+    silently handed a successor."""
+
+    def __init__(self) -> None:
+        self._tasks: dict[UUID, asyncio.Task[Any]] = {}
+
+    def register(self, task_id: UUID, task: asyncio.Task[Any]) -> None:
+        self._tasks[task_id] = task
+
+    def unregister(self, task_id: UUID, task: asyncio.Task[Any]) -> None:
+        if self._tasks.get(task_id) is task:
+            del self._tasks[task_id]
+
+    def executor(self, task_id: UUID) -> asyncio.Task[Any] | None:
+        task = self._tasks.get(task_id)
+        return task if task is not None and not task.done() else None
+
+
 class ComputerAdmission:
     def __init__(
         self, *, tasks: ComputerTaskStore, redis: Any,
         clock: Callable[[], datetime], poll_seconds: float = 0.25,
+        executors: SegmentRegistry | None = None,
     ) -> None:
         self._tasks = tasks
         self._redis = redis
         self._clock = clock
         self._poll = poll_seconds
+        self.executors = executors or SegmentRegistry()
 
     async def submit(
         self, *, scope: str, kind: str, payload: Mapping[str, Any],
@@ -115,28 +188,137 @@ class ComputerAdmission:
             await self._redis.xadd(_stream(scope), {"task": str(task.id)})
         except Exception:  # noqa: BLE001 - a publish gap reconciles, never loses the row
             log.warning("computer task publish failed; the reconcile pass will")
+        # The wait is for the RUNNER's grant+dispatch: `granted` is never
+        # answered here — a row the runner claimed executes runner-side, and
+        # returning it to the caller would run the segment twice. The caller
+        # only ever sees the terminal result inside the window.
         deadline = asyncio.get_running_loop().time() + wait_seconds
         while asyncio.get_running_loop().time() < deadline:
             row = await self._tasks.get(task.id)
             if row is None or row.status in TERMINAL:
                 return SubmittedTask(task=task, result=row)
-            if row.status == RUNNING:
-                return SubmittedTask(task=row, granted=True)
             await asyncio.sleep(self._poll)
         row = await self._tasks.get(task.id)
-        if row is not None and row.status == RUNNING:
-            return SubmittedTask(task=row, granted=True)
         return SubmittedTask(
             task=task, result=row if row is not None and row.status in TERMINAL else None)
+
+    async def wait_for_grant(self, task_id: UUID, *, until: datetime) -> ComputerTask | None:
+        """A WORKER submitter's wait for its own claim: `try_claim_head`
+        until the row grants, goes terminal, or `until` passes. Worker rows
+        have no dispatcher, so the submitter's claim is the only grant."""
+        while self._clock() < until:
+            row = await self._tasks.get(task_id)
+            if row is None or row.status in TERMINAL:
+                return row
+            if row.deadline_at is not None and row.deadline_at <= self._clock():
+                return row  # past its bound: never claim expired work
+            claimed = await self._tasks.try_claim_head(task_id, now=self._clock())
+            if claimed is not None:
+                return claimed
+            await asyncio.sleep(self._poll)
+        return await self._tasks.get(task_id)
+
+    async def run_segment(
+        self, task: ComputerTask, work: Awaitable[Mapping[str, Any]],
+    ) -> Mapping[str, Any]:
+        """Execute a granted segment in a registered child task.
+
+        The child sets `current_segment` (nested calls inherit) and writes
+        the terminal row itself — cancelled by the queue, failed by an
+        exception, or the reply's own status — so a caller that dies
+        mid-segment leaves a closing executor, not an orphaned grant. The
+        reply reaching the caller marks the row `delivered`; a caller
+        cancelled first leaves delivery to `on_terminal`."""
+        outcome: dict[str, Mapping[str, Any]] = {}
+
+        async def _run() -> None:
+            token = current_segment.set(task.id)
+            try:
+                reply = dict(await work)
+            except asyncio.CancelledError:
+                reply = {"status": "cancelled",
+                         "note": "The computer task was stopped while it ran."}
+                await self._safe_finish(task.id, "cancelled", reply)
+                raise
+            except BaseException as exc:
+                reply = {"status": "unavailable", "reason": type(exc).__name__}
+                await self._safe_finish(task.id, "unavailable", reply)
+                raise
+            else:
+                await self._safe_finish(task.id, row_status(reply), reply)
+                outcome["reply"] = reply
+            finally:
+                current_segment.reset(token)
+
+        worker = asyncio.ensure_future(_run())
+        self.executors.register(task.id, worker)
+        try:
+            await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            if not worker.done():
+                # The CALLER was cancelled: the segment runs on and finishes
+                # the row itself; `delivered_at` stays empty, so
+                # `on_terminal` hands the terminal row to deferred delivery.
+                raise
+            # The queue cancelled the segment: its own except path closed
+            # the row. The cancelled reply is what the caller is told.
+            row = await self._tasks.get(task.id)
+            if row is not None and row.status in TERMINAL:
+                with contextlib.suppress(Exception):
+                    await self._tasks.mark_delivered(task.id, now=self._clock())
+            return {"status": "cancelled",
+                    "note": "The computer task was stopped while it ran."}
+        finally:
+            self.executors.unregister(task.id, worker)
+        if worker.exception() is not None:
+            # The executor failed outside the cancelled path; the row is
+            # already closed `unavailable` by its own except.
+            return {"status": "unavailable",
+                    "note": "The computer task failed while it ran."}
+        reply = outcome.get("reply") or {"status": "unavailable"}
+        with contextlib.suppress(Exception):
+            await self._tasks.mark_delivered(task.id, now=self._clock())
+        return reply
+
+    async def _safe_finish(
+        self, task_id: UUID, status: str, result: Mapping[str, Any],
+    ) -> None:
+        try:
+            await self._tasks.finish(
+                task_id, status=status, result=cut_result(result), now=self._clock())
+        except Exception:
+            log.exception("computer task %s could not write its terminal row", task_id)
 
     async def finish(self, task_id: UUID, *, status: str,
                      result: Mapping[str, Any]) -> None:
         """The executing caller's close: terminal row persisted."""
-        await self._tasks.finish(task_id, status=status,
-                                 result=result, now=self._clock())
+        await self._safe_finish(task_id, status, result)
 
     async def cancel(self, task_id: UUID) -> ComputerTask | None:
-        return await self._tasks.request_cancel(task_id, now=self._clock())
+        """Cancel a task AND drain its executor. A queued row closes
+        `cancelled` at once; a running one is flagged, its executor task is
+        cancelled and awaited — only a confirmed stop returns `cancelled`.
+        An executor that will not stop, or an owner that is gone, closes
+        `interrupted` (uncertain effects are never replayed), never
+        `cancelled` on a flag alone."""
+        row = await self._tasks.request_cancel(task_id, now=self._clock())
+        if row is None or row.status != RUNNING:
+            return row
+        executor = self.executors.executor(task_id)
+        if executor is None:
+            await self._tasks.mark_interrupted(
+                task_id, now=self._clock(), reason="the owner was lost")
+            return await self._tasks.get(task_id)
+        executor.cancel()
+        with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
+            await asyncio.wait_for(asyncio.shield(executor), DRAIN_SECONDS)
+        fresh = await self._tasks.get(task_id)
+        if fresh is not None and fresh.status == RUNNING:
+            await self._tasks.mark_interrupted(
+                task_id, now=self._clock(),
+                reason="the cancellation could not be confirmed")
+            fresh = await self._tasks.get(task_id)
+        return fresh
 
     async def delivered(self, task_id: UUID) -> None:
         """The terminal result was consumed live: `delivered_at`, so
@@ -157,15 +339,24 @@ def _ephemeral(scope: str, kind: str, now: datetime) -> ComputerTask:
 
 
 class ComputerQueueRunner:
-    """The granter/watchdog loop. `run_forever` is composition's task;
-    `tick` is one reconcile+grant pass (the testable half)."""
+    """The granter/dispatcher/watchdog loop. `run_forever` is composition's
+    task; `tick` is one reconcile+grant pass (the testable half).
+
+    `dispatch` maps a task `kind` to the executor that rebuilds and runs its
+    durable request — `native`, `browse` and `capture` re-enter the tool
+    path; kinds with no dispatcher (`worker`) are claimed only by their own
+    submitter, never by the runner."""
 
     def __init__(
         self, *, tasks: ComputerTaskStore, redis: Any,
         clock: Callable[[], datetime], metrics: Any = None,
         batch: int = 20, watch_seconds: float = 1.0,
         on_terminal: Callable[[ComputerTask], Awaitable[None]] | None = None,
-        reconcile: Callable[[str], Awaitable[None]] | None = None,
+        reconcile: Callable[[str], Awaitable[str]] | None = None,
+        dispatch: Mapping[str, Callable[[ComputerTask], Awaitable[Mapping[str, Any]]]]
+        | None = None,
+        executors: SegmentRegistry | None = None,
+        audit: Callable[[ComputerTask, str], Awaitable[None]] | None = None,
     ) -> None:
         self._tasks = tasks
         self._redis = redis
@@ -174,9 +365,21 @@ class ComputerQueueRunner:
         self._batch = batch
         self._on_terminal = on_terminal
         self._reconcile_scope = reconcile
+        self._dispatch = dict(dispatch or {})
+        self._executors = executors or SegmentRegistry()
+        self._audit = audit
         self._watch_seconds = watch_seconds
         self._group_ready: set[str] = set()
         self._watchers: set[asyncio.Task[Any]] = set()
+
+    def set_dispatch(
+        self, kind: str,
+        executor: Callable[[ComputerTask], Awaitable[Mapping[str, Any]]],
+    ) -> None:
+        """Bind a kind's executor after construction — composition builds the
+        tool-facing dispatcher after the runner exists."""
+        if kind in TASK_KINDS:
+            self._dispatch[kind] = executor
 
     async def _group(self, stream: str) -> None:
         if stream in self._group_ready:
@@ -186,28 +389,34 @@ class ComputerQueueRunner:
         self._group_ready.add(stream)
 
     async def _scopes(self) -> list[str]:
-        keys = []
-        async for key in self._redis.scan_iter(match=f"{STREAM_PREFIX}*", count=100):
-            keys.append(key.decode() if isinstance(key, bytes) else key)
-        return [k[len(STREAM_PREFIX):] for k in keys]
+        """The scopes with open work, from the table — the record of truth —
+        never a Redis SCAN (the dedicated credential stays narrow)."""
+        return await self._tasks.open_scopes(limit=self._batch * 4)
+
+    async def _note(self, task: ComputerTask, transition: str) -> None:
+        if self._audit is None:
+            return
+        try:
+            await self._audit(task, transition)
+        except Exception:
+            log.exception("computer queue audit write failed")
 
     async def reconcile(self) -> None:
         """Publish gaps and dead grants: an unannounced `queued` row gets its
-        stream entry; a stale `running` row is closed `interrupted` — its
-        effects are uncertain and never re-run."""
+        stream entry; a stale `running` row past the orphan bound is closed
+        `interrupted` — its effects are uncertain and never re-run."""
         try:
-            # Only rows old enough that a normal publish would already have
-            # landed: an every-tick re-xadd would duplicate pointers, not
-            # close gaps (a duplicate is harmless — a pointer is never the
-            # record — but it grows the pending list for nothing).
             grace = self._clock() - timedelta(seconds=10)
             for task in await self._tasks.unannounced(limit=self._batch):
                 if task.created_at < grace:
                     await self._redis.xadd(_stream(task.scope), {"task": str(task.id)})
             for task in await self._tasks.interrupted(
                     older_than=self._clock() - ORPHAN_AFTER, limit=self._batch):
+                if self._executors.executor(task.id) is not None:
+                    continue  # alive in-process: its own deadline governs it
                 await self._tasks.mark_interrupted(
                     task.id, now=self._clock(), reason="the owner was lost")
+                await self._note(task, "interrupted")
         except Exception:
             log.exception("computer queue reconcile failed")
 
@@ -216,15 +425,12 @@ class ComputerQueueRunner:
         await self.reconcile()
         granted = 0
         for scope in await self._scopes():
-            granted += await self._dispatch(scope)
+            granted += await self._dispatch_scope(scope)
         return granted
 
-    async def _dispatch(self, scope: str) -> int:
+    async def _dispatch_scope(self, scope: str) -> int:
         stream = _stream(scope)
         await self._group(stream)
-        if self._reconcile_scope is not None:
-            with contextlib.suppress(Exception):
-                await self._reconcile_scope(scope)
         try:
             auto = await self._redis.xautoclaim(
                 stream, GROUP, CONSUMER, min_idle_time=60_000, start_id="0-0",
@@ -232,9 +438,6 @@ class ComputerQueueRunner:
             pending = list(auto[1] if len(auto) > 1 else [])
             fresh = await self._redis.xreadgroup(
                 GROUP, CONSUMER, {stream: ">"}, count=self._batch)
-            # Pointers this consumer already holds: "0" re-reads the pending
-            # list NOW, not after xautoclaim's idle bound — the grant after
-            # a finish cannot stall a minute on an entry it already had.
             held = await self._redis.xreadgroup(
                 GROUP, CONSUMER, {stream: "0"}, count=self._batch)
             for _, items in held or []:
@@ -248,13 +451,39 @@ class ComputerQueueRunner:
         for _, items in fresh or []:
             seen.extend((mid, fields) for mid, fields in items)
         seen.extend(pending)
-        # A scope with a running row cannot grant anything this pass.
         try:
             open_rows = await self._tasks.open_for_scope(scope, limit=self._batch)
         except Exception:
             log.exception("computer queue scope read failed")
             return 0
-        if any(r.status == RUNNING for r in open_rows):
+        running = [r for r in open_rows if r.status == RUNNING]
+        if running:
+            # One running segment blocks the scope; whether it is still
+            # OWNED decides what blocks and for how long.
+            for running_row in running:
+                if self._executors.executor(running_row.id) is not None:
+                    if (running_row.deadline_at is not None
+                            and running_row.deadline_at <= self._clock()):
+                        # Past its bound: cancel the real work; its own
+                        # handler closes the row.
+                        executor = self._executors.executor(running_row.id)
+                        if executor is not None:
+                            executor.cancel()
+                    continue
+                # Owner-lost: no executor here. Reconcile the VM's ACTUAL
+                # process state before this scope may grant again — an idle
+                # timeout is not proof the old command stopped.
+                verdict = "unknown"
+                if self._reconcile_scope is not None:
+                    with contextlib.suppress(Exception):
+                        verdict = await self._reconcile_scope(scope)
+                if verdict == "quiet":
+                    await self._tasks.mark_interrupted(
+                        running_row.id, now=self._clock(),
+                        reason="the owner was lost; the VM is quiet")
+                    await self._note(running_row, "interrupted")
+                # busy/unknown: keep the row running and the scope blocked;
+                # the orphan bound is the outer limit.
             return 0
         granted = 0
         for mid, fields in seen:
@@ -263,23 +492,34 @@ class ComputerQueueRunner:
                 await self._ack(stream, mid)
                 continue
             row = await self._tasks.get(task_id)
-            if row is None or row.status != QUEUED:
+            if row is None:
+                await self._ack(stream, mid)
+                continue
+            if row.status in TERMINAL:
+                await self._settle(stream, mid, row)
+                continue
+            if row.status != QUEUED:
                 await self._ack(stream, mid)
                 continue
             # Re-check at the queue head: cancelled or past-deadline never
-            # starts.
+            # starts — and a queued cancel is still DELIVERED.
             if (row.deadline_at is not None and row.deadline_at <= self._clock()
                     ) or row.cancel_requested_at is not None:
-                await self._tasks.request_cancel(row.id, now=self._clock())
-                await self._ack(stream, mid)
+                cancelled = await self._tasks.request_cancel(row.id, now=self._clock())
+                await self._note(row, "cancelled")
+                await self._settle(stream, mid, cancelled or row)
                 continue
+            if row.kind not in self._dispatch:
+                continue  # submitter-owned kind (a worker job): never runner-run
             claimed = await self._tasks.try_claim_head(row.id, now=self._clock())
             if claimed is None:
                 continue  # not head: FIFO, never skip ahead
             granted += 1
-            watcher = asyncio.ensure_future(self._watch(stream, mid, claimed))
-            self._watchers.add(watcher)
-            watcher.add_done_callback(self._watch_done)
+            await self._note(claimed, "granted")
+            worker = asyncio.ensure_future(self._execute(stream, mid, claimed))
+            self._executors.register(claimed.id, worker)
+            self._watchers.add(worker)
+            worker.add_done_callback(self._watch_done)
             break
         return granted
 
@@ -289,35 +529,60 @@ class ComputerQueueRunner:
             return
         exc = watcher.exception()
         if exc is not None:
-            log.error("computer queue watcher died", exc_info=exc)
+            log.error("computer queue worker died", exc_info=exc)
 
     async def _ack(self, stream: str, mid: Any) -> None:
         with contextlib.suppress(Exception):
             await self._redis.xack(stream, GROUP, mid)
 
-    async def _watch(self, stream: str, mid: Any, task: ComputerTask) -> None:
-        """Wait out the granted segment: its caller finishes the row, or the
-        deadline/orphan bound closes it `interrupted`. The row is terminal
-        before the ack."""
+    async def _settle(self, stream: str, mid: Any, row: ComputerTask) -> None:
+        """Terminal delivery THEN ack: the row stands first, then the room
+        is told, then the pointer is dropped. A delivery failure leaves the
+        entry pending — reclaimed and retried, never silently dropped."""
+        if row.delivered_at is None and self._on_terminal is not None:
+            try:
+                await self._on_terminal(row)
+            except Exception:
+                log.exception("computer task %s delivery failed; the pointer stays", row.id)
+                return
+        await self._ack(stream, mid)
+
+    async def _execute(self, stream: str, mid: Any, task: ComputerTask) -> None:
+        """Run a claimed row's durable request through its dispatcher, close
+        the row with the typed reply, then settle (deliver + ack)."""
+        me = asyncio.current_task()
         try:
-            while True:
-                row = await self._tasks.get(task.id)
-                if row is None or row.status in TERMINAL:
-                    break
-                now = self._clock()
-                if (row.deadline_at is not None and row.deadline_at <= now) or (
-                        row.started_at is not None
-                        and row.started_at < now - ORPHAN_AFTER):
-                    await self._tasks.mark_interrupted(
-                        task.id, now=now, reason="the grant ran out")
-                    row = await self._tasks.get(task.id)
-                    break
-                await asyncio.sleep(self._watch_seconds)
-            if row is not None and self._on_terminal is not None:
-                with contextlib.suppress(Exception):
-                    await self._on_terminal(row)
+            executor = self._dispatch[task.kind]
+            token = current_segment.set(task.id)
+            try:
+                reply = dict(await executor(task))
+            except asyncio.CancelledError:
+                reply = {"status": "cancelled",
+                         "note": "The computer task was stopped while it ran."}
+                await self._safe_finish(task.id, "cancelled", reply)
+                raise
+            except Exception as exc:
+                log.exception("computer task %s dispatch failed", task.id)
+                reply = {"status": "unavailable", "reason": type(exc).__name__}
+                await self._safe_finish(task.id, "unavailable", reply)
+            else:
+                await self._safe_finish(task.id, row_status(reply), reply)
+            finally:
+                current_segment.reset(token)
+            row = await self._tasks.get(task.id)
+            if row is not None:
+                await self._settle(stream, mid, row)
         finally:
-            await self._ack(stream, mid)
+            if me is not None:
+                self._executors.unregister(task.id, me)
+
+    async def _safe_finish(self, task_id: UUID, status: str,
+                           result: Mapping[str, Any]) -> None:
+        try:
+            await self._tasks.finish(
+                task_id, status=status, result=cut_result(result), now=self._clock())
+        except Exception:
+            log.exception("computer task %s could not write its terminal row", task_id)
 
     async def run_forever(self, *, tick_seconds: float = 1.0) -> None:
         while True:
@@ -341,9 +606,10 @@ class ComputerTaskBackend:
     half of the queue. `launch` is never called — a computer task is
     submitted through `ComputerAdmission`, and the `compute_jobs` row is
     written only when its terminal state needs delivering. `poll` reads the
-    row back: still open is `RUNNING`, `done` is `SUCCEEDED`, anything else
-    is `FAILED` with the row's reason — the same three states the generic
-    poller already renders."""
+    row back: still open is `RUNNING`, `done` is `SUCCEEDED` with the
+    segment's actual report (its answer, capture path or note — the typed
+    result, never a generic word), anything else is `FAILED` with the row's
+    reason."""
 
     def __init__(self, *, tasks: ComputerTaskStore) -> None:
         self._tasks = tasks
@@ -368,12 +634,14 @@ class ComputerTaskBackend:
                              failure_reason="lost")
         if row.status in (QUEUED, RUNNING):
             return JobResult(status=JobStatus.RUNNING)
-        note = str(row.result.get("note") or row.result.get("reply_status")
-                   or row.status)
+        result = dict(row.result or {})
+        report = str(
+            result.get("answer") or result.get("report") or result.get("note")
+            or result.get("reason") or row.status)
         if row.status == "done":
-            return JobResult(status=JobStatus.SUCCEEDED, report=note,
-                             summary=note)
-        return JobResult(status=JobStatus.FAILED, error=note,
+            return JobResult(status=JobStatus.SUCCEEDED, report=report,
+                             summary=report)
+        return JobResult(status=JobStatus.FAILED, error=report,
                          failure_reason=row.status)
 
     async def cancel(self, *, job_id: str) -> None:
@@ -390,13 +658,12 @@ async def deliver_computer_task(
 ) -> None:
     """Hand a terminal queued task's result to the deferred-delivery outbox.
 
-    Called by the runner's `on_terminal` for every row that closes. A row
-    its caller already consumed (`delivered_at` set by the live/granted
-    path) or that names no room is skipped; otherwise one `compute_jobs`
-    row of kind `computer` is written and the task is marked delivered, so
-    the result reaches the origin room through `ComputeJobPoller` — the
-    same path every other deferred job takes — without holding a
-    conversation slot while it was queued."""
+    Retryable and deduplicated: an already-`delivered` row, a worker whose
+    own job row IS the delivery (`origin.deliver == "job"`), and a task with
+    a `compute_jobs` row already filed for it (a retried delivery after a
+    crash) all stop here — the entry is re-driven until `delivered_at`
+    lands, never duplicated. A row naming no room is only marked delivered.
+    """
     import hashlib
     import json as _json
     from uuid import uuid4
@@ -408,7 +675,17 @@ async def deliver_computer_task(
     origin = dict(row.origin or {})
     platform = str(origin.get("platform") or "")
     conversation_id = str(origin.get("conversation_id") or "")
-    if platform and conversation_id:
+    if platform and conversation_id and origin.get("deliver") != "job":
+        # Re-check live: a fast-path `mark_delivered` landing between the
+        # settle read and here must not file a second delivery.
+        fresh = await tasks.get(row.id)
+        if fresh is not None and fresh.delivered_at is not None:
+            return
+        existing = await jobs.kind_since(
+            kind="computer", since=row.created_at - timedelta(minutes=1))
+        if any(j.backend_job_id == str(row.id) for j in existing):
+            await tasks.mark_delivered(row.id, now=clock())
+            return
         tool = str(row.payload.get("tool") or row.kind)
         task_text = _json.dumps({"kind": row.kind, "payload": row.payload},
                                 sort_keys=True, default=str)
@@ -432,4 +709,3 @@ async def deliver_computer_task(
     # state was dispositioned, so a second `on_terminal` call cannot file a
     # duplicate delivery.
     await tasks.mark_delivered(row.id, now=clock())
-

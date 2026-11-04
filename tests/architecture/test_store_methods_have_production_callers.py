@@ -280,6 +280,9 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         # `SqlComputerTaskStore` and `SqlBrowserTabStore` each read a scope's
         # open rows; their contract suites drive the two stores.
         "open_for_scope",
+        # The same pair each answer "which scopes hold open rows" — the
+        # queue's and the tab sweep's breadth reads — checked by contract.
+        "open_scopes",
         # Profile source reads share register/settle names with other owners.
         "register", "settle",
         # `SqlDocumentStore.set_state` (DEC-255) shares the name with another store's.

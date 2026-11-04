@@ -25,7 +25,7 @@ import asyncio
 import base64
 import contextlib
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -136,13 +136,25 @@ class Snapshot:
 
 class CdpConnection:
     """One CDP websocket: numbered calls answered in any order, events
-    dropped (the actions here poll instead of subscribing)."""
+    fanned to `subscribe`d handlers. computerd admits ONE browser websocket
+    per scope, so everything that needs Chrome's target list — the attach,
+    the reconcile, the popup watch — shares this connection."""
 
     def __init__(self, ws: aiohttp.ClientWebSocketResponse) -> None:
         self._ws = ws
         self._next = 0
         self._pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
+        self._handlers: list[Callable[[str, dict[str, Any]], None]] = []
         self._reader = asyncio.create_task(self._read())
+
+    def subscribe(self, handler: Callable[[str, dict[str, Any]], None]) -> None:
+        """A `(method, params)` sync callback for CDP events. It must not
+        block or await — schedule async work from it."""
+        self._handlers.append(handler)
+
+    def unsubscribe(self, handler: Callable[[str, dict[str, Any]], None]) -> None:
+        with contextlib.suppress(ValueError):
+            self._handlers.remove(handler)
 
     async def _read(self) -> None:
         try:
@@ -153,9 +165,16 @@ class CdpConnection:
                     data = json.loads(msg.data)
                 except ValueError:
                     continue
-                waiter = self._pending.pop(data.get("id"), None) if "id" in data else None
-                if waiter is not None and not waiter.done():
-                    waiter.set_result(data)
+                if "id" in data:
+                    waiter = self._pending.pop(data.get("id"), None)
+                    if waiter is not None and not waiter.done():
+                        waiter.set_result(data)
+                else:
+                    method = str(data.get("method") or "")
+                    params = data.get("params") or {}
+                    for handler in self._handlers:
+                        with contextlib.suppress(Exception):
+                            handler(method, params)
         finally:
             for waiter in self._pending.values():
                 if not waiter.done():

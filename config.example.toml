@@ -591,7 +591,7 @@ enabled = false
 # [computer.scoped]
 # enabled = false               # one microVM per scope instead of one shared VM
 # registry = ""                 # the directory `nora-computer scope provision` writes
-# redis_url_env = "NORA_BRIDGES_REDIS_URL"  # the dedicated nq:computer:* streams' Redis
+# redis_url_env = "NORA_COMPUTER_REDIS_URL" # the dedicated nq:computer:* streams' Redis
 # browser_idle_seconds = 600    # a tab idle this long expires (10 min)
 # browser_sweep_seconds = 30    # the expiry sweep's tick
 #

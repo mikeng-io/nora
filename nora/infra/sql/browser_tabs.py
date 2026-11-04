@@ -1,10 +1,10 @@
 """`BrowserTabStore` over SQLAlchemy Core (`browser_tasks`, migration `0147`;
 `nora.domain.browser_tasks`).
 
-`expire_idle` is the sweep's compare-and-set: only rows still `open` with a
-stale `last_activity_at` move, so an attach landing mid-sweep keeps its tab.
-`expire_instance` retires a scope's open rows bound to a dead VM instance.
-Nothing deletes.
+`open_scopes` is the sweep's breadth read; `expire_instance` retires a
+scope's open rows bound to a dead VM instance. Idle expiry is the manager's
+own serialized path (confirm the guest close, then set the row) — there is
+no blind bulk-expire write. Nothing deletes.
 """
 
 from __future__ import annotations
@@ -89,18 +89,12 @@ class SqlBrowserTabStore:
             await conn.execute(
                 sa.update(T).where(T.c.id == tab_id).values(status=status))
 
-    async def expire_idle(self, *, idle_before: datetime, now: datetime,
-                          limit: int) -> list[BrowserTab]:
-        idle_before = ensure_utc_event(idle_before, field="idle_before")
-        now = ensure_utc_event(now, field="now")
-        async with self._engine.begin() as conn:
+    async def open_scopes(self, *, limit: int) -> list[str]:
+        async with self._engine.connect() as conn:
             rows = (await conn.execute(
-                sa.update(T)
-                .where(T.c.status == OPEN, T.c.last_activity_at < idle_before)
-                .values(status=EXPIRED)
-                .returning(T)
-            )).all()
-        return [_row(r) for r in rows[:limit]]
+                sa.select(T.c.scope).where(T.c.status == OPEN)
+                .distinct().limit(limit))).all()
+        return [str(r.scope) for r in rows]
 
     async def expire_instance(self, *, scope: str, instance: str,
                               now: datetime) -> int:

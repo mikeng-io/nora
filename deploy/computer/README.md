@@ -393,6 +393,54 @@ same bearer token: each text frame is one CDP message, relayed to Chrome's
 - Nothing uses it yet: `computer_browse` is B2. Pages load only from hosts
   the egress policy allows.
 
+## Scoped microVMs ([computer.scoped])
+
+One scope (a policy unit, or a canonical private-DM `(person, anchor unit)`
+binding) runs its own sbx microVM `nora-computer-<first 12 of scope>`.
+`nora-computer` is the ONLY host writer of the scope→endpoint registry at
+`[computer.scoped] registry`; Nora reads it through `FileScopeEndpoints`,
+which never provisions and never holds an sbx or Docker socket.
+
+```bash
+nora-computer scope provision <scope>   # sandbox + egress verified, record published
+nora-computer scope serve <scope>       # egress re-verified; computerd, COMPUTERD_SCOPE bound
+nora-computer scope observe <scope>     # /v1/identity read back → instance + ready_at
+nora-computer scope resolve <scope>     # print the record Nora resolves
+nora-computer scope backup <scope>      # the scope's /workspace → BACKUP_DIR/<scope>-<ts>.tar.gz
+nora-computer scope restore <scope> F   # extracts OVER /workspace — never wipes
+nora-computer scope revoke <scope>      # drops a record whose sandbox is verifiably gone
+```
+
+**The two-phase readiness contract.** `provision` publishes
+`{scope, endpoint, name, "instance": ""}` — and only after the DEC-289
+egress policy (private-range denies BEFORE the wildcard allow) applies and
+reads back; a failed or unknown verdict publishes nothing, and the sandbox
+is never deleted or recreated to escape the refusal. The record is NOT yet
+ready: `observe` asks the running VM its own `/v1/identity` and writes the
+observed `instance` (its `boot_id`) plus `ready_at`. Re-run `observe` after
+every `serve`/restart so the record names the current boot. Nora binds a
+scope only when registry scope, live `/v1/identity` scope AND instance all
+match — an empty or stale `instance` authorizes nothing, and a recreated VM
+expires every handle bound to the old boot.
+
+- A record's sandbox existing in `sbx ls --json` is what "alive" means; an
+  unreadable list is `unknown`, never `absent` — every state-dependent
+  branch (provision/serve/revoke/backup) fails closed on `unknown`.
+- `provision` is idempotent: a record that already agrees with its sandbox
+  re-verifies state and egress before answering ready. A live sandbox with
+  no record, or a record binding another scope or name, is a CONFLICT —
+  refused, never adopted.
+- The queue for a scope's computer segments lives on `nq:computer:<scope>`
+  in the DEDICATED credential `NORA_COMPUTER_REDIS_URL` (projected through
+  the existing `redis_url_env` mechanism — no parallel loader). The runner
+  needs `XADD`, `XGROUP CREATE`, `XREADGROUP`, `XAUTOCLAIM`, `XACK`, `PING`;
+  breadth comes from the `computer_tasks` table, so `SCAN`/`KEYS` are NOT
+  required and the credential must not grant them.
+- The shared VM (`NAME`, port `HOST_IP:HOST_PORT`) stays the
+  `[computer.scoped] enabled = false` deployment until an explicit cutover;
+  the per-scope systemd units are the packaging lane's to wire once this
+  interface is stable.
+
 ## Upgrading from the S2a timer (once)
 
 S2a made the sandbox with `sbx create`, which sandboxd auto-stops, and ran a

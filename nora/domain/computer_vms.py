@@ -58,7 +58,10 @@ class ScopeEndpoints(Protocol):
 
 class FileScopeEndpoints:
     """`ScopeEndpoints` over the `nora-computer scope provision` registry:
-    `<dir>/<scope>.json` files holding `{scope, endpoint, name}`. Read fresh
+    `<dir>/<scope>.json` files holding `{scope, endpoint, name, instance}` —
+    `instance` empty until `nora-computer scope observe` publishes the VM's
+    own /v1/identity (the two-phase readiness contract; an empty instance
+    authorizes nothing). Read fresh
     each call (the directory is the provisioning seam; a stale cache would
     route to a destroyed VM). A malformed record is logged and skipped, never
     trusted."""

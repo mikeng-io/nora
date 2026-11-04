@@ -70,17 +70,23 @@ class SqlComputerTaskStore:
         return _row(row) if row is not None else None
 
     async def try_claim_head(self, task_id: UUID, *, now: datetime) -> ComputerTask | None:
+        """Claim ONLY if this row may run now: still `queued`, the scope's
+        OLDEST `queued` row, and NO row of its scope `running`. The running
+        exclusion is a separate predicate, not folded into the head pick —
+        picking the oldest open row lets a late-committed older `queued` row
+        start while another segment is already mid-flight."""
         now = ensure_utc_event(now, field="now")
+        scope = sa.select(T.c.scope).where(T.c.id == task_id).scalar_subquery()
         head = sa.select(T.c.id).where(
-            T.c.scope == sa.select(T.c.scope).where(
-                T.c.id == task_id).scalar_subquery(),
-            T.c.status.in_((QUEUED, RUNNING)),
+            T.c.scope == scope, T.c.status == QUEUED,
         ).order_by(T.c.created_at, T.c.id).limit(1).scalar_subquery()
+        running = sa.select(T.c.id).where(
+            T.c.scope == scope, T.c.status == RUNNING)
         async with self._engine.begin() as conn:
             row = (await conn.execute(
                 sa.update(T)
                 .where(T.c.id == task_id, T.c.status == QUEUED,
-                       T.c.id == head)
+                       T.c.id == head, ~sa.exists(running))
                 .values(status=RUNNING, started_at=now, updated_at=now)
                 .returning(T)
             )).first()
@@ -151,6 +157,16 @@ class SqlComputerTaskStore:
                     T.c.status.in_((QUEUED, RUNNING)))
                 .order_by(T.c.created_at).limit(limit))).all()
         return [_row(r) for r in rows]
+
+    async def open_scopes(self, *, limit: int) -> list[str]:
+        """The scopes with any open row: the runner's breadth read, from the
+        table itself — the record of truth — never a Redis SCAN."""
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(T.c.scope).where(
+                    T.c.status.in_((QUEUED, RUNNING)))
+                .distinct().limit(limit))).all()
+        return [str(r.scope) for r in rows]
 
     async def mark_delivered(self, task_id: UUID, *, now: datetime) -> None:
         now = ensure_utc_event(now, field="now")

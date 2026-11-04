@@ -302,6 +302,14 @@ class ToolRegistry:
         # and answers `computer_capture`. Both `None` keep the shared-VM shape.
         computer_admission: Any = None,
         browser_manager: Any = None,
+        # The canonical-DM scope resolver (`design/private-dm/05`): a DM
+        # room's `(person, anchor unit)` scope id — process-lifetime because
+        # it is the policy, not the turn. `None` leaves DM computer calls
+        # `unavailable` (fail-closed, never a group VM for a DM).
+        computer_dm_scope_for: Callable[[str, str], str | None] | None = None,
+        # The context block's cache invalidation: a mutating segment calls
+        # it with the scope so the next turn re-reads the machine.
+        computer_context_invalidate: Callable[[str], None] | None = None,
         # `computer_export(to="link")`'s portal origin (ADR 0023), `[documents]
         # public_url`; `""` answers a link export `unavailable`.
         artifact_link_base: str = "",
@@ -586,6 +594,8 @@ class ToolRegistry:
         self._computer = computer
         self._computer_admission = computer_admission
         self._browser_manager = browser_manager
+        self._computer_dm_scope_for = computer_dm_scope_for
+        self._computer_context_invalidate = computer_context_invalidate
         self._computer_events = computer_events
         self._computer_settings = computer_settings
         self._computer_sessions = computer_sessions
@@ -1205,6 +1215,8 @@ class ToolRegistry:
             browser=self._browser,
             computer_admission=self._computer_admission,
             browser_manager=self._browser_manager,
+            computer_dm_scope_for=self._computer_dm_scope_for,
+            computer_context_invalidate=self._computer_context_invalidate,
             artifact_link_base=self._artifact_link_base,
             music=self._music,
             online_source=self._online, voice_source=self._voice,

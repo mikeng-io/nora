@@ -2835,6 +2835,10 @@ class FakeComputerTaskStore:
         return [t for t in sorted(self.rows.values(), key=lambda t: t.created_at)
                 if t.scope == scope and t.status in ("queued", "running")][:limit]
 
+    async def open_scopes(self, *, limit: int) -> list[str]:
+        return sorted({t.scope for t in self.rows.values()
+                       if t.status in ("queued", "running")})[:limit]
+
     async def mark_delivered(self, task_id: UUID, *, now: datetime) -> None:
         task = self.rows.get(task_id)
         if task is not None:
@@ -2842,8 +2846,8 @@ class FakeComputerTaskStore:
 
 
 class FakeBrowserTabStore:
-    """In-memory `BrowserTabStore`; `expire_instance` and `expire_idle` do
-    the same compare-and-set moves the SQL store does."""
+    """In-memory `BrowserTabStore`; `expire_instance` does the same
+    compare-and-set move the SQL store does."""
 
     def __init__(self) -> None:
         self.rows: dict[UUID, BrowserTab] = {}
@@ -2881,13 +2885,9 @@ class FakeBrowserTabStore:
         if tab is not None:
             self._save(replace(tab, status=status))
 
-    async def expire_idle(self, *, idle_before: datetime, now: datetime,
-                          limit: int) -> list[BrowserTab]:
-        stale = [t for t in self.rows.values()
-                 if t.status == "open" and t.last_activity_at < idle_before]
-        for tab in stale:
-            self._save(replace(tab, status="expired"))
-        return stale[:limit]
+    async def open_scopes(self, *, limit: int) -> list[str]:
+        return sorted({t.scope for t in self.rows.values()
+                       if t.status == "open"})[:limit]
 
     async def expire_instance(self, *, scope: str, instance: str,
                               now: datetime) -> int:

@@ -99,10 +99,9 @@ class BrowserTabStore(Protocol):
 
     async def set_status(self, tab_id: UUID, *, status: str, now: datetime) -> None: ...
 
-    async def expire_idle(self, *, idle_before: datetime, now: datetime,
-                          limit: int) -> list[BrowserTab]:
-        """Open rows with `last_activity_at < idle_before`, set `expired`:
-        the sweep's compare-and-set read+write in one call."""
+    async def open_scopes(self, *, limit: int) -> list[str]:
+        """The scopes with any `open` row: the sweep's breadth read, from the
+        table — never a key scan."""
         ...
 
     async def expire_instance(self, *, scope: str, instance: str,

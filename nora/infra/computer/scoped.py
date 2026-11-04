@@ -16,8 +16,9 @@ old handles stale instead of silently routing to a replacement.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, TypeVar
 
 import aiohttp
@@ -38,6 +39,10 @@ log = logging.getLogger("nora.computer.scoped")
 
 __all__ = ["ScopeBinding", "ScopedComputerdRuntime"]
 
+#: A verified binding is trusted for this long, then `/v1/identity` is asked
+#: again — a VM ownership change is re-verified, never cached forever.
+BINDING_SECONDS = 30.0
+
 
 @dataclass(frozen=True, slots=True)
 class ScopeBinding:
@@ -49,6 +54,12 @@ class ScopeBinding:
     instance: str
 
 
+@dataclass(frozen=True, slots=True)
+class _Bound:
+    binding: ScopeBinding
+    verified_at: datetime
+
+
 _R = TypeVar("_R")
 
 
@@ -58,12 +69,22 @@ def _unavailable(reason: str, cls: Callable[..., _R]) -> _R:
 
 class ScopedComputerdRuntime:
     """Satisfies `nora.domain.ports.SandboxRuntime` (duck-typed: the verbs
-    and results match; construction needs the registry)."""
+    and results match; construction needs the registry).
+
+    Binding is exact: a scope resolves only to its own registry record, the
+    record must carry the host-published `instance`, and `/v1/identity` must
+    answer the SAME scope and the SAME non-empty instance. A VM answering
+    for another scope, an empty or mismatched instance, an unresolvable
+    scope and an unreachable endpoint all read the same way: `unavailable` —
+    there is no shared-VM or other-scope fallback, and an empty registry
+    instance never silently authorizes. A failed verb or a stale identity
+    invalidates the cached binding, so the next call re-verifies."""
 
     def __init__(
         self, *, endpoints: ScopeEndpoints, token: str,
         timeout_seconds: float = 30.0, max_output_chars: int = 8000,
         observer: Any = None, verify_seconds: float = 10.0,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._endpoints = endpoints
         self._token = token
@@ -71,7 +92,8 @@ class ScopedComputerdRuntime:
         self._max_output = max_output_chars
         self._observer = observer
         self._verify_seconds = verify_seconds
-        self._bound: dict[str, ScopeBinding] = {}
+        self._clock = clock or (lambda: datetime.now(UTC))
+        self._bound: dict[str, _Bound] = {}
 
     async def _identity(self, endpoint: ScopedEndpoint) -> dict[str, Any] | None:
         """`GET /v1/identity` on the endpoint; its body or None."""
@@ -92,29 +114,44 @@ class ScopedComputerdRuntime:
         return body if isinstance(body, dict) else None
 
     async def binding(self, scope: str) -> ScopeBinding | None:
-        """The verified binding for `scope`, or None. Re-verifies whenever the
-        cache holds nothing or the registry's instance moved."""
+        """The verified binding for `scope`, or None.
+
+        Re-verifies whenever the cache is cold or the registry's record
+        moved; an endpoint whose identity no longer matches — another
+        scope's answer, a changed or empty instance — is never bound."""
+        if not isinstance(scope, str) or not scope:
+            return None
         try:
             endpoint = await self._endpoints.resolve(scope)
         except Exception:
             log.exception("scope endpoint resolution failed")
             return None
-        if endpoint is None:
+        if endpoint is None or not endpoint.base_url or not endpoint.instance:
+            # No record, no address, or a pre-`ready` record that never
+            # published its instance: none authorizes a call.
             return None
         cached = self._bound.get(scope)
-        if cached is not None and cached.endpoint == endpoint:
-            return cached
+        if (cached is not None and cached.binding.endpoint == endpoint
+                and (self._clock() - cached.verified_at).total_seconds()
+                < BINDING_SECONDS):
+            return cached.binding
         body = await self._identity(endpoint)
         if body is None:
+            self._bound.pop(scope, None)
             return None
-        bound_scope = body.get("scope")
-        if bound_scope not in (None, scope):
-            # The VM answers for a DIFFERENT scope: misrouted or rebound.
-            log.warning("endpoint %.8s… answered for another scope", scope)
+        if body.get("scope") != scope:
+            # The VM answers for a DIFFERENT scope — or for none: misrouted
+            # or rebound, never adopted.
+            log.warning("endpoint answered for another scope")
+            self._bound.pop(scope, None)
             return None
         instance = str(body.get("instance") or "")
-        if endpoint.instance and instance and endpoint.instance != instance:
-            log.warning("endpoint %.8s… instance changed since provision", scope)
+        if not instance or instance != endpoint.instance:
+            # The live instance must equal the host-published one exactly:
+            # a recreated VM under an old record is a stale authority.
+            log.warning("endpoint instance mismatch (stale authority)")
+            self._bound.pop(scope, None)
+            return None
         binding = ScopeBinding(
             endpoint=endpoint,
             runtime=ComputerdRuntime(
@@ -123,7 +160,7 @@ class ScopedComputerdRuntime:
                 observer=self._observer),
             instance=instance,
         )
-        self._bound[scope] = binding
+        self._bound[scope] = _Bound(binding=binding, verified_at=self._clock())
         return binding
 
     def invalidate(self, scope: str) -> None:
@@ -142,54 +179,54 @@ class ScopedComputerdRuntime:
         return binding.runtime if binding is not None else None
 
     # -- the port ---------------------------------------------------------
+    #
+    # Every verb goes through `_call`: a raised error or an `unavailable`
+    # result drops the cached binding, so the next call re-verifies the VM's
+    # identity before it is trusted again.
+
+    async def _call(self, scope: str, cls: Callable[..., _R],
+                    verb: Callable[[ComputerdRuntime], Awaitable[_R]]) -> _R:
+        rt = await self._on(scope)
+        if rt is None:
+            return _unavailable("no VM for this scope", cls)
+        try:
+            got = await verb(rt)
+        except Exception:
+            self.invalidate(scope)
+            raise
+        if getattr(got, "status", None) is SandboxStatus.UNAVAILABLE:
+            self.invalidate(scope)
+        return got
 
     async def run(self, *, scope: str, command: str, timeout_s: float,
                   limits: Any = None) -> RunResult:
-        rt = await self._on(scope)
-        if rt is None:
-            return _unavailable("no VM for this scope", RunResult)
-        return await rt.run(scope=scope, command=command, timeout_s=timeout_s,
-                            limits=limits)
+        return await self._call(scope, RunResult, lambda rt: rt.run(
+            scope=scope, command=command, timeout_s=timeout_s, limits=limits))
 
     async def read(self, *, scope: str, path: str, offset: int = 0,
                    limit: int | None = None) -> FileResult:
-        rt = await self._on(scope)
-        if rt is None:
-            return _unavailable("no VM for this scope", FileResult)
-        return await rt.read(scope=scope, path=path, offset=offset, limit=limit)
+        return await self._call(scope, FileResult, lambda rt: rt.read(
+            scope=scope, path=path, offset=offset, limit=limit))
 
     async def write_text(self, *, scope: str, path: str, content: str) -> OpResult:
-        rt = await self._on(scope)
-        if rt is None:
-            return _unavailable("no VM for this scope", OpResult)
-        return await rt.write_text(scope=scope, path=path, content=content)
+        return await self._call(scope, OpResult, lambda rt: rt.write_text(
+            scope=scope, path=path, content=content))
 
     async def edit(self, *, scope: str, path: str, old: str, new: str) -> OpResult:
-        rt = await self._on(scope)
-        if rt is None:
-            return _unavailable("no VM for this scope", OpResult)
-        return await rt.edit(scope=scope, path=path, old=old, new=new)
+        return await self._call(scope, OpResult, lambda rt: rt.edit(
+            scope=scope, path=path, old=old, new=new))
 
     async def files(self, *, scope: str, pattern: str = "**/*") -> ListResult:
-        rt = await self._on(scope)
-        if rt is None:
-            return _unavailable("no VM for this scope", ListResult)
-        return await rt.files(scope=scope, pattern=pattern)
+        return await self._call(scope, ListResult, lambda rt: rt.files(
+            scope=scope, pattern=pattern))
 
     async def fetch(self, *, scope: str, path: str, max_bytes: int) -> BytesResult:
-        rt = await self._on(scope)
-        if rt is None:
-            return _unavailable("no VM for this scope", BytesResult)
-        return await rt.fetch(scope=scope, path=path, max_bytes=max_bytes)
+        return await self._call(scope, BytesResult, lambda rt: rt.fetch(
+            scope=scope, path=path, max_bytes=max_bytes))
 
     async def put(self, *, scope: str, path: str, data: bytes) -> OpResult:
-        rt = await self._on(scope)
-        if rt is None:
-            return _unavailable("no VM for this scope", OpResult)
-        return await rt.put(scope=scope, path=path, data=data)
+        return await self._call(scope, OpResult, lambda rt: rt.put(
+            scope=scope, path=path, data=data))
 
     async def state(self, *, scope: str) -> StateResult:
-        rt = await self._on(scope)
-        if rt is None:
-            return _unavailable("no VM for this scope", StateResult)
-        return await rt.state(scope=scope)
+        return await self._call(scope, StateResult, lambda rt: rt.state(scope=scope))

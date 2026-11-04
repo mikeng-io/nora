@@ -76,6 +76,7 @@ from ..domain.computer import (
     ComputerToolSettings,
     SandboxStatus,
     anything_running,
+    computer_dm_scope,
     computer_unit_scope,
 )
 from ..domain.computer_events import (
@@ -5092,6 +5093,15 @@ def build_tool_specs(
     # `computer_capture`/`computer_cancel` `unavailable`.
     computer_admission: Any = None,
     browser_manager: Any = None,
+    # The canonical-DM scope resolver (`design/private-dm/05-cross-platform.md`):
+    # `(platform, conversation_id)` → the DM scope id (the `(person, anchor
+    # unit)` binding), hashed here to the workspace key. `None` — DM admission
+    # is not wired — leaves DM-turn computer calls `unavailable`; never a
+    # group unit, never a person-only key, never a shared fallback.
+    computer_dm_scope_for: Callable[[str, str], str | None] | None = None,
+    # Called with the scope after a mutating segment lands, so the context
+    # block's cache cannot serve the turn a stale workspace/browser view.
+    computer_context_invalidate: Callable[[str], None] | None = None,
     # `computer_export(to="link")`'s portal origin (ADR 0023), `[documents]
     # public_url`: a link is `<origin>/artifacts/<artifact_id>`. `""` answers a
     # link `unavailable`.
@@ -15806,8 +15816,25 @@ Args:
     # declared table for its catalogue (no turn); nothing is called on those.
     computer_bounds = computer_settings or ComputerToolSettings()
     computer_platform = room.platform if room is not None else ""
-    computer_unit = _unit() if room is not None and conversation_type == "group" else None
-    bound_computer_scope = computer_unit_scope(computer_unit) if computer_unit else ""
+    # The scope binds to the room's own identity: a group turn to its policy
+    # unit, a DM turn to the canonical `(person, anchor unit)` binding — never
+    # a group unit's VM for a DM, never person-only, never a shared fallback.
+    if room is None:
+        bound_computer_scope = ""
+    elif conversation_type == "group":
+        computer_unit = _unit()
+        bound_computer_scope = computer_unit_scope(computer_unit) if computer_unit else ""
+    else:
+        _dm_scope_id = (
+            computer_dm_scope_for(computer_platform, bound_conversation_id)
+            if computer_dm_scope_for is not None else None)
+        bound_computer_scope = computer_dm_scope(_dm_scope_id) if _dm_scope_id else ""
+
+    def _computer_dirty() -> None:
+        """A mutating segment landed: the context block's cache must re-read
+        the workspace/browser view, not serve the turn what it had."""
+        if computer_context_invalidate is not None and bound_computer_scope:
+            computer_context_invalidate(bound_computer_scope)
     computer_limits = dict(computer_bounds.limits) or None
     # WHO, for the audit, from the same provenance `remind` reads: a Dreamer
     # pass names its adaptor, a fire turn has no tagger, anything else is a
@@ -16084,39 +16111,25 @@ Args:
         "browse": 660.0, "capture": 180.0, "worker": 960.0,
     }
 
-    async def _segment_finish(task_id: UUID, reply: dict) -> None:
-        """Persist the terminal result of a granted segment (consumed by this
-        caller, so it needs no deferred delivery)."""
-        status = str(reply.get("status") or "unavailable")
-        await computer_admission.finish(
-            task_id,
-            status="done" if status == "ok" else (
-                "cancelled" if status == "cancelled" else
-                "failed" if status in ("nothing_found", "refused") else "unavailable"),
-            result={"reply_status": status,
-                    "note": str(reply.get("note") or "")[:500],
-                    "task": str(reply.get("task") or "")})
-        await computer_admission.delivered(task_id)
-
-    def _computer_queued(kind: str, wait_seconds: float):
+    def _computer_queued(kind: str, wait_seconds: float, *, dirty: bool = False):
         """Wrap a computer tool in the scope's FIFO admission.
 
-        No admission wired: the tool runs synchronously, exactly as before.
-        Wired: the call is a durable `computer_tasks` row — head-of-queue runs
-        inline now (the common case: nothing else holds the scope), otherwise
-        the call waits `wait_seconds` for the grant, else goes queued and a
-        background continuation runs the WHOLE tool when the slot opens —
-        its audit rows, session and reply all happen then, and the terminal
-        row is delivered to this room through the compute-job path. A
-        worker's nested call (`subagent_job`) inherits its parent's slot and
-        runs inline, never behind itself."""
+        No admission wired (or no scope resolved): the tool runs
+        synchronously, exactly as before. Wired: the call is a durable
+        `computer_tasks` row — head-of-queue runs now through
+        `run_segment` (a registered, cancellable executor that writes the
+        terminal row itself), otherwise the call waits `wait_seconds` for a
+        terminal row and otherwise answers `queued`: the RUNNER then
+        re-builds the call from the durable `payload` through `dispatch`
+        (fresh policy admission on the rebuilt request, never a captured
+        closure) and delivers the result to this room through the
+        compute-job path. A worker's nested call inherits its parent's
+        `current_segment` and runs inline, never behind itself. `dirty`
+        kinds invalidate the scope's cached context view when they land."""
         def decorate(fn: Callable[..., Awaitable[dict]]) -> Callable[..., Awaitable[dict]]:
             @wraps(fn)
             async def wrapper(*args: Any, **kwargs: Any) -> dict:
-                if computer_admission is None:
-                    return await fn(*args, **kwargs)
-                from nora.domain.computer_tasks import current_segment
-                if subagent_job:
+                if computer_admission is None or not bound_computer_scope:
                     return await fn(*args, **kwargs)
                 origin = {
                     "platform": computer_platform,
@@ -16134,88 +16147,41 @@ Args:
                     deadline_at=now_fn() + timedelta(
                         seconds=_segment_deadline.get(kind, 960.0)))
                 if submitted.inherited:
-                    return await fn(*args, **kwargs)
-                if submitted.result is not None:
-                    gone = submitted.result
-                    return {
-                        "status": "cancelled",
-                        "reason": str(gone.result.get("reason") or gone.status),
-                        "note": "That task did not run: it was cancelled before "
-                                "its turn came. Say so."}
-                if submitted.granted:
-                    token = current_segment.set(submitted.task.id)
-                    try:
-                        reply = await fn(*args, **kwargs)
-                    except asyncio.CancelledError:
-                        raise
-                    except BaseException as exc:  # noqa: BLE001 - the row closes on ANY failure
-                        reply = {"status": "unavailable",
-                                 "reason": type(exc).__name__,
-                                 "note": "The computer task failed while it "
-                                         "ran; try it again."}
-                    finally:
-                        current_segment.reset(token)
-                    await _segment_finish(submitted.task.id, reply)
+                    reply = await fn(*args, **kwargs)
+                    if dirty:
+                        _computer_dirty()
                     return reply
-                task = submitted.task
-                task_id = task.id
-
-                async def _deferred() -> None:
-                    """Run the whole call when the scope's slot opens: the
-                    row goes `running`, the tool executes (its audit rows,
-                    session and reply all then), and the row is finished —
-                    `delivered_at` stays empty, so `on_terminal` hands the
-                    terminal row to the deferred delivery."""
-                    try:
-                        while True:
-                            row = await computer_admission.get(task_id)
-                            if row is None or row.status in (
-                                    "cancelled", "interrupted", "unavailable",
-                                    "failed", "done"):
-                                return
-                            if row.status == "running":
-                                break
-                            await asyncio.sleep(0.5)
-                        token = current_segment.set(task_id)
-                        try:
-                            reply = await fn(*args, **kwargs)
-                        except asyncio.CancelledError:
-                            reply = {"status": "cancelled",
-                                     "reason": "cancelled while running",
-                                     "note": "That computer task was stopped "
-                                             "while it ran."}
-                        except BaseException as exc:  # noqa: BLE001 - the row closes on ANY failure
-                            reply = {"status": "unavailable",
-                                     "reason": type(exc).__name__,
-                                     "note": "The computer task failed while "
-                                             "it ran."}
-                        finally:
-                            current_segment.reset(token)
-                        status = str(reply.get("status") or "unavailable")
-                        await computer_admission.finish(
-                            task_id,
-                            status="done" if status == "ok" else (
-                                "cancelled" if status == "cancelled" else
-                                "failed" if status in ("nothing_found", "refused")
-                                else "unavailable"),
-                            result={"reply_status": status,
-                                    "note": str(reply.get("note") or "")[:500]})
-                    except Exception:
-                        log.exception("deferred computer task %s failed", task_id)
-
-                deferred = asyncio.ensure_future(_deferred())
-                _AUDIT_TASKS.add(deferred)
-                deferred.add_done_callback(_AUDIT_TASKS.discard)
+                if submitted.result is not None:
+                    # The runner's grant landed it inside the wait window:
+                    # the typed terminal result IS the reply. Consuming it
+                    # here marks the row delivered, so no deferred delivery
+                    # repeats it to the room.
+                    row = submitted.result
+                    reply = dict(row.result or {})
+                    reply.setdefault("status", row.status)
+                    reply.setdefault(
+                        "note", "That computer task ended before it could "
+                                "answer; its record says why.")
+                    await computer_admission.delivered(row.id)
+                    if dirty:
+                        _computer_dirty()
+                    return reply
+                if submitted.granted:
+                    reply = await computer_admission.run_segment(
+                        submitted.task, fn(*args, **kwargs))
+                    if dirty:
+                        _computer_dirty()
+                    return dict(reply)
                 return {
-                    "status": "queued", "task": str(task_id),
+                    "status": "queued", "task": str(submitted.task.id),
                     "note": "Your computer is busy right now; this is queued "
                             "and I'll tell you what it did when it finishes. "
                             "To stop it, computer_cancel with this task id."}
             return wrapper
         return decorate
 
-    _queued_run = _computer_queued("native", LIVE_WAIT_SECONDS)
-    _queued_browse = _computer_queued("browse", LIVE_WAIT_SECONDS)
+    _queued_run = _computer_queued("native", LIVE_WAIT_SECONDS, dirty=True)
+    _queued_browse = _computer_queued("browse", LIVE_WAIT_SECONDS, dirty=True)
     _queued_capture = _computer_queued("capture", LIVE_WAIT_SECONDS)
 
     async def computer_run(command: str, timeout_seconds: int | None = None) -> dict:
@@ -18261,7 +18227,7 @@ Args:
         _spec("computer_write", _queued_run(computer_write)),
         _spec("computer_edit", _queued_run(computer_edit)),
         _spec("computer_export", computer_export),
-        _spec("computer_import", computer_import),
+        _spec("computer_import", _queued_run(computer_import)),
         _spec("computer_session_list", computer_session_list),
         _spec("computer_browse", _queued_browse(computer_browse)),
         _spec("computer_capture", _queued_capture(computer_capture)),

@@ -8,20 +8,36 @@ sibling. Ownership is checked at every attach against the resolved VM
 `instance`: a recreated VM makes every old row `expired` and its handles
 dead, so a stale handle answers `expired`, never a substitute tab.
 
+Handles are NEW or EXISTING, never fuzzy: an attach that names no task opens
+a tab; one that names a task MUST find that task's row (`must_exist`) — a
+foreign, invented, expired or stale-instance handle is refused, and
+`capture` can never conjure a tab.
+
 The population rule: at most `MAX_PAGE_TARGETS` page targets live per scope
 (popups counted). A page target with no open row is an orphan — bound to the
-task that is executing when it is found (`via="popup"`), or closed when no
-task owns it. The cap refuses a NEW tab when four live; it does not evict an
+task executing when it is found (`via="popup"`), or closed when no task
+owns it. The cap refuses a NEW tab when four live; it does not evict an
 active owner.
 
+One CDP websocket: computerd admits a single browser connection per scope,
+so the attach's connection is the one every `Target.getTargets`,
+`Target.setDiscoverTargets` watch, `Target.closeTarget` and target event
+runs on — reconciliation happens on the admitted connection at attach, on
+target events while a segment runs, and once more after the segment hands
+the page back (a popup the objective spawned is adopted or closed before
+the next segment sees the browser).
+
 Lifecycle: authorized activity touches `last_activity_at` (page timers do
-not — only manager calls move it); `sweep` expires tabs idle past
-`idle_after`, closes their targets, and — when no open tab remains — asks
-computerd to stop Chrome/Xvfb and confirms the exit through `state`.
+not — only manager calls move it); `sweep` closes the targets of idle rows
+on their scope's own serialized path — the guest effect confirmed BEFORE
+the row expires, a failed close left open for the next pass — and when no
+open tab remains, asks computerd to stop Chrome/Xvfb and confirms the exit
+through `state`. A scope mid-attach is skipped, never raced.
 """
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hashlib
 import logging
@@ -107,6 +123,17 @@ class ScopeBrowserManager:
         #: The task currently holding a live attach per scope — the owner any
         #: unbound page target found during its attach is assigned to.
         self._active: dict[str, UUID] = {}
+        #: One lock per scope serializes attach/reconcile against the sweep's
+        #: close path, so an idle pass can never kill a tab mid-segment.
+        self._locks: dict[str, asyncio.Lock] = {}
+        #: The serialized reconcile drain per scope (event-driven target
+        #: changes funnel through it) and a flag meaning "another event
+        #: arrived while one ran".
+        self._drains: dict[str, asyncio.Task[None]] = {}
+        self._drain_again: set[str] = set()
+
+    def _lock(self, scope: str) -> asyncio.Lock:
+        return self._locks.setdefault(scope, asyncio.Lock())
 
     async def _binding(self, scope: str) -> ScopeBinding:
         binding = await self._runtime.binding(scope)
@@ -126,27 +153,20 @@ class ScopeBrowserManager:
             log.exception("browser tab store unreadable")
             raise TabUnavailable("unavailable") from None
 
-    async def _targets(self, base_url: str, scope: str) -> list[dict[str, Any]]:
-        async with connect_browser_cdp(
-            base_url=base_url, token=self._token, scope=scope,
-        ) as cdp:
-            got = await cdp.call("Target.getTargets")
-            return [t for t in got.get("targetInfos", []) if t.get("type") == "page"]
-
-    async def _reconcile(self, binding: ScopeBinding, scope: str,
-                         live: set[str], now: datetime,
-                         owner: UUID | None) -> None:
-        """Match live page targets with open rows: an unbound page is an
-        orphan (assigned to `owner`, the executing task, as a popup; closed
-        when no task owns it — never exposed unattributed); a row whose
-        target is gone is `closed`. Over-cap popups are refused and closed."""
-        base = binding.endpoint.base_url
+    async def _reconcile(self, scope: str, binding: ScopeBinding,
+                         cdp: Any, now: datetime, owner: UUID | None) -> None:
+        """Match live page targets with open rows ON THE ADMITTED
+        CONNECTION: an unbound page is an orphan (assigned to `owner`, the
+        executing task, as a popup; closed when no task owns it or the cap
+        is full — never exposed unattributed); a row whose target is gone
+        is `closed`."""
         try:
-            targets = await self._targets(base, scope)
+            got = await cdp.call("Target.getTargets")
         except BrowserError:
             return
+        targets = [t for t in got.get("targetInfos", []) if t.get("type") == "page"]
+        live = {str(t.get("targetId")) for t in targets}
         rows = await self._open_rows(scope, binding.instance)
-        live.update(str(t.get("targetId")) for t in targets)
         bound = {r.target_id: r for r in rows}
         for row in rows:
             if row.target_id not in live:
@@ -155,97 +175,151 @@ class ScopeBrowserManager:
         orphans = [t for t in targets if str(t.get("targetId")) not in bound]
         room = max(0, MAX_PAGE_TARGETS - len(bound) - len(
             [t for t in orphans if owner is None]))
-        async with connect_browser_cdp(
-            base_url=base, token=self._token, scope=scope,
-        ) as cdp:
-            for orphan in orphans:
-                target_id = str(orphan.get("targetId"))
-                if owner is not None and room > 0:
-                    room -= 1
-                    with contextlib.suppress(Exception):
-                        await self._tabs.bind(BrowserTab(
-                            id=uuid.uuid4(), scope=scope, task_id=owner,
-                            instance=binding.instance, target_id=target_id,
-                            status=OPEN, created_at=now, last_activity_at=now,
-                            via="popup",
-                            last_url=str(orphan.get("url") or ""),
-                            last_title=str(orphan.get("title") or "")))
-                    continue
-                # No owner, or the cap is full: the page is refused. A refused
-                # popup counts against nothing — it never lived.
-                with contextlib.suppress(BrowserError):
-                    await cdp.call("Target.closeTarget", {"targetId": target_id})
+        for orphan in orphans:
+            target_id = str(orphan.get("targetId"))
+            if owner is not None and room > 0:
+                room -= 1
+                with contextlib.suppress(Exception):
+                    await self._tabs.bind(BrowserTab(
+                        id=uuid.uuid4(), scope=scope, task_id=owner,
+                        instance=binding.instance, target_id=target_id,
+                        status=OPEN, created_at=now, last_activity_at=now,
+                        via="popup",
+                        last_url=str(orphan.get("url") or ""),
+                        last_title=str(orphan.get("title") or "")))
+                continue
+            # No owner, or the cap is full: the page is refused. A refused
+            # popup counts against nothing — it never lived.
+            with contextlib.suppress(BrowserError):
+                await cdp.call("Target.closeTarget", {"targetId": target_id})
+
+    def _schedule_reconcile(self, scope: str, binding: ScopeBinding,
+                            cdp: Any, owner: UUID) -> asyncio.Task[None]:
+        """Funnel target-change work through the scope's drain: reconciles
+        never overlap, and an event arriving mid-pass re-runs once."""
+        running = self._drains.get(scope)
+        if running is not None and not running.done():
+            self._drain_again.add(scope)
+            return running
+
+        async def _drain() -> None:
+            while True:
+                self._drain_again.discard(scope)
+                await self._reconcile(scope, binding, cdp,
+                                      now=self._clock(), owner=owner)
+                if scope not in self._drain_again:
+                    return
+
+        drain = asyncio.ensure_future(_drain())
+        self._drains[scope] = drain
+        drain.add_done_callback(lambda t: self._drains.pop(scope, None))
+        return drain
 
     @contextlib.asynccontextmanager
-    async def acquire(self, scope: str, task_id: UUID,
-                    target_id: str | None = None) -> AsyncIterator[BoundTab]:
+    async def acquire(
+        self, scope: str, task_id: UUID, target_id: str | None = None, *,
+        must_exist: bool = False,
+    ) -> AsyncIterator[BoundTab]:
         """Attach the task's tab (its earlier `target_id`, or a fresh page).
-        `target_id` naming another task's row or a dead one is
-        `TabUnavailable("expired")`; a fresh page over the cap is
+
+        `must_exist` is the EXISTING-handle rule: the task must already own a
+        `via="task"` row on the LIVE instance — a foreign, invented, expired
+        or stale-instance handle is `TabUnavailable("expired")`/`("denied")`,
+        never a substitute tab. `target_id` naming another task's row or a
+        dead one is refused the same way; a fresh page over the cap is
         `TabUnavailable("cap")`."""
-        binding = await self._binding(scope)
-        now = self._clock()
-        await self._expire_other_instances(scope, binding.instance)
-        rows = await self._open_rows(scope, binding.instance)
-        mine = [r for r in rows if r.task_id == task_id and r.via == "task"]
-        if target_id is not None:
-            row = next((r for r in mine if r.target_id == target_id), None)
-            if row is not None:
-                wanted = target_id
-            elif any(r.target_id == target_id for r in rows):
-                raise TabUnavailable("denied")  # another task's tab
-            else:
-                raise TabUnavailable("expired")
-        elif mine:
-            wanted = mine[-1].target_id
-        else:
-            if len(rows) >= MAX_PAGE_TARGETS:
-                raise TabUnavailable("cap")
-            wanted = None
-        self._active[scope] = task_id
-        try:
-            async with open_browser_tab(
-                base_url=binding.endpoint.base_url, token=self._token,
-                scope=scope, target_id=wanted,
-            ) as page:
-                now = self._clock()
-                if wanted is None:
-                    tab = await self._tabs.bind(BrowserTab(
-                        id=uuid.uuid4(), scope=scope, task_id=task_id,
-                        instance=binding.instance, target_id=page.target_id,
-                        status=OPEN, created_at=now, last_activity_at=now))
+        async with self._lock(scope):
+            binding = await self._binding(scope)
+            now = self._clock()
+            await self._expire_other_instances(scope, binding.instance)
+            rows = await self._open_rows(scope, binding.instance)
+            mine = [r for r in rows if r.task_id == task_id and r.via == "task"]
+            if target_id is not None:
+                if any(r.target_id == target_id and r.task_id == task_id
+                       for r in mine):
+                    wanted: str | None = target_id
+                elif any(r.target_id == target_id for r in rows):
+                    raise TabUnavailable("denied")  # another task's tab
                 else:
-                    tab = next(r for r in rows if r.target_id == page.target_id)
-                    await self._tabs.touch(tab.id, now=now)
-                    tab = (await self._tabs.get(tab.id)) or tab
-                live: set[str] = set()
-                await self._reconcile(binding, scope, live, now, owner=task_id)
-                yield BoundTab(page=page, tab=tab, binding=binding)
-                with contextlib.suppress(Exception):
-                    snap_url = str(await page.evaluate("location.href") or "")
-                    snap_title = str(await page.evaluate("document.title") or "")
-                    await self._tabs.touch(tab.id, now=self._clock(),
-                                           url=snap_url, title=snap_title)
-        except BrowserError as exc:
-            # A bound row whose target vanished between the read and the
-            # attach is `expired`, not a wrong tab.
-            if wanted is not None:
-                with contextlib.suppress(Exception):
-                    gone = [r for r in rows if r.target_id == wanted]
-                    for r in gone:
-                        await self._tabs.set_status(r.id, status=CLOSED,
-                                                    now=self._clock())
-                raise TabUnavailable("expired") from None
-            raise TabUnavailable("unavailable") from exc
-        finally:
-            self._active.pop(scope, None)
+                    raise TabUnavailable("expired")
+            elif mine:
+                wanted = mine[-1].target_id
+            elif must_exist:
+                raise TabUnavailable("expired")
+            else:
+                if len(rows) >= MAX_PAGE_TARGETS:
+                    raise TabUnavailable("cap")
+                wanted = None
+            self._active[scope] = task_id
+            try:
+                async with open_browser_tab(
+                    base_url=binding.endpoint.base_url, token=self._token,
+                    scope=scope, target_id=wanted,
+                ) as page:
+                    now = self._clock()
+                    if wanted is None:
+                        tab = await self._tabs.bind(BrowserTab(
+                            id=uuid.uuid4(), scope=scope, task_id=task_id,
+                            instance=binding.instance, target_id=page.target_id,
+                            status=OPEN, created_at=now, last_activity_at=now))
+                    else:
+                        tab = next(r for r in rows if r.target_id == page.target_id)
+                        await self._tabs.touch(tab.id, now=now)
+                        tab = (await self._tabs.get(tab.id)) or tab
+                    cdp = page.cdp
+                    # Reconcile on THIS connection, then watch target events
+                    # for the segment's length: a popup is adopted or closed
+                    # while it is born, not on a later poll.
+                    await self._reconcile(scope, binding, cdp, now, owner=task_id)
+                    with contextlib.suppress(BrowserError):
+                        await cdp.call("Target.setDiscoverTargets",
+                                       {"discover": True})
+
+                    def _on_event(method: str, params: dict[str, Any]) -> None:
+                        if method.startswith("Target."):
+                            self._schedule_reconcile(scope, binding, cdp, task_id)
+
+                    with contextlib.suppress(AttributeError):
+                        cdp.subscribe(_on_event)
+                    try:
+                        yield BoundTab(page=page, tab=tab, binding=binding)
+                    finally:
+                        with contextlib.suppress(AttributeError):
+                            cdp.unsubscribe(_on_event)
+                        with contextlib.suppress(Exception):
+                            snap_url = str(await page.evaluate("location.href") or "")
+                            snap_title = str(await page.evaluate("document.title") or "")
+                            await self._tabs.touch(tab.id, now=self._clock(),
+                                                   url=snap_url, title=snap_title)
+                        # Post-objective reconcile: a popup the segment
+                        # spawned is adopted to this task or closed before
+                        # the next segment sees the browser.
+                        drain = self._schedule_reconcile(
+                            scope, binding, cdp, task_id)
+                        with contextlib.suppress(Exception):
+                            await asyncio.wait_for(asyncio.shield(drain), 10.0)
+            except BrowserError as exc:
+                # A bound row whose target vanished between the read and the
+                # attach is `expired`, not a wrong tab.
+                if wanted is not None:
+                    with contextlib.suppress(Exception):
+                        gone = [r for r in rows if r.target_id == wanted]
+                        for r in gone:
+                            await self._tabs.set_status(r.id, status=CLOSED,
+                                                        now=self._clock())
+                    raise TabUnavailable("expired") from None
+                raise TabUnavailable("unavailable") from exc
+            finally:
+                self._active.pop(scope, None)
 
     async def capture(self, scope: str, task_id: UUID, *, full_page: bool,
                       directory: str = "captures") -> CapturedImage:
         """A direct image of the task's tab (no decision loop), saved into
         the bound workspace through `put`; the row's provenance rides along.
-        The image itself is returned, never logged."""
-        async with self.acquire(scope, task_id) as bound:
+        The image itself is returned, never logged. `must_exist`: capture is
+        always an EXISTING handle — a missing, foreign or stale task is
+        `expired`; it never opens a tab."""
+        async with self.acquire(scope, task_id, must_exist=True) as bound:
             now = self._clock()
             data, media_type, partial = await bound.page.capture_image(
                 full_page=full_page)
@@ -287,39 +361,90 @@ class ScopeBrowserManager:
             if state.status is SandboxStatus.OK else None
         return running is False
 
-    async def sweep(self, *, now: datetime | None = None) -> int:
-        """Expire tabs idle past `idle_after`; close their targets; stop the
-        browser when nothing open remains. Returns expiries."""
-        now = now or self._clock()
-        idle_before = now - self._idle_after
-        try:
-            expired = await self._tabs.expire_idle(
-                idle_before=idle_before, now=now, limit=50)
-        except Exception:
-            log.exception("browser tab idle sweep failed")
-            return 0
-        stopped: set[str] = set()
-        for tab in expired:
-            if tab.scope in stopped:
-                continue
-            stopped.add(tab.scope)
-            binding = await self._runtime.binding(tab.scope)
-            if binding is None or binding.instance != tab.instance:
-                continue  # dead VM: rows already expire on next acquire
-            async with connect_browser_cdp(
-                base_url=binding.endpoint.base_url, token=self._token,
-                scope=tab.scope,
-            ) as cdp:
-                for row in [t for t in expired if t.scope == tab.scope]:
-                    with contextlib.suppress(BrowserError):
-                        await cdp.call("Target.closeTarget",
-                                       {"targetId": row.target_id})
+    async def _sweep_scope(self, scope: str, now: datetime) -> int:
+        """One scope's idle close, serialized against its own attaches.
+
+        Rows on a DEAD instance expire outright (their targets went with the
+        VM). Rows on the live instance are closed on the scope's own CDP
+        connection and expired only once the guest effect is confirmed —
+        a refused close leaves the row open for the next pass, never
+        silently leaked, and a busy scope is skipped, never raced."""
+        lock = self._lock(scope)
+        if lock.locked():
+            return 0  # mid-attach: next pass retries
+        async with lock:
+            binding = await self._runtime.binding(scope)
+            idle_before = now - self._idle_after
             try:
-                left = await self._tabs.open_for_scope(tab.scope,
-                                                       instance=binding.instance)
+                rows = await self._tabs.for_scope(scope, limit=200)
+            except Exception:
+                log.exception("browser tab sweep read failed")
+                return 0
+            open_rows = [r for r in rows if r.status == OPEN]
+            if not open_rows:
+                return 0
+            if binding is None:
+                return 0  # no verified VM: nothing safe to do this pass
+            dead = [r for r in open_rows if r.instance != binding.instance]
+            live_rows = [r for r in open_rows if r.instance == binding.instance]
+            candidates = [r for r in live_rows
+                          if r.last_activity_at < idle_before
+                          and r.task_id != self._active.get(scope)]
+            if not dead and not candidates:
+                return 0
+            expired = 0
+            now2 = self._clock()
+            for row in dead:
+                with contextlib.suppress(Exception):
+                    await self._tabs.set_status(row.id, status="expired", now=now2)
+                    expired += 1
+            if candidates:
+                try:
+                    async with connect_browser_cdp(
+                        base_url=binding.endpoint.base_url,
+                        token=self._token, scope=scope,
+                    ) as cdp:
+                        for row in candidates:
+                            # Re-read idle inside the lock: an attach that
+                            # touched it while we waited is spared.
+                            fresh = await self._tabs.get(row.id)
+                            if (fresh is None or fresh.status != OPEN
+                                    or fresh.last_activity_at >= idle_before):
+                                continue
+                            try:
+                                await cdp.call("Target.closeTarget",
+                                               {"targetId": row.target_id})
+                            except BrowserError as exc:
+                                if "gone" not in str(exc).lower():
+                                    continue  # guest effect unconfirmed: retry next pass
+                            with contextlib.suppress(Exception):
+                                await self._tabs.set_status(
+                                    row.id, status="expired", now=self._clock())
+                                expired += 1
+                except BrowserError:
+                    pass  # no connection: every close stays pending, retried
+            try:
+                left = await self._tabs.open_for_scope(scope, instance=binding.instance)
             except Exception:
                 log.exception("browser tab open-row read failed")
-                continue
+                return expired
             if not left:
-                await self.browser_stop(tab.scope)
-        return len(expired)
+                await self.browser_stop(scope)
+            return expired
+
+    async def sweep(self, *, now: datetime | None = None) -> int:
+        """Expire tabs idle past `idle_after`, scopes one at a time; stop the
+        browser when nothing open remains. Returns confirmed expiries."""
+        now = now or self._clock()
+        try:
+            scopes = await self._tabs.open_scopes(limit=200)
+        except Exception:
+            log.exception("browser tab scope sweep read failed")
+            return 0
+        total = 0
+        for scope in scopes:
+            try:
+                total += await self._sweep_scope(scope, now)
+            except Exception:
+                log.exception("browser tab sweep failed (scope %s…)", scope[:8])
+        return total

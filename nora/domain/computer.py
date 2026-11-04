@@ -17,6 +17,7 @@ Every result carries a `status` in R-27's vocabulary plus `denied`:
 from __future__ import annotations
 
 import hashlib
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -79,6 +80,35 @@ def computer_scope(platform: str, conversation_id: str) -> str:
 def computer_unit_scope(unit: str) -> str:
     """Opaque group workspace key, from the exact policy unit name."""
     return hashlib.sha256(f"unit:{unit}".encode()).hexdigest()[:32]
+
+
+#: The namespace `dm_scope_id`s are minted under: a stable, opaque, canonical
+#: UUID5 of the `(person, anchor unit)` pair, so every platform transport
+#: that resolves the same pair lands on the same DM scope — and no other
+#: pair can collide into it. Derived, never a literal: UUID5 output is the
+#: same on every host and version, so the namespace is stable by
+#: construction (a pinned spec constant, not a deploy secret).
+DM_SCOPE_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "nora/computer/dm-scope")
+
+
+def dm_scope_id(person_id: str, anchor_unit: str) -> str | None:
+    """The canonical private-DM scope id (`design/private-dm/05-cross-platform.md`):
+    `uuid5(DM_SCOPE_NAMESPACE, "<person_id>:<anchor_unit>")`, rendered in
+    canonical lowercase hyphenated form. `None` when either half is empty —
+    a DM scope is NEVER minted from a person alone or a guessed unit."""
+    if not person_id or not anchor_unit:
+        return None
+    return str(uuid.uuid5(DM_SCOPE_NAMESPACE, f"{person_id}:{anchor_unit}"))
+
+
+def computer_dm_scope(dm_scope_id: str) -> str:
+    """Opaque canonical-DM workspace key
+    (`design/private-dm/05-cross-platform.md` «Computer, browser and export»):
+    `sha256("dm:" + dm_scope_id)[:32]`, the scope id rendered in canonical
+    lowercase hyphenated form. The `(person, anchor unit)` binding that
+    produces `dm_scope_id` is DM admission's — it is resolved by the caller,
+    never inferred here."""
+    return hashlib.sha256(f"dm:{dm_scope_id}".encode()).hexdigest()[:32]
 
 
 @dataclass(frozen=True)

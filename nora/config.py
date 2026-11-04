@@ -2303,9 +2303,13 @@ class ComputerScopedConfig(BaseModel):
     a scope with no record is `unavailable`, never the shared VM.
 
     `redis_url_env` NAMES the env var the dedicated computer streams
-    (`nq:computer:<scope>`) are reached through — ordinarily the same Redis
-    the bridges use. Scoped mode refuses to start without it: a queue with
-    nowhere to publish is a queue that silently never grants.
+    (`nq:computer:<scope>`) are reached through — the computer's OWN
+    credential (`NORA_COMPUTER_REDIS_URL`), projected through the existing
+    `secret_delivery` mechanism like every other env secret; the queue's
+    privilege is derived for the `nq:computer:*` family alone, so reusing
+    the bridge credential would share more than the work needs. Scoped
+    mode refuses to start without it: a queue with nowhere to publish is a
+    queue that silently never grants.
 
     `browser_idle_seconds` is a tab's inactivity bound (a task's own
     authorized activity refreshes it); the sweeper runs every
@@ -2316,7 +2320,7 @@ class ComputerScopedConfig(BaseModel):
 
     enabled: bool = False
     registry: str = ""
-    redis_url_env: str = "NORA_BRIDGES_REDIS_URL"
+    redis_url_env: str = "NORA_COMPUTER_REDIS_URL"
     browser_idle_seconds: float = Field(default=600.0, gt=0)
     browser_sweep_seconds: float = Field(default=30.0, gt=0)
 

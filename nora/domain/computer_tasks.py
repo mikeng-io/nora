@@ -182,6 +182,11 @@ class ComputerTaskStore(Protocol):
         running segment for the context block."""
         ...
 
+    async def open_scopes(self, *, limit: int) -> list[str]:
+        """Every scope with a non-terminal row: the granter's breadth read,
+        from the table — the record of truth — never a stream SCAN."""
+        ...
+
     async def mark_delivered(self, task_id: UUID, *, now: datetime) -> None:
         """The terminal result reached its room (or the caller consumed it):
         `delivered_at`, bookkeeping only — the result row already stands."""

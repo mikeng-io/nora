@@ -133,35 +133,47 @@ async def test_nested_call_inherits_the_slot() -> None:
     assert _stream(SCOPE) not in redis.streams
 
 
-async def test_runner_grants_head_then_watches_terminal() -> None:
+async def test_runner_grants_head_then_executes_and_delivers() -> None:
     store, redis = FakeComputerTaskStore(), FakeStreamRedis()
     admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
     delivered: list[ComputerTask] = []
+    ran: list[str] = []
 
     async def collect(row: ComputerTask) -> None:
+        # The real `on_terminal` (deliver_computer_task) marks delivered
+        # after the room handoff; model that here.
         delivered.append(row)
+        await store.mark_delivered(row.id, now=NOW)
+
+    async def executor(row: ComputerTask) -> dict:
+        # The deferred executor rebuilds the call from the DURABLE payload.
+        ran.append(str(row.payload.get("tool")))
+        return {"status": "ok", "answer": "the durable answer"}
 
     runner = ComputerQueueRunner(
         tasks=store, redis=redis, clock=clock(), watch_seconds=0.01,
-        on_terminal=collect)
+        on_terminal=collect, dispatch={"native": executor})
     blocker = await admission.submit(scope=SCOPE, kind="native", payload={}, origin={})
-    queued = await admission.submit(scope=SCOPE, kind="native", payload={},
+    queued = await admission.submit(scope=SCOPE, kind="native",
+                                    payload={"tool": "computer_run",
+                                             "args": {"command": "true"}},
                                     origin={}, wait_seconds=0.0)
     assert blocker.granted and not queued.granted
     # A running row blocks the whole scope this pass.
     assert await runner.tick() == 0
     await admission.finish(blocker.task.id, status="done", result={})
     assert await runner.tick() == 1
-    row = await store.get(queued.task.id)
-    assert row is not None and row.status == "running"
-    # The caller executes and finishes; the watcher acks after the terminal row.
-    await admission.finish(queued.task.id, status="failed",
-                           result={"reply_status": "unavailable"})
     for _ in range(50):
         if delivered:
             break
         await asyncio.sleep(0.01)
+    row = await store.get(queued.task.id)
+    assert row is not None and row.status == "done"
+    # The typed result is the row's record — the answer, not a generic note.
+    assert row.result.get("answer") == "the durable answer"
+    assert ran == ["computer_run"]
     assert delivered and delivered[-1].id == queued.task.id
+    assert row.delivered_at is not None
 
 
 async def test_cancelled_queued_task_never_starts() -> None:
@@ -202,11 +214,13 @@ async def test_deadline_and_orphan_close_never_replay() -> None:
 
 
 class _Cdp:
-    """The manager's CDP seam, in memory: a page-target pool per scope."""
+    """The manager's CDP seam, in memory: a page-target pool per scope,
+    with the event fan-out `subscribe`/`unsubscribe` expose."""
 
     def __init__(self) -> None:
         self.targets: dict[str, dict] = {}
         self.closed: list[str] = []
+        self.handlers: list = []
         self._n = 0
 
     async def __aenter__(self):
@@ -214,6 +228,17 @@ class _Cdp:
 
     async def __aexit__(self, *exc):
         return False
+
+    def subscribe(self, handler) -> None:
+        self.handlers.append(handler)
+
+    def unsubscribe(self, handler) -> None:
+        if handler in self.handlers:
+            self.handlers.remove(handler)
+
+    def fire(self, method: str, params: dict | None = None) -> None:
+        for handler in list(self.handlers):
+            handler(method, params or {})
 
     async def call(self, method, params=None):
         if method == "Target.getTargets":
@@ -226,17 +251,19 @@ class _Cdp:
             self.closed.append(tid)
             self.targets.pop(tid, None)
             return {}
+        if method == "Target.setDiscoverTargets":
+            return {}
         return {}
 
 
 class _Page:
     def __init__(self, cdp: _Cdp, target_id: str) -> None:
-        self._cdp = cdp
+        self.cdp = cdp
         self.target_id = target_id
 
     async def evaluate(self, expr):
         key = "title" if "title" in expr else "url"
-        return self._cdp.targets.get(self.target_id, {}).get(key, "")
+        return self.cdp.targets.get(self.target_id, {}).get(key, "")
 
     async def capture_image(self, *, full_page):
         return b"\x89PNGfake", "image/png", False
@@ -432,3 +459,266 @@ async def test_backend_polls_the_terminal_row() -> None:
     await store.finish(row.id, status="done", result={"note": "ran"}, now=NOW)
     done = await backend.poll(job_id=str(row.id))
     assert done.status is JobStatus.SUCCEEDED and done.report == "ran"
+
+
+# --- owner, drain, watchdog ---------------------------------------------------
+
+
+async def test_run_segment_cancel_reaches_the_executor() -> None:
+    """A cancel on a RUNNING task reaches its real asyncio executor: the
+    work is cancelled and DRAINED, and only then does the row close."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    granted = await admission.submit(scope=SCOPE, kind="native",
+                                     payload={}, origin={})
+    assert granted.granted
+    stopped = asyncio.Event()
+
+    async def work() -> dict:
+        try:
+            await asyncio.Event().wait()
+            return {"status": "ok"}
+        finally:
+            stopped.set()
+
+    runner = asyncio.ensure_future(
+        admission.run_segment(granted.task, work()))
+    await asyncio.sleep(0.02)
+    row = await admission.cancel(granted.task.id)
+    assert row is not None and row.status == "cancelled"
+    assert stopped.is_set()  # the executor itself was stopped, not just flagged
+    got = await runner
+    assert got["status"] == "cancelled"
+
+
+async def test_owner_lost_busy_scope_stays_blocked() -> None:
+    """A running row whose executor is gone: the VM's ACTUAL state decides.
+    Busy or unknown keeps the scope blocked — an idle grant is not proof the
+    old command stopped — quiet lets it close interrupted."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    verdicts = iter(["busy", "quiet"])
+
+    async def verdict(scope: str) -> str:
+        return next(verdicts)
+
+    runner = ComputerQueueRunner(
+        tasks=store, redis=redis, clock=clock(), reconcile=verdict)
+    orphan = replace(task(), status="running", started_at=NOW)
+    store.rows[orphan.id] = orphan
+    # Busy: the row keeps running and nothing behind it is granted.
+    assert await runner.tick() == 0
+    row = await store.get(orphan.id)
+    assert row is not None and row.status == "running"
+    # Quiet: the VM says nothing runs — close interrupted, never replay.
+    assert await runner.tick() == 0
+    row = await store.get(orphan.id)
+    assert row is not None and row.status == "interrupted"
+
+
+async def test_worker_row_is_never_runner_dispatched() -> None:
+    """A `worker` segment is claimed by its OWN submitter's wait_for_grant:
+    the runner has no dispatcher for the kind and must not run it."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    ran: list[str] = []
+    runner = ComputerQueueRunner(
+        tasks=store, redis=redis, clock=clock(),
+        dispatch={"native": lambda row: ran.append("native") or {}})
+    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    got = await admission.submit(scope=SCOPE, kind="worker",
+                                 payload={"job": "j1"}, origin={})
+    # Head grants to the submitter directly — the worker executes itself.
+    assert got.granted
+    assert await runner.tick() == 0
+    assert ran == []
+
+
+async def test_deferred_dispatch_rebuilds_the_durable_request() -> None:
+    """Restart-shaped proof: a queued row plus a stream entry is EVERYTHING
+    a fresh runner needs — no in-memory closure survives a restart."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    row = task()
+    await store.enqueue(row)
+    await redis.xadd(_stream(SCOPE), {"task": str(row.id)})
+    seen: list[dict] = []
+
+    async def executor(t: ComputerTask) -> dict:
+        seen.append(dict(t.payload))
+        return {"status": "ok", "note": "rebuilt"}
+
+    # A NEW runner, a NEW admission — the in-process state is gone.
+    runner = ComputerQueueRunner(
+        tasks=store, redis=redis, clock=clock(),
+        dispatch={"native": executor})
+    assert await runner.tick() == 1
+    for _ in range(50):
+        fresh = await store.get(row.id)
+        if fresh is not None and fresh.status == "done":
+            break
+        await asyncio.sleep(0.01)
+    fresh = await store.get(row.id)
+    assert fresh is not None and fresh.status == "done"
+    assert seen == [{"tool": "computer_run", "args": {"command": "true"}}]
+
+
+# --- NEW vs EXISTING handles ---------------------------------------------------
+
+
+async def test_stale_instance_continuation_is_expired(monkeypatch) -> None:
+    """An EXISTING handle on a dead instance answers `expired` — the VM was
+    recreated, its tabs died with it, and no substitute is conjured."""
+    rig = _wired(monkeypatch)
+    _register(rig.runtime)
+    owner = uuid.uuid4()
+    async with rig.manager.acquire(SCOPE, owner):
+        pass
+    rig.runtime.instance = "boot-2"
+    _register(rig.runtime, instance="boot-2")
+    with pytest.raises(TabUnavailable) as err:
+        async with rig.manager.acquire(SCOPE, owner, must_exist=True):
+            pass
+    assert err.value.reason == "expired"
+
+
+async def test_capture_never_creates_a_tab(monkeypatch) -> None:
+    """Capture is EXISTING-only: a task with no tab is `expired`, and no
+    target and no row appear as a side effect."""
+    rig = _wired(monkeypatch)
+    _register(rig.runtime)
+    with pytest.raises(TabUnavailable) as err:
+        await rig.manager.capture(SCOPE, uuid.uuid4(), full_page=False)
+    assert err.value.reason == "expired"
+    assert not rig.cdp.targets and not rig.tabs.rows
+
+
+async def test_foreign_and_invented_handles_are_refused(monkeypatch) -> None:
+    """A target naming ANOTHER task's tab is `denied`; a target no row
+    names is `expired` — never adopted, never replaced."""
+    rig = _wired(monkeypatch)
+    _register(rig.runtime)
+    mine, other = uuid.uuid4(), uuid.uuid4()
+    async with rig.manager.acquire(SCOPE, mine) as bound:
+        target = bound.tab.target_id
+    with pytest.raises(TabUnavailable) as err:
+        async with rig.manager.acquire(SCOPE, other, target_id=target):
+            pass
+    assert err.value.reason == "denied"
+    with pytest.raises(TabUnavailable) as err:
+        async with rig.manager.acquire(SCOPE, other, target_id="target-999"):
+            pass
+    assert err.value.reason == "expired"
+
+
+async def test_popup_adopted_to_the_running_task(monkeypatch) -> None:
+    """A page target with no row — a popup — is bound to the task executing
+    when it is found (`via="popup"`), counted toward the four-cap."""
+    rig = _wired(monkeypatch)
+    _register(rig.runtime)
+    owner = uuid.uuid4()
+    async with rig.manager.acquire(SCOPE, owner):
+        # The segment's own click spawned a page target.
+        rig.cdp.targets["popup-1"] = {"url": "https://x", "title": "pop"}
+        rig.cdp.fire("Target.targetCreated",
+                     {"targetInfo": {"targetId": "popup-1", "type": "page"}})
+        await asyncio.sleep(0.05)
+        adopted = [r for r in rig.tabs.rows.values() if r.via == "popup"]
+        assert adopted and adopted[0].task_id == owner
+        assert adopted[0].target_id == "popup-1"
+
+
+async def test_context_renders_full_opaque_handles(monkeypatch) -> None:
+    """The `<computer>` block carries the task's FULL UUID — the handle a
+    later `computer_cancel`/capture parses — never a truncated prefix."""
+    rig = _wired(monkeypatch)
+    _register(rig.runtime, scope=UNIT_SCOPE)
+    tasks = FakeComputerTaskStore()
+    row = task(scope=UNIT_SCOPE)
+    row = replace(row, status="running", started_at=NOW)
+    await store_row(tasks, row)
+    sessions = FakeComputerSessionStore()
+    events = FakeComputerEventStore()
+    reader = ComputerContextReader(
+        sessions=sessions, events=events, runtime=rig.runtime,
+        caps=ComputerContextCaps(), clock=clock(), metrics=None,
+        unit_for=lambda platform, cid: "unit-x",
+        tasks=tasks, tabs=rig.tabs, browser_idle_after=timedelta(minutes=10))
+    view = await reader.read(platform="signal", conversation_id="room-a")
+    assert view is not None and view.tasks
+    assert view.tasks[0].task_id == str(row.id)  # the full UUID handle
+    block = render_computer(view)
+    assert block is not None and str(row.id) in block.body
+
+
+async def store_row(tasks: FakeComputerTaskStore, row: ComputerTask) -> None:
+    tasks.rows[row.id] = row
+
+
+# --- exact scope+instance binding -------------------------------------------------
+
+
+def _runtime(endpoints: FakeScopeEndpoints, identity: dict | None,
+             clock_fn=clock()):
+    """A ScopedComputerdRuntime whose /v1/identity answer is `identity`."""
+    from nora.infra.computer.scoped import ScopedComputerdRuntime
+    runtime = ScopedComputerdRuntime(endpoints=endpoints, token="t", clock=clock_fn)
+
+    async def fake_identity(endpoint):
+        return identity
+
+    runtime._identity = fake_identity  # noqa: SLF001 - the seam is the point
+    return runtime
+
+
+async def test_binding_refuses_empty_and_mismatched_instance() -> None:
+    """A registry record whose `instance` is empty authorizes NOTHING (the
+    pre-observe phase), and a VM answering a different instance than the
+    record's is a stale authority — neither binds."""
+    endpoints = FakeScopeEndpoints()
+    # Pre-observe record: instance empty.
+    endpoints.by_scope[SCOPE] = ScopedEndpoint(
+        scope=SCOPE, base_url="http://vm", name="vm", instance="")
+    runtime = _runtime(endpoints, {"scope": SCOPE, "instance": "boot-9"})
+    assert await runtime.binding(SCOPE) is None
+    # Observed record: the VM must answer the SAME instance.
+    endpoints.by_scope[SCOPE] = ScopedEndpoint(
+        scope=SCOPE, base_url="http://vm", name="vm", instance="boot-1")
+    runtime = _runtime(endpoints, {"scope": SCOPE, "instance": "boot-9"})
+    assert await runtime.binding(SCOPE) is None  # a recreated VM, old record
+    runtime = _runtime(endpoints, {"scope": SCOPE, "instance": "boot-1"})
+    bound = await runtime.binding(SCOPE)
+    assert bound is not None and bound.instance == "boot-1"
+
+
+async def test_binding_refuses_a_foreign_scope_and_refalls() -> None:
+    """A VM answering for ANOTHER scope is never adopted — and there is no
+    shared fallback: an unregistered scope resolves to nothing."""
+    endpoints = FakeScopeEndpoints()
+    endpoints.by_scope[SCOPE] = ScopedEndpoint(
+        scope=SCOPE, base_url="http://vm", name="vm", instance="boot-1")
+    runtime = _runtime(endpoints, {"scope": OTHER, "instance": "boot-1"})
+    assert await runtime.binding(SCOPE) is None
+    runtime = _runtime(endpoints, {"scope": SCOPE, "instance": "boot-1"})
+    assert await runtime.binding(OTHER) is None  # no record, no fallback
+    assert await runtime.binding("") is None
+
+
+async def test_binding_revalidates_after_invalidation() -> None:
+    """A cached binding is dropped on a failed verb; the next call asks
+    /v1/identity again — stale authority is never trusted twice."""
+    endpoints = FakeScopeEndpoints()
+    endpoints.by_scope[SCOPE] = ScopedEndpoint(
+        scope=SCOPE, base_url="http://vm", name="vm", instance="boot-1")
+    calls: list[str] = []
+    from nora.infra.computer.scoped import ScopedComputerdRuntime
+    runtime = ScopedComputerdRuntime(endpoints=endpoints, token="t", clock=clock())
+
+    async def counting(endpoint):
+        calls.append("identity")
+        return {"scope": SCOPE, "instance": "boot-1"}
+
+    runtime._identity = counting  # noqa: SLF001
+    assert await runtime.binding(SCOPE) is not None
+    assert await runtime.binding(SCOPE) is not None
+    assert len(calls) == 1  # cached within the revalidation window
+    runtime.invalidate(SCOPE)
+    assert await runtime.binding(SCOPE) is not None
+    assert len(calls) == 2  # re-verified, never trusted twice
