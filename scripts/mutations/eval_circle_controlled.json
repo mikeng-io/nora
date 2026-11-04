@@ -82,5 +82,12 @@
     "old": "str(case.expected_output)) if c.name == 'social_suitability' else c",
     "new": "\"lost requirement\") if c.name == 'social_suitability' else c",
     "target": "tests/unit/test_eval_full_restore.py::test_circle_judge_receives_requirement_separately_from_actual_evidence"
+  },
+  {
+    "name": "running job binds to registered worker handle",
+    "file": "nora/subject/circle.py",
+    "old": "id=job_id, backend_job_id=handle, task=brief.objective,",
+    "new": "id=job_id, backend_job_id=\"unregistered\", task=brief.objective,",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk"
   }
 ]
