@@ -135,6 +135,15 @@ result only on new evidence or an explicit change of requirement.
 
 ## Resolve a worker at launch
 
+**Claude role restriction (operator, 2026-11-04):** Claude models are eligible
+only for orchestration: scope, brief, dispatch, reconcile evidence, triage, land
+and report. Never select Claude as an implementation worker or independent
+reviewer. This includes small direct edits in a Claude-led session: delegate
+them to an eligible non-Claude builder. Orchestrator evidence reconciliation
+is not independent review. This restriction holds unless the operator explicitly
+reverses it; catalogue availability, capability and vendor diversity do not
+waive it. Other models retain the direct-work rule below.
+
 The operator-facing session owns the outcome and directly implements small,
 coherent changes, including documents, agent skills and bounded edits across a
 few files. Delegate substantial implementation only when a separate worker

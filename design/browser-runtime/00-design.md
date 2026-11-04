@@ -46,6 +46,13 @@ isolation, resource or concurrency results require revisiting its mechanics.
   by-ID lookups. Never fall back to the shared VM, another endpoint or another
   scope when resolution fails. No unauthenticated CDP port is exposed to peers.
 
+Each new unit or admitted DM VM must apply and read back the existing
+DEC-289 public-web TCP allow plus private-range denies, scoped to that exact
+sandbox; the shared VM's policy does not transfer. Apply and verify every deny
+before enabling the wildcard allow, withholding it if any check is unavailable
+or fails. Preserve the accepted hostname-to-private-address limitation; this
+split does not introduce a filtering proxy or silently strengthen that claim.
+
 ### Browser lifetime and operations
 
 One native headed Google Chrome per VM starts **on demand**, with its virtual
@@ -78,6 +85,372 @@ visits, failures and sample size, alongside task success. Headed Chrome is no
 guarantee against bot detection; a challenge is an explicit unavailable outcome,
 not a solver, fabricated success or automatic switch to a stealth engine.
 
+### Control and model selection — design review (2026-11-04)
+
+**Design first; runtime implementation has not started.** The operator asked to
+reconcile this bundle before building. The scoped topology and session behavior
+above are requirements; the model/driver recommendation below is not an accepted
+selection. The historical four-tier architecture is not a requirement to build
+all tiers before the first usable browser.
+
+Separate the environment, action executor and decision model:
+
+| Layer | Existing baseline | Selection for the scoped target |
+|---|---|---|
+| Browser environment | Headed Chrome on Xvfb inside the shared sbx VM | Keep native Chrome, move to one VM per admitted unit/DM scope |
+| Action executor | Nora CDP client through computerd's authenticated websocket and Chrome debugging pipe | Recommend reuse; trycua driver is an alternative executor, not a model |
+| Task reasoning and step decisions | Strands browser subagent, configured browse model; historical B2 Flash baseline | Recommend baseline first; Jev and Cua-S1 remain candidates pending the selection below |
+| Observation | Accessibility snapshot and element refs; marked screenshot on request | Keep snapshot-first as the baseline; evaluate additional visual grounding only for a demonstrated gap |
+| Direct capture | Screenshot exists inside the agent loop | Add scoped task-tab viewport/full-page capture without a model loop |
+
+“CUA or Jev” is not one binary choice. Computer use names a capability;
+trycua supplies drivers/infrastructure, while Cua-S1 supplies specialist decision
+models. Jev supplies typed decisions over supplied state/questions. Neither a
+Jev decision nor a Cua-S1 selection executes a click: a scoped executor still
+has to validate and apply it. See the refreshed
+[research](02-research.md#design-refresh-2026-11-04) and
+[selection questions](03-open-questions.md#current-selection-2026-11-04).
+
+**Recommendation, not a ruling:** reuse the existing executor and browser
+subagent for the first scoped version. It already provides the necessary page
+operations; changing VM/session routing does not itself require another driver
+or model. Cua-S1 could later replace a narrow step decision; Jev could serve
+that role only after its endpoint, data route and permission fit are resolved.
+The existing ADR rejects hosted page-content processing, so a hosted Jev arm is
+not admitted merely because it appears in this comparison. No credentials,
+model calls, new dependencies or experiments are authorized by this document.
+
+Reopen the recommendation if a candidate demonstrates better task completion
+or lower end-to-end cost at comparable completion on the selected task set,
+within the existing data boundary and available resources. Vendor latency and
+benchmark claims are not Nora measurements. Before implementation, record the
+accepted executor/model, evidence limits and exact scope in issue #520; leave
+unmeasured optimizations deferred rather than building every candidate.
+
+### Bounded browser lifecycle and unit context (2026-11-04)
+
+Lifecycle is code-owned in the existing browser manager/task supervisor, not a
+new container, model cleanup instruction or egress policy. Egress controls
+network access; it does not close tabs or release Chrome memory. The browser
+and its display remain in the unit's own VM.
+
+First-version defaults: at most four open page targets per VM, counting popups
+and unbound pages; reuse the existing ten-minute inactivity window and
+thirty-second cleanup cadence. These are bounded starting values, not a claim
+that four arbitrary pages fit every VM memory budget. Packaging owns the VM
+resource limit; measure browser/process memory under this cap before cutover.
+
+- A queued item opens no browser/tab until admitted. Acquire/reuse its owned
+  target on start; every popup/new target is assigned to that task and counted
+  before it can be exposed for use. Refuse/close excess targets rather than
+  permitting an uncapped popup path. At capacity, retire already-expired idle
+  tabs or report capacity unavailable; do not evict an active task's tab.
+- Keep tabs briefly after an execution segment finishes for the next message
+  to continue. Successful authorized task operations update last activity;
+  background page traffic, timers, the cleanup sweep and queue waiting do not.
+  Explicit task close/cancel closes its owned tabs after execution stops;
+  idle expiry closes them automatically and records the reason/time.
+- Active work is bounded by existing configured step/time/token budgets,
+  not exempted forever by an open websocket. Timeout, lost execution ownership
+  or disconnect recovery cancels/drains the task and releases its ownership;
+  the sweeper reconciles ownerless targets. Cleanup and capture use the same
+  ownership mechanism so expiry never races an active admitted operation.
+- With no active owners or resumable tabs, stop Chrome and Xvfb after the idle
+  bound. Fresh anonymous profile on restart; no previous-session restoration
+  or reopening URLs from historical audit/context. Browser/VM recreation expires
+  old handles. Verify actual process exit, not merely deletion of a Python map
+  entry. Files/exported artifacts are retained under their separate contract.
+
+Reuse the existing `<computer>` context block; a browser task/tab is a section
+of that unit's computer state, not a new prompt block per task or tab. Also do
+not confuse a model context block with a browser profile/context: the former is
+a rendered observation, the latter holds browsing state. The current anonymous
+baseline shares profile storage within the unit and owns tabs by task.
+
+Current source already has `ComputerContextReader` selecting audit/session rows
+by unit scope and reading runtime state with a bounded timeout/cache. Its
+`ComputerView` and deterministic renderer carry sessions, processes, files,
+commands and export links; typed `StateResult`/`ComputerView` do not yet carry a
+browser/tab lifecycle view. The manager's current browser idle cleanup is not
+new target delivery, and existing `_attach` still closes extra tabs.
+
+Extend these same typed views and the existing declared context-assembly path
+with browser availability/instance, active task, queue summary and owned tabs:
+opaque task/tab handle, observed title/URL, last operation/result, observation
+revision/time, last activity and expiry/close reason. Resolve one admitted unit
+scope; all that unit's rooms see the same scoped state while audit/delivery keep
+originating room provenance. Canonical DMs stay in their own scope. Keep existing
+render caps and truncation/unknown markers, not whole-page text/screenshots or
+an unbounded tab list. Titles/URLs remain untrusted page data.
+
+Update typed task/tab state deterministically from actual executor outcomes and
+browser target events; reconcile on reconnect/read after missing events.
+Invalidate the existing scope-state cache after mutations, capture, cancellation
+and expiry. Next turn assembles a fresh bounded `<computer>` view with observation
+age and unavailable/expired detail. Within a running turn, tool results carry
+the new state immediately; do not claim background events rewrite a prompt the
+model has already received. Deferred completion uses the existing completion
+turn, which reads the same view. Page content/action refs must be observed fresh
+before acting, regardless of a cached context summary. No model-written progress
+summary is the canonical browser state.
+
+Acceptance adds: target/popup cap, idle expiry without another user request,
+active-task budget enforcement, orphan cleanup, Chrome/Xvfb process exit,
+restart without tab resurrection, unit cross-room visibility and deterministic
+context/tool results after navigation/capture/close. A missing machine read is
+unavailable, never an empty successful browser, and a retained historical URL
+must never cause navigation during context rendering.
+
+### Concrete browser setup — researched recommendation (2026-11-04)
+
+Read the [current setup research](02-research.md#microvm-browser-setup-research-2026-11-04)
+before choosing packages or implementing this slice. Existing image baseline is
+Google Chrome Stable (`google-chrome-stable`), Xvfb and distro libraries/fonts;
+existing controller is Python `aiohttp` plus Nora's CDP client, not Playwright.
+Recommend retaining it pending source mapping; compare Playwright if it avoids
+substantial new custom mechanics. Agent-browser, browser-use and Cua Driver are
+explicit alternatives with different lifecycle/guest costs, not missing installs.
+
+Headed Chrome is the accepted baseline; modern headless shares Chrome code and
+can capture screenshots without Xvfb. Neither headed mode nor Chrome branding
+establishes better challenge rates. Historical fingerprint assertions below
+must not be treated as measurements. Verify browser sandboxing, guest resources,
+TLS activation, proxy and per-task cookie/context ownership before cutover.
+
+### Adapter boundary and ownership (2026-11-04)
+
+The architecture supports multiple decision backends over one scoped browser
+execution path. First use the existing configured LLM/Flash runner; later add
+one selected Jev or Cua-S1 backend when its fit and data route are established.
+This is extensibility of the selected solution, not a requirement to ship three
+backends or a per-step automatic fallback cascade in the first version.
+
+Reuse the existing `BrowserRunner` task-level port (`nora/domain/ports.py`) and
+`BrowseAgentRunner` implementation (`nora/agent/browse.py`). Extend their task
+binding for the session/tab requirements rather than creating a parallel public
+tool per model. Both native calls and workers use this same scoped path.
+
+| Responsibility | Owner | Adapter may change |
+|---|---|---|
+| Scope, VM instance, task/tab ownership, admission and expiry | Shared session/runtime code outside the decision backend | Nothing; models do not choose a scope or endpoint |
+| Observe, validate refs/actions and execute via authenticated computerd/CDP | Shared browser executor | A future driver replacement must preserve the same contract |
+| Reason over objective and observations; propose steps; decide when done | Selected runner/decision backend | Flash agent now; later Jev/Cua-S1 integration |
+| Limits, cancellation, shared execution audit and artifact publication | Common task/execution path | No backend-specific bypass or success reporting |
+| Final task result | Existing typed `BrowseOutcome` boundary | Backend internals differ; outcomes remain grounded and fail-closed |
+
+Jev/Cua-S1 are not necessarily drop-in replacements for the LLM's model name.
+A typed decision model can select an action/ref from prepared candidates; its
+adapter must assemble the supported observation, decode decisions, handle
+abstention and maintain task progression. Open-ended extraction, text generation
+and final answer synthesis may still need the LLM. Make those remaining calls
+explicit in the adapter and total cost; do not claim the whole browser became
+LLM-free because clicks use a decision model. Only introduce a shared internal
+step-decision interface when a second backend is actually being built; the
+existing runner is sufficient for the first implementation. When introducing
+another runner, establish one shared browser-runner contract suite under the
+existing contract-test directory (not present today), covering
+`BrowseAgentRunner`, its fake and each additional runner.
+
+Select a backend at task/session creation and record the actual selection.
+Do not silently switch on failure or reconnect. An explicit later fallback is
+part of that backend's declared behavior and budget, retaining the same VM/tab
+binding and recording each attempted model. Unknown/unsupported selection is
+unavailable. A later trycua driver changes the execution layer independently;
+it does not require replacing the sandbox provider or the export pipeline.
+
+### Screenshot artifacts and delivery (2026-11-04)
+
+Use one path: capture the owned tab, write an image to that scope's workspace,
+then reuse `computer_export(path, to="chat" | "link" | "keep")` when delivery
+or retention is requested. No separate screenshot publisher, blob store or
+artifact endpoint is introduced. A request to see the current page can capture
+and export directly without asking the browser decision backend to browse again.
+
+The current `BrowserPage.screenshot` returns viewport JPEG bytes to a model;
+it does not establish a workspace file, full-page capture or delivery. The new
+capture operation must securely write the actual image in the bound VM/workspace
+through existing file operations and return its relative path, media type,
+size/digest and scope/task/tab/capture-time provenance. User-facing capture is
+unmarked by default; Set-of-Marks remains an observation aid for models.
+Do not embed base64 image bodies in normal logs or audit rows.
+
+Existing export checks remain the authority for byte/type/size validation,
+requester/destination permissions, publication and export provenance. Keep DM
+publication rules. A successful capture is not a successful export: if delivery
+fails, report the saved capture and failed delivery separately, preserving the
+file for an explicitly requested retry. Full-page failure/partial coverage is
+explicit; it must not be labelled complete. Model-only observation screenshots
+do not automatically become published artifacts or a continuous recording.
+
+### Audit, logging, tracing and operational evidence (2026-11-04)
+
+Follow [the observability contract](../../docs/observability.md); reuse its
+SigNoz/OTel pipeline and Sentry correlation, not another browser monitoring
+stack. These signals answer different questions:
+
+| Signal | Existing owner / required extension |
+|---|---|
+| Durable audit: what was attempted and what happened? | Reuse `computer_events` started/finished operations and `computer_exports`. Existing `computer_browse` records the whole task; shared executor step coverage is still required for the new target, including rejected actions and captures. |
+| Trace: where did time and model cost go? | Keep one execution root with child browser/model/action/capture/export spans. Separate consecutive turns remain separate traces linked by stable task/session identity; no indefinitely open browser trace. Strands owns LLM spans; future raw model calls use the existing telemetry boundary. |
+| Logs/errors: what broke operationally? | Existing structured logging, trace correlation and Sentry. Record stage, reason and identifiers needed to find the audit; no duplicated full page contents, screenshots or per-step debug prose. |
+| Metrics: how often, how long and at what cost? | Reuse computer call/health/audit-failure metrics; add only missing lifecycle/capture/expiry/challenge and adapter-cost measurements needed by acceptance, with declarations and call sites together. No URLs, task IDs or scope IDs as metric labels. |
+
+Correlate audit and trace using operation/task/session, scope, VM instance/tab,
+originating turn/job, selected backend and actual served model. Record requested
+action/ref against its observation revision, execution outcome and timing;
+capture/export records link the image file/digest and export artifact. Retain
+payloads under the existing content/storage rules by reference, rather than
+copying them into every signal. The backend's proposed action is not evidence
+that the executor performed it. A decision model's confidence is not task success.
+
+Preserve the existing audit failure semantics: refusal to record a required
+start prevents execution; a failed finish append after an operation ran is
+logged/counted and must not erase its result. Cancellation/crash leaves an
+explicit incomplete operation, not a fabricated success. Model call counts and
+usage count actual invocations once, including fallback/answer synthesis;
+unknown usage or unpriced cost remains unknown, not zero. Declare new payloads
+through context assembly; adapter code does not build ad-hoc model prompts.
+
+Acceptance includes one complete generated journey: open/filter a page, resume
+on the next turn, capture the same task tab and export the image. Check the
+actual file/digest and authorized delivery, then reconstruct task and action
+outcomes from existing audit records and linked traces. Include a refused
+cross-scope operation, expired handle, model/driver error and export failure;
+positive controls prove execution/capture ran. Source checks do not establish
+that the deployed collector retained a trace or that a chat received a file.
+
+### Implementation seams and lane ownership (2026-11-04)
+
+Source mapping confirms the following bounded changes; no runtime code has
+been changed. The Compose/Deployment session owns image packaging, lifecycle
+installation, Redis ACLs and host operations; coordinate required interfaces
+there before editing those files. This lane owns application routing, queue,
+BrowserRunner/session/tab behavior and capture/export integration.
+
+| Existing seam inspected | Required change |
+|---|---|
+| `nora/app/composition.py` wires computer runtime, probe and browser runner to one `cfg.computer.base_url` | Bind all three through the same admitted scope-to-VM resolution; no separate browser endpoint selection |
+| `nora/infra/computer/client.py` stores one base URL; methods already take `scope` | Preserve existing sandbox verbs/results while routing to the bound VM/instance |
+| `nora/infra/computer/browser.py` `_attach` selects the first page and closes every extra page | Replace with explicit task-owned tab attachment; never adopt first/active tab or close sibling tasks' tabs |
+| `nora/agent/browse.py` opens a connection per objective; screenshot tool returns image bytes to the model | Reconnect to the same task binding, and add direct capture-to-file through the same executor |
+| `nora/domain/computer_leases.py` and tool closures use unit locks or separate job locks | Join one scope queue/admission; nested worker calls inherit admission |
+| `nora/app/bridge_queue.py` demonstrates durable stream handoff; `nora/app/compute_poller.py` delivers completed backend jobs | Reuse patterns, not the bridge payload/consumer or completion state as pre-launch execution state |
+
+For the small anonymous version, use one transient profile per VM browser
+lifetime and separate owned tabs per task. Same-unit tasks share anonymous
+cookies/storage; tab ownership prevents navigation interference, not storage
+privacy. The unit is already the data boundary. Do not build per-task cookie
+isolation unless a later requirement calls for it. Preserve profile state while
+the browser lives; cleanup/expiry and no restart-persistence promise still apply.
+
+### Implementation sequence — after design selection
+
+One integrated scoped-browser change, built in this order:
+
+1. Trace the current scope resolver, supervisor, runtime client, computerd and
+   browser runner; pin source revision and enumerate callers before editing.
+   Refresh private source inventory before planning migration; source inspection
+   does not establish host state or authorize cutover.
+2. Bind native computer operations and worker routing to the admitted scope's
+   VM and instance. Carry that binding through lifecycle/state, files, process
+   handles and CDP; unresolved scope is unavailable, with no shared-VM fallback.
+3. Add scope-wide FIFO execution admission with durable intent, Redis Streams
+   handoff/recovery and existing result delivery; native/worker calls share it.
+   Give that VM one on-demand Chrome and each task its own tab ownership.
+   Preserve continuation across turns/transports, serialize same-tab operations,
+   and make cancellation, idle cleanup and expired handles explicit.
+4. Expose direct screenshot-to-file capture on the same scoped task tab and
+   reuse `computer_export` for requested delivery. Keep model
+   reasoning outside the VM and use the selected baseline, without adding the
+   historical cache, ranker or model cascade to this slice.
+5. Wire shared audit/trace/log/metric coverage for all backends; verify scope
+   routing, continuity, concurrency, expiry, capture/export and evidence against the
+   acceptance below. Use generated scopes and focused checks, hosted checks and
+   the applicable independent review. No full local suite before the PR.
+6. Prepare data-preserving migration and rollback from the refreshed inventory.
+   Notify the operator before deployment; only authorized runtime readback can
+   establish resource cost, cold/warm behavior and actual challenge rate.
+
+Pi's full adapter, ACP and another VM provider retain their own delivery scope;
+the routing must agree with them, but implementing every adapter is not browser
+acceptance. Design reconciliation and roadmap updates are the current work;
+per-scope VMs, new tab lifetime and direct capture remain NOT BUILT.
+
+### Per-scope computer queue (operator scope addition, 2026-11-04)
+
+Two admitted rooms of one unit target the same VM. Their computer tasks must
+queue instead of colliding or spending a live turn waiting. First version:
+one active computer execution segment per scope/VM, FIFO among admitted ready
+segments; independent scopes may progress concurrently. A segment is one
+bounded browser objective, worker job or native operation, not the browser
+session's whole lifetime. Release on completion/cancellation; a later turn's
+continuation queues again while retaining its own tab/context. Status and
+cancellation remain available while the VM is busy. This serial baseline
+replaces concurrent same-VM execution as a first-version requirement; task-owned
+tabs still prevent one task adopting another task's page. Revisit parallel
+execution only when a measured queue delay warrants finer resource ownership.
+
+Reuse the existing Redis service, client and Streams producer/consumer recovery
+patterns, with a separate computer-work stream per opaque scope and a dedicated
+consumer group. Do not put computer commands into platform-account bridge
+streams or change their ingest ACK obligations. Redis `XREADGROUP` distributes
+entries; consumer-group membership alone is not per-VM execution exclusion.
+The existing bridge reader elects an owner with a database advisory lock;
+reuse that established ownership pattern for each computer scope, with one
+serial executor and shared admission for native tools and workers. If ownership
+is lost, stop dispatch, cancel/drain managed operations and reconcile actual VM
+process state before admitting a successor. An idle timeout/claim is not proof
+that an old command or worker has stopped. A successor must not dispatch until
+old execution is confirmed stopped; inability to confirm blocks that scope.
+
+The existing `ComputerLeases` only covers non-job calls by unit; worker calls
+currently use `job:<id>`. Both paths must join scope-wide admission. A queued
+worker passes its admitted execution ownership to nested native/browser calls;
+those calls must not enqueue behind their own parent and deadlock. Models may
+not supply that ownership. Intentional detached processes remain scope-owned:
+a segment may not release the VM while work it owns can still mutate the shared
+computer, unless a separately specified managed handoff preserves exclusion.
+
+Queue lifecycle:
+
+1. Resolve admitted scope and originating actor/room/job once. Retain a stable
+   request/job ID, payload reference, enqueue time/deadline, task/tab binding and
+   trace link. Commit durable execution intent before publishing; reconcile a
+   publish gap using existing outbox/retry patterns, not another task database.
+2. Use journaled/deduplicated enqueue and report queued only after durable
+   acceptance. Reuse deferred job completion/delivery for work that exceeds a
+   live turn; do not leave the conversation slot held while it waits. Re-check
+   current admission and expiry when it reaches the head. A queued item must
+   not start under revoked permissions.
+3. The elected scope executor claims the next item, checks prior completion and
+   actual ownership, then executes under the shared VM admission. Persist actual
+   terminal result before ACK, or commit complete durable downstream ownership
+   before ACK if handing off. Reclaim handles lost delivery, not exactly-once
+   execution. Never blindly repeat an uncertain click, command or export after
+   a crash; reconcile it or return an explicit interrupted/unavailable outcome.
+4. Pending cancellation prevents start; running cancellation stops and drains
+   the managed work before releasing the slot. A cancelled/expired or definitively
+   failed task becomes terminal so the next ready task can run. Preserve its
+   result and originating room for delivery; no shared active-room pointer.
+
+Existing `ComputeJob`/poller is completion delivery after backend launch, not
+already a pre-execution FIFO. Its readiness/payload integration must be designed
+before implementation; do not reinterpret delivery `PENDING` as queued execution.
+The new execution admission must have one durable owner linked to that job,
+without introducing a competing result/delivery store. Existing turn/worker
+budgets apply; queue wait and execution time are measured separately. Redis or
+intent-store failure is unavailable, never "queued" or an unqueued direct run.
+
+Reuse audit/OTel with queue/claim/start/finish/cancel and outcome timestamps,
+origin/task/VM correlation, wait duration and oldest pending age; no per-scope
+metric labels or duplicate page payloads. Acceptance: two rooms of one unit
+submit together and run in enqueue order with maximum one active segment;
+another unit progresses; continuation resumes the original tab; nested worker
+tools do not deadlock; pending/running cancellation, revocation, expiry,
+restart/lost-ACK and publish-gap recovery neither lose work nor blindly repeat
+uncertain effects. Prove positive execution as well as refused overlap. No new
+queue daemon, runtime implementation or host operation ships in this document.
+
 ### Migration prerequisites and acceptance
 
 The next implementation must first refresh the current shared-VM inventory and
@@ -103,10 +476,10 @@ contracts, plus later explicitly authorized runtime readback:
 - Native tools and Pi/ACP agree on workspace and browser identity for the same
   scope. Cross-scope management, state, session/process/tab handles and CDP are
   refused, including forged IDs, reconnects and stale-instance handles.
-- Concurrent native and worker browser tasks in one scope use separate tabs;
-  same-tab operations serialize under one owner/admission mechanism. Existing
-  `job:<id>` leases alone are not browser exclusion. Different scoped VMs
-  progress independently; cancellation/idle cleanup leaves active tasks intact.
+- Native and worker browser tasks in one scope retain separate tabs;
+  same-VM execution segments serialize through the scope queue/admission, even
+  across separate task tabs. Existing `job:<id>` leases alone are not browser
+  exclusion. Different scoped VMs progress independently; cancellation/idle cleanup leaves active tasks intact.
 - Consecutive-turn snapshot and direct viewport/full-page image captures are
   verified against the intended tab. Restart/idle expiry returns unavailable
   with expired detail; no hidden persistence or cross-task tab substitution.

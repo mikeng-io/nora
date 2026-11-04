@@ -13,6 +13,137 @@ Corrections from the re-check are marked **Corrected**. VRAM figures in §5
 are arithmetic (weights plus about 1 GB for cache and a 3–4k-token page),
 not measurements.
 
+## Design refresh (2026-11-04)
+
+This refresh separates product layers; the October survey below is historical,
+not a current model recommendation or a claim that its measurements were rerun.
+
+- **Jev:** TypeSafe's official [introduction](https://docs.typesafe.ai/introduction)
+  describes supplied state and typed questions returning structured decisions.
+  It is a decision component, not an action executor. API availability, Nora's
+  route and the hosted-data restriction remain unresolved for this design.
+- **trycua:** the [repository](https://github.com/trycua/cua) supplies computer-use
+  drivers/infrastructure; adopting that driver is separate from choosing a model.
+- **Cua-S1:** its [model card](https://github.com/trycua/cua/blob/main/libs/cua-s1/MODEL_CARD.md)
+  describes a family of specialist research checkpoints with different task
+  contracts. The [README](https://github.com/trycua/cua/tree/main/libs/cua-s1)
+  explicitly scopes it below a general computer-use agent. An exact checkpoint,
+  input/action contract and resource fit are required before comparison.
+- **Nora source baseline inspected:** `nora/agent/browse.py` gives a Strands
+  subagent page tools and a typed outcome; `nora/infra/computer/browser.py`
+  implements snapshots/refs and actions over computerd CDP. This establishes
+  the existing source path, not current host enablement or target VM delivery.
+
+Primary pages above were read on 2026-11-04. No model or host was called.
+Current recommendation and unresolved selection are owned by
+[00](00-design.md#control-and-model-selection--design-review-2026-11-04) and
+[03](03-open-questions.md#current-selection-2026-11-04); no new benchmark score,
+latency, cost or broad capability is inferred here.
+
+## MicroVM browser setup research (2026-11-04)
+
+Research scope: browser binary, automation package, guest display/sandbox,
+profiles, transport and export for anonymous public-web agent tasks. Primary
+documentation and the current repository were read; no packages were installed,
+no VM/browser was started and no performance or challenge-rate test was run.
+The October survey below is historical. This section corrects its general
+headless/fingerprint assumptions; no claim of lower challenge rate is measured.
+
+### Browser binary: Chrome, Chromium and Chrome for Testing
+
+- [Playwright browser documentation](https://playwright.dev/docs/browsers)
+  distinguishes its bundled open-source Chromium from installed branded Chrome
+  (`channel="chrome"`). A package named `chromium` in a Python/JS API does not
+  identify the binary it will actually launch. Record executable and version.
+- [Google's Chrome for Testing documentation](https://developer.chrome.com/docs/automation-and-testing/chrome-for-testing)
+  describes a versioned Chrome build without auto-update, intended for testing
+  and automation; that page also limits its recommendation to trustworthy content.
+  Reproducible testing is a useful arm, not sufficient evidence to replace Nora's
+  general public-web browser. Its security-update ownership must be explicit.
+- [Chrome headless documentation](https://developer.chrome.com/docs/automation-and-testing/headless)
+  says modern headless and headful share Chrome code; old headless is the separate
+  `chrome-headless-shell`. Headed is retained as Nora's accepted baseline, not
+  because a different engine or anti-bot advantage was proved. Screenshots alone
+  do not require Xvfb/headed. A headless alternative remains possible if selected.
+- [Chrome remote-debugging changes](https://developer.chrome.com/blog/remote-debugging-port)
+  require a non-default `--user-data-dir` for ordinary Chrome debugging switches
+  since Chrome 136. Never attach an agent to a person's ordinary profile.
+
+**Recommendation:** keep the already packaged Google Chrome Stable for Nora,
+with explicit version/digest and a deliberate security-update/rebuild process.
+Chromium is a valid alternative, not a demonstrated inferior agent engine.
+Neither Chrome branding, headed mode nor a webdriver flag guarantees challenge
+avoidance. Existing renderer Chromium is a different consumer and not implicitly
+Nora's browsing executable.
+
+### Automation library/package options
+
+| Candidate | What official documentation supplies | Fit and cost for Nora (engineering assessment) |
+|---|---|---|
+| Existing Python `aiohttp` + Nora CDP client | Already used by the client and computerd relay; source path inspected | Least migration for current scoped work, but Nora owns protocol/event/ref handling and must verify it. Reuse is a recommendation based on existing code, not a speed benchmark. |
+| Python `playwright` / Node `playwright-core` | [Browser APIs](https://playwright.dev/docs/api/class-browsertype), locators, contexts and [full-page screenshot](https://playwright.dev/docs/screenshots); installed Chrome supported | Strong maintained high-level alternative if replacing custom browser mechanics. `connectOverCDP` is documented as lower fidelity than Playwright protocol, with launch-argument compatibility caveats. Verify the current authenticated relay, headers, target events and cancellation before claiming drop-in support; no open CDP port workaround. |
+| `agent-browser` | [Official repository](https://github.com/vercel-labs/agent-browser): native CLI, accessibility refs, resident daemon, CDP attachment and sessions; default browser is Chrome for Testing | Useful for shell-oriented workers. Its default per-session browser/daemon differs from one browser per Nora VM. An attached/shared-browser integration must preserve task-tab binding and stop behavior; it is not automatically another decision model. |
+| Python `browser-use` | [Official browser parameters](https://docs.browser-use.com/open-source/customize/browser/all-parameters): existing CDP endpoint, executable/profile/proxy controls and `keep_alive` | Candidate whole browser-agent runner, not just a screenshot library. Overlaps Nora's existing Strands browser loop; compare end-to-end integration and cost before replacing it. Do not nest a second agent loop merely to obtain page operations. |
+| `cua-driver` / Python `cua_driver` | [Driver documentation](https://cua.ai/docs/cua-driver) provides native apps and browser control; separate from Cua-S1 model checkpoints | Candidate when real desktop operations are needed. [Linux support](https://cua.ai/docs/cua-driver/concepts/platform-support) depends on window system/toolkit; not every input route is supported. More guest environment and binding work than browser-only CDP. |
+
+These are alternatives, not dependencies to install together. No package version
+is selected from a search snippet; implementation must pin the actual compatible
+release and its lock/artifact integrity after choosing a path. First-version
+recommendation remains existing CDP + Flash; Playwright is the principal
+high-level library alternative if the source mapping demonstrates that reuse
+would leave substantial custom mechanics to build. A bounded authorized
+integration check, not documentation alone, resolves that trade-off.
+
+### Guest setup and ownership
+
+[Docker Sandboxes isolation](https://docs.docker.com/ai/sandboxes/security/isolation)
+puts a Linux kernel in each microVM. This does not tell us whether the browser's
+own renderer sandbox is active. [Playwright's container guidance](https://playwright.dev/docs/docker)
+and [Puppeteer troubleshooting](https://pptr.dev/troubleshooting) call out user,
+namespace/sandbox and process management requirements; ordinary Docker examples
+must not be copied as sbx host flags.
+
+| Component | Concrete proposed setup / evidence still required |
+|---|---|
+| Guest image | Existing digest-pinned Ubuntu image, Google Chrome Stable `.deb` with version/hash verification, Xvfb and distro runtime libraries, CA certificates and Noto CJK/emoji fonts. Install at image build, not first user task. |
+| Processes | computerd remains the management process; Chrome and its Xvfb run as the admitted scope's non-root user. Retain browser renderer sandboxing; do not add `--no-sandbox` to make a failed launch pass. Verify it in the actual sbx guest. |
+| Display | Retain Xvfb with an authenticated local display, `-nolisten tcp`, consistent viewport/locale/timezone/fonts. Browser-only CDP needs no full XFCE desktop, VNC or streaming server. Measure RAM and `/dev/shm` availability and process reaping inside the guest. Do not use host IPC or broad capabilities as an unmeasured fix. |
+| Profile/session | Fresh non-default private anonymous profile for each browser lifetime, held while tasks continue, no imported personal/authenticated profile. Retain tab/context handles across turns and remove ephemeral state at expiry; keep workspace files under their separate contract. Preserve old profiles privately during migration rather than reusing logins. Decide explicitly whether task contexts share cookies; tab separation alone does not isolate storage. |
+| Control | computerd owns `--remote-debugging-pipe` and exposes only its authenticated scoped relay. Agent/model loop remains outside the VM; worker access uses the same admitted VM/task binding. No model/master key or unauthenticated debugging listener is added. |
+| Network | Apply/read back accepted egress per created sandbox, set Chrome's proxy deliberately, preserve TLS startup checks and known hostname/private-IP limitation. A new package must not bypass those checks by launching its own unmanaged Chrome. |
+| Screenshot | Capture actual tab bytes, save a scoped image, then existing `computer_export`; verify full-page semantics and size bounds. PNG or JPEG as appropriate, no base64 logs. |
+
+If Cua Driver is selected instead, its [VM guide](https://cua.ai/docs/cua-driver/guides/vms-and-remote)
+places the driver in the guest whose desktop it controls. Its own Linux sandbox
+test environment includes Xvfb, XFCE and AT-SPI; that is not proof that Nora's
+current Xvfb-only image supplies all prerequisites. Its [browser guide](https://cua.ai/docs/cua-driver/guides/browsers)
+binds exact native window/tab identity and documents Linux trusted-background
+input refusal. A dedicated VM may permit foreground delivery, but that route
+must be selected and measured; do not silently accept unverifiable synthetic
+clicks as task completion. Installing Cua-S1 alone supplies none of this desktop.
+
+### Repository observations and implementation checks
+
+At source candidate `d126a5ca736cc90f1a0b17890b2906341e9ed5ba`:
+`deploy/computer/Dockerfile` already installs version/hash-pinned
+`google-chrome-stable` and `xvfb`, runtime libraries and Noto fonts. A separate
+Puppeteer download serves Mermaid rendering. `deploy/computer/computerd.py`
+launches `google-chrome` non-root on Xvfb with a private profile and debugging
+pipe; no `--no-sandbox` flag is in its managed launch. Its launch includes
+`--disable-blink-features=AutomationControlled`; that is not challenge-rate proof.
+`nora/infra/computer/browser.py` uses `aiohttp` CDP and accessibility refs.
+`deploy/computer/README.md` records the incident-specific TLS activation checks
+which any replacement must preserve. None of this is current host readback.
+
+Before building, close executable/package selection and map the actual new
+work: scoped lifecycle/endpoint routing, task tabs/contexts and cookie policy,
+expiry, capture-to-file/export and audit correlation. If replacement is proposed,
+compare the existing path and one alternative on the same finite continuation,
+concurrency, dynamic-page, capture/export and failure journeys. Report integration
+changes, completion, calls, latency, RAM and challenge counts; no anti-bot or
+performance conclusion follows from vendor feature lists. Runtime probes and
+model comparisons require separately authorized scope/cost; this research ran none.
+
 ## 1. Hermes Agent (Nous Research)
 
 - Backends: Browser Use Cloud, Browserbase, Firecrawl (cloud); Camofox,
