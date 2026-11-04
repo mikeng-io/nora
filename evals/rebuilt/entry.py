@@ -52,10 +52,9 @@ from .profile_identity import profile_identity
 async def gate(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     """`RelevanceGate.decide` on the window the case laid down.
 
-    There is no `input` to deliver: the gate's input IS the window, which
-    `know()` has already written into the same `RecordStore` the deployed gate
-    reads. That is the whole of the setup, and it is why this suite is the
-    cleanest instrument in the repo.
+    Anchored cases read the restored window. An invented arriving line, when
+    present, joins that window through the same store path participation uses;
+    it is never an extra instruction to the gate.
     """
     g = subject.deps.relevance_gate
     if g is None:
@@ -64,6 +63,8 @@ async def gate(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
             error="no gate on the graph — [relevance_gate] enabled is false",
         )
     platform, conversation_id = subject.room
+    if case.input:
+        await arrive(subject, case.input, now_ms=now_ms, person=case.person)
     verdict = await g.decide(platform=platform, conversation_id=conversation_id)
     # `source` decides whether this is a READING or an ERROR. The gate never
     # raises: a timeout, a provider refusal and an unparseable body all come
