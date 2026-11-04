@@ -1,5 +1,17 @@
 # Changelog
 
+## [7.15.0](https://github.com/mikeng-io/nora/compare/v7.14.15...v7.15.0) (2026-11-04)
+
+
+### Features
+
+* **agent:** add authored reactions and bound shorter video reads ([68c09b7](https://github.com/mikeng-io/nora/commit/68c09b794a29746a7b7589ab791778d02120e081))
+
+
+### Bug Fixes
+
+* **media:** preserve reaction continuation and automatic read admission ([851c789](https://github.com/mikeng-io/nora/commit/851c789071f130d235eb7ee3260bb1691834dcd3))
+
 ## [7.14.15](https://github.com/mikeng-io/nora/compare/v7.14.14...v7.14.15) (2026-11-04)
 
 
