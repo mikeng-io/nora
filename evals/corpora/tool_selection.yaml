@@ -210,9 +210,9 @@ cases:
     entry: tag
     expect: reply
     mention: true
-    input: 你而家行緊咩版本？有邊啲正式 release？
+    input: 你而家行緊咩版本？GitHub 最新正式 release 係邊版？你落後咗未？
     metadata: {tools: [version_list], not_tools: [version_read, web_search, web_fetch]}
-    snapshot: *room_a
+    snapshot: {<<: *room_a, before_ms: 1793786400000}
 
   # Generate nora/version.json with scripts/gen_version_manifest.py in the
   # clean evaluation checkout before running; v6.6.9 is a recorded release.
@@ -225,7 +225,7 @@ cases:
       tools: [version_read]
       not_tools: [version_list, web_search, web_fetch]
       args_include: {version_read: [6.6.9]}
-    snapshot: *room_a
+    snapshot: {<<: *room_a, before_ms: 1793786400000}
 
   - name: route_version_indirect_upgrade
     entry: tag
@@ -236,7 +236,7 @@ cases:
       tools: [version_list]
       required_tools: [version_list, version_read]
       not_tools: [web_search, web_fetch]
-    snapshot: *room_a
+    snapshot: {<<: *room_a, before_ms: 1793786400000}
 
   - name: route_generate_image
     entry: tag

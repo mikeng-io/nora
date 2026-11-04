@@ -11,6 +11,46 @@ timestamp: '2026-08-11'
 > nothing is announced to a room. The build-time stamp and the three-state read below still
 > hold. Read the rest of this file as history.
 
+## Public release awareness (issue #217, 2026-11-04)
+
+The repository is now public. The operator requested live published-version
+awareness in addition to the running identity; this supersedes the snapshot-only
+network restriction below, while retaining the baked stamp as the only running
+identity source. GitHub publication, image build and deployment are distinct.
+
+`version_list(history=False)` reads the running stamp locally and makes one
+unauthenticated GitHub `/releases/latest` request for the latest stable release.
+`history=True` instead reads the first twenty published releases from `/releases`,
+including explicitly labelled prereleases, to discover intermediate versions.
+List results contain metadata rather than note bodies. A full page sets
+`history_complete=False`; it is not the entire history. History mode does not
+claim an authoritative latest-stable comparison.
+
+Running and published observations have independent statuses. The overall result
+is `ok` only when both are available, but an unavailable component does not erase
+the other component's known facts. Comparison is `same`, `behind` or `ahead` only
+for stable semantic versions; snapshots and unknown stamps produce `unknown`.
+The live observation carries its source URL and observation time. It says nothing
+about whether a release's capabilities are available in this process.
+
+`version_read(version)` reads the named GitHub release by tag, with notes capped
+at 8,000 characters and truncation explicitly marked. If GitHub cannot supply the
+release and a shipped entry exists, the existing snapshot reader supplies a
+labelled fallback with the separate published-check status. An unknown tag and a
+failed check remain distinct; an absent stamp does not prevent a live public read.
+Public release text is reference data, never instructions. Existing read budgets
+still bound multi-release summaries: report only the inspected releases and never
+claim a complete cross-version summary from one latest-release body.
+
+The client uses the installed HTTP dependency, a five-second deadline, fixed
+public repository and on-demand requests. No credential, new store, polling,
+update permission or deployment action is introduced. Production wires the client
+through `ToolRegistry`; unconfigured offline registries retain the explicitly
+labelled shipped-history behavior below. Running identity remains process-fixed;
+live release observations can advance independently.
+
+The following section records the earlier snapshot-only delivery.
+
 ## Current release tools (issue #217, 2026-10-23)
 
 `version_list()` replaces the old `version(which)` interface. It reads the
