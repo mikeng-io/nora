@@ -633,7 +633,7 @@ async def test_reaction_receipts_reach_suitability_without_phantom_text(
     from strands.telemetry.tracer import get_tracer
     from strands_evals.types.evaluation import EvaluationData
 
-    from evals.backbone import NORA_REACTIONS, NORA_SAID, MeetsGrader, state_of
+    from evals.backbone import NORA_REACTIONS, NORA_SAID, AbsenceGrader, MeetsGrader, state_of
 
     async def drive(_subject, _case, *, now_ms):
         _render_her_turn()
@@ -659,6 +659,14 @@ async def test_reaction_receipts_reach_suitability_without_phantom_text(
     assert bool(state_of(data, NORA_REACTIONS)) == (status == "ok")
     [graded] = MeetsGrader().evaluate(data)
     assert graded.label == ("PASS" if status == "ok" else "FAIL")
+    [absence] = AbsenceGrader().evaluate(data)
+    assert absence.label == ("PASS" if status == "ok" else "FAIL")
+    silent_data = EvaluationData(
+        input="x", metadata={"expect": "silence"},
+        actual_environment_state=result["environment_state"],
+    )
+    [silence] = AbsenceGrader().evaluate(silent_data)
+    assert silence.label == ("FAIL" if status == "ok" else "PASS")
     if status == "ok":
         [call] = judge.graded
         assert "Confirmed reaction_send" in call["said"]

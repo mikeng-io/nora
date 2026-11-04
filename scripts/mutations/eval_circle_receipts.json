@@ -12,5 +12,26 @@
     "old": "if case.input:\n        await arrive(subject, case.input, now_ms=now_ms, person=case.person)",
     "new": "if case.input:\n        pass",
     "target": "tests/unit/test_eval_backbone.py::test_gate_delivers_case_input_to_the_real_window_path"
+  },
+  {
+    "name": "unconfirmed reaction outcomes never become confirmed receipts",
+    "file": "evals/backbone.py",
+    "old": "if isinstance(result, dict) and result.get(\"status\") == \"ok\":",
+    "new": "if isinstance(result, dict):",
+    "target": "tests/unit/test_eval_full_restore.py::test_reaction_receipts_reach_suitability_without_phantom_text"
+  },
+  {
+    "name": "suitability judges see the actual source blocks",
+    "file": "evals/backbone.py",
+    "old": "if {\"recall_grounded\", \"social_suitability\"} & set(criteria):",
+    "new": "if \"recall_grounded\" in criteria:",
+    "target": "tests/unit/test_eval_full_restore.py::test_a_recall_judge_is_shown_every_block_her_turn_was_shown"
+  },
+  {
+    "name": "suitability draws fail closed when evidence capture is incomplete",
+    "file": "evals/backbone.py",
+    "old": "elif {\"recall_grounded\", \"social_suitability\"} & set(md.get(\"criteria\") or ()) and (",
+    "new": "elif \"recall_grounded\" in tuple(md.get(\"criteria\") or ()) and (",
+    "target": "tests/unit/test_eval_full_restore.py::test_a_recall_draw_whose_blocks_are_not_read_back_is_an_error"
   }
 ]
