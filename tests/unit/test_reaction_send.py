@@ -71,6 +71,11 @@ async def test_reaction_retracts_progress_before_sending_and_keeps_authored_emoj
     observer = indicate.DeliverySettler(indicator=indicator,
                                       spawn=lambda c: tasks.append(asyncio.create_task(c)))
     await observer.prepare_reaction()
+    # A text delivery may already have queued progress resolution while the
+    # authored reaction is still waiting for its transport confirmation.
+    indicate.resolve(indicator=indicator, delivered=True,
+                     spawn=lambda c: tasks.append(asyncio.create_task(c)))
+    await asyncio.gather(*tasks)
     await adapter.react(target=TARGET, emoji='❤️', to_author='sender', to_timestamp=1000)
     observer.finish_reaction(ok=True)
     observer.settle()
