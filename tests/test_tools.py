@@ -343,10 +343,11 @@ def test_the_three_reply_defects_live_in_the_doctrine_not_the_send_reply_schema(
     # The law lines live in rooms/constraints.md, and the capability rule there
     # states its must-hold fact while keeping DEC-90's concrete examples.
     law = " ".join((_DOCTRINE / "rooms" / "constraints.md").read_text().split())
-    # Length: short by default, and looking a lot up is not content.
-    assert "一兩句已經答到差唔多所有嘢" in voice
-    assert "查咗幾多都唔係內容" in voice
-    assert "冇 headings" in voice
+    # Depth follows need; neither research volume nor chat style dictates it.
+    assert "答幾多跟眼前需要" in voice
+    assert "唔係跟你查咗幾多" in voice
+    assert "唔好為咗短而刪走有用嘅嘢" in voice
+    assert "段落、list 幫到佢睇就用" in voice
     # The chatbot tail (voice), and the capability overclaim it leads to (law).
     assert "有需要再搵我" in voice
     assert "Never offer, promise or volunteer an action that your tools and skills " \
@@ -711,15 +712,9 @@ def test_a_second_message_must_earn_its_place():
         (_DOCTRINE / "rooms" / "conduct.md").read_text()
         .split("# Follow the conversation", 1)[1].split("\n# ", 1)[0].split()
     ).lower()
-    assert "has to earn its place" in section, (
-        "conduct.md must say a further message has to earn its place, not "
-        "just fill the budget"
-    )
-    assert "restating the same point" in section, (
-        "conduct.md must say plainly that restating the same point in "
-        "different words is not a second message"
-    )
-    assert "name the one new thing it adds" in section
+    assert "one message or several can make one complete answer" in section
+    assert "each part should help them follow it" in section
+    assert "do not repeat yourself or split for performance" in section
 
 
 async def test_send_reply_is_the_only_tool_that_can_send(wiring):
