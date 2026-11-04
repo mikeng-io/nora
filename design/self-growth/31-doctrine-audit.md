@@ -550,3 +550,8 @@ keeps an unavailable synthetic read from being judged against unrelated real
 preferences that the restored background may legitimately supply. The same
 question is used for partial, unavailable and public isolation; the question
 states the topic, never the hidden preference or correction.
+
+The public adapter also reads the existing silent-failure counter around its
+resolved turn: the turn's return value describes follow-up failure, not every
+first-call error. A healthy silent invocation is the positive control; a provider
+error or timeout with no reply is an eval error, never a silence pass.
