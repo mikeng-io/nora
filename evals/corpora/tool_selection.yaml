@@ -1544,3 +1544,19 @@ cases:
       tools: [who_said, record_query, load_transcript, search_memory, memory_search]
       not_tools: [poll_list, poll_read, room_state_read]
     snapshot: *room_a
+
+  - name: route_reaction_only
+    entry: tag
+    expect: reply
+    mention: true
+    input: 唔使覆文字，用一個你覺得啱嘅 emoji react 呢度上一個訊息就得
+    metadata: {tools: [reaction_send], not_tools: [send_gif]}
+    snapshot: *room_a
+
+  - name: route_gif_not_reaction
+    entry: tag
+    expect: reply
+    mention: true
+    input: 搵張好笑嘅 reaction GIF send 出嚟，唔係 react 個 message
+    metadata: {tools: [search_gifs], not_tools: [reaction_send]}
+    snapshot: *room_a

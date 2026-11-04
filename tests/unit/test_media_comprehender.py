@@ -418,3 +418,59 @@ async def test_the_automatic_comprehension_question_asks_for_speech():
         assert "phone number, ID number or account number" in prompt, prompt
     assert "text on screen" in video_prompt
     assert (video_provider, audio_provider) == ("opencode-go", "opencode-go")
+
+
+async def test_video_windows_overlap_in_three_bounded_calls_and_keep_source_order():
+    import asyncio
+
+    from nora.infra.vision.comprehend import read_video_windows
+
+    windows = tuple(VideoWindow(start_seconds=i * 30, seconds=30, data=bytes([i]))
+                    for i in range(7))
+    cut = VideoCut(windows=windows, duration_seconds=210, covered_seconds=210, capped=False)
+    first_batch = asyncio.Event()
+    release = asyncio.Event()
+    started = []
+    active = 0
+    peak = 0
+
+    async def ask(data, count):
+        nonlocal active, peak
+        assert count == 7
+        active += 1
+        peak = max(peak, active)
+        started.append(data[0])
+        if len(started) == 3:
+            first_batch.set()
+        try:
+            await release.wait()
+            if data == b'\x01':
+                return VisionResult(available=False, reason='timeout')
+            return VisionResult(available=True, description=f'part {data[0]}')
+        finally:
+            active -= 1
+
+    task = asyncio.create_task(read_video_windows(cut=cut, media_type='video/mp4', ask=ask))
+    try:
+        await asyncio.wait_for(first_batch.wait(), 1)
+        assert started == [0, 1, 2]
+        release.set()
+        segments, read = await task
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    assert peak == 3
+    assert len(segments) == 7
+    assert segments[1] == '0:30 — this part could not be read'
+    assert segments[-1] == '3:00 — part 6'
+    assert read == (windows[0], *windows[2:])
+
+
+def test_missing_video_coverage_names_exact_intervals():
+    from nora.infra.vision.comprehend import describe_coverage
+
+    windows = tuple(VideoWindow(start_seconds=i * 30, seconds=30, data=bytes([i]))
+                    for i in range(6))
+    cut = VideoCut(windows=windows, duration_seconds=175, covered_seconds=175, capped=False)
+    assert describe_coverage(cut=cut, read=windows[3:]) == (
+        '(I could not watch 0:00-1:30 of this clip.)')

@@ -377,15 +377,14 @@ async def test_the_ages_she_reads_are_measured_after_the_reading(world):
     assert "@miles_example tagged you 8m ago" in text
 
 
-async def test_a_reel_longer_than_one_window_is_said_to_be_not_read(world):
-    """Not a failure: the reading does not open a clip longer than one
-    window (the configured `chunk_seconds`), and says so."""
-    world.items(_reel(0, seconds=float(world.registry.video_chunk_seconds) + 1))
+async def test_a_reel_past_the_automatic_read_limit_is_said_to_be_not_read(world):
+    """The automatic read cap is independent of the model's chunk size."""
+    world.items(_reel(0, seconds=91.0))
     await world.occasion().run(_card())
 
     assert world.downloads.urls == []
     ((_, reading),) = _item_lines(world.post_block())
-    assert reading.startswith("not read: longer than one reading window")
+    assert reading.startswith("not read: longer than the automatic read limit")
 
 
 async def test_a_video_of_unknown_length_is_said_to_be_not_read(world):
@@ -562,3 +561,18 @@ async def test_a_summons_turn_may_search_eight_times_and_a_room_tag_keeps_the_re
     # A room tag's: the registry's value, unchanged by the summons.
     assert world.registry.budgets()["web_search"] == registry_before["web_search"]
     assert registry_before["web_search"] == NATIVE_TOOLS["web_search"].budget != 8
+
+
+async def test_a_sixty_second_reel_is_read_with_thirty_second_windows(world, monkeypatch):
+    async def clip(args, timeout_seconds, data):
+        if args[0] == "ffprobe":
+            return 0, b"60", b""
+        return 0, ("window " + str(args)).encode(), b""
+
+    monkeypatch.setattr(_preprocess, "_run_video", clip)
+    world.items(_reel(0, seconds=60.0))
+    await world.occasion().run(_card())
+    assert world.downloads.urls
+    ((_, reading),) = _item_lines(world.post_block())
+    assert 'what the vision model saw' in reading
+    assert world.vision.prompts == ['', '']

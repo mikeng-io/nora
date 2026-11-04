@@ -296,7 +296,7 @@ def test_a_long_clip_tightens_the_per_call_timeout():
     derived = derive_vision_timeout(
         loop_timeout_seconds=OPERATOR_LOOP,
         configured=OPERATOR_CONFIGURED,
-        waves=vision_waves(windows=10),
+        waves=vision_waves(windows=30),
     )
     assert derived == pytest.approx(21.6)
     assert derived < OPERATOR_CONFIGURED
@@ -328,7 +328,7 @@ def test_the_client_derives_one_ceiling_per_wave_count(mimo):
         "one window is one wave — it must derive the same ceiling as a "
         "single-view read, or a 90 s Instagram clip and a photo disagree"
     )
-    long_read = client._call_timeout(10)
+    long_read = client._call_timeout(30)
     assert long_read < client._call_timeout(1), (
         "ten windows must derive a tighter per-window ceiling than one"
     )
@@ -821,7 +821,7 @@ async def test_describe_hands_its_window_count_to_the_ceiling(mimo, monkeypatch)
 
     monkeypatch.setattr(client_module.asyncio, "wait_for", spy)
     client = _client(mimo, timeout_seconds=120.0, loop_timeout_seconds=360.0)
-    await client.describe(data=RED_PNG, media_type="video/mp4", windows=10)
+    await client.describe(data=RED_PNG, media_type="video/mp4", windows=30)
     await client.describe(data=RED_PNG, media_type="video/mp4")
     assert seen == [pytest.approx(21.6), 120.0]
 

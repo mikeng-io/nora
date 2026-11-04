@@ -86,14 +86,8 @@ class VisionSpanRecorder(Protocol):
 # elapsed time, and must not enter this derivation.
 VISION_LOOP_SHARE = 0.6
 
-# How many of ONE invocation's windows are read at once. One today: the fan-out
-# in `comprehend.read_video_windows` is a sequential `for`, and this constant is
-# that loop's width, written where the derivation can see it. It is the
-# divisor's companion — `waves = ceil(windows / concurrency)` — so raising the
-# fan-out without raising this (or the reverse) would silently void the
-# invariant. Both must move in the same change, which
-# `test_the_window_fan_out_and_the_wave_divisor_cannot_drift_apart` enforces.
-VISION_WINDOW_CONCURRENCY = 1
+# Shared with the bounded batches in read_video_windows.
+VISION_WINDOW_CONCURRENCY = 3
 
 # Authored, fixed, and small — never model-supplied. The description it asks for
 # is untrusted egress, screened by the tool on every serve.
@@ -264,8 +258,8 @@ def vision_waves(
     """How many model calls ONE invocation must await IN SEQUENCE.
 
     The serial factor, and the only one that adds up in wall clock. A video is
-    cut into windows (`preprocess.VIDEO_CHUNK_SECONDS` = 90 s,
-    `VIDEO_MAX_CHUNKS` = 10), `concurrency` of them are read at once, so the
+    cut into windows (`preprocess.VIDEO_CHUNK_SECONDS` = 30 s,
+    `VIDEO_MAX_CHUNKS` = 30), `concurrency` of them are read at once, so the
     invocation's elapsed time is `ceil(windows / concurrency)` per-call ceilings
     — not `windows` of them, and not one, and one `media_fetch` is not one model call.
 

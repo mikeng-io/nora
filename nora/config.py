@@ -749,8 +749,8 @@ class DescriberConfig(BaseModel):
     # `chunk_max` is not merely a cost bound: when it binds, the cap is written
     # into `media_objects.provenance` AND said in the description, so a cut is
     # never silent.
-    chunk_seconds: int = 90
-    chunk_max: int = 10
+    chunk_seconds: int = 30
+    chunk_max: int = 30
     # A per-modality byte ceiling for the describer, overriding the shared
     # `media.vision_max_bytes` (which exists for still images: "no still image
     # worth describing is that large"). Video bytes are routinely far larger than

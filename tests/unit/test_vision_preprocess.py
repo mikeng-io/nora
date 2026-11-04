@@ -469,3 +469,14 @@ async def test_probe_duration_answers_none_rather_than_zero_when_it_cannot_read(
     assert await probe_duration(b"video", runner=_runner(duration="nonsense")) is None
     assert await probe_duration(b"video", runner=_runner(duration="0")) is None
     assert await probe_duration(b"video", runner=_runner(duration="12.5")) == 12.5
+
+
+async def test_default_reel_windows_are_thirty_seconds_without_reducing_the_horizon():
+    run = _runner(duration='175.0')
+    cut = await cut_video(b'video', runner=run)
+    assert [(w.start_seconds, w.seconds) for w in cut.windows] == [
+        (0, 30), (30, 30), (60, 30), (90, 30), (120, 30), (150, 25)]
+    assert cut.complete
+    long = await cut_video(b'video', runner=_runner(duration='1000.0'))
+    assert long.covered_seconds == 900
+    assert long.capped

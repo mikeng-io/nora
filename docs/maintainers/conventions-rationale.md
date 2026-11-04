@@ -1075,3 +1075,34 @@ environment-only credential-source guidance; `*_env` references retain their nam
 Private `secret.toml` and generated delivery files never enter Git. Config and
 secret changes require validated controlled recreation; identity/policy retain
 their existing validated reload.
+
+
+## Progress reactions and authored reactions
+
+The rationale formerly in `engagement/stages/indicate.py` belongs here. Progress
+has three observable outcomes: 👀 means accepted and working, ✅ means a response
+reached the room, and ⚠️ means the turn ended without one. Leaving 👀 strands the
+tagger; clearing it without a resolution makes a failed turn indistinguishable
+from a tag Nora never accepted. ✅ without delivery falsely promises success.
+⚠️ exposes only the already-visible absence of a response, never its internal
+cause. It is a sign rather than a face or shrug, avoiding unintended human tone;
+its variation selector is part of the reaction's grapheme.
+
+Progress placement and resolution are spawned so transport latency does not sit
+in front of the model call. Resolution waits for placement, whose event is set
+in `finally` even on cancellation. The shared latch prevents competing delivery
+and pipeline-finally resolutions from replacing each other. Clearing 👀 is
+explicit: a redundant retract costs one RPC; omitting it can leave contradictory
+progress markers on a platform whose replacement behavior is unverified.
+Decoration errors are counted and logged, never turned into chat text.
+
+The 2026-11-04 authored-reaction change supersedes the old assertion that the
+model cannot react. `reaction_send` consumes the same bounded delivery attempts
+as text, targets a row in the visible room transcript, and records only a
+confirmed platform action with turn/doctrine provenance. Progress itself still
+uses the bound tagging target and consumes no authored message budget. Workers
+cannot deliver reactions. The delivery observer clears progress before an
+authored reaction and suppresses subsequent progress replacement. Its lock
+serializes queued resolution with that handover; a pending reaction releases a
+suppressed resolution claim so failure or cancellation can resolve normally.
+Success settles the indicator and leaves the model's chosen emoji in place.

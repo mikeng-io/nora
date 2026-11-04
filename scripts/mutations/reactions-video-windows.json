@@ -1,0 +1,65 @@
+[
+  {
+    "name": "reaction success is a completed response without a text send",
+    "file": "nora/agent/guards.py",
+    "old": "        self._reaction_delivered = True",
+    "new": "        self._reaction_delivered = False",
+    "target": "tests/unit/test_reaction_send.py::test_reaction_only_is_delivered_and_recorded_without_a_phantom_message"
+  },
+  {
+    "name": "progress resolution cannot overwrite the authored emoji",
+    "file": "nora/engagement/stages/indicate.py",
+    "old": "        if indicator.authored_reaction:\n            if not indicator.reaction_confirmed:\n                indicator.settled.clear()\n            return",
+    "new": "        if False:\n            return",
+    "target": "tests/unit/test_reaction_send.py::test_reaction_retracts_progress_before_sending_and_keeps_authored_emoji"
+  },
+  {
+    "name": "video windows overlap rather than serializing provider waits",
+    "file": "nora/infra/vision/client.py",
+    "old": "VISION_WINDOW_CONCURRENCY = 3",
+    "new": "VISION_WINDOW_CONCURRENCY = 1",
+    "target": "tests/unit/test_media_comprehender.py::test_video_windows_overlap_in_three_bounded_calls_and_keep_source_order"
+  },
+  {
+    "name": "default video windows are shorter while retaining fifteen minutes",
+    "file": "nora/infra/vision/preprocess.py",
+    "old": "VIDEO_CHUNK_SECONDS = 30",
+    "new": "VIDEO_CHUNK_SECONDS = 90",
+    "target": "tests/unit/test_vision_preprocess.py::test_default_reel_windows_are_thirty_seconds_without_reducing_the_horizon"
+  },
+  {
+    "name": "reaction continuation and unavailable fallback survive the terminal budget",
+    "file": "nora/agent/guards.py",
+    "old": "(name != \"reaction_send\"\n                     and self.counts.get(name, 0) >= self._budgets.get(name, 0))",
+    "new": "self.counts.get(name, 0) >= self._budgets.get(name, 0)",
+    "target": "tests/test_guards_terminal.py::test_reaction_continuation_and_failure_reach_the_next_model_call"
+  },
+  {
+    "name": "automatic admission stays ninety seconds with thirty second windows",
+    "file": "nora/infra/social/readings.py",
+    "old": "MAX_READ_VIDEO_SECONDS = 90.0",
+    "new": "MAX_READ_VIDEO_SECONDS = 30.0",
+    "target": "tests/unit/test_summons_reads_the_post.py::test_a_sixty_second_reel_is_read_with_thirty_second_windows"
+  },
+  {
+    "name": "cancellation during progress handover runs reaction cleanup",
+    "file": "nora/agent/guards.py",
+    "old": "        ok = False\n        supported = True\n        try:\n            await self._on_delivered.prepare_reaction()",
+    "new": "        await self._on_delivered.prepare_reaction()\n        ok = False\n        supported = True\n        try:",
+    "target": "tests/unit/test_reaction_send.py::test_cancel_during_progress_handover_does_not_strand_the_indicator"
+  },
+  {
+    "name": "suppressed pending resolution releases its latch after reaction failure",
+    "file": "nora/engagement/stages/indicate.py",
+    "old": "                indicator.settled.clear()",
+    "new": "                pass",
+    "target": "tests/unit/test_reaction_send.py::test_a_suppressed_resolution_can_resume_after_reaction_failure"
+  },
+  {
+    "name": "exact coverage intervals survive automatic reading serialization",
+    "file": "nora/infra/social/readings.py",
+    "old": "    r\"|I could not watch \\d+:\\d{2}-\\d+:\\d{2}\"\n",
+    "new": "",
+    "target": "tests/unit/test_instagram_read_readings.py::test_every_real_coverage_sentence_is_split_off_and_bounded"
+  }
+]

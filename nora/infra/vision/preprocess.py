@@ -72,12 +72,12 @@ VIDEO_AUDIO_BITRATE = "64k"
 # channel count, like the codec above, would come from the container.
 VIDEO_AUDIO_CHANNELS = "2"
 
-# Chunk geometry. 1-2 minutes per chunk — 90 s is the middle of that range, and
+# Chunk geometry. 30 seconds per chunk keeps each model request small, and
 # the ceiling is what turns an unbounded clip into a bounded number of model
 # calls. Both are overridable from `[media.describe.video]`; these are the
 # defaults a config without the keys gets.
-VIDEO_CHUNK_SECONDS = 90
-VIDEO_MAX_CHUNKS = 10               # 10 x 90 s = 15 minutes of a clip read in full
+VIDEO_CHUNK_SECONDS = 30
+VIDEO_MAX_CHUNKS = 30               # 30 x 30 s = 15 minutes of a clip read in full
 FFPROBE_TIMEOUT_SECONDS = 10.0
 
 # How long one ffmpeg run may take. A 2K clip scaled to 720p is seconds;

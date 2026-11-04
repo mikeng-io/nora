@@ -1663,16 +1663,14 @@ async def test_media_fetch_reads_a_clip_in_windows_and_admits_what_it_missed(
     out = await _call(tool, code=PNG_SHA[:6])
 
     assert out["status"] == "ok"
-    # 20 minutes at the shipped 90s/10-window geometry: ten windows read, and
+    # 20 minutes at the shipped 30s/30-window geometry: thirty windows read, and
     # the ceiling binds on the rest.
-    assert len(vision.calls) == 10, "one call per window, not one view of the lot"
-    # Every window tells the client it is one of TEN, so each gets the
-    # ten-window ceiling — never the one-window one, which would let ten
-    # windows spend ten times the loop's share.
-    assert vision.windows == [10] * 10
+    assert len(vision.calls) == 30, "one call per window, not one view of the lot"
+    # The total window count reaches the client's batch-based timeout.
+    assert vision.windows == [30] * 30
     assert "0:00 —" in out["description"]
     assert "1:30 —" in out["description"]
-    assert "13:30 —" in out["description"], "the tenth window, not the third"
+    assert "14:30 —" in out["description"], "the final window, not the third"
     assert "have not seen the rest" in out["description"]
 
 
@@ -1728,7 +1726,7 @@ async def test_a_question_about_a_clip_reads_every_window_too(wiring, monkeypatc
     out = await _call(tool, code=PNG_SHA[:6], question="what colour is the car")
 
     assert out["status"] == "ok"
-    assert len(vision.calls) == 2
+    assert len(vision.calls) == 6
     assert len(cache) == 0, "a question-conditioned answer is never cached"
 
 
@@ -1835,7 +1833,7 @@ async def test_a_describer_that_raises_on_a_clip_is_wrapped_not_propagated(
     out = await _call(tool, code=PNG_SHA[:6])
 
     assert out["status"] == "unavailable"
-    assert _Explodes.calls == 2, "both windows were attempted"
+    assert _Explodes.calls == 6, "all windows were attempted"
 
 
 async def test_a_second_look_at_a_capped_clip_still_admits_what_it_missed(
@@ -2153,7 +2151,7 @@ async def test_a_room_clip_with_no_ingest_reading_is_cached_too(wiring, monkeypa
     again = await _call(build(), code=PNG_SHA[:6])
 
     assert again["status"] == "ok"
-    assert len(vision.calls) == 2, "two windows read ONCE, not twice"
+    assert len(vision.calls) == 4, "four windows read ONCE, not twice"
 
 
 async def test_a_raised_chunk_ceiling_misses_and_reads_again(wiring, monkeypatch):
@@ -2177,7 +2175,7 @@ async def test_a_raised_chunk_ceiling_misses_and_reads_again(wiring, monkeypatch
 
     assert "have not seen the rest" in capped["description"]
     assert "have not seen the rest" not in whole["description"]
-    assert len(vision.calls) == 2 + 4, "the raised ceiling re-read the clip"
+    assert len(vision.calls) == 2 + 10, "the raised ceiling re-read the clip"
 
 
 async def test_a_cached_partial_read_still_says_what_it_missed(wiring, monkeypatch):

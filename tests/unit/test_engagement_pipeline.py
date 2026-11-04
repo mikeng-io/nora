@@ -3183,3 +3183,26 @@ async def test_who_said_searches_the_whole_read_window_not_the_prompt_slice():
     assert runner.seen_transcripts[0] == ("m8", "m9", "m10", "m11")      # the prompt: 4
     assert seen["bound"] == ("m8", "m9", "m10", "m11")                   # #n / reply_to: shown
     assert seen["lookup"] == tuple(f"m{i}" for i in range(2, 12))        # who_said: all 10
+
+
+async def test_a_reaction_only_turn_has_no_text_fallback_or_progress_overwrite():
+    from nora.testing import FakeAdapter
+
+    adapter = FakeAdapter()
+    audit = FakeRecordStore()
+    message = _msg()
+    await audit.append(message=message)
+    pipeline, metrics, _, memory, background = _build_pipeline(
+        adapter=adapter, audit=audit,
+        runner=ScriptedRunner([ScriptedTurn(tool_calls=[
+            ('reaction_send', {'emoji': '👍', 'reply_to': 1})])]),
+    )
+    await pipeline.run(_request(message))
+    await _drain(background)
+    assert not adapter.sent
+    assert [(r[1], r[-1]) for r in adapter.reactions] == [
+        ('👀', False), ('👀', True), ('👍', False)]
+    assert len(audit.reactions) == 1
+    assert not any(r['is_nora'] for r in audit.rows)
+    assert not any(peer == 'nora' for peer, _, _ in memory.fed)
+    assert metrics.get('nora_engagement_outcomes_total', outcome='send_reply') == 1

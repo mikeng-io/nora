@@ -184,7 +184,7 @@ def test_replies_end_the_turn_at_the_cap_not_before():
 
 
 def test_reply_verbs_are_terminal():
-    assert ToolRegistry().terminal_tools() == frozenset({"send_reply", "send_gif"})
+    assert ToolRegistry().terminal_tools() == frozenset({"send_reply", "send_gif", "reaction_send"})
 
 
 def test_every_spec_carries_the_declaration_the_registry_reports():
@@ -375,3 +375,23 @@ async def test_a_raised_terminal_budget_buys_a_second_model_call():
     """
     model = await _drive(terminal={"now"}, budgets=BUDGETS_TWICE)
     assert model.calls == 2
+
+
+def test_reaction_continuation_and_failure_reach_the_next_model_call():
+    import json
+
+    registry = ToolRegistry()
+    for status, more, closes in [
+        ('ok', True, False), ('ok', False, True),
+        ('unavailable', True, False), ('unavailable', False, False),
+        ('held_for_review', False, True),
+    ]:
+        guard = _guard(terminal=registry.terminal_tools(), budgets=registry.budgets())
+        event = _AfterToolCall('reaction_send')
+        event.tool_use['input'] = {'more': more}
+        event.result['content'] = [{'text': json.dumps({'status': status})}]
+        guard._after_tool(event)
+        before = _BeforeModelCall()
+        guard._before_model(before)
+        assert bool(before.cancel) is closes, (status, more, before.cancel)
+        assert guard.counts['reaction_send'] == 1

@@ -27,7 +27,10 @@ from ..domain.media import MediaBlob
 from ..domain.models import (
     ConversationTarget,
     DeliveryStatus,
+    EditTarget,
     NormalizedMessage,
+    Touch,
+    TranscriptRow,
 )
 from ..domain.ports import OutboundAttachment, OutboundQuote, SendResult, Styled
 from ..obs.metrics import Metrics
@@ -57,7 +60,7 @@ def _flag(tool_input: Mapping[str, Any], key: str) -> bool:
 class DeliveredObserver(Protocol):
     """Told once a reply has actually reached the group (DEC-83).
 
-    A one-method port so `Deliverer` (in `nora.agent`) never imports the
+    A delivery-lifecycle port so `Deliverer` (in `nora.agent`) never imports the
     reaction stage in `nora.engagement`, which the layered import contract
     forbids in that direction. `nora.engagement.stages.indicate.DeliverySettler`
     is the implementation; `_NoDeliveredObserver` below is the default.
@@ -66,6 +69,10 @@ class DeliveredObserver(Protocol):
     side of a message the group already has, and R-5's rule is that decoration
     failing is never allowed to become the turn's problem.
     """
+
+    async def prepare_reaction(self) -> None: ...
+
+    def finish_reaction(self, *, ok: bool) -> None: ...
 
     def settle(self) -> None: ...
 
@@ -78,6 +85,12 @@ class _NoDeliveredObserver:
     even for a stateless object, so nobody has to re-audit statelessness on later
     edits. A `Deliverer` lives and dies with one tag, so this costs one empty
     object per tag."""
+
+    async def prepare_reaction(self) -> None:
+        return None
+
+    def finish_reaction(self, *, ok: bool) -> None:
+        return None
 
     def settle(self) -> None:
         return None
@@ -192,6 +205,7 @@ class Deliverer:
         # speak, and a guard stopped her.
         self._send_calls = 0
         self._delivered_count = 0
+        self._reaction_delivered = False
         # Every message actually SENT this turn (Honcho v2): the feedback stage
         # feeds each under the Nora aiPeer. Populated only on a successful send,
         # so a refused/failed message is never fed.
@@ -239,7 +253,7 @@ class Deliverer:
 
     @property
     def delivered(self) -> bool:
-        return self._delivered_count > 0
+        return self._delivered_count > 0 or self._reaction_delivered
 
     @property
     def sent_message_ids(self) -> tuple[int, ...]:
@@ -302,6 +316,80 @@ class Deliverer:
         except Exception:                  # decoration is never fatal
             log.exception("compose raised (tag=%s); sending plain text", self._tag_id)
             return Outbound(styled)
+
+    async def react(self, *, emoji: str, row: TranscriptRow, quote: OutboundQuote) -> bool:
+        """An authored reaction is a reply, recorded beside its target, never as text."""
+        self._send_calls += 1
+        if self.exhausted:
+            self._metrics.inc("nora_guard_vetoes_total", rule="R-2")
+            self._last_outcome = "cap_spent"
+            return False
+        if not emoji.strip():
+            self._metrics.inc("nora_silent_failures_total", reason="empty_reply",
+                              platform=self._target.platform, audience=self._audience)
+            self._last_outcome = "empty_reply"
+            return False
+        if self._leak.check(emoji):
+            self._metrics.inc("nora_leak_blocks_total")
+            self._metrics.inc("nora_silent_failures_total", reason="doctrine_leak",
+                              platform=self._target.platform, audience=self._audience)
+            self._last_outcome = "doctrine_leak"
+            return False
+        kind = scan_reply(emoji, content_checks=self._content_checks)
+        if kind:
+            self._metrics.inc("nora_egress_blocks_total", kind=kind)
+            self._metrics.inc("nora_silent_failures_total", reason="egress_block",
+                              platform=self._target.platform, audience=self._audience)
+            self._last_outcome = "egress_block"
+            return False
+        if not self._send_permitted:
+            self._held_texts.append(emoji)
+            self._last_outcome = "cooldown_held"
+            return False
+        self._attempts += 1
+        ok = False
+        supported = True
+        try:
+            await self._on_delivered.prepare_reaction()
+            result = await self._adapter.react(
+                target=self._target, emoji=emoji, to_author=quote.author_id,
+                to_timestamp=quote.ts, to_message_id=quote.platform_message_id or "",
+            )
+            ok, supported = result.ok, result.supported
+        except Exception:
+            log.exception("reaction failed (tag=%s)", self._tag_id)
+        finally:
+            self._on_delivered.finish_reaction(ok=ok)
+        status = "sent" if ok else "failed" if supported else "unsupported"
+        self._last_outcome = "sent" if ok else "send_failed" if supported else "unsupported"
+        self._metrics.inc("nora_reactions_total", phase="reply", status=status,
+                          platform=self._target.platform)
+        if supported:
+            self._metrics.inc("nora_replies_total", status=status, platform=self._target.platform)
+        if not ok and supported:
+            self._metrics.inc("nora_silent_failures_total", reason="send_failed",
+                              platform=self._target.platform, audience=self._audience)
+        if not ok:
+            return False
+        self._reaction_delivered = True
+        message = NormalizedMessage(
+            platform=self._target.platform, conversation_id=self._target.conversation_id,
+            conversation_type=self._target.conversation_type,
+            sender_id=self._nora_sender_id, sender_name=None,
+            timestamp=int(time.time() * 1000), body="",
+            raw={"tag_id": self._tag_id, "doctrine_sha256": self._doctrine_sha256},
+            touch=Touch(kind="reaction", target=EditTarget(
+                message_id=quote.platform_message_id or "",
+                sent_ts=None if quote.platform_message_id else quote.ts),
+                        target_author=quote.author_id, emoji=emoji),
+        )
+        try:
+            await self._store.append_reaction(message_id=row.id, message=message, person_id=None)
+        except Exception:
+            # The platform already confirmed it. Do not invite a duplicate reaction.
+            log.exception("reaction audit failed (tag=%s)", self._tag_id)
+        self._on_delivered.settle()
+        return True
 
     async def deliver(
         self, text: str, *, source: str = "tool",
@@ -1186,7 +1274,15 @@ class ReplyGuard(HookProvider):
             text = result["content"][0]["text"]
         except (KeyError, IndexError, TypeError):
             return False
-        return isinstance(text, str) and text.strip() in ("sent", "held_for_review")
+        if not isinstance(text, str):
+            return False
+        if text.strip() in ("sent", "held_for_review"):
+            return True
+        try:
+            payload = json.loads(text)
+        except (ValueError, TypeError):
+            return False
+        return isinstance(payload, dict) and payload.get("status") in {"ok", "held_for_review"}
 
     @staticmethod
     def _reply_closes_turn(name: str, tool_input: Any, result: Any) -> bool:
@@ -1204,7 +1300,7 @@ class ReplyGuard(HookProvider):
         relaxed path, as does a result this cannot read. Only `send_reply` has the
         argument; `send_gif` is not covered here.
         """
-        if name != "send_reply":
+        if name not in {"send_reply", "reaction_send"}:
             return False
         # Read `more` the way the TOOL does: Strands validates the input with
         # pydantic's lax bool, so "true", "True", 1 and "yes" are all True to the
@@ -1430,7 +1526,8 @@ class ReplyGuard(HookProvider):
                 # and collapsing them would cap her at one message.
                 self._spoke = True
                 self._turn_is_over = (
-                    self.counts.get(name, 0) >= self._budgets.get(name, 0)
+                    (name != "reaction_send"
+                     and self.counts.get(name, 0) >= self._budgets.get(name, 0))
                     or self._reply_closes_turn(
                         name, (tool_use.get("input") or {}),
                         getattr(event, "result", None),

@@ -395,7 +395,7 @@ def test_a_video_past_the_cap_or_too_long_says_why_it_was_not_read():
     )
     body = _inside(render(Result("ok", view=dataclasses.replace(base, items=items)),
                           max_chars=4000)["text"])
-    assert "not read here: longer than one reading window" in body
+    assert "not read here: longer than the automatic read limit" in body
     assert "not read here: only 3 videos are read per post or story" in body
 
 
@@ -487,7 +487,7 @@ def test_the_client_writes_no_model_facing_dict_of_its_own():
 
 
 def test_a_single_long_reel_is_not_read_here_and_is_never_called_unseen():
-    """A 140 s reel is past one reading window, so it is not read HERE; its
+    """A 140 s reel is past the automatic read limit, so it is not read HERE; its
     line says `media_fetch` reads it, and the note must send her there, never
     tell her to say she could not see it."""
     base = post_view(_body("posts_carousel_ok.json"))
