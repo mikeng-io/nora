@@ -127,6 +127,80 @@ benchmark claims are not Nora measurements. Before implementation, record the
 accepted executor/model, evidence limits and exact scope in issue #520; leave
 unmeasured optimizations deferred rather than building every candidate.
 
+### Bounded browser lifecycle and unit context (2026-11-04)
+
+Lifecycle is code-owned in the existing browser manager/task supervisor, not a
+new container, model cleanup instruction or egress policy. Egress controls
+network access; it does not close tabs or release Chrome memory. The browser
+and its display remain in the unit's own VM.
+
+First-version defaults: at most four open page targets per VM, counting popups
+and unbound pages; reuse the existing ten-minute inactivity window and
+thirty-second cleanup cadence. These are bounded starting values, not a claim
+that four arbitrary pages fit every VM memory budget. Packaging owns the VM
+resource limit; measure browser/process memory under this cap before cutover.
+
+- A queued item opens no browser/tab until admitted. Acquire/reuse its owned
+  target on start; every popup/new target is assigned to that task and counted
+  before it can be exposed for use. Refuse/close excess targets rather than
+  permitting an uncapped popup path. At capacity, retire already-expired idle
+  tabs or report capacity unavailable; do not evict an active task's tab.
+- Keep tabs briefly after an execution segment finishes for the next message
+  to continue. Successful authorized task operations update last activity;
+  background page traffic, timers, the cleanup sweep and queue waiting do not.
+  Explicit task close/cancel closes its owned tabs after execution stops;
+  idle expiry closes them automatically and records the reason/time.
+- Active work is bounded by existing configured step/time/token budgets,
+  not exempted forever by an open websocket. Timeout, lost execution ownership
+  or disconnect recovery cancels/drains the task and releases its ownership;
+  the sweeper reconciles ownerless targets. Cleanup and capture use the same
+  ownership mechanism so expiry never races an active admitted operation.
+- With no active owners or resumable tabs, stop Chrome and Xvfb after the idle
+  bound. Fresh anonymous profile on restart; no previous-session restoration
+  or reopening URLs from historical audit/context. Browser/VM recreation expires
+  old handles. Verify actual process exit, not merely deletion of a Python map
+  entry. Files/exported artifacts are retained under their separate contract.
+
+Reuse the existing `<computer>` context block; a browser task/tab is a section
+of that unit's computer state, not a new prompt block per task or tab. Also do
+not confuse a model context block with a browser profile/context: the former is
+a rendered observation, the latter holds browsing state. The current anonymous
+baseline shares profile storage within the unit and owns tabs by task.
+
+Current source already has `ComputerContextReader` selecting audit/session rows
+by unit scope and reading runtime state with a bounded timeout/cache. Its
+`ComputerView` and deterministic renderer carry sessions, processes, files,
+commands and export links; typed `StateResult`/`ComputerView` do not yet carry a
+browser/tab lifecycle view. The manager's current browser idle cleanup is not
+new target delivery, and existing `_attach` still closes extra tabs.
+
+Extend these same typed views and the existing declared context-assembly path
+with browser availability/instance, active task, queue summary and owned tabs:
+opaque task/tab handle, observed title/URL, last operation/result, observation
+revision/time, last activity and expiry/close reason. Resolve one admitted unit
+scope; all that unit's rooms see the same scoped state while audit/delivery keep
+originating room provenance. Canonical DMs stay in their own scope. Keep existing
+render caps and truncation/unknown markers, not whole-page text/screenshots or
+an unbounded tab list. Titles/URLs remain untrusted page data.
+
+Update typed task/tab state deterministically from actual executor outcomes and
+browser target events; reconcile on reconnect/read after missing events.
+Invalidate the existing scope-state cache after mutations, capture, cancellation
+and expiry. Next turn assembles a fresh bounded `<computer>` view with observation
+age and unavailable/expired detail. Within a running turn, tool results carry
+the new state immediately; do not claim background events rewrite a prompt the
+model has already received. Deferred completion uses the existing completion
+turn, which reads the same view. Page content/action refs must be observed fresh
+before acting, regardless of a cached context summary. No model-written progress
+summary is the canonical browser state.
+
+Acceptance adds: target/popup cap, idle expiry without another user request,
+active-task budget enforcement, orphan cleanup, Chrome/Xvfb process exit,
+restart without tab resurrection, unit cross-room visibility and deterministic
+context/tool results after navigation/capture/close. A missing machine read is
+unavailable, never an empty successful browser, and a retained historical URL
+must never cause navigation during context rendering.
+
 ### Concrete browser setup — researched recommendation (2026-11-04)
 
 Read the [current setup research](02-research.md#microvm-browser-setup-research-2026-11-04)
