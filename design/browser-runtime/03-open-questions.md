@@ -19,6 +19,12 @@ backend for first delivery. Shared executor audit, scoped screenshot files and
 The executor and decision-model choice is still a design selection, not a
 completed benchmark or authorization to build every historical tier.
 
+Queue scope is now explicit: one active computer execution segment per unit/DM
+VM, reusing Redis Streams infrastructure with scope-wide admission. Source
+mapping must close durable pre-launch intent and existing completion-job
+integration, owner-loss process reconciliation, and worker nested-call handling
+before build. Existing bridge streams and their ACK contract stay separate.
+
 | Question | Current evidence / recommendation | What closes it |
 |---|---|---|
 | Existing CDP executor or trycua driver? | Existing Nora executor is built. Recommend reuse for browser-only scope; no demonstrated missing desktop operation is supplied by the current brief. | Accept reuse, or name a required action the existing executor cannot perform and verify candidate Linux/VM integration. |

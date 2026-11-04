@@ -256,7 +256,9 @@ One integrated scoped-browser change, built in this order:
 2. Bind native computer operations and worker routing to the admitted scope's
    VM and instance. Carry that binding through lifecycle/state, files, process
    handles and CDP; unresolved scope is unavailable, with no shared-VM fallback.
-3. Give that VM one on-demand Chrome and each task its own tab ownership.
+3. Add scope-wide FIFO execution admission with durable intent, Redis Streams
+   handoff/recovery and existing result delivery; native/worker calls share it.
+   Give that VM one on-demand Chrome and each task its own tab ownership.
    Preserve continuation across turns/transports, serialize same-tab operations,
    and make cancellation, idle cleanup and expired handles explicit.
 4. Expose direct screenshot-to-file capture on the same scoped task tab and
@@ -275,6 +277,81 @@ Pi's full adapter, ACP and another VM provider retain their own delivery scope;
 the routing must agree with them, but implementing every adapter is not browser
 acceptance. Design reconciliation and roadmap updates are the current work;
 per-scope VMs, new tab lifetime and direct capture remain NOT BUILT.
+
+### Per-scope computer queue (operator scope addition, 2026-11-04)
+
+Two admitted rooms of one unit target the same VM. Their computer tasks must
+queue instead of colliding or spending a live turn waiting. First version:
+one active computer execution segment per scope/VM, FIFO among admitted ready
+segments; independent scopes may progress concurrently. A segment is one
+bounded browser objective, worker job or native operation, not the browser
+session's whole lifetime. Release on completion/cancellation; a later turn's
+continuation queues again while retaining its own tab/context. Status and
+cancellation remain available while the VM is busy. This serial baseline
+replaces concurrent same-VM execution as a first-version requirement; task-owned
+tabs still prevent one task adopting another task's page. Revisit parallel
+execution only when a measured queue delay warrants finer resource ownership.
+
+Reuse the existing Redis service, client and Streams producer/consumer recovery
+patterns, with a separate computer-work stream per opaque scope and a dedicated
+consumer group. Do not put computer commands into platform-account bridge
+streams or change their ingest ACK obligations. Redis `XREADGROUP` distributes
+entries; consumer-group membership alone is not per-VM execution exclusion.
+The existing bridge reader elects an owner with a database advisory lock;
+reuse that established ownership pattern for each computer scope, with one
+serial executor and shared admission for native tools and workers. If ownership
+is lost, stop dispatch, cancel/drain managed operations and reconcile actual VM
+process state before admitting a successor. An idle timeout/claim is not proof
+that an old command or worker has stopped. A successor must not dispatch until
+old execution is confirmed stopped; inability to confirm blocks that scope.
+
+The existing `ComputerLeases` only covers non-job calls by unit; worker calls
+currently use `job:<id>`. Both paths must join scope-wide admission. A queued
+worker passes its admitted execution ownership to nested native/browser calls;
+those calls must not enqueue behind their own parent and deadlock. Models may
+not supply that ownership. Intentional detached processes remain scope-owned:
+a segment may not release the VM while work it owns can still mutate the shared
+computer, unless a separately specified managed handoff preserves exclusion.
+
+Queue lifecycle:
+
+1. Resolve admitted scope and originating actor/room/job once. Retain a stable
+   request/job ID, payload reference, enqueue time/deadline, task/tab binding and
+   trace link. Commit durable execution intent before publishing; reconcile a
+   publish gap using existing outbox/retry patterns, not another task database.
+2. Use journaled/deduplicated enqueue and report queued only after durable
+   acceptance. Reuse deferred job completion/delivery for work that exceeds a
+   live turn; do not leave the conversation slot held while it waits. Re-check
+   current admission and expiry when it reaches the head. A queued item must
+   not start under revoked permissions.
+3. The elected scope executor claims the next item, checks prior completion and
+   actual ownership, then executes under the shared VM admission. Persist actual
+   terminal result before ACK, or commit complete durable downstream ownership
+   before ACK if handing off. Reclaim handles lost delivery, not exactly-once
+   execution. Never blindly repeat an uncertain click, command or export after
+   a crash; reconcile it or return an explicit interrupted/unavailable outcome.
+4. Pending cancellation prevents start; running cancellation stops and drains
+   the managed work before releasing the slot. A cancelled/expired or definitively
+   failed task becomes terminal so the next ready task can run. Preserve its
+   result and originating room for delivery; no shared active-room pointer.
+
+Existing `ComputeJob`/poller is completion delivery after backend launch, not
+already a pre-execution FIFO. Its readiness/payload integration must be designed
+before implementation; do not reinterpret delivery `PENDING` as queued execution.
+The new execution admission must have one durable owner linked to that job,
+without introducing a competing result/delivery store. Existing turn/worker
+budgets apply; queue wait and execution time are measured separately. Redis or
+intent-store failure is unavailable, never "queued" or an unqueued direct run.
+
+Reuse audit/OTel with queue/claim/start/finish/cancel and outcome timestamps,
+origin/task/VM correlation, wait duration and oldest pending age; no per-scope
+metric labels or duplicate page payloads. Acceptance: two rooms of one unit
+submit together and run in enqueue order with maximum one active segment;
+another unit progresses; continuation resumes the original tab; nested worker
+tools do not deadlock; pending/running cancellation, revocation, expiry,
+restart/lost-ACK and publish-gap recovery neither lose work nor blindly repeat
+uncertain effects. Prove positive execution as well as refused overlap. No new
+queue daemon, runtime implementation or host operation ships in this document.
 
 ### Migration prerequisites and acceptance
 
@@ -301,10 +378,10 @@ contracts, plus later explicitly authorized runtime readback:
 - Native tools and Pi/ACP agree on workspace and browser identity for the same
   scope. Cross-scope management, state, session/process/tab handles and CDP are
   refused, including forged IDs, reconnects and stale-instance handles.
-- Concurrent native and worker browser tasks in one scope use separate tabs;
-  same-tab operations serialize under one owner/admission mechanism. Existing
-  `job:<id>` leases alone are not browser exclusion. Different scoped VMs
-  progress independently; cancellation/idle cleanup leaves active tasks intact.
+- Native and worker browser tasks in one scope retain separate tabs;
+  same-VM execution segments serialize through the scope queue/admission, even
+  across separate task tabs. Existing `job:<id>` leases alone are not browser
+  exclusion. Different scoped VMs progress independently; cancellation/idle cleanup leaves active tasks intact.
 - Consecutive-turn snapshot and direct viewport/full-page image captures are
   verified against the intended tab. Restart/idle expiry returns unavailable
   with expired detail; no hidden persistence or cross-task tab substitution.
