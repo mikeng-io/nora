@@ -12,6 +12,10 @@ baseline without an anti-bot guarantee. ADR 0022 remains unchanged.
 
 The operator requested a coherent design before implementation. Topology,
 anonymous use, continuation and direct screenshots are settled requirements.
+The design supports the existing Flash runner first and additional decision
+backends later through the same task-level port; it does not require every
+backend for first delivery. Shared executor audit, scoped screenshot files and
+`computer_export` delivery belong to the integrated slice.
 The executor and decision-model choice is still a design selection, not a
 completed benchmark or authorization to build every historical tier.
 

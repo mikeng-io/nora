@@ -120,6 +120,106 @@ benchmark claims are not Nora measurements. Before implementation, record the
 accepted executor/model, evidence limits and exact scope in issue #520; leave
 unmeasured optimizations deferred rather than building every candidate.
 
+### Adapter boundary and ownership (2026-11-04)
+
+The architecture supports multiple decision backends over one scoped browser
+execution path. First use the existing configured LLM/Flash runner; later add
+one selected Jev or Cua-S1 backend when its fit and data route are established.
+This is extensibility of the selected solution, not a requirement to ship three
+backends or a per-step automatic fallback cascade in the first version.
+
+Reuse the existing `BrowserRunner` task-level port (`nora/domain/ports.py`) and
+`BrowseAgentRunner` implementation (`nora/agent/browse.py`). Extend their task
+binding for the session/tab requirements rather than creating a parallel public
+tool per model. Both native calls and workers use this same scoped path.
+
+| Responsibility | Owner | Adapter may change |
+|---|---|---|
+| Scope, VM instance, task/tab ownership, admission and expiry | Shared session/runtime code outside the decision backend | Nothing; models do not choose a scope or endpoint |
+| Observe, validate refs/actions and execute via authenticated computerd/CDP | Shared browser executor | A future driver replacement must preserve the same contract |
+| Reason over objective and observations; propose steps; decide when done | Selected runner/decision backend | Flash agent now; later Jev/Cua-S1 integration |
+| Limits, cancellation, shared execution audit and artifact publication | Common task/execution path | No backend-specific bypass or success reporting |
+| Final task result | Existing typed `BrowseOutcome` boundary | Backend internals differ; outcomes remain grounded and fail-closed |
+
+Jev/Cua-S1 are not necessarily drop-in replacements for the LLM's model name.
+A typed decision model can select an action/ref from prepared candidates; its
+adapter must assemble the supported observation, decode decisions, handle
+abstention and maintain task progression. Open-ended extraction, text generation
+and final answer synthesis may still need the LLM. Make those remaining calls
+explicit in the adapter and total cost; do not claim the whole browser became
+LLM-free because clicks use a decision model. Only introduce a shared internal
+step-decision interface when a second backend is actually being built; the
+existing runner is sufficient for the first implementation. Every additional
+runner, including its fake, must pass the same runner contract suite.
+
+Select a backend at task/session creation and record the actual selection.
+Do not silently switch on failure or reconnect. An explicit later fallback is
+part of that backend's declared behavior and budget, retaining the same VM/tab
+binding and recording each attempted model. Unknown/unsupported selection is
+unavailable. A later trycua driver changes the execution layer independently;
+it does not require replacing the sandbox provider or the export pipeline.
+
+### Screenshot artifacts and delivery (2026-11-04)
+
+Use one path: capture the owned tab, write an image to that scope's workspace,
+then reuse `computer_export(path, to="chat" | "link" | "keep")` when delivery
+or retention is requested. No separate screenshot publisher, blob store or
+artifact endpoint is introduced. A request to see the current page can capture
+and export directly without asking the browser decision backend to browse again.
+
+The current `BrowserPage.screenshot` returns viewport JPEG bytes to a model;
+it does not establish a workspace file, full-page capture or delivery. The new
+capture operation must securely write the actual image in the bound VM/workspace
+through existing file operations and return its relative path, media type,
+size/digest and scope/task/tab/capture-time provenance. User-facing capture is
+unmarked by default; Set-of-Marks remains an observation aid for models.
+Do not embed base64 image bodies in normal logs or audit rows.
+
+Existing export checks remain the authority for byte/type/size validation,
+requester/destination permissions, publication and export provenance. Keep DM
+publication rules. A successful capture is not a successful export: if delivery
+fails, report the saved capture and failed delivery separately, preserving the
+file for an explicitly requested retry. Full-page failure/partial coverage is
+explicit; it must not be labelled complete. Model-only observation screenshots
+do not automatically become published artifacts or a continuous recording.
+
+### Audit, logging, tracing and operational evidence (2026-11-04)
+
+Follow [the observability contract](../../docs/observability.md); reuse its
+SigNoz/OTel pipeline and Sentry correlation, not another browser monitoring
+stack. These signals answer different questions:
+
+| Signal | Existing owner / required extension |
+|---|---|
+| Durable audit: what was attempted and what happened? | Reuse `computer_events` started/finished operations and `computer_exports`. Existing `computer_browse` records the whole task; shared executor step coverage is still required for the new target, including rejected actions and captures. |
+| Trace: where did time and model cost go? | Keep one execution root with child browser/model/action/capture/export spans. Separate consecutive turns remain separate traces linked by stable task/session identity; no indefinitely open browser trace. Strands owns LLM spans; future raw model calls use the existing telemetry boundary. |
+| Logs/errors: what broke operationally? | Existing structured logging, trace correlation and Sentry. Record stage, reason and identifiers needed to find the audit; no duplicated full page contents, screenshots or per-step debug prose. |
+| Metrics: how often, how long and at what cost? | Reuse computer call/health/audit-failure metrics; add only missing lifecycle/capture/expiry/challenge and adapter-cost measurements needed by acceptance, with declarations and call sites together. No URLs, task IDs or scope IDs as metric labels. |
+
+Correlate audit and trace using operation/task/session, scope, VM instance/tab,
+originating turn/job, selected backend and actual served model. Record requested
+action/ref against its observation revision, execution outcome and timing;
+capture/export records link the image file/digest and export artifact. Retain
+payloads under the existing content/storage rules by reference, rather than
+copying them into every signal. The backend's proposed action is not evidence
+that the executor performed it. A decision model's confidence is not task success.
+
+Preserve the existing audit failure semantics: refusal to record a required
+start prevents execution; a failed finish append after an operation ran is
+logged/counted and must not erase its result. Cancellation/crash leaves an
+explicit incomplete operation, not a fabricated success. Model call counts and
+usage count actual invocations once, including fallback/answer synthesis;
+unknown usage or unpriced cost remains unknown, not zero. Declare new payloads
+through context assembly; adapter code does not build ad-hoc model prompts.
+
+Acceptance includes one complete generated journey: open/filter a page, resume
+on the next turn, capture the same task tab and export the image. Check the
+actual file/digest and authorized delivery, then reconstruct task and action
+outcomes from existing audit records and linked traces. Include a refused
+cross-scope operation, expired handle, model/driver error and export failure;
+positive controls prove execution/capture ran. Source checks do not establish
+that the deployed collector retained a trace or that a chat received a file.
+
 ### Implementation sequence — after design selection
 
 One integrated scoped-browser change, built in this order:
@@ -134,10 +234,12 @@ One integrated scoped-browser change, built in this order:
 3. Give that VM one on-demand Chrome and each task its own tab ownership.
    Preserve continuation across turns/transports, serialize same-tab operations,
    and make cancellation, idle cleanup and expired handles explicit.
-4. Expose direct screenshot capture on the same scoped task tab. Keep model
+4. Expose direct screenshot-to-file capture on the same scoped task tab and
+   reuse `computer_export` for requested delivery. Keep model
    reasoning outside the VM and use the selected baseline, without adding the
    historical cache, ranker or model cascade to this slice.
-5. Verify scope routing, continuity, concurrency, expiry and capture against the
+5. Wire shared audit/trace/log/metric coverage for all backends; verify scope
+   routing, continuity, concurrency, expiry, capture/export and evidence against the
    acceptance below. Use generated scopes and focused checks, hosted checks and
    the applicable independent review. No full local suite before the PR.
 6. Prepare data-preserving migration and rollback from the refreshed inventory.
