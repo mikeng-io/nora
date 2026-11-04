@@ -414,3 +414,21 @@ UNAVAILABLE model acceptance, not parked successes. Current deterministic
 assembly/completion checks measure wiring only. Cognition's replacement prelude,
 tool-free judges, speech formatter and worker retain their distinct ownership.
 Public voice changes depth, never private-context access or action authority.
+
+
+### Evidence limits of the existing judge
+
+The stateful circle cases also select `recall_grounded` and
+`tool_status_reported`: these existing axes supply the actual shown blocks and
+tool results to the judge. The brief-fact/explanation pair is self-contained in
+the invented arriving line and uses suitability alone. No judge should infer a
+write receipt, current preference or completed job from doctrine prose.
+
+The current tag outcome counts authored message rows, not reaction-only receipt
+state. Thus `circle_acknowledgement` and `circle_banter` cannot establish
+reaction-only suitability with this grader; their text-response observations
+alone are insufficient acceptance. Existing `tests/unit/test_reaction_send.py`
+controls delivery/held/unavailable mechanics separately. Model acceptance of
+reaction-only choice, the eight controlled state/audience cases and the broader
+gate's extra admissions/interruption/spend remain UNAVAILABLE until the existing
+measurement paths can carry those properties. No competing harness is added.
