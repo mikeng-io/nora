@@ -180,6 +180,17 @@ class Outcome:
     #: failure.
     said: tuple[str, ...] = ()
 
+    #: Confirmed reaction tool receipts, separate from authored text rows.
+    reactions: tuple[str, ...] = ()
+
+    @property
+    def responded(self) -> bool:
+        return bool(self.said or self.reactions)
+
+    @property
+    def response(self) -> str:
+        return "\n".join((*self.said, *self.reactions))
+
     #: What the pass changed, as `("create", title)` / `("update", title)`.
     #: Empty for every entry point that writes no notes.
     changed: tuple[tuple[str, str], ...] = ()
@@ -324,7 +335,7 @@ class Outcome:
         if expect == "no_go":
             return self.admitted is False
         if expect in ("speak", "reply"):
-            return bool(self.said)
+            return self.responded
         if expect in ("create", "update"):
             return any(kind == expect for kind, _ in self.changed)
         if expect == "remind":
@@ -350,14 +361,14 @@ class Outcome:
             # the act path it is a row the screen cancelled, a turn that never
             # ran, so the case's own question was never asked. A case where
             # nothing ran still falls to `None`.
-            if self.said or self.written or self.changed or self.admitted is True:
+            if self.responded or self.written or self.changed or self.admitted is True:
                 return True
             return None
         if expect == "none":
             # BOTH, because `none` is the negative of two different positives:
             # a pass writing a note and a pass writing a row.
             return not self.changed and self.written == 0
-        return not self.said
+        return not self.responded
 
 
 @dataclass(frozen=True, slots=True)

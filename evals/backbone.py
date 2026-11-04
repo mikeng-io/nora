@@ -161,6 +161,7 @@ NORA_TOOL_RESULTS = "nora.tool_results"
 #: routing alone cannot tell «drew herself with her reference» from «drew an
 #: empty room»: both are one `generate_image` call.
 NORA_TOOL_INPUTS = "nora.tool_inputs"
+NORA_REACTIONS = "nora.reaction_receipts"
 #: The clock line the turn was shown (`nora.agent.prefill._now_line`), read
 #: back off the first model call. A case that grades a date she had to work
 #: out («this Saturday») is graded against the date SHE was given, not the
@@ -510,6 +511,31 @@ def _tool_results(exporter: InMemorySpanExporter) -> tuple[tuple[str, str], ...]
                 text = str(attrs["gen_ai.output.messages"])
         out.append((str(span.attributes["gen_ai.tool.name"]), text))
     return tuple(out)
+
+
+def _reaction_receipts(
+    results: tuple[tuple[str, str], ...], inputs: tuple[tuple[str, str], ...],
+) -> tuple[str, ...]:
+    """Only an executed reaction's confirmed result is a response; never its name alone.
+
+    Keep the captured arguments verbatim so the judge can assess emoji and target.
+    These are sandbox tool receipts, not a claim of live platform delivery.
+    """
+    receipts = []
+    for (name, raw), (called, arguments) in zip(results, inputs, strict=True):
+        if name != "reaction_send" or called != name:
+            continue
+        for text in _texts_in(raw):
+            try:
+                result = json.loads(text)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(result, dict) and result.get("status") == "ok":
+                if not arguments:
+                    raise ValueError("confirmed reaction has no captured arguments")
+                receipts.append("[Confirmed reaction_send; arguments=" + arguments + "]")
+                break
+    return tuple(receipts)
 
 
 #: Blocks `_shown_blocks` captures that `_judge_source` does NOT add as
@@ -1715,6 +1741,9 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             tools_called = _tools_called(exporter)
             tool_results = _tool_results(exporter)
             tool_inputs = _tool_inputs(exporter)
+            outcome = dataclasses.replace(
+                outcome, reactions=_reaction_receipts(tool_results, tool_inputs),
+            )
             _dump_exchanges(exporter, case.name)
             shown_now = _shown_now(exporter)
             # `agent=agent_name`: the turn's own render, never the relevance
@@ -1784,7 +1813,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             # Judged HERE, while the
             # subject is alive, because the judge needs the doctrine she
             # actually ran ON, not a copy read off disk.
-            elif spec.judge is not None and outcome.said and outcome.error is None:
+            elif spec.judge is not None and outcome.responded and outcome.error is None:
                 if shown_transcript is None:
                     # NOT fail-closed to fall through to `source=None`: `Judge.
                     # grade` still answers with no source ("meaningful with or
@@ -1825,7 +1854,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                             subject, md, now_ms=seeded.now_ms,
                         )
                     judgement = await spec.judge.grade(
-                        said="\n".join(outcome.said),
+                        said=outcome.response,
                         asked=nora_case.input,
                         doctrine=subject.deps.doctrine.doctrine_text,
                         # The SOURCE the reply had to ground against — the
@@ -1874,11 +1903,12 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             await _close(subject)
             subject = None
             return {
-                "output": "\n".join(outcome.said),
+                "output": outcome.response,
                 "environment_state": [
                     EnvironmentState(name=NORA_ERROR, state=outcome.error),
                     EnvironmentState(name=NORA_TOKEN, state=outcome.outcome_token),
                     EnvironmentState(name=NORA_SAID, state=len(outcome.said)),
+                    EnvironmentState(name=NORA_REACTIONS, state=outcome.reactions),
                     EnvironmentState(name=NORA_DELIVERY, state=outcome.delivery),
                     EnvironmentState(name=NORA_ADMITTED, state=outcome.admitted),
                     EnvironmentState(name=NORA_BLOCKS_EMPTY, state=blocks_empty),
@@ -2235,7 +2265,9 @@ class AbsenceGrader(Evaluator):
         # entry point leaves `admitted` at `None` (never ran a gate), so
         # `said` is still the right signal there. Reading `said` alone for a
         # gate case would grade every one of them as silence, verdict ignored.
-        spoke = bool(admitted) if admitted is not None else bool(said)
+        spoke = bool(state_of(data, NORA_REACTIONS)) or (
+            bool(admitted) if admitted is not None else bool(said)
+        )
         detail = f"admitted={admitted}" if admitted is not None else f"{said} row(s)"
         if expect in ("silence", "no_reply", "none", "no_go"):
             return [
@@ -2306,6 +2338,7 @@ class MeetsGrader(Evaluator):
         outcome = Outcome(
             admitted=state_of(data, NORA_ADMITTED),
             said=said,
+            reactions=tuple(state_of(data, NORA_REACTIONS) or ()),
             changed=tuple(state_of(data, NORA_CHANGED) or ()),
             written=state_of(data, NORA_WRITTEN) or 0,
             checks_failed=tuple(state_of(data, NORA_CHECKS_FAILED) or ()),
