@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.15.2](https://github.com/mikeng-io/nora/compare/v7.15.1...v7.15.2) (2026-11-04)
+
+
+### Bug Fixes
+
+* **version:** explain unavailable running build stamps ([b5e4185](https://github.com/mikeng-io/nora/commit/b5e41852fadc7f64043f62b0bcfbf6112a6b8479))
+
 ## [7.15.1](https://github.com/mikeng-io/nora/compare/v7.15.0...v7.15.1) (2026-11-04)
 
 
