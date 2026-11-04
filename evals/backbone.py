@@ -1536,6 +1536,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     workspace being deleted.
     """
     from evals.rebuilt.entry import ENTRY_POINTS
+    spec = dataclasses.replace(spec, entry=(case.metadata or {}).get("entry", spec.entry))
     port = ENTRY_POINTS[spec.entry]
     if port.frozen_input:
         outcome = await port.drive(spec.judge, case, now_ms=0)
@@ -1577,6 +1578,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
     from evals.rebuilt.domain import Moment, Outcome
     from evals.rebuilt.entry import ENTRY_POINTS
 
+    spec = dataclasses.replace(spec, entry=(case.metadata or {}).get("entry", spec.entry))
     port = ENTRY_POINTS[spec.entry]
     if spec.repeat > 1 and port.delivers_input:
         # `port.delivers_input` means a line ARRIVES after the window —
@@ -1663,13 +1665,13 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         # DRAW'S Honcho workspace, created empty.
                         overrides={
                             **port.config,
-                            **(overlay.overrides if overlay else {}),
                             # A full restore turns the presence READER back on
                             # (`FULL_RESTORE_OVERRIDES` says why nothing polls).
                             # Before the spec's own, so a caller can still state
                             # otherwise; empty on every other corpus.
                             **(FULL_RESTORE_OVERRIDES if spec.full_restore else {}),
                             **(spec.overrides or {}),
+                            **(overlay.overrides if overlay else {}),
                             "honcho.workspace_id": memory_workspace,
                         },
                         # The deployment's OWN roster and room set, verbatim.
@@ -1716,7 +1718,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         "(design/evaluation/11-the-sandbox-rebuild.md §1.2's "
                         "declared Discord divergence)."
                     )
-            if spec.memory_surface is not None:
+            if spec.memory_surface is not None and not (overlay and overlay.memory):
                 refuse_a_memory_surface_mismatch(
                     spec.memory_surface, subject.cfg.memory.index.read,
                 )
@@ -1832,6 +1834,9 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 outcome = dataclasses.replace(outcome, error=problem)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
 
+            if (overlay or port.public_audience) and outcome.responded and spec.judge is None:
+                outcome = dataclasses.replace(
+                    outcome, error='controlled reply requires semantic judge')
             judged_why = ""
             # The standing fold: the judged thing is the POSITION a fold wrote, against the
             # case's one stated property, read over the turn's RECORD — the

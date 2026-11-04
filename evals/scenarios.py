@@ -335,6 +335,7 @@ def _case(row: dict[str, Any], corpus: str = "") -> Case:
         metadata={
             **(row.get("metadata") or {}),
             "corpus": corpus,
+            "entry": str(row["entry"]),
             "expect": row["expect"],
             "snapshot": dict(row.get("snapshot") or {}),
             "parked": dict(row.get("parked") or {}),
@@ -376,8 +377,7 @@ def census(name: str) -> Census:
     )
 
 
-#: Which entry point drives a corpus. ALL cases in a given corpus file share
-#: one entry point — a corpus IS a suite about one entry point.
+#: Default entry for a corpus. A case may name an existing entry explicitly.
 CORPUS_ENTRY: dict[str, str] = {
     "no_trigger": "tag",
     "near_miss": "tag",

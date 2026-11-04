@@ -196,7 +196,7 @@ cases:
     mention: true
     entry: tag
     expect: reply
-    input: '{trigger} 我嘅口味係點？'
+    input: '{trigger} 我嘅 preference 係點？'
     expected_output: Synthetic admitted graph evidence has old taste and a later explicit correction with
       partial coverage. Use the correction for this person, without implying complete recall.
     metadata:
@@ -209,7 +209,7 @@ cases:
     mention: true
     entry: tag
     expect: reply
-    input: '{trigger} 我嘅口味係點？'
+    input: '{trigger} 我嘅 preference 係點？'
     expected_output: The same graph read is unavailable and no current preference is visible. Say it could
       not be checked, rather than inventing taste or declaring no history.
     metadata:

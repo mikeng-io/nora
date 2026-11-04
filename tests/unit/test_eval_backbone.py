@@ -1334,3 +1334,26 @@ async def test_gate_delivers_case_input_to_the_real_window_path(monkeypatch, lin
     assert decisions == [{"platform": "signal", "conversation_id": "generated-room"}]
     assert arrivals == ([(line, 1234, "generated")] if line else [])
     assert outcome.admitted == bool(line)
+
+
+async def test_circle_hold_enters_real_participation_send_permission(monkeypatch):
+    from evals.rebuilt import entry
+    from evals.rebuilt.domain import Case as NoraCase
+    calls = []
+    async def arrive(*args, **kwargs): pass
+    async def watermark(*args): return 7
+    async def heard(*args, **kwargs): return ()
+    async def speak(occasion, **kwargs):
+        calls.append(kwargs)
+        return 'silent'
+    monkeypatch.setattr(entry, 'arrive', arrive)
+    monkeypatch.setattr(entry, 'last_row_id', watermark)
+    monkeypatch.setattr(entry, 'heard', heard)
+    subject = SimpleNamespace(room=('signal', 'generated-room'),
+        deps=SimpleNamespace(fire_path=SimpleNamespace(speak=speak)))
+    for overlay in ({'reaction': 'held'}, {}):
+        case = NoraCase(name='generated', entry='participation', expect='silence', input='Thanks',
+            metadata={'circle_overlay': overlay})
+        outcome = await entry.participation(subject, case, now_ms=1234)
+        assert outcome.error is None and outcome.outcome_token == 'silent'  # noqa: S105
+    assert calls == [{'send_permitted': False}, {}]

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING, Literal
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from nora.domain.compute import ComputeJob, ComputeJobState
 from nora.domain.ports import LaunchRequest
@@ -119,6 +119,9 @@ async def seed_job(subject: Subject, overlay: CircleOverlay, *, person: str, now
             await seed_documents(subject, 'circle checked output', [{
                 'id': document_id, 'title': brief.title, 'body': report,
             }])
+            checked = await subject.deps.documents.get(document_id=UUID(document_id))
+            if checked is None or checked.text.strip() != brief.title + "\n" + report:
+                raise ValueError('generated output readback missing or changed')
             from nora.agent.guards import Deliverer
             from nora.domain.models import ConversationTarget
             deliverer = Deliverer(store=subject.deps.audit,
@@ -202,10 +205,11 @@ class CircleMemory:
         unit = subject.unit
         at = datetime.fromtimestamp(now_ms / 1000, UTC)
         person_entity = pointer_entity('person', unit, person, 'Generated speaker')
-        topic = Entity(f'{unit}:generated-spicy', 'topic', unit, 'spicy food 食辣')
-        old = 'Generated preference: I like spicy food 食辣.'
-        new = ('Generated correction: I no longer eat spicy food 唔食辣. '
+        topic = Entity(f'{unit}:generated-spicy', 'work', unit, 'generated spicy noodle dish 食辣')
+        old = 'Generated preference 口味: I like spicy food 食辣.'
+        new = ('Generated correction 口味: I no longer eat spicy food 唔食辣. '
                'This replaces my old preference.')
+        await self.graph.upsert_entity(person_entity)
         sources = {}
         relations = []
         for i, text in enumerate((old, new)):
@@ -223,13 +227,20 @@ class CircleMemory:
                 persons=(person,), asserted_at=datetime.fromtimestamp(stamp / 1000, UTC))
             evidence = Evidence(key, relation_id=relation.id, span=text)
             admission = await self.graph.stage_and_admit(
-                entities=(person_entity, topic) if i == 0 else (),
+                entities=(topic,) if i == 0 else (),
                 relations=(relation,), evidence=(evidence,), sources=sources,
                 corrections=(Correction(relations[0].id, 'supersede', at,
                     by=relation.id, evidence=(key,)),) if i else (),
             )
             if admission.refused:
                 raise ValueError(f'generated preference refused: {admission.refused}')
+            record = Relation(f'circle-authorship-{i}', key, 'authored_by',
+                person_entity.key, 'record', unit, persons=(person,),
+                asserted_at=datetime.fromtimestamp(stamp / 1000, UTC))
+            admitted_record = await self.graph.stage_and_admit(entities=(), relations=(record,),
+                evidence=(Evidence(key, relation_id=record.id, span=text),), sources=sources)
+            if admitted_record.refused:
+                raise ValueError('generated source authorship refused')
             relations.append(relation)
             self.index.edges.append(('message', str(row), 'authored_by', 'person', person))
         # Neither old nor corrected preference is visible in the arriving question.
