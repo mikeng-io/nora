@@ -900,3 +900,16 @@ async def test_circle_public_adapter_uses_real_occasion_and_narrow_grant(monkeyp
     assert built[0]['skills_dir'] is None
     assert built[0]['models']._spec.tool_choice == 'auto'
     assert not {'memory_search', 'memory_read', 'subagent_read', 'send_gif'} & PUBLIC_GRANT
+
+
+async def test_circle_declared_entry_is_used_by_the_actual_drive(seams, monkeypatch):
+    calls = []
+    async def drive(subject, case, *, now_ms):
+        calls.append((case.entry, now_ms))
+        return Outcome(admitted=None)
+    monkeypatch.setitem(ENTRY_POINTS, 'public_summons', EntryPoint(drive=drive))
+    case = _case('generated-public-entry')
+    case.metadata['entry'] = 'public_summons'
+    await backbone._drive(case, _spec())
+    assert calls == [('public_summons', _SHOT['before_ms'])]
+    assert seams['sandbox_from_snapshot'][0]['leave_room_for_arrival'] is False

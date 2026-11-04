@@ -1829,7 +1829,10 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 outcome = dataclasses.replace(
                     outcome, position=json.dumps(receipt, ensure_ascii=False, sort_keys=True),
                 )
-            problem = _circle_execution_problem(overlay, tool_results, shown_blocks, tools_called)
+            measured_overlay = (dataclasses.replace(overlay, memory=None)
+                                if port.public_audience and overlay else overlay)
+            problem = _circle_execution_problem(
+                measured_overlay, tool_results, shown_blocks, tools_called)
             if problem and outcome.error is None:
                 outcome = dataclasses.replace(outcome, error=problem)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
