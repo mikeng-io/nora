@@ -116,3 +116,11 @@ cases:
     input: 用你部電腦跑段python：計1到100嘅平方和
     metadata: {criteria: [tool_status_reported]}
     snapshot: *room_a
+
+  - name: report_version_running_and_published
+    entry: tag
+    expect: reply
+    mention: true
+    input: Check your running version and the latest published Nora release. Explain whether you are behind, and distinguish released changes from capabilities you actually have. Read the relevant release notes.
+    metadata: {criteria: [tool_status_reported]}
+    snapshot: {<<: *room_a, before_ms: 1793786400000}

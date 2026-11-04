@@ -1,0 +1,51 @@
+[
+  {
+    "name": "published release knowledge advances independently of the immutable stamp",
+    "file": "nora/infra/releases.py",
+    "old": "return {**result, \"latest\": entry}",
+    "new": "return {**result, \"latest\": {**entry, \"version\": \"v0.0.9\"}}",
+    "target": "tests/integration/test_version_releases.py::test_running_identity_is_independent_of_the_latest_release"
+  },
+  {
+    "name": "the upgrade comparison does not equate every release with the running build",
+    "file": "nora/agent/tools.py",
+    "old": "comparison = compare_versions(running[\"version\"], published[\"latest\"][\"version\"])",
+    "new": "comparison = \"same\"",
+    "target": "tests/integration/test_version_releases.py::test_running_identity_is_independent_of_the_latest_release"
+  },
+  {
+    "name": "snapshot fallback is not reported as a live GitHub observation",
+    "file": "nora/agent/tools.py",
+    "old": "\"source\": \"shipped_snapshot\", \"version\": entry.version",
+    "new": "\"source\": \"github\", \"version\": entry.version",
+    "target": "tests/integration/test_version_releases.py::test_a_github_failure_does_not_hide_the_running_version"
+  },
+  {
+    "name": "a missing published tag differs from an unavailable API",
+    "file": "nora/infra/releases.py",
+    "old": "return {**result, \"status\": \"nothing_found\"}",
+    "new": "return {**result, \"status\": \"unavailable\"}",
+    "target": "tests/integration/test_version_releases.py::test_an_unknown_release_is_distinct_from_a_failed_check"
+  },
+  {
+    "name": "catalogue retains the list versus named-read discrimination",
+    "file": "nora/agent/tools.py",
+    "old": "List running and published history when somebody asks about upgrades or changes to you.",
+    "new": "Check running and published versions when asked about upgrades or changes to yourself.",
+    "target": "tests/unit/test_tool_catalogue.py::test_confusable_pairs_are_discriminated_in_the_catalogue_itself"
+  },
+  {
+    "name": "an unknown public tag still offers the recorded alternatives",
+    "file": "nora/agent/tools.py",
+    "old": "known = ({\"known\": list(lookup.known), \"known_source\": \"shipped_snapshot\"}",
+    "new": "known = ({\"known\": [], \"known_source\": \"shipped_snapshot\"}",
+    "target": "tests/integration/test_version_releases.py::test_an_unknown_release_is_distinct_from_a_failed_check"
+  },
+  {
+    "name": "named release reads retain the direct-read catalogue guidance",
+    "file": "nora/agent/tools.py",
+    "old": "For a known version, read directly without version_list before or after.",
+    "new": "Read directly without version_list for a known version.",
+    "target": "tests/unit/test_tool_catalogue.py::test_confusable_pairs_are_discriminated_in_the_catalogue_itself"
+  }
+]

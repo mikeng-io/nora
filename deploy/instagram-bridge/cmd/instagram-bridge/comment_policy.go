@@ -9,7 +9,7 @@ import (
 )
 
 // The comment write's three switches (design/instagram-adoption/19 §Account
-// safety, rule 4; compose.fragment.yml):
+// safety, rule 4; root docker-compose.yml):
 //
 //	INSTAGRAM_COMMENT_WRITES        exactly `on` enables the write. Anything
 //	                                else, unset included, is off.

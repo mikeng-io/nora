@@ -22,6 +22,11 @@ success receipt or pending attempt routes deployment and recovery through the
 recreate procedures below apply only before that cutover; read-only diagnostics
 still apply in either mode.
 
+The [deployment ownership map](../deploy/README.md#ownership-and-entry-points)
+identifies the application, infrastructure, observability and computer entry points.
+Project `nora` is shared: do not use project-wide teardown or orphan removal
+to clean up retired services.
+
 Host exec examples require the [installed secret-delivery helper](configuration.md#host-migration-and-installed-files).
 Bare Compose commands below require a runtime `.env` sufficient for Compose
 interpolation; historical checkout procedures retain that prerequisite. Native
@@ -468,34 +473,31 @@ result into the review channel.
 `PlatformSilent` is the SSE-silence one — no adapter event for 900 seconds — and the
 rest are in `docs/observability.md`'s table with the incident behind each.
 
-Until 2026-09-09 this section described a shell script polling `/health` on a timer
-that was never created, whose alert channel was `echo >&2`. It was deleted; the
-commands below are unchanged and still the right first moves.
+For a Signal alert, inspect the current `signal-bridge` container first:
 
-1. Check signal-cli first — it's the more common cause:
+```bash
+docker inspect --format '{{.State.Status}} {{.State.Health.Status}}' signal-bridge
+docker logs --tail 100 signal-bridge
+curl -fsS http://127.0.0.1:9100/health
+```
 
-   ```bash
-   python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T nora /app/.venv/bin/python -c \
-     'import urllib.request; print(urllib.request.urlopen("http://signal-cli:18080/api/v1/check", timeout=5).status)'
-   ```
+The container healthcheck measures bridge HTTP readiness; it does not prove a
+platform event reached Nora. Compare Nora's platform health with bridge logs and
+the durable queue's backlog before attributing silence to either process.
+Signal's transport executable lives inside this bridge. Do not start a legacy
+standalone `signal-cli` against the same account store.
 
-   If that's not a healthy 200, restart or investigate signal-cli itself before touching
-   Nora.
+Then inspect Nora's logs:
 
-2. If signal-cli looks fine, check Nora's own logs:
+```bash
+docker logs --tail 100 nora
+```
 
-   ```bash
-   docker logs --tail 100 -f nora
-   ```
-
-   Look for reconnect-backoff messages, unhandled exceptions in the SSE listen loop, or a
-   process restart. SSE reconnects automatically with exponential backoff, so a brief blip
-   self-heals; a sustained >300s silence with `sse.connected: false` in `/health` after that
-   means the reconnect loop itself is stuck and the container likely needs a restart:
-
-   ```bash
-   docker compose restart nora
-   ```
+Look for transport failures, queue-reader failures or a process restart. A quiet
+room or an empty log is insufficient evidence for recreation. If recovery needs
+a restart/recreation, follow the installed [Komodo recovery procedure](../deploy/komodo/README.md#failure-and-recovery)
+for the affected service, preserving the other bridges and admission publisher.
+Do not run checkout `docker compose restart` against the installed application.
 
 ## 4b. WhatsApp (whatsapp-bridge)
 

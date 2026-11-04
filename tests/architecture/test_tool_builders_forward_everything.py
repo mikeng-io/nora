@@ -85,7 +85,8 @@ _SPECS_ONLY = frozenset({
     # threaded the same way as `subagent_job`.
     "checkpoint_sink",
     "music", "reminder_caps", "reminders", "tool_call_log_store",
-    "versions",
+    # Release readers are wired by ToolRegistry; neither test-facing wrapper owns them.
+    "versions", "releases",
     # `load_tools`' per-turn shelf. Created and
     # stocked inside `ToolRegistry.surface()`, which is the only thing that
     # knows what was deferred; a `build_tools` caller has no shelf to pass,

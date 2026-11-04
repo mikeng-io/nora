@@ -1,5 +1,39 @@
 # Changelog
 
+## [7.15.4](https://github.com/mikeng-io/nora/compare/v7.15.3...v7.15.4) (2026-11-04)
+
+
+### Security
+
+* **deps:** update reported vulnerable runtime libraries ([fe336ee](https://github.com/mikeng-io/nora/commit/fe336ee3b44b675aec126dbd9513f8d29d7a758f))
+
+## [7.15.3](https://github.com/mikeng-io/nora/compare/v7.15.2...v7.15.3) (2026-11-04)
+
+
+### Maintenance
+
+* **deploy:** clarify Compose ownership and retire obsolete entry points ([466bd8a](https://github.com/mikeng-io/nora/commit/466bd8a23259ebf30ed25b4cee9bbad650df1f90))
+
+## [7.15.2](https://github.com/mikeng-io/nora/compare/v7.15.1...v7.15.2) (2026-11-04)
+
+
+### Bug Fixes
+
+* **version:** explain unavailable running build stamps ([b5e4185](https://github.com/mikeng-io/nora/commit/b5e41852fadc7f64043f62b0bcfbf6112a6b8479))
+
+## [7.15.1](https://github.com/mikeng-io/nora/compare/v7.15.0...v7.15.1) (2026-11-04)
+
+
+### Features
+
+* **version:** compare the running build with public releases ([31d62ee](https://github.com/mikeng-io/nora/commit/31d62eef1a1af0e488601f8d44ccb115b4f5068e))
+
+
+### Bug Fixes
+
+* **version:** guide upgrade questions through release discovery ([44cd962](https://github.com/mikeng-io/nora/commit/44cd9620763e43a1f8f04e1a32797708d049fd18))
+* **version:** retain catalogue discrimination and known history ([380e9df](https://github.com/mikeng-io/nora/commit/380e9df496b9ffd1c9a4f10cf1b09547c24c161d))
+
 ## [7.15.0](https://github.com/mikeng-io/nora/compare/v7.14.15...v7.15.0) (2026-11-04)
 
 
