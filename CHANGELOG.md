@@ -1,5 +1,18 @@
 # Changelog
 
+## [7.15.1](https://github.com/mikeng-io/nora/compare/v7.15.0...v7.15.1) (2026-11-04)
+
+
+### Features
+
+* **version:** compare the running build with public releases ([31d62ee](https://github.com/mikeng-io/nora/commit/31d62eef1a1af0e488601f8d44ccb115b4f5068e))
+
+
+### Bug Fixes
+
+* **version:** guide upgrade questions through release discovery ([44cd962](https://github.com/mikeng-io/nora/commit/44cd9620763e43a1f8f04e1a32797708d049fd18))
+* **version:** retain catalogue discrimination and known history ([380e9df](https://github.com/mikeng-io/nora/commit/380e9df496b9ffd1c9a4f10cf1b09547c24c161d))
+
 ## [7.15.0](https://github.com/mikeng-io/nora/compare/v7.14.15...v7.15.0) (2026-11-04)
 
 
