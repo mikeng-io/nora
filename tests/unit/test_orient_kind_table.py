@@ -254,3 +254,31 @@ async def test_an_admitted_memory_write_backs_a_written_close(monkeypatch, wrote
     await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
                                       last_activity_ms=None, last_wake=None), now_ms=NOW)
     assert fake.results[1]["status"] == closes, fake.results[1]
+
+
+@pytest.mark.parametrize("author,admitted", [("generated-person", True), ("someone-else", False)])
+async def test_a_write_as_the_model_writes_it_is_admitted(author, admitted):
+    """The smoke's refused shape: integer source id, a date, no projected person yet.
+
+    The person end is staged only for the cited message's author; anyone else
+    still needs a pointer the projection made.
+    """
+    memory = wake_memory()
+    state = _state(memory)
+    memory.graph.entities.clear()
+    payload = _payload()
+    payload["relations"][0].update(src=["person", author], persons=[author, "generated-person"],
+                                   valid_from="2026-10-17")
+    payload["evidence"][0]["source"] = ["message", 1]
+    result, local = await memory.admission._admit(
+        state.memory_items[0].work, GraphWrite.model_validate(payload),
+        state.graph_fetched, state.session_id)
+    assert not local
+    if admitted:
+        assert [r.rel for r in result.relations] == ["likes"]
+        assert result.relations[0].valid_from == datetime(2026, 10, 17, tzinfo=AT.tzinfo)
+        assert "unit-1:person:generated-person" in memory.graph.entities
+    else:
+        assert not result.relations
+        assert {r.reason for r in result.refused} >= {"wrong_ends"}
+        assert "unit-1:person:someone-else" not in memory.graph.entities

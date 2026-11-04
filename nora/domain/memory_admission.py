@@ -19,6 +19,7 @@ from nora.domain.memory_graph import (
     Source,
     Subgraph,
     Walk,
+    pointer_entity,
     validate_relation,
 )
 from nora.domain.memory_index import IndexedNode, in_scope, narrowed
@@ -27,6 +28,20 @@ GraphBatchOutcome = Literal["ok", "nothing_found", "unavailable"]
 GRAPH_BATCH_OUTCOMES: tuple[str, ...] = get_args(GraphBatchOutcome)
 GraphProjectionOutcome = Literal["excluded"]
 GRAPH_PROJECTION_OUTCOMES: tuple[str, ...] = get_args(GraphProjectionOutcome)
+
+
+def _grounded_person(
+    key: Key, relation: Relation, evidence: tuple[Evidence, ...], sources: Mapping[Key, Source]
+) -> Entity | None:
+    """The unit's pointer for a person end, when a cited source is in that person's scope."""
+    prefix = f"{relation.unit}:person:"
+    if key[0] != "person" or not key[1].startswith(prefix):
+        return None
+    ref = key[1].removeprefix(prefix)
+    if not any(ref in sources[e.source].persons for e in evidence if e.source in sources):
+        return None
+    # ponytail: named by its id until the projection upserts the authored name.
+    return pointer_entity("person", relation.unit, ref, ref)
 
 
 class AdmissionState:
@@ -75,6 +90,7 @@ class AdmissionState:
             else:
                 candidates[entity.id] = entity
         accepted: list[Relation] = []
+        pointers: list[Entity] = []
         for relation in relations:
             ev = tuple(e for e in evidence if e.relation_id == relation.id)
             reason = validate_relation(relation, ev, sources)
@@ -82,6 +98,12 @@ class AdmissionState:
                 reason = "duplicate_relation"
             if reason is None:
                 for key in (relation.src, relation.dst):
+                    pointer = _grounded_person(key, relation, ev, sources)
+                    if pointer is not None and key[1] not in candidates:
+                        # The projection has not reached this person yet; the
+                        # cited source is about them, so their pointer is staged.
+                        candidates[key[1]] = pointer
+                        pointers.append(pointer)
                     if key[0] in ENTITY_KINDS and (
                         key[1] not in candidates
                         or candidates[key[1]].unit != relation.unit
@@ -93,7 +115,11 @@ class AdmissionState:
             else:
                 accepted.append(relation)
         endpoints = {k for r in accepted for k in (r.src, r.dst)}
-        committed = []
+        committed = [
+            await self._upsert_entity(p)
+            for p in {p.id: p for p in pointers}.values()
+            if p.key in endpoints and p.id not in self.entities
+        ]
         for entity in entities:
             if candidates.get(entity.id) != entity:
                 continue
