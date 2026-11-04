@@ -1,0 +1,30 @@
+[
+  {
+    "name": "reaction success is a completed response without a text send",
+    "file": "nora/agent/guards.py",
+    "old": "        self._reaction_delivered = True",
+    "new": "        self._reaction_delivered = False",
+    "target": "tests/unit/test_reaction_send.py::test_reaction_only_is_delivered_and_recorded_without_a_phantom_message"
+  },
+  {
+    "name": "progress resolution cannot overwrite the authored emoji",
+    "file": "nora/engagement/stages/indicate.py",
+    "old": "        if indicator.authored_reaction:\n            return",
+    "new": "        if False:\n            return",
+    "target": "tests/unit/test_reaction_send.py::test_reaction_retracts_progress_before_sending_and_keeps_authored_emoji"
+  },
+  {
+    "name": "video windows overlap rather than serializing provider waits",
+    "file": "nora/infra/vision/client.py",
+    "old": "VISION_WINDOW_CONCURRENCY = 3",
+    "new": "VISION_WINDOW_CONCURRENCY = 1",
+    "target": "tests/unit/test_media_comprehender.py::test_video_windows_overlap_in_three_bounded_calls_and_keep_source_order"
+  },
+  {
+    "name": "default video windows are shorter while retaining fifteen minutes",
+    "file": "nora/infra/vision/preprocess.py",
+    "old": "VIDEO_CHUNK_SECONDS = 30",
+    "new": "VIDEO_CHUNK_SECONDS = 90",
+    "target": "tests/unit/test_vision_preprocess.py::test_default_reel_windows_are_thirty_seconds_without_reducing_the_horizon"
+  }
+]

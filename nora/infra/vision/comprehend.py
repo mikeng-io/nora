@@ -29,7 +29,7 @@ degrades to a prose description is strictly better than one that reports
 `unavailable` because a model wrapped its JSON in a code fence.
 
 **Video is read in chunks.** `cut_video` produces transient
-1-2-minute windows of the ORIGINAL blob — storage is untouched — each of which
+30-second windows of the ORIGINAL blob — storage is untouched — each of which
 goes through the existing describer path unchanged. `content` is those chunk
 outputs in order, timecoded; `title`/`description` are synthesized from them by
 one cheap TEXT call, never by a second pass through the video. When the chunk
@@ -39,6 +39,7 @@ records it in provenance: a long clip is bounded, and the bound is never silent.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -49,7 +50,7 @@ from nora.domain.blocks import wrap_outside_text
 from nora.domain.media import parse_media_type
 from nora.domain.ports import MediaDescription
 
-from .client import VisionClient, VisionResult
+from .client import VISION_WINDOW_CONCURRENCY, VisionClient, VisionResult
 from .preprocess import (
     VIDEO_CHUNK_SECONDS,
     VIDEO_MAX_CHUNKS,
@@ -468,29 +469,23 @@ async def read_video_windows(
     """
     segments: list[str] = []
     read: list[VideoWindow] = []
-    # SEQUENTIAL, and that is `client.VISION_WINDOW_CONCURRENCY == 1` written
-    # as control flow: the per-call ceiling divides by `ceil(windows /
-    # concurrency)`, so a bounded `asyncio.gather` here without raising that
-    # constant would hand each window a ceiling derived for a serial read.
-    # Moving to parallel windows means changing both together.
-    for window in cut.windows:
-        result = await ask(window.data, len(cut.windows))
-        stamp = _timecode(window.start_seconds)
-        # `result is None` FIRST, and it is not defensive padding. `ask` is a
-        # caller-supplied callable and `media_fetch`'s returns `None` when the
-        # describer raises; dereferencing `None.available` would propagate an
-        # AttributeError out of the tool into the agent loop, and a tool never
-        # raises into the loop.
-        #
-        # A window whose describer BLEW UP is exactly a window nothing read, so
-        # it takes the same gap marker as one the model merely refused: the
-        # coverage arithmetic below is computed from `read`, and both belong
-        # outside it.
-        if result is None or not result.available or not result.description.strip():
-            segments.append(f"{stamp} — {_UNREAD_MARKER}")
-            continue
-        segments.append(f"{stamp} — {result.description.strip()}")
-        read.append(window)
+    for start in range(0, len(cut.windows), VISION_WINDOW_CONCURRENCY):
+        batch = cut.windows[start:start + VISION_WINDOW_CONCURRENCY]
+        results = await asyncio.gather(*(
+            ask(window.data, len(cut.windows)) for window in batch
+        ), return_exceptions=True)
+        for window, result in zip(batch, results, strict=True):
+            if isinstance(result, BaseException):
+                if isinstance(result, asyncio.CancelledError):
+                    raise result
+                log.warning("video window read failed", exc_info=result)
+                result = None
+            stamp = _timecode(window.start_seconds)
+            if result is None or not result.available or not result.description.strip():
+                segments.append(f"{stamp} — {_UNREAD_MARKER}")
+                continue
+            segments.append(f"{stamp} — {result.description.strip()}")
+            read.append(window)
     return tuple(segments), tuple(read)
 
 
@@ -512,12 +507,16 @@ def describe_coverage(*, cut: VideoCut, read: tuple[VideoWindow, ...]) -> str:
             "(I could not tell how long this clip is, and some of what I did "
             "open would not read, so there are parts of it I have not seen.)"
         )
-    missing = max(0.0, cut.duration_seconds - seen)
-    return (
-        f"(About {max(1, round(missing / 60))} minutes of this "
-        f"{round(cut.duration_seconds / 60)}-minute clip I could not watch, so "
-        f"there are parts of it I have not seen.)"
-    )
+    gaps: list[str] = []
+    end = 0.0
+    for window in sorted(read, key=lambda w: w.start_seconds):
+        if window.start_seconds > end:
+            gaps.append(f"{_timecode(end)}-{_timecode(window.start_seconds)}")
+        end = max(end, window.start_seconds + window.seconds)
+    if end < cut.duration_seconds:
+        gaps.append(f"{_timecode(end)}-{_timecode(cut.duration_seconds)}")
+    return f"(I could not watch {', '.join(gaps)} of this clip.)"
+
 
 
 def comprehension_provenance(

@@ -1,119 +1,8 @@
-"""Stage: indicate — the progress reaction Nora puts on the message that
-tagged her, and the resolution she replaces it with when the turn ends.
+"""Progress reactions on the tagging message.
 
-Two public entry points, not one `run()`, for the same reason
-`nora.engagement.stages.deliver` has two: the pair is needed at two different
-points of a tag. `begin()` runs the moment admission accepts the tag;
-`resolve()` runs from the pipeline's `finally`, after the turn has ended one
-way or another.
-
-Three states, and a person who tagged her can tell them apart at a glance:
-
-    👀  I have this and I am working on it     (begin)
-    ✅  done — the reply is the one below      (resolve, delivered)
-    ⚠️  done — nothing is coming               (resolve, not delivered)
-
-
-WHY ⚠️ AND NOT ✅ ON FAILURE
----------------------------
-A ✅ on a tag that produced no reply claims something was delivered when
-nothing was — the group would sit waiting for a message that already isn't
-coming. It is the *inverse* of R-5: not an error leaking out, but a success
-leaking out that never happened, which is worse, because a silent failure is
-at least honestly ambiguous and a false ✅ is confidently wrong.
-
-The two obvious alternatives are both the wrong-silence bug, in user-facing
-form:
-
-- Leaving the 👀 in place forever makes "thinking" and "broken" the same
-  observation.
-- Removing the 👀 and adding nothing makes "gave up" and "never triggered"
-  the same observation, so the tagger cannot even tell whether Nora heard
-  them.
-
-⚠️ is the honest resolution, and it does not violate R-5. R-5 forbids error
-*text* reaching the group — a stack trace, an exception message, an "I broke"
-apology, anything that discloses what failed or invites a debugging
-conversation in a group chat. ⚠️ discloses none of that. It carries exactly
-one bit, and that bit is *already public*: the reply is missing, and the group
-can see it is missing. All the reaction does is remove the ambiguity about
-whether more is still coming. It says nothing about WHY — a model timeout, a
-guard veto, an audit write failure and a leak block are indistinguishable
-under it, which is what DEC-4 requires of `INFRASTRUCTURE`/`GUARD_VETO`
-failures. The operator reads the real reason in the log and in
-`nora_silent_failures_total{reason=...}`; the group learns only that the
-conversation is theirs again.
-
-❌ is not used: it reads as an incident report and invites exactly the "what's
-wrong with the bot?" thread R-5 exists to prevent. ⚠️ reads as an empty outcome
-and nothing more.
-
-WHY A SIGN AND NOT A PERSON
----------------------------
-A person emoji carries skin tone, gender and human affect, and a shrug is
-somebody being dismissive — a lot of tone to attach to "the model timed out".
-⚠️ is a sign, not a face; nobody reads a caution triangle as sarcasm. It stays
-unmistakable against 👀 and ✅ at a glance, which matters more than subtlety for
-a marker whose only job is to be unambiguous.
-
-Unlike the other two it is a VARIATION SEQUENCE — U+26A0 plus U+FE0F, two
-codepoints forming one grapheme cluster, which is what signal-cli's `--emoji`
-requires. Dropping the selector renders a monochrome glyph on some clients and
-is a different reaction to Signal, so both halves are load-bearing.
-
-
-WHY THE REACTION IS SPAWNED, NEVER AWAITED
-------------------------------------------
-Both `begin()` and `resolve()` schedule their work through the injected
-`spawn` and return immediately — the same shape
-`nora.ingest.stages.memory_feed` uses.
-
-Awaiting the 👀 would put an HTTP round-trip to signal-cli in front of the
-model call on every single tag, and `nora_overhead_seconds` (tag latency minus
-the model call) is the metric that exists to catch precisely that. The tail is
-the real argument, not the median: `SignalReactor` runs a 10s total timeout,
-so an unreachable or wedged daemon would add up to ten seconds to EVERY tag
-before Nora even started thinking. Spawning bounds the blast radius of a sick
-daemon to the decoration itself.
-
-Spawning introduces an ordering hazard, handled here: `begin()` and `resolve()`
-can otherwise race, and a resolution that lands before its own 👀 leaves the 👀
-as the final state. `Indicator.placed` is an `asyncio.Event` set in `_place`'s
-`finally`, and `_resolve` waits on it before touching anything, so the two are
-serialised with respect to each other without either being on the reply's path.
-
-
-WHY R-2, R-2b, R-3 AND R-7 ALL STILL HOLD
------------------------------------------
-A reaction is an outbound side effect, so this is stated precisely.
-
-- **It is not a tool, and cannot become one by accident.** Nothing here is
-  registered with `nora.agent.registry.ToolRegistry`, so `ReplyGuard`'s
-  injected `budgets` mapping is unchanged and no reply budget is consumed.
-  R-7's other half does the rest: a tool name absent from `budgets` is vetoed
-  by default, so a model that hallucinates a `react` tool is refused before
-  anything runs. The model has no way to emit a reaction at all — the pipeline
-  drives this, not the agent.
-- **R-2 / R-2b are untouched.** `Deliverer._attempted` and `_delivered` are
-  written only by `Deliverer.deliver`, whose only caller is the `send_reply`
-  tool. This module never constructs, reads or calls a `Deliverer`; it takes
-  `delivered` as a plain `bool` the pipeline already computed. The attempt
-  latch cannot be consumed, refreshed or re-armed from here, so a tag still
-  produces at most one text reply.
-- **R-3 is untouched, and unreachable from here.** R-3 vetoes a `send_reply`
-  whose `conversation_id` argument is not the tagging conversation, and it
-  works on *model-supplied* input. The reaction takes no model input
-  whatsoever: its `ConversationTarget` is `message.target()` — the tagging
-  message's own conversation, computed in the pipeline from the message that
-  triggered the tag. There is no argument for a model to get wrong.
-- **`Deliverer` remains the only caller of `adapter.send()`.** This module
-  calls `adapter.react()`, a different port method that cannot deliver text.
-- **A reaction failure can never block or duplicate the reply.** `_react`
-  catches every exception, `SignalReactor.react` never raises, and both
-  coroutines run detached under `spawn`, so nothing here can propagate into
-  the pipeline's `try`/`finally`, trigger its `except BaseException`, or cause
-  an early return. The reply path does not observe this module's outcome at
-  all — only the reverse.
+An authored reaction is delivered by Deliverer, not by this stage. Its observer
+clears progress before that action and suppresses later progress replacement.
+The per-indicator lock serializes that handover with already scheduled resolution.
 """
 
 from __future__ import annotations
@@ -158,6 +47,8 @@ class Indicator:
     # An `Event` rather than a bool because it is also the honest name for the
     # state: set exactly once, never cleared, read from more than one task.
     settled: asyncio.Event = field(default_factory=asyncio.Event)
+    reaction_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    authored_reaction: bool = False
 
 
 async def _react(indicator: Indicator, emoji: str, *, phase: str, remove: bool = False) -> None:
@@ -206,22 +97,25 @@ async def _place(indicator: Indicator) -> None:
 
 
 async def _resolve(indicator: Indicator, *, delivered: bool) -> None:
-    with contextlib.suppress(Exception):
-        await indicator.placed.wait()
-    # Retract the 👀 explicitly before placing the terminal emoji. Signal's
-    # data model appears to allow one reaction per author per message, which
-    # would make the second `sendReaction` replace the first on its own and
-    # this call redundant, but that is unverified. The two failure
-    # modes are wildly asymmetric: a redundant retract costs one off-path RPC
-    # nobody sees, while a missing one leaves 👀 and ✅ stuck on the message
-    # together, which is the ambiguity the whole feature exists to remove. So
-    # it is sent unconditionally, and a failure of it is ignored on purpose —
-    # landing on "no reaction" is degraded but never misleading.
-    await _react(indicator, ACK, phase="clear", remove=True)
-    await _react(
-        indicator, DONE if delivered else GAVE_UP,
-        phase="done" if delivered else "gave_up",
-    )
+    async with indicator.reaction_lock:
+        if indicator.authored_reaction:
+            return
+        with contextlib.suppress(Exception):
+            await indicator.placed.wait()
+        # Retract the 👀 explicitly before placing the terminal emoji. Signal's
+        # data model appears to allow one reaction per author per message, which
+        # would make the second `sendReaction` replace the first on its own and
+        # this call redundant, but that is unverified. The two failure
+        # modes are wildly asymmetric: a redundant retract costs one off-path RPC
+        # nobody sees, while a missing one leaves 👀 and ✅ stuck on the message
+        # together, which is the ambiguity the whole feature exists to remove. So
+        # it is sent unconditionally, and a failure of it is ignored on purpose —
+        # landing on "no reaction" is degraded but never misleading.
+        await _react(indicator, ACK, phase="clear", remove=True)
+        await _react(
+            indicator, DONE if delivered else GAVE_UP,
+            phase="done" if delivered else "gave_up",
+        )
 
 
 def begin(
@@ -320,6 +214,18 @@ class DeliverySettler:
     ) -> None:
         self._indicator = indicator
         self._spawn = spawn
+
+    async def prepare_reaction(self) -> None:
+        if self._indicator is None:
+            return
+        self._indicator.authored_reaction = True
+        async with self._indicator.reaction_lock:
+            await self._indicator.placed.wait()
+            await _react(self._indicator, ACK, phase="clear", remove=True)
+
+    def finish_reaction(self, *, ok: bool) -> None:
+        if self._indicator is not None and not ok:
+            self._indicator.authored_reaction = False
 
     def settle(self) -> None:
         """A reply reached the group. Safe to call on every message of a

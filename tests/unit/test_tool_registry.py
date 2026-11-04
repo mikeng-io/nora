@@ -178,7 +178,7 @@ def test_the_registry_exposes_every_declared_tool():
     assert {t.tool_name for t in tools} == {
         # DEC-146: the window-scoped rung below `load_transcript`.
         "who_said",
-        "now", "load_transcript", "send_reply", "search_gifs", "send_gif",
+        "now", "load_transcript", "send_reply", "reaction_send", "search_gifs", "send_gif",
         "send_to",
         # which rooms this group has, and what is
         # said in one of them.
@@ -307,7 +307,7 @@ def test_budgets_match_todays_table():
         # higher cap invites rewordings of one point. Still the spam
         # cap: `turns` and the token ceiling are far away, so this number is
         # the only thing bounding one inbound message's outbound volume.
-            "send_reply": 3, "search_gifs": 1, "send_gif": 1,
+            "send_reply": 3, "reaction_send": 1, "search_gifs": 1, "send_gif": 1,
             # DEC-105. Two, not six: relaying is a deliberate act somebody
             # asked for, not a register she can fall into.
             "send_to": 2,
@@ -522,7 +522,7 @@ def test_calculate_is_not_terminal_and_ends_no_turn():
     middle of an answer rather than the end of one — she works a total out and
     then still has to say it. `time_shiftable` has no meaning here either way:
     unlike `now`, the answer to `1485/7` does not depend on when it is asked."""
-    assert ToolRegistry().terminal_tools() == frozenset({"send_reply", "send_gif"})
+    assert ToolRegistry().terminal_tools() == frozenset({"send_reply", "send_gif", "reaction_send"})
 
 
 def test_budgets_do_not_require_runtime_dependencies():
@@ -941,7 +941,7 @@ ACT_VERBS = frozenset({
     "subagent_create", "subagent_cancel",
     # the worker's checkpoint replaces a row's value, an act.
     "checkpoint_update",
-    "send_reply", "send_to", "send_gif",
+    "send_reply", "send_to", "send_gif", "reaction_send",
     # DEC-137: generation is an external side effect (provider call +
     # artifact hosting), never a read — the Dreamer may not generate.
     "generate_image",

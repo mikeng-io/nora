@@ -16,8 +16,8 @@
   {
     "name": "the window count reaches the describer (total, not 1 and not the index)",
     "file": "nora/infra/vision/comprehend.py",
-    "old": "        result = await ask(window.data, len(cut.windows))",
-    "new": "        result = await ask(window.data, 1)",
+    "old": "ask(window.data, len(cut.windows)) for window in batch",
+    "new": "ask(window.data, 1) for window in batch",
     "target": "tests/unit/test_media_comprehender.py -k whole_read_adds_no_caveat"
   },
   {
@@ -35,10 +35,10 @@
     "target": "tests/test_vision.py -k waves_of_one_read_together"
   },
   {
-    "name": "the fan-out guard fires when the window loop goes concurrent",
+    "name": "the fan-out guard refuses a serial loop with a concurrent divisor",
     "file": "nora/infra/vision/comprehend.py",
-    "old": "    for window in cut.windows:\n        result = await ask(window.data, len(cut.windows))",
-    "new": "    import asyncio as _a\n    _r = await _a.gather(*(ask(w.data, len(cut.windows)) for w in cut.windows))\n    for window, result in zip(cut.windows, _r):",
+    "old": "        results = await asyncio.gather(*(\n            ask(window.data, len(cut.windows)) for window in batch\n        ), return_exceptions=True)",
+    "new": "        results = []\n        for window in batch:\n            results.append(await ask(window.data, len(cut.windows)))",
     "target": "tests/test_vision.py -k cannot_drift_apart"
   }
 ]

@@ -1850,6 +1850,9 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # is read at the moment of writing; whether they hold from the system
     # prompt alone is the reversal condition, and the reply-shape evals are
     # what would show it.
+    "reaction_send": NativeTool(1, terminal=True, side_effect_state="unknown",
+                                idempotency="non_idempotent", retry="never",
+                                output_contract="three_state", level=3),
     "send_reply": NativeTool(3,
                              terminal=True,
                              side_effect_state="unknown", idempotency="non_idempotent",
@@ -2003,7 +2006,7 @@ _AUDIT_TASKS: set[asyncio.Future[None]] = set()
 # the graph surface a load round trip the Honcho one never paid, and confound
 # the routing measurement that compares them.
 HOT_TOOLS: frozenset[str] = frozenset({
-    "web_search", "send_reply", "note_read", "web_fetch", "now", "search_memory",
+    "web_search", "send_reply", "reaction_send", "note_read", "web_fetch", "now", "search_memory",
     "memory_search",
 })
 
@@ -15519,6 +15522,39 @@ Args:
                           "id": reaction.candidate.id, "type": "gif",
                           "picked_by": "reaction", "mode": reaction.mode}}
 
+    async def reaction_send(
+        emoji: str, reply_to: int, more: bool | None = False,
+    ) -> dict:
+        """React to a message with an emoji. Call this when a reaction is your
+        reply, without sending a text message.
+
+        A successful reaction ends your turn unless `more` is true.
+        Returns `status`: `ok`, `held_for_review` or `unavailable`, with a `note` on how
+        to report it.
+
+        Args:
+            emoji: The emoji you choose for this conversation.
+            reply_to: The message's `n` in `group_transcript`.
+            more: True if another message or action follows this reaction.
+        """
+        quote = _resolve_quote(reply_to)
+        if quote is None:
+            _record(metrics, "reaction_send", "unavailable", reason="target")
+            return {"status": "unavailable", "note": "That message is not in the visible "
+                    "transcript. Nothing was reacted to."}
+        held_before = deliverer.held_count
+        sent = await deliverer.react(emoji=emoji, row=bound_window[reply_to - 1], quote=quote)
+        status = _send_status(deliverer, sent=sent, held_before=held_before)
+        _record(metrics, "reaction_send", "ok" if sent else "unavailable")
+        if sent:
+            return {"status": "ok", "note": "Your reaction reached the message. "
+                    "No text reply is needed."}
+        if status == HELD:
+            return {"status": "held_for_review", "note": "This room's send cooldown held "
+                    "the reaction. Do not resend or replace it with text."}
+        return {"status": "unavailable", "note": "The reaction could not be confirmed. "
+                "Do not retry it or claim it arrived."}
+
     async def send_reply(
         text: str, reply_to: int | None = None, more: bool | None = False,
         heads_up: bool | None = False,
@@ -15526,8 +15562,8 @@ Args:
         """Send your reply in words. Call this when your reply is text; a
         reaction GIF goes through `send_gif`.
 
-        This and `send_gif` are the ONLY way a reply reaches the room. You MUST
-        call one of them whenever you reply. Do not return the reply as your
+        This, `send_gif` and `reaction_send` are how a reply reaches the room.
+        You MUST call the one that fits your reply. Do not return the reply as your
         final message instead: that path is an emergency fallback, never a
         choice. If you call neither, nothing is sent. It always goes to the
         conversation you were tagged in; you do not choose where. A send ends
@@ -17922,6 +17958,7 @@ Args:
         _spec("version_list", version_list),
         _spec("version_read", version_read),
         _spec("send_reply", send_reply),
+        _spec("reaction_send", reaction_send),
         _spec("send_to", send_to),
         _spec("search_gifs", search_gifs),
         _spec("send_gif", send_gif),

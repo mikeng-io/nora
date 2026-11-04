@@ -360,8 +360,8 @@ enabled = true
 model = "mimo-v2.6-flash"
 provider = "opencode-go"
 max_bytes = 104857600
-chunk_seconds = 90
-chunk_max = 10
+chunk_seconds = 30
+chunk_max = 30
 
 [image_gen]
 enabled = false

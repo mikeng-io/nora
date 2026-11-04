@@ -37,7 +37,8 @@ ENC = tiktoken.get_encoding("cl100k_base")
 # and is not what any turn is shown. Tools that ship withheld
 # (`[documents] enabled = false`, `[video_gen] enabled = false`) cost a live
 # turn nothing until they are turned on.
-BLOCK_CEILING = 2_600
+# reaction_send adds 28 tokens; measured largest catalogue: 2,626 tokens.
+BLOCK_CEILING = 2_630
 
 #: The platforms a tag turn runs on. The catalogue differs only by the tools
 #: scoped to one (`DISCORD_ONLY_TOOLS`) and by the Dreamer-only ones, which no
