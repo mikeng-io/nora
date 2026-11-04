@@ -277,8 +277,34 @@ async def test_a_write_as_the_model_writes_it_is_admitted(author, admitted):
     if admitted:
         assert [r.rel for r in result.relations] == ["likes"]
         assert result.relations[0].valid_from == datetime(2026, 10, 17, tzinfo=AT.tzinfo)
-        assert "unit-1:person:generated-person" in memory.graph.entities
+        pointer = memory.graph.entities["unit-1:person:generated-person"]
+        # Scoped reads match a pointer by its ref; losing it hides the relation.
+        assert pointer.attributes == {"ref": "generated-person"}
+        assert not any(r.reason == "missing_evidence" for r in result.refused)
     else:
         assert not result.relations
         assert {r.reason for r in result.refused} >= {"wrong_ends"}
         assert "unit-1:person:someone-else" not in memory.graph.entities
+
+
+async def test_a_refused_relation_never_vouches_for_another_persons_end():
+    """A stages the author's pointer then fails; B cites someone else's message."""
+    memory = wake_memory()
+    state = _state(memory)
+    memory.graph.entities.clear()
+    other = Source(("message", "2"), "record", "unit-1", ("someone-else",), "Lantern Game rocks")
+    state.graph_fetched.show(other)
+    payload = _payload()
+    a = {"id": "a", "src": ["person", "generated-person"], "rel": "likes",
+         "dst": ["work", "never-proposed"], "persons": ["generated-person"]}
+    b = {**payload["relations"][0],
+         "persons": ["generated-person", "someone-else"]}
+    payload["relations"] = [a, b]
+    payload["evidence"] = [
+        {"source": ["message", 1], "relation_id": "a", "span": "I like Lantern Game"},
+        {"source": ["message", 2], "relation_id": "like", "span": "Lantern Game rocks"}]
+    result, _ = await memory.admission._admit(
+        state.memory_items[0].work, GraphWrite.model_validate(payload),
+        state.graph_fetched, state.session_id)
+    assert not result.relations
+    assert "unit-1:person:generated-person" not in memory.graph.entities
