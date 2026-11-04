@@ -509,11 +509,19 @@ async def test_prepare_keeps_each_social_sources_real_provenance() -> None:
     state.shown_keys = set()
     state.items_by_index = {0: SimpleNamespace(
         stimulus_ids=(1, 2, 3, 4), room=SimpleNamespace(platform="signal", conversation_id=ROOM))}
-    stimuli = {i: SimpleNamespace(kind="social", item="post", at_ms=NOW_MS,
+    stimuli = {i: SimpleNamespace(id=i, kind="social", item="post", at_ms=NOW_MS,
                                   ref="social:" + ref)
                for i, ref in enumerate(
                    ("insta:first", "insta:second", "insta:third", "insta:undated"), 1)}
     await memory.prepare(state, stimuli, SimpleNamespace(records={}))
+    from nora.domain.cognition_ground import Grounding
+    from nora.domain.cognition_session import AgendaItem, Room
+    from nora.language.cognition_render import render_agenda
+    room = Room("signal", ROOM)
+    agenda = AgendaItem(kind="social", room=room, summary="Generated posts", cues=(),
+                        surprise=0, stimulus_ids=(1, 2, 3, 4))
+    render_agenda([agenda], stimuli=stimuli, grounding=Grounding(), now_ms=NOW_MS,
+                  memory_items=state.memory_items)
     await memory.account_view(state, ["person", PERSON])
     account = state.profile_accounts[PERSON_ACCOUNT_KEY]["account"]
     citable = memory._citable_for(state, account)

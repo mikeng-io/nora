@@ -61,6 +61,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, tzinfo
 from typing import Any
+from xml.etree import ElementTree
 
 from nora.domain.blocks import (
     BlockKey,
@@ -267,7 +268,7 @@ class _Row:
 
 def _message_row(
     rec: RecordItem, cues: Sequence[str], *, now_ms: int, tz: tzinfo,
-    message_chars: int, target: bool = False,
+    message_chars: int, target: bool = False, source_key: Sequence[str] | None = None,
 ) -> _Row:
     """A person's message, an edit of one, a reaction to one or a deletion of
     one, as `<m n="<message id>" at from ...>words</m>`. `n` is the message's
@@ -296,6 +297,8 @@ def _message_row(
             [rec], row_id=lambda r: r.message_id,
             attrs=lambda r: (
                 ("at", when), ("from", speaker_of(r.author)),
+                ("source", ":".join(source_key) if source_key else None),
+                ("person", r.person_id),
                 ("target", "yes" if target else None),
                 ("reaction", emoji_display(r.emoji or "?") if reacted else None),
                 ("reaction_removed", "yes" if reacted and r.removed else None),
@@ -657,9 +660,40 @@ def _item_attrs(
     ]
 
 
+def _reading_rows(
+    readable: list[_Row], stimuli: Sequence[Stimulus], item: AgendaItem,
+    memory_item: Any, *, now_ms: int, tz: tzinfo, message_chars: int,
+) -> list[_Row]:
+    candidates = memory_item.snapshot["messages"] if memory_item is not None else []
+    keys = memory_item.snapshot["source_keys"] if memory_item is not None else {}
+    candidates = {r["id"]: r for r in candidates}
+    present = {r.id for r in readable}
+    if memory_item is not None:
+        # A social record is a citable row here, rather than a second caption.
+        social_ids = {s.id for s in stimuli if s.kind == "social"
+                      and any(k[0] == "social" and s.ref == ":".join(k)
+                              for k in keys.values())}
+        readable = [r for r in readable if r.id not in social_ids]
+        present = {r.id for r in readable}
+    for rid, row in candidates.items():
+        if rid in present:
+            continue
+        from nora.domain.media import media_detail
+        text = row["body"]
+        if keys[str(rid)][0] == "media":
+            text = media_detail(label="image", title="", description="", content=text)
+        rec = RecordItem(ref=str(keys[str(rid)]), kind="message", message_id=rid,
+                         room=item.room, author=row.get("author") or "unknown",
+                         person_id=row.get("person_id"), at_ms=row["ts"], text=text)
+        readable.append(_message_row(rec, (), now_ms=now_ms, tz=tz,
+                                     message_chars=message_chars, source_key=keys[str(rid)]))
+    return readable
+
+
 def _item_block(
     index: int, item: AgendaItem, stimuli: Mapping[int, Stimulus], grounding: Grounding,
     *, now_ms: int, tz: tzinfo, allowance_of: Mapping[int, int], message_chars: int,
+    memory_item: Any = None,
 ) -> str:
     """One `<item>`: its attributes, and the rows the budget chose."""
     rows = [stimuli[sid] for sid in item.stimulus_ids if sid in stimuli]
@@ -667,8 +701,24 @@ def _item_block(
         item, rows, grounding, grounding.own_sends.get(index, ()),
         now_ms=now_ms, tz=tz, message_chars=message_chars,
     )
+    readable = _reading_rows(readable, rows, item, memory_item, now_ms=now_ms,
+                             tz=tz, message_chars=message_chars)
+    candidates = {} if memory_item is None else {
+        r["id"]: r for r in memory_item.snapshot["messages"]}
+    keys = {} if memory_item is None else memory_item.snapshot["source_keys"]
     readable.sort(key=lambda r: (r.at_ms, r.id))
     kept, cut = _fit(readable, allowance_of.get(index, 0))
+    if memory_item is not None:
+        shown = []
+        shown_keys = {}
+        for row, rendered in zip(readable[cut:], kept, strict=True):
+            if row.id not in candidates:
+                continue
+            element = ElementTree.fromstring(rendered)  # noqa: S314 - our escaped row renderer's output
+            shown.append({**candidates[row.id], "body": element.text or ""})
+            shown_keys[str(row.id)] = keys[str(row.id)]
+        memory_item.snapshot["messages"] = shown
+        memory_item.snapshot["source_keys"] = shown_keys
     attrs = _item_attrs(index, item, grounding.room_labels)
     attrs.append(("window", _window([s.at_ms for s in rows], now_ms, tz)))
     if cut:
@@ -685,6 +735,7 @@ def _item_block(
 def _needs(
     items: Sequence[AgendaItem], stimuli: Mapping[int, Stimulus], grounding: Grounding,
     *, now_ms: int, tz: tzinfo, message_chars: int,
+    memory_items: Mapping[int, Any] | None = None,
 ) -> list[int]:
     needs = []
     for index, item in enumerate(items):
@@ -693,6 +744,8 @@ def _needs(
             item, rows, grounding, grounding.own_sends.get(index, ()),
             now_ms=now_ms, tz=tz, message_chars=message_chars,
         )
+        readable = _reading_rows(readable, rows, item, (memory_items or {}).get(index),
+                                 now_ms=now_ms, tz=tz, message_chars=message_chars)
         needs.append(sum(len(r.show(None)) + 1 for r in readable))
     return needs
 
@@ -882,6 +935,7 @@ def _register(
 def _item_blocks(
     items: Sequence[AgendaItem], stimuli: Mapping[int, Stimulus], grounding: Grounding,
     *, now_ms: int | None, tz: tzinfo, budget: RenderBudget,
+    memory_items: Mapping[int, Any] | None = None,
 ) -> list[ContextBlock]:
     """The `agenda` block (one `<item>` per item), then the Register. Without a
     clock an item is its summary alone (the probe's hand-written item), and
@@ -894,12 +948,14 @@ def _item_blocks(
         return [restamp(ContextBlock(name="agenda", body="\n".join(elements)), _ROW)]
     needs = _needs(
         items, stimuli, grounding, now_ms=now_ms, tz=tz, message_chars=budget.message_chars,
+        memory_items=memory_items,
     )
     allowance = dict(enumerate(_shares(needs, budget.record_chars, budget.min_item_chars)))
     elements = [
         _item_block(
             i, item, stimuli, grounding, now_ms=now_ms, tz=tz, allowance_of=allowance,
             message_chars=budget.message_chars,
+            memory_item=(memory_items or {}).get(i),
         )
         for i, item in enumerate(items)
     ]
@@ -918,6 +974,7 @@ def render_agenda(
     grounding: Grounding | None = None, reads_note: str = "", now_ms: int | None = None,
     last_session_ms: int | None = None, tz: tzinfo = UTC,
     budget: RenderBudget | None = None, graph: str = "",
+    memory_items: Mapping[int, Any] | None = None,
     shared: SharedView | None = None,
 ) -> str:
     """The session's prompt. `stimuli` is the claimed stimuli by id (an item
@@ -958,9 +1015,25 @@ def render_agenda(
         ), _ROW))
     if reads_note:
         blocks.append(restamp(ContextBlock(name="reads", body=escape(reads_note)), _ROW))
+    # Real database message ids are positive. Other record keys share one
+    # negative namespace, allocated once here, never by individual loaders.
+    source_ids: dict[tuple[str, ...], int] = {}
+    for memory_item in (memory_items or {}).values():
+        candidates = []
+        keys = {}
+        for row in memory_item.snapshot.get("record_rows", []):
+            key = tuple(row["source_key"])
+            if key[0] == "message":
+                rid = int(key[1])
+            else:
+                rid = source_ids.setdefault(key, -(len(source_ids) + 1))
+            candidates.append({**row, "id": rid})
+            keys[str(rid)] = list(key)
+        memory_item.snapshot["messages"] = candidates
+        memory_item.snapshot["source_keys"] = keys
     item_blocks = _item_blocks(
         items, stimuli or {}, grounding or Grounding(), now_ms=now_ms, tz=tz,
-        budget=budget or RenderBudget(),
+        budget=budget or RenderBudget(), memory_items=memory_items,
     )
     blocks += item_blocks
     if shared is not None and now_ms is not None:

@@ -1011,7 +1011,8 @@ async def test_stays_and_plays_join_the_same_proposal_coverage():
         admitted_evidence=[], shown_keys=set())
     await memory.prepare(state, {1: play, 2: stay}, Grounding())
     assert {s.key[0] for s in state.memory_items[0].sources} == {"play", "rollup"}
-    assert "Generated track" in state.graph_text
+    assert "Generated track" in next(s.text for s in state.memory_items[0].sources
+                                     if s.key[0] == "play")
     answer = await memory.propose(state, items=[0], payload={k: v for k, v in proposal().items()
                                                             if k != "items"})
     assert answer["admitted"] == [0]
@@ -1104,7 +1105,7 @@ async def test_inspected_wake_injects_implicit_senders_plan():
     assert "plans" in inspection["agenda"]
     assert "Forbidden outing" not in inspection["agenda"]
     assert "message:99" not in inspection["agenda"]
-    assert "generated-mention" in inspection["agenda"]
+    assert "generated-actor" in inspection["agenda"]
     assert agent.calls == 0
 
 
