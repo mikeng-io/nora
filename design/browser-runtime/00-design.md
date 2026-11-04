@@ -46,6 +46,13 @@ isolation, resource or concurrency results require revisiting its mechanics.
   by-ID lookups. Never fall back to the shared VM, another endpoint or another
   scope when resolution fails. No unauthenticated CDP port is exposed to peers.
 
+Each new unit or admitted DM VM must apply and read back the existing
+DEC-289 public-web TCP allow plus private-range denies, scoped to that exact
+sandbox; the shared VM's policy does not transfer. Apply and verify every deny
+before enabling the wildcard allow, withholding it if any check is unavailable
+or fails. Preserve the accepted hostname-to-private-address limitation; this
+split does not introduce a filtering proxy or silently strengthen that claim.
+
 ### Browser lifetime and operations
 
 One native headed Google Chrome per VM starts **on demand**, with its virtual
@@ -149,8 +156,10 @@ and final answer synthesis may still need the LLM. Make those remaining calls
 explicit in the adapter and total cost; do not claim the whole browser became
 LLM-free because clicks use a decision model. Only introduce a shared internal
 step-decision interface when a second backend is actually being built; the
-existing runner is sufficient for the first implementation. Every additional
-runner, including its fake, must pass the same runner contract suite.
+existing runner is sufficient for the first implementation. When introducing
+another runner, establish one shared runner contract suite (planned:
+`tests/contract/test_browser_runner_contract.py`, not present today) and run it
+against `BrowseAgentRunner`, its fake and each additional runner.
 
 Select a backend at task/session creation and record the actual selection.
 Do not silently switch on failure or reconnect. An explicit later fallback is
