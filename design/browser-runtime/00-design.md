@@ -157,9 +157,9 @@ explicit in the adapter and total cost; do not claim the whole browser became
 LLM-free because clicks use a decision model. Only introduce a shared internal
 step-decision interface when a second backend is actually being built; the
 existing runner is sufficient for the first implementation. When introducing
-another runner, establish one shared runner contract suite (planned:
-`tests/contract/test_browser_runner_contract.py`, not present today) and run it
-against `BrowseAgentRunner`, its fake and each additional runner.
+another runner, establish one shared browser-runner contract suite under the
+existing contract-test directory (not present today), covering
+`BrowseAgentRunner`, its fake and each additional runner.
 
 Select a backend at task/session creation and record the actual selection.
 Do not silently switch on failure or reconnect. An explicit later fallback is
