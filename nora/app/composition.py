@@ -175,6 +175,7 @@ from nora.infra.embedder import QUERY_TIMEOUT_SECONDS, LlamaEmbedder, fingerprin
 from nora.infra.google.auth import GoogleCredentials
 from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
+from nora.infra.releases import GithubReleases
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.bridge_store import WORK_KINDS, SqlBridgeStore
 from nora.infra.sql.character import SqlCharacterEvidence
@@ -3455,7 +3456,7 @@ async def build_dependencies(
         # note tier does not silently depend on the NOTE tier being wired —
         # two absences covering for each other.
         unit_for=_note_unit_of(allowlist),
-        versions=version_manifest,
+        versions=version_manifest, releases=GithubReleases(),
         giphy=giphy_client,
         reaction=reaction_picker,
         music=music_bridge,
