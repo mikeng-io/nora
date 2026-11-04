@@ -68,5 +68,12 @@
     "old": "retry=room_runner._retry, skills_dir=None,",
     "new": "retry=room_runner._retry, skills_dir='private-skills',",
     "target": "tests/unit/test_eval_full_restore.py::test_circle_public_adapter_uses_real_occasion_and_narrow_grant"
+  },
+  {
+    "name": "declared public entry is driven instead of tag",
+    "file": "evals/backbone.py",
+    "old": "    spec = dataclasses.replace(spec, entry=(case.metadata or {}).get(\"entry\", spec.entry))",
+    "new": "    spec = spec",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_declared_entry_is_used_by_the_actual_drive"
   }
 ]

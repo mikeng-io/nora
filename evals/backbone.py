@@ -1578,7 +1578,6 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
     from evals.rebuilt.domain import Moment, Outcome
     from evals.rebuilt.entry import ENTRY_POINTS
 
-    spec = dataclasses.replace(spec, entry=(case.metadata or {}).get("entry", spec.entry))
     port = ENTRY_POINTS[spec.entry]
     if spec.repeat > 1 and port.delivers_input:
         # `port.delivers_input` means a line ARRIVES after the window —
