@@ -96,5 +96,12 @@
     "old": "        if not observed:\n            return 'controlled memory read/capture missing'",
     "new": "        if False:\n            return 'controlled memory read/capture missing'",
     "target": "tests/unit/test_eval_full_restore.py::test_circle_memory_capture_measures_status_not_words"
+  },
+  {
+    "name": "fresh checked job context does not require a redundant tool read",
+    "file": "evals/backbone.py",
+    "old": "if not shown or 'subagent_create' in tools:",
+    "new": "if not shown or not statuses.get('subagent_read') or 'subagent_create' in tools:",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk"
   }
 ]

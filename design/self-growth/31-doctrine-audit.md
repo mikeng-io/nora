@@ -531,3 +531,16 @@ different chat input, and structured memory capture rejects status words in
 ordinary source prose. These are generated deterministic input captures, not a
 new paid subject's complete input. Existing sandbox sends stamp audit rows at
 wall time; the seeded job lifecycle's own clock remains the declared draw time.
+
+### Parent acceptance-case reconciliation
+
+Before model confirmation of the controlled cases, the parent aligned their
+arriving requests with the branches being measured: explicit reaction and GIF
+requests exercise controlled failure rather than penalizing a valid choice of
+text. The unavailable reaction asks for an honest status if it cannot be
+confirmed. Public preference lookup expects the existing public silence rule
+when its answer requires unavailable private information; actual public model
+input capture remains a mandatory positive control. Fresh captured job context
+is sufficient evidence without a redundant `subagent_read`; a missing block or
+a duplicate job still fails. These expectations were reconciled against the
+existing doctrine before new draws, not changed to make a model result pass.

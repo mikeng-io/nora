@@ -830,6 +830,14 @@ async def test_circle_job_lifecycle_is_read_by_real_context_and_desk(monkeypatch
     assert view is not None and len(view.lines) == 1
     rendered = render_subagents(view).body
     assert 'Generated comparison' in rendered
+    overlay = circle.CircleOverlay(job=state)
+    assert backbone._circle_execution_problem(
+        overlay, (), (('subagents', rendered),), (),
+    ) is None
+    assert backbone._circle_execution_problem(overlay, (), (), ())
+    assert backbone._circle_execution_problem(
+        overlay, (), (('subagents', rendered),), ('subagent_create',),
+    )
     assert view.lines[0].state == ('running' if state == 'running' else 'done')
     assert view.lines[0].delivered == (state == 'checked_complete')
     if state == 'checked_complete':

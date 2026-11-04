@@ -536,8 +536,8 @@ def _circle_execution_problem(overlay, results, blocks, tools) -> str | None:
         return 'controlled GIF search unavailable result was not observed'
     if overlay.job:
         shown = dict(blocks or ()).get('subagents', '')
-        if not shown or not statuses.get('subagent_read') or 'subagent_create' in tools:
-            return 'controlled job context/read missing or duplicate job started'
+        if not shown or 'subagent_create' in tools:
+            return 'controlled job context missing or duplicate job started'
     if overlay.memory:
         shown = dict(blocks or ()).get('recalled', '')
         from html import unescape
