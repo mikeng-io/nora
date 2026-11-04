@@ -74,8 +74,8 @@ def references(tree: dict) -> set[str]:
     return result
 
 
-def projection(config: dict, values: dict[str, str]) -> dict:
-    """Extra operator aliases only; existing Compose owns native image mappings."""
+def service_references(config: dict) -> dict[str, set[str]]:
+    """Resolve credential references, including scoped defaults, per reader."""
     presence = config.get("presence", {})
     login_fields = {"client_credential_env", "username_env", "password_env", "auth_token_env"}
     # `computer.scoped.redis_url_env` ships a deployment-owned default
@@ -86,7 +86,7 @@ def projection(config: dict, values: dict[str, str]) -> dict:
         config.get("computer", {}).get("scoped", {}).get("redis_url_env")
         or "NORA_COMPUTER_REDIS_URL"
     )
-    scopes = {
+    return {
         "nora": references({k: v for k, v in config.items() if k != "presence"})
         | references({k: v for k, v in presence.items() if k not in login_fields})
         | {scoped_redis},
@@ -94,6 +94,11 @@ def projection(config: dict, values: dict[str, str]) -> dict:
         | references({k: v for k, v in presence.items() if k in login_fields}),
         "analytics": references({k: config[k] for k in ("store", "obs") if k in config}),
     }
+
+
+def projection(config: dict, values: dict[str, str]) -> dict:
+    """Extra operator aliases only; existing Compose owns native image mappings."""
+    scopes = service_references(config)
     services = {
         service: {"environment": {k: values[k] for k in sorted(keys) if k in values}}
         for service, keys in scopes.items()
@@ -135,15 +140,15 @@ def prepare(runtime: Path, environ: dict[str, str] | None = None,
     signoz_overlay = runtime / "deploy/signoz/docker-compose.signoz.yaml"
     if signoz and not signoz_overlay.is_file():
         raise FileNotFoundError("install the SigNoz Compose overlay before enabling its endpoint")
-    if not (runtime / "secret.toml").exists() and not references(config) and not signoz:
+    resolved = set().union(*service_references(config).values())
+    if not (runtime / "secret.toml").exists() and not resolved and not signoz:
         return []
     values = source(runtime, environ)
-    config = tomllib.loads((runtime / "config.toml").read_text())
     file_keys = set(dotenv(runtime / ".env"))
     secret_path = runtime / "secret.toml"
     if secret_path.exists():
         file_keys.update(tomllib.loads(secret_path.read_text()).get("credentials", {}))
-    file_keys.update(references(config))
+    file_keys.update(resolved)
     values = {k: v for k, v in values.items() if k in file_keys}
     directory = output_directory if output_directory is not None else runtime / ".secret-delivery"
     directory.mkdir(mode=0o700, exist_ok=True)
