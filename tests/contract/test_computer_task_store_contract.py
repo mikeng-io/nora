@@ -22,7 +22,6 @@ Generated rows only: every scope is a synthetic hex key.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4

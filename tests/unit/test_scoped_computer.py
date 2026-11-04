@@ -656,15 +656,17 @@ async def store_row(tasks: FakeComputerTaskStore, row: ComputerTask) -> None:
 
 
 def _runtime(endpoints: FakeScopeEndpoints, identity: dict | None,
-             clock_fn=clock()):
+             clock_fn=None):
     """A ScopedComputerdRuntime whose /v1/identity answer is `identity`."""
     from nora.infra.computer.scoped import ScopedComputerdRuntime
-    runtime = ScopedComputerdRuntime(endpoints=endpoints, token="t", clock=clock_fn)
+    runtime = ScopedComputerdRuntime(
+        endpoints=endpoints, token="t",  # noqa: S106 - a test token
+        clock=clock_fn or clock())
 
     async def fake_identity(endpoint):
         return identity
 
-    runtime._identity = fake_identity  # noqa: SLF001 - the seam is the point
+    runtime._identity = fake_identity
     return runtime
 
 
@@ -709,13 +711,15 @@ async def test_binding_revalidates_after_invalidation() -> None:
         scope=SCOPE, base_url="http://vm", name="vm", instance="boot-1")
     calls: list[str] = []
     from nora.infra.computer.scoped import ScopedComputerdRuntime
-    runtime = ScopedComputerdRuntime(endpoints=endpoints, token="t", clock=clock())
+    runtime = ScopedComputerdRuntime(
+        endpoints=endpoints, token="t",  # noqa: S106 - a test token
+        clock=clock())
 
     async def counting(endpoint):
         calls.append("identity")
         return {"scope": SCOPE, "instance": "boot-1"}
 
-    runtime._identity = counting  # noqa: SLF001
+    runtime._identity = counting
     assert await runtime.binding(SCOPE) is not None
     assert await runtime.binding(SCOPE) is not None
     assert len(calls) == 1  # cached within the revalidation window

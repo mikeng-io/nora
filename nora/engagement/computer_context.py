@@ -42,7 +42,6 @@ from nora.domain.computer_context import (
     TaskLine,
 )
 from nora.domain.computer_events import ComputerEvent, ComputerEventStore
-from nora.domain.computer_tasks import ComputerTask
 from nora.domain.computer_sessions import (
     COMMAND_CHARS,
     EXPIRED,
@@ -52,6 +51,7 @@ from nora.domain.computer_sessions import (
     derive_progress,
     shown_status,
 )
+from nora.domain.computer_tasks import ComputerTask
 from nora.domain.ports import SandboxRuntime
 
 log = logging.getLogger("nora.computer.context")

@@ -1,0 +1,65 @@
+[
+  {
+    "name": "a running row blocks the scope's next claim",
+    "file": "nora/infra/sql/computer_tasks.py",
+    "old": "T.c.id == head, ~sa.exists(running))",
+    "new": "T.c.id == head)",
+    "target": "tests/contract/test_computer_task_store_contract.py::test_late_committed_older_row_cannot_overlap"
+  },
+  {
+    "name": "an existing-handle call never creates a tab",
+    "file": "nora/infra/computer/manager.py",
+    "old": "            elif must_exist:\n                raise TabUnavailable(\"expired\")",
+    "new": "            elif must_exist:\n                wanted = None",
+    "target": "tests/unit/test_scoped_computer.py::test_capture_never_creates_a_tab"
+  },
+  {
+    "name": "a dead instance's rows expire on rebind",
+    "file": "nora/infra/computer/manager.py",
+    "old": "            await self._expire_other_instances(scope, binding.instance)",
+    "new": "            pass  # stale rows are trusted as-is",
+    "target": "tests/unit/test_scoped_computer.py::test_stale_instance_expires_the_binding"
+  },
+  {
+    "name": "nested calls inherit the parent slot",
+    "file": "nora/app/computer_queue.py",
+    "old": "        if current_segment.get() is not None:",
+    "new": "        if current_segment.get() is None:",
+    "target": "tests/unit/test_scoped_computer.py::test_nested_call_inherits_the_slot"
+  },
+  {
+    "name": "cancel drains the real executor",
+    "file": "nora/app/computer_queue.py",
+    "old": "            return await self._tasks.get(task_id)\n        executor.cancel()",
+    "new": "            return await self._tasks.get(task_id)",
+    "target": "tests/unit/test_scoped_computer.py::test_run_segment_cancel_reaches_the_executor"
+  },
+  {
+    "name": "a quiet VM lets the lost owner close",
+    "file": "nora/app/computer_queue.py",
+    "old": "                if verdict == \"quiet\":",
+    "new": "                if verdict == \"never\":",
+    "target": "tests/unit/test_scoped_computer.py::test_owner_lost_busy_scope_stays_blocked"
+  },
+  {
+    "name": "the live instance must match the record's exactly",
+    "file": "nora/infra/computer/scoped.py",
+    "old": "        if not instance or instance != endpoint.instance:",
+    "new": "        if not instance:",
+    "target": "tests/unit/test_scoped_computer.py::test_binding_refuses_empty_and_mismatched_instance"
+  },
+  {
+    "name": "a popup is bound to the task that owns the scope",
+    "file": "nora/infra/computer/manager.py",
+    "old": "            if owner is not None and room > 0:",
+    "new": "            if owner is not None and room > 99:",
+    "target": "tests/unit/test_scoped_computer.py::test_popup_adopted_to_the_running_task"
+  },
+  {
+    "name": "the block renders the full UUID handle",
+    "file": "nora/engagement/computer_context.py",
+    "old": "                    task_id=str(t.id), kind=t.kind, status=t.status,",
+    "new": "                    task_id=str(t.id)[:8], kind=t.kind, status=t.status,",
+    "target": "tests/unit/test_scoped_computer.py::test_context_renders_full_opaque_handles"
+  }
+]
