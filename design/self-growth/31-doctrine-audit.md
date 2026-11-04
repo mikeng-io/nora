@@ -589,3 +589,9 @@ an inability announcement is also a send. Existing case labels stay fixed.
 Raw judge votes, including intermediate scores, confidence, malformed samples
 and errors, are now retained in the existing opt-in private exchange export.
 These are built repairs, not a claim that their model confirmation has passed.
+
+Parent repair validation at `bbf3000d4`: 219 focused doctrine/evaluator checks
+passed and eleven selected backbone mutation clauses were caught, each restored
+green. The gate's HTTP 503 is specifically `model_not_in_catalog` for its
+configured DeepSeek target; bridge DNS warnings in the same log are unrelated.
+The shared routing correction remains unapplied pending operator approval.
