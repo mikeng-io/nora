@@ -425,14 +425,16 @@ record-evidence contract these cases do not satisfy. The brief-fact/explanation
 pair is self-contained in the invented arriving line. No judge should infer a
 write receipt, current preference or completed job from doctrine prose.
 
-At that earlier checkpoint the tag outcome counted authored message rows, not reaction-only
-receipt state; the integrated receipt patch now carries confirmed reactions separately. Thus `circle_acknowledgement` and `circle_banter` cannot establish
-reaction-only suitability with this grader; their text-response observations
-alone are insufficient acceptance. Existing `tests/unit/test_reaction_send.py`
-controls delivery/held/unavailable mechanics separately. Model acceptance of
-reaction-only choice, the eight controlled state/audience cases and the broader
-gate's extra admissions/interruption/spend remain UNAVAILABLE until the existing
-measurement paths can carry those properties. No competing harness is added.
+At that earlier checkpoint the tag outcome counted authored message rows, not
+reaction-only receipt state. The integrated receipt patch now carries confirmed
+reactions separately. Earlier text-response observations of
+`circle_acknowledgement` and `circle_banter` do not establish reaction-only
+suitability. Existing `tests/unit/test_reaction_send.py` controls
+held/unavailable mechanics separately. The later controlled-state amendment
+below supplies the missing state/audience paths; model acceptance of those
+paths, reaction-only choice and the broader gate's contribution/interruption/
+spend remains UNAVAILABLE until parent-owned confirmation is read back.
+No competing harness is added.
 
 ### Source-verified advisory corrections
 
@@ -493,3 +495,39 @@ stores; it does not claim production index coverage. No model suitability,
 platform delivery, spend, latency, deploy or issue completion follows from these
 deterministic receipts. Parent-owned paired model confirmation and independent
 review remain separate requirements.
+
+
+Deterministic receipts: code candidate
+`ac2d50a61436243b985f52076031f3744efd0c48` passed **414 focused checks, rc=0**
+in the worker-owned host checkout
+`~/workspace/nora-eval-575-controlled-c2507d7a`. Selection: evaluator
+full-restore/backbone/scenarios, anchor/corpus accounting, import boundaries,
+reaction guards, public summons occasion and the two named GIF failure-guidance
+checks. Log: `/tmp/nora575-controlled-final4.log`. Local execution refused rc=2
+under the existing busy test lease; no lock was bypassed or altered. Ruff on
+changed Python and `git diff --check` passed. No full suite/gate ran.
+
+Mutation proof used `scripts.pytest_gate` for every baseline, mutant and restored
+run, under the host's normal test lease. The first thirteen table entries at
+`5cda7c747c85a1de20df5102ae3b55e9912e0515` were **13/13 caught, rc=0**
+(`/tmp/nora575-controlled-mutations-final.log`). The later structured-memory-
+capture delta at `ac2d50a61436243b985f52076031f3744efd0c48` has its own
+**1/1 caught, rc=0** (`/tmp/nora575-controlled-mutation14.log`); the preceding
+thirteen anchors/behaviors are unchanged. Each baseline/restored run passed its
+named tests; each mutant returned rc=1 on the behavioral assertion, including
+pytest's missing-required-exception assertion for the index outage. These are
+fourteen observed red/green clauses across the two stated revisions, not a claim
+that a fourteen-entry sweep ran at one final head. Both the fourteen new anchors
+and the five existing receipt-table anchors resolve exactly once. Host tracked
+state was clean after restoration.
+
+Concrete generated render/readback checks live in
+`tests/unit/test_eval_full_restore.py`: job context carries running or
+`done`/delivered plus the generated 12-versus-9-unit report; the actual memory
+read renders a partial recalled block with the superseding correction; the
+public occasion's invocation carries its assembled social-post blocks, empty
+private prefill and only public-grant tools. Public capture rejects a missing or
+different chat input, and structured memory capture rejects status words in
+ordinary source prose. These are generated deterministic input captures, not a
+new paid subject's complete input. Existing sandbox sends stamp audit rows at
+wall time; the seeded job lifecycle's own clock remains the declared draw time.
