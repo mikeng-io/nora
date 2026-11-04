@@ -276,7 +276,7 @@ that runs. Their remediation is testable without the scanner's target.
 - **Trust boundary:** caller identity inside the private network. Network
   membership is not authentication; a compromised sidecar is the reversal
   condition for treating the network as sufficient.
-- **Deployment:** `docker-compose.yml` and `deploy/instagram-bridge/compose.fragment.yml`
+- **Deployment:** `docker-compose.yml` (the duplicate Instagram Compose fragment was retired; its historical audit is retained here)
   now require `NORA_BRIDGE_TOKEN`; the same value must be set in the host
   environment before recreating. The bridge will not start without it.
 

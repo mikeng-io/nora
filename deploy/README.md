@@ -1,23 +1,70 @@
 # Deployment
 
-## Current runtime
+## Ownership and entry points
 
-Production application deploys use the installed Komodo Stack `nora-releases`
-on a Linux host; infrastructure retains the legacy root Docker Compose project.
-It assumes model/memory services, persistent storage and separately provisioned
-platform accounts. Start from `config.example.toml`, `identity.example.toml` and
-`policy.example.toml`; configure only the capabilities you intend to operate.
-The examples require operator configuration before startup. Store real config,
-credentials and platform sessions outside version control and back up persistent
-data before upgrading.
+The root [`docker-compose.yml`](../docker-compose.yml) is the canonical source
+model. [`release_bundle.py`](../scripts/release_bundle.py) reads it directly,
+removes builds, selects immutable application images and rewrites host binds for
+the runtime root. The generated `compose.json` still describes infrastructure;
+the installed wrapper selects only its application cohort with `--no-deps`.
+A service appearing in that manifest does not make Komodo its lifecycle owner.
 
-The operator/agent
-procedure is [nora-deploy](../.agents/skills/nora-deploy/SKILL.md); operational
-recovery is in the [runbook](../docs/runbook.md). The installed wrapper serializes
-changes with the shared host lock, validates config and reads back every owned service and the success receipt.
+| Scope | Source and owner | Entry point |
+|---|---|---|
+| Application | Generated `deployments` branch `compose.json` + `release.json`; installed Komodo Stack `nora-releases` | Ordinary release/image/poller flow; explicit maintenance uses the [Komodo procedure](komodo/README.md) |
+| Infrastructure: `redis`, `db`, `rustfs`, `embedder` | Root Compose file in the persistent runtime checkout | Explicit service maintenance under the shared deploy lock; outside application reconciliation |
+| Application telemetry wiring | [`signoz/docker-compose.signoz.yaml`](signoz/docker-compose.signoz.yaml), an overlay on the selected application manifest | Installed Stack configuration, after the backend exists; never a standalone stack |
+| SigNoz backend | [`signoz/deployment/compose.yaml`](signoz/deployment/compose.yaml), separate project `signoz` | [Observability procedure](../docs/observability.md); retain installed host overrides |
+| Computer VM image and lifecycle | [`computer/`](computer/README.md), outside root Compose | `nora-computer` and its documented systemd lifecycle |
+| Memory graph experiment | [`memory-graph-spike/compose.yaml`](memory-graph-spike/compose.yaml), isolated experiment project | Its [experiment procedure](memory-graph-spike/README.md); never production memory storage |
+| OTel queue fixture | [`otel-queue-fixture/docker-compose.yml`](otel-queue-fixture/docker-compose.yml) | Disposable test fixture; not a production deployment entry point |
 
-The Compose file uses bridge networks, persistent volumes and private host
-configuration. The separate `honcho_memory` network must already exist.
+The application cohort is `nora`, `presence`, `analytics`, `app`, optional
+`site`, `stt`, `voice-sidecar`, `voice-wake`, all four platform bridges and
+`bridge-projection`. The projection publisher is a running admission service,
+not a bootstrap job: bridges use its shared projection volume while Nora is
+restarting. Signal's `signal-cli` executable runs **inside `signal-bridge`**;
+there is no current standalone `signal-cli` service.
+
+Application and infrastructure deliberately share Compose project `nora` and
+its existing network/volume identities. Do not rename the project, move the
+runtime root or split the model as housekeeping: those changes need a migration
+of the publisher, installed wrapper, binds and persistent resource identities.
+Use explicit services for infrastructure work; project-wide `up`, `down`,
+`stop`, `--remove-orphans` and volume pruning cross lifecycle boundaries.
+The former `make up`, `make stop`, `make logs` and `make ps` shortcuts are removed.
+For installed container reads, use `docker logs <container>` and `docker ps -a`
+without resolving private Compose inputs. Host exec uses the
+[credential helper](../docs/configuration.md#host-migration-and-installed-files).
+
+The operator/agent procedure is [nora-deploy](../.agents/skills/nora-deploy/SKILL.md);
+recovery is in the [runbook](../docs/runbook.md). Before a host change, identify
+the installed deployment mode, preserve outstanding attempts and private state,
+and use the shared lock. Unreadable deployment receipts are unavailable evidence,
+not permission to fall back to checkout deployment.
+
+## Retirement boundaries
+
+An exited container is not proof that its data or role is obsolete. Inventory
+its owner, replacement, mounts, volumes and remaining consumers before removal.
+Retire selected containers separately from state deletion; never use a broad
+project teardown or orphan cleanup to remove old services.
+
+- A legacy standalone `signal-cli` must never run beside `signal-bridge` against
+  the same registration store. Preserve `state/signal-cli/`, linked-device data
+  and bridge journals even if the old container is removed.
+- Legacy Prometheus, Alertmanager and alert-bridge are outside the current root
+  model. Their replacement and retained telemetry follow the
+  [SigNoz cutover](../docs/observability.md), not application release cleanup.
+- A separately installed OTel collector may still serve other producers. Trace
+  its receivers, exporters and clients before stopping it; the SigNoz overlay
+  alone does not establish that it is unused.
+- Graph-spike databases and volumes are experiment state. Confirm the experiment
+  owner's remaining purpose and retention before stopping or deleting them.
+- Completed SigNoz bootstrap/migration jobs and probes belong to that project's
+  procedure; an exited job is not a failed permanent service.
+
+These boundaries authorize no host stop, deletion, restart or deployment.
 
 ## Release deployment with Komodo
 
@@ -58,78 +105,29 @@ Bare Compose commands require a runtime `.env` sufficient for interpolation;
 they do not read `secret.toml`. Host exec uses the
 [installed helper](../docs/configuration.md#host-migration-and-installed-files).
 
-## Legacy checkout bootstrap: first installation
+## First installation and checkout use
 
-This is a configurable stack, not a preconfigured hosted service. Prerequisites:
-Docker Engine with Docker Compose on Linux; GnuPG (`gpg`) for verifying the
-signal-cli download; a messaging account or bot for at
-least one supported platform; an OpenAI-compatible model endpoint; and an
-external Honcho memory backend. Compose supplies PostgreSQL and RustFS storage.
-Optional speech, computer, social and portal features need their own services
-and credentials.
+A complete supported clean-host walkthrough remains tracked in
+[issue #368](https://github.com/mikeng-io/nora/issues/368). The installed Komodo
+procedure assumes an existing runtime; it is not a first-install recipe.
+The old Signal-only bootstrap commands named the retired standalone service
+and are removed rather than presented as a working installation path.
 
-1. Clone the repository and copy the inputs:
+Prepare private `config.toml`, `identity.toml`, `policy.toml` and credential
+sources from their examples. Provision an OpenAI-compatible model endpoint,
+external Honcho and the selected platform accounts; the `honcho_memory` network
+must exist. Configure bridge endpoints for bridge mode, not the old
+`signal-cli:18080` direct endpoint. Preserve platform session directories and
+use generated credentials, never example identities or production data in Git.
+Disabling an integration in config does not remove its Compose interpolation
+requirements or dependencies. A selected-platform bootstrap must account for
+those requirements before it can be called supported.
 
-   ```bash
-   cp config.example.toml config.toml
-   cp identity.example.toml identity.toml
-   cp policy.example.toml policy.toml
-   cp .env.example .env
-   ```
-
-2. Replace the synthetic examples with your own accounts and policy grants.
-   Disable unused platforms and optional integrations. Configure service URLs
-   reachable **from the Nora container**: for example, `http://signal-cli:18080`
-   for Signal, `/app/data` for `[store] data_dir`, and your memory service's DNS
-   alias on the shared network. Container loopback does not reach the host;
-   use `host.docker.internal` for a host model service where configured.
-   Provision Honcho separately, then create `honcho_memory` with
-   `docker network create --internal honcho_memory` if absent and attach the
-   memory API to it. This repository does not bootstrap that backend.
-
-3. Fill the required Compose environment variables. `POSTGRES_PASSWORD`,
-   `RUSTFS_ROOT_USER`, `RUSTFS_ROOT_PASSWORD`, `OMNIROUTE_API_KEY` and
-   `SIGNAL_ACCOUNT` are required by the checked-in Compose file. Portal variables
-   `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `AUTH_SECRET` and `AUTH_URL` are
-   also interpolated by Compose even when selecting other services. Use your own
-   values; `.env.example` lists these separately from optional integrations.
-   The model key's variable name does not require an OmniRoute deployment: set
-   `[llm] base_url` and `model` for your OpenAI-compatible endpoint.
-
-4. Provision the selected platform before starting Nora. For Signal, link or
-   register the account with signal-cli and preserve its complete
-   `state/signal-cli/` directory; see the [Signal notes](../docs/runbook.md#9-where-does-everything-live-read-this-first-months-later).
-   For Discord, create a bot application, enable Message Content intent, invite
-   it to the intended server and set `DISCORD_BOT_TOKEN`. Map the platform's
-   account IDs in `identity.toml` and allow only the intended rooms in
-   `policy.toml`. Do not reuse the example identities.
-
-5. Validate configuration and prepare the images. With Python 3.12 and uv:
-
-   ```bash
-   uv sync --frozen --extra evals
-   uv run nora config validate --config config.toml
-   ./deploy/signal-cli/fetch.sh
-   ./scripts/build-image.sh
-   docker compose build signal-cli
-   docker compose up -d db rustfs signal-cli nora
-   ```
-
-   This starts a Signal-oriented subset. Add your configured platform bridge or
-   optional services explicitly. Keep model/memory services available before
-   starting Nora. The image entry point runs database migrations at startup.
-
-6. Read back health and logs, then tag Nora from an allowed room:
-
-   ```bash
-   docker compose ps
-   curl -fsS http://127.0.0.1:9100/health
-   docker compose logs --tail 100 nora
-   ```
-
-   Inspect degraded platform details even with HTTP 200. Confirm the message is
-   received and a reply delivered; the [runbook](../docs/runbook.md) explains
-   policy denials and silent failures. Do not publish raw logs or production rows.
+The root file remains available for deliberate source builds and isolated
+checkout deployments. `make build` builds the local Nora image; it does not
+publish or deploy a release. Bare Compose requires an environment sufficient
+for interpolation and does not read `secret.toml`. Follow the selected deployment
+mode's procedure rather than running the root project without service selection.
 
 ## Upgrades, recovery and fetching
 
@@ -147,9 +145,9 @@ redirects or DNS rebinding.
 
 ## Container-era sidecars in this tree
 
-The repo-root `docker-compose.yml` still runs database, RustFS, Prometheus,
-Alertmanager and embedder infrastructure from the legacy runtime root. Komodo
-owns application services through the generated `deployments` Compose manifest;
+The repo-root `docker-compose.yml` defines Redis, PostgreSQL, RustFS and embedder
+infrastructure maintained from the persistent runtime root. Komodo owns
+application services through the generated `deployments` Compose manifest;
 their release images are built from subtrees here (`stt/`, `voice-sidecar/`, …).
 The newest:
 
@@ -170,6 +168,6 @@ The newest:
 
 ## Monitoring
 
-See [observability](../docs/observability.md) for Prometheus, Alertmanager and
-delivery diagnostics. Health and dependency metrics answer different questions;
+See [observability](../docs/observability.md) for SigNoz metrics, traces, logs
+and delivery diagnostics. Health and dependency metrics answer different questions;
 monitor both.

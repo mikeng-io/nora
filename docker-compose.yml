@@ -1,3 +1,8 @@
+# Canonical source model for checkout builds and release-bundle generation.
+# Production applications: generated deployments/compose.json via Komodo.
+# Infrastructure maintenance: this file, explicit services, project nora.
+# Ownership, overlays and retirement boundaries: deploy/README.md.
+
 services:
   # redis — the durable inbound handoff (design/platform-bridges). AOF everysec
   # + named volume + noeviction; survives app-only releases and ordinary
@@ -259,8 +264,6 @@ services:
 
   # instagram-bridge — the Instagram wire, the fourth transport daemon after
   # signal-bridge, whatsapp-bridge and discord-bridge.
-  # Full reasoning for every line below lives in
-  # deploy/instagram-bridge/compose.fragment.yml, which this is lifted from.
   instagram-bridge:
     build:
       context: ./deploy/instagram-bridge
@@ -311,8 +314,7 @@ services:
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://host.docker.internal:4318/v1/traces
       - OTEL_SERVICE_NAME=instagram-bridge
       # The summons comment write, the bridge's only public write (design
-      # instagram-adoption/19; the guards and the latch are documented in
-      # deploy/instagram-bridge/compose.fragment.yml). Off unless the host's
+      # instagram-adoption/19). Off unless the host's
       # .env says exactly `on`: the switch is operator config, not code.
       - INSTAGRAM_COMMENT_WRITES=${INSTAGRAM_COMMENT_WRITES:-off}
       - INSTAGRAM_COMMENT_DAILY_CAP=${INSTAGRAM_COMMENT_DAILY_CAP:-10}
