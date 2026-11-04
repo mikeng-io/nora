@@ -12,10 +12,6 @@ new kind or the claim's INSERT is refused.
 The expression is built from `TASK_KINDS` — the list is owned by the
 domain, never retyped here, so a later kind widens the constraint the same
 way instead of drifting from `schema.py`.
-
-Revision ID: 0148_computer_task_maintenance
-Revises: 0147_computer_tasks
-Create Date: 2026-10-30
 """
 
 from __future__ import annotations

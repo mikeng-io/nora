@@ -13,15 +13,13 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
+from nora.domain.browser_tasks import TAB_STATUSES
+from nora.domain.computer_tasks import TASK_KINDS, TASK_STATUSES
+
 revision = "0147_computer_tasks"
 down_revision = "0146_multi_post_native_ids"
 branch_labels = None
 depends_on = None
-
-_TASK_STATUSES = ("queued", "running", "done", "failed", "cancelled",
-                  "unavailable", "interrupted")
-_TASK_KINDS = ("native", "browse", "capture", "worker")
-_TAB_STATUSES = ("open", "closed", "expired")
 
 
 def upgrade() -> None:
@@ -46,13 +44,13 @@ def upgrade() -> None:
         sa.Column("cancel_requested_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("delivered_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint(
-            f"status IN ({', '.join(repr(x) for x in _TASK_STATUSES)})",
+            f"status IN ({', '.join(repr(x) for x in sorted(TASK_STATUSES))})",
             name="ck_computer_tasks_status"),
         sa.CheckConstraint(
-            f"kind IN ({', '.join(repr(x) for x in _TASK_KINDS)})",
+            f"kind IN ({', '.join(repr(x) for x in sorted(TASK_KINDS - {'maintenance'}))})",
             name="ck_computer_tasks_kind"),
     )
-    op.create_index("ix_computer_tasks_scope_open", "computer_tasks",
+    op.create_index("idx_computer_tasks_scope_open", "computer_tasks",
                     ["scope", "created_at"],
                     postgresql_where=sa.text(
                         "status IN ('queued','running')"))
@@ -72,12 +70,12 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("last_activity_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
-            f"status IN ({', '.join(repr(x) for x in _TAB_STATUSES)})",
+            f"status IN ({', '.join(repr(x) for x in sorted(TAB_STATUSES))})",
             name="ck_browser_tasks_status"),
         sa.UniqueConstraint("scope", "instance", "target_id",
                             name="uq_browser_tasks_target"),
     )
-    op.create_index("ix_browser_tasks_scope_open", "browser_tasks",
+    op.create_index("idx_browser_tasks_scope_open", "browser_tasks",
                     ["scope", "instance"],
                     postgresql_where=sa.text("status = 'open'"))
 

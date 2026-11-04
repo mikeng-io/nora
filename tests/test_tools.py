@@ -209,6 +209,9 @@ def test_every_declared_tool_is_built(wiring):
         "computer_export", "computer_import", "computer_session_list",
         # Built here; offered only with a browser runner.
         "computer_browse",
+        # Scoped-computer pair: built here like every closure; offered only
+        # with `[computer.scoped]` wiring (the queue and the browser manager).
+        "computer_capture", "computer_cancel",
         # A document is published to the web app, read back to edit.
         "document_publish", "document_read", "document_set_status",
         # Subagents (DEC-283).

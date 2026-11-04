@@ -38,7 +38,8 @@ ENC = tiktoken.get_encoding("cl100k_base")
 # (`[documents] enabled = false`, `[video_gen] enabled = false`) cost a live
 # turn nothing until they are turned on.
 # reaction_send adds 28 tokens; measured largest catalogue: 2,626 tokens.
-BLOCK_CEILING = 2_630
+# computer_capture/computer_cancel add 63; measured largest catalogue: 2,693.
+BLOCK_CEILING = 2_700
 
 #: The platforms a tag turn runs on. The catalogue differs only by the tools
 #: scoped to one (`DISCORD_ONLY_TOOLS`) and by the Dreamer-only ones, which no

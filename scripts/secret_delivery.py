@@ -19,6 +19,7 @@ NATIVE_CREDENTIALS = {
     "NORA_REDIS_INSPECTOR_PASSWORD",
     "DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "AUTH_SECRET", "DISCORD_BOT_TOKEN",
     "NORA_OTP_SECRET", "NORA_OTP_API_TOKEN", "NORA_COMPUTER_TOKEN", "MEDIA_ENCRYPTION_KEY",
+    "NORA_COMPUTER_REDIS_URL",
     "XAI_OAUTH_REFRESH_TOKEN", "OPENAI_CODEX_REFRESH_TOKEN", "GIPHY_API_KEY", "PULSE_API_TOKEN",
     "PULSE_MCP_TOKEN",
 }
@@ -77,9 +78,18 @@ def projection(config: dict, values: dict[str, str]) -> dict:
     """Extra operator aliases only; existing Compose owns native image mappings."""
     presence = config.get("presence", {})
     login_fields = {"client_credential_env", "username_env", "password_env", "auth_token_env"}
+    # `computer.scoped.redis_url_env` ships a deployment-owned default
+    # (`NORA_COMPUTER_REDIS_URL`): an operator enabling scoped mode need not
+    # write the field, so `references` cannot see it. Resolve it here or the
+    # overlay delivers nothing for the name the image natively reads.
+    scoped_redis = (
+        config.get("computer", {}).get("scoped", {}).get("redis_url_env")
+        or "NORA_COMPUTER_REDIS_URL"
+    )
     scopes = {
         "nora": references({k: v for k, v in config.items() if k != "presence"})
-        | references({k: v for k, v in presence.items() if k not in login_fields}),
+        | references({k: v for k, v in presence.items() if k not in login_fields})
+        | {scoped_redis},
         "presence": references({k: config[k] for k in ("store", "obs") if k in config})
         | references({k: v for k, v in presence.items() if k in login_fields}),
         "analytics": references({k: config[k] for k in ("store", "obs") if k in config}),

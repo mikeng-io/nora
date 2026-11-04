@@ -65,6 +65,13 @@ DECLARED_STATUS_EXTENSIONS: Mapping[str, str] = {
                "an id and no result yet. Not `ok` (that reads as «done») and not "
                "`unavailable` (it did start). The result arrives later, by message "
                "(design/subagent §3).",
+    "queued": "the call was durably accepted into the scope's FIFO but is "
+              "waiting behind the task running now: a `task` id and no result "
+              "yet. Not `started` (that work is already running) and not "
+              "`unavailable` (nothing failed, and an intent-store failure "
+              "answers `unavailable`, never `queued`): the result arrives "
+              "later through the delivery path (design/browser-runtime, the "
+              "queue lifecycle).",
     "partial": "a search answered from an index still being rebuilt, or with "
                "sources waiting on its projection queue: what it found is real, "
                "and what it did not find may still exist. Not `nothing_found` "

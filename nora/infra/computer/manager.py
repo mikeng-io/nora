@@ -61,7 +61,9 @@ from nora.domain.browser_tasks import (
     BrowserTabStore,
 )
 from nora.domain.computer import SandboxStatus
-from nora.domain.computer_tasks import QUEUED, ComputerTask, current_segment
+from nora.domain.computer_tasks import (
+    QUEUED, ComputerTask, ComputerTaskStore, current_segment,
+)
 from nora.infra.computer.browser import (
     BrowserError,
     BrowserPage,
@@ -129,7 +131,7 @@ class ScopeBrowserManager:
         # executor registry. Both wired, cleanup claims the SAME elected
         # scope owner every segment holds — a `running` row blocks the
         # claim, and cleanup's own running row blocks every other claim.
-        tasks: Any = None,
+        tasks: ComputerTaskStore | None = None,
         segments: Any = None,
         # Lifecycle events to the existing audit facilities:
         # `(scope, transition, subject)` — `tab_expired`, `browser_stopped`,

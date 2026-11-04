@@ -651,25 +651,24 @@ async def test_a_page_target_born_while_attached_is_the_clients_to_own(
     monkeypatch.setenv("FAKE_POPUP_DELAY", "1.0")
     srv = await _serve(fakes)
     try:
-        async with ClientSession() as session:
-            async with session.ws_connect(
-                    srv.make_url(f"/v1/browser?scope={SCOPE}"), headers=AUTH) as ws:
-                await ws.send_str(json.dumps({"id": 7, "method": "Browser.getVersion"}))
-                assert (await ws.receive(timeout=10)).type is WSMsgType.TEXT
-                seen = None
-                for _ in range(25):
-                    try:
-                        msg = await ws.receive(timeout=1)
-                    except TimeoutError:
-                        continue
-                    if msg.type is not WSMsgType.TEXT:
-                        continue
-                    frame = json.loads(msg.data)
-                    if frame.get("method") == "Target.targetCreated":
-                        seen = frame
-                        break
-                assert seen is not None  # the event WAS relayed to the client
-                assert seen["params"]["targetInfo"]["targetId"] == "popup-a"
+        async with ClientSession() as session, session.ws_connect(
+                srv.make_url(f"/v1/browser?scope={SCOPE}"), headers=AUTH) as ws:
+            await ws.send_str(json.dumps({"id": 7, "method": "Browser.getVersion"}))
+            assert (await ws.receive(timeout=10)).type is WSMsgType.TEXT
+            seen = None
+            for _ in range(25):
+                try:
+                    msg = await ws.receive(timeout=1)
+                except TimeoutError:
+                    continue
+                if msg.type is not WSMsgType.TEXT:
+                    continue
+                frame = json.loads(msg.data)
+                if frame.get("method") == "Target.targetCreated":
+                    seen = frame
+                    break
+            assert seen is not None  # the event WAS relayed to the client
+            assert seen["params"]["targetInfo"]["targetId"] == "popup-a"
     finally:
         await srv.close()
     closes = [c["params"]["targetId"] for c in _chrome_commands(fakes)

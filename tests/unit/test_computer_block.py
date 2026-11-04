@@ -28,8 +28,8 @@ from nora.domain.computer_context import (
     SessionLine,
 )
 from nora.domain.computer_events import ComputerEvent
-from nora.domain.computer_tasks import ComputerTask
 from nora.domain.computer_sessions import ComputerSession, SessionProgress
+from nora.domain.computer_tasks import ComputerTask
 from nora.domain.models import NormalizedMessage, TagContext
 from nora.engagement.computer_context import ComputerContextReader
 from nora.language.computer_render import estimate_tokens, render_computer

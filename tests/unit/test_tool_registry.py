@@ -138,18 +138,26 @@ def test_the_computer_tools_are_offered_only_when_a_computer_is_wired(defer):
     assert COMPUTER_TOOLS.isdisjoint(off.admitted | catalogued(off))
     assert COMPUTER_TOOLS.isdisjoint(set(off.shelf.names()))
     assert "computer_read" not in ToolRegistry().capability_digest()
-    # A computer without a browser runner (`[computer.browse]` off) offers
-    # every computer tool but `computer_browse`; with one, all of them.
+    # A shared VM (`[computer]` on, `[computer.scoped]` off) has no queue and
+    # no browser manager, so `computer_browse`, `computer_capture` and
+    # `computer_cancel` would only answer `unavailable` and stay withheld.
     no_browser = _surface(ToolRegistry(computer=FakeSandboxRuntime()), defer=defer)
-    assert no_browser.admitted >= COMPUTER_TOOLS - {"computer_browse"}
-    assert "computer_browse" not in no_browser.admitted | catalogued(no_browser)
-    on_registry = ToolRegistry(computer=FakeSandboxRuntime(), browser=FakeBrowserRunner())
-    on = _surface(on_registry, defer=defer)
+    assert no_browser.admitted >= COMPUTER_TOOLS - {
+        "computer_browse", "computer_capture", "computer_cancel"}
+    assert {"computer_browse", "computer_capture", "computer_cancel"}.isdisjoint(
+        no_browser.admitted | catalogued(no_browser))
+    # Scoped wiring (`[computer.scoped]`): the admission queue and the
+    # browser manager are real, so capture and cancel are offered;
+    # `computer_browse` still waits on a BrowserRunner.
+    scoped_registry = ToolRegistry(
+        computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(),
+        computer_admission=object(), browser_manager=object())
+    on = _surface(scoped_registry, defer=defer)
     assert on.admitted >= COMPUTER_TOOLS
     assert catalogued(on) >= COMPUTER_TOOLS
     if defer:
         assert set(on.shelf.names()) >= COMPUTER_TOOLS
-    assert "computer_read" in on_registry.capability_digest()
+    assert "computer_read" in scoped_registry.capability_digest()
 
 
 def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") -> list:
@@ -174,6 +182,7 @@ def test_the_registry_exposes_every_declared_tool():
         social_items=_SOCIAL_ITEMS,
         memos=_MEMOS,
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
+        computer_admission=object(), browser_manager=object(),
     ))
     assert {t.tool_name for t in tools} == {
         # DEC-146: the window-scoped rung below `load_transcript`.
@@ -238,6 +247,9 @@ def test_the_registry_exposes_every_declared_tool():
         "computer_export", "computer_import", "computer_session_list",
         # a whole browser task, by a sub-agent.
         "computer_browse",
+        # the scoped pair: a picture of a task's own tab; a queued or
+        # running task stopped.
+        "computer_capture", "computer_cancel",
         # a document is published to the web app, read back to edit.
         "document_publish", "document_read", "document_set_status",
         # (the four `subagent_*` tools are tag-turn only: this Dreamer-path build omits them,
@@ -349,6 +361,9 @@ def test_budgets_match_todays_table():
         # second is a different status filter.
         "computer_session_list": 2,
         "computer_browse": 2,
+        # one capture of a task's own tab, one retry with a fresh look; one
+        # stop of a queued or running task, a second to read the row back.
+        "computer_capture": 2, "computer_cancel": 2,
         # no-spec catalog read, publish, a fix, an edit; a read.
         "document_publish": 6, "document_read": 2,
         # Archive, delete or restore one document; a second call is an undo or
@@ -567,6 +582,7 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
         social_items=_SOCIAL_ITEMS,
         memos=_MEMOS,
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
+        computer_admission=object(), browser_manager=object(),
     ))
     agent = factory.create_agent(
         model=model, system_prompt="p", tools=tools, pre_fill=[],
@@ -932,6 +948,9 @@ ACT_VERBS = frozenset({
     # S3a: an export publishes (a Drop link, an attachment) or stores, and an
     # import writes into the workspace.
     "computer_export", "computer_import",
+    # a capture writes a new file into the room's workspace, and a cancel
+    # moves a task row and stops real guest work.
+    "computer_capture", "computer_cancel",
     # commits a document other people can open.
     "document_publish",
     # Appends a `document_state` row: archives, deletes or restores a document.

@@ -154,6 +154,22 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
     ("cognition_wake", "detail"): "why a wake fired or was braked",
     ("compute_jobs", "result_document_ids"): "documents a job wrote, by id",
     ("compute_jobs", "checkpoint"): "the compute backend's own resume state",
+    # 0147_computer_tasks: the scope-FIFO task ledger and its tab bindings.
+    # `payload` is the typed work (op, command, refs) and `result` the typed
+    # outcome plus provenance — a capture's workspace `path` and file digest,
+    # a landing `url`, an `exit_code`; execution bytes live on the scope VM
+    # and in the `computer_events.output_ref`/`computer_exports` custody
+    # trail, never in these rows.
+    ("computer_tasks", "payload"): "typed work ops and refs; never byte custody",
+    ("computer_tasks", "origin"): (
+        "delivery provenance (room, person, turn, session, operation ids); "
+        "never blob custody"
+    ),
+    ("computer_tasks", "result"): (
+        "typed result prose and provenance (path, url, a file's digest); "
+        "byte custody is computer_events.output_ref and computer_exports"
+    ),
+    ("browser_tasks", "detail"): "live tab observation metadata; never blob custody",
     ("computer_sessions", "stopped_at_detail"): "why a computer session stopped",
     ("doctrine_revision", "files"): "doctrine file paths to their `revision_blob` hashes",
     ("assess_report", "results"): "an assessment's scores",

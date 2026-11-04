@@ -180,12 +180,12 @@ async def test_a_lost_http_connection_kills_the_guest_command(
         await asyncio.sleep(3.5)
         assert not marker.exists()
         # The scope is quiet and serves the NEXT segment.
-        async with aiohttp.ClientSession() as s:
-            async with s.post(f"{url}/v1/run", headers=auth, json={
+        async with aiohttp.ClientSession() as s, s.post(
+                f"{url}/v1/run", headers=auth, json={
                     "scope": SCOPE, "timeout_s": 5,
                     "command": "echo ok > next"}) as r:
-                assert r.status == 200
-                assert (await r.json())["status"] == "ok"
+            assert r.status == 200
+            assert (await r.json())["status"] == "ok"
         assert (tmp_path / "root" / SCOPE / "next").read_text() == "ok\n"
     finally:
         await runner.cleanup()

@@ -111,6 +111,10 @@ _SPECS_ONLY = frozenset({
     # threaded from the composition root through `ToolRegistry.build`
     # like `browser`; built only under `[computer.scoped]`.
     "computer_admission", "browser_manager",
+    # The scoped pair's process-lifetime helpers, threaded the same way:
+    # the canonical-DM scope resolver and the computer block's cache
+    # invalidation, both owned by `ToolRegistry.surface`.
+    "computer_dm_scope_for", "computer_context_invalidate",
     # `file_fetch`'s source, threaded from the
     # composition root through `ToolRegistry.build` like `browser`; its tests
     # build through `build_tool_specs` (tests/unit/test_file_fetch_tool.py).

@@ -186,6 +186,8 @@ $$;
 );
 );
 );
+);
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -199,6 +201,7 @@ ADD CONSTRAINT bridge_event_alias_pkey PRIMARY KEY (event_id);
 ADD CONSTRAINT bridge_event_pkey PRIMARY KEY (id);
 ADD CONSTRAINT bridge_work_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.bridge_event(id);
 ADD CONSTRAINT bridge_work_pkey PRIMARY KEY (id);
+ADD CONSTRAINT browser_tasks_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_carry_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_self_wake_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_self_wake_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.cognition_session(id);
@@ -212,6 +215,7 @@ ADD CONSTRAINT compute_jobs_pkey PRIMARY KEY (id);
 ADD CONSTRAINT computer_events_pkey PRIMARY KEY (id);
 ADD CONSTRAINT computer_exports_pkey PRIMARY KEY (id);
 ADD CONSTRAINT computer_sessions_pkey PRIMARY KEY (id);
+ADD CONSTRAINT computer_tasks_pkey PRIMARY KEY (id);
 ADD CONSTRAINT config_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT consolidation_watermark_pkey PRIMARY KEY (consolidator_name, scope_id);
 ADD CONSTRAINT culture_head_revision_id_fkey FOREIGN KEY (head_revision_id) REFERENCES public.culture_revision(id);
@@ -362,6 +366,7 @@ ADD CONSTRAINT tool_call_log_pkey PRIMARY KEY (id);
 ADD CONSTRAINT turn_verdict_pkey PRIMARY KEY (tag_id);
 ADD CONSTRAINT uq_bridge_event_source UNIQUE (platform, account_key, source_digest);
 ADD CONSTRAINT uq_bridge_work_obligation UNIQUE (event_id, kind, ordinal);
+ADD CONSTRAINT uq_browser_tasks_target UNIQUE (scope, instance, target_id);
 ADD CONSTRAINT uq_computer_events_operation_phase UNIQUE (operation_id, phase);
 ADD CONSTRAINT uq_extraction_arrival UNIQUE (platform, origin_room, source_key);
 ADD CONSTRAINT uq_extraction_attempt UNIQUE (extraction_id, attempt);
@@ -391,6 +396,8 @@ ALTER TABLE ONLY public.bridge_event_alias
 ALTER TABLE ONLY public.bridge_work
 ALTER TABLE ONLY public.bridge_work
 ALTER TABLE ONLY public.bridge_work
+ALTER TABLE ONLY public.browser_tasks
+ALTER TABLE ONLY public.browser_tasks
 ALTER TABLE ONLY public.cognition_carry
 ALTER TABLE ONLY public.cognition_self_wake
 ALTER TABLE ONLY public.cognition_self_wake
@@ -406,6 +413,7 @@ ALTER TABLE ONLY public.computer_events
 ALTER TABLE ONLY public.computer_events
 ALTER TABLE ONLY public.computer_exports
 ALTER TABLE ONLY public.computer_sessions
+ALTER TABLE ONLY public.computer_tasks
 ALTER TABLE ONLY public.config_revision
 ALTER TABLE ONLY public.consolidation_watermark
 ALTER TABLE ONLY public.culture
@@ -686,6 +694,7 @@ CONSTRAINT ck_bridge_action_owner CHECK ((owner_kind = ANY (ARRAY['work'::text, 
 CONSTRAINT ck_bridge_action_state CHECK ((state = ANY (ARRAY['prepared'::text, 'started'::text, 'confirmed'::text, 'rejected'::text, 'uncertain'::text])))
 CONSTRAINT ck_bridge_event_state CHECK ((state = ANY (ARRAY['open'::text, 'done'::text, 'intentional_skip'::text, 'failed_retained'::text, 'uncertain'::text])))
 CONSTRAINT ck_bridge_work_state CHECK ((state = ANY (ARRAY['pending'::text, 'running'::text, 'done'::text, 'intentional_skip'::text, 'retryable_failure'::text, 'failed_retained'::text, 'uncertain'::text, 'cancelled'::text])))
+CONSTRAINT ck_browser_tasks_status CHECK ((status = ANY (ARRAY['closed'::text, 'expired'::text, 'open'::text])))
 CONSTRAINT ck_cognition_carry_state CHECK ((state = ANY (ARRAY['carried'::text, 'released'::text, 'struck'::text])))
 CONSTRAINT ck_cognition_self_wake_outcome CHECK ((outcome = ANY (ARRAY['recorded'::text, 'refused'::text]))),
 CONSTRAINT ck_cognition_self_wake_outcome_shape CHECK (((outcome = 'recorded'::text) OR (refusal_reason IS NOT NULL))),
@@ -708,6 +717,8 @@ CONSTRAINT ck_computer_sessions_actor CHECK (((actor = ANY (ARRAY['cognition'::t
 CONSTRAINT ck_computer_sessions_expired_reason CHECK (((expired_reason IS NULL) OR (expired_reason = ANY (ARRAY['idle'::text, 'jobs_ended'::text, 'running_past_limit'::text])))),
 CONSTRAINT ck_computer_sessions_expiry CHECK ((((status = 'open'::text) AND (expired_at IS NULL) AND (expired_reason IS NULL)) OR ((status = 'expired'::text) AND (expired_at IS NOT NULL) AND (expired_reason IS NOT NULL)))),
 CONSTRAINT ck_computer_sessions_status CHECK ((status = ANY (ARRAY['expired'::text, 'open'::text])))
+CONSTRAINT ck_computer_tasks_kind CHECK ((kind = ANY (ARRAY['browse'::text, 'capture'::text, 'maintenance'::text, 'native'::text, 'worker'::text]))),
+CONSTRAINT ck_computer_tasks_status CHECK ((status = ANY (ARRAY['cancelled'::text, 'done'::text, 'failed'::text, 'interrupted'::text, 'queued'::text, 'running'::text, 'unavailable'::text])))
 CONSTRAINT ck_corridor_speed_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
 CONSTRAINT ck_derived_places_kind CHECK ((kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text])))
 CONSTRAINT ck_document_revision_media CHECK ((array_to_string(media, ','::text) ~ '^([0-9a-f]{64}(,[0-9a-f]{64})*)?$'::text)),
@@ -1008,6 +1019,7 @@ CREATE INDEX idx_bridge_action_owner ON public.bridge_action USING btree (owner_
 CREATE INDEX idx_bridge_event_conv ON public.bridge_event USING btree (platform, account_key, conversation_id, seq);
 CREATE INDEX idx_bridge_work_claim ON public.bridge_work USING btree (state, due_at);
 CREATE INDEX idx_bridge_work_conv ON public.bridge_work USING btree (platform, account_key, conversation_id, ordinal);
+CREATE INDEX idx_browser_tasks_scope_open ON public.browser_tasks USING btree (scope, instance) WHERE (status = 'open'::text);
 CREATE INDEX idx_cognition_carry_unit_stimulus ON public.cognition_carry USING btree (unit, stimulus_id, id);
 CREATE INDEX idx_cognition_self_wake_unit_recorded ON public.cognition_self_wake USING btree (unit, recorded_at);
 CREATE INDEX idx_cognition_self_wake_unit_ref ON public.cognition_self_wake USING btree (unit, wake_ref);
@@ -1021,6 +1033,7 @@ CREATE INDEX idx_computer_events_session_ts ON public.computer_events USING btre
 CREATE INDEX idx_computer_exports_artifact ON public.computer_exports USING btree (artifact_id, created_at);
 CREATE INDEX idx_computer_exports_room ON public.computer_exports USING btree (conversation_id, created_at);
 CREATE INDEX idx_computer_sessions_room ON public.computer_sessions USING btree (conversation_id, last_activity_at);
+CREATE INDEX idx_computer_tasks_scope_open ON public.computer_tasks USING btree (scope, created_at) WHERE (status = ANY (ARRAY['queued'::text, 'running'::text]));
 CREATE INDEX idx_config_revision_file_loaded ON public.config_revision USING btree (file, loaded_at);
 CREATE INDEX idx_culture_revision_key_written ON public.culture_revision USING btree (culture_key, written_at DESC, id DESC);
 CREATE INDEX idx_decision_log_conv_ts ON public.decision_log USING btree (conversation_id, ts DESC, id DESC);
@@ -1132,6 +1145,7 @@ CREATE TABLE public.bridge_action (
 CREATE TABLE public.bridge_event (
 CREATE TABLE public.bridge_event_alias (
 CREATE TABLE public.bridge_work (
+CREATE TABLE public.browser_tasks (
 CREATE TABLE public.cognition_carry (
 CREATE TABLE public.cognition_self_wake (
 CREATE TABLE public.cognition_session (
@@ -1144,6 +1158,7 @@ CREATE TABLE public.compute_jobs (
 CREATE TABLE public.computer_events (
 CREATE TABLE public.computer_exports (
 CREATE TABLE public.computer_sessions (
+CREATE TABLE public.computer_tasks (
 CREATE TABLE public.config_revision (
 CREATE TABLE public.consolidation_watermark (
 CREATE TABLE public.culture (
@@ -1834,6 +1849,7 @@ built_at text,
 built_at timestamp with time zone DEFAULT now() NOT NULL,
 built_at timestamp with time zone,
 calls integer DEFAULT 0 NOT NULL,
+cancel_requested_at timestamp with time zone,
 canonical_form text NOT NULL,
 canonical_form text NOT NULL,
 canonical_name text NOT NULL,
@@ -1986,6 +2002,8 @@ created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone NOT NULL,
 created_at timestamp with time zone NOT NULL,
 created_at timestamp with time zone NOT NULL,
+created_at timestamp with time zone NOT NULL,
+created_at timestamp with time zone NOT NULL,
 created_at_ms bigint NOT NULL,
 created_by text NOT NULL,
 created_by text NOT NULL,
@@ -1994,9 +2012,11 @@ cues text[] DEFAULT '{}'::text[] CONSTRAINT signal_cues_not_null NOT NULL,
 culture_key text NOT NULL,
 cursor text,
 cut_cooldown integer DEFAULT 0 NOT NULL,
+deadline_at timestamp with time zone,
 decision_ids text[] NOT NULL,
 decision_ids text[] NOT NULL,
 deleted_at timestamp with time zone NOT NULL,
+delivered_at timestamp with time zone,
 delivered_message_id bigint,
 delivery_status text DEFAULT 'pending'::text NOT NULL,
 deriver_name text NOT NULL,
@@ -2005,6 +2025,7 @@ description text DEFAULT ''::text NOT NULL,
 description text NOT NULL,
 description text,
 destination text NOT NULL,
+detail jsonb DEFAULT '{}'::jsonb NOT NULL,
 detail jsonb DEFAULT '{}'::jsonb NOT NULL,
 detail jsonb DEFAULT '{}'::jsonb NOT NULL,
 detail text DEFAULT ''::text NOT NULL,
@@ -2122,6 +2143,7 @@ field_meta jsonb DEFAULT '{}'::jsonb NOT NULL,
 field_meta jsonb DEFAULT '{}'::jsonb NOT NULL,
 file text NOT NULL,
 files jsonb NOT NULL,
+finished_at timestamp with time zone,
 finished_at timestamp with time zone,
 finished_at timestamp with time zone,
 finished_at timestamp with time zone,
@@ -2263,11 +2285,14 @@ id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
+id uuid NOT NULL,
+id uuid NOT NULL,
 image jsonb NOT NULL,
 image_id text,
 input_hash text NOT NULL,
 input_hash text NOT NULL,
 input_tokens bigint,
+instance text NOT NULL,
 instruction_sha256 text NOT NULL,
 instruction_sha256 text NOT NULL,
 instruction_sha256 text,
@@ -2314,7 +2339,9 @@ kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
+kind text NOT NULL,
 label text,
+last_activity_at timestamp with time zone NOT NULL,
 last_activity_at timestamp with time zone NOT NULL,
 last_adjudicated_at bigint,
 last_allowed_at bigint NOT NULL,
@@ -2348,6 +2375,8 @@ last_seen_ts bigint NOT NULL,
 last_send_at bigint,
 last_supported_at bigint,
 last_tag_id text NOT NULL,
+last_title text DEFAULT ''::text NOT NULL,
+last_url text DEFAULT ''::text NOT NULL,
 last_wake_revision_id uuid,
 last_window_end_at bigint NOT NULL,
 lat double precision NOT NULL,
@@ -2536,6 +2565,7 @@ operation_id uuid NOT NULL,
 ordering text DEFAULT 'arrival'::text NOT NULL,
 ordinal integer NOT NULL,
 ordinal integer NOT NULL,
+origin jsonb DEFAULT '{}'::jsonb NOT NULL,
 origin text NOT NULL,
 origin text NOT NULL,
 origin_room text NOT NULL,
@@ -2566,6 +2596,7 @@ owner_kind text NOT NULL,
 p50_kmh double precision NOT NULL,
 p90_kmh double precision NOT NULL,
 params_sha256 text NOT NULL,
+parent uuid,
 parent_revision integer,
 parent_revision integer,
 parent_revision integer,
@@ -2586,6 +2617,7 @@ path text NOT NULL,
 path text NOT NULL,
 path text NOT NULL,
 paused boolean NOT NULL,
+payload jsonb DEFAULT '{}'::jsonb NOT NULL,
 payload jsonb NOT NULL,
 payload jsonb NOT NULL,
 payload jsonb NOT NULL,
@@ -2825,6 +2857,7 @@ responded_at timestamp with time zone NOT NULL,
 responders text[] DEFAULT '{}'::text[] NOT NULL,
 response text NOT NULL,
 result jsonb DEFAULT '{}'::jsonb NOT NULL,
+result jsonb DEFAULT '{}'::jsonb NOT NULL,
 result jsonb,
 result_document_ids jsonb,
 result_report text,
@@ -2862,6 +2895,8 @@ saved_place_id text,
 saved_place_id text,
 saved_place_id text,
 scope text DEFAULT ''::text NOT NULL,
+scope text NOT NULL,
+scope text NOT NULL,
 scope text NOT NULL,
 scope text NOT NULL,
 scope text NOT NULL,
@@ -2967,6 +3002,7 @@ started_at timestamp with time zone NOT NULL,
 started_at timestamp with time zone NOT NULL,
 started_at timestamp with time zone,
 started_at timestamp with time zone,
+started_at timestamp with time zone,
 started_at_ms bigint NOT NULL,
 started_ts bigint NOT NULL,
 started_ts bigint NOT NULL,
@@ -2991,6 +3027,8 @@ state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
 status text DEFAULT 'current'::text NOT NULL,
+status text NOT NULL,
+status text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
@@ -3069,9 +3107,11 @@ tagged text[] DEFAULT '{}'::text[] NOT NULL,
 tags_sha256 text,
 taken_at timestamp with time zone NOT NULL,
 target_author_id text,
+target_id text NOT NULL,
 target_key text,
 target_message_id bigint,
 task text NOT NULL,
+task_id uuid NOT NULL,
 task_sha256 text DEFAULT ''::text NOT NULL,
 text text DEFAULT ''::text NOT NULL,
 text text NOT NULL,
@@ -3183,6 +3223,7 @@ updated_at timestamp with time zone DEFAULT now() NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL,
 updated_at timestamp with time zone NOT NULL,
 updated_at timestamp with time zone NOT NULL,
+updated_at timestamp with time zone NOT NULL,
 updated_ms bigint NOT NULL,
 updated_ts bigint NOT NULL,
 updated_ts bigint NOT NULL,
@@ -3237,6 +3278,7 @@ version_id := nextval('row_history_id_seq');
 version_id := nextval('row_history_id_seq');
 version_id bigint;
 version_num character varying(32) NOT NULL
+via text DEFAULT 'task'::text NOT NULL,
 voice_channel_id text NOT NULL,
 volume double precision NOT NULL,
 waits integer DEFAULT 0 CONSTRAINT signal_waits_not_null NOT NULL,
