@@ -60,7 +60,7 @@ RULE_TESTS = {
     # changes NOTHING here: it goes through `FirePath.speak`, so the two callers
     # remain two.
     "R-1b": "test_only_the_tag_path_and_the_fire_path_can_send",
-    "R-2": "test_send_reply_past_the_cap_is_cancelled",
+    "R-2": "test_a_reaction_and_a_text_reply_share_the_message_cap",
     "R-2b": "test_deliverer_latch_is_single_shot",
     "R-3": "test_send_to_other_group_cannot_escape_the_tagged_conversation",
     "R-4": "test_empty_reply_not_sent",

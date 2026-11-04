@@ -304,9 +304,8 @@ async def test_at_most_three_videos_are_read_and_a_long_one_is_not():
     assert [c["url"] for c in look.calls] == [items[n].url for n in (0, 2, 4, 5, 7)]
 
 
-async def test_the_window_is_the_configured_one_not_the_default():
-    """`[media.describe.video] chunk_seconds` sets what one window is; a 45 s
-    video is past a 30 s window and inside the default 90 s one."""
+async def test_an_explicit_admission_cap_is_independent_of_the_default():
+    """A caller can set its own admission cap independently of window geometry."""
     view = PostView(author=None, caption=None, taken_at=None, items=(_video(0, 45.0),))
     short = await read_view(view, TurnLook(ScriptedLook(), max_video_seconds=30.0))
     default = await read_view(view, TurnLook(ScriptedLook()))
@@ -828,12 +827,10 @@ async def test_a_story_frame_the_model_opens_itself_is_not_persisted_either(worl
     assert len(world.descriptions.remembered) == 1
 
 
-async def test_the_configured_reading_window_is_the_cutoff_end_to_end(world):
-    """`[media.describe.video] chunk_seconds` reaches the cutoff: with a
-    10 s window the carousel's 12.5 s video is not read here, and says so."""
+async def test_shorter_windows_do_not_shrink_the_automatic_read_limit(world):
     world.reconfigure(video_chunk_seconds=10)
     out = await world.make()(link=_POST_LINK)
-
     body = _inside_the_wrap(out["text"])
-    assert "2. video, 12s\nnot read here: longer than one reading window" in body
-    assert body.count("shows: ") == 2
+    assert "not read here" not in body
+    assert body.count("shows: ") == 3
+    assert len(world.vision.seen) == 4

@@ -70,7 +70,8 @@ NOT_LOOKUPS: frozenset[str] = frozenset({
 #: Held by nobody on a worker, whatever the registry grows: every send path, every
 #: schedule, every note, event and memory write, and the document state change.
 NEVER: frozenset[str] = frozenset({
-    "send_reply", "send_to", "send_gif", "media_send", "generate_image", "video_create",
+    "send_reply", "reaction_send", "send_to", "send_gif", "media_send",
+    "generate_image", "video_create",
     "remind", "cancel_reminder",
     "note_create", "note_revise",
     "event_propose", "event_revise", "event_rsvp", "event_set_status",

@@ -45,10 +45,12 @@ class Indicator:
     # once the moment a reply is delivered, and once from the pipeline's
     # `finally` on the way out — and only the first may place a terminal emoji.
     # An `Event` rather than a bool because it is also the honest name for the
-    # state: set exactly once, never cleared, read from more than one task.
+    # state shared across tasks. A pending authored reaction may release a
+    # suppressed resolution claim; success then settles it, failure may retry.
     settled: asyncio.Event = field(default_factory=asyncio.Event)
     reaction_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     authored_reaction: bool = False
+    reaction_confirmed: bool = False
 
 
 async def _react(indicator: Indicator, emoji: str, *, phase: str, remove: bool = False) -> None:
@@ -99,6 +101,8 @@ async def _place(indicator: Indicator) -> None:
 async def _resolve(indicator: Indicator, *, delivered: bool) -> None:
     async with indicator.reaction_lock:
         if indicator.authored_reaction:
+            if not indicator.reaction_confirmed:
+                indicator.settled.clear()
             return
         with contextlib.suppress(Exception):
             await indicator.placed.wait()
@@ -224,7 +228,12 @@ class DeliverySettler:
             await _react(self._indicator, ACK, phase="clear", remove=True)
 
     def finish_reaction(self, *, ok: bool) -> None:
-        if self._indicator is not None and not ok:
+        if self._indicator is None:
+            return
+        self._indicator.reaction_confirmed = ok
+        if ok:
+            self._indicator.settled.set()
+        else:
             self._indicator.authored_reaction = False
 
     def settle(self) -> None:

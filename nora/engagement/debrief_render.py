@@ -138,16 +138,8 @@ _THIS_TURN_ONLY = (
 #: case most worth reviewing — a fold shown
 #: `outcome="silent"` and nothing else has to guess whether that was a choice,
 #: a veto or a crash, and those are three different reviews.
-# KNOWN GAP. A turn where the never-silent fallback delivered
-# `_EXHAUSTED_FALLBACK` is labelled `send_reply` by `EngagementPipeline` —
-# `recovered_delivered` is only set on the DEC-93 prose-recovery branch, not
-# on the fallback one — so the gloss below tells the fold "you replied,
-# through the send_reply tool" while the rendered `<steps>` shows no such
-# call. A self-contradictory input.
-#
-# The honest fix is a SEVENTH outcome, but `VALID_OUTCOMES` is a closed set
-# backed by `tag_trace_outcome_check`, so it needs a migration of a live
-# table. The case is rare: `nora_loop_exhausted_fallbacks_total` counts it.
+# The legacy send_reply outcome covers successful delivery actions and fallback;
+# the steps identify the actual tool, if any.
 #
 #: **Every gloss is scoped to THIS TURN, and the scope is spelled out rather
 #: than implied.** A bare «the model call failed; nothing was sent» is true of
@@ -158,7 +150,7 @@ _THIS_TURN_ONLY = (
 #: because a scope the reader has to infer is a scope the reader gets to
 #: choose.
 _OUTCOME_GLOSS: Mapping[str, str] = {
-    "send_reply": "you replied, through the send_reply tool",
+    "send_reply": "you sent a response to the room",
     "recovered": "you wrote a reply as prose without calling send_reply; "
                  "the pipeline delivered it for you",
     "silent": "you chose to say nothing on this turn — no delivery was "

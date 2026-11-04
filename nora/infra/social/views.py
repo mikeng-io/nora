@@ -37,7 +37,7 @@ ItemKind = Literal["image", "video", "media"]
 #: * `failed` — it could not look (the download, the vision call, media
 #:   reading not configured: `media_fetch` said it could not);
 #: * `timed_out` — the look ran past its own ceiling or the whole call's;
-#: * `too_long` — a video longer than one reading window: not read here, by
+#: * `too_long` — a video longer than the automatic read limit: not read here, by
 #:   design, because one open must not spend a long clip's minutes;
 #: * `over_video_cap` — a video past the per-open video cap: not read here;
 #: * `unknown_length` — a post video with no stated length: not read here,

@@ -111,7 +111,7 @@ MAX_ITEMS_SHOWN = 4
 #: * `unreadable` — the look failed, ran out of time, or never got to start:
 #:   she is told it could not be read, never left to guess;
 #: * `too_long`, `unknown_length`, `over_video_cap` — a video the reading
-#:   does not open by design (longer than one reading window, a post video
+#:   does not open by design (longer than the automatic read limit, a post video
 #:   with no stated length, or past the per-post video cap), said so.
 ItemReadState = Literal[
     "seen", "withheld", "unreadable", "too_long", "unknown_length", "over_video_cap",
@@ -514,7 +514,7 @@ def _who(name: str | None) -> str:
 _NOT_SEEN: dict[str, str] = {
     "withheld": "not shown: what it shows contains what looks like a phone number or ID",
     "unreadable": "could not be read",
-    "too_long": "not read: longer than one reading window",
+    "too_long": "not read: longer than the automatic read limit",
     "unknown_length": "not read: a video of unknown length",
     "over_video_cap": "not read: past the number of videos read per post",
 }

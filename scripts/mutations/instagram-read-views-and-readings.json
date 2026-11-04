@@ -226,8 +226,8 @@
   {
     "name": "the turn gets a fresh set of slots per call instead of one shared",
     "file": "nora/agent/tools.py",
-    "old": "            max_video_seconds=float(video_chunk_seconds), slots=_instagram_slots,",
-    "new": "            max_video_seconds=float(video_chunk_seconds),",
+    "old": "            slots=_instagram_slots,",
+    "new": "",
     "target": "tests/unit/test_instagram_read_readings.py -k batched_calls_share"
   },
   {
@@ -245,7 +245,7 @@
     "target": "tests/unit/test_instagram_social_client.py::test_a_long_caption_comes_back_whole_where_the_transcript_cuts_it"
   },
   {
-    "name": "a reel not read HERE by design gets the «say you couldn't see it» note (round 1's regression)",
+    "name": "a reel not read HERE by design gets the \u00absay you couldn't see it\u00bb note (round 1's regression)",
     "file": "nora/infra/social/render.py",
     "old": "    not_read = any(r is None or r.state in NOT_READ_HERE for r in readings)",
     "new": "    not_read = False",
@@ -336,11 +336,11 @@
     "target": "tests/unit/test_instagram_read_readings.py -k configured"
   },
   {
-    "name": "the tool does not hand the configured window to the read",
+    "name": "the tool incorrectly uses window geometry as automatic admission",
     "file": "nora/agent/tools.py",
-    "old": "            max_video_seconds=float(video_chunk_seconds),",
-    "new": "",
-    "target": "tests/unit/test_instagram_read_readings.py -k configured_reading_window"
+    "old": "            slots=_instagram_slots,",
+    "new": "            max_video_seconds=float(video_chunk_seconds), slots=_instagram_slots,",
+    "target": "tests/unit/test_instagram_read_readings.py::test_shorter_windows_do_not_shrink_the_automatic_read_limit"
   },
   {
     "name": "a post video of unknown length is read anyway",

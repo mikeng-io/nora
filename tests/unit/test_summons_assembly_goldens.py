@@ -631,7 +631,7 @@ def test_the_goldens_vary_what_this_step_is_about():
     assert "(nothing but the tag: they mean the post above)" in text[
         "question-empty-means-the-post-above"]
     assert "not read" in text["items-an-image-with-no-reading-is-not-read"]
-    for phrase in ("could not be read", "longer than one reading window",
+    for phrase in ("could not be read", "longer than the automatic read limit",
                    "a video of unknown length", "past the number of videos",
                    "what looks like a phone number or ID", "shows: "):
         assert phrase in text["items-every-reading-state"], phrase

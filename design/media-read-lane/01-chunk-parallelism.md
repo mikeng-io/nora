@@ -10,6 +10,29 @@ edges:
 
 # Chunk Parallelism
 
+## Amendment — 2026-11-04
+
+PR #576 implements ordered batches of three calls per video read and changes the
+video defaults to 30 seconds × 30 windows, retaining the 15-minute horizon. This
+supersedes the historical geometry and unbuilt concurrency statements below.
+Automatic Instagram post/story and summons admission stays at 90 seconds per
+video, independent of the window size; longer clips need an explicit read.
+Failed windows retain their original intervals, including holes in capped clips.
+
+Ownership is per read, **not a process-wide provider semaphore**. Default ingest
+fan-out is four comprehension jobs × three calls = **12 video calls**. Foreground
+`media_fetch` may add up to four concurrent reads × three calls = **12 more per
+turn**, including automatic Instagram reads using the turn's four slots. Other
+turns and processes can add further calls; 24 is not a global ceiling. Existing
+turn deadlines include provider waits and local preprocessing. A process-wide
+limit becomes warranted if measured provider contention makes this scope fail.
+
+A maximum-length video now makes up to 30 calls instead of 10, so repeated
+per-window reasoning can increase total token cost. Thirty-second latency,
+provider capacity at the aggregate fan-out, and end-to-end speed remain
+unmeasured by this PR. Historical timings below describe their original clips
+and model route; they are not performance claims for this change.
+
 ## 1. The current shape
 
 ```

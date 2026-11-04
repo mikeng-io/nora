@@ -203,7 +203,7 @@ _NOT_SEEN: dict[str, str] = {
     "timed_out": "not seen: looking at it took too long",
     "not_started": "not seen: there was no time left to look at it",
     "too_long": (
-        "not read here: longer than one reading window; "
+        "not read here: longer than the automatic read limit; "
         "media_fetch(url=...) on its link reads it"
     ),
     "over_video_cap": (

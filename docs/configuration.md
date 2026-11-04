@@ -72,7 +72,11 @@ Video reads default to 30-second windows, at most 30 windows (15 minutes), in
 batches of three model calls. The timeout uses the number of sequential batches
 and the time left in the turn. Explicit `[media.describe.video] chunk_seconds`
 and `chunk_max` values override these defaults. Partial reads name the missing
-intervals. These bounds do not guarantee a provider response within the timeout.
+intervals. Automatic Instagram and summons reads retain their separate 90-second admission
+limit. These bounds do not guarantee a provider response within the timeout.
+The per-read concurrency is not a process-wide provider cap; aggregate fan-out
+and measurement limits are documented in
+[the media design](../design/media-read-lane/01-chunk-parallelism.md#amendment--2026-11-04).
 
 `reaction_send` lets the agent choose an emoji for a message in its visible
 transcript. A confirmed reaction can complete a turn without text. It is recorded

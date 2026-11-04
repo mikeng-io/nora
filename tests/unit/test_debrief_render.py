@@ -152,7 +152,7 @@ def test_the_outcome_gloss_speaks_in_the_first_person():
     glosses (`timeout`, `llm_error`) say whose nothing it is, in the second
     person like every other one."""
     for outcome, expected in (
-        ("send_reply", "you replied, through the send_reply tool"),
+        ("send_reply", "you sent a response to the room"),
         ("recovered", "you wrote a reply as prose"),
         ("silent", "you chose to say nothing"),
         ("vetoed", "you tried to reply"),

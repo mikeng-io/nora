@@ -291,8 +291,8 @@ from ..domain.turn_record import DisclosureRequirement, turn_handles_in
 from ..domain.video import ReferenceKind, VideoReference, VideoRequest
 from ..domain.x_links import is_handle as _is_x_handle
 from ..domain.x_links import parse_link as _parse_x_link
+from ..infra.social.readings import MAX_READ_VIDEO_SECONDS, TurnLook
 from ..infra.social.readings import READ_CONCURRENCY as _INSTAGRAM_READ_CONCURRENCY
-from ..infra.social.readings import TurnLook
 from ..infra.vision.client import DESCRIBE_PROMPTS
 from ..infra.vision.comprehend import describe_coverage, read_video_windows
 from ..infra.vision.preprocess import (
@@ -2261,7 +2261,7 @@ def media_look(
     *,
     caller: str,
     persist: bool,
-    max_video_seconds: float,
+    max_video_seconds: float = MAX_READ_VIDEO_SECONDS,
     slots: asyncio.Semaphore | None = None,
 ) -> TurnLook:
     """A `TurnLook` whose every look is `fetch` — `media_fetch` itself, from
@@ -12651,11 +12651,9 @@ Returns `status`: ok (`members`, `scope`) or unavailable (`note`)."""
     _instagram_story_urls: set[str] = set()
 
     def _instagram_look(*, story: bool) -> TurnLook:
-        # The longest video read here is one reading window, as CONFIGURED
-        # (`[media.describe.video] chunk_seconds`), not the default.
         return media_look(
             media_fetch, caller="instagram_read", persist=not story,
-            max_video_seconds=float(video_chunk_seconds), slots=_instagram_slots,
+            slots=_instagram_slots,
         )
 
     # Opaque continuation references exist only for this turn. The bridge's

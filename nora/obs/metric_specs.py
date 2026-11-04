@@ -398,17 +398,17 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Adoptable rows whose Honcho feed failed; left unmarked to retry.",
         ("platform",),
     ),
-    # Progress reactions (nora/engagement/stages/indicate.py). Reactions are
-    # decoration and every failure of one is swallowed so it can never touch the
-    # reply, which is why they need a counter. One name, three labels, because the
+    # Progress and authored reactions share the transport outcome vocabulary.
+    # Progress failures are decoration; an authored failure is unavailable.
+    # One name, three labels, because the
     # questions are cross-cuts of the same series: `phase`
-    # (ack/done/gave_up/clear) says WHICH indicator, `status`
+    # (ack/done/gave_up/clear/reply) says WHICH reaction, `status`
     # (sent/failed/unsupported) says how it went. `unsupported` is not a failure:
     # it is the steady state of any platform without reactions, and summing it into
     # `failed` would make a correctly-degrading adapter look broken.
     _CounterSpec(
         "nora_reactions_total",
-        "Progress-indicator reactions attempted, by lifecycle phase and outcome.",
+        "Progress and authored reactions attempted, by lifecycle phase and outcome.",
         ("platform", "phase", "status"),
     ),
     _CounterSpec(

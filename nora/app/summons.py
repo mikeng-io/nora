@@ -614,7 +614,6 @@ class SummonsOccasion:
             )
         look = media_look(
             fetch, caller="summons", persist=False,
-            max_video_seconds=float(self._registry.video_chunk_seconds),
         )
         # Only what a look needs: kind, url, a video's length. No author, no
         # caption: the view carries nothing a stranger wrote.

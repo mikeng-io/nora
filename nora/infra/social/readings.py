@@ -22,7 +22,7 @@ it on the prompts a recording vision client receives.
 
 **Bounded, and a failure is one item's.** At most `MAX_READ_ITEMS` items, in
 the view's order, of which at most `MAX_READ_VIDEOS` videos, each no longer
-than one reading window; at most `READ_CONCURRENCY` looks in flight across
+than `MAX_READ_VIDEO_SECONDS`; at most `READ_CONCURRENCY` looks in flight across
 the WHOLE TURN (`TurnLook.slots` is one semaphore per turn, so two batched
 calls cannot run eight at once). Each look is held to `ITEM_TIMEOUT_SECONDS`
 from the moment it gets a slot and the whole set to `TOTAL_TIMEOUT_SECONDS`,
@@ -50,7 +50,6 @@ from typing import Any, Protocol, TypeVar
 
 from ...domain.turn_deadline import seconds_left
 from ..vision.client import VISION_LOOP_SHARE
-from ..vision.preprocess import VIDEO_CHUNK_SECONDS
 from .views import ItemView, PostView, Reading, StoryView
 
 log = logging.getLogger("nora.social.instagram.readings")
@@ -74,16 +73,9 @@ MAX_READ_ITEMS = 8
 #: why.
 MAX_READ_VIDEOS = 3
 
-#: A video longer than one reading window is not read here: it would be
-#: several windows read in sequence inside one open. Its link reads it
-#: through `media_fetch`. The window is the CONFIGURED one
-#: (`[media.describe.video] chunk_seconds`), which the caller hands in on
-#: `TurnLook.max_video_seconds`; this is only its default.
-#:
-#: A POST video with no stated length is not read here either: nothing
-#: bounds it. A STORY frame carries no length at all, and Instagram caps a
-#: story video at 60 s, so a story frame is read.
-MAX_READ_VIDEO_SECONDS = float(VIDEO_CHUNK_SECONDS)
+#: Admission per open is independent of model window geometry. Longer clips
+#: remain available through an explicit media_fetch.
+MAX_READ_VIDEO_SECONDS = 90.0
 
 #: Looks in flight at once, across the whole turn: `media_fetch`'s own
 #: per-turn budget, and the number of media reads the executor already runs
@@ -132,6 +124,7 @@ class TurnLook:
 #: silently losing its protection.
 _COVERAGE = re.compile(
     r"\((?:I could not tell how long this clip is"
+    r"|I could not watch \d+:\d{2}-\d+:\d{2}"
     r"|About \d+ minutes of this \d+-minute clip"
     r"|This clip runs about \d+ minutes and I only watched)"
 )
@@ -178,7 +171,7 @@ def _not_read(
     chosen: tuple[ItemView, ...], *, max_seconds: float, story: bool,
 ) -> dict[int, Reading]:
     """The chosen items that are NOT looked at, by position: a video longer
-    than one window, a post video of unknown length, and every video past
+    than the admission limit, a post video of unknown length, and every video past
     the per-open cap."""
     skipped: dict[int, Reading] = {}
     videos = 0

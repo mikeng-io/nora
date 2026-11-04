@@ -320,10 +320,26 @@ class Deliverer:
     async def react(self, *, emoji: str, row: TranscriptRow, quote: OutboundQuote) -> bool:
         """An authored reaction is a reply, recorded beside its target, never as text."""
         self._send_calls += 1
-        if self.exhausted or not emoji.strip():
-            self._last_outcome = "cap_spent" if self.exhausted else "empty_reply"
+        if self.exhausted:
+            self._metrics.inc("nora_guard_vetoes_total", rule="R-2")
+            self._last_outcome = "cap_spent"
             return False
-        if self._leak.check(emoji) or scan_reply(emoji, content_checks=self._content_checks):
+        if not emoji.strip():
+            self._metrics.inc("nora_silent_failures_total", reason="empty_reply",
+                              platform=self._target.platform, audience=self._audience)
+            self._last_outcome = "empty_reply"
+            return False
+        if self._leak.check(emoji):
+            self._metrics.inc("nora_leak_blocks_total")
+            self._metrics.inc("nora_silent_failures_total", reason="doctrine_leak",
+                              platform=self._target.platform, audience=self._audience)
+            self._last_outcome = "doctrine_leak"
+            return False
+        kind = scan_reply(emoji, content_checks=self._content_checks)
+        if kind:
+            self._metrics.inc("nora_egress_blocks_total", kind=kind)
+            self._metrics.inc("nora_silent_failures_total", reason="egress_block",
+                              platform=self._target.platform, audience=self._audience)
             self._last_outcome = "egress_block"
             return False
         if not self._send_permitted:
@@ -331,21 +347,28 @@ class Deliverer:
             self._last_outcome = "cooldown_held"
             return False
         self._attempts += 1
-        await self._on_delivered.prepare_reaction()
         ok = False
+        supported = True
         try:
+            await self._on_delivered.prepare_reaction()
             result = await self._adapter.react(
                 target=self._target, emoji=emoji, to_author=quote.author_id,
                 to_timestamp=quote.ts, to_message_id=quote.platform_message_id or "",
             )
-            ok = result.ok
+            ok, supported = result.ok, result.supported
         except Exception:
             log.exception("reaction failed (tag=%s)", self._tag_id)
         finally:
             self._on_delivered.finish_reaction(ok=ok)
-        self._last_outcome = "sent" if ok else "send_failed"
-        self._metrics.inc("nora_replies_total", status="sent" if ok else "failed",
+        status = "sent" if ok else "failed" if supported else "unsupported"
+        self._last_outcome = "sent" if ok else "send_failed" if supported else "unsupported"
+        self._metrics.inc("nora_reactions_total", phase="reply", status=status,
                           platform=self._target.platform)
+        if supported:
+            self._metrics.inc("nora_replies_total", status=status, platform=self._target.platform)
+        if not ok and supported:
+            self._metrics.inc("nora_silent_failures_total", reason="send_failed",
+                              platform=self._target.platform, audience=self._audience)
         if not ok:
             return False
         self._reaction_delivered = True
@@ -1503,7 +1526,8 @@ class ReplyGuard(HookProvider):
                 # and collapsing them would cap her at one message.
                 self._spoke = True
                 self._turn_is_over = (
-                    self.counts.get(name, 0) >= self._budgets.get(name, 0)
+                    (name != "reaction_send"
+                     and self.counts.get(name, 0) >= self._budgets.get(name, 0))
                     or self._reply_closes_turn(
                         name, (tool_use.get("input") or {}),
                         getattr(event, "result", None),
