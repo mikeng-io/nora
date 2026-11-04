@@ -100,8 +100,8 @@
   {
     "name": "fresh checked job context does not require a redundant tool read",
     "file": "evals/backbone.py",
-    "old": "if not shown or 'subagent_create' in tools:",
-    "new": "if not shown or not statuses.get('subagent_read') or 'subagent_create' in tools:",
+    "old": "if not job_shown or 'subagent_create' in tools:",
+    "new": "if not job_shown or not statuses.get('subagent_read') or 'subagent_create' in tools:",
     "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk"
   },
   {
@@ -110,5 +110,26 @@
     "old": "failed = failure in ('failed', 'timed_out') or silently_failed(\n        silent_failures(subject) - prior_failures, said=said,\n    )",
     "new": "failed = failure in ('failed', 'timed_out')",
     "target": "tests/unit/test_eval_full_restore.py::test_public_silence_requires_a_healthy_invocation"
+  },
+  {
+    "name": "completed evidence does not require the pending subagents block",
+    "file": "evals/backbone.py",
+    "old": "        from html import unescape\n\n        from nora.domain.compute import ComputeJobState\n\n        job_context = unescape(dict(blocks or ()).get('subagents', ''))\n        bound = job is not None and (job.platform, job.conversation_id) == room\n        if overlay.job == 'running':\n            job_shown = bool(bound and job.state == ComputeJobState.PENDING\n                         and str(job.id) in job_context and 'running' in job_context)\n        else:\n            # DONE is the persisted delivery receipt, not a pending-job context block.\n            completed = (bound and job.state == ComputeJobState.DONE\n                         and job.completed_at is not None and bool(job.result_report)\n                         and bool(job.result_document_ids))\n            context = [unescape(text) for _, text in (blocks or ())]\n            job_shown = bool(completed and (\n                any(job.result_report in text\n                    and (str(job.id) in text\n                         or any(doc in text for doc in job.result_document_ids))\n                    for text in context)\n                or any(value.get('document_id') in job.result_document_ids\n                       and job.result_report in _strings_in(value.get('spec', {}))\n                       for value in document_reads)))\n",
+    "new": "        job_shown = dict(blocks or ()).get('subagents', '')\n",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk[checked_complete]"
+  },
+  {
+    "name": "completed document read must carry the persisted result",
+    "file": "evals/backbone.py",
+    "old": "and job.result_report in _strings_in(value.get('spec', {}))",
+    "new": "and True",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk[checked_complete]"
+  },
+  {
+    "name": "completed receipt belongs to the driven room",
+    "file": "evals/backbone.py",
+    "old": "bound = job is not None and (job.platform, job.conversation_id) == room",
+    "new": "bound = job is not None",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk[checked_complete]"
   }
 ]

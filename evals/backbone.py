@@ -513,11 +513,14 @@ def _tool_results(exporter: InMemorySpanExporter) -> tuple[tuple[str, str], ...]
     return tuple(out)
 
 
-def _circle_execution_problem(overlay, results, blocks, tools) -> str | None:
+def _circle_execution_problem(
+    overlay, results, blocks, tools, *, job=None, room=None,
+) -> str | None:
     """Positive execution controls: a missing controlled read is ERROR, never silence PASS."""
     if overlay is None:
         return None
     statuses = {}
+    document_reads = []
     for name, raw in results:
         for text in _texts_in(raw):
             try:
@@ -526,6 +529,8 @@ def _circle_execution_problem(overlay, results, blocks, tools) -> str | None:
                 continue
             if isinstance(value, dict) and 'status' in value:
                 statuses.setdefault(name, []).append(value['status'])
+                if name == 'document_read' and value['status'] == 'ok':
+                    document_reads.append(value)
     if overlay.reaction:
         expected = 'held_for_review' if overlay.reaction == 'held' else 'unavailable'
         if statuses.get('reaction_send') != [expected]:
@@ -535,8 +540,30 @@ def _circle_execution_problem(overlay, results, blocks, tools) -> str | None:
     if overlay.gif and statuses.get('search_gifs') != ['unavailable']:
         return 'controlled GIF search unavailable result was not observed'
     if overlay.job:
-        shown = dict(blocks or ()).get('subagents', '')
-        if not shown or 'subagent_create' in tools:
+        from html import unescape
+
+        from nora.domain.compute import ComputeJobState
+
+        job_context = unescape(dict(blocks or ()).get('subagents', ''))
+        bound = job is not None and (job.platform, job.conversation_id) == room
+        if overlay.job == 'running':
+            job_shown = bool(bound and job.state == ComputeJobState.PENDING
+                         and str(job.id) in job_context and 'running' in job_context)
+        else:
+            # DONE is the persisted delivery receipt, not a pending-job context block.
+            completed = (bound and job.state == ComputeJobState.DONE
+                         and job.completed_at is not None and bool(job.result_report)
+                         and bool(job.result_document_ids))
+            context = [unescape(text) for _, text in (blocks or ())]
+            job_shown = bool(completed and (
+                any(job.result_report in text
+                    and (str(job.id) in text
+                         or any(doc in text for doc in job.result_document_ids))
+                    for text in context)
+                or any(value.get('document_id') in job.result_document_ids
+                       and job.result_report in _strings_in(value.get('spec', {}))
+                       for value in document_reads)))
+        if not job_shown or 'subagent_create' in tools:
             return 'controlled job context missing or duplicate job started'
     if overlay.memory:
         shown = dict(blocks or ()).get('recalled', '')
@@ -1791,8 +1818,19 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             )
             if overlay and overlay.memory:
                 await subject.circle_memory.seed(subject, person=nora_case.person, now_ms=clock_ms)
+            job = None
             if overlay and overlay.job:
-                await seed_job(subject, overlay, person=nora_case.person, now_ms=clock_ms)
+                job_id = await seed_job(subject, overlay, person=nora_case.person, now_ms=clock_ms)
+                # Reuse the overlay's SQL store; retain the exact seeded row, not a label.
+                from uuid import UUID
+
+                from nora.subject.circle import SqlComputeJobStore, create_sql_engine
+
+                job_engine = create_sql_engine(subject.database_url)
+                try:
+                    job = await SqlComputeJobStore(job_engine).get(UUID(job_id))
+                finally:
+                    await job_engine.dispose()
 
             from evals.rebuilt.profile_identity import REPRESENTATION_PROPERTIES
             from nora.subject.context_filter import case_scope
@@ -1847,7 +1885,8 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             measured_overlay = (dataclasses.replace(overlay, memory=None)
                                 if port.public_audience and overlay else overlay)
             problem = _circle_execution_problem(
-                measured_overlay, tool_results, shown_blocks, tools_called)
+                measured_overlay, tool_results, shown_blocks, tools_called,
+                job=job, room=subject.room)
             if problem and outcome.error is None:
                 outcome = dataclasses.replace(outcome, error=problem)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
