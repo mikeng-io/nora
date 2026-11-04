@@ -283,6 +283,8 @@ class ComputerdRuntime:
                 processes_reason=(_opt_str(reply.get("processes_reason"))
                                   or (None if isinstance(raw_procs, list)
                                       else "computerd did not report processes")),
+                browser=(reply["browser"] if isinstance(reply.get("browser"), dict)
+                         else None),
             )
         return await self._guarded(
             "state", body, lambda why: StateResult(SandboxStatus.UNAVAILABLE, reason=why),

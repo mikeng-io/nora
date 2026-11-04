@@ -76,11 +76,43 @@ class LinkLine:
 
 
 @dataclass(frozen=True)
+class TaskLine:
+    """One `computer_tasks` row as the block shows it ([computer.scoped]):
+    the task's short id (what `task=` on `computer_browse`/`computer_capture`
+    and `computer_cancel` take), its kind, its state — `queued`, `running`
+    or a terminal word — when it was created, and how it ended (`note`)."""
+
+    task_id: str
+    kind: str
+    status: str
+    created: datetime
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class TabLine:
+    """One `browser_tasks` row as the block shows it: which task owns the
+    tab, its last observed url/title (untrusted text), whether it is open or
+    expired, and when it was last touched. `expires_in` seconds left before
+    the idle sweep retires it (negative: already due)."""
+
+    task_id: str
+    url: str
+    title: str
+    status: str
+    via: str
+    last_activity: datetime
+    expires_in: float | None = None
+
+
+@dataclass(frozen=True)
 class ComputerView:
     """Everything one render needs. Sessions and runs are newest first and
     NOT yet capped: the renderer applies the caps, so it can say how many it
     left out. `tmux` is None when the machine could not be read or could not
-    list tmux; `files` are already limited to `recent_file_days`."""
+    list tmux; `files` are already limited to `recent_file_days`. `tasks`
+    and `tabs` are the scoped runtime's queue/tab state — `None` on the
+    shared-VM shape (no `computer_tasks`/`browser_tasks` stores wired)."""
 
     now: datetime
     caps: ComputerContextCaps
@@ -93,4 +125,6 @@ class ComputerView:
     files: tuple[StateFile, ...] = ()
     runs: tuple[RunLine, ...] = ()
     links: tuple[LinkLine, ...] = ()
+    tasks: tuple[TaskLine, ...] | None = None
+    tabs: tuple[TabLine, ...] | None = None
     machine_read: bool = True

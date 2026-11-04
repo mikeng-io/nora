@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from dataclasses import dataclass
 from typing import Any, Literal
+from uuid import UUID
 
 from strands import tool
 
@@ -265,44 +267,73 @@ def _tools(task: _Task) -> list[Any]:
 
 
 class BrowseAgentRunner:
-    """`BrowserRunner` over computerd's browser and a Strands sub-agent."""
+    """`BrowserRunner` over computerd's browser and a Strands sub-agent.
+
+    `manager` (a `ScopeBrowserManager`) is the scoped-tab path: each task
+    owns a tab — `task_id` continues a task's earlier tab, `None` opens a
+    new one — and the outcome carries the owning task and target ids.
+    Without it the runner keeps the shared-VM shape: `open_browser` takes
+    the whole browser for one task."""
 
     def __init__(self, *, model_source: ModelSource, retry: RetryPolicy, base_url: str,
-                 token: str, settings: BrowseSettings) -> None:
+                 token: str, settings: BrowseSettings, manager: Any = None) -> None:
         self._models = model_source
         self._retry = retry
         self._base_url = base_url
         self._token = token
         self._settings = settings
+        self._manager = manager
 
     async def browse(self, *, scope: str, objective: str,
-                     start_url: str | None = None) -> BrowseOutcome:
+                     start_url: str | None = None,
+                     task_id: UUID | None = None) -> BrowseOutcome:
         try:
             return await asyncio.wait_for(
-                self._run(scope, objective, start_url), self._settings.timeout_seconds)
+                self._run(scope, objective, start_url, task_id),
+                self._settings.timeout_seconds)
         except TimeoutError:
             limit = self._settings.timeout_seconds
             return BrowseOutcome(status="unavailable", reason=f"ran out of time after {limit:g}s")
         except BrowserError as exc:
             return BrowseOutcome(status="unavailable", reason=str(exc))
         except Exception as exc:
+            if type(exc).__name__ == "TabUnavailable":
+                return BrowseOutcome(
+                    status="unavailable",
+                    reason=getattr(exc, "reason", "unavailable"))
             log.exception("browse task failed")
             return BrowseOutcome(status="unavailable", reason=type(exc).__name__)
 
-    async def _run(self, scope: str, objective: str, start_url: str | None) -> BrowseOutcome:
+    async def _drive(self, page: BrowserPage, objective: str,
+                     start_url: str | None,
+                     task_id: str = "", tab: str = "") -> BrowseOutcome:
+        task = _Task(page, self._settings)
+        brief = f"Task: {objective.strip()}"
+        if start_url:
+            brief += f"\nStart at: {start_url.strip()}"
+        agent = create_browse_agent(
+            model=self._models.create(), system_prompt=SYSTEM_PROMPT, tools=_tools(task),
+            trace_attributes={"nora.agent": "browse"}, retry=self._retry,
+        )
+        await invoke(agent, brief, invocation_state={}, limits=build_limits(
+            output_tokens=self._settings.output_tokens, turns=self._settings.turns,
+            total_tokens=self._settings.total_tokens))
+        got = task.finished
+        if got is None:
+            got = BrowseOutcome(status="unavailable", url=task.url, steps=task.steps,
+                                reason="the browser task stopped without an answer")
+        return BrowseOutcome(
+            status=got.status, answer=got.answer, reason=got.reason,
+            url=got.url, steps=got.steps, needs_human=got.needs_human,
+            task_id=task_id, tab=tab)
+
+    async def _run(self, scope: str, objective: str, start_url: str | None,
+                   task_id: UUID | None) -> BrowseOutcome:
+        if self._manager is not None:
+            owner = task_id or uuid.uuid4()
+            async with self._manager.acquire(scope, owner) as bound:
+                return await self._drive(
+                    bound.page, objective, start_url,
+                    task_id=str(owner), tab=bound.tab.target_id)
         async with open_browser(base_url=self._base_url, token=self._token, scope=scope) as page:
-            task = _Task(page, self._settings)
-            brief = f"Task: {objective.strip()}"
-            if start_url:
-                brief += f"\nStart at: {start_url.strip()}"
-            agent = create_browse_agent(
-                model=self._models.create(), system_prompt=SYSTEM_PROMPT, tools=_tools(task),
-                trace_attributes={"nora.agent": "browse"}, retry=self._retry,
-            )
-            await invoke(agent, brief, invocation_state={}, limits=build_limits(
-                output_tokens=self._settings.output_tokens, turns=self._settings.turns,
-                total_tokens=self._settings.total_tokens))
-            if task.finished is not None:
-                return task.finished
-            return BrowseOutcome(status="unavailable", url=task.url, steps=task.steps,
-                                 reason="the browser task stopped without an answer")
+            return await self._drive(page, objective, start_url)

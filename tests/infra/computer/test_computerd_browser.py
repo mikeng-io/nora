@@ -256,8 +256,15 @@ async def test_each_room_gets_its_own_chrome_profile_and_display(server, fakes):
     assert a["pid"] != b["pid"]
     assert a["display"] != b["display"]
     root = fakes["root"]
-    assert f"--user-data-dir={root / SCOPE / 'browser' / 'default'}" in a["argv"]
-    assert f"--user-data-dir={root / OTHER / 'browser' / 'default'}" in b["argv"]
+    # A fresh anonymous profile per browser lifetime: `browser/profile-*`,
+    # never a resurrected `default`.
+    a_profile = next(a for a in a["argv"] if a.startswith("--user-data-dir="))
+    b_profile = next(a for a in b["argv"] if a.startswith("--user-data-dir="))
+    assert a_profile.startswith(
+        f"--user-data-dir={root / SCOPE / 'browser' / 'profile-'}")
+    assert b_profile.startswith(
+        f"--user-data-dir={root / OTHER / 'browser' / 'profile-'}")
+    assert a_profile != b_profile
     assert a["xauthority"] == str(root / SCOPE / "browser" / ".Xauthority")
 
 

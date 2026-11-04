@@ -197,6 +197,54 @@ async def computer_sweep_loop(
             metrics.inc("nora_errors_total", stage="computer_sweep")
 
 
+class _TicksComputerQueue(Protocol):
+    """The one method `computer_queue_loop` needs
+    (`nora.app.computer_queue.ComputerQueueRunner`)."""
+
+    async def tick(self) -> int: ...
+
+
+async def computer_queue_loop(
+    runner: _TicksComputerQueue, metrics: Metrics, *, tick_seconds: float = 1.0,
+) -> None:
+    """Grant the scope FIFOs and sweep dead grants
+    (`nora.app.computer_queue.ComputerQueueRunner`), `prune_loop`'s
+    discipline: tick, and on failure log + count
+    `nora_errors_total{stage=computer_queue}` and keep looping. Started only
+    while `[computer.scoped] enabled`."""
+    while True:
+        try:
+            await runner.tick()
+        except Exception:
+            log.exception("computer queue tick failed")
+            metrics.inc("nora_errors_total", stage="computer_queue")
+        await asyncio.sleep(tick_seconds)
+
+
+class _SweepsBrowserTabs(Protocol):
+    """The one method `computer_browser_sweep_loop` needs
+    (`nora.infra.computer.manager.ScopeBrowserManager.sweep`)."""
+
+    async def sweep(self, *, now: Any = None) -> int: ...
+
+
+async def computer_browser_sweep_loop(
+    manager: _SweepsBrowserTabs, metrics: Metrics, *, interval_seconds: float,
+) -> None:
+    """Expire idle task-owned tabs and stop idle browsers
+    (`ScopeBrowserManager.sweep`), `computer_sweep_loop`'s discipline.
+    Started only while `[computer.scoped] enabled`."""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            expired = await manager.sweep()
+            if expired:
+                log.info("expired %d computer browser tabs", expired)
+        except Exception:
+            log.exception("computer browser sweep failed")
+            metrics.inc("nora_errors_total", stage="computer_browser_sweep")
+
+
 class _ProbesComputerd(Protocol):
     """The one method `computer_probe_loop` needs
     (`nora.infra.computer.probe.ComputerdProbe`)."""

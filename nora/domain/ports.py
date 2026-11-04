@@ -166,6 +166,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
+from uuid import UUID
 
 from nora.domain.cognition_pace import PendingSelfWake
 from nora.domain.computer import BrowseOutcome as BrowseOutcome
@@ -1981,7 +1982,8 @@ class BrowserRunner(Protocol):
     failure is an outcome with status `unavailable` and a reason."""
 
     async def browse(self, *, scope: str, objective: str,
-                     start_url: str | None = None) -> BrowseOutcome: ...
+                     start_url: str | None = None,
+                     task_id: UUID | None = None) -> BrowseOutcome: ...
 
 
 @runtime_checkable

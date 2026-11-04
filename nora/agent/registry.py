@@ -296,6 +296,12 @@ class ToolRegistry:
         computer_exports: ComputerExportStore | None = None,
         # `computer_browse` (B2): None while `[computer.browse]` is off.
         browser: BrowserRunner | None = None,
+        # The scoped-computer runtime ([computer.scoped]): `ComputerAdmission`
+        # is the per-scope FIFO the write-path tools queue through (None: they
+        # run synchronously as before); `browser_manager` owns task-bound tabs
+        # and answers `computer_capture`. Both `None` keep the shared-VM shape.
+        computer_admission: Any = None,
+        browser_manager: Any = None,
         # `computer_export(to="link")`'s portal origin (ADR 0023), `[documents]
         # public_url`; `""` answers a link export `unavailable`.
         artifact_link_base: str = "",
@@ -401,6 +407,8 @@ class ToolRegistry:
                else frozenset({"poll_list", "poll_read", "room_state_read"}))
             | (frozenset() if computer is not None else COMPUTER_TOOLS)
             | (frozenset() if browser is not None else frozenset({"computer_browse"}))
+            | (frozenset() if browser_manager is not None else frozenset({"computer_capture"}))
+            | (frozenset() if computer_admission is not None else frozenset({"computer_cancel"}))
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)
             | (frozenset() if subagent is not None else SUBAGENT_TOOLS)
             | (frozenset() if video is not None else VIDEO_TOOLS)
@@ -576,6 +584,8 @@ class ToolRegistry:
         # makes `recall_lookups` answer `unavailable` (R-5) rather than crash.
         self._tool_call_log_store = tool_call_log_store
         self._computer = computer
+        self._computer_admission = computer_admission
+        self._browser_manager = browser_manager
         self._computer_events = computer_events
         self._computer_settings = computer_settings
         self._computer_sessions = computer_sessions
@@ -1193,6 +1203,8 @@ class ToolRegistry:
             computer_leases=self._computer_leases,
             computer_exports=self._computer_exports,
             browser=self._browser,
+            computer_admission=self._computer_admission,
+            browser_manager=self._browser_manager,
             artifact_link_base=self._artifact_link_base,
             music=self._music,
             online_source=self._online, voice_source=self._voice,

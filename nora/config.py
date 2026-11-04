@@ -2292,6 +2292,35 @@ class ComputerContextConfig(BaseModel):
     state_cache_seconds: float = Field(default=30.0, ge=0)
 
 
+class ComputerScopedConfig(BaseModel):
+    """The scoped computer (design/browser-runtime): one sbx
+    microVM per computer scope instead of one shared VM.
+
+    Ships INERT (`enabled = false`): off, nothing here is built and the
+    deployment keeps the shared-VM shape exactly. On, `registry` names the
+    directory `nora-computer scope provision` writes one `<scope>.json`
+    record into and `FileScopeEndpoints` resolves a scope's endpoint from;
+    a scope with no record is `unavailable`, never the shared VM.
+
+    `redis_url_env` NAMES the env var the dedicated computer streams
+    (`nq:computer:<scope>`) are reached through — ordinarily the same Redis
+    the bridges use. Scoped mode refuses to start without it: a queue with
+    nowhere to publish is a queue that silently never grants.
+
+    `browser_idle_seconds` is a tab's inactivity bound (a task's own
+    authorized activity refreshes it); the sweeper runs every
+    `browser_sweep_seconds`.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    registry: str = ""
+    redis_url_env: str = "NORA_BRIDGES_REDIS_URL"
+    browser_idle_seconds: float = Field(default=600.0, gt=0)
+    browser_sweep_seconds: float = Field(default=30.0, gt=0)
+
+
 class ComputerConfig(BaseModel):
     """Nora's computer (DEC-243, ADR 0019): the
     `computer_run`/`computer_read`/`computer_write`/`computer_edit` tools
@@ -2331,6 +2360,7 @@ class ComputerConfig(BaseModel):
     sessions: ComputerSessionsConfig = ComputerSessionsConfig()
     context: ComputerContextConfig = ComputerContextConfig()
     browse: ComputerBrowseConfig = ComputerBrowseConfig()
+    scoped: ComputerScopedConfig = ComputerScopedConfig()
 
     @model_validator(mode="after")
     def _default_run_within_max(self) -> ComputerConfig:

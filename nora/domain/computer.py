@@ -17,6 +17,7 @@ Every result carries a `status` in R-27's vocabulary plus `denied`:
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -144,6 +145,10 @@ class BrowseOutcome:
     url: str = ""
     steps: int = 0
     needs_human: bool = False
+    # Scoped-tab binding: the computer task that owns the tab this outcome
+    # ran on, and the browser target id. Empty on the shared-VM path.
+    task_id: str = ""
+    tab: str = ""
 
 
 @dataclass(frozen=True)
@@ -217,6 +222,10 @@ class StateResult:
     processes: tuple[ScopeProcess, ...] | None = None
     processes_truncated: bool = False
     processes_reason: str | None = None
+    #: What computerd reports of the scope's browser (`{"running", "started",
+    #: "attached"}`), or None when the answer carried none — unknown, never
+    #: «no browser». A capture or stop's confirmation reads it.
+    browser: Mapping[str, object] | None = None
 
 
 def anything_running(state: StateResult) -> bool | None:

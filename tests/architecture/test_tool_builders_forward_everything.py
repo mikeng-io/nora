@@ -106,6 +106,10 @@ _SPECS_ONLY = frozenset({
     # same way as the computer runtime above; its tests build through
     # `build_tool_specs` (tests/unit/test_computer_browse_tool.py).
     "browser",
+    # The scoped computer's per-scope FIFO and task-tab manager,
+    # threaded from the composition root through `ToolRegistry.build`
+    # like `browser`; built only under `[computer.scoped]`.
+    "computer_admission", "browser_manager",
     # `file_fetch`'s source, threaded from the
     # composition root through `ToolRegistry.build` like `browser`; its tests
     # build through `build_tool_specs` (tests/unit/test_file_fetch_tool.py).

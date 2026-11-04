@@ -40,6 +40,12 @@ BACKUP_DIR=${NORA_COMPUTER_BACKUP_DIR:-$HOME/nora-backups/computer-workspace}
 BACKUP_KEEP=${NORA_COMPUTER_BACKUP_KEEP:-14}
 STATE_DIR=${NORA_COMPUTER_STATE_DIR:-$HOME/.local/state/nora-computer}
 UNUSED_WORKSPACE=${NORA_COMPUTER_UNUSED_WORKSPACE:-$STATE_DIR/unused-workspace-$NAME}
+# The scope→endpoint registry `FileScopeEndpoints` reads
+# (`nora/domain/computer_vms.py`): one `<scope>.json` per provisioned scope
+# written by `nora-computer scope provision`, naming its sandbox and the
+# endpoint computerd answers on. Deleting a record is `scope revoke`; it
+# never destroys the sandbox.
+SCOPE_REGISTRY=${NORA_COMPUTER_SCOPE_REGISTRY:-$STATE_DIR/scope-endpoints}
 # The lifecycle audit (design/sandbox-runtime sec 12). A host-side spool is the
 # first record of every operator-side event, and Postgres' computer_events is the
 # record of truth it is replayed into; COMPOSE_DIR is where `docker compose exec
@@ -796,6 +802,158 @@ cmd_destroy() {
     exit "$rc"
 }
 
+# --- scope commands: one sbx microVM per computer scope ---------------------
+#
+# `nora-computer scope provision <scope>` creates (or verifies) the scope's
+# own sandbox `nora-computer-<first 12 of scope>`, publishes computerd's port
+# on the same docker0 address the shared VM uses, applies the SAME egress
+# policy and writes `<SCOPE_REGISTRY>/<scope>.json` — the record
+# `FileScopeEndpoints` resolves. `scope serve <scope>` runs that scope's
+# computerd bound to the scope (`COMPUTERD_SCOPE`), so a packet for another
+# scope is refused inside the VM as well as unrouted on the host.
+#
+# Ownership is the registry record: a live sandbox with no record, or a
+# record whose sandbox is gone or whose scope mismatches, is a CONFLICT —
+# provision refuses rather than adopt or replace it. `scope revoke` removes
+# only a record whose sandbox is already gone; it never destroys a live VM
+# and never touches /workspace. Backups per scope stay the operator's `sbx`
+# calls (one sandbox, one disk); the shared VM's backup flow does not read a
+# scope's disk.
+
+scope_valid() {
+    case "${1:-}" in
+        *[!0-9a-f]*|"") return 1 ;;
+        *) [ "${#1}" -ge 16 ] && [ "${#1}" -le 64 ] ;;
+    esac
+}
+
+scope_sandbox() { printf 'nora-computer-%.12s' "$1"; }
+
+# A scope's host port is derived from the scope itself: the same scope always
+# gets the same port, and a collision shows as an already-published or a
+# refused port, never a silent share. 24000-44000 stays clear of the shared
+# VM's 18765 and of ephemeral source ports.
+scope_port() { printf '%d' $((24000 + (16#${1:0:8} % 20000))); }
+
+scope_record() { printf '%s/%s.json' "$SCOPE_REGISTRY" "$1"; }
+
+scope_state() {
+    # like sandbox_state but for the scope's sandbox.
+    sbx state "$(scope_sandbox "$1")" 2>/dev/null || echo absent
+}
+
+scope_provision() {
+    local scope=${1:-} box port record out
+    scope_valid "$scope" || { echo "usage: nora-computer scope provision SCOPE (lowercase hex, 16-64)" >&2; exit 2; }
+    box=$(scope_sandbox "$scope"); port=$(scope_port "$scope")
+    record=$(scope_record "$scope")
+    mkdir -p "$SCOPE_REGISTRY" || exit 5
+    if [ -f "$record" ]; then
+        local known known_name
+        known=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(r.get("scope",""), r.get("name",""))' "$record" 2>/dev/null)
+        known_name=${known#* }
+        if [ "${known%% *}" != "$scope" ]; then
+            echo "scope: $record does not bind to $scope — refusing to adopt it" >&2; exit 4
+        fi
+        if [ "$known_name" != "$box" ]; then
+            echo "scope: $record names $known_name, not $box — conflicting ownership" >&2; exit 4
+        fi
+        # Idempotent: record and sandbox agree; verify the endpoint answers.
+        if [ "$(scope_state "$scope")" = absent ]; then
+            echo "scope: record exists but sandbox $box is absent — stale record; revoke it first" >&2; exit 4
+        fi
+        printf '%s\n' "$record"; exit 0
+    fi
+    if [ "$(scope_state "$scope")" != absent ]; then
+        echo "scope: sandbox $box exists with no record — refusing to adopt unknown ownership" >&2; exit 4
+    fi
+    mkdir -p "$UNUSED_WORKSPACE-$box" && chmod 700 "$UNUSED_WORKSPACE-$box" || exit 5
+    log "creating scope sandbox $box for $scope (detached)"
+    if ! sbx run -d --name "$box" -m "$MEMORY" --cpus "$CPUS" --pull never -t "$IMAGE" \
+        -p "$HOST_IP:$port:80" shell "$UNUSED_WORKSPACE-$box" \
+        </dev/null >/dev/null; then
+        record_event scope_create failed scope="$scope"
+        log "scope create failed"
+        exit 6
+    fi
+    record_event scope_create ok scope="$scope" name="$box" port="$port"
+    # The same DEC-289 policy, scoped to this sandbox by sbx itself.
+    local NAME_saved=$NAME
+    NAME=$box
+    { egress_apply && egress_check >/dev/null; } \
+        || log "egress: the policy is NOT in place or does not read back; run: nora-computer egress check (against $box)"
+    NAME=$NAME_saved
+    python3 - "$record" "$scope" "http://$HOST_IP:$port" "$box" <<'EOF'
+import json, sys
+record, scope, endpoint, name = sys.argv[1:5]
+with open(record, "w") as f:
+    json.dump({"scope": scope, "endpoint": endpoint, "name": name, "instance": ""}, f)
+    f.write("\n")
+EOF
+    printf '%s\n' "$record"
+}
+
+scope_serve() {
+    local scope=${1:-} box record
+    scope_valid "$scope" || { echo "usage: nora-computer scope serve SCOPE" >&2; exit 2; }
+    record=$(scope_record "$scope")
+    [ -f "$record" ] || { log "no record for $scope: run nora-computer scope provision $scope"; exit 6; }
+    box=$(scope_sandbox "$scope")
+    [ "$(scope_state "$scope")" != absent ] || { log "sandbox $box is absent; provision first"; exit 6; }
+    load_token
+    sbx exec -u root "$box" pkill -f /opt/computerd/computerd.py </dev/null >/dev/null 2>&1 || true
+    record_event scope_computerd_start ok scope="$scope" name="$box"
+    log "serving computerd for scope $scope in the foreground"
+    exec sbx exec -u root -e COMPUTERD_TOKEN -e COMPUTERD_SCOPE="$scope" "$box" \
+        /opt/computerd/venv/bin/python /opt/computerd/computerd.py --root /workspace --port 80 \
+        </dev/null
+}
+
+scope_resolve() {
+    local scope=${1:-}
+    scope_valid "$scope" || { echo "usage: nora-computer scope resolve SCOPE" >&2; exit 2; }
+    [ -f "$(scope_record "$scope")" ] || exit 1
+    cat "$(scope_record "$scope")"
+}
+
+scope_list() {
+    local f
+    for f in "$SCOPE_REGISTRY"/*.json; do
+        [ -e "$f" ] || continue
+        python3 - "$f" <<'EOF'
+import json, sys
+try:
+    r = json.load(open(sys.argv[1]))
+    print(r.get("scope", "?"), r.get("endpoint", "?"), r.get("name", "?"))
+except Exception as exc:
+    print(sys.argv[1], "unreadable:", exc)
+EOF
+    done
+}
+
+scope_revoke() {
+    local scope=${1:-} box
+    scope_valid "$scope" || { echo "usage: nora-computer scope revoke SCOPE" >&2; exit 2; }
+    box=$(scope_sandbox "$scope")
+    if [ "$(scope_state "$scope")" != absent ]; then
+        echo "scope: sandbox $box is still alive; destroy it explicitly (sbx rm --force $box) before revoking — its /workspace may hold data" >&2
+        exit 4
+    fi
+    rm -f "$(scope_record "$scope")"
+    record_event scope_revoke ok scope="$scope"
+}
+
+cmd_scope() {
+    case "${1:-}" in
+        provision) shift; scope_provision "$@" ;;
+        serve) shift; scope_serve "$@" ;;
+        resolve) shift; scope_resolve "$@" ;;
+        list) scope_list ;;
+        revoke) shift; scope_revoke "$@" ;;
+        *) echo "usage: nora-computer scope provision|serve|resolve|list|revoke" >&2; exit 2 ;;
+    esac
+}
+
 case "${1:-}" in
     build) cmd_build ;;
     serve) cmd_serve ;;
@@ -805,7 +963,8 @@ case "${1:-}" in
     sync-events) shift; sync_events "$@"; exit $? ;;
     backup) cmd_backup ;;
     restore) shift; cmd_restore "$@" ;;
+    scope) shift; cmd_scope "$@" ;;
     stop) sbx stop "$NAME" </dev/null ;;
     destroy) shift; cmd_destroy "$@" ;;
-    *) echo "usage: nora-computer build|serve|status|egress|policy-log|sync-events|backup|restore|stop|destroy" >&2; exit 2 ;;
+    *) echo "usage: nora-computer build|serve|status|egress|policy-log|sync-events|backup|restore|scope|stop|destroy" >&2; exit 2 ;;
 esac

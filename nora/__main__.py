@@ -367,6 +367,17 @@ class App:
                 deps.computer_sweeper, deps.metrics,
                 interval_seconds=deps.computer_sweep_seconds,
             ))
+        # The scoped computer's queue and tab sweep ([computer.scoped]):
+        # composition builds both only while the scoped runtime is on.
+        if deps.computer_queue_runner is not None:
+            deps.background.spawn(runtime.computer_queue_loop(
+                deps.computer_queue_runner, deps.metrics,
+            ))
+        if deps.browser_manager is not None:
+            deps.background.spawn(runtime.computer_browser_sweep_loop(
+                deps.browser_manager, deps.metrics,
+                interval_seconds=deps.browser_sweep_seconds,
+            ))
         # The timed probe of computerd (DEC-261), the same flag.
         if deps.computer_probe is not None:
             deps.background.spawn(runtime.computer_probe_loop(

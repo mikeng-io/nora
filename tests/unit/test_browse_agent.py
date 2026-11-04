@@ -140,7 +140,7 @@ def _runner(**settings: Any) -> BrowseAgentRunner:
 
 
 async def test_a_browser_that_cannot_be_opened_is_unavailable_never_raised(monkeypatch):
-    async def refuse(self, scope, objective, start_url):
+    async def refuse(self, scope, objective, start_url, task_id):
         raise BrowserError("this room's browser already has a client")
     monkeypatch.setattr(BrowseAgentRunner, "_run", refuse)
     got = await _runner().browse(scope="ab" * 8, objective="x")
@@ -148,7 +148,7 @@ async def test_a_browser_that_cannot_be_opened_is_unavailable_never_raised(monke
 
 
 async def test_a_task_past_its_time_is_unavailable(monkeypatch):
-    async def slow(self, scope, objective, start_url):
+    async def slow(self, scope, objective, start_url, task_id):
         await asyncio.sleep(5)
     monkeypatch.setattr(BrowseAgentRunner, "_run", slow)
     got = await _runner(timeout_seconds=0.05).browse(scope="ab" * 8, objective="x")
@@ -156,7 +156,7 @@ async def test_a_task_past_its_time_is_unavailable(monkeypatch):
 
 
 async def test_an_unexpected_error_is_unavailable_never_raised(monkeypatch):
-    async def boom(self, scope, objective, start_url):
+    async def boom(self, scope, objective, start_url, task_id):
         raise ValueError("bad")
     monkeypatch.setattr(BrowseAgentRunner, "_run", boom)
     got = await _runner().browse(scope="ab" * 8, objective="x")

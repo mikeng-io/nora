@@ -29,6 +29,7 @@ import logging
 import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from typing import Any
 
 from nora.domain.computer import SandboxStatus, StateResult, anything_running, computer_unit_scope
 from nora.domain.computer_context import (
@@ -37,6 +38,8 @@ from nora.domain.computer_context import (
     LinkLine,
     RunLine,
     SessionLine,
+    TabLine,
+    TaskLine,
 )
 from nora.domain.computer_events import ComputerEvent, ComputerEventStore
 from nora.domain.computer_sessions import (
@@ -67,6 +70,11 @@ class ComputerContextReader:
         clock: Callable[[], datetime], metrics: object,
         unit_for: Callable[[str, str], str | None] | None = None,
         monotonic: Callable[[], float] = time.monotonic,
+        # The scoped runtime's queue and tab stores ([computer.scoped]):
+        # when wired, the block carries queued/running tasks and task-owned
+        # tabs. `None` keeps the shared-VM block exactly as before.
+        tasks: Any = None, tabs: Any = None,
+        browser_idle_after: timedelta | None = None,
     ) -> None:
         self._unit_for = unit_for
         self._sessions = sessions
@@ -76,6 +84,9 @@ class ComputerContextReader:
         self._clock = clock
         self._metrics = metrics
         self._monotonic = monotonic
+        self._tasks = tasks
+        self._tabs = tabs
+        self._browser_idle_after = browser_idle_after
         # scope -> (read at, a good read). One process, rooms in the tens,
         # entries overwritten per room: bounded by the rooms that use it.
         self._cache: dict[str, tuple[float, StateResult]] = {}
@@ -167,12 +178,40 @@ class ComputerContextReader:
         lapsed_lines = (*lines[len(shown_open):],
                         *(SessionLine(s, "lapsed", None)
                           for s in lapsed_rows[caps.max_lapsed_sessions:]))
+        tasks: tuple[TaskLine, ...] | None = None
+        tabs: tuple[TabLine, ...] | None = None
+        if self._tasks is not None:
+            try:
+                task_rows = await self._tasks.open_for_scope(scope, limit=8)
+                tasks = tuple(TaskLine(
+                    task_id=str(t.id)[:8], kind=t.kind, status=t.status,
+                    created=t.created_at,
+                    note=cut(str(t.result.get("note") or t.result.get("reason") or ""),
+                             60)) for t in task_rows)
+            except Exception:
+                log.exception("computer tasks read failed")
+                tasks = None
+        if self._tabs is not None:
+            try:
+                tab_rows = await self._tabs.for_scope(scope, limit=8)
+                idle = self._browser_idle_after
+                tabs = tuple(TabLine(
+                    task_id=str(t.task_id)[:8], url=cut(t.last_url, 80),
+                    title=cut(t.last_title, 60), status=t.status, via=t.via,
+                    last_activity=t.last_activity_at,
+                    expires_in=((t.last_activity_at + idle - now).total_seconds()
+                                if idle is not None and t.status == "open" else None),
+                ) for t in tab_rows)
+            except Exception:
+                log.exception("browser tabs read failed")
+                tabs = None
         return ComputerView(
             now=now, caps=caps, open_sessions=tuple(open_lines),
             lapsed_sessions=tuple(lapsed_lines),
             tmux=tmux, processes=processes,
             processes_truncated=state.processes_truncated if state is not None else False,
             files=files, runs=_runs(rows), links=_links(rows),
+            tasks=tasks, tabs=tabs,
             machine_read=machine_read,
         )
 

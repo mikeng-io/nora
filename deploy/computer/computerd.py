@@ -73,6 +73,7 @@ import os
 import pwd
 import re
 import secrets
+import shutil
 import signal
 import stat
 import subprocess
@@ -129,6 +130,9 @@ TMUX_NO_SERVER = ("no server running", "error connecting", "no such file or dire
 
 # The token this process was started with never reaches a child process.
 TOKEN_ENV = "COMPUTERD_TOKEN"  # noqa: S105 - the variable NAME, not a secret
+#: `COMPUTERD_SCOPE` binds a per-scope VM's computerd to its one scope;
+#: empty/unset means the multi-scope service the shared VM runs today.
+SCOPE_ENV = "COMPUTERD_SCOPE"
 
 _DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 _READ_FLAGS = os.O_RDONLY | os.O_NOFOLLOW
@@ -208,12 +212,17 @@ class Computer:
     def __init__(
         self, *, root: Path, token: str, isolate_scopes: bool = True,
         tmux_root: Path | None = None, tmux_bin: str = "tmux",
-        proc_root: Path = Path("/proc"),
+        proc_root: Path = Path("/proc"), bound_scope: str | None = None,
     ) -> None:
         if not token:
             raise ValueError("computerd needs a non-empty token")
         self.root = root
         self._token = token
+        #: When set (`COMPUTERD_SCOPE`, a per-scope VM), the one scope this
+        #: computerd serves: every verb and the browser socket refuse a
+        #: different one. A cross-scope request landing here means the
+        #: routing above misrouted, so it is denied, never served.
+        self.bound_scope = bound_scope
         self.owner = Owner(isolate=isolate_scopes)
         # The directory the API serves; the CLI's default exists in the image,
         # and a test root may not until its first write.
@@ -1048,7 +1057,13 @@ class Browsers:
         await asyncio.to_thread(self.ensure_x11_dir)
         cookie = secrets.token_bytes(16)
         auth = await asyncio.to_thread(self._write_xauthority, scope, cookie)
-        profile = self.computer.root / scope / "browser" / "default"
+        # A FRESH anonymous profile per browser lifetime: no history, cookies
+        # or tabs restore across a restart (`no tab resurrection`). Stale
+        # profiles of earlier lifetimes are wiped before this one is made —
+        # the wipe runs through the same no-follow walk and refuses anything
+        # that is not a plain profile-* directory a previous Chrome left.
+        profile_name = await asyncio.to_thread(self._fresh_profile, scope)
+        profile = self.computer.root / scope / "browser" / profile_name
         env = self.computer._env(scope)
         env.update(XAUTHORITY=str(auth))
         user = self.computer._user(scope)
@@ -1134,11 +1149,30 @@ class Browsers:
                 raise
         return fd
 
+    def _fresh_profile(self, scope: str) -> str:
+        """Wipe stale `browser/profile-*` directories of earlier browser
+        lifetimes and return a fresh profile name. The wipe runs inside the
+        no-follow walk: anything under `browser/` that is not a plain
+        `profile-*` directory (a room's own file, a link) is left alone, and
+        a profile that will not delete raises so the start is refused —
+        never a half-wiped profile silently kept."""
+        name = f"profile-{secrets.token_hex(8)}"
+        browser_dir = self.computer.root / scope / "browser"
+        if not browser_dir.is_dir():
+            return name
+        with self.computer._dir(scope, ["browser"], create=True) as dfd:
+            for entry in os.listdir(dfd):
+                if not entry.startswith("profile-"):
+                    continue
+                info = os.stat(entry, dir_fd=dfd, follow_symlinks=False)
+                if not stat.S_ISDIR(info.st_mode):
+                    continue
+                shutil.rmtree(entry, dir_fd=dfd)  # noqa: args/kwargs for dir_fd
+        return name
+
     def _write_xauthority(self, scope: str, cookie: bytes) -> Path:
         """The room's display cookie, in `<scope>/browser/.Xauthority`, `0o600`
         and the room user's, written through the no-follow walk."""
-        with self.computer._dir(scope, ["browser", "default"], create=True):
-            pass
         with self.computer._dir(scope, ["browser"], create=True) as dfd:
             tmp = f".Xauthority.{secrets.token_hex(6)}"
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600,
@@ -1351,9 +1385,11 @@ def create_app(
     chrome_bin: str = "google-chrome", xvfb_bin: str = "Xvfb",
     x11_dir: Path = X11_DIR, max_browsers: int = MAX_BROWSERS,
     browser_idle_seconds: float = BROWSER_IDLE_SECONDS,
+    bound_scope: str | None = None,
 ) -> web.Application:
     computer = Computer(root=root, token=token, isolate_scopes=isolate_scopes,
-                        tmux_root=tmux_root, tmux_bin=tmux_bin, proc_root=proc_root)
+                        tmux_root=tmux_root, tmux_bin=tmux_bin, proc_root=proc_root,
+                        bound_scope=bound_scope)
     browsers = Browsers(computer, chrome_bin=chrome_bin, xvfb_bin=xvfb_bin, x11_dir=x11_dir,
                         max_browsers=max_browsers, idle_seconds=browser_idle_seconds)
     file_ops: dict[str, Callable[[str, dict[str, Any]], Any]] = {
@@ -1365,6 +1401,27 @@ def create_app(
         # No auth and no detail: what the lifecycle unit reads to know that
         # computerd itself answers (under sbx a TCP connect proves nothing).
         return web.json_response({"service": "computerd", "status": "ok"})
+
+    def _boot_id() -> str:
+        """This VM's boot identity: a recreated VM is a NEW instance, so every
+        handle bound to the old one is stale. Read once; a VM that cannot
+        name its instance reports "" (still verified by scope)."""
+        try:
+            return Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        except OSError:
+            return ""
+    boot_id = _boot_id()
+
+    async def identity(request: web.Request) -> web.Response:
+        """Who this computerd is: its bound scope (None when unbound, the
+        shared-VM shape) and its VM instance. Authenticated, because it is
+        what an endpoint's claim is checked against."""
+        if not computer.authorised(request):
+            return web.json_response({"status": "unauthorised"}, status=401)
+        return web.json_response({
+            "service": "computerd", "scope": computer.bound_scope,
+            "instance": boot_id,
+        })
 
     def answer(result: Any) -> web.Response:
         if isinstance(result, bytes):
@@ -1388,6 +1445,9 @@ def create_app(
                         raise RefusedError("body is too large") from None
                     if not computer.valid_scope(scope):
                         raise RefusedError("scope must be a lowercase hex key")
+                    if (computer.bound_scope is not None
+                            and scope != computer.bound_scope):
+                        raise RefusedError("this computer serves another scope")
                     return answer(await asyncio.to_thread(computer._store, scope, raw, data))
                 try:
                     body = await request.json()
@@ -1398,6 +1458,9 @@ def create_app(
                 scope = body.get("scope")
                 if not computer.valid_scope(scope):
                     raise RefusedError("scope must be a lowercase hex key")
+                if (computer.bound_scope is not None
+                        and scope != computer.bound_scope):
+                    raise RefusedError("this computer serves another scope")
                 if op == "run":
                     return answer(await computer.run(scope, body))
                 if op == "state":
@@ -1429,6 +1492,9 @@ def create_app(
         if not computer.valid_scope(scope):
             return web.json_response({"status": "denied",
                                       "reason": "scope must be a lowercase hex key"})
+        if computer.bound_scope is not None and scope != computer.bound_scope:
+            return web.json_response({"status": "denied",
+                                      "reason": "this computer serves another scope"})
         try:
             # Starting Chrome writes the room; it must not land under a
             # directory the installer is about to rename away.
@@ -1484,6 +1550,7 @@ def create_app(
     app["browsers"] = browsers
     app.cleanup_ctx.append(reap_idle)
     app.router.add_get("/v1/health", health)
+    app.router.add_get("/v1/identity", identity)
     app.router.add_get("/v1/browser", browser_cdp)
     app.router.add_post("/v1/{op}", dispatch)
     return app
@@ -1504,7 +1571,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
     token = os.environ.get(TOKEN_ENV, "")
-    app = create_app(root=Path(args.root), token=token)
+    app = create_app(root=Path(args.root), token=token,
+                     bound_scope=os.environ.get(SCOPE_ENV) or None)
     web.run_app(app, host=args.host, port=args.port)
 
 

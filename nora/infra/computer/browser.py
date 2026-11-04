@@ -554,6 +554,33 @@ class BrowserPage:
             boxes.append((ref, min(xs), min(ys), max(xs), max(ys)))
         return draw_marks(jpeg, boxes)
 
+    async def capture_image(self, *, full_page: bool = False,
+                            max_height: int = 16000) -> tuple[bytes, str, bool]:
+        """An UNMARKED image of THIS tab for a person: `(bytes, media_type,
+        partial)`. The viewport is a PNG of what shows; `full_page` captures
+        beyond it from the layout metrics, capped at `max_height` pixels —
+        `partial` is True when the page ran past the cap, never silently
+        presented as complete. A CDP refusal raises `BrowserError`."""
+        params: dict[str, Any] = {"format": "png"}
+        partial = False
+        if full_page:
+            metrics = await self._page("Page.getLayoutMetrics")
+            content = metrics.get("cssContentSize") or metrics.get("contentSize") or {}
+            width = float(content.get("width") or 0)
+            height = float(content.get("height") or 0)
+            if width <= 0 or height <= 0:
+                raise BrowserError("the page size could not be measured")
+            if height > max_height:
+                height, partial = float(max_height), True
+            params["clip"] = {"x": 0.0, "y": 0.0, "width": width,
+                              "height": height, "scale": 1.0}
+            params["captureBeyondViewport"] = True
+        got = await self._page("Page.captureScreenshot", params)
+        data = got.get("data")
+        if not isinstance(data, str):
+            raise BrowserError("no screenshot came back")
+        return base64.b64decode(data), "image/png", partial
+
 
 def draw_marks(jpeg: bytes, boxes: list[tuple[str, float, float, float, float]]) -> bytes:
     """`jpeg` with each `(ref, left, top, right, bottom)` boxed and labelled;
@@ -613,6 +640,77 @@ async def open_browser(*, base_url: str, token: str, scope: str,
             yield page
         finally:
             await cdp.close()
+
+
+@contextlib.asynccontextmanager
+async def connect_browser_cdp(*, base_url: str, token: str, scope: str,
+                              timeout_seconds: float = CALL_SECONDS,
+                              ) -> AsyncIterator[CdpConnection]:
+    """A raw CDP connection to the scope's browser, no target attached: the
+    manager's channel for target bookkeeping (`getTargets`, `closeTarget`),
+    never for page actions. Starting the browser counts as the same on-demand
+    start `/v1/browser` always does."""
+    ws_url = base_url.rstrip("/").replace("http://", "ws://", 1).replace(
+        "https://", "wss://", 1) + f"/v1/browser?scope={scope}"
+    headers = {"Authorization": f"Bearer {token}"}
+    timeout = aiohttp.ClientTimeout(total=None, sock_connect=timeout_seconds)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        try:
+            ws = await session.ws_connect(ws_url, headers=headers, max_msg_size=64 * 1024 * 1024,
+                                          heartbeat=30)
+        except aiohttp.WSServerHandshakeError as exc:
+            raise BrowserError("the computer refused the browser: it is busy, every "
+                               f"browser slot is in use, or it is off ({exc.status})") from None
+        except (aiohttp.ClientError, OSError, TimeoutError) as exc:
+            raise BrowserError(f"the computer could not be reached: {type(exc).__name__}") from None
+        cdp = CdpConnection(ws)
+        try:
+            yield cdp
+        finally:
+            await cdp.close()
+
+
+@contextlib.asynccontextmanager
+async def open_browser_tab(*, base_url: str, token: str, scope: str,
+                           target_id: str | None = None,
+                           timeout_seconds: float = CALL_SECONDS,
+                           ) -> AsyncIterator[BrowserPage]:
+    """Connect to the scope's browser and attach to ONE OWNED target.
+
+    This is the task-owned attach: `target_id` names the tab a task bound
+    earlier (`BrowserTab`); None opens a fresh tab for a task with none. It
+    NEVER adopts the first/active page (that could be another task's) and
+    NEVER closes a page (popups and sibling tabs belong to their tasks).
+    A `target_id` the browser no longer holds is `BrowserError` — the handle
+    is stale, and the caller answers `expired`, never a substitute tab."""
+    async with connect_browser_cdp(
+        base_url=base_url, token=token, scope=scope,
+        timeout_seconds=timeout_seconds,
+    ) as cdp:
+        yield await _attach_owned(cdp, target_id)
+
+
+async def _attach_owned(cdp: CdpConnection, target_id: str | None) -> BrowserPage:
+    """Attach to the target `target_id` names (verifying it is a page target
+    that exists), or create one. The target id Chrome reports back is the
+    handle returned; nothing else is touched."""
+    try:
+        if target_id is not None:
+            targets = {str(t.get("targetId")): t for t in
+                       (await cdp.call("Target.getTargets")).get("targetInfos", [])}
+            if target_id not in targets or targets[target_id].get("type") != "page":
+                raise BrowserError("the bound tab is gone")
+        else:
+            target_id = str((await cdp.call("Target.createTarget",
+                                            {"url": "about:blank"}))["targetId"])
+        attached = await cdp.call("Target.attachToTarget",
+                                  {"targetId": target_id, "flatten": True})
+        session_id = str(attached["sessionId"])
+    except (KeyError, TypeError) as exc:
+        raise BrowserError(f"the tab could not be attached: {type(exc).__name__}") from None
+    for domain in ("Page", "DOM", "Accessibility"):
+        await cdp.call(f"{domain}.enable", session_id=session_id)
+    return BrowserPage(cdp=cdp, session_id=session_id, target_id=target_id)
 
 
 async def _attach(cdp: CdpConnection) -> BrowserPage:
