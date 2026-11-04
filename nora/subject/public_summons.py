@@ -23,9 +23,12 @@ async def turn(subject: Subject, context: SummonsContext) -> tuple[tuple[str, ..
 
     room_runner = subject.deps.engagement._runner
     models = room_runner._models
+    url, key, model = subject.cfg.endpoint('summons', models._spec.model)
+    owns_client = (url, key) != subject.cfg.endpoint('tag')[:2]
+    client = factory.create_client(base_url=url, api_key=key) if owns_client else models._client
     runner = LiveAgentRunner(
-        models=factory.ModelSource(client=models._client,
-            spec=replace(models._spec, tool_choice=tool_choice.AFTER_SPEAKING)),
+        models=factory.ModelSource(client=client,
+            spec=replace(models._spec, model=model, tool_choice=tool_choice.AFTER_SPEAKING)),
         retry=room_runner._retry, skills_dir=None,
         agent_name=subject.cfg.agent.name, metrics=subject.deps.metrics,
     )
@@ -39,4 +42,8 @@ async def turn(subject: Subject, context: SummonsContext) -> tuple[tuple[str, ..
         timeout_seconds=subject.cfg.llm.timeout_seconds, clock=lambda: context.now,
         content_checks=subject.cfg.content_checks.enabled,
     )
-    return await occasion._turn(uuid4(), context=context, now=context.now)
+    try:
+        return await occasion._turn(uuid4(), context=context, now=context.now)
+    finally:
+        if owns_client:
+            await client.close()
