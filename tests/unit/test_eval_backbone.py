@@ -1309,3 +1309,28 @@ def test_a_text_must_cite_still_binds_a_message_and_a_required_reply():
     assert _cited("either", ("去元朗食",)) != ()
     assert _cited("either", ("三多 12點",)) == ()
     assert _cited("speak", ()) != ()
+
+
+@pytest.mark.parametrize("line", ["", "an invented arriving line"])
+async def test_gate_delivers_case_input_to_the_real_window_path(monkeypatch, line):
+    from evals.rebuilt.domain import Case as NoraCase
+    from evals.rebuilt.entry import gate
+
+    arrivals = []
+    decisions = []
+
+    async def arrive(subject, body, *, now_ms, person):
+        arrivals.append((body, now_ms, person))
+
+    async def decide(**kwargs):
+        decisions.append(kwargs)
+        return SimpleNamespace(source="model", admits=bool(arrivals))
+
+    monkeypatch.setattr("evals.rebuilt.entry.arrive", arrive)
+    subject = SimpleNamespace(room=("signal", "generated-room"),
+                              deps=SimpleNamespace(relevance_gate=SimpleNamespace(decide=decide)))
+    case = NoraCase(name="arrival", entry="gate", expect="go", input=line, person="generated")
+    outcome = await gate(subject, case, now_ms=1234)
+    assert decisions == [{"platform": "signal", "conversation_id": "generated-room"}]
+    assert arrivals == ([(line, 1234, "generated")] if line else [])
+    assert outcome.admitted == bool(line)

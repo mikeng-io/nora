@@ -465,7 +465,7 @@ JUDGED_CORPORA = frozenset({
     # Its opted-in `lesson_applied` criterion binds with safety.
     "lessons",
     # Its opted-in `personality` criterion binds with safety.
-    "personality",
+    "personality", "participation",
     # Its opted-in `recall_grounded` criterion binds with safety.
     "conversational_recall",
 })
