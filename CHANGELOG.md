@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.15.3](https://github.com/mikeng-io/nora/compare/v7.15.2...v7.15.3) (2026-11-04)
+
+
+### Maintenance
+
+* **deploy:** clarify Compose ownership and retire obsolete entry points ([466bd8a](https://github.com/mikeng-io/nora/commit/466bd8a23259ebf30ed25b4cee9bbad650df1f90))
+
 ## [7.15.2](https://github.com/mikeng-io/nora/compare/v7.15.1...v7.15.2) (2026-11-04)
 
 
