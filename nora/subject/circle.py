@@ -206,8 +206,8 @@ class CircleMemory:
         at = datetime.fromtimestamp(now_ms / 1000, UTC)
         person_entity = pointer_entity('person', unit, person, 'Generated speaker')
         topic = Entity(f'{unit}:generated-spicy', 'work', unit, 'generated spicy noodle dish 食辣')
-        old = 'Generated preference 口味: I like spicy food 食辣.'
-        new = ('Generated correction 口味: I no longer eat spicy food 唔食辣. '
+        old = 'Generated preference 口味: I like generated spicy noodle dish 食辣.'
+        new = ('Generated correction 口味: I no longer eat generated spicy noodle dish 唔食辣. '
                'This replaces my old preference.')
         await self.graph.upsert_entity(person_entity)
         sources = {}

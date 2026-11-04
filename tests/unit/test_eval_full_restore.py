@@ -712,7 +712,7 @@ async def test_circle_reaction_outage_is_the_real_signal_result_and_validates_re
 
 
 @pytest.mark.parametrize('unavailable', [False, True])
-@pytest.mark.parametrize('query', ['spicy', '我嘅 preference 係點？'])
+@pytest.mark.parametrize('query', ['spicy', '我對 generated spicy noodle dish 嘅 preference 係點？'])
 async def test_circle_memory_uses_admitted_correction_and_scoped_read(unavailable, query):
     from nora.agent.memory_search import MemorySearch
     from nora.domain.lineage import LiveRoom, RenderRoom, RoomFacts
