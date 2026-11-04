@@ -49,17 +49,6 @@ FIRST_ROW_MS = 1_785_928_686_349
 #: blocked on unfinished work is not parked.
 #: Adding a name here is a decision; removing one is the seam landing.
 UNANCHORED_BY_DESIGN = {
-    # #575: controlled action/memory results and public audience need existing rebuild seams.
-    "tool_reporting": {
-        "circle_reaction_held",
-        "circle_gif_unavailable",
-        "circle_memory_unavailable",
-        "circle_work_running",
-        "circle_memory_partial",
-        "circle_public_private_boundary",
-        "circle_reaction_unavailable",
-        "circle_work_checked_complete",
-    },
     # Frozen multi-account census is anchored by its private provenance, not one room.
     "profile_coverage": {"frozen_coverage"},
     # Invented vectors require private file inputs; no synthetic snapshot is invented.

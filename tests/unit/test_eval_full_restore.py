@@ -675,3 +675,98 @@ async def test_reaction_receipts_reach_suitability_without_phantom_text(
     else:
         assert judge.graded == []
         assert result["output"] == ""
+
+
+@pytest.mark.parametrize('state', ['unavailable', 'held'])
+def test_circle_reaction_requires_actual_execution_and_forbids_hold_bypass(state):
+    import json
+
+    from nora.subject.circle import CircleOverlay
+    overlay = CircleOverlay(reaction=state)
+    result = 'held_for_review' if state == 'held' else 'unavailable'
+    receipt = (('reaction_send', json.dumps({'status': result})),)
+    assert backbone._circle_execution_problem(overlay, receipt, (), ('reaction_send',)) is None
+    assert backbone._circle_execution_problem(overlay, (), (), ())
+    assert backbone._circle_execution_problem(overlay,
+        (('reaction_send', '{"status":"ok"}'),), (), ('reaction_send',))
+    if state == 'held':
+        assert backbone._circle_execution_problem(overlay, receipt, (),
+            ('reaction_send', 'send_reply'))
+
+
+async def test_circle_reaction_outage_is_the_real_signal_result_and_validates_requests():
+    import aiohttp
+
+    from nora.domain.models import ConversationTarget
+    from nora.platform.signal.react import SignalReactor
+    from nora.subject.circle import CircleOverlay, reaction_wire
+    async with reaction_wire(CircleOverlay(reaction='unavailable')) as url:
+        result = await SignalReactor(url).react(ConversationTarget('signal', 'generated', 'group'),
+            '👍', to_author='generated-author', to_timestamp=42)
+        assert result.supported and not result.ok
+        async with (
+            aiohttp.ClientSession() as client,
+            client.post(url + '/api/v1/rpc', json={'method': 'send'}) as response,
+        ):
+            assert response.status == 400
+
+
+@pytest.mark.parametrize('unavailable', [False, True])
+async def test_circle_memory_uses_admitted_correction_and_scoped_read(unavailable):
+    from nora.agent.memory_search import MemorySearch
+    from nora.domain.lineage import LiveRoom, RenderRoom, RoomFacts
+    from nora.domain.memory_graph import Walk
+    from nora.obs.metrics import Metrics
+    from nora.subject.circle import CircleMemory
+    memory = CircleMemory(unavailable=unavailable)
+    subject = SimpleNamespace(unit='generated-unit', room=('signal', 'generated-room'))
+    await memory.seed(subject, person='generated-person', now_ms=1_790_000_000_000)
+    assert memory.graph.relations['circle-preference-0'].status == 'superseded'
+    assert memory.graph.relations['circle-preference-1'].status == 'current'
+    room = RoomFacts('signal', frozenset({'generated-room'}), 'generated-unit',
+                     frozenset({'generated-person'}))
+    target = RenderRoom(room=room, rooms=(room,), circles=(),
+                        live=LiveRoom(person_ids=frozenset({'generated-person'})))
+    service = MemorySearch(memory.index, Metrics(), graph=memory.graph)
+    result = await service.read(query='spicy', target=target, now_ms=1_790_000_000_000,
+                                social_off=())
+    assert result['status'] == ('unavailable' if unavailable else 'partial'), result
+    assert memory.index.calls
+    if not unavailable:
+        assert 'no longer eat' in result['preview'], result
+        assert 'Generated speaker' in result['preview']
+        refused = await memory.graph.walk((('person', 'generated-unit:person:generated-person'),),
+            Walk('another-unit', frozenset({'generated-person'})))
+        assert not refused.nodes
+        hidden = await memory.graph.walk((('person', 'generated-unit:person:generated-person'),),
+            Walk('generated-unit', frozenset()))
+        assert not hidden.nodes
+
+
+def test_circle_gif_absence_reaches_existing_registry_boundary():
+    from nora.agent.registry import ToolRegistry
+    from nora.subject.circle import CircleOverlay, external_boundaries
+    with external_boundaries(CircleOverlay(gif='unavailable')):
+        registry = ToolRegistry(giphy=object())
+        assert registry._giphy is None
+    assert ToolRegistry(giphy='positive')._giphy == 'positive'
+
+
+def test_circle_public_capture_requires_actual_public_chat_input():
+    import json
+
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer('generated')
+    rendered = '<social_post>generated public question</social_post>'
+    assert backbone._public_input(exporter, rendered) is None
+    with tracer.start_as_current_span('model') as span:
+        span.set_attribute('gen_ai.operation.name', 'chat')
+        span.set_attribute('gen_ai.input.messages', json.dumps([
+            {'role': 'user', 'content': rendered}]))
+    assert backbone._public_input(exporter, rendered) == rendered
+    assert backbone._public_input(exporter, '<social_post>other input</social_post>') is None

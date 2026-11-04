@@ -513,6 +513,39 @@ def _tool_results(exporter: InMemorySpanExporter) -> tuple[tuple[str, str], ...]
     return tuple(out)
 
 
+def _circle_execution_problem(overlay, results, blocks, tools) -> str | None:
+    """Positive execution controls: a missing controlled read is ERROR, never silence PASS."""
+    if overlay is None:
+        return None
+    statuses = {}
+    for name, raw in results:
+        for text in _texts_in(raw):
+            try:
+                value = json.loads(text)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(value, dict) and 'status' in value:
+                statuses.setdefault(name, []).append(value['status'])
+    if overlay.reaction:
+        expected = 'held_for_review' if overlay.reaction == 'held' else 'unavailable'
+        if statuses.get('reaction_send') != [expected]:
+            return 'controlled reaction was not executed exactly once with its real result'
+        if overlay.reaction == 'held' and any(t in tools for t in ('send_reply', 'send_gif')):
+            return 'held reaction was replaced with another medium'
+    if overlay.gif and statuses.get('search_gifs') != ['unavailable']:
+        return 'controlled GIF search unavailable result was not observed'
+    if overlay.job:
+        shown = dict(blocks or ()).get('subagents', '')
+        if not shown or not statuses.get('subagent_read') or 'subagent_create' in tools:
+            return 'controlled job context/read missing or duplicate job started'
+    if overlay.memory:
+        shown = dict(blocks or ()).get('recalled', '')
+        observed = overlay.memory in shown or overlay.memory in statuses.get('memory_search', [])
+        if not observed:
+            return 'controlled memory read/capture missing'
+    return None
+
+
 def _reaction_receipts(
     results: tuple[tuple[str, str], ...], inputs: tuple[tuple[str, str], ...],
 ) -> tuple[str, ...]:
@@ -853,6 +886,22 @@ def _shown_blocks(
                         (found.group(1), found.group(0))
                         for found in _CONTEXT_BLOCK.finditer(text)
                     )
+    return None
+
+
+def _public_input(exporter: InMemorySpanExporter, rendered: str) -> str | None:
+    """Read the public assembly back from the actual chat input, never expected_output."""
+    for span in exporter.get_finished_spans():
+        if (span.attributes or {}).get('gen_ai.operation.name') != 'chat':
+            continue
+        values = list((span.attributes or {}).values())
+        for event in span.events or ():
+            values.extend((event.attributes or {}).values())
+        for raw in values:
+            if isinstance(raw, str):
+                for text in _texts_in(raw):
+                    if text == rendered and '<social_post' in text:
+                        return text
     return None
 
 
@@ -1593,8 +1642,10 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
         )
     workdir = Path(tempfile.mkdtemp(prefix="nora-case-"))
     subject = None
+    from nora.subject.circle import CircleOverlay, reaction_wire, seed_job
+    overlay = CircleOverlay(**md['circle_overlay']) if md.get('circle_overlay') else None
     try:
-        async with _sandbox_for(spec, now) as database_url:
+        async with _sandbox_for(spec, now) as database_url, reaction_wire(overlay) as signal_url:
             # A full restore holds the real speakers, so each room's members
             # are read from them while the graph composes; without it every
             # lineage tool answers `unavailable` (`nora.subject.sandbox_roster`).
@@ -1606,11 +1657,13 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     SubjectSpec(
                         database_url=database_url,
                         workdir=workdir,
+                        circle=overlay, signal_rpc_url=signal_url,
                         room=room,
                         # LAST, so nothing a spec states can redirect it: THIS
                         # DRAW'S Honcho workspace, created empty.
                         overrides={
                             **port.config,
+                            **(overlay.overrides if overlay else {}),
                             # A full restore turns the presence READER back on
                             # (`FULL_RESTORE_OVERRIDES` says why nothing polls).
                             # Before the spec's own, so a caller can still state
@@ -1719,6 +1772,11 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             nora_case = dataclasses.replace(
                 nora_case, moment=Moment(source_url=spec.source_url, rows=seeded.rows),
             )
+            if overlay and overlay.memory:
+                await subject.circle_memory.seed(subject, person=nora_case.person, now_ms=clock_ms)
+            if overlay and overlay.job:
+                await seed_job(subject, overlay, person=nora_case.person, now_ms=clock_ms)
+
             from evals.rebuilt.profile_identity import REPRESENTATION_PROPERTIES
             from nora.subject.context_filter import case_scope
 
@@ -1750,6 +1808,11 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             # gate's (`_shown_transcript`'s own docstring).
             shown_transcript = _shown_transcript(exporter, agent=agent_name or None)
             shown_blocks = _shown_blocks(exporter, agent=agent_name or None)
+            if port.public_audience:
+                shown_transcript = _public_input(exporter, outcome.shown)
+                if shown_transcript is None:
+                    outcome = dataclasses.replace(
+                        outcome, error='public model input capture missing')
             blocks_rendered = _blocks_rendered(exporter)
             shown = shown_where(exporter.get_finished_spans())
             _SPEND.append(spend)
@@ -1764,6 +1827,9 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 outcome = dataclasses.replace(
                     outcome, position=json.dumps(receipt, ensure_ascii=False, sort_keys=True),
                 )
+            problem = _circle_execution_problem(overlay, tool_results, shown_blocks, tools_called)
+            if problem and outcome.error is None:
+                outcome = dataclasses.replace(outcome, error=problem)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
 
             judged_why = ""
@@ -1837,7 +1903,8 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         ),
                     )
                 elif {"recall_grounded", "social_suitability"} & set(md.get("criteria") or ()) and (
-                    blocks_problem := _recall_blocks_problem(shown_blocks, blocks_rendered)
+                    blocks_problem := (None if port.public_audience else
+                        _recall_blocks_problem(shown_blocks, blocks_rendered))
                 ):
                     outcome = dataclasses.replace(outcome, error=blocks_problem)
                 else:
@@ -1853,10 +1920,17 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         judge_facts = await recall_facts(
                             subject, md, now_ms=seeded.now_ms,
                         )
+                    extra = criteria_for(criteria)
+                    if md.get('circle_overlay') or port.public_audience:
+                        extra = tuple(dataclasses.replace(c, description=c.description +
+                            " Case acceptance requirement (not evidence): " +
+                            str(case.expected_output)) if c.name == 'social_suitability' else c
+                            for c in extra)
                     judgement = await spec.judge.grade(
                         said=outcome.response,
                         asked=nora_case.input,
-                        doctrine=subject.deps.doctrine.doctrine_text,
+                        doctrine=(subject.deps.doctrine_store.get(applies_to='summons').doctrine_text
+                                  if port.public_audience else subject.deps.doctrine.doctrine_text),
                         # The SOURCE the reply had to ground against — the
                         # window her turn actually RENDERED (`shown_transcript`),
                         # not `seeded.transcript` (every row
@@ -1868,7 +1942,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         source=_judge_source(
                             shown_transcript, tool_results, criteria, shown_blocks or (),
                         ),
-                        extra=criteria_for(criteria),
+                        extra=extra,
                         facts=judge_facts,
                     )
                     outcome = dataclasses.replace(
