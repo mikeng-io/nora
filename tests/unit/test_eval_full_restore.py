@@ -931,3 +931,25 @@ async def test_circle_declared_entry_is_used_by_the_actual_drive(seams, monkeypa
     await backbone._drive(case, _spec())
     assert calls == [('public_summons', _SHOT['before_ms'])]
     assert seams['sandbox_from_snapshot'][0]['leave_room_for_arrival'] is False
+
+
+async def test_circle_judge_receives_requirement_separately_from_actual_evidence(
+    judged, monkeypatch,
+):
+    import json
+    case = _judged_case('generated-gif-unavailable', ['social_suitability'])
+    case.metadata['circle_overlay'] = {'gif': 'unavailable'}
+    case.expected_output = 'No invented sent GIF; words remain possible.'
+    raw = json.dumps([{'text': json.dumps({'status': 'unavailable',
+                                          'note': 'Reply in words instead.'})}])
+    monkeypatch.setattr(backbone, '_tool_results', lambda _exporter: (('search_gifs', raw),))
+    monkeypatch.setattr(backbone, '_tool_inputs', lambda _exporter: (('search_gifs', '{}'),))
+    monkeypatch.setattr(backbone, '_tools_called', lambda _exporter: ('search_gifs',))
+    judge = _Judge()
+    await backbone._drive(case, _spec(judge=judge))
+    [graded] = judge.graded
+    criterion = next(c for c in graded['extra'] if c.name == 'social_suitability')
+    assert 'Case acceptance requirement (not evidence)' in criterion.description
+    assert case.expected_output in criterion.description
+    assert case.expected_output not in graded['source']
+    assert 'Reply in words instead.' in graded['source'] and 'unavailable' in graded['source']
