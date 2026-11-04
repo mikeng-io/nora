@@ -468,7 +468,8 @@ class Computer:
 
     # -- commands ---------------------------------------------------------
 
-    async def run(self, scope: str, body: dict[str, Any]) -> dict[str, Any]:
+    async def run(self, scope: str, body: dict[str, Any], *,
+                  disconnected: Callable[[], bool] | None = None) -> dict[str, Any]:
         command = body.get("command")
         if not isinstance(command, str) or not command.strip():
             raise RefusedError("command must be a non-empty string")
@@ -495,15 +496,28 @@ class Computer:
             except OSError as exc:
                 return {"status": "unavailable", "reason": f"could not start bash: {exc}"}
             timed_out = False
-            try:
-                # Files, not pipes: this waits for the process alone, never for
-                # a backgrounded child that inherited the output.
-                await asyncio.wait_for(proc.wait(), timeout)
-            except TimeoutError:
-                timed_out = True
+            dropped = False
+            # Files, not pipes: this waits for the process alone, never for
+            # a backgrounded child that inherited the output. The caller's
+            # transport is watched alongside: a client that went away cannot
+            # collect the result, so its command's process GROUP is killed —
+            # never left running the workspace while the row already reads
+            # cancelled.
+            wait = asyncio.ensure_future(proc.wait())
+            deadline = started + timeout
+            while not wait.done():
+                if disconnected is not None and disconnected():
+                    dropped = True
+                    break
+                if time.monotonic() >= deadline:
+                    timed_out = True
+                    break
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(asyncio.shield(wait), 0.5)
+            if timed_out or dropped:
                 with contextlib.suppress(ProcessLookupError):
                     os.killpg(proc.pid, signal.SIGKILL)
-                await proc.wait()
+                await wait
             stdout, out_cut = _bounded(out, limit)
             stderr, err_cut = _bounded(err, max(limit // 4, 200))
         fields = {
@@ -511,6 +525,10 @@ class Computer:
             "truncated": out_cut or err_cut,
             "duration_ms": int((time.monotonic() - started) * 1000),
         }
+        if dropped:
+            return {"status": "unavailable",
+                    "reason": "the caller went away; the command was stopped",
+                    **fields}
         if timed_out:
             return {"status": "unavailable", "reason": f"timed out after {timeout:g}s", **fields}
         return {"status": "ok", **fields}
@@ -1386,6 +1404,7 @@ def create_app(
     x11_dir: Path = X11_DIR, max_browsers: int = MAX_BROWSERS,
     browser_idle_seconds: float = BROWSER_IDLE_SECONDS,
     bound_scope: str | None = None,
+    boot_id: str | None = None,
 ) -> web.Application:
     computer = Computer(root=root, token=token, isolate_scopes=isolate_scopes,
                         tmux_root=tmux_root, tmux_bin=tmux_bin, proc_root=proc_root,
@@ -1410,7 +1429,10 @@ def create_app(
             return Path("/proc/sys/kernel/random/boot_id").read_text().strip()
         except OSError:
             return ""
-    boot_id = _boot_id()
+    # `boot_id` may be injected (tests, a host that publishes the instance a
+    # different way); the default is this VM's own kernel boot identity.
+    if boot_id is None:
+        boot_id = _boot_id()
 
     async def identity(request: web.Request) -> web.Response:
         """Who this computerd is: its bound scope (None when unbound, the
@@ -1431,9 +1453,35 @@ def create_app(
             )
         return web.json_response(result)
 
+    def _instance_ok(request: web.Request) -> bool:
+        """A scoped computerd serves only calls that pin ITS boot: every
+        request must carry `X-Computerd-Instance` equal to this boot's id —
+        reconnecting to the same URL after the VM was replaced is not
+        authorization, and the registry's record is not proof the process
+        answering now is the one it named. An unbound computerd (the
+        shared-VM shape) is untouched."""
+        if computer.bound_scope is None or not boot_id:
+            return True
+        return request.headers.get("X-Computerd-Instance") == boot_id
+
+    _instance_deny = {"status": "denied", "reason": "the VM instance changed"}
+
+    @web.middleware
+    async def _stamp_instance(request: web.Request, handler: Any) -> web.StreamResponse:
+        """Every answer is stamped with this boot's instance: a client that
+        pinned one boot can tell when a different one answered — even on a
+        refused call. Already-prepared responses (the CDP upgrade) are not
+        touched."""
+        response = await handler(request)
+        if boot_id and not response.prepared:
+            response.headers["X-Computerd-Instance"] = boot_id
+        return response
+
     async def dispatch(request: web.Request) -> web.Response:
         if not computer.authorised(request):
             return web.json_response({"status": "unauthorised"}, status=401)
+        if not _instance_ok(request):
+            return web.json_response(dict(_instance_deny), status=409)
         op = request.match_info["op"]
         async with computer.room_lease():
             try:
@@ -1462,7 +1510,12 @@ def create_app(
                         and scope != computer.bound_scope):
                     raise RefusedError("this computer serves another scope")
                 if op == "run":
-                    return answer(await computer.run(scope, body))
+                    transport = request.transport
+                    return answer(await computer.run(
+                        scope, body,
+                        disconnected=(
+                            None if transport is None
+                            else transport.is_closing)))
                 if op == "state":
                     return answer({**await computer.state(scope, body), **browsers.status(scope)})
                 if op == "browser_stop":
@@ -1495,6 +1548,8 @@ def create_app(
         if computer.bound_scope is not None and scope != computer.bound_scope:
             return web.json_response({"status": "denied",
                                       "reason": "this computer serves another scope"})
+        if not _instance_ok(request):
+            return web.json_response(dict(_instance_deny), status=409)
         try:
             # Starting Chrome writes the room; it must not land under a
             # directory the installer is about to rename away.
@@ -1546,7 +1601,8 @@ def create_app(
         task.cancel()
         await browsers.stop_all()
 
-    app = web.Application(client_max_size=MAX_TRANSFER_BYTES + 1024)
+    app = web.Application(
+        middlewares=[_stamp_instance], client_max_size=MAX_TRANSFER_BYTES + 1024)
     app["browsers"] = browsers
     app.cleanup_ctx.append(reap_idle)
     app.router.add_get("/v1/health", health)

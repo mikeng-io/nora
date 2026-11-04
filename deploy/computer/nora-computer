@@ -1011,6 +1011,7 @@ scope_serve() {
     [ -f "$record" ] || { log "no record for $scope: run nora-computer scope provision $scope"; exit 6; }
     box=$(scope_sandbox "$scope")
     state=$(scope_state "$scope")
+    [ "$state" != unknown ] || { log "sandbox $box's state could not be read; refusing to serve"; exit 4; }
     [ "$state" != absent ] || { log "sandbox $box is absent; provision first"; exit 6; }
     # computerd only serves behind the policy it publishes under: verify the
     # denies read back BEFORE starting — `unknown` is not a pass.
@@ -1091,6 +1092,145 @@ scope_restore() {
     record_event scope_restore ok scope="$scope" file="$file"
 }
 
+# Migration preparation (design «Migration»): a scope move is not proven by
+# backup/extract alone. `scope manifest` freezes the DRAINED source's
+# inventory — every file's path, size, sha256 and owner — plus the owner and
+# session mapping the restore must honour (scope → sandbox → record →
+# instance). `scope verify` restores the archive to a scratch directory and
+# re-reads every manifest entry: the restore is verified only when every
+# named file extracts and digests match. Both emit the same JSON contract a
+# rollback reads: what was moved aside and where it sits.
+scope_manifest_dir() {
+    # Build the drained inventory of DIRECTORY as JSON on $2's path.
+    # Testable half: no sbx, no host facts — files, sizes, digests, owners.
+    python3 - "$1" "$2" <<'EOF'
+import hashlib, json, os, sys
+root, out = sys.argv[1], sys.argv[2]
+files = []
+for base, _dirs, names in os.walk(root):
+    for name in sorted(names):
+        path = os.path.join(base, name)
+        rel = os.path.relpath(path, root)
+        try:
+            st = os.lstat(path)
+        except OSError:
+            continue
+        if not os.path.isfile(path) or os.path.islink(path):
+            continue
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        files.append({"path": rel, "size": st.st_size, "sha256": h.hexdigest(),
+                      "uid": st.st_uid, "gid": st.st_gid, "mtime": int(st.st_mtime)})
+files.sort(key=lambda f: f["path"])
+with open(out, "w") as fh:
+    json.dump({"files": files, "count": len(files)}, fh, indent=1)
+    fh.write("\n")
+print(out)
+EOF
+}
+
+scope_verify_dir() {
+    # Re-read $2 (the restored tree) against manifest $1: every file named
+    # must exist with the same size+sha256; print the verdict JSON. rc=3 on
+    # any miss or mismatch — a verified restore or nothing.
+    python3 - "$1" "$2" <<'EOF'
+import hashlib, json, os, sys
+manifest, root = sys.argv[1], sys.argv[2]
+want = {f["path"]: f for f in json.load(open(manifest))["files"]}
+missing, mismatched = [], []
+for rel, spec in want.items():
+    path = os.path.join(root, rel)
+    if not os.path.isfile(path) or os.path.islink(path):
+        missing.append(rel); continue
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    if os.lstat(path).st_size != spec["size"] or h.hexdigest() != spec["sha256"]:
+        mismatched.append(rel)
+ok = not missing and not mismatched
+print(json.dumps({"verified": ok, "checked": len(want),
+                  "missing": missing, "mismatched": mismatched}, indent=1))
+sys.exit(0 if ok else 3)
+EOF
+}
+
+scope_manifest() {
+    # The drained-source inventory of a scope's sandbox + the session/owner
+    # mapping, written beside the archive as `<file>.manifest.json`.
+    # --drained is the operator's confirmation the scope's queue held no
+    # open work when the archive was made; a running sandbox WITHOUT it is
+    # refused — a live workspace is not a drained source.
+    local scope=${1:-} file=${2:-} box state record instance drained=0
+    scope_valid "$scope" || { echo "usage: nora-computer scope manifest SCOPE FILE [--drained]" >&2; exit 2; }
+    [ "${3:-}" = "--drained" ] && drained=1
+    record=$(scope_record "$scope")
+    [ -f "$record" ] || { echo "scope manifest: no record for $scope" >&2; exit 6; }
+    [ -f "$file" ] || { echo "scope manifest: no archive $file" >&2; exit 2; }
+    box=$(scope_sandbox "$scope")
+    state=$(scope_state "$scope")
+    if [ "$state" = running ] && [ "$drained" != 1 ]; then
+        echo "scope manifest: $box is running — confirm the scope's queue held no open work with --drained" >&2
+        exit 4
+    fi
+    [ "$state" != unknown ] || { echo "scope manifest: $box's state could not be read" >&2; exit 4; }
+    instance=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("instance") or "")' "$record" 2>/dev/null || true)
+    local inv; inv=$(mktemp -d)
+    mkdir -p "$inv/extract"
+    tar xzf "$file" -C "$inv/extract" || { rm -rf "$inv"; echo "scope manifest: archive does not extract" >&2; exit 3; }
+    scope_manifest_dir "$inv/extract" "$inv/inventory.json" >/dev/null || { rm -rf "$inv"; exit 3; }
+    python3 - "$file" "$scope" "$box" "$state" "$instance" "$drained" "$inv/inventory.json" "$file.manifest.json" <<'EOF'
+import hashlib, json, sys
+archive, scope, box, state, instance, drained, inv_path, out = sys.argv[1:9]
+h = hashlib.sha256()
+with open(archive, "rb") as fh:
+    for chunk in iter(lambda: fh.read(1 << 20), b""):
+        h.update(chunk)
+inventory = json.load(open(inv_path))
+json.dump({
+    "scope": scope, "archive": archive, "archive_sha256": h.hexdigest(),
+    "source": {"sandbox": box, "state": state, "instance": instance},
+    "drained_confirmed": drained == "1" or state != "running",
+    "mapping": {"scope": scope, "workspace_root": "/workspace",
+                "record": f"{scope}.json",
+                "owners": sorted({f["uid"] for f in inventory["files"]})},
+    "files": inventory["files"], "count": inventory["count"],
+    "rollback": "on restore, the live workspace is moved aside to a "
+                ".restore-old directory and put back when the destination "
+                "is free — the restore never widens into a wipe",
+}, open(out, "w"), indent=1)
+print(out)
+EOF
+    local rc=$?
+    rm -rf "$inv"
+    [ "$rc" = 0 ] || exit 3
+    record_event scope_manifest ok scope="$scope" file="$file"
+}
+
+scope_verify() {
+    # Verified restore: extract the archive to a scratch dir INSIDE the
+    # scope's sandbox and re-read every manifest entry — the migration is
+    # proven only when the restored bytes digest-match the drained source.
+    local scope=${1:-} file=${2:-} box state
+    scope_valid "$scope" || { echo "usage: nora-computer scope verify SCOPE FILE" >&2; exit 2; }
+    [ -f "$file" ] || { echo "scope verify: no archive $file" >&2; exit 2; }
+    [ -f "$file.manifest.json" ] || { echo "scope verify: $file.manifest.json is missing — run scope manifest first" >&2; exit 3; }
+    record=$(scope_record "$scope")
+    [ -f "$record" ] || { echo "scope verify: no record for $scope" >&2; exit 6; }
+    box=$(scope_sandbox "$scope")
+    state=$(scope_state "$scope")
+    [ "$state" = running ] || { echo "scope verify: $box is $state, not running" >&2; exit 6; }
+    local inv; inv=$(mktemp -d)
+    tar xzf "$file" -C "$inv" || { rm -rf "$inv"; echo "scope verify: archive does not extract" >&2; exit 3; }
+    scope_verify_dir "$file.manifest.json" "$inv"
+    local rc=$?
+    rm -rf "$inv"
+    [ "$rc" = 0 ] || { echo "scope verify: restore is NOT verified — do not migrate" >&2; exit 3; }
+    record_event scope_verify ok scope="$scope" file="$file"
+}
+
 scope_revoke() {
     local scope=${1:-} box state
     scope_valid "$scope" || { echo "usage: nora-computer scope revoke SCOPE" >&2; exit 2; }
@@ -1113,8 +1253,10 @@ cmd_scope() {
         list) scope_list ;;
         backup) shift; scope_backup "$@" ;;
         restore) shift; scope_restore "$@" ;;
+        manifest) shift; scope_manifest "$@" ;;
+        verify) shift; scope_verify "$@" ;;
         revoke) shift; scope_revoke "$@" ;;
-        *) echo "usage: nora-computer scope provision|observe|serve|resolve|list|backup|restore|revoke" >&2; exit 2 ;;
+        *) echo "usage: nora-computer scope provision|observe|serve|resolve|list|backup|restore|manifest|verify|revoke" >&2; exit 2 ;;
     esac
 }
 

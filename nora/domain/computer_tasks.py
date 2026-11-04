@@ -191,3 +191,9 @@ class ComputerTaskStore(Protocol):
         """The terminal result reached its room (or the caller consumed it):
         `delivered_at`, bookkeeping only — the result row already stands."""
         ...
+
+    async def undelivered(self, *, limit: int) -> list[ComputerTask]:
+        """TERMINAL rows whose `delivered_at` is still empty: the durable
+        delivery retry's discovery read — independent of open work, so the
+        last terminal row of a scope is retried, never stranded."""
+        ...

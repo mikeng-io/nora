@@ -92,15 +92,34 @@ class ComputerdRuntime:
     def __init__(
         self, *, base_url: str, token: str, timeout_seconds: float = 30.0,
         max_output_chars: int = 8000, observer: ComputerCallObserver | None = None,
+        instance: str | None = None,
     ) -> None:
         self._base = base_url.rstrip("/") + "/v1"
         self._headers = {"Authorization": f"Bearer {token}"}
+        # `instance` pins every request and every reply to the VM boot the
+        # scope was admitted on (`X-Computerd-Instance`): a replaced VM —
+        # same URL, a different computerd — refuses the request and, even
+        # when it answers, fails the check below, so it reads `unavailable`,
+        # never silently served by a successor.
+        self._instance = instance or None
+        if self._instance:
+            self._headers["X-Computerd-Instance"] = self._instance
         self._timeout = timeout_seconds
         self._max_output_chars = max_output_chars
         # Told, after every call, which operation ran, the status it answered
         # and whether computerd answered at all. Never raises into a call: a
         # broken observer must not turn a computer answer into a failure.
         self._observer = observer
+
+    def _check_instance(self, response: aiohttp.ClientResponse) -> None:
+        """The reply must be stamped by the admitted instance: a computerd
+        that is not it (a replacement, or one that never learned to stamp)
+        cannot be trusted to carry this scope's requests."""
+        if self._instance is None:
+            return
+        if response.headers.get("X-Computerd-Instance") != self._instance:
+            raise _UnavailableError(
+                "the answering VM is not the admitted instance")
 
     # -- the port ---------------------------------------------------------
 
@@ -194,6 +213,7 @@ class ComputerdRuntime:
             ):
                 if response.status != 200:
                     raise _NoAnswerError(f"computerd answered HTTP {response.status}")
+                self._check_instance(response)
                 if response.content_type == "application/json":
                     reply = await response.json()
                     if not isinstance(reply, dict):
@@ -234,6 +254,7 @@ class ComputerdRuntime:
             ):
                 if response.status != 200:
                     raise _NoAnswerError(f"computerd answered HTTP {response.status}")
+                self._check_instance(response)
                 reply = await response.json(content_type=None)
             return _op_result(reply, sent)
         return await self._guarded(
@@ -310,6 +331,7 @@ class ComputerdRuntime:
         ):
             if response.status != 200:
                 raise _NoAnswerError(f"computerd answered HTTP {response.status}")
+            self._check_instance(response)
             reply = await response.json(content_type=None)
         if not isinstance(reply, dict):
             raise _UnavailableError("computerd returned a non-object JSON body")

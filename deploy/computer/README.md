@@ -408,6 +408,8 @@ nora-computer scope observe <scope>     # /v1/identity read back → instance + 
 nora-computer scope resolve <scope>     # print the record Nora resolves
 nora-computer scope backup <scope>      # the scope's /workspace → BACKUP_DIR/<scope>-<ts>.tar.gz
 nora-computer scope restore <scope> F   # extracts OVER /workspace — never wipes
+nora-computer scope manifest <scope> F [--drained]  # drained-source inventory + owner/session mapping → F.manifest.json
+nora-computer scope verify <scope> F    # extract to scratch, digest-match every manifest entry — the restore proven or refused
 nora-computer scope revoke <scope>      # drops a record whose sandbox is verifiably gone
 ```
 
@@ -430,6 +432,13 @@ expires every handle bound to the old boot.
   re-verifies state and egress before answering ready. A live sandbox with
   no record, or a record binding another scope or name, is a CONFLICT —
   refused, never adopted.
+- Migration preparation: `scope manifest` freezes the DRAINED source —
+  every file's path, size, sha256 and owner plus the scope→sandbox→
+  instance mapping — into `<file>.manifest.json`; a live sandbox requires
+  `--drained` (the operator's confirmation the queue held no open work).
+  `scope verify` extracts the archive to a scratch directory and re-reads
+  every entry: the restore is proven only when all digests match. Backup/
+  extract alone is not proof.
 - The queue for a scope's computer segments lives on `nq:computer:<scope>`
   in the DEDICATED credential `NORA_COMPUTER_REDIS_URL` (projected through
   the existing `redis_url_env` mechanism — no parallel loader). The runner

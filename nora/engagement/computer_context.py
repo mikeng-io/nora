@@ -95,21 +95,27 @@ class ComputerContextReader:
         self._tasks = tasks
         self._tabs = tabs
         self._browser_idle_after = browser_idle_after
-        # scope -> (read at, a good read). One process, rooms in the tens,
-        # entries overwritten per room: bounded by the rooms that use it.
-        self._cache: dict[str, tuple[float, StateResult]] = {}
+        # scope -> (read at monotonic, a good read, the read's own time).
+        # One process, rooms in the tens, entries overwritten per room:
+        # bounded by the rooms that use it.
+        self._cache: dict[str, tuple[float, StateResult, datetime]] = {}
+        #: scope -> observation number: how many blocks this scope's reads
+        #: have built — the block's revision mark.
+        self._revisions: dict[str, int] = {}
 
     def _inc(self, name: str, **labels: object) -> None:
         inc = getattr(self._metrics, "inc", None)
         if inc is not None:
             inc(name, **labels)
 
-    async def _state(self, scope: str) -> StateResult | None:
-        """The room's machine state within the read budget, from the cache
-        when fresh; None when it could not be read in time or at all."""
+    async def _state(self, scope: str) -> tuple[StateResult, datetime] | None:
+        """The room's machine state AND the time it was read, within the
+        read budget, from the cache when fresh; None when it could not be
+        read in time or at all. A cached hit stamps the read it serves,
+        never this turn's clock."""
         hit = self._cache.get(scope)
         if hit is not None and self._monotonic() - hit[0] < self._caps.state_cache_seconds:
-            return hit[1]
+            return hit[1], hit[2]
         try:
             state = await asyncio.wait_for(
                 self._runtime.state(scope=scope), self._caps.read_timeout_seconds,
@@ -120,8 +126,9 @@ class ComputerContextReader:
         if state.status is not SandboxStatus.OK:
             self._inc("nora_computer_context_machine_unread_total", reason="unavailable")
             return None
-        self._cache[scope] = (self._monotonic(), state)
-        return state
+        read_at = self._clock()
+        self._cache[scope] = (self._monotonic(), state, read_at)
+        return state, read_at
 
     def invalidate(self, scope: str) -> None:
         """Drop a cached machine read: a mutating segment landed on `scope`,
@@ -179,8 +186,9 @@ class ComputerContextReader:
         # the block even before its first audit event lands.
         if not used and not task_rows and not open_rows and not lapsed_rows:
             return None
-        state = await self._state(scope)
-        machine_read = state is not None
+        got = await self._state(scope)
+        state, state_at = got if got is not None else (None, None)
+        machine_read = got is not None
         tmux = state.tmux if state is not None else None
         processes = state.processes if state is not None else None
         # A tmux job or ANY process the room's user owns (a `nohup … &` job
@@ -226,20 +234,6 @@ class ComputerContextReader:
             except Exception:
                 log.exception("computer tasks read failed")
                 tasks = None
-        if self._tabs is not None:
-            try:
-                tab_rows = await self._tabs.for_scope(scope, limit=8)
-                idle = self._browser_idle_after
-                tabs = tuple(TabLine(
-                    task_id=str(t.task_id), url=cut(t.last_url, 80),
-                    title=cut(t.last_title, 60), status=t.status, via=t.via,
-                    last_activity=t.last_activity_at,
-                    expires_in=((t.last_activity_at + idle - now).total_seconds()
-                                if idle is not None and t.status == "open" else None),
-                ) for t in tab_rows)
-            except Exception:
-                log.exception("browser tabs read failed")
-                tabs = None
         instance: str | None = None
         instance_read = getattr(self._runtime, "instance", None)
         if instance_read is not None:
@@ -247,13 +241,37 @@ class ComputerContextReader:
                 instance = await instance_read(scope)
             except Exception:  # noqa: BLE001 - an unreadable identity is absent, never raised
                 instance = None
+        if self._tabs is not None:
+            try:
+                tab_rows = await self._tabs.for_scope(scope, limit=8)
+                idle = self._browser_idle_after
+                tabs = tuple(TabLine(
+                    task_id=str(t.task_id), url=cut(t.last_url, 80),
+                    title=cut(t.last_title, 60),
+                    # A row bound to a DEAD instance is expired whatever the
+                    # sweep has had time to write — the block renders the
+                    # live instance's tabs only.
+                    status=("expired" if t.status == "open" and instance is not None
+                            and t.instance != instance else t.status),
+                    via=t.via,
+                    last_activity=t.last_activity_at,
+                    expires_in=((t.last_activity_at + idle - now).total_seconds()
+                                if idle is not None and t.status == "open"
+                                and (instance is None or t.instance == instance)
+                                else None),
+                ) for t in tab_rows)
+            except Exception:
+                log.exception("browser tabs read failed")
+                tabs = None
+        self._revisions[scope] = self._revisions.get(scope, 0) + 1
         return ComputerView(
             now=now, caps=caps, open_sessions=tuple(open_lines),
             lapsed_sessions=tuple(lapsed_lines),
             tmux=tmux, processes=processes,
             processes_truncated=state.processes_truncated if state is not None else False,
             files=files, runs=_runs(rows), links=_links(rows),
-            tasks=tasks, tabs=tabs, instance=instance,
+            tasks=tasks, tabs=tabs, instance=instance, state_at=state_at,
+            revision=self._revisions[scope],
             machine_read=machine_read,
         )
 

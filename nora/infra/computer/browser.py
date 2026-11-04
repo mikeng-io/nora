@@ -664,14 +664,19 @@ async def open_browser(*, base_url: str, token: str, scope: str,
 @contextlib.asynccontextmanager
 async def connect_browser_cdp(*, base_url: str, token: str, scope: str,
                               timeout_seconds: float = CALL_SECONDS,
+                              instance: str | None = None,
                               ) -> AsyncIterator[CdpConnection]:
     """A raw CDP connection to the scope's browser, no target attached: the
     manager's channel for target bookkeeping (`getTargets`, `closeTarget`),
     never for page actions. Starting the browser counts as the same on-demand
-    start `/v1/browser` always does."""
+    start `/v1/browser` always does. `instance` pins the connection to the
+    admitted VM boot — a scoped computerd refuses a browser attach that does
+    not name the boot it serves."""
     ws_url = base_url.rstrip("/").replace("http://", "ws://", 1).replace(
         "https://", "wss://", 1) + f"/v1/browser?scope={scope}"
     headers = {"Authorization": f"Bearer {token}"}
+    if instance:
+        headers["X-Computerd-Instance"] = instance
     timeout = aiohttp.ClientTimeout(total=None, sock_connect=timeout_seconds)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         try:
@@ -693,6 +698,7 @@ async def connect_browser_cdp(*, base_url: str, token: str, scope: str,
 async def open_browser_tab(*, base_url: str, token: str, scope: str,
                            target_id: str | None = None,
                            timeout_seconds: float = CALL_SECONDS,
+                           instance: str | None = None,
                            ) -> AsyncIterator[BrowserPage]:
     """Connect to the scope's browser and attach to ONE OWNED target.
 
@@ -704,7 +710,7 @@ async def open_browser_tab(*, base_url: str, token: str, scope: str,
     is stale, and the caller answers `expired`, never a substitute tab."""
     async with connect_browser_cdp(
         base_url=base_url, token=token, scope=scope,
-        timeout_seconds=timeout_seconds,
+        timeout_seconds=timeout_seconds, instance=instance,
     ) as cdp:
         yield await _attach_owned(cdp, target_id)
 

@@ -22,6 +22,7 @@ from nora.domain.computer_tasks import (
     INTERRUPTED,
     QUEUED,
     RUNNING,
+    TERMINAL,
     ComputerTask,
     ensure_utc_event,
     normalise_task,
@@ -74,7 +75,15 @@ class SqlComputerTaskStore:
         OLDEST `queued` row, and NO row of its scope `running`. The running
         exclusion is a separate predicate, not folded into the head pick —
         picking the oldest open row lets a late-committed older `queued` row
-        start while another segment is already mid-flight."""
+        start while another segment is already mid-flight.
+
+        The exclusion is serialized on the scope itself: `pg_advisory_xact_
+        lock` on the scope key, taken INSIDE this transaction before the
+        update. A `NOT EXISTS` on the statement snapshot alone cannot
+        exclude a concurrent grant — two claims each miss the other's
+        uncommitted `running` row; the lock makes the second claimer's
+        update see the first's committed row (each statement re-reads
+        under READ COMMITTED)."""
         now = ensure_utc_event(now, field="now")
         scope = sa.select(T.c.scope).where(T.c.id == task_id).scalar_subquery()
         head = sa.select(T.c.id).where(
@@ -83,6 +92,13 @@ class SqlComputerTaskStore:
         running = sa.select(T.c.id).where(
             T.c.scope == scope, T.c.status == RUNNING)
         async with self._engine.begin() as conn:
+            owner = (await conn.execute(
+                sa.select(T.c.scope).where(T.c.id == task_id))).scalar()
+            if owner is None:
+                return None
+            await conn.execute(
+                sa.text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+                {"scope": str(owner)})
             row = (await conn.execute(
                 sa.update(T)
                 .where(T.c.id == task_id, T.c.status == QUEUED,
@@ -174,3 +190,12 @@ class SqlComputerTaskStore:
             await conn.execute(
                 sa.update(T).where(T.c.id == task_id)
                 .values(delivered_at=now, updated_at=now))
+
+    async def undelivered(self, *, limit: int) -> list[ComputerTask]:
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(T).where(
+                    T.c.status.in_(tuple(sorted(TERMINAL))),
+                    T.c.delivered_at.is_(None))
+                .order_by(T.c.finished_at).limit(limit))).all()
+        return [_row(r) for r in rows]

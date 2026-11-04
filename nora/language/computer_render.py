@@ -136,6 +136,15 @@ def render_computer(view: ComputerView | None) -> ContextBlock | None:
                 f"{where} · active {age(tab.last_activity, now)}",
                 tab.last_activity))
 
+    # The machine's own identity and when this block's read of it was made:
+    # the instance every handle above was minted on, and the observation's
+    # own revision and time — a cached read shows ITS age, never "just now".
+    if view.instance:
+        when = (f"read {age(view.state_at, now)}" if view.state_at is not None
+                else "not read")
+        lines.append(_Line(
+            f"computer instance {view.instance} · observation {view.revision} · "
+            f"{when}", view.state_at))
     if not view.machine_read:
         lines.append(_Line(f"the computer itself could not be read, checked {age(now, now)}",
                            None))

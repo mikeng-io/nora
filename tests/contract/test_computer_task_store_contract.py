@@ -21,6 +21,7 @@ Generated rows only: every scope is a synthetic hex key.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -229,3 +230,61 @@ async def test_tab_open_scopes_is_the_sweep_breadth(tabs: Any) -> None:
     await tabs.bind(_tab(scope=SCOPE))
     await tabs.bind(_tab(scope=OTHER, status="expired"))
     assert await tabs.open_scopes(limit=10) == [SCOPE]
+
+
+# --- terminal rediscovery -------------------------------------------------------
+
+
+async def test_undelivered_finds_terminal_rows_only(tasks: Any) -> None:
+    """`undelivered` is the delivery watchdog's breadth read: terminal rows
+    whose `delivered_at` never landed — a last row with no open siblings —
+    and nothing else."""
+    delivered = _task(status="done")
+    await tasks.enqueue(delivered)
+    await tasks.mark_delivered(delivered.id, now=T0)
+    stranded = _task(status="done")
+    await tasks.enqueue(stranded)
+    running = _task(status="running")
+    await tasks.enqueue(running)
+    got = await tasks.undelivered(limit=10)
+    assert [r.id for r in got] == [stranded.id]
+
+
+async def test_claim_waits_on_an_uncommitted_running_row(
+        _tasks_db: str) -> None:
+    """The round-2 overlap on REAL Postgres: a claim transaction holding an
+    uncommitted `running` row is still the scope's owner — a second claim
+    for an OLDER-created row waits on the scope's advisory lock, then sees
+    the committed `running` row and refuses. Without the lock both claims
+    land: two `running` rows, one slot."""
+    engine = create_sql_engine(_tasks_db)
+    try:
+        store = SqlComputerTaskStore(engine)
+        older = _task(created=T0)
+        newer = _task(created=T0 + timedelta(seconds=1))
+        # The later-created row is committed `queued` first — it is head
+        # alone. The earlier-created row is enqueued only AFTER the
+        # in-flight claim has begun: the review's exact interleaving.
+        await store.enqueue(newer)
+        async with engine.connect() as held:
+            # An in-flight claim of `newer`, held open like the real one:
+            # the scope's advisory lock PLUS the uncommitted `running`
+            # write — exactly `try_claim_head`'s transaction.
+            await held.execute(sa.text(
+                "SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+                {"scope": newer.scope})
+            await held.execute(sa.text(
+                "UPDATE computer_tasks SET status='running', started_at=now(),"
+                " updated_at=now() WHERE id = :id"), {"id": newer.id})
+            await store.enqueue(older)
+            # The second claim: the lock makes it WAIT for the first's
+            # commit, then re-read — `NOT EXISTS (running)` is true now.
+            raced = asyncio.ensure_future(
+                store.try_claim_head(older.id, now=T0))
+            await asyncio.sleep(0.3)  # reach the lock wait before committing
+            await held.commit()
+            assert await raced is None
+        fresh = await store.get(older.id)
+        assert fresh is not None and fresh.status == "queued"
+    finally:
+        await engine.dispose()

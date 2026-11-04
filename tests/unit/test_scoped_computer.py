@@ -28,6 +28,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from nora.app.computer_queue import (
+    GROUP,
     ORPHAN_AFTER,
     ComputerAdmission,
     ComputerQueueRunner,
@@ -122,14 +123,16 @@ async def test_admission_grants_head_and_queues_the_collision() -> None:
 async def test_nested_call_inherits_the_slot() -> None:
     store, redis = FakeComputerTaskStore(), FakeStreamRedis()
     admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
-    token = current_segment.set(uuid.uuid4())
+    parent = task(scope=SCOPE)
+    await store.enqueue(parent)
+    token = current_segment.set(parent.id)
     try:
         got = await admission.submit(scope=SCOPE, kind="native", payload={}, origin={})
     finally:
         current_segment.reset(token)
     assert got.inherited and not got.granted
-    # No row, no stream entry: a child never queues behind its parent.
-    assert not store.rows
+    # No new row, no stream entry: a child never queues behind its parent.
+    assert [r.id for r in store.rows.values()] == [parent.id]
     assert _stream(SCOPE) not in redis.streams
 
 
@@ -163,11 +166,14 @@ async def test_runner_grants_head_then_executes_and_delivers() -> None:
     assert await runner.tick() == 0
     await admission.finish(blocker.task.id, status="done", result={})
     assert await runner.tick() == 1
+    # `_deliver_pending` may deliver the finished blocker first; wait for
+    # THIS row to reach its terminal state, not for any delivery at all.
+    row = await store.get(queued.task.id)
     for _ in range(50):
-        if delivered:
+        if row is not None and row.status == "done":
             break
         await asyncio.sleep(0.01)
-    row = await store.get(queued.task.id)
+        row = await store.get(queued.task.id)
     assert row is not None and row.status == "done"
     # The typed result is the row's record — the answer, not a generic note.
     assert row.result.get("answer") == "the durable answer"
@@ -193,7 +199,8 @@ async def test_cancelled_queued_task_never_starts() -> None:
 async def test_deadline_and_orphan_close_never_replay() -> None:
     store, redis = FakeComputerTaskStore(), FakeStreamRedis()
     runner = ComputerQueueRunner(
-        tasks=store, redis=redis, clock=clock(), watch_seconds=0.01)
+        tasks=store, redis=redis, clock=clock(), watch_seconds=0.01,
+        reconcile=lambda scope: asyncio.sleep(0, "quiet"))
     stale = task(deadline=NOW - timedelta(seconds=1))
     await store.enqueue(stale)
     await redis.xadd(_stream(SCOPE), {"task": str(stale.id)})
@@ -274,18 +281,30 @@ class _Page:
 
 class _FakeScopedRuntime:
     """The scoped runtime's surface the manager reads: `binding`, `state`,
-    `put` — the endpoint registry decides resolution."""
+    `put`, `registered`, `invalidate` — the endpoint registry decides
+    resolution."""
 
     def __init__(self, endpoints: FakeScopeEndpoints, *, instance: str) -> None:
         self.endpoints = endpoints
-        self.instance = instance
+        self._instance = instance
         self.puts: dict[str, bytes] = {}
+        self.browser_running = False
+        self.invalidated: list[str] = []
 
     async def binding(self, scope):
         ep = await self.endpoints.resolve(scope)
         if ep is None:
             return None
-        return ScopeBinding(endpoint=ep, runtime=None, instance=self.instance)
+        return ScopeBinding(endpoint=ep, runtime=None, instance=self._instance)
+
+    async def instance(self, scope):
+        return self._instance
+
+    async def registered(self):
+        return tuple(self.endpoints.by_scope)
+
+    def invalidate(self, scope: str) -> None:
+        self.invalidated.append(scope)
 
     async def put(self, *, scope, path, data):
         self.puts[path] = data
@@ -293,7 +312,7 @@ class _FakeScopedRuntime:
 
     async def state(self, *, scope):
         return StateResult(status=SandboxStatus.OK,
-                           browser={"running": False})
+                           browser={"running": self.browser_running})
 
 
 @dataclass
@@ -312,11 +331,11 @@ def _wired(monkeypatch, *, instance="boot-1") -> _Rig:
     tabs = FakeBrowserTabStore()
 
     @contextlib.asynccontextmanager
-    async def fake_cdp(*, base_url, token, scope):
+    async def fake_cdp(*, base_url, token, scope, instance=None):
         yield cdp
 
     @contextlib.asynccontextmanager
-    async def fake_tab(*, base_url, token, scope, target_id):
+    async def fake_tab(*, base_url, token, scope, target_id, instance=None):
         if target_id is None:
             cdp._n += 1
             target_id = f"target-{cdp._n}"
@@ -372,7 +391,7 @@ async def test_stale_instance_expires_the_binding(monkeypatch) -> None:
     async with rig.manager.acquire(SCOPE, owner) as bound:
         target = bound.tab.target_id
     # The VM is recreated: a NEW instance answers now.
-    rig.runtime.instance = "boot-2"
+    rig.runtime._instance = "boot-2"
     _register(rig.runtime, instance="boot-2")
     async with rig.manager.acquire(SCOPE, owner) as bound:
         # A fresh tab on the new instance — the old row is expired, never
@@ -468,7 +487,9 @@ async def test_run_segment_cancel_reaches_the_executor() -> None:
     """A cancel on a RUNNING task reaches its real asyncio executor: the
     work is cancelled and DRAINED, and only then does the row close."""
     store, redis = FakeComputerTaskStore(), FakeStreamRedis()
-    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    admission = ComputerAdmission(
+        tasks=store, redis=redis, clock=clock(),
+        reconcile=lambda scope: asyncio.sleep(0, "quiet"))
     granted = await admission.submit(scope=SCOPE, kind="native",
                                      payload={}, origin={})
     assert granted.granted
@@ -512,6 +533,32 @@ async def test_owner_lost_busy_scope_stays_blocked() -> None:
     # Quiet: the VM says nothing runs — close interrupted, never replay.
     assert await runner.tick() == 0
     row = await store.get(orphan.id)
+    assert row is not None and row.status == "interrupted"
+
+
+async def test_orphan_bound_never_closes_a_busy_vm() -> None:
+    """The 45-min orphan bound is still not permission to close on age:
+    a VM that answers BUSY keeps its running row — only the guest's own
+    `quiet` lets the lost owner close `interrupted`."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    verdict = ["busy"]
+
+    async def reconcile(scope: str) -> str:
+        return verdict[0]
+
+    runner = ComputerQueueRunner(
+        tasks=store, redis=redis, clock=clock(), reconcile=reconcile)
+    old = replace(task(), status="running",
+                  started_at=NOW - timedelta(hours=1))
+    store.rows[old.id] = old
+    # Busy: past the orphan bound does not close it — still the owner.
+    await runner.tick()
+    row = await store.get(old.id)
+    assert row is not None and row.status == "running"
+    # Quiet: the guest itself reports no surviving work — close.
+    verdict[0] = "quiet"
+    await runner.tick()
+    row = await store.get(old.id)
     assert row is not None and row.status == "interrupted"
 
 
@@ -571,7 +618,7 @@ async def test_stale_instance_continuation_is_expired(monkeypatch) -> None:
     owner = uuid.uuid4()
     async with rig.manager.acquire(SCOPE, owner):
         pass
-    rig.runtime.instance = "boot-2"
+    rig.runtime._instance = "boot-2"
     _register(rig.runtime, instance="boot-2")
     with pytest.raises(TabUnavailable) as err:
         async with rig.manager.acquire(SCOPE, owner, must_exist=True):
@@ -726,3 +773,289 @@ async def test_binding_revalidates_after_invalidation() -> None:
     runtime.invalidate(SCOPE)
     assert await runtime.binding(SCOPE) is not None
     assert len(calls) == 2  # re-verified, never trusted twice
+
+
+# --- round-2 blockers -----------------------------------------------------------
+
+
+async def test_submit_refuses_a_scope_that_moved() -> None:
+    """`current_segment` inherits only for the SAME scope: a rebuilt call
+    resolving a DIFFERENT partition — the room's unit or DM anchor moved
+    under the queued row — is `unavailable`, never run under the old
+    grant, never retargeted, never enqueued."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    parent = task(scope=SCOPE)
+    await store.enqueue(parent)
+    token = current_segment.set(parent.id)
+    try:
+        moved = await admission.submit(scope=OTHER, kind="native",
+                                       payload={}, origin={})
+        same = await admission.submit(scope=SCOPE, kind="native",
+                                      payload={}, origin={})
+    finally:
+        current_segment.reset(token)
+    assert not moved.granted and not moved.inherited
+    assert moved.result is not None and moved.result.status == "unavailable"
+    assert "scope moved" in (moved.result.result or {}).get("reason", "")
+    assert same.inherited
+    # The only durable row is the parent's — nothing reached the new scope.
+    assert [r.id for r in store.rows.values()] == [parent.id]
+    assert _stream(OTHER) not in redis.streams
+
+
+async def test_terminal_undelivered_row_is_rediscovered() -> None:
+    """A terminal row the stream never carried — or whose delivery failed —
+    is re-driven from the TABLE until `delivered_at` lands: a last row with
+    no open siblings and no pointer is never stranded."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    delivered: list[uuid.UUID] = []
+    attempts: list[uuid.UUID] = []
+
+    async def flaky(row: ComputerTask) -> None:
+        attempts.append(row.id)
+        if len(attempts) == 1:
+            raise RuntimeError("delivery down")  # retried, never lost
+        delivered.append(row.id)
+        await store.mark_delivered(row.id, now=NOW)
+
+    runner = ComputerQueueRunner(
+        tasks=store, redis=redis, clock=clock(), on_terminal=flaky)
+    last = replace(task(), status="done", finished_at=NOW)
+    store.rows[last.id] = last  # terminal, undelivered, no stream entry
+    assert await runner.tick() == 0
+    row = await store.get(last.id)
+    assert row is not None and row.delivered_at is None  # failed: stays
+    assert await runner.tick() == 0
+    row = await store.get(last.id)
+    assert delivered == [last.id] and row.delivered_at is not None
+
+
+async def test_settle_never_acks_a_row_that_is_not_terminal() -> None:
+    """A row whose `finish` write never landed is neither delivered nor
+    acked — the pending pointer drives the pass that reconciles it."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    delivered: list[uuid.UUID] = []
+
+    async def collect(row: ComputerTask) -> None:
+        delivered.append(row.id)
+
+    runner = ComputerQueueRunner(
+        tasks=store, redis=redis, clock=clock(), on_terminal=collect)
+    row = replace(task(), status="running", started_at=NOW)
+    store.rows[row.id] = row
+    mid = await redis.xadd(_stream(SCOPE), {"task": str(row.id)})
+    key = (_stream(SCOPE), GROUP)
+    redis.pending.setdefault(key, []).append(mid)
+    await runner._settle(_stream(SCOPE), mid, row)
+    fresh = await store.get(row.id)
+    assert fresh.delivered_at is None and delivered == []
+    assert mid in redis.pending[key]  # unacked: the pointer survives
+
+
+async def test_cancel_without_executor_keeps_a_busy_vm_blocked() -> None:
+    """A running row with no local executor: `cancel` asks the GUEST — busy
+    keeps the row running and the scope excluded; quiet closes it
+    `interrupted`, never `cancelled` on a flag alone."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    verdicts = ["busy"]
+
+    async def probe(scope: str) -> str:
+        return verdicts[-1]
+
+    admission = ComputerAdmission(
+        tasks=store, redis=redis, clock=clock(), reconcile=probe)
+    running = replace(task(), status="running", started_at=NOW)
+    store.rows[running.id] = running
+    row = await admission.cancel(running.id)
+    assert row is not None and row.status == "running"  # busy: never closed
+    verdicts.append("quiet")
+    row = await admission.cancel(running.id)
+    assert row is not None and row.status == "interrupted"
+    assert (row.result or {}).get("reason") == "the owner was lost"
+
+
+async def test_caller_cancel_never_orphans_the_executor() -> None:
+    """A cancelled CALLER leaves the segment registered and running: the
+    executor — not the awaiter — owns the row's terminal write, and the
+    registry entry ends when the executor does."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    admission = ComputerAdmission(
+        tasks=store, redis=redis, clock=clock(),
+        reconcile=lambda scope: asyncio.sleep(0, "quiet"))
+    granted = await admission.submit(scope=SCOPE, kind="native",
+                                     payload={}, origin={})
+    assert granted.granted
+    release = asyncio.Event()
+
+    async def work() -> dict:
+        await release.wait()
+        return {"status": "ok"}
+
+    caller = asyncio.ensure_future(
+        admission.run_segment(granted.task, work()))
+    await asyncio.sleep(0.02)
+    caller.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await caller
+    # The executor outlives its caller: still registered, still owning.
+    assert admission.executors.executor(granted.task.id) is not None
+    release.set()
+    row = None
+    for _ in range(50):
+        row = await store.get(granted.task.id)
+        if row is not None and row.status == "done":
+            break
+        await asyncio.sleep(0.01)
+    assert row is not None and row.status == "done"
+    assert admission.executors.executor(granted.task.id) is None
+
+
+async def test_poll_delivers_the_typed_result() -> None:
+    """`poll` hands the room the typed result the row persisted — stdout,
+    the capture's path and digest, the exit code — not a bare note."""
+    store = FakeComputerTaskStore()
+    backend = ComputerTaskBackend(tasks=store)
+    row = task()
+    await store.enqueue(row)
+    await store.claim(row.id, now=NOW)
+    await store.finish(row.id, status="done", result={
+        "status": "ok", "exit_code": 0, "stdout": "answer is 42\n",
+        "path": "captures/c1.png", "sha256": "ab" * 32}, now=NOW)
+    from nora.domain.ports import JobStatus
+    got = await backend.poll(job_id=str(row.id))
+    assert got.status is JobStatus.SUCCEEDED
+    assert "answer is 42" in got.report
+    assert "captures/c1.png" in got.report and ("ab" * 32) in got.report
+
+
+async def test_sweep_closes_a_popup_no_client_adopted(monkeypatch) -> None:
+    """A page target that appeared while NO client was attached — a timer's
+    popup — is found by the sweep's live-target reconcile and closed; an
+    unowned target never mints a tab row."""
+    rig = _wired(monkeypatch)
+    _register(rig.runtime)
+    rig.runtime.browser_running = True
+    rig.cdp.targets["popup-1"] = {"url": "https://x.invalid", "title": "pop"}
+    assert await rig.manager.sweep(now=NOW) == 0  # no rows expired
+    assert "popup-1" in rig.cdp.closed and "popup-1" not in rig.cdp.targets
+    assert not rig.tabs.rows
+
+
+async def test_browser_stop_refuses_while_a_task_runs(monkeypatch) -> None:
+    """The stop joins the scope's execution owner: a durable `running` row
+    makes the scope busy — no stop call reaches the VM at all."""
+    rig = _wired(monkeypatch)
+    _register(rig.runtime)
+    store = FakeComputerTaskStore()
+    store.rows[task().id] = replace(task(), status="running", started_at=NOW)
+    rig.manager._tasks = store
+    rig.runtime.browser_running = True
+    called: list[str] = []
+
+    class _NoHttp:
+        def __init__(self, *a, **k) -> None:
+            called.append("http")
+            raise AssertionError("no HTTP while a task runs")
+
+    monkeypatch.setattr(mgr_mod.aiohttp, "ClientSession", _NoHttp)
+    assert await rig.manager.browser_stop(SCOPE) is False
+    assert called == []
+
+
+async def test_sweep_retries_a_failed_stop_until_the_browser_is_down(
+        monkeypatch) -> None:
+    """A browser still running with every tab row gone is still discovered
+    (the registry names the scope) and its stop retried — a refused stop is
+    never the end of the story."""
+    rig = _wired(monkeypatch)
+    _register(rig.runtime)
+    rig.runtime.browser_running = True
+    stops: list[str] = []
+
+    async def fake_stop(scope: str) -> bool:
+        stops.append(scope)
+        if len(stops) < 2:
+            return False  # unconfirmed: stays retryable
+        rig.runtime.browser_running = False
+        return True
+
+    monkeypatch.setattr(rig.manager, "browser_stop", fake_stop)
+    assert await rig.manager.sweep(now=NOW) == 0
+    assert stops == [SCOPE]
+    assert await rig.manager.sweep(now=NOW) == 0
+    assert stops == [SCOPE, SCOPE]  # retried, not leaked
+
+
+async def test_context_stamps_instance_revision_and_the_reads_own_time(
+        monkeypatch) -> None:
+    """The `<computer>` block carries the bound instance and the
+    observation's own revision and read time — a cached read shows ITS
+    age, never 'checked just now' on a stale answer."""
+    rig = _wired(monkeypatch)
+    _register(rig.runtime, scope=UNIT_SCOPE)
+    sessions = FakeComputerSessionStore()
+    events = FakeComputerEventStore()
+    await events.append(ComputerEvent(
+        id=uuid.uuid4(), operation_id=uuid.uuid4(), phase="finished",
+        created_at=NOW, started_at=NOW, finished_at=NOW,
+        actor="tag", requester_person_id="p1", platform="signal",
+        conversation_id="room-a", conversation_type="group", tag_id="",
+        scope=UNIT_SCOPE, tool="computer_run", path="direct",
+        trace_id="", span_id="", status="ok", result={"note": "ran"}))
+    tick = [NOW, 0.0]
+
+    def mono() -> float:
+        return tick[1]
+
+    reader = ComputerContextReader(
+        sessions=sessions, events=events, runtime=rig.runtime,
+        caps=ComputerContextCaps(), clock=lambda: tick[0], metrics=None,
+        unit_for=lambda platform, cid: "unit-x", monotonic=mono,
+        tasks=FakeComputerTaskStore(), tabs=rig.tabs,
+        browser_idle_after=timedelta(minutes=10))
+    first = await reader.read(platform="signal", conversation_id="room-a")
+    assert first is not None and first.instance == "boot-1"
+    assert first.revision == 1 and first.state_at == NOW
+    body = render_computer(first)
+    assert body is not None and "boot-1" in body.body
+    # A cached read (the monotonic clock stays inside the cache window): the
+    # block stamps the ORIGINAL read's time and a new revision.
+    tick[0] = NOW + timedelta(minutes=2)
+    tick[1] = 10.0
+    second = await reader.read(platform="signal", conversation_id="room-a")
+    assert second.revision == 2 and second.state_at == NOW  # the read's own
+    body = render_computer(second)
+    assert body is not None and "2 min ago" in body.body
+
+
+async def test_context_marks_a_dead_instances_tab_expired(monkeypatch) -> None:
+    """A tab row bound to an instance that is no longer the live one is
+    rendered `expired` whatever the sweep has had time to write — the
+    block reports the live instance's tabs only."""
+    rig = _wired(monkeypatch)
+    _register(rig.runtime, scope=UNIT_SCOPE)
+    async with rig.manager.acquire(UNIT_SCOPE, uuid.uuid4()):
+        pass
+    # The VM is recreated: a new instance answers; the row is un-swept.
+    rig.runtime._instance = "boot-2"
+    _register(rig.runtime, scope=UNIT_SCOPE, instance="boot-2")
+    sessions = FakeComputerSessionStore()
+    events = FakeComputerEventStore()
+    await events.append(ComputerEvent(
+        id=uuid.uuid4(), operation_id=uuid.uuid4(), phase="finished",
+        created_at=NOW, started_at=NOW, finished_at=NOW,
+        actor="tag", requester_person_id="p1", platform="signal",
+        conversation_id="room-a", conversation_type="group", tag_id="",
+        scope=UNIT_SCOPE, tool="computer_browse", path="direct",
+        trace_id="", span_id="", status="ok", result={"note": "ran"}))
+    reader = ComputerContextReader(
+        sessions=sessions, events=events, runtime=rig.runtime,
+        caps=ComputerContextCaps(), clock=clock(), metrics=None,
+        unit_for=lambda platform, cid: "unit-x",
+        tasks=FakeComputerTaskStore(), tabs=rig.tabs,
+        browser_idle_after=timedelta(minutes=10))
+    view = await reader.read(platform="signal", conversation_id="room-a")
+    assert view is not None and view.tabs
+    assert view.instance == "boot-2"
+    assert all(t.status == "expired" for t in view.tabs)

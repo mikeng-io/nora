@@ -131,4 +131,12 @@ class ComputerView:
     #: typed provenance: an `instance` change means every handle in this
     #: block was minted on a dead VM.
     instance: str | None = None
+    #: When the machine state was actually read — its own observation time,
+    #: never the turn's: a cached state stamps the read it serves, so the
+    #: block can never show a fresh "checked just now" on a stale answer.
+    state_at: datetime | None = None
+    #: The reader's per-scope observation counter: it moves on every read
+    #: this block was built from — two blocks carrying the same number saw
+    #: the same observation.
+    revision: int = 0
     machine_read: bool = True

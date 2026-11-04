@@ -50,7 +50,7 @@ from nora.domain.computer_sessions import (
     ensure_utc_event,
     normalise_session,
 )
-from nora.domain.computer_tasks import ComputerTask
+from nora.domain.computer_tasks import TERMINAL, ComputerTask
 from nora.domain.computer_vms import ScopedEndpoint
 from nora.domain.documents import (
     DocumentExistsError,
@@ -2762,6 +2762,7 @@ class FakeComputerTaskStore:
     def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
         self.rows: dict[UUID, ComputerTask] = {}
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._scope_locks: dict[str, asyncio.Lock] = {}
 
     def _save(self, task: ComputerTask) -> ComputerTask:
         self.rows[task.id] = task
@@ -2782,17 +2783,24 @@ class FakeComputerTaskStore:
 
     async def try_claim_head(self, task_id: UUID, *, now: datetime) -> ComputerTask | None:
         task = self.rows.get(task_id)
-        if task is None or task.status != "queued":
+        if task is None:
             return None
-        blocked = any(
-            t.scope == task.scope and (
-                t.status == "running"
-                or (t.status == "queued"
-                    and (t.created_at, str(t.id)) < (task.created_at, str(task.id))))
-            for t in self.rows.values())
-        if blocked:
-            return None
-        return await self.claim(task_id, now=now)
+        # The same serialization the SQL store takes on the scope's
+        # advisory lock: two claims of one scope never interleave their
+        # check and write.
+        async with self._scope_locks.setdefault(task.scope, asyncio.Lock()):
+            task = self.rows.get(task_id)
+            if task is None or task.status != "queued":
+                return None
+            blocked = any(
+                t.scope == task.scope and (
+                    t.status == "running"
+                    or (t.status == "queued"
+                        and (t.created_at, str(t.id)) < (task.created_at, str(task.id))))
+                for t in self.rows.values())
+            if blocked:
+                return None
+            return await self.claim(task_id, now=now)
 
     async def finish(self, task_id: UUID, *, status: str,
                      result: Mapping[str, Any], now: datetime) -> None:
@@ -2843,6 +2851,11 @@ class FakeComputerTaskStore:
         task = self.rows.get(task_id)
         if task is not None:
             self._save(replace(task, delivered_at=now, updated_at=now))
+
+    async def undelivered(self, *, limit: int) -> list[ComputerTask]:
+        return [t for t in sorted(
+            self.rows.values(), key=lambda t: t.finished_at or t.updated_at)
+            if t.status in TERMINAL and t.delivered_at is None][:limit]
 
 
 class FakeBrowserTabStore:

@@ -113,6 +113,14 @@ class ScopeBrowserManager:
         self, *, runtime: ScopedComputerdRuntime, tabs: BrowserTabStore,
         token: str, clock: Callable[[], datetime], idle_after: timedelta,
         observer: Any = None,
+        # The execution-owner store ([computer.scoped]): browser cleanup
+        # joins the same owner as segments — a scope with a `running` row
+        # is an active owner and its browser is never stopped under it.
+        tasks: Any = None,
+        # Lifecycle events to the existing audit facilities:
+        # `(scope, transition, subject)` — `tab_expired`, `browser_stopped`,
+        # `popup_closed`. None keeps cleanup silent.
+        on_event: Callable[[str, str, Any], Any] | None = None,
     ) -> None:
         self._runtime = runtime
         self._tabs = tabs
@@ -120,6 +128,8 @@ class ScopeBrowserManager:
         self._clock = clock
         self._idle_after = idle_after
         self._observer = observer
+        self._tasks = tasks
+        self._on_event = on_event
         #: The task currently holding a live attach per scope — the owner any
         #: unbound page target found during its attach is assigned to.
         self._active: dict[str, UUID] = {}
@@ -134,6 +144,16 @@ class ScopeBrowserManager:
 
     def _lock(self, scope: str) -> asyncio.Lock:
         return self._locks.setdefault(scope, asyncio.Lock())
+
+    def _note(self, scope: str, transition: str, subject: Any = None) -> None:
+        """Lifecycle instrumentation on the existing audit hook — never
+        blocks cleanup: a listener failure is logged, not raised."""
+        if self._on_event is None:
+            return
+        try:
+            self._on_event(scope, transition, subject)
+        except Exception:
+            log.exception("browser lifecycle listener failed")
 
     async def _binding(self, scope: str) -> ScopeBinding:
         binding = await self._runtime.binding(scope)
@@ -254,7 +274,7 @@ class ScopeBrowserManager:
             try:
                 async with open_browser_tab(
                     base_url=binding.endpoint.base_url, token=self._token,
-                    scope=scope, target_id=wanted,
+                    scope=scope, target_id=wanted, instance=binding.instance,
                 ) as page:
                     now = self._clock()
                     if wanted is None:
@@ -308,6 +328,9 @@ class ScopeBrowserManager:
                             await self._tabs.set_status(r.id, status=CLOSED,
                                                         now=self._clock())
                     raise TabUnavailable("expired") from None
+                # A refused or dead connection may be a replaced VM:
+                # re-verify the identity before the next attach.
+                self._runtime.invalidate(scope)
                 raise TabUnavailable("unavailable") from exc
             finally:
                 self._active.pop(scope, None)
@@ -342,7 +365,21 @@ class ScopeBrowserManager:
     async def browser_stop(self, scope: str) -> bool:
         """Ask computerd to stop the scope's browser and confirm, through
         `state`, that it is gone. False when the VM could not answer or the
-        browser is still up."""
+        browser is still up.
+
+        The stop joins the scope's EXECUTION owner, not just the manager
+        lock: a `running` task row (a native or worker segment, which may
+        be about to attach) makes the scope busy, and a store that cannot
+        prove quiet is never a stop."""
+        if self._tasks is not None:
+            try:
+                busy = any(
+                    t.status == "running"
+                    for t in await self._tasks.open_for_scope(scope, limit=20))
+            except Exception:  # noqa: BLE001 - an unreadable store is never a quiet owner
+                return False
+            if busy:
+                return False
         binding = await self._runtime.binding(scope)
         if binding is None:
             return False
@@ -350,30 +387,58 @@ class ScopeBrowserManager:
         try:
             async with aiohttp.ClientSession(
                     timeout=aiohttp.ClientTimeout(total=30)) as s, s.post(url, headers={
-                    "Authorization": f"Bearer {self._token}"},
+                    "Authorization": f"Bearer {self._token}",
+                    "X-Computerd-Instance": binding.instance},
                     json={"scope": scope}) as r:
                 if r.status != 200:
+                    # A refused stop (a mismatched instance included) makes
+                    # the binding suspect: re-verify before the next pass.
+                    self._runtime.invalidate(scope)
                     return False
         except Exception:  # noqa: BLE001 - an unanswering VM reads as "not stopped"
             return False
         state = await self._runtime.state(scope=scope)
         running = bool((state.browser or {}).get("running")) \
             if state.status is SandboxStatus.OK else None
-        return running is False
+        stopped = running is False
+        if stopped:
+            self._note(scope, "browser_stopped", scope)
+        return stopped
+
+    async def _browser_running(self, scope: str) -> bool | None:
+        """Whether the scope's browser verifiably runs, from `state`: True,
+        False, or None when the VM could not say — unknown is never "down"."""
+        try:
+            state = await self._runtime.state(scope=scope)
+        except Exception:  # noqa: BLE001 - an unreachable VM is "unknown", never "down"
+            return None
+        if (state.status is not SandboxStatus.OK
+                or not isinstance(state.browser, dict)):
+            return None
+        return bool(state.browser.get("running"))
 
     async def _sweep_scope(self, scope: str, now: datetime) -> int:
-        """One scope's idle close, serialized against its own attaches.
+        """One scope's reconcile and idle close, serialized against its
+        own attaches.
 
         Rows on a DEAD instance expire outright (their targets went with the
         VM). Rows on the live instance are closed on the scope's own CDP
         connection and expired only once the guest effect is confirmed —
         a refused close leaves the row open for the next pass, never
-        silently leaked, and a busy scope is skipped, never raced."""
+        silently leaked, and a busy scope is skipped, never raced.
+
+        While the browser is up at all, the pass reconciles the ACTUAL
+        target list with `owner=None`: a popup a page timer created while
+        no client was attached (computerd drops target events with none)
+        is unbound and is closed here — the four-target cap holds for the
+        browser's whole retained lifetime, not only inside `acquire`."""
         lock = self._lock(scope)
         if lock.locked():
             return 0  # mid-attach: next pass retries
         async with lock:
             binding = await self._runtime.binding(scope)
+            if binding is None:
+                return 0  # no verified VM: nothing safe to do this pass
             idle_before = now - self._idle_after
             try:
                 rows = await self._tabs.for_scope(scope, limit=200)
@@ -381,29 +446,30 @@ class ScopeBrowserManager:
                 log.exception("browser tab sweep read failed")
                 return 0
             open_rows = [r for r in rows if r.status == OPEN]
-            if not open_rows:
-                return 0
-            if binding is None:
-                return 0  # no verified VM: nothing safe to do this pass
+            browser_up = await self._browser_running(scope)
+            if not open_rows and browser_up is not True:
+                return 0  # nothing bound and no live browser to stop
             dead = [r for r in open_rows if r.instance != binding.instance]
             live_rows = [r for r in open_rows if r.instance == binding.instance]
             candidates = [r for r in live_rows
                           if r.last_activity_at < idle_before
                           and r.task_id != self._active.get(scope)]
-            if not dead and not candidates:
-                return 0
             expired = 0
             now2 = self._clock()
             for row in dead:
                 with contextlib.suppress(Exception):
                     await self._tabs.set_status(row.id, status="expired", now=now2)
                     expired += 1
-            if candidates:
+                    self._note(scope, "tab_expired", row.id)
+            if candidates or browser_up is True:
                 try:
                     async with connect_browser_cdp(
                         base_url=binding.endpoint.base_url,
                         token=self._token, scope=scope,
+                        instance=binding.instance,
                     ) as cdp:
+                        await self._reconcile(scope, binding, cdp, now=now2,
+                                              owner=None)
                         for row in candidates:
                             # Re-read idle inside the lock: an attach that
                             # touched it while we waited is spared.
@@ -421,28 +487,46 @@ class ScopeBrowserManager:
                                 await self._tabs.set_status(
                                     row.id, status="expired", now=self._clock())
                                 expired += 1
+                                self._note(scope, "tab_expired", row.id)
                 except BrowserError:
-                    pass  # no connection: every close stays pending, retried
+                    # No connection: every close stays pending, retried; the
+                    # binding itself is suspect — re-verify before next pass.
+                    self._runtime.invalidate(scope)
             try:
                 left = await self._tabs.open_for_scope(scope, instance=binding.instance)
             except Exception:
                 log.exception("browser tab open-row read failed")
                 return expired
-            if not left:
+            # Stop the browser only once nothing open remains AND the
+            # machine still says it runs — or the last row just expired
+            # this pass. A failed stop stays retryable: the registry keeps
+            # this scope in `sweep`'s discovery while its browser runs.
+            if not left and (browser_up is True or open_rows):
                 await self.browser_stop(scope)
             return expired
 
     async def sweep(self, *, now: datetime | None = None) -> int:
-        """Expire tabs idle past `idle_after`, scopes one at a time; stop the
-        browser when nothing open remains. Returns confirmed expiries."""
+        """Expire tabs idle past `idle_after`, scopes one at a time;
+        reconcile every scope whose browser still runs, and stop it when
+        nothing open remains. Returns confirmed expiries.
+
+        Discovery is the tab store's open scopes UNION the registry's
+        provisioned ones: a scope whose browser is still up with all tabs
+        already closed or expired is still visited — the stop that failed
+        is retried, the guest process is never leaked by silence."""
         now = now or self._clock()
+        scopes: set[str] = set()
         try:
-            scopes = await self._tabs.open_scopes(limit=200)
+            scopes.update(await self._tabs.open_scopes(limit=200))
         except Exception:
             log.exception("browser tab scope sweep read failed")
             return 0
+        registered = getattr(self._runtime, "registered", None)
+        if registered is not None:
+            with contextlib.suppress(Exception):
+                scopes.update(await registered())
         total = 0
-        for scope in scopes:
+        for scope in sorted(scopes):
             try:
                 total += await self._sweep_scope(scope, now)
             except Exception:

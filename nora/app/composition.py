@@ -16,6 +16,7 @@ function, construct `App`.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import functools
 import logging
 import uuid
@@ -1818,14 +1819,6 @@ async def build_dependencies(
         # (admission) and the granter side (runner): a `running` row with no
         # executor here is owner-lost, and a cancel can reach the real work.
         computer_segments = SegmentRegistry()
-        computer_admission = ComputerAdmission(
-            tasks=computer_tasks, redis=computer_redis, clock=clock,
-            executors=computer_segments)
-        browser_manager = ScopeBrowserManager(
-            runtime=computer, tabs=browser_tabs,
-            token=computer_token, clock=clock,
-            idle_after=timedelta(seconds=scoped_cfg.browser_idle_seconds))
-        computer_task_backend = ComputerTaskBackend(tasks=computer_tasks)
 
         async def _deliver_computer_task(row: Any) -> None:
             await deliver_computer_task(
@@ -1841,9 +1834,9 @@ async def build_dependencies(
                     else "quiet" if verdict is False else "unknown")
 
         async def _queue_audit(task: Any, transition: str) -> None:
-            """A queue lifecycle transition (granted/cancelled/interrupted)
-            as its own audit row — the executor's own calls audit inside the
-            segment; this records the QUEUE's acts."""
+            """A queue lifecycle transition (granted/cancelled/interrupted/
+            delivered) as its own audit row — the executor's own calls audit
+            inside the segment; this records the QUEUE's acts."""
             if computer_events is None:
                 return
             origin = dict(task.origin or {})
@@ -1863,6 +1856,39 @@ async def build_dependencies(
                 result={"task": str(task.id), "kind": task.kind,
                         "transition": transition}))
 
+        def _browser_event(scope: str, transition: str, subject: Any) -> None:
+            """A browser lifecycle transition (tab expired, browser stopped)
+            as its own audit row — the sweep's guest effect, not a guess.
+            A transition the room can see dirties its `<computer>` block's
+            cached read too, so the next turn re-observes."""
+            if computer_context is not None:
+                computer_context.invalidate(scope)
+            if computer_events is None:
+                return
+
+            async def _write() -> None:
+                await computer_events.append(ComputerEvent(
+                    id=uuid.uuid4(), operation_id=uuid.uuid4(), phase="finished",
+                    created_at=clock(), started_at=clock(), finished_at=clock(),
+                    actor="sweeper", requester_person_id=None,
+                    platform="", conversation_id="", conversation_type="",
+                    tag_id="", scope=scope, tool="computer_browser",
+                    path="direct", trace_id="", span_id="", status=transition,
+                    result={"transition": transition,
+                            "subject": str(subject or "")}))
+            with contextlib.suppress(Exception):
+                asyncio.get_running_loop().create_task(_write())
+
+        computer_admission = ComputerAdmission(
+            tasks=computer_tasks, redis=computer_redis, clock=clock,
+            executors=computer_segments, reconcile=_reconcile_scope,
+            audit=_queue_audit)
+        browser_manager = ScopeBrowserManager(
+            runtime=computer, tabs=browser_tabs, tasks=computer_tasks,
+            token=computer_token, clock=clock,
+            idle_after=timedelta(seconds=scoped_cfg.browser_idle_seconds),
+            on_event=_browser_event)
+        computer_task_backend = ComputerTaskBackend(tasks=computer_tasks)
         computer_queue_runner = ComputerQueueRunner(
             tasks=computer_tasks, redis=computer_redis, clock=clock,
             metrics=metrics, on_terminal=_deliver_computer_task,

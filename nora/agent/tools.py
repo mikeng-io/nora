@@ -16182,7 +16182,7 @@ Args:
 
     _queued_run = _computer_queued("native", LIVE_WAIT_SECONDS, dirty=True)
     _queued_browse = _computer_queued("browse", LIVE_WAIT_SECONDS, dirty=True)
-    _queued_capture = _computer_queued("capture", LIVE_WAIT_SECONDS)
+    _queued_capture = _computer_queued("capture", LIVE_WAIT_SECONDS, dirty=True)
 
     async def computer_run(command: str, timeout_seconds: int | None = None) -> dict:
         """Run a bash command on your own computer, in this unit's shared workspace.
@@ -17179,6 +17179,8 @@ Args:
                     "reason": "the task changed while it was cancelled",
                     "note": "The task changed while it was being stopped; "
                             "check the computer block for its state."}
+        if computer_context_invalidate is not None:
+            computer_context_invalidate(bound_computer_scope)
         if row.status in ("cancelled", "interrupted"):
             return {"status": "ok", "task": str(row.id),
                     "note": "The task is stopped."}

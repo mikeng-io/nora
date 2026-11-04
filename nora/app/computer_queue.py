@@ -41,7 +41,7 @@ import contextlib
 import logging
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -51,6 +51,7 @@ from nora.domain.computer_tasks import (
     RUNNING,
     TASK_KINDS,
     TERMINAL,
+    UNAVAILABLE,
     ComputerTask,
     ComputerTaskStore,
     current_segment,
@@ -158,12 +159,26 @@ class ComputerAdmission:
         self, *, tasks: ComputerTaskStore, redis: Any,
         clock: Callable[[], datetime], poll_seconds: float = 0.25,
         executors: SegmentRegistry | None = None,
+        reconcile: Callable[[str], Awaitable[str]] | None = None,
+        audit: Callable[[ComputerTask, str], Awaitable[None]] | None = None,
     ) -> None:
         self._tasks = tasks
         self._redis = redis
         self._clock = clock
         self._poll = poll_seconds
         self.executors = executors or SegmentRegistry()
+        # The VM's own quiet/busy probe — the only authority that can
+        # confirm a cancelled command really stopped on the guest.
+        self._reconcile = reconcile
+        self._audit = audit
+
+    async def _note(self, task: ComputerTask, transition: str) -> None:
+        if self._audit is None:
+            return
+        try:
+            await self._audit(task, transition)
+        except Exception:
+            log.exception("computer queue audit write failed")
 
     async def submit(
         self, *, scope: str, kind: str, payload: Mapping[str, Any],
@@ -171,9 +186,26 @@ class ComputerAdmission:
         deadline_at: datetime | None = None,
     ) -> SubmittedTask:
         """Admit one segment, FIFO within the scope."""
-        if current_segment.get() is not None:
-            return SubmittedTask(task=_ephemeral(scope, kind, self._clock()),
-                                 inherited=True)
+        segment_id = current_segment.get()
+        if segment_id is not None:
+            parent = await self._tasks.get(segment_id)
+            if parent is not None and parent.scope == scope:
+                return SubmittedTask(task=_ephemeral(scope, kind, self._clock()),
+                                     inherited=True)
+            # The durable row is bound to the scope it was admitted for. A
+            # rebuilt call that resolves a DIFFERENT partition — the room's
+            # unit or DM anchor moved under the queued row — is never run
+            # under the old grant and never retargeted: it is unavailable.
+            moved = _ephemeral(scope, kind, self._clock())
+            return SubmittedTask(task=moved, result=replace(
+                moved, status=UNAVAILABLE, finished_at=self._clock(),
+                result={
+                    "status": "unavailable",
+                    "reason": "the task's scope moved while it was queued",
+                    "note": "That computer task could not run: the unit or DM "
+                            "it belonged to changed while it waited, and it is "
+                            "never run against a different computer.",
+                }))
         now = self._clock()
         task = ComputerTask(
             id=uuid.uuid4(), scope=scope, kind=kind, status=QUEUED,
@@ -238,7 +270,13 @@ class ComputerAdmission:
             except asyncio.CancelledError:
                 reply = {"status": "cancelled",
                          "note": "The computer task was stopped while it ran."}
-                await self._safe_finish(task.id, "cancelled", reply)
+                # `cancelled` is written only when the VM itself reports no
+                # surviving work — a stopped HTTP awaiter is not a stopped
+                # guest command. Busy or unreadable leaves the row
+                # `running`: owner-lost, the watchdog's reconcile owns it.
+                if await _guest_quiet(
+                        self._reconcile, task.scope, seconds=DRAIN_SECONDS):
+                    await self._safe_finish(task.id, "cancelled", reply)
                 raise
             except BaseException as exc:
                 reply = {"status": "unavailable", "reason": type(exc).__name__}
@@ -252,6 +290,10 @@ class ComputerAdmission:
 
         worker = asyncio.ensure_future(_run())
         self.executors.register(task.id, worker)
+        # Unregister when the EXECUTOR ends — never when the caller does: a
+        # cancelled caller must not orphan a running segment's ownership.
+        worker.add_done_callback(
+            lambda done: self.executors.unregister(task.id, done))
         try:
             await asyncio.shield(worker)
         except asyncio.CancelledError:
@@ -268,8 +310,6 @@ class ComputerAdmission:
                     await self._tasks.mark_delivered(task.id, now=self._clock())
             return {"status": "cancelled",
                     "note": "The computer task was stopped while it ran."}
-        finally:
-            self.executors.unregister(task.id, worker)
         if worker.exception() is not None:
             # The executor failed outside the cancelled path; the row is
             # already closed `unavailable` by its own except.
@@ -306,17 +346,24 @@ class ComputerAdmission:
             return row
         executor = self.executors.executor(task_id)
         if executor is None:
-            await self._tasks.mark_interrupted(
-                task_id, now=self._clock(), reason="the owner was lost")
+            # No executor on this side: the GUEST's own quiet is the only
+            # proof its command stopped. Busy or unreadable stays `running`
+            # and the scope stays excluded.
+            if await _guest_quiet(self._reconcile, row.scope, seconds=DRAIN_SECONDS):
+                await self._tasks.mark_interrupted(
+                    task_id, now=self._clock(), reason="the owner was lost")
+                await self._note(row, "interrupted")
             return await self._tasks.get(task_id)
         executor.cancel()
         with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
             await asyncio.wait_for(asyncio.shield(executor), DRAIN_SECONDS)
         fresh = await self._tasks.get(task_id)
         if fresh is not None and fresh.status == RUNNING:
-            await self._tasks.mark_interrupted(
-                task_id, now=self._clock(),
-                reason="the cancellation could not be confirmed")
+            if await _guest_quiet(self._reconcile, fresh.scope, seconds=DRAIN_SECONDS):
+                await self._tasks.mark_interrupted(
+                    task_id, now=self._clock(),
+                    reason="the cancellation could not be confirmed")
+                await self._note(fresh, "interrupted")
             fresh = await self._tasks.get(task_id)
         return fresh
 
@@ -336,6 +383,27 @@ def _ephemeral(scope: str, kind: str, now: datetime) -> ComputerTask:
     return ComputerTask(
         id=uuid.uuid4(), scope=scope, kind=kind, status=RUNNING,
         payload={}, origin={}, created_at=now, updated_at=now, started_at=now)
+
+
+async def _guest_quiet(
+    reconcile: Callable[[str], Awaitable[str]] | None,
+    scope: str, *, seconds: float,
+) -> bool:
+    """Bounded wait for the scope's VM to report NO surviving work: `quiet`
+    is the one verdict that confirms a cancelled command actually stopped
+    (its process group is gone). Busy — or the VM that will not say — is
+    never a stop, so the row keeps `running` and the scope stays excluded."""
+    if reconcile is None:
+        return False
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + seconds
+    while True:
+        with contextlib.suppress(Exception):
+            if await reconcile(scope) == "quiet":
+                return True
+        if loop.time() >= deadline:
+            return False
+        await asyncio.sleep(0.5)
 
 
 class ComputerQueueRunner:
@@ -414,6 +482,12 @@ class ComputerQueueRunner:
                     older_than=self._clock() - ORPHAN_AFTER, limit=self._batch):
                 if self._executors.executor(task.id) is not None:
                     continue  # alive in-process: its own deadline governs it
+                verdict = "unknown"
+                if self._reconcile_scope is not None:
+                    with contextlib.suppress(Exception):
+                        verdict = await self._reconcile_scope(task.scope)
+                if verdict != "quiet":
+                    continue  # busy or unreadable: never closed on age alone
                 await self._tasks.mark_interrupted(
                     task.id, now=self._clock(), reason="the owner was lost")
                 await self._note(task, "interrupted")
@@ -426,7 +500,28 @@ class ComputerQueueRunner:
         granted = 0
         for scope in await self._scopes():
             granted += await self._dispatch_scope(scope)
+        await self._deliver_pending()
         return granted
+
+    async def _deliver_pending(self) -> None:
+        """Terminal rows whose result never reached a room, discovered from
+        the table — not the stream: a last terminal row with no open
+        siblings (a fast-path row its caller lost, a delivery that kept
+        failing after the row's siblings closed) is re-driven until
+        `delivered_at` lands, never stranded."""
+        if self._on_terminal is None:
+            return
+        try:
+            rows = await self._tasks.undelivered(limit=self._batch)
+        except Exception:
+            log.exception("computer queue undelivered read failed")
+            return
+        for row in rows:
+            try:
+                await self._on_terminal(row)
+            except Exception:
+                log.exception(
+                    "computer task %s delivery failed; retried next pass", row.id)
 
     async def _dispatch_scope(self, scope: str) -> int:
         stream = _stream(scope)
@@ -538,13 +633,19 @@ class ComputerQueueRunner:
     async def _settle(self, stream: str, mid: Any, row: ComputerTask) -> None:
         """Terminal delivery THEN ack: the row stands first, then the room
         is told, then the pointer is dropped. A delivery failure leaves the
-        entry pending — reclaimed and retried, never silently dropped."""
+        entry pending — reclaimed and retried, never silently dropped. A
+        row that is not terminal (its `finish` write could not persist) is
+        neither delivered nor acked: the pending pointer drives the later
+        pass that reconciles it."""
+        if row.status not in TERMINAL:
+            return
         if row.delivered_at is None and self._on_terminal is not None:
             try:
                 await self._on_terminal(row)
             except Exception:
                 log.exception("computer task %s delivery failed; the pointer stays", row.id)
                 return
+            await self._note(row, "delivered")
         await self._ack(stream, mid)
 
     async def _execute(self, stream: str, mid: Any, task: ComputerTask) -> None:
@@ -559,7 +660,12 @@ class ComputerQueueRunner:
             except asyncio.CancelledError:
                 reply = {"status": "cancelled",
                          "note": "The computer task was stopped while it ran."}
-                await self._safe_finish(task.id, "cancelled", reply)
+                # `cancelled` only on an observed-quiet guest — the same
+                # rule as the submitter side: a stopped awaiter is not a
+                # stopped guest command.
+                if await _guest_quiet(
+                        self._reconcile_scope, task.scope, seconds=DRAIN_SECONDS):
+                    await self._safe_finish(task.id, "cancelled", reply)
                 raise
             except Exception as exc:
                 log.exception("computer task %s dispatch failed", task.id)
@@ -635,9 +741,25 @@ class ComputerTaskBackend:
         if row.status in (QUEUED, RUNNING):
             return JobResult(status=JobStatus.RUNNING)
         result = dict(row.result or {})
-        report = str(
-            result.get("answer") or result.get("report") or result.get("note")
-            or result.get("reason") or row.status)
+        # The typed result the row actually persisted: the prose the tool
+        # wrote first, then its provenance fields (capture path and digest,
+        # landing url, exit code), then the command output itself — a
+        # delivery that drops stdout or the capture's digest answers
+        # nothing.
+        parts = [
+            str(result.get(key)) for key in ("answer", "report", "note", "reason")
+            if result.get(key)
+        ]
+        for key in ("path", "url", "title", "media_type", "sha256",
+                    "exit_code", "steps"):
+            value = result.get(key)
+            if value not in (None, ""):
+                parts.append(f"{key}: {value}")
+        for key in ("stdout", "stderr"):
+            value = result.get(key)
+            if value:
+                parts.append(f"{key}:\n{str(value)[:4000]}")
+        report = "\n".join(parts) or row.status
         if row.status == "done":
             return JobResult(status=JobStatus.SUCCEEDED, report=report,
                              summary=report)
@@ -670,7 +792,7 @@ async def deliver_computer_task(
 
     from nora.domain.compute import ComputeJob, ComputeJobState, normalise_compute_job
 
-    if row.delivered_at is not None:
+    if row.status not in TERMINAL or row.delivered_at is not None:
         return
     origin = dict(row.origin or {})
     platform = str(origin.get("platform") or "")

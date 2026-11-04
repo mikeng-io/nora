@@ -157,7 +157,7 @@ class ScopedComputerdRuntime:
             runtime=ComputerdRuntime(
                 base_url=endpoint.base_url, token=self._token,
                 timeout_seconds=self._timeout, max_output_chars=self._max_output,
-                observer=self._observer),
+                observer=self._observer, instance=instance),
             instance=instance,
         )
         self._bound[scope] = _Bound(binding=binding, verified_at=self._clock())
@@ -167,6 +167,16 @@ class ScopedComputerdRuntime:
         """Drop a cached binding (an identity change or dead client): the
         next call re-verifies before anything is sent."""
         self._bound.pop(scope, None)
+
+    async def registered(self) -> tuple[str, ...]:
+        """Every scope the registry names — the browser sweep's breadth
+        read, so a still-running browser with no open tab rows is still
+        found and stopped. Never raises: an unreadable registry is none."""
+        try:
+            return await self._endpoints.registered()
+        except Exception:
+            log.exception("scope registry read failed")
+            return ()
 
     async def instance(self, scope: str) -> str | None:
         """The VM instance `scope` is currently bound to (the browser
