@@ -851,8 +851,12 @@ async def test_circle_job_lifecycle_is_read_by_real_context_and_desk(monkeypatch
                             job_id=job_id, person_id='generated-person') is None
 
 
-async def test_circle_public_adapter_uses_real_occasion_and_narrow_grant(monkeypatch, tmp_path):
+@pytest.mark.parametrize('different_route', [False, True])
+async def test_circle_public_adapter_uses_real_occasion_and_narrow_grant(
+    monkeypatch, tmp_path, different_route,
+):
     from pathlib import Path
+    from unittest.mock import AsyncMock
 
     from nora.agent import factory
     from nora.agent.registry import ToolRegistry
@@ -878,7 +882,18 @@ async def test_circle_public_adapter_uses_real_occasion_and_narrow_grant(monkeyp
         built.append(kwargs)
         return runner
     monkeypatch.setattr(public_summons, 'LiveAgentRunner', build)
-    subject = SimpleNamespace(cfg=SimpleNamespace(agent=SimpleNamespace(name='generated'),
+    client = SimpleNamespace(close=AsyncMock())
+    created = []
+    def create_client(**kwargs):
+        created.append(kwargs)
+        return client
+    monkeypatch.setattr(factory, 'create_client', create_client)
+    def endpoint(purpose, model=''):
+        return ('https://public.invalid' if different_route and purpose == 'summons'
+                else 'https://tag.invalid', '', 'public-model' if purpose == 'summons' else 'tag')
+
+    subject = SimpleNamespace(cfg=SimpleNamespace(endpoint=endpoint,
+        agent=SimpleNamespace(name='generated'),
         doctrine=SimpleNamespace(canary='GENERATED-CANARY'),
         llm=SimpleNamespace(timeout_seconds=5), content_checks=SimpleNamespace(enabled=False)),
         deps=SimpleNamespace(persons=persons, metrics=metrics, doctrine_store=doctrine,
@@ -899,6 +914,9 @@ async def test_circle_public_adapter_uses_real_occasion_and_narrow_grant(monkeyp
     assert {tool.tool_name for tool in calls[0]['tools']} <= PUBLIC_GRANT
     assert built[0]['skills_dir'] is None
     assert built[0]['models']._spec.tool_choice == 'auto'
+    assert built[0]['models']._spec.model == 'public-model'
+    assert bool(created) == different_route
+    assert client.close.await_count == int(different_route)
     assert not {'memory_search', 'memory_read', 'subagent_read', 'send_gif'} & PUBLIC_GRANT
 
 
