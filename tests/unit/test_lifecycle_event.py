@@ -32,6 +32,16 @@ def test_every_event_the_script_records_is_in_the_vocabulary() -> None:
     assert used >= lifecycle.EVENTS, lifecycle.EVENTS - used
 
 
+def test_every_status_the_script_records_is_in_the_vocabulary() -> None:
+    """The same check one argument down: `record_event`'s status becomes
+    `--status`, argparse's `choices` refuse anything outside `STATUSES`, and
+    the call fails at the moment of the failure it was recording."""
+    used = set(re.findall(r"record_event [a-z_]+ ([a-z_]+)", SCRIPT.read_text()))
+    assert used, "no record_event status found, so this check read nothing"
+    assert used <= lifecycle.STATUSES, used - lifecycle.STATUSES
+    assert used >= lifecycle.STATUSES, lifecycle.STATUSES - used
+
+
 def test_the_fingerprint_is_twelve_hex_and_not_the_token() -> None:
     token = "t" * 64
     fp = lifecycle.fingerprint(token)
