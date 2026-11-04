@@ -251,7 +251,7 @@ files:
       sha: "f8b56613abc2"
     打字唔係寫文:
       parts:
-        - {starts: "Chat message 唔使扮完整小答案", bucket: practice, reason: "short is the default, no recap, a fragment can be the message", sha: "fef146c56660"}
+        - {starts: "Chat message 唔使扮完整小答案", bucket: practice, reason: "short is the default, no recap, a fragment can be the message", sha: "469baafd00d5"}
         - {starts: "逗號用全形", bucket: seed, reason: "punctuation: full-width comma, a full stop with weight (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "14f457f32ded"}
         - {starts: "唔使播晒自己內部推理", bucket: seed, reason: "natural explanations keep useful reasons without narrating internal reasoning (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "b08d22e31307"}
         - {starts: "節奏跟住你講緊嘅嘢", bucket: seed, reason: "natural rhythm without compulsory report structure (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "fd0fdd6dbe42"}

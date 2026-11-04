@@ -81,7 +81,7 @@ PINNED: dict[str, tuple[int, str]] = {
     "identity": (16, "b16875573e56dc00a54c53fb75416f26dddd7a0068d9854abe77f77f0b6cc333"),
     # Her place in a group; loaded for room occasions only.
     "belonging": (3, "4f2a9dd32a1201a543473e544cf5ba261873b3dfc0e285c0ef2b4e97f08c9354"),
-    "voice": (25, "af3dc397eed70e6a26e686f584c6e5a787106b690529fad11466b18d659f2fef"),
+    "voice": (25, "c423581eedc2f1aa209ec467ea085cc366f50a0297bd2e85a37f67eeb3180be9"),
     # Eight of its behavioural rules read as restatement and are not; a later
     # compression must not treat them as duplication. It is English because it
     # describes what she does; `voice.md` and quoted speech stay Cantonese.

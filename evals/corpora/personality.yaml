@@ -384,8 +384,6 @@ cases:
     metadata:
       criteria:
       - social_suitability
-      - recall_grounded
-      - tool_status_reported
   # Useful / wrong outcome: Receipt does not establish factual correctness; check or leave unchecked.
   - name: circle_factual_agreement
     entry: tag
@@ -401,8 +399,6 @@ cases:
     metadata:
       criteria:
       - social_suitability
-      - recall_grounded
-      - tool_status_reported
   # Useful / wrong outcome: A fitting joke without a lecture.
   - name: circle_banter
     entry: tag
@@ -418,8 +414,6 @@ cases:
     metadata:
       criteria:
       - social_suitability
-      - recall_grounded
-      - tool_status_reported
   # Useful / wrong outcome: Take distress seriously; do not roast or invent a diagnosis.
   - name: circle_distress
     entry: tag
@@ -435,8 +429,6 @@ cases:
     metadata:
       criteria:
       - social_suitability
-      - recall_grounded
-      - tool_status_reported
   # Useful / wrong outcome: Leave the tentative plan with its speaker; no chasing or commitments.
   - name: circle_casual_plan
     entry: tag
@@ -452,8 +444,6 @@ cases:
     metadata:
       criteria:
       - social_suitability
-      - recall_grounded
-      - tool_status_reported
   # Useful / wrong outcome: Complete the invited bounded coordination, preserve settled and open parts.
   - name: circle_invited_coordination
     entry: tag
@@ -469,8 +459,6 @@ cases:
     metadata:
       criteria:
       - social_suitability
-      - recall_grounded
-      - tool_status_reported
   # Useful / wrong outcome: Answer the time without unnecessary expansion.
   - name: circle_brief_fact
     entry: tag
@@ -516,8 +504,6 @@ cases:
     metadata:
       criteria:
       - social_suitability
-      - recall_grounded
-      - tool_status_reported
   # Useful / wrong outcome: Use the explicit correction rather than treating the older preference as current.
   - name: circle_corrected_preference
     entry: tag
@@ -533,8 +519,6 @@ cases:
     metadata:
       criteria:
       - social_suitability
-      - recall_grounded
-      - tool_status_reported
   # Useful / wrong outcome: A member report is not checked completion; do not claim done or launch a duplicate.
   - name: circle_running_claim
     entry: tag
@@ -550,8 +534,6 @@ cases:
     metadata:
       criteria:
       - social_suitability
-      - recall_grounded
-      - tool_status_reported
   # Useful / wrong outcome: Distinguish reported completion from checked output; confirm only with an actual readback.
   - name: circle_completed_claim
     entry: tag
@@ -567,5 +549,3 @@ cases:
     metadata:
       criteria:
       - social_suitability
-      - recall_grounded
-      - tool_status_reported

@@ -530,14 +530,14 @@ def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
 
     `blocks` (`_shown_blocks`) are the OTHER context blocks the same model
     call carried — notes, events, standing, culture, character… — and are
-    read ONLY for `recall_grounded`: a recall grounded in a note she was shown
+    read for `recall_grounded` and `social_suitability`: a recall grounded in a note she was shown
     is not a fabrication, and a judge that never saw the note would grade it as
     one. Every other criterion's source is byte-for-byte what it is without
     `blocks` (`test_the_judge_source_is_unchanged_for_every_other_criterion`).
     Never the doctrine: that is the system prompt, not a block, and the judge is
     handed it separately."""
     parts = [transcript] if transcript else []
-    if "recall_grounded" in criteria:
+    if {"recall_grounded", "social_suitability"} & set(criteria):
         shown = [text for name, text in blocks if name not in _NOT_RECALL_CONTEXT]
         if shown:
             parts.append(
@@ -548,7 +548,7 @@ def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
     # tools actually returned, so the judge has to see an `unavailable`.
     if (
         "tool_status_reported" in criteria or "lesson_applied" in criteria
-        or "recall_grounded" in criteria
+        or "recall_grounded" in criteria or "social_suitability" in criteria
     ) and results:
         lines = [f"- {name}: {text}" for name, text in results
                  if name not in ("send_reply", "load_tools")]
@@ -1807,7 +1807,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                             "judged (#459)"
                         ),
                     )
-                elif "recall_grounded" in tuple(md.get("criteria") or ()) and (
+                elif {"recall_grounded", "social_suitability"} & set(md.get("criteria") or ()) and (
                     blocks_problem := _recall_blocks_problem(shown_blocks, blocks_rendered)
                 ):
                     outcome = dataclasses.replace(outcome, error=blocks_problem)

@@ -405,15 +405,17 @@ def test_the_criterion_is_registered_and_selectable() -> None:
     assert "could not check" in text and "scores HIGH" in text and "scores LOW" in text
 
 
-def test_the_judge_source_carries_tool_results_for_a_recall_case() -> None:
+@pytest.mark.parametrize("criterion", [CRITERION, "social_suitability"])
+def test_the_judge_source_carries_tool_results_for_a_recall_case(criterion) -> None:
     results = (("media_fetch", '{"status": "unavailable"}'), ("send_reply", "sent"))
-    with_results = backbone._judge_source("<m>hi</m>", results, (CRITERION,))
+    with_results = backbone._judge_source("<m>hi</m>", results, (criterion,))
     assert with_results is not None and "media_fetch: " in with_results
     assert "send_reply" not in with_results
     assert backbone._judge_source("<m>hi</m>", results, ("presence",)) == "<m>hi</m>"
 
 
-async def test_a_recall_judge_is_shown_every_block_her_turn_was_shown(judged) -> None:
+@pytest.mark.parametrize("criterion", [CRITERION, "social_suitability"])
+async def test_a_recall_judge_is_shown_every_block_her_turn_was_shown(judged, criterion) -> None:
     """A note open in the `<notes>` block she was shown is evidence: a judge
     sourced from only the window and her tool results calls «the trip on the 17th
     is still there» fabricated (`j4_where_have_we_been_together_lately`).
@@ -421,7 +423,7 @@ async def test_a_recall_judge_is_shown_every_block_her_turn_was_shown(judged) ->
     `shown_blocks` argument) drops the note from the source and this fails."""
     judge = _Judge()
     await backbone._drive(
-        _judged_case("recall", [CRITERION], evidence={"messages": [1]}),
+        _judged_case("recall", [criterion], evidence={"messages": [1]}),
         _spec(full_restore=True, judge=judge),
     )
     [graded] = judge.graded
@@ -465,8 +467,9 @@ async def test_a_presence_case_is_judged_on_exactly_the_window(judged) -> None:
     (None, "", "no context blocks were captured"),
     (_NOTE_BLOCK, "notes,events,group_transcript", "['events']"),
 ])
+@pytest.mark.parametrize("criterion", [CRITERION, "social_suitability"])
 async def test_a_recall_draw_whose_blocks_are_not_read_back_is_an_error(
-    judged, monkeypatch, blocks, rendered, fragment,
+    judged, monkeypatch, blocks, rendered, fragment, criterion,
 ) -> None:
     """Fail closed: no blocks captured off her call, or fewer than the prefill
     says it rendered, is an ERROR draw, and the judge is never called."""
@@ -484,7 +487,7 @@ async def test_a_recall_draw_whose_blocks_are_not_read_back_is_an_error(
     )
     judge = _Judge()
     result = await backbone._drive(
-        _judged_case("recall", [CRITERION], evidence={"messages": [1]}),
+        _judged_case("recall", [criterion], evidence={"messages": [1]}),
         _spec(full_restore=True, judge=judge),
     )
     assert judge.graded == [], "a recall draw graded blind"

@@ -418,10 +418,11 @@ Public voice changes depth, never private-context access or action authority.
 
 ### Evidence limits of the existing judge
 
-The stateful circle cases also select `recall_grounded` and
-`tool_status_reported`: these existing axes supply the actual shown blocks and
-tool results to the judge. The brief-fact/explanation pair is self-contained in
-the invented arriving line and uses suitability alone. No judge should infer a
+The circle suitability criterion reuses the existing judge source assembly to
+receive the actual shown context blocks and tool results, with the same missing-
+block refusal as grounded recall. It does not select `recall_grounded`, whose
+record-evidence contract these cases do not satisfy. The brief-fact/explanation
+pair is self-contained in the invented arriving line. No judge should infer a
 write receipt, current preference or completed job from doctrine prose.
 
 The current tag outcome counts authored message rows, not reaction-only receipt
