@@ -65,6 +65,7 @@ from ..domain.profile import ProfileWriter
 from ..domain.reminders import ReminderCaps, ReminderStore
 from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.parking import ParkingClient, StreetParkingClient
+from ..infra.releases import GithubReleases
 from ..infra.routes import RouteClient
 from ..infra.transit import TransitClient
 from ..infra.version import VersionManifest
@@ -302,6 +303,7 @@ class ToolRegistry:
         clock: Callable[[], datetime] = utc_now,
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
         versions: VersionManifest | None = None,
+        releases: GithubReleases | None = None,
         giphy: GifSource | None = None,
         reaction: ReactionPicker | None = None,
         music: MusicToolBridge | None = None,
@@ -606,6 +608,7 @@ class ToolRegistry:
         self._mcp_tools = dict(mcp_tools) if mcp_tools is not None else {}
         # One immutable snapshot for running identity and shipped release history.
         self._versions = versions if versions is not None else VersionManifest()
+        self._releases = releases
         self._giphy = giphy
         # `nora.agent.reaction`: None keeps every reply exactly as written.
         self._reaction = reaction
@@ -1183,7 +1186,7 @@ class ToolRegistry:
             culture=self._culture,
             profile_read=self._profile_read,
             social_items=self._social_items,
-            versions=self._versions,
+            versions=self._versions, releases=self._releases,
             giphy_source=self._giphy,
             reaction_picker=self._reaction,
             tool_call_log_store=self._tool_call_log_store,
