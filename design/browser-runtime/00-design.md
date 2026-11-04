@@ -245,6 +245,30 @@ cross-scope operation, expired handle, model/driver error and export failure;
 positive controls prove execution/capture ran. Source checks do not establish
 that the deployed collector retained a trace or that a chat received a file.
 
+### Implementation seams and lane ownership (2026-11-04)
+
+Source mapping confirms the following bounded changes; no runtime code has
+been changed. The Compose/Deployment session owns image packaging, lifecycle
+installation, Redis ACLs and host operations; coordinate required interfaces
+there before editing those files. This lane owns application routing, queue,
+BrowserRunner/session/tab behavior and capture/export integration.
+
+| Existing seam inspected | Required change |
+|---|---|
+| `nora/app/composition.py` wires computer runtime, probe and browser runner to one `cfg.computer.base_url` | Bind all three through the same admitted scope-to-VM resolution; no separate browser endpoint selection |
+| `nora/infra/computer/client.py` stores one base URL; methods already take `scope` | Preserve existing sandbox verbs/results while routing to the bound VM/instance |
+| `nora/infra/computer/browser.py` `_attach` selects the first page and closes every extra page | Replace with explicit task-owned tab attachment; never adopt first/active tab or close sibling tasks' tabs |
+| `nora/agent/browse.py` opens a connection per objective; screenshot tool returns image bytes to the model | Reconnect to the same task binding, and add direct capture-to-file through the same executor |
+| `nora/domain/computer_leases.py` and tool closures use unit locks or separate job locks | Join one scope queue/admission; nested worker calls inherit admission |
+| `nora/app/bridge_queue.py` demonstrates durable stream handoff; `nora/app/compute_poller.py` delivers completed backend jobs | Reuse patterns, not the bridge payload/consumer or completion state as pre-launch execution state |
+
+For the small anonymous version, use one transient profile per VM browser
+lifetime and separate owned tabs per task. Same-unit tasks share anonymous
+cookies/storage; tab ownership prevents navigation interference, not storage
+privacy. The unit is already the data boundary. Do not build per-task cookie
+isolation unless a later requirement calls for it. Preserve profile state while
+the browser lives; cleanup/expiry and no restart-persistence promise still apply.
+
 ### Implementation sequence — after design selection
 
 One integrated scoped-browser change, built in this order:
