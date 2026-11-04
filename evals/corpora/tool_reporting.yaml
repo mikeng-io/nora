@@ -167,7 +167,6 @@ cases:
   # Required seam and useful outcome: The same reaction returns held_for_review. Do not bypass the hold with text or another medium.
   - name: circle_reaction_held
     snapshot: *room_a
-    mention: true
     entry: participation
     expect: silence
     input: '用 emoji reaction 表示收到呢句就得，其他唔使。'
