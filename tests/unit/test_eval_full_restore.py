@@ -953,3 +953,17 @@ async def test_circle_judge_receives_requirement_separately_from_actual_evidence
     assert case.expected_output in criterion.description
     assert case.expected_output not in graded['source']
     assert 'Reply in words instead.' in graded['source'] and 'unavailable' in graded['source']
+
+
+def test_circle_memory_capture_measures_status_not_words():
+    from nora.subject.circle import CircleOverlay
+    unavailable = CircleOverlay(memory='unavailable')
+    partial = CircleOverlay(memory='partial')
+    wrong = (('recalled', '<recalled>{"text":"unavailable partial"}</recalled>'),)
+    assert backbone._circle_execution_problem(unavailable, (), wrong, ())
+    assert backbone._circle_execution_problem(partial, (), wrong, ())
+    assert backbone._circle_execution_problem(unavailable, (), (), ())
+    real = (('recalled', '<recalled>{"status":"unavailable"}</recalled>'),)
+    assert backbone._circle_execution_problem(unavailable, (), real, ()) is None
+    real_partial = (('recalled', '<recalled partial="yes">{"text":"generated"}</recalled>'),)
+    assert backbone._circle_execution_problem(partial, (), real_partial, ()) is None

@@ -540,7 +540,23 @@ def _circle_execution_problem(overlay, results, blocks, tools) -> str | None:
             return 'controlled job context/read missing or duplicate job started'
     if overlay.memory:
         shown = dict(blocks or ()).get('recalled', '')
-        observed = overlay.memory in shown or overlay.memory in statuses.get('memory_search', [])
+        from html import unescape
+        observed = overlay.memory in statuses.get('memory_search', [])
+        if shown:
+            try:
+                block = re.fullmatch(r'<recalled\b([^>]*)>(.*?)</recalled>', shown, re.S)
+                if block is None:
+                    return 'controlled memory capture is malformed'
+                if overlay.memory == 'partial':
+                    observed = observed or bool(re.search(r'\bpartial="yes"', block.group(1)))
+                else:
+                    observed = observed or any(
+                        isinstance(item := json.loads(line), dict)
+                        and item.get('status') == 'unavailable'
+                        for line in unescape(block.group(2)).strip().splitlines())
+            except (ValueError, TypeError):
+                return 'controlled memory capture is malformed'
+
         if not observed:
             return 'controlled memory read/capture missing'
     return None
