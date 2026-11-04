@@ -433,3 +433,16 @@ controls delivery/held/unavailable mechanics separately. Model acceptance of
 reaction-only choice, the eight controlled state/audience cases and the broader
 gate's extra admissions/interruption/spend remain UNAVAILABLE until the existing
 measurement paths can carry those properties. No competing harness is added.
+
+### Source-verified advisory corrections
+
+A document-only DeepSeek v4.1 Flash opinion prompted a source readback. The
+participation window closes on quiet **or** volume, so its header now describes
+the offered turn without inventing quiet or denying earlier calls. The gate
+separates a visible opening from unknown record availability/access; a social
+opening grants no action consent. An unavailable action remains unconfirmed,
+not proven absent. Settled group facts belong to later scoped processing, not
+`note_create`'s tracked uncertainty, and the person-write fallback is scoped to
+person facts. These are wording corrections against actual consumers, not
+advisory approval or measured model acceptance. Updated classification and
+rendered-section/header pins carry the intentional text changes.

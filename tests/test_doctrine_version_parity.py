@@ -87,12 +87,12 @@ PINNED: dict[str, tuple[int, str]] = {
     # describes what she does; `voice.md` and quoted speech stay Cantonese.
     # Dashes are removed at the transport (`nora.agent.punctuation`), not by a
     # doctrine rule.
-    "conduct": (44, "cf5729b590dad2d5fc146b6b7469733c1a838f8210b51fb8863e94f212b3ee85"),
+    "conduct": (45, "0a8ce1acb1fd387947d17c6be79f9e0561a7ec67c1413b8aa832d01aee67f1fb"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # An edit to it needs the gate's 40-case eval suite.
     "participation": (
-        8, "93e5a41e97ff11c19d28352866e18c372147a3b428b052c035710c028c3ececa",
+        9, "6aeb190f434d23e40022040fa1cbc8e6ca8f2185260b9458a4504ed8f42c631a",
     ),
     # The reaction picker's instruction (`nora.agent.reaction`).
     "reaction": (
@@ -107,7 +107,7 @@ PINNED: dict[str, tuple[int, str]] = {
     ),
     "constraints": (13, "eb71a2acd9b663cdcadac1b9f8e5191acf02242e6b0140ce3347536e666c392c"),
     # The constraints for room occasions, ordered right after `constraints`.
-    "room-constraints": (3, "86f6c46f187e7972798130b402819d116e29d9e080431ab63e67b5d848b33c58"),
+    "room-constraints": (4, "3cf97670e2fc376bdcf27badad486519c4266a3256a252163f3548c9e691658c"),
     # What she already knows about a picture and when to look again; loaded for room
     # occasions only, before `constraints`.
     "pictures": (4, "513d551a17c9d5968b93d0ce93c01e35440ff8bf89524207bc1e4295f4010498"),

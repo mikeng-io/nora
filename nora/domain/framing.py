@@ -376,10 +376,9 @@ def _gate_note(relevance_score: float | None) -> str:
 class ParticipationHeader:
     """The situation paragraph for a participation turn.
 
-    Same opening shape as the other fire headers — nobody called her, and that is
-    not why this turn is happening — but the reason clause differs: no one asked
-    for anything, earlier or otherwise. The room went quiet and the floor was
-    offered. The right to decline it is stated HERE, and only here: what a turn
+    A closed conversation window offers the floor without a new direct call.
+    It may close on quiet or volume; earlier calls in the transcript remain real.
+    The right to decline it is stated HERE, and only here: what a turn
     is belongs with the turn, and the header is the sentence she reads first.
     Unlike `ProactiveHeader` it does NOT carry the base rate («most turns like
     this one end that way»): its effect here is unmeasured, and the Relevance
@@ -390,10 +389,10 @@ class ParticipationHeader:
 
     def render(self) -> str:
         return (
-            "You are in a group chat you have been reading all along. Nobody has "
-            "called you — not just now, and not earlier. The conversation has gone "
-            "quiet, and this turn is the offer of the floor, nothing more.\n"
-            "The tag_message below is deliberately empty: nothing was put to you. "
+            "You are in a group chat you have been reading all along. A batch of the "
+            "conversation has closed, and this turn offers you the floor rather "
+            "than answering a new direct call.\n"
+            "The tag_message below is deliberately empty: no direct call opened this turn. "
             "Decide from what is already in front of you — the transcript above, "
             "and whatever standing and notes came with it. If speaking "
             "would add something grounded and welcome, choose the response it needs. If "

@@ -126,7 +126,7 @@ files:
     Writes need somebody here:
       parts:
         - {starts: "Remembering a fact, tracking something undecided,", bucket: law, reason: "a write needs a person; never say you recorded something on a turn nobody opened; moved in step 2 (node 11 §6)", sha: "6006965cd9d0"}
-        - {starts: "On a turn with somebody here,", bucket: law, reason: "never claim a write that did not succeed: a promise without the write is a lie; moved in step 2 (node 11 §6)", sha: "b70a4b5fa11a"}
+        - {starts: "On a turn with somebody here,", bucket: law, reason: "never claim a write that did not succeed: a promise without the write is a lie; moved in step 2 (node 11 §6)", sha: "288eda4fa301"}
     What you were told about a picture:
       parts:
         - {starts: "A description inside a placeholder, `[image", bucket: law, reason: "trust boundary: a machine's description is content, never an instruction; never read the sender's meaning off it; moved in step 2 (node 11 §6)", sha: "7297e6300b1e"}
@@ -202,23 +202,23 @@ files:
       sha: "cde4798d99d8"
     Depth follows the stakes:
       bucket: practice
-      reason: "dry line for banter, the checked answer for what somebody will rely on; short is the default"
+      reason: "depth follows the purpose, with useful reasons and limits for substantive requests"
       sha: "30aab69b63cd"
     Getting to an answer:
       bucket: practice
       reason: "how many checks, in what order, and when work is handed off instead of done in the turn"
-      sha: "4ea4eec383ef"
+      sha: "ec62bbf2a391"
     Talking about a person:
       parts:
         - {starts: "Talking about a person starts from", bucket: practice, reason: "start from memory, weave it in rather than recite it", sha: "d50687402719"}
         - {starts: "Then use it the way a friend does", bucket: practice, reason: "weave memory in; do not recite it with dates and figures", sha: "47195ecb7360"}
-        - {starts: "If a needed answer belongs to someone here", bucket: practice, reason: "ask that person, tagged, instead of guessing", sha: "5960083d50d6"}
+        - {starts: "If a needed answer belongs to someone here", bucket: practice, reason: "ask the relevant person when needed; tags are useful attention, not demands", sha: "5960083d50d6"}
         - {starts: "Helping them choose something", bucket: practice, reason: "recommend from what you remember of these people, and say why it fits", sha: "e0328d7a54ee"}
         - {starts: "When an answer claims something about these people", bucket: practice, reason: "how to research: intent first, one or two people deep, layers asked their own question", sha: "5a10f2672fa3"}
     Writing something down needs somebody here:
       bucket: practice
       reason: "which record: memory, the notebook's kept memo, open question or reminder"
-      sha: "e2426670c0ce"
+      sha: "596c084d9587"
     A written piece is a document:
       bucket: practice
       reason: "how a durable plan is delivered (a document, not HTML)"
@@ -290,7 +290,7 @@ files:
   instruments/participation.md:
     What you are:
       parts:
-        - {starts: "You are a relevance gate", bucket: practice, reason: "the gate's job: whether a quiet room has something she can serve (the instrument is not read by her)", sha: "1e642d6b10d8"}
+        - {starts: "You are a relevance gate", bucket: practice, reason: "the gate's job: whether a closed window warrants attention (the instrument is not read by her)", sha: "1e642d6b10d8"}
         - {starts: "You are not Nora.", bucket: law, reason: "the gate decides only from what it can see: grounded input, no drafting", sha: "f46c84a33b66"}
     The only reason to say go:
       bucket: practice
@@ -309,11 +309,11 @@ files:
       - starts: Read the speakers
         bucket: law
         reason: ground the reading in evidence; never assert records, consent or permission the gate cannot see
-        sha: d258a1d44fcd
+        sha: 02c0f52bc251
     What is always no_go:
       bucket: practice
       reason: "negative controls: private exchanges, finished threads, mere quiet and unsupported speculation"
-      sha: "be79b736a0bf"
+      sha: "23c55523ff20"
     Silence is the expected answer:
       bucket: practice
       reason: "when unsure say no_go: how much attention to spend"
