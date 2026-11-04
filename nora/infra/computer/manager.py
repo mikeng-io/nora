@@ -62,7 +62,10 @@ from nora.domain.browser_tasks import (
 )
 from nora.domain.computer import SandboxStatus
 from nora.domain.computer_tasks import (
-    QUEUED, ComputerTask, ComputerTaskStore, current_segment,
+    QUEUED,
+    ComputerTask,
+    ComputerTaskStore,
+    current_segment,
 )
 from nora.infra.computer.browser import (
     BrowserError,
