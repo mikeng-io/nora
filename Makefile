@@ -9,7 +9,7 @@
 .PHONY: bridge test test-all test-fast test-affected lint typecheck imports gate gate-fresh gate-reuse _gate full-gate _full-gate mutate \
         setup hooks schema-parity heads decision-numbers \
         eval-participation eval-adversarial-corpora eval-gate \
-        build up stop logs ps \
+        build \
         branches
 
 # --- setup (AGENTS.md: a fresh worktree needs this once, or pytest dies at
@@ -157,24 +157,11 @@ eval-participation:
 # Releases are cut on GitHub by release-please (DEC-314, the nora-release
 # skill); there is no release target here.
 
-# --- build / deploy (README.md "Deployment") ---
-# Standalone .env recipes: Compose interpolation must already be satisfied.
-# Native Komodo owns application deploys; see docs/configuration.md.
-
+# --- local image build (deploy/README.md) ---
+# Application deployment belongs to the installed Komodo Stack. There are no
+# project-wide up/stop shortcuts: infrastructure maintenance selects services.
 build:
 	scripts/build-image.sh
-
-up:
-	docker compose up -d
-
-stop:
-	docker compose stop nora
-
-logs:
-	docker compose logs -f nora
-
-ps:
-	docker compose ps
 
 # --- branch hygiene (docs/maintainers/conventions.md: "Cleanup") ---
 # Reports only. Deleting is a decision, and a branch with a live worktree or an
