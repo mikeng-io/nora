@@ -26,5 +26,26 @@
     "old": "return {**result, \"status\": \"nothing_found\"}",
     "new": "return {**result, \"status\": \"unavailable\"}",
     "target": "tests/integration/test_version_releases.py::test_an_unknown_release_is_distinct_from_a_failed_check"
+  },
+  {
+    "name": "catalogue retains the list versus named-read discrimination",
+    "file": "nora/agent/tools.py",
+    "old": "Check running and published versions or history when somebody asks about upgrades.",
+    "new": "Check running and published versions when somebody asks about upgrades.",
+    "target": "tests/unit/test_tool_catalogue.py::test_confusable_pairs_are_discriminated_in_the_catalogue_itself"
+  },
+  {
+    "name": "an unknown public tag still offers the recorded alternatives",
+    "file": "nora/agent/tools.py",
+    "old": "known = ({\"known\": list(lookup.known), \"known_source\": \"shipped_snapshot\"}",
+    "new": "known = ({\"known\": [], \"known_source\": \"shipped_snapshot\"}",
+    "target": "tests/integration/test_version_releases.py::test_an_unknown_release_is_distinct_from_a_failed_check"
+  },
+  {
+    "name": "named release reads retain the direct-read catalogue guidance",
+    "file": "nora/agent/tools.py",
+    "old": "For a known version, read directly without version_list before or after.",
+    "new": "Read directly without version_list for a known version.",
+    "target": "tests/unit/test_tool_catalogue.py::test_confusable_pairs_are_discriminated_in_the_catalogue_itself"
   }
 ]

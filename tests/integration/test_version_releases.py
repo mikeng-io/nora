@@ -158,6 +158,7 @@ async def test_an_unknown_release_is_distinct_from_a_failed_check(tmp_path, gith
     calls, _ = tools(tmp_path, github)
     missing = await calls['version_read'](version='v9.9.9')
     assert missing['status'] == 'nothing_found'
+    assert missing['known'] == ['v0.0.1'] and missing['known_source'] == 'shipped_snapshot'
     github['status'] = 503
     assert (await calls['version_read'](version='v9.9.9'))['status'] == 'unavailable'
 
@@ -209,3 +210,10 @@ async def test_a_recorded_release_without_a_public_github_release_uses_labelled_
     answer = await calls['version_read'](version='v0.0.1')
     assert answer['status'] == 'ok' and answer['source'] == 'shipped_snapshot'
     assert answer['published_status'] == 'nothing_found' and answer['notes'] == 'Baked notes'
+
+
+async def test_an_unreadable_stamp_does_not_invent_an_empty_known_history(tmp_path, github):
+    calls, _ = tools(tmp_path, github, running=None)
+    answer = await calls['version_read'](version='v9.9.9')
+    assert answer['status'] == 'nothing_found' and answer['source'] == 'github'
+    assert 'known' not in answer and 'known_source' not in answer

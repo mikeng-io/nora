@@ -1799,7 +1799,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                     side_effect_state="confirmed", idempotency="idempotent",
                                     retry="safe",
                                     output_contract="three_state", level=2),
-    # One list call discovers shipped history and the running build. Two reads
+    # One list call checks running identity and published versions. Two reads
     # allow notes for the running release and one selected earlier release.
     "version_list": NativeTool(1,
                                source_tier="confirmed", read_only=True,
@@ -15393,7 +15393,7 @@ Args:
         return {"status": "ok", "title": note.title}
 
     async def version_list(history: bool = False) -> dict:
-        """Check running and published versions when somebody asks about upgrades.
+        """Check running and published versions or history when somebody asks about upgrades.
 
         Use version_read for a named release's notes.
         Returns `status`: ok or unavailable, with reporting guidance.
@@ -15441,7 +15441,7 @@ Args:
     async def version_read(version: str) -> dict:
         """Read release notes when somebody names a version.
 
-        Read directly without version_list for a known version.
+        For a known version, read directly without version_list before or after.
         Returns `status`: ok, nothing_found or unavailable, with reporting guidance.
         Published notes describe released changes, not this process's capabilities.
 
@@ -15463,9 +15463,14 @@ Args:
                         "release before claiming a complete cross-version summary."}
             if lookup is None or lookup.status != "ok" or lookup.entry is None:
                 _record(metrics, "version_read", published["status"])
-                return {**published, "note": "No published release was found for this tag." if
+                note = ("No published release was found for this tag." if
                         published["status"] == "nothing_found" else
-                        "The published release could not be checked. Do not claim it is absent."}
+                        "The published release could not be checked. Do not claim it is absent.")
+                known = ({"known": list(lookup.known), "known_source": "shipped_snapshot"}
+                         if lookup is not None and lookup.status != "unavailable" else {})
+                return {**published, **known,
+                        "note": note + " Known versions, when listed, are from the shipped "
+                        "snapshot only."}
         if lookup is None or lookup.status == "unavailable":
             _record(metrics, "version_read", "unavailable")
             return {"status": "unavailable", "note": "I couldn't read my shipped history. "
