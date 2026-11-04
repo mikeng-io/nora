@@ -149,6 +149,7 @@ async def test_a_missing_stamp_does_not_hide_published_versions(tmp_path, github
     calls, _ = tools(tmp_path, github, running=None)
     answer = await calls['version_list']()
     assert answer['status'] == 'unavailable' and answer['running']['status'] == 'unavailable'
+    assert 'build stamp' in answer['running'].get('note', '')
     assert answer['published']['latest']['version'] == 'v0.0.3'
     assert answer['comparison'] == 'unknown'
     assert (await calls['version_read'](version='v0.0.3'))['status'] == 'ok'

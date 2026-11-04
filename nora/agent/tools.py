@@ -15407,7 +15407,9 @@ Args:
             running = ({"status": "ok", "version": current.entry.version,
                         "commit": current.entry.commit}
                        if current is not None and current.status == "ok" and current.entry
-                       else {"status": "unavailable"})
+                       else {"status": "unavailable",
+                             "note": "I couldn't read my build stamp. "
+                                     "Don't guess the running version."})
             published = await releases.list(history=history)
             status = "ok" if running["status"] == published["status"] == "ok" else "unavailable"
             comparison = "unknown"
