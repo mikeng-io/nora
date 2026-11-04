@@ -131,5 +131,19 @@
     "old": "bound = job is not None and (job.platform, job.conversation_id) == room",
     "new": "bound = job is not None",
     "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk[checked_complete]"
+  },
+  {
+    "name": "raw indecisive judge votes survive the private export",
+    "file": "evals/backbone.py",
+    "old": "\"samples\": getattr(judgement, \"samples\", ()),",
+    "new": "\"samples\": (),",
+    "target": "tests/unit/test_eval_full_restore.py::test_judge_export_retains_raw_votes_and_errors_privately"
+  },
+  {
+    "name": "the real draw exports its judgement",
+    "file": "evals/backbone.py",
+    "old": "            _dump_judgement(judgement, case.name)",
+    "new": "            pass  # lost judge receipt",
+    "target": "tests/unit/test_eval_backbone.py::test_the_judges_source_is_the_rendered_window_not_the_whole_seed"
   }
 ]

@@ -696,6 +696,25 @@ def _dump_exchanges(exporter: InMemorySpanExporter, case: str) -> None:
     path.write_text(json.dumps(calls, ensure_ascii=False, default=str), encoding="utf-8")
     path.chmod(0o600)
 
+def _dump_judgement(judgement, case: str) -> None:
+    """Keep every raw vote beside the private exchanges, including indecisive scores."""
+    import uuid
+
+    raw = os.environ.get(EXCHANGES_ENV, "").strip()
+    if not raw or judgement is None:
+        return
+    folder = Path(raw).expanduser()
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = folder / f"{case}-{uuid.uuid4().hex[:8]}-judge.json"
+    path.write_text(json.dumps({
+        "criterion": getattr(judgement, "criterion", ""),
+        "verdict": judgement.verdict,
+        "samples": getattr(judgement, "samples", ()),
+        "error": judgement.error,
+    }, ensure_ascii=False), encoding="utf-8")
+    path.chmod(0o600)
+
+
 def _tool_inputs(exporter: InMemorySpanExporter) -> tuple[tuple[str, str], ...]:
     """`(tool, input)` per executed tool, in start order (see `NORA_TOOL_INPUTS`).
     An input Strands did not record is an empty string, which a grader must
@@ -1895,6 +1914,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 outcome = dataclasses.replace(
                     outcome, error='controlled reply requires semantic judge')
             judged_why = ""
+            judgement = None
             # The standing fold: the judged thing is the POSITION a fold wrote, against the
             # case's one stated property, read over the turn's RECORD — the
             # same evidence on both arms of a comparison. Selected by the
@@ -2011,6 +2031,8 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         outcome, judged=judgement.verdict, error=judgement.error,
                     )
                     judged_why = str(getattr(judgement, "why", "") or "")
+
+            _dump_judgement(judgement, case.name)
 
             repeat_state = []
             if spec.repeat > 1:

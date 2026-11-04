@@ -1064,7 +1064,7 @@ async def test_drive_never_judges_blind_when_no_window_was_captured(monkeypatch,
 
 
 async def test_the_judges_source_is_the_rendered_window_not_the_whole_seed(
-    monkeypatch, one_path,
+    monkeypatch, one_path, tmp_path,
 ):
     """`sandbox_from_snapshot` seeds (and its `Sandboxed.transcript`
     reads back) every row up to the instant; her turn renders only the newest
@@ -1112,7 +1112,12 @@ async def test_the_judges_source_is_the_rendered_window_not_the_whole_seed(
     monkeypatch.setitem(ENTRY_POINTS, "tag", EntryPoint(drive=fake_drive))
 
     judge = _FakeJudge(verdict="PASS")
+    monkeypatch.setenv(backbone.EXCHANGES_ENV, str(tmp_path))
     await backbone._drive(_case("window-probe"), _spec("tag", judge=judge))
+    import json
+
+    exported, = tmp_path.glob("window-probe-*-judge.json")
+    assert json.loads(exported.read_text())["verdict"] == "PASS"
 
     assert len(judge.calls) == 1
     source = judge.calls[0]["source"]
