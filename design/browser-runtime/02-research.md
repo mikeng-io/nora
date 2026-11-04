@@ -13,6 +13,33 @@ Corrections from the re-check are marked **Corrected**. VRAM figures in §5
 are arithmetic (weights plus about 1 GB for cache and a 3–4k-token page),
 not measurements.
 
+## Design refresh (2026-11-04)
+
+This refresh separates product layers; the October survey below is historical,
+not a current model recommendation or a claim that its measurements were rerun.
+
+- **Jev:** TypeSafe's official [introduction](https://docs.typesafe.ai/introduction)
+  describes supplied state and typed questions returning structured decisions.
+  It is a decision component, not an action executor. API availability, Nora's
+  route and the hosted-data restriction remain unresolved for this design.
+- **trycua:** the [repository](https://github.com/trycua/cua) supplies computer-use
+  drivers/infrastructure; adopting that driver is separate from choosing a model.
+- **Cua-S1:** its [model card](https://github.com/trycua/cua/blob/main/libs/cua-s1/MODEL_CARD.md)
+  describes a family of specialist research checkpoints with different task
+  contracts. The [README](https://github.com/trycua/cua/tree/main/libs/cua-s1)
+  explicitly scopes it below a general computer-use agent. An exact checkpoint,
+  input/action contract and resource fit are required before comparison.
+- **Nora source baseline inspected:** `nora/agent/browse.py` gives a Strands
+  subagent page tools and a typed outcome; `nora/infra/computer/browser.py`
+  implements snapshots/refs and actions over computerd CDP. This establishes
+  the existing source path, not current host enablement or target VM delivery.
+
+Primary pages above were read on 2026-11-04. No model or host was called.
+Current recommendation and unresolved selection are owned by
+[00](00-design.md#control-and-model-selection--design-review-2026-11-04) and
+[03](03-open-questions.md#current-selection-2026-11-04); no new benchmark score,
+latency, cost or broad capability is inferred here.
+
 ## 1. Hermes Agent (Nous Research)
 
 - Backends: Browser Use Cloud, Browserbase, Firecrawl (cloud); Camofox,

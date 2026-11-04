@@ -8,6 +8,33 @@ streaming/noVNC, tier cache, small models, GPU and stealth-engine arms are
 outside the current slice; challenge rate is measured on the consistent Chrome
 baseline without an anti-bot guarantee. ADR 0022 remains unchanged.
 
+## Current selection (2026-11-04)
+
+The operator requested a coherent design before implementation. Topology,
+anonymous use, continuation and direct screenshots are settled requirements.
+The executor and decision-model choice is still a design selection, not a
+completed benchmark or authorization to build every historical tier.
+
+| Question | Current evidence / recommendation | What closes it |
+|---|---|---|
+| Existing CDP executor or trycua driver? | Existing Nora executor is built. Recommend reuse for browser-only scope; no demonstrated missing desktop operation is supplied by the current brief. | Accept reuse, or name a required action the existing executor cannot perform and verify candidate Linux/VM integration. |
+| Existing browse model or Cua-S1? | Existing browser subagent is baseline; Cua-S1 has checkpoint-specific specialist contracts, not evidence of complete Nora browser journeys. | Accept baseline for first delivery, or select one exact checkpoint and bounded task comparison; include invalid/stale refs, abstention, continuation and whole-task results. |
+| Jev? | Typed-decision candidate; not a browser driver. The accepted ADR rejects hosted page-content processing. No current authorized endpoint, route, credential or Nora-task receipt is established. | Resolve the data boundary and actual endpoint/protocol/OmniRoute fit first. Hosted use needs an explicit change to the accepted restriction; catalogue membership is insufficient. |
+| Is a model comparison required before first delivery? | Recommendation: no paid spike by default; keep the existing model while VM/session routing changes. This remains a recommendation for design acceptance. | Record the accepted baseline and deferred alternatives in #520; if a comparison is requested, name its finite tasks, arms and spending limit before running it. |
+
+A requested comparison uses anonymous tasks matching this slice: navigate/read,
+search/filter, two-turn continuation, independent concurrent task tabs, dynamic
+page/stale refs, and an explicit challenge/failure outcome. Direct screenshot
+has an image/tab check and no model arm. Report attempted/completed/error counts,
+wrong actions, latency and total model/adapter cost; include ranker/escalation
+cost if present. Local resource fit is measured, not copied from a model card.
+Do not reuse historical logged-in/vault tasks as prerequisites for this anonymous
+slice. A missing candidate is unavailable, not a loss or a pass.
+
+The historical rulings and broad B3 programme below are not current dispatch
+instructions. Accepted ADRs stay unchanged; any accepted reversal follows the
+ADR amendment procedure.
+
 Status (2026-10-07): every ruling made, ADR 0022 accepted, S1 run. Nothing here is decided by argument.
 
 ## 1. Rulings for the operator

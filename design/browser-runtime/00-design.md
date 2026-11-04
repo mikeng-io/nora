@@ -78,6 +78,77 @@ visits, failures and sample size, alongside task success. Headed Chrome is no
 guarantee against bot detection; a challenge is an explicit unavailable outcome,
 not a solver, fabricated success or automatic switch to a stealth engine.
 
+### Control and model selection — design review (2026-11-04)
+
+**Design first; runtime implementation has not started.** The operator asked to
+reconcile this bundle before building. The scoped topology and session behavior
+above are requirements; the model/driver recommendation below is not an accepted
+selection. The historical four-tier architecture is not a requirement to build
+all tiers before the first usable browser.
+
+Separate the environment, action executor and decision model:
+
+| Layer | Existing baseline | Selection for the scoped target |
+|---|---|---|
+| Browser environment | Headed Chrome on Xvfb inside the shared sbx VM | Keep native Chrome, move to one VM per admitted unit/DM scope |
+| Action executor | Nora CDP client through computerd's authenticated websocket and Chrome debugging pipe | Recommend reuse; trycua driver is an alternative executor, not a model |
+| Task reasoning and step decisions | Strands browser subagent, configured browse model; historical B2 Flash baseline | Recommend baseline first; Jev and Cua-S1 remain candidates pending the selection below |
+| Observation | Accessibility snapshot and element refs; marked screenshot on request | Keep snapshot-first as the baseline; evaluate additional visual grounding only for a demonstrated gap |
+| Direct capture | Screenshot exists inside the agent loop | Add scoped task-tab viewport/full-page capture without a model loop |
+
+“CUA or Jev” is not one binary choice. Computer use names a capability;
+trycua supplies drivers/infrastructure, while Cua-S1 supplies specialist decision
+models. Jev supplies typed decisions over supplied state/questions. Neither a
+Jev decision nor a Cua-S1 selection executes a click: a scoped executor still
+has to validate and apply it. See the refreshed
+[research](02-research.md#design-refresh-2026-11-04) and
+[selection questions](03-open-questions.md#current-selection-2026-11-04).
+
+**Recommendation, not a ruling:** reuse the existing executor and browser
+subagent for the first scoped version. It already provides the necessary page
+operations; changing VM/session routing does not itself require another driver
+or model. Cua-S1 could later replace a narrow step decision; Jev could serve
+that role only after its endpoint, data route and permission fit are resolved.
+The existing ADR rejects hosted page-content processing, so a hosted Jev arm is
+not admitted merely because it appears in this comparison. No credentials,
+model calls, new dependencies or experiments are authorized by this document.
+
+Reopen the recommendation if a candidate demonstrates better task completion
+or lower end-to-end cost at comparable completion on the selected task set,
+within the existing data boundary and available resources. Vendor latency and
+benchmark claims are not Nora measurements. Before implementation, record the
+accepted executor/model, evidence limits and exact scope in issue #520; leave
+unmeasured optimizations deferred rather than building every candidate.
+
+### Implementation sequence — after design selection
+
+One integrated scoped-browser change, built in this order:
+
+1. Trace the current scope resolver, supervisor, runtime client, computerd and
+   browser runner; pin source revision and enumerate callers before editing.
+   Refresh private source inventory before planning migration; source inspection
+   does not establish host state or authorize cutover.
+2. Bind native computer operations and worker routing to the admitted scope's
+   VM and instance. Carry that binding through lifecycle/state, files, process
+   handles and CDP; unresolved scope is unavailable, with no shared-VM fallback.
+3. Give that VM one on-demand Chrome and each task its own tab ownership.
+   Preserve continuation across turns/transports, serialize same-tab operations,
+   and make cancellation, idle cleanup and expired handles explicit.
+4. Expose direct screenshot capture on the same scoped task tab. Keep model
+   reasoning outside the VM and use the selected baseline, without adding the
+   historical cache, ranker or model cascade to this slice.
+5. Verify scope routing, continuity, concurrency, expiry and capture against the
+   acceptance below. Use generated scopes and focused checks, hosted checks and
+   the applicable independent review. No full local suite before the PR.
+6. Prepare data-preserving migration and rollback from the refreshed inventory.
+   Notify the operator before deployment; only authorized runtime readback can
+   establish resource cost, cold/warm behavior and actual challenge rate.
+
+Pi's full adapter, ACP and another VM provider retain their own delivery scope;
+the routing must agree with them, but implementing every adapter is not browser
+acceptance. Design reconciliation and roadmap updates are the current work;
+per-scope VMs, new tab lifetime and direct capture remain NOT BUILT.
+
 ### Migration prerequisites and acceptance
 
 The next implementation must first refresh the current shared-VM inventory and
