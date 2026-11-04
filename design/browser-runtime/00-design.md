@@ -127,6 +127,22 @@ benchmark claims are not Nora measurements. Before implementation, record the
 accepted executor/model, evidence limits and exact scope in issue #520; leave
 unmeasured optimizations deferred rather than building every candidate.
 
+### Concrete browser setup — researched recommendation (2026-11-04)
+
+Read the [current setup research](02-research.md#microvm-browser-setup-research-2026-11-04)
+before choosing packages or implementing this slice. Existing image baseline is
+Google Chrome Stable (`google-chrome-stable`), Xvfb and distro libraries/fonts;
+existing controller is Python `aiohttp` plus Nora's CDP client, not Playwright.
+Recommend retaining it pending source mapping; compare Playwright if it avoids
+substantial new custom mechanics. Agent-browser, browser-use and Cua Driver are
+explicit alternatives with different lifecycle/guest costs, not missing installs.
+
+Headed Chrome is the accepted baseline; modern headless shares Chrome code and
+can capture screenshots without Xvfb. Neither headed mode nor Chrome branding
+establishes better challenge rates. Historical fingerprint assertions below
+must not be treated as measurements. Verify browser sandboxing, guest resources,
+TLS activation, proxy and per-task cookie/context ownership before cutover.
+
 ### Adapter boundary and ownership (2026-11-04)
 
 The architecture supports multiple decision backends over one scoped browser
