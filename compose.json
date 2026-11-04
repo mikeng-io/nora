@@ -200,7 +200,7 @@
       }
     },
     "instagram-bridge": {
-      "image": "ghcr.io/mikeng-io/nora-instagram-bridge@sha256:9b13c91e0110271f962630cfec9fc1aa332976535be3db52d9d35825c8f2491e",
+      "image": "ghcr.io/mikeng-io/nora-instagram-bridge@sha256:047e5c8dbae1a848aa8b4a1f57fe8a3bb1b42327c637ba4dacd3a7ebd60b80af",
       "container_name": "instagram-bridge",
       "restart": "unless-stopped",
       "networks": [
@@ -311,7 +311,7 @@
       }
     },
     "nora": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:e54ba3461d641c5e87494a90fb09ba823f48b041382854ec1707a557661a4fb4",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:5706d9f350cf1a2dee82c087be773b45d890452b11c358f5f117f6887b368096",
       "container_name": "nora",
       "restart": "unless-stopped",
       "stop_grace_period": "75s",
@@ -427,7 +427,7 @@
       ]
     },
     "site": {
-      "image": "ghcr.io/mikeng-io/nora-site@sha256:cc7509ea196dd1c912471e914d275cf063bbf4ccd4f805862665fcaf4a6deb7a",
+      "image": "ghcr.io/mikeng-io/nora-site@sha256:6b553bd6c7fc921e3dc552ee95059c788dae592ab8021a1c66ea4a585b897796",
       "container_name": "nora-site",
       "profiles": [
         "site"
@@ -438,7 +438,7 @@
       ]
     },
     "presence": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:e54ba3461d641c5e87494a90fb09ba823f48b041382854ec1707a557661a4fb4",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:5706d9f350cf1a2dee82c087be773b45d890452b11c358f5f117f6887b368096",
       "container_name": "presence",
       "restart": "unless-stopped",
       "entrypoint": [
@@ -490,7 +490,7 @@
       }
     },
     "analytics": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:e54ba3461d641c5e87494a90fb09ba823f48b041382854ec1707a557661a4fb4",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:5706d9f350cf1a2dee82c087be773b45d890452b11c358f5f117f6887b368096",
       "container_name": "analytics",
       "restart": "unless-stopped",
       "entrypoint": [
