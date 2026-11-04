@@ -1,0 +1,16 @@
+[
+  {
+    "name": "confirmed reactions are responses without phantom text",
+    "file": "evals/backbone.py",
+    "old": "outcome, reactions=_reaction_receipts(tool_results, tool_inputs),",
+    "new": "outcome, reactions=(),",
+    "target": "tests/unit/test_eval_full_restore.py::test_reaction_receipts_reach_suitability_without_phantom_text"
+  },
+  {
+    "name": "synthetic gate arrivals enter the actual transcript path",
+    "file": "evals/rebuilt/entry.py",
+    "old": "if case.input:\n        await arrive(subject, case.input, now_ms=now_ms, person=case.person)",
+    "new": "if case.input:\n        pass",
+    "target": "tests/unit/test_eval_backbone.py::test_gate_delivers_case_input_to_the_real_window_path"
+  }
+]
