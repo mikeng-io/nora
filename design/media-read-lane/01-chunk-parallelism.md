@@ -20,12 +20,20 @@ video, independent of the window size; longer clips need an explicit read.
 Failed windows retain their original intervals, including holes in capped clips.
 
 Ownership is per read, **not a process-wide provider semaphore**. Default ingest
-fan-out is four comprehension jobs × three calls = **12 video calls**. Foreground
-`media_fetch` may add up to four concurrent reads × three calls = **12 more per
-turn**, including automatic Instagram reads using the turn's four slots. Other
-turns and processes can add further calls; 24 is not a global ceiling. Existing
-turn deadlines include provider waits and local preprocessing. A process-wide
-limit becomes warranted if measured provider contention makes this scope fail.
+fan-out is four comprehension jobs × three calls = **12 video calls**. Direct
+`media_fetch` calls occupy the process's eight shared tool-executor slots; if all
+slots contain direct video reads they add **24 calls**, or **36 with ingest**.
+Its per-turn tool budget is eight, independently of that shared executor.
+
+Automatic Instagram reads fan out behind an `instagram_read` invocation, using
+four look slots shared across that turn's opens: up to **12 video calls per
+turn**. Summons automatic reads also own four look slots and run before the
+agent loop. These nested reads, concurrent turns/occasions and other processes
+mean **36 is not a global provider ceiling**. Size aggregate demand from the
+actual admitted jobs, turns and occasions; this change adds no shared provider
+semaphore. Existing turn deadlines include provider waits and preprocessing. A
+process-wide limit becomes warranted if measured contention makes this scope
+fail.
 
 A maximum-length video now makes up to 30 calls instead of 10, so repeated
 per-window reasoning can increase total token cost. Thirty-second latency,

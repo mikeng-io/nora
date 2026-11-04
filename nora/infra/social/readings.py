@@ -77,9 +77,8 @@ MAX_READ_VIDEOS = 3
 #: remain available through an explicit media_fetch.
 MAX_READ_VIDEO_SECONDS = 90.0
 
-#: Looks in flight at once, across the whole turn: `media_fetch`'s own
-#: per-turn budget, and the number of media reads the executor already runs
-#: together when the model batches them.
+#: Automatic looks in flight across a turn's batched opens. Independent of
+#: the direct media_fetch tool budget and the process's outer tool slots.
 READ_CONCURRENCY = 4
 
 #: One look: the single-window vision ceiling (120 s) plus the url download
