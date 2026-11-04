@@ -32,12 +32,15 @@
 # window happens to hold. `person:` names a pseudonymised member of that room,
 # resolved on the deploy host by the private map (#776), as every corpus does.
 #
-# --- THE FOUR KINDS ----------------------------------------------------------
+# --- CATEGORIES ----------------------------------------------------------
 #
-# `category:` records the kind: banter, correction, about_nora, greeting. Each
-# kind has one `_control` case whose right reply is short and plain, so a build
+# The original categories are banter, correction, about_nora and greeting.
+# Each has one `_control` case whose right reply is short and plain, so a build
 # that gets flatter AND a build that starts performing a personality where the
 # moment did not call for one both have a case that can fail.
+#
+# The later `circle` category adds paired intent/evidence cases, graded with
+# social_suitability rather than personality. See the #575 audit amendment.
 #
 # --- HOW THEY ARE GRADED -----------------------------------------------------
 #
@@ -49,8 +52,8 @@
 # it would move with the arm it measures. There is no `expected_output`: one
 # property, read the same way on every case, is the whole grading.
 #
-# NOT YET RUN. No baseline exists; the first reading is the before arm of the
-# first cut.
+# Historical initial corpus status: no baseline existed when these cases were
+# authored. Current #575 evidence and its limits are recorded in PR #589.
 
 cases:
   # --- banter ---------------------------------------------------------------

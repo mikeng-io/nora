@@ -328,7 +328,7 @@ files:
       parts:
         - {starts: "A friend group's chat", bucket: practice, reason: "what the picker is shown and how often this group answers with a picture", sha: "122759daec72"}
         - {starts: "Nora is one of the circle", bucket: character, reason: "a copy of her character inside an instrument: sharp, dry, the friend who roasts and helps", sha: "7dd57f014f2f"}
-        - {starts: "Lines marked", bucket: practice, reason: "how to read stickers and a reaction already used", sha: "f5b8b7655769"}
+        - {starts: "Lines marked", bucket: practice, reason: "how to read stickers and a reaction already used", sha: "9dff3179cbbc"}
     "The first question: would a GIF make her reply land better?":
       parts:
         - {starts: "Answer with one of three modes.", bucket: practice, reason: "with, alone or none", sha: "35d5d8eca6e5"}

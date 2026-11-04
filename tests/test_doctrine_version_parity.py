@@ -96,7 +96,7 @@ PINNED: dict[str, tuple[int, str]] = {
     ),
     # The reaction picker's instruction (`nora.agent.reaction`).
     "reaction": (
-        4, "873a5fa1a9d5f6f8e2bdec47905be95315d7206563fc844a6e1ad2a4a59e469c",
+        5, "24ad6ab63039c66819ca4b0ee1fbc9290b28b06a145a1b33b1acac5c882a3feb",
     ),
     # The speech formatter's instruction.
     "speech-format": (
