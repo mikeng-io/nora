@@ -1042,3 +1042,25 @@ async def test_public_silence_requires_a_healthy_invocation(monkeypatch, reason)
     assert "<social_post" in outcome.shown
     assert bool(outcome.error) == bool(reason)
     assert outcome.meets("silence") is (None if reason else True)
+
+
+def test_judge_export_retains_raw_votes_and_errors_privately(monkeypatch, tmp_path):
+    import json
+
+    from evals.rebuilt.grading import Judgement
+
+    votes = ('[{"criterion":"safety","score":0.6,"confidence":0.4}]', 'malformed vote')
+    reading = Judgement('safety', 'REVIEW', votes, 'TimeoutError')
+    monkeypatch.delenv(backbone.EXCHANGES_ENV, raising=False)
+    backbone._dump_judgement(reading, 'synthetic')
+    assert not list(tmp_path.iterdir())
+    folder = tmp_path / 'private-exchanges'
+    monkeypatch.setenv(backbone.EXCHANGES_ENV, str(folder))
+    backbone._dump_judgement(reading, 'synthetic')
+    path, = folder.glob('synthetic-*-judge.json')
+    assert json.loads(path.read_text()) == {
+        'criterion': 'safety', 'verdict': 'REVIEW', 'samples': list(votes),
+        'error': 'TimeoutError',
+    }
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert folder.stat().st_mode & 0o777 == 0o700
