@@ -278,7 +278,7 @@ class ProactiveHeader:
             "since been settled, or somebody already said it, or it would not "
             "help, stay silent: silence is a complete answer here, not a failure, "
             "and most turns like this one end that way. "
-            "If it is still worth saying, give it the substance it needs in your own words, "
+            "If it is still worth saying, say it once, briefly, in your own words, "
             "and never as «I set myself a reminder» or «my note says», and never "
             "in the note's own words — the note and the reminder are WHY you are "
             "here, never WHAT you have to say."
@@ -353,8 +353,8 @@ def _gate_note(relevance_score: float | None) -> str:
 
     Rendered as what it IS — a cheap upstream guess made without her notes,
     facts or memory — and not as an instruction, because the moment it reads as
-    one the second layer stops being a second judgement. The gate found a possible
-    opening; only this turn can decide whether she has a fitting contribution, and the
+    one the second layer stops being a second judgement. The gate decided the
+    room is ASKING; only this turn can decide whether she HOLDS anything, and the
     sentence has to leave that decision where it is.
 
     `None` renders nothing at all rather than "no score": a header that
@@ -367,7 +367,7 @@ def _gate_note(relevance_score: float | None) -> str:
         f"\nA relevance check upstream scored this room {_figure(relevance_score, '.2f')} "
         "before you saw it. It read only the transcript and your standing — not "
         "your notes, facts or memory — so it is a guess about whether the room is "
-        "open to a contribution, never a judgement that you have an answer. Weigh it as such, and "
+        "asking, never a judgement that you have an answer. Weigh it as such, and "
         "stay silent anyway if you hold nothing."
     )
 
@@ -376,9 +376,10 @@ def _gate_note(relevance_score: float | None) -> str:
 class ParticipationHeader:
     """The situation paragraph for a participation turn.
 
-    A closed conversation window offers the floor without a new direct call.
-    It may close on quiet or volume; earlier calls in the transcript remain real.
-    The right to decline it is stated HERE, and only here: what a turn
+    Same opening shape as the other fire headers — nobody called her, and that is
+    not why this turn is happening — but the reason clause differs: no one asked
+    for anything, earlier or otherwise. The room went quiet and the floor was
+    offered. The right to decline it is stated HERE, and only here: what a turn
     is belongs with the turn, and the header is the sentence she reads first.
     Unlike `ProactiveHeader` it does NOT carry the base rate («most turns like
     this one end that way»): its effect here is unmeasured, and the Relevance
@@ -389,13 +390,13 @@ class ParticipationHeader:
 
     def render(self) -> str:
         return (
-            "You are in a group chat you have been reading all along. A batch of the "
-            "conversation has closed, and this turn offers you the floor rather "
-            "than answering a new direct call.\n"
-            "The tag_message below is deliberately empty: no direct call opened this turn. "
+            "You are in a group chat you have been reading all along. Nobody has "
+            "called you — not just now, and not earlier. The conversation has gone "
+            "quiet, and this turn is the offer of the floor, nothing more.\n"
+            "The tag_message below is deliberately empty: nothing was put to you. "
             "Decide from what is already in front of you — the transcript above, "
             "and whatever standing and notes came with it. If speaking "
-            "would add something grounded and welcome, choose the response it needs. If "
+            "would add something the room can use, say it — once, briefly. If "
             "not, stay silent: silence is a complete answer here, not a failure."
             f"{_gate_note(self.relevance_score)}"
         )
