@@ -60,7 +60,7 @@ async def public_summons(subject: Subject, case: Case, *, now_ms: int) -> Outcom
         now, 'generated_author', 'Generated public food discussion.', None, (), 0,
         (ThreadRow('generated_speaker', case.input, now, True),), 0)
     said, failure = await turn(subject, context)
-    return Outcome(admitted=True, said=said, shown=render_summons(context),
+    return Outcome(admitted=None, said=said, shown=render_summons(context),
         error=f'public turn failed: {failure}' if failure in ('failed', 'timed_out') else None,
         outcome_token='public_staged' if said else 'public_silent', delivery='staged')
 

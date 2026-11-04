@@ -1,0 +1,72 @@
+[
+  {
+    "name": "job result substance survives readback",
+    "file": "nora/subject/circle.py",
+    "old": "result_report=report, result_document_ids=(document_id,)",
+    "new": "result_report=\"\", result_document_ids=(document_id,)",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk"
+  },
+  {
+    "name": "completed jobs require a real sandbox send receipt",
+    "file": "nora/subject/circle.py",
+    "old": "if not await deliverer.deliver(report):",
+    "new": "if False:",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk"
+  },
+  {
+    "name": "reaction RPC outage reaches actual reactor",
+    "file": "nora/subject/circle.py",
+    "old": "'error': {'code': -32000, 'message': 'controlled outage'}",
+    "new": "'result': {}",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_reaction_outage_is_the_real_signal_result_and_validates_requests"
+  },
+  {
+    "name": "hold is enforced at existing send permission",
+    "file": "evals/rebuilt/entry.py",
+    "old": "**({'send_permitted': False} if",
+    "new": "**({'send_permitted': True} if",
+    "target": "tests/unit/test_eval_backbone.py::test_circle_hold_enters_real_participation_send_permission"
+  },
+  {
+    "name": "held reaction cannot bypass with text",
+    "file": "evals/backbone.py",
+    "old": "if overlay.reaction == 'held' and any(t in tools for t in ('send_reply', 'send_gif')):",
+    "new": "if False:",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_reaction_requires_actual_execution_and_forbids_hold_bypass"
+  },
+  {
+    "name": "GIF boundary is actually unavailable",
+    "file": "nora/subject/circle.py",
+    "old": "kwargs['giphy'] = None",
+    "new": "kwargs['giphy'] = 'incorrect-success'",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_gif_absence_reaches_existing_registry_boundary"
+  },
+  {
+    "name": "correction closes old preference",
+    "file": "nora/subject/circle.py",
+    "old": "by=relation.id, evidence=(key,)),) if i else ()",
+    "new": "by=relation.id, evidence=(key,)),) if False else ()",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_memory_uses_admitted_correction_and_scoped_read"
+  },
+  {
+    "name": "memory outage stays unavailable",
+    "file": "nora/subject/circle.py",
+    "old": "fail=TimeoutError('controlled index outage') if unavailable else None",
+    "new": "fail=None",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_memory_uses_admitted_correction_and_scoped_read"
+  },
+  {
+    "name": "public capture binds actual rendered input",
+    "file": "evals/backbone.py",
+    "old": "if text == rendered and '<social_post' in text:",
+    "new": "if '<social_post' in text:",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_public_capture_requires_actual_public_chat_input"
+  },
+  {
+    "name": "public uses the existing auto runner without skills",
+    "file": "nora/subject/public_summons.py",
+    "old": "retry=room_runner._retry, skills_dir=None,",
+    "new": "retry=room_runner._retry, skills_dir='private-skills',",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_public_adapter_uses_real_occasion_and_narrow_grant"
+  }
+]
