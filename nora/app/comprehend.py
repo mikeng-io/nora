@@ -6,7 +6,7 @@ import json
 import logging
 import re
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, tzinfo
 from typing import Any, Literal, get_args
 from uuid import NAMESPACE_URL, uuid5
 
@@ -57,7 +57,8 @@ class ProposedRelation(Shape):
 
 
 class ProposedEvidence(Shape):
-    source: list[str] = Field(min_length=2, max_length=2)
+    # A source id is accepted as written: readings cite it as an integer.
+    source: list[str | int] = Field(min_length=2, max_length=2)
     relation_id: str | None = None
     entity_id: str | None = None
     attribute: str | None = None
@@ -78,7 +79,7 @@ class ProposedCorrection(Shape):
     kind: Literal["close", "supersede", "dispute", "retire"]
     at: str
     by: str | None = None
-    evidence: list[list[str]] = Field(default_factory=list)
+    evidence: list[list[str | int]] = Field(default_factory=list)
 
 
 class GraphWrite(Shape):
@@ -132,18 +133,21 @@ def _endpoint(value: list[str], unit: str) -> Key:
     return kind, ref
 
 
-def _key(value: list[str]) -> Key:
+def _key(value: list[str] | list[str | int]) -> Key:
     if len(value) != 2:
         raise ValueError("source key requires kind and id")
-    return value[0], value[1]
+    return str(value[0]), str(value[1])
 
 
-def _time(value: str | None) -> datetime | None:
+def _time(value: str | None, tz: tzinfo | None) -> datetime | None:
+    """An ISO time; a date or naive time is read in the batch clock's zone."""
     if value is None:
         return None
     at = datetime.fromisoformat(value)
     if at.tzinfo is None:
-        raise ValueError("time requires offset")
+        if tz is None:
+            raise ValueError("time requires offset")
+        at = at.replace(tzinfo=tz)
     return at
 
 
@@ -229,8 +233,8 @@ class MemoryProposalAdmission:
                         "notebook",
                         work.unit,
                         tuple(r.persons),
-                        _time(r.valid_from),
-                        _time(r.valid_to),
+                        _time(r.valid_from, work.as_of.tzinfo),
+                        _time(r.valid_to, work.as_of.tzinfo),
                         asserted_at=work.as_of,
                         written_by=f"cognition:comprehend:{session}",
                     )
@@ -241,7 +245,7 @@ class MemoryProposalAdmission:
         for c in output.corrections:
             try:
                 correction_parts.append(Correction(
-                    c.relation_id, c.kind, _time(c.at) or work.as_of,
+                    c.relation_id, c.kind, _time(c.at, work.as_of.tzinfo) or work.as_of,
                     ids.get(c.by, c.by) if c.by is not None else None,
                     tuple(_key(k) for k in c.evidence),
                 ))

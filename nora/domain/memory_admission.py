@@ -19,6 +19,7 @@ from nora.domain.memory_graph import (
     Source,
     Subgraph,
     Walk,
+    pointer_entity,
     validate_relation,
 )
 from nora.domain.memory_index import IndexedNode, in_scope, narrowed
@@ -27,6 +28,20 @@ GraphBatchOutcome = Literal["ok", "nothing_found", "unavailable"]
 GRAPH_BATCH_OUTCOMES: tuple[str, ...] = get_args(GraphBatchOutcome)
 GraphProjectionOutcome = Literal["excluded"]
 GRAPH_PROJECTION_OUTCOMES: tuple[str, ...] = get_args(GraphProjectionOutcome)
+
+
+def _grounded_person(
+    key: Key, relation: Relation, evidence: tuple[Evidence, ...], sources: Mapping[Key, Source]
+) -> Entity | None:
+    """The unit's pointer for a person end, when a cited source is in that person's scope."""
+    prefix = f"{relation.unit}:person:"
+    if key[0] != "person" or not key[1].startswith(prefix):
+        return None
+    ref = key[1].removeprefix(prefix)
+    if not any(ref in sources[e.source].persons for e in evidence if e.source in sources):
+        return None
+    # ponytail: named by its id until the projection upserts the authored name.
+    return pointer_entity("person", relation.unit, ref, ref)
 
 
 class AdmissionState:
@@ -75,24 +90,34 @@ class AdmissionState:
             else:
                 candidates[entity.id] = entity
         accepted: list[Relation] = []
+        pointers: dict[str, Entity] = {}
         for relation in relations:
             ev = tuple(e for e in evidence if e.relation_id == relation.id)
             reason = validate_relation(relation, ev, sources)
             if relation.id in self.relations or any(r.id == relation.id for r in accepted):
                 reason = "duplicate_relation"
+            staged: dict[str, Entity] = {}
             if reason is None:
                 for key in (relation.src, relation.dst):
+                    pointer = _grounded_person(key, relation, ev, sources)
+                    if pointer is not None and key[1] not in candidates | pointers:
+                        # The projection has not reached this person yet; this
+                        # relation's own cited source is about them. Staged for
+                        # this relation only, kept only if it is accepted.
+                        staged[key[1]] = pointer
+                    held = (candidates | pointers | staged).get(key[1])
                     if key[0] in ENTITY_KINDS and (
-                        key[1] not in candidates
-                        or candidates[key[1]].unit != relation.unit
-                        or candidates[key[1]].kind != key[0]
+                        held is None or held.unit != relation.unit or held.kind != key[0]
                     ):
                         reason = "wrong_ends"
             if reason:
                 refused.append(Refusal("relation", relation.id, reason))
             else:
                 accepted.append(relation)
+                pointers.update(staged)
         endpoints = {k for r in accepted for k in (r.src, r.dst)}
+        # Code-made pointers keep their `ref`; they skip attribute evidence below.
+        staged_pointers = [await self._upsert_entity(p) for p in pointers.values()]
         committed = []
         for entity in entities:
             if candidates.get(entity.id) != entity:
@@ -144,7 +169,7 @@ class AdmissionState:
             cleaned = replace(entity, attributes=attrs)
             self.entities[entity.id] = cleaned
             clean_entities.append(cleaned)
-        committed = clean_entities
+        committed = clean_entities + staged_pointers
         for r in accepted:
             self.relations[r.id] = r
         admitted_corrections = []
