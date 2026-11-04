@@ -620,3 +620,50 @@ async def test_tool_routing_uses_the_full_record_restore(corpus, seams, monkeypa
     assert seams["sandbox_as_of"] == [(_SOURCE, _NOW, "the_blank")]
     assert seams["sandbox_from_snapshot"] == []
     assert seams["restored_room"] == [{"source_url":_SOURCE,"before_ms":_SHOT["before_ms"]}]
+
+
+@pytest.mark.parametrize("latest", [False, True])
+@pytest.mark.parametrize("status", ["ok", "held_for_review", "unavailable", "malformed"])
+async def test_reaction_receipts_reach_suitability_without_phantom_text(
+    judged, monkeypatch, latest, status,
+) -> None:
+    """Real SDK tool spans: confirmed reaction is judged; held/unknown is not speech."""
+    import json
+
+    from strands.telemetry.tracer import get_tracer
+    from strands_evals.types.evaluation import EvaluationData
+
+    from evals.backbone import NORA_REACTIONS, NORA_SAID, MeetsGrader, state_of
+
+    async def drive(_subject, _case, *, now_ms):
+        _render_her_turn()
+        tracer = get_tracer()
+        monkeypatch.setattr(tracer, "use_latest_genai_conventions", latest)
+        tool = {"name": "reaction_send", "toolUseId": "reaction-1",
+                "input": {"emoji": "😂", "reply_to": 1}}
+        span = tracer.start_tool_call_span(tool)
+        text = "bad-json" if status == "malformed" else json.dumps({"status": status})
+        tracer.end_tool_call_span(span, {"toolUseId": "reaction-1", "status": "success",
+                                          "content": [{"text": text}]})
+        return Outcome(admitted=False)
+
+    monkeypatch.setitem(ENTRY_POINTS, "tag", EntryPoint(drive=drive, delivers_input=True))
+    judge = _Judge()
+    result = await backbone._drive(
+        _judged_case("reaction", ["social_suitability"]),
+        _spec(full_restore=True, judge=judge),
+    )
+    data = EvaluationData(input="x", metadata={"expect": "reply"},
+                          actual_environment_state=result["environment_state"])
+    assert state_of(data, NORA_SAID) == 0
+    assert bool(state_of(data, NORA_REACTIONS)) == (status == "ok")
+    [graded] = MeetsGrader().evaluate(data)
+    assert graded.label == ("PASS" if status == "ok" else "FAIL")
+    if status == "ok":
+        [call] = judge.graded
+        assert "Confirmed reaction_send" in call["said"]
+        assert "😂" in call["said"] and '"reply_to": 1' in call["said"]
+        assert result["output"] == call["said"]
+    else:
+        assert judge.graded == []
+        assert result["output"] == ""
