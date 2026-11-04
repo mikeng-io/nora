@@ -11,7 +11,10 @@ Operator, 2026-09-26: when he tags Nora in a group about a reel, story, post,
 picture or clip, she "reports" it. Her answer opens by presenting the media
 back (what the picture is, what is in it, in order) instead of reacting the
 way a friend who saw it would. The public summons has its own doctrine and
-was fixed separately (#575); this note covers the room tag path only.
+had an earlier scoped fix referenced by #575; that receipt does not complete
+the expanded 2026-11-04 circle-doctrine scope of #575. This note covers the
+historical room-tag study only. The later doctrine honors explicit requests
+to describe, summarize or explain shared media.
 
 ## Method
 

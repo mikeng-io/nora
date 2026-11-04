@@ -373,3 +373,44 @@ tag audience 39, 37, 25. After step 2 (2026-10-12): 62 law, 70 practice, 28 char
 (160 parts); for the tag audience 42, 37, 25. Law gained three parts: `core/constraints.md`
 § Other people stay private split into four (the location rule and the records rule are
 new); every other part moved one for one.
+
+
+## Later amendment — circle doctrine, 2026-11-04 (#575)
+
+The integrated revision supersedes fixed brevity, conclusion-only, one-message
+and mandatory-tag practice. Purpose determines medium, supporting substance and
+grouping. Invited bounded coordination is distinct from unsolicited chasing.
+The authored identity/register seed and law/practice precedence remain; no
+must-hold guidance moved behind optional skill loading. Classification hashes
+track the revised text without converting law to practice. Earlier measurements
+above remain historical, not behavioral acceptance of this revision.
+
+The gate may offer a fitting social exchange within existing room grants. It
+sees transcript and Standing only; it cannot attest to profiles, retained memory,
+member preferences or available actions. The full turn judges admitted evidence
+and can stay silent. Cooldowns, budgets, fail-closed outcomes and delivery owners
+are unchanged. Extra admissions, interruption, latency and spend still require
+paired model evidence before claiming the broader gate pays for itself.
+
+Fixed invented arriving lines in `evals/corpora/personality.yaml` map response
+suitability to `circle_brief_fact` / `circle_requested_explanation`, social
+meaning to `circle_acknowledgement` / `circle_factual_agreement` and
+`circle_banter` / `circle_distress`, responsibility to `circle_casual_plan` /
+`circle_invited_coordination`, corrections to `circle_old_preference` /
+`circle_corrected_preference`, and claimed progress to `circle_running_claim` /
+`circle_completed_claim`. All use the existing tag entry point, declared context
+assembly and a common real background anchor; invented lines are not historical
+messages. The `social_suitability` judge grades intent, useful substance,
+attribution, action honesty and restraint rather than prose quotas.
+
+Controlled tool-state cases remain visibly unanchored in
+`evals/corpora/tool_reporting.yaml`: `circle_work_running`,
+`circle_work_checked_complete`, `circle_reaction_unavailable`,
+`circle_reaction_held`, `circle_gif_unavailable`, `circle_memory_partial`,
+`circle_memory_unavailable`, `circle_public_private_boundary`.
+The existing rebuild cannot inject these controlled outcomes/audiences from a
+real anchor. A member saying a job finished does not fill that seam. These are
+UNAVAILABLE model acceptance, not parked successes. Current deterministic
+assembly/completion checks measure wiring only. Cognition's replacement prelude,
+tool-free judges, speech formatter and worker retain their distinct ownership.
+Public voice changes depth, never private-context access or action authority.
