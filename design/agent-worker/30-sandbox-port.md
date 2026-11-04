@@ -80,3 +80,15 @@ linked browser contract and join the existing contract/corpus checks in
 VM instance is refused. Resource admission failure is unavailable, never a
 shared-VM fallback. Do not replace the shipped unit migration or claim private-DM
 prerequisites are complete. No worker or host operation follows from this doc.
+
+### Scope-wide execution queue amendment (2026-11-04)
+
+The [computer queue contract](../browser-runtime/00-design.md#per-scope-computer-queue-operator-scope-addition-2026-11-04)
+serializes first-version execution segments per VM, across native tools and
+worker jobs. Separate task tabs remain, but concurrent same-VM execution is
+not required. Reuse Redis Streams infrastructure and existing durable job
+delivery; do not mix computer commands into bridge streams. Worker child tools
+inherit their admitted scope ownership instead of requeueing behind the parent.
+The existing job-only lease is not sufficient. Stop/reconcile old VM processes
+before a successor dispatches after ownership loss; queue recovery is not
+permission to replay an uncertain side effect.

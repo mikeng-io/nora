@@ -7,7 +7,9 @@ description: Lands a Nora change from first edit to merged master, covering a ne
 
 Worktree → impact-based validation → PR → applicable review → merge → read-back. Rules: `CONTRIBUTING.md`, `AGENTS.md`.
 Read logs/state after each step, not just its exit code; proceed unless blocked or missing an operator-only fact.
-Implement small changes directly; delegate substantial work only when the benefit
+Apply the Claude orchestration-only restriction in `ORCHESTRATION.md` before
+selecting any builder or reviewer. Other models implement small changes directly;
+delegate substantial work only when the benefit
 outweighs context loss, or the operator asks (`ORCHESTRATION.md`). Review follows
 risk separately. Delegated builders run named checks, commit/push/open PR and
 stop; the parent owns final validation, review, merge and read-back.

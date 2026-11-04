@@ -405,8 +405,10 @@ keeps this table and that directory in step.
 
 **[ORCHESTRATION.md](ORCHESTRATION.md) is the canonical engineering-agent policy**
 (operator ruling, 2026-10-27): capability/evidence tiers, adaptive worker admission,
-artifact ownership, independent review and its two-round limit. The operator-facing
-session directly implements small, coherent changes; delegate substantial
+artifact ownership, independent review and its two-round limit. Claude models
+orchestrate only; they never implement or independently review,
+including small edits. Other models in the operator-facing
+session directly implement small, coherent changes; delegate substantial
 implementation only when its capacity/capability benefit outweighs briefing and
 context loss, or when the operator asks. A delegated builder implements its
 bounded brief. Independent review follows the applicable risk tier. Use isolated
