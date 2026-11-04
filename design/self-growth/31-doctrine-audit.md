@@ -544,3 +544,9 @@ input capture remains a mandatory positive control. Fresh captured job context
 is sufficient evidence without a redundant `subagent_read`; a missing block or
 a duplicate job still fails. These expectations were reconciled against the
 existing doctrine before new draws, not changed to make a model result pass.
+
+The generated memory controls ask about their own named generated dish. This
+keeps an unavailable synthetic read from being judged against unrelated real
+preferences that the restored background may legitimately supply. The same
+question is used for partial, unavailable and public isolation; the question
+states the topic, never the hidden preference or correction.
