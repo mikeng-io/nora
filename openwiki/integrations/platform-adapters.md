@@ -9,6 +9,8 @@ verified:
 sources:
   - id: openwiki-source-7aa209ee4f993345d7092214
     resource: repo://config.example.toml
+  - id: openwiki-source-66b9681d81fa3b109a7352d3
+    resource: repo://deploy/instagram-bridge/compose.fragment.yml
   - id: openwiki-source-b79fbbd921df689b4bbdc82f
     resource: repo://docker-compose.yml
   - id: openwiki-source-619bca1ef65b542d1dde0030
