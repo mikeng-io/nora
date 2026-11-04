@@ -24,10 +24,10 @@ async def destination(monkeypatch, aiohttp_server):
     async def serve(request):
         hits.append((request.host, request.path))
         if request.path == "/redirect":
-            raise web.HTTPFound(f"http://private.invalid:{request.url.port}/secret")
+            raise web.HTTPFound(f"http://private.invalid:{server.port}/secret")
         if request.path == "/page":
             return web.Response(
-                text=f'<title>Public control</title><meta property="og:image" content="http://private.invalid:{request.url.port}/secret">',
+                text=f'<title>Public control</title><meta property="og:image" content="http://private.invalid:{server.port}/secret">',
                 content_type="text/html",
             )
         return web.Response(text="<title>Public control</title>", content_type="text/html")

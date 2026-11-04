@@ -37,7 +37,7 @@ BUILDS = {
 # Reviewed recipes: pinned external images, locked language dependencies, no
 # inputs outside their context. A changed recipe builds until reviewed here.
 REUSE_RECIPES = {
-    'app': '3bf5dc79009ee6f79dacd671b1c6e91ab00022efeb07df1fe8874f83326b8019',
+    'app': '37698828ca05554c0a5454a05193e2e235eb6d5480fc5d81b7c8eb66f89ed6eb',
     'site': '3a8f159aaaf3b076a9e3c742480b39c236d81a7698886865081a1fb02bddd80d',
     'stt': '0f909a02fd4c8d484501ecf6f5ce85dd2b5ffed5481065fcec75dbb638c53ad0',
     'voice-sidecar': '69f0ecc9a3efc00732f6c4c364c6441014dba5355667f8b57fe60f39a71f8ba5',
