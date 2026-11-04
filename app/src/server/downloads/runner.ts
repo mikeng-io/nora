@@ -179,6 +179,10 @@ export class DownloadRunner {
     }
   }
 
+  private command(binary: string, args: string[]): [string, string[]] {
+    return ["python3", [path.resolve("scripts/public-download.py"), binary, ...args]];
+  }
+
   private async probe(id: string, url: string): Promise<ProbeResult> {
     if (this.opts.probeImpl) return this.opts.probeImpl(id, url);
     let info: string;
@@ -187,8 +191,7 @@ export class DownloadRunner {
         // execFile with a callback, not promisified: the child must sit in
         // `running` so a delete mid-probe can kill it like any download.
         const child = execFile(
-          this.opts.ytdlpPath,
-          ["--dump-json", "--no-playlist", "--no-warnings", url],
+          ...this.command(this.opts.ytdlpPath, ["--dump-json", "--no-playlist", "--no-warnings", url]),
           { timeout: PROBE_TIMEOUT_MS, maxBuffer: PROBE_BUFFER, killSignal: "SIGKILL" },
           (err, stdout) => (err ? reject(err) : resolve(stdout)),
         );
@@ -249,7 +252,7 @@ export class DownloadRunner {
     const spawnImpl = this.opts.spawnImpl ?? spawn;
 
     return new Promise((resolve, reject) => {
-      const child = spawnImpl(this.opts.ytdlpPath, args, { stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawnImpl(...this.command(this.opts.ytdlpPath, args), { stdio: ["ignore", "pipe", "pipe"] });
       this.running.set(id, child);
 
       let fileName: string | null = null;
@@ -333,7 +336,7 @@ export class DownloadRunner {
       const args = ffmpegArgs(target);
       let child: ChildProcess;
       try {
-        child = spawnImpl(this.opts.ffmpegPath ?? "ffmpeg", ["-hide_banner", "-y", "-i", input, ...args, staging], {
+        child = spawnImpl(...this.command(this.opts.ffmpegPath ?? "ffmpeg", ["-hide_banner", "-y", "-i", input, ...args, staging]), {
           stdio: ["ignore", "ignore", "pipe"],
         });
       } catch (err) {

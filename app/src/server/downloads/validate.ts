@@ -5,14 +5,9 @@ import dns from "node:dns/promises";
 // link-local or internal address — a download makes THIS server fetch the URL,
 // so anything internal is SSRF from inside the compose network (a circle member
 // could ask for http://nora:9100/status and read it back from the shelf).
-// The boundary is enforced twice: the literal hostname here, and the resolved
-// addresses in assertPublicHost() — a public name that resolves privately is
-// refused at submit and again when the job runs (DNS can be rebound between
-// them). Residual holes, named rather than silently missing: yt-dlp follows
-// HTTP redirects inside its own process (a public URL that 302s to an internal
-// address is not pinned), and it resolves the host again on its own clock, so
-// a name that flips answers between our check and its fetch (rebinding) is not
-// pinned either. Closing both needs an egress proxy, not a hostname check.
+// Submission/pre-run checks give early feedback. The connection boundary is
+// scripts/public-download.py: public-only proxy plus a network namespace for
+// yt-dlp and all descendants. See docs/security/outbound-fetches.md.
 
 // hostname arrives bracketed for IPv6 literals ("[::1]"); strip the brackets
 // before testing so the anchors below apply to either form.
