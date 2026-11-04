@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.15.4](https://github.com/mikeng-io/nora/compare/v7.15.3...v7.15.4) (2026-11-04)
+
+
+### Security
+
+* **deps:** update reported vulnerable runtime libraries ([fe336ee](https://github.com/mikeng-io/nora/commit/fe336ee3b44b675aec126dbd9513f8d29d7a758f))
+
 ## [7.15.3](https://github.com/mikeng-io/nora/compare/v7.15.2...v7.15.3) (2026-11-04)
 
 
