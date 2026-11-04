@@ -185,3 +185,22 @@ async def test_budget_omitted_source_cannot_be_cited():
     assert "-1" not in item.snapshot["source_keys"]
     claims, drops = partition_claims({"claims": [claim(-1, "Pending")]}, item.snapshot)
     assert not claims and drops == ["citation_outside_batch"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("now_ms, index", [(None, 0), (NOW, 99)])
+async def test_unrendered_item_sources_cannot_be_cited(now_ms, index):
+    state, shown = await wake()
+    item = state.memory_items[0]
+    assert '<m n="-1"' in shown and "-1" in item.snapshot["source_keys"]
+    prompt = render_agenda(
+        list(state.items_by_index.values()),
+        now_ms=now_ms,
+        memory_items={index: item},
+    )
+    assert '<item index="0"' in prompt
+    assert '<m ' not in prompt
+    assert item.snapshot["messages"] == []
+    assert item.snapshot["source_keys"] == {}
+    claims, drops = partition_claims({"claims": [claim(-1, "Pending")]}, item.snapshot)
+    assert not claims and drops == ["citation_outside_batch"]

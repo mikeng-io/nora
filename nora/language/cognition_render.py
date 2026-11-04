@@ -1018,10 +1018,12 @@ def render_agenda(
     # Real database message ids are positive. Other record keys share one
     # negative namespace, allocated once here, never by individual loaders.
     source_ids: dict[tuple[str, ...], int] = {}
-    for memory_item in (memory_items or {}).values():
+    for index, memory_item in (memory_items or {}).items():
         candidates = []
         keys = {}
-        for row in memory_item.snapshot.get("record_rows", []):
+        rows = (memory_item.snapshot.get("record_rows", [])
+                if now_ms is not None and 0 <= index < len(items) else [])
+        for row in rows:
             key = tuple(row["source_key"])
             if key[0] == "message":
                 rid = int(key[1])
