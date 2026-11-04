@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.14.15](https://github.com/mikeng-io/nora/compare/v7.14.14...v7.14.15) (2026-11-04)
+
+
+### Bug Fixes
+
+* **memory:** admit graph writes in the shape the session writes them ([4a6fa8f](https://github.com/mikeng-io/nora/commit/4a6fa8f02d1c71518fbd5b05a5195a2504db6b2f))
+* **memory:** keep staged person pointers per relation and keep their ref ([b610374](https://github.com/mikeng-io/nora/commit/b6103742d773d198f1af6ad9aa205fbe6b432f43))
+
 ## [7.14.14](https://github.com/mikeng-io/nora/compare/v7.14.13...v7.14.14) (2026-11-03)
 
 
