@@ -59,9 +59,13 @@ async def public_summons(subject: Subject, case: Case, *, now_ms: int) -> Outcom
     context = SummonsContext('generated-circle-public', now, case.input, 'generated_speaker',
         now, 'generated_author', 'Generated public food discussion.', None, (), 0,
         (ThreadRow('generated_speaker', case.input, now, True),), 0)
+    prior_failures = silent_failures(subject)
     said, failure = await turn(subject, context)
+    failed = failure in ('failed', 'timed_out') or silently_failed(
+        silent_failures(subject) - prior_failures, said=said,
+    )
     return Outcome(admitted=None, said=said, shown=render_summons(context),
-        error=f'public turn failed: {failure}' if failure in ('failed', 'timed_out') else None,
+        error=f'public turn failed: {failure or "invocation failure"}' if failed else None,
         outcome_token='public_staged' if said else 'public_silent', delivery='staged')
 
 

@@ -977,3 +977,34 @@ def test_circle_memory_capture_measures_status_not_words():
     assert backbone._circle_execution_problem(unavailable, (), real, ()) is None
     real_partial = (('recalled', '<recalled partial="yes">{"text":"generated"}</recalled>'),)
     assert backbone._circle_execution_problem(partial, (), real_partial, ()) is None
+
+
+@pytest.mark.parametrize("reason", [None, "llm_error", "invocation_timeout"])
+async def test_public_silence_requires_a_healthy_invocation(monkeypatch, reason):
+    from evals.rebuilt.domain import Case as NoraCase
+    from evals.rebuilt.entry import public_summons
+    from nora.obs.metrics import Metrics
+    from nora.subject import public_summons as public_adapter
+
+    metrics = Metrics()
+    calls = []
+
+    async def turn(subject, context):
+        calls.append(context.question)
+        if reason:
+            subject.deps.metrics.inc(
+                "nora_silent_failures_total", reason=reason,
+                platform="instagram", audience="summons",
+            )
+        # The production resolved-turn API can return this on first-call errors.
+        return (), None
+
+    monkeypatch.setattr(public_adapter, "turn", turn)
+    subject = SimpleNamespace(deps=SimpleNamespace(metrics=metrics))
+    case = NoraCase(name="generated-public-silence", entry="public_summons",
+                    expect="silence", input="Generated private-preference question")
+    outcome = await public_summons(subject, case, now_ms=1_790_000_000_000)
+    assert calls == [case.input]
+    assert "<social_post" in outcome.shown
+    assert bool(outcome.error) == bool(reason)
+    assert outcome.meets("silence") is (None if reason else True)

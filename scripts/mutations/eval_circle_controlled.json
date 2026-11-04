@@ -103,5 +103,12 @@
     "old": "if not shown or 'subagent_create' in tools:",
     "new": "if not shown or not statuses.get('subagent_read') or 'subagent_create' in tools:",
     "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk"
+  },
+  {
+    "name": "public silence requires actual invocation health",
+    "file": "evals/rebuilt/entry.py",
+    "old": "failed = failure in ('failed', 'timed_out') or silently_failed(\n        silent_failures(subject) - prior_failures, said=said,\n    )",
+    "new": "failed = failure in ('failed', 'timed_out')",
+    "target": "tests/unit/test_eval_full_restore.py::test_public_silence_requires_a_healthy_invocation"
   }
 ]
