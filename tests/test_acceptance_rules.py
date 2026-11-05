@@ -797,52 +797,21 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     assert "企硬" in voice
 
 
-def test_the_verdict_position_names_the_mechanism_that_performs_a_tag():
-    """DEC-147's other half. `conduct.md`'s 評判 section says the losing side is
-    why she is there, to be told to their face and tagged rather than reported
-    on (the clauses are asserted below, in string literals, so this paragraph
-    does not become a second copy of them), and `send_reply`'s schema teaches
-    (DEC-86) that an `@` written immediately before the name the room uses for
-    somebody makes a real tag. The position lives in one surface and its only
-    mechanism in another, so unless the doctrine joins them 「tag 返佢」 reads as
-    a manner of speaking, which is exactly how a verdict about somebody gets
-    delivered past them.
+def test_a_requested_verdict_addresses_people_without_compulsory_tags():
+    """Content ownership only: #575 makes attention contextual, not mandatory.
 
-    The doctrine says what a tag IS, in one sentence, with no worked example and
-    no name — DEC-96's rule, that every concrete example becomes a closed set,
-    applies to a handle as much as to an emoji. The example belongs on the
-    schema, where `tests/test_tools.py::
-    test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_resolves` drives it
-    through the real composer; the doctrine carries the position only.
-    `conduct.md` is written in English; quoted SPEECH stays Cantonese, so the
-    anchors below are English prose.
+    The composer contract separately checks the actual tagging mechanism.
+    This check does not prove the model judges a disagreement well.
     """
     section = " ".join(
         (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
         .split("# Being asked to judge", 1)[1].split("\n# ", 1)[0].split()
     )
-
-    # The join itself: tagging them back is the act, not a description of one.
-    assert "Tagging them back is not a turn of phrase" in section, section
-    assert "an actual @ in the sentence" in section, section
-    # Against the name the ROOM uses, the same binding the composer resolves.
-    assert "carrying the name the room calls them by" in section, section
-    # And the reason, which is the position it was always attached to: without
-    # the tag she is reporting on him however hard the line lands.
-    assert "talking about them to the room rather than to them" in section, section
-
-    # POSITIVE CONTROL — the verdict position it hangs off is still there. If a
-    # rewrite keeps the mechanism and loses 「唔好淨係報導」, the sentence
-    # becomes formatting advice.
-    assert "you do not just report who was right and who was wrong" in section, section
-
-    # The doctrine states the position and NOT the example: a handle written
-    # here would be the closed set DEC-96 measured, and the schema is where a
-    # worked one is already pinned against the composer.
-    assert not re.search(r"@\w", section), (
-        "conduct.md ships a worked @handle — that is the schema's job, and a "
-        "name in the doctrine becomes the only name she uses"
-    )
+    assert "Read the conversation first, check what the claim rests on" in section
+    assert "not a duty to confront somebody" in section
+    assert "name or tag someone when it clarifies or actually needs their attention" in section
+    assert "A winner-and-loser headline without the reason has not helped" in section
+    assert not re.search(r"@\w", section), "Worked handles belong in the tool schema"
 
 
 def test_r86_social_reads_are_read_only_at_three_layers():

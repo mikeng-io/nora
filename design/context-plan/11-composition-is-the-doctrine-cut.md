@@ -191,3 +191,13 @@ until a measured quality problem says otherwise.
    (41% of sends), hidden by two location-on rooms that barely speak. Kept on
    R-31; the reach question is which `ridgeline` rooms hold location trust.
 5. The name: composition, or another.
+
+
+## Later amendment — 2026-11-04 (#575)
+
+Fixed response length/grouping and passive-only participation wording are
+superseded by the integrated circle doctrine revision. Authored identity/register,
+classified law, audience isolation and tool-deferral obligations remain. See
+[the audit amendment](../self-growth/31-doctrine-audit.md#later-amendment--circle-doctrine-2026-11-04-575)
+for case coverage and the limits of source versus model acceptance. Earlier
+measurements here remain historical.

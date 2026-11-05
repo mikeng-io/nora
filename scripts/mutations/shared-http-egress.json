@@ -1,0 +1,16 @@
+[
+  {
+    "name": "preview and media reject a private connected address",
+    "file": "nora/infra/public_http.py",
+    "old": "if not answers or any(not is_public_address(a[\"host\"]) for a in answers):",
+    "new": "if False:",
+    "target": "tests/integration/test_public_fetches.py::test_preview_and_media_rebinding_cannot_reach_private_server"
+  },
+  {
+    "name": "shared proxy refuses client-selected onward proxy",
+    "file": "deploy/http-egress/main.go",
+    "old": " || r.Header.Get(\"X-Upstream-Https-Proxy\") != \"\"",
+    "new": "",
+    "target": "go:deploy/http-egress . -run TestRejectClientOnwardProxyAndPorts"
+  }
+]

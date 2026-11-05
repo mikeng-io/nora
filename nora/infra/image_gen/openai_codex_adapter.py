@@ -1,27 +1,8 @@
-"""OpenAI gpt-image through the Codex (ChatGPT subscription) lane.
+"""GPT Image through Codex's authenticated Images API.
 
-DEC-304: the second `ImageGenerator`. It speaks the
-wire the `codex` CLI speaks: a streamed Responses call to
-`chatgpt.com/backend-api/codex/responses`, where a text model (`gpt-5.5`)
-hosts the `image_generation` tool (`gpt-image-2`). The image arrives as the
-`result` (base64) of the `response.output_item.done` event whose item is an
-`image_generation_call`.
-
-**A 200 is not an image.** The host model can answer in text and the stream
-still ends `response.completed`. `tool_choice` forces the tool, and the adapter still counts only a
-completed
-`image_generation_call` with decodable PNG bytes as `ok`; anything else is
-`unavailable` (`no_image`), never a silent success.
-
-**Size and quality are requests, not guarantees**: the output can differ in
-dimensions and quality from what was asked. The host model sets the tool's
-parameters itself, so the aspect also goes into its instructions. Nothing
-downstream reads the dimensions.
-
-NEVER raises (R-27). Reference images are custody handles resolved only
-through the injected `reference_resolver`, sent as `input_image` data URIs;
-there is no URL path. `allow_reference_images` is enforced by the tool
-(`nora.agent.tools`), the same as for xAI.
+Prompts go directly to the renderer without a text-model rewrite. References
+remain custody bytes, never external URLs. Only decoded PNG results are ok;
+missing, malformed or wrong-format results are unavailable (R-27).
 """
 
 from __future__ import annotations
@@ -55,22 +36,16 @@ _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 #: contract.
 CODEX_MAX_REFERENCE_IMAGES = 16
 
-# gpt-image takes three fixed sizes. ponytail: `ImageSize.tier` is not mapped;
+# ponytail: `ImageSize.tier` is not mapped;
 # the output may ignore even the size asked for, so a tier knob would
 # be decoration. Map it if a provider release starts honouring sizes.
 _SIZE_BY_ASPECT = {
     "1:1": "1024x1024",
-    "16:9": "1536x1024",
+    "16:9": "1536x864",
     "3:2": "1536x1024",
-    "9:16": "1024x1536",
+    "9:16": "864x1536",
     "2:3": "1024x1536",
 }
-
-_INSTRUCTIONS = (
-    "You are an image renderer. Call the image_generation tool exactly once, "
-    "with the user's prompt passed through as written: do not shorten it, add "
-    "to it or answer in text instead."
-)
 
 
 def _media_type(body: bytes) -> str:
@@ -107,7 +82,7 @@ class OpenAICodexImageGenerator:
         self,
         *,
         oauth: OpenAICodexOAuth,
-        model: str = "gpt-image-2",
+        model: str = "gpt-image-2.6-flare",
         responses_model: str = "gpt-5.5",
         standard_quality: str = "medium",
         high_quality: str = "high",
@@ -118,11 +93,10 @@ class OpenAICodexImageGenerator:
         self._max_refs = _reference_limit(max_reference_images, CODEX_MAX_REFERENCE_IMAGES)
         self._oauth = oauth
         self._model = model
-        self._responses_model = responses_model
         self._standard_quality = standard_quality
         self._high_quality = high_quality
         self._timeout = timeout_seconds
-        self._url = f"{base_url.rstrip('/')}/responses"
+        self._url = f"{base_url.rstrip('/')}/images"
 
     @property
     def max_reference_images(self) -> int:
@@ -143,7 +117,7 @@ class OpenAICodexImageGenerator:
         if not prompt.strip():
             return ImageResult(status="nothing_found", reason="empty_prompt")
 
-        content: list[dict[str, str]] = [{"type": "input_text", "text": prompt}]
+        images: list[dict[str, str]] = []
         refs = reference_images or ()
         if refs:
             if reference_resolver is None:
@@ -161,46 +135,36 @@ class OpenAICodexImageGenerator:
                     return ImageResult(
                         status="nothing_found", reason="unknown_reference", provider=PROVIDER,
                     )
-                content.append({
-                    "type": "input_image",
+                images.append({
                     "image_url": f"data:{_media_type(data)};base64,"
                     + base64.b64encode(data).decode("ascii"),
                 })
 
-        tool: dict[str, str] = {
-            "type": "image_generation",
+        payload: dict[str, object] = {
             "model": self._model,
+            "prompt": prompt,
             "output_format": "png",
             "quality": self._high_quality if quality == "quality" else self._standard_quality,
             "size": _SIZE_BY_ASPECT.get(size.aspect_ratio, "auto") if size else "auto",
         }
-        instructions = _INSTRUCTIONS
-        if size is not None and size.aspect_ratio in _SIZE_BY_ASPECT:
-            instructions += f" Use the aspect ratio {size.aspect_ratio}."
-        payload = {
-            "model": self._responses_model,
-            "instructions": instructions,
-            "input": [{"role": "user", "content": content}],
-            "tools": [tool],
-            "tool_choice": {"type": "image_generation"},
-            "store": False,
-            "stream": True,
-        }
+        if images:
+            payload["images"] = images
+        endpoint = "edits" if images else "generations"
 
         auth = await self._oauth.access_token()
         if auth.status != "ok":
             return self._unavailable(auth.reason or "auth")
-        status, body = await self._post(payload, auth.access_token, auth.account_id)
+        status, body = await self._post(payload, auth.access_token, auth.account_id, endpoint)
         if status == 401:
             # A token the issuer revoked early: refresh once and retry once.
             auth = await self._oauth.access_token(rejected=auth.access_token)
             if auth.status != "ok":
                 return self._unavailable(auth.reason or "auth")
-            status, body = await self._post(payload, auth.access_token, auth.account_id)
+            status, body = await self._post(payload, auth.access_token, auth.account_id, endpoint)
         if status is None:
             return self._unavailable("down")
         if status == 200:
-            return self._read_stream(body)
+            return self._read_image(body)
 
         try:
             parsed: object = json.loads(body)
@@ -225,65 +189,36 @@ class OpenAICodexImageGenerator:
         return self._unavailable("down")
 
     async def _post(
-        self, payload: dict[str, object], token: str, account_id: str,
+        self, payload: dict[str, object], token: str, account_id: str, endpoint: str,
     ) -> tuple[int | None, bytes]:
         headers = {
             "Authorization": f"Bearer {token}",
             "chatgpt-account-id": account_id,
             "Content-Type": "application/json",
-            "Accept": "text/event-stream",
-            "OpenAI-Beta": "responses=experimental",
+            "Accept": "application/json",
             "originator": "codex_cli_rs",
         }
         try:
             timeout = aiohttp.ClientTimeout(total=self._timeout)
             async with (
                 aiohttp.ClientSession(timeout=timeout) as session,
-                session.post(self._url, headers=headers, json=payload) as resp,
+                session.post(f"{self._url}/{endpoint}", headers=headers, json=payload) as resp,
             ):
-                # The whole stream, not readline(): the image is ONE
-                # `data:` line of ~2-3 MB, past aiohttp's line limit.
                 return resp.status, await resp.read()
         except (aiohttp.ClientError, TimeoutError):
             return None, b""
 
-    def _read_stream(self, body: bytes) -> ImageResult:
-        image: dict[str, object] | None = None
-        failure = ""
-        for line in body.split(b"\n"):
-            line = line.strip()
-            if not line.startswith(b"data:"):
-                continue
-            try:
-                event = json.loads(line[5:])
-            except ValueError:
-                continue
-            if not isinstance(event, dict):
-                continue
-            kind = event.get("type")
-            item = event.get("item")
-            if (
-                kind == "response.output_item.done"
-                and isinstance(item, dict)
-                and item.get("type") == "image_generation_call"
-            ):
-                image = item
-            elif kind in ("response.failed", "error", "response.incomplete"):
-                response = event.get("response")
-                source = response if isinstance(response, dict) else event
-                failure = _error_code(source) or str(kind)
-
-        if image is None:
-            if _refusal(failure):
-                return ImageResult(status="nothing_found", reason="refused", provider=PROVIDER)
-            if failure:
-                log.warning("openai_codex: stream ended without an image (%s)", failure)
+    def _read_image(self, body: bytes) -> ImageResult:
+        try:
+            response = json.loads(body)
+        except ValueError:
+            return self._unavailable("bad_response")
+        if not isinstance(response, dict):
+            return self._unavailable("bad_response")
+        data = response.get("data")
+        if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
             return self._unavailable("no_image")
-        if image.get("status") != "completed":
-            if _refusal(failure) or _refusal(str(image.get("status") or "")):
-                return ImageResult(status="nothing_found", reason="refused", provider=PROVIDER)
-            return self._unavailable("no_image")
-        b64 = image.get("result")
+        b64 = data[0].get("b64_json")
         if not isinstance(b64, str) or not b64:
             return self._unavailable("no_image")
         try:

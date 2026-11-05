@@ -1,0 +1,5 @@
+# Operator-installed opt-in only; see docs/security/outbound-fetches.md.
+services:
+  app:
+    security_opt:
+      - seccomp=/etc/docker/nora-download-seccomp.json

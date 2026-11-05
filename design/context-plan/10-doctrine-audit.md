@@ -246,3 +246,13 @@ Order in the prompt: **core first and byte-stable** (system prompt), then `runti
 6. "Your form" (identity.md:40-44): keep it in the core for "what do you look like", or leave it to the image and video skills?
 7. On the deployed route, where do tool schemas fall in the cached prefix relative to the system prompt? This decides whether conditional units can sit at the end of the system prompt or must move to the head of the per-turn message.
 8. Delete conduct.md:77-79 (documents) as a duplicate of the document_publish MUST and the skill, or keep it as the one copy seen before a deferred schema loads?
+
+
+## Later amendment — 2026-11-04 (#575)
+
+Fixed response length/grouping and passive-only participation wording are
+superseded by the integrated circle doctrine revision. Authored identity/register,
+classified law, audience isolation and tool-deferral obligations remain. See
+[the audit amendment](../self-growth/31-doctrine-audit.md#later-amendment--circle-doctrine-2026-11-04-575)
+for case coverage and the limits of source versus model acceptance. Earlier
+measurements here remain historical.
