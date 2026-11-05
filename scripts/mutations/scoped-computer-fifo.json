@@ -51,8 +51,8 @@
  {
   "name": "a busy VM never closes on a flag",
   "file": "nora/app/computer_queue.py",
-  "old": "            if await _guest_quiet(self._reconcile, row.scope, seconds=DRAIN_SECONDS):",
-  "new": "            if True:",
+  "old": "            if await _guest_quiet(self._reconcile, row.scope, seconds=DRAIN_SECONDS) \\",
+  "new": "            if True \\",
   "target": "tests/unit/test_scoped_computer.py::test_cancel_without_executor_keeps_a_busy_vm_blocked"
  },
  {
