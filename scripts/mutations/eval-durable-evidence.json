@@ -1,0 +1,23 @@
+[
+  {
+    "name": "requests and exposure are durable before model dispatch",
+    "file": "nora/obs/tracing.py",
+    "old": "        evidence(\"event\", name=name, attributes=attributes)",
+    "new": "        pass  # no durable pre-dispatch event",
+    "target": "tests/integration/test_eval_observability.py::test_real_case_request_tools_results_logs_and_report_are_durable"
+  },
+  {
+    "name": "typed case results survive beyond the in-memory experiment",
+    "file": "evals/backbone.py",
+    "old": "        evidence.result(result)",
+    "new": "        pass  # leave results only in memory",
+    "target": "tests/integration/test_eval_observability.py::test_real_case_request_tools_results_logs_and_report_are_durable"
+  },
+  {
+    "name": "full corpus report persists before console reduction",
+    "file": "evals/__main__.py",
+    "old": "        evidence.record(\"corpus_report\", corpus=name, report=report.model_dump())",
+    "new": "        pass  # discard complete report",
+    "target": "tests/integration/test_eval_observability.py::test_real_case_request_tools_results_logs_and_report_are_durable"
+  }
+]

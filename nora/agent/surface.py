@@ -28,10 +28,15 @@ the framework hands `load_tools` at call time.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Any
+
+from opentelemetry import baggage
+
+from nora.obs.tracing import record_eval_event
 
 #: The music verbs. Discord-only by construction — their bodies gate on the
 #: platform too, but shipping them elsewhere costs prompt tokens for a tool
@@ -200,6 +205,14 @@ class ToolSurface:
         #: `ShelfLoader` when anything is shelved, nothing otherwise. Opaque
         #: here (this module imports no `strands`); built by the registry.
         self.hooks = tuple(hooks)
+        if baggage.get_baggage("nora.eval.capture") == "true":
+            record_eval_event("nora.tools.surface", {
+                "nora.tools.surface": json.dumps({
+                    "admitted": sorted(self.admitted), "resident": sorted(self.resident),
+                    "deferred": sorted(self.shelf.names()), "platform": scope.platform,
+                    "grant": sorted(scope.grant) if scope.grant is not None else None,
+                }),
+            })
 
     @cached_property
     def catalogue(self) -> str:

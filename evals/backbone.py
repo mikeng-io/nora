@@ -700,6 +700,11 @@ def _dump_judgement(judgement, case: str) -> None:
     """Keep every raw vote beside the private exchanges, including indecisive scores."""
     import uuid
 
+    from nora.subject.eval_evidence import current
+
+    if judgement is not None and (evidence := current()):
+        evidence.record("judge_result", case=case, verdict=judgement.verdict,
+                        samples=getattr(judgement, "samples", ()), error=judgement.error)
     raw = os.environ.get(EXCHANGES_ENV, "").strip()
     if not raw or judgement is None:
         return
@@ -1584,6 +1589,20 @@ async def _sandbox_for(spec: Spec, now: datetime) -> AsyncIterator[str]:
 
 
 async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
+    from nora.subject.eval_evidence import current
+
+    evidence = current()
+    if evidence is None:
+        return await _drive_uncaptured(case, spec)
+    with evidence.case(
+            case.name or "unnamed", input=case.input,
+            metadata={"case": case.model_dump(mode="json"), "entry": spec.entry}):
+        result = await _drive_uncaptured(case, spec)
+        evidence.result(result)
+        return result
+
+
+async def _drive_uncaptured(case: Case, spec: Spec) -> dict[str, Any]:
     """One DRAW, in a Honcho workspace of its own. Raises; `nora_task` catches.
 
     The sandbox database isolates what she knows in Postgres; Honcho is an
@@ -1759,6 +1778,15 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 )
             # SPEAKING NEEDS AN ADAPTER, and the sandbox disables Discord's
             # (a declared divergence — it authenticates for real at startup).
+            from nora.subject.eval_evidence import current, fingerprint
+
+            if evidence := current():
+                evidence.record("subject_ready", files={
+                    name: await asyncio.to_thread(fingerprint, workdir / name)
+                    for name in ("config.toml", "identity.toml", "policy.toml")
+                }, computer_enabled=subject.cfg.computer.enabled,
+                    browse_enabled=subject.cfg.computer.browse.enabled,
+                    defer_tools=subject.cfg.llm.defer_tools)
             # `FirePath._turn` resolves the room's own adapter before it says
             # anything, so a turn case anchored where no adapter is wired dies
             # deep in `fire.py` with a `KeyError`. Refused here, by name,
