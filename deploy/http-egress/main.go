@@ -49,6 +49,11 @@ func handler() http.Handler {
 }
 
 func main() {
+	// goproxy otherwise inherits onward proxies from the process environment.
+	for _, key := range []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+		"http_proxy", "https_proxy", "all_proxy", "NO_PROXY", "no_proxy"} {
+		os.Unsetenv(key)
+	}
 	log.SetOutput(io.Discard)
 	server := &http.Server{Addr: ":4750", Handler: handler(), ReadHeaderTimeout: 15 * time.Second, IdleTimeout: 5 * time.Minute, ErrorLog: log.New(io.Discard, "", 0)}
 	// Fixed text only: request authorities, credentials and query strings never enter logs.

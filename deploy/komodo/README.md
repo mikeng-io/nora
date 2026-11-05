@@ -363,3 +363,12 @@ so the source runtime and credentials can remain mounted read-only. Direct
 `secret_delivery.prepare` calls still default to `<runtime>/.secret-delivery/`
 unless given `output_directory`. No new shared secret mounts are needed.
 Candidate validation remains network-disabled and also validates required model credentials using only the Nora service environment projection.
+
+## Shared HTTP egress cohort (implementation candidate, 2026-11-05)
+
+The new `http-egress` image joins the ordinary publisher/rendered cohort. The
+trusted installed `komodo_deploy.py` needs the reviewed ownership update before
+this cohort can apply; the old wrapper refuses it. The updated wrapper also
+accepts the previous cohort for rollback. No host update is performed here.
+See [gateway prerequisites and rollback](../http-egress/README.md), including
+the downloader seccomp/user-namespace prerequisite and held sbx activation.

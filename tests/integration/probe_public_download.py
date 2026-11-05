@@ -98,7 +98,7 @@ class PublicDownloadBoundary(unittest.TestCase):
                     if name == "mixed.invalid":
                         addresses = ["127.0.0.1", PUBLIC]
                     elif name == "rebind.invalid":
-                        addresses = [PUBLIC if dns_calls.count(name) == 1 else "127.0.0.1"]
+                        addresses = [PUBLIC if dns_calls.count(name) == 1 else "10.77.0.2"]
                 answer = data[:2] + struct.pack("!HHHHH", 0x8180, 1, len(addresses), 0, 0)
                 answer += data[12:end]
                 for ip in addresses:
@@ -126,6 +126,24 @@ class PublicDownloadBoundary(unittest.TestCase):
                 check=True,
             )
             content = media.read_bytes()
+            for kind, name in [("hls", "playlist.m3u8"), ("dash", "manifest.mpd")]:
+                subprocess.run(  # noqa: S603 -- generated media fixture
+                    [
+                        "ffmpeg",
+                        "-v",
+                        "error",
+                        "-i",
+                        str(media),
+                        "-c:a",
+                        "aac",
+                        "-f",
+                        kind,
+                        str(root / name),
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
+
             cert, key = root / "cert.pem", root / "key.pem"
             subprocess.run(  # noqa: S603 -- generated local test certificate
                 [
@@ -178,6 +196,13 @@ class PublicDownloadBoundary(unittest.TestCase):
                     if self.path == "/secondary":
                         body = f'<html><title>secondary</title><video src="http://127.0.0.1:{self.server.server_port}/secret.wav"></video></html>'.encode()
                         kind = "text/html"
+                    elif (root / self.path.lstrip("/")).is_file():
+                        source = root / self.path.lstrip("/")
+                        body = source.read_bytes()
+                        kind = {
+                            ".m3u8": "application/vnd.apple.mpegurl",
+                            ".mpd": "application/dash+xml",
+                        }.get(source.suffix, "application/octet-stream")
                     else:
                         body, kind = content, "audio/wav"
                     self.send_response(200)
@@ -262,19 +287,20 @@ class PublicDownloadBoundary(unittest.TestCase):
                 self.assertEqual(hits, [], "HTTPS hostname mismatch was accepted")
                 before = len(accepted)
                 self.assertNotEqual(
-                    proxy.run(download(f"https://127.0.0.1:{tls_port}/secret.wav", "private-tls")),
+                    proxy.run(download(f"https://10.77.0.2:{tls_port}/secret.wav", "private-tls")),
                     0,
                 )
                 self.assertEqual(len(accepted), before, "private CONNECT reached TLS server")
                 import urllib.request
 
                 with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(
-                    f"http://127.0.0.1:{port}/private-control"
+                    f"http://10.77.0.2:{port}/private-control"
                 ) as response:
                     self.assertEqual(response.status, 200)
                 self.assertIn("/private-control", hits)
                 hits.clear()
                 for target in [
+                    f"http://10.77.0.2:{port}/secret.wav",
                     f"http://127.0.0.1:{port}/secret.wav",
                     f"http://[::ffff:127.0.0.1]:{port}/secret.wav",
                     f"http://10.0.0.1:{port}/secret.wav",
@@ -323,6 +349,11 @@ class PublicDownloadBoundary(unittest.TestCase):
                     0,
                 )
                 self.assertEqual(hits, [], f"ffmpeg private server reached: {hits}")
+                for name in ["playlist.m3u8", "manifest.mpd"]:
+                    self.assertEqual(proxy.run(download(f"http://public.invalid/{name}", name)), 0)
+                    self.assertIn("/" + name, hits)
+                    self.assertTrue(any(path.endswith((".ts", ".m4s")) for path in hits))
+                    hits.clear()
                 # Ignoring/overriding proxy environment must still fail at the namespace.
                 for direct in [
                     f'import socket; socket.create_connection(("{PUBLIC}", 80), timeout=1)',
@@ -330,7 +361,7 @@ class PublicDownloadBoundary(unittest.TestCase):
                         "import socket; "
                         'socket.create_connection(("2606:4700:4700::1111", 443), timeout=1)'
                     ),
-                    f'import os,urllib.request; os.environ["NO_PROXY"]="*"; urllib.request.urlopen("http://{PUBLIC}/secret.wav",timeout=1)',
+                    f'import os,urllib.request; os.environ["NO_PROXY"]=os.environ["no_proxy"]="*"; urllib.request.urlopen("http://{PUBLIC}/secret.wav",timeout=1)',
                 ]:
                     self.assertNotEqual(proxy.run([sys.executable, "-c", direct]), 0)
                     self.assertEqual(hits, [])

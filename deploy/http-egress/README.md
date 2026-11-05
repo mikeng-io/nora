@@ -26,6 +26,15 @@ connections; active streams have no total gateway timeout. The downloader's
 existing job timeout/concurrency/byte limits remain. Other authenticated internal
 clients can use this shared service; it does not replace per-scope authorization.
 
+## Installed ownership prerequisite
+
+The host's trusted `komodo_deploy.py` is outside the fetched release clone.
+It must receive the reviewed cohort update under the existing deploy lock before
+this cohort can apply; the previous installed wrapper rejects the new service.
+Back up the installed script, preserve sibling helpers/control state, compare
+its hash with the candidate and validate both old/new manifests before enabling
+adoption. Application releases do not install it. This PR makes no host edits.
+
 ## Downloader prerequisite and rollback
 
 Keep the [namespace/seccomp prerequisite](../../docs/security/outbound-fetches.md).
