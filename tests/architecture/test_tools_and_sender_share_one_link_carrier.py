@@ -19,8 +19,8 @@ happens here instead.
 
 WHAT IT PINS
 ------------
-For every module that calls `deliver.build` (there are exactly two, and
-`test_only_two_paths_can_send.py` is what keeps that true), every
+For every module that calls `deliver.build` (the closed set pinned by
+`test_only_two_paths_can_send.py`), every
 `ToolRegistry.build(...)` call in that module passes `links=`. The pairing is
 what matters: a module that sends AND builds tools has both halves in scope, so
 there is no honest reason for it to wire only one.
