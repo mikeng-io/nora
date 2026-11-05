@@ -1,6 +1,6 @@
 """Closed semantic source certificates for test_one_context_composer.
 
-Audit references: context-composer-audit, 2026-11-04, source 0b78f00.
+Audit references: context-composer-audit, source 0b78f00.
 V1-V12 and gap 1-7 refer to its confirmed violations and ownership gaps.
 Hashes bind reviewed source, never authorize arbitrary code at a path.
 """
