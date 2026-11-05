@@ -1004,5 +1004,32 @@
       "contactTitle": "聯絡",
       "contactBody": "如對本條款有任何疑問，請電郵至 {email}。"
     }
+  },
+  "miniNora": {
+    "title": "Mini Nora · 3D 習作",
+    "intro": "在安靜的攝影棚中探索她的模型。這仍是製作中的版本。",
+    "portrait": "穿着紫荊服飾的 Mini Nora",
+    "stage": "可互動的 Mini Nora 模型",
+    "download": "準備好後可載入 28 MB 模型。不使用 3D 時仍可查看肖像。",
+    "load": "探索 3D 模型",
+    "loading": "正在載入角色…",
+    "failed": "暫時無法顯示 3D，仍可查看肖像。",
+    "help": "拖曳旋轉，雙指或滾輪縮放。按播放才會開始動作。",
+    "controls": "角色控制",
+    "motion": "動作",
+    "Stand": "站立",
+    "Walk": "步行",
+    "Run": "跑步",
+    "play": "播放",
+    "pause": "暫停",
+    "head": "轉頭",
+    "arm": "抬起左臂",
+    "light": "攝影棚燈光",
+    "reset": "重設視角",
+    "limits": "候選身體骨架與材質。跑步包含輕微髮束跟隨動作。此模型尚未提供眼睛、表情及獨立手指控制。",
+    "left": "向左旋轉",
+    "right": "向右旋轉",
+    "closer": "放大",
+    "farther": "縮小"
   }
 }

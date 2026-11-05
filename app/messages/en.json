@@ -1004,5 +1004,32 @@
       "contactTitle": "Contact",
       "contactBody": "Questions about these terms can be sent to {email}."
     }
+  },
+  "miniNora": {
+    "title": "Mini Nora · 3D study",
+    "intro": "A quiet studio for exploring her modeled form. This is a work in progress.",
+    "portrait": "Mini Nora in her Bauhinia outfit",
+    "stage": "Interactive Mini Nora model",
+    "download": "Load the 28 MB model when you are ready. The portrait stays available without 3D.",
+    "load": "Explore in 3D",
+    "loading": "Loading the character…",
+    "failed": "3D is unavailable. The portrait remains available.",
+    "help": "Drag to orbit. Pinch or scroll to zoom. Motion starts only when you press Play.",
+    "controls": "Character controls",
+    "motion": "Motion",
+    "Stand": "Stand",
+    "Walk": "Walk",
+    "Run": "Run",
+    "play": "Play",
+    "pause": "Pause",
+    "head": "Head turn",
+    "arm": "Left arm lift",
+    "light": "Studio light",
+    "reset": "Reset view",
+    "limits": "Candidate body rig and materials. Run includes subtle side-lock follow-through. Eye, expression and individual finger controls are not available in this model.",
+    "left": "Orbit left",
+    "right": "Orbit right",
+    "closer": "Zoom in",
+    "farther": "Zoom out"
   }
 }

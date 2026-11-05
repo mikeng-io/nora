@@ -14,6 +14,7 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
+import { ButtonLink } from "@/components/ui/button";
 import { Link } from "@/i18n/routing";
 import { art } from "@/components/nora/art";
 import { PageFrame } from "@/components/shell/app-shell";
@@ -42,11 +43,13 @@ const PLATFORM: Record<string, string> = {
 // the site: the studio portrait by day, its late-night twin by night.
 export function NoraView() {
   const t = useTranslations("noraPage");
+  const mini = useTranslations("miniNora");
   const state = useNoraState();
   const ref = useRegisterTitle("Nora");
 
   return (
     <PageFrame width="wide">
+      <div className="mb-5"><ButtonLink href="/nora/showcase" variant="outline">{mini("title")}</ButtonLink></div>
       <section
         aria-labelledby="nora-title"
         className="mb-6 grid grid-cols-[112px_minmax(0,1fr)] items-center gap-x-5 gap-y-5 sm:grid-cols-[160px_minmax(0,1fr)] lg:mb-10 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-x-12"
