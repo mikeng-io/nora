@@ -1,5 +1,57 @@
 # Changelog
 
+## [7.15.8](https://github.com/mikeng-io/nora/compare/v7.15.7...v7.15.8) (2026-11-05)
+
+
+### Bug Fixes
+
+* **image:** use GPT Image 2.6 through direct Codex Images API ([31644d3](https://github.com/mikeng-io/nora/commit/31644d3e6e41f73543e7930a0545094045586403))
+
+## [7.15.7](https://github.com/mikeng-io/nora/compare/v7.15.6...v7.15.7) (2026-11-05)
+
+
+### Bug Fixes
+
+* **doctrine:** allow grounded denial without accepting work ([4904fdf](https://github.com/mikeng-io/nora/commit/4904fdf4b96c724490f41a6999206b921eab7027))
+* **doctrine:** carry offered-floor and public silence through to sends ([bbf3000](https://github.com/mikeng-io/nora/commit/bbf3000d4b2dfa1d5f93d53f75c2a315f406d232))
+* **doctrine:** correct reaction picker prose after independent review ([85d98d1](https://github.com/mikeng-io/nora/commit/85d98d1ac7755cb7dabac3a76da190590721bed1))
+* **doctrine:** preserve uncertainty and actual participation occasions ([3fb0346](https://github.com/mikeng-io/nora/commit/3fb034615be193c97586678a4a79146366a01a25))
+* **doctrine:** scope inability answers to the current occasion ([ae82cbf](https://github.com/mikeng-io/nora/commit/ae82cbf6f8ad5c6e62f7bef744fd1149bfe7a685))
+* **evals:** bind completed circle checks to delivered result evidence ([b558097](https://github.com/mikeng-io/nora/commit/b5580975f0d4612197a115d4303f09c9ca39a323))
+* **evals:** distinguish failed public invocations from silence ([2ef6639](https://github.com/mikeng-io/nora/commit/2ef6639514ada2f3467f670cec80a3fd780bb9d1))
+* **evals:** judge confirmed reaction responses without text rows ([e3ea2b2](https://github.com/mikeng-io/nora/commit/e3ea2b2f934adb2aa474a2c415539e7a1ec8b2e1))
+* **evals:** retain raw judge votes beside private exchanges ([53b31f4](https://github.com/mikeng-io/nora/commit/53b31f4f355292acc749b39393dabecd9f421263))
+* **evals:** show circle suitability judges the admitted evidence ([1ec88a7](https://github.com/mikeng-io/nora/commit/1ec88a79b6b954f5afeda0060260439a889a8f71))
+
+
+### Doctrine
+
+* align social judgement and accepted work across audiences ([368c4bf](https://github.com/mikeng-io/nora/commit/368c4bfd20d3bf68c4ce658085ea56020db2391b))
+
+## [7.15.6](https://github.com/mikeng-io/nora/compare/v7.15.5...v7.15.6) (2026-11-05)
+
+
+### Bug Fixes
+
+* **egress:** route confined downloads through shared Smokescreen ([3048293](https://github.com/mikeng-io/nora/commit/3048293d01b91071ee1ebc8a40f15aadd96e70a6))
+* **egress:** suppress dependency request diagnostics ([8be57d9](https://github.com/mikeng-io/nora/commit/8be57d9e0c1a3846b9001860f754dc5d21b16a86))
+* **security:** isolate downloader credentials and cover the egress module in CI ([2213594](https://github.com/mikeng-io/nora/commit/2213594065ea2d04a48b6045f26cf97783de144f))
+* **security:** strip credentials before starting the download namespace ([7fb9982](https://github.com/mikeng-io/nora/commit/7fb9982df3eede92bc9b0c54011d9f91dbba0812))
+
+## [7.15.5](https://github.com/mikeng-io/nora/compare/v7.15.4...v7.15.5) (2026-11-05)
+
+
+### Maintenance
+
+* **security:** adopt Smokescreen as the shared HTTP egress design ([3659997](https://github.com/mikeng-io/nora/commit/36599970fc5d651b44559d9e45eb353b2510d327))
+
+## [7.15.4](https://github.com/mikeng-io/nora/compare/v7.15.3...v7.15.4) (2026-11-04)
+
+
+### Security
+
+* **deps:** update reported vulnerable runtime libraries ([fe336ee](https://github.com/mikeng-io/nora/commit/fe336ee3b44b675aec126dbd9513f8d29d7a758f))
+
 ## [7.15.3](https://github.com/mikeng-io/nora/compare/v7.15.2...v7.15.3) (2026-11-04)
 
 

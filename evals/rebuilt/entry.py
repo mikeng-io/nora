@@ -49,13 +49,32 @@ from .profile_coverage import profile_coverage
 from .profile_identity import profile_identity
 
 
+async def public_summons(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
+    from datetime import UTC, datetime
+
+    from nora.domain.summons import SummonsContext, ThreadRow, render_summons
+    from nora.subject.public_summons import turn
+
+    now = datetime.fromtimestamp(now_ms / 1000, UTC)
+    context = SummonsContext('generated-circle-public', now, case.input, 'generated_speaker',
+        now, 'generated_author', 'Generated public food discussion.', None, (), 0,
+        (ThreadRow('generated_speaker', case.input, now, True),), 0)
+    prior_failures = silent_failures(subject)
+    said, failure = await turn(subject, context)
+    failed = failure in ('failed', 'timed_out') or silently_failed(
+        silent_failures(subject) - prior_failures, said=said,
+    )
+    return Outcome(admitted=None, said=said, shown=render_summons(context),
+        error=f'public turn failed: {failure or "invocation failure"}' if failed else None,
+        outcome_token='public_staged' if said else 'public_silent', delivery='staged')
+
+
 async def gate(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     """`RelevanceGate.decide` on the window the case laid down.
 
-    There is no `input` to deliver: the gate's input IS the window, which
-    `know()` has already written into the same `RecordStore` the deployed gate
-    reads. That is the whole of the setup, and it is why this suite is the
-    cleanest instrument in the repo.
+    Anchored cases read the restored window. An invented arriving line, when
+    present, joins that window through the same store path participation uses;
+    it is never an extra instruction to the gate.
     """
     g = subject.deps.relevance_gate
     if g is None:
@@ -64,6 +83,8 @@ async def gate(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
             error="no gate on the graph — [relevance_gate] enabled is false",
         )
     platform, conversation_id = subject.room
+    if case.input:
+        await arrive(subject, case.input, now_ms=now_ms, person=case.person)
     verdict = await g.decide(platform=platform, conversation_id=conversation_id)
     # `source` decides whether this is a READING or an ERROR. The gate never
     # raises: a timeout, a provider refusal and an unparseable body all come
@@ -106,7 +127,9 @@ async def participation(subject: Subject, case: Case, *, now_ms: int) -> Outcome
     watermark = await last_row_id(subject)
 
     token = await path.speak(
-        participation_occasion(platform=platform, conversation_id=conversation_id)
+        participation_occasion(platform=platform, conversation_id=conversation_id),
+        **({'send_permitted': False} if
+           (case.metadata.get('circle_overlay') or {}).get('reaction') == 'held' else {}),
     )
 
     hers = await heard(subject, after_id=watermark)
@@ -657,6 +680,8 @@ class EntryPoint:
     #: registered drive/Outcome contract applies; no workspace or sandbox is needed.
     frozen_input: bool = False
 
+    public_audience: bool = False
+
     #: What a judge grades, when a judge is configured: `"reply"` — what she
     #: said, against the reply rubric — or `"position"` — the standing position
     #: a fold wrote — or `"identity"`, canonical heads against source meaning.
@@ -696,6 +721,7 @@ _PARTICIPATION_SUBSYSTEM = {
 #: The port's implementations, by the name a case selects. A new suite over an
 #: existing entry point adds NOTHING here; a test pins that.
 ENTRY_POINTS = {
+    "public_summons": EntryPoint(drive=public_summons, public_audience=True),
     "profile_coverage": EntryPoint(drive=profile_coverage, frozen_input=True),
     "gate": EntryPoint(drive=gate, config=_PARTICIPATION_SUBSYSTEM),
     "participation": EntryPoint(

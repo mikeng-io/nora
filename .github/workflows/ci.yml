@@ -192,18 +192,21 @@ jobs:
     if: ${{ always() && (needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan)['go']) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      matrix:
+        module: [deploy/instagram-bridge, deploy/http-egress]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: deploy/instagram-bridge/go.mod
-          cache-dependency-path: deploy/instagram-bridge/go.sum
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
       - run: go vet ./...
-        working-directory: deploy/instagram-bridge
+        working-directory: ${{ matrix.module }}
       - run: go test ./...
-        working-directory: deploy/instagram-bridge
+        working-directory: ${{ matrix.module }}
 
   site:
     needs: classify
@@ -288,6 +291,9 @@ jobs:
       contents: read
       security-events: write
       packages: read
+    strategy:
+      matrix:
+        module: [deploy/instagram-bridge, deploy/http-egress]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -295,18 +301,18 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: deploy/instagram-bridge/go.mod
-          cache-dependency-path: deploy/instagram-bridge/go.sum
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
       - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
           languages: go
           build-mode: manual
           config-file: ./.github/codeql/config.yml
       - run: go build ./...
-        working-directory: deploy/instagram-bridge
+        working-directory: ${{ matrix.module }}
       - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
-          category: /language:go
+          category: /language:go/module:${{ matrix.module }}
           output: .codeql-results
       - name: Block high or critical findings on added PR lines
         run: python3 -m scripts.ci_plan codeql

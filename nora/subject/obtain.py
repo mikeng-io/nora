@@ -32,6 +32,7 @@ from nora.config import load as _load_config
 from nora.persons import load_persons
 from nora.policy import Conversation, load_policy
 
+from .circle import CircleMemory, CircleOverlay, external_boundaries
 from .memory_workspace import (
     NotADrawWorkspaceError,
     refuse_unless_draw_workspace,
@@ -280,6 +281,9 @@ class SubjectSpec:
     #: cheaper to hold here than to remember at each call site.
     now: datetime | None = None
 
+    circle: CircleOverlay | None = None
+    signal_rpc_url: str = ""
+
 
 @dataclass(frozen=True, slots=True)
 class Subject:
@@ -327,6 +331,7 @@ class Subject:
     #: `<character>` block renders exactly these), so a snapshot asks the
     #: source for the persons production would render and no others.
     listed_persons: frozenset[str] | None = None
+    circle_memory: CircleMemory | None = None
 
 
 def _with(obj: Any, path: str, value: Any) -> Any:
@@ -585,9 +590,12 @@ async def obtain(spec: SubjectSpec) -> Subject:
     var = f"NORA_SUBJECT_DATABASE_URL_{uuid.uuid4().hex}"
     cfg = _with(cfg, "store.database_url_env", var)
     cfg._credentials = {**cfg.credentials, var: spec.database_url}
+    circle_memory = (CircleMemory(unavailable=spec.circle.memory == 'unavailable')
+                     if spec.circle and spec.circle.memory else None)
     with (
         recording_subagent_worker() if cfg.subagent.enabled else contextlib.nullcontext(),
         landed_signal_sends(),
+        external_boundaries(spec.circle, signal_url=spec.signal_rpc_url, memory=circle_memory),
     ):
         deps = await build_dependencies(cfg, clock=clock)
     # NO EMBEDDING WORKER, whatever `[memory.index] embed` says. The flag also
@@ -609,5 +617,5 @@ async def obtain(spec: SubjectSpec) -> Subject:
     return Subject(
         deps=deps, cfg=cfg, database_url=spec.database_url, room=spec.room,
         unit=convo.unit, culture_key=convo.primary_id,
-        listed_persons=convo.persons,
+        listed_persons=convo.persons, circle_memory=circle_memory,
     )

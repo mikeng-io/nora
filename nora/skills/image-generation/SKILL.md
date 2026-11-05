@@ -99,16 +99,22 @@ cuffs and grille panels; separate wide navy trousers and ivory ankle boots.
 
 ## Writing for the model that draws it
 
-One section per model; a new model adds a section here.
+### GPT Image gpt-image-2.6-flare
 
-### xAI grok-imagine-image-2.0 (the standard model)
+Build a self-contained brief: use, subject, composition, action, medium, light
+and constraints. Label interacting requirements. Enrich sparse requests with useful visible choices, never invented facts. State framing, relative scale, gaze and contact with objects explicitly.
 
-It changes a style or medium when the prompt describes the aesthetic you want. With references, the
-result takes the shape of the first one unless you name an aspect, so put first the reference whose
-framing you want, or name the aspect. To refine an image you just made, edit that image rather than
-starting again; it is already in the room as a picture you hold.
+Quote lettering exactly, with placement and hierarchy; no extra wording. Assign each reference a numbered role, such as identity, style
+or setting, and explain how they combine. For edits, separate the requested
+change from what must stay: identity, proportions, clothing, layout and colour.
+Change one thing at a time and inspect the result before another edit. A request
+for motion needs actual animation support; a still image is not a GIF.
 
-### xAI grok-imagine-image-quality (the quality option)
+### xAI grok-imagine-image-2.0
 
-A separate, costlier model until xAI retires it on 2 November 2026; from then a request for it is
-served by the standard model at its lowest quality, so asking for it buys nothing.
+Name the desired aesthetic and aspect. Without an explicit aspect, the first
+reference determines framing. Refine the held result instead of starting over.
+
+### xAI grok-imagine-image-quality
+
+Retired; requesting it buys no quality improvement.

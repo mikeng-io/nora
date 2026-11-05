@@ -1064,7 +1064,7 @@ async def test_drive_never_judges_blind_when_no_window_was_captured(monkeypatch,
 
 
 async def test_the_judges_source_is_the_rendered_window_not_the_whole_seed(
-    monkeypatch, one_path,
+    monkeypatch, one_path, tmp_path,
 ):
     """`sandbox_from_snapshot` seeds (and its `Sandboxed.transcript`
     reads back) every row up to the instant; her turn renders only the newest
@@ -1112,7 +1112,12 @@ async def test_the_judges_source_is_the_rendered_window_not_the_whole_seed(
     monkeypatch.setitem(ENTRY_POINTS, "tag", EntryPoint(drive=fake_drive))
 
     judge = _FakeJudge(verdict="PASS")
+    monkeypatch.setenv(backbone.EXCHANGES_ENV, str(tmp_path))
     await backbone._drive(_case("window-probe"), _spec("tag", judge=judge))
+    import json
+
+    exported, = tmp_path.glob("window-probe-*-judge.json")
+    assert json.loads(exported.read_text())["verdict"] == "PASS"
 
     assert len(judge.calls) == 1
     source = judge.calls[0]["source"]
@@ -1309,3 +1314,51 @@ def test_a_text_must_cite_still_binds_a_message_and_a_required_reply():
     assert _cited("either", ("去元朗食",)) != ()
     assert _cited("either", ("三多 12點",)) == ()
     assert _cited("speak", ()) != ()
+
+
+@pytest.mark.parametrize("line", ["", "an invented arriving line"])
+async def test_gate_delivers_case_input_to_the_real_window_path(monkeypatch, line):
+    from evals.rebuilt.domain import Case as NoraCase
+    from evals.rebuilt.entry import gate
+
+    arrivals = []
+    decisions = []
+
+    async def arrive(subject, body, *, now_ms, person):
+        arrivals.append((body, now_ms, person))
+
+    async def decide(**kwargs):
+        decisions.append(kwargs)
+        return SimpleNamespace(source="model", admits=bool(arrivals))
+
+    monkeypatch.setattr("evals.rebuilt.entry.arrive", arrive)
+    subject = SimpleNamespace(room=("signal", "generated-room"),
+                              deps=SimpleNamespace(relevance_gate=SimpleNamespace(decide=decide)))
+    case = NoraCase(name="arrival", entry="gate", expect="go", input=line, person="generated")
+    outcome = await gate(subject, case, now_ms=1234)
+    assert decisions == [{"platform": "signal", "conversation_id": "generated-room"}]
+    assert arrivals == ([(line, 1234, "generated")] if line else [])
+    assert outcome.admitted == bool(line)
+
+
+async def test_circle_hold_enters_real_participation_send_permission(monkeypatch):
+    from evals.rebuilt import entry
+    from evals.rebuilt.domain import Case as NoraCase
+    calls = []
+    async def arrive(*args, **kwargs): pass
+    async def watermark(*args): return 7
+    async def heard(*args, **kwargs): return ()
+    async def speak(occasion, **kwargs):
+        calls.append(kwargs)
+        return 'silent'
+    monkeypatch.setattr(entry, 'arrive', arrive)
+    monkeypatch.setattr(entry, 'last_row_id', watermark)
+    monkeypatch.setattr(entry, 'heard', heard)
+    subject = SimpleNamespace(room=('signal', 'generated-room'),
+        deps=SimpleNamespace(fire_path=SimpleNamespace(speak=speak)))
+    for overlay in ({'reaction': 'held'}, {}):
+        case = NoraCase(name='generated', entry='participation', expect='silence', input='Thanks',
+            metadata={'circle_overlay': overlay})
+        outcome = await entry.participation(subject, case, now_ms=1234)
+        assert outcome.error is None and outcome.outcome_token == 'silent'  # noqa: S105
+    assert calls == [{'send_permitted': False}, {}]

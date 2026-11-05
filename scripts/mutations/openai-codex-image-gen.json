@@ -77,10 +77,17 @@
     "target": "tests/contract/test_openai_codex_image_generator.py::test_import_refuses_codex_home_and_a_copy_of_the_operators_token"
   },
   {
-    "name": "an image call that is not completed is never ok, even with PNG bytes",
+    "name": "non-PNG image bytes are never ok",
     "file": "nora/infra/image_gen/openai_codex_adapter.py",
-    "old": "        if image.get(\"status\") != \"completed\":\n",
+    "old": "        if not raw.startswith(_PNG_MAGIC):\n",
     "new": "        if False:\n",
-    "target": "tests/contract/test_openai_codex_image_generator.py::test_a_stream_without_a_usable_image_is_never_ok"
+    "target": "tests/contract/test_openai_codex_image_generator.py::test_a_response_without_a_usable_image_is_never_ok"
+  },
+  {
+    "name": "Codex uses direct Images endpoint rather than the retired Responses host",
+    "file": "nora/infra/image_gen/openai_codex_adapter.py",
+    "old": "self._url = f\"{base_url.rstrip('/')}/images\"",
+    "new": "self._url = f\"{base_url.rstrip('/')}/responses\"",
+    "target": "tests/contract/test_openai_codex_image_generator.py::test_a_completed_image_uses_the_direct_images_endpoint"
   }
 ]

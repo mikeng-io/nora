@@ -1,0 +1,156 @@
+[
+  {
+    "name": "job result substance survives readback",
+    "file": "nora/subject/circle.py",
+    "old": "result_report=report, result_document_ids=(document_id,)",
+    "new": "result_report=\"\", result_document_ids=(document_id,)",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk"
+  },
+  {
+    "name": "completed jobs require a real sandbox send receipt",
+    "file": "nora/subject/circle.py",
+    "old": "if not await deliverer.deliver(report):",
+    "new": "if False:",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk"
+  },
+  {
+    "name": "reaction RPC outage reaches actual reactor",
+    "file": "nora/subject/circle.py",
+    "old": "'error': {'code': -32000, 'message': 'controlled outage'}",
+    "new": "'result': {}",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_reaction_outage_is_the_real_signal_result_and_validates_requests"
+  },
+  {
+    "name": "hold is enforced at existing send permission",
+    "file": "evals/rebuilt/entry.py",
+    "old": "**({'send_permitted': False} if",
+    "new": "**({'send_permitted': True} if",
+    "target": "tests/unit/test_eval_backbone.py::test_circle_hold_enters_real_participation_send_permission"
+  },
+  {
+    "name": "held reaction cannot bypass with text",
+    "file": "evals/backbone.py",
+    "old": "if overlay.reaction == 'held' and any(t in tools for t in ('send_reply', 'send_gif')):",
+    "new": "if False:",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_reaction_requires_actual_execution_and_forbids_hold_bypass"
+  },
+  {
+    "name": "GIF boundary is actually unavailable",
+    "file": "nora/subject/circle.py",
+    "old": "kwargs['giphy'] = None",
+    "new": "kwargs['giphy'] = 'incorrect-success'",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_gif_absence_reaches_existing_registry_boundary"
+  },
+  {
+    "name": "correction closes old preference",
+    "file": "nora/subject/circle.py",
+    "old": "by=relation.id, evidence=(key,)),) if i else ()",
+    "new": "by=relation.id, evidence=(key,)),) if False else ()",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_memory_uses_admitted_correction_and_scoped_read"
+  },
+  {
+    "name": "memory outage stays unavailable",
+    "file": "nora/subject/circle.py",
+    "old": "fail=TimeoutError('controlled index outage') if unavailable else None",
+    "new": "fail=None",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_memory_uses_admitted_correction_and_scoped_read"
+  },
+  {
+    "name": "public capture binds actual rendered input",
+    "file": "evals/backbone.py",
+    "old": "if text == rendered and '<social_post' in text:",
+    "new": "if '<social_post' in text:",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_public_capture_requires_actual_public_chat_input"
+  },
+  {
+    "name": "public uses the existing auto runner without skills",
+    "file": "nora/subject/public_summons.py",
+    "old": "retry=room_runner._retry, skills_dir=None,",
+    "new": "retry=room_runner._retry, skills_dir='private-skills',",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_public_adapter_uses_real_occasion_and_narrow_grant"
+  },
+  {
+    "name": "declared public entry is driven instead of tag",
+    "file": "evals/backbone.py",
+    "old": "    spec = dataclasses.replace(spec, entry=(case.metadata or {}).get(\"entry\", spec.entry))",
+    "new": "    spec = spec",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_declared_entry_is_used_by_the_actual_drive"
+  },
+  {
+    "name": "case requirement reaches judge without becoming evidence",
+    "file": "evals/backbone.py",
+    "old": "str(case.expected_output)) if c.name == 'social_suitability' else c",
+    "new": "\"lost requirement\") if c.name == 'social_suitability' else c",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_judge_receives_requirement_separately_from_actual_evidence"
+  },
+  {
+    "name": "running job binds to registered worker handle",
+    "file": "nora/subject/circle.py",
+    "old": "id=job_id, backend_job_id=handle, task=brief.objective,",
+    "new": "id=job_id, backend_job_id=\"unregistered\", task=brief.objective,",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk"
+  },
+  {
+    "name": "memory execution control refuses absent or wrong status",
+    "file": "evals/backbone.py",
+    "old": "        if not observed:\n            return 'controlled memory read/capture missing'",
+    "new": "        if False:\n            return 'controlled memory read/capture missing'",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_memory_capture_measures_status_not_words"
+  },
+  {
+    "name": "fresh checked job context does not require a redundant tool read",
+    "file": "evals/backbone.py",
+    "old": "if not job_shown or 'subagent_create' in tools:",
+    "new": "if not job_shown or not statuses.get('subagent_read') or 'subagent_create' in tools:",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk"
+  },
+  {
+    "name": "public silence requires actual invocation health",
+    "file": "evals/rebuilt/entry.py",
+    "old": "failed = failure in ('failed', 'timed_out') or silently_failed(\n        silent_failures(subject) - prior_failures, said=said,\n    )",
+    "new": "failed = failure in ('failed', 'timed_out')",
+    "target": "tests/unit/test_eval_full_restore.py::test_public_silence_requires_a_healthy_invocation"
+  },
+  {
+    "name": "completed evidence does not require the pending subagents block",
+    "file": "evals/backbone.py",
+    "old": "        from html import unescape\n\n        from nora.domain.compute import ComputeJobState\n\n        job_context = unescape(dict(blocks or ()).get('subagents', ''))\n        bound = job is not None and (job.platform, job.conversation_id) == room\n        if overlay.job == 'running':\n            job_shown = bool(bound and job.state == ComputeJobState.PENDING\n                         and str(job.id) in job_context and 'running' in job_context)\n        else:\n            # DONE is the persisted delivery receipt, not a pending-job context block.\n            completed = (bound and job.state == ComputeJobState.DONE\n                         and job.completed_at is not None and bool(job.result_report)\n                         and bool(job.result_document_ids))\n            context = [unescape(text) for _, text in (blocks or ())]\n            job_shown = bool(completed and (\n                any(job.result_report in text\n                    and (str(job.id) in text\n                         or any(doc in text for doc in job.result_document_ids))\n                    for text in context)\n                or any(value.get('document_id') in job.result_document_ids\n                       and job.result_report in _strings_in(value.get('spec', {}))\n                       for value in document_reads)))\n",
+    "new": "        job_shown = dict(blocks or ()).get('subagents', '')\n",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk[checked_complete]"
+  },
+  {
+    "name": "completed document read must carry the persisted result",
+    "file": "evals/backbone.py",
+    "old": "and job.result_report in _strings_in(value.get('spec', {}))",
+    "new": "and True",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk[checked_complete]"
+  },
+  {
+    "name": "completed receipt belongs to the driven room",
+    "file": "evals/backbone.py",
+    "old": "bound = job is not None and (job.platform, job.conversation_id) == room",
+    "new": "bound = job is not None",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_job_lifecycle_is_read_by_real_context_and_desk[checked_complete]"
+  },
+  {
+    "name": "raw indecisive judge votes survive the private export",
+    "file": "evals/backbone.py",
+    "old": "\"samples\": getattr(judgement, \"samples\", ()),",
+    "new": "\"samples\": (),",
+    "target": "tests/unit/test_eval_full_restore.py::test_judge_export_retains_raw_votes_and_errors_privately"
+  },
+  {
+    "name": "the real draw exports its judgement",
+    "file": "evals/backbone.py",
+    "old": "            _dump_judgement(judgement, case.name)",
+    "new": "            pass  # lost judge receipt",
+    "target": "tests/unit/test_eval_backbone.py::test_the_judges_source_is_the_rendered_window_not_the_whole_seed"
+  },
+  {
+    "name": "uncontrolled participation also carries its declared requirement to the judge",
+    "file": "evals/backbone.py",
+    "old": "                    if case.expected_output:",
+    "new": "                    if md.get('circle_overlay') or port.public_audience:",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_judge_receives_requirement_separately_from_actual_evidence"
+  }
+]

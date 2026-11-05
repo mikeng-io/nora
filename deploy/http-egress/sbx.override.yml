@@ -1,0 +1,4 @@
+# Prepared only: apply after sbx upstream reachability and rollout approval.
+services:
+  http-egress:
+    ports: ["127.0.0.1:4750:4750"]
