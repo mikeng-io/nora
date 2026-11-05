@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.15.12](https://github.com/mikeng-io/nora/compare/v7.15.11...v7.15.12) (2026-11-05)
+
+
+### Maintenance
+
+* **evals:** grade quoted notice answers against explicit case contracts ([53d988f](https://github.com/mikeng-io/nora/commit/53d988f7f7806fbc87c305d35d912a409ebe0b0b))
+
 ## [7.15.11](https://github.com/mikeng-io/nora/compare/v7.15.10...v7.15.11) (2026-11-05)
 
 

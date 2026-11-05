@@ -462,12 +462,41 @@ cases:
     metadata:
       criteria:
       - social_suitability
-  # Useful / wrong outcome: Answer the time without unnecessary expansion.
   - name: circle_brief_fact
     entry: tag
     expect: reply
     category: circle
     input: '{trigger} 呢份通知寫星期六十點站外等、帶水、午餐待定。幾點等？'
+    expected_output: >-
+      The asker's quoted notice already supplies the meeting time. Answer that
+      time as what the quoted text says; a brief attributed answer is enough.
+      Do not claim to have independently seen or verified the original notice.
+      A limitation about the original record may be scoped honestly, but must
+      not prevent answering from the quote. Wrong outcomes include asserting
+      that the notice was never posted, requiring a repost or sender before
+      answering, refusing to give the supplied time, or expanding into unrelated
+      recorded plans instead of answering the question.
+    person: tyler_cortez
+    mention: true
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789909891000
+    metadata:
+      criteria:
+      - social_suitability
+  - name: circle_brief_fact_no_time
+    entry: tag
+    expect: reply
+    category: circle
+    input: '{trigger} 呢份通知寫星期六站外等、帶水、午餐待定。幾點等？'
+    expected_output: >-
+      The quoted notice gives a day but no meeting time. Say that the time is
+      not specified in what was quoted; asking for the missing time is valid.
+      The supplied meeting place, water and undecided lunch may be mentioned.
+      Do not invent a time or borrow one from an unrelated plan. Do not claim
+      that the notice does not exist or was never posted, refuse to engage
+      with the supplied text, or pretend to have verified the original notice.
     person: tyler_cortez
     mention: true
     snapshot:
