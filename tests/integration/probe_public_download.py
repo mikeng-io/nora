@@ -174,16 +174,23 @@ class PublicDownloadBoundary(unittest.TestCase):
             tls.set_servername_callback(lambda sock, name, ctx: names.append(name))
 
             class Origin(http.server.BaseHTTPRequestHandler):
+                protocol_version = "HTTP/1.1"
+
                 def log_message(self, *_args):
                     pass
 
                 def do_GET(self):
+                    self.close_connection = True
                     hits.append(self.path)
                     if self.path == "/socket":
                         self.send_response(101)
                         self.send_header("Upgrade", "websocket")
                         self.send_header("Connection", "Upgrade")
                         self.end_headers()
+                        self.wfile.flush()
+                        self.connection.settimeout(3)
+                        if self.rfile.read(4) != b"ping":
+                            return
                         self.wfile.write(b"fixture-stream")
                         return
                     if self.path == "/redirect":
@@ -385,6 +392,12 @@ else:
 s.sendall((f"GET {target} HTTP/1.1\r\nHost: public.invalid\r\n"
            "Connection: Upgrade\r\nUpgrade: websocket\r\n\r\n").encode())
 response = b""
+while not response.endswith(b"\r\n\r\n"):
+    data = s.recv(1)
+    assert data, response
+    response += data
+assert b"101" in response
+s.sendall(b"ping")
 while b"fixture-stream" not in response:
     data = s.recv(4096)
     assert data, response
