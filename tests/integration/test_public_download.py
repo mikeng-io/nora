@@ -226,14 +226,19 @@ def test_relay_drains_reverse_traffic_under_forward_backpressure():
             errors.append(type(error).__name__)
 
     pumps = [
-        threading.Thread(target=module.relay, args=(relay_left, relay_right), daemon=True),
+        threading.Thread(
+            target=record_errors, args=(lambda: module.relay(relay_left, relay_right),), daemon=True
+        ),
         threading.Thread(target=record_errors, args=(send_left,), daemon=True),
         threading.Thread(target=record_errors, args=(send_then_receive_right,), daemon=True),
     ]
     try:
         for thread in pumps:
             thread.start()
-        received["left"] = receive(left)
+        try:
+            received["left"] = receive(left)
+        except OSError as error:
+            errors.append(type(error).__name__)
         for thread in pumps:
             thread.join(timeout=4)
         assert not errors, errors
