@@ -38,11 +38,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json as _json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -152,12 +154,56 @@ class SegmentRegistry:
     a `running` row with no registered executor is owner-lost, never
     silently handed a successor."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, pending_path: Path | None = None) -> None:
         self._tasks: dict[UUID, asyncio.Task[Any]] = {}
         # `task_id` → the terminal outcome the durable row could not yet
         # take: an uncertain exit holding its real result, or a finish the
         # store refused — retried until the write lands, never replayed.
         self._pending: dict[UUID, _PendingResult] = {}
+        # `pending_path` makes the map durable across restart: without it a
+        # process dying between caller consumption and `_persist_pending`
+        # loses the result outright, and loses `consumed` — the terminal
+        # discovery then hands the live-delivered result to deferred
+        # delivery a second time. It is a plain file (the SQL store is the
+        # thing that was down); a sibling of the scope registry, never
+        # inside it — `FileScopeEndpoints` globs `*.json` there.
+        self._pending_path = pending_path
+        if pending_path is not None:
+            self._load_pending()
+
+    def _load_pending(self) -> None:
+        try:
+            data = _json.loads(self._pending_path.read_text(encoding="utf-8"))
+        except (OSError, _json.JSONDecodeError):
+            return
+        if not isinstance(data, dict):
+            return
+        for key, raw in data.items():
+            try:
+                self._pending[UUID(key)] = _PendingResult(
+                    status=raw["status"], result=dict(raw["result"]),
+                    consumed=bool(raw.get("consumed")))
+            except (KeyError, TypeError, ValueError):
+                continue
+
+    def _spill(self) -> None:
+        """Rewrite the pending map atomically. Sets are tiny (one entry per
+        retained outcome); a failed spill keeps the in-memory copy and the
+        next mutation retries."""
+        if self._pending_path is None:
+            return
+        payload = {
+            str(task_id): {"status": p.status, "result": p.result,
+                           "consumed": p.consumed}
+            for task_id, p in self._pending.items()
+        }
+        try:
+            self._pending_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self._pending_path.with_name(self._pending_path.name + ".tmp")
+            tmp.write_text(_json.dumps(payload, default=str), encoding="utf-8")
+            tmp.replace(self._pending_path)
+        except OSError:
+            log.warning("computer pending-result spill failed (retained in memory)")
 
     def register(self, task_id: UUID, task: asyncio.Task[Any]) -> None:
         self._tasks[task_id] = task
@@ -176,6 +222,7 @@ class SegmentRegistry:
         self._pending[task_id] = _PendingResult(
             status=status, result=dict(result),
             consumed=consumed or (old.consumed if old is not None else False))
+        self._spill()
 
     def mark_consumed(self, task_id: UUID) -> None:
         """The caller saw the retained reply: the row, once it persists,
@@ -183,12 +230,14 @@ class SegmentRegistry:
         old = self._pending.get(task_id)
         if old is not None and not old.consumed:
             self._pending[task_id] = replace(old, consumed=True)
+            self._spill()
 
     def pending_result(self, task_id: UUID) -> _PendingResult | None:
         return self._pending.get(task_id)
 
     def clear_pending(self, task_id: UUID) -> None:
-        self._pending.pop(task_id, None)
+        if self._pending.pop(task_id, None) is not None:
+            self._spill()
 
 
 class ComputerAdmission:

@@ -1575,3 +1575,51 @@ async def test_confirmed_browser_stop_retires_full_capacity_before_a_new_task(mo
             pass
     async with rig.manager.acquire(SCOPE, uuid.uuid4()) as fresh:
         assert fresh.tab.target_id in rig.cdp.targets
+
+
+async def test_pending_results_survive_a_restart(tmp_path) -> None:
+    """A retained outcome is spilled to disk: a fresh `SegmentRegistry` (the
+    "next process") sees both the original result and its `consumed` flag —
+    so `_persist_pending` writes the row terminal AND marks it delivered
+    instead of losing the result or re-delivering it."""
+    from nora.app.computer_queue import SegmentRegistry
+    path = tmp_path / "computer-pending-results.json"
+    first = SegmentRegistry(pending_path=path)
+    tid = uuid.uuid4()
+    first.retain(tid, "done", {"status": "ok", "note": "written"})
+    first.mark_consumed(tid)
+
+    second = SegmentRegistry(pending_path=path)  # the restart
+    pending = second.pending_result(tid)
+    assert pending is not None and pending.status == "done" \
+        and pending.result["note"] == "written" and pending.consumed
+
+    second.clear_pending(tid)
+    third = SegmentRegistry(pending_path=path)
+    assert third.pending_result(tid) is None
+
+
+async def test_a_retained_pending_is_persisted_terminal_and_delivered(tmp_path) -> None:
+    """Restart scenario end to end: the SQL store was down at finish time,
+    the caller saw the reply (`consumed`), the process died — a new
+    registry's `_persist_pending` lands the ORIGINAL result terminal and
+    stamps `delivered_at`, so deferred delivery never hands it out twice."""
+    from nora.app.computer_queue import _persist_pending, SegmentRegistry
+    path = tmp_path / "computer-pending-results.json"
+    first = SegmentRegistry(pending_path=path)
+    store = FakeComputerTaskStore()
+    row = task()
+    await store.enqueue(row)
+    await store.try_claim_head(row.id, now=NOW)
+    tid = row.id
+    first.retain(tid, "done", {"status": "ok", "value": 42})
+    first.mark_consumed(tid)
+
+    second = SegmentRegistry(pending_path=path)  # the restart
+    assert await _persist_pending(
+        executors=second, tasks=store, clock=clock(), task_id=tid)
+    fresh = await store.get(tid)
+    assert fresh is not None and fresh.status == "done" \
+        and fresh.result == {"status": "ok", "value": 42} \
+        and fresh.delivered_at is not None
+    assert second.pending_result(tid) is None

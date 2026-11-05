@@ -1819,7 +1819,10 @@ async def build_dependencies(
         # ONE registry of live executors, shared by the submitter side
         # (admission) and the granter side (runner): a `running` row with no
         # executor here is owner-lost, and a cancel can reach the real work.
-        computer_segments = SegmentRegistry()
+        # `pending_path` spills retained results/consumed markers to local
+        # disk so an application restart cannot lose them or re-deliver.
+        computer_segments = SegmentRegistry(
+            pending_path=Path(scoped_cfg.registry).parent / "computer-pending-results.json")
 
         async def _deliver_computer_task(row: Any) -> None:
             await deliver_computer_task(
