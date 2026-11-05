@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.15.14](https://github.com/mikeng-io/nora/compare/v7.15.13...v7.15.14) (2026-11-05)
+
+
+### Bug Fixes
+
+* **evals:** dump slash-named cases inside the private evidence root ([327e0b9](https://github.com/mikeng-io/nora/commit/327e0b90ed00cb072006698174579ec384ce93c2))
+
 ## [7.15.13](https://github.com/mikeng-io/nora/compare/v7.15.12...v7.15.13) (2026-11-05)
 
 
