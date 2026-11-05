@@ -139,8 +139,9 @@ async def test_deferred_computer_schemas_reach_the_real_request(persons):
         if n == 2:
             assert "computer_browse" in names
             assert "computer_write" not in names  # not loaded yet
-            loaded = json.dumps(tool_msgs)
-            assert '"computer_browse"' in loaded and '"computer_wrong"' in loaded
+            result = json.loads(tool_msgs[-1]["content"])
+            assert result["loaded"] == ["computer_browse"]
+            assert result["unknown"] == ["computer_wrong"]
             delta = _tool_call("call_load2", LOADER_TOOL,
                                {"names": ["computer_write", "computer_capture",
                                           "computer_export"]})
@@ -154,7 +155,8 @@ async def test_deferred_computer_schemas_reach_the_real_request(persons):
             return httpx.Response(200, headers={"content-type": "text/event-stream"},
                                   content=_sse(delta, "tool_calls"))
         assert n == 4
-        assert any("ok" in json.dumps(m.get("content", "")) for m in tool_msgs)
+        result = json.loads(tool_msgs[-1]["content"])
+        assert result["status"] == "ok" and result["path"] == "report.csv"
         delta = {"role": "assistant", "content": "done"}
         return httpx.Response(200, headers={"content-type": "text/event-stream"},
                               content=_sse(delta, "stop"))

@@ -96,7 +96,7 @@ async def test_a_sealed_journal_with_healthy_sql_still_delivers(tmp_path):
     authoritative durable disposition suffices, so the live reply goes out
     and nothing stays deferred-eligible."""
     directory = tmp_path / "pending"
-    executors, tasks, admission = _rig(directory)
+    _executors, tasks, admission = _rig(directory)
     task = _task()
     await tasks.enqueue(task)
     await tasks.try_claim_head(task.id, now=NOW)

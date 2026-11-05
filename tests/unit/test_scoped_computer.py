@@ -1606,6 +1606,7 @@ async def test_pending_results_survive_a_restart(tmp_path) -> None:
         and pending.result["note"] == "written" and pending.consumed
 
     second.clear_pending(tid)
+    _os.close(second._lock_fd)  # release before the next owner
     third = SegmentRegistry(pending_dir=path)
     assert third.pending_result(tid) is None
 
