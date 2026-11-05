@@ -34,6 +34,7 @@ updates:
   - /deploy/computer
   - /deploy/discord-bridge
   - /deploy/instagram-bridge
+  - /deploy/http-egress
   - /deploy/komodo
   - /deploy/otel-queue-fixture/langfuse-sink
   - /deploy/signal-bridge
@@ -43,6 +44,7 @@ updates:
   - /deploy/voice-wake
   - /deploy/whatsapp-bridge
   - /site
+  - /tests/fixtures/download-egress
   schedule:
     interval: monthly
   assignees:
@@ -137,6 +139,7 @@ updates:
 - package-ecosystem: gomod
   directories:
   - /deploy/instagram-bridge
+  - /deploy/http-egress
   schedule:
     interval: monthly
   assignees:

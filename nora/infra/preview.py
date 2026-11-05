@@ -44,16 +44,9 @@ with it, in the narrowest form that does the job:
 5. One total timeout across the whole thing, small (seconds), because this sits
    on the reply path with a human waiting.
 
-**The residual risk, stated rather than papered over:** the address check and
-the connection are two separate resolutions, so a DNS record that changes
-between them (rebinding) is not covered. Closing that means resolving once and
-connecting to the literal IP with a `Host:` header, which breaks TLS
-certificate validation for HTTPS and is a materially bigger piece of machinery
-than the feature is worth. What bounds it is that the OUTPUT is a title and a
-description, both identifier-screened at the composer (`nora.agent.outbound`)
-before they can reach the room, and the fetch is unauthenticated — Nora sends
-no cookie, no bearer token and no header that would make an internal endpoint
-answer differently for her than for anyone else.
+Connections use the shared public-only connector, including literal addresses.
+The original hostname remains on the request for Host, SNI and certificate checks.
+See docs/security/outbound-fetches.md for the connection boundary.
 """
 
 from __future__ import annotations
@@ -70,6 +63,7 @@ from urllib.parse import urljoin, urlsplit
 import aiohttp
 
 from nora.domain.ports import LinkPreview
+from nora.infra.public_http import PublicTCPConnector, is_public_address
 
 log = logging.getLogger("nora.preview")
 
@@ -246,7 +240,7 @@ async def _is_global_host(host: str, port: int) -> bool:
             address = ipaddress.ip_address(str(sockaddr[0]))
         except ValueError:
             return False
-        if not address.is_global:
+        if not is_public_address(str(address)):
             log.warning("refusing a preview fetch: %r resolves to %s", host, address)
             return False
     return True
@@ -307,7 +301,9 @@ class OpenGraphPreviewSource:
             return None
 
     async def _build(self, url: str) -> LinkPreview | None:
-        async with aiohttp.ClientSession(timeout=self._timeout) as session:
+        async with aiohttp.ClientSession(
+            timeout=self._timeout, connector=PublicTCPConnector(),
+        ) as session:
             fetched = await self._get(session, url, html_only=True)
             if fetched is None:
                 return None
@@ -438,11 +434,7 @@ async def _read_limited(stream: aiohttp.StreamReader, limit: int) -> bytes:
     return b"".join(chunks)
 
 
-# No cookies, no auth, no referer — see the module docstring's residual-risk
-# note: an unauthenticated fetch is what keeps a rebinding window from being
-# able to read anything Nora's credentials would have unlocked. The UA is
-# honest rather than a browser impersonation; a site that refuses it simply
-# yields no card.
+# Anonymous requests; no caller credentials are forwarded.
 _HEADERS = {
     "User-Agent": "nora-link-preview/1.0",
     "Accept": "text/html,application/xhtml+xml",

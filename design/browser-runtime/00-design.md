@@ -838,3 +838,39 @@ Two paths, both built eventually:
 | **B5** | tier 2 cache + tier 3 picker as chosen by B3 | second-run cost |
 | **B6** | portal stream view-only, then noVNC hand-off | access test |
 | **B7** | only if the owner-match rule holds (§4): OpenCLI into the VM as `browser`, behind the bridge; retire host social Chrome | a room's shell is refused by the daemon; R-86 still holds at three layers |
+
+## Shared HTTP egress implementation candidate — 2026-11-05
+
+The [gateway recipe and operations](../../deploy/http-egress/README.md) and
+[downloader boundary](../../docs/security/outbound-fetches.md) implement the
+source path selected by ADR 0035: a release-owned private Smokescreen service,
+fixed downloader relay and retained namespaces. Preview/media retain actual
+connection guards. This source candidate does not establish deployed behavior
+or sbx/browser acceptance. PR584 remains held; sandbox upstream configuration,
+daemon restart and host prerequisite installation are not performed. The
+operations document names remaining acceptance and rollback. DEC-326 records
+this source slice; DEC-289 remains the sandbox baseline until the separate sbx
+chain is validated and activated.
+
+**Acceptance correction (2026-11-05):** the original plain WS probe used a
+forward absolute GET, whereas RFC6455 section4.1 step3 recommends CONNECT even
+for `ws:80`. Its handshake/bytes were also incomplete. Forward Upgrade still
+has a concrete upstream limitation; the earlier timeout is preserved in the
+handoff receipt. The replacement acceptance fixture checks CONNECT80/443 with
+key/accept/version, masked messages and close frames. It measures an explicit
+proxy client, not sbx transparent routing or Chrome compatibility.
+
+Local coverage now includes owned private/mapped/CGNAT/link-local/native IPv6 ULA origin controls,
+malicious HLS/DASH/thumbnail references, an active HTTPS stream, a separately
+shortened one-second idle fixture, and owned gateway stop/restart with destination
+hit controls. Credit only the recorded rc0 final run. Docker memory/PID settings
+are exercised, not a saturation ceiling. See the gateway operations document and
+[PR594](https://github.com/mikeng-io/nora/pull/594)
+for exact-head results and its durable receipt and the concrete unapplied prerequisite patch.
+
+Correctness/Completeness of full adoption remain open: full-duration/load boundaries,
+real sbx explicit AND transparent route,
+Chrome authority/TLS/fingerprint, credential injection, scope/control isolation,
+PAC/DIRECT/loopback bypass, UDP/QUIC/WebRTC, target namespace/profile and installed
+artifact readback are unverified. PR584 remains held. No host installation,
+Stack/settings edit, daemon restart or rollout is authorized by local acceptance.

@@ -576,11 +576,12 @@ async def _download(
 
     from ..preview import _safe as _preview_safe
     from ..preview import next_hop as _preview_next_hop
+    from ..public_http import PublicTCPConnector
 
     check = safe if safe is not None else _preview_safe
     current = url
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(connector=PublicTCPConnector()) as session:
             for _ in range(URL_DOWNLOAD_MAX_REDIRECTS + 1):
                 if not await check(current):
                     return b"", ""
