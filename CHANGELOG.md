@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.15.8](https://github.com/mikeng-io/nora/compare/v7.15.7...v7.15.8) (2026-11-05)
+
+
+### Bug Fixes
+
+* **image:** use GPT Image 2.6 through direct Codex Images API ([31644d3](https://github.com/mikeng-io/nora/commit/31644d3e6e41f73543e7930a0545094045586403))
+
 ## [7.15.7](https://github.com/mikeng-io/nora/compare/v7.15.6...v7.15.7) (2026-11-05)
 
 
