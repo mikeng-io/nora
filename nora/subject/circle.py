@@ -1,4 +1,4 @@
-"""Explicit synthetic #575 overlays. Nothing here describes the anchor's history."""
+"""Explicit synthetic circle overlays. Nothing here describes the anchor's history."""
 from __future__ import annotations
 
 import contextlib

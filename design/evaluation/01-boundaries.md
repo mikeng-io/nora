@@ -60,6 +60,13 @@ model, no `nora.app`. This is where "what a suite IS" lives, and it is small.
   second one by hand — which is one of the seven assemblies §4 counts. Naming
   it once, with the same literal as the default, is a fix to the composition
   root on its own terms and closes the third of §7's four missing seams.
+- **external boundaries** — what the world around her does NOT answer. `circle`
+  names which controlled absence a case presents (a pending job, a held
+  reaction, a partial index), and `signal_rpc_url` is where the transport
+  would reach if it reached at all. Both are input, exactly like the clock:
+  the outage is the world a case describes, not a collaborator of Nora's — a
+  case that cannot state the outage can only watch her handle a healthy world
+  she was never graded on.
 
 **Application** — the runner. One function. No suite-specific branch.
 

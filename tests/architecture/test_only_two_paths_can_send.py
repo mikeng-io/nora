@@ -53,6 +53,12 @@ NORA = ROOT / "nora"
 SENDER = "nora/agent/guards.py"
 # The one module that may construct a `Deliverer`.
 BUILDER = "nora/engagement/stages/deliver.py"
+# The only other allowed construction site, and it is NOT a send path: the eval
+# subject (`nora.subject.circle`) drives a generated-output check through the
+# same `Deliverer` guards, but the subject only exists inside the sandbox —
+# every send lands in `LandedSignalSender` (`nora/subject/sandbox_signal.py`),
+# which dials nothing. R-1's closed set of senders is unchanged.
+SANDBOX_BUILDER = "nora/subject/circle.py"
 # The paths that may cause a send. THIS IS THE RULE.
 CALLERS = {
     "nora/engagement/pipeline.py",
@@ -125,7 +131,7 @@ def test_only_the_tag_path_and_the_fire_path_can_send():
         "bypasses R-2's latch, R-4, R-6's leak scan, R-18's egress scan and "
         "A9's audit-first write, all five at once"
     )
-    assert _modules_where(sources, _is_deliverer_construction) == {BUILDER}, (
+    assert _modules_where(sources, _is_deliverer_construction) == {BUILDER, SANDBOX_BUILDER}, (
         "a second Deliverer construction site — `audience` has no default "
         "there precisely so a new one cannot silently report its failures as "
         "the tag path's"

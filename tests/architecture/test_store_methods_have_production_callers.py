@@ -273,6 +273,9 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "describe", "enqueue", "get", "history", "lookup", "mark", "put", "read",
         "finish",  # RawSpanRecorder and the store both declare this verb.
         "recent", "record", "resolve", "rsvps_for", "save", "search",
+        # `CircleMemory.seed` (the eval subject's controlled overlay) shares the
+        # name with `SqlMemoryIndex.seed`, so `.seed(...)` cannot be attributed.
+        "seed",
         "sweep_firing", "apply",
         # Computer session selection and audit reads both use the bound unit scope.
         # Their independent contract suites drive the two production stores.

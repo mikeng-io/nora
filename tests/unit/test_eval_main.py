@@ -65,7 +65,9 @@ def test_judged_corpora_are_reachable_by_class():
     # `standing` (the fold) is judged and sits in S6,
     # the class of what a WRITE keeps.
     s6 = set(_corpora_for(_args(cls=["S6"])))
-    assert s3 | s9 | (s6 & JUDGED_CORPORA) == JUDGED_CORPORA
+    # `participation` is judged and sits in S7.
+    s7 = set(_corpora_for(_args(cls=["S7"])))
+    assert s3 | s9 | s7 | (s6 & JUDGED_CORPORA) == JUDGED_CORPORA
     assert "standing" in s6
 
 
