@@ -657,3 +657,128 @@ repair. Shared participation framing also presumes a reply in some labels,
 which may affect response propensity but does not explain the historical claim.
 No old CLI verdict or parent adjudication is relabeled. Behavioral confirmation
 must be tied to the new core version and exact input difference.
+
+### Doctrine audit reconciliation and shared occasion framing — 2026-11-06
+
+The operator asked to finish the doctrine audit and its fixes, stopping the
+relevance-gate routing detour. This continuation is based on master
+`57d48173b914e65d0ddd3244d6f39f61dece761f`. Comparing the landed revision
+`098c914d02eebcf826daba2d40958b68dff39455` with that base shows no changes in
+`nora/doctrine`, `nora/domain/framing.py`, `evals` or `nora/subject`. Earlier
+source/model receipts remain bound to their actual revisions; a new release
+number is not new behavioral evidence.
+
+#### Original checklist reconciled
+
+The issue's original unchecked boxes mixed source implementation and behavioral
+acceptance. The table below separates them instead of either reporting the
+source work as missing or calling every model obligation complete.
+
+| Original task | Source/delivery status | Behavioral or other remaining evidence |
+|---|---|---|
+| 1. Candidate and fixed scenarios | Delivered in #589; six personality pairs and controlled cases use the existing evaluator | Historical errors and invalid comparisons stay recorded |
+| 2. Membership and voice | Revised belonging v3 and room voice v25; authored AI identity/register retained | Broad reliable character/depth behavior not established |
+| 3. Response and coordination | Conduct v45, participation-conduct v5 and pictures v4 revise depth, medium, consent and invited responsibility | Unsupported history/unsolicited coordination and restraint limits remain known issues |
+| 4. Admission and headers | Instrument participation v9 and typed header revised; no grant or delivery-owner change | Gate routing is outside this continuation; admission is not whole-turn suitability |
+| 5. Memory and retention | Profile/graph/legacy evidence, corrections, unavailable reads and write receipts reconciled in conduct and room constraints | Narrow controlled read/reporting evidence exists; live persistence/retention is not established |
+| 6. Action and completion | Started/checked/delivered/held/unconfirmed states and worker ownership reconciled | Controlled running/completion cases passed narrowly; live browser/computer work and platform delivery unverified |
+| 7. Public and auxiliary audiences | Public voice/conduct/constraints revised; Dreamer judge, Cognition replacement prelude, formatter and worker retain distinct roles | Public no-send adherence remains a known failure; approved public intake is separately #527 |
+| 8. Classification and maintained references | Delivered with #589; hashes/pins/goldens updated without changing law/seed authority | This continuation fixes shared framing below, not new policy or tool capability |
+| 9. Validation | Focused structural checks, mutation guards and multiple bounded model runs executed | Model acceptance is mixed, not all PASS; semantic grader/fixture and broader depth evidence remain limited |
+| 10. Review and landing | #589 merged after two independent Devin reviews; REQUEST CHANGES reports preserved with operator-authorized known-issue disposition | Merge is not a behavioral approval or deployment receipt |
+| 11. Reconciliation/live acceptance | Source delivery and remaining scope recorded in #575 | No live runtime acceptance; issue remains open for explicitly deferred behaviors/measurement |
+
+#### Coverage of the sixteen doctrine surfaces
+
+- Core identity and constraints: retain AI identity, source/host versus working
+  computer distinction, instruction/data separation and scoped truthful answers.
+- Room belonging, voice, conduct, constraints, participation-conduct and pictures:
+  membership, response substance, grounded social meaning, actual capabilities,
+  write ownership and uncertainty are reconciled by #589. Existing tool/skill
+  admission, not a copied inventory in doctrine, remains the capability source.
+- Public constraints, conduct and voice: distinct public evidence/authority and
+  proportional answer depth; group context does not transfer to strangers.
+- Participation instrument and reaction picker: separate readers with separate
+  jobs, not the main speaker's full social doctrine. Emoji action and automatic
+  GIF selection are not interchangeable mechanisms.
+- Speech formatter: word-preserving presentation, not a social decision maker.
+- Dreamer judge and subagent: the former reads supplied evidence without tools;
+  the worker carries bounded work and reports to Nora. Cognition's action-capable
+  replacement prelude is not the tool-free judge doctrine.
+
+This is source review, not a live inventory. The existing capability map covers
+memory/history, profiles/Standing, response media, factual/research tools,
+computer/browser work, documents and jobs. A declared tool is not necessarily
+admitted in a given turn; a tool being present is not proof a complete live
+journey works. New browser/runtime, memory cutover or public-intake implementation
+stays with its existing owner. This continuation adds none of them.
+
+#### Confirmed source conflict and bounded correction
+
+The shared prefill closed with “I'll read the conversation and reply as myself”.
+The shared `tag_message` description said “Read it and answer it; that is what
+this turn is for”. `EngagementPipeline._run_turn` and `FirePath._turn` both call
+`build_prefill` and `build_tag_message`; the latter uses the same builders even
+when its participation header explicitly permits silence and its body is empty.
+Thus one rendered turn both offered a choice and presupposed a reply. This fails
+**Coherence**, regardless of whether it caused a particular model failure.
+
+The correction removes the reply promise from `CLOSING_LINE` and describes
+`tag_message` as whatever was put to Nora for this turn, if anything, interpreted
+in the occasion named by the header. Directly called room turns still have their
+existing obligation to answer in room constraints. No per-audience switch,
+parallel prompt builder, changed read/write grant, tool schema, routing or
+reaction/delivery mechanism is introduced. The shared authored strings stay in
+their existing owners; goldens change only for those strings.
+
+This correction reaches tag and fire prefills, not the public summons prompt.
+It therefore is not a repair claim for public no-send, unsupported history,
+judging defects or overall social reliability. The operator's permission for a
+grounded denial and deferral of unresolved behaviors remain unchanged.
+
+A named assembled-input regression checks an offered floor plus the empty
+message and assistant prefill. Its assertions establish consistent source text,
+not that a model chooses correctly. Validation, model evidence and independent
+review for this continuation must be read at their actual heads in its PR.
+
+#### Independent review and bounded model readback
+
+The first independent full Devin review at
+`8e86f9d12c6375bca4fd8c1b9b0e65029ca268c2` returned REQUEST CHANGES: the
+profile-vocabulary default-prefill fixture still pinned the old assistant
+closing line, and one existing header-mutation anchor also named that old
+text. Both are updated; runtime prompt text is unchanged by these repairs.
+The profile-equivalence, header-golden and mutation-anchor checks passed
+239 tests, rc=0. Earlier 199/122 receipts remain their original selections,
+not one combined suite. The review confirmed the source correction's audience,
+assembly and authority boundaries, without granting behavioral acceptance.
+
+One low-severity, pre-existing limitation remains: the shared tag-message type
+still calls carried proactive/compute content another person's chat. Typed
+occasion headers supply its actual origin. This continuation removes the
+universal reply imperative; it does not introduce per-occasion block types or
+claim to have corrected that separate provenance wording.
+
+Three of the planned four bounded model commands ran, one draw per case/arm.
+The before/after brief-fact commands each returned CLI PASS with three judge
+PASS votes. Actual readback does not accept that as a clean brief-answer
+result: before eventually gives the supplied time but also denies holding the
+notice and brings in unrelated history; after refuses a direct answer and
+requests the notice again despite the quoted time. Both perform multiple
+memory/history reads. The after draw still authors a reply, so loss of all
+responsiveness is not observed; answer usefulness and groundedness are not
+proved. No causal regression or improvement rate follows from one draw.
+
+The before quiet-participation command returned FAIL: it sent a bantering
+reply with a sandbox `sent` result instead of silence. That command did not
+invoke the semantic judge. The after quiet command was not run after the
+positive control exposed another grading false positive; no redraw was used
+to buy a PASS. Quiet-choice behavioral effect therefore remains unavailable.
+
+Evaluator/cases/dependencies and prepared configuration were identical across
+arms; actual captured first inputs contain the old shared wording before and
+the revised wording after. The frozen source/config identities were read back
+unchanged. Model confirmation remains incomplete, and the operator's deferred
+public/history/judge limitations are not repaired or relabelled by this
+source-coherence change. Full receipts, exact refs, command counts and spend
+belong to this continuation's PR; no private room text is reproduced here.
