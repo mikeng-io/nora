@@ -16,6 +16,7 @@ import os
 import stat
 import sys
 from collections.abc import AsyncIterator
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +65,24 @@ if popups:
             emit({{"method": "Target.targetCreated",
                   "params": {{"targetInfo": {{"targetId": tid, "type": kind}}}}}})
     threading.Thread(target=_fire, daemon=True).start()
+# Chrome's crash reporter double-forks out of the browser process tree.
+# Model that real failure shape: stopping the browser group cannot kill it.
+if os.environ.get("FAKE_DETACHED_HELPER") == "1":
+    helper_path = os.path.join(os.environ["FAKE_X11_DIR"], "helper-%d.pid" % os.getpid())
+    child = os.fork()
+    if child == 0:
+        os.setsid()
+        if os.fork():
+            os._exit(0)
+        os.close(3)
+        os.close(4)
+        with open(helper_path, "w") as marker:
+            marker.write(str(os.getpid()))
+        time.sleep(3600)
+        os._exit(0)
+    os.waitpid(child, 0)
+    while not os.path.exists(helper_path):
+        time.sleep(0.001)
 buffer = b""
 while True:
     chunk = inbox.read(65536)
@@ -832,3 +851,39 @@ async def test_lost_browser_command_transport_drains_before_quiet(server, fakes)
             browser=state["browser"])) is False
         with pytest.raises(ProcessLookupError):
             os.kill(pid, 0)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux subreaper/process ownership")
+async def test_browser_retirement_leaves_no_detached_crash_reporter(server, fakes, monkeypatch):
+    monkeypatch.setenv("FAKE_DETACHED_HELPER", "1")
+    helper_pid = None
+    try:
+        async with ClientSession() as session:
+            pid = (await _ask(session, server, SCOPE))["result"]["pid"]
+            os.kill(pid, 0)  # positive control: the browser really started
+            marker = fakes["x11"] / f"helper-{pid}.pid"
+            assert marker.exists(), "the detached-helper positive control did not run"
+            helper_pid = int(marker.read_text())
+            os.kill(helper_pid, 0)
+            raw = await asyncio.to_thread(Path(f"/proc/{helper_pid}/stat").read_text)
+            parent = int(raw.rsplit(")", 1)[1].split()[1])
+            browser = server.app["browsers"].running[SCOPE]
+            assert parent == browser.chrome.pid, "Chrome's helper escaped its lifetime owner"
+            stopped = await (await session.post(
+                server.make_url("/v1/browser_stop"), headers=AUTH,
+                json={"scope": SCOPE})).json()
+            assert stopped["status"] == "ok"
+            with pytest.raises(ProcessLookupError):
+                os.kill(pid, 0)
+            detached_alive = False
+            if helper_pid is not None:
+                try:
+                    os.kill(helper_pid, 0)
+                    detached_alive = True
+                except ProcessLookupError:
+                    pass
+            assert not detached_alive, "a detached Chrome helper survives browser retirement"
+    finally:
+        if helper_pid is not None:
+            with suppress(ProcessLookupError):
+                os.kill(helper_pid, 9)  # only this generated fixture's recorded process

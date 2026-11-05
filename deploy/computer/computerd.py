@@ -62,6 +62,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import ctypes
 import errno
 import fcntl
 import fnmatch
@@ -77,6 +78,7 @@ import shutil
 import signal
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -1060,7 +1062,10 @@ class Browser:
         for proc in (self.chrome, self.xvfb):
             if proc is not None and proc.returncode is None:
                 with contextlib.suppress(ProcessLookupError):
-                    os.killpg(proc.pid, signal.SIGKILL)
+                    if proc is self.chrome and sys.platform == "linux":
+                        os.kill(proc.pid, signal.SIGTERM)
+                    else:
+                        os.killpg(proc.pid, signal.SIGKILL)
                 await proc.wait()
         self._client_pending.clear()
         if self._to_chrome is not None:
@@ -1300,9 +1305,13 @@ class Browsers:
             # bash, not sh: the pipe's descriptors are usually above 9, and
             # dash (the VM's /bin/sh) only redirects single-digit ones, so it
             # exits 2 before Chrome starts.
+            command = [self.chrome_bin]
+            if sys.platform == "linux":
+                command = [sys.executable, os.path.abspath(__file__),
+                           "--browser-child", self.chrome_bin]
             browser.chrome = await asyncio.create_subprocess_exec(
                 "/bin/bash", "-c", f'exec "$0" "$@" 3<&{cmd_r} 4>&{out_w}',
-                self.chrome_bin, *flags, "about:blank",
+                *command, *flags, "about:blank",
                 env=env, cwd=str(self.computer.root / scope), pass_fds=(cmd_r, out_w),
                 stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL,
                 stderr=log_fd, start_new_session=True, **user,
@@ -1839,6 +1848,61 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+class _BrowserStopped(BaseException):
+    pass
+
+
+def run_browser_child(argv: list[str]) -> int:
+    """Own and reap Chrome's double-forked helpers in the scope user's process.
+
+    Linux reparents orphan descendants to this subreaper instead of PID 1.
+    Its lifetime ends only after every child has exited; native jobs are
+    outside this tree and still count as work in `state`.
+    """
+    parent = os.getppid()
+    children = Path(f"/proc/self/task/{os.getpid()}/children")
+    children.read_text()  # refuse before starting Chrome if ownership is unreadable
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
+        raise OSError(ctypes.get_errno(), "cannot own Chrome descendants")
+
+    def stopped(_signum: int, _frame: Any) -> None:
+        raise _BrowserStopped
+
+    signal.signal(signal.SIGTERM, stopped)
+    signal.signal(signal.SIGINT, stopped)
+    try:
+        if libc.prctl(1, signal.SIGTERM, 0, 0, 0) != 0:  # PR_SET_PDEATHSIG
+            raise OSError(ctypes.get_errno(), "cannot observe computerd exit")
+        if os.getppid() != parent or parent == 1:
+            return 143
+        child = os.fork()
+        if child == 0:
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            try:
+                os.execvp(argv[0], argv)  # noqa: S606 - the configured browser executable
+            except OSError:
+                os._exit(127)
+        os.close(3)
+        os.close(4)
+        _, status = os.waitpid(child, 0)
+        return os.waitstatus_to_exitcode(status)
+    except _BrowserStopped:
+        return 143
+    finally:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        while True:
+            for pid in children.read_text().split():
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(int(pid), signal.SIGKILL)
+            try:
+                os.waitpid(-1, 0)
+            except ChildProcessError:
+                break
+
+
 def main() -> None:
     args = build_parser().parse_args()
     token = os.environ.get(TOKEN_ENV, "")
@@ -1848,4 +1912,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--browser-child"]:
+        raise SystemExit(run_browser_child(sys.argv[2:]))
     main()

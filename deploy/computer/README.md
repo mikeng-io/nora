@@ -457,6 +457,11 @@ expires every handle bound to the old boot.
   drains Chrome/Xvfb before guest state can report quiet. Completed commands
   retain their task tabs; managed browser descendants do not count as native
   jobs. Native/detached work and pending CDP commands still block successors.
+- On Linux, Chrome runs beneath a scope-user child subreaper in computerd's
+  own file. Double-forked crash-reporting helpers stay in that browser tree;
+  retirement signals the supervisor and waits for all descendants to be reaped.
+  Native jobs remain outside it and still block the queue. No new service,
+  package, renderer flag or cgroup mount is required.
 - Retained terminal results and live-consumption markers retry store writes
   within the running application. They are memory, not a durable outage spool:
   restarting before persistence loses that retained payload; recovery reports
