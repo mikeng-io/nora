@@ -65,3 +65,6 @@ value f265c1d9-066b-4632-83a7-0734a5ca9a37 -- generated icon content-credential 
 value K@e5.lm -- coincidental ASCII bytes inside the generated site icon's compressed PNG IDAT payload, not a mailbox
 
 value-re (852)?900001\d\d -- the scrub's pseudonym phone range (scrub/README.md): placeholders that replaced real numbers
+binary app/public/models/mini-nora/*.glb -- embedded public Mini Nora character mesh, textures and motion clips
+
+large app/public/models/mini-nora/character.glb -- public deployable character asset; scan embedded strings despite its 28 MB size
