@@ -38,8 +38,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import fcntl
 import json as _json
 import logging
+import os
+import stat
+import tempfile
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
@@ -154,56 +158,141 @@ class SegmentRegistry:
     a `running` row with no registered executor is owner-lost, never
     silently handed a successor."""
 
-    def __init__(self, *, pending_path: Path | None = None) -> None:
+    def __init__(self, *, pending_dir: Path | None = None) -> None:
         self._tasks: dict[UUID, asyncio.Task[Any]] = {}
         # `task_id` → the terminal outcome the durable row could not yet
         # take: an uncertain exit holding its real result, or a finish the
         # store refused — retried until the write lands, never replayed.
         self._pending: dict[UUID, _PendingResult] = {}
-        # `pending_path` makes the map durable across restart: without it a
-        # process dying between caller consumption and `_persist_pending`
-        # loses the result outright, and loses `consumed` — the terminal
-        # discovery then hands the live-delivered result to deferred
-        # delivery a second time. It is a plain file (the SQL store is the
-        # thing that was down); a sibling of the scope registry, never
-        # inside it — `FileScopeEndpoints` globs `*.json` there.
-        self._pending_path = pending_path
-        if pending_path is not None:
+        # `pending_dir` makes the map durable across restart. It MUST be an
+        # app-owned writable persistent root (`/app/state/computer` in the
+        # deployment: the same mount class as OAuth state — private, not the
+        # read-only provisioner scope registry and not the ephemeral image
+        # layer). One process owns it for its whole lifetime via an
+        # exclusive `flock`; a second owner fails closed at construction —
+        # two owners writing whole-map snapshots would lose each other's
+        # entries. Construction refuses unsafe state rather than treating
+        # corrupt/unreadable data as an empty store.
+        self._pending_dir = pending_dir
+        self._pending_path: Path | None = None
+        self._lock_fd: int | None = None
+        if pending_dir is not None:
+            self._open_pending_store()
+
+    def _open_pending_store(self) -> None:
+        """Take exclusive lifetime ownership and recover the durable map.
+
+        Refuses (raises) when: the root is not a real private directory, a
+        second owner holds the lock, or the stored snapshot is
+        missing-shaped/corrupt — quarantined to `<name>.corrupt-<utc>` so
+        evidence survives and an operator decides, never silently emptied
+        and later overwritten."""
+        directory = self._pending_dir
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if directory.is_symlink() or not directory.is_dir():
+            raise RuntimeError(
+                f"computer pending store root {directory} is not a real directory")
+        directory.chmod(0o700)
+        lock_fd = os.open(directory / "pending-results.lock",
+                          os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(lock_fd)
+            raise RuntimeError(
+                "a second owner was refused the computer pending store at "
+                f"{directory} — one process owns it for its lifetime") from None
+        self._pending_path = directory / "pending-results.json"
+        try:
             self._load_pending()
+        except BaseException:
+            os.close(lock_fd)
+            raise
+        self._lock_fd = lock_fd
 
     def _load_pending(self) -> None:
+        path = self._pending_path
+        if not path.exists():
+            return  # first use: absent is empty, never an error
+        st = path.lstat()
+        if not stat.S_ISREG(st.st_mode) or path.is_symlink():
+            return self._quarantine(path, "not a regular file")
         try:
-            data = _json.loads(self._pending_path.read_text(encoding="utf-8"))
-        except (OSError, _json.JSONDecodeError):
-            return
+            raw = path.read_bytes().decode("utf-8")
+            data = _json.loads(raw)
+        except (OSError, UnicodeDecodeError, _json.JSONDecodeError) as exc:
+            return self._quarantine(path, f"unreadable: {exc}")
         if not isinstance(data, dict):
-            return
-        for key, raw in data.items():
+            return self._quarantine(path, "top level is not an object")
+        pending: dict[UUID, _PendingResult] = {}
+        for key, entry in data.items():
             try:
-                self._pending[UUID(key)] = _PendingResult(
-                    status=raw["status"], result=dict(raw["result"]),
-                    consumed=bool(raw.get("consumed")))
-            except (KeyError, TypeError, ValueError):
-                continue
+                task_id = UUID(key)
+                status = entry["status"]
+                result = entry["result"]
+                consumed = entry["consumed"]
+            except (KeyError, TypeError, ValueError) as exc:
+                return self._quarantine(path, f"entry {key!r} invalid: {exc}")
+            if (status not in TERMINAL or not isinstance(result, dict)
+                    or type(consumed) is not bool):
+                return self._quarantine(
+                    path, f"entry {key!r} has non-strict fields")
+            pending[task_id] = _PendingResult(
+                status=status, result=result, consumed=consumed)
+        self._pending = pending
 
-    def _spill(self) -> None:
-        """Rewrite the pending map atomically. Sets are tiny (one entry per
-        retained outcome); a failed spill keeps the in-memory copy and the
-        next mutation retries."""
+    def _quarantine(self, path: Path, why: str) -> None:
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
+        quarantined = path.with_name(f"{path.name}.corrupt-{stamp}")
+        try:
+            path.replace(quarantined)
+        except OSError:
+            pass
+        raise RuntimeError(
+            f"computer pending store at {path} refused as corrupt ({why}); "
+            f"evidence kept at {quarantined} — operator decides, the state "
+            "is never emptied silently")
+
+    def _spill(self) -> bool:
+        """Rewrite the durable map: strict typed serialization (no coercion —
+        a result that does not round-trip JSON fails the checkpoint), a
+        fresh private temp file, fsync, atomic replace, then a directory
+        fsync so the rename survives power loss. `False` means NOT durable:
+        callers propagate that, and the in-memory copy still holds the
+        same-process semantics."""
         if self._pending_path is None:
-            return
+            return False
         payload = {
             str(task_id): {"status": p.status, "result": p.result,
                            "consumed": p.consumed}
             for task_id, p in self._pending.items()
         }
+        directory = self._pending_path.parent
+        tmp_name: str | None = None
         try:
-            self._pending_path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._pending_path.with_name(self._pending_path.name + ".tmp")
-            tmp.write_text(_json.dumps(payload, default=str), encoding="utf-8")
-            tmp.replace(self._pending_path)
-        except OSError:
-            log.warning("computer pending-result spill failed (retained in memory)")
+            body = _json.dumps(payload)  # strict: no default=str coercion
+            fd, tmp_name = tempfile.mkstemp(
+                dir=directory, prefix="pending-results.", suffix=".tmp")
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(body)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp_name, self._pending_path)
+            tmp_name = None
+            dir_fd = os.open(directory, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+            return True
+        except (OSError, TypeError, ValueError):
+            log.warning("computer pending-result checkpoint failed "
+                        "(entry kept in memory; callers told)", exc_info=True)
+            return False
+        finally:
+            if tmp_name is not None:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp_name)
 
     def register(self, task_id: UUID, task: asyncio.Task[Any]) -> None:
         self._tasks[task_id] = task
@@ -217,27 +306,41 @@ class SegmentRegistry:
         return task if task is not None and not task.done() else None
 
     def retain(self, task_id: UUID, status: str, result: Mapping[str, Any],
-               *, consumed: bool = False) -> None:
+               *, consumed: bool = False) -> bool:
+        """Journal an outcome the store could not (yet) take. Returns the
+        durable-checkpoint result: `False` means the file did not take it —
+        the entry still holds same-process semantics in memory, and the
+        caller must not imply durable retention happened."""
         old = self._pending.get(task_id)
         self._pending[task_id] = _PendingResult(
             status=status, result=dict(result),
             consumed=consumed or (old.consumed if old is not None else False))
-        self._spill()
+        return self._spill()
 
-    def mark_consumed(self, task_id: UUID) -> None:
+    def mark_consumed(self, task_id: UUID) -> bool:
         """The caller saw the retained reply: the row, once it persists,
-        counts as delivered, never handed to the room a second time."""
+        counts as delivered, never handed to the room a second time.
+        `False` = the consumed disposition did not reach disk — the
+        in-memory marker still prevents a same-process re-delivery, but a
+        restart before the next successful checkpoint can hand the
+        live-delivered result to deferred delivery again. That residual
+        cannot be closed locally once the reply is out; the caller logs it
+        as a real boundary, never a durable success."""
         old = self._pending.get(task_id)
         if old is not None and not old.consumed:
             self._pending[task_id] = replace(old, consumed=True)
-            self._spill()
+        return self._spill()
 
     def pending_result(self, task_id: UUID) -> _PendingResult | None:
         return self._pending.get(task_id)
 
-    def clear_pending(self, task_id: UUID) -> None:
-        if self._pending.pop(task_id, None) is not None:
-            self._spill()
+    def clear_pending(self, task_id: UUID) -> bool:
+        """Drop the entry and checkpoint. `False` = the durable map still
+        holds it: a stale entry replays safely (`_persist_pending` converges
+        on the terminal row, SQL `delivered_at` is the authority), so the
+        caller logs and continues rather than treating the drop as lost."""
+        self._pending.pop(task_id, None)
+        return self._spill()
 
 
 class ComputerAdmission:
@@ -369,9 +472,14 @@ class ComputerAdmission:
                                            uncertain=True)
                 raise
             else:
-                await self._finish_guarded(
-                    task, row_status(reply), reply,
-                    uncertain=bool(reply.get("uncertain")))
+                # Journal the returned outcome BEFORE the quiet/SQL waits:
+                # a restart inside `_finish_guarded` must still recover the
+                # ORIGINAL result, not an orphaned `running` row.
+                self.executors.retain(task.id, row_status(reply), reply)
+                if await self._finish_guarded(
+                        task, row_status(reply), reply,
+                        uncertain=bool(reply.get("uncertain"))):
+                    self.executors.clear_pending(task.id)
                 outcome["reply"] = reply
             finally:
                 current_segment.reset(token)
@@ -487,7 +595,11 @@ class ComputerAdmission:
         row = await self._tasks.get(task_id)
         if row is None or row.status not in TERMINAL:
             return
-        self.executors.retain(task_id, row.status, row.result, consumed=True)
+        if not self.executors.retain(task_id, row.status, row.result,
+                                     consumed=True):
+            log.error("computer task %s consumed checkpoint did not land; "
+                      "restart before the next pass can re-deliver a "
+                      "live-consumed result", task_id)
         await _persist_pending(executors=self.executors, tasks=self._tasks,
                                clock=self._clock, task_id=task_id)
 
@@ -527,8 +639,10 @@ async def _finish_guarded(
         pass
     else:
         persisted = await finish(task.id, status, reply)
-    if not persisted:
-        executors.retain(task.id, status, cut_result(dict(reply)))
+    if not persisted and not executors.retain(
+            task.id, status, cut_result(dict(reply))):
+        log.error("computer task %s terminal outcome retained in memory "
+                  "only; the durable journal did not take it", task.id)
     return persisted
 
 
@@ -545,9 +659,11 @@ async def _persist_pending(
     if pending is None:
         return False
     try:
-        await tasks.finish(task_id, status=pending.status,
-                           result=pending.result, now=clock())
         row = await tasks.get(task_id)
+        if row is None or row.status not in TERMINAL:
+            await tasks.finish(task_id, status=pending.status,
+                               result=pending.result, now=clock())
+            row = await tasks.get(task_id)
     except Exception:
         log.exception("computer task retained finish failed (kept for the next pass)")
         return False
@@ -558,7 +674,10 @@ async def _persist_pending(
             except Exception:
                 log.exception("computer task consumed disposition failed (retained)")
                 return False
-        executors.clear_pending(task_id)
+        if not executors.clear_pending(task_id):
+            log.error("computer task %s pending entry cleared but the "
+                      "checkpoint did not land; a stale entry may replay "
+                      "safely on restart", task_id)
         return True
     if row is None:
         executors.clear_pending(task_id)

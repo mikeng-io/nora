@@ -1819,10 +1819,13 @@ async def build_dependencies(
         # ONE registry of live executors, shared by the submitter side
         # (admission) and the granter side (runner): a `running` row with no
         # executor here is owner-lost, and a cancel can reach the real work.
-        # `pending_path` spills retained results/consumed markers to local
-        # disk so an application restart cannot lose them or re-deliver.
+        # `pending_dir` journals retained results/consumed markers to
+        # `/app/state/computer` — the same app-owned private persistent root
+        # OAuth state uses — so an application restart cannot lose them or
+        # re-deliver. The read-only provisioner scope registry is untouched;
+        # one process owns the store for its lifetime (exclusive flock).
         computer_segments = SegmentRegistry(
-            pending_path=Path(scoped_cfg.registry).parent / "computer-pending-results.json")
+            pending_dir=Path("/app/state") / "computer")
 
         async def _deliver_computer_task(row: Any) -> None:
             await deliver_computer_task(

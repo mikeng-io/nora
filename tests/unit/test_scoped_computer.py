@@ -1583,19 +1583,19 @@ async def test_pending_results_survive_a_restart(tmp_path) -> None:
     so `_persist_pending` writes the row terminal AND marks it delivered
     instead of losing the result or re-delivering it."""
     from nora.app.computer_queue import SegmentRegistry
-    path = tmp_path / "computer-pending-results.json"
-    first = SegmentRegistry(pending_path=path)
+    path = tmp_path / "pending"
+    first = SegmentRegistry(pending_dir=path)
     tid = uuid.uuid4()
     first.retain(tid, "done", {"status": "ok", "note": "written"})
     first.mark_consumed(tid)
 
-    second = SegmentRegistry(pending_path=path)  # the restart
+    second = SegmentRegistry(pending_dir=path)  # the restart
     pending = second.pending_result(tid)
     assert pending is not None and pending.status == "done" \
         and pending.result["note"] == "written" and pending.consumed
 
     second.clear_pending(tid)
-    third = SegmentRegistry(pending_path=path)
+    third = SegmentRegistry(pending_dir=path)
     assert third.pending_result(tid) is None
 
 
@@ -1605,8 +1605,8 @@ async def test_a_retained_pending_is_persisted_terminal_and_delivered(tmp_path) 
     registry's `_persist_pending` lands the ORIGINAL result terminal and
     stamps `delivered_at`, so deferred delivery never hands it out twice."""
     from nora.app.computer_queue import _persist_pending, SegmentRegistry
-    path = tmp_path / "computer-pending-results.json"
-    first = SegmentRegistry(pending_path=path)
+    path = tmp_path / "pending"
+    first = SegmentRegistry(pending_dir=path)
     store = FakeComputerTaskStore()
     row = task()
     await store.enqueue(row)
@@ -1615,7 +1615,7 @@ async def test_a_retained_pending_is_persisted_terminal_and_delivered(tmp_path) 
     first.retain(tid, "done", {"status": "ok", "value": 42})
     first.mark_consumed(tid)
 
-    second = SegmentRegistry(pending_path=path)  # the restart
+    second = SegmentRegistry(pending_dir=path)  # the restart
     assert await _persist_pending(
         executors=second, tasks=store, clock=clock(), task_id=tid)
     fresh = await store.get(tid)
