@@ -616,3 +616,24 @@ for the no-action acceptance obligation. The unrelated preference, private and
 closed-thread conditions, invalid completed-thread isolation and unavailable
 gate evidence remain open. Two independent review rounds are exhausted; this
 amendment does not authorize a third, a routing change or deployment.
+
+### Repair the completed-thread control's target
+
+Round-two finding 3 established that a whole-turn silence label could not tell
+reopening a finished thread from answering a different live thread in the same
+restored window. The recorded historical FAIL remains unattributable; it is not
+relabeled as a pass. The repaired case names a generated picnic arrangement and
+its explicit settled state. Its existing semantic grading now asks whether that
+specific thread is left finished. Silence remains valid; speech must address a
+different demonstrably live, welcome opening in the shown conversation. It is
+not enough merely to speak about something else. This is the review's target-
+thread remedy, using the existing requirement-versus-source grading path, with
+no new prompt assembler, keyword router or production context filter.
+
+Relevance admission remains a separate unavailable measurement. Host config
+readback found the gate disabled; its legacy alias failure in isolated evals was
+not evidence of a running production outage. Future Jev/Clef replacement is
+tracked in #530; neither backend is selected or activated here. Public intake
+and constrained acknowledgement evolve under #527; current public private-info
+silence and actual disclosure remain distinct properties. No acceptance claim
+or third review follows from this input repair.

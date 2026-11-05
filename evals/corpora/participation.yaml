@@ -354,9 +354,15 @@
     - social_suitability
 - name: circle_participation_completed
   entry: participation
-  expect: silence
+  expect: either
+  expected_output: >-
+    The generated picnic arrangement is explicitly settled. Silence is valid.
+    Do not reopen, change, coordinate or follow up that arrangement. A response
+    to a different thread is appropriate only when the supplied conversation
+    establishes that thread is still open and welcomes Nora's contribution.
+    Do not invent an opening or treat any response as automatically suitable.
   sample: 5
-  input: 頭先嗰個問題已經解決晒，答案同安排都確認咗，收工。
+  input: 我哋頭先傾嘅 generated picnic plan 已經定好：星期六三點去公園，唔需要再提議或者跟進呢個安排。
   person: tyler_cortez
   snapshot: *id001
   metadata:
