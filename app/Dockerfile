@@ -19,7 +19,7 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 # floor pyproject.toml declares for Nora's own yt-dlp use (>=2026.8.19).
 ARG YTDLP_VERSION=2026.08.19
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg \
+    && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg python3 util-linux \
     && arch="$(uname -m)" \
     && case "$arch" in x86_64) bin=yt-dlp_linux ;; aarch64) bin=yt-dlp_linux_aarch64 ;; *) echo "unsupported arch $arch" >&2; exit 1 ;; esac \
     && curl -fsSL -o /usr/local/bin/yt-dlp "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/${bin}" \
@@ -33,6 +33,7 @@ ENV YTDLP_PATH=/usr/local/bin/yt-dlp NORA_DOWNLOADS_DIR=/data/downloads NORA_DOW
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
+COPY --chown=node:node scripts/public-download.py ./scripts/public-download.py
 USER node
 EXPOSE 3000
 CMD ["node", "server.js"]

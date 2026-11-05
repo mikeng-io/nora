@@ -18,6 +18,7 @@ from pathlib import Path
 
 REGISTRY = 'ghcr.io/mikeng-io/nora-'
 COHORT = {
+    'http-egress': 'http-egress',
     'nora': 'nora', 'presence': 'nora', 'analytics': 'nora',
     'app': 'app', 'site': 'site', 'stt': 'stt', 'voice-wake': 'voice-wake',
     'voice-sidecar': 'voice-sidecar', 'signal-bridge': 'signal-bridge',
@@ -77,7 +78,7 @@ def expected_images(manifest: dict, *, site: bool) -> dict[str, str]:
     if version[1] and (channel != 'master' or not manifest['commit'].startswith(version[1])):
         raise ValueError('snapshot stamp differs from master source')
     images = manifest['services']
-    if set(images) != set(COHORT):
+    if set(images) not in (set(COHORT), set(COHORT) - {'http-egress'}):
         raise ValueError('release service set differs from installed ownership')
     for service, image in images.items():
         pattern = re.escape(REGISTRY + COHORT[service]) + r'@sha256:[0-9a-f]{64}'
@@ -103,7 +104,7 @@ def reload_services(resolved: dict, images: dict, request: Path) -> list[str]:
         raise ValueError('invalid scoped config reload request')
     if set(files) & {'secret.toml', '.env'}:
         return [name for name in images if name not in {
-            'site', 'stt', 'signal-bridge', 'discord-bridge'}]
+            'site', 'stt', 'signal-bridge', 'discord-bridge', 'http-egress'}]
     targets = {'/app/' + f for f in files}
     readers = [name for name in images if any(
         v['target'] in targets for v in resolved['services'][name].get('volumes', []))]

@@ -69,7 +69,9 @@ def classify(paths: list[str], repo: Path = affected_tests.ROOT) -> dict[str, bo
                     or name.endswith("config.json")
                 ):
                     plan["codeql-javascript"] = True
-        elif path.startswith("deploy/instagram-bridge/") and suffix != ".md":
+        elif (
+            path.startswith(("deploy/instagram-bridge/", "deploy/http-egress/")) and suffix != ".md"
+        ):
             plan["go"] = plan["codeql-go"] = True
         elif affected_tests._is_doc_or_data(path, repo):
             continue

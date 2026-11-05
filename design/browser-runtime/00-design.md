@@ -9,6 +9,16 @@ status: partly-built
 
 # Nora's browser
 
+## HTTP egress amendment (2026-11-05)
+
+**Accepted design; NOT IMPLEMENTED or deployed by this document.**
+[ADR 0035](../../docs/adr/0035-shared-smokescreen-http-egress.md) owns the
+shared `http-egress` service (Smokescreen), serving confined downloader traffic
+and the existing sbx proxy's sandbox upstream. It replaces the target's earlier
+“no extra proxy” constraint. Standard HTTP/CONNECT is the abstraction; VM scope,
+workspace and browser ownership stay independent. Acceptance covers DNS changes,
+redirects, bypass refusal and real browser/downloader compatibility before rollout.
+
 ## Current target — scoped anonymous browser (2026-11-02)
 
 **NOT BUILT.** Operator-directed scope amendment, tracked with the Pi/sandbox
@@ -50,8 +60,10 @@ Each new unit or admitted DM VM must apply and read back the existing
 DEC-289 public-web TCP allow plus private-range denies, scoped to that exact
 sandbox; the shared VM's policy does not transfer. Apply and verify every deny
 before enabling the wildcard allow, withholding it if any check is unavailable
-or fails. Preserve the accepted hostname-to-private-address limitation; this
-split does not introduce a filtering proxy or silently strengthen that claim.
+or fails. The VM split alone does not repair the accepted hostname-to-private-address
+limitation. The HTTP egress amendment above separately requires connection-time
+public destination enforcement; do not claim that protection until its complete
+chain passes acceptance and is deployed.
 
 ### Browser lifetime and operations
 
@@ -826,3 +838,39 @@ Two paths, both built eventually:
 | **B5** | tier 2 cache + tier 3 picker as chosen by B3 | second-run cost |
 | **B6** | portal stream view-only, then noVNC hand-off | access test |
 | **B7** | only if the owner-match rule holds (§4): OpenCLI into the VM as `browser`, behind the bridge; retire host social Chrome | a room's shell is refused by the daemon; R-86 still holds at three layers |
+
+## Shared HTTP egress implementation candidate — 2026-11-05
+
+The [gateway recipe and operations](../../deploy/http-egress/README.md) and
+[downloader boundary](../../docs/security/outbound-fetches.md) implement the
+source path selected by ADR 0035: a release-owned private Smokescreen service,
+fixed downloader relay and retained namespaces. Preview/media retain actual
+connection guards. This source candidate does not establish deployed behavior
+or sbx/browser acceptance. PR584 remains held; sandbox upstream configuration,
+daemon restart and host prerequisite installation are not performed. The
+operations document names remaining acceptance and rollback. DEC-326 records
+this source slice; DEC-289 remains the sandbox baseline until the separate sbx
+chain is validated and activated.
+
+**Acceptance correction (2026-11-05):** the original plain WS probe used a
+forward absolute GET, whereas RFC6455 section4.1 step3 recommends CONNECT even
+for `ws:80`. Its handshake/bytes were also incomplete. Forward Upgrade still
+has a concrete upstream limitation; the earlier timeout is preserved in the
+handoff receipt. The replacement acceptance fixture checks CONNECT80/443 with
+key/accept/version, masked messages and close frames. It measures an explicit
+proxy client, not sbx transparent routing or Chrome compatibility.
+
+Local coverage now includes owned private/mapped/CGNAT/link-local/native IPv6 ULA origin controls,
+malicious HLS/DASH/thumbnail references, an active HTTPS stream, a separately
+shortened one-second idle fixture, and owned gateway stop/restart with destination
+hit controls. Credit only the recorded rc0 final run. Docker memory/PID settings
+are exercised, not a saturation ceiling. See the gateway operations document and
+[PR594](https://github.com/mikeng-io/nora/pull/594)
+for exact-head results and its durable receipt and the concrete unapplied prerequisite patch.
+
+Correctness/Completeness of full adoption remain open: full-duration/load boundaries,
+real sbx explicit AND transparent route,
+Chrome authority/TLS/fingerprint, credential injection, scope/control isolation,
+PAC/DIRECT/loopback bypass, UDP/QUIC/WebRTC, target namespace/profile and installed
+artifact readback are unverified. PR584 remains held. No host installation,
+Stack/settings edit, daemon restart or rollout is authorized by local acceptance.
