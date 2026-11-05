@@ -1328,7 +1328,7 @@ def _replying_to_block(ctx: TagContext, display_name: str) -> str:
 
 
 def build_tag_message(ctx: TagContext, *, tagger_name: str, display_name: str) -> str:
-    """The tagging message, attributed.
+    """The message or fire-occasion body, attributed.
 
     `also_known_as` carries the other names the GROUP uses for this person
     (阿Miles, 米高, a handle) so Nora understands a reference to them in the
@@ -1339,15 +1339,8 @@ def build_tag_message(ctx: TagContext, *, tagger_name: str, display_name: str) -
     """
     tagger = ctx.tagger
     quoted = _replying_to_block(ctx, display_name)
-    # CLASS 1: what a person typed AT her, framed like every other block built
-    # from what people typed.
-    #
-    # **This is a prompt-content change, not an assembly one.** This is the
-    # message she was directly ASKED to answer, and hedging it could plausibly
-    # make her less responsive to a genuine request, so the participation and
-    # routing suites are what measure it. What she reads is a sentence saying
-    # this is what they asked of you and not an instruction about how you
-    # work, rather than the word «untrusted» over the request.
+    # Tag and fire turns share this block. Its contents do not establish a
+    # direct call; the occasion header says why the turn opened.
     attrs: tuple[tuple[str, str], ...] = (("from", tagger_name),)
     if tagger is not None and tagger.aliases:
         attrs += (("also_known_as", ", ".join(tagger.aliases)),)

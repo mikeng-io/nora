@@ -566,7 +566,23 @@ def test_nora_rows_are_attributed_to_her_display_name():
 def test_the_third_message_closes_the_prefill_as_the_assistant():
     msgs = build_prefill(_ctx(_rows("hi")), display_name="Nora", context_window=40)
     assert msgs[2]["role"] == "assistant"
-    assert "reply as myself" in msgs[2]["content"][0]["text"]
+    assert "as myself" in msgs[2]["content"][0]["text"]
+
+
+def test_an_offered_floor_has_no_shared_instruction_that_requires_a_reply():
+    from nora.domain.framing import ParticipationHeader
+
+    ctx = _ctx(_rows("hi"), body="")
+    msgs = build_prefill(
+        ctx, display_name="Nora", context_window=40,
+        header=ParticipationHeader().render(),
+    )
+    tag = build_tag_message(ctx, tagger_name="Miles", display_name="Nora")
+    assert "silence is a complete answer" in msgs[0]["content"][0]["text"]
+    assert "reply" not in msgs[2]["content"][0]["text"]
+    assert "Read it and answer it" not in tag
+    assert "if anything" in tag
+    assert "described by the header" in tag
 
 
 def test_tag_message_is_wrapped_and_escaped():
