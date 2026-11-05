@@ -1,41 +1,61 @@
-# Mini Nora showcase candidate
+# Mini Nora character study
 
-Public character asset for the authenticated portal's `/nora/showcase` page.
-This is a review candidate, not the accepted final character rig. The normal
-2D avatars remain unchanged. No private identities, runtime data or credentials
-are embedded. The loader uses this fixed same-origin path only.
+Public asset for the portal's existing `/nora/showcase` page. This is still a
+partial character candidate for issue #245. The approved 2D surfaces are unchanged.
 
-`character.glb`: 27,917,440 bytes, 307,377 triangles, 25 joints, embedded 1K PNG
-textures, `Walk` and `Run` clips. Rest nodes come from the existing static body
-rig. Geometry, UVs, normals, tangents, skin accessor bytes and original run
-animation data are preserved from the earlier PBR/hair candidate. The walk
-animation is appended by bone name. Textures are resized to 1K; base colour is
-preserved in content, rather than regenerated. No geometry repair is claimed.
+`character.glb`: 10,730,088 bytes, 316,622 rendered triangles, 55 unique joints,
+three facial morphs, embedded 1K PNG textures, original `Walk`/`Run` clips.
+Meshopt compression and mesh quantization require the decoder configured in
+`stage.ts`. The download remains opt-in; a portrait covers unavailable 3D.
 
-Supported: standing pose, walk/run playback, modest head turn and left arm lift.
-Run retains the earlier single-side-lock hair prototype. No eyelid, gaze,
-expression or finger controls exist. These require local surface separation,
-retopology and deformation work; adding named bones alone would not deliver them.
-The base colour can contain baked lighting and source faceting remains visible.
+## Implemented
 
-The deployable GLB is a regular Git binary, like the portal's existing shipped
-art, so the existing Docker/CI checkout delivers real bytes without an LFS pointer.
-The much larger editable Blender sources remain outside Git. Showreel's LFS
-rules remain scoped to its source media. Revisit model delivery with a measured
-mobile budget; the current 307K mesh is not certified for mobile performance.
+- Local reconstruction replaces the fused hand surfaces with separate digits,
+  closed palm surfaces, three weighted joints per digit, and thumb opposition.
+  Both hands support open/fist/point and individual curl sliders. Each new hand
+  has 8,082 triangles after local reduction. The intact cuffs hide the wrist joins.
+- Neutral keeps the original face. `Smile`, `Happy`, and `Puzzled` are local
+  mouth/cheek/brow morphs; their effect is deliberately restrained. They do not
+  supply eye gaze, eyelid closure, or an open mouth cavity.
+- Original body animation is retained. Walk adds a small loop-closed side-lock
+  rotation; Run retains the earlier hair follow-through. Head and arm controls remain.
+- PBR normal strength is reduced to 0.22 to soften the source's harsh normal detail.
+  The original image content remains; baked base-colour shading and fine hair
+  seams are not fully repaired.
 
-## Provenance and evidence
+The reconstruction was combined with the input GLB by preserving original body
+position, normal, tangent, UV and skin attribute bytes before compression. Only
+hand triangle references were removed; facial morphs are sparse additions.
+Final compression quantizes positions/UVs/weights to 16 bits and normals/tangents
+to 14 bits. Final accessor bytes are therefore not claimed identical to the source.
 
-Local delivery folder: `/Users/mike/Workplace/nora-artifacts/mini-nora-showcase-2026-11-06/`.
-It contains `REPORT.md`, editable `mini-nora-showcase.blend`, matching GLB,
-source-preservation hashes, packaging script, validator output, Blender reimport
-checks and matched studio renders. Earlier artifacts are immutable.
+## Unfinished and diagnostic work
 
-Earlier source task IDs are retained in the local delivery report.
-This run made no paid submission: balance remained 1,050 credits.
+Separate iris/sclera and deforming eyelid geometry was actually built and tested,
+including blink and four gaze directions. Its perimeter joins remain visibly
+wrong and alter the approved neutral. That reconstruction is retained outside
+Git and is excluded from this asset and its controls. The full character plan
+remains incomplete. Do not close issue #245 on this delivery.
 
-Focused validation: app typecheck/build, seven selected asset/locale tests,
-Khronos GLB validator (zero errors; one inherited non-root skinned-mesh warning),
-fresh Blender import and finite evaluated geometry at three phases per clip.
-Browser interaction, real mobile frame rate, continuous-motion acceptance and
-final operator visual acceptance remain unavailable. See issue #245.
+## Evidence
+
+Local folder:
+`/Users/mike/Workplace/nora-artifacts/mini-nora-character-completion-2026-11-06/`.
+`REPORT.md` covers acceptance and limitations. It includes editable Blender
+files, compressed/uncompressed GLBs, source hashes, scripts, 24 fps motion MP4s,
+decoded contact sheets, matched neutral images, reimport/control checks, validator
+reports and browser screenshots/timings. Historic sources are unchanged.
+
+Final compressed and decoded GLBs validate with zero errors. One inherited
+non-root skinned-mesh warning remains; the validator cannot itself decode Meshopt,
+so the decoded file and the real Three.js loader were also checked. Both body
+clips, three morphs and all ten digit controls survive decoding/reimport.
+
+Playwright using Chrome and this Mac's M3 Max GPU measured roughly 60 fps over
+five-second run samples at desktop and iPhone-size emulation, with zero draw calls
+while paused. This is not real-phone performance or thermal/load testing.
+Normal-speed videos were encoded at 24 fps and decoded frames inspected;
+continuous playback and final operator visual acceptance are not claimed.
+
+No Meshy generation was needed for the missing custom face/hand surfaces.
+New paid submissions: zero; balance read back at 1,050 credits. No deployment.

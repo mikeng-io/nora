@@ -17,12 +17,17 @@ describe("shipped Mini Nora asset", () => {
         expect(gltf.accessors[sampler.output].count).toBeGreaterThan(1);
       }
     }
-    expect(gltf.skins[0].joints).toHaveLength(25);
+    expect(gltf.skins.some((skin: { joints: number[] }) => skin.joints.length === 55)).toBe(true);
+    expect(gltf.meshes[0].extras.targetNames).toEqual(["Smile", "Happy", "Puzzled"]);
+    for (const side of ["Left", "Right"]) for (const finger of ["Thumb", "Index", "Middle", "Ring", "Pinky"]) for (let joint = 1; joint <= 3; joint++) {
+      expect(gltf.nodes.some((node: { name: string }) => node.name === `${side}${finger}${joint}`)).toBe(true);
+    }
+    expect(gltf.extensionsRequired).toContain("EXT_meshopt_compression");
+    expect(bytes.length).toBeLessThan(11_000_000);
     expect(gltf.nodes.some((n: {name: string}) => n.name === "HairTipFollow")).toBe(true);
   });
   it("keeps all buffers and images embedded, with declared PNG payloads", () => {
-    expect(gltf.buffers).toHaveLength(1);
-    expect(gltf.buffers[0].uri).toBeUndefined();
+    for (const buffer of gltf.buffers) expect(buffer.uri).toBeUndefined();
     for (const image of gltf.images) {
       expect(image.uri).toBeUndefined();
       expect(image.mimeType).toBe("image/png");

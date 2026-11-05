@@ -1,8 +1,13 @@
 import * as THREE from "three";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
+export type Expression = "Neutral" | "Smile" | "Happy" | "Puzzled";
+export type Hand = "Left" | "Right";
+export const fingers = ["Thumb", "Index", "Middle", "Ring", "Pinky"] as const;
+export type Finger = typeof fingers[number];
 export type Motion = "Stand" | "Walk" | "Run";
 export async function createStage(host: HTMLElement, onContextLost: () => void) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -35,6 +40,9 @@ export async function createStage(host: HTMLElement, onContextLost: () => void) 
   let mixer: THREE.AnimationMixer | undefined;
   let model: THREE.Group | undefined;
   let motion: Motion = "Stand", playing = false, head = 0, arm = 0;
+  let expression: Expression = "Neutral";
+  const curls = { Left: [0, 0, 0, 0, 0], Right: [0, 0, 0, 0, 0] };
+  const fingerAxes = new Map<string, { flex: THREE.Vector3; oppose: THREE.Vector3 }>();
   let disposed = false, visible = true, last = 0;
   const rest = new Map<THREE.Object3D, THREE.Quaternion>();
   const actions = new Map<string, THREE.AnimationAction>();
@@ -63,6 +71,28 @@ export async function createStage(host: HTMLElement, onContextLost: () => void) 
     rotate("RightArm", new THREE.Vector3(0, 0, 1), 1.15);
     rotate("Head", new THREE.Vector3(0, 1, 0), head);
   }
+  function characterPose() {
+    if (!model) return;
+    for (const side of ["Left", "Right"] as const) for (const [index, finger] of fingers.entries()) {
+      const amount = curls[side][index] * 1.15, sign = side === "Left" ? 1 : -1;
+      for (let joint = 1; joint <= 3; joint++) {
+        const name = `${side}${finger}${joint}`, bone = model.getObjectByName(name), axes = fingerAxes.get(name);
+        if (!bone || !axes) continue;
+        bone.quaternion.copy(rest.get(bone)!);
+        if (finger === "Thumb" && joint === 1) bone.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(axes.oppose, 1.7 * curls[side][index] * sign));
+        const factor = finger === "Thumb" ? (joint === 1 ? 0.45 : 0.5) : (joint === 1 ? 0.75 : 1);
+        bone.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(axes.flex, amount * factor * sign));
+      }
+    }
+    model.traverse(o => {
+      if (!(o instanceof THREE.Mesh) || !o.morphTargetDictionary || !o.morphTargetInfluences) return;
+      for (const name of ["Smile", "Happy", "Puzzled"]) {
+        const index = o.morphTargetDictionary[name];
+        if (index !== undefined) o.morphTargetInfluences[index] = name === expression ? 1 : 0;
+      }
+    });
+    model.updateMatrixWorld(true);
+  }
   function render() { if (!disposed) renderer.render(scene, camera); }
   const resize = new ResizeObserver(() => {
     const { width, height } = host.getBoundingClientRect();
@@ -87,18 +117,28 @@ export async function createStage(host: HTMLElement, onContextLost: () => void) 
   renderer.setAnimationLoop((time) => {
     const delta = last ? Math.min((time - last) / 1000, 0.05) : 0; last = time;
     if (!visible || !playing) return;
-    mixer?.update(delta); render();
+    mixer?.update(delta); characterPose(); render();
   });
-  const ready = new GLTFLoader().loadAsync("/models/mini-nora/character.glb").then((gltf) => {
+  const ready = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync("/models/mini-nora/character.glb").then((gltf) => {
     if (disposed) { disposeModel(gltf.scene); return; }
     model = gltf.scene;
     const bounds = new THREE.Box3().setFromObject(model);
     const center = bounds.getCenter(new THREE.Vector3());
     model.position.set(-center.x, -bounds.min.y, -center.z);
     model.traverse((o) => { if (o instanceof THREE.Mesh) o.castShadow = true; if (o instanceof THREE.Bone) rest.set(o, o.quaternion.clone()); });
+    model.updateMatrixWorld(true);
+    for (const side of ["Left", "Right"]) for (const finger of fingers) for (let joint = 1; joint <= 3; joint++) {
+      const name = `${side}${finger}${joint}`, bone = model.getObjectByName(name);
+      if (!bone) continue;
+      const inverse = bone.getWorldQuaternion(new THREE.Quaternion()).invert();
+      fingerAxes.set(name, {
+        flex: new THREE.Vector3(finger === "Thumb" ? 0.707 : 0, 0, finger === "Thumb" ? -0.707 : -1).applyQuaternion(inverse).normalize(),
+        oppose: new THREE.Vector3(0, 1, 0).applyQuaternion(inverse).normalize(),
+      });
+    }
     scene.add(model); mixer = new THREE.AnimationMixer(model);
     for (const clip of gltf.animations) actions.set(clip.name, mixer.clipAction(clip));
-    pose(); render();
+    pose(); characterPose(); render();
   });
   return {
     ready, dispose,
@@ -109,11 +149,13 @@ export async function createStage(host: HTMLElement, onContextLost: () => void) 
       motion = value; mixer?.stopAllAction();
       for (const [bone, q] of rest) bone.quaternion.copy(q);
       if (value === "Stand") pose(); else { actions.get(value)?.reset().play(); mixer?.update(0); }
-      render();
+      characterPose(); render();
     },
+    setExpression(value: Expression) { expression = value; characterPose(); render(); },
+    setFinger(side: Hand, finger: Finger, value: number) { curls[side][fingers.indexOf(finger)] = THREE.MathUtils.clamp(value, 0, 1); characterPose(); render(); },
     setPlaying(value: boolean) { playing = value; last = 0; },
-    setHead(value: number) { head = value; pose(); render(); },
-    setArm(value: number) { arm = value; pose(); render(); },
+    setHead(value: number) { head = value; pose(); characterPose(); render(); },
+    setArm(value: number) { arm = value; pose(); characterPose(); render(); },
     setLight(value: number) { key.intensity = value; render(); },
   };
 }

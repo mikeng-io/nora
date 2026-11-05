@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { PageFrame } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { art } from "@/components/nora/art";
-import type { createStage, Motion } from "./stage";
+import type { createStage, Motion, Expression, Hand, Finger } from "./stage";
 
 type Stage = Awaited<ReturnType<typeof createStage>>;
 export function MiniNoraShowcase() {
@@ -15,6 +15,18 @@ export function MiniNoraShowcase() {
   const [active, setActive] = useState(false), [ready, setReady] = useState(false), [failed, setFailed] = useState(false);
   const [motion, setMotion] = useState<Motion>("Stand"), [playing, setPlaying] = useState(false);
   const [head, setHead] = useState(0), [arm, setArm] = useState(0);
+  const [expression, setExpression] = useState<Expression>("Neutral");
+  const fingerNames = ["Thumb", "Index", "Middle", "Ring", "Pinky"] as const;
+  const [hands, setHands] = useState({ Left: [0, 0, 0, 0, 0], Right: [0, 0, 0, 0, 0] });
+  function curl(side: Hand, finger: Finger, value: number) {
+    setHands(current => ({ ...current, [side]: current[side].map((v, i) => fingerNames[i] === finger ? value : v) }));
+    stage.current?.setFinger(side, finger, value);
+  }
+  function handPose(side: Hand, pose: "Open" | "Fist" | "Point") {
+    const values = fingerNames.map(finger => pose === "Open" || (pose === "Point" && finger === "Index") ? 0 : 1);
+    setHands(current => ({ ...current, [side]: values }));
+    fingerNames.forEach((finger, index) => stage.current?.setFinger(side, finger, values[index]));
+  }
   useEffect(() => {
     if (!active || !host.current) return;
     let cancelled = false;
@@ -50,6 +62,15 @@ export function MiniNoraShowcase() {
           <Button variant="outline" disabled={motion === "Stand"} onClick={() => { setPlaying(!playing); stage.current?.setPlaying(!playing); }}>{playing ? t("pause") : t("play")}</Button>
           <label className="block text-sm">{t("head")}<input className="mt-3 block w-full accent-denim" type="range" min="-0.35" max="0.35" step="0.01" value={head} disabled={motion !== "Stand"} onChange={e => { setHead(+e.target.value); stage.current?.setHead(+e.target.value); }} /></label>
           <label className="block text-sm">{t("arm")}<input className="mt-3 block w-full accent-denim" type="range" min="0" max="1" step="0.01" value={arm} disabled={motion !== "Stand"} onChange={e => { setArm(+e.target.value); stage.current?.setArm(+e.target.value); }} /></label>
+          <label className="block text-sm">{t("expression")}<select aria-label={t("expression")} className="mt-2 block h-11 w-full rounded-control border border-seam bg-surface px-3" value={expression} onChange={e => { const value = e.target.value as Expression; setExpression(value); stage.current?.setExpression(value); }}>{(["Neutral", "Smile", "Happy", "Puzzled"] as const).map(value => <option key={value} value={value}>{t(value)}</option>)}</select></label>
+          {(["Left", "Right"] as const).map(side => <details key={side} className="border-t border-hairline pt-3">
+            <summary className="min-h-11 cursor-pointer text-sm text-ink">{t(`${side}Hand`)}</summary>
+            <fieldset className="space-y-3">
+              <legend className="sr-only">{t(`${side}Hand`)}</legend>
+              <div className="flex flex-wrap gap-2">{(["Open", "Fist", "Point"] as const).map(pose => <Button key={pose} variant="outline" onClick={() => handPose(side, pose)}>{t(pose)}</Button>)}</div>
+              {fingerNames.map((finger, index) => <label key={finger} className="block text-sm">{t(finger)}<input className="mt-3 block w-full accent-denim" type="range" min="0" max="1" step="0.01" value={hands[side][index]} onChange={e => curl(side, finger, +e.target.value)} /></label>)}
+            </fieldset>
+          </details>)}
           <label className="block text-sm">{t("light")}<input className="mt-3 block w-full accent-denim" type="range" min="0.5" max="5" step="0.1" defaultValue="3" onChange={e => stage.current?.setLight(+e.target.value)} /></label>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => stage.current?.orbit(-0.3)}>{t("left")}</Button>
