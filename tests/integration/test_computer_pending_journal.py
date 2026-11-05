@@ -10,6 +10,8 @@ body — and the deferred path delivers the original outcome once instead.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import uuid
 from datetime import UTC, datetime
@@ -213,3 +215,80 @@ async def test_the_result_is_journaled_before_the_sql_finish_wait(tmp_path):
                                   clock=lambda: NOW, task_id=task.id)
     row = await tasks.get(task.id)
     assert row.status == "done" and row.result == {"status": "ok", "v": 9}
+
+
+async def test_a_stale_consumed_claim_cannot_suppress_the_deferred_handoff(tmp_path):
+    """R2-B: SQL `mark_delivered` fails after the outcome journal lands —
+    caller gets `unavailable` + task id, and the journal on disk must hold
+    `consumed=False` (never a pre-confirmation `True`). Reconstruction then
+    leaves the row deferred-eligible: `undelivered` finds it and the
+    deferred path delivers the ORIGINAL result once."""
+    directory = tmp_path / "pending"
+    executors, tasks, admission = _rig(directory)
+    task = _task()
+    await tasks.enqueue(task)
+    await tasks.try_claim_head(task.id, now=NOW)
+    tasks.fail_delivered = True
+
+    reply = await admission.run_segment(task, _work({"status": "ok", "v": 11}))
+    assert reply["status"] == "unavailable" and reply["task"] == str(task.id)
+    assert "v" not in reply
+    # The journal must NOT carry a consumed claim the SQL authority never
+    # confirmed — a stale True on restart would stamp a never-delivered
+    # result and suppress its one handoff.
+    snapshot = json.loads(
+        (directory / "pending-results.json").read_text())
+    assert snapshot[str(task.id)]["consumed"] is False
+    pending = executors.pending_result(task.id)
+    assert pending is not None and not pending.consumed
+
+    # Restart: SQL recovers, pending converges — the row stays
+    # deferred-eligible (delivered_at never stamped) and the deferred path
+    # delivers the original result once.
+    tasks.fail_delivered = False
+    os.close(executors._lock_fd)  # simulate process death
+    second = SegmentRegistry(pending_dir=directory)
+    recovered = second.pending_result(task.id)
+    assert recovered is not None and not recovered.consumed
+    assert await _persist_pending(
+        executors=second, tasks=tasks, clock=lambda: NOW, task_id=task.id)
+    row = await tasks.get(task.id)
+    assert row.status == "done" and row.delivered_at is None
+    assert [r.id for r in await tasks.undelivered(limit=10)] == [task.id]
+    os.close(second._lock_fd)
+
+
+async def test_the_shared_finish_path_journals_before_its_waits(tmp_path):
+    """R2-C: the shared `_finish_guarded` (used by the deferred `_execute`
+    path and every cancel/exception exit) journals the ORIGINAL outcome
+    before the quiet-check wait. A fresh owner constructed INSIDE that wait
+    sees the real payload, not an empty registry that would close the row
+    as a generic interruption."""
+    directory = tmp_path / "pending"
+    executors, tasks, admission = _rig(directory)
+    task = _task()
+    await tasks.enqueue(task)
+    await tasks.try_claim_head(task.id, now=NOW)
+
+    quiet = asyncio.Event()
+
+    async def gate(scope: str) -> str:
+        await quiet.wait()
+        return "busy"  # never proves quiet: the row must stay running
+
+    holding = asyncio.ensure_future(admission._finish_guarded(
+        task, "done", {"status": "ok", "v": 13, "stdout": "kept"},
+        uncertain=True))
+    await asyncio.sleep(0.05)  # inside the quiet wait
+
+    os.close(executors._lock_fd)  # simulate process death mid-wait
+    second = SegmentRegistry(pending_dir=directory)
+    pending = second.pending_result(task.id)
+    assert pending is not None, (
+        "restart inside the finish wait must recover the original outcome")
+    assert pending.result == {"status": "ok", "v": 13, "stdout": "kept"}
+    assert not pending.consumed
+    quiet.set()
+    assert await holding is False  # quiet never proved: row stays running
+    assert (await tasks.get(task.id)).status == "running"
+    os.close(second._lock_fd)

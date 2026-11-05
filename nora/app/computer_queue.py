@@ -356,6 +356,16 @@ class SegmentRegistry:
         self._pending[task_id] = replace(old, consumed=False)
         return self._spill()
 
+    def mark_consumed_ram(self, task_id: UUID) -> None:
+        """RAM-only `consumed`: the durable journal keeps `False` until the
+        SQL authority confirms the disposition (`delivered_at`). A `True`
+        that never reached a confirmed authority must not exist on disk —
+        a restart reads it as "the caller got the result" and suppresses
+        the deferred handoff it never received."""
+        pending = self._pending.get(task_id)
+        if pending is not None:
+            self._pending[task_id] = replace(pending, consumed=True)
+
     def pending_result(self, task_id: UUID) -> _PendingResult | None:
         return self._pending.get(task_id)
 
@@ -497,18 +507,12 @@ class ComputerAdmission:
                                            uncertain=True)
                 raise
             else:
-                # Journal the returned outcome BEFORE the quiet/SQL waits:
-                # a restart inside `_finish_guarded` must still recover the
-                # ORIGINAL result, not an orphaned `running` row. The entry
-                # is NOT cleared here: SQL is the result authority from a
-                # successful finish, but `consumed`/`delivered` disposition
-                # is only durably settled by `delivered()` (live handoff) or
-                # the deferred path — clearing now would reopen the
-                # finish-to-consumption window.
-                if not self.executors.retain(task.id, row_status(reply), reply):
-                    log.error("computer task %s result journal failed before "
-                              "the finish wait; restart recovers memory "
-                              "only", task.id)
+                # `_finish_guarded` journals the returned outcome before its
+                # quiet/SQL waits — the shared path every executor and the
+                # cancellation/exception exits pass through — and the entry
+                # is NOT cleared after a successful finish: `consumed`/
+                # `delivered` disposition is only durably settled by
+                # `delivered()` (live handoff) or the deferred path.
                 await self._finish_guarded(
                     task, row_status(reply), reply,
                     uncertain=bool(reply.get("uncertain")))
@@ -647,13 +651,21 @@ class ComputerAdmission:
             return True  # nothing owed: no row, no disposition to settle
         if row.status not in TERMINAL:
             return False  # not durable evidence — a live row's mark is not
-        self.executors.retain(task_id, row.status, row.result, consumed=True)
+        # The journal records the OUTCOME (`consumed=False`); `consumed` is a
+        # RAM marker for this process's `_persist_pending` read only. Writing
+        # `consumed=True` to disk before SQL confirms `delivered_at` would
+        # leave a restart a stale claim that stamps a never-delivered result
+        # — the failed handoff is exactly what must stay recoverable.
+        self.executors.retain(task_id, row.status, row.result)
+        self.executors.mark_consumed_ram(task_id)
         persisted = await _persist_pending(
             executors=self.executors, tasks=self._tasks,
             clock=self._clock, task_id=task_id)
-        if not persisted and not self.executors.unmark_consumed(task_id):
-            log.error("computer task %s consumed marker may be stale on "
-                      "disk; suppressed delivery is the residual", task_id)
+        if not persisted:
+            self.executors.unmark_consumed(task_id)
+            log.error("computer task %s delivery stamp could not be "
+                      "committed; the original result stays "
+                      "deferred-eligible", task_id)
         return persisted
 
     async def get(self, task_id: UUID) -> ComputerTask | None:
@@ -686,16 +698,23 @@ async def _finish_guarded(
     replayed). A certain exit — an answered result or refusal — finishes
     straight away; a finish the store refuses is retained the same way,
     so the durable row is written before delivery rather than lost."""
+    # The ORIGINAL outcome is journaled before ANY wait — quiet-check or
+    # SQL write — because a restart inside either would otherwise lose it
+    # and a fresh owner would close the row as a generic interruption.
+    # `consumed` stays False until a durable disposition exists; a failed
+    # checkpoint is logged, never faked.
+    if not executors.retain(task.id, status, cut_result(dict(reply))):
+        log.error("computer task %s outcome retained in memory only; the "
+                  "durable journal did not take it", task.id)
     persisted = False
     if uncertain and not await _guest_quiet(reconcile, task.scope,
                                             seconds=DRAIN_SECONDS):
         pass
     else:
         persisted = await finish(task.id, status, reply)
-    if not persisted and not executors.retain(
-            task.id, status, cut_result(dict(reply))):
-        log.error("computer task %s terminal outcome retained in memory "
-                  "only; the durable journal did not take it", task.id)
+    if not persisted:
+        log.error("computer task %s terminal row did not land; the retained "
+                  "outcome stays journaled for recovery", task.id)
     return persisted
 
 

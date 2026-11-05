@@ -13,6 +13,8 @@ file that was never made answers `nothing_found`, never a guessed success.
 
 from __future__ import annotations
 
+import asyncio
+import uuid
 from datetime import UTC, datetime
 
 import pytest
@@ -25,9 +27,10 @@ from nora.app.computer_queue import ComputerAdmission
 from nora.domain.computer import (
     ComputerToolSettings,
     computer_dm_scope,
-        computer_unit_scope,
+    computer_unit_scope,
 )
 from nora.domain.computer_leases import ComputerLeases
+from nora.domain.computer_tasks import ComputerTask
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import (
@@ -176,3 +179,42 @@ async def test_a_dm_binds_the_canonical_scope_not_the_rooms_unit(persons):
     assert write["status"] == "ok"
     assert computer_dm_scope("dm-anchor-1") in rig.runtime.files_by_scope
     assert computer_unit_scope(UNIT) not in rig.runtime.files_by_scope
+
+
+async def test_the_wait_window_caller_never_hands_out_an_uncommitted_result(persons):
+    """R2-A: a head-holding sibling puts the call in submit's wait window;
+    the row turns terminal there and the wrapper may hand out the result
+    only when the durable delivery stamp commits. `mark_delivered` refusing
+    means the caller gets `unavailable` + task identity — the ORIGINAL
+    outcome stays deferred-eligible for exactly one deferred delivery,
+    never both a live body and a deferred job."""
+    rig = _Rig()
+    specs = {s.name: s for s in rig.registry.specs(
+        **rig.surface_kwargs(persons, _room(persons)))}
+    scope = computer_unit_scope(UNIT)
+    holder = ComputerTask(
+        id=uuid.uuid4(), scope=scope, kind="native", status="running",
+        payload={}, origin={}, created_at=NOW, updated_at=NOW)
+    await rig.tasks.enqueue(holder)
+
+    async def refusing(task_id, *, now):
+        raise OSError("computer_task_store mark_delivered offline")
+
+    call = asyncio.ensure_future(specs["computer_write"].call(
+        path="report.csv", content="a,b\n1,2\n"))
+    await asyncio.sleep(0.05)  # submit enqueued, claim refused, polling
+    row = next(r for r in rig.tasks.rows.values() if r.id != holder.id)
+    # The runner's path: holder finishes, the claim lands, the row runs and
+    # turns terminal INSIDE the caller's wait window.
+    await rig.tasks.finish(holder.id, status="done", result={}, now=NOW)
+    assert await rig.tasks.try_claim_head(row.id, now=NOW) is not None
+    rig.tasks.mark_delivered = refusing  # type: ignore[method-assign]
+    await rig.tasks.finish(row.id, status="done",
+                           result={"status": "ok", "path": "report.csv"},
+                           now=NOW)
+    reply = await call
+    assert reply["status"] == "unavailable" and reply["task"] == str(row.id)
+    assert reply.get("path") is None  # the result body did NOT go out
+    # The original row stays deferred-eligible for its ONE delivery.
+    assert row.id in [r.id for r in await rig.tasks.undelivered(limit=10)]
+

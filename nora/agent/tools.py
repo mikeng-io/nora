@@ -16207,12 +16207,27 @@ Args:
                     # here marks the row delivered, so no deferred delivery
                     # repeats it to the room.
                     row = submitted.result
+                    if not await computer_admission.delivered(row.id):
+                        # The durable delivery stamp did not land: handing
+                        # out the result AND leaving the row deferred-
+                        # eligible would be the duplicate handoff the
+                        # contract forbids — return task identity, keep the
+                        # original outcome for its one deferred delivery.
+                        if dirty:
+                            _computer_dirty()
+                        return {
+                            "status": "unavailable",
+                            "task": str(row.id),
+                            "note": "That computer task finished, but its "
+                                    "answer could not be committed for "
+                                    "delivery — it may still arrive on its "
+                                    "own.",
+                        }
                     reply = dict(row.result or {})
                     reply.setdefault("status", row.status)
                     reply.setdefault(
                         "note", "That computer task ended before it could "
                                 "answer; its record says why.")
-                    await computer_admission.delivered(row.id)
                     if dirty:
                         _computer_dirty()
                     return reply
