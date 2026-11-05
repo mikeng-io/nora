@@ -28,7 +28,8 @@ relay on a private Unix socket and puts yt-dlp/ffmpeg in fresh Linux user,
 network and PID namespaces. Only loopback exists there; its local relay reaches
 the Unix socket. The outer relay connects only to `http-egress:4750`. Downloader children receive
 only named runtime environment variables (path, home, temp, locale and CA paths),
-plus the fixed proxy settings; app credentials are not inherited. Independent
+plus the fixed proxy settings. The whitelist is applied before starting unshare,
+so namespace-init processes also cannot inherit app credentials through procfs. Independent
 copy pumps preserve bidirectional traffic under backpressure. The relay does not
 interpret HTTP, resolve destinations or accept a client-selected upstream.
 All descendants inherit the boundary, including clients ignoring proxy settings.

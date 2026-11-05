@@ -62,6 +62,14 @@ class RelayServer(socketserver.ThreadingTCPServer):
     daemon_threads = True
 
 
+def runtime_environment() -> dict[str, str]:
+    return {
+        key: os.environ[key]
+        for key in ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR")
+        if key in os.environ
+    }
+
+
 def inside(proxy_path: str, command: list[str]) -> int:
     # Only loopback exists in this fresh network namespace.
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as control:
@@ -70,11 +78,7 @@ def inside(proxy_path: str, command: list[str]) -> int:
         server.proxy_path = proxy_path
         threading.Thread(target=server.serve_forever, daemon=True).start()
         proxy = f"http://127.0.0.1:{server.server_address[1]}"
-        env = {
-            key: os.environ[key]
-            for key in ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR")
-            if key in os.environ
-        }
+        env = runtime_environment()
         for key in (
             "http_proxy",
             "https_proxy",
@@ -116,6 +120,7 @@ def run(command: list[str]) -> int:
                     proxy_path,
                     *command,
                 ],
+                env=runtime_environment(),
                 start_new_session=True,
             )
 

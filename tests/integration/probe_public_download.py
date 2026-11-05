@@ -41,12 +41,22 @@ class PublicDownloadBoundary(unittest.TestCase):
         for name in credentials:
             os.environ[name] = "synthetic-fixture-secret"
         try:
-            code = (
-                "import os; "
-                f"assert not set({credentials!r}).intersection(os.environ); "
-                "assert os.environ['http_proxy'].startswith('http://127.0.0.1:'); "
-                "assert os.environ.get('PATH')"
-            )
+            code = f"""
+import os
+from pathlib import Path
+credentials = {credentials!r}
+assert not set(credentials).intersection(os.environ)
+assert os.environ['http_proxy'].startswith('http://127.0.0.1:')
+assert os.environ.get('PATH')
+# The inherited procfs reports host PIDs even inside the child PID namespace.
+parent = next(line.split()[1] for line in Path('/proc/self/status').read_text().splitlines()
+              if line.startswith('PPid:'))
+parent_environment = (Path('/proc') / parent / 'environ').read_bytes()
+assert parent_environment, 'positive parent-environ read control missing'
+assert not any((name + '=').encode() in parent_environment for name in credentials), (
+    'namespace parent inherited app credentials'
+)
+"""
             self.assertEqual(proxy.run([sys.executable, "-c", code]), 0)
         finally:
             for name, value in previous.items():
