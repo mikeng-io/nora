@@ -1,5 +1,15 @@
 # Changelog
 
+## [7.15.6](https://github.com/mikeng-io/nora/compare/v7.15.5...v7.15.6) (2026-11-05)
+
+
+### Bug Fixes
+
+* **egress:** route confined downloads through shared Smokescreen ([3048293](https://github.com/mikeng-io/nora/commit/3048293d01b91071ee1ebc8a40f15aadd96e70a6))
+* **egress:** suppress dependency request diagnostics ([8be57d9](https://github.com/mikeng-io/nora/commit/8be57d9e0c1a3846b9001860f754dc5d21b16a86))
+* **security:** isolate downloader credentials and cover the egress module in CI ([2213594](https://github.com/mikeng-io/nora/commit/2213594065ea2d04a48b6045f26cf97783de144f))
+* **security:** strip credentials before starting the download namespace ([7fb9982](https://github.com/mikeng-io/nora/commit/7fb9982df3eede92bc9b0c54011d9f91dbba0812))
+
 ## [7.15.5](https://github.com/mikeng-io/nora/compare/v7.15.4...v7.15.5) (2026-11-05)
 
 
