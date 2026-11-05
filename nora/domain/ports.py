@@ -1983,7 +1983,9 @@ class BrowserRunner(Protocol):
 
     async def browse(self, *, scope: str, objective: str,
                      start_url: str | None = None,
-                     task_id: UUID | None = None) -> BrowseOutcome: ...
+                     task_id: UUID | None = None,
+                     record: Callable[..., Awaitable[None]] | None = None,
+                     ) -> BrowseOutcome: ...
 
 
 @runtime_checkable

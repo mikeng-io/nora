@@ -780,10 +780,10 @@ def test_a_scoped_computerd_disables_its_own_idle_reap(tmp_path):
     one owner), while an unscoped VM keeps its reaper."""
     computerd = load_computerd()
     scoped = computerd.create_app(
-        root=tmp_path / "s", token="t", isolate_scopes=False,
+        root=tmp_path / "s", token=TOKEN, isolate_scopes=False,
         tmux_root=tmp_path / "s-tmux", bound_scope=SCOPE, boot_id="b1")
     shared = computerd.create_app(
-        root=tmp_path / "h", token="t", isolate_scopes=False,
+        root=tmp_path / "h", token=TOKEN, isolate_scopes=False,
         tmux_root=tmp_path / "h-tmux")
     assert scoped["browsers"].idle_reap is False
     assert shared["browsers"].idle_reap is True

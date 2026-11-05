@@ -257,7 +257,8 @@ class ComputerContextReader:
                         if key not in owners:
                             try:
                                 owners[key] = await self._tasks.get(t.task_id)
-                            except Exception:
+                            # An unreadable owner is unknown, not absent.
+                            except Exception:  # noqa: BLE001
                                 owners[key] = None
 
                 def _line(t: Any) -> TabLine:

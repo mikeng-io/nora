@@ -407,27 +407,28 @@ class ComputerAdmission:
             # No executor on this side: the GUEST's own quiet is the only
             # proof its command stopped. Busy or unreadable stays `running`
             # and the scope stays excluded.
-            if await _guest_quiet(self._reconcile, row.scope, seconds=DRAIN_SECONDS):
-                if not await _persist_pending(
+            if await _guest_quiet(self._reconcile, row.scope, seconds=DRAIN_SECONDS) \
+                    and not await _persist_pending(
                         executors=self.executors, tasks=self._tasks,
                         clock=self._clock, task_id=task_id):
-                    await self._tasks.mark_interrupted(
-                        task_id, now=self._clock(), reason="the owner was lost")
-                    await self._note(row, "interrupted")
+                await self._tasks.mark_interrupted(
+                    task_id, now=self._clock(), reason="the owner was lost")
+                await self._note(row, "interrupted")
             return await self._tasks.get(task_id)
         executor.cancel()
         with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
             await asyncio.wait_for(asyncio.shield(executor), DRAIN_SECONDS)
         fresh = await self._tasks.get(task_id)
-        if fresh is not None and fresh.status == RUNNING:
-            if await _guest_quiet(self._reconcile, fresh.scope, seconds=DRAIN_SECONDS):
-                if not await _persist_pending(
-                        executors=self.executors, tasks=self._tasks,
-                        clock=self._clock, task_id=task_id):
-                    await self._tasks.mark_interrupted(
-                        task_id, now=self._clock(),
-                        reason="the cancellation could not be confirmed")
-                    await self._note(fresh, "interrupted")
+        if fresh is not None and fresh.status == RUNNING \
+                and await _guest_quiet(self._reconcile, fresh.scope,
+                                       seconds=DRAIN_SECONDS) \
+                and not await _persist_pending(
+                    executors=self.executors, tasks=self._tasks,
+                    clock=self._clock, task_id=task_id):
+            await self._tasks.mark_interrupted(
+                task_id, now=self._clock(),
+                reason="the cancellation could not be confirmed")
+            await self._note(fresh, "interrupted")
             fresh = await self._tasks.get(task_id)
         return fresh
 
@@ -700,14 +701,13 @@ class ComputerQueueRunner:
                 if self._reconcile_scope is not None:
                     with contextlib.suppress(Exception):
                         verdict = await self._reconcile_scope(scope)
-                if verdict == "quiet":
-                    if not await _persist_pending(
-                            executors=self._executors, tasks=self._tasks,
-                            clock=self._clock, task_id=running_row.id):
-                        await self._tasks.mark_interrupted(
-                            running_row.id, now=self._clock(),
-                            reason="the owner was lost; the VM is quiet")
-                        await self._note(running_row, "interrupted")
+                if verdict == "quiet" and not await _persist_pending(
+                        executors=self._executors, tasks=self._tasks,
+                        clock=self._clock, task_id=running_row.id):
+                    await self._tasks.mark_interrupted(
+                        running_row.id, now=self._clock(),
+                        reason="the owner was lost; the VM is quiet")
+                    await self._note(running_row, "interrupted")
                 # busy/unknown: keep the row running and the scope blocked;
                 # the orphan bound is the outer limit.
             return 0
