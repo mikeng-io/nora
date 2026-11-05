@@ -93,3 +93,13 @@ the Record and Rollup, so an authored seed account is not an option.
 >
 > **Built 2026-10-13:** `seed` is a bucket in `classification.yaml`; the identity
 > seed is marked there ([context-plan 12](../context-plan/12-the-sort-ruled.md) §1).
+
+
+## Later amendment — 2026-11-04 (#575)
+
+Fixed response length/grouping and passive-only participation wording are
+superseded by the integrated circle doctrine revision. Authored identity/register,
+classified law, audience isolation and tool-deferral obligations remain. See
+[the audit amendment](../self-growth/31-doctrine-audit.md#later-amendment--circle-doctrine-2026-11-04-575)
+for case coverage and the limits of source versus model acceptance. Earlier
+measurements here remain historical.

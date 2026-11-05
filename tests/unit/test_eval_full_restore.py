@@ -405,15 +405,17 @@ def test_the_criterion_is_registered_and_selectable() -> None:
     assert "could not check" in text and "scores HIGH" in text and "scores LOW" in text
 
 
-def test_the_judge_source_carries_tool_results_for_a_recall_case() -> None:
+@pytest.mark.parametrize("criterion", [CRITERION, "social_suitability"])
+def test_the_judge_source_carries_tool_results_for_a_recall_case(criterion) -> None:
     results = (("media_fetch", '{"status": "unavailable"}'), ("send_reply", "sent"))
-    with_results = backbone._judge_source("<m>hi</m>", results, (CRITERION,))
+    with_results = backbone._judge_source("<m>hi</m>", results, (criterion,))
     assert with_results is not None and "media_fetch: " in with_results
     assert "send_reply" not in with_results
     assert backbone._judge_source("<m>hi</m>", results, ("presence",)) == "<m>hi</m>"
 
 
-async def test_a_recall_judge_is_shown_every_block_her_turn_was_shown(judged) -> None:
+@pytest.mark.parametrize("criterion", [CRITERION, "social_suitability"])
+async def test_a_recall_judge_is_shown_every_block_her_turn_was_shown(judged, criterion) -> None:
     """A note open in the `<notes>` block she was shown is evidence: a judge
     sourced from only the window and her tool results calls «the trip on the 17th
     is still there» fabricated (`j4_where_have_we_been_together_lately`).
@@ -421,7 +423,7 @@ async def test_a_recall_judge_is_shown_every_block_her_turn_was_shown(judged) ->
     `shown_blocks` argument) drops the note from the source and this fails."""
     judge = _Judge()
     await backbone._drive(
-        _judged_case("recall", [CRITERION], evidence={"messages": [1]}),
+        _judged_case("recall", [criterion], evidence={"messages": [1]}),
         _spec(full_restore=True, judge=judge),
     )
     [graded] = judge.graded
@@ -465,8 +467,9 @@ async def test_a_presence_case_is_judged_on_exactly_the_window(judged) -> None:
     (None, "", "no context blocks were captured"),
     (_NOTE_BLOCK, "notes,events,group_transcript", "['events']"),
 ])
+@pytest.mark.parametrize("criterion", [CRITERION, "social_suitability"])
 async def test_a_recall_draw_whose_blocks_are_not_read_back_is_an_error(
-    judged, monkeypatch, blocks, rendered, fragment,
+    judged, monkeypatch, blocks, rendered, fragment, criterion,
 ) -> None:
     """Fail closed: no blocks captured off her call, or fewer than the prefill
     says it rendered, is an ERROR draw, and the judge is never called."""
@@ -484,7 +487,7 @@ async def test_a_recall_draw_whose_blocks_are_not_read_back_is_an_error(
     )
     judge = _Judge()
     result = await backbone._drive(
-        _judged_case("recall", [CRITERION], evidence={"messages": [1]}),
+        _judged_case("recall", [criterion], evidence={"messages": [1]}),
         _spec(full_restore=True, judge=judge),
     )
     assert judge.graded == [], "a recall draw graded blind"
@@ -617,3 +620,449 @@ async def test_tool_routing_uses_the_full_record_restore(corpus, seams, monkeypa
     assert seams["sandbox_as_of"] == [(_SOURCE, _NOW, "the_blank")]
     assert seams["sandbox_from_snapshot"] == []
     assert seams["restored_room"] == [{"source_url":_SOURCE,"before_ms":_SHOT["before_ms"]}]
+
+
+@pytest.mark.parametrize("latest", [False, True])
+@pytest.mark.parametrize("status", ["ok", "held_for_review", "unavailable", "malformed"])
+async def test_reaction_receipts_reach_suitability_without_phantom_text(
+    judged, monkeypatch, latest, status,
+) -> None:
+    """Real SDK tool spans: confirmed reaction is judged; held/unknown is not speech."""
+    import json
+
+    from strands.telemetry.tracer import get_tracer
+    from strands_evals.types.evaluation import EvaluationData
+
+    from evals.backbone import NORA_REACTIONS, NORA_SAID, AbsenceGrader, MeetsGrader, state_of
+
+    async def drive(_subject, _case, *, now_ms):
+        _render_her_turn()
+        tracer = get_tracer()
+        monkeypatch.setattr(tracer, "use_latest_genai_conventions", latest)
+        tool = {"name": "reaction_send", "toolUseId": "reaction-1",
+                "input": {"emoji": "😂", "reply_to": 1}}
+        span = tracer.start_tool_call_span(tool)
+        text = "bad-json" if status == "malformed" else json.dumps({"status": status})
+        tracer.end_tool_call_span(span, {"toolUseId": "reaction-1", "status": "success",
+                                          "content": [{"text": text}]})
+        return Outcome(admitted=False)
+
+    monkeypatch.setitem(ENTRY_POINTS, "tag", EntryPoint(drive=drive, delivers_input=True))
+    judge = _Judge()
+    result = await backbone._drive(
+        _judged_case("reaction", ["social_suitability"]),
+        _spec(full_restore=True, judge=judge),
+    )
+    data = EvaluationData(input="x", metadata={"expect": "reply"},
+                          actual_environment_state=result["environment_state"])
+    assert state_of(data, NORA_SAID) == 0
+    assert bool(state_of(data, NORA_REACTIONS)) == (status == "ok")
+    [graded] = MeetsGrader().evaluate(data)
+    assert graded.label == ("PASS" if status == "ok" else "FAIL")
+    [absence] = AbsenceGrader().evaluate(data)
+    assert absence.label == ("PASS" if status == "ok" else "FAIL")
+    silent_data = EvaluationData(
+        input="x", metadata={"expect": "silence"},
+        actual_environment_state=result["environment_state"],
+    )
+    [silence] = AbsenceGrader().evaluate(silent_data)
+    assert silence.label == ("FAIL" if status == "ok" else "PASS")
+    if status == "ok":
+        [call] = judge.graded
+        assert "Confirmed reaction_send" in call["said"]
+        assert "😂" in call["said"] and '"reply_to": 1' in call["said"]
+        assert result["output"] == call["said"]
+    else:
+        assert judge.graded == []
+        assert result["output"] == ""
+
+
+@pytest.mark.parametrize('state', ['unavailable', 'held'])
+def test_circle_reaction_requires_actual_execution_and_forbids_hold_bypass(state):
+    import json
+
+    from nora.subject.circle import CircleOverlay
+    overlay = CircleOverlay(reaction=state)
+    result = 'held_for_review' if state == 'held' else 'unavailable'
+    receipt = (('reaction_send', json.dumps([{'text': json.dumps({'status': result})}])),)
+    assert backbone._circle_execution_problem(overlay, receipt, (), ('reaction_send',)) is None
+    assert backbone._circle_execution_problem(overlay, (), (), ())
+    assert backbone._circle_execution_problem(overlay,
+        (('reaction_send', '[{"text":"{\"status\":\"ok\"}"}]'),), (), ('reaction_send',))
+    if state == 'held':
+        assert backbone._circle_execution_problem(overlay, receipt, (),
+            ('reaction_send', 'send_reply'))
+
+
+async def test_circle_reaction_outage_is_the_real_signal_result_and_validates_requests():
+    import aiohttp
+
+    from nora.domain.models import ConversationTarget
+    from nora.platform.signal.react import SignalReactor
+    from nora.subject.circle import CircleOverlay, reaction_wire
+    async with reaction_wire(CircleOverlay(reaction='unavailable')) as url:
+        result = await SignalReactor(url).react(ConversationTarget('signal', 'generated', 'group'),
+            '👍', to_author='generated-author', to_timestamp=42)
+        assert result.supported and not result.ok
+        async with (
+            aiohttp.ClientSession() as client,
+            client.post(url + '/api/v1/rpc', json={'method': 'send'}) as response,
+        ):
+            assert response.status == 400
+
+
+@pytest.mark.parametrize('unavailable', [False, True])
+@pytest.mark.parametrize('query', [
+    'spicy', '我對 generated spicy noodle dish 嘅 preference 係點？',
+])
+async def test_circle_memory_uses_admitted_correction_and_scoped_read(unavailable, query):
+    from nora.agent.memory_search import MemorySearch
+    from nora.domain.lineage import LiveRoom, RenderRoom, RoomFacts
+    from nora.domain.memory_graph import Walk
+    from nora.obs.metrics import Metrics
+    from nora.subject.circle import CircleMemory
+    memory = CircleMemory(unavailable=unavailable)
+    subject = SimpleNamespace(unit='generated-unit', room=('signal', 'generated-room'))
+    await memory.seed(subject, person='generated-person', now_ms=1_790_000_000_000)
+    assert memory.graph.relations['circle-preference-0'].status == 'superseded'
+    assert memory.graph.relations['circle-preference-1'].status == 'current'
+    room = RoomFacts('signal', frozenset({'generated-room'}), 'generated-unit',
+                     frozenset({'generated-person'}))
+    target = RenderRoom(room=room, rooms=(room,), circles=(),
+                        live=LiveRoom(person_ids=frozenset({'generated-person'})))
+    service = MemorySearch(memory.index, Metrics(), graph=memory.graph)
+    result = await service.read(query=query, target=target, now_ms=1_790_000_000_000,
+                                social_off=())
+    assert result['status'] == ('unavailable' if unavailable else 'partial'), result
+    assert memory.index.calls
+    if unavailable:
+        with pytest.raises(TimeoutError):
+            await memory.index.index_state()
+        down = await memory.graph.walk((), Walk('generated-unit', frozenset()))
+        assert down.status == 'unavailable'
+    if not unavailable:
+        assert 'no longer eat' in result['preview'], result
+        assert 'Generated speaker' in result['preview']
+        from nora.agent.prefill import _recalled_block
+        from nora.domain.blocks import assemble
+        block = _recalled_block(SimpleNamespace(recalled=(result,), recalled_partial=True))
+        rendered = assemble([block])
+        assert '<recalled' in rendered and 'no longer eat' in rendered
+        assert 'partial' in rendered
+
+        refused = await memory.graph.walk((('person', 'generated-unit:person:generated-person'),),
+            Walk('another-unit', frozenset({'generated-person'})))
+        assert not refused.nodes
+        hidden = await memory.graph.walk((('person', 'generated-unit:person:generated-person'),),
+            Walk('generated-unit', frozenset()))
+        assert not hidden.nodes
+
+
+async def test_circle_gif_absence_reaches_existing_registry_boundary():
+    from nora.agent.registry import ToolRegistry
+    from nora.subject.circle import CircleOverlay, external_boundaries
+    with external_boundaries(CircleOverlay(gif='unavailable')):
+        registry = ToolRegistry(giphy=object())
+        assert registry._giphy is None
+    assert ToolRegistry(giphy='positive')._giphy == 'positive'
+    from nora.obs.metrics import Metrics
+    from nora.testing import FakeRecordStore
+    specs = registry.specs(store=FakeRecordStore(), conversation_id='generated-room',
+        conversation_type='group', persons=None, honcho=None,
+        deliverer=SimpleNamespace(), metrics=Metrics(), room=None)
+    tools = {spec.name: spec for spec in specs}
+    result = await tools['search_gifs'].call(query='laughing noodles')
+    assert result == {'status': 'unavailable', 'note': 'Reply in words instead.'}
+    assert (await tools['send_gif'].call(candidate_id='invented'))['status'] == 'unavailable'
+
+
+
+def test_circle_public_capture_requires_actual_public_chat_input():
+    import json
+
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer('generated')
+    rendered = '<social_post>generated public question</social_post>'
+    assert backbone._public_input(exporter, rendered) is None
+    with tracer.start_as_current_span('model') as span:
+        span.set_attribute('gen_ai.operation.name', 'chat')
+        span.set_attribute('gen_ai.input.messages', json.dumps([
+            {'role': 'user', 'content': rendered}]))
+    assert backbone._public_input(exporter, rendered) == rendered
+    assert backbone._public_input(exporter, '<social_post>other input</social_post>') is None
+
+
+@pytest.mark.parametrize('state', ['running', 'checked_complete'])
+async def test_circle_job_lifecycle_is_read_by_real_context_and_desk(monkeypatch, state):
+    from nora.agent.subagent_desk import SubagentDesk
+    from nora.doctrine.loader import Doctrine
+    from nora.engagement.subagents_context import SubagentsContextReader
+    from nora.language.subagents_render import render_subagents
+    from nora.obs.metrics import Metrics
+    from nora.subject import circle
+    from nora.subject.recording_subagent import RecordingSubagentBackend
+    from nora.testing import FakeAdapter, FakeComputeJobStore, FakeDocumentStore, FakeRecordStore
+    store, docs, audit, adapter = (FakeComputeJobStore(), FakeDocumentStore(),
+                                    FakeRecordStore(), FakeAdapter())
+    class Engine:
+        async def dispose(self): pass
+    monkeypatch.setattr(circle, 'create_sql_engine', lambda _url: Engine())
+    monkeypatch.setattr(circle, 'SqlComputeJobStore', lambda _engine: store)
+    now = datetime.fromtimestamp(1_790_000_000, UTC)
+    backend = RecordingSubagentBackend()
+    metrics = Metrics()
+    subject = SimpleNamespace(database_url='unused', room=('signal', 'generated-room'),
+        deps=SimpleNamespace(subagent_backend=backend, documents=docs, audit=audit,
+            registry=SimpleNamespace(adapters={'signal': adapter}), metrics=metrics,
+            doctrine=Doctrine(sections=(), text='', doctrine_text='', sha256='generated',
+                              runtime_context='', loaded_at=0)),
+        cfg=SimpleNamespace(documents=SimpleNamespace(enabled=True),
+                            doctrine=SimpleNamespace(canary='GENERATED-CANARY')))
+    job_id = await circle.seed_job(subject, circle.CircleOverlay(job=state),
+        person='generated-person', now_ms=1_790_000_000_000)
+    reader = SubagentsContextReader(jobs=store, clock=lambda: now, metrics=metrics)
+    reader.attach(backend)
+    view = await reader.read(platform='signal', conversation_id='generated-room',
+                              person_id='generated-person')
+    assert view is not None and len(view.lines) == 1
+    rendered = render_subagents(view).body
+    assert 'Generated comparison' in rendered
+    overlay = circle.CircleOverlay(job=state)
+    job = await store.get(UUID(job_id))
+    binding = {'job': job, 'room': subject.room}
+    assert backbone._circle_execution_problem(
+        overlay, (), (('subagents', rendered),), (), **binding,
+    ) is None
+    assert backbone._circle_execution_problem(overlay, (), (), ())
+    assert backbone._circle_execution_problem(
+        overlay, (), (('subagents', rendered),), ('subagent_create',), **binding,
+    )
+    assert view.lines[0].state == ('running' if state == 'running' else 'done')
+    assert view.lines[0].delivered == (state == 'checked_complete')
+    if state == 'checked_complete':
+        assert '12 units' in rendered and '9 units' in rendered
+        assert len(adapter.sent) == 1
+        assert len(docs._rooms) == 1
+        assert len(audit.rows) == 1
+        # FirePath legitimately omits the pending-only subagents block. Capture the
+        # real generated document as document_read returns it, with no new job/read.
+        import dataclasses
+        import json
+
+        doc = await docs.get(document_id=UUID(job.result_document_ids[0]))
+        capture = (('document_read', json.dumps([{'text': json.dumps({
+            'status': 'ok', 'document_id': str(doc.summary.id), 'title': doc.summary.title,
+            'spec': doc.spec,
+        })}])),)
+        assert backbone._circle_execution_problem(overlay, capture, (), (), **binding) is None
+        from html import escape
+        rendered_doc = (('documents', escape(
+            str(doc.summary.id) + '\n' + doc.text)),)
+        assert backbone._circle_execution_problem(
+            overlay, (), rendered_doc, (), **binding) is None
+        assert backbone._circle_execution_problem(overlay, (), (), (), **binding)
+        assert backbone._circle_execution_problem(
+            overlay, capture, (), ('subagent_create',), **binding)
+        for wrong in (
+            dataclasses.replace(job, result_document_ids=('wrong-document',)),
+            dataclasses.replace(job, result_report='Wrong generated result'),
+            dataclasses.replace(job, conversation_id='another-unit'),
+            dataclasses.replace(job, state=circle.ComputeJobState.PENDING),
+            dataclasses.replace(job, completed_at=None),
+        ):
+            assert backbone._circle_execution_problem(
+                overlay, capture, (), (), job=wrong, room=subject.room)
+        missing_result = (('document_read', json.dumps([{'text': json.dumps({
+            'status': 'ok', 'document_id': str(doc.summary.id), 'title': doc.summary.title,
+        })}])),)
+        assert backbone._circle_execution_problem(overlay, missing_result, (), (), **binding)
+    else:
+        assert not adapter.sent and not audit.rows and not docs._rooms
+    assert await reader.read(platform='signal', conversation_id='another-room',
+                               person_id='generated-person') is None
+    # The desk's bound read refuses a handle from another room.
+    desk = SubagentDesk(jobs=store, clock=lambda: now)
+    desk.attach(backend)
+    result = await desk.read(platform='signal', conversation_id='generated-room',
+                             job_id=job_id, person_id='generated-person')
+    assert result is not None and result.state == view.lines[0].state
+    assert await desk.read(platform='signal', conversation_id='another-room',
+                            job_id=job_id, person_id='generated-person') is None
+
+
+@pytest.mark.parametrize('different_route', [False, True])
+async def test_circle_public_adapter_uses_real_occasion_and_narrow_grant(
+    monkeypatch, tmp_path, different_route,
+):
+    from pathlib import Path
+    from unittest.mock import AsyncMock
+
+    from nora.agent import factory
+    from nora.agent.registry import ToolRegistry
+    from nora.app.summons import PUBLIC_GRANT
+    from nora.doctrine.loader import DoctrineStore
+    from nora.domain.summons import SummonsContext, ThreadRow
+    from nora.obs.metrics import Metrics
+    from nora.persons import load_persons
+    from nora.subject import public_summons
+    from nora.testing import FakeAgentRunner, ScriptedTurn
+    identity = tmp_path / 'generated-identity.toml'
+    identity.write_text('[persons.generated]\nname="Generated"\n')
+    persons = load_persons(identity)
+    metrics = Metrics()
+    doctrine = DoctrineStore(Path(__file__).resolve().parents[2] / 'nora/doctrine',  # noqa: ASYNC240
+        canary='GENERATED-CANARY', strict=True,
+        tool_names=ToolRegistry().tool_names(), metrics=metrics)
+    calls = []
+    runner = FakeAgentRunner([ScriptedTurn(tool_calls=[
+        ('send_reply', {'text': 'I cannot tell from this public post.'})])], on_call=calls.append)
+    built = []
+    def build(**kwargs):
+        built.append(kwargs)
+        return runner
+    monkeypatch.setattr(public_summons, 'LiveAgentRunner', build)
+    client = SimpleNamespace(close=AsyncMock())
+    created = []
+    def create_client(**kwargs):
+        created.append(kwargs)
+        return client
+    monkeypatch.setattr(factory, 'create_client', create_client)
+    def endpoint(purpose, model=''):
+        return ('https://public.invalid' if different_route and purpose == 'summons'
+                else 'https://tag.invalid', '', 'public-model' if purpose == 'summons' else 'tag')
+
+    subject = SimpleNamespace(cfg=SimpleNamespace(endpoint=endpoint,
+        agent=SimpleNamespace(name='generated'),
+        doctrine=SimpleNamespace(canary='GENERATED-CANARY'),
+        llm=SimpleNamespace(timeout_seconds=5), content_checks=SimpleNamespace(enabled=False)),
+        deps=SimpleNamespace(persons=persons, metrics=metrics, doctrine_store=doctrine,
+            engagement=SimpleNamespace(
+                _limits={'turns':8, 'total_tokens':64000, 'output_tokens':8000},
+                _runner=SimpleNamespace(_models=factory.ModelSource(client=None,
+                    spec=factory.ModelSpec(model='unused', max_tokens=100, temperature=0)),
+                    _retry=None))))
+    now = datetime(2026, 10, 1, tzinfo=UTC)
+    ctx = SummonsContext('generated', now, 'What is my preference?', 'generated', now,
+        'generated', 'Public food post', None, (), 0,
+        (ThreadRow('generated', 'What is my preference?', now, True),), 0)
+    said, failure = await public_summons.turn(subject, ctx)
+    assert failure is None and said == ('I cannot tell from this public post.',)
+    assert runner.invocations == 1
+    assert '<social_post' in calls[0]['tag_message']
+    assert not calls[0]['pre_fill']
+    assert {tool.tool_name for tool in calls[0]['tools']} <= PUBLIC_GRANT
+    assert built[0]['skills_dir'] is None
+    assert built[0]['models']._spec.tool_choice == 'auto'
+    assert built[0]['models']._spec.model == 'public-model'
+    assert bool(created) == different_route
+    assert client.close.await_count == int(different_route)
+    assert not {'memory_search', 'memory_read', 'subagent_read', 'send_gif'} & PUBLIC_GRANT
+
+
+async def test_circle_declared_entry_is_used_by_the_actual_drive(seams, monkeypatch):
+    calls = []
+    async def drive(subject, case, *, now_ms):
+        calls.append((case.entry, now_ms))
+        return Outcome(admitted=None)
+    monkeypatch.setitem(ENTRY_POINTS, 'public_summons', EntryPoint(drive=drive))
+    case = _case('generated-public-entry')
+    case.metadata['entry'] = 'public_summons'
+    await backbone._drive(case, _spec())
+    assert calls == [('public_summons', _SHOT['before_ms'])]
+    assert seams['sandbox_from_snapshot'][0]['leave_room_for_arrival'] is False
+
+
+@pytest.mark.parametrize('controlled', [True, False])
+async def test_circle_judge_receives_requirement_separately_from_actual_evidence(
+    judged, monkeypatch, controlled,
+):
+    import json
+    case = _judged_case('generated-gif-unavailable', ['social_suitability'])
+    if controlled:
+        case.metadata['circle_overlay'] = {'gif': 'unavailable'}
+    case.expected_output = 'No invented sent GIF; words remain possible.'
+    raw = json.dumps([{'text': json.dumps({'status': 'unavailable',
+                                          'note': 'Reply in words instead.'})}])
+    monkeypatch.setattr(backbone, '_tool_results', lambda _exporter: (('search_gifs', raw),))
+    monkeypatch.setattr(backbone, '_tool_inputs', lambda _exporter: (('search_gifs', '{}'),))
+    monkeypatch.setattr(backbone, '_tools_called', lambda _exporter: ('search_gifs',))
+    judge = _Judge()
+    await backbone._drive(case, _spec(judge=judge))
+    [graded] = judge.graded
+    criterion = next(c for c in graded['extra'] if c.name == 'social_suitability')
+    assert 'Case acceptance requirement (not evidence)' in criterion.description
+    assert case.expected_output in criterion.description
+    assert case.expected_output not in graded['source']
+    assert 'Reply in words instead.' in graded['source'] and 'unavailable' in graded['source']
+
+
+def test_circle_memory_capture_measures_status_not_words():
+    from nora.subject.circle import CircleOverlay
+    unavailable = CircleOverlay(memory='unavailable')
+    partial = CircleOverlay(memory='partial')
+    wrong = (('recalled', '<recalled>{"text":"unavailable partial"}</recalled>'),)
+    assert backbone._circle_execution_problem(unavailable, (), wrong, ())
+    assert backbone._circle_execution_problem(partial, (), wrong, ())
+    assert backbone._circle_execution_problem(unavailable, (), (), ())
+    real = (('recalled', '<recalled>{"status":"unavailable"}</recalled>'),)
+    assert backbone._circle_execution_problem(unavailable, (), real, ()) is None
+    real_partial = (('recalled', '<recalled partial="yes">{"text":"generated"}</recalled>'),)
+    assert backbone._circle_execution_problem(partial, (), real_partial, ()) is None
+
+
+@pytest.mark.parametrize("reason", [None, "llm_error", "invocation_timeout"])
+async def test_public_silence_requires_a_healthy_invocation(monkeypatch, reason):
+    from evals.rebuilt.domain import Case as NoraCase
+    from evals.rebuilt.entry import public_summons
+    from nora.obs.metrics import Metrics
+    from nora.subject import public_summons as public_adapter
+
+    metrics = Metrics()
+    calls = []
+
+    async def turn(subject, context):
+        calls.append(context.question)
+        if reason:
+            subject.deps.metrics.inc(
+                "nora_silent_failures_total", reason=reason,
+                platform="instagram", audience="summons",
+            )
+        # The production resolved-turn API can return this on first-call errors.
+        return (), None
+
+    monkeypatch.setattr(public_adapter, "turn", turn)
+    subject = SimpleNamespace(deps=SimpleNamespace(metrics=metrics))
+    case = NoraCase(name="generated-public-silence", entry="public_summons",
+                    expect="silence", input="Generated private-preference question")
+    outcome = await public_summons(subject, case, now_ms=1_790_000_000_000)
+    assert calls == [case.input]
+    assert "<social_post" in outcome.shown
+    assert bool(outcome.error) == bool(reason)
+    assert outcome.meets("silence") is (None if reason else True)
+
+
+def test_judge_export_retains_raw_votes_and_errors_privately(monkeypatch, tmp_path):
+    import json
+
+    from evals.rebuilt.grading import Judgement
+
+    votes = ('[{"criterion":"safety","score":0.6,"confidence":0.4}]', 'malformed vote')
+    reading = Judgement('safety', 'REVIEW', votes, 'TimeoutError')
+    monkeypatch.delenv(backbone.EXCHANGES_ENV, raising=False)
+    backbone._dump_judgement(reading, 'synthetic')
+    assert not list(tmp_path.iterdir())
+    folder = tmp_path / 'private-exchanges'
+    monkeypatch.setenv(backbone.EXCHANGES_ENV, str(folder))
+    backbone._dump_judgement(reading, 'synthetic')
+    path, = folder.glob('synthetic-*-judge.json')
+    assert json.loads(path.read_text()) == {
+        'criterion': 'safety', 'verdict': 'REVIEW', 'samples': list(votes),
+        'error': 'TimeoutError',
+    }
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert folder.stat().st_mode & 0o777 == 0o700

@@ -678,27 +678,12 @@ def test_voice_binds_the_one_hard_rule_of_the_open_register():
     assert "to make a hit land" in law
 
 
-def test_conduct_separates_a_burst_from_one_answer_in_instalments():
-    """DEC-88, DEC-95: removing a counter-signal beats adding a maxim.
-
-    A conduct line banning the burst («never a second helping of the first»)
-    while voice.md demands it makes the doctrine argue with itself, and that
-    resolves toward whichever half is timid.
-
-    The bound still has to exist: it is about ONE ANSWER paced out, not about
-    how many messages a turn may send. Both halves are pinned — a second
-    message may be a genuinely separate act, several short messages may be one
-    reply — and the BOUND is still «instalments».
-    """
-    raw = (_path("conduct")).read_text()
-    text = " ".join(raw.split())
-
-    assert "a genuinely separate act" in text     # the permission
-    assert "one reply when the rhythm is genuinely the interaction" in text
-    assert "instalments" in text                  # the bound
-    assert "never a second helping of the first" not in text
-    assert "you never split one answer across several" not in text
-    assert "One reply, then stop" not in text
+def test_conduct_allows_purpose_led_response_grouping():
+    """Structural coverage only; the circle cases measure suitability with a model."""
+    text = " ".join(_conduct().split())
+    assert "One message or several can make one complete answer" in text
+    assert "Do not repeat yourself or split for performance" in text
+    assert "A quick check needs no filler prelude" in text
 
 
 def test_conduct_keeps_judgement_and_the_three_state_honesty():

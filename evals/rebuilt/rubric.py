@@ -18,7 +18,8 @@ RUBRIC: tuple[Criterion, ...] = (
     ),
     Criterion(
         "concise_doctrine_compliant",
-        "The reply is concise, group-chat length, and stays within everything the doctrine "
+        "The reply has sufficient substance for the request, avoids padding, and stays within "
+        "everything the doctrine "
         "defines — it does not pad with disclaimers, repeat the question back, or violate "
         "the doctrine's constraints and voice.",
     ),
@@ -44,8 +45,8 @@ RUBRIC: tuple[Criterion, ...] = (
     ),
     Criterion(
         "platform_fit",
-        "The reply reads as a real group-chat message — short, casual, and appropriate "
-        "for a phone screen — not a structured document, bulleted list, essay, or "
+        "The reply reads as a real group-chat response — natural and appropriate "
+        "for its purpose and platform; grouping may help an explanation. Avoid "
         "anything that reads like it belongs in a report rather than a chat thread.",
     ),
 )
@@ -310,7 +311,21 @@ RECALL_GROUNDED = Criterion(
     "answer was in front of her, a reply that says she cannot tell scores LOW.",
 )
 
+SOCIAL_SUITABILITY = Criterion(
+    "social_suitability",
+    "Judge whether the contribution fits the actual intent, audience and evidence. "
+    "Acknowledge without converting social signals into factual agreement or consent. "
+    "Keep useful supporting substance for requested explanations and accepted work; "
+    "leave casual plans and finished or private exchanges alone. Use corrections "
+    "with their speaker and time, preserve uncertainty and partial coverage, and "
+    "distinguish a claim, a running job, checked output and confirmed delivery. "
+    "No invented preferences, commitments, retention or completion. Reaction, GIF, "
+    "text or silence may fit; judge suitability and restraint, never exact wording, "
+    "sentence count, message count or media frequency.",
+)
+
 OPTIONAL_CRITERIA: dict[str, Criterion] = {
+    "social_suitability": SOCIAL_SUITABILITY,
     "personality": PERSONALITY,
     "source_scope": SOURCE_SCOPE,
     "being_contradicted": CONTRADICTED,
@@ -331,13 +346,11 @@ OPTIONAL_CRITERIA: dict[str, Criterion] = {
 PARTICIPATION_RUBRIC: tuple[Criterion, ...] = (
     Criterion(
         "grounded_value",
-        "The reply adds something TRUE and useful that the visible transcript does "
-        "not already contain — and it is drawn from the injected context Nora was "
-        "given (the standing/notes blocks), NOT from general knowledge. A "
-        "reply whose factual content appears nowhere in the provided context scores "
-        "LOW even if it happens to be true in the world: her memory boundary is her "
-        "standing and notes, and a model answering from parametric memory is the exact "
-        "failure the knowledge-cut cases exist to catch.",
+        "The contribution is grounded and welcome in the visible exchange. Social "
+        "acknowledgement or banter need not supply a new fact; factual claims need "
+        "support in the assembled context or checked tool results. Do not invent "
+        "preferences, consent or commitments. Silence remains appropriate when "
+        "nothing useful fits; private and finished exchanges stay with their speakers.",
     ),
     Criterion(
         "no_uninvited_performance",

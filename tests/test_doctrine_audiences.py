@@ -139,7 +139,7 @@ MIN_BODY_CHARS = 400
 # wording. A rule that is rephrased and quietly loses the heartbeat audience is
 # exactly the failure this test exists to catch. The needle is a fragment that
 # spans no line break.
-MULTI_MESSAGE = "a genuinely separate act"
+MULTI_MESSAGE = "one message or several can make one complete answer"
 # The needle is the stem of the claim that is FALSE on a heartbeat turn, where
 # silence is a failure: an obligation occasion must never read that saying
 # nothing is success. The claim lives in the participation and proactive

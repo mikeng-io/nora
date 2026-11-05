@@ -183,3 +183,13 @@ her length is unknown until replies are read back.
 - Layer E gains two situation facts: the turn's occasion (replacing silence.md)
   and, for a location-trusted room, where its members are — on both loops.
 - Sequence step 4 cuts grown character only; the seed is never cut.
+
+
+## Later amendment — 2026-11-04 (#575)
+
+Fixed response length/grouping and passive-only participation wording are
+superseded by the integrated circle doctrine revision. Authored identity/register,
+classified law, audience isolation and tool-deferral obligations remain. See
+[the audit amendment](../self-growth/31-doctrine-audit.md#later-amendment--circle-doctrine-2026-11-04-575)
+for case coverage and the limits of source versus model acceptance. Earlier
+measurements here remain historical.

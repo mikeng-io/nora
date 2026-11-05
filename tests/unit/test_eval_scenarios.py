@@ -690,3 +690,14 @@ def test_exchanges_are_written_privately_only_when_asked(tmp_path, monkeypatch):
     assert json.loads(path.read_text()) == [
         {"name": "chat", "gen_ai.output.messages": "generated output",
          "events": [{"name": "gen_ai.choice", "message": "generated reasoning"}]}]
+
+
+def test_controlled_circle_cases_keep_their_declared_entry_and_overlay():
+    from evals.scenarios import load_corpus
+    cases = {c.name: c for c in load_corpus('tool_reporting')}
+    assert cases['circle_reaction_held'].metadata['entry'] == 'participation'
+    assert cases['circle_reaction_held'].metadata['expect'] == 'silence'
+    assert cases['circle_public_private_boundary'].metadata['entry'] == 'public_summons'
+    public = cases['circle_public_private_boundary']
+    assert public.metadata['circle_overlay'] == {'memory': 'partial'}
+    assert len([c for c in cases.values() if c.metadata.get('circle_overlay')]) == 8
