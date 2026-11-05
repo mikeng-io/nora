@@ -5,7 +5,7 @@
 # (CA certificates to speak TLS to instagram.com, and curl for the compose
 # healthcheck).
 
-FROM golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5 AS build
+FROM golang:1.27.3-bookworm@sha256:d9b6a1beb9474adc2a1ce842573639b44b2a0dd49b6669f51d3821baf9ec37c9 AS build
 WORKDIR /src
 
 # go.mod and go.sum first so the module download layer survives a code edit.
@@ -40,7 +40,7 @@ COPY internal ./internal
 RUN go vet ./... && IG_BRIDGE_IMAGE_BUILD=1 go test ./... && \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/instagram-bridge ./cmd/instagram-bridge
 
-FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
 ARG NORA_VERSION=""
 ENV OTEL_SERVICE_VERSION=${NORA_VERSION}
 

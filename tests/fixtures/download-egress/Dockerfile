@@ -1,4 +1,4 @@
-FROM python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2
+FROM python:3.15-slim-trixie@sha256:8c13a3f37a6a5b71498228e902c4b9f51c1f7900d49fabf71f9a650c6120e0d0
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg iproute2 openssl util-linux \
     && rm -rf /var/lib/apt/lists/*

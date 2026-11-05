@@ -11,7 +11,7 @@
 # project from the FROZEN uv.lock into a .venv built inside THIS image — no
 # cross-distro package copies, no unpinned installs.
 
-FROM eclipse-temurin:25-jre-noble@sha256:3f2223fe04b750aa5a8179e29b5c9a1ddf7665fc9bb08bfe11ad01d143bc13a5 AS verified
+FROM eclipse-temurin:25-jre-noble@sha256:a98128a57de944a72bd31fbc79b898edd5a5864d3652071d5bbd2160ab7d7dce AS verified
 
 ARG SIGNAL_CLI_VERSION=0.14.7
 ARG SIGNAL_CLI_KEY=FA10826A74907F9EC6BBB7FC2BA2CD21B5B09570
@@ -28,7 +28,7 @@ RUN gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys "${SIGNAL_CLI_KE
  && tar xzf /tmp/signal-cli-${SIGNAL_CLI_VERSION}.tar.gz -C /opt
 
 # Only the verified distribution crosses into runtime: no archive or build GPG.
-FROM eclipse-temurin:25-jre-noble@sha256:3f2223fe04b750aa5a8179e29b5c9a1ddf7665fc9bb08bfe11ad01d143bc13a5
+FROM eclipse-temurin:25-jre-noble@sha256:a98128a57de944a72bd31fbc79b898edd5a5864d3652071d5bbd2160ab7d7dce
 ARG SIGNAL_CLI_VERSION=0.14.7
 
 # python3 (noble's 3.12) is the interpreter `uv sync` builds the venv on, so

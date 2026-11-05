@@ -2,7 +2,7 @@
 # Build from the REPO ROOT so the art in assets/ is in the context:
 #   docker build -f site/Dockerfile -t nora-site .
 # (site/Dockerfile.dockerignore keeps that context to site/ and assets/.)
-FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS build
+FROM node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446 AS build
 WORKDIR /repo/site
 COPY site/package.json site/package-lock.json ./
 # --ignore-scripts: esbuild's install script only re-validates the binary its
@@ -16,7 +16,7 @@ ARG PUBLIC_PORTAL_ORIGIN
 RUN npm run build
 
 # The wiki is generated/reviewed in Git; image builds make no model calls.
-FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS wiki
+FROM node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446 AS wiki
 # Native wiki regressions create Git fixtures and independently verify the patch.
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo/docs-site
@@ -32,7 +32,7 @@ RUN npm run build
 # Hash every inline script the two sites ship and bake the hashes into the Caddyfile's
 # script-src (no 'unsafe-inline'). Fails the build on an inline event handler or
 # javascript: URL, which a hash cannot cover.
-FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS csp
+FROM node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446 AS csp
 WORKDIR /csp
 COPY site/scripts/csp-hashes.mjs ./
 COPY site/Caddyfile ./Caddyfile.in
