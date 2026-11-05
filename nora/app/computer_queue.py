@@ -319,7 +319,15 @@ class SegmentRegistry:
         self._pending[task_id] = _PendingResult(
             status=status, result=dict(result),
             consumed=consumed or (old.consumed if old is not None else False))
-        return self._spill()
+        if not self._spill() and self._pending[task_id].consumed:
+            # A `consumed` claim that never reached disk must not live in
+            # memory either: keeping it would suppress the deferred delivery
+            # of a result the caller was NOT handed (the caller is told
+            # `unavailable` on this failure), silently losing the result.
+            self._pending[task_id] = replace(
+                self._pending[task_id], consumed=False)
+            return False
+        return self._pending_path is not None
 
     def mark_consumed(self, task_id: UUID) -> bool:
         """The caller saw the retained reply: the row, once it persists,
@@ -331,8 +339,25 @@ class SegmentRegistry:
         cannot be closed locally once the reply is out; the caller logs it
         as a real boundary, never a durable success."""
         old = self._pending.get(task_id)
-        if old is not None and not old.consumed:
-            self._pending[task_id] = replace(old, consumed=True)
+        if old is None or old.consumed:
+            return self._pending_path is not None
+        self._pending[task_id] = replace(old, consumed=True)
+        if not self._spill():
+            self._pending[task_id] = old  # durable claim failed: undo the
+            return False                  # in-memory suppression as well
+        return True
+
+    def unmark_consumed(self, task_id: UUID) -> bool:
+        """A consumed claim the durable chain could not honour (the live
+        caller was told `unavailable`, never the result): drop the flag so
+        the deferred path delivers the original outcome once. `False` means
+        the file may still carry a stale `True` — that suppresses delivery
+        (at-most-once residual), logged by the caller; never silently
+        claimed."""
+        old = self._pending.get(task_id)
+        if old is None or not old.consumed:
+            return self._spill()
+        self._pending[task_id] = replace(old, consumed=False)
         return self._spill()
 
     def pending_result(self, task_id: UUID) -> _PendingResult | None:
@@ -512,8 +537,11 @@ class ComputerAdmission:
             # The queue cancelled the segment: its own except path closed
             # the row. The cancelled reply is what the caller is told.
             row = await self._tasks.get(task.id)
-            if row is not None and row.status in TERMINAL:
-                await self.delivered(task.id)
+            if row is not None and row.status in TERMINAL \
+                    and not await self.delivered(task.id):
+                return {"status": "unavailable", "task": str(task.id),
+                        "note": "That computer task was stopped, but the "
+                                "delivery mark could not be committed."}
             return {"status": "cancelled",
                     "note": "The computer task was stopped while it ran."}
         if worker.exception() is not None:
@@ -532,13 +560,16 @@ class ComputerAdmission:
             # marks delivered then — never a second handoff.
             durable = self.executors.mark_consumed(task.id)
         if not durable:
-            # The reply is the real outcome and must reach the caller — but
-            # it must not imply the delivered disposition is durable: a
-            # restart before the next checkpoint can hand this same result
-            # to deferred delivery once. Say so instead of silent success.
-            reply["note"] = (
-                f"{reply.get('note', '')} This answer's delivery mark could "
-                "not be stored, so it may arrive once more later.".strip())
+            # The durable handoff could not be committed — the reply does
+            # NOT go out as the answer (delivering it AND leaving the result
+            # deferred-eligible would be the duplicate this contract
+            # forbids). The caller gets the task's identity: the original
+            # outcome stays in the journal/row and is delivered exactly once
+            # through the deferred path instead.
+            return {"status": "unavailable", "task": str(task.id),
+                    "note": "That computer task finished, but its answer "
+                            "could not be committed for delivery — it may "
+                            "still arrive on its own."}
         return reply
 
     async def _finish_guarded(
@@ -614,18 +645,20 @@ class ComputerAdmission:
         DURABLE handoff — journal checkpoint AND SQL stamp — not merely
         that the caller was told."""
         row = await self._tasks.get(task_id)
-        if row is None or row.status not in TERMINAL:
-            return True
+        if row is None:
+            return True  # nothing owed: no row, no disposition to settle
+        if row.status not in TERMINAL:
+            return False  # not durable evidence — a live row's mark is not
         journaled = self.executors.retain(task_id, row.status, row.result,
                                           consumed=True)
-        persisted = await _persist_pending(
-            executors=self.executors, tasks=self._tasks,
-            clock=self._clock, task_id=task_id)
-        if not journaled or not persisted:
-            log.error("computer task %s delivered disposition is not durable "
-                      "(journal=%s persisted=%s); restart before a later "
-                      "pass can re-deliver a live-consumed result",
-                      task_id, journaled, persisted)
+        persisted = False
+        if journaled:
+            persisted = await _persist_pending(
+                executors=self.executors, tasks=self._tasks,
+                clock=self._clock, task_id=task_id)
+            if not persisted and not self.executors.unmark_consumed(task_id):
+                log.error("computer task %s consumed marker may be stale on "
+                          "disk; suppressed delivery is the residual", task_id)
         return journaled and persisted
 
     async def get(self, task_id: UUID) -> ComputerTask | None:
