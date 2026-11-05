@@ -281,7 +281,20 @@ class SubjectSpec:
     #: cheaper to hold here than to remember at each call site.
     now: datetime | None = None
 
+    #: THE CONTROLLED STATE OF THE WORLD AROUND HER — which external boundary
+    #: is absent, degraded or held: a subagent job still running or delivered,
+    #: the reaction endpoint down, the GIF provider unconfigured, the memory
+    #: index partial or out. A seam for `now`'s reason: WHAT THE WORLD IS
+    #: DOING is not part of her, and a case that cannot state it can only
+    #: watch her on a world that happens to be healthy. `None` is the
+    #: unmarked world — every boundary exactly as composed.
     circle: CircleOverlay | None = None
+
+    #: WHERE THE CONTROLLED `sendReaction` ENDPOINT IS. `circle.reaction_wire`
+    #: binds a draw-owned RPC address per case; `obtain` points the composed
+    #: adapter's `SignalReactor` at it, so the REAL reactor meets the
+    #: controlled outage rather than a stub of itself. Empty means no
+    #: overlay endpoint — composition is untouched.
     signal_rpc_url: str = ""
 
 

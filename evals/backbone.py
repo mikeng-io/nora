@@ -1874,7 +1874,8 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 nora_case, moment=Moment(source_url=spec.source_url, rows=seeded.rows),
             )
             if overlay and overlay.memory:
-                await subject.circle_memory.seed(subject, person=nora_case.person, now_ms=clock_ms)
+                await subject.circle_memory.populate(
+                    subject, person=nora_case.person, now_ms=clock_ms)
             job = None
             if overlay and overlay.job:
                 job_id = await seed_job(subject, overlay, person=nora_case.person, now_ms=clock_ms)
