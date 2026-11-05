@@ -70,6 +70,16 @@ CALLERS = {
     # every guard and the audit-first write still stand between it and the
     # wire (`nora.app.otp`).
     "nora/app/otp.py",
+    # The circle revision's controlled-state seed amends R-1b again
+    # (design/self-growth/31-doctrine-audit.md, the circle amendment):
+    # a `checked_complete` job overlay states a report was DELIVERED, so the
+    # seed puts it there through `deliver.build` — every guard and the
+    # audit-first write still stand between the generated text and the wire,
+    # which in a subject is what `obtain`'s `landed_signal_sends()` captures.
+    # Not a production path: `nora.subject` composes only for callers that
+    # are not the deployment, and its Deliverer is still BUILT in the one
+    # place.
+    "nora/subject/circle.py",
 }
 
 
@@ -131,9 +141,9 @@ def test_only_the_tag_path_and_the_fire_path_can_send():
         "the tag path's"
     )
     assert _modules_where(sources, _is_deliver_build) == CALLERS, (
-        "the tag path, the fire path, the public summons and the one-time code "
-        "are the only senders; another caller of deliver.build is another way "
-        "for Nora to speak unprompted"
+        "the tag path, the fire path, the public summons, the one-time code "
+        "and the eval circle seed are the only callers; another caller of "
+        "deliver.build is another way for Nora to speak unprompted"
     )
 
 
