@@ -1,13 +1,15 @@
 # Shared HTTP egress
 
-ADR 0035 implementation candidate. **Blocked on plain WS compatibility.**
-No rollout or sbx activation has occurred. The real Linux amd64 integration
-passes direct plain WS and proxied WSS bidirectional Upgrade controls, but
-plain WS through this pinned gateway times out. Its goproxy HTTP path removes
-`Connection` and copies an ordinary response body without a bidirectional
-Upgrade tunnel. The integrated test intentionally remains failing. Do not adopt
-this candidate or waive the ADR requirement; upstream compatibility/design
-resolution belongs to the parent. No custom protocol fork was added.
+ADR 0035 implementation candidate; rollout remains held. The acceptance client
+uses HTTP CONNECT on both port80 (WS) and port443 (WSS), following
+[RFC6455 section4.1 step3](https://www.rfc-editor.org/rfc/rfc6455.html#section-4.1).
+The earlier forward absolute-GET Upgrade timeout is a real goproxy limitation,
+but did not establish failure of CONNECT-based plain WS clients. Its old
+handshake omitted WebSocket key/accept/version and exchanged unframed bytes.
+The corrected fixture validates the handshake, masked text frames, replies and
+close exchange for both schemes. This explicit proxy route does not establish
+sbx transparent or Chrome compatibility. No fork/custom production proxy was added.
+
 The maintained Smokescreen module is pinned to source
 `5b4b7aabca9bc70a8435358d648edd03294c299e` in go.mod/go.sum. No fork or
 vendored protocol implementation. Both builder and nonroot distroless runtime
@@ -86,3 +88,27 @@ WS/WSS, long transfers, ignored environment/NO_PROXY/direct IPv4/IPv6/proxy-dead
 restart/cancellation and sbx/browser checks to the exact candidate. Use synthetic
 owned origins with positive destination hit controls. Record unmet or unavailable
 rows explicitly; host activation and release ownership do not waive them.
+
+## Local acceptance coverage
+
+The disposable fixture runs the exact production recipe and a separate copy with
+only `c.IdleTimeout` shortened from five minutes to one second. That second
+image checks inactivity semantics without claiming five-minute runtime evidence.
+Active HTTPS data arrives every half-second for six seconds; the short-timeout
+variant also checks that an idle CONNECT closes. Image identities/options and
+raw results are in the implementation handoff receipt; credit only rc0 runs.
+
+Owned direct-origin controls cover private IPv4, IPv4-mapped private IPv6,
+CGNAT, link-local IPv4 and native IPv6 ULA before checking gateway refusal. Generated HLS/DASH
+manifests point secondary resources at an owned private origin. Thumbnail checks
+include a successful public thumbnail and a refused private thumbnail; yt-dlp
+can finish the media successfully after a nonfatal thumbnail error. The fixture
+checks refusal diagnostics, absent thumbnail file and destination hits rather
+than assuming all refusals yield nonzero process status. Gateway stop/restart
+uses only the fixture's owned container and verifies no origin hit during outage,
+then successful origin delivery after restart. Docker's existing 256MiB/128-PID
+limits are applied and read back; this is not a saturation/load ceiling test.
+
+Full-duration transfers, adversarial resource saturation and complete sbx/Chrome/credential/QUIC/control-path coverage
+remain unverified. A forward-Upgrade client remains unsupported. These limits
+must be reconciled before adoption; a CONNECT success cannot waive them.

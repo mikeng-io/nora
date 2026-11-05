@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+import ipaddress
 import shutil
 import subprocess
+import time
 import uuid
 from pathlib import Path
 
 import docker
+import pytest
 import yt_dlp
 
 ROOT = Path(__file__).resolve().parents[2]
+# Generated CGNAT subnet, never a host's real Tailscale identity.
+CGNAT = ipaddress.IPv4Network((0x64404D00, 24))
 
 
-def test_real_downloader_boundary(tmp_path):
+@pytest.mark.parametrize("short_idle", [False, True], ids=["production", "idle-1s"])
+def test_real_downloader_boundary(tmp_path, short_idle):
     shutil.copytree(Path(yt_dlp.__file__).parent, tmp_path / "yt_dlp")
     for source in [
         ROOT / "tests/fixtures/download-egress/Dockerfile",
@@ -22,9 +28,21 @@ def test_real_downloader_boundary(tmp_path):
     ]:
         shutil.copy(source, tmp_path / source.name)
     client = docker.from_env()
+    range_networks = []
+    ipv6_network = None
     image = container = gateway = network = private_network = None
     try:
         image, _ = client.images.build(path=str(tmp_path), network_mode="host", rm=True)
+        gateway_context = ROOT / "deploy/http-egress"
+        if short_idle:
+            gateway_context = tmp_path / "gateway"
+            shutil.copytree(ROOT / "deploy/http-egress", gateway_context)
+            source = gateway_context / "main.go"
+            original = source.read_text()
+            assert original.count("c.IdleTimeout = 5 * time.Minute") == 1
+            source.write_text(
+                original.replace("c.IdleTimeout = 5 * time.Minute", "c.IdleTimeout = time.Second")
+            )
         subprocess.run(  # noqa: S603 -- fixed local image recipe, no publish
             [
                 "docker",
@@ -36,7 +54,7 @@ def test_real_downloader_boundary(tmp_path):
                 "--network=host",
                 "-t",
                 "nora-http-egress-test:amd64",
-                str(ROOT / "deploy/http-egress"),
+                str(gateway_context),
             ],
             check=True,
             capture_output=True,
@@ -57,6 +75,24 @@ def test_real_downloader_boundary(tmp_path):
                 pool_configs=[docker.types.IPAMPool(subnet="10.77.0.0/24")]
             ),
         )
+        for subnet in [str(CGNAT), "169.254.77.0/24"]:
+            range_networks.append(
+                client.networks.create(
+                    "nora-egress-range-" + uuid.uuid4().hex[:10],
+                    internal=True,
+                    ipam=docker.types.IPAMConfig(
+                        pool_configs=[docker.types.IPAMPool(subnet=subnet)]
+                    ),
+                )
+            )
+        ipv6_network = client.networks.create(
+            "nora-egress-v6-" + uuid.uuid4().hex[:10],
+            internal=True,
+            enable_ipv6=True,
+            ipam=docker.types.IPAMConfig(
+                pool_configs=[docker.types.IPAMPool(subnet="fd00:77::/64")]
+            ),
+        )
         gateway = client.containers.create(
             gateway_image.id,
             user="65532:65532",
@@ -67,6 +103,8 @@ def test_real_downloader_boundary(tmp_path):
                 "https_proxy": "http://127.0.0.1:1",
             },
             read_only=True,
+            mem_limit="256m",
+            pids_limit=128,
             cap_drop=["ALL"],
             security_opt=["no-new-privileges:true"],
             network_mode=network.name,
@@ -76,16 +114,52 @@ def test_real_downloader_boundary(tmp_path):
         network.disconnect(gateway)
         network.connect(gateway, ipv4_address="93.184.216.2", aliases=["http-egress"])
         private_network.connect(gateway, ipv4_address="10.77.0.3")
+        for net, address in zip(
+            range_networks, [str(CGNAT.network_address + 3), "169.254.77.3"], strict=True
+        ):
+            net.connect(gateway, ipv4_address=address)
+        ipv6_network.connect(gateway, ipv6_address="fd00:77::3")
         gateway.start()
         container = client.containers.create(
             image.id,
+            environment={"FIXTURE_SHORT_IDLE": "1" if short_idle else ""},
             network_mode=network.name,
             security_opt=["seccomp=unconfined"],
         )
         network.disconnect(container)
         network.connect(container, ipv4_address="93.184.216.34")
         private_network.connect(container, ipv4_address="10.77.0.2")
+        for net, address in zip(
+            range_networks, [str(CGNAT.network_address + 2), "169.254.77.2"], strict=True
+        ):
+            net.connect(container, ipv4_address=address)
+        ipv6_network.connect(container, ipv6_address="fd00:77::2")
         container.start()
+
+        def wait_marker(name):
+            deadline = time.monotonic() + 160
+            while True:
+                try:
+                    if container.exec_run(["test", "-f", "/control/" + name]).exit_code == 0:
+                        return
+                except docker.errors.APIError as error:
+                    raise AssertionError(container.logs().decode()) from error
+                container.reload()
+                assert container.status == "running", container.logs().decode()
+                assert time.monotonic() < deadline, container.logs().decode()
+                time.sleep(0.2)
+
+        wait_marker("gateway-stop-ready")
+        gateway.reload()
+        assert gateway.attrs["HostConfig"]["Memory"] == 256 * 1024 * 1024
+        assert gateway.attrs["HostConfig"]["PidsLimit"] == 128
+        assert not gateway.attrs["State"]["OOMKilled"]
+        print(f"gateway image={gateway_image.id} short_idle={short_idle} limits=256MiB/128pids")
+        gateway.stop(timeout=1)
+        container.exec_run(["touch", "/control/gateway-stopped"])
+        wait_marker("gateway-dead-checked")
+        gateway.start()
+        container.exec_run(["touch", "/control/gateway-restarted"])
         result = container.wait(timeout=180)
         output = container.logs().decode()
         assert result["StatusCode"] == 0, output + gateway.logs().decode()
@@ -98,6 +172,10 @@ def test_real_downloader_boundary(tmp_path):
             container.remove(force=True)
         if gateway is not None:
             gateway.remove(force=True)
+        for net in range_networks:
+            net.remove()
+        if ipv6_network is not None:
+            ipv6_network.remove()
         if private_network is not None:
             private_network.remove()
         if network is not None:

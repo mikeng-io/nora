@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import http.server
 import importlib.util
+import ipaddress
 import json
 import os
 import socket
@@ -16,6 +19,7 @@ import tempfile
 import threading
 import time
 import unittest
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +29,10 @@ SPEC = importlib.util.spec_from_file_location(
 proxy = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(proxy)
 PUBLIC = "93.184.216.34"
+# Generated fixture subnet; the hook treats literal CGNAT addresses as private identity.
+CGNAT_ORIGIN = str(ipaddress.IPv4Address(0x64404D02))
+# RFC6455's public protocol GUID, not a person or account identifier.
+WS_GUID = str(uuid.UUID(int=0x258EAFA5E91447DA95CAC5AB0DC85B11)).upper()
 
 
 class PublicDownloadBoundary(unittest.TestCase):
@@ -144,6 +152,23 @@ class PublicDownloadBoundary(unittest.TestCase):
                     capture_output=True,
                 )
 
+            playlist = (root / "playlist.m3u8").read_text()
+            playlist = (
+                "\n".join(
+                    "http://10.77.0.2/secret.wav" if line and not line.startswith("#") else line
+                    for line in playlist.splitlines()
+                )
+                + "\n"
+            )
+            (root / "evil.m3u8").write_text(playlist)
+            manifest = (root / "manifest.mpd").read_text()
+            manifest = manifest.replace('media="', 'media="http://10.77.0.2/').replace(
+                'initialization="', 'initialization="http://10.77.0.2/'
+            )
+            (root / "evil.mpd").write_text(manifest)
+
+            # Only generated public media assets are served; request paths never reach disk.
+            assets = {"/" + asset.name: asset.read_bytes() for asset in root.iterdir()}
             cert, key = root / "cert.pem", root / "key.pem"
             subprocess.run(  # noqa: S603 -- generated local test certificate
                 [
@@ -183,33 +208,81 @@ class PublicDownloadBoundary(unittest.TestCase):
                     self.close_connection = True
                     hits.append(self.path)
                     if self.path == "/socket":
+                        # Minimal RFC6455 endpoint: validate handshake and masked text/close.
+                        key = self.headers.get("Sec-WebSocket-Key", "")
+                        if (
+                            self.headers.get("Sec-WebSocket-Version") != "13"
+                            or len(base64.b64decode(key)) != 16
+                        ):
+                            self.send_error(400)
+                            return
+                        accept = base64.b64encode(
+                            hashlib.sha1(
+                                (key + WS_GUID).encode(),
+                                usedforsecurity=False,
+                            ).digest()
+                        ).decode()
                         self.send_response(101)
                         self.send_header("Upgrade", "websocket")
                         self.send_header("Connection", "Upgrade")
+                        self.send_header("Sec-WebSocket-Accept", accept)
                         self.end_headers()
                         self.wfile.flush()
                         self.connection.settimeout(3)
-                        if self.rfile.read(4) != b"ping":
-                            return
-                        self.wfile.write(b"fixture-stream")
+                        for opcode, expected in [(1, b"ping"), (8, b"\x03\xe8")]:
+                            header = self.rfile.read(2)
+                            if header != bytes([0x80 | opcode, 0x80 | len(expected)]):
+                                return
+                            mask = self.rfile.read(4)
+                            data = self.rfile.read(len(expected))
+                            if bytes(c ^ mask[i % 4] for i, c in enumerate(data)) != expected:
+                                return
+                            payload = b"fixture-stream" if opcode == 1 else expected
+                            self.wfile.write(bytes([0x80 | opcode, len(payload)]) + payload)
+                            self.wfile.flush()
                         return
-                    if self.path == "/redirect":
+                    if self.path == "/idle":
+                        self.close_connection = False
+                        self.send_response(200)
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return
+                    if self.path == "/stream":
+                        self.send_response(200)
+                        self.send_header("Content-Length", "24")
+                        self.end_headers()
+                        for _ in range(12):
+                            self.wfile.write(b"ok")
+                            self.wfile.flush()
+                            time.sleep(0.5)
+                        return
+                    if self.path in {"/thumbnail", "/thumbnail-public"}:
+                        body = (
+                            b"<html><title>thumbnail</title>"
+                            b'<meta property="og:image" content="http://10.77.0.2/secret.jpg">'
+                            b'<video src="http://public.invalid/control.wav"></video></html>'
+                        )
+                        if self.path == "/thumbnail-public":
+                            body = body.replace(
+                                b"10.77.0.2/secret.jpg", b"public.invalid/public.jpg"
+                            )
+                        kind = "text/html"
+                    elif self.path == "/redirect":
                         self.send_response(302)
                         self.send_header(
                             "Location", f"http://127.0.0.1:{self.server.server_port}/secret.wav"
                         )
                         self.end_headers()
                         return
-                    if self.path == "/secondary":
+                    elif self.path == "/secondary":
                         body = f'<html><title>secondary</title><video src="http://127.0.0.1:{self.server.server_port}/secret.wav"></video></html>'.encode()
                         kind = "text/html"
-                    elif (root / self.path.lstrip("/")).is_file():
-                        source = root / self.path.lstrip("/")
-                        body = source.read_bytes()
+                    elif self.path in assets:
+                        body = assets[self.path]
                         kind = {
                             ".m3u8": "application/vnd.apple.mpegurl",
                             ".mpd": "application/dash+xml",
-                        }.get(source.suffix, "application/octet-stream")
+                        }.get(Path(self.path).suffix, "application/octet-stream")
                     else:
                         body, kind = content, "audio/wav"
                     self.send_response(200)
@@ -218,6 +291,15 @@ class PublicDownloadBoundary(unittest.TestCase):
                     self.end_headers()
                     self.wfile.write(body)
 
+            class IPv6Origin(http.server.ThreadingHTTPServer):
+                address_family = socket.AF_INET6
+
+                def server_bind(self):
+                    self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                    super().server_bind()
+
+            ipv6_origin = IPv6Origin(("::", 80), Origin)
+            threading.Thread(target=ipv6_origin.serve_forever, daemon=True).start()
             origin = http.server.ThreadingHTTPServer(("0.0.0.0", 80), Origin)
             threading.Thread(target=origin.serve_forever, daemon=True).start()
             port = origin.server_port
@@ -248,6 +330,8 @@ class PublicDownloadBoundary(unittest.TestCase):
                     "--no-warnings",
                     "--no-playlist",
                     "--retries",
+                    "0",
+                    "--fragment-retries",
                     "0",
                     "--socket-timeout",
                     "3",
@@ -306,13 +390,30 @@ class PublicDownloadBoundary(unittest.TestCase):
                     self.assertEqual(response.status, 200)
                 self.assertIn("/private-control", hits)
                 hits.clear()
+                # These non-public destinations are attached owned origins, not null routes.
+                for address in [
+                    CGNAT_ORIGIN,
+                    "169.254.77.2",
+                    "[::ffff:10.77.0.2]",
+                    "[fd00:77::2]",
+                ]:
+                    with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(
+                        f"http://{address}/range-control"
+                    ) as response:
+                        self.assertEqual(response.status, 200)
+                    self.assertIn("/range-control", hits)
+                    hits.clear()
+                    self.assertNotEqual(
+                        proxy.run(download(f"http://{address}/secret.wav", "range")), 0
+                    )
+                    self.assertEqual(hits, [], address)
                 for target in [
                     f"http://10.77.0.2:{port}/secret.wav",
                     f"http://127.0.0.1:{port}/secret.wav",
                     f"http://[::ffff:127.0.0.1]:{port}/secret.wav",
                     f"http://10.0.0.1:{port}/secret.wav",
-                    f"http://169.254.169.254:{port}/secret.wav",
-                    f"http://100.64.0.1:{port}/secret.wav",
+                    f"http://169.254.77.2:{port}/secret.wav",
+                    f"http://{CGNAT_ORIGIN}:{port}/secret.wav",
                 ]:
                     self.assertNotEqual(proxy.run(download(target, "literal")), 0)
                     self.assertEqual(hits, [], f"private literal server reached: {hits}")
@@ -361,6 +462,47 @@ class PublicDownloadBoundary(unittest.TestCase):
                     self.assertIn("/" + name, hits)
                     self.assertTrue(any(path.endswith((".ts", ".m4s")) for path in hits))
                     hits.clear()
+                for name in ["evil.m3u8", "evil.mpd"]:
+                    self.assertNotEqual(
+                        proxy.run(download(f"http://public.invalid/{name}", name)), 0
+                    )
+                    self.assertIn("/" + name, hits)
+                    self.assertFalse(
+                        any(path.endswith((".m4s", ".ts", "/secret.wav")) for path in hits), hits
+                    )
+                    hits.clear()
+                for page, suffix in [("thumbnail-public", "thumbcontrol"), ("thumbnail", "thumb")]:
+                    thumbnail = download(f"http://public.invalid/{page}", suffix)
+                    thumbnail.remove("--no-warnings")
+                    thumbnail.insert(1, "--write-thumbnail")
+                    result = subprocess.run(  # noqa: S603 -- owned extractor fixture
+                        [sys.executable, str(ROOT / "app/scripts/public-download.py"), *thumbnail],
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("/" + page, hits)
+                    self.assertIn("/control.wav", hits)
+                    if page == "thumbnail-public":
+                        self.assertIn("/public.jpg", hits)
+                        self.assertTrue((root / "outthumbcontrol.jpg").exists())
+                    else:
+                        # yt-dlp treats thumbnail errors as nonfatal; measure refusal itself.
+                        self.assertIn("407", result.stderr)
+                        self.assertNotIn("/secret.jpg", hits)
+                        self.assertFalse((root / "outthumb.jpg").exists())
+                    hits.clear()
+                stream = r"""
+import os, urllib.request
+p = urllib.request.ProxyHandler({"https": os.environ["https_proxy"]})
+with urllib.request.build_opener(p).open("https://public.invalid/stream", timeout=2) as response:
+    assert response.read() == b"ok" * 12
+"""
+                start = time.monotonic()
+                self.assertEqual(proxy.run([sys.executable, "-c", stream]), 0)
+                self.assertGreater(time.monotonic() - start, 5)
+                self.assertIn("/stream", hits)
+                hits.clear()
                 # Ignoring/overriding proxy environment must still fail at the namespace.
                 for direct in [
                     f'import socket; socket.create_connection(("{PUBLIC}", 80), timeout=1)',
@@ -372,62 +514,112 @@ class PublicDownloadBoundary(unittest.TestCase):
                 ]:
                     self.assertNotEqual(proxy.run([sys.executable, "-c", direct]), 0)
                     self.assertEqual(hits, [])
-                # Real Upgrade bytes over HTTP and a verified CONNECT tunnel.
-                for secure_socket in [True, False]:
-                    code = r"""
-import os, socket, ssl, sys
+                # RFC6455 section4.1 step3: CONNECT for BOTH ws:80 and wss:443.
+                # This is an explicit HTTP proxy client, not the sbx transparent path.
+                code = r"""
+import base64, hashlib, os, socket, ssl, sys, uuid
+WS_GUID = str(uuid.UUID(int=0x258EAFA5E91447DA95CAC5AB0DC85B11)).upper()
 from urllib.parse import urlsplit
 p = urlsplit(os.environ["http_proxy"])
 s = socket.create_connection((p.hostname, p.port), timeout=3)
-if sys.argv[1] == "True":
-    s.sendall(b"CONNECT public.invalid:443 HTTP/1.1\r\nHost: public.invalid:443\r\n\r\n")
-    response = b""
-    while not response.endswith(b"\r\n\r\n"):
-        response += s.recv(1)
-    assert b"200" in response
-    s = ssl.create_default_context().wrap_socket(s, server_hostname="public.invalid")
-    target = "/socket"
-else:
-    target = "http://public.invalid/socket"
-s.sendall((f"GET {target} HTTP/1.1\r\nHost: public.invalid\r\n"
-           "Connection: Upgrade\r\nUpgrade: websocket\r\n\r\n").encode())
+port = 443 if sys.argv[1] == "True" else 80
+s.sendall(f"CONNECT public.invalid:{port} HTTP/1.1\r\nHost: public.invalid:{port}\r\n\r\n".encode())
 response = b""
 while not response.endswith(b"\r\n\r\n"):
     data = s.recv(1)
     assert data, response
     response += data
-assert b"101" in response
-s.sendall(b"ping")
-while b"fixture-stream" not in response:
-    data = s.recv(4096)
+assert response.split()[1] == b"200", response
+if port == 443:
+    s = ssl.create_default_context().wrap_socket(s, server_hostname="public.invalid")
+key = base64.b64encode(os.urandom(16)).decode()
+s.sendall(("GET /socket HTTP/1.1\r\nHost: public.invalid\r\n"
+           "Connection: Upgrade\r\nUpgrade: websocket\r\n"
+           f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
+response = b""
+while not response.endswith(b"\r\n\r\n"):
+    data = s.recv(1)
     assert data, response
     response += data
-assert b"101" in response
+assert response.split()[1] == b"101", response
+headers = dict(line.split(b": ", 1) for line in response.split(b"\r\n")[1:] if b": " in line)
+assert headers[b"Upgrade"].lower() == b"websocket"
+assert headers[b"Connection"].lower() == b"upgrade"
+assert headers[b"Sec-WebSocket-Accept"] == base64.b64encode(hashlib.sha1(
+    (key + WS_GUID).encode(), usedforsecurity=False).digest())
+def receive(size):
+    result = b""
+    while len(result) < size:
+        data = s.recv(size - len(result))
+        assert data, result
+        result += data
+    return result
+for opcode, payload, expected in [(1, b"ping", b"fixture-stream"), (8, b"\x03\xe8", b"\x03\xe8")]:
+    mask = os.urandom(4)
+    frame = bytes([0x80 | opcode, 0x80 | len(payload)]) + mask
+    s.sendall(frame + bytes(c ^ mask[i % 4] for i,c in enumerate(payload)))
+    assert receive(2) == bytes([0x80 | opcode, len(expected)])
+    assert receive(len(expected)) == expected
 s.close()
 """
-                    if not secure_socket:
-                        direct_code = code.replace(
-                            "s = socket.create_connection((p.hostname, p.port), timeout=3)",
-                            f"s = socket.create_connection(('{PUBLIC}', 80), timeout=3)",
-                        )
-                        direct_code = direct_code.replace(
-                            'target = "http://public.invalid/socket"', 'target = "/socket"'
-                        )
-                        control = subprocess.run(  # noqa: S603 -- owned synthetic origin
-                            [sys.executable, "-c", direct_code, "False"],
-                            env={**os.environ, "http_proxy": "http://unused.invalid:80"},
-                            capture_output=True,
-                            text=True,
-                        )
-                        self.assertEqual(control.returncode, 0, control.stderr)
-                        self.assertIn("/socket", hits)
-                        print("plain WS direct positive control passed", flush=True)
-                        hits.clear()
+                for secure_socket in [True, False]:
                     self.assertEqual(proxy.run([sys.executable, "-c", code, str(secure_socket)]), 0)
-                    print(f"gateway Upgrade secure={secure_socket} passed", flush=True)
                     self.assertIn("/socket", hits)
+                    print(f"RFC6455 CONNECT WS secure={secure_socket} passed", flush=True)
                     hits.clear()
+                if os.environ.get("FIXTURE_SHORT_IDLE"):
+                    idle = r"""
+import os, socket, time
+from urllib.parse import urlsplit
+p = urlsplit(os.environ["http_proxy"])
+s = socket.create_connection((p.hostname, p.port), timeout=4)
+s.sendall(b"CONNECT public.invalid:80 HTTP/1.1\r\nHost: public.invalid:80\r\n\r\n")
+response = b""
+while not response.endswith(b"\r\n\r\n"):
+    data = s.recv(1)
+    assert data, response
+    response += data
+assert response.split()[1] == b"200", response
+# Reach the real HTTP origin before testing inactivity.
+s.sendall(b"GET /idle HTTP/1.1\r\nHost: public.invalid\r\n\r\n")
+response = b""
+while not response.endswith(b"\r\n\r\n"):
+    data = s.recv(1)
+    assert data, response
+    response += data
+assert response.split()[1] == b"200", response
+time.sleep(2)
+assert s.recv(1) == b"", "idle CONNECT remained open"
+s.close()
+"""
+                    self.assertEqual(proxy.run([sys.executable, "-c", idle]), 0)
+                    self.assertIn("/idle", hits)
+                    hits.clear()
+                    print("one-second fixture CONNECT inactivity bound passed", flush=True)
+                # Outer Docker fixture stops/starts ONLY its owned gateway.
+                Path("/control/gateway-stop-ready").touch()
+
+                def wait_marker(name):
+                    deadline = time.monotonic() + 30
+                    while not Path("/control/" + name).exists():
+                        self.assertLess(time.monotonic(), deadline, name)
+                        time.sleep(0.1)
+
+                wait_marker("gateway-stopped")
+                self.assertNotEqual(
+                    proxy.run(download("http://public.invalid/dead.wav", "dead")), 0
+                )
+                self.assertEqual(hits, [], "gateway outage caused direct destination hit")
+                Path("/control/gateway-dead-checked").touch()
+                wait_marker("gateway-restarted")
+                self.assertEqual(
+                    proxy.run(download("http://public.invalid/restarted.wav", "restart")), 0
+                )
+                self.assertIn("/restarted.wav", hits)
+                print("gateway dead/no fallback/restart destination controls passed", flush=True)
             finally:
+                ipv6_origin.shutdown()
+                ipv6_origin.server_close()
                 origin.shutdown()
                 origin.server_close()
                 secure.shutdown()

@@ -851,10 +851,25 @@ daemon restart and host prerequisite installation are not performed. The
 operations document names remaining acceptance and rollback. Parent allocates
 the implementation DEC and reconciles DEC-289 at landing.
 
-**Implementation acceptance blocked (2026-11-05):** the pinned Smokescreen
-source's goproxy dependency does not provide a bidirectional plain HTTP Upgrade
-path. The disposable Linux amd64 candidate passes direct plain WS and proxied
-WSS controls, but plain WS through the gateway times out. The named integrated
-test remains failing; no custom protocol implementation or acceptance waiver
-was added. Resolve this compatibility evidence before adoption; ADR 0035's
-reopen condition applies. Host/sbx rollout remains held.
+**Acceptance correction (2026-11-05):** the original plain WS probe used a
+forward absolute GET, whereas RFC6455 section4.1 step3 recommends CONNECT even
+for `ws:80`. Its handshake/bytes were also incomplete. Forward Upgrade still
+has a concrete upstream limitation; the earlier timeout is preserved in the
+handoff receipt. The replacement acceptance fixture checks CONNECT80/443 with
+key/accept/version, masked messages and close frames. It measures an explicit
+proxy client, not sbx transparent routing or Chrome compatibility.
+
+Local coverage now includes owned private/mapped/CGNAT/link-local/native IPv6 ULA origin controls,
+malicious HLS/DASH/thumbnail references, an active HTTPS stream, a separately
+shortened one-second idle fixture, and owned gateway stop/restart with destination
+hit controls. Credit only the recorded rc0 final run. Docker memory/PID settings
+are exercised, not a saturation ceiling. See the gateway operations document and
+[PR594](https://github.com/mikeng-io/nora/pull/594)
+for exact-head results and its durable receipt and the concrete unapplied prerequisite patch.
+
+Correctness/Completeness of full adoption remain open: full-duration/load boundaries,
+real sbx explicit AND transparent route,
+Chrome authority/TLS/fingerprint, credential injection, scope/control isolation,
+PAC/DIRECT/loopback bypass, UDP/QUIC/WebRTC, target namespace/profile and installed
+artifact readback are unverified. PR584 remains held. No host installation,
+Stack/settings edit, daemon restart or rollout is authorized by local acceptance.

@@ -2,6 +2,7 @@ FROM python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg iproute2 openssl util-linux \
     && rm -rf /var/lib/apt/lists/*
+RUN mkdir /control && chmod 0777 /control
 COPY yt_dlp /opt/yt_dlp
 COPY public-download.py /repo/app/scripts/public-download.py
 COPY probe_public_download.py /repo/tests/integration/probe_public_download.py
