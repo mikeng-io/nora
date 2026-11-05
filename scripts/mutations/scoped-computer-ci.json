@@ -16,7 +16,7 @@
   {
     "name": "the scoped Redis name is projected to nora even unwritten",
     "file": "scripts/secret_delivery.py",
-    "old": "        | {scoped_redis},",
+    "old": "        | ({scoped_redis} if config.get(\"computer\", {}).get(\"scoped\", {}).get(\n            \"enabled\", False) else set()),",
     "new": "",
     "target": "tests/test_env_template.py::test_every_secret_name_the_config_defaults_reaches_the_container_that_reads_it"
   },

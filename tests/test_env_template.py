@@ -531,8 +531,10 @@ def test_every_secret_name_the_config_defaults_reaches_the_container_that_reads_
     # name is still held to the base list.
     projection_delivered = {"computer.scoped.redis_url_env"}
     from scripts.secret_delivery import projection
+    delivery_config = tomllib.loads((ROOT / "config.example.toml").read_text())
+    delivery_config.setdefault("computer", {}).setdefault("scoped", {})["enabled"] = True
     delivered = projection(
-        tomllib.loads((ROOT / "config.example.toml").read_text()),
+        delivery_config,
         dict.fromkeys(found.values(), "x"),
     )
     overlay_env = {

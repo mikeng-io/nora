@@ -8,6 +8,14 @@ import pytest
 from scripts.secret_delivery import prepare
 
 
+@pytest.mark.parametrize("enabled", [None, False])
+def test_disabled_scoped_mode_does_not_admit_an_implicit_overlay(tmp_path, enabled):
+    config = "" if enabled is None else "[computer.scoped]\nenabled=false\n"
+    (tmp_path / "config.toml").write_text(config)
+    assert prepare(tmp_path, {"NORA_COMPUTER_REDIS_URL": "synthetic-unused"}) == []
+    assert not (tmp_path / ".secret-delivery").exists()
+
+
 @pytest.mark.parametrize("alias", [None, "NORA_COMPUTER_REDIS_URL", "CUSTOM_COMPUTER_REDIS"])
 @pytest.mark.parametrize("credential_source", ["environment", "dotenv", "secret"])
 def test_prepare_delivers_scoped_redis_reference(tmp_path, alias, credential_source):

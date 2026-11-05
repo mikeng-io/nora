@@ -89,7 +89,8 @@ def service_references(config: dict) -> dict[str, set[str]]:
     return {
         "nora": references({k: v for k, v in config.items() if k != "presence"})
         | references({k: v for k, v in presence.items() if k not in login_fields})
-        | {scoped_redis},
+        | ({scoped_redis} if config.get("computer", {}).get("scoped", {}).get(
+            "enabled", False) else set()),
         "presence": references({k: config[k] for k in ("store", "obs") if k in config})
         | references({k: v for k, v in presence.items() if k in login_fields}),
         "analytics": references({k: config[k] for k in ("store", "obs") if k in config}),
