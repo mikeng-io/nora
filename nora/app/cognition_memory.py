@@ -42,9 +42,6 @@ from nora.domain.profile import (
 )
 from nora.language.comprehend_render import preview_text
 
-#: Characters of each row's body kept in the reading slot map.
-READING_CLIP = 160
-
 
 def historical_graph(graph: Subgraph, at: datetime) -> Subgraph:
     """Keep asserted structure, withholding heads without historical versions."""
@@ -117,12 +114,10 @@ class WakeMemory:
         at = datetime.fromtimestamp(state.now_ms / 1000, UTC)
         anchors: list[Key] = []
         aliases = {} if state.historical else await self.graph.aliases(unit=state.unit)
-        next_source_row = max(
-            [row.message_id for row in grounding.records.values()] + [0]) + 1
         for index, agenda in state.items_by_index.items():
             sources: list[Source] = []
             stimulus_inputs: dict[str, str] = {}
-            rows = []
+            rows: list[dict[str, Any]] = []
             loaded_items = []
             for sid in agenda.stimulus_ids:
                 stimulus = stimuli[sid]
@@ -142,10 +137,12 @@ class WakeMemory:
                     if loaded is not None:
                         loaded_items.append(loaded)
                         sources.extend(loaded.sources)
-                        rows.extend(loaded.snapshot.get("messages", []))
-                        rows.extend(loaded.snapshot.get("context", []))
+                        rows.extend({**r, "source_key": loaded.snapshot.get("source_keys", {}).get(
+                            str(r["id"]), ["message", str(r["id"])])}
+                            for r in loaded.snapshot.get("messages", [])
+                            + loaded.snapshot.get("context", []))
                     rows.append({"id": row.message_id, "body": row.text, "ts": row.at_ms,
-                                 "person_id": row.person_id, "mentions": []})
+                                 "person_id": row.person_id, "author": row.author})
                 elif stimulus.kind == "message":
                     continue
                 elif stimulus.kind in ("social", "play"):
@@ -158,8 +155,10 @@ class WakeMemory:
                         continue  # gone or hidden: never read, never cited
                     loaded_items.append(loaded)
                     sources.extend(loaded.sources)
-                    rows.extend(loaded.snapshot.get("messages", []))
-                    rows.extend(loaded.snapshot.get("context", []))
+                    rows.extend({**r, "source_key": loaded.snapshot.get("source_keys", {}).get(
+                        str(r["id"]), ["message", str(r["id"])])}
+                        for r in loaded.snapshot.get("messages", [])
+                        + loaded.snapshot.get("context", []))
                 else:
                     line = grounding.rollups.get(stimulus.ref)
                     text = json.dumps(asdict(line), default=str) if line else stimulus.ref
@@ -183,23 +182,30 @@ class WakeMemory:
                      stimulus.at_ms, _source_payload(sources[start:])],
                     sort_keys=True).encode()).hexdigest()
             sources = list({s.key: s for s in sources}.values())
-            original_rows: dict[int, Any] = {}
+            original_rows: dict[Key, Any] = {}
             for r in rows:
-                original_rows[r["id"]] = {**r, **original_rows.get(r["id"], {})}
+                key = tuple(r.get("source_key", ["message", str(r["id"])]))
+                original_rows[key] = {**original_rows.get(key, {}), **r}
             rows = []
-            source_keys = {}
             for source in sources:
-                if source.layer != "record":
+                if source.layer != "record" or scan_identifiers(
+                        source.text, content_checks=self.content_checks):
                     continue
-                row_id = int(source.key[1]) if source.key[0] == "message" else next_source_row
-                if source.key[0] != "message":
-                    next_source_row += 1
-                rows.append({**original_rows.get(row_id, {}), "id": row_id, "body": source.text,
-                    "ts": original_rows.get(row_id, {}).get("ts", state.now_ms),
-                    "person_id": original_rows.get(row_id, {}).get("person_id")
-                    or (source.persons[0] if len(source.persons) == 1 else ""),
-                    "mentions": original_rows.get(row_id, {}).get("mentions", [])})
-                source_keys[str(row_id)] = list(source.key)
+                origin = original_rows.get(source.key, {})
+                if source.key[0] == "media":
+                    parent = ("message", source.key[1].partition(":")[0])
+                    origin = original_rows.get(parent, {})
+                if source.key[0] == "social":
+                    loaded = next(v for v in loaded_items if source in v.sources)
+                    stamp = (loaded.snapshot.get("metadata") or {}).get("taken_at")
+                    if isinstance(stamp, str):
+                        stamp = int(datetime.fromisoformat(stamp).timestamp() * 1000)
+                    origin = {"ts": stamp, "person_id": loaded.author}
+                if not isinstance(origin.get("ts"), int):
+                    continue  # no assertion clock: do not invent one for a reading
+                rows.append({**origin, "source_key": list(source.key), "body": source.text,
+                             "mentions": origin.get("mentions", []),
+                             "author": origin.get("author") or origin.get("person_id")})
             digest = hashlib.sha256(json.dumps(_source_payload(sources),
                                               sort_keys=True).encode()).hexdigest()
             work = WorkItem(f"stimuli:{','.join(map(str, agenda.stimulus_ids))}",
@@ -215,10 +221,10 @@ class WakeMemory:
             }
             item = ComprehendItem(work, tuple(sources), agenda.room.platform,
                                   agenda.room.conversation_id,
-                                  author=next((r.get("person_id") for r in rows
+                                  author=next((str(r["person_id"]) for r in rows
                                                if r.get("person_id")), ""),
-                                  snapshot={"messages": rows, "context": [],
-                                            "source_keys": source_keys,
+                                  snapshot={"messages": [], "context": [],
+                                            "record_rows": rows, "source_keys": {},
                                             "stimulus_inputs": stimulus_inputs,
                                             "source_provenance": source_provenance})
             from dataclasses import replace
@@ -258,14 +264,6 @@ class WakeMemory:
         # budget omits was never shown, whatever the walk returned.
         state.graph_text = preview_text(Preview(seeds, graph, tuple(candidates), (at, at)),
                                         shown_keys=state.shown_keys)
-        # The slot map the model cites by row id. The agenda already renders the
-        # text, so each body is clipped to identify the row, never repeat it.
-        # ponytail: fixed clip; count it into RenderBudget if busy wakes overflow.
-        state.graph_text += "\nreading_sources=" + json.dumps(
-            {i: {**v.snapshot, "messages": [
-                {**r, "body": str(r.get("body") or "")[:READING_CLIP]}
-                for r in v.snapshot["messages"]]}
-             for i, v in state.memory_items.items()}, default=str)
         if scan_identifiers(state.graph_text, content_checks=self.content_checks):
             state.graph_text = ""
             self.metrics.inc("nora_errors_total", stage="wake_prefetch")
