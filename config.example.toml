@@ -379,8 +379,8 @@ keepalive = true
 refresh_interval_hours = 24.0
 
 [image_gen.openai_codex]
-model = "gpt-image-2"
-responses_model = "gpt-5.5"
+model = "gpt-image-2.6-flare"
+# responses_model is a legacy no-op; images go directly to the renderer.
 standard_quality = "medium"
 high_quality = "high"
 refresh_token_env = "OPENAI_CODEX_REFRESH_TOKEN"
