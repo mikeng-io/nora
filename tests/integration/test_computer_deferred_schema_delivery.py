@@ -15,11 +15,10 @@ they prove schema/request formatting, not zero model activity.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 
 import httpx
 import pytest
-
-from datetime import UTC, datetime
 
 from nora.agent import factory
 from nora.agent.guards import ReplyGuard
@@ -115,7 +114,7 @@ async def test_deferred_computer_schemas_reach_the_real_request(persons):
     carries all four schemas. `computer_write` then runs against the runtime
     and lands bytes on the bound scope."""
     _room, registry, runtime, surface = _rig(persons)
-    assert COMPUTER_TOOLS <= surface.shelf.names()
+    assert surface.shelf.names() >= COMPUTER_TOOLS
     catalogue = surface.prompt_catalogue
     assert all(n in catalogue for n in LOAD_NAMES)
 

@@ -1604,7 +1604,7 @@ async def test_a_retained_pending_is_persisted_terminal_and_delivered(tmp_path) 
     the caller saw the reply (`consumed`), the process died — a new
     registry's `_persist_pending` lands the ORIGINAL result terminal and
     stamps `delivered_at`, so deferred delivery never hands it out twice."""
-    from nora.app.computer_queue import _persist_pending, SegmentRegistry
+    from nora.app.computer_queue import SegmentRegistry, _persist_pending
     path = tmp_path / "pending"
     first = SegmentRegistry(pending_dir=path)
     store = FakeComputerTaskStore()

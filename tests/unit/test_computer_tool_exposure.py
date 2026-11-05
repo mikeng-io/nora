@@ -89,10 +89,11 @@ class _Rig:
 
     def surface_kwargs(self, persons, room, *, conversation_id=CID,
                        conversation_type="group"):
-        return dict(
-            store=None, conversation_id=conversation_id,
-            conversation_type=conversation_type, persons=persons, honcho=None,
-            deliverer=None, metrics=Metrics(), room=room)
+        return {
+            "store": None, "conversation_id": conversation_id,
+            "conversation_type": conversation_type, "persons": persons,
+            "honcho": None, "deliverer": None, "metrics": Metrics(),
+            "room": room}
 
 
 class _AgentRegistry:
@@ -116,9 +117,9 @@ def test_scoped_surface_defers_and_loads_the_computer_verbs(persons):
     the named schemas — an invented name is `nothing_found`, not a load."""
     rig = _Rig()
     surface = rig.registry.surface(defer=True, **rig.surface_kwargs(persons, _room(persons)))
-    assert (COMPUTER_TOOLS | SCOPED_ONLY) <= surface.admitted
+    assert surface.admitted >= (COMPUTER_TOOLS | SCOPED_ONLY)
     assert not {n for n in surface.resident if n.startswith("computer_")}
-    assert (COMPUTER_TOOLS | SCOPED_ONLY) <= surface.shelf.names()
+    assert surface.shelf.names() >= (COMPUTER_TOOLS | SCOPED_ONLY)
     assert surface.hooks  # the loader hook rides with a stocked shelf
     catalogue = surface.prompt_catalogue
     for name in COMPUTER_TOOLS | SCOPED_ONLY:

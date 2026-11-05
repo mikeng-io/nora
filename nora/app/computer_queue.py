@@ -42,6 +42,7 @@ import fcntl
 import json as _json
 import logging
 import os
+import shutil
 import stat
 import tempfile
 import uuid
@@ -188,6 +189,8 @@ class SegmentRegistry:
         evidence survives and an operator decides, never silently emptied
         and later overwritten."""
         directory = self._pending_dir
+        if directory is None:
+            return  # invariant: called only when pending_dir is set
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         if directory.is_symlink() or not directory.is_dir():
             raise RuntimeError(
@@ -212,7 +215,7 @@ class SegmentRegistry:
 
     def _load_pending(self) -> None:
         path = self._pending_path
-        if not path.exists():
+        if path is None or not path.exists():
             return  # first use: absent is empty, never an error
         st = path.lstat()
         if not stat.S_ISREG(st.st_mode) or path.is_symlink():
@@ -242,16 +245,17 @@ class SegmentRegistry:
         self._pending = pending
 
     def _quarantine(self, path: Path, why: str) -> None:
+        # COPY the evidence aside; the corrupt ORIGINAL stays in place so
+        # every later construction refuses again — a single rename would let
+        # the next start read "absent" as first-use and discard it.
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
         quarantined = path.with_name(f"{path.name}.corrupt-{stamp}")
-        try:
-            path.replace(quarantined)
-        except OSError:
-            pass
+        with contextlib.suppress(OSError):
+            shutil.copy2(path, quarantined)
         raise RuntimeError(
             f"computer pending store at {path} refused as corrupt ({why}); "
-            f"evidence kept at {quarantined} — operator decides, the state "
-            "is never emptied silently")
+            f"evidence copied to {quarantined} — the file stays corrupt in "
+            "place until an operator removes or repairs it deliberately")
 
     def _spill(self) -> bool:
         """Rewrite the durable map: strict typed serialization (no coercion —
@@ -474,12 +478,19 @@ class ComputerAdmission:
             else:
                 # Journal the returned outcome BEFORE the quiet/SQL waits:
                 # a restart inside `_finish_guarded` must still recover the
-                # ORIGINAL result, not an orphaned `running` row.
-                self.executors.retain(task.id, row_status(reply), reply)
-                if await self._finish_guarded(
-                        task, row_status(reply), reply,
-                        uncertain=bool(reply.get("uncertain"))):
-                    self.executors.clear_pending(task.id)
+                # ORIGINAL result, not an orphaned `running` row. The entry
+                # is NOT cleared here: SQL is the result authority from a
+                # successful finish, but `consumed`/`delivered` disposition
+                # is only durably settled by `delivered()` (live handoff) or
+                # the deferred path — clearing now would reopen the
+                # finish-to-consumption window.
+                if not self.executors.retain(task.id, row_status(reply), reply):
+                    log.error("computer task %s result journal failed before "
+                              "the finish wait; restart recovers memory "
+                              "only", task.id)
+                await self._finish_guarded(
+                    task, row_status(reply), reply,
+                    uncertain=bool(reply.get("uncertain")))
                 outcome["reply"] = reply
             finally:
                 current_segment.reset(token)
@@ -510,16 +521,24 @@ class ComputerAdmission:
             # already closed `unavailable` by its own except.
             return {"status": "unavailable",
                     "note": "The computer task failed while it ran."}
-        reply = outcome.get("reply") or {"status": "unavailable"}
+        reply = dict(outcome.get("reply") or {"status": "unavailable"})
         row = await self._tasks.get(task.id)
         if row is not None and row.status in TERMINAL:
-            await self.delivered(task.id)
+            durable = await self.delivered(task.id)
         else:
             # The row could not be confirmed terminal (an uncertain exit
             # still holding the scope, or a finish the store refused). The
             # caller saw the reply: the retained pending persists later and
             # marks delivered then — never a second handoff.
-            self.executors.mark_consumed(task.id)
+            durable = self.executors.mark_consumed(task.id)
+        if not durable:
+            # The reply is the real outcome and must reach the caller — but
+            # it must not imply the delivered disposition is durable: a
+            # restart before the next checkpoint can hand this same result
+            # to deferred delivery once. Say so instead of silent success.
+            reply["note"] = (
+                f"{reply.get('note', '')} This answer's delivery mark could "
+                "not be stored, so it may arrive once more later.".strip())
         return reply
 
     async def _finish_guarded(
@@ -589,19 +608,25 @@ class ComputerAdmission:
             fresh = await self._tasks.get(task_id)
         return fresh
 
-    async def delivered(self, task_id: UUID) -> None:
+    async def delivered(self, task_id: UUID) -> bool:
         """The terminal result was consumed live: `delivered_at`, so
-        `on_terminal` does not hand it to deferred delivery."""
+        `on_terminal` does not hand it to deferred delivery. Returns the
+        DURABLE handoff — journal checkpoint AND SQL stamp — not merely
+        that the caller was told."""
         row = await self._tasks.get(task_id)
         if row is None or row.status not in TERMINAL:
-            return
-        if not self.executors.retain(task_id, row.status, row.result,
-                                     consumed=True):
-            log.error("computer task %s consumed checkpoint did not land; "
-                      "restart before the next pass can re-deliver a "
-                      "live-consumed result", task_id)
-        await _persist_pending(executors=self.executors, tasks=self._tasks,
-                               clock=self._clock, task_id=task_id)
+            return True
+        journaled = self.executors.retain(task_id, row.status, row.result,
+                                          consumed=True)
+        persisted = await _persist_pending(
+            executors=self.executors, tasks=self._tasks,
+            clock=self._clock, task_id=task_id)
+        if not journaled or not persisted:
+            log.error("computer task %s delivered disposition is not durable "
+                      "(journal=%s persisted=%s); restart before a later "
+                      "pass can re-deliver a live-consumed result",
+                      task_id, journaled, persisted)
+        return journaled and persisted
 
     async def get(self, task_id: UUID) -> ComputerTask | None:
         return await self._tasks.get(task_id)
