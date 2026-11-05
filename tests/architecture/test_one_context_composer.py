@@ -104,6 +104,14 @@ def discover(source: str, file: str) -> list[Surface]:
         for a in n.names
         if a.name == "assemble"
     )
+    # Module assignments follow execution order, including alias chains.
+    for n in tree.body:
+        if isinstance(n, (ast.Assign, ast.AnnAssign)) and n.value is not None:
+            targets = n.targets if isinstance(n, ast.Assign) else [n.target]
+            value = aliases.get(_name(n.value), _name(n.value))
+            for target in targets:
+                if isinstance(target, ast.Name) and value in factories:
+                    aliases[target.id] = value
     # Find local block factories, including import aliases and qualified calls.
     for name, node in functions.items():
         if any(a.arg == "body" for a in (*node.args.args, *node.args.kwonlyargs)) and any(
@@ -161,81 +169,122 @@ def _body_problems(surface: Surface) -> list[ast.AST]:
         elif isinstance(n, ast.Import):
             imports.update({a.asname or a.name: a.name for a in n.names})
 
+    parameters: dict[tuple[ast.AST, str], bool] = {}
+
+    def reaching(name: str, scope: ast.AST, use: ast.AST) -> list[ast.AST]:
+        """Last straight-line write; join all possible values at branch exits."""
+
+        def walk(statements: list[ast.stmt], values: list[ast.AST]) -> list[ast.AST]:
+            for stmt in statements:
+                if stmt.lineno >= use.lineno:
+                    break
+                if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    continue
+                if isinstance(stmt, ast.If):
+                    if stmt.end_lineno is not None and use.lineno <= stmt.end_lineno:
+                        arm = stmt.body if use.lineno <= stmt.body[-1].end_lineno else stmt.orelse
+                        return walk(arm, values)
+                    left, right = walk(stmt.body, values), walk(stmt.orelse, values)
+                    if left or right:
+                        values = (left or [stmt]) + (right or [stmt])
+                    continue
+                if isinstance(
+                    stmt,
+                    (ast.For, ast.AsyncFor, ast.While, ast.Try, ast.With, ast.AsyncWith, ast.Match),
+                ):
+                    # Loops/exception flow cannot establish a single reaching write.
+                    if any(
+                        isinstance(n, ast.Name) and n.id == name and isinstance(n.ctx, ast.Store)
+                        for n in ast.walk(stmt)
+                    ) or any(
+                        isinstance(n, ast.Call)
+                        and isinstance(n.func, ast.Attribute)
+                        and isinstance(n.func.value, ast.Name)
+                        and n.func.value.id == name
+                        for n in ast.walk(stmt)
+                    ):
+                        values = [stmt]
+                    continue
+                targets = (
+                    stmt.targets
+                    if isinstance(stmt, ast.Assign)
+                    else [stmt.target]
+                    if isinstance(stmt, (ast.AnnAssign, ast.AugAssign))
+                    else []
+                )
+                for target in targets:
+                    if isinstance(target, (ast.Tuple, ast.List)) and stmt.value is not None:
+                        for index, item in enumerate(target.elts):
+                            if isinstance(item, ast.Name) and item.id == name:
+                                values = [
+                                    ast.copy_location(
+                                        ast.Subscript(value=stmt.value, slice=ast.Constant(index)),
+                                        stmt,
+                                    )
+                                ]
+                if any(isinstance(t, ast.Name) and t.id == name for t in targets):
+                    if isinstance(stmt, ast.AugAssign):
+                        values = [*values, stmt.value]
+                    elif stmt.value is not None:
+                        values = [stmt.value]
+                if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+                    call = stmt.value
+                    if (
+                        isinstance(call.func, ast.Attribute)
+                        and isinstance(call.func.value, ast.Name)
+                        and call.func.value.id == name
+                        and call.func.attr in {"append", "extend"}
+                    ):
+                        values = [*values, *call.args]
+            return values
+
+        return walk(getattr(scope, "body", []), [])
+
     def resolve(expr: ast.AST, scope: ast.AST, seen: frozenset = frozenset()) -> bool:
         token = (id(expr), id(scope))
         if token in seen:
-            return True
+            return False
         seen = seen | {token}
         if isinstance(expr, ast.Constant):
             return True
         if isinstance(expr, ast.Name):
-            assignments = []
-            for n in ast.walk(scope):
-                if scopes.get(n) != scopes.get(scope):
-                    continue
-                targets = (
-                    n.targets
-                    if isinstance(n, ast.Assign)
-                    else ([n.target] if isinstance(n, (ast.AnnAssign, ast.AugAssign)) else [])
-                )
-                if (
-                    any(
-                        any(isinstance(t, ast.Name) and t.id == expr.id for t in ast.walk(target))
-                        for target in targets
-                    )
-                    and n.value is not None
-                ):
-                    value = n.value
-                    target = next(
-                        t
-                        for t in targets
-                        if any(isinstance(v, ast.Name) and v.id == expr.id for v in ast.walk(t))
-                    )
-                    if (
-                        isinstance(target, ast.Tuple)
-                        and isinstance(value, ast.Call)
-                        and _name(value.func) == "next"
-                    ):
-                        index = next(
-                            i
-                            for i, t in enumerate(target.elts)
-                            if isinstance(t, ast.Name) and t.id == expr.id
-                        )
-                        value = ast.Subscript(value=value.args[0], slice=ast.Constant(index))
-                    assignments.append(value)
-                if (
-                    isinstance(n, ast.Call)
-                    and isinstance(n.func, ast.Attribute)
-                    and isinstance(n.func.value, ast.Name)
-                    and n.func.value.id == expr.id
-                    and n.func.attr in {"append", "extend"}
-                ):
-                    assignments.extend(n.args)
+            assignments = reaching(expr.id, scope, expr)
+            if assignments:
+                return all(resolve(v, scope, seen) for v in assignments)
+            args = getattr(scope, "args", None)
+            if args and any(
+                a.arg == expr.id for a in [*args.posonlyargs, *args.args, *args.kwonlyargs]
+            ):
+                return parameters.get((scope, expr.id), False)
             for n in ast.walk(scope):
                 if (
                     isinstance(n, ast.comprehension)
                     and isinstance(n.target, ast.Name)
                     and n.target.id == expr.id
                 ):
-                    assignments.append(n.iter)
-            if assignments:
-                return all(resolve(v, scope, seen) for v in assignments)
-            # Scalar text parameters are passthroughs; row collections are not.
-            args = getattr(scope, "args", None)
-            if args and any(
-                a.arg == expr.id and a.annotation is not None and "str" in ast.unparse(a.annotation)
-                for a in (*args.args, *args.kwonlyargs)
-            ):
-                return True
-            return expr.id.isupper()
+                    return resolve(n.iter, scope, seen)
+            if scope is not s.tree:
+                assignments = reaching(expr.id, s.tree, s.node)
+                if assignments:
+                    return all(resolve(v, s.tree, seen) for v in assignments)
+            if expr.id in imports:
+                module, _, name = imports[expr.id].rpartition(".")
+                path = ROOT / (module.replace(".", "/") + ".py")
+                if path.is_file():
+                    for stmt in ast.parse(path.read_text()).body:
+                        if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
+                            targets = (
+                                stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
+                            )
+                            if any(isinstance(t, ast.Name) and t.id == name for t in targets):
+                                try:
+                                    ast.literal_eval(stmt.value)
+                                except (ValueError, TypeError):
+                                    return False
+                                return True
+            return False
         if isinstance(expr, ast.Attribute):
-            return ast.unparse(expr) in {
-                "got.text",
-                "ctx.message.body",
-                "parent.body",
-                "b.body",
-                "block.body",
-            } or expr.attr in {"graph_text", "description"}
+            return False
         if isinstance(expr, ast.JoinedStr):
             return all(
                 resolve(v.value if isinstance(v, ast.FormattedValue) else v, scope, seen)
@@ -262,15 +311,14 @@ def _body_problems(surface: Surface) -> list[ast.AST]:
             return all(resolve(v, scope, seen) for v in expr.args)
         if isinstance(expr, ast.Subscript) and isinstance(expr.slice, ast.Constant):
             if isinstance(expr.value, ast.Name):
-                assigned = [
-                    n.value
-                    for n in ast.walk(scope)
-                    if isinstance(n, ast.Assign)
-                    and any(isinstance(t, ast.Name) and t.id == expr.value.id for t in n.targets)
-                ]
+                assigned = reaching(expr.value.id, scope, expr)
                 if assigned:
                     return all(
-                        resolve(ast.Subscript(value=v, slice=expr.slice), scope, seen)
+                        resolve(
+                            ast.copy_location(ast.Subscript(value=v, slice=expr.slice), expr),
+                            scope,
+                            seen,
+                        )
                         for v in assigned
                     )
             if isinstance(expr.value, ast.Call):
@@ -321,13 +369,62 @@ def _body_problems(surface: Surface) -> list[ast.AST]:
                     for n in ast.walk(fn)
                     if isinstance(n, ast.Return) and n.value is not None and scopes[n] == scopes[fn]
                 ]
-                return bool(returns) and all(resolve(v, fn, seen) for v in returns)
+                args = [*fn.args.posonlyargs, *fn.args.args]
+                bound = {
+                    arg.arg: resolve(value, scope, seen)
+                    for arg, value in zip(args, expr.args, strict=False)
+                }
+                bound.update(
+                    {
+                        k.arg: resolve(k.value, scope, seen)
+                        for k in expr.keywords
+                        if k.arg is not None
+                    }
+                )
+                defaults = dict(
+                    zip(
+                        [a.arg for a in args][-len(fn.args.defaults) :] if fn.args.defaults else [],
+                        fn.args.defaults,
+                        strict=True,
+                    )
+                )
+                defaults.update(
+                    {
+                        a.arg: v
+                        for a, v in zip(fn.args.kwonlyargs, fn.args.kw_defaults, strict=True)
+                        if v is not None
+                    }
+                )
+                saved = parameters.copy()
+                for arg in [*args, *fn.args.kwonlyargs]:
+                    parameters[fn, arg.arg] = bound.get(
+                        arg.arg,
+                        resolve(defaults[arg.arg], s.tree, seen) if arg.arg in defaults else False,
+                    )
+                try:
+                    return bool(returns) and all(resolve(v, fn, seen) for v in returns)
+                finally:
+                    parameters.clear()
+                    parameters.update(saved)
         return False
 
     node = s.node
     bodies = []
     if isinstance(node, ast.Call):
         bodies = [k.value for k in node.keywords if k.arg == "body"]
+        if (
+            not bodies
+            and _name(node.func) != "assemble"
+            and any(k.arg is None for k in node.keywords)
+        ):
+            # Dynamic keyword construction is not proof of a composed body.
+            bodies.append(node)
+        if not bodies:
+            for key, fn in functions.items():
+                if key.split(".")[-1] == _name(node.func):
+                    for index, arg in enumerate([*fn.args.posonlyargs, *fn.args.args]):
+                        if arg.arg == "body" and index < len(node.args):
+                            bodies.append(node.args[index])
         if not bodies and _name(node.func) == "wrap_outside_text" and len(node.args) >= 3:
             bodies = [node.args[2]]
         if not bodies and _name(node.func) == "_social_post" and len(node.args) >= 2:
@@ -348,7 +445,36 @@ def _body_problems(surface: Surface) -> list[ast.AST]:
             for k in n.keywords
             if k.arg == "body"
         ]
-    return [body for body in bodies if not resolve(body, s.scope)]
+        bodies.extend(
+            value
+            for n in ast.walk(node)
+            if isinstance(n, ast.Dict)
+            for key, value in zip(n.keys, n.values, strict=True)
+            if isinstance(key, ast.Constant) and key.value == "body"
+        )
+
+    def forwarded(body: ast.AST) -> bool:
+        # Transparent block factories are checked at their discovered call sites.
+        if not (isinstance(s.node, ast.Call) and _name(s.node.func) == "ContextBlock"):
+            return False
+        if not isinstance(s.scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return False
+        args = [*s.scope.args.args, *s.scope.args.kwonlyargs]
+        if not any(a.arg == "body" for a in args) and s.scope.name not in {
+            "wrap_outside_text",
+            "_social_post",
+        }:
+            return False
+        value = body
+        if isinstance(value, ast.Call) and _name(value.func) == "escape" and len(value.args) == 1:
+            value = value.args[0]
+        return (
+            isinstance(value, ast.Name)
+            and any(a.arg == value.id for a in args)
+            and not reaching(value.id, s.scope, value)
+        )
+
+    return [body for body in bodies if not forwarded(body) and not resolve(body, s.scope)]
 
 
 def violations(surfaces: list[Surface], *, inventory: bool = False) -> list[str]:
@@ -376,7 +502,11 @@ def violations(surfaces: list[Surface], *, inventory: bool = False) -> list[str]
                         "memos": "memo",
                         "graph": "graph",
                     }.get(label, kind)
-                problems.append(f"{s.file}:{body.lineno} {s.function}: use the {kind} composer")
+                problems.append(
+                    f"{s.file}:{body.lineno} {s.function}: cannot prove this body comes "
+                    f"from a registered composer; use the {kind} composer or add a "
+                    "known-violation entry"
+                )
     if inventory:
         stale = KNOWN.keys() - failing
         problems.extend(f"stale known violation: {key}" for key in sorted(stale))
@@ -444,3 +574,68 @@ def test_known_violation_becomes_stale_when_repaired() -> None:
     )
     problems = violations(discover(source, file), inventory=True)
     assert "stale known violation: nora.agent.reaction:render_recent" in problems
+
+
+def test_helper_arguments_keep_their_provenance() -> None:
+    prefix = "def frame(text: str):\n return f'Recent messages: {text}'\n"
+    bad = prefix + "def bad(rows):\n return ContextBlock(body=frame(json.dumps(rows)))\n"
+    good = (
+        "from nora.domain.blocks import render_messages\n"
+        + prefix
+        + "def good(rows):\n return ContextBlock(body=frame(render_messages(rows)))\n"
+    )
+    assert violations(discover(bad, "nora/new_occasion.py"))
+    assert not violations(discover(good, "nora/new_occasion.py"))
+    keyword = bad.replace("frame(json.dumps(rows))", "frame(text=json.dumps(rows))")
+    assert violations(discover(keyword, "nora/new_occasion.py"))
+    factory = (
+        "def frame(body):\n body = json.dumps(rows)\n return ContextBlock(body=body)\n"
+        "def bad(rows):\n return frame(body='Header')"
+    )
+    assert violations(discover(factory, "nora/new_occasion.py"))
+
+
+def test_record_description_is_not_a_composer() -> None:
+    source = "def bad(rows):\n return ContextBlock(body='\\n'.join(r.description for r in rows))"
+    assert violations(discover(source, "nora/new_occasion.py"))
+
+
+def test_assignment_alias_is_discovered_and_checked() -> None:
+    source = "B = ContextBlock\nC = B\ndef bad(rows):\n return C(body=json.dumps(rows))"
+    surfaces = discover(source, "nora/new_occasion.py")
+    assert surfaces
+    assert violations(surfaces)
+
+
+def test_dict_table_and_dynamic_keywords_fail_closed() -> None:
+    sources = (
+        "_BLOCKS = ({'name': 'group_transcript', 'body': json.dumps(rows)},)",
+        "def bad(row):\n return ContextBlock(**row)",
+    )
+    for source in sources:
+        surfaces = discover(source, "nora/new_occasion.py")
+        assert surfaces
+        assert violations(surfaces)
+
+
+def test_only_reaching_assignments_contribute_to_body() -> None:
+    source = (
+        "from nora.domain.blocks import render_messages\n"
+        "def good(rows):\n text = render_messages(rows)\n"
+        " block = ContextBlock(body=text)\n text = json.dumps(rows)\n return block"
+    )
+    surfaces = discover(source, "nora/new_occasion.py")
+    assert surfaces
+    assert not violations(surfaces)
+
+
+def test_every_reaching_branch_must_be_compliant() -> None:
+    prefix = (
+        "from nora.domain.blocks import render_messages\n"
+        "def case(rows, condition):\n text = json.dumps(rows)\n"
+        " if condition:\n  text = render_messages(rows)\n"
+    )
+    bad = prefix + " return ContextBlock(body=text)"
+    good = prefix + " else:\n  text = render_messages(rows)\n return ContextBlock(body=text)"
+    assert violations(discover(bad, "nora/new_occasion.py"))
+    assert not violations(discover(good, "nora/new_occasion.py"))

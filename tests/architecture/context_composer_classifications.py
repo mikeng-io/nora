@@ -1,10 +1,11 @@
-"""Semantic owners and the shrink-only inventory of parallel composers."""
+"""Semantic owners and the audited inventory of parallel composers."""
 
 COMPOSERS = {
     "message": (
         "nora.domain.blocks.render_messages",
         "nora.domain.blocks.render_row_window",
         "nora.domain.blocks.render_rows",
+        "nora.agent.prefill._transcript_block",
     ),
     "media": (
         "nora.domain.media.render_placeholder",
@@ -58,6 +59,7 @@ COMPOSERS = {
     "decision": ("nora.domain.decision_log.render_decisions",),
     "catalogue": ("nora.skills.loader.SkillStore.render_available",),
     "clock": ("nora.language.note_render.today_block",),
+    "instruction": ("nora.language.comprehend_render.render_session_system",),
     "room_members": ("nora.agent.prefill._room_members_block",),
     "debrief": (
         "nora.engagement.debrief_render._turn_block",
@@ -75,6 +77,38 @@ COMPOSERS = {
 }
 
 KNOWN = {
+    "nora.agent.prefill:build_tag_message": (
+        "message",
+        "V8: raw tag message body outside the message composer",
+    ),
+    "nora.agent.prefill:_replying_to_block": (
+        "message",
+        "V8: raw quoted parent body outside the message composer",
+    ),
+    "nora.agent.prefill:build_prefill": (
+        "catalogue",
+        "gap 1: unproven caller-supplied tool catalogue",
+    ),
+    "nora.agent.speech_format:render_input": (
+        "message",
+        "V8: raw reply text for speech formatting",
+    ),
+    "nora.agent.tools:build_tool_specs.file_fetch": (
+        "document",
+        "gap 1: raw fetched file part outside the document composer",
+    ),
+    "nora.infra.vision.comprehend:MediaComprehender.summarize": (
+        "media",
+        "V4: raw media text passed to summarization",
+    ),
+    "nora.ingest.relevance_gate:render_context": (
+        "standing",
+        "gap 1: caller-supplied standing text outside the standing composer",
+    ),
+    "nora.language.confirmation_render:confirmation_prompts": (
+        "source_object",
+        "V5: caller-supplied scenario and wake JSON evidence",
+    ),
     "nora.agent.prefill:_context_header": ("clock", "gap 4: ContextHeader clock variant"),
     "nora.agent.prefill:_standing_block": ("source_object", "gap 1: retained objects"),
     "nora.agent.reaction:render_recent": ("message", "V10: recent-chat loop"),
