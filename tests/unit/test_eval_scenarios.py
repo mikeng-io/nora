@@ -692,6 +692,42 @@ def test_exchanges_are_written_privately_only_when_asked(tmp_path, monkeypatch):
          "events": [{"name": "gen_ai.choice", "message": "generated reasoning"}]}]
 
 
+def test_a_case_name_with_a_namespace_dumps_under_it_inside_the_root(
+    tmp_path, monkeypatch,
+):
+    """Corpus names carry a namespace (`probe/standing`): the dump made only the
+    root, so the namespaced file's write raised FileNotFoundError — #603. The
+    file lands at its namespaced path inside the private root; a `..` name is
+    refused, never relocated outside it."""
+    import json
+    import stat
+
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    from evals.backbone import EXCHANGES_ENV, _dump_exchanges
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    with provider.get_tracer("t").start_as_current_span("chat") as span:
+        span.set_attribute("gen_ai.output.messages", "generated output")
+    out = tmp_path / "exchanges"
+    monkeypatch.setenv(EXCHANGES_ENV, str(out))
+    _dump_exchanges(exporter, "probe/standing")
+    _dump_exchanges(exporter, "generated-case")
+    [nested] = list((out / "probe").glob("standing-*.json"))
+    [flat] = list(out.glob("generated-case-*.json"))
+    assert stat.S_IMODE(nested.stat().st_mode) == 0o600
+    assert stat.S_IMODE((out / "probe").stat().st_mode) == 0o700
+    assert json.loads(nested.read_text()) == json.loads(flat.read_text()) == [
+        {"name": "chat", "gen_ai.output.messages": "generated output", "events": []}]
+    with pytest.raises(ValueError, match="escapes the evidence root"):
+        _dump_exchanges(exporter, "../outside")
+    assert not list(tmp_path.glob("outside-*.json"))
+
+
 def test_controlled_circle_cases_keep_their_declared_entry_and_overlay():
     from evals.scenarios import load_corpus
     cases = {c.name: c for c in load_corpus('tool_reporting')}
