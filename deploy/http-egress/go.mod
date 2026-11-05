@@ -2,7 +2,10 @@ module nora.local/http-egress
 
 go 1.27.1
 
-require github.com/stripe/smokescreen v0.1.1-0.20261103182740-5b4b7aabca9b
+require (
+	github.com/sirupsen/logrus v1.10.1
+	github.com/stripe/smokescreen v0.1.1-0.20261103182740-5b4b7aabca9b
+)
 
 require (
 	github.com/DataDog/datadog-go/v5 v5.9.1 // indirect
@@ -17,7 +20,6 @@ require (
 	github.com/prometheus/common v0.70.1 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/rs/xid v1.6.1-0.20260724084550-40a728ce78a4 // indirect
-	github.com/sirupsen/logrus v1.10.1 // indirect
 	github.com/stripe/goproxy v0.0.0-20260922184237-948457f542a3 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/mod v0.41.0 // indirect

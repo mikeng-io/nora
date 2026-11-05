@@ -9,11 +9,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stripe/smokescreen/pkg/smokescreen"
 	"github.com/stripe/smokescreen/pkg/smokescreen/conntrack"
 )
 
 func handler() http.Handler {
+	logrus.SetOutput(io.Discard)
 	c := smokescreen.NewConfig()
 	// Upstream logs include signed URLs and client headers. Do not retain them.
 	c.Log.SetOutput(io.Discard)
@@ -30,6 +32,7 @@ func handler() http.Handler {
 	}
 	c.ConnTracker = conntrack.NewTracker(c.IdleTimeout, c.MetricsClient, c.Log, c.ShuttingDown, nil)
 	proxy := smokescreen.BuildProxy(c)
+	proxy.Logger = log.New(io.Discard, "", 0)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authority := r.URL.Host
 		if r.Method == http.MethodConnect {
