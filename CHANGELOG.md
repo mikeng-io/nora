@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.15.9](https://github.com/mikeng-io/nora/compare/v7.15.8...v7.15.9) (2026-11-05)
+
+
+### Bug Fixes
+
+* **doctrine:** leave the decision to reply with the turn's occasion ([8e86f9d](https://github.com/mikeng-io/nora/commit/8e86f9d12c6375bca4fd8c1b9b0e65029ca268c2))
+
 ## [7.15.8](https://github.com/mikeng-io/nora/compare/v7.15.7...v7.15.8) (2026-11-05)
 
 
