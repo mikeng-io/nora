@@ -150,7 +150,7 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
    ```
    Check: the header's `pseudonym map: N rule(s)` (#776), the rc file, then the log.
    `RC=0` means no FAIL, ERROR or UNSTABLE; `RC=1` means at least one, or a crash
-   (the log says which); `RC=2` means refused before spending (read why).
+   (the log says which); `RC=2` means refusal or invalid evidence, possibly after spending.
    Check private `events.jsonl` ends with `run_finished` and the same rc;
    missing terminal evidence is incomplete (`docs/eval-sop.md`). Inputs stay on-host.
 

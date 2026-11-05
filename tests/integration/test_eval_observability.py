@@ -216,6 +216,22 @@ def test_cli_capture_failure_refuses_before_execution(evidence_root, monkeypatch
     assert reached == []
 
 
+@pytest.mark.parametrize("failure", ["root_is_file", "unreadable_config"])
+def test_cli_preparation_oserror_is_a_clean_refusal(evidence_root, monkeypatch, capsys, failure):
+    reached = []
+    if failure == "root_is_file":
+        evidence_root.write_text("generated regular file")
+    else:
+        def denied(*_):
+            raise PermissionError("generated unreadable config")
+        monkeypatch.setattr(cli, "fingerprint", denied)
+    monkeypatch.setattr(cli, "_execute", lambda *a, **k: reached.append(True) or 0)
+    monkeypatch.setattr("sys.argv", ["python -m evals", "tool_selection"])
+    assert cli.main() == 2
+    assert reached == []
+    assert "refusing to run: cannot prepare private eval evidence" in capsys.readouterr().err
+
+
 def test_no_private_capture_event_outside_eval(evidence_root):
     from nora.agent.telemetry import record_eval_model_request
 

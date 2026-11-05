@@ -735,12 +735,15 @@ def _main(*, lock_fd: int = -1) -> int:
     from nora.subject.sandbox import EVAL_HOST_LOCK
 
     _prefill_capture()  # establish the existing SDK provider before attaching durable capture
-    evidence = RunEvidence(run_id=RUN_ID, lock_fd=lock_fd, metadata={
-        **revision(_REPO_ROOT), "corpora": names, "cases": sorted(only or ()),
-        "sample": args.sample, "judge": args.judge, "judge_samples": args.judge_samples,
-        "deployment_config_sha256": fingerprint(Path(args.deployment_config)),
-        "lock_path": str(EVAL_HOST_LOCK), "lock_acquired": True,
-    })
+    try:
+        evidence = RunEvidence(run_id=RUN_ID, lock_fd=lock_fd, metadata={
+            **revision(_REPO_ROOT), "corpora": names, "cases": sorted(only or ()),
+            "sample": args.sample, "judge": args.judge, "judge_samples": args.judge_samples,
+            "deployment_config_sha256": fingerprint(Path(args.deployment_config)),
+            "lock_path": str(EVAL_HOST_LOCK), "lock_acquired": True,
+        })
+    except OSError as exc:
+        raise EvidenceError(f"cannot prepare private eval evidence ({type(exc).__name__})") from exc
     print(f"private eval evidence: {evidence.path}")
     with evidence.capture(trace.get_tracer_provider()):
         rc = _execute(args, names, only)

@@ -504,6 +504,7 @@ def eval_host_lock_is_this_test_s(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     from nora.subject import sandbox
 
     monkeypatch.setattr(sandbox, "EVAL_HOST_LOCK", tmp_path / sandbox.EVAL_HOST_LOCK.name)
+    monkeypatch.setenv("NORA_EVAL_EXCHANGES", str(tmp_path / "eval-evidence"))
 
 
 @pytest.fixture(scope="session", autouse=True)

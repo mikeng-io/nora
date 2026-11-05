@@ -19,5 +19,12 @@
     "old": "        evidence.record(\"corpus_report\", corpus=name, report=report.model_dump())",
     "new": "        pass  # discard complete report",
     "target": "tests/integration/test_eval_observability.py::test_real_case_request_tools_results_logs_and_report_are_durable"
+  },
+  {
+    "name": "filesystem preparation errors use the clean CLI refusal",
+    "file": "evals/__main__.py",
+    "old": "    except OSError as exc:\n        raise EvidenceError(f\"cannot prepare private eval evidence ({type(exc).__name__})\") from exc",
+    "new": "    except FileNotFoundError as exc:\n        raise EvidenceError(f\"cannot prepare private eval evidence ({type(exc).__name__})\") from exc",
+    "target": "tests/integration/test_eval_observability.py::test_cli_preparation_oserror_is_a_clean_refusal"
   }
 ]
