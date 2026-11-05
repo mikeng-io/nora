@@ -515,6 +515,11 @@ class ScopeBrowserManager:
             if state.status is SandboxStatus.OK else None
         stopped = running is False
         if stopped:
+            for row in await self._open_rows(scope, binding.instance):
+                await self._tabs.set_status(
+                    row.id, status="expired", now=self._clock(),
+                    reason="the browser stopped")
+                self._note(scope, "tab_expired", row.id)
             self._note(scope, "browser_stopped", scope)
         return stopped
 

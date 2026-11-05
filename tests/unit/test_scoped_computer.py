@@ -1526,3 +1526,52 @@ async def test_maintenance_cannot_run_beside_a_running_task() -> None:
                                    payload={"op": "browser_stop"},
                                    origin={})
     assert again.granted
+
+
+async def test_confirmed_browser_stop_retires_full_capacity_before_a_new_task(monkeypatch):
+    rig = _wired(monkeypatch)
+    _register(rig.runtime)
+    owners = [uuid.uuid4() for _ in range(MAX_PAGE_TARGETS)]
+    for owner in owners:
+        async with rig.manager.acquire(SCOPE, owner):
+            pass
+    assert len(await rig.tabs.open_for_scope(SCOPE, instance="boot-1")) == MAX_PAGE_TARGETS
+    stops = []
+
+    class Response:
+        status = 200
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+    class Session:
+        def __init__(self, *, timeout):
+            assert timeout.total == 30
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        def post(self, url, *, headers, json):
+            assert url == "http://vm/v1/browser_stop"
+            assert json == {"scope": SCOPE}
+            assert headers["X-Computerd-Instance"] == "boot-1"
+            stops.append(SCOPE)
+            rig.cdp.targets.clear()
+            rig.runtime.browser_running = False
+            return Response()
+
+    monkeypatch.setattr(mgr_mod.aiohttp, "ClientSession", Session)
+    assert await rig.manager.browser_stop(SCOPE)
+    assert stops == [SCOPE]
+    assert not await rig.tabs.open_for_scope(SCOPE, instance="boot-1")
+    with pytest.raises(TabUnavailable, match="expired"):
+        async with rig.manager.acquire(SCOPE, owners[0], must_exist=True):
+            pass
+    async with rig.manager.acquire(SCOPE, uuid.uuid4()) as fresh:
+        assert fresh.tab.target_id in rig.cdp.targets
