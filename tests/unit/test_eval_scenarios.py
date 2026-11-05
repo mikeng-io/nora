@@ -696,7 +696,7 @@ def test_a_case_name_with_a_namespace_dumps_under_it_inside_the_root(
     tmp_path, monkeypatch,
 ):
     """Corpus names carry a namespace (`probe/standing`): the dump made only the
-    root, so the namespaced file's write raised FileNotFoundError — #603. The
+    root, so the namespaced file's write raised FileNotFoundError. The
     file lands at its namespaced path inside the private root; a `..` name is
     refused, never relocated outside it."""
     import json
