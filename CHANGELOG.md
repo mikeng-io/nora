@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.15.10](https://github.com/mikeng-io/nora/compare/v7.15.9...v7.15.10) (2026-11-05)
+
+
+### Bug Fixes
+
+* **cognition:** refuse citations for unrendered agenda items ([3acc9b0](https://github.com/mikeng-io/nora/commit/3acc9b0ed5e17b930d6e4716ff153fce8b46c8b0))
+* **memory:** bind readings to rendered agenda source rows ([c7e9c1c](https://github.com/mikeng-io/nora/commit/c7e9c1ccafb786398fe3649b7f3c028a6ecf6fd3))
+
 ## [7.15.9](https://github.com/mikeng-io/nora/compare/v7.15.8...v7.15.9) (2026-11-05)
 
 
