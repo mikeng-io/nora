@@ -94,7 +94,10 @@ class TabLine:
     """One `browser_tasks` row as the block shows it: which task owns the
     tab, its last observed url/title (untrusted text), whether it is open or
     expired, and when it was last touched. `expires_in` seconds left before
-    the idle sweep retires it (negative: already due)."""
+    the idle sweep retires it (negative: already due). `reason` is why it
+    closed when it did (the row's recorded `close_reason`, or the dead
+    instance it was bound to); `last_op`/`last_result` are the owning
+    task's latest tool and outcome — the record of what the tab's work did."""
 
     task_id: str
     url: str
@@ -103,6 +106,9 @@ class TabLine:
     via: str
     last_activity: datetime
     expires_in: float | None = None
+    reason: str = ""
+    last_op: str = ""
+    last_result: str = ""
 
 
 @dataclass(frozen=True)

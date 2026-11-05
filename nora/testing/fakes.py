@@ -2284,7 +2284,8 @@ class FakeBrowserRunner:
 
     async def browse(self, *, scope: str, objective: str,
                      start_url: str | None = None,
-                     task_id: UUID | None = None) -> BrowseOutcome:
+                     task_id: UUID | None = None,
+                     record: object = None) -> BrowseOutcome:
         self.calls.append((scope, objective, start_url, task_id))
         return self.outcome
 
@@ -2893,10 +2894,13 @@ class FakeBrowserTabStore:
             tab, last_activity_at=now,
             last_url=url or tab.last_url, last_title=title or tab.last_title))
 
-    async def set_status(self, tab_id: UUID, *, status: str, now: datetime) -> None:
+    async def set_status(self, tab_id: UUID, *, status: str, now: datetime,
+                         reason: str = "") -> None:
         tab = self.rows.get(tab_id)
         if tab is not None:
-            self._save(replace(tab, status=status))
+            detail = ({**dict(tab.detail), "close_reason": reason}
+                      if reason else dict(tab.detail))
+            self._save(replace(tab, status=status, detail=detail))
 
     async def open_scopes(self, *, limit: int) -> list[str]:
         return sorted({t.scope for t in self.rows.values()

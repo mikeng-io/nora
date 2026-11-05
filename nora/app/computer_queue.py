@@ -131,6 +131,19 @@ def cut_result(reply: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
+@dataclass(frozen=True)
+class _PendingResult:
+    """A terminal outcome the store could not take yet: the segment's OWN
+    result, retained with the execution owner — never genericised into
+    `interrupted` — retried until the write lands. `consumed` is set when
+    the caller already saw the reply (the fast path answers live), so the
+    persisted row marks delivered instead of being handed off twice."""
+
+    status: str
+    result: dict[str, Any]
+    consumed: bool = False
+
+
 class SegmentRegistry:
     """The in-process executors holding granted segments: `task_id` → the
     asyncio task actually running it. Shared by `ComputerAdmission` (the
@@ -141,6 +154,10 @@ class SegmentRegistry:
 
     def __init__(self) -> None:
         self._tasks: dict[UUID, asyncio.Task[Any]] = {}
+        # `task_id` → the terminal outcome the durable row could not yet
+        # take: an uncertain exit holding its real result, or a finish the
+        # store refused — retried until the write lands, never replayed.
+        self._pending: dict[UUID, _PendingResult] = {}
 
     def register(self, task_id: UUID, task: asyncio.Task[Any]) -> None:
         self._tasks[task_id] = task
@@ -152,6 +169,26 @@ class SegmentRegistry:
     def executor(self, task_id: UUID) -> asyncio.Task[Any] | None:
         task = self._tasks.get(task_id)
         return task if task is not None and not task.done() else None
+
+    def retain(self, task_id: UUID, status: str, result: Mapping[str, Any],
+               *, consumed: bool = False) -> None:
+        old = self._pending.get(task_id)
+        self._pending[task_id] = _PendingResult(
+            status=status, result=dict(result),
+            consumed=consumed or (old.consumed if old is not None else False))
+
+    def mark_consumed(self, task_id: UUID) -> None:
+        """The caller saw the retained reply: the row, once it persists,
+        counts as delivered, never handed to the room a second time."""
+        old = self._pending.get(task_id)
+        if old is not None and not old.consumed:
+            self._pending[task_id] = replace(old, consumed=True)
+
+    def pending(self, task_id: UUID) -> _PendingResult | None:
+        return self._pending.get(task_id)
+
+    def clear_pending(self, task_id: UUID) -> None:
+        self._pending.pop(task_id, None)
 
 
 class ComputerAdmission:
@@ -274,16 +311,18 @@ class ComputerAdmission:
                 # surviving work — a stopped HTTP awaiter is not a stopped
                 # guest command. Busy or unreadable leaves the row
                 # `running`: owner-lost, the watchdog's reconcile owns it.
-                if await _guest_quiet(
-                        self._reconcile, task.scope, seconds=DRAIN_SECONDS):
-                    await self._safe_finish(task.id, "cancelled", reply)
+                await self._finish_guarded(task, "cancelled", reply,
+                                           uncertain=True)
                 raise
             except BaseException as exc:
                 reply = {"status": "unavailable", "reason": type(exc).__name__}
-                await self._safe_finish(task.id, "unavailable", reply)
+                await self._finish_guarded(task, "unavailable", reply,
+                                           uncertain=True)
                 raise
             else:
-                await self._safe_finish(task.id, row_status(reply), reply)
+                await self._finish_guarded(
+                    task, row_status(reply), reply,
+                    uncertain=bool(reply.get("uncertain")))
                 outcome["reply"] = reply
             finally:
                 current_segment.reset(token)
@@ -316,18 +355,37 @@ class ComputerAdmission:
             return {"status": "unavailable",
                     "note": "The computer task failed while it ran."}
         reply = outcome.get("reply") or {"status": "unavailable"}
-        with contextlib.suppress(Exception):
-            await self._tasks.mark_delivered(task.id, now=self._clock())
+        row = await self._tasks.get(task.id)
+        if row is not None and row.status in TERMINAL:
+            with contextlib.suppress(Exception):
+                await self._tasks.mark_delivered(task.id, now=self._clock())
+        else:
+            # The row could not be confirmed terminal (an uncertain exit
+            # still holding the scope, or a finish the store refused). The
+            # caller saw the reply: the retained pending persists later and
+            # marks delivered then — never a second handoff.
+            self.executors.mark_consumed(task.id)
         return reply
+
+    async def _finish_guarded(
+        self, task: ComputerTask, status: str, reply: Mapping[str, Any],
+        *, uncertain: bool,
+    ) -> bool:
+        return await _finish_guarded(
+            executors=self.executors, reconcile=self._reconcile,
+            finish=self._safe_finish, task=task, status=status,
+            reply=reply, uncertain=uncertain)
 
     async def _safe_finish(
         self, task_id: UUID, status: str, result: Mapping[str, Any],
-    ) -> None:
+    ) -> bool:
         try:
             await self._tasks.finish(
                 task_id, status=status, result=cut_result(result), now=self._clock())
         except Exception:
             log.exception("computer task %s could not write its terminal row", task_id)
+            return False
+        return True
 
     async def finish(self, task_id: UUID, *, status: str,
                      result: Mapping[str, Any]) -> None:
@@ -350,9 +408,12 @@ class ComputerAdmission:
             # proof its command stopped. Busy or unreadable stays `running`
             # and the scope stays excluded.
             if await _guest_quiet(self._reconcile, row.scope, seconds=DRAIN_SECONDS):
-                await self._tasks.mark_interrupted(
-                    task_id, now=self._clock(), reason="the owner was lost")
-                await self._note(row, "interrupted")
+                if not await _persist_pending(
+                        executors=self.executors, tasks=self._tasks,
+                        clock=self._clock, task_id=task_id):
+                    await self._tasks.mark_interrupted(
+                        task_id, now=self._clock(), reason="the owner was lost")
+                    await self._note(row, "interrupted")
             return await self._tasks.get(task_id)
         executor.cancel()
         with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
@@ -360,10 +421,13 @@ class ComputerAdmission:
         fresh = await self._tasks.get(task_id)
         if fresh is not None and fresh.status == RUNNING:
             if await _guest_quiet(self._reconcile, fresh.scope, seconds=DRAIN_SECONDS):
-                await self._tasks.mark_interrupted(
-                    task_id, now=self._clock(),
-                    reason="the cancellation could not be confirmed")
-                await self._note(fresh, "interrupted")
+                if not await _persist_pending(
+                        executors=self.executors, tasks=self._tasks,
+                        clock=self._clock, task_id=task_id):
+                    await self._tasks.mark_interrupted(
+                        task_id, now=self._clock(),
+                        reason="the cancellation could not be confirmed")
+                    await self._note(fresh, "interrupted")
             fresh = await self._tasks.get(task_id)
         return fresh
 
@@ -383,6 +447,64 @@ def _ephemeral(scope: str, kind: str, now: datetime) -> ComputerTask:
     return ComputerTask(
         id=uuid.uuid4(), scope=scope, kind=kind, status=RUNNING,
         payload={}, origin={}, created_at=now, updated_at=now, started_at=now)
+
+
+async def _finish_guarded(
+    *, executors: SegmentRegistry,
+    reconcile: Callable[[str], Awaitable[str]] | None,
+    finish: Callable[[UUID, str, Mapping[str, Any]], Awaitable[bool]],
+    task: ComputerTask, status: str, reply: Mapping[str, Any],
+    uncertain: bool,
+) -> bool:
+    """Terminalize, gated on the guest having actually stopped.
+
+    An UNCERTAIN exit — the transport dropped mid-command, the executor
+    raised, the caller cancelled, the outcome itself says so — cannot say
+    the guest's work ended. Only an observed `quiet` verdict proves it:
+    busy or unknown keeps the row `running` and the scope blocked, with
+    the real outcome retained for the reconcile pass to persist (never
+    replayed). A certain exit — an answered result or refusal — finishes
+    straight away; a finish the store refuses is retained the same way,
+    so the durable row is written before delivery rather than lost."""
+    persisted = False
+    if uncertain and not await _guest_quiet(reconcile, task.scope,
+                                            seconds=DRAIN_SECONDS):
+        pass
+    else:
+        persisted = await finish(task.id, status, reply)
+    if not persisted:
+        executors.retain(task.id, status, cut_result(dict(reply)))
+    return persisted
+
+
+async def _persist_pending(
+    *, executors: SegmentRegistry, tasks: ComputerTaskStore,
+    clock: Callable[[], datetime], task_id: UUID,
+) -> bool:
+    """Persist a retained outcome once the guest is observed quiet (or the
+    row is past `ORPHAN_AFTER`): the row goes terminal with the ORIGINAL
+    result, never a generic interruption. True when the row is terminal —
+    its result landed, or someone else already closed it. False keeps the
+    pending result for the next pass."""
+    pending = executors.pending(task_id)
+    if pending is None:
+        return False
+    try:
+        await tasks.finish(task_id, status=pending.status,
+                           result=pending.result, now=clock())
+        row = await tasks.get(task_id)
+    except Exception:
+        log.exception("computer task retained finish failed (kept for the next pass)")
+        return False
+    if row is not None and row.status in TERMINAL:
+        executors.clear_pending(task_id)
+        if pending.consumed and row.delivered_at is None:
+            with contextlib.suppress(Exception):
+                await tasks.mark_delivered(task_id, now=clock())
+        return True
+    if row is None:
+        executors.clear_pending(task_id)
+    return False
 
 
 async def _guest_quiet(
@@ -488,9 +610,15 @@ class ComputerQueueRunner:
                         verdict = await self._reconcile_scope(task.scope)
                 if verdict != "quiet":
                     continue  # busy or unreadable: never closed on age alone
-                await self._tasks.mark_interrupted(
-                    task.id, now=self._clock(), reason="the owner was lost")
-                await self._note(task, "interrupted")
+                # A retained outcome persists first: the row closes with
+                # the segment's REAL result, `interrupted` only when the
+                # owner left nothing behind.
+                if not await _persist_pending(
+                        executors=self._executors, tasks=self._tasks,
+                        clock=self._clock, task_id=task.id):
+                    await self._tasks.mark_interrupted(
+                        task.id, now=self._clock(), reason="the owner was lost")
+                    await self._note(task, "interrupted")
         except Exception:
             log.exception("computer queue reconcile failed")
 
@@ -573,10 +701,13 @@ class ComputerQueueRunner:
                     with contextlib.suppress(Exception):
                         verdict = await self._reconcile_scope(scope)
                 if verdict == "quiet":
-                    await self._tasks.mark_interrupted(
-                        running_row.id, now=self._clock(),
-                        reason="the owner was lost; the VM is quiet")
-                    await self._note(running_row, "interrupted")
+                    if not await _persist_pending(
+                            executors=self._executors, tasks=self._tasks,
+                            clock=self._clock, task_id=running_row.id):
+                        await self._tasks.mark_interrupted(
+                            running_row.id, now=self._clock(),
+                            reason="the owner was lost; the VM is quiet")
+                        await self._note(running_row, "interrupted")
                 # busy/unknown: keep the row running and the scope blocked;
                 # the orphan bound is the outer limit.
             return 0
@@ -669,16 +800,18 @@ class ComputerQueueRunner:
                 # `cancelled` only on an observed-quiet guest — the same
                 # rule as the submitter side: a stopped awaiter is not a
                 # stopped guest command.
-                if await _guest_quiet(
-                        self._reconcile_scope, task.scope, seconds=DRAIN_SECONDS):
-                    await self._safe_finish(task.id, "cancelled", reply)
+                await self._finish_guarded(task, "cancelled", reply,
+                                           uncertain=True)
                 raise
             except Exception as exc:
                 log.exception("computer task %s dispatch failed", task.id)
                 reply = {"status": "unavailable", "reason": type(exc).__name__}
-                await self._safe_finish(task.id, "unavailable", reply)
+                await self._finish_guarded(task, "unavailable", reply,
+                                           uncertain=True)
             else:
-                await self._safe_finish(task.id, row_status(reply), reply)
+                await self._finish_guarded(
+                    task, row_status(reply), reply,
+                    uncertain=bool(reply.get("uncertain")))
             finally:
                 current_segment.reset(token)
             row = await self._tasks.get(task.id)
@@ -688,13 +821,24 @@ class ComputerQueueRunner:
             if me is not None:
                 self._executors.unregister(task.id, me)
 
+    async def _finish_guarded(
+        self, task: ComputerTask, status: str, reply: Mapping[str, Any],
+        *, uncertain: bool,
+    ) -> bool:
+        return await _finish_guarded(
+            executors=self._executors, reconcile=self._reconcile_scope,
+            finish=self._safe_finish, task=task, status=status,
+            reply=reply, uncertain=uncertain)
+
     async def _safe_finish(self, task_id: UUID, status: str,
-                           result: Mapping[str, Any]) -> None:
+                           result: Mapping[str, Any]) -> bool:
         try:
             await self._tasks.finish(
                 task_id, status=status, result=cut_result(result), now=self._clock())
         except Exception:
             log.exception("computer task %s could not write its terminal row", task_id)
+            return False
+        return True
 
     async def run_forever(self, *, tick_seconds: float = 1.0) -> None:
         while True:
@@ -757,14 +901,16 @@ class ComputerTaskBackend:
             if result.get(key)
         ]
         for key in ("path", "url", "title", "media_type", "sha256",
-                    "exit_code", "steps"):
+                    "exit_code", "steps", "task", "tab"):
             value = result.get(key)
             if value not in (None, ""):
                 parts.append(f"{key}: {value}")
         for key in ("stdout", "stderr"):
             value = result.get(key)
             if value:
-                parts.append(f"{key}:\n{str(value)[:4000]}")
+                # Persisted rows are already bounded (`RESULT_CHARS`):
+                # reporting them whole keeps the tail the producer wrote.
+                parts.append(f"{key}:\n{value}")
         report = "\n".join(parts) or row.status
         if row.status == "done":
             return JobResult(status=JobStatus.SUCCEEDED, report=report,

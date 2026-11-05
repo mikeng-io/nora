@@ -16324,6 +16324,10 @@ Args:
                     "status": "unavailable", "reason": ran.reason or "",
                     "source": "computer", "stdout": stdout, "stderr": stderr,
                     "truncated": truncated,
+                    # computerd never answered the request itself: the
+                    # command may still be running — the queue holds the
+                    # scope until the guest is observed quiet.
+                    "uncertain": not ran.answered,
                     "note": "The command did not finish, or the computer could not "
                             "be reached. Say so; don't guess what it would have "
                             "printed.",
@@ -17082,9 +17086,27 @@ Args:
             status, finished = CANCELLED, None
             result: dict[str, object] = {"reason": "cancelled before the browser answered"}
             output_ref: dict[str, object] = {}
+
+            async def _action_record(*, name: str, ref: str = "",
+                                     observation: int = 0, outcome: str = "",
+                                     detail: str = "") -> None:
+                """One durable row per page action the browse agent selected:
+                the selection (name + ref), the observation it came from and
+                what became of it — correlated to this call by `operation_id`."""
+                if computer_events is None:
+                    return
+                await computer_events.append(_computer_row(
+                    "computer_browse.action", operation_id, "finished",
+                    outcome or "recorded", started=now_fn(), finished=now_fn(),
+                    request={"action": name, "ref": ref,
+                             "observation": observation},
+                    result={"outcome": outcome, "detail": str(detail)[:1000]},
+                    session_id=session_id,
+                ))
             try:
                 got = await runner.browse(scope=bound_computer_scope, objective=objective,
-                                          start_url=start_url, task_id=task_uuid)
+                                          start_url=start_url, task_id=task_uuid,
+                                          record=_action_record)
                 finished = now_fn()
                 result = {"reason": got.reason, "url": got.url, "steps": got.steps,
                           "needs_human": got.needs_human, "answer_chars": len(got.answer)}
@@ -17126,6 +17148,9 @@ Args:
             }
         return {
             "status": "unavailable", "needs_human": False, "reason": got.reason,
+            # A transport or time-limit exit cannot confirm the guest side
+            # ended: the queue holds the scope until it is observed quiet.
+            "uncertain": bool(getattr(got, "uncertain", False)),
             "note": "The browser could not finish this, and nothing it found is "
                     "confirmed. Say so; don't describe a result you never got.",
         }

@@ -129,11 +129,14 @@ def render_computer(view: ComputerView | None) -> ContextBlock | None:
                 state = (f"open, expires in {max(0, int(tab.expires_in))}s of "
                          "no activity")
             else:
-                state = tab.status
+                state = tab.status + (f" ({tab.reason})" if tab.reason else "")
             via = ", a popup it opened" if tab.via == "popup" else ""
+            title = f'"{tab.title}" · ' if tab.title else ""
+            did = (f" · last op {tab.last_op} {tab.last_result}".rstrip()
+                   if tab.last_op else "")
             lines.append(_Line(
                 f"browser tab of task {tab.task_id}{via} · {state} · "
-                f"{where} · active {age(tab.last_activity, now)}",
+                f"{title}{where}{did} · active {age(tab.last_activity, now)}",
                 tab.last_activity))
 
     # The machine's own identity and when this block's read of it was made:

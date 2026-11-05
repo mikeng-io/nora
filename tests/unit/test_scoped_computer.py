@@ -1202,3 +1202,271 @@ async def test_a_leaked_queued_maintenance_row_is_closed_never_started() -> None
         await asyncio.sleep(0.01)
     assert (await store.get(behind.id)).status == "done"
     assert ran == ["native"]
+
+
+# --- uncertain exits hold their owner until the guest reports quiet ----------
+
+
+async def test_an_uncertain_fast_reply_holds_the_scope_until_quiet() -> None:
+    """A reply that cannot say whether the guest ran it keeps the row
+    RUNNING and the owner registered — no terminal write, no successor —
+    until the scoped probe says `quiet`; then the REAL reply persists.
+    A certain `done` reply closes immediately as the positive control."""
+    quiet = asyncio.Event()
+    verdict = {"v": "busy"}
+
+    async def reconcile(scope: str) -> str:
+        await quiet.wait()
+        return verdict["v"]
+
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    admission = ComputerAdmission(
+        tasks=store, redis=redis, clock=clock(), reconcile=reconcile)
+
+    async def uncertain() -> dict:
+        return {"status": "unavailable", "uncertain": True,
+                "note": "the computer could not be reached",
+                "stdout": "partial"}
+
+    got = await admission.submit(scope=SCOPE, kind="native", payload={},
+                                 origin={})
+    assert got.granted
+    runner = asyncio.ensure_future(
+        admission.run_segment(got.task, work=uncertain()))
+    await asyncio.sleep(0.05)
+    verdict["v"] = "quiet"
+    quiet.set()
+    result = await runner
+    # The caller's reply is the reply, not an interrupted rewrite.
+    assert result.get("stdout") == "partial"
+
+    row = await store.get(got.task.id)
+    assert row is not None and row.status == "unavailable"
+    assert row.result.get("stdout") == "partial"
+    assert row.result.get("uncertain") is True
+    # The owner is gone only after the guest proved quiet.
+    assert admission.executors.executor(got.task.id) is None
+
+    # A successor can now be admitted; while the owner held it could not.
+    nxt = await admission.submit(scope=SCOPE, kind="native", payload={},
+                                 origin={})
+    assert nxt.granted
+
+    async def certain() -> dict:
+        return {"status": "ok", "answer": "clean"}
+
+    done = await admission.run_segment(nxt.task, work=certain())
+    assert done.get("answer") == "clean"
+    row = await store.get(nxt.task.id)
+    assert row is not None and row.status == "done"
+    assert row.result.get("answer") == "clean"
+
+
+async def test_an_uncertain_reply_with_a_busy_guest_never_lets_go() -> None:
+    """While the scoped probe stays `busy`, reconciliation never writes a
+    terminal row — the scope cannot be stolen and nothing is replayed."""
+    verdict = {"v": "busy"}
+
+    async def reconcile(scope: str) -> str:
+        return verdict["v"]
+
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    admission = ComputerAdmission(
+        tasks=store, redis=redis, clock=clock(), reconcile=reconcile)
+
+    async def uncertain() -> dict:
+        return {"status": "unavailable", "uncertain": True}
+
+    got = await admission.submit(scope=SCOPE, kind="native", payload={},
+                                 origin={})
+    assert got.granted
+    runner = asyncio.ensure_future(
+        admission.run_segment(got.task, work=uncertain()))
+    await asyncio.sleep(0.1)
+    row = await store.get(got.task.id)
+    assert row is not None and row.status == "running"
+    assert row.result.get("answer") in (None, "")
+    # No successor while the command may still exist.
+    nxt = await admission.submit(scope=SCOPE, kind="native", payload={},
+                                 origin={}, wait_seconds=0.0)
+    assert not nxt.granted
+    verdict["v"] = "quiet"
+    result = await runner
+    assert result.get("status") == "unavailable"
+    row = await store.get(got.task.id)
+    assert row is not None and row.status == "unavailable"
+
+
+async def test_a_failed_finish_keeps_the_result_with_its_owner() -> None:
+    """The terminal write dropping the row keeps the REAL reply on the
+    executor: the row is RUNNING and undelivered while the store is down,
+    and reconciliation's retry persists the original result — stdout,
+    handles and all — and only then marks it delivered."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    admission = ComputerAdmission(
+        tasks=store, redis=redis, clock=clock(),
+        reconcile=lambda scope: asyncio.sleep(0, "quiet"))
+    real_finish = store.finish
+    fail = {"on": True}
+
+    async def finish(*args, **kwargs):
+        if fail["on"]:
+            raise OSError("computer_task_store offline")
+        return await real_finish(*args, **kwargs)
+
+    store.finish = finish  # type: ignore[method-assign]
+
+    async def work() -> dict:
+        return {"status": "ok", "answer": "kept",
+                "stdout": "x" * 4500, "exit_code": 0}
+
+    got = await admission.submit(scope=SCOPE, kind="native", payload={},
+                                 origin={})
+    assert got.granted
+    reply = await admission.run_segment(got.task, work=work())
+    # The caller saw the real reply — it is never rewritten.
+    assert reply.get("answer") == "kept"
+    row = await store.get(got.task.id)
+    assert row is not None and row.status == "running"
+    assert row.delivered_at is None
+    # The retained result is reachable with the executor that ran it.
+    assert admission.executors.pending(got.task.id) is not None
+
+    fail["on"] = False
+    runner = ComputerQueueRunner(
+        tasks=store, redis=redis, clock=clock(), watch_seconds=0.01,
+        executors=admission.executors,
+        reconcile=lambda scope: asyncio.sleep(0, "quiet"))
+    await runner.tick()
+    row = await store.get(got.task.id)
+    assert row is not None and row.status == "done"
+    assert row.result.get("answer") == "kept"
+    assert row.result.get("stdout") == "x" * 4500
+    # A reply the caller already saw is persisted delivered — never
+    # handed off a second time.
+    assert row.delivered_at is not None
+    assert admission.executors.pending(got.task.id) is None
+
+
+async def test_a_failed_finish_on_the_runner_retries_before_delivery() -> None:
+    """The deferred path keeps the typed reply when `finish` fails: the
+    stream entry stays pending (never acked, never delivered) and the
+    next reconcile persists the ORIGINAL result — not `interrupted`."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    blocker = await admission.submit(scope=SCOPE, kind="native", payload={},
+                                     origin={})
+    queued = await admission.submit(scope=SCOPE, kind="native",
+                                    payload={"tool": "computer_run",
+                                             "args": {"command": "true"}},
+                                    origin={}, wait_seconds=0.0)
+    assert blocker.granted and not queued.granted
+    await admission.finish(blocker.task.id, status="done", result={})
+
+    delivered: list[ComputerTask] = []
+
+    async def collect(row: ComputerTask) -> None:
+        delivered.append(row)
+        await store.mark_delivered(row.id, now=NOW)
+
+    real_finish = store.finish
+    fail = {"on": True}
+
+    async def finish(*args, **kwargs):
+        if fail["on"] and kwargs.get("status") == "done":
+            raise OSError("computer_task_store offline")
+        return await real_finish(*args, **kwargs)
+
+    store.finish = finish  # type: ignore[method-assign]
+
+    async def executor(row: ComputerTask) -> dict:
+        return {"status": "ok", "answer": "the deferred answer",
+                "stdout": "kept-bytes"}
+
+    runner = ComputerQueueRunner(
+        tasks=store, redis=redis, clock=clock(), watch_seconds=0.01,
+        on_terminal=collect, dispatch={"native": executor},
+        reconcile=lambda scope: asyncio.sleep(0, "quiet"))
+    await runner.tick()
+    await asyncio.sleep(0.05)
+    row = await store.get(queued.task.id)
+    # The failed finish left the row RUNNING and undelivered — no
+    # `interrupted` overwrite, no ack.
+    assert row is not None and row.status == "running"
+    assert row.delivered_at is None
+    assert [d.id for d in delivered] == [blocker.task.id]
+
+    fail["on"] = False
+    for _ in range(60):
+        await runner.tick()
+        if (await store.get(queued.task.id)).status == "done":
+            break
+        await asyncio.sleep(0.02)
+    row = await store.get(queued.task.id)
+    assert row is not None and row.status == "done"
+    assert row.result.get("answer") == "the deferred answer"
+    assert row.result.get("stdout") == "kept-bytes"
+    assert [d.id for d in delivered][-1] == queued.task.id
+    assert row.delivered_at is not None
+
+
+async def test_poll_reports_the_browser_handle_tab_and_full_tail() -> None:
+    """`poll` projects the row's typed result: the browser handle, the tab
+    it ran on, and every byte of the retained stdout — no silent 4000 cut."""
+    store = FakeComputerTaskStore()
+    backend = ComputerTaskBackend(tasks=store)
+    row = task(kind="browse")
+    await store.enqueue(row)
+    await store.claim(row.id, now=NOW)
+    handle = f"h-{uuid.uuid4()}"
+    stdout = "x" * 4500
+    await store.finish(row.id, status="done", result={
+        "task": handle, "tab": "tab-7", "status": "ok",
+        "stdout": stdout, "url": "https://example.invalid/"}, now=NOW)
+    done = await backend.poll(job_id=str(row.id))
+    from nora.domain.ports import JobStatus
+    assert done.status is JobStatus.SUCCEEDED
+    assert handle in done.report and "tab-7" in done.report
+    assert stdout in done.report
+
+
+async def test_a_stale_attach_invalidates_the_binding_before_expired(
+        monkeypatch) -> None:
+    """`acquire` on a bound row whose target is gone expires the row AND
+    drops the endpoint binding — the next call re-resolves the instance
+    rather than routing a stale handle to a replacement VM."""
+    rig = _wired(monkeypatch)
+    _register(rig.runtime)
+    owner = uuid.uuid4()
+    async with rig.manager.acquire(SCOPE, owner) as bound:
+        target = bound.tab.target_id
+    assert target in rig.cdp.targets
+    del rig.cdp.targets[target]
+    with pytest.raises(TabUnavailable, match="expired"):
+        async with rig.manager.acquire(SCOPE, owner, target_id=target):
+            pass
+    assert rig.runtime.invalidated == [SCOPE]
+    stale = [r for r in rig.tabs.rows.values() if r.target_id == target]
+    assert stale and all(r.status == "expired" for r in stale)
+
+
+async def test_maintenance_cannot_run_beside_a_running_task() -> None:
+    """The maintenance segment is claimed through the SAME FIFO as user
+    work: while a task is running, `browser_stop` cannot be admitted —
+    the guest reaper is not a second lifecycle owner."""
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    first = await admission.submit(scope=SCOPE, kind="native", payload={},
+                                   origin={})
+    assert first.granted
+    maint = await admission.submit(scope=SCOPE, kind="maintenance",
+                                   payload={"op": "browser_stop"},
+                                   origin={}, wait_seconds=0.0)
+    assert not maint.granted
+    assert maint.task.kind == "maintenance"
+    await admission.cancel(maint.task.id)
+    await admission.finish(first.task.id, status="done", result={})
+    again = await admission.submit(scope=SCOPE, kind="maintenance",
+                                   payload={"op": "browser_stop"},
+                                   origin={})
+    assert again.granted

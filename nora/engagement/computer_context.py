@@ -250,21 +250,46 @@ class ComputerContextReader:
             try:
                 tab_rows = await self._tabs.for_scope(scope, limit=8)
                 idle = self._browser_idle_after
-                tabs = tuple(TabLine(
-                    task_id=str(t.task_id), url=cut(t.last_url, 80),
-                    title=cut(t.last_title, 60),
-                    # A row bound to a DEAD instance is expired whatever the
-                    # sweep has had time to write — the block renders the
-                    # live instance's tabs only.
-                    status=("expired" if t.status == "open" and instance is not None
-                            and t.instance != instance else t.status),
-                    via=t.via,
-                    last_activity=t.last_activity_at,
-                    expires_in=((t.last_activity_at + idle - now).total_seconds()
-                                if idle is not None and t.status == "open"
-                                and (instance is None or t.instance == instance)
-                                else None),
-                ) for t in tab_rows)
+                owners: dict[str, ComputerTask | None] = {}
+                if self._tasks is not None:
+                    for t in tab_rows:
+                        key = str(t.task_id)
+                        if key not in owners:
+                            try:
+                                owners[key] = await self._tasks.get(t.task_id)
+                            except Exception:
+                                owners[key] = None
+
+                def _line(t: Any) -> TabLine:
+                    owner = owners.get(str(t.task_id))
+                    why = str((t.detail or {}).get("close_reason") or "")
+                    if (not why and instance is not None
+                            and t.instance != instance):
+                        why = "the VM instance changed"
+                    return TabLine(
+                        task_id=str(t.task_id), url=cut(t.last_url, 80),
+                        title=cut(t.last_title, 60),
+                        # A row bound to a DEAD instance is expired whatever
+                        # the sweep has had time to write — the block renders
+                        # the live instance's tabs only.
+                        status=("expired" if t.status == "open"
+                                and instance is not None
+                                and t.instance != instance else t.status),
+                        via=t.via,
+                        last_activity=t.last_activity_at,
+                        expires_in=((t.last_activity_at + idle - now).total_seconds()
+                                    if idle is not None and t.status == "open"
+                                    and (instance is None or t.instance == instance)
+                                    else None),
+                        reason=cut(why, 60),
+                        last_op=(cut(str((owner.payload or {}).get("tool")
+                                         or owner.kind), 40)
+                                 if owner is not None else ""),
+                        last_result=(cut(owner.status, 20)
+                                     if owner is not None else ""),
+                    )
+
+                tabs = tuple(_line(t) for t in tab_rows)
             except Exception:
                 log.exception("browser tabs read failed")
                 tabs = None

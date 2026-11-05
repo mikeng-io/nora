@@ -120,6 +120,10 @@ class RunResult:
     truncated: bool = False
     duration_ms: int | None = None
     reason: str | None = None
+    #: False when computerd never answered the request itself (a refused or
+    #: timed-out connection): the command may still be running on the guest.
+    #: The queue terminalizes such an exit only after observing guest quiet.
+    answered: bool = True
 
 
 @dataclass(frozen=True)
@@ -179,6 +183,10 @@ class BrowseOutcome:
     # ran on, and the browser target id. Empty on the shared-VM path.
     task_id: str = ""
     tab: str = ""
+    #: True when the outcome came from an exit whose effects were not
+    #: confirmed ended (a dead connection, a task cut at its time limit):
+    #: the queue terminalizes it only after observing guest quiet.
+    uncertain: bool = False
 
 
 @dataclass(frozen=True)
@@ -256,15 +264,21 @@ class StateResult:
     #: "attached"}`), or None when the answer carried none — unknown, never
     #: «no browser». A capture or stop's confirmation reads it.
     browser: Mapping[str, object] | None = None
+    #: computerd's count of `run` calls still executing in the scope, or
+    #: None when the answer carried none (an old computerd — unknown, never
+    #: «none»). The managed browser's own processes are not jobs and do not
+    #: count here or in `processes`.
+    runs: int | None = None
 
 
 def anything_running(state: StateResult) -> bool | None:
-    """Whether the scope is running a job: a tmux pane with one, or ANY
-    process its user owns (a `nohup … &` job has no tmux session at all).
-    True as soon as either source shows one; None when neither shows one and
-    either could not be read (unknown is never «nothing running»)."""
+    """Whether the scope is running a job: a tmux pane with one, ANY
+    process its user owns (a `nohup … &` job has no tmux session at all),
+    or a `run` call still executing on the guest. True as soon as one
+    source shows one; None when none shows one and one could not be read
+    (unknown is never «nothing running»)."""
     tmux_running = state.tmux is not None and any(t.running for t in state.tmux)
-    if tmux_running or state.processes:
+    if tmux_running or state.processes or (state.runs or 0) > 0:
         return True
     if state.tmux is None or state.processes is None:
         return None

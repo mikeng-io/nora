@@ -83,11 +83,17 @@ class SqlBrowserTabStore:
                 sa.update(T).where(T.c.id == tab_id, T.c.status == OPEN)
                 .values(**values))
 
-    async def set_status(self, tab_id: UUID, *, status: str, now: datetime) -> None:
+    async def set_status(self, tab_id: UUID, *, status: str, now: datetime,
+                         reason: str = "") -> None:
         now = ensure_utc_event(now, field="now")
+        values: dict[str, Any] = {"status": status}
+        if reason:
+            row = await self.get(tab_id)
+            values["detail"] = {**(dict(row.detail) if row is not None else {}),
+                                "close_reason": reason}
         async with self._engine.begin() as conn:
             await conn.execute(
-                sa.update(T).where(T.c.id == tab_id).values(status=status))
+                sa.update(T).where(T.c.id == tab_id).values(**values))
 
     async def open_scopes(self, *, limit: int) -> list[str]:
         async with self._engine.connect() as conn:

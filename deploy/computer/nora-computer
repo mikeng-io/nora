@@ -1078,15 +1078,30 @@ scope_restore() {
     box=$(scope_sandbox "$scope")
     state=$(scope_state "$scope")
     [ "$state" = running ] || { echo "scope restore: $box is $state, not running — start the scope's sandbox first" >&2; exit 6; }
-    # tar -x over /workspace: restores every file the archive names and keeps
-    # every file it does not — the migration path a recreated scope needs.
     if ! sbx cp "$file" "$box:/tmp/nora-scope-restore.tar.gz" </dev/null; then
         echo "scope restore: could not copy the archive into $box" >&2; exit 6
     fi
-    if ! sbx exec -u root "$box" sh -c \
-            'tar xzf /tmp/nora-scope-restore.tar.gz -C /workspace && rm -f /tmp/nora-scope-restore.tar.gz' \
-            </dev/null; then
-        echo "scope restore: extraction failed; the archive may still sit at /tmp/nora-scope-restore.tar.gz in $box" >&2
+    # The manifest's rollback claim, made true: the archive extracts into a
+    # sibling staging tree, /workspace moves aside to /workspace.restore-old
+    # BEFORE the staged tree takes its place — an operator can put the old
+    # tree back until the destination is verified and the dir removed.
+    # computerd's restore-lease file is carried forward (or rebuilt when the
+    # archive predates it) so the lease contract survives the swap.
+    if ! sbx exec -u root "$box" sh -c '
+            set -e
+            rm -rf /workspace.restore-new
+            mkdir /workspace.restore-new
+            tar xzf /tmp/nora-scope-restore.tar.gz -C /workspace.restore-new
+            rm -f /tmp/nora-scope-restore.tar.gz
+            rm -rf /workspace.restore-old
+            mv /workspace /workspace.restore-old
+            mv /workspace.restore-new /workspace
+            [ -f /workspace/.restore.lock ] || \
+                install -m 600 /workspace.restore-old/.restore.lock /workspace/.restore.lock 2>/dev/null || \
+                : > /workspace/.restore.lock
+            chmod 600 /workspace/.restore.lock
+            ' </dev/null; then
+        echo "scope restore: swap failed; the pre-restore workspace may sit at /workspace.restore-old in $box" >&2
         exit 6
     fi
     record_event scope_restore ok scope="$scope" file="$file"
@@ -1132,7 +1147,7 @@ EOF
 }
 
 scope_verify_dir() {
-    # Re-read $2 (the restored tree) against manifest $1: every file named
+    # Re-read $2 (a restored tree) against manifest $1: every file named
     # must exist with the same size+sha256; print the verdict JSON. rc=3 on
     # any miss or mismatch — a verified restore or nothing.
     python3 - "$1" "$2" <<'EOF'
@@ -1153,6 +1168,50 @@ for rel, spec in want.items():
 ok = not missing and not mismatched
 print(json.dumps({"verified": ok, "checked": len(want),
                   "missing": missing, "mismatched": mismatched}, indent=1))
+sys.exit(0 if ok else 3)
+EOF
+}
+
+scope_verify_tar() {
+    # Re-read $2 (the restored tree, read back as a tar) against manifest
+    # $1: every file named must exist with the same size+sha256 AND the
+    # same uid/gid the drained source recorded — the restored owner
+    # mapping, read from the archive's own member metadata (a host extract
+    # cannot say what uid the guest file has). rc=3 on any miss or
+    # mismatch — a verified restore or nothing.
+    python3 - "$1" "$2" <<'EOF'
+import hashlib, json, sys, tarfile
+manifest, tar_path = sys.argv[1], sys.argv[2]
+want = {f["path"]: f for f in json.load(open(manifest))["files"]}
+missing, mismatched, wrong_owner = [], [], []
+with tarfile.open(tar_path) as tf:
+    members = {}
+    for m in tf.getmembers():
+        if m.isfile():
+            members[m.name.lstrip("./")] = m
+    for rel, spec in want.items():
+        m = members.get(rel)
+        if m is None:
+            missing.append(rel); continue
+        if m.size != spec["size"]:
+            mismatched.append(rel)
+        else:
+            h = hashlib.sha256()
+            src = tf.extractfile(m)
+            while True:
+                chunk = src.read(1 << 20)
+                if not chunk:
+                    break
+                h.update(chunk)
+            if h.hexdigest() != spec["sha256"]:
+                mismatched.append(rel)
+        if "uid" in spec and (m.uid != spec["uid"]
+                              or m.gid != spec.get("gid", spec["uid"])):
+            wrong_owner.append(rel)
+ok = not missing and not mismatched and not wrong_owner
+print(json.dumps({"verified": ok, "checked": len(want),
+                  "missing": missing, "mismatched": mismatched,
+                  "wrong_owner": wrong_owner}, indent=1))
 sys.exit(0 if ok else 3)
 EOF
 }
@@ -1210,9 +1269,11 @@ EOF
 }
 
 scope_verify() {
-    # Verified restore: extract the archive to a scratch dir INSIDE the
-    # scope's sandbox and re-read every manifest entry — the migration is
-    # proven only when the restored bytes digest-match the drained source.
+    # Verified restore: re-read the RESTORED guest tree — pulled back out
+    # of the scope's sandbox — against every manifest entry: restored
+    # bytes digest-match the drained source AND the restored ownership
+    # matches the recorded mapping. A host re-extract of the archive
+    # proves nothing about what the restore actually left behind.
     local scope=${1:-} file=${2:-} box state
     scope_valid "$scope" || { echo "usage: nora-computer scope verify SCOPE FILE" >&2; exit 2; }
     [ -f "$file" ] || { echo "scope verify: no archive $file" >&2; exit 2; }
@@ -1223,8 +1284,16 @@ scope_verify() {
     state=$(scope_state "$scope")
     [ "$state" = running ] || { echo "scope verify: $box is $state, not running" >&2; exit 6; }
     local inv; inv=$(mktemp -d)
-    tar xzf "$file" -C "$inv" || { rm -rf "$inv"; echo "scope verify: archive does not extract" >&2; exit 3; }
-    scope_verify_dir "$file.manifest.json" "$inv"
+    # The guest is read back as one stream: `tar czf` inside the box
+    # carries every restored file's bytes AND its uid/gid in the member
+    # metadata — `scope_verify_tar` reads both against the manifest, so
+    # the check is the restored tree, never a host re-extract of the
+    # archive or the host's own ids.
+    if ! sbx exec -u root "$box" sh -c \
+            'tar czf - -C /workspace .' </dev/null >"$inv/restored.tar.gz"; then
+        rm -rf "$inv"; echo "scope verify: the restored workspace could not be read back" >&2; exit 3
+    fi
+    scope_verify_tar "$file.manifest.json" "$inv/restored.tar.gz"
     local rc=$?
     rm -rf "$inv"
     [ "$rc" = 0 ] || { echo "scope verify: restore is NOT verified — do not migrate" >&2; exit 3; }

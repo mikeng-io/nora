@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, TypeVar
 
@@ -306,6 +307,7 @@ class ComputerdRuntime:
                                       else "computerd did not report processes")),
                 browser=(reply["browser"] if isinstance(reply.get("browser"), dict)
                          else None),
+                runs=_opt_int(reply.get("runs")),
             )
         return await self._guarded(
             "state", body, lambda why: StateResult(SandboxStatus.UNAVAILABLE, reason=why),
@@ -362,6 +364,11 @@ class ComputerdRuntime:
         except Exception as exc:  # a raise out of the port breaks every tool on it
             log.exception("computerd call failed unexpectedly")
             result = unavailable(f"the computer call failed ({type(exc).__name__})")
+        if not answered and isinstance(result, RunResult):
+            # An `unavailable` that computerd itself gave ends the command;
+            # one its transport could not answer may leave it running — the
+            # caller must reconcile guest quiet before terminalizing.
+            result = replace(result, answered=False)
         self._observe(op, str(getattr(result, "status", SandboxStatus.UNAVAILABLE)), answered)
         return result
 

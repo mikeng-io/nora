@@ -97,7 +97,11 @@ class BrowserTabStore(Protocol):
         refreshes; page timers do not — only rows a caller touches move)."""
         ...
 
-    async def set_status(self, tab_id: UUID, *, status: str, now: datetime) -> None: ...
+    async def set_status(self, tab_id: UUID, *, status: str, now: datetime,
+                         reason: str = "") -> None:
+        """A status write; `reason` is recorded on the row's `detail` as
+        `close_reason` — why it closed, for the context block's report."""
+        ...
 
     async def open_scopes(self, *, limit: int) -> list[str]:
         """The scopes with any `open` row: the sweep's breadth read, from the

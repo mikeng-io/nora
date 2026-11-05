@@ -264,6 +264,15 @@ class Computer:
                 )
         finally:
             os.close(fd)
+        # `run` calls currently executing, per scope: the guest-side busy
+        # signal the idle reaper and `state` report — a transport may die
+        # mid-command while the command itself still runs.
+        self._runs: dict[str, int] = {}
+
+    def busy(self, scope: str) -> bool:
+        """A `run` call is executing for this scope right now: the owner a
+        guest-side idle reaper must never cut out from under."""
+        return self._runs.get(scope, 0) > 0
 
     @contextlib.asynccontextmanager
     async def room_lease(self) -> AsyncIterator[None]:
@@ -486,52 +495,63 @@ class Computer:
         env = self._env(scope)
         user = self._user(scope)
         started = time.monotonic()
-        with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    "bash", "-c", command, cwd=workdir, env=env,
-                    stdin=asyncio.subprocess.DEVNULL, stdout=out, stderr=err,
-                    start_new_session=True, **user,
-                )
-            except OSError as exc:
-                return {"status": "unavailable", "reason": f"could not start bash: {exc}"}
-            timed_out = False
-            dropped = False
-            # Files, not pipes: this waits for the process alone, never for
-            # a backgrounded child that inherited the output. The caller's
-            # transport is watched alongside: a client that went away cannot
-            # collect the result, so its command's process GROUP is killed —
-            # never left running the workspace while the row already reads
-            # cancelled.
-            wait = asyncio.ensure_future(proc.wait())
-            deadline = started + timeout
-            while not wait.done():
-                if disconnected is not None and disconnected():
-                    dropped = True
-                    break
-                if time.monotonic() >= deadline:
-                    timed_out = True
-                    break
-                with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(asyncio.shield(wait), 0.5)
-            if timed_out or dropped:
-                with contextlib.suppress(ProcessLookupError):
-                    os.killpg(proc.pid, signal.SIGKILL)
-                await wait
-            stdout, out_cut = _bounded(out, limit)
-            stderr, err_cut = _bounded(err, max(limit // 4, 200))
-        fields = {
-            "exit_code": proc.returncode, "stdout": stdout, "stderr": stderr,
-            "truncated": out_cut or err_cut,
-            "duration_ms": int((time.monotonic() - started) * 1000),
-        }
-        if dropped:
-            return {"status": "unavailable",
-                    "reason": "the caller went away; the command was stopped",
-                    **fields}
-        if timed_out:
-            return {"status": "unavailable", "reason": f"timed out after {timeout:g}s", **fields}
-        return {"status": "ok", **fields}
+        # Registered while the command runs: a dropped transport is not a
+        # stopped command — `busy()` and `state` report it until `wait`
+        # returns, whatever happens to the caller's connection.
+        self._runs[scope] = self._runs.get(scope, 0) + 1
+        try:
+            with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "bash", "-c", command, cwd=workdir, env=env,
+                        stdin=asyncio.subprocess.DEVNULL, stdout=out, stderr=err,
+                        start_new_session=True, **user,
+                    )
+                except OSError as exc:
+                    return {"status": "unavailable", "reason": f"could not start bash: {exc}"}
+                timed_out = False
+                dropped = False
+                # Files, not pipes: this waits for the process alone, never for
+                # a backgrounded child that inherited the output. The caller's
+                # transport is watched alongside: a client that went away cannot
+                # collect the result, so its command's process GROUP is killed —
+                # never left running the workspace while the row already reads
+                # cancelled.
+                wait = asyncio.ensure_future(proc.wait())
+                deadline = started + timeout
+                while not wait.done():
+                    if disconnected is not None and disconnected():
+                        dropped = True
+                        break
+                    if time.monotonic() >= deadline:
+                        timed_out = True
+                        break
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(asyncio.shield(wait), 0.5)
+                if timed_out or dropped:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    await wait
+                stdout, out_cut = _bounded(out, limit)
+                stderr, err_cut = _bounded(err, max(limit // 4, 200))
+            fields = {
+                "exit_code": proc.returncode, "stdout": stdout, "stderr": stderr,
+                "truncated": out_cut or err_cut,
+                "duration_ms": int((time.monotonic() - started) * 1000),
+            }
+            if dropped:
+                return {"status": "unavailable",
+                        "reason": "the caller went away; the command was stopped",
+                        **fields}
+            if timed_out:
+                return {"status": "unavailable", "reason": f"timed out after {timeout:g}s", **fields}
+            return {"status": "ok", **fields}
+        finally:
+            left = self._runs.get(scope, 0) - 1
+            if left > 0:
+                self._runs[scope] = left
+            else:
+                self._runs.pop(scope, None)
 
     def _env(self, scope: str) -> dict[str, str]:
         """A command's environment: computerd's own minus its token. HOME is
@@ -716,12 +736,18 @@ class Computer:
         return {"processes": found[:MAX_STATE_PROCESSES],
                 "processes_truncated": len(found) > MAX_STATE_PROCESSES}
 
-    async def state(self, scope: str, body: dict[str, Any]) -> dict[str, Any]:
+    async def state(self, scope: str, body: dict[str, Any], *,
+                    exclude_pids: frozenset[int] = frozenset()) -> dict[str, Any]:
         files = await asyncio.to_thread(self.recent_files, scope)
         tmux = await self.tmux_sessions(scope)
         panes = tmux.pop("_pane_pids", frozenset())
-        procs = await asyncio.to_thread(self.processes, scope, panes=panes)
-        return {"status": "ok", **files, **tmux, **procs}
+        # `runs` is the in-flight `run` count: a dropped transport is not a
+        # stopped command. The managed browser's own pids are excluded —
+        # Chrome is the lifecycle-owned resource, not a job a caller ran.
+        procs = await asyncio.to_thread(
+            self.processes, scope, panes=panes | exclude_pids)
+        return {"status": "ok", "runs": self._runs.get(scope, 0),
+                **files, **tmux, **procs}
 
 
 def xauthority_entry(cookie: bytes) -> bytes:
@@ -1068,7 +1094,7 @@ class Browsers:
     def __init__(
         self, computer: Computer, *, chrome_bin: str = "google-chrome", xvfb_bin: str = "Xvfb",
         max_browsers: int = MAX_BROWSERS, idle_seconds: float = BROWSER_IDLE_SECONDS,
-        x11_dir: Path = X11_DIR,
+        x11_dir: Path = X11_DIR, idle_reap: bool = True,
     ) -> None:
         self.computer = computer
         self.x11_dir = x11_dir
@@ -1076,19 +1102,40 @@ class Browsers:
         self.xvfb_bin = xvfb_bin
         self.max_browsers = max_browsers
         self.idle_seconds = idle_seconds
+        #: False on a scoped VM (`COMPUTERD_SCOPE`): idle retirement there is
+        #: owned by the app's maintenance segment through `browser_stop`,
+        #: the ONE lifecycle owner — the guest loop only recovers dead
+        #: processes, never an idle policy beside it.
+        self.idle_reap = idle_reap
         self.running: dict[str, Browser] = {}
         self._lock = asyncio.Lock()
 
+    def pids(self, scope: str) -> frozenset[int]:
+        """The scope's managed browser processes (chrome + xvfb): resource
+        pids, never jobs — `state` excludes them from `processes` so a
+        retained idle browser is not read as surviving work."""
+        browser = self.running.get(scope)
+        if browser is None:
+            return frozenset()
+        return frozenset(
+            p.pid for p in (browser.chrome, browser.xvfb) if p is not None)
+
     async def reap(self) -> None:
-        """Stop every browser that died, or sat idle past the limit with no
-        client attached."""
+        """Stop every browser that died; on a shared VM, also one that sat
+        idle past the limit with no client attached and no owner running
+        work."""
         async with self._lock:
             await self._reap()
 
     async def _reap(self) -> None:
         now = time.monotonic()
         for scope, browser in list(self.running.items()):
-            idle = browser.client is None and now - browser.last_used > self.idle_seconds
+            # An idle close is never taken while an owner is mid-work: a
+            # `run` call in flight IS the scope's owner, whatever the SQL
+            # maintenance row says.
+            idle = (self.idle_reap and browser.client is None
+                    and now - browser.last_used > self.idle_seconds
+                    and not self.computer.busy(scope))
             if not browser.alive or idle:
                 await browser.stop()
                 self.running.pop(scope, None)
@@ -1520,7 +1567,13 @@ def create_app(
                         tmux_root=tmux_root, tmux_bin=tmux_bin, proc_root=proc_root,
                         bound_scope=bound_scope)
     browsers = Browsers(computer, chrome_bin=chrome_bin, xvfb_bin=xvfb_bin, x11_dir=x11_dir,
-                        max_browsers=max_browsers, idle_seconds=browser_idle_seconds)
+                        max_browsers=max_browsers, idle_seconds=browser_idle_seconds,
+                        # A scoped VM's idle lifecycle is owned by the app's
+                        # maintenance segment (the SQL-elected owner through
+                        # `browser_stop`): this guest loop keeps only dead-
+                        # process recovery, so no second idle policy can cut
+                        # under a live owner. The shared VM keeps its reaper.
+                        idle_reap=bound_scope is None)
     file_ops: dict[str, Callable[[str, dict[str, Any]], Any]] = {
         "read": computer.read, "write": computer.write, "edit": computer.edit,
         "files": computer.files, "fetch": computer.fetch,
@@ -1632,7 +1685,9 @@ def create_app(
                             None if transport is None
                             else transport.is_closing)))
                 if op == "state":
-                    return answer({**await computer.state(scope, body), **browsers.status(scope)})
+                    return answer({**await computer.state(
+                        scope, body, exclude_pids=browsers.pids(scope)),
+                        **browsers.status(scope)})
                 if op == "browser_stop":
                     stopped = await browsers.stop(scope)
                     return answer({"status": "ok" if stopped else "nothing_found"})

@@ -694,3 +694,96 @@ async def test_a_non_page_target_born_clientless_is_not_a_popup(fakes, monkeypat
     closes = [c["params"]["targetId"] for c in _chrome_commands(fakes)
               if c["method"] == "Target.closeTarget"]
     assert "worker-1" not in closes
+
+
+class _FakeBrowser:
+    """A stopped-or-alive browser shape `Browsers._reap` reads."""
+
+    def __init__(self, *, alive: bool, last_used: float) -> None:
+        self.client = None
+        self.last_used = last_used
+        self.chrome = None
+        self.xvfb = None
+        self._alive = alive
+        self.stops = 0
+
+    @property
+    def alive(self) -> bool:
+        return self._alive
+
+    async def stop(self) -> None:
+        self.stops += 1
+
+
+class _FakeComputer:
+    """The one `Computerd` method `reap` reads: is a `run` in flight."""
+
+    def __init__(self, busy: bool = False) -> None:
+        self._busy = busy
+
+    def busy(self, scope: str) -> bool:
+        return self._busy
+
+
+async def test_scoped_idle_reap_belongs_to_the_app_not_the_guest() -> None:
+    """On a scoped VM the guest's idle policy is OFF: an idle browser with
+    no client is never closed by `reap` — the app's maintenance segment
+    (through `browser_stop`) is the ONE lifecycle owner. Dead processes
+    are still recovered, and a shared VM's idle policy still holds."""
+    import time
+
+    from tests.contract.test_sandbox_runtime_contract import load_computerd
+
+    computerd = load_computerd()
+    browsers = computerd.Browsers(
+        _FakeComputer(), idle_seconds=0.0, idle_reap=False)
+    idle = _FakeBrowser(alive=True, last_used=time.monotonic() - 1000)
+    dead = _FakeBrowser(alive=False, last_used=time.monotonic())
+    browsers.running[SCOPE] = idle
+    browsers.running[OTHER] = dead
+    await browsers.reap()
+    # Dead recovery still happens; the live idle browser is SPARED.
+    assert browsers.running.get(SCOPE) is idle and idle.stops == 0
+    assert browsers.running.get(OTHER) is None and dead.stops == 1
+
+    # Positive control: the same idle browser on a SHARED VM reaps.
+    shared = computerd.Browsers(
+        _FakeComputer(), idle_seconds=0.0, idle_reap=True)
+    gone = _FakeBrowser(alive=True, last_used=time.monotonic() - 1000)
+    shared.running[SCOPE] = gone
+    await shared.reap()
+    assert shared.running.get(SCOPE) is None and gone.stops == 1
+
+
+async def test_an_idle_reap_never_closes_beside_a_running_run() -> None:
+    """A `run` call in flight IS an owner: even on a shared VM, `reap`
+    spares an idle browser while its scope reports busy, and only closes
+    it once the work is gone (positive control)."""
+    import time
+
+    computerd = load_computerd()
+    computer = _FakeComputer(busy=True)
+    browsers = computerd.Browsers(
+        computer, idle_seconds=0.0, idle_reap=True)
+    spared = _FakeBrowser(alive=True, last_used=time.monotonic() - 1000)
+    browsers.running[SCOPE] = spared
+    await browsers.reap()
+    assert browsers.running.get(SCOPE) is spared and spared.stops == 0
+    computer._busy = False
+    await browsers.reap()
+    assert browsers.running.get(SCOPE) is None and spared.stops == 1
+
+
+def test_a_scoped_computerd_disables_its_own_idle_reap(tmp_path):
+    """Wiring, not just the flag: a bound-scope computerd builds `Browsers`
+    with the guest idle policy OFF (the app's maintenance segment is the
+    one owner), while an unscoped VM keeps its reaper."""
+    computerd = load_computerd()
+    scoped = computerd.create_app(
+        root=tmp_path / "s", token="t", isolate_scopes=False,
+        tmux_root=tmp_path / "s-tmux", bound_scope=SCOPE, boot_id="b1")
+    shared = computerd.create_app(
+        root=tmp_path / "h", token="t", isolate_scopes=False,
+        tmux_root=tmp_path / "h-tmux")
+    assert scoped["browsers"].idle_reap is False
+    assert shared["browsers"].idle_reap is True

@@ -55,6 +55,7 @@ import aiohttp
 
 from nora.domain.browser_tasks import (
     CLOSED,
+    EXPIRED,
     MAX_PAGE_TARGETS,
     OPEN,
     BrowserTab,
@@ -211,7 +212,8 @@ class ScopeBrowserManager:
         for row in rows:
             if row.target_id not in live:
                 with contextlib.suppress(Exception):
-                    await self._tabs.set_status(row.id, status=CLOSED, now=now)
+                    await self._tabs.set_status(row.id, status=CLOSED, now=now,
+                                                reason="the target is gone")
         orphans = [t for t in targets if str(t.get("targetId")) not in bound]
         room = max(0, MAX_PAGE_TARGETS - len(bound) - len(
             [t for t in orphans if owner is None]))
@@ -339,18 +341,20 @@ class ScopeBrowserManager:
                         with contextlib.suppress(Exception):
                             await asyncio.wait_for(asyncio.shield(drain), 10.0)
             except BrowserError as exc:
+                # A refused or dead connection may be a replaced VM: the
+                # cached binding goes BEFORE any outcome is answered — an
+                # `expired` answer included — so no stale authority stays.
+                self._runtime.invalidate(scope)
                 # A bound row whose target vanished between the read and the
                 # attach is `expired`, not a wrong tab.
                 if wanted is not None:
                     with contextlib.suppress(Exception):
                         gone = [r for r in rows if r.target_id == wanted]
                         for r in gone:
-                            await self._tabs.set_status(r.id, status=CLOSED,
-                                                        now=self._clock())
+                            await self._tabs.set_status(
+                                r.id, status=EXPIRED, now=self._clock(),
+                                reason="the target is gone")
                     raise TabUnavailable("expired") from None
-                # A refused or dead connection may be a replaced VM:
-                # re-verify the identity before the next attach.
-                self._runtime.invalidate(scope)
                 raise TabUnavailable("unavailable") from exc
             finally:
                 self._active.pop(scope, None)
@@ -606,7 +610,8 @@ class ScopeBrowserManager:
         now2 = self._clock()
         for row in dead:
             with contextlib.suppress(Exception):
-                await self._tabs.set_status(row.id, status="expired", now=now2)
+                await self._tabs.set_status(row.id, status="expired", now=now2,
+                                            reason="the VM instance changed")
                 expired += 1
                 self._note(scope, "tab_expired", row.id)
         if candidates or browser_up is True:
@@ -633,7 +638,8 @@ class ScopeBrowserManager:
                                 continue  # guest effect unconfirmed: retry next pass
                         with contextlib.suppress(Exception):
                             await self._tabs.set_status(
-                                row.id, status="expired", now=self._clock())
+                                row.id, status="expired", now=self._clock(),
+                                reason="idle")
                             expired += 1
                             self._note(scope, "tab_expired", row.id)
             except BrowserError:
