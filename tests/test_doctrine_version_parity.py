@@ -105,7 +105,7 @@ PINNED: dict[str, tuple[int, str]] = {
     "participation-conduct": (
         5, "40a7a6d6fa1acd44428836c51a45814bd3aee8d9af23dc0fdbd285f0d4411bbb",
     ),
-    "constraints": (14, "f7374cf851f8604a26756ff1839275b6b5292ff63379c92297af9e5870acd7db"),
+    "constraints": (13, "eb71a2acd9b663cdcadac1b9f8e5191acf02242e6b0140ce3347536e666c392c"),
     # The constraints for room occasions, ordered right after `constraints`.
     "room-constraints": (4, "3cf97670e2fc376bdcf27badad486519c4266a3256a252163f3548c9e691658c"),
     # What she already knows about a picture and when to look again; loaded for room
