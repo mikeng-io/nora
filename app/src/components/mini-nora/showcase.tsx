@@ -13,6 +13,7 @@ export function MiniNoraShowcase() {
   const t = useTranslations("miniNora");
   const host = useRef<HTMLDivElement>(null), stage = useRef<Stage | null>(null);
   const [active, setActive] = useState(false), [ready, setReady] = useState(false), [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [motion, setMotion] = useState<Motion>("Stand"), [playing, setPlaying] = useState(false);
   const [head, setHead] = useState(0), [arm, setArm] = useState(0);
   const [expression, setExpression] = useState<Expression>("Neutral");
@@ -40,7 +41,12 @@ export function MiniNoraShowcase() {
       if (!cancelled) setReady(true);
     }).catch(() => { instance?.dispose(); if (!cancelled) { stage.current = null; setFailed(true); } });
     return () => { cancelled = true; instance?.dispose(); stage.current = null; };
-  }, [active]);
+  }, [active, attempt]);
+  function load() {
+    setReady(false); setFailed(false); setActive(true); setAttempt(value => value + 1);
+    setMotion("Stand"); setPlaying(false); setHead(0); setArm(0); setExpression("Neutral");
+    setHands({ Left: [0, 0, 0, 0, 0], Right: [0, 0, 0, 0, 0] });
+  }
   function choose(value: Motion) {
     setMotion(value); stage.current?.setMotion(value);
     setPlaying(false); stage.current?.setPlaying(false);
@@ -55,8 +61,8 @@ export function MiniNoraShowcase() {
       </div>
       <div className="space-y-5">
         <p role="status" className="text-sm text-ink-soft">{failed ? t("failed") : !active ? t("download") : !ready ? t("loading") : t("help")}</p>
-        {!active && <Button variant="primary" onClick={() => setActive(true)}>{t("load")}</Button>}
-        <fieldset disabled={!ready || failed} className="space-y-5 disabled:opacity-45">
+        {(!active || failed) && <Button variant="primary" onClick={load}>{t(failed ? "retry" : "load")}</Button>}
+        <fieldset key={attempt} disabled={!ready || failed} className="space-y-5 disabled:opacity-45">
           <legend className="sr-only">{t("controls")}</legend>
           <label className="block text-sm">{t("motion")}<select className="mt-2 block h-11 w-full rounded-control border border-seam bg-surface px-3" value={motion} onChange={e => choose(e.target.value as Motion)}>{(["Stand", "Walk", "Run"] as const).map(m => <option key={m} value={m}>{t(m)}</option>)}</select></label>
           <Button variant="outline" disabled={motion === "Stand"} onClick={() => { setPlaying(!playing); stage.current?.setPlaying(!playing); }}>{playing ? t("pause") : t("play")}</Button>
