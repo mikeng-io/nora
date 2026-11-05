@@ -637,3 +637,23 @@ tracked in #530; neither backend is selected or activated here. Public intake
 and constrained acknowledgement evolve under #527; current public private-info
 silence and actual disclosure remain distinct properties. No acceptance claim
 or third review follows from this input repair.
+
+### Scope inability answers to the occasion
+
+A bounded source investigation read the frozen actual public input and traced
+model choice through the real summons invocation. No forced tool choice or
+fallback caused the observed send: the model selected send_reply. The input
+also carried an integration ambiguity: the higher shared core imperative to
+give inability answers plainly coexisted with the public no-send requirement.
+Core now qualifies that imperative by whether the occasion calls for an answer;
+an offered floor or public rule requiring silence is not overruled by it. This
+repairs Coherence without asserting which instruction caused an earlier draw.
+No grant, model, routing, public intake capability or code guard changes.
+
+Debt input already labels incomplete history and carries the amended denial
+rule. No source cause sufficient to repair its unsupported historical inference
+was established; that observed failure is not solved by this public ambiguity
+repair. Shared participation framing also presumes a reply in some labels,
+which may affect response propensity but does not explain the historical claim.
+No old CLI verdict or parent adjudication is relabeled. Behavioral confirmation
+must be tied to the new core version and exact input difference.

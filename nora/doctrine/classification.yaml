@@ -89,7 +89,7 @@ files:
     A broken Nora and a quiet Nora look the same:
       bucket: law
       reason: "never post an error, trace or malfunction account; 'I don't know' stays a real answer"
-      sha: "c74ece2ed6fb"
+      sha: "7f82de4630b5"
 
   rooms/constraints.md:
     When you are called:
