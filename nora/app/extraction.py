@@ -41,7 +41,9 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (("cited_sources", 10, "turn"),
 _ROW = {name: (order, key) for name, order, key in _BLOCKS}
 
 Text = Annotated[str, Field(min_length=1, strict=True)]
-MessageId = Annotated[int, Field(gt=0, strict=True)]
+# Agenda rows may use negative ids for non-message records; provenance
+# validation below still requires every cited id to be in the shown snapshot.
+SourceRowId = Annotated[int, Field(strict=True)]
 
 
 class Slots(BaseModel):
@@ -54,12 +56,12 @@ class ExtractionSubject(Slots):
 
 
 class ExtractionTime(Slots):
-    source_id: MessageId
+    source_id: SourceRowId
     expression: Text | None
 
 
 class ExtractionEvidence(Slots):
-    source_id: MessageId
+    source_id: SourceRowId
     quote: Text
 
 
@@ -69,7 +71,7 @@ class ExtractionClaim(Slots):
     happened_at: ExtractionTime
     where: Text | None
     how: Literal["stated", "said_by_another", "planned", "asked", "reported"]
-    source_ids: Annotated[list[MessageId], Field(min_length=1)]
+    source_ids: Annotated[list[SourceRowId], Field(min_length=1)]
     evidence: Annotated[list[ExtractionEvidence], Field(min_length=1)]
 
 

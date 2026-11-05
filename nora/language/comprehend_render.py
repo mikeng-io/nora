@@ -69,7 +69,7 @@ Call memory_propose with the agenda indices in items, entities, relations, evide
 corrections and readings,
 or with empty lists for an explicit no-change. All relations have layer notebook.
 Evidence names source keys you were shown. Never supply source snapshots.
-Readings cite a source row by its integer `id` in reading_sources, never by a [kind,id] key:
+Readings cite a source row by its integer `n` in the agenda row, never by a [kind,id] key:
 about=[{person_id,reference}], what, happened_at={source_id,expression}, where,
 how (stated/said_by_another/planned/asked/reported), source_ids=[12],
 evidence=[{source_id:12,quote}]. The expression is the source's exact words for the time
