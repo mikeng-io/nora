@@ -1,5 +1,20 @@
 # Changelog
 
+## [7.15.12](https://github.com/mikeng-io/nora/compare/v7.15.11...v7.15.12) (2026-11-05)
+
+
+### Maintenance
+
+* **evals:** grade quoted notice answers against explicit case contracts ([53d988f](https://github.com/mikeng-io/nora/commit/53d988f7f7806fbc87c305d35d912a409ebe0b0b))
+
+## [7.15.11](https://github.com/mikeng-io/nora/compare/v7.15.10...v7.15.11) (2026-11-05)
+
+
+### Bug Fixes
+
+* **evals:** isolate test evidence and report preparation refusals ([7bd52b5](https://github.com/mikeng-io/nora/commit/7bd52b5fb948acd94e15b978f55d6a3338c7c29c))
+* **evals:** persist private run evidence before model dispatch ([7ec895f](https://github.com/mikeng-io/nora/commit/7ec895f4c0e37c5ce794eb556cfad2929a37cdfc))
+
 ## [7.15.10](https://github.com/mikeng-io/nora/compare/v7.15.9...v7.15.10) (2026-11-05)
 
 
