@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import importlib.util
 import ipaddress
 import shutil
+import socket
 import subprocess
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -183,3 +186,59 @@ def test_real_downloader_boundary(tmp_path, short_idle):
         if image is not None:
             client.images.remove(image.id)
         client.close()
+
+
+def test_relay_drains_reverse_traffic_under_forward_backpressure():
+    spec = importlib.util.spec_from_file_location(
+        "download_relay", ROOT / "app/scripts/public-download.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    left, relay_left = socket.socketpair()
+    relay_right, right = socket.socketpair()
+    sockets = (left, relay_left, relay_right, right)
+    for connection in sockets:
+        connection.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+        connection.settimeout(3)
+    payload = b"synthetic-transfer" * 131072
+    received = {}
+    errors = []
+
+    def receive(connection):
+        data = bytearray()
+        while chunk := connection.recv(65536):
+            data.extend(chunk)
+        return bytes(data)
+
+    def send_left():
+        left.sendall(payload)
+        left.shutdown(socket.SHUT_WR)
+
+    def send_then_receive_right():
+        right.sendall(payload)
+        right.shutdown(socket.SHUT_WR)
+        received["right"] = receive(right)
+
+    def record_errors(operation):
+        try:
+            operation()
+        except OSError as error:
+            errors.append(type(error).__name__)
+
+    pumps = [
+        threading.Thread(target=module.relay, args=(relay_left, relay_right), daemon=True),
+        threading.Thread(target=record_errors, args=(send_left,), daemon=True),
+        threading.Thread(target=record_errors, args=(send_then_receive_right,), daemon=True),
+    ]
+    try:
+        for thread in pumps:
+            thread.start()
+        received["left"] = receive(left)
+        for thread in pumps:
+            thread.join(timeout=4)
+        assert not errors, errors
+        assert all(not thread.is_alive() for thread in pumps)
+        assert received == {"left": payload, "right": payload}
+    finally:
+        for connection in sockets:
+            connection.close()

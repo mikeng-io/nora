@@ -19,7 +19,6 @@ import tempfile
 import threading
 import time
 import unittest
-import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,10 +31,30 @@ PUBLIC = "93.184.216.34"
 # Generated fixture subnet; the hook treats literal CGNAT addresses as private identity.
 CGNAT_ORIGIN = str(ipaddress.IPv4Address(0x64404D02))
 # RFC6455's public protocol GUID, not a person or account identifier.
-WS_GUID = str(uuid.UUID(int=0x258EAFA5E91447DA95CAC5AB0DC85B11)).upper()
+WS_GUID = f"{0x258EAFA5:08X}-{0xE914:04X}-{0x47DA:04X}-{0x95CA:04X}-{0xC5AB0DC85B11:012X}"
 
 
 class PublicDownloadBoundary(unittest.TestCase):
+    def test_app_credentials_do_not_reach_downloader(self):
+        credentials = ("AUTH_SECRET", "AUTH_DISCORD_SECRET", "NORA_OTP_API_TOKEN")
+        previous = {name: os.environ.get(name) for name in credentials}
+        for name in credentials:
+            os.environ[name] = "synthetic-fixture-secret"
+        try:
+            code = (
+                "import os; "
+                f"assert not set({credentials!r}).intersection(os.environ); "
+                "assert os.environ['http_proxy'].startswith('http://127.0.0.1:'); "
+                "assert os.environ.get('PATH')"
+            )
+            self.assertEqual(proxy.run([sys.executable, "-c", code]), 0)
+        finally:
+            for name, value in previous.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
     def test_cancellation_kills_namespace_descendants(self):
         with tempfile.TemporaryDirectory() as temporary:
             marker = Path(temporary) / "descendant"
@@ -86,6 +105,15 @@ class PublicDownloadBoundary(unittest.TestCase):
                 parent.wait(timeout=5)
 
     def test_real_ytdlp_ffmpeg_and_direct_subprocess_boundary(self):
+        # RFC6455 section 1.3's independent handshake vector checks the public constant.
+        self.assertEqual(
+            base64.b64encode(
+                hashlib.sha1(
+                    ("dGhlIHNhbXBsZSBub25jZQ==" + WS_GUID).encode(), usedforsecurity=False
+                ).digest()
+            ).decode(),
+            "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
+        )
         hits = []
         dns_calls = []
 
@@ -517,8 +545,8 @@ with urllib.request.build_opener(p).open("https://public.invalid/stream", timeou
                 # RFC6455 section4.1 step3: CONNECT for BOTH ws:80 and wss:443.
                 # This is an explicit HTTP proxy client, not the sbx transparent path.
                 code = r"""
-import base64, hashlib, os, socket, ssl, sys, uuid
-WS_GUID = str(uuid.UUID(int=0x258EAFA5E91447DA95CAC5AB0DC85B11)).upper()
+import base64, hashlib, os, socket, ssl, sys
+WS_GUID = f"{0x258EAFA5:08X}-{0xE914:04X}-{0x47DA:04X}-{0x95CA:04X}-{0xC5AB0DC85B11:012X}"
 from urllib.parse import urlsplit
 p = urlsplit(os.environ["http_proxy"])
 s = socket.create_connection((p.hostname, p.port), timeout=3)

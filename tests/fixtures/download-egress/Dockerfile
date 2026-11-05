@@ -3,8 +3,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg iproute2 openssl util-linux \
     && rm -rf /var/lib/apt/lists/*
 RUN mkdir /control && chmod 0777 /control
-COPY yt_dlp /opt/yt_dlp
+COPY yt_dlp /usr/local/lib/python3.12/site-packages/yt_dlp
 COPY public-download.py /repo/app/scripts/public-download.py
 COPY probe_public_download.py /repo/tests/integration/probe_public_download.py
-ENV PYTHONPATH=/opt HOME=/tmp
+ENV HOME=/tmp
 CMD ["sh", "-c", "exec setpriv --reuid 1000 --regid 1000 --clear-groups python3 /repo/tests/integration/probe_public_download.py"]

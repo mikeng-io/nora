@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import fcntl
 import os
-import select
 import signal
 import socket
 import socketserver
@@ -19,15 +18,21 @@ from pathlib import Path
 
 
 def relay(left: socket.socket, right: socket.socket) -> None:
-    while True:
-        ready, _, _ = select.select([left, right], [], [], 300)
-        if not ready:
-            return
-        for source in ready:
-            data = source.recv(65536)
-            if not data:
-                return
-            (right if source is left else left).sendall(data)
+    def copy(source: socket.socket, destination: socket.socket) -> None:
+        try:
+            while data := source.recv(65536):
+                destination.sendall(data)
+        except OSError:
+            pass
+        finally:
+            with suppress(OSError):
+                destination.shutdown(socket.SHUT_WR)
+
+    # Independent pumps keep a blocked writer from stalling reverse traffic.
+    forward = threading.Thread(target=copy, args=(left, right), daemon=True)
+    forward.start()
+    copy(right, left)
+    forward.join()
 
 
 class FixedRelay(socketserver.BaseRequestHandler):
@@ -65,7 +70,11 @@ def inside(proxy_path: str, command: list[str]) -> int:
         server.proxy_path = proxy_path
         threading.Thread(target=server.serve_forever, daemon=True).start()
         proxy = f"http://127.0.0.1:{server.server_address[1]}"
-        env = os.environ.copy()
+        env = {
+            key: os.environ[key]
+            for key in ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR")
+            if key in os.environ
+        }
         for key in (
             "http_proxy",
             "https_proxy",

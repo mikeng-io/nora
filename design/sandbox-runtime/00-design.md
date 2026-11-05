@@ -913,10 +913,9 @@ daemon restart and host prerequisite installation are not performed. The
 operations document names remaining acceptance and rollback. Parent allocates
 the implementation DEC and reconciles DEC-289 at landing.
 
-**Implementation acceptance blocked (2026-11-05):** the pinned Smokescreen
-source's goproxy dependency does not provide a bidirectional plain HTTP Upgrade
-path. The disposable Linux amd64 candidate passes direct plain WS and proxied
-WSS controls, but plain WS through the gateway times out. The named integrated
-test remains failing; no custom protocol implementation or acceptance waiver
-was added. Resolve this compatibility evidence before adoption; ADR 0035's
-reopen condition applies. Host/sbx rollout remains held.
+**Local compatibility correction (2026-11-05):** standard CONNECT-based
+plain WS and WSS pass the corrected RFC6455 handshake/frame fixture. The earlier
+forward-Upgrade failure remains a pinned goproxy limitation, not proof that
+CONNECT WS fails. Real sbx explicit/transparent and browser compatibility remain
+unverified; no custom production protocol or adoption waiver was added.
+Host/sbx rollout remains held.

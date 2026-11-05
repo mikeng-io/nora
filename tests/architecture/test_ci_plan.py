@@ -21,6 +21,7 @@ from scripts import ci_plan
         (["nora/app.py"], {"python", "codeql-python"}, {"portal", "go"}),
         (["app/src/page.tsx"], {"portal", "codeql-javascript"}, {"python"}),
         (["deploy/instagram-bridge/main.go"], {"go", "codeql-go"}, {"python"}),
+        (["deploy/http-egress/main.go"], {"go", "codeql-go"}, {"python"}),
         (["uv.lock"], {"python", "dependency-review", "codeql-python"}, {"portal"}),
         (["app/package-lock.json"], {"portal", "dependency-review"}, {"go"}),
         (
@@ -334,3 +335,16 @@ def test_codeql_rejects_a_pr_checkout_that_is_not_the_analyzed_merge(tmp_path):
     assert ci_plan.codeql_findings({}, tmp_path, tmp_path) == 0
     with pytest.raises(ValueError, match="analyzed PR merge"):
         ci_plan.codeql_findings({"pull_request": {}}, tmp_path, tmp_path)
+
+
+def test_hosted_go_jobs_cover_each_deployed_module():
+    root = Path(__file__).resolve().parents[2]
+    jobs = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())["jobs"]
+    modules = {str(path.parent.relative_to(root)) for path in root.glob("deploy/*/go.mod")}
+    assert "deploy/http-egress" in modules
+    for name in ("go", "codeql-go"):
+        job = jobs[name]
+        assert set(job["strategy"]["matrix"]["module"]) == modules
+        builds = [step for step in job["steps"] if step.get("run", "").startswith("go ")]
+        assert builds
+        assert all(step["working-directory"] == "${{ matrix.module }}" for step in builds)
