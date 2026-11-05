@@ -410,7 +410,8 @@ class ComputerAdmission:
             if await _guest_quiet(self._reconcile, row.scope, seconds=DRAIN_SECONDS) \
                     and not await _persist_pending(
                         executors=self.executors, tasks=self._tasks,
-                        clock=self._clock, task_id=task_id):
+                        clock=self._clock, task_id=task_id) \
+                    and self.executors.pending(task_id) is None:
                 await self._tasks.mark_interrupted(
                     task_id, now=self._clock(), reason="the owner was lost")
                 await self._note(row, "interrupted")
@@ -424,7 +425,8 @@ class ComputerAdmission:
                                        seconds=DRAIN_SECONDS) \
                 and not await _persist_pending(
                     executors=self.executors, tasks=self._tasks,
-                    clock=self._clock, task_id=task_id):
+                    clock=self._clock, task_id=task_id) \
+                    and self.executors.pending(task_id) is None:
             await self._tasks.mark_interrupted(
                 task_id, now=self._clock(),
                 reason="the cancellation could not be confirmed")
@@ -616,7 +618,8 @@ class ComputerQueueRunner:
                 # owner left nothing behind.
                 if not await _persist_pending(
                         executors=self._executors, tasks=self._tasks,
-                        clock=self._clock, task_id=task.id):
+                        clock=self._clock, task_id=task.id) \
+                        and self._executors.pending(task.id) is None:
                     await self._tasks.mark_interrupted(
                         task.id, now=self._clock(), reason="the owner was lost")
                     await self._note(task, "interrupted")
@@ -703,7 +706,8 @@ class ComputerQueueRunner:
                         verdict = await self._reconcile_scope(scope)
                 if verdict == "quiet" and not await _persist_pending(
                         executors=self._executors, tasks=self._tasks,
-                        clock=self._clock, task_id=running_row.id):
+                        clock=self._clock, task_id=running_row.id) \
+                        and self._executors.pending(running_row.id) is None:
                     await self._tasks.mark_interrupted(
                         running_row.id, now=self._clock(),
                         reason="the owner was lost; the VM is quiet")

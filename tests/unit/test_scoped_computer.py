@@ -1379,6 +1379,14 @@ async def test_a_failed_finish_keeps_the_result_with_its_owner() -> None:
         tasks=store, redis=redis, clock=clock(), watch_seconds=0.01,
         executors=admission.executors,
         reconcile=lambda scope: asyncio.sleep(0, "quiet"))
+    fail["on"] = True
+    for _ in range(2):
+        await runner.tick()
+        row = await store.get(got.task.id)
+        assert row is not None and row.status == "running"
+        assert row.delivered_at is None
+        assert admission.executors.pending(got.task.id) is not None
+    fail["on"] = False
     await runner.tick()
     row = await store.get(got.task.id)
     assert row is not None and row.status == "done"
@@ -1438,6 +1446,12 @@ async def test_a_failed_finish_on_the_runner_retries_before_delivery() -> None:
     assert row.delivered_at is None
     assert [d.id for d in delivered] == [blocker.task.id]
 
+    for _ in range(2):
+        await runner.tick()
+        row = await store.get(queued.task.id)
+        assert row is not None and row.status == "running"
+        assert row.delivered_at is None
+        assert [d.id for d in delivered] == [blocker.task.id]
     fail["on"] = False
     for _ in range(60):
         await runner.tick()
