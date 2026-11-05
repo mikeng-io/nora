@@ -103,7 +103,7 @@ PINNED: dict[str, tuple[int, str]] = {
         1, "b3c17e1505b551b01f88313e447674ed1f7f6d6bc3700da8d066d2dfd3ea8f63",
     ),
     "participation-conduct": (
-        4, "66f7c4fdee793f28d6946edd1a301a166195400b91b327aa312cd85a75c21f88",
+        5, "40a7a6d6fa1acd44428836c51a45814bd3aee8d9af23dc0fdbd285f0d4411bbb",
     ),
     "constraints": (13, "eb71a2acd9b663cdcadac1b9f8e5191acf02242e6b0140ce3347536e666c392c"),
     # The constraints for room occasions, ordered right after `constraints`.

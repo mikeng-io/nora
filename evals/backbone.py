@@ -2003,7 +2003,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                             subject, md, now_ms=seeded.now_ms,
                         )
                     extra = criteria_for(criteria)
-                    if md.get('circle_overlay') or port.public_audience:
+                    if case.expected_output:
                         extra = tuple(dataclasses.replace(c, description=c.description +
                             " Case acceptance requirement (not evidence): " +
                             str(case.expected_output)) if c.name == 'social_suitability' else c

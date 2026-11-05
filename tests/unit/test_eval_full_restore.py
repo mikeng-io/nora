@@ -977,12 +977,14 @@ async def test_circle_declared_entry_is_used_by_the_actual_drive(seams, monkeypa
     assert seams['sandbox_from_snapshot'][0]['leave_room_for_arrival'] is False
 
 
+@pytest.mark.parametrize('controlled', [True, False])
 async def test_circle_judge_receives_requirement_separately_from_actual_evidence(
-    judged, monkeypatch,
+    judged, monkeypatch, controlled,
 ):
     import json
     case = _judged_case('generated-gif-unavailable', ['social_suitability'])
-    case.metadata['circle_overlay'] = {'gif': 'unavailable'}
+    if controlled:
+        case.metadata['circle_overlay'] = {'gif': 'unavailable'}
     case.expected_output = 'No invented sent GIF; words remain possible.'
     raw = json.dumps([{'text': json.dumps({'status': 'unavailable',
                                           'note': 'Reply in words instead.'})}])

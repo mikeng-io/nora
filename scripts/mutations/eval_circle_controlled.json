@@ -145,5 +145,12 @@
     "old": "            _dump_judgement(judgement, case.name)",
     "new": "            pass  # lost judge receipt",
     "target": "tests/unit/test_eval_backbone.py::test_the_judges_source_is_the_rendered_window_not_the_whole_seed"
+  },
+  {
+    "name": "uncontrolled participation also carries its declared requirement to the judge",
+    "file": "evals/backbone.py",
+    "old": "                    if case.expected_output:",
+    "new": "                    if md.get('circle_overlay') or port.public_audience:",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_judge_receives_requirement_separately_from_actual_evidence"
   }
 ]
