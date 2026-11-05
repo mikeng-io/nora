@@ -516,9 +516,9 @@ TAG_HEADER = (
     "this turn is happening."
 )
 
-#: The assistant message that closes the prefill: she is shown agreeing to read
-#: and reply, so the turn that follows begins in her own voice.
-CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
+#: The shared prefill closes in her own voice; the occasion decides whether
+#: reading calls for a reply.
+CLOSING_LINE = "Understood. I'll read the conversation as myself."
 
 #: The body of `<spoken_turn>`: rendered only
 #: when the message she is answering was spoken in a voice channel. The SITUATION,
