@@ -740,3 +740,45 @@ A named assembled-input regression checks an offered floor plus the empty
 message and assistant prefill. Its assertions establish consistent source text,
 not that a model chooses correctly. Validation, model evidence and independent
 review for this continuation must be read at their actual heads in its PR.
+
+#### Independent review and bounded model readback
+
+The first independent full Devin review at
+`8e86f9d12c6375bca4fd8c1b9b0e65029ca268c2` returned REQUEST CHANGES: the
+profile-vocabulary default-prefill fixture still pinned the old assistant
+closing line, and one existing header-mutation anchor also named that old
+text. Both are updated; runtime prompt text is unchanged by these repairs.
+The profile-equivalence, header-golden and mutation-anchor checks passed
+239 tests, rc=0. Earlier 199/122 receipts remain their original selections,
+not one combined suite. The review confirmed the source correction's audience,
+assembly and authority boundaries, without granting behavioral acceptance.
+
+One low-severity, pre-existing limitation remains: the shared tag-message type
+still calls carried proactive/compute content another person's chat. Typed
+occasion headers supply its actual origin. This continuation removes the
+universal reply imperative; it does not introduce per-occasion block types or
+claim to have corrected that separate provenance wording.
+
+Three of the planned four bounded model commands ran, one draw per case/arm.
+The before/after brief-fact commands each returned CLI PASS with three judge
+PASS votes. Actual readback does not accept that as a clean brief-answer
+result: before eventually gives the supplied time but also denies holding the
+notice and brings in unrelated history; after refuses a direct answer and
+requests the notice again despite the quoted time. Both perform multiple
+memory/history reads. The after draw still authors a reply, so loss of all
+responsiveness is not observed; answer usefulness and groundedness are not
+proved. No causal regression or improvement rate follows from one draw.
+
+The before quiet-participation command returned FAIL: it sent a bantering
+reply with a sandbox `sent` result instead of silence. That command did not
+invoke the semantic judge. The after quiet command was not run after the
+positive control exposed another grading false positive; no redraw was used
+to buy a PASS. Quiet-choice behavioral effect therefore remains unavailable.
+
+Evaluator/cases/dependencies and prepared configuration were identical across
+arms; actual captured first inputs contain the old shared wording before and
+the revised wording after. The frozen source/config identities were read back
+unchanged. Model confirmation remains incomplete, and the operator's deferred
+public/history/judge limitations are not repaired or relabelled by this
+source-coherence change. Full receipts, exact refs, command counts and spend
+belong to this continuation's PR; no private room text is reproduced here.
