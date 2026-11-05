@@ -31,9 +31,9 @@ NOW = datetime(2026, 2, 1, 12, 0, tzinfo=UTC)
 SCOPE = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
 
 
-def _task(task_id=None):
+def _task(task_id=None, scope=SCOPE):
     return ComputerTask(
-        id=task_id or uuid.uuid4(), scope=SCOPE, kind="native",
+        id=task_id or uuid.uuid4(), scope=scope, kind="native",
         status="queued", payload={}, origin={},
         created_at=NOW, updated_at=NOW)
 
@@ -300,4 +300,80 @@ async def test_the_shared_finish_path_journals_before_its_waits(tmp_path):
     quiet.set()
     assert await holding is False  # quiet never proved: row stays running
     assert (await tasks.get(task.id)).status == "running"
+    os.close(second._lock_fd)
+
+
+async def test_a_siblings_checkpoint_cannot_leak_an_unconfirmed_consumption(tmp_path):
+    """Cross-scope B2: while scope A's `delivered()` is suspended inside
+    `mark_delivered`, an unrelated scope-B checkpoint serializes the WHOLE
+    pending map. A's unconfirmed consumption must NOT be in that payload —
+    otherwise a later SQL + unmark failure leaves a stale `True` that a
+    restart reads as "caller got it" and suppresses the deferred handoff.
+    Reconstruction then proves A's original completion stays
+    deferred-eligible and B's persisted entry is intact."""
+    directory = tmp_path / "pending"
+    executors, tasks, admission = _rig(directory)
+    task_a = _task(scope="a" * 32)
+    task_b = _task(scope="b" * 32)
+    await tasks.enqueue(task_a)
+    await tasks.enqueue(task_b)
+    await tasks.try_claim_head(task_a.id, now=NOW)
+
+    # A's SQL stamp suspends mid-flight so B's unrelated checkpoint lands
+    # while the delivery intent is only tentative.
+    gate = asyncio.Event()
+    inside = asyncio.Event()
+    fail = {"on": False}
+    real_mark = tasks.mark_delivered
+
+    async def pausing(task_id, *, now):
+        inside.set()
+        await gate.wait()
+        if fail["on"]:
+            raise OSError("mark_delivered offline")
+        return await real_mark(task_id, now=now)
+
+    tasks.mark_delivered = pausing  # type: ignore[method-assign]
+    call = asyncio.ensure_future(
+        admission.run_segment(task_a, _work({"status": "ok", "v": 17})))
+    await inside.wait()
+
+    # Scope B takes its own unrelated durable checkpoint mid-suspension.
+    assert executors.retain(task_b.id, "done", {"status": "ok", "v": 2})
+    snapshot = json.loads(
+        (directory / "pending-results.json").read_text())
+    assert snapshot[str(task_b.id)]["result"]["v"] == 2  # B really persisted
+    # A's tentative delivery intent must not be in B's serialized payload.
+    assert snapshot[str(task_a.id)]["consumed"] is False
+
+    # A's stamp now fails; the cleanup checkpoint fails too — exactly the
+    # R2-B sequence, but through the cross-scope write.
+    fail["on"] = True
+    real_spill = executors._spill
+    executors._spill = lambda: False
+    gate.set()
+    reply = await call
+    assert reply["status"] == "unavailable" and reply["task"] == str(task_a.id)
+    assert "v" not in reply
+    executors._spill = real_spill
+    tasks.fail_delivered = False
+    tasks.mark_delivered = real_mark  # type: ignore[method-assign]
+
+    # The disk must never hold a `True` the SQL authority did not confirm.
+    snapshot = json.loads(
+        (directory / "pending-results.json").read_text())
+    assert snapshot[str(task_a.id)]["consumed"] is False
+
+    # Reconstruction: A stays deferred-eligible; B's entry is intact.
+    os.close(executors._lock_fd)  # simulate process death
+    second = SegmentRegistry(pending_dir=directory)
+    recovered = second.pending_result(task_a.id)
+    assert recovered is not None and not recovered.consumed
+    assert second.pending_result(task_b.id).result["v"] == 2
+    tasks.mark_delivered = real_mark  # type: ignore[method-assign]
+    assert await _persist_pending(
+        executors=second, tasks=tasks, clock=lambda: NOW, task_id=task_a.id)
+    row = await tasks.get(task_a.id)
+    assert row.status == "done" and row.delivered_at is None
+    assert task_a.id in [r.id for r in await tasks.undelivered(limit=10)]
     os.close(second._lock_fd)

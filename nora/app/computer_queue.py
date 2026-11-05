@@ -322,7 +322,7 @@ class SegmentRegistry:
         # Durable only when a journal exists AND took the checkpoint; the
         # memory entry always holds so this process keeps its semantics —
         # the CALLER decides whether the failed write must revert a
-        # `consumed` claim (`unmark_consumed` / `mark_consumed` handle it).
+        # `consumed` claim (`mark_consumed` handles it).
         return self._pending_path is not None and self._spill()
 
     def mark_consumed(self, task_id: UUID) -> bool:
@@ -342,29 +342,6 @@ class SegmentRegistry:
             self._pending[task_id] = old  # durable claim failed: undo the
             return False                  # in-memory suppression as well
         return True
-
-    def unmark_consumed(self, task_id: UUID) -> bool:
-        """A consumed claim the durable chain could not honour (the live
-        caller was told `unavailable`, never the result): drop the flag so
-        the deferred path delivers the original outcome once. `False` means
-        the file may still carry a stale `True` — that suppresses delivery
-        (at-most-once residual), logged by the caller; never silently
-        claimed."""
-        old = self._pending.get(task_id)
-        if old is None or not old.consumed:
-            return self._spill()
-        self._pending[task_id] = replace(old, consumed=False)
-        return self._spill()
-
-    def mark_consumed_ram(self, task_id: UUID) -> None:
-        """RAM-only `consumed`: the durable journal keeps `False` until the
-        SQL authority confirms the disposition (`delivered_at`). A `True`
-        that never reached a confirmed authority must not exist on disk —
-        a restart reads it as "the caller got the result" and suppresses
-        the deferred handoff it never received."""
-        pending = self._pending.get(task_id)
-        if pending is not None:
-            self._pending[task_id] = replace(pending, consumed=True)
 
     def pending_result(self, task_id: UUID) -> _PendingResult | None:
         return self._pending.get(task_id)
@@ -565,9 +542,8 @@ class ComputerAdmission:
             # deferred-eligible would be the duplicate this contract
             # forbids). The caller gets the task's identity: the original
             # outcome stays journaled and the deferred path delivers it
-            # while the row's `delivered_at` is empty — unless a stale
-            # `consumed` marker survived on disk, the logged at-most-once
-            # residual, never promised away.
+            # while the row's `delivered_at` is empty — the journal never
+            # carries an unconfirmed `consumed` claim.
             return {"status": "unavailable", "task": str(task.id),
                     "note": "That computer task finished, but its answer "
                             "could not be committed for delivery — it may "
@@ -651,22 +627,21 @@ class ComputerAdmission:
             return True  # nothing owed: no row, no disposition to settle
         if row.status not in TERMINAL:
             return False  # not durable evidence — a live row's mark is not
-        # The journal records the OUTCOME (`consumed=False`); `consumed` is a
-        # RAM marker for this process's `_persist_pending` read only. Writing
-        # `consumed=True` to disk before SQL confirms `delivered_at` would
-        # leave a restart a stale claim that stamps a never-delivered result
-        # — the failed handoff is exactly what must stay recoverable.
+        # The journal records the OUTCOME (`consumed` stays False). The
+        # delivery intent is operation-local and goes straight to the SQL
+        # authority — never into the serialized map, where an unrelated
+        # scope's checkpoint would flush an unconfirmed `consumed` claim to
+        # disk and a restart would stamp a never-delivered result.
         self.executors.retain(task_id, row.status, row.result)
-        self.executors.mark_consumed_ram(task_id)
-        persisted = await _persist_pending(
-            executors=self.executors, tasks=self._tasks,
-            clock=self._clock, task_id=task_id)
-        if not persisted:
-            self.executors.unmark_consumed(task_id)
+        try:
+            await self._tasks.mark_delivered(task_id, now=self._clock())
+        except Exception:  # noqa: BLE001 - the stamp store is the boundary; it must answer
             log.error("computer task %s delivery stamp could not be "
                       "committed; the original result stays "
                       "deferred-eligible", task_id)
-        return persisted
+            return False
+        self.executors.clear_pending(task_id)
+        return True
 
     async def get(self, task_id: UUID) -> ComputerTask | None:
         return await self._tasks.get(task_id)
