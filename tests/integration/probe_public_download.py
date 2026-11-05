@@ -397,6 +397,9 @@ s.close()
                             "s = socket.create_connection((p.hostname, p.port), timeout=3)",
                             f"s = socket.create_connection(('{PUBLIC}', 80), timeout=3)",
                         )
+                        direct_code = direct_code.replace(
+                            'target = "http://public.invalid/socket"', 'target = "/socket"'
+                        )
                         control = subprocess.run(  # noqa: S603 -- owned synthetic origin
                             [sys.executable, "-c", direct_code, "False"],
                             env={**os.environ, "http_proxy": "http://unused.invalid:80"},
