@@ -218,21 +218,30 @@ async def test_the_result_is_journaled_before_the_sql_finish_wait(tmp_path):
 
 
 async def test_a_stale_consumed_claim_cannot_suppress_the_deferred_handoff(tmp_path):
-    """R2-B: SQL `mark_delivered` fails after the outcome journal lands —
-    caller gets `unavailable` + task id, and the journal on disk must hold
-    `consumed=False` (never a pre-confirmation `True`). Reconstruction then
-    leaves the row deferred-eligible: `undelivered` finds it and the
-    deferred path delivers the ORIGINAL result once."""
+    """R2-B: SQL `mark_delivered` fails after the outcome journal lands AND
+    the compensating unmark checkpoint fails too — caller gets
+    `unavailable` + task id, and the journal on disk must hold
+    `consumed=False` (never a pre-confirmation `True`, which a restart
+    would read as "caller got it" and stamp a never-delivered result).
+    Reconstruction then leaves the row deferred-eligible: `undelivered`
+    finds it and the deferred path delivers the ORIGINAL result once."""
     directory = tmp_path / "pending"
     executors, tasks, admission = _rig(directory)
     task = _task()
     await tasks.enqueue(task)
     await tasks.try_claim_head(task.id, now=NOW)
     tasks.fail_delivered = True
+    # The first two checkpoints land for real (outcome + retain); every
+    # checkpoint after fails — including the compensating unmark whose
+    # spill failure is exactly the R2-B stale-True sequence.
+    real_spill = executors._spill
+    calls = [real_spill, real_spill]
+    executors._spill = lambda: calls.pop(0)() if calls else False
 
     reply = await admission.run_segment(task, _work({"status": "ok", "v": 11}))
     assert reply["status"] == "unavailable" and reply["task"] == str(task.id)
     assert "v" not in reply
+    executors._spill = real_spill
     # The journal must NOT carry a consumed claim the SQL authority never
     # confirmed — a stale True on restart would stamp a never-delivered
     # result and suppress its one handoff.
