@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.15.5](https://github.com/mikeng-io/nora/compare/v7.15.4...v7.15.5) (2026-11-05)
+
+
+### Maintenance
+
+* **security:** adopt Smokescreen as the shared HTTP egress design ([3659997](https://github.com/mikeng-io/nora/commit/36599970fc5d651b44559d9e45eb353b2510d327))
+
 ## [7.15.4](https://github.com/mikeng-io/nora/compare/v7.15.3...v7.15.4) (2026-11-04)
 
 
