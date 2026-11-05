@@ -537,7 +537,7 @@ def test_the_image_skill_has_one_section_per_configured_model(store, example_con
     xai = example_config.image_gen.xai
     headings = [ln for ln in _image_skill(store).instructions.splitlines()
                 if ln.startswith("### ")]
-    for model in (xai.model, xai.quality_model):
+    for model in (xai.model, xai.quality_model, example_config.image_gen.openai_codex.model):
         assert any(model in h for h in headings), model
 
 

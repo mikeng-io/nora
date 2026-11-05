@@ -2858,9 +2858,9 @@ class OpenAICodexImageGenConfig(BaseModel):
     """`[image_gen.openai_codex]`: gpt-image through the ChatGPT (Codex)
     subscription lane (DEC-304).
 
-    `model` is the image model the `image_generation` tool runs;
-    `responses_model` is the text model that hosts that tool on the Codex
-    backend. `standard_quality` / `high_quality` map the port's
+    `model` is the image renderer called directly;
+    `responses_model` is retained for old config files but unused by the
+    direct Images API. `standard_quality` / `high_quality` map the port's
     `quality="standard"` / `"quality"`. `refresh_token_env` NAMES the env var
     holding the BOOTSTRAP refresh token `nora openai-codex-login` writes
     (DEC-8); the rotating token after it lives in the state file.
@@ -2869,7 +2869,7 @@ class OpenAICodexImageGenConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    model: str = Field(default="gpt-image-2", min_length=1)
+    model: str = Field(default="gpt-image-2.6-flare", min_length=1)
     responses_model: str = Field(default="gpt-5.5", min_length=1)
     standard_quality: _GptImageQuality = "medium"
     high_quality: _GptImageQuality = "high"

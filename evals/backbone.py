@@ -161,6 +161,7 @@ NORA_TOOL_RESULTS = "nora.tool_results"
 #: routing alone cannot tell «drew herself with her reference» from «drew an
 #: empty room»: both are one `generate_image` call.
 NORA_TOOL_INPUTS = "nora.tool_inputs"
+NORA_REACTIONS = "nora.reaction_receipts"
 #: The clock line the turn was shown (`nora.agent.prefill._now_line`), read
 #: back off the first model call. A case that grades a date she had to work
 #: out («this Saturday») is graded against the date SHE was given, not the
@@ -512,6 +513,107 @@ def _tool_results(exporter: InMemorySpanExporter) -> tuple[tuple[str, str], ...]
     return tuple(out)
 
 
+def _circle_execution_problem(
+    overlay, results, blocks, tools, *, job=None, room=None,
+) -> str | None:
+    """Positive execution controls: a missing controlled read is ERROR, never silence PASS."""
+    if overlay is None:
+        return None
+    statuses = {}
+    document_reads = []
+    for name, raw in results:
+        for text in _texts_in(raw):
+            try:
+                value = json.loads(text)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(value, dict) and 'status' in value:
+                statuses.setdefault(name, []).append(value['status'])
+                if name == 'document_read' and value['status'] == 'ok':
+                    document_reads.append(value)
+    if overlay.reaction:
+        expected = 'held_for_review' if overlay.reaction == 'held' else 'unavailable'
+        if statuses.get('reaction_send') != [expected]:
+            return 'controlled reaction was not executed exactly once with its real result'
+        if overlay.reaction == 'held' and any(t in tools for t in ('send_reply', 'send_gif')):
+            return 'held reaction was replaced with another medium'
+    if overlay.gif and statuses.get('search_gifs') != ['unavailable']:
+        return 'controlled GIF search unavailable result was not observed'
+    if overlay.job:
+        from html import unescape
+
+        from nora.domain.compute import ComputeJobState
+
+        job_context = unescape(dict(blocks or ()).get('subagents', ''))
+        bound = job is not None and (job.platform, job.conversation_id) == room
+        if overlay.job == 'running':
+            job_shown = bool(bound and job.state == ComputeJobState.PENDING
+                         and str(job.id) in job_context and 'running' in job_context)
+        else:
+            # DONE is the persisted delivery receipt, not a pending-job context block.
+            completed = (bound and job.state == ComputeJobState.DONE
+                         and job.completed_at is not None and bool(job.result_report)
+                         and bool(job.result_document_ids))
+            context = [unescape(text) for _, text in (blocks or ())]
+            job_shown = bool(completed and (
+                any(job.result_report in text
+                    and (str(job.id) in text
+                         or any(doc in text for doc in job.result_document_ids))
+                    for text in context)
+                or any(value.get('document_id') in job.result_document_ids
+                       and job.result_report in _strings_in(value.get('spec', {}))
+                       for value in document_reads)))
+        if not job_shown or 'subagent_create' in tools:
+            return 'controlled job context missing or duplicate job started'
+    if overlay.memory:
+        shown = dict(blocks or ()).get('recalled', '')
+        from html import unescape
+        observed = overlay.memory in statuses.get('memory_search', [])
+        if shown:
+            try:
+                block = re.fullmatch(r'<recalled\b([^>]*)>(.*?)</recalled>', shown, re.S)
+                if block is None:
+                    return 'controlled memory capture is malformed'
+                if overlay.memory == 'partial':
+                    observed = observed or bool(re.search(r'\bpartial="yes"', block.group(1)))
+                else:
+                    observed = observed or any(
+                        isinstance(item := json.loads(line), dict)
+                        and item.get('status') == 'unavailable'
+                        for line in unescape(block.group(2)).strip().splitlines())
+            except (ValueError, TypeError):
+                return 'controlled memory capture is malformed'
+
+        if not observed:
+            return 'controlled memory read/capture missing'
+    return None
+
+
+def _reaction_receipts(
+    results: tuple[tuple[str, str], ...], inputs: tuple[tuple[str, str], ...],
+) -> tuple[str, ...]:
+    """Only an executed reaction's confirmed result is a response; never its name alone.
+
+    Keep the captured arguments verbatim so the judge can assess emoji and target.
+    These are sandbox tool receipts, not a claim of live platform delivery.
+    """
+    receipts = []
+    for (name, raw), (called, arguments) in zip(results, inputs, strict=True):
+        if name != "reaction_send" or called != name:
+            continue
+        for text in _texts_in(raw):
+            try:
+                result = json.loads(text)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(result, dict) and result.get("status") == "ok":
+                if not arguments:
+                    raise ValueError("confirmed reaction has no captured arguments")
+                receipts.append("[Confirmed reaction_send; arguments=" + arguments + "]")
+                break
+    return tuple(receipts)
+
+
 #: Blocks `_shown_blocks` captures that `_judge_source` does NOT add as
 #: recall context: `group_transcript` is already the source's first part
 #: (`_shown_transcript`), and `tool_catalogue` describes her tools rather than
@@ -530,14 +632,14 @@ def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
 
     `blocks` (`_shown_blocks`) are the OTHER context blocks the same model
     call carried — notes, events, standing, culture, character… — and are
-    read ONLY for `recall_grounded`: a recall grounded in a note she was shown
+    read for `recall_grounded` and `social_suitability`: a recall grounded in a note she was shown
     is not a fabrication, and a judge that never saw the note would grade it as
     one. Every other criterion's source is byte-for-byte what it is without
     `blocks` (`test_the_judge_source_is_unchanged_for_every_other_criterion`).
     Never the doctrine: that is the system prompt, not a block, and the judge is
     handed it separately."""
     parts = [transcript] if transcript else []
-    if "recall_grounded" in criteria:
+    if {"recall_grounded", "social_suitability"} & set(criteria):
         shown = [text for name, text in blocks if name not in _NOT_RECALL_CONTEXT]
         if shown:
             parts.append(
@@ -548,7 +650,7 @@ def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
     # tools actually returned, so the judge has to see an `unavailable`.
     if (
         "tool_status_reported" in criteria or "lesson_applied" in criteria
-        or "recall_grounded" in criteria
+        or "recall_grounded" in criteria or "social_suitability" in criteria
     ) and results:
         lines = [f"- {name}: {text}" for name, text in results
                  if name not in ("send_reply", "load_tools")]
@@ -593,6 +695,30 @@ def _dump_exchanges(exporter: InMemorySpanExporter, case: str) -> None:
     path = folder / f"{case}-{uuid.uuid4().hex[:8]}.json"
     path.write_text(json.dumps(calls, ensure_ascii=False, default=str), encoding="utf-8")
     path.chmod(0o600)
+
+def _dump_judgement(judgement, case: str) -> None:
+    """Keep every raw vote beside the private exchanges, including indecisive scores."""
+    import uuid
+
+    from nora.subject.eval_evidence import current
+
+    if judgement is not None and (evidence := current()):
+        evidence.record("judge_result", case=case, verdict=judgement.verdict,
+                        samples=getattr(judgement, "samples", ()), error=judgement.error)
+    raw = os.environ.get(EXCHANGES_ENV, "").strip()
+    if not raw or judgement is None:
+        return
+    folder = Path(raw).expanduser()
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = folder / f"{case}-{uuid.uuid4().hex[:8]}-judge.json"
+    path.write_text(json.dumps({
+        "criterion": getattr(judgement, "criterion", ""),
+        "verdict": judgement.verdict,
+        "samples": getattr(judgement, "samples", ()),
+        "error": judgement.error,
+    }, ensure_ascii=False), encoding="utf-8")
+    path.chmod(0o600)
+
 
 def _tool_inputs(exporter: InMemorySpanExporter) -> tuple[tuple[str, str], ...]:
     """`(tool, input)` per executed tool, in start order (see `NORA_TOOL_INPUTS`).
@@ -827,6 +953,22 @@ def _shown_blocks(
                         (found.group(1), found.group(0))
                         for found in _CONTEXT_BLOCK.finditer(text)
                     )
+    return None
+
+
+def _public_input(exporter: InMemorySpanExporter, rendered: str) -> str | None:
+    """Read the public assembly back from the actual chat input, never expected_output."""
+    for span in exporter.get_finished_spans():
+        if (span.attributes or {}).get('gen_ai.operation.name') != 'chat':
+            continue
+        values = list((span.attributes or {}).values())
+        for event in span.events or ():
+            values.extend((event.attributes or {}).values())
+        for raw in values:
+            if isinstance(raw, str):
+                for text in _texts_in(raw):
+                    if text == rendered and '<social_post' in text:
+                        return text
     return None
 
 
@@ -1447,6 +1589,20 @@ async def _sandbox_for(spec: Spec, now: datetime) -> AsyncIterator[str]:
 
 
 async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
+    from nora.subject.eval_evidence import current
+
+    evidence = current()
+    if evidence is None:
+        return await _drive_uncaptured(case, spec)
+    with evidence.case(
+            case.name or "unnamed", input=case.input,
+            metadata={"case": case.model_dump(mode="json"), "entry": spec.entry}):
+        result = await _drive_uncaptured(case, spec)
+        evidence.result(result)
+        return result
+
+
+async def _drive_uncaptured(case: Case, spec: Spec) -> dict[str, Any]:
     """One DRAW, in a Honcho workspace of its own. Raises; `nora_task` catches.
 
     The sandbox database isolates what she knows in Postgres; Honcho is an
@@ -1461,6 +1617,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     workspace being deleted.
     """
     from evals.rebuilt.entry import ENTRY_POINTS
+    spec = dataclasses.replace(spec, entry=(case.metadata or {}).get("entry", spec.entry))
     port = ENTRY_POINTS[spec.entry]
     if port.frozen_input:
         outcome = await port.drive(spec.judge, case, now_ms=0)
@@ -1567,8 +1724,10 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
         )
     workdir = Path(tempfile.mkdtemp(prefix="nora-case-"))
     subject = None
+    from nora.subject.circle import CircleOverlay, reaction_wire, seed_job
+    overlay = CircleOverlay(**md['circle_overlay']) if md.get('circle_overlay') else None
     try:
-        async with _sandbox_for(spec, now) as database_url:
+        async with _sandbox_for(spec, now) as database_url, reaction_wire(overlay) as signal_url:
             # A full restore holds the real speakers, so each room's members
             # are read from them while the graph composes; without it every
             # lineage tool answers `unavailable` (`nora.subject.sandbox_roster`).
@@ -1580,6 +1739,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     SubjectSpec(
                         database_url=database_url,
                         workdir=workdir,
+                        circle=overlay, signal_rpc_url=signal_url,
                         room=room,
                         # LAST, so nothing a spec states can redirect it: THIS
                         # DRAW'S Honcho workspace, created empty.
@@ -1591,6 +1751,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                             # otherwise; empty on every other corpus.
                             **(FULL_RESTORE_OVERRIDES if spec.full_restore else {}),
                             **(spec.overrides or {}),
+                            **(overlay.overrides if overlay else {}),
                             "honcho.workspace_id": memory_workspace,
                         },
                         # The deployment's OWN roster and room set, verbatim.
@@ -1617,6 +1778,15 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 )
             # SPEAKING NEEDS AN ADAPTER, and the sandbox disables Discord's
             # (a declared divergence — it authenticates for real at startup).
+            from nora.subject.eval_evidence import current, fingerprint
+
+            if evidence := current():
+                evidence.record("subject_ready", files={
+                    name: await asyncio.to_thread(fingerprint, workdir / name)
+                    for name in ("config.toml", "identity.toml", "policy.toml")
+                }, computer_enabled=subject.cfg.computer.enabled,
+                    browse_enabled=subject.cfg.computer.browse.enabled,
+                    defer_tools=subject.cfg.llm.defer_tools)
             # `FirePath._turn` resolves the room's own adapter before it says
             # anything, so a turn case anchored where no adapter is wired dies
             # deep in `fire.py` with a `KeyError`. Refused here, by name,
@@ -1637,7 +1807,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         "(design/evaluation/11-the-sandbox-rebuild.md §1.2's "
                         "declared Discord divergence)."
                     )
-            if spec.memory_surface is not None:
+            if spec.memory_surface is not None and not (overlay and overlay.memory):
                 refuse_a_memory_surface_mismatch(
                     spec.memory_surface, subject.cfg.memory.index.read,
                 )
@@ -1693,6 +1863,22 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             nora_case = dataclasses.replace(
                 nora_case, moment=Moment(source_url=spec.source_url, rows=seeded.rows),
             )
+            if overlay and overlay.memory:
+                await subject.circle_memory.seed(subject, person=nora_case.person, now_ms=clock_ms)
+            job = None
+            if overlay and overlay.job:
+                job_id = await seed_job(subject, overlay, person=nora_case.person, now_ms=clock_ms)
+                # Reuse the overlay's SQL store; retain the exact seeded row, not a label.
+                from uuid import UUID
+
+                from nora.subject.circle import SqlComputeJobStore, create_sql_engine
+
+                job_engine = create_sql_engine(subject.database_url)
+                try:
+                    job = await SqlComputeJobStore(job_engine).get(UUID(job_id))
+                finally:
+                    await job_engine.dispose()
+
             from evals.rebuilt.profile_identity import REPRESENTATION_PROPERTIES
             from nora.subject.context_filter import case_scope
 
@@ -1715,12 +1901,20 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             tools_called = _tools_called(exporter)
             tool_results = _tool_results(exporter)
             tool_inputs = _tool_inputs(exporter)
+            outcome = dataclasses.replace(
+                outcome, reactions=_reaction_receipts(tool_results, tool_inputs),
+            )
             _dump_exchanges(exporter, case.name)
             shown_now = _shown_now(exporter)
             # `agent=agent_name`: the turn's own render, never the relevance
             # gate's (`_shown_transcript`'s own docstring).
             shown_transcript = _shown_transcript(exporter, agent=agent_name or None)
             shown_blocks = _shown_blocks(exporter, agent=agent_name or None)
+            if port.public_audience:
+                shown_transcript = _public_input(exporter, outcome.shown)
+                if shown_transcript is None:
+                    outcome = dataclasses.replace(
+                        outcome, error='public model input capture missing')
             blocks_rendered = _blocks_rendered(exporter)
             shown = shown_where(exporter.get_finished_spans())
             _SPEND.append(spend)
@@ -1735,9 +1929,20 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 outcome = dataclasses.replace(
                     outcome, position=json.dumps(receipt, ensure_ascii=False, sort_keys=True),
                 )
+            measured_overlay = (dataclasses.replace(overlay, memory=None)
+                                if port.public_audience and overlay else overlay)
+            problem = _circle_execution_problem(
+                measured_overlay, tool_results, shown_blocks, tools_called,
+                job=job, room=subject.room)
+            if problem and outcome.error is None:
+                outcome = dataclasses.replace(outcome, error=problem)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
 
+            if (overlay or port.public_audience) and outcome.responded and spec.judge is None:
+                outcome = dataclasses.replace(
+                    outcome, error='controlled reply requires semantic judge')
             judged_why = ""
+            judgement = None
             # The standing fold: the judged thing is the POSITION a fold wrote, against the
             # case's one stated property, read over the turn's RECORD — the
             # same evidence on both arms of a comparison. Selected by the
@@ -1784,7 +1989,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             # Judged HERE, while the
             # subject is alive, because the judge needs the doctrine she
             # actually ran ON, not a copy read off disk.
-            elif spec.judge is not None and outcome.said and outcome.error is None:
+            elif spec.judge is not None and outcome.responded and outcome.error is None:
                 if shown_transcript is None:
                     # NOT fail-closed to fall through to `source=None`: `Judge.
                     # grade` still answers with no source ("meaningful with or
@@ -1807,8 +2012,9 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                             "judged (#459)"
                         ),
                     )
-                elif "recall_grounded" in tuple(md.get("criteria") or ()) and (
-                    blocks_problem := _recall_blocks_problem(shown_blocks, blocks_rendered)
+                elif {"recall_grounded", "social_suitability"} & set(md.get("criteria") or ()) and (
+                    blocks_problem := (None if port.public_audience else
+                        _recall_blocks_problem(shown_blocks, blocks_rendered))
                 ):
                     outcome = dataclasses.replace(outcome, error=blocks_problem)
                 else:
@@ -1824,10 +2030,17 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         judge_facts = await recall_facts(
                             subject, md, now_ms=seeded.now_ms,
                         )
+                    extra = criteria_for(criteria)
+                    if case.expected_output:
+                        extra = tuple(dataclasses.replace(c, description=c.description +
+                            " Case acceptance requirement (not evidence): " +
+                            str(case.expected_output)) if c.name == 'social_suitability' else c
+                            for c in extra)
                     judgement = await spec.judge.grade(
-                        said="\n".join(outcome.said),
+                        said=outcome.response,
                         asked=nora_case.input,
-                        doctrine=subject.deps.doctrine.doctrine_text,
+                        doctrine=(subject.deps.doctrine_store.get(applies_to='summons').doctrine_text
+                                  if port.public_audience else subject.deps.doctrine.doctrine_text),
                         # The SOURCE the reply had to ground against — the
                         # window her turn actually RENDERED (`shown_transcript`),
                         # not `seeded.transcript` (every row
@@ -1839,13 +2052,15 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         source=_judge_source(
                             shown_transcript, tool_results, criteria, shown_blocks or (),
                         ),
-                        extra=criteria_for(criteria),
+                        extra=extra,
                         facts=judge_facts,
                     )
                     outcome = dataclasses.replace(
                         outcome, judged=judgement.verdict, error=judgement.error,
                     )
                     judged_why = str(getattr(judgement, "why", "") or "")
+
+            _dump_judgement(judgement, case.name)
 
             repeat_state = []
             if spec.repeat > 1:
@@ -1874,11 +2089,12 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             await _close(subject)
             subject = None
             return {
-                "output": "\n".join(outcome.said),
+                "output": outcome.response,
                 "environment_state": [
                     EnvironmentState(name=NORA_ERROR, state=outcome.error),
                     EnvironmentState(name=NORA_TOKEN, state=outcome.outcome_token),
                     EnvironmentState(name=NORA_SAID, state=len(outcome.said)),
+                    EnvironmentState(name=NORA_REACTIONS, state=outcome.reactions),
                     EnvironmentState(name=NORA_DELIVERY, state=outcome.delivery),
                     EnvironmentState(name=NORA_ADMITTED, state=outcome.admitted),
                     EnvironmentState(name=NORA_BLOCKS_EMPTY, state=blocks_empty),
@@ -2235,7 +2451,9 @@ class AbsenceGrader(Evaluator):
         # entry point leaves `admitted` at `None` (never ran a gate), so
         # `said` is still the right signal there. Reading `said` alone for a
         # gate case would grade every one of them as silence, verdict ignored.
-        spoke = bool(admitted) if admitted is not None else bool(said)
+        spoke = bool(state_of(data, NORA_REACTIONS)) or (
+            bool(admitted) if admitted is not None else bool(said)
+        )
         detail = f"admitted={admitted}" if admitted is not None else f"{said} row(s)"
         if expect in ("silence", "no_reply", "none", "no_go"):
             return [
@@ -2306,6 +2524,7 @@ class MeetsGrader(Evaluator):
         outcome = Outcome(
             admitted=state_of(data, NORA_ADMITTED),
             said=said,
+            reactions=tuple(state_of(data, NORA_REACTIONS) or ()),
             changed=tuple(state_of(data, NORA_CHANGED) or ()),
             written=state_of(data, NORA_WRITTEN) or 0,
             checks_failed=tuple(state_of(data, NORA_CHECKS_FAILED) or ()),

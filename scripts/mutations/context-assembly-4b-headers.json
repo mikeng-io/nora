@@ -93,8 +93,8 @@
   {
     "name": "4b: the closing line's wording changes",
     "file": "nora/domain/framing.py",
-    "old": "I'll read the conversation and reply as myself.",
-    "new": "I will read the conversation and reply as myself.",
+    "old": "I'll read the conversation as myself.",
+    "new": "I will read the conversation as myself.",
     "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[prefill-the-three-messages-for-the-default-header]"
   },
   {

@@ -1,5 +1,56 @@
 # Changelog
 
+## [7.15.11](https://github.com/mikeng-io/nora/compare/v7.15.10...v7.15.11) (2026-11-05)
+
+
+### Bug Fixes
+
+* **evals:** isolate test evidence and report preparation refusals ([7bd52b5](https://github.com/mikeng-io/nora/commit/7bd52b5fb948acd94e15b978f55d6a3338c7c29c))
+* **evals:** persist private run evidence before model dispatch ([7ec895f](https://github.com/mikeng-io/nora/commit/7ec895f4c0e37c5ce794eb556cfad2929a37cdfc))
+
+## [7.15.10](https://github.com/mikeng-io/nora/compare/v7.15.9...v7.15.10) (2026-11-05)
+
+
+### Bug Fixes
+
+* **cognition:** refuse citations for unrendered agenda items ([3acc9b0](https://github.com/mikeng-io/nora/commit/3acc9b0ed5e17b930d6e4716ff153fce8b46c8b0))
+* **memory:** bind readings to rendered agenda source rows ([c7e9c1c](https://github.com/mikeng-io/nora/commit/c7e9c1ccafb786398fe3649b7f3c028a6ecf6fd3))
+
+## [7.15.9](https://github.com/mikeng-io/nora/compare/v7.15.8...v7.15.9) (2026-11-05)
+
+
+### Bug Fixes
+
+* **doctrine:** leave the decision to reply with the turn's occasion ([8e86f9d](https://github.com/mikeng-io/nora/commit/8e86f9d12c6375bca4fd8c1b9b0e65029ca268c2))
+
+## [7.15.8](https://github.com/mikeng-io/nora/compare/v7.15.7...v7.15.8) (2026-11-05)
+
+
+### Bug Fixes
+
+* **image:** use GPT Image 2.6 through direct Codex Images API ([31644d3](https://github.com/mikeng-io/nora/commit/31644d3e6e41f73543e7930a0545094045586403))
+
+## [7.15.7](https://github.com/mikeng-io/nora/compare/v7.15.6...v7.15.7) (2026-11-05)
+
+
+### Bug Fixes
+
+* **doctrine:** allow grounded denial without accepting work ([4904fdf](https://github.com/mikeng-io/nora/commit/4904fdf4b96c724490f41a6999206b921eab7027))
+* **doctrine:** carry offered-floor and public silence through to sends ([bbf3000](https://github.com/mikeng-io/nora/commit/bbf3000d4b2dfa1d5f93d53f75c2a315f406d232))
+* **doctrine:** correct reaction picker prose after independent review ([85d98d1](https://github.com/mikeng-io/nora/commit/85d98d1ac7755cb7dabac3a76da190590721bed1))
+* **doctrine:** preserve uncertainty and actual participation occasions ([3fb0346](https://github.com/mikeng-io/nora/commit/3fb034615be193c97586678a4a79146366a01a25))
+* **doctrine:** scope inability answers to the current occasion ([ae82cbf](https://github.com/mikeng-io/nora/commit/ae82cbf6f8ad5c6e62f7bef744fd1149bfe7a685))
+* **evals:** bind completed circle checks to delivered result evidence ([b558097](https://github.com/mikeng-io/nora/commit/b5580975f0d4612197a115d4303f09c9ca39a323))
+* **evals:** distinguish failed public invocations from silence ([2ef6639](https://github.com/mikeng-io/nora/commit/2ef6639514ada2f3467f670cec80a3fd780bb9d1))
+* **evals:** judge confirmed reaction responses without text rows ([e3ea2b2](https://github.com/mikeng-io/nora/commit/e3ea2b2f934adb2aa474a2c415539e7a1ec8b2e1))
+* **evals:** retain raw judge votes beside private exchanges ([53b31f4](https://github.com/mikeng-io/nora/commit/53b31f4f355292acc749b39393dabecd9f421263))
+* **evals:** show circle suitability judges the admitted evidence ([1ec88a7](https://github.com/mikeng-io/nora/commit/1ec88a79b6b954f5afeda0060260439a889a8f71))
+
+
+### Doctrine
+
+* align social judgement and accepted work across audiences ([368c4bf](https://github.com/mikeng-io/nora/commit/368c4bfd20d3bf68c4ce658085ea56020db2391b))
+
 ## [7.15.6](https://github.com/mikeng-io/nora/compare/v7.15.5...v7.15.6) (2026-11-05)
 
 

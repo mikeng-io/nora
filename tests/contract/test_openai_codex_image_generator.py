@@ -1,7 +1,7 @@
 """`OpenAICodexImageGenerator` + `OpenAICodexOAuth` (DEC-304).
 
 The OpenAI Codex lane against local aiohttp servers, no network: a fake Codex
-backend that streams SSE the way the live one does, and a fake
+backend with the direct Images JSON contract, and a fake
 `auth.openai.com` token endpoint that ROTATES the refresh token on every use
 and refuses a spent one, the property this lane is built around.
 """
@@ -46,27 +46,8 @@ def _jwt(n: int, *, account: str = "acct-1", ttl: float = 10 * 86400) -> str:
     return f"{seg({'alg': 'none'})}.{seg(claims)}.sig"
 
 
-def _sse(*events: dict) -> bytes:
-    return b"".join(b"data: " + json.dumps(e).encode() + b"\n\n" for e in events)
-
-
-def _image_events(status: str = "completed", result: bytes | None = PNG) -> bytes:
-    item: dict = {"id": "ig_1", "type": "image_generation_call", "status": status}
-    if result is not None:
-        item["result"] = base64.b64encode(result).decode()
-    return _sse(
-        {"type": "response.created"},
-        {"type": "response.output_item.done", "item": item},
-        {"type": "response.output_item.done", "item": {"type": "message"}},
-        {"type": "response.completed", "response": {"usage": {"input_tokens": 1}}},
-    )
-
-
-TEXT_ONLY = _sse(
-    {"type": "response.created"},
-    {"type": "response.output_item.done", "item": {"type": "message"}},
-    {"type": "response.completed", "response": {}},
-)
+def _image_response(result: bytes = PNG) -> web.Response:
+    return web.json_response({"data": [{"b64_json": base64.b64encode(result).decode()}]})
 
 
 @pytest.fixture
@@ -103,25 +84,23 @@ async def auth_server():
 
 @pytest.fixture
 async def codex_server():
-    """A Codex backend: `state["reply"]` is a callable (request, body) ->
+    """A Codex Images backend: `state["reply"]` is a callable (request, body) ->
     response, and every request's headers + JSON body are recorded."""
-    state: dict = {"requests": [], "reply": lambda req, body: _stream(_image_events())}
+    state: dict = {"requests": [], "reply": lambda req, body: _image_response()}
 
     async def responses(request: web.Request) -> web.StreamResponse:
         body = await request.json()
         state["requests"].append((dict(request.headers), body))
+        state["path"] = request.path
         return state["reply"](request, body)
 
     app = web.Application(client_max_size=64 * 1024 * 1024)
-    app.router.add_post("/responses", responses)
+    app.router.add_post("/images/generations", responses)
+    app.router.add_post("/images/edits", responses)
     server = TestServer(app)
     await server.start_server()
     yield str(server.make_url("/")).rstrip("/"), state
     await server.close()
-
-
-def _stream(payload: bytes, status: int = 200) -> web.Response:
-    return web.Response(body=payload, status=status, content_type="text/event-stream")
 
 
 def _oauth(tmp_path: Path, issuer: str, bootstrap: str = "rt-boot") -> OpenAICodexOAuth:
@@ -140,7 +119,7 @@ def _gen(oauth: OpenAICodexOAuth, base: str) -> OpenAICodexImageGenerator:
 # -- generation -------------------------------------------------------------
 
 
-async def test_a_completed_image_call_is_ok_and_the_tool_is_forced(
+async def test_a_completed_image_uses_the_direct_images_endpoint(
     tmp_path, auth_server, codex_server,
 ):
     issuer, _ = auth_server
@@ -155,46 +134,41 @@ async def test_a_completed_image_call_is_ok_and_the_tool_is_forced(
     headers, body = cx["requests"][0]
     assert headers["chatgpt-account-id"] == "acct-1"
     assert headers["Authorization"].startswith("Bearer ")
-    assert body["model"] == "gpt-5.5"
-    assert body["tool_choice"] == {"type": "image_generation"}
-    assert body["tools"][0]["model"] == "gpt-image-2"
-    assert body["tools"][0]["quality"] == "high"
-    assert body["stream"] is True and body["store"] is False
-    assert body["input"][0]["content"] == [{"type": "input_text", "text": "a red apple"}]
+    assert cx["path"] == "/images/generations"
+    assert body == {
+        "model": "gpt-image-2.6-flare", "prompt": "a red apple",
+        "quality": "high", "size": "auto", "output_format": "png",
+    }
+
 
 
 async def test_a_text_only_reply_is_unavailable_not_ok(tmp_path, auth_server, codex_server):
     """A 200 that carries no image is the failure this lane must not hide."""
     issuer, _ = auth_server
     base, cx = codex_server
-    cx["reply"] = lambda req, body: _stream(TEXT_ONLY)
+    cx["reply"] = lambda req, body: web.json_response({"output": [{"type": "message"}]})
     result = await _gen(_oauth(tmp_path, issuer), base).generate(prompt="a cat")
     assert (result.status, result.reason) == ("unavailable", "no_image")
 
 
 @pytest.mark.parametrize(
-    ("events", "expected"),
+    ("body", "reason"),
     [
-        (_image_events(status="failed", result=None), ("unavailable", "no_image")),
-        (_image_events(status="failed"), ("unavailable", "no_image")),
-        (_image_events(status="in_progress"), ("unavailable", "no_image")),
-        (_image_events(result=b"not a png"), ("unavailable", "bad_response")),
-        (
-            _sse({"type": "response.failed",
-                  "response": {"error": {"code": "moderation_blocked"}}}),
-            ("nothing_found", "refused"),
-        ),
+        ({}, "no_image"), ({"data": []}, "no_image"),
+        ({"data": [None]}, "no_image"),
+        ({"data": [{"b64_json": "%%%"}]}, "bad_response"),
+        ({"data": [{"b64_json": base64.b64encode(b"not a png").decode()}]}, "bad_response"),
+        ([], "bad_response"),
     ],
-    ids=["call-failed", "failed-with-png", "in-progress-with-png", "not-a-png", "moderation"],
 )
-async def test_a_stream_without_a_usable_image_is_never_ok(
-    tmp_path, auth_server, codex_server, events, expected,
+async def test_a_response_without_a_usable_image_is_never_ok(
+    tmp_path, auth_server, codex_server, body, reason,
 ):
     issuer, _ = auth_server
     base, cx = codex_server
-    cx["reply"] = lambda req, body: _stream(events)
+    cx["reply"] = lambda req, payload: web.json_response(body)
     result = await _gen(_oauth(tmp_path, issuer), base).generate(prompt="a cat")
-    assert (result.status, result.reason) == expected
+    assert (result.status, result.reason) == ("unavailable", reason)
 
 
 @pytest.mark.parametrize(
@@ -227,7 +201,7 @@ async def test_a_401_refreshes_once_and_retries(tmp_path, auth_server, codex_ser
         first.setdefault("token", token)
         if token == first["token"]:
             return web.json_response({"error": {"code": "token_expired"}}, status=401)
-        return _stream(_image_events())
+        return _image_response()
 
     cx["reply"] = reply
     result = await _gen(_oauth(tmp_path, issuer), base).generate(prompt="a cat")
@@ -261,12 +235,12 @@ async def test_references_travel_as_data_uris_of_custody_bytes(
         reference_resolver=resolver,
     )
     assert result.status == "ok"
-    content = cx["requests"][0][1]["input"][0]["content"]
-    assert content[1] == {
-        "type": "input_image",
+    assert cx["path"] == "/images/edits"
+    content = cx["requests"][0][1]["images"]
+    assert content[0] == {
         "image_url": "data:image/png;base64," + base64.b64encode(PNG).decode(),
     }
-    assert content[2]["image_url"].startswith("data:image/jpeg;base64,")
+    assert content[1]["image_url"].startswith("data:image/jpeg;base64,")
 
 
 async def test_a_reference_outside_custody_sends_nothing(tmp_path, auth_server, codex_server):
@@ -287,24 +261,24 @@ async def test_a_reference_outside_custody_sends_nothing(tmp_path, auth_server, 
 
 
 @pytest.mark.parametrize(
-    ("size", "wire", "named"),
+    ("size", "wire"),
     [
-        (ImageSize(aspect_ratio="16:9"), "1536x1024", True),
-        (ImageSize(aspect_ratio="2:3"), "1024x1536", True),
-        (ImageSize(aspect_ratio="4:3"), "auto", False),  # type: ignore[arg-type]
-        (None, "auto", False),
+        (ImageSize(aspect_ratio="16:9"), "1536x864"),
+        (ImageSize(aspect_ratio="2:3"), "1024x1536"),
+        (ImageSize(aspect_ratio="4:3"), "auto"),  # type: ignore[arg-type]
+        (None, "auto"),
     ],
 )
 async def test_size_maps_to_a_gpt_image_size_or_auto(
-    tmp_path, auth_server, codex_server, size, wire, named,
+    tmp_path, auth_server, codex_server, size, wire,
 ):
     issuer, _ = auth_server
     base, cx = codex_server
     result = await _gen(_oauth(tmp_path, issuer), base).generate(prompt="a cat", size=size)
     assert result.status == "ok"
     body = cx["requests"][0][1]
-    assert body["tools"][0]["size"] == wire
-    assert ("aspect ratio" in body["instructions"]) is named
+    assert body["size"] == wire
+    assert body["prompt"] == "a cat"
 
 
 # -- credentials ------------------------------------------------------------
@@ -608,7 +582,7 @@ def test_the_codex_section_is_validated():
     from nora.config import ImageGenConfig
 
     cfg = ImageGenConfig.model_validate({"provider": "openai_codex", "openai_codex": {}})
-    assert cfg.openai_codex.model == "gpt-image-2"
+    assert cfg.openai_codex.model == "gpt-image-2.6-flare"
     assert cfg.openai_codex.refresh_token_env == "OPENAI_CODEX_REFRESH_TOKEN"
     assert ImageGenConfig().provider == "xai"
     for bad in ({"quality": "high"}, {"standard_quality": "ultra"}, {"timeout_seconds": 0}):

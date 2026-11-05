@@ -32,6 +32,7 @@ from evals.backbone import (
     RUN_ID,
     UNSTABLE,
     Spec,
+    _prefill_capture,
     base_name,
     drain_draws,
     drain_spend,
@@ -68,6 +69,7 @@ from nora.subject import (
     sweep_stale_private_blank_templates,
 )
 from nora.subject.context_filter import exposure
+from nora.subject.eval_evidence import EvidenceError, RunEvidence, fingerprint, revision
 from nora.subject.sandbox import EvalLockHeldError, eval_host_lock
 
 #: Coarse S-class grouping for `--class`. Approximate on purpose where a
@@ -408,6 +410,11 @@ def _run_one(
         memory_index=memory_index,
     )
     report = experiment.run_evaluations(task=task)
+    from nora.subject.eval_evidence import current
+
+    if evidence := current():
+        evidence.check()
+        evidence.record("corpus_report", corpus=name, report=report.model_dump())
     context_complete = True
     if context_receipts is not None:
         missing = {c["name"] for c in report.cases} - {
@@ -539,14 +546,14 @@ def main() -> int:
     the host's eval lock (`eval_host_lock`). A run that finds it held is refused
     before it does anything, so no two runs share the shared template."""
     try:
-        with eval_host_lock():
-            return _main()
-    except EvalLockHeldError as exc:
+        with eval_host_lock() as lock_fd:
+            return _main(lock_fd=lock_fd)
+    except (EvalLockHeldError, EvidenceError) as exc:
         print(f"refusing to run: {exc}", file=sys.stderr)
         return 2
 
 
-def _main() -> int:
+def _main(*, lock_fd: int = -1) -> int:
     ap = argparse.ArgumentParser(prog="python -m evals")
     ap.add_argument("corpus", nargs="*", help="corpus name(s) — see --list")
     ap.add_argument("--class", dest="cls", action="append",
@@ -721,6 +728,30 @@ def _main() -> int:
             file=sys.stderr,
         )
         return 2
+    if args.print_input:
+        return _execute(args, names, only)
+    from opentelemetry import trace
+
+    from nora.subject.sandbox import EVAL_HOST_LOCK
+
+    _prefill_capture()  # establish the existing SDK provider before attaching durable capture
+    try:
+        evidence = RunEvidence(run_id=RUN_ID, lock_fd=lock_fd, metadata={
+            **revision(_REPO_ROOT), "corpora": names, "cases": sorted(only or ()),
+            "sample": args.sample, "judge": args.judge, "judge_samples": args.judge_samples,
+            "deployment_config_sha256": fingerprint(Path(args.deployment_config)),
+            "lock_path": str(EVAL_HOST_LOCK), "lock_acquired": True,
+        })
+    except OSError as exc:
+        raise EvidenceError(f"cannot prepare private eval evidence ({type(exc).__name__})") from exc
+    print(f"private eval evidence: {evidence.path}")
+    with evidence.capture(trace.get_tracer_provider()):
+        rc = _execute(args, names, only)
+        evidence.exit_code = rc
+        return rc
+
+
+def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | None) -> int:
     if "profile_coverage" in names:
         # A frozen read-only measurement has no subject to compose, sandbox to
         # mutate or Honcho workspace to create. It still runs the same task,
@@ -820,6 +851,10 @@ def _main() -> int:
             except ValueError as exc:
                 print(f"refusing to run: {exc}", file=sys.stderr)
                 return 2
+            from nora.subject.eval_evidence import current
+
+            if evidence := current():
+                evidence.record("subject_config", sha256=fingerprint(Path(generated)))
             print(f"subject config rebuilt from {args.deployment_config} -> {generated}")
             # AFTER the rebuild: the sweep reads Honcho's address and the
             # deployment's workspace off the config every subject composes.
