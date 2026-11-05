@@ -319,15 +319,11 @@ class SegmentRegistry:
         self._pending[task_id] = _PendingResult(
             status=status, result=dict(result),
             consumed=consumed or (old.consumed if old is not None else False))
-        if not self._spill() and self._pending[task_id].consumed:
-            # A `consumed` claim that never reached disk must not live in
-            # memory either: keeping it would suppress the deferred delivery
-            # of a result the caller was NOT handed (the caller is told
-            # `unavailable` on this failure), silently losing the result.
-            self._pending[task_id] = replace(
-                self._pending[task_id], consumed=False)
-            return False
-        return self._pending_path is not None
+        # Durable only when a journal exists AND took the checkpoint; the
+        # memory entry always holds so this process keeps its semantics —
+        # the CALLER decides whether the failed write must revert a
+        # `consumed` claim (`unmark_consumed` / `mark_consumed` handle it).
+        return self._pending_path is not None and self._spill()
 
     def mark_consumed(self, task_id: UUID) -> bool:
         """The caller saw the retained reply: the row, once it persists,
@@ -564,8 +560,10 @@ class ComputerAdmission:
             # NOT go out as the answer (delivering it AND leaving the result
             # deferred-eligible would be the duplicate this contract
             # forbids). The caller gets the task's identity: the original
-            # outcome stays in the journal/row and is delivered exactly once
-            # through the deferred path instead.
+            # outcome stays journaled and the deferred path delivers it
+            # while the row's `delivered_at` is empty — unless a stale
+            # `consumed` marker survived on disk, the logged at-most-once
+            # residual, never promised away.
             return {"status": "unavailable", "task": str(task.id),
                     "note": "That computer task finished, but its answer "
                             "could not be committed for delivery — it may "
@@ -649,17 +647,14 @@ class ComputerAdmission:
             return True  # nothing owed: no row, no disposition to settle
         if row.status not in TERMINAL:
             return False  # not durable evidence — a live row's mark is not
-        journaled = self.executors.retain(task_id, row.status, row.result,
-                                          consumed=True)
-        persisted = False
-        if journaled:
-            persisted = await _persist_pending(
-                executors=self.executors, tasks=self._tasks,
-                clock=self._clock, task_id=task_id)
-            if not persisted and not self.executors.unmark_consumed(task_id):
-                log.error("computer task %s consumed marker may be stale on "
-                          "disk; suppressed delivery is the residual", task_id)
-        return journaled and persisted
+        self.executors.retain(task_id, row.status, row.result, consumed=True)
+        persisted = await _persist_pending(
+            executors=self.executors, tasks=self._tasks,
+            clock=self._clock, task_id=task_id)
+        if not persisted and not self.executors.unmark_consumed(task_id):
+            log.error("computer task %s consumed marker may be stale on "
+                      "disk; suppressed delivery is the residual", task_id)
+        return persisted
 
     async def get(self, task_id: UUID) -> ComputerTask | None:
         return await self._tasks.get(task_id)

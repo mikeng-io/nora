@@ -90,25 +90,50 @@ async def test_a_healthy_segment_returns_the_reply_and_stamps_delivered(tmp_path
     assert executors.pending_result(task.id) is None
 
 
-async def test_failed_consumed_checkpoint_returns_identity_not_the_result(tmp_path):
-    """The B2 closure case: the work produced a real reply but the journal
-    cannot take ANY checkpoint — the caller gets `unavailable` + task id,
-    NOT the result body, and the original outcome stays deferred-eligible
-    for exactly one deferred delivery."""
+async def test_a_sealed_journal_with_healthy_sql_still_delivers(tmp_path):
+    """Positive control, single-authority: the journal cannot take a
+    checkpoint but SQL takes the terminal row and `delivered_at` — one
+    authoritative durable disposition suffices, so the live reply goes out
+    and nothing stays deferred-eligible."""
     directory = tmp_path / "pending"
     executors, tasks, admission = _rig(directory)
     task = _task()
     await tasks.enqueue(task)
     await tasks.try_claim_head(task.id, now=NOW)
-    _seal(directory)  # no checkpoint can land, including the initial retain
+    _seal(directory)
+
+    reply = await admission.run_segment(task, _work({"status": "ok", "v": 7}))
+    assert reply["v"] == 7
+    row = await tasks.get(task.id)
+    assert row.status == "done" and row.delivered_at is not None
+    assert await tasks.undelivered(limit=10) == []
+
+
+async def test_failed_consumed_checkpoint_returns_identity_not_the_result(tmp_path):
+    """The B2 closure case: BOTH stores refuse — journal sealed AND SQL
+    `mark_delivered` down — so no durable disposition exists. The caller
+    gets `unavailable` + task id, NOT the result body; the consumed marker
+    is reverted so the original outcome stays deferred-eligible for exactly
+    one deferred delivery."""
+    directory = tmp_path / "pending"
+    executors, tasks, admission = _rig(directory)
+    task = _task()
+    await tasks.enqueue(task)
+    await tasks.try_claim_head(task.id, now=NOW)
+    _seal(directory)
+    tasks.fail_delivered = True
 
     reply = await admission.run_segment(task, _work({"status": "ok", "v": 7}))
     assert reply["status"] == "unavailable" and reply["task"] == str(task.id)
     assert "v" not in reply  # the result body did NOT go out
     row = await tasks.get(task.id)
     assert row.status == "done" and row.delivered_at is None
-    # The result is preserved for the ONE deferred delivery.
     assert row.result == {"status": "ok", "v": 7}
+    pending = executors.pending_result(task.id)
+    assert pending is None or not pending.consumed  # unmarked for deferred
+
+    # Recovery: SQL alone takes the terminal result and the deferred stamp.
+    tasks.fail_delivered = False
     _open(directory)
     os.close(executors._lock_fd)  # simulate process death
     second = SegmentRegistry(pending_dir=directory)

@@ -1366,13 +1366,20 @@ async def test_a_failed_finish_keeps_the_result_with_its_owner() -> None:
                                  origin={})
     assert got.granted
     reply = await admission.run_segment(got.task, work=work())
-    # The caller saw the real reply — it is never rewritten.
-    assert reply.get("answer") == "kept"
+    # No durable store could take the disposition (journal-less registry,
+    # SQL finish refused): the live handoff cannot be committed, so the
+    # caller gets `unavailable` with the task's identity — never the result
+    # body, which would make the deferred handoff a duplicate.
+    assert reply.get("status") == "unavailable"
+    assert reply.get("task") == str(got.task.id)
+    assert reply.get("answer") is None
     row = await store.get(got.task.id)
     assert row is not None and row.status == "running"
     assert row.delivered_at is None
     # The retained result is reachable with the executor that ran it.
-    assert admission.executors.pending_result(got.task.id) is not None
+    pending = admission.executors.pending_result(got.task.id)
+    assert pending is not None and pending.result.get("answer") == "kept"
+    assert not pending.consumed
 
     fail["on"] = False
     runner = ComputerQueueRunner(
@@ -1392,9 +1399,11 @@ async def test_a_failed_finish_keeps_the_result_with_its_owner() -> None:
     assert row is not None and row.status == "done"
     assert row.result.get("answer") == "kept"
     assert row.result.get("stdout") == "x" * 4500
-    # A reply the caller already saw is persisted delivered — never
-    # handed off a second time.
-    assert row.delivered_at is not None
+    # The caller was told `unavailable`, never the result — so the row
+    # stays deferred-eligible (`delivered_at` empty) and the ORIGINAL
+    # outcome is delivered exactly once through the deferred path.
+    assert row.delivered_at is None
+    assert [r.id for r in await store.undelivered(limit=10)] == [got.task.id]
     assert admission.executors.pending_result(got.task.id) is None
 
 
@@ -1588,6 +1597,8 @@ async def test_pending_results_survive_a_restart(tmp_path) -> None:
     tid = uuid.uuid4()
     first.retain(tid, "done", {"status": "ok", "note": "written"})
     first.mark_consumed(tid)
+    import os as _os
+    _os.close(first._lock_fd)  # simulate process death: release the store
 
     second = SegmentRegistry(pending_dir=path)  # the restart
     pending = second.pending_result(tid)
@@ -1615,6 +1626,8 @@ async def test_a_retained_pending_is_persisted_terminal_and_delivered(tmp_path) 
     first.retain(tid, "done", {"status": "ok", "value": 42})
     first.mark_consumed(tid)
 
+    import os as _os
+    _os.close(first._lock_fd)  # simulate process death
     second = SegmentRegistry(pending_dir=path)  # the restart
     assert await _persist_pending(
         executors=second, tasks=store, clock=clock(), task_id=tid)
