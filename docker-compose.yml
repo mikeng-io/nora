@@ -677,6 +677,20 @@ services:
   # docs/superpowers/specs/2026-08-17-nora-web-design.md). Loopback-only,
   # same pattern as `nora` itself — public reachability is a separate,
   # operator-side Cloudflare Tunnel step, not this compose file's job.
+  http-egress:
+    build:
+      context: ./deploy/http-egress
+      network: host
+    image: nora-http-egress:latest
+    restart: unless-stopped
+    networks: [nora]
+    read_only: true
+    user: "65532:65532"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 256m
+
   app:
     build:
       context: ./app
@@ -687,6 +701,8 @@ services:
     networks: [nora]
     ports: ["127.0.0.1:3400:3000"]
     depends_on:
+      http-egress:
+        condition: service_started
       nora:
         condition: service_healthy
     environment:

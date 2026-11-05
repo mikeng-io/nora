@@ -93,17 +93,27 @@ async def test_real_image_shrinks_to_jpeg():
 
 
 # ---- download_media (the generic URL surface's network seam) --------------
-# Real aiohttp against a local server, with the SSRF screen injectable so
-# 127.0.0.1 is reachable in tests (the real screen refuses it, and that
-# refusal is itself pinned below via the preview-safety unit in
-# `test_preview_safe`).
+# Local transport tests explicitly permit the fixture address below; connection
+# policy and rebinding are exercised separately in integration/test_public_fetches.py.
+
+
+@pytest.fixture
+def local_download_transport(monkeypatch):
+    from nora.infra import public_http
+    original = public_http.is_public_address
+    monkeypatch.setattr(
+        public_http, "is_public_address",
+        lambda address: address == "127.0.0.1" or original(address),
+    )
 
 
 @pytest.mark.skipif(
     __import__("shutil").which("ffmpeg") is None,
     reason="real ffmpeg not installed in this environment",
 )
-async def test_download_happy_path_returns_bytes_and_content_type(aiohttp_server):
+async def test_download_happy_path_returns_bytes_and_content_type(
+    aiohttp_server, local_download_transport,
+):
     from aiohttp import web
 
     async def handler(request):
@@ -123,7 +133,7 @@ async def test_download_happy_path_returns_bytes_and_content_type(aiohttp_server
     assert ctype == "image/jpeg"
 
 
-async def test_download_follows_relative_redirect(aiohttp_server):
+async def test_download_follows_relative_redirect(aiohttp_server, local_download_transport):
     from aiohttp import web
 
     async def handler(request):
@@ -147,7 +157,7 @@ async def test_download_follows_relative_redirect(aiohttp_server):
     assert ctype == "image/png"
 
 
-async def test_download_refuses_a_hop_the_screen_rejects(aiohttp_server):
+async def test_download_refuses_a_hop_the_screen_rejects(aiohttp_server, local_download_transport):
     """Each redirect hop is re-validated: a fetch that STARTS at an allowed
     host but lands on a screen-refused target comes back empty (SSRF
     regression pin)."""
@@ -172,7 +182,7 @@ async def test_download_refuses_a_hop_the_screen_rejects(aiohttp_server):
     assert ctype == ""
 
 
-async def test_download_over_ceiling_returns_empty(aiohttp_server):
+async def test_download_over_ceiling_returns_empty(aiohttp_server, local_download_transport):
     from aiohttp import web
 
     async def handler(request):
@@ -193,7 +203,7 @@ async def test_download_over_ceiling_returns_empty(aiohttp_server):
     assert ctype == ""
 
 
-async def test_download_timeout_returns_empty(aiohttp_server):
+async def test_download_timeout_returns_empty(aiohttp_server, local_download_transport):
     from aiohttp import web
 
     async def handler(request):

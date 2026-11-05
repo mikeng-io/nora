@@ -1363,3 +1363,13 @@ def test_previous_pre_bridge_manifest_refuses_incomplete_or_untrusted_state(faul
         previous['artifacts']['app']['inputs']['external'] = {'unexpected': 'd' * 64}
     with pytest.raises(ValueError):
         bundle.validate_manifest(previous, previous=True)
+
+
+def test_gateway_cohort_and_previous_cohort_are_owned():
+    bundle = load('release_bundle')
+    wrapper = load('komodo_deploy')
+    _, manifest = bundle.render(source(), images(bundle), 'v6.3.1', 'b' * 40)
+    assert 'http-egress' in wrapper.expected_images(manifest, site=False)
+    del manifest['services']['http-egress']
+    bundle.validate_manifest(manifest, previous=True)
+    assert 'http-egress' not in wrapper.expected_images(manifest, site=False)
