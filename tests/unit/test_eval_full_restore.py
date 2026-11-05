@@ -723,7 +723,7 @@ async def test_circle_memory_uses_admitted_correction_and_scoped_read(unavailabl
     from nora.subject.circle import CircleMemory
     memory = CircleMemory(unavailable=unavailable)
     subject = SimpleNamespace(unit='generated-unit', room=('signal', 'generated-room'))
-    await memory.seed(subject, person='generated-person', now_ms=1_790_000_000_000)
+    await memory.populate(subject, person='generated-person', now_ms=1_790_000_000_000)
     assert memory.graph.relations['circle-preference-0'].status == 'superseded'
     assert memory.graph.relations['circle-preference-1'].status == 'current'
     room = RoomFacts('signal', frozenset({'generated-room'}), 'generated-unit',

@@ -58,18 +58,19 @@ def test_an_unknown_corpus_name_is_refused_not_silently_dropped():
 
 
 def test_judged_corpora_are_reachable_by_class():
-    """S3/S9 must be selectable by class, not only by exact corpus name —
-    otherwise `--class S3` silently runs nothing."""
+    """Every judged corpus must be selectable by class, not only by exact
+    corpus name — otherwise `--class S3` silently runs nothing judged."""
     s3 = set(_corpora_for(_args(cls=["S3"])))
     s9 = set(_corpora_for(_args(cls=["S9"])))
     # `standing` (the fold) is judged and sits in S6,
     # the class of what a WRITE keeps.
     s6 = set(_corpora_for(_args(cls=["S6"])))
-    # `participation` is judged and sits in S7; the class itself carries
-    # unjudged corpora, so it is filtered like S6.
+    # `participation` is judged on its opted-in criteria and sits in S7,
+    # the trigger class its cases belong to.
     s7 = set(_corpora_for(_args(cls=["S7"])))
-    assert s3 | s9 | (s7 & JUDGED_CORPORA) | (s6 & JUDGED_CORPORA) == JUDGED_CORPORA
+    assert s3 | s9 | ((s6 | s7) & JUDGED_CORPORA) == JUDGED_CORPORA
     assert "standing" in s6
+    assert "participation" in s7
 
 
 def test_positions_prints_each_draws_written_position_and_its_length(capsys):

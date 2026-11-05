@@ -122,14 +122,27 @@ async def seed_job(subject: Subject, overlay: CircleOverlay, *, person: str, now
             checked = await subject.deps.documents.get(document_id=UUID(document_id))
             if checked is None or checked.text.strip() != brief.title + "\n" + report:
                 raise ValueError('generated output readback missing or changed')
-            from nora.agent.guards import Deliverer
+            from nora.domain import audience as audience_names
             from nora.domain.models import ConversationTarget
-            deliverer = Deliverer(store=subject.deps.audit,
+            from nora.engagement.stages import deliver
+            # The one construction site every sender passes through (R-1b), so
+            # R-2/R-4/R-6/R-18 and the audit-first write still stand between
+            # the generated report and the wire — in this subject, the wire is
+            # what `obtain`'s `landed_signal_sends()` captures. The handle's
+            # guard half is never attached to a model here; `budgets` answers
+            # `message_cap`'s one message and `composer=None` is the stated
+            # eval decision (no roster, no preview fetcher).
+            deliverer = deliver.build(
+                store=subject.deps.audit,
                 adapter=subject.deps.registry.adapters[subject.room[0]],
                 target=ConversationTarget(*subject.room, 'group'),
                 doctrine=subject.deps.doctrine, canary=subject.cfg.doctrine.canary,
                 tag_id=f'generated-circle-{job_id}', nora_sender_id='eval',
-                message_cap=1, audience='tag', metrics=subject.deps.metrics)
+                conversation_id=subject.room[1],
+                budgets={'send_reply': 1}, terminal=frozenset({'send_reply'}),
+                audience=audience_names.TAG, composer=None,
+                metrics=subject.deps.metrics,
+            ).deliverer
             if not await deliverer.deliver(report):
                 raise ValueError('generated output delivery did not land')
             if not await store.claim(job_id):
@@ -190,7 +203,7 @@ class CircleMemory:
             fail=TimeoutError('controlled index outage') if unavailable else None)
         self.unavailable = unavailable
 
-    async def seed(self, subject: Subject, *, person: str, now_ms: int) -> None:
+    async def populate(self, subject: Subject, *, person: str, now_ms: int) -> None:
         from datetime import UTC, datetime
 
         from nora.domain.memory_graph import (

@@ -1,5 +1,26 @@
 # Changelog
 
+## [7.15.14](https://github.com/mikeng-io/nora/compare/v7.15.13...v7.15.14) (2026-11-05)
+
+
+### Bug Fixes
+
+* **evals:** dump slash-named cases inside the private evidence root ([327e0b9](https://github.com/mikeng-io/nora/commit/327e0b90ed00cb072006698174579ec384ce93c2))
+
+## [7.15.13](https://github.com/mikeng-io/nora/compare/v7.15.12...v7.15.13) (2026-11-05)
+
+
+### Bug Fixes
+
+* **memory:** state Orient admission scope and reconcile duplicate endpoints ([9a77de8](https://github.com/mikeng-io/nora/commit/9a77de8134ca93b6a4543f39373539ae92e0b4bb))
+
+## [7.15.12](https://github.com/mikeng-io/nora/compare/v7.15.11...v7.15.12) (2026-11-05)
+
+
+### Maintenance
+
+* **evals:** grade quoted notice answers against explicit case contracts ([53d988f](https://github.com/mikeng-io/nora/commit/53d988f7f7806fbc87c305d35d912a409ebe0b0b))
+
 ## [7.15.11](https://github.com/mikeng-io/nora/compare/v7.15.10...v7.15.11) (2026-11-05)
 
 
