@@ -912,3 +912,11 @@ or sbx/browser acceptance. PR584 remains held; sandbox upstream configuration,
 daemon restart and host prerequisite installation are not performed. The
 operations document names remaining acceptance and rollback. Parent allocates
 the implementation DEC and reconciles DEC-289 at landing.
+
+**Implementation acceptance blocked (2026-11-05):** the pinned Smokescreen
+source's goproxy dependency does not provide a bidirectional plain HTTP Upgrade
+path. The disposable Linux amd64 candidate passes direct plain WS and proxied
+WSS controls, but plain WS through the gateway times out. The named integrated
+test remains failing; no custom protocol implementation or acceptance waiver
+was added. Resolve this compatibility evidence before adoption; ADR 0035's
+reopen condition applies. Host/sbx rollout remains held.

@@ -1,6 +1,13 @@
 # Shared HTTP egress
 
-ADR 0035 implementation candidate. No rollout or sbx activation has occurred.
+ADR 0035 implementation candidate. **Blocked on plain WS compatibility.**
+No rollout or sbx activation has occurred. The real Linux amd64 integration
+passes direct plain WS and proxied WSS bidirectional Upgrade controls, but
+plain WS through this pinned gateway times out. Its goproxy HTTP path removes
+`Connection` and copies an ordinary response body without a bidirectional
+Upgrade tunnel. The integrated test intentionally remains failing. Do not adopt
+this candidate or waive the ADR requirement; upstream compatibility/design
+resolution belongs to the parent. No custom protocol fork was added.
 The maintained Smokescreen module is pinned to source
 `5b4b7aabca9bc70a8435358d648edd03294c299e` in go.mod/go.sum. No fork or
 vendored protocol implementation. Both builder and nonroot distroless runtime
