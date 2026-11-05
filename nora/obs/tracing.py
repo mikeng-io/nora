@@ -42,6 +42,18 @@ from nora.secret import resolve
 
 log = logging.getLogger("nora.tracing")
 
+# Private, process-local context; never propagated as network baggage.
+EVAL_EVIDENCE_KEY = "nora.eval.evidence"
+
+
+def record_eval_event(name: str, attributes: dict[str, str]) -> None:
+    """Keep eval inputs before dispatch as well as on their existing OTel span."""
+    evidence = otel_context.get_value(EVAL_EVIDENCE_KEY)
+    if callable(evidence):
+        evidence("event", name=name, attributes=attributes)
+        trace.get_current_span().add_event(name, attributes)
+
+
 #: Langfuse drops a session id longer than this, or with a non-ASCII character,
 #: silently (langfuse.com/docs/observability/features/sessions).
 _SESSION_ID_MAX = 200

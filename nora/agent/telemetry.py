@@ -40,13 +40,14 @@ upstream-maintained rather than a bespoke dialect this repo keeps in sync.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
-from opentelemetry import trace
+from opentelemetry import baggage, trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.sampling import Sampler
@@ -56,7 +57,7 @@ from strands.telemetry.tracer import get_tracer, serialize
 from strands.types.content import Message, Messages
 from strands.types.event_loop import Metrics, StopReason, Usage
 
-from ..obs.tracing import TraceIdentityProcessor
+from ..obs.tracing import TraceIdentityProcessor, record_eval_event
 
 log = logging.getLogger("nora.agent.telemetry")
 
@@ -372,3 +373,11 @@ def timed() -> Iterator[Callable[[], float]]:
     at every call site."""
     start = time.monotonic()
     yield lambda: time.monotonic() - start
+
+
+def record_eval_model_request(request: Mapping[str, Any]) -> None:
+    """The formatted request body, without transport credentials, for private eval capture."""
+    if baggage.get_baggage("nora.eval.capture") == "true":
+        record_eval_event("nora.model.request", {
+            "nora.model.request.body": json.dumps(request, ensure_ascii=False),
+        })
