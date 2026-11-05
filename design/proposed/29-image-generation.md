@@ -508,3 +508,32 @@ that reopens it: a documented Codex-lane limit, or a refusal at or below 16.
 
 The xAI number is documentation only. Reading that reopens it: a live
 `/v1/images/edits` call with 5 images refused, or one with 6 accepted.
+
+
+## Current Codex transport (2026-11-05)
+
+The operator requested the current image model, prompt enrichment for GPT Image,
+and temporary video-generation disablement. The Codex provider now defaults to
+`gpt-image-2.6-flare`, preserving medium/high quality selection. It sends the
+prebuilt prompt directly to `POST /backend-api/codex/images/generations`, or
+`images/edits` with ordered custody data URIs. There is no intermediary text
+model. The old `responses_model` setting remains accepted for config compatibility
+but has no effect. PNG output and the existing reference/privacy gates remain.
+This supersedes the Responses wire description in section 11; OAuth ownership,
+refresh persistence and keepalive are unchanged.
+
+A live probe with Nora's access token generated a PNG using the explicit Flare
+model. The previous Responses host returned model_not_found for `gpt-5.5`.
+A GIF request to the new endpoint returned HTTP 400, `GIF output is not enabled
+for this request.` GIF is therefore unverified/unavailable on this account;
+`generate_image` continues to produce PNG only. Reopen GIF support when the same
+account can return an animated GIF, with decoding and delivery verified.
+
+The runtime image skill now describes self-contained composition, action,
+lettering, reference roles and edit invariants for GPT Image. Identity anchors,
+clock grounding and custody rules are preserved. Skill reach, latency and
+behavioural quality improvements require a live eval and are not established by
+content tests. Video generation's shipped default is already off; disabling the
+existing installation is a private validated config edit, not a source default
+change. Official references: [Codex Images implementation](https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/endpoint/images.rs)
+and [GPT Image prompting](https://developers.openai.com/api/docs/guides/image-prompting).

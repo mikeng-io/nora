@@ -648,19 +648,14 @@ async def test_xai_sends_every_reference_up_to_its_documented_limit(server_facto
 
 async def test_codex_sends_every_reference_up_to_its_documented_limit():
     """OpenAI documents sixteen input images for gpt-image; all sixteen travel,
-    in order, as `input_image` parts after the prompt."""
+    in order, as `images` entries alongside the prompt."""
     captured: list[dict] = []
-    item = {"type": "image_generation_call", "status": "completed",
-            "result": base64.b64encode(_PNG + b"\x00" * 32).decode()}
-    stream = b"data: " + json.dumps(
-        {"type": "response.output_item.done", "item": item}).encode() + b"\n\n"
-
     async def responses(request: web.Request) -> web.Response:
         captured.append(await request.json())
-        return web.Response(body=stream, content_type="text/event-stream")
+        return _json({"data": [{"b64_json": base64.b64encode(_PNG + b"\x00" * 32).decode()}]})
 
     app = web.Application(client_max_size=64 * 1024 * 1024)
-    app.router.add_post("/responses", responses)
+    app.router.add_post("/images/edits", responses)
     server = TestServer(app)
     await server.start_server()
     try:
@@ -675,9 +670,9 @@ async def test_codex_sends_every_reference_up_to_its_documented_limit():
     finally:
         await server.close()
     assert result.status == "ok"
-    parts = captured[0]["input"][0]["content"]
-    assert parts[0]["type"] == "input_text"
-    assert [p["image_url"] for p in parts[1:]] == [_uri(i) for i in range(16)]
+    parts = captured[0]["images"]
+    assert captured[0]["prompt"] == "all of us"
+    assert [p["image_url"] for p in parts] == [_uri(i) for i in range(16)]
 
 
 @pytest.mark.parametrize(
