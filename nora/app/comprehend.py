@@ -275,6 +275,8 @@ class MemoryProposalAdmission:
             )
             recovered = tuple(e.relation for e in existing.relations if e.relation.id in duplicates)
             recovered_ids = {r.id for r in recovered}
+            recovered_ends = {k for r in recovered for k in (r.src, r.dst)}
+            connected_ids = {e.id for e in entities if e.key in recovered_ends}
             admission = replace(
                 admission,
                 relations=(*admission.relations, *recovered),
@@ -288,7 +290,8 @@ class MemoryProposalAdmission:
                     if not (
                         r.id in recovered_ids
                         and r.reason in ("duplicate_relation", "orphan_evidence")
-                    )
+                    ) and not (r.kind == "entity" and r.reason == "orphan_entity"
+                               and r.id in connected_ids)
                 ),
             )
         for refusal in admission.refused:

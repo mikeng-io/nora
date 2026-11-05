@@ -78,7 +78,10 @@ source_ids and covers every one of them.
 Every relation needs id, src=[kind,id], rel, dst=[kind,id], persons (authored person ids),
 and at least one evidence item naming its id. A person end is ["person", the person id shown
 in sources]; code turns it into the graph's pointer.
+Relation persons must include the union of persons from every cited source, even for
+event/place ends; persons=[] is valid only when all cited sources have empty persons.
 valid_from and valid_to (ISO time or null). Entity fields: id, kind, name, aliases, attributes.
+name is an entity field, not an attributes key; never cite attribute="name".
 Graph evidence is the separate top-level evidence list, never inside a relation. Each item
 is {source:[kind,id], relation_id, span} or {source:[kind,id], entity_id, attribute, span},
 with optional role (supports/contradicts); no other fields.
@@ -285,6 +288,9 @@ For each thing the batch states: match a candidate first, else create; relate it
 correct what it contradicts, and enrich it if public and thin. Then make one
 memory_propose. A new entity must be the end of an admitted relation, not an orphan.
 The kind table defines what each write is for; an item fitting no row is silence.
+Record-backed creation does not license unscoped attributes: entity attribute evidence
+requires sources with empty persons. Person-authored chat has non-empty persons; put
+its details in scoped relations or readings instead.
 The open-corner test belongs to the note row alone.
 Whether a write will matter later is not Orient's question: when a row's «create when»
 holds, write it. What matters is decided when memory is read, not when it is written.
