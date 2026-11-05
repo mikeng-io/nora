@@ -67,6 +67,39 @@ uv run python -m evals injections identity_grounding --judge
   population error rate.
 - Every run prints its own spend; put it in the PR with the command.
 
+## Durable run evidence
+
+The CLI holds the existing host eval lock for the whole run. Before composing
+subjects or calling models it opens a private, unique run directory and prints
+`private eval evidence: ...`. The default is
+`${XDG_STATE_HOME:-~/.local/state}/nora/evals`; `NORA_EVAL_EXCHANGES` selects an
+existing private evidence root instead (and retains its legacy exchange dumps).
+Directories must be owned by the runner with mode 0700; `events.jsonl` is 0600.
+These files contain actual prompts, tool arguments/results and room content.
+They stay on the eval host, outside Git, PRs and chat. Transport authorization
+headers and credential files are not recorded. Tool payloads can still contain
+sensitive material; access and retention follow the same private-log boundary.
+
+The append-only JSONL file fsyncs each record. It contains the held lock identity,
+source revision/diff and configuration hashes, run selection, case/draw inputs,
+actual admitted/resident/deferred tool names, formatted OpenAI request bodies,
+existing OTel spans (including model/tool outputs and usage), enabled application
+logs, raw judge votes, typed case results and complete corpus reports. It uses
+the existing provider/SDK spans even when remote tracing/export is disabled.
+Request bodies and tool-surface events are persisted before model dispatch;
+raw model paths retain their existing SDK span contents rather than gaining a
+second model wrapper. Run/case IDs and trace/span IDs correlate the records.
+
+Read the printed run directory privately. `run_finished` carries the CLI exit
+code; it does not turn a failed case into PASS. A started case/run without a
+terminal record is incomplete, including a process killed before cleanup.
+Span start records survive interruption; unfinished spans cannot promise a
+complete response. Failure to write evidence invalidates the run and stops new
+work; inability to create the artifact refuses the run. `--list` and
+`--print-input` remain inspection commands without model execution. Collector
+availability and private evidence retention are separate operational checks;
+this local artifact does not prove delivery to SigNoz or semantic acceptance.
+
 ## Anchoring the Cognition session corpus
 
 The thirteen scenarios include two code guarantees and eleven parked model cases

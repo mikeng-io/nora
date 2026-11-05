@@ -24,6 +24,11 @@ two copies drift and the one that drifts is the one you did not read
 
 ---
 
+Eval CLI runs also keep private durable evidence on the eval host using the same
+OTel provider, independent of remote exporter flags. See
+[Durable run evidence](eval-sop.md#durable-run-evidence) for the lock, contents,
+permissions and incomplete-run semantics.
+
 ## Accepted direction: self-hosted SigNoz
 
 **Decision accepted 2026-10-30; backend and application cutover deployed

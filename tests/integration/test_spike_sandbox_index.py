@@ -249,7 +249,9 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(clean_pg_url,
                 assert ("social", f"{NET}:item-2") in keys
                 assert ("message", "1000") in {
                     s.key for s in state.memory_items[0].sources}
-                assert "Generated pre-instant caption" in state.graph_text
+                assert "Generated pre-instant caption" in next(
+                    s.text for s in state.memory_items[1].sources
+                    if s.key == ("social", f"{NET}:item-1"))
 
                 # No durable acts and no work produced; the source is untouched.
                 assert spike.check_acts(before, await spike.acts(sandbox)) == 0

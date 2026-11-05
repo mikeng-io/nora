@@ -1,5 +1,42 @@
 # Changelog
 
+## [7.15.13](https://github.com/mikeng-io/nora/compare/v7.15.12...v7.15.13) (2026-11-05)
+
+
+### Bug Fixes
+
+* **memory:** state Orient admission scope and reconcile duplicate endpoints ([9a77de8](https://github.com/mikeng-io/nora/commit/9a77de8134ca93b6a4543f39373539ae92e0b4bb))
+
+## [7.15.12](https://github.com/mikeng-io/nora/compare/v7.15.11...v7.15.12) (2026-11-05)
+
+
+### Maintenance
+
+* **evals:** grade quoted notice answers against explicit case contracts ([53d988f](https://github.com/mikeng-io/nora/commit/53d988f7f7806fbc87c305d35d912a409ebe0b0b))
+
+## [7.15.11](https://github.com/mikeng-io/nora/compare/v7.15.10...v7.15.11) (2026-11-05)
+
+
+### Bug Fixes
+
+* **evals:** isolate test evidence and report preparation refusals ([7bd52b5](https://github.com/mikeng-io/nora/commit/7bd52b5fb948acd94e15b978f55d6a3338c7c29c))
+* **evals:** persist private run evidence before model dispatch ([7ec895f](https://github.com/mikeng-io/nora/commit/7ec895f4c0e37c5ce794eb556cfad2929a37cdfc))
+
+## [7.15.10](https://github.com/mikeng-io/nora/compare/v7.15.9...v7.15.10) (2026-11-05)
+
+
+### Bug Fixes
+
+* **cognition:** refuse citations for unrendered agenda items ([3acc9b0](https://github.com/mikeng-io/nora/commit/3acc9b0ed5e17b930d6e4716ff153fce8b46c8b0))
+* **memory:** bind readings to rendered agenda source rows ([c7e9c1c](https://github.com/mikeng-io/nora/commit/c7e9c1ccafb786398fe3649b7f3c028a6ecf6fd3))
+
+## [7.15.9](https://github.com/mikeng-io/nora/compare/v7.15.8...v7.15.9) (2026-11-05)
+
+
+### Bug Fixes
+
+* **doctrine:** leave the decision to reply with the turn's occasion ([8e86f9d](https://github.com/mikeng-io/nora/commit/8e86f9d12c6375bca4fd8c1b9b0e65029ca268c2))
+
 ## [7.15.8](https://github.com/mikeng-io/nora/compare/v7.15.7...v7.15.8) (2026-11-05)
 
 

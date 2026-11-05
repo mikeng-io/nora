@@ -133,8 +133,7 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
    wrap common selections, at one draw. If you name another judge id, probe it
    with a real call: the gateway's `/v1/models` listing is not the catalogue
    (2026-09-10).
-   Check: n is stated before the run, and chosen for the claim (a rate over four
-   positive cases needed n>=15, #158).
+   Check: state n for the claim (a rate over four positive cases needed n>=15, #158).
 
 7. **Run each arm, one after the other, capturing the code.** From the worktree
    root (the deployment's doctrine path is relative, so the checkout's doctrine is
@@ -151,8 +150,9 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
    ```
    Check: the header's `pseudonym map: N rule(s)` (#776), the rc file, then the log.
    `RC=0` means no FAIL, ERROR or UNSTABLE; `RC=1` means at least one, or a crash
-   (the log says which); `RC=2` means refused before spending (read why).
-   Output is block-buffered under a redirect: wait for exit, do not tail.
+   (the log says which); `RC=2` means refusal or invalid evidence, possibly after spending.
+   Check private `events.jsonl` ends with `run_finished` and the same rc;
+   missing terminal evidence is incomplete (`docs/eval-sop.md`). Inputs stay on-host.
 
 8. **Read the log honestly.** Per case PASS/FAIL only when every draw agreed;
    UNSTABLE prints `[p pass / f fail / e error]`; ERROR is never PASS; report n with

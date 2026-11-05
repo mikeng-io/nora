@@ -1336,6 +1336,7 @@ class CognitionSessionRunner:
             reads_note=state.reads_note, now_ms=now_ms,
             last_session_ms=situation.last_session_ms, tz=self._tz,
             budget=self._render_budget, graph=state.graph_text,
+            memory_items=state.memory_items,
             shared=shared_view,
         )
         return state, tools, system_prompt, prompt
