@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.15.13](https://github.com/mikeng-io/nora/compare/v7.15.12...v7.15.13) (2026-11-05)
+
+
+### Bug Fixes
+
+* **memory:** state Orient admission scope and reconcile duplicate endpoints ([9a77de8](https://github.com/mikeng-io/nora/commit/9a77de8134ca93b6a4543f39373539ae92e0b4bb))
+
 ## [7.15.12](https://github.com/mikeng-io/nora/compare/v7.15.11...v7.15.12) (2026-11-05)
 
 
