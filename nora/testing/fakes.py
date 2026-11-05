@@ -2886,13 +2886,15 @@ class FakeBrowserTabStore:
                 if t.scope == scope and t.instance == instance and t.status == "open"]
 
     async def touch(self, tab_id: UUID, *, now: datetime,
-                    url: str = "", title: str = "") -> None:
+                    url: str = "", title: str = "", segment_id: UUID | None = None) -> None:
         tab = self.rows.get(tab_id)
         if tab is None or tab.status != "open":
             return
         self._save(replace(
             tab, last_activity_at=now,
-            last_url=url or tab.last_url, last_title=title or tab.last_title))
+            last_url=url or tab.last_url, last_title=title or tab.last_title,
+            detail={**dict(tab.detail), **({"segment_id": str(segment_id)}
+                                         if segment_id is not None else {})}))
 
     async def set_status(self, tab_id: UUID, *, status: str, now: datetime,
                          reason: str = "") -> None:

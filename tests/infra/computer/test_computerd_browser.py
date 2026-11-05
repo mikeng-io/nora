@@ -23,7 +23,7 @@ import pytest
 from aiohttp import ClientSession, WSMsgType, web
 from aiohttp.test_utils import TestServer
 
-from nora.domain.computer import computer_scope
+from nora.domain.computer import SandboxStatus, StateResult, anything_running, computer_scope
 from tests.contract.test_sandbox_runtime_contract import TOKEN, load_computerd, short_tmux_root
 
 SCOPE = computer_scope("signal", "room-a")
@@ -128,6 +128,8 @@ while True:
         elif method == "Target.closeTarget":
             pages.pop(p["targetId"], None)
             result = {{"success": True}}
+        elif method == "Generated.block":
+            time.sleep(3600)
         elif method == "Browser.getVersion":
             result = {{"argv": argv, "display": os.environ.get("DISPLAY"),
                       "xauthority": os.environ.get("XAUTHORITY"), "history": history,
@@ -787,3 +789,46 @@ def test_a_scoped_computerd_disables_its_own_idle_reap(tmp_path):
         tmux_root=tmp_path / "h-tmux")
     assert scoped["browsers"].idle_reap is False
     assert shared["browsers"].idle_reap is True
+
+
+async def test_lost_browser_command_transport_drains_before_quiet(server, fakes):
+    """A real websocket/pipe carries an unanswered fake-Chrome command.
+    Disconnect stops that guest process before its pending work is quiet.
+    A completed command is the positive control: it retains the browser.
+    """
+    async with ClientSession() as session:
+        version = await _ask(session, server, SCOPE)
+        pid = version["result"]["pid"]
+        os.kill(pid, 0)
+        async with session.post(server.make_url("/v1/state"),
+                                headers=AUTH, json={"scope": SCOPE}) as response:
+            state = await response.json()
+        assert state["browser"]["running"] and state["browser"]["pending_actions"] == 0
+        ws = await session.ws_connect(server.make_url(f"/v1/browser?scope={SCOPE}"),
+                                      headers=AUTH)
+        await ws.send_json({"id": 42, "method": "Generated.block"})
+        log = fakes["x11"] / f"chrome-{pid}.jsonl"
+        async with asyncio.timeout(5):
+            while "Generated.block" not in log.read_text():  # noqa: ASYNC110 - child process log
+                await asyncio.sleep(0.01)
+        async with session.post(server.make_url("/v1/state"),
+                                headers=AUTH, json={"scope": SCOPE}) as response:
+            state = await response.json()
+        assert state["browser"]["pending_actions"] == 1
+        assert anything_running(StateResult(
+            status=SandboxStatus.OK, tmux=(), processes=(), runs=0,
+            browser=state["browser"])) is True
+        await ws.close()
+        for _ in range(100):
+            async with session.post(server.make_url("/v1/state"),
+                                    headers=AUTH, json={"scope": SCOPE}) as response:
+                state = await response.json()
+            if not state["browser"]["running"]:
+                break
+            await asyncio.sleep(0.01)
+        assert state["browser"]["running"] is False
+        assert anything_running(StateResult(
+            status=SandboxStatus.OK, tmux=(), processes=(), runs=0,
+            browser=state["browser"])) is False
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)

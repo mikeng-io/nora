@@ -803,15 +803,28 @@ class Browser:
         # consumed here, never forwarded to the websocket.
         self._own_next = 0
         self._own_pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
+        self._client_pending: set[tuple[int, str | None]] = set()
 
     @property
     def alive(self) -> bool:
         return self.chrome is not None and self.chrome.returncode is None
 
-    async def send(self, message: str) -> None:
+    async def send(self, message: str, *, client_command: bool = False) -> None:
         self.last_used = time.monotonic()
         if self._to_chrome is None:
             raise OSError("the browser's pipe is closed")
+        if client_command:
+            try:
+                frame = json.loads(message)
+            except ValueError as exc:
+                raise OSError("invalid CDP command") from exc
+            if not isinstance(frame, dict):
+                raise OSError("invalid CDP command")
+            mid = frame.get("id")
+            if not isinstance(mid, int) or mid <= 0:
+                raise OSError("CDP client commands require positive ids")
+            # Retain until Chrome replies, including after websocket loss.
+            self._client_pending.add((mid, frame.get("sessionId")))
         data = message.encode("utf-8") + b"\0"
         async with self._write_lock:
             await asyncio.to_thread(_write_all, self._to_chrome, data)
@@ -855,10 +868,9 @@ class Browser:
                             continue
                     # computerd's own calls and the target events discovery
                     # armed are parsed here — events are small; command
-                    # replies (screenshot bodies included) carry no
-                    # `"method"` and no negative `"id"`, so they are never
-                    # parsed, only forwarded.
-                    if (b'"id":-' in message or b'"id": -' in message
+                    # replies also retire admitted client commands. Unsolicited
+                    # frames without a method or pending command need no parse.
+                    if (self._client_pending or b'"id":-' in message or b'"id": -' in message
                             or b'"method"' in message):
                         try:
                             frame = json.loads(message)
@@ -867,6 +879,9 @@ class Browser:
                         if isinstance(frame, dict):
                             if self._route_own_reply(frame):
                                 continue
+                            if "id" in frame:
+                                self._client_pending.discard(
+                                    (frame["id"], frame.get("sessionId")))
                             self._route_target_event(frame)
                     client = self.client
                     if client is not None and not client.closed:
@@ -1047,6 +1062,7 @@ class Browser:
                 with contextlib.suppress(ProcessLookupError):
                     os.killpg(proc.pid, signal.SIGKILL)
                 await proc.wait()
+        self._client_pending.clear()
         if self._to_chrome is not None:
             with contextlib.suppress(OSError):
                 os.close(self._to_chrome)
@@ -1115,10 +1131,31 @@ class Browsers:
         pids, never jobs — `state` excludes them from `processes` so a
         retained idle browser is not read as surviving work."""
         browser = self.running.get(scope)
-        if browser is None:
+        if browser is None or not browser.alive:
             return frozenset()
-        return frozenset(
-            p.pid for p in (browser.chrome, browser.xvfb) if p is not None)
+        managed = {p.pid for p in (browser.chrome, browser.xvfb) if p is not None}
+        parents: dict[int, int] = {}
+        try:
+            entries = list(self.computer.proc_root.iterdir())
+        except OSError:
+            return frozenset(managed)  # processes() separately reports unreadable /proc
+        for entry in entries:
+            if not entry.name.isdigit():
+                continue
+            try:
+                fd = os.open(entry, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                try:
+                    raw = _read_proc_file(fd, "stat").decode("utf-8", errors="replace")
+                finally:
+                    os.close(fd)
+                fields = raw[raw.rfind(")") + 1:].split()
+                parents[int(entry.name)] = int(fields[1])
+            except (OSError, ValueError, IndexError):
+                continue
+        while descendants := {pid for pid, parent in parents.items()
+                              if parent in managed and pid not in managed}:
+            managed.update(descendants)
+        return frozenset(managed)
 
     async def reap(self) -> None:
         """Stop every browser that died; on a shared VM, also one that sat
@@ -1377,7 +1414,8 @@ class Browsers:
         if browser is None or not browser.alive:
             return {"browser": {"running": False}}
         return {"browser": {"running": True, "started": int(browser.started),
-                            "attached": browser.client is not None}}
+                            "attached": browser.client is not None,
+                            "pending_actions": len(browser._client_pending)}}
 
 
 def _read_proc_file(pid_fd: int, name: str, limit: int = 65536) -> bytes:
@@ -1733,6 +1771,9 @@ def create_app(
         if browser.client is not None and not browser.client.closed:
             return web.json_response({"status": "denied",
                                       "reason": "this room's browser already has a client"})
+        if browser._client_pending:
+            return web.json_response({"status": "unavailable",
+                                      "reason": "previous browser commands are still pending"})
         ws = web.WebSocketResponse(max_msg_size=MAX_TRANSFER_BYTES)
         # Claimed before the first await, so two connects at once cannot
         # both pass the check above.
@@ -1744,13 +1785,17 @@ def create_app(
                     await ws.close(code=1003, message=b"CDP messages are text frames")
                     break
                 try:
-                    await browser.send(msg.data)
+                    await browser.send(msg.data, client_command=True)
                 except OSError:
                     break
         finally:
             if browser.client is ws:
                 browser.client = None
             browser.last_used = time.monotonic()
+            if browser._client_pending:
+                # Drain a lost command transport while its app segment still
+                # owns the scope. Idle maintenance cannot retire live work.
+                await browser.stop()
         return ws
 
     async def reap_idle(app: web.Application) -> AsyncIterator[None]:

@@ -30,6 +30,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 from nora.domain.computer import SandboxStatus, StateResult, anything_running, computer_unit_scope
 from nora.domain.computer_context import (
@@ -253,16 +254,16 @@ class ComputerContextReader:
                 owners: dict[str, ComputerTask | None] = {}
                 if self._tasks is not None:
                     for t in tab_rows:
-                        key = str(t.task_id)
+                        key = str(t.detail.get("segment_id") or "")
                         if key not in owners:
                             try:
-                                owners[key] = await self._tasks.get(t.task_id)
+                                owners[key] = await self._tasks.get(UUID(key)) if key else None
                             # An unreadable owner is unknown, not absent.
                             except Exception:  # noqa: BLE001
                                 owners[key] = None
 
                 def _line(t: Any) -> TabLine:
-                    owner = owners.get(str(t.task_id))
+                    owner = owners.get(str(t.detail.get("segment_id") or ""))
                     why = str((t.detail or {}).get("close_reason") or "")
                     if (not why and instance is not None
                             and t.instance != instance):

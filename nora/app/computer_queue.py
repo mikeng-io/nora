@@ -345,8 +345,7 @@ class ComputerAdmission:
             # the row. The cancelled reply is what the caller is told.
             row = await self._tasks.get(task.id)
             if row is not None and row.status in TERMINAL:
-                with contextlib.suppress(Exception):
-                    await self._tasks.mark_delivered(task.id, now=self._clock())
+                await self.delivered(task.id)
             return {"status": "cancelled",
                     "note": "The computer task was stopped while it ran."}
         if worker.exception() is not None:
@@ -357,8 +356,7 @@ class ComputerAdmission:
         reply = outcome.get("reply") or {"status": "unavailable"}
         row = await self._tasks.get(task.id)
         if row is not None and row.status in TERMINAL:
-            with contextlib.suppress(Exception):
-                await self._tasks.mark_delivered(task.id, now=self._clock())
+            await self.delivered(task.id)
         else:
             # The row could not be confirmed terminal (an uncertain exit
             # still holding the scope, or a finish the store refused). The
@@ -437,7 +435,12 @@ class ComputerAdmission:
     async def delivered(self, task_id: UUID) -> None:
         """The terminal result was consumed live: `delivered_at`, so
         `on_terminal` does not hand it to deferred delivery."""
-        await self._tasks.mark_delivered(task_id, now=self._clock())
+        row = await self._tasks.get(task_id)
+        if row is None or row.status not in TERMINAL:
+            return
+        self.executors.retain(task_id, row.status, row.result, consumed=True)
+        await _persist_pending(executors=self.executors, tasks=self._tasks,
+                               clock=self._clock, task_id=task_id)
 
     async def get(self, task_id: UUID) -> ComputerTask | None:
         return await self._tasks.get(task_id)
@@ -500,10 +503,13 @@ async def _persist_pending(
         log.exception("computer task retained finish failed (kept for the next pass)")
         return False
     if row is not None and row.status in TERMINAL:
-        executors.clear_pending(task_id)
         if pending.consumed and row.delivered_at is None:
-            with contextlib.suppress(Exception):
+            try:
                 await tasks.mark_delivered(task_id, now=clock())
+            except Exception:
+                log.exception("computer task consumed disposition failed (retained)")
+                return False
+        executors.clear_pending(task_id)
         return True
     if row is None:
         executors.clear_pending(task_id)
@@ -649,6 +655,12 @@ class ComputerQueueRunner:
             log.exception("computer queue undelivered read failed")
             return
         for row in rows:
+            pending = self._executors.pending_result(row.id)
+            if pending is not None and pending.consumed:
+                await _persist_pending(
+                    executors=self._executors, tasks=self._tasks,
+                    clock=self._clock, task_id=row.id)
+                continue
             try:
                 await self._on_terminal(row)
             except Exception:
@@ -780,6 +792,13 @@ class ComputerQueueRunner:
         pass that reconciles it."""
         if row.status not in TERMINAL:
             return
+        pending = self._executors.pending_result(row.id)
+        if pending is not None and pending.consumed:
+            if not await _persist_pending(
+                    executors=self._executors, tasks=self._tasks,
+                    clock=self._clock, task_id=row.id):
+                return
+            row = await self._tasks.get(row.id) or row
         if row.delivered_at is None and self._on_terminal is not None:
             try:
                 await self._on_terminal(row)

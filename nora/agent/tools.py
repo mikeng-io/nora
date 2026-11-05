@@ -17092,13 +17092,14 @@ Args:
                                      detail: str = "") -> None:
                 """One durable row per page action the browse agent selected:
                 the selection (name + ref), the observation it came from and
-                what became of it — correlated to this call by `operation_id`."""
+                what became of it — linked to this call by `parent_operation_id`."""
                 if computer_events is None:
                     return
                 await computer_events.append(_computer_row(
-                    "computer_browse.action", operation_id, "finished",
+                    "computer_browse.action", uuid.uuid4(), "finished",
                     outcome or "recorded", started=now_fn(), finished=now_fn(),
-                    request={"action": name, "ref": ref,
+                    request={"parent_operation_id": str(operation_id),
+                             "action": name, "ref": ref,
                              "observation": observation},
                     result={"outcome": outcome, "detail": str(detail)[:1000]},
                     session_id=session_id,

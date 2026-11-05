@@ -407,9 +407,9 @@ nora-computer scope serve <scope>       # egress re-verified; computerd, COMPUTE
 nora-computer scope observe <scope>     # /v1/identity read back → instance + ready_at
 nora-computer scope resolve <scope>     # print the record Nora resolves
 nora-computer scope backup <scope>      # the scope's /workspace → BACKUP_DIR/<scope>-<ts>.tar.gz
-nora-computer scope restore <scope> F   # extracts OVER /workspace — never wipes
+nora-computer scope restore <scope> F   # stages workspace and moves the old tree aside
 nora-computer scope manifest <scope> F [--drained]  # drained-source inventory + owner/session mapping → F.manifest.json
-nora-computer scope verify <scope> F    # extract to scratch, digest-match every manifest entry — the restore proven or refused
+nora-computer scope verify <scope> F    # read restored guest archive; compare contents, owners and modes
 nora-computer scope revoke <scope>      # drops a record whose sandbox is verifiably gone
 ```
 
@@ -433,18 +433,27 @@ expires every handle bound to the old boot.
   no record, or a record binding another scope or name, is a CONFLICT —
   refused, never adopted.
 - Migration preparation: `scope manifest` freezes the DRAINED source —
-  every file's path, size, sha256 and owner plus the scope→sandbox→
-  instance mapping — into `<file>.manifest.json`; a live sandbox requires
+  every file's path, size, sha256, mode and guest uid/gid read directly
+  from the source archive, plus the scope→sandbox→instance mapping — into
+  `<file>.manifest.json`; a live sandbox requires
   `--drained` (the operator's confirmation the queue held no open work).
-  `scope verify` extracts the archive to a scratch directory and re-reads
-  every entry: the restore is proven only when all digests match. Backup/
-  extract alone is not proof.
+  `scope verify` reads the restored workspace back from the guest as an
+  archive, checking contents, owners and recorded modes against that source.
+  Host extraction alone cannot establish guest ownership.
 - The queue for a scope's computer segments lives on `nq:computer:<scope>`
   in the DEDICATED credential `NORA_COMPUTER_REDIS_URL` (projected through
   the existing `redis_url_env` mechanism — no parallel loader). The runner
   needs `XADD`, `XGROUP CREATE`, `XREADGROUP`, `XAUTOCLAIM`, `XACK`, `PING`;
   breadth comes from the `computer_tasks` table, so `SCAN`/`KEYS` are NOT
   required and the credential must not grant them.
+- A browser command whose websocket is lost while a CDP reply is pending
+  drains Chrome/Xvfb before guest state can report quiet. Completed commands
+  retain their task tabs; managed browser descendants do not count as native
+  jobs. Native/detached work and pending CDP commands still block successors.
+- Retained terminal results and live-consumption markers retry store writes
+  within the running application. They are memory, not a durable outage spool:
+  restarting before persistence loses that retained payload; recovery reports
+  interrupted/unavailable after guest quiet and never blindly replays it.
 - The shared VM (`NAME`, port `HOST_IP:HOST_PORT`) stays the
   `[computer.scoped] enabled = false` deployment until an explicit cutover;
   the per-scope systemd units are the packaging lane's to wire once this

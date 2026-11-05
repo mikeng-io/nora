@@ -324,3 +324,17 @@ async def test_a_running_row_blocks_the_cleanup_claim_too(tasks: Any) -> None:
     await tasks.enqueue(running)
     await tasks.enqueue(sweep_row)
     assert await tasks.try_claim_head(sweep_row.id, now=T0) is None
+
+
+async def test_tab_activity_preserves_latest_execution_segment(tabs: Any) -> None:
+    tab = _tab()
+    await tabs.bind(tab)
+    first, second = uuid4(), uuid4()
+    await tabs.touch(tab.id, now=T0, segment_id=first)
+    await tabs.touch(tab.id, now=T0, url="https://example.invalid/")
+    got = await tabs.get(tab.id)
+    assert got.detail["segment_id"] == str(first)
+    await tabs.touch(tab.id, now=T0, segment_id=second)
+    got = await tabs.get(tab.id)
+    assert got.detail["segment_id"] == str(second)
+    assert got.last_url == "https://example.invalid/"

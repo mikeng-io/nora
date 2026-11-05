@@ -227,6 +227,8 @@ class ScopeBrowserManager:
                         instance=binding.instance, target_id=target_id,
                         status=OPEN, created_at=now, last_activity_at=now,
                         via="popup",
+                        detail={"segment_id": str(current_segment.get())}
+                        if current_segment.get() is not None else {},
                         last_url=str(orphan.get("url") or ""),
                         last_title=str(orphan.get("title") or "")))
                 continue
@@ -303,10 +305,12 @@ class ScopeBrowserManager:
                         tab = await self._tabs.bind(BrowserTab(
                             id=uuid.uuid4(), scope=scope, task_id=task_id,
                             instance=binding.instance, target_id=page.target_id,
-                            status=OPEN, created_at=now, last_activity_at=now))
+                            status=OPEN, created_at=now, last_activity_at=now,
+                            detail={"segment_id": str(current_segment.get())}
+                            if current_segment.get() is not None else {}))
                     else:
                         tab = next(r for r in rows if r.target_id == page.target_id)
-                        await self._tabs.touch(tab.id, now=now)
+                        await self._tabs.touch(tab.id, now=now, segment_id=current_segment.get())
                         tab = (await self._tabs.get(tab.id)) or tab
                     cdp = page.cdp
                     # Reconcile on THIS connection, then watch target events

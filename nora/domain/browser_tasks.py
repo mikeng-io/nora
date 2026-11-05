@@ -11,6 +11,9 @@ never silently attach to a replacement.
 Popups a task opens are rows of the same task (`via="popup"`): they count
 against the scope's four-target cap and are closed with it.
 
+`detail.segment_id` identifies the latest computer execution segment, distinct
+from the reusable browser task handle; continuation and capture refresh it.
+
 `last_url`/`last_title` are OBSERVED page text — untrusted, never used for
 actions, refreshed on activity. Status: `open` while the tab may live,
 `closed` when the task released or the tab was seen gone, `expired` when the
@@ -92,7 +95,7 @@ class BrowserTabStore(Protocol):
         ...
 
     async def touch(self, tab_id: UUID, *, now: datetime,
-                    url: str = "", title: str = "") -> None:
+                    url: str = "", title: str = "", segment_id: UUID | None = None) -> None:
         """Activity on a bound tab moves `last_activity_at` (authorized work
         refreshes; page timers do not — only rows a caller touches move)."""
         ...

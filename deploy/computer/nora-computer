@@ -1111,10 +1111,38 @@ scope_restore() {
 # backup/extract alone. `scope manifest` freezes the DRAINED source's
 # inventory — every file's path, size, sha256 and owner — plus the owner and
 # session mapping the restore must honour (scope → sandbox → record →
-# instance). `scope verify` restores the archive to a scratch directory and
-# re-reads every manifest entry: the restore is verified only when every
-# named file extracts and digests match. Both emit the same JSON contract a
+# instance). `scope verify` reads back the guest archive and checks every
+# manifest entry: the restore is verified only when its file contents,
+# owners and recorded modes match the source archive. Both emit the same JSON contract a
 # rollback reads: what was moved aside and where it sits.
+scope_manifest_tar() {
+    # Source ownership belongs to the guest archive, never its host extractor.
+    python3 - "$1" "$2" <<'EOF'
+import hashlib, json, pathlib, sys, tarfile
+files = []
+with tarfile.open(sys.argv[1]) as tf:
+    for member in tf.getmembers():
+        if not member.isfile():
+            continue
+        path = pathlib.PurePosixPath(member.name)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError("archive member is outside the workspace")
+        h = hashlib.sha256()
+        with tf.extractfile(member) as src:
+            for chunk in iter(lambda: src.read(1 << 20), b""):
+                h.update(chunk)
+        files.append({"path": str(path), "size": member.size, "sha256": h.hexdigest(),
+                      "uid": member.uid, "gid": member.gid, "mode": member.mode,
+                      "mtime": int(member.mtime)})
+files.sort(key=lambda f: f["path"])
+if len({f["path"] for f in files}) != len(files):
+    raise ValueError("duplicate archive file")
+with open(sys.argv[2], "w") as out:
+    json.dump({"files": files, "count": len(files)}, out, indent=1)
+    out.write("\n")
+EOF
+}
+
 scope_manifest_dir() {
     # Build the drained inventory of DIRECTORY as JSON on $2's path.
     # Testable half: no sbx, no host facts — files, sizes, digests, owners.
@@ -1180,15 +1208,15 @@ scope_verify_tar() {
     # cannot say what uid the guest file has). rc=3 on any miss or
     # mismatch — a verified restore or nothing.
     python3 - "$1" "$2" <<'EOF'
-import hashlib, json, sys, tarfile
+import hashlib, json, pathlib, sys, tarfile
 manifest, tar_path = sys.argv[1], sys.argv[2]
 want = {f["path"]: f for f in json.load(open(manifest))["files"]}
-missing, mismatched, wrong_owner = [], [], []
+missing, mismatched, wrong_owner, wrong_mode = [], [], [], []
 with tarfile.open(tar_path) as tf:
     members = {}
     for m in tf.getmembers():
         if m.isfile():
-            members[m.name.lstrip("./")] = m
+            members[str(pathlib.PurePosixPath(m.name))] = m
     for rel, spec in want.items():
         m = members.get(rel)
         if m is None:
@@ -1208,10 +1236,12 @@ with tarfile.open(tar_path) as tf:
         if "uid" in spec and (m.uid != spec["uid"]
                               or m.gid != spec.get("gid", spec["uid"])):
             wrong_owner.append(rel)
-ok = not missing and not mismatched and not wrong_owner
+        if "mode" in spec and m.mode != spec["mode"]:
+            wrong_mode.append(rel)
+ok = not missing and not mismatched and not wrong_owner and not wrong_mode
 print(json.dumps({"verified": ok, "checked": len(want),
                   "missing": missing, "mismatched": mismatched,
-                  "wrong_owner": wrong_owner}, indent=1))
+                  "wrong_owner": wrong_owner, "wrong_mode": wrong_mode}, indent=1))
 sys.exit(0 if ok else 3)
 EOF
 }
@@ -1237,9 +1267,7 @@ scope_manifest() {
     [ "$state" != unknown ] || { echo "scope manifest: $box's state could not be read" >&2; exit 4; }
     instance=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("instance") or "")' "$record" 2>/dev/null || true)
     local inv; inv=$(mktemp -d)
-    mkdir -p "$inv/extract"
-    tar xzf "$file" -C "$inv/extract" || { rm -rf "$inv"; echo "scope manifest: archive does not extract" >&2; exit 3; }
-    scope_manifest_dir "$inv/extract" "$inv/inventory.json" >/dev/null || { rm -rf "$inv"; exit 3; }
+    scope_manifest_tar "$file" "$inv/inventory.json" >/dev/null || { rm -rf "$inv"; exit 3; }
     python3 - "$file" "$scope" "$box" "$state" "$instance" "$drained" "$inv/inventory.json" "$file.manifest.json" <<'EOF'
 import hashlib, json, sys
 archive, scope, box, state, instance, drained, inv_path, out = sys.argv[1:9]

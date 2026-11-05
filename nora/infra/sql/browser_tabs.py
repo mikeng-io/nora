@@ -71,13 +71,15 @@ class SqlBrowserTabStore:
         return [_row(r) for r in rows]
 
     async def touch(self, tab_id: UUID, *, now: datetime,
-                    url: str = "", title: str = "") -> None:
+                    url: str = "", title: str = "", segment_id: UUID | None = None) -> None:
         now = ensure_utc_event(now, field="now")
         values: dict[str, Any] = {"last_activity_at": now}
         if url:
             values["last_url"] = url
         if title:
             values["last_title"] = title
+        if segment_id is not None:
+            values["detail"] = T.c.detail.op("||")({"segment_id": str(segment_id)})
         async with self._engine.begin() as conn:
             await conn.execute(
                 sa.update(T).where(T.c.id == tab_id, T.c.status == OPEN)

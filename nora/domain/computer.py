@@ -278,9 +278,12 @@ def anything_running(state: StateResult) -> bool | None:
     source shows one; None when none shows one and one could not be read
     (unknown is never «nothing running»)."""
     tmux_running = state.tmux is not None and any(t.running for t in state.tmux)
-    if tmux_running or state.processes or (state.runs or 0) > 0:
+    pending_actions = (state.browser or {}).get("pending_actions", 0)
+    if (tmux_running or state.processes or (state.runs or 0) > 0
+            or (isinstance(pending_actions, int) and pending_actions > 0)):
         return True
-    if state.tmux is None or state.processes is None:
+    if (state.tmux is None or state.processes is None
+            or not isinstance(pending_actions, int)):
         return None
     return False
 
