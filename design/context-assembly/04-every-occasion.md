@@ -180,9 +180,12 @@ An occasion is any place a prompt reaches a model: an agent turn, a Dreamer pass
    The same ownership rule applies inside the body and to model-facing tool
    results: one semantic composer per content kind, not just one block injector.
    `tests/architecture/test_one_context_composer.py` discovers these surfaces and
-   rejects unclassified or changed source flows. Its closed source certificates
-   distinguish semantic owners/composites from structural escaping/JSON helpers;
-   the named audit-violation table only shrinks and rejects stale entries.
+   traces body expressions through local assignments and helpers to the qualified
+   functions in the content-kind composer registry. Constants and composed-body
+   passthroughs are allowed; raw row loops, JSON projections and private parallel
+   renderers fail with a composer diagnostic. Unrelated function edits need no
+   reclassification. Known violations are keyed by module and function, without
+   source hashes; deleted or compliant entries fail as stale and must be removed.
    Final-request duplicate-source detection remains the complementary runtime work.
 
 4. **Declare the type.** Every block name has a `BlockType` in `nora/domain/block_types.py`: a description of what the block IS and how to read it, and a gloss for each attribute it can emit. This is the one channel that tells the model what it is reading, so a rule about how to read a block goes there and not into an objective. A type whose two renderers differ in what a field means is two types. Enforced by `tests/architecture/test_every_block_declares_its_type.py`: a block with no type fails, a type nothing renders fails, and a description must describe rather than label. **Not enforced:** that every attribute the renderer can emit has a gloss. Only the Cognition types are held to that (`tests/unit/test_cognition_block_types_explain_every_field.py`), and `tests/unit/test_prompt_documents.py` covers part of the rest, so a new type's glosses are review.
