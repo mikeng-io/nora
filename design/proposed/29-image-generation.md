@@ -525,9 +525,15 @@ refresh persistence and keepalive are unchanged.
 A live probe with Nora's access token generated a PNG using the explicit Flare
 model. The previous Responses host returned model_not_found for `gpt-5.5`.
 A GIF request to the new endpoint returned HTTP 400, `GIF output is not enabled
-for this request.` GIF is therefore unverified/unavailable on this account;
-`generate_image` continues to produce PNG only. Reopen GIF support when the same
-account can return an animated GIF, with decoding and delivery verified.
+for this request.` GIF is therefore unavailable for the tested request; the rejection alone does
+not distinguish account rollout from request/client capability gating.
+`generate_image` continues to produce PNG only. Reopen GIF support when this
+subscription path returns an animated GIF, with decoding and delivery verified.
+
+Two further live requests with `size=1536x864` and `size=864x1536` both
+returned PNG successfully, but both decoded to 1536x1024. The subscription
+backend did not honour the requested dimensions in these probes; size is still
+a request, not a guaranteed output property.
 
 The runtime image skill now describes self-contained composition, action,
 lettering, reference roles and edit invariants for GPT Image. Identity anchors,
