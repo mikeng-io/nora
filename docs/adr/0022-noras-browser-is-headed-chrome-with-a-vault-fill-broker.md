@@ -1,6 +1,6 @@
 # 0022 · Nora's browser is headed Chrome in sbx, driven in tiers, with credentials only through a vault fill broker
 
-- **Status:** accepted (2026-10-07, operator)
+- **Status:** accepted (2026-10-07, operator); Decision 2 superseded in part for the target HTTP egress architecture by [0035](0035-shared-smokescreen-http-egress.md), implementation pending.
 - **Date:** 2026-10-07
 - **Extends:** [0019](0019-noras-computer-runs-in-an-sbx-microvm.md) and
   `design/sandbox-runtime/00-design.md` §14 (S4, the browser), which this

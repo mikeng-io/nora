@@ -462,6 +462,12 @@ computer_export(path, to="link", title, artifact_id?)
 
 ## 8. Credentials and network (from sbx)
 
+**Target amendment, 2026-11-05:** [ADR 0035](../../docs/adr/0035-shared-smokescreen-http-egress.md)
+accepts a shared Smokescreen `http-egress` service upstream of sbx's sandbox
+proxy. Retain sbx policy and confinement; prove no direct fallback. This adds
+HTTP destination enforcement, not filtering of every VM protocol. Implementation
+and rollout are pending; historical policy and measurements below are unchanged.
+
 - **Network:** `sbx policy init deny-all`, then `sbx policy allow network`
   for package mirrors, and the public web for browsing. `sbx policy log
   --json` supplies the network half of the audit. **Decided 2026-10-01

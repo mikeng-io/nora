@@ -40,6 +40,13 @@ nothing on the host reads.
 
 ## Network egress: the public web, the private ranges denied
 
+**Accepted target, not installed by this documentation (2026-11-05):**
+[ADR 0035](../../docs/adr/0035-shared-smokescreen-http-egress.md) adds a shared
+Smokescreen service named `http-egress` upstream of the sbx sandbox proxy.
+The following describes the existing implementation and its known limitation;
+the new destination boundary requires integration proof and an approved rollout.
+Do not change daemon proxy settings or restart sandboxes from this design alone.
+
 sbx's policy is deny-all (`sbx policy ls` shows `default-deny-all` and
 `local-policy`). Nora's computer browses the public web (operator ruling,
 2026-10-07, ADR 0022 Decision 2, which replaced the 2026-10-01 PyPI-and-Ubuntu
