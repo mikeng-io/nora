@@ -1372,7 +1372,7 @@ async def test_a_failed_finish_keeps_the_result_with_its_owner() -> None:
     assert row is not None and row.status == "running"
     assert row.delivered_at is None
     # The retained result is reachable with the executor that ran it.
-    assert admission.executors.pending(got.task.id) is not None
+    assert admission.executors.pending_result(got.task.id) is not None
 
     fail["on"] = False
     runner = ComputerQueueRunner(
@@ -1385,7 +1385,7 @@ async def test_a_failed_finish_keeps_the_result_with_its_owner() -> None:
         row = await store.get(got.task.id)
         assert row is not None and row.status == "running"
         assert row.delivered_at is None
-        assert admission.executors.pending(got.task.id) is not None
+        assert admission.executors.pending_result(got.task.id) is not None
     fail["on"] = False
     await runner.tick()
     row = await store.get(got.task.id)
@@ -1395,7 +1395,7 @@ async def test_a_failed_finish_keeps_the_result_with_its_owner() -> None:
     # A reply the caller already saw is persisted delivered — never
     # handed off a second time.
     assert row.delivered_at is not None
-    assert admission.executors.pending(got.task.id) is None
+    assert admission.executors.pending_result(got.task.id) is None
 
 
 async def test_a_failed_finish_on_the_runner_retries_before_delivery() -> None:

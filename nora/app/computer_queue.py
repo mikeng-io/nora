@@ -184,7 +184,7 @@ class SegmentRegistry:
         if old is not None and not old.consumed:
             self._pending[task_id] = replace(old, consumed=True)
 
-    def pending(self, task_id: UUID) -> _PendingResult | None:
+    def pending_result(self, task_id: UUID) -> _PendingResult | None:
         return self._pending.get(task_id)
 
     def clear_pending(self, task_id: UUID) -> None:
@@ -411,7 +411,7 @@ class ComputerAdmission:
                     and not await _persist_pending(
                         executors=self.executors, tasks=self._tasks,
                         clock=self._clock, task_id=task_id) \
-                    and self.executors.pending(task_id) is None:
+                    and self.executors.pending_result(task_id) is None:
                 await self._tasks.mark_interrupted(
                     task_id, now=self._clock(), reason="the owner was lost")
                 await self._note(row, "interrupted")
@@ -426,7 +426,7 @@ class ComputerAdmission:
                 and not await _persist_pending(
                     executors=self.executors, tasks=self._tasks,
                     clock=self._clock, task_id=task_id) \
-                    and self.executors.pending(task_id) is None:
+                    and self.executors.pending_result(task_id) is None:
             await self._tasks.mark_interrupted(
                 task_id, now=self._clock(),
                 reason="the cancellation could not be confirmed")
@@ -489,7 +489,7 @@ async def _persist_pending(
     result, never a generic interruption. True when the row is terminal —
     its result landed, or someone else already closed it. False keeps the
     pending result for the next pass."""
-    pending = executors.pending(task_id)
+    pending = executors.pending_result(task_id)
     if pending is None:
         return False
     try:
@@ -619,7 +619,7 @@ class ComputerQueueRunner:
                 if not await _persist_pending(
                         executors=self._executors, tasks=self._tasks,
                         clock=self._clock, task_id=task.id) \
-                        and self._executors.pending(task.id) is None:
+                        and self._executors.pending_result(task.id) is None:
                     await self._tasks.mark_interrupted(
                         task.id, now=self._clock(), reason="the owner was lost")
                     await self._note(task, "interrupted")
@@ -707,7 +707,7 @@ class ComputerQueueRunner:
                 if verdict == "quiet" and not await _persist_pending(
                         executors=self._executors, tasks=self._tasks,
                         clock=self._clock, task_id=running_row.id) \
-                        and self._executors.pending(running_row.id) is None:
+                        and self._executors.pending_result(running_row.id) is None:
                     await self._tasks.mark_interrupted(
                         running_row.id, now=self._clock(),
                         reason="the owner was lost; the VM is quiet")
