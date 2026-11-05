@@ -1,0 +1,65 @@
+[
+  {
+    "name": "admission-run-segment-drops-the-uncertain-flag",
+    "file": "nora/app/computer_queue.py",
+    "old": "uncertain=bool(reply.get(\"uncertain\")))\n                outcome[\"reply\"] = reply",
+    "new": "uncertain=False)\n                outcome[\"reply\"] = reply",
+    "target": "tests/unit/test_scoped_computer.py::test_an_uncertain_fast_reply_holds_the_scope_until_quiet"
+  },
+  {
+    "name": "runner-execute-drops-the-uncertain-flag",
+    "file": "nora/app/computer_queue.py",
+    "old": "uncertain=bool(reply.get(\"uncertain\")))\n            finally:",
+    "new": "uncertain=False)\n            finally:",
+    "target": "tests/unit/test_scoped_computer.py::test_an_uncertain_queued_reply_holds_the_scope"
+  },
+  {
+    "name": "finish-guard-drops-the-retained-result",
+    "file": "nora/app/computer_queue.py",
+    "old": "        executors.retain(task.id, status, cut_result(dict(reply)))",
+    "new": "        pass",
+    "target": "tests/unit/test_scoped_computer.py::test_a_failed_finish_keeps_the_result_with_its_owner"
+  },
+  {
+    "name": "persist-pending-treats-absent-as-persisted",
+    "file": "nora/app/computer_queue.py",
+    "old": "    if pending is None:\n        return False",
+    "new": "    if pending is None:\n        return True",
+    "target": "tests/unit/test_scoped_computer.py::test_deadline_and_orphan_close_never_replay"
+  },
+  {
+    "name": "guest-reaper-ignores-a-busy-owner",
+    "file": "deploy/computer/computerd.py",
+    "old": "and not self.computer.busy(scope))",
+    "new": "and True)",
+    "target": "tests/infra/computer/test_computerd_browser.py::test_an_idle_reap_never_closes_beside_a_running_run"
+  },
+  {
+    "name": "guest-reaper-ignores-the-scoped-off-switch",
+    "file": "deploy/computer/computerd.py",
+    "old": "idle = (self.idle_reap and browser.client is None",
+    "new": "idle = (browser.client is None",
+    "target": "tests/infra/computer/test_computerd_browser.py::test_scoped_idle_reap_belongs_to_the_app_not_the_guest"
+  },
+  {
+    "name": "scoped-computerd-keeps-its-idle-reaper",
+    "file": "deploy/computer/computerd.py",
+    "old": "idle_reap=bound_scope is None)",
+    "new": "idle_reap=True)",
+    "target": "tests/infra/computer/test_computerd_browser.py::test_a_scoped_computerd_disables_its_own_idle_reap"
+  },
+  {
+    "name": "stale-attach-closes-instead-of-expiring",
+    "file": "nora/infra/computer/manager.py",
+    "old": "r.id, status=EXPIRED, now=self._clock(),",
+    "new": "r.id, status=CLOSED, now=self._clock(),",
+    "target": "tests/unit/test_scoped_computer.py::test_a_stale_attach_invalidates_the_binding_before_expired"
+  },
+  {
+    "name": "client-marks-a-no-answer-as-answered",
+    "file": "nora/infra/computer/client.py",
+    "old": "result = replace(result, answered=False)",
+    "new": "result = replace(result, answered=True)",
+    "target": "tests/infra/computer/test_computerd.py::test_an_unreachable_computer_is_unavailable_never_a_raise"
+  }
+]

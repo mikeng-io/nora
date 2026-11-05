@@ -1297,6 +1297,48 @@ async def test_an_uncertain_reply_with_a_busy_guest_never_lets_go() -> None:
     assert row is not None and row.status == "unavailable"
 
 
+async def test_an_uncertain_queued_reply_holds_the_scope() -> None:
+    """The deferred half obeys the same gate: an uncertain reply keeps the
+    row running and the scope blocked while the guest is busy, and only a
+    quiet verdict persists the REAL outcome — never a generic note."""
+    verdict = {"v": "busy"}
+
+    async def reconcile(scope: str) -> str:
+        return verdict["v"]
+
+    store, redis = FakeComputerTaskStore(), FakeStreamRedis()
+    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    blocker = await admission.submit(scope=SCOPE, kind="native", payload={},
+                                     origin={})
+    queued = await admission.submit(scope=SCOPE, kind="native",
+                                    payload={"tool": "computer_run",
+                                             "args": {"command": "true"}},
+                                    origin={}, wait_seconds=0.0)
+    assert blocker.granted and not queued.granted
+    await admission.finish(blocker.task.id, status="done", result={})
+
+    async def executor(row: ComputerTask) -> dict:
+        return {"status": "unavailable", "uncertain": True,
+                "stdout": "kept-bytes"}
+
+    runner = ComputerQueueRunner(
+        tasks=store, redis=redis, clock=clock(), watch_seconds=0.01,
+        dispatch={"native": executor}, reconcile=reconcile)
+    assert await runner.tick() == 1
+    await asyncio.sleep(0.1)
+    row = await store.get(queued.task.id)
+    assert row is not None and row.status == "running"
+    verdict["v"] = "quiet"
+    for _ in range(60):
+        row = await store.get(queued.task.id)
+        if row is not None and row.status == "unavailable":
+            break
+        await asyncio.sleep(0.1)
+    row = await store.get(queued.task.id)
+    assert row is not None and row.status == "unavailable"
+    assert row.result.get("stdout") == "kept-bytes"
+
+
 async def test_a_failed_finish_keeps_the_result_with_its_owner() -> None:
     """The terminal write dropping the row keeps the REAL reply on the
     executor: the row is RUNNING and undelivered while the store is down,
