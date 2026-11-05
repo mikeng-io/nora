@@ -900,3 +900,15 @@ session names it, and does not restart the task from scratch.
 
 **Open:** Chromium RSS (a measurement, S1), and everything S4 needs. No open
 decision is left in this design.
+
+## Shared HTTP egress implementation candidate — 2026-11-05
+
+The [gateway recipe and operations](../../deploy/http-egress/README.md) and
+[downloader boundary](../../docs/security/outbound-fetches.md) implement the
+source path selected by ADR 0035: a release-owned private Smokescreen service,
+fixed downloader relay and retained namespaces. Preview/media retain actual
+connection guards. This source candidate does not establish deployed behavior
+or sbx/browser acceptance. PR584 remains held; sandbox upstream configuration,
+daemon restart and host prerequisite installation are not performed. The
+operations document names remaining acceptance and rollback. Parent allocates
+the implementation DEC and reconciles DEC-289 at landing.

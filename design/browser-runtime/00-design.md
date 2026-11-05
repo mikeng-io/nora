@@ -838,3 +838,15 @@ Two paths, both built eventually:
 | **B5** | tier 2 cache + tier 3 picker as chosen by B3 | second-run cost |
 | **B6** | portal stream view-only, then noVNC hand-off | access test |
 | **B7** | only if the owner-match rule holds (§4): OpenCLI into the VM as `browser`, behind the bridge; retire host social Chrome | a room's shell is refused by the daemon; R-86 still holds at three layers |
+
+## Shared HTTP egress implementation candidate — 2026-11-05
+
+The [gateway recipe and operations](../../deploy/http-egress/README.md) and
+[downloader boundary](../../docs/security/outbound-fetches.md) implement the
+source path selected by ADR 0035: a release-owned private Smokescreen service,
+fixed downloader relay and retained namespaces. Preview/media retain actual
+connection guards. This source candidate does not establish deployed behavior
+or sbx/browser acceptance. PR584 remains held; sandbox upstream configuration,
+daemon restart and host prerequisite installation are not performed. The
+operations document names remaining acceptance and rollback. Parent allocates
+the implementation DEC and reconciles DEC-289 at landing.
