@@ -848,8 +848,9 @@ fixed downloader relay and retained namespaces. Preview/media retain actual
 connection guards. This source candidate does not establish deployed behavior
 or sbx/browser acceptance. PR584 remains held; sandbox upstream configuration,
 daemon restart and host prerequisite installation are not performed. The
-operations document names remaining acceptance and rollback. Parent allocates
-the implementation DEC and reconciles DEC-289 at landing.
+operations document names remaining acceptance and rollback. DEC-326 records
+this source slice; DEC-289 remains the sandbox baseline until the separate sbx
+chain is validated and activated.
 
 **Acceptance correction (2026-11-05):** the original plain WS probe used a
 forward absolute GET, whereas RFC6455 section4.1 step3 recommends CONNECT even
