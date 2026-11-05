@@ -9,6 +9,16 @@ status: partly-built
 
 # Nora's browser
 
+## HTTP egress amendment (2026-11-05)
+
+**Accepted design; NOT IMPLEMENTED or deployed by this document.**
+[ADR 0035](../../docs/adr/0035-shared-smokescreen-http-egress.md) owns the
+shared `http-egress` service (Smokescreen), serving confined downloader traffic
+and the existing sbx proxy's sandbox upstream. It replaces the target's earlier
+“no extra proxy” constraint. Standard HTTP/CONNECT is the abstraction; VM scope,
+workspace and browser ownership stay independent. Acceptance covers DNS changes,
+redirects, bypass refusal and real browser/downloader compatibility before rollout.
+
 ## Current target — scoped anonymous browser (2026-11-02)
 
 **NOT BUILT.** Operator-directed scope amendment, tracked with the Pi/sandbox
@@ -50,8 +60,10 @@ Each new unit or admitted DM VM must apply and read back the existing
 DEC-289 public-web TCP allow plus private-range denies, scoped to that exact
 sandbox; the shared VM's policy does not transfer. Apply and verify every deny
 before enabling the wildcard allow, withholding it if any check is unavailable
-or fails. Preserve the accepted hostname-to-private-address limitation; this
-split does not introduce a filtering proxy or silently strengthen that claim.
+or fails. The VM split alone does not repair the accepted hostname-to-private-address
+limitation. The HTTP egress amendment above separately requires connection-time
+public destination enforcement; do not claim that protection until its complete
+chain passes acceptance and is deployed.
 
 ### Browser lifetime and operations
 
