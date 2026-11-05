@@ -366,7 +366,7 @@ class PublicDownloadBoundary(unittest.TestCase):
                     self.assertNotEqual(proxy.run([sys.executable, "-c", direct]), 0)
                     self.assertEqual(hits, [])
                 # Real Upgrade bytes over HTTP and a verified CONNECT tunnel.
-                for secure_socket in [False, True]:
+                for secure_socket in [True, False]:
                     code = r"""
 import os, socket, ssl, sys
 from urllib.parse import urlsplit
@@ -392,7 +392,23 @@ while b"fixture-stream" not in response:
 assert b"101" in response
 s.close()
 """
+                    if not secure_socket:
+                        direct_code = code.replace(
+                            "s = socket.create_connection((p.hostname, p.port), timeout=3)",
+                            f"s = socket.create_connection(('{PUBLIC}', 80), timeout=3)",
+                        )
+                        control = subprocess.run(  # noqa: S603 -- owned synthetic origin
+                            [sys.executable, "-c", direct_code, "False"],
+                            env={**os.environ, "http_proxy": "http://unused.invalid:80"},
+                            capture_output=True,
+                            text=True,
+                        )
+                        self.assertEqual(control.returncode, 0, control.stderr)
+                        self.assertIn("/socket", hits)
+                        print("plain WS direct positive control passed", flush=True)
+                        hits.clear()
                     self.assertEqual(proxy.run([sys.executable, "-c", code, str(secure_socket)]), 0)
+                    print(f"gateway Upgrade secure={secure_socket} passed", flush=True)
                     self.assertIn("/socket", hits)
                     hits.clear()
             finally:
