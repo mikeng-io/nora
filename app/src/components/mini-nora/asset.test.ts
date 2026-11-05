@@ -23,7 +23,7 @@ describe("shipped Mini Nora asset", () => {
       expect(gltf.nodes.some((node: { name: string }) => node.name === `${side}${finger}${joint}`)).toBe(true);
     }
     expect(gltf.extensionsRequired).toContain("EXT_meshopt_compression");
-    expect(bytes.length).toBeLessThan(11_000_000);
+    expect(bytes.length).toBeLessThan(14_000_000);
     expect(gltf.nodes.some((n: {name: string}) => n.name === "HairTipFollow")).toBe(true);
   });
   it("keeps all buffers and images embedded, with declared PNG payloads", () => {

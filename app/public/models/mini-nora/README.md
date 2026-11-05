@@ -1,61 +1,59 @@
 # Mini Nora character study
 
-Public asset for the portal's existing `/nora/showcase` page. This is still a
-partial character candidate for issue #245. The approved 2D surfaces are unchanged.
+Public asset for the shared `/nora/showcase` page, still a partial candidate for
+issue #245. The approved 2D surfaces are unchanged.
 
-`character.glb`: 10,730,088 bytes, 316,622 rendered triangles, 55 unique joints,
-three facial morphs, embedded 1K PNG textures, original `Walk`/`Run` clips.
-Meshopt compression and mesh quantization require the decoder configured in
-`stage.ts`. The download remains opt-in; a portrait covers unavailable 3D.
+`character.glb`: 13,799,764 bytes, 316,622 rendered triangles, 55 unique joints,
+three facial morphs, embedded PNG textures, original `Walk`/`Run` clips.
+Meshopt compression requires the decoder in `stage.ts`. Download remains opt-in.
 
 ## Implemented
 
-- Local reconstruction replaces the fused hand surfaces with separate digits,
-  closed palm surfaces, three weighted joints per digit, and thumb opposition.
-  Both hands support open/fist/point and individual curl sliders. Each new hand
-  has 8,082 triangles after local reduction. The intact cuffs hide the wrist joins.
-- Neutral keeps the original face. `Smile`, `Happy`, and `Puzzled` are local
-  mouth/cheek/brow morphs; their effect is deliberately restrained. They do not
-  supply eye gaze, eyelid closure, or an open mouth cavity.
-- Original body animation is retained. Walk adds a small loop-closed side-lock
-  rotation; Run retains the earlier hair follow-through. Head and arm controls remain.
-- PBR normal strength is reduced to 0.22 to soften the source's harsh normal detail.
-  The original image content remains; baked base-colour shading and fine hair
-  seams are not fully repaired.
+- Both reconstructed hands retain ten individual digit controls, three joints per
+  digit, thumb opposition, and open/fist/point presets. Maximum-curl creases remain.
+- Neutral retains the original head geometry, UVs and texture payloads before
+  compression. Smile/Happy/Puzzled remain restrained mouth/cheek/brow morphs.
+- Original body clips, head/arm controls and the existing side-lock hair movement
+  remain. No new whole-body rig or remesh.
+- Body UV charts are repacked with padded, locally extended colour and PBR maps.
+  This removes bright atlas-edge bleed that made the navy trousers look cracked.
+  Lower-cloth normals are averaged across coincident seam vertices within a
+  60-degree neighbourhood, with tangents re-orthogonalized. Silhouette, positions,
+  skin weights and motion are preserved before compression. Head textures are
+  excluded from this repair to preserve eyelash/iris detail.
+- The showcase uses broad key/fill lights, a rim light, balanced environment and
+  one 512-square blurred shadow caster. Other lights do not cast shadows.
 
-The reconstruction was combined with the input GLB by preserving original body
-position, normal, tangent, UV and skin attribute bytes before compression. Only
-hand triangle references were removed; facial morphs are sparse additions.
-Final compression quantizes positions/UVs/weights to 16 bits and normals/tangents
-to 14 bits. Final accessor bytes are therefore not claimed identical to the source.
+The body uses three 2K maps; the original head keeps its 1K maps. Original normal
+strength remains 0.22. The texture and download cost increased; the asset test
+caps the current package at 14 MB. Position/UV/weight quantization is 16-bit;
+normal/tangent quantization is 14-bit. One compressed stream is stored as its exact
+decoded bytes to avoid an accidental identifier-shaped binary run. No scanner
+bypass or acknowledgement was used.
 
-## Unfinished and diagnostic work
+## Unfinished
 
-Separate iris/sclera and deforming eyelid geometry was actually built and tested,
-including blink and four gaze directions. Its perimeter joins remain visibly
-wrong and alter the approved neutral. That reconstruction is retained outside
-Git and is excluded from this asset and its controls. The full character plan
-remains incomplete. Do not close issue #245 on this delivery.
+Eye gaze and blink are not shipped. A new joined eye/lid implementation corrected
+boundary ordering and retained separately intersecting hair components, but its
+lid ridges and iris/sclera occlusion still fail neutral and animation appearance.
+It remains diagnostic only. No fake eye controls are exposed. Fine head/hair
+faceting and baked shading remain. Full character acceptance is unmet; do not
+close issue #245. Real-phone GPU, memory and thermal acceptance is unavailable.
 
 ## Evidence
 
-Local folder:
+Latest external source/evidence folder:
+`/Users/mike/Workplace/nora-artifacts/mini-nora-eye-finish-2026-11-06/`.
+Its `REPORT.md` records the diagnosis, accepted/rejected local work, exact files,
+checks and limits. It contains the editable final reimport, separate failed-eye
+Blend/GLB, source scripts, matched browser controls and before/after frames,
+24 fps body and failed-eye motion with decoded frames, and validator reports.
+Earlier hand/expression evidence remains in
 `/Users/mike/Workplace/nora-artifacts/mini-nora-character-completion-2026-11-06/`.
-`REPORT.md` covers acceptance and limitations. It includes editable Blender
-files, compressed/uncompressed GLBs, source hashes, scripts, 24 fps motion MP4s,
-decoded contact sheets, matched neutral images, reimport/control checks, validator
-reports and browser screenshots/timings. Historic sources are unchanged.
 
-Final compressed and decoded GLBs validate with zero errors. One inherited
-non-root skinned-mesh warning remains; the validator cannot itself decode Meshopt,
-so the decoded file and the real Three.js loader were also checked. Both body
-clips, three morphs and all ten digit controls survive decoding/reimport.
-
-Playwright using Chrome and this Mac's M3 Max GPU measured roughly 60 fps over
-five-second run samples at desktop and iPhone-size emulation, with zero draw calls
-while paused. This is not real-phone performance or thermal/load testing.
-Normal-speed videos were encoded at 24 fps and decoded frames inspected;
-continuous playback and final operator visual acceptance are not claimed.
-
-No Meshy generation was needed for the missing custom face/hand surfaces.
-New paid submissions: zero; balance read back at 1,050 credits. No deployment.
+Focused app typecheck/build and seven selected tests pass. Both compressed and
+fully decoded GLBs validate with zero errors; the inherited non-root skinned-mesh
+warning remains. Fresh Blender reimport checks retain all ten digit controls and
+three expressions with measured vertex movement. Browser desktop and phone-size
+viewport checks are desktop GPU evidence only. No paid Meshy stage, independent
+review, merge or deployment was performed by this implementation worker.

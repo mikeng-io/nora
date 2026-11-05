@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUniformsLib.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 export type Expression = "Neutral" | "Smile" | "Happy" | "Puzzled";
@@ -13,7 +14,7 @@ export async function createStage(host: HTMLElement, onContextLost: () => void) 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.type = THREE.VSMShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 50);
@@ -26,15 +27,23 @@ export async function createStage(host: HTMLElement, onContextLost: () => void) 
   const pmrem = new THREE.PMREMGenerator(renderer);
   const room = new RoomEnvironment();
   const environment = pmrem.fromScene(room);
-  scene.environment = environment.texture; scene.environmentIntensity = 0.6;
+  scene.environment = environment.texture; scene.environmentIntensity = 0.35;
   room.dispose(); pmrem.dispose();
-  scene.add(new THREE.HemisphereLight(0xfff7ee, 0x656070, 2));
-  const key = new THREE.DirectionalLight(0xfff0df, 3);
-  key.position.set(2, 4, 3); key.castShadow = true;
-  key.shadow.mapSize.set(1024, 1024);
-  key.shadow.camera.left = -2; key.shadow.camera.right = 2;
-  key.shadow.camera.top = 3; key.shadow.camera.bottom = -1;
-  key.shadow.normalBias = 0.02; scene.add(key);
+  RectAreaLightUniformsLib.init();
+  scene.add(new THREE.HemisphereLight(0xfff7ee, 0x656070, 0.85));
+  const key = new THREE.RectAreaLight(0xfff0df, 3, 3, 4);
+  key.position.set(-2.5, 3.5, 3); key.lookAt(0, 1, 0); scene.add(key);
+  const fill = new THREE.RectAreaLight(0xe6edff, 1.5, 3, 3);
+  fill.position.set(2.5, 2, 2); fill.lookAt(0, 1, 0); scene.add(fill);
+  const rim = new THREE.DirectionalLight(0xffeedb, 0.8);
+  rim.position.set(1, 3, -2); scene.add(rim);
+  // One shadow caster grounds the feet; the broad lights shape the face and cloth.
+  const shadow = new THREE.DirectionalLight(0xfff0df, 0.7);
+  shadow.position.set(-2.5, 6, 3); shadow.castShadow = true;
+  shadow.shadow.mapSize.set(512, 512);
+  shadow.shadow.camera.left = -1.5; shadow.shadow.camera.right = 1.5;
+  shadow.shadow.camera.top = 2.5; shadow.shadow.camera.bottom = -1;
+  shadow.shadow.normalBias = 0.02; shadow.shadow.radius = 5; shadow.shadow.blurSamples = 8; scene.add(shadow);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.ShadowMaterial({ opacity: 0.18 }));
   floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
   let mixer: THREE.AnimationMixer | undefined;
@@ -109,7 +118,7 @@ export async function createStage(host: HTMLElement, onContextLost: () => void) 
     disposed = true; resize.disconnect(); document.removeEventListener("visibilitychange", visibility);
     renderer.setAnimationLoop(null); controls.dispose(); mixer?.stopAllAction();
     if (model) { mixer?.uncacheRoot(model); disposeModel(model); }
-    floor.geometry.dispose(); floor.material.dispose(); environment.dispose(); key.shadow.dispose();
+    floor.geometry.dispose(); floor.material.dispose(); environment.dispose(); shadow.shadow.dispose();
     renderer.domElement.removeEventListener("webglcontextlost", contextLost);
     renderer.dispose(); renderer.domElement.remove();
   };
