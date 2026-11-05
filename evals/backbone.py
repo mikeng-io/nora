@@ -674,12 +674,24 @@ _INPUT_MESSAGES = "gen_ai.input.messages"
 EXCHANGES_ENV = "NORA_EVAL_EXCHANGES"
 
 
+def _exchanges_path(folder: Path, case: str, suffix: str) -> Path:
+    """The case's dump file inside `folder`. A case name may carry a namespace
+    (`probe/standing`), kept as a subpath of the root; an absolute or `..` name
+    would write outside the private root, so it is refused, not relocated."""
+    import uuid
+
+    relative = Path(case)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError(f"eval case name escapes the evidence root: {case!r}")
+    path = folder / f"{case}-{uuid.uuid4().hex[:8]}{suffix}"
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return path
+
+
 def _dump_exchanges(exporter: InMemorySpanExporter, case: str) -> None:
     raw = os.environ.get(EXCHANGES_ENV, "").strip()
     if not raw:
         return
-    import uuid
-
     keys = ("gen_ai.system_instructions", "gen_ai.input.messages", "gen_ai.output.messages",
             "gen_ai.tool.name")
     # Strands puts message content on span EVENTS as well as attributes (see `_tool_inputs`).
@@ -692,14 +704,12 @@ def _dump_exchanges(exporter: InMemorySpanExporter, case: str) -> None:
     ]
     folder = Path(raw).expanduser()
     folder.mkdir(mode=0o700, parents=True, exist_ok=True)
-    path = folder / f"{case}-{uuid.uuid4().hex[:8]}.json"
+    path = _exchanges_path(folder, case, ".json")
     path.write_text(json.dumps(calls, ensure_ascii=False, default=str), encoding="utf-8")
     path.chmod(0o600)
 
 def _dump_judgement(judgement, case: str) -> None:
     """Keep every raw vote beside the private exchanges, including indecisive scores."""
-    import uuid
-
     from nora.subject.eval_evidence import current
 
     if judgement is not None and (evidence := current()):
@@ -710,7 +720,7 @@ def _dump_judgement(judgement, case: str) -> None:
         return
     folder = Path(raw).expanduser()
     folder.mkdir(mode=0o700, parents=True, exist_ok=True)
-    path = folder / f"{case}-{uuid.uuid4().hex[:8]}-judge.json"
+    path = _exchanges_path(folder, case, "-judge.json")
     path.write_text(json.dumps({
         "criterion": getattr(judgement, "criterion", ""),
         "verdict": judgement.verdict,
