@@ -57,7 +57,7 @@ async def test_the_budget_counts_and_caps_the_real_dispatch_path():
     request + terminal stream usage; a second call is refused BEFORE it
     reaches the transport (requests stays 1)."""
     requests: list[dict] = []
-    budget = RunBudget(max_requests=1, max_input_tokens=10_000,
+    budget = RunBudget(max_requests=1, max_input_bytes=10_000,
                        max_output_tokens=10_000, output_reserve=100)
     token = active_run_budget.set(budget)
     try:

@@ -31,8 +31,6 @@ response finishes reconciling, success or failure.
 
 from __future__ import annotations
 
-import asyncio
-import json
 import time
 from collections.abc import AsyncIterator, Callable
 from contextvars import ContextVar
@@ -68,8 +66,9 @@ class RunBudget:
     """
 
     max_requests: int
-    max_input_tokens: int
-    max_output_tokens: int
+    max_input_tokens: int | None = None
+    max_output_tokens: int = 40_000
+    max_input_bytes: int | None = None
     deadline: float | None = None
     output_reserve: int = 0
     requests: int = 0
@@ -79,6 +78,20 @@ class RunBudget:
     _reserved_out: int = field(default=0, repr=False)
     _spent_reason: str | None = field(default=None, repr=False)
     monotonic: Callable[[], float] = time.monotonic
+
+    def __post_init__(self) -> None:
+        # A strict input-TOKEN bound is a real request — and there is no
+        # authoritative pre-dispatch bound for it: provider-side
+        # template/framing expansion is not measurable without a
+        # tokenizer (none may be invented), so the bounded path refuses
+        # every dispatch rather than pretend a byte count is the token
+        # bound. `max_input_bytes` remains the supported serialized-size
+        # cap; measured tokens still reconcile and a measured overrun
+        # is terminal either way.
+        if self.max_input_tokens is not None:
+            self._spent_reason = (
+                "run budget: strict input-token bound unsupported — "
+                "no authoritative pre-dispatch token bound exists")
 
     @property
     def spent(self) -> str | None:
@@ -123,10 +136,11 @@ class RunBudget:
             raise self._fail(
                 f"run budget: model requests {self.requests + 1} > "
                 f"{self.max_requests}")
-        if self.input_bytes + input_bytes > self.max_input_tokens:
+        if (self.max_input_bytes is not None
+                and self.input_bytes + input_bytes > self.max_input_bytes):
             raise self._fail(
                 f"run budget: input size {self.input_bytes + input_bytes} "
-                f"B > {self.max_input_tokens}")
+                f"B > {self.max_input_bytes}")
         out = declared_output_tokens or self.output_reserve
         if out <= 0:
             raise self._fail("run budget: no output ceiling to enforce")
@@ -149,7 +163,8 @@ class RunBudget:
                     "indeterminate usage is spent, never zero")
         self.input_tokens += input_tokens
         self.output_tokens += output_tokens
-        if self.input_tokens > self.max_input_tokens:
+        if (self.max_input_tokens is not None
+                and self.input_tokens > self.max_input_tokens):
             raise self._fail(
                 f"run budget: input tokens {self.input_tokens} > "
                 f"{self.max_input_tokens}")
@@ -176,6 +191,7 @@ class RunBudget:
         return {
             "max_requests": self.max_requests,
             "max_input_tokens": self.max_input_tokens,
+            "max_input_bytes": self.max_input_bytes,
             "max_output_tokens": self.max_output_tokens,
             "deadline": self.deadline,
             "output_reserve": self.output_reserve,

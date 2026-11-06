@@ -365,7 +365,6 @@ def gate_client(client: Any) -> Any:
     if (getattr(inner_transport, "_budget", None) is not budget
             and inner_client is not None):
         inner_client._transport = _BoundedTransport(inner_transport, budget)
-    import functools
     if budget is None:          # unreachable — the early return gates it
         return client           # (mypy narrowing for the partial below)
     for resource in (client.chat.completions, client.beta.chat.completions):

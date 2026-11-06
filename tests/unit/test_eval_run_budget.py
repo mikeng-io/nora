@@ -69,7 +69,7 @@ def _client(requests, **kw):
 
 async def test_admitted_call_counts_and_reconciles():
     requests: list[dict] = []
-    budget = RunBudget(max_requests=1, max_input_tokens=10_000_000,
+    budget = RunBudget(max_requests=1, max_input_bytes=10_000_000,
                        max_output_tokens=10_000, output_reserve=100)
     token = active_run_budget.set(budget)
     try:
@@ -93,7 +93,7 @@ async def test_extra_body_cannot_enlarge_the_ceiling():
     """An `extra_body` max_tokens override lands on the merged body the
     transport reads — 50000 declared under a 40000 cap refuses."""
     requests: list[dict] = []
-    budget = RunBudget(max_requests=10, max_input_tokens=10_000_000,
+    budget = RunBudget(max_requests=10, max_input_bytes=10_000_000,
                        max_output_tokens=40_000, output_reserve=4000)
     token = active_run_budget.set(budget)
     try:
@@ -119,7 +119,7 @@ async def test_schema_expansion_counts_the_final_wire_bytes():
         a: int = Field(description="x" * 30_000)
 
     requests: list[dict] = []
-    budget = RunBudget(max_requests=10, max_input_tokens=10_000,
+    budget = RunBudget(max_requests=10, max_input_bytes=10_000,
                        max_output_tokens=10_000, output_reserve=100)
     token = active_run_budget.set(budget)
     try:
@@ -139,7 +139,7 @@ async def test_negative_usage_is_terminal_never_credit():
     """Malformed usage (negative ints) is indeterminate: spent latched,
     the budget is not credited, `finished` reports invalid."""
     requests: list[dict] = []
-    budget = RunBudget(max_requests=10, max_input_tokens=10_000_000,
+    budget = RunBudget(max_requests=10, max_input_bytes=10_000_000,
                        max_output_tokens=10_000, output_reserve=100)
     token = active_run_budget.set(budget)
     try:
@@ -167,7 +167,7 @@ async def test_streams_release_the_reservation_exactly_once():
                      usage={"prompt_tokens": 1,
                             "completion_tokens": 1,
                             "total_tokens": 2})]
-    budget = RunBudget(max_requests=40, max_input_tokens=10_000_000,
+    budget = RunBudget(max_requests=40, max_input_bytes=10_000_000,
                        max_output_tokens=40_000, output_reserve=4000)
     token = active_run_budget.set(budget)
     try:
@@ -189,7 +189,7 @@ async def test_streams_release_the_reservation_exactly_once():
 async def test_a_stream_without_usage_is_spent():
     requests: list[dict] = []
     chunks = [_chunk(content="ok", finish="stop")]   # no usage chunk
-    budget = RunBudget(max_requests=10, max_input_tokens=10_000_000,
+    budget = RunBudget(max_requests=10, max_input_bytes=10_000_000,
                        max_output_tokens=10_000, output_reserve=100)
     token = active_run_budget.set(budget)
     try:
@@ -213,7 +213,7 @@ async def test_a_stream_without_usage_is_spent():
 
 async def test_deadline_refuses_dispatch():
     requests: list[dict] = []
-    budget = RunBudget(max_requests=10, max_input_tokens=10_000,
+    budget = RunBudget(max_requests=10, max_input_bytes=10_000,
                        max_output_tokens=10_000, output_reserve=10,
                        deadline=0.0)
     token = active_run_budget.set(budget)
@@ -236,7 +236,7 @@ async def test_sdk_owned_provider_dispatches_through_the_budget():
     transport = httpx.MockTransport(_respond(requests))
     # a SPENT budget refuses before the wire — built under it, the way
     # composition builds the provider during a bounded run
-    spent = RunBudget(max_requests=0, max_input_tokens=10_000,
+    spent = RunBudget(max_requests=0, max_input_bytes=10_000,
                       max_output_tokens=10_000, output_reserve=100)
     token = active_run_budget.set(spent)
     try:
@@ -268,3 +268,32 @@ def test_create_client_wraps_only_when_a_budget_is_installed():
     client = factory.create_client(base_url="https://x", api_key="k")
     transport = client._client._transport
     assert not hasattr(transport, "_budget")
+
+
+@pytest.mark.anyio
+async def test_a_strict_input_token_bound_refuses_before_any_http():
+    """`max_input_tokens` asks for a bound nothing can measure
+    pre-dispatch (provider template/framing is not a byte count): the
+    budget marks itself unsupported and NO request reaches the
+    transport — the run records unavailability, never a PASS."""
+    requests: list[dict] = []
+    budget = RunBudget(
+        max_requests=10, max_input_tokens=600_000,
+        max_output_tokens=40_000, output_reserve=4_000)
+    token = active_run_budget.set(budget)
+    try:
+        transport = httpx.MockTransport(_respond(requests))
+        client = factory.create_client(
+            base_url="https://generated.invalid/v1", api_key="generated-key",
+            http_client=httpx.AsyncClient(transport=transport))
+        with pytest.raises(RunBudgetError, match="unsupported"):
+            await client.chat.completions.create(
+                model="m",
+                messages=[{"role": "user", "content": "hi"}])
+        assert requests == []                # zero transport attempts
+        assert budget.requests == 0
+        assert budget.spent is not None and "unsupported" in budget.spent
+        with pytest.raises(RunBudgetError):   # serializes as a failure
+            budget.finished()
+    finally:
+        active_run_budget.reset(token)

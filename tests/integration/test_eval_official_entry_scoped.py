@@ -31,6 +31,7 @@ import sqlalchemy as sa
 
 import evals.__main__ as cli
 from tests.fakes import FakeHoncho
+from tests.fakes import FakeHoncho
 from nora.agent import factory
 from nora.subject import sandbox
 
@@ -142,7 +143,9 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     # Honcho: the generated subject's memory traffic and the per-draw
     # workspace must reach a REAL workspace server, not the deploy host's
     # — the existing FakeHoncho served on its own loop in a thread.
-    import asyncio, importlib, threading
+    import asyncio
+    import importlib
+    import threading
     _obtain_mod = importlib.import_module("nora.subject.obtain")
     fake = FakeHoncho()
     honcho_loop = asyncio.new_event_loop()
@@ -236,7 +239,7 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
         "--deployment-config", str(deploy_dir / "config.toml"),
         "--source-url", source_url,
         "--subject-overrides", str(fixture),
-        "--run-budget", "12,2000000,40000,30",
+        "--run-budget", "12",
     ])
     # `main()` owns its asyncio.run + SIGTERM handler — it must run on the
     # main thread with no running loop, which is exactly what a

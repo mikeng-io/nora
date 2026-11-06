@@ -788,7 +788,7 @@ def _main(*, lock_fd: int = -1) -> int:
             print("refusing to run: --run-budget takes 1-4 positive integers",
                   file=sys.stderr)
             return 2
-        vals += [40, 600000, 40000, 30][len(vals):]
+        vals += [40, None, 40000, 30][len(vals):]
         budget = RunBudget(
             max_requests=vals[0], max_input_tokens=vals[1],
             max_output_tokens=vals[2],
