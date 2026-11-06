@@ -849,7 +849,14 @@ class Browser:
                     # frees its slot.
                     if self.chrome is not None and self.chrome.returncode is None:
                         with contextlib.suppress(ProcessLookupError):
-                            os.killpg(self.chrome.pid, signal.SIGKILL)
+                            if sys.platform == "linux":
+                                # `chrome.pid` is the lifetime wrapper:
+                                # SIGTERM lets it SIGKILL + reap the whole
+                                # tree — killpg cannot reach setsid'd
+                                # helpers in a different process group.
+                                os.kill(self.chrome.pid, signal.SIGTERM)
+                            else:
+                                os.killpg(self.chrome.pid, signal.SIGKILL)
                     return
                 while (end := buffer.find(b"\0", scan)) != -1:
                     message = bytes(buffer[:end])
