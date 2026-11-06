@@ -23,7 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
@@ -62,7 +62,7 @@ class RunBudget:
     _reserved_out: int = field(default=0, repr=False)
     _spent_reason: str | None = field(default=None, repr=False)
     _in_call: int = field(default=0, repr=False)
-    monotonic: Any = time.monotonic
+    monotonic: Callable[[], float] = time.monotonic
 
     @property
     def spent(self) -> str | None:
@@ -164,7 +164,7 @@ def declared_output(kwargs: dict[str, Any]) -> int | None:
     return None
 
 
-def _request_bytes(args: tuple, kwargs: dict[str, Any]) -> int:
+def _request_bytes(args: tuple[Any, ...], kwargs: dict[str, Any]) -> int:
     """The serialized request's size — the conservative input bound.
 
     Every token covers at least one byte, so the byte count is a rigorous
