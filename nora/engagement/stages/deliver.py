@@ -56,10 +56,10 @@ class DeliveryHandle:
     links: LinkCarry
     tool_call_log: ToolCallLog
     # Built HERE for `tool_call_log`'s reason — this is the one
-    # seam both production senders pass through
-    # (`tests/architecture/test_only_two_paths_can_send.py` proves there are
-    # exactly two), so building it here is what makes BOTH paths carry it
-    # rather than one. It is also the only place that holds `audience`, which
+    # seam all declared delivery callers pass through
+    # (`tests/architecture/test_only_two_paths_can_send.py` pins that set), so
+    # building it here makes every path carry it. It is also the only place
+    # that holds `audience`, which
     # is what the row's `path` column records.
     reasoning_watch: ReasoningStripWatch
 
@@ -103,9 +103,9 @@ def build(
     **`composer` has no default here either, and `None` is a legal value** —
     the two statements are not in tension, and the distinction is which
     mistake stays invisible. `Deliverer` defaults it, because a test about R-2
-    should not have to care; THIS function is the seam both production senders
-    pass through (`tests/architecture/test_only_two_paths_can_send.py` proves
-    there are exactly two), so requiring the keyword is what stops the feature
+    should not have to care; THIS function is the seam all declared callers
+    pass through (`tests/architecture/test_only_two_paths_can_send.py` pins
+    that set), so requiring the keyword is what stops the feature
     from shipping INERT — wired everywhere, decided nowhere, silently sending
     plain text while a decision index entry claims otherwise (DEC-42). Passing `None` is a
     decision (the offline and eval compositions genuinely have no roster and no
@@ -137,9 +137,9 @@ def build(
     # DEC-89: one carrier per turn, built HERE because this is the only place
     # both users of it are in scope — the `Deliverer` below, and (via the
     # returned handle) the `ToolRegistry.build(links=...)` call the caller makes
-    # next. `deliver.build` has exactly two production callers
-    # (`tests/architecture/test_only_two_paths_can_send.py` proves it), so
-    # minting it here is what makes both paths carry links rather than one.
+    # next. Every declared caller uses this builder
+    # (`tests/architecture/test_only_two_paths_can_send.py` pins that set), so
+    # minting it here makes every path carry links.
     links = LinkCarry()
     deliverer = Deliverer(
         store=store, adapter=adapter, target=target, doctrine=doctrine, canary=canary,
