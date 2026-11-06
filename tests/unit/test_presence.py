@@ -133,7 +133,7 @@ def _adapters(**overrides):
 
 async def _body(reader: PresenceReader, platform="signal", cid="SIGNAL-FRIENDS-ID") -> str:
     presence = await reader.read(platform=platform, conversation_id=cid)
-    return render_presence(presence).body
+    return render_presence(presence).body.text
 
 
 async def test_this_units_rooms_are_named_by_network_and_label(policy):
@@ -359,7 +359,7 @@ def test_the_block_is_situation_never_capability():
         platform="signal", label="Friends", here_state="up",
         unit_rooms=(PresenceRoom("discord", "Zone 42", "unknown"),),
         other_groups=True, handles=(("signal", "@nora.000"),),
-    )).body
+    )).body.text
 
     assert not re.search(
         r"\b(can|able to|could)\b", body.replace("could not be checked", ""),

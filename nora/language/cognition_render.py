@@ -83,6 +83,7 @@ from nora.domain.cognition_ground import (
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
+from nora.domain.composed import legacy_composed
 from nora.domain.external_files import render_file_links
 from nora.domain.models import REACTION_LABEL_MAX, emoji_display
 from nora.domain.observations import SourceEvent, parse_handle
@@ -796,7 +797,7 @@ def _register(
         ])
         left_out = len(notes) - len(rows)
         blocks.append(restamp(ContextBlock(
-            name="note_index", body="\n".join(rows),
+            name="note_index", body=legacy_composed("\n".join(rows)),
             attrs=_attrs([("not_listed", str(left_out) if left_out else None)]),
             when_empty="self_close",
         ), _ROW))
@@ -902,7 +903,7 @@ def _register(
         ))
     if standing_groups:
         blocks.append(restamp(ContextBlock(
-            name="standing", body="\n".join(standing_groups)), _ROW))
+            name="standing", body=legacy_composed("\n".join(standing_groups))), _ROW))
     groups: list[str] = []
     for room in rooms:
         events = [e for e in grounding.events if e.room == room]
@@ -919,13 +920,14 @@ def _register(
             "\n".join(rows),
         ))
     if groups:
-        blocks.append(restamp(ContextBlock(name="events", body="\n".join(groups)), _ROW))
+        blocks.append(restamp(ContextBlock(name="events",
+            body=legacy_composed("\n".join(groups))), _ROW))
     memo_lines, memos_left = memo_rows(
         grounding.memos, tz=tz, lines=budget.memo_lines, chars=budget.memo_chars,
     )
     if memo_lines or memos_left:
         blocks.append(restamp(ContextBlock(
-            name="memos", body="\n".join(memo_lines),
+            name="memos", body=legacy_composed("\n".join(memo_lines)),
             attrs=_attrs([("not_listed", str(memos_left) if memos_left else None)]),
             when_empty="self_close",
         ), _ROW))
@@ -945,7 +947,8 @@ def _item_blocks(
             render_group("item", _item_attrs(i, item, grounding.room_labels), "")
             for i, item in enumerate(items)
         ]
-        return [restamp(ContextBlock(name="agenda", body="\n".join(elements)), _ROW)]
+        return [restamp(ContextBlock(name="agenda",
+            body=legacy_composed("\n".join(elements))), _ROW)]
     needs = _needs(
         items, stimuli, grounding, now_ms=now_ms, tz=tz, message_chars=budget.message_chars,
         memory_items=memory_items,
@@ -964,7 +967,7 @@ def _item_blocks(
         if item.room not in rooms:
             rooms.append(item.room)
     return [
-        restamp(ContextBlock(name="agenda", body="\n".join(elements)), _ROW),
+        restamp(ContextBlock(name="agenda", body=legacy_composed("\n".join(elements))), _ROW),
         *_register(rooms, grounding, now_ms=now_ms, tz=tz, budget=budget),
     ]
 
@@ -1011,10 +1014,11 @@ def render_agenda(
             blocks.append(self_block)
     if now_ms is not None:
         blocks.append(restamp(ContextBlock(
-            name="clock", body=escape(clock_line(now_ms, last_session_ms, tz)),
+            name="clock", body=legacy_composed(escape(clock_line(now_ms, last_session_ms, tz))),
         ), _ROW))
     if reads_note:
-        blocks.append(restamp(ContextBlock(name="reads", body=escape(reads_note)), _ROW))
+        blocks.append(restamp(ContextBlock(name="reads",
+            body=legacy_composed(escape(reads_note))), _ROW))
     # Real database message ids are positive. Other record keys share one
     # negative namespace, allocated once here, never by individual loaders.
     source_ids: dict[tuple[str, ...], int] = {}
@@ -1043,13 +1047,14 @@ def render_agenda(
             render_shared_state(shared, now_ms=now_ms, tz=tz), _ROW)
         if shared_block is not None:
             source_blocks = [b for b in blocks if b.name == "standing"]
-            shared_block = replace(shared_block, body="\n".join(
-                [shared_block.body, *(b.body for b in source_blocks)],
-            ))
+            shared_block = replace(shared_block, body=legacy_composed("\n".join(
+                [shared_block.body.text, *(b.body.text for b in source_blocks)],
+            )))
             blocks = [b for b in blocks if b.name != "standing"]
             blocks.append(shared_block)
     if graph:
-        blocks.append(restamp(ContextBlock(name="graph", body=escape(graph)), _ROW))
+        blocks.append(restamp(ContextBlock(name="graph",
+            body=legacy_composed(escape(graph))), _ROW))
     return assemble(blocks, sep=_SEP)
 
 

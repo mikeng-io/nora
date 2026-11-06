@@ -31,6 +31,7 @@ from datetime import datetime
 
 from nora.agent import prefill
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
+from nora.domain.composed import legacy_composed
 from nora.domain.external_files import render_file_links
 from nora.domain.models import TagContext
 from nora.domain.prompt import escape
@@ -115,7 +116,7 @@ def selector_prompt(
     declared: list[ContextBlock] = [
         restamp(ContextBlock(
             name="tag_message",
-            body=escape(render_file_links(ctx.message.body)),
+            body=legacy_composed(escape(render_file_links(ctx.message.body))),
             attrs=((
                 "from",
                 ctx.tagger.name if ctx.tagger
@@ -132,7 +133,7 @@ def selector_prompt(
     if "peer_history" in available:
         b = available["peer_history"]
         declared.append(restamp(ContextBlock(
-            name="peer_history", body=escape(b.body[:_PREVIEW_CHARS]),
+            name="peer_history", body=legacy_composed(escape(b.body.text[:_PREVIEW_CHARS])),
             attrs=(*b.attrs, ("preview", _PREVIEW_NOTE)),
             when_empty=b.when_empty,
         ), _ROW))
@@ -145,21 +146,21 @@ def selector_prompt(
     if "computer" in available:
         b = available["computer"]
         declared.append(restamp(ContextBlock(
-            name="computer", body=escape(b.body[:_PREVIEW_CHARS]),
+            name="computer", body=legacy_composed(escape(b.body.text[:_PREVIEW_CHARS])),
             attrs=(*b.attrs, ("preview", _PREVIEW_NOTE)),
             when_empty=b.when_empty,
         ), _ROW))
     if "documents" in available:
         b = available["documents"]
         declared.append(restamp(ContextBlock(
-            name="documents", body=escape(b.body[:_PREVIEW_CHARS]),
+            name="documents", body=legacy_composed(escape(b.body.text[:_PREVIEW_CHARS])),
             attrs=(*b.attrs, ("preview", _PREVIEW_NOTE)),
             when_empty=b.when_empty,
         ), _ROW))
     if "subagents" in available:
         b = available["subagents"]
         declared.append(restamp(ContextBlock(
-            name="subagents", body=escape(b.body[:_PREVIEW_CHARS]),
+            name="subagents", body=legacy_composed(escape(b.body.text[:_PREVIEW_CHARS])),
             attrs=(*b.attrs, ("preview", _PREVIEW_NOTE)),
             when_empty=b.when_empty,
         ), _ROW))
@@ -174,8 +175,8 @@ def selector_prompt(
     b = available["group_transcript"]
     declared.append(restamp(ContextBlock(
         name="group_transcript",
-        body=prefill.render_transcript(
-            ctx.transcript[-8:], display_name=display_name, now=now),
+        body=legacy_composed(prefill.render_transcript(
+            ctx.transcript[-8:], display_name=display_name, now=now)),
         attrs=(("window", str(min(8, len(ctx.transcript)))),),
         when_empty=b.when_empty,
     ), _ROW))

@@ -830,7 +830,7 @@ async def test_circle_job_lifecycle_is_read_by_real_context_and_desk(monkeypatch
     view = await reader.read(platform='signal', conversation_id='generated-room',
                               person_id='generated-person')
     assert view is not None and len(view.lines) == 1
-    rendered = render_subagents(view).body
+    rendered = render_subagents(view).body.text
     assert 'Generated comparison' in rendered
     overlay = circle.CircleOverlay(job=state)
     job = await store.get(UUID(job_id))

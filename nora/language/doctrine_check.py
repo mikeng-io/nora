@@ -18,6 +18,7 @@ from collections.abc import Callable, Sequence
 from typing import Protocol
 
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, render_elements
+from nora.domain.composed import compose_body
 from nora.domain.doctrine_check import (
     CHECK_OUTCOMES,
     LAW_SURFACES,
@@ -76,17 +77,17 @@ def render_check_input(*, lesson: str, rules: Sequence[LawRule]) -> str:
     which is what the answer names."""
     return assemble([
         ContextBlock(name="law_rules", order=_ROW["law_rules"][0],
-                     key=_ROW["law_rules"][1], body=render_elements(
+                     key=_ROW["law_rules"][1], body=compose_body(render_elements(
             list(rules), tag="rule",
             attrs=lambda r, i: (("n", str(i)), ("file", r.file)),
             body=lambda r: r.text,
-        )),
+        ))),
         # ESCAPED: the lesson is model-written from members' messages, and a
         # `</lesson_to_check>` in it would otherwise close the block and let
         # it forge a verdict. The law is escaped by
         # `render_elements`.
         ContextBlock(name="lesson_to_check", order=_ROW["lesson_to_check"][0],
-                     key=_ROW["lesson_to_check"][1], body=escape(lesson)),
+                     key=_ROW["lesson_to_check"][1], body=compose_body(escape(lesson))),
     ], sep="\n\n")
 
 

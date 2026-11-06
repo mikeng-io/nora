@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, tzinfo
 
 from nora.domain.blocks import ContextBlock
+from nora.domain.composed import compose_body
 from nora.domain.prompt import age, escape
 from nora.domain.shared_state import SharedView
 
@@ -140,5 +141,5 @@ def render_shared_state(
         if e.detail:
             lines.append(f"    {e.detail}")
     return ContextBlock(
-        name="standing", body=escape("\n".join(lines)),
+        name="standing", body=compose_body(escape("\n".join(lines))),
     )

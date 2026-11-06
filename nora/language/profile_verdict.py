@@ -37,6 +37,7 @@ from nora.domain.blocks import (
     render_group,
     render_row_window,
 )
+from nora.domain.composed import legacy_composed
 from nora.domain.culture import RoomMessage
 from nora.domain.errors import AccountNotRecordableError
 from nora.domain.ports import Proposal
@@ -246,18 +247,18 @@ class ProfileVerdictAdaptor:
         parts = [
             ContextBlock(
                 name="profile_verdict_docket", **_at("profile_verdict_docket"),
-                body="\n".join(
+                body=legacy_composed("\n".join(
                     render_group("guess", [
                         ("id", handle),
                         ("about", self._subject(line)),
                         ("window_end", iso(line.prediction_window_end or 0)),
                     ], f"{escape(line.prediction or '')}\n"
                        f"observable: {escape(line.prediction_observable or '')}")
-                    for handle, line in handles.items()),
+                    for handle, line in handles.items())),
             ),
             ContextBlock(
                 name="profile_verdict_window", **_at("profile_verdict_window"),
-                body="\n".join(windows),
+                body=legacy_composed("\n".join(windows)),
             ),
         ]
         return assemble(parts, sep="\n\n")

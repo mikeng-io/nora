@@ -359,7 +359,7 @@ async def _later_turn_block(store: FakeDocumentStore, conversation_id: str = ROO
     block = render_documents(await reader.read(
         platform="signal", conversation_id=conversation_id, person_id="miles",
     ))
-    return "" if block is None else block.body
+    return "" if block is None else block.body.text
 
 
 def _id_on(body: str, prefix: str) -> str:

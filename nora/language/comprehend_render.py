@@ -6,6 +6,7 @@ import json
 from collections import Counter
 
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
+from nora.domain.composed import compose_body, legacy_composed
 from nora.domain.comprehend import ComprehendItem, Preview
 from nora.domain.memory_graph import (
     ENTITY_KINDS,
@@ -184,7 +185,7 @@ def memory_result_text(text: str, *, query: str, depth: int) -> str:
             restamp(
                 ContextBlock(
                     name="memory",
-                    body=escape(rows),
+                    body=compose_body(escape(rows)),
                     when_empty="render",
                     attrs=(
                         ("query", query),
@@ -215,18 +216,19 @@ def render_comprehend(item: ComprehendItem, preview: Preview, *, tokens: int = 1
         [
             restamp(
                 ContextBlock(
-                    name="graph_preview", body=escape(preview_text(preview, tokens=tokens))
+                    name="graph_preview",
+                        body=legacy_composed(escape(preview_text(preview, tokens=tokens)))
                 ),
                 _ROW,
             ),
             restamp(
                 ContextBlock(
                     name="comprehend_item",
-                    body=escape(
+                    body=legacy_composed(escape(
                         json.dumps(payload, ensure_ascii=False, default=str).replace(
                             "\x7f", r"\u007f"
                         )
-                    ),
+                    )),
                 ),
                 _ROW,
             ),
@@ -250,7 +252,7 @@ def render_reshape(
             restamp(
                 ContextBlock(
                     name="reshape_graph",
-                    body=escape(
+                    body=legacy_composed(escape(
                         json.dumps(
                             {
                                 "entity": entity,
@@ -263,7 +265,7 @@ def render_reshape(
                             default=str,
                             ensure_ascii=False,
                         )
-                    ),
+                    )),
                 ),
                 _ROW,
             )
@@ -316,7 +318,7 @@ Then act or stay silent on committed state.
 
 def render_session_system(doctrine: str, skills: str, *, memory: bool) -> str:
     orient = assemble([restamp(ContextBlock(
-        name="cognition_orient", body=SESSION_INSTRUCTION if memory else ""), _ROW)])
+        name="cognition_orient", body=compose_body(SESSION_INSTRUCTION if memory else "")), _ROW)])
     # Authored objective slots keep the generated instruction and the resolved
     # skill in OODA order, inside the objective's existing authority wrapper.
     if "<!-- cognition-orient -->" in doctrine:

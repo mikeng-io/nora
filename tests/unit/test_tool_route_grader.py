@@ -11,6 +11,7 @@ import pytest
 from strands_evals.types.evaluation import EnvironmentState, EvaluationData
 
 from evals.backbone import ERROR, FAIL, NORA_ERROR, NORA_TOOLS, PASS, ToolRouteGrader, _tools_called
+from nora.testing.context_blocks import compose_fixture
 
 
 def _data(called, *, tools=("where_is",), not_tools=("where_been",), error=None):
@@ -513,7 +514,8 @@ def test_shown_transcript_decodes_the_real_strands_serialized_span():
         ),
     )
     body = render_transcript(rows, display_name="Nora", now=now)
-    block = ContextBlock(name="group_transcript", body=body, attrs=(("window", "3"),)).render()
+    block = ContextBlock(name="group_transcript",
+        body=compose_fixture(body), attrs=(("window", "3"),)).render()
     # A real prefill is many blocks concatenated, not just this one.
     prompt = f"<static_head>a head</static_head>\n{block}\n<self_card>a card</self_card>"
 

@@ -161,7 +161,7 @@ async def test_write_then_later_turn_renders() -> None:
     block = render_profile(
         ProfileView(entity="person", of=PERSON, lines=heads),
         name_of=lambda pid: pid, now=AS_OF)
-    assert block is not None and "steady evening pace" in block.body
+    assert block is not None and "steady evening pace" in block.body.text
 
 
 @pytest.mark.asyncio
@@ -199,7 +199,7 @@ async def test_correction_and_retirement_change_the_later_read() -> None:
     block = render_profile(
         ProfileView(entity="person", of=PERSON, lines=heads),
         name_of=lambda pid: pid, now=AS_OF)
-    assert block is None or "paces fast" not in block.body
+    assert block is None or "paces fast" not in block.body.text
 
 
 @pytest.mark.asyncio

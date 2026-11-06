@@ -176,6 +176,29 @@ An occasion is any place a prompt reaches a model: an agent turn, a Dreamer pass
 1. **Declare the table.** A module-level, non-empty `_BLOCKS: tuple[...] = (...)` literal, one row per block (`name`, `order`, `key`, or `source` when one block type appears more than once, as in `nora/domain/summons.py`). The `order` is the order the model reads, which is data and not a comment. Enforced by `test_nothing_builds_a_prompt_outside_context_assembly` (`undeclared`), and the rows are checked against the blocks the module builds, both ways, by `tests/architecture/test_the_registry_is_exhaustive.py`.
 2. **Walk it with `assemble`.** Import `assemble` from `nora.domain.blocks` and call it over blocks that come from the table; a join with `"\n".join(b.render() for b in blocks)`, `sorted` or a local function of that name is a hand join. Pass `sep=` for the separator the occasion reads, and `when_empty=` on a block whose empty body must still render (`self_close`, `render`, `nothing`; the default `drop` is right when a body is never empty). Enforced by the same test (`hand_joined` when the module never calls `assemble`, `hand_join_call` for a `.join` over rendered blocks anywhere in `nora/`). **Not enforced:** that the list handed to `assemble` is the one built from `_BLOCKS`, or a hand join spelled some other way than `.join`.
 3. **Share the builders.** A block another occasion already builds (`today`, notes, Standing, culture, presence, the self card, the decisions log) comes from its shared builder in the module that owns it, and the caller stamps it with this prompt's own `order` and `key` through `restamp(block, row)`, where `row` is the table's name-to-`(order, key)` mapping; do not write a second builder. Enforced by `test_the_registry_is_exhaustive.py`'s shared-builder list (add a new shared builder there) and by the per-module checks in `tests/architecture/test_one_block_injector.py`, `test_one_transcript_renderer.py`, `test_one_row_renders_one_line.py` and `test_one_name_space_per_prompt.py` (add the module to `CONVERTED` in the first two).
+
+   `ContextBlock.body` accepts only the frozen `Composed(text, composer)` value.
+   Mypy rejects raw strings; construction also raises at runtime, including for
+   an empty raw body. Registered semantic owners in `nora.domain.composed.COMPOSERS`
+   finish their body with `compose_body`; the caller is checked at runtime and
+   supplies no composer label. Forwarding helpers accept `Composed` and preserve
+   it. Rendering and `assemble` keep the existing `_BLOCKS`, ordering, escaping
+   and empty-body behavior; consumers explicitly read `.text` when needed.
+
+   The operator's 2026-11-06 amendment replaces #588's AST source-flow analyser
+   and classification certificates with this type boundary. Existing raw-body
+   violations are deliberately not refactored: `legacy_composed` is permitted
+   only at the explicit `module:function` entries in `LEGACY_COMPOSERS`, seeded
+   from the branch's known-violation inventory. The architecture test inventories
+   these calls and rejects unlisted or stale entries; a frozen historical ceiling
+   means the allowlist can only shrink. This is a body-composer cleanup backlog,
+   not an exception to the requirement that every occasion declares `_BLOCKS`
+   and walks it with `assemble` (DEC-273 / ADR 0021).
+
+   Registration is the review boundary: a registered owner can still compose
+   poor content. This guard does not analyse tool-result strings outside blocks,
+   prove semantic quality, or detect duplicate sources in a final request.
+
 4. **Declare the type.** Every block name has a `BlockType` in `nora/domain/block_types.py`: a description of what the block IS and how to read it, and a gloss for each attribute it can emit. This is the one channel that tells the model what it is reading, so a rule about how to read a block goes there and not into an objective. A type whose two renderers differ in what a field means is two types. Enforced by `tests/architecture/test_every_block_declares_its_type.py`: a block with no type fails, a type nothing renders fails, and a description must describe rather than label. **Not enforced:** that every attribute the renderer can emit has a gloss. Only the Cognition types are held to that (`tests/unit/test_cognition_block_types_explain_every_field.py`), and `tests/unit/test_prompt_documents.py` covers part of the rest, so a new type's glosses are review.
 5. **Escape through the shared renderers.** A member's or a stranger's text goes in through `render_rows`, `render_messages`, `render_row_window`, `render_group`, `wrap_outside_text` or `nora.domain.prompt.escape`, never by interpolation, and a speaker is named through `speaker_label`. Enforced in part by `test_one_row_renders_one_line.py`, `test_one_name_space_per_prompt.py` and `test_escaping_is_for_prompts_only.py`. **Not enforced:** a body interpolated into an attribute or an f-string the tests do not read.
 6. **Put authored framing text in `nora/domain/framing.py`.** A header, a head paragraph or a closing line is one typed builder there, and every value enters it through `_put` in one of its four named ways; the occasion only names inputs. Enforced by `tests/architecture/test_framing_is_one_typed_place.py` for fire, the announcement, the summons and the prefill; **not enforced** for prose elsewhere (see Open).
