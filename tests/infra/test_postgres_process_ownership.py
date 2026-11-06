@@ -1,4 +1,6 @@
 """Generated orphan-exit control: recovery must not kill an existing backend."""
+import time
+
 import psycopg
 import pytest
 from testcontainers.postgres import PostgresContainer
@@ -11,16 +13,32 @@ def test_external_orphan_exit_does_not_reach_postmaster(init):
     ) as pg, psycopg.connect(pg.get_connection_url().replace('+psycopg', '')) as conn:
         backend = conn.execute('SELECT pg_backend_pid()').fetchone()[0]
         container = pg.get_wrapped_container()
+
+        def wait_for(predicate):
+            deadline = time.monotonic() + 10
+            while not predicate():
+                assert time.monotonic() < deadline, container.logs().decode()
+                time.sleep(0.02)
+
         result = container.exec_run(['sh', '-c',
-            '(sleep 0.2; exit 2) >/dev/null 2>&1 & exit 0'])
+            'mkfifo /run/orphan-exit; '
+            "sh -c 'read value < /run/orphan-exit; exit 2' >/dev/null 2>&1 & "
+            'echo $!'])
         assert result.exit_code == 0
+        orphan = int(result.output)
+        wait_for(lambda: container.exec_run(['sh', '-c',
+            f"awk '/^PPid:/ {{print $2}}' /proc/{orphan}/status"]).output.strip() == b'1')
+        assert container.exec_run(['sh', '-c', 'echo exit > /run/orphan-exit']).exit_code == 0
         if init:
-            # This live backend spans the orphan's exit; a recovery would
-            # terminate it. The bare control proves the probe sees that.
-            assert conn.execute('SELECT pg_sleep(1), pg_backend_pid()').fetchone()[1] == backend
+            wait_for(lambda: container.exec_run(
+                ['test', '!', '-e', f'/proc/{orphan}']).exit_code == 0)
+            # The same live backend spans adoption, exit and reaping.
+            assert conn.execute('SELECT pg_backend_pid()').fetchone()[0] == backend
             assert b'terminating any other active server processes' not in container.logs()
         else:
+            # A socket close can precede Docker's delivery of the recovery log.
+            marker = f'untracked child process (PID {orphan}) exited with exit code 2'.encode()
+            wait_for(lambda: marker in container.logs()
+                     and b'terminating any other active server processes' in container.logs())
             with pytest.raises(psycopg.OperationalError):
-                conn.execute('SELECT pg_sleep(10)')
-            assert b'untracked child process' in container.logs()
-            assert b'terminating any other active server processes' in container.logs()
+                conn.execute('SELECT pg_backend_pid()')
