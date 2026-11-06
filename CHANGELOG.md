@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.15.18](https://github.com/mikeng-io/nora/compare/v7.15.17...v7.15.18) (2026-11-06)
+
+
+### Bug Fixes
+
+* **memory:** bind custody/completion guards, guard metrics=None ([e93fd56](https://github.com/mikeng-io/nora/commit/e93fd56cf8efcae71fe83f8588e770f1f30d5949))
+* **memory:** correction catalogue is emitted rows, plus connected targets ([7b6bf80](https://github.com/mikeng-io/nora/commit/7b6bf80b28b2ad5dc56f1febd7e7e3addf55afd8))
+* **memory:** shown-custody at the endpoint, correction custody, retry merges, per-statement refusal ([2aa7eee](https://github.com/mikeng-io/nora/commit/2aa7eee32a9730375c5afea65c211147a9889e85))
+
 ## [7.15.17](https://github.com/mikeng-io/nora/compare/v7.15.16...v7.15.17) (2026-11-06)
 
 
