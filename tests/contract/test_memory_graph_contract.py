@@ -657,6 +657,72 @@ def test_pointer_ids_are_unique_across_kinds() -> None:
     assert pointer_entity("person", "u", "x", "X").id != pointer_entity("room", "u", "x", "X").id
 
 
+async def test_a_shown_author_grounds_without_source_scope(graph: MemoryGraph) -> None:
+    """A unit-wide room's cited sources are scoped to no one, so a shown
+    author's pointer cannot come from `Source.persons`: `shown_persons`
+    grounds it the way a cited privacy person would — and the relation's
+    persons stay the cited sources' empty union."""
+    public = replace(SOURCE, persons=())
+    work = Entity("w1", "work", "u1", "Generated Work")
+    relation = Relation(
+        "r-shown", ("person", "u1:person:p1"), "likes", work.key, "notebook",
+        "u1", (), asserted_at=NOW,
+    )
+    result = await graph.stage_and_admit(
+        entities=(work,),
+        relations=(relation,),
+        evidence=(Evidence(public.key, relation_id="r-shown", span="attended"),),
+        sources={public.key: public},
+        shown_persons=frozenset({"p1"}),
+    )
+    assert result.relations == (relation,)
+    pointer = next(e for e in result.entities if e.kind == "person")
+    assert pointer.key == ("person", "u1:person:p1")
+    assert pointer.attributes == {"ref": "p1"}
+    assert relation.persons == ()
+
+
+async def test_an_unshown_author_does_not_ground(graph: MemoryGraph) -> None:
+    """Without shown authorship or a cited scope person the end refuses
+    `wrong_ends` and no pointer is committed."""
+    public = replace(SOURCE, persons=())
+    work = Entity("w1", "work", "u1", "Generated Work")
+    relation = Relation(
+        "r-unshown", ("person", "u1:person:p1"), "likes", work.key, "notebook",
+        "u1", (), asserted_at=NOW,
+    )
+    result = await graph.stage_and_admit(
+        entities=(work,),
+        relations=(relation,),
+        evidence=(Evidence(public.key, relation_id="r-unshown", span="attended"),),
+        sources={public.key: public},
+        shown_persons=frozenset({"someone-else"}),
+    )
+    assert not result.relations
+    assert Refusal("relation", relation.id, "wrong_ends") in result.refused
+    assert all(e.kind != "person" for e in result.entities)
+
+
+async def test_another_units_author_does_not_ground(graph: MemoryGraph) -> None:
+    """A pointer key is one unit's own: a shown author never grounds another
+    unit's person pointer."""
+    public = replace(SOURCE, persons=())
+    work = Entity("w1", "work", "u1", "Generated Work")
+    relation = Relation(
+        "r-other", ("person", "u2:person:p1"), "likes", work.key, "notebook",
+        "u1", (), asserted_at=NOW,
+    )
+    result = await graph.stage_and_admit(
+        entities=(work,),
+        relations=(relation,),
+        evidence=(Evidence(public.key, relation_id="r-other", span="attended"),),
+        sources={public.key: public},
+        shown_persons=frozenset({"p1"}),
+    )
+    assert not result.relations
+    assert Refusal("relation", relation.id, "wrong_ends") in result.refused
+
+
 async def test_topic_activity_direct_evidence_counts_times_and_failure(graph: MemoryGraph) -> None:
     topic = Entity("generated-topic", "topic", "u1", "Generated racing")
     early = NOW - timedelta(days=2)

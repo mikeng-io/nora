@@ -188,7 +188,7 @@ async def test_message_checks_reuse_media_lookups_per_attachment_value(
             assert result['unattempted_cached'] == (0 if settled else 48)
     finally:
         sa.event.remove(env.sync_engine, 'before_execute', capture)
-    [query] = queries
+    query = queries[0]
     async with env.connect() as conn:
         [explain] = (await conn.execute(Explain(query))).scalar_one()
     (tmp_path / f'{reader}-{settled}.json').write_text(json.dumps(explain, indent=2))
@@ -203,9 +203,7 @@ async def test_message_checks_reuse_media_lookups_per_attachment_value(
                 if n.get('Relation Name') == 'media_objects')
     revisions = sum(n['Actual Loops'] for n in plan if n['Node Type'] == 'Aggregate'
                     and any('jsonb_agg(' in value for value in n.get('Output', ())))
-    edit_heads = [n for n in plan if n['Node Type'] == 'Aggregate' and any(
-        value.startswith('max(message_edit') and value.endswith('.id)')
-        for value in n.get('Output', ()))]
+    edit_heads = [n for n in plan if n.get('Relation Name') == 'message_edit']
     distinct_refs = 3  # NULL and empty string have the same old coalesce semantics.
     print(reader, settled, 'media scans', scans, 'media revisions', revisions,
           'edit head sites', len(edit_heads),
@@ -368,7 +366,7 @@ async def test_rollup_pending_page_computes_each_root_revision_once(env):
         sa.event.remove(env.sync_engine, 'before_execute', capture)
     assert [root.row.id for root in revision.roots] == [10]
     assert dict(revision.properties)['replies_ab'] == '1'
-    [query] = queries
+    query = queries[0]
     sql = str(query.compile(dialect=postgresql.dialect(),
                             compile_kwargs={'literal_binds': True}))
     async with env.connect() as conn:
@@ -897,3 +895,118 @@ async def test_a_person_with_a_wake_batch_of_new_messages_counts_the_whole_batch
     evidence = ProfileEvidence(store=reads, profile=SqlProfileStore(env, screen=lambda _: None),
                                keys={KEY: pk}, source_inputs=source_inputs(env), wake_batch=3)
     assert await evidence.count(key=KEY, after=boundary) >= 3
+
+
+async def test_fixed_pending_batch_media_work_scales_with_generated_history(env, tmp_path):
+    """Count actual visited media rows, including rows rejected by a scan."""
+    from sqlalchemy.ext.compiler import compiles
+    from sqlalchemy.sql.expression import ClauseElement, Executable
+
+    class Explain(Executable, ClauseElement):
+        inherit_cache = False
+
+        def __init__(self, query):
+            self.query = query
+
+    @compiles(Explain)
+    def explain(element, compiler, **kwargs):
+        return 'EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ' + compiler.process(
+            element.query, **kwargs)
+
+    def nodes(plan):
+        yield plan
+        for child in plan.get('Plans', ()):
+            yield from nodes(child)
+
+    source = source_inputs(env)
+    measured = []
+    for first, last in [(1, 3000), (3001, 6000)]:
+        async with env.begin() as conn:
+            await conn.execute(sa.insert(MEDIA_OBJECTS), [{
+                'sha256': hashlib.sha256(f'generated-{i}'.encode()).hexdigest(),
+                'source': 'inbound', 'created_at_ms': T0, 'description': 'generated scene',
+            } for i in range((first - 1) // 10, last // 10)])
+            await conn.execute(sa.insert(MESSAGES), [{
+                'id': i, 'platform': 'signal', 'conversation_id': 'room-a',
+                'conversation_type': 'group',
+                'sender_id': 'generated-sender', 'person_id': PERSON, 'ts': T0 + i,
+                'body': 'generated intention', 'is_nora': 0, 'delivery_status': 'sent',
+                'media_json': json.dumps([{'sha256': hashlib.sha256(
+                    f'generated-{(i - 1) // 10}'.encode()).hexdigest()}]),
+            } for i in range(first, last + 1)])
+            await conn.execute(sa.text('ANALYZE messages'))
+            await conn.execute(sa.text('ANALYZE media_objects'))
+        revisions = await source.messages(key=KEY, rooms=ROOMS, person=PERSON,
+                                           limit=last, discover=True)
+        await source.settle(key=KEY, revisions=revisions[:-20])
+        queries = []
+
+        def capture(conn, clause, multiparams, params, options, queries=queries):
+            if 'profile_message_media' in str(clause):
+                queries.append(clause)
+
+        sa.event.listen(env.sync_engine, 'before_execute', capture)
+        try:
+            pending = await source.messages(key=KEY, rooms=ROOMS, person=PERSON,
+                                             limit=20, discover=True)
+        finally:
+            sa.event.remove(env.sync_engine, 'before_execute', capture)
+        assert len(pending) == 20 and all(not row.roots for row in pending)
+        async with env.connect() as conn:
+            [plan] = (await conn.execute(Explain(queries[0]))).scalar_one()
+        work = sum((node['Actual Rows'] + node.get('Rows Removed by Filter', 0))
+                   * node['Actual Loops'] for node in nodes(plan['Plan'])
+                   if node.get('Relation Name') == 'media_objects')
+        assert 0 < work <= last * 4, (last, work)
+        (tmp_path / f'plan-{last}.json').write_text(json.dumps(plan, indent=2))
+        assert plan['Plan']['Total Cost'] < 100000, plan['Plan']['Total Cost']
+        measured.append(work)
+        print('generated history', last, 'pending', len(pending), 'media work', work,
+              'cost', plan['Plan']['Total Cost'], 'JIT', plan.get('JIT'))
+    assert measured[1] <= measured[0] * 2.5
+
+
+async def test_wake_discovery_does_not_load_transcripts_or_repeat_completed_sweep(env, monkeypatch):
+    import nora.infra.sql.profile_inputs as module
+
+    await message(env)
+    _, _, source, _, _ = wired(env)
+    # Complete the empty-media initial sweep through its owning store.
+    await source.media_recovery(key=KEY, rooms=ROOMS, person=PERSON, initialize=True)
+
+    def unavailable_transcript(row):
+        raise AssertionError('wake attempted to construct a transcript')
+
+    monkeypatch.setattr(module, 'transcript_row', unavailable_transcript)
+    # Direct source discovery remains useful even when full evidence cannot load.
+    pending = await source.messages(key=KEY, rooms=ROOMS, person=PERSON,
+                                    limit=20, discover=True)
+    assert len(pending) == 1 and not pending[0].roots
+    # A completed recovery marker avoids a second room-wide recovery inventory.
+    def unavailable_inventory(**kwargs):
+        raise AssertionError('completed sweep repeated message inventory')
+
+    monkeypatch.setattr(source, '_messages', unavailable_inventory)
+    assert await source.media_recovery(key=KEY, rooms=ROOMS, person=PERSON,
+        initialize=True, discover=True) == {
+            'initial_sweep_complete': True, 'unattempted_cached': 0}
+
+
+async def test_profile_count_discovers_without_constructing_message_evidence(env, monkeypatch):
+    import nora.infra.sql.profile_inputs as module
+
+    reads, _, source, evidence, _ = wired(env)
+    assert await reads.history_state(key=KEY) == (0, 0)
+    await message(env)
+    constructed = []
+    original = module.transcript_row
+
+    def observe(row):
+        constructed.append(row.id)
+        return original(row)
+
+    monkeypatch.setattr(module, 'transcript_row', observe)
+    assert await evidence.count(key=KEY, after=0) > 0
+    assert constructed == []
+    assert len(await source.messages(key=KEY, rooms=ROOMS, person=PERSON, limit=20)) == 1
+    assert constructed == [10]

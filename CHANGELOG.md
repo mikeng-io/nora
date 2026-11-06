@@ -1,5 +1,28 @@
 # Changelog
 
+## [7.15.22](https://github.com/mikeng-io/nora/compare/v7.15.21...v7.15.22) (2026-11-06)
+
+
+### Bug Fixes
+
+* **database:** bound Dreamer store demand and remove recurring media rescans ([fa60b56](https://github.com/mikeng-io/nora/commit/fa60b56ff0969c044ab1d098a6ea8fca593ad5c8))
+
+## [7.15.21](https://github.com/mikeng-io/nora/compare/v7.15.20...v7.15.21) (2026-11-06)
+
+
+### Bug Fixes
+
+* **comprehend:** ground a shown author's person pointer at admission ([3c209eb](https://github.com/mikeng-io/nora/commit/3c209eba442d8aea3c3f03685f71077f7d49ac46))
+
+## [7.15.20](https://github.com/mikeng-io/nora/compare/v7.15.19...v7.15.20) (2026-11-06)
+
+
+### Bug Fixes
+
+* **ci:** require the selected backend workload before merge ([896c14f](https://github.com/mikeng-io/nora/commit/896c14fdeabe8c56a696a107d1b383a6fac9aae8))
+* **ci:** retain hosted capacity and reconcile gate guidance ([e152407](https://github.com/mikeng-io/nora/commit/e15240769f74f612344908ae1fed39e48ca183f9))
+* **comprehend:** admit @person handles for emitted rows' authors, not source scope ([6cf40dd](https://github.com/mikeng-io/nora/commit/6cf40dd1cb64991c32ee3eaf0eb0772ee9e0c0cf))
+
 ## [7.15.19](https://github.com/mikeng-io/nora/compare/v7.15.18...v7.15.19) (2026-11-06)
 
 

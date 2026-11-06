@@ -26,7 +26,7 @@ NOTICE = (
 )
 
 
-async def wake(budget=None, seed=None):
+async def wake(budget=None, seed=None, historical=False):
     stimuli = {
         i: Stimulus(
             id=i,
@@ -102,10 +102,11 @@ async def wake(budget=None, seed=None):
         admitted_evidence=[],
         unit="generated-unit",
         now_ms=NOW,
-        historical=False,
+        historical=historical,
         items_by_index=dict(enumerate(items)),
         memory_items={},
         shown_keys=set(),
+        shown_persons=set(),
         graph_fetched=GraphFetched(),
     )
     grounding = Grounding(records=records)
@@ -330,3 +331,105 @@ async def test_an_emitted_preview_relation_can_be_corrected():
         state, items=[0], nothing_here=[], statements=[_correction()])
     assert result["statements"][0]["status"] == "saved"
     assert state.memory.graph.relations["generated-edge"].status == "retired"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("historical", [False, True])
+async def test_an_emitted_rows_author_is_handle_citable_without_source_scope(historical):
+    """A unit-wide room: the emitted row renders `person=generated-a` while
+    its citable Source is scoped to no one (`persons=()`). The author the
+    session was shown is handle-citable — `persons` is a source's scope, not
+    its authorship — and the relation keeps the cited sources' empty persons
+    union, so nothing widens. A live and a historical session answer alike."""
+    from dataclasses import replace as _replace
+
+    from nora.domain.memory_graph import pointer_entity
+
+    def seed(memory):
+        person = pointer_entity(
+            "person", "generated-unit", "generated-a", "Generated A")
+        memory.graph.entities[person.id] = person
+
+    state, prompt = await wake(historical=historical, seed=seed)
+    assert 'person="generated-a"' in prompt
+    for source in list(state.graph_fetched.sources.values()):
+        state.graph_fetched.show(_replace(source, persons=()))
+    result = await state.memory.propose(
+        state, items=[0], nothing_here=[],
+        statements=[{
+            "type": "relation", "rel": "likes",
+            "subject": "@person:generated-a",
+            "object": {"new": {"kind": "work", "name": "Generated work"}},
+            "cite": [{"source": 101, "quote": "Image attached."}],
+        }])
+    assert result["statements"][0]["status"] == "saved", result
+    relation = state.memory.graph.relations[result["committed"][0]]
+    assert relation.persons == ()
+
+
+@pytest.mark.asyncio
+async def test_a_shown_author_grounds_a_pointer_the_projection_has_not_written():
+    """No pointer exists for the emitted row's author — the projection has
+    not reached her, and the group room's Sources are scoped to no one.
+    Admission stages the unit's pointer from shown authorship alone: the
+    statement saves, the pointer is committed, and the relation's persons
+    stay the cited sources' empty union."""
+    from dataclasses import replace as _replace
+
+    state, prompt = await wake()
+    assert 'person="generated-a"' in prompt
+    assert "generated-unit:person:generated-a" not in state.memory.graph.entities
+    for source in list(state.graph_fetched.sources.values()):
+        state.graph_fetched.show(_replace(source, persons=()))
+    result = await state.memory.propose(
+        state, items=[0], nothing_here=[],
+        statements=[{
+            "type": "relation", "rel": "likes",
+            "subject": "@person:generated-a",
+            "object": {"new": {"kind": "work", "name": "Generated work"}},
+            "cite": [{"source": 101, "quote": "Image attached."}],
+        }])
+    assert result["statements"][0]["status"] == "saved", result
+    pointer = state.memory.graph.entities["generated-unit:person:generated-a"]
+    assert pointer.attributes == {"ref": "generated-a"}
+    relation = state.memory.graph.relations[result["committed"][0]]
+    assert relation.persons == ()
+
+
+@pytest.mark.asyncio
+async def test_a_clipped_rows_author_is_not_a_shown_person():
+    """The budget clips row 101 and the media row: their author was never
+    emitted as `person=`, so `@person:generated-a` refuses `unshown` even
+    though a fetched Source names her in scope. The emitted row's author
+    still resolves, in the same call."""
+    state, _prompt = await wake(RenderBudget(record_chars=160, min_item_chars=160))
+    emitted = [r.get("person_id") for r in state.memory_items[0].snapshot["messages"]]
+    assert emitted == ["generated-b"], emitted
+    statements = [
+        {"type": "relation", "rel": "likes", "subject": f"@person:{person}",
+         "object": {"new": {"kind": "work", "name": "Generated work"}},
+         "cite": [{"source": 102, "quote": "Context from B."}]}
+        for person in ("generated-a", "generated-b")
+    ]
+    result = await state.memory.propose(
+        state, items=[0], nothing_here=[], statements=statements)
+    assert result["statements"][0]["status"] == "refused"
+    assert result["statements"][0]["reason"] == "unshown"
+    assert result["statements"][1]["status"] == "saved"
+
+
+@pytest.mark.asyncio
+async def test_a_person_never_shown_is_still_unshown():
+    """Custody is authorship the session emitted, and nothing else: a person
+    appearing nowhere as an emitted row's `person=` refuses `unshown`."""
+    state, _prompt = await wake()
+    result = await state.memory.propose(
+        state, items=[0], nothing_here=[],
+        statements=[{
+            "type": "relation", "rel": "likes",
+            "subject": "@person:generated-stranger",
+            "object": {"new": {"kind": "work", "name": "Generated work"}},
+            "cite": [{"source": 101, "quote": "Image attached."}],
+        }])
+    assert result["statements"][0]["status"] == "refused"
+    assert result["statements"][0]["reason"] == "unshown"

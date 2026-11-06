@@ -980,6 +980,7 @@ services:
   # exposing it off the box.
   db:
     image: pgvector/pgvector:pg18
+    init: true
     restart: unless-stopped
     networks: [nora]
     ports: ["127.0.0.1:5435:5432"]

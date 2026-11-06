@@ -31,14 +31,21 @@ GRAPH_PROJECTION_OUTCOMES: tuple[str, ...] = get_args(GraphProjectionOutcome)
 
 
 def _grounded_person(
-    key: Key, relation: Relation, evidence: tuple[Evidence, ...], sources: Mapping[Key, Source]
+    key: Key,
+    relation: Relation,
+    evidence: tuple[Evidence, ...],
+    sources: Mapping[Key, Source],
+    shown_persons: frozenset[str],
 ) -> Entity | None:
-    """The unit's pointer for a person end, when a cited source is in that person's scope."""
+    """The unit's pointer for a person end, when a cited source is in that person's
+    scope or the session showed a row they authored (`shown_persons`)."""
     prefix = f"{relation.unit}:person:"
     if key[0] != "person" or not key[1].startswith(prefix):
         return None
     ref = key[1].removeprefix(prefix)
-    if not any(ref in sources[e.source].persons for e in evidence if e.source in sources):
+    if ref not in shown_persons and not any(
+        ref in sources[e.source].persons for e in evidence if e.source in sources
+    ):
         return None
     # ponytail: named by its id until the projection upserts the authored name.
     return pointer_entity("person", relation.unit, ref, ref)
@@ -71,6 +78,7 @@ class AdmissionState:
         evidence: tuple[Evidence, ...],
         sources: Mapping[Key, Source],
         corrections: tuple[Correction, ...] = (),
+        shown_persons: frozenset[str] = frozenset(),
     ) -> Admission:
         refused: list[Refusal] = []
         before = dict(self.entities)
@@ -99,11 +107,11 @@ class AdmissionState:
             staged: dict[str, Entity] = {}
             if reason is None:
                 for key in (relation.src, relation.dst):
-                    pointer = _grounded_person(key, relation, ev, sources)
+                    pointer = _grounded_person(key, relation, ev, sources, shown_persons)
                     if pointer is not None and key[1] not in candidates | pointers:
-                        # The projection has not reached this person yet; this
-                        # relation's own cited source is about them. Staged for
-                        # this relation only, kept only if it is accepted.
+                        # The projection has not reached this person yet; a cited
+                        # source scopes them or a shown row authored them. Staged
+                        # for this relation only, kept only if it is accepted.
                         staged[key[1]] = pointer
                     held = (candidates | pointers | staged).get(key[1])
                     if key[0] in ENTITY_KINDS and (

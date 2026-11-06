@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .. import tag as tag_module
+from ..agent.dream_store import model_phase, store_unit
 from ..agent.dreamer import AdaptorSchedule
 from ..domain.media_join import MediaJoin
 from ..domain.models import TranscriptRow
@@ -776,6 +777,13 @@ async def seed_watermarks(
     return seeded
 
 
+async def _dream_run(
+    runtime: _AdaptorRunner, *, adaptor: DreamAdaptor, key: str, batch: Sequence[Any],
+) -> _DreamOutcome:
+    async with model_phase():
+        return await runtime.run(adaptor=adaptor, key=key, batch=batch)
+
+
 async def _dream_adaptor_once(
     *, adaptor: DreamAdaptor, runtime: _AdaptorRunner,
     record: _SinceReadable, language: _ConsolidationCursor, metrics: Metrics,
@@ -838,7 +846,7 @@ async def _dream_adaptor_once(
         )
     if not adaptor.uses_watermark:
         if sched is None:
-            return (await runtime.run(adaptor=adaptor, key=key, batch=())).status
+            return (await _dream_run(runtime, adaptor=adaptor, key=key, batch=())).status
         if clock is None:
             # LOUD, like the runtime-less branch in `dream_loop` and for the
             # same reason: a wiring mistake whose only symptom is silence.
@@ -851,7 +859,7 @@ async def _dream_adaptor_once(
                 "dream adaptor %s has a schedule but no clock to read; it "
                 "will run EVERY TICK instead of on its schedule", adaptor.name,
             )
-            return (await runtime.run(adaptor=adaptor, key=key, batch=())).status
+            return (await _dream_run(runtime, adaptor=adaptor, key=key, batch=())).status
         # A watermark-free adaptor on its own clock fires on its SLOT, never on
         # backlog: there is no cursor to age, and requiring `lag > 0` would
         # make a silent room's schedule never fire at all — which is precisely
@@ -876,7 +884,7 @@ async def _dream_adaptor_once(
             # reading that separates them.
             metrics.inc("nora_dream_skipped_total", reason="schedule")
             return None
-        status = (await runtime.run(adaptor=adaptor, key=key, batch=())).status
+        status = (await _dream_run(runtime, adaptor=adaptor, key=key, batch=())).status
         # Stamped AFTER the run, and NEVER on `unavailable`.
         #
         # Stamping first would not prevent a concurrent second copy:
@@ -982,7 +990,7 @@ async def _dream_adaptor_once(
             "media_join", "enrich", media_join.enrich(batch, path="dreamer"),
         ))
 
-    outcome = await runtime.run(adaptor=adaptor, key=key, batch=batch)
+    outcome = await _dream_run(runtime, adaptor=adaptor, key=key, batch=batch)
 
     if outcome.status == "unavailable":
         # NOBODY READ THIS BATCH. Hold the cursor — this is
@@ -1059,7 +1067,7 @@ async def _dream_evidence_once(
     items, cursor = await traced_read(
         "character", "newest", evidence.newest(key=key, after=watermark, limit=limit),
     )
-    outcome = await runtime.run(adaptor=adaptor, key=key, batch=items)
+    outcome = await _dream_run(runtime, adaptor=adaptor, key=key, batch=items)
     if outcome.status == "unavailable":
         return outcome.status
     await language.advance_watermark(
@@ -1179,6 +1187,10 @@ async def dream_loop(
             "dream loop has %d adaptor(s) and no runtime; none of them will run",
             len(adaptors),
         )
+    # ponytail: two serial store phases per process. Four reader elections +
+    # two background connections leave nine of the unchanged 15 for foreground
+    # and other services; revisit with measured reader/population growth.
+    store_slots = asyncio.Semaphore(2)
     failures: dict[str, int] = {}
     running: set[str] = set()
     # `_backoff_elapsed`'s own per-scope companion state (see its docstring
@@ -1278,19 +1290,21 @@ async def dream_loop(
         """
         unit = f"{adaptor.name}:{key}"
         try:
-            async with asyncio.timeout(max_unit_hold_seconds) as unit_deadline:
-                status = await _dream_adaptor_once(
-                    adaptor=adaptor, runtime=runner, record=record,
-                    language=language, metrics=metrics, key=key,
-                    safety_lag=safety_lag, quiet_seconds=quiet_seconds,
-                    max_age_seconds=max_age_seconds, batch_limit=batch_limit,
-                    media_join=media_join,
-                    schedules=schedules, clock=schedule_clock,
-                    # Consecutive failures on THIS unit, so a retry reads less
-                    # than the attempt that failed. Cleared on any
-                    # non-`unavailable` outcome, so this is 0 in steady state.
-                    failure_count=failures.get(unit, 0),
-                )
+            async with store_unit(store_slots) as lease:
+                async with asyncio.timeout(max_unit_hold_seconds) as unit_deadline:
+                    lease.deadline = unit_deadline
+                    status = await _dream_adaptor_once(
+                        adaptor=adaptor, runtime=runner, record=record,
+                        language=language, metrics=metrics, key=key,
+                        safety_lag=safety_lag, quiet_seconds=quiet_seconds,
+                        max_age_seconds=max_age_seconds, batch_limit=batch_limit,
+                        media_join=media_join,
+                        schedules=schedules, clock=schedule_clock,
+                        # Consecutive failures on THIS unit, so a retry reads less
+                        # than the attempt that failed. Cleared on any
+                        # non-`unavailable` outcome, so this is 0 in steady state.
+                        failure_count=failures.get(unit, 0),
+                    )
             # On the unit's root (`_run_unit`), so the trace list says what
             # the unit did; `None` is a unit whose conditions held it back.
             annotate(**{"nora.outcome": status or "skipped"})

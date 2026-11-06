@@ -304,9 +304,11 @@ class _SourceInputs(Protocol):
     async def recovery_requested(self, *, key: str) -> bool: ...
     async def claim_recovery(self, *, key: str) -> None: ...
     async def messages(self, *, key: str, rooms: Sequence[tuple[str, str]],
-                       person: str, limit: int, after: int = 0) -> list[PersonSourceRevision]: ...
+                       person: str, limit: int, after: int = 0,
+                       discover: bool = False) -> list[PersonSourceRevision]: ...
     async def media_recovery(self, *, key: str, rooms: Sequence[tuple[str, str]],
-                             person: str, initialize: bool = False) -> dict[str, int | bool]: ...
+                             person: str, initialize: bool = False,
+                             discover: bool = False) -> dict[str, int | bool]: ...
     async def social(self, *, key: str, persons: Sequence[str],
                      limit: int) -> list[PersonSourceRevision]: ...
     async def register(self, *, key: str, unit: str, rooms: Sequence[tuple[str, str]],
@@ -377,7 +379,9 @@ class ProfileEvidence:
         """Every id their social items may be recorded under."""
         return (person_id, *self._former_ids(person_id))
 
-    async def _sources(self, key: str, limit: int, after: int) -> list[PersonSourceRevision]:
+    async def _sources(
+        self, key: str, limit: int, after: int, *, discover: bool = False,
+    ) -> list[PersonSourceRevision]:
         source = self._source_inputs
         if source is None:
             return []
@@ -386,7 +390,8 @@ class ProfileEvidence:
                                 "person": pk.person.person_id}
         out: list[PersonSourceRevision] = []
         readers: tuple[tuple[str, Callable[[], Awaitable[list[PersonSourceRevision]]]], ...] = (
-            ("message", lambda: source.messages(**args, limit=limit, after=after)),
+            ("message", lambda: source.messages(
+                **args, limit=limit, after=after, discover=discover)),
             ("social", lambda: source.social(key=key, persons=self._ids(pk.person.person_id),
                                              limit=SOCIAL_ITEMS_MAX)),
             ("register", lambda: source.register(**args, unit=pk.unit, limit=SOCIAL_ITEMS_MAX)),
@@ -416,10 +421,11 @@ class ProfileEvidence:
             # Read up to a whole batch: the wake rule is `new >= wake_batch`,
             # so a probe of one could never reach it (the person woke only
             # on the stale rule).
-            n = len(await self._sources(key, self._wake_batch, max(after, boundary)))
+            n = len(await self._sources(key, self._wake_batch, max(after, boundary), discover=True))
             try:
                 recovery = await asyncio.wait_for(self._source_inputs.media_recovery(
-                    key=key, rooms=_listed(pk), person=pk.person.person_id, initialize=True),
+                    key=key, rooms=_listed(pk), person=pk.person.person_id,
+                    initialize=True, discover=True),
                     timeout=self._source_timeout)
                 if not recovery["initial_sweep_complete"] and recovery["unattempted_cached"]:
                     return self._wake_batch
@@ -792,14 +798,11 @@ class ProfilePersonAdaptor:
         old_cited = [m for m in cited if m.row.id not in dispute_ids]
         ties = ([] if revisions or self.evidence.historical(key) else
                 (await self._reads.tie_totals(unit=pk.unit, person_id=person))[:TIES_MAX])
-        cultures = await asyncio.gather(
-            *(
-                self._profile.room_context(key=r.key)
-                if self._render
-                else self._culture.head(key=r.key)
-                for r in pk.rooms
-            )
-        )
+        cultures = [
+            await (self._profile.room_context(key=r.key) if self._render
+                   else self._culture.head(key=r.key))
+            for r in pk.rooms
+        ]
 
         # Every code-citable legacy/dispute row is visible with its original
         # words and source time, not merely a number beside old model prose.

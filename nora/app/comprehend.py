@@ -183,18 +183,22 @@ class Scope:
 def proposal_scope(
     inputs: list[Any], fetched: GraphFetched, *,
     shown_keys: Any = frozenset(), shown_relations: Any = frozenset(),
-    admitted: Any = frozenset(),
+    shown_persons: Any = frozenset(), admitted: Any = frozenset(),
 ) -> Scope:
     """The citable catalogue of one proposal call: the union of the named
     items' rendered rows, plus the tool-fetched rows the session was shown.
     Handles are citable only when the session showed them: node keys in
     `shown_keys`, correction targets in `shown_relations` or `admitted`, and
-    person handles authored by a shown row."""
+    person handles authored by a shown row — the `person=` the agenda emitted
+    or a row a read tool handed out; a source's `persons` is its scope, not
+    its authorship."""
     scope = Scope(
         shown_keys=frozenset(shown_keys) | frozenset(fetched.sources),
         shown_relations=frozenset(shown_relations),
-        shown_persons=frozenset(
-            p for s in fetched.sources.values() for p in s.persons),
+        shown_persons=frozenset(shown_persons) | frozenset(
+            str(r["person_id"]) for item in inputs
+            for r in item.snapshot.get("messages", ())
+            if r.get("person_id")),
         admitted=frozenset(admitted),
     )
     for index, item in enumerate(inputs):
@@ -489,6 +493,7 @@ class MemoryProposalAdmission:
             evidence=tuple(evidence),
             sources=fetched.sources,
             corrections=tuple(corrections),
+            shown_persons=scope.shown_persons,
         )
         duplicates = {r.id for r in admission.refused if r.reason == "duplicate_relation"}
         if duplicates:

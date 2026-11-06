@@ -5,6 +5,8 @@ description: Reads back the evidence that a Nora turn, background pass, deploy o
 
 # nora-readback
 
+For database contention, record held election sessions separately from active queries, compare a normal background tick with foreground progress, and inspect executed work on generated history locally. LIMIT and EXPLAIN cost alone do not measure execution. PostgreSQL internal recovery needs logs or backend continuity; postmaster start time and Docker restart count can remain unchanged.
+
 `docs/observability.md` is the map (the three signals, Reading it back, When
 a span is missing). This skill is the procedure and the traps. Before reading
 anything, write down what a positive result would look like; a null from an

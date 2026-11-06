@@ -7,6 +7,8 @@ $$;
 $$;
 $$;
 $$;
+$_$;
+)
 ) SELECT array_agg(id) INTO retired FROM changed;
 );
 );
@@ -629,6 +631,7 @@ AS $$
 AS $$
 AS $$
 AS $$
+AS $_$
 BEGIN
 BEGIN
 BEGIN
@@ -1011,6 +1014,7 @@ CREATE FUNCTION public.computer_events_refuse_change() RETURNS trigger
 CREATE FUNCTION public.computer_exports_refuse_change() RETURNS trigger
 CREATE FUNCTION public.extraction_retire(source integer) RETURNS void
 CREATE FUNCTION public.extraction_source_changed() RETURNS trigger
+CREATE FUNCTION public.nora_media_keys(ref text) RETURNS text[]
 CREATE FUNCTION public.nora_row_history() RETURNS trigger
 CREATE FUNCTION public.nora_row_history_refuse_truncate() RETURNS trigger
 CREATE INDEX idx_assess_report_kind_run ON public.assess_report USING btree (kind, run_at_ms);
@@ -1434,6 +1438,7 @@ END),
 ERRCODE = 'insufficient_privilege';
 ERRCODE = 'insufficient_privilege';
 FOREACH col IN ARRAY TG_ARGV LOOP
+FROM generate_series(1, length(ref) - 63) AS pos
 IF NEW.hidden_at IS DISTINCT FROM OLD.hidden_at
 IF TG_OP <> 'DELETE' THEN
 IF TG_OP <> 'INSERT' THEN
@@ -1503,6 +1508,7 @@ LANGUAGE plpgsql
 LANGUAGE plpgsql
 LANGUAGE plpgsql
 LANGUAGE plpgsql
+LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
 MESSAGE = 'computer_events is append-only: ' || TG_OP || ' refused',
 MESSAGE = 'computer_exports is append-only: ' || TG_OP || ' refused',
 NO MAXVALUE
@@ -1620,6 +1626,8 @@ RETURN NULL;
 RETURN NULL;
 RETURN OLD;
 RETURNING id
+SELECT ARRAY(
+SELECT DISTINCT substr(ref, pos, 64)
 SEQUENCE NAME public.assess_report_id_seq
 SEQUENCE NAME public.bridge_event_seq_seq
 SEQUENCE NAME public.bridge_work_id_seq
@@ -1724,6 +1732,7 @@ WHEN (mode = 'abduced'::text) THEN ((prediction IS NOT NULL) AND (prediction_obs
 WHERE extraction_id = ANY(retired) AND retired_at IS NULL;
 WHERE extraction_id = ANY(retired);
 WHERE state <> 'retired'
+WHERE substr(ref, pos, 64) ~ '^[0-9a-f]{64}$'
 WHERE table_name = TG_TABLE_NAME AND row_key = new_key
 WHERE table_name = TG_TABLE_NAME AND row_key = old_key
 WITH changed AS (
