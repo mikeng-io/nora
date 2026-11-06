@@ -77,7 +77,7 @@ def _declared_ceiling(body: dict[str, Any]) -> int | None:
     contradictory output is unsupported, refused before dispatch
     rather than admitted under a pretend reservation)."""
     ceilings = [v for k in ("max_tokens", "max_completion_tokens")
-                if type((v := body.get(k))) is int and v > 0]
+                if type(v := body.get(k)) is int and v > 0]
     return ceilings[0] if len(ceilings) == 1 else None
 
 
