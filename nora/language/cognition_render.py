@@ -64,6 +64,7 @@ from datetime import UTC, datetime, tzinfo
 from typing import Any
 from xml.etree import ElementTree
 
+from nora.domain.block_types import P3_BLOCK_TYPES
 from nora.domain.blocks import (
     BlockKey,
     ContextBlock,
@@ -95,6 +96,7 @@ from nora.domain.social_stream import describe_read
 from nora.domain.stimuli import Stimulus
 from nora.language.culture_render import render_self
 from nora.language.event_render import render_event_rows
+from nora.language.instruction_variants import INSTRUCTION_VARIANTS
 from nora.language.memo_render import memo_rows
 from nora.language.note_render import render_note_rows
 from nora.language.profile_render import render_profile
@@ -1132,6 +1134,7 @@ def render_agenda(
     memory_items: Mapping[int, Any] | None = None,
     shared: SharedView | None = None,
     agenda_format: str = "A",
+    instruction_variant: str = "P0",
 ) -> str:
     """The session's prompt. `stimuli` is the claimed stimuli by id (an item
     names its own by id), `grounding` what code read for them.
@@ -1141,9 +1144,14 @@ def render_agenda(
     what the eval probe hands the model and nothing else does.
 
     `agenda_format` is the experiment's candidate (`AGENDA_FORMATS`); the
-    default renders the production spelling."""
+    default renders the production spelling. `instruction_variant` is the
+    instruction experiment's arm (`INSTRUCTION_VARIANTS`): P3 alone changes
+    this prompt — its block descriptions explain the input in place — and
+    P0/P1/P2 render the production text byte-identically."""
     if agenda_format not in AGENDA_FORMATS:
         raise ValueError(f"unknown agenda format {agenda_format!r}")
+    if instruction_variant not in INSTRUCTION_VARIANTS:
+        raise ValueError(f"unknown instruction variant {instruction_variant!r}")
     blocks: list[ContextBlock] = []
     now = None if now_ms is None else datetime.fromtimestamp(now_ms / 1000, tz=tz)
     # THE SWITCH (45 §5): her Profile account, when the grounder read one,
@@ -1214,6 +1222,8 @@ def render_agenda(
     if graph:
         blocks.append(restamp(ContextBlock(name="graph",
             body=legacy_composed(escape(graph))), _ROW))
+    if instruction_variant == "P3":
+        blocks = [replace(b, type_overrides=P3_BLOCK_TYPES) for b in blocks]
     return assemble(blocks, sep=_SEP)
 
 

@@ -738,6 +738,11 @@ class CognitionSessionRunner:
         # an experiment-only collaborator, never a live config key; the spike
         # runner swaps it via `with_collaborators`.
         agenda_format: str = "A",
+        # EXPERIMENT (exp/orient-instruction-variants): the system-instruction
+        # arm — also an experiment-only collaborator, orthogonal to the agenda
+        # format. P0 composes today's text; P1-P3 read a variants file once
+        # here, at construction.
+        instruction_variant: str = "P0",
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -792,6 +797,9 @@ class CognitionSessionRunner:
         if agenda_format not in AGENDA_FORMATS:
             raise ValueError(f"unknown agenda format {agenda_format!r}")
         self._agenda_format = agenda_format
+        self._instruction_variant = instruction_variant
+        from nora.language.instruction_variants import instruction_variant_text
+        self._variant_system_text = instruction_variant_text(instruction_variant)
         self._content_checks = content_checks
         self._tag_trace_store = tag_trace_store
         self._observations = observations
@@ -1247,6 +1255,16 @@ class CognitionSessionRunner:
             trace_attributes={"cognition.unit": unit, "cognition.session_id": str(session_id)},
         )
 
+    def _system_text(self, doctrine_text: str, skill_text: str) -> str:
+        """The system prompt a session runs on: the variant arm's file for
+        P1-P3, the composed text for P0 — the one point where the session's
+        instruction is assembled."""
+        if self._variant_system_text is not None:
+            return self._variant_system_text
+        from nora.language.comprehend_render import render_session_system
+        return render_session_system(
+            doctrine_text, skill_text, memory=self._memory is not None)
+
     def _doctrine(self) -> tuple[str, str | None]:
         if self._doctrine_source is not None:
             return self._doctrine_source()
@@ -1373,9 +1391,7 @@ class CognitionSessionRunner:
         tools = await self._build_tools(
             unit=unit, state=state, now_ms=now_ms, labels=grounding.room_labels,
         )
-        from nora.language.comprehend_render import render_session_system
-        system_prompt = render_session_system(
-            doctrine_text, skill_text, memory=self._memory is not None)
+        system_prompt = self._system_text(doctrine_text, skill_text)
         shared_view = None
         if self._shared is not None:
             try:
@@ -1401,6 +1417,7 @@ class CognitionSessionRunner:
             memory_items=state.memory_items,
             shared=shared_view,
             agenda_format=self._agenda_format,
+            instruction_variant=self._instruction_variant,
         )
         if self._memory is not None:
             # ONE evidence custody: the agenda's emitted rows are the only

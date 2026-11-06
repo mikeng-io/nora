@@ -32,7 +32,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, tzinfo
 from typing import Literal, Protocol, TypeVar, overload
 
-from nora.domain.block_types import BLOCK_TYPES
+from nora.domain.block_types import BLOCK_TYPES, BlockType
 from nora.domain.composed import Composed, compose_body
 from nora.domain.external_files import render_file_links
 from nora.domain.prompt import age, escape, escape_attr, one_line
@@ -214,6 +214,13 @@ class ContextBlock:
     #: What `assemble` does with this block when its body is empty — see
     #: `EmptyBody`. `drop` unless a caller says otherwise.
     when_empty: EmptyBody = "drop"
+    #: A registry declared in `nora.domain.block_types` that shadows
+    #: `BLOCK_TYPES` for the names it holds — the instruction-variant
+    #: experiment's `P3_BLOCK_TYPES`, which moves the input explanation into
+    #: the descriptions it belongs to. Lookup falls through to `BLOCK_TYPES`,
+    #: so a type the registry does not name renders unchanged. Never a
+    #: hand-built dict: a description is still selected, not composed.
+    type_overrides: Mapping[str, BlockType] | None = None
 
     def __post_init__(self) -> None:
         """Both halves of «a call site cannot invent a description», checked
@@ -265,7 +272,7 @@ class ContextBlock:
         Rendered as an ATTRIBUTE of the block rather than a sibling element, so
         it cannot be confused with content and content cannot forge it.
         """
-        pairs = BLOCK_TYPES[self.name].annotations
+        pairs = self._type().annotations
         if not pairs:
             return ""
         return "; ".join(f"`{field}` is {what}" for field, what in pairs)
@@ -286,8 +293,16 @@ class ContextBlock:
         an empty body before `render()`, so raising only at render would be
         silent on exactly the turns where the block had nothing to say.
         """
+        return self._type().description
+
+    def _type(self) -> BlockType:
+        """This block's type: the override registry's entry when it names this
+        block, else `BLOCK_TYPES`'s — so an override registry can shadow a
+        type without restating every other one."""
+        if self.type_overrides is not None and self.name in self.type_overrides:
+            return self.type_overrides[self.name]
         try:
-            return BLOCK_TYPES[self.name].description
+            return BLOCK_TYPES[self.name]
         except KeyError:
             raise KeyError(
                 f"no block type declares {self.name!r}. Add it to "

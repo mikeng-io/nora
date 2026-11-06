@@ -936,7 +936,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                         if runner is None:
                             raise ValueError("snapshot session unavailable")
                         runner = runner.with_collaborators(
-                            agenda_format=args.agenda_format)
+                            agenda_format=args.agenda_format,
+                            instruction_variant=args.instruction_variant)
                         measured["index"] = (
                             await index_replay_sandbox(
                                 subject, source_url=args.database_url
@@ -1036,6 +1037,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         report = {
             "driver": "cognition_session",
             "agenda_format": args.agenda_format,
+            "instruction_variant": args.instruction_variant,
             "sample_sha256": sample_sha256,
             "seed": args.seed,
             "effective_judges": judges.effective_models,
@@ -1170,6 +1172,9 @@ def main() -> int:
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--agenda-format", choices=("A", "B", "C", "D"), default="A",
                         help="EXPERIMENT: the agenda input format candidate")
+    parser.add_argument("--instruction-variant", choices=("P0", "P1", "P2", "P3"),
+                        default="P0",
+                        help="EXPERIMENT: the system-instruction arm")
     args = parser.parse_args()
     if args.per_stratum <= 0 or args.minimum <= 0:
         parser.error("sample sizes must be positive")
