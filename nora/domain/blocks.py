@@ -717,6 +717,8 @@ def render_messages(
     turn: Callable[[Row], str | None] = lambda _: None,
     reactions: Callable[[Row], str | None] = lambda _: None,
     reactions_observed: Callable[[Row], str | None] = lambda _: None,
+    start: int = 1,
+    extra: Callable[[Row], Sequence[tuple[str, str | None]]] = lambda _: (),
 ) -> str:
     """A conversation as one TAG PER MESSAGE, not one line per message.
 
@@ -749,6 +751,10 @@ def render_messages(
     before or after the correction? — so the element carries one, and the old
     text is what makes an earlier reply to it legible. `was` is an attribute
     and so collapsed to one line; the body stays the message.
+
+    `start` offsets the positional `n` (the closed set need not begin at 1),
+    and `extra` appends an occasion's own attributes after the standard set —
+    presentation, like `reactions`: escaped and collapsed by `render_elements`.
     """
     clock = now or datetime.now().astimezone()
     stamps = [timestamp(r) for r in rows]
@@ -770,7 +776,7 @@ def render_messages(
         parent = replying_to(row)
         changed = edited(row)
         return (
-            ("n", str(i)),
+            ("n", str(i + start - 1)),
             ("age", age(ts, clock) if ts is not None else None),
             ("from", one_line(speaker(row))),
             ("turn", turn(row)),
@@ -780,6 +786,7 @@ def render_messages(
             ("was", was(row) if changed is not None else None),
             ("reactions", reactions(row)),
             ("reactions_observed", reactions_observed(row)),
+            *extra(row),
         )
 
     return render_elements(rows, tag=tag, attrs=_attrs, body=body)

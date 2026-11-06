@@ -95,13 +95,19 @@ no live Character, culture, Lessons or entry store changes. Empty proposals mean
 
 def preview_text(preview: Preview, *, tokens: int = 1500,
                  shown_keys: set[tuple[str, str]] | None = None,
-                 shown_relations: set[str] | None = None) -> str:
+                 shown_relations: set[str] | None = None,
+                 statements: bool = False) -> str:
     """Whole labelled rows within the budget; an omitted row always says more.
 
     `shown_keys`, when handed a set, collects the node keys of the rows the
     budget actually emitted — never an omitted, truncated or merely-cited key.
     `shown_relations` collects the relation ids of the emitted edge rows the
-    same way — the correction catalogue, which cannot out-live the prompt."""
+    same way — the correction catalogue, which cannot out-live the prompt.
+
+    `statements` (candidate D of the agenda-format experiment) writes each
+    relation row in the statement shape the model must output —
+    `@src rel @dst [#id]` — rather than the `id: src ─rel─▶ dst` ledger row;
+    the fields the row carries are unchanged."""
     graphs = (preview.graph, *preview.candidates)
     rows: list[str] = []
     row_keys: dict[str, tuple[tuple[str, str], ...]] = {}
@@ -147,11 +153,18 @@ def preview_text(preview: Preview, *, tokens: int = 1500,
                 layer = "found"
             counts = Counter(e.source[0] for e in edge.evidence)
             counted = ", ".join(f"{n} {kind}" for kind, n in sorted(counts.items()))
-            row = (
-                f"{r.id}: {r.src[0]}:{r.src[1]} ─{r.rel}─▶ {r.dst[0]}:{r.dst[1]} "
-                f"{layer} · {r.status} · valid={r.valid_from}/{r.valid_to} · "
-                f"asserted={r.asserted_at.isoformat()} · evidence={edge.evidence_count} {counted}"
-            )
+            if statements:
+                row = (
+                    f"@{r.src[0]}:{r.src[1]} {r.rel} @{r.dst[0]}:{r.dst[1]} [#{r.id}] "
+                    f"{layer} · {r.status} · valid={r.valid_from}/{r.valid_to} · "
+                    f"asserted={r.asserted_at.isoformat()} · evidence={edge.evidence_count} {counted}"
+                )
+            else:
+                row = (
+                    f"{r.id}: {r.src[0]}:{r.src[1]} ─{r.rel}─▶ {r.dst[0]}:{r.dst[1]} "
+                    f"{layer} · {r.status} · valid={r.valid_from}/{r.valid_to} · "
+                    f"asserted={r.asserted_at.isoformat()} · evidence={edge.evidence_count} {counted}"
+                )
             rows.append(row)
             row_keys.setdefault(row, (r.src, r.dst))
             row_relations.setdefault(row, r.id)

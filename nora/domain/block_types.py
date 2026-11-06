@@ -738,6 +738,7 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
            "unreadable": "how many of the item's messages are not readable now",
            "n": "a message's real id: cite it exactly as [n] at the end of the note "
                 "line it supports, or as digits in an event's cited ids",
+           "age": "how long ago it was sent",
            "at": "when it was sent (a reaction or a deletion: when it happened), "
                  "and how long ago",
            "from": "who said it: this exact name, as written, goes in parentheses "

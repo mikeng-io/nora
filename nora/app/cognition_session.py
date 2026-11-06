@@ -175,6 +175,7 @@ from nora.domain.stimuli import (
 from nora.domain.turn_record import cited_turn_lineage, turn_handles_in
 from nora.infra.sql.standing_revise import standing_revise as live_standing_revise
 from nora.language.cognition_render import (
+    AGENDA_FORMATS,
     RenderBudget,
     render_agenda,
     room_key,
@@ -489,6 +490,38 @@ class _RunState:
 
 _room_key = room_key
 
+
+def _custody(state: _RunState) -> dict[str, Any]:
+    """The citation custody an inspection emitted, as JSON-safe data: the
+    rendered row number -> source key catalogue, the shown source keys and
+    their emitted bodies, the shown node keys and relation ids, and the
+    persons a shown source authored — the whole set `memory_propose`
+    citations and `@kind:id` endpoints are admitted against."""
+    return {
+        "catalogue": {
+            str(n): list(key)
+            for item in state.memory_items.values()
+            for n, key in item.snapshot.get("source_keys", {}).items()
+        },
+        "rows": {
+            str(r["id"]): r["body"]
+            for item in state.memory_items.values()
+            for r in item.snapshot.get("messages", [])
+        },
+        "shown_sources": sorted(
+            [k, r] for k, r in state.graph_fetched.sources
+        ),
+        "shown_persons": sorted({
+            p for s in state.graph_fetched.sources.values() for p in s.persons
+        }),
+        "shown_node_keys": sorted(
+            [k, r] for k, r in state.shown_keys
+        ),
+        "shown_relation_ids": sorted(
+            getattr(state, "shown_relations", None) or ()
+        ),
+    }
+
 #: The close reasons that leave nothing for a follow-up model call to do: when
 #: every agenda item closed with one of these and no other verb was called, the
 #: loop ends at the last close (DEC-279).
@@ -686,6 +719,10 @@ class CognitionSessionRunner:
         # retained. None refuses a ref write `unavailable`, never accepts
         # one it cannot check.
         observations: Any = None,
+        # EXPERIMENT (exp/agenda-format-candidates): the agenda input format —
+        # an experiment-only collaborator, never a live config key; the spike
+        # runner swaps it via `with_collaborators`.
+        agenda_format: str = "A",
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -737,6 +774,9 @@ class CognitionSessionRunner:
         known window no overflow is ever the agenda's, and every one is
         `infra`."""
         self._memory = memory
+        if agenda_format not in AGENDA_FORMATS:
+            raise ValueError(f"unknown agenda format {agenda_format!r}")
+        self._agenda_format = agenda_format
         self._content_checks = content_checks
         self._tag_trace_store = tag_trace_store
         self._observations = observations
@@ -1002,6 +1042,10 @@ class CognitionSessionRunner:
                 )
                 return {
                     "system": system, "agenda": agenda,
+                    # The citation custody the render actually emitted — the
+                    # offline format check and the smoke scorer resolve shown
+                    # numbers and handles against exactly this.
+                    "custody": _custody(state),
                     "work": [
                         {
                             "index": index,
@@ -1308,7 +1352,9 @@ class CognitionSessionRunner:
             ),
         )
         if self._memory is not None:
-            await self._memory.prepare(state, {s.id: s for s in view.pending}, grounding)
+            await self._memory.prepare(
+                state, {s.id: s for s in view.pending}, grounding,
+                agenda_format=self._agenda_format)
         tools = await self._build_tools(
             unit=unit, state=state, now_ms=now_ms, labels=grounding.room_labels,
         )
@@ -1339,6 +1385,7 @@ class CognitionSessionRunner:
             budget=self._render_budget, graph=state.graph_text,
             memory_items=state.memory_items,
             shared=shared_view,
+            agenda_format=self._agenda_format,
         )
         if self._memory is not None:
             # ONE evidence custody: the agenda's emitted rows are the only

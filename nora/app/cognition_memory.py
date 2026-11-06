@@ -118,8 +118,12 @@ class WakeMemory:
         for sid in ids:
             await self.records.fail_stimulus(unit, sid, session)
 
-    async def prepare(self, state: Any, stimuli: Any, grounding: Any) -> None:
-        """Freeze exactly what the agenda shows, including each non-message source."""
+    async def prepare(
+        self, state: Any, stimuli: Any, grounding: Any, *, agenda_format: str = "A",
+    ) -> None:
+        """Freeze exactly what the agenda shows, including each non-message
+        source. `agenda_format` is the experiment's candidate; D renders the
+        preview's relation rows in statement shape."""
         at = datetime.fromtimestamp(state.now_ms / 1000, UTC)
         anchors: list[Key] = []
         aliases = {} if state.historical else await self.graph.aliases(unit=state.unit)
@@ -276,7 +280,8 @@ class WakeMemory:
         state.graph_text = preview_text(
             Preview(seeds, graph, tuple(candidates), (at, at)),
             shown_keys=state.shown_keys,
-            shown_relations=state.shown_relations)
+            shown_relations=state.shown_relations,
+            statements=agenda_format == "D")
         if scan_identifiers(state.graph_text, content_checks=self.content_checks):
             state.graph_text = ""
             self.metrics.inc("nora_errors_total", stage="wake_prefetch")

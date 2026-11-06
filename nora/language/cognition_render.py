@@ -57,6 +57,7 @@ its lines) stay in `nora.domain`.
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, tzinfo
@@ -69,6 +70,7 @@ from nora.domain.blocks import (
     assemble,
     render_elements,
     render_group,
+    render_messages,
     render_row_window,
     restamp,
     speaker_name,
@@ -243,6 +245,18 @@ def returning(strike: int) -> str:
     return f"left open by {strike} earlier {noun}"
 
 
+#: The agenda input formats the format experiment renders (EXP
+#: agenda-format-candidates): A is today's spelling; B spells every identity
+#: once, in the form the tool takes; C renders message rows in the shared
+#: reply-transcript form over a session-wide closed set of numbers with a
+#: `people:` legend; D is C with the Known preview in statement shape.
+AGENDA_FORMATS = ("A", "B", "C", "D")
+
+#: Formats whose message rows carry a closed-set ordinal rather than the
+#: row's own id (C and D).
+_CLOSED_SET_FORMATS = ("C", "D")
+
+
 def _words(text: str, limit: int) -> str:
     """A message's words as one line cut to `limit`; none at all for a limit of
     nothing (the measure of what a row costs without them).
@@ -255,35 +269,66 @@ def _words(text: str, limit: int) -> str:
     return clip(render_file_links(text), limit) if limit > 0 else ""
 
 
-@dataclass(frozen=True, slots=True)
+def _words_block(text: str, limit: int) -> str:
+    """`_words` for `render_messages`, whose body keeps its line breaks: the
+    file-link swap first (see `_words`), then a plain character cut — never a
+    collapse, the transcript form keeps a paragraph's shape."""
+    if limit <= 0:
+        return ""
+    text = render_file_links(text)
+    return text if len(text) <= limit else text[: max(limit - 1, 1)].rstrip() + "…"
+
+
+@dataclass(slots=True)
 class _Row:
     """One readable row of an item, before it is rendered: where it sorts, and
     how to render it. `show(None)` is the row as it is normally shown;
     `show(n)` shows its words cut to `n` characters, which is how the one row an
-    allowance must keep is made to fit without cutting its element."""
+    allowance must keep is made to fit without cutting its element.
+
+    `render(n, limit)` draws the row citing number `n` — the row's own `id`
+    under formats A/B, the session's closed-set ordinal under C/D, assigned
+    into `num` after the item's rows are sorted (`numbered` marks the rows that
+    take one). `person` is `(shown name, person id)` for a person row, what a
+    `people:` legend is built from; None where the row has no person handle."""
 
     at_ms: int
     id: int
-    show: Callable[[int | None], str]
+    render: Callable[[int, int | None], str]
+    num: int = 0
+    numbered: bool = False
+    person: tuple[str, str | None] | None = None
+
+    def show(self, limit: int | None) -> str:
+        return self.render(self.num or self.id, limit)
 
 
 def _message_row(
     rec: RecordItem, cues: Sequence[str], *, now_ms: int, tz: tzinfo,
-    message_chars: int, target: bool = False, source_key: Sequence[str] | None = None,
+    message_chars: int, fmt: str = "A", target: bool = False,
+    source_key: Sequence[str] | None = None,
 ) -> _Row:
     """A person's message, an edit of one, a reaction to one or a deletion of
     one, as `<m n="<message id>" at from ...>words</m>`. `n` is the message's
     own id (`render_row_window` writes it first); a reaction's is the message
     reacted to, and its `from` and words are that message's. `target="yes"`
     marks a row shown only because a source event affected it — context for
-    the event, never a fresh utterance."""
+    the event, never a fresh utterance.
+
+    `fmt` is the experiment's input format: A is the row above; B spells each
+    identity once in the form the tool takes (`from` carries the `@person:`
+    handle, the duplicate `person`/`source` attributes go); C/D render the
+    shared reply-transcript form (`n` is the closed-set ordinal, `age` not
+    `at`, the person handle moves to the item's `people:` line)."""
     when = _when(rec.at_ms, now_ms, tz)
+    clock = datetime.fromtimestamp(now_ms / 1000, tz)
     reacted = rec.kind == "reaction"
     deleted = rec.kind == "delete"
     withdrawn = deleted or (not reacted and rec.text is None)
     edited = rec.kind == "edit" or (rec.kind == "message" and rec.edited)
+    name = speaker_of(rec.author)
 
-    def show(limit: int | None) -> str:
+    def render(n: int, limit: int | None) -> str:
         cap = message_chars if limit is None else min(limit, message_chars)
         # The reaction annotation is budgeted ALONGSIDE the words: the same
         # cut shrinks it, pairs that do not fit fold into a `+N` marker, and
@@ -293,13 +338,48 @@ def _message_row(
             REACTION_LABEL_MAX if limit is None
             else min(limit, REACTION_LABEL_MAX)
         )
+        if fmt in _CLOSED_SET_FORMATS:
+            words = "" if deleted or rec.text is None else _words_block(rec.text, cap)
+            return render_messages(
+                [rec], start=n,
+                speaker=lambda _r: name,
+                body=lambda _r: words,
+                timestamp=lambda r: r.at_ms,
+                now=clock,
+                turn=lambda r: r.turn_handle,
+                reactions=lambda r: (
+                    r.reactions.bounded_label(label_cap) if r.reactions else None
+                ),
+                reactions_observed=lambda r: (
+                    f"{r.reactions.coverage} "
+                    f"{_when(r.reactions.observed_at, now_ms, tz)}"
+                    if r.reactions is not None
+                    and r.reactions.observed_at is not None
+                    else None
+                ),
+                extra=lambda r: (
+                    ("target", "yes" if target else None),
+                    ("reaction", emoji_display(r.emoji or "?") if reacted else None),
+                    ("reaction_removed", "yes" if reacted and r.removed else None),
+                    ("edited", "yes" if edited else None),
+                    ("withdrawn", "yes" if withdrawn else None),
+                    ("deleted", "yes" if deleted else None),
+                    ("cues", ", ".join(cues) if cues else None),
+                ),
+            )
         words = "" if deleted or rec.text is None else _words(rec.text, cap)
         return render_row_window(
-            [rec], row_id=lambda r: r.message_id,
+            [rec], row_id=lambda r: n,
             attrs=lambda r: (
-                ("at", when), ("from", speaker_of(r.author)),
-                ("source", ":".join(source_key) if source_key else None),
-                ("person", r.person_id),
+                ("at", when),
+                (
+                    "from",
+                    name
+                    if fmt == "A" or not r.person_id
+                    else f"{name} @person:{r.person_id}",
+                ),
+                ("source", ":".join(source_key) if source_key and fmt == "A" else None),
+                ("person", r.person_id if fmt == "A" else None),
                 ("target", "yes" if target else None),
                 ("reaction", emoji_display(r.emoji or "?") if reacted else None),
                 ("reaction_removed", "yes" if reacted and r.removed else None),
@@ -325,23 +405,54 @@ def _message_row(
             body=lambda _r: words,
         )
 
-    return _Row(rec.at_ms, rec.message_id, show)
+    return _Row(
+        rec.at_ms, rec.message_id, render,
+        numbered=fmt in _CLOSED_SET_FORMATS,
+        person=(name, rec.person_id),
+    )
 
 
-def _own_row(rec: RecordItem, *, now_ms: int, tz: tzinfo, message_chars: int) -> _Row:
+def _own_row(
+    rec: RecordItem, *, now_ms: int, tz: tzinfo, message_chars: int, fmt: str = "A",
+) -> _Row:
     """Nora's own send, marked as hers: `own="yes"`. It is context the room's
     messages may be answering, never a stimulus."""
     when = _when(rec.at_ms, now_ms, tz)
+    clock = datetime.fromtimestamp(now_ms / 1000, tz)
 
-    def show(limit: int | None) -> str:
+    def render(n: int, limit: int | None) -> str:
         cap = message_chars if limit is None else min(limit, message_chars)
         label_cap = (
             REACTION_LABEL_MAX if limit is None
             else min(limit, REACTION_LABEL_MAX)
         )
+        if fmt in _CLOSED_SET_FORMATS:
+            words = "" if rec.text is None else _words_block(rec.text, cap)
+            return render_messages(
+                [rec], start=n,
+                speaker=lambda r: speaker_of(r.author),
+                body=lambda _r: words,
+                timestamp=lambda r: r.at_ms,
+                now=clock,
+                turn=lambda r: r.turn_handle,
+                reactions=lambda r: (
+                    r.reactions.bounded_label(label_cap) if r.reactions else None
+                ),
+                reactions_observed=lambda r: (
+                    f"{r.reactions.coverage} "
+                    f"{_when(r.reactions.observed_at, now_ms, tz)}"
+                    if r.reactions is not None
+                    and r.reactions.observed_at is not None
+                    else None
+                ),
+                extra=lambda r: (
+                    ("own", "yes"),
+                    ("withdrawn", "yes" if r.text is None else None),
+                ),
+            )
         words = "" if rec.text is None else _words(rec.text, cap)
         return render_row_window(
-            [rec], row_id=lambda r: r.message_id,
+            [rec], row_id=lambda r: n,
             attrs=lambda r: (
                 ("at", when), ("from", speaker_of(r.author)), ("own", "yes"),
                 (
@@ -364,7 +475,11 @@ def _own_row(rec: RecordItem, *, now_ms: int, tz: tzinfo, message_chars: int) ->
             body=lambda _r: words,
         )
 
-    return _Row(rec.at_ms, rec.message_id, show)
+    return _Row(
+        rec.at_ms, rec.message_id, render,
+        numbered=fmt in _CLOSED_SET_FORMATS,
+        person=(speaker_of(rec.author), rec.person_id),
+    )
 
 
 def _shrunk(row: _Row, room: int) -> str:
@@ -503,13 +618,13 @@ def _rollup_row(stimulus: Stimulus, line: RollupLine, *, now_ms: int, tz: tzinfo
     message id, so it is no `<m>`: it is not something a note line cites."""
     sentence = _rollup_sentence(line, now_ms=now_ms, tz=tz)
 
-    def show(limit: int | None) -> str:
+    def render(_n: int, limit: int | None) -> str:
         return render_elements(
             [line], tag="rollup", attrs=lambda r, _i: (("kind", r.kind),),
             body=lambda _r: one_line(sentence) if limit is None else _words(sentence, limit),
         )
 
-    return _Row(stimulus.at_ms, stimulus.id, show)
+    return _Row(stimulus.at_ms, stimulus.id, render)
 
 
 def _social_row(stimulus: Stimulus, line: SocialLine, *, now_ms: int, tz: tzinfo) -> _Row:
@@ -518,13 +633,13 @@ def _social_row(stimulus: Stimulus, line: SocialLine, *, now_ms: int, tz: tzinfo
     was posted. It has no message id, so it is no `<m>`."""
     sentence = f"{line.name} posted {describe_read(line.item)}"
 
-    def show(limit: int | None) -> str:
+    def render(_n: int, limit: int | None) -> str:
         return render_elements(
             [line], tag="social", attrs=lambda r, _i: (("at", _when(r.at_ms, now_ms, tz)),),
             body=lambda _r: one_line(sentence) if limit is None else _words(sentence, limit),
         )
 
-    return _Row(stimulus.at_ms, stimulus.id, show)
+    return _Row(stimulus.at_ms, stimulus.id, render)
 
 
 def _observation_row(
@@ -542,7 +657,7 @@ def _observation_row(
     when = (_when(event.at_ms, now_ms, tz)
             if event.at_ms > 0 and event.time_quality != "unknown" else "")
 
-    def show(limit: int | None) -> str:
+    def render(_n: int, limit: int | None) -> str:
         who = event.actor or (
             "anonymous" if event.actor_status == "anonymous" else None)
         return render_elements(
@@ -565,12 +680,13 @@ def _observation_row(
                 else _words(event.summary, limit)),
         )
 
-    return _Row(stimulus.at_ms, stimulus.id, show)
+    return _Row(stimulus.at_ms, stimulus.id, render)
 
 
 def _item_rows(
     item: AgendaItem, rows: Sequence[Stimulus], grounding: Grounding,
     own: Sequence[RecordItem], *, now_ms: int, tz: tzinfo, message_chars: int,
+    fmt: str = "A",
 ) -> tuple[list[_Row], int]:
     """The item's readable rows and how many stimuli of it could not be read:
     its messages (Record rows), Nora's own sends in its window, its Rollup
@@ -611,7 +727,7 @@ def _item_rows(
             continue
         message_ids.add(rec.message_id)
         out.append(_message_row(
-            rec, s.cues, now_ms=now_ms, tz=tz, message_chars=message_chars,
+            rec, s.cues, now_ms=now_ms, tz=tz, message_chars=message_chars, fmt=fmt,
         ))
     for s, event in linked:
         # The messages the event is about — for a merged source obligation
@@ -635,13 +751,14 @@ def _item_rows(
             message_ids.add(rec.message_id)
             out.append(_message_row(
                 rec, s.cues, now_ms=now_ms, tz=tz,
-                message_chars=message_chars,
+                message_chars=message_chars, fmt=fmt,
                 target=(message_id == event.target_message_id
                         and message_id != event.delivered_message_id),
             ))
     for rec in own:
         if rec.room == item.room:
-            out.append(_own_row(rec, now_ms=now_ms, tz=tz, message_chars=message_chars))
+            out.append(_own_row(rec, now_ms=now_ms, tz=tz,
+                                message_chars=message_chars, fmt=fmt))
     return out, unreadable
 
 
@@ -664,6 +781,7 @@ def _item_attrs(
 def _reading_rows(
     readable: list[_Row], stimuli: Sequence[Stimulus], item: AgendaItem,
     memory_item: Any, *, now_ms: int, tz: tzinfo, message_chars: int,
+    fmt: str = "A",
 ) -> list[_Row]:
     candidates = memory_item.snapshot["messages"] if memory_item is not None else []
     keys = memory_item.snapshot["source_keys"] if memory_item is not None else {}
@@ -687,27 +805,37 @@ def _reading_rows(
                          room=item.room, author=row.get("author") or "unknown",
                          person_id=row.get("person_id"), at_ms=row["ts"], text=text)
         readable.append(_message_row(rec, (), now_ms=now_ms, tz=tz,
-                                     message_chars=message_chars, source_key=keys[str(rid)]))
+                                     message_chars=message_chars, fmt=fmt,
+                                     source_key=keys[str(rid)]))
     return readable
 
 
 def _item_block(
     index: int, item: AgendaItem, stimuli: Mapping[int, Stimulus], grounding: Grounding,
     *, now_ms: int, tz: tzinfo, allowance_of: Mapping[int, int], message_chars: int,
-    memory_item: Any = None,
+    memory_item: Any = None, fmt: str = "A", numbers: Any = None,
 ) -> str:
-    """One `<item>`: its attributes, and the rows the budget chose."""
+    """One `<item>`: its attributes, the `people:` legend (C/D) and the rows
+    the budget chose. `numbers` is the session's closed-set counter, consumed
+    only under the formats that number rows by position."""
     rows = [stimuli[sid] for sid in item.stimulus_ids if sid in stimuli]
     readable, unreadable = _item_rows(
         item, rows, grounding, grounding.own_sends.get(index, ()),
-        now_ms=now_ms, tz=tz, message_chars=message_chars,
+        now_ms=now_ms, tz=tz, message_chars=message_chars, fmt=fmt,
     )
     readable = _reading_rows(readable, rows, item, memory_item, now_ms=now_ms,
-                             tz=tz, message_chars=message_chars)
+                             tz=tz, message_chars=message_chars, fmt=fmt)
     candidates = {} if memory_item is None else {
         r["id"]: r for r in memory_item.snapshot["messages"]}
     keys = {} if memory_item is None else memory_item.snapshot["source_keys"]
     readable.sort(key=lambda r: (r.at_ms, r.id))
+    if fmt in _CLOSED_SET_FORMATS:
+        # The session's closed set: every numbered row gets the number the
+        # model must cite BEFORE the budget decides which rows stay, so a cut
+        # row's number is simply absent — never reassigned to a different row.
+        for row in readable:
+            if row.numbered:
+                row.num = next(numbers)
     kept, cut = _fit(readable, allowance_of.get(index, 0))
     if memory_item is not None:
         shown = []
@@ -716,37 +844,55 @@ def _item_block(
             if row.id not in candidates:
                 continue
             element = ElementTree.fromstring(rendered)  # noqa: S314 - our escaped row renderer's output
-            shown.append({**candidates[row.id], "body": element.text or ""})
-            shown_keys[str(row.id)] = keys[str(row.id)]
+            shown.append({**candidates[row.id], "id": row.num or row.id,
+                          "body": element.text or ""})
+            shown_keys[str(row.num or row.id)] = keys[str(row.id)]
         memory_item.snapshot["messages"] = shown
         memory_item.snapshot["source_keys"] = shown_keys
     attrs = _item_attrs(index, item, grounding.room_labels)
     attrs.append(("window", _window([s.at_ms for s in rows], now_ms, tz)))
     if cut:
-        dropped = sorted(r.id for r in readable[:cut])
+        dropped = sorted((r.num or r.id) for r in readable[:cut])
         attrs += [
             ("earlier_not_shown", str(cut)),
             ("earlier_range", f"{dropped[0]} to {dropped[-1]}"),
         ]
     if unreadable:
         attrs.append(("unreadable", str(unreadable)))
-    return render_group("item", attrs, "\n".join(kept))
+    inner = "\n".join(kept)
+    if fmt in _CLOSED_SET_FORMATS:
+        # The `people:` legend: each shown speaker's name beside the
+        # `@person:` handle a statement endpoint takes, said once per item.
+        people = {
+            pid: shown_name
+            for row in readable[cut:]
+            if row.person is not None
+            for shown_name, pid in (row.person,)
+            if pid
+        }
+        if people:
+            legend = "people: " + "; ".join(
+                f"{escape(people[pid])} @person:{pid}" for pid in people
+            )
+            inner = f"{legend}\n{inner}" if inner else legend
+    return render_group("item", attrs, inner)
 
 
 def _needs(
     items: Sequence[AgendaItem], stimuli: Mapping[int, Stimulus], grounding: Grounding,
     *, now_ms: int, tz: tzinfo, message_chars: int,
-    memory_items: Mapping[int, Any] | None = None,
+    memory_items: Mapping[int, Any] | None = None, fmt: str = "A",
 ) -> list[int]:
     needs = []
     for index, item in enumerate(items):
         rows = [stimuli[sid] for sid in item.stimulus_ids if sid in stimuli]
         readable, _ = _item_rows(
             item, rows, grounding, grounding.own_sends.get(index, ()),
-            now_ms=now_ms, tz=tz, message_chars=message_chars,
+            now_ms=now_ms, tz=tz, message_chars=message_chars, fmt=fmt,
         )
         readable = _reading_rows(readable, rows, item, (memory_items or {}).get(index),
-                                 now_ms=now_ms, tz=tz, message_chars=message_chars)
+                                 now_ms=now_ms, tz=tz, message_chars=message_chars,
+                                 fmt=fmt)
         needs.append(sum(len(r.show(None)) + 1 for r in readable))
     return needs
 
@@ -937,7 +1083,7 @@ def _register(
 def _item_blocks(
     items: Sequence[AgendaItem], stimuli: Mapping[int, Stimulus], grounding: Grounding,
     *, now_ms: int | None, tz: tzinfo, budget: RenderBudget,
-    memory_items: Mapping[int, Any] | None = None,
+    memory_items: Mapping[int, Any] | None = None, fmt: str = "A",
 ) -> list[ContextBlock]:
     """The `agenda` block (one `<item>` per item), then the Register. Without a
     clock an item is its summary alone (the probe's hand-written item), and
@@ -951,14 +1097,15 @@ def _item_blocks(
             body=legacy_composed("\n".join(elements))), _ROW)]
     needs = _needs(
         items, stimuli, grounding, now_ms=now_ms, tz=tz, message_chars=budget.message_chars,
-        memory_items=memory_items,
+        memory_items=memory_items, fmt=fmt,
     )
     allowance = dict(enumerate(_shares(needs, budget.record_chars, budget.min_item_chars)))
+    numbers = itertools.count(1)
     elements = [
         _item_block(
             i, item, stimuli, grounding, now_ms=now_ms, tz=tz, allowance_of=allowance,
             message_chars=budget.message_chars,
-            memory_item=(memory_items or {}).get(i),
+            memory_item=(memory_items or {}).get(i), fmt=fmt, numbers=numbers,
         )
         for i, item in enumerate(items)
     ]
@@ -979,13 +1126,19 @@ def render_agenda(
     budget: RenderBudget | None = None, graph: str = "",
     memory_items: Mapping[int, Any] | None = None,
     shared: SharedView | None = None,
+    agenda_format: str = "A",
 ) -> str:
     """The session's prompt. `stimuli` is the claimed stimuli by id (an item
     names its own by id), `grounding` what code read for them.
 
     Without `now_ms` (a probe's hand-written item) there is no clock and no
     age; without `grounding` an item is its summary alone, which is exactly
-    what the eval probe hands the model and nothing else does."""
+    what the eval probe hands the model and nothing else does.
+
+    `agenda_format` is the experiment's candidate (`AGENDA_FORMATS`); the
+    default renders the production spelling."""
+    if agenda_format not in AGENDA_FORMATS:
+        raise ValueError(f"unknown agenda format {agenda_format!r}")
     blocks: list[ContextBlock] = []
     now = None if now_ms is None else datetime.fromtimestamp(now_ms / 1000, tz=tz)
     # THE SWITCH (45 §5): her Profile account, when the grounder read one,
@@ -1040,6 +1193,7 @@ def render_agenda(
     item_blocks = _item_blocks(
         items, stimuli or {}, grounding or Grounding(), now_ms=now_ms, tz=tz,
         budget=budget or RenderBudget(), memory_items=memory_items,
+        fmt=agenda_format,
     )
     blocks += item_blocks
     if shared is not None and now_ms is not None:
@@ -1059,6 +1213,6 @@ def render_agenda(
 
 
 __all__ = [
-    "RenderBudget", "clock_line", "render_agenda", "returning", "room_key", "room_label",
-    "speaker_of",
+    "AGENDA_FORMATS", "RenderBudget", "clock_line", "render_agenda", "returning",
+    "room_key", "room_label", "speaker_of",
 ]
