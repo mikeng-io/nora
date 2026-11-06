@@ -1,9 +1,11 @@
-"""The run budget on the REAL dispatch path: `factory.create_client` under
-`httpx.MockTransport`, with `RunEvidence` carrying the formatted request.
+"""The run budget on the REAL gated dispatch path: `factory.create_client`
+under `httpx.MockTransport`.
 
-No paid calls: the transport is the mock. The proof is the same request
-body the eval evidence records (`nora.model.request`) is the one the
-budget counted — and a refused call never reaches the transport at all.
+No paid calls: the transport is the mock. The proof is that an admitted
+streamed call lands its terminal usage on the budget, and a refused call
+raises BEFORE it reaches the transport. Evidence composition (`RunEvidence`
++ formatted-request records through `python -m evals` itself) is covered by
+`tests/integration/test_eval_official_entry_scoped.py`, not here.
 """
 
 from __future__ import annotations
@@ -123,13 +125,3 @@ def test_a_non_private_evidence_dir_is_refused_before_dispatch(
     finally:
         os.close(lock)
 
-
-def test_sha_of_the_bytes_read_not_a_second_read(tmp_path):
-    """`--subject-overrides` hashes the bytes it read once, so a fixture
-    edited between reads still binds the applied content exactly."""
-    import hashlib
-
-    fixture = tmp_path / "f.json"
-    fixture.write_text('{"computer.scoped.enabled": true}')
-    raw = fixture.read_bytes()
-    assert hashlib.sha256(raw).hexdigest() == hashlib.sha256(raw).hexdigest()
