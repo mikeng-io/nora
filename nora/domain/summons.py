@@ -26,6 +26,7 @@ from typing import Literal, Protocol, get_args
 from uuid import UUID
 
 from nora.domain.blocks import BlockKey, ContextBlock, assemble
+from nora.domain.composed import compose_body
 from nora.domain.framing import SummonsHead
 from nora.domain.prompt import escape
 
@@ -579,7 +580,7 @@ def _social_post(source: str, text: str) -> ContextBlock:
     `assemble` would otherwise drop."""
     order, key = _ROW[source]
     return ContextBlock(
-        name="social_post", attrs=(("source", source),), body=escape(text),
+        name="social_post", attrs=(("source", source),), body=compose_body(escape(text)),
         order=order, key=key, when_empty="render",
     )
 

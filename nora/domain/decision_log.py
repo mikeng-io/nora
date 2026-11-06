@@ -113,6 +113,7 @@ from datetime import datetime
 from typing import Literal, Protocol, get_args
 
 from nora.domain.blocks import ContextBlock
+from nora.domain.composed import compose_body
 from nora.domain.prompt import age as _age
 from nora.domain.prompt import escape
 
@@ -641,5 +642,5 @@ def render_decisions(
     for label, rows in groups:
         lines.extend(decision_line(row, now=now, label=label) for row in rows)
     return ContextBlock(
-        name="loop_decisions", body="\n".join(lines) if lines else empty,
+        name="loop_decisions", body=compose_body("\n".join(lines) if lines else empty),
     )

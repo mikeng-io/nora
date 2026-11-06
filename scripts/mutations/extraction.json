@@ -72,8 +72,8 @@
   {
     "name": "source markup stays inside its existing block",
     "file": "nora/app/extraction.py",
-    "old": "body=escape(payload),",
-    "new": "body=payload,",
+    "old": "body=legacy_composed(escape(payload)),",
+    "new": "body=legacy_composed(payload),",
     "target": "tests/contract/test_extraction_contract.py::test_writer_input_keeps_message_markup_inside_existing_source_block"
   },
   {

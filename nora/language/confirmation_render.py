@@ -19,6 +19,7 @@ the task's instruction, not in the evidence a recording could mimic.
 from __future__ import annotations
 
 from nora.domain.blocks import BlockKey, ContextBlock, assemble
+from nora.domain.composed import legacy_composed
 from nora.domain.prompt import escape
 
 #: The task, verbatim from what the script used to send inline: a yes/no
@@ -65,12 +66,12 @@ def confirmation_prompts(scenario: str, moment_json: str) -> tuple[str, str]:
     moment_order, moment_key = _ROW["wake_moment"]
     system = assemble((
         ContextBlock(name="confirmation_task", order=task_order, key=task_key,
-                     body=escape(_TASK)),
+                     body=legacy_composed(escape(_TASK))),
         ContextBlock(name="confirmation_scenario", order=scenario_order,
-                     key=scenario_key, body=escape(scenario)),
+                     key=scenario_key, body=legacy_composed(escape(scenario))),
     )).rstrip("\n")
     user = assemble((
         ContextBlock(name="wake_moment", order=moment_order, key=moment_key,
-                     body=escape(moment_json)),
+                     body=legacy_composed(escape(moment_json))),
     )).rstrip("\n")
     return system, user

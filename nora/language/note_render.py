@@ -52,6 +52,8 @@ from collections.abc import Callable, Sequence
 from datetime import date, datetime
 from typing import Protocol, TypeVar
 
+from nora.domain.composed import compose_body
+
 from ..domain.blocks import ContextBlock, render_elements
 from ..domain.notes import Note, NoteRevision
 from ..domain.prompt import age, escape
@@ -195,7 +197,7 @@ def render_notes(
     if not standing:
         return None
     return ContextBlock(
-        name="notes", body=render_note_rows(standing, today=today),
+        name="notes", body=compose_body(render_note_rows(standing, today=today)),
     )
 
 
@@ -218,7 +220,7 @@ def today_block(when: date | str) -> ContextBlock:
     a different block with a different description.
     """
     text = f"{when:%Y-%m-%d %a}" if isinstance(when, date) else when
-    return ContextBlock(name="today", body=escape(text))
+    return ContextBlock(name="today", body=compose_body(escape(text)))
 
 
 def _about(anchor_date: int | None, today: int | None) -> str | None:

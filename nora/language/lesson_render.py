@@ -20,6 +20,7 @@ from collections.abc import Awaitable, Sequence
 from typing import Protocol
 
 from nora.domain.blocks import ContextBlock, render_elements
+from nora.domain.composed import compose_body
 from nora.domain.lessons import Lesson
 from nora.obs.metrics import Metrics
 
@@ -73,6 +74,6 @@ def render_lessons(lessons: Sequence[str]) -> ContextBlock | None:
         return None
     return ContextBlock(
         name="lessons",
-        body=render_elements(shown, tag="lesson", attrs=lambda _x, i: (("n", str(i)),),
-                             body=lambda x: x),
+        body=compose_body(render_elements(shown, tag="lesson", attrs=lambda _x, i: (("n", str(i)),),
+                             body=lambda x: x)),
     )

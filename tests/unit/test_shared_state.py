@@ -287,9 +287,9 @@ def test_the_renderer_names_withheld_entries_and_coverage():
     assert block is not None and block.name == "standing"
     # Withheld entries name the room only as «another» — the raw
     # platform/conversation_id of a room this read cannot see never renders.
-    assert "open in another room · withheld" in block.body
-    assert "room-b" not in block.body
-    assert "ledger partial" in block.body
+    assert "open in another room · withheld" in block.body.text
+    assert "room-b" not in block.body.text
+    assert "ledger partial" in block.body.text
 
 
 def test_nothing_found_renders_no_block():
@@ -348,11 +348,11 @@ async def test_a_destination_read_applies_the_real_ledger_permit():
     assert send.permitted is True
     block = render_shared_state(view, now_ms=T0_MS)
     assert block is not None
-    assert "withheld" in block.body
+    assert "withheld" in block.body.text
     # The withheld entry leaks neither its room nor its content; other rooms'
     # unit-visible kinds still name their room honestly.
-    assert "pier" not in block.body
-    assert "venue" not in block.body
+    assert "pier" not in block.body.text
+    assert "venue" not in block.body.text
 
 
 async def test_a_unit_read_sees_every_room():
@@ -440,8 +440,8 @@ async def test_closed_decisions_and_done_commitments_survive_the_standing_read()
     block = render_shared_state(view, now_ms=T0_MS)
     assert block is not None
     for status in ("closed", "done"):
-        assert f"generated {status} outcome" in block.body
-    assert "turn(t1)" in block.body
+        assert f"generated {status} outcome" in block.body.text
+    assert "turn(t1)" in block.body.text
 
 
 def test_render_preserves_positions_conclusions_and_withholds_their_content():
@@ -465,13 +465,13 @@ def test_render_preserves_positions_conclusions_and_withholds_their_content():
         unit="u1", status="ok", as_of_ms=T0_MS, entries=entries,
     ), now_ms=T0_MS)
     assert rendered is not None
-    assert "We await confirmation" in rendered.body
-    assert "open: booking; owe: reply" in rendered.body
-    assert "Choose Friday; options: Thursday or Friday" in rendered.body
-    assert "note:n-1" in rendered.body
-    assert "tag-1" in rendered.body
-    assert "SECRET" not in rendered.body
-    assert "withheld" in rendered.body
+    assert "We await confirmation" in rendered.body.text
+    assert "open: booking; owe: reply" in rendered.body.text
+    assert "Choose Friday; options: Thursday or Friday" in rendered.body.text
+    assert "note:n-1" in rendered.body.text
+    assert "tag-1" in rendered.body.text
+    assert "SECRET" not in rendered.body.text
+    assert "withheld" in rendered.body.text
 
 
 async def test_a_filtered_fact_walk_finds_unresolved_past_irrelevant_turns():
@@ -632,10 +632,10 @@ async def test_an_unresolved_only_view_is_rendered():
                              traces=traces)
     block = render_shared_state(view, now_ms=T0_MS)
     assert view.status == "ok"
-    assert block is not None and "note:missing" in block.body
+    assert block is not None and "note:missing" in block.body.text
 
-    assert "turn(t1)" in block.body and "action=ask" in block.body
-    assert datetime.fromtimestamp((T0_MS - 3_600_000) / 1000, UTC).isoformat() in block.body
+    assert "turn(t1)" in block.body.text and "action=ask" in block.body.text
+    assert datetime.fromtimestamp((T0_MS - 3_600_000) / 1000, UTC).isoformat() in block.body.text
 
 
 def test_delivery_facts_expose_action_identity_and_legacy_uncertainty():
@@ -652,9 +652,9 @@ def test_delivery_facts_expose_action_identity_and_legacy_uncertainty():
         ),
     ), now_ms=T0_MS)
     assert block is not None
-    assert "note:generated-plan" in block.body and "generated-ask-date" in block.body
-    assert "subject unresolved" in block.body
-    assert "mapping unresolved" in block.body
+    assert "note:generated-plan" in block.body.text and "generated-ask-date" in block.body.text
+    assert "subject unresolved" in block.body.text
+    assert "mapping unresolved" in block.body.text
 
 
 def test_renderer_keeps_all_facts_selected_by_the_bounded_reader():
@@ -672,7 +672,7 @@ def test_renderer_keeps_all_facts_selected_by_the_bounded_reader():
     assert block is not None
     for subject in ("generated-act-12", "generated-send-8", "generated-finding-8",
                     "generated-decision-8"):
-        assert subject in block.body
+        assert subject in block.body.text
 
 
 async def test_a_delivered_message_without_text_is_still_a_delivery_fact():
@@ -680,5 +680,5 @@ async def test_a_delivered_message_without_text_is_still_a_delivery_fact():
                              record_query=_Sends([_send(9, T0_MS - 1000, "")]))
     assert view.status == "ok"
     block = render_shared_state(view, now_ms=T0_MS)
-    assert block is not None and "send 9" in block.body
-    assert "message without text" in block.body
+    assert block is not None and "send 9" in block.body.text
+    assert "message without text" in block.body.text

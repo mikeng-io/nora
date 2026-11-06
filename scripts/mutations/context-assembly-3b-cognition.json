@@ -16,8 +16,8 @@
  {
   "name": "3b (b): the reads line is not escaped, so a room label writes markup",
   "file": "nora/language/cognition_render.py",
-  "old": "blocks.append(restamp(ContextBlock(name=\"reads\", body=escape(reads_note)), _ROW))",
-  "new": "blocks.append(restamp(ContextBlock(name=\"reads\", body=reads_note), _ROW))",
+  "old": "blocks.append(restamp(ContextBlock(name=\"reads\",\n            body=legacy_composed(escape(reads_note))), _ROW))",
+  "new": "blocks.append(restamp(ContextBlock(name=\"reads\",\n            body=legacy_composed(reads_note)), _ROW))",
   "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_hostile_words_names_titles_labels_and_summaries_write_no_element"
  },
  {
@@ -163,15 +163,15 @@
  {
   "name": "3b item 1: every item is its own `agenda` block again, so the type text repeats per item",
   "file": "nora/language/cognition_render.py",
-  "old": "        restamp(ContextBlock(name=\"agenda\", body=\"\\n\".join(elements)), _ROW),\n        *_register(",
-  "new": "        *[restamp(ContextBlock(name=\"agenda\", body=e), _ROW) for e in elements],\n        *_register(",
+  "old": "        restamp(ContextBlock(name=\"agenda\", body=legacy_composed(\"\\n\".join(elements))), _ROW),\n        *_register(",
+  "new": "        *[restamp(ContextBlock(name=\"agenda\", body=legacy_composed(e)), _ROW) for e in elements],\n        *_register(",
   "target": "tests/unit/test_cognition_block_types_explain_every_field.py::test_the_type_text_appears_once_per_prompt_however_many_items tests/unit/test_cognition_block_types_explain_every_field.py::test_twelve_items_cost_their_own_rows_and_not_twelve_copies_of_the_type_text"
  },
  {
   "name": "3b item 1: each room's events are their own block again, so the events text repeats per room",
   "file": "nora/language/cognition_render.py",
-  "old": "        blocks.append(restamp(ContextBlock(name=\"events\", body=\"\\n\".join(groups)), _ROW))",
-  "new": "        blocks += [restamp(ContextBlock(name=\"events\", body=g), _ROW) for g in groups]",
+  "old": "        blocks.append(restamp(ContextBlock(name=\"events\",\n            body=legacy_composed(\"\\n\".join(groups))), _ROW))",
+  "new": "        blocks += [restamp(ContextBlock(name=\"events\",\n            body=legacy_composed(g)), _ROW) for g in groups]",
   "target": "tests/unit/test_cognition_block_types_explain_every_field.py::test_the_type_text_appears_once_per_prompt_however_many_items"
  },
  {

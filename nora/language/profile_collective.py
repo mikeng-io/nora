@@ -41,6 +41,7 @@ from nora.domain.blocks import (
     render_row_window,
     restamp,
 )
+from nora.domain.composed import compose_body, legacy_composed
 from nora.domain.culture import Episode, RoomMessage
 from nora.domain.profile import (
     PROFILE_HKT,
@@ -400,7 +401,7 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
                 return None
             return ContextBlock(
                 name="profile_messages", **_at("profile_messages"),
-                body=render_row_window(
+                body=compose_body(render_row_window(
                     sorted(rows, key=lambda m: (m.row.ts, m.row.id)),
                     row_id=lambda m: m.row.id,
                     attrs=lambda m: (
@@ -411,17 +412,17 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
                             m.row.ts / 1000, PROFILE_HKT).isoformat()),
                     ),
                     body=lambda m: m.row.body or "",
-                ),
+                )),
             )
 
         def source_block(rows: Sequence[PersonSourceRevision]) -> ContextBlock:
             return ContextBlock(name="profile_source_revisions",
                 **_at("profile_source_revisions"),
-                body=escape(json.dumps([{"source": r.source, "cite": r.citable,
+                body=legacy_composed(escape(json.dumps([{"source": r.source, "cite": r.citable,
                     "from": self._name_of(r.subject) if r.subject else "computed",
                     "as_of": r.as_of, "from_time": r.effective_from,
                     "to_time": r.effective_until, "properties": dict(r.properties)}
-                    for r in rows], ensure_ascii=False)))
+                    for r in rows], ensure_ascii=False))))
 
         # The person writer's whole-source selection, after the media join:
         # measure what is actually shown (including escaping and metadata).
@@ -489,28 +490,28 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
                     ("name", ck.label or self._kind),
                     ("rooms", ", ".join(r.label or "unnamed room" for r in ck.rooms)),
                 ),
-                body=escape(ck.description),
+                body=legacy_composed(escape(ck.description)),
             ),
             None
             if not handle_of
             else ContextBlock(
                 name="profile_lines",
                 **_at("profile_lines"),
-                body=render_elements(
+                body=legacy_composed(render_elements(
                     [h for h in heads if h.id in handle_of],
                     tag="line",
                     attrs=lambda h, _i: _line_attrs(h, handle_of[h.id], now, self._name_of),
                     body=lambda h: (
                         identity_text(h, name_of=identity_name) or "legacy untyped: " + h.text
                     ),
-                ),
+                )),
             ),
             None
             if previous is None
             else ContextBlock(
                 name="previous_character",
                 **_at("previous_character"),
-                body=escape(previous.body),
+                body=legacy_composed(escape(previous.body)),
                 attrs=(("written", age(previous.written_at, now)),)
                 + ((("cites", ", ".join(str(m.row.id) for m in old_cited)),) if old_cited else ()),
             ),
@@ -521,7 +522,7 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
             else ContextBlock(
                 name="profile_episodes",
                 **_at("profile_episodes"),
-                body="\n".join(
+                body=legacy_composed("\n".join(
                     render_group(
                         "episode",
                         [
@@ -548,7 +549,7 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
                         ),
                     )
                     for e in episodes
-                ),
+                )),
             ),
         ]
         if social_block is not None:

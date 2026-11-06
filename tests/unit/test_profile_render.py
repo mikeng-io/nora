@@ -53,5 +53,5 @@ def test_people_budget_never_emits_an_unidentified_profile():
         assert set(dict(block.attrs)) == {"of", "written_by", "source", "written"}
         assert dict(block.attrs)["of"] in {view.of for view in views}
         assert dict(block.attrs)["written_by"] == "nora"
-    assert blocks[-1].body.endswith("more characters not shown]")
+    assert blocks[-1].body.text.endswith("more characters not shown]")
     assert sum(len(block.render()) + 1 for block in blocks) <= PROFILE_PEOPLE_MAX_CHARS

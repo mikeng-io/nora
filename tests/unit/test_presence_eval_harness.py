@@ -105,7 +105,7 @@ def reader(tmp_path) -> PresenceReader:
 
 async def _body(reader: PresenceReader) -> str:
     presence = await reader.read(platform="signal", conversation_id="SIGNAL-FRIENDS-ID")
-    return render_presence(presence).body
+    return render_presence(presence).body.text
 
 
 # ---- the transport tier, held ----------------------------------------------

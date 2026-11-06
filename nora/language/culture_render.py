@@ -36,6 +36,8 @@ from collections.abc import Awaitable, Sequence
 from datetime import datetime
 from typing import Protocol
 
+from nora.domain.composed import compose_body
+
 from ..domain.blocks import ContextBlock
 from ..domain.culture import CultureRevision, character_key
 from ..domain.models import PersonRef
@@ -121,7 +123,7 @@ def render_culture(
         attrs = (("room", room), *attrs)
     return ContextBlock(
         name="culture", attrs=attrs,
-        body=escape(culture.body),
+        body=compose_body(escape(culture.body)),
     )
 
 
@@ -137,7 +139,7 @@ def render_unit_culture(
     return ContextBlock(
         name="unit_culture",
         attrs=(("written", _age(culture.written_at, now or datetime.now().astimezone())),),
-        body=escape(culture.body),
+        body=compose_body(escape(culture.body)),
     )
 
 
@@ -176,7 +178,7 @@ def render_self(
     return ContextBlock(
         name="self",
         attrs=(("written", _age(account.written_at, now or datetime.now().astimezone())),),
-        body=escape(body),
+        body=compose_body(escape(body)),
     )
 
 
@@ -261,7 +263,7 @@ def render_character(
     clock = now or datetime.now().astimezone()
     budget = (
         CHARACTER_BLOCK_MAX_CHARS
-        - len(ContextBlock(name="character", body="").render())
+        - len(ContextBlock(name="character", body=compose_body("")).render())
         - _CLOSING_MARKER_RESERVE
     )
 
@@ -269,7 +271,7 @@ def render_character(
         return ContextBlock(
             name="person_account",
             attrs=(("name", name), ("written", _age(rev.written_at, clock))),
-            body=escape(body),
+            body=compose_body(escape(body)),
         ).render()
 
     rows: list[str] = []
@@ -300,4 +302,4 @@ def render_character(
             closed = True
     if omitted:
         rows.append(f"[{omitted} more characters not shown]")
-    return ContextBlock(name="character", body="\n".join(rows)) if rows else None
+    return ContextBlock(name="character", body=compose_body("\n".join(rows))) if rows else None

@@ -886,3 +886,14 @@ async def test_run_restores_the_prior_logging_threshold_when_engine_creation_fai
         assert logging.root.manager.disable == logging.ERROR
     finally:
         logging.disable(logging.NOTSET)
+
+
+def test_prompt_composer_is_registered_when_the_script_runs_directly():
+    from types import FunctionType
+
+    direct_prompt = FunctionType(
+        spike.prompt.__code__, {**spike.prompt.__globals__, "__name__": "__main__"},
+    )
+    assert direct_prompt({"source": "Generated evidence"}) == spike.prompt(
+        {"source": "Generated evidence"}
+    )

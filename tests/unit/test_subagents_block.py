@@ -124,7 +124,7 @@ async def _body(store, *, viewer: str | None = KEN, **kw) -> str:
         platform=ROOM[0], conversation_id=ROOM[1], person_id=viewer,
     )
     block = render_subagents(view)
-    return "" if block is None else block.body
+    return "" if block is None else block.body.text
 
 
 def _ctx(view) -> TagContext:
@@ -278,7 +278,7 @@ async def test_a_tag_turn_titles_the_document_for_its_tagger_and_not_for_another
             message=msg, decision=EngageDecision(engage=True, reason="trigger_text"),
             tag_id="tag-1",
         ))
-        shown[sender] = render_subagents(ctx.subagents).body if ctx.subagents else ""
+        shown[sender] = render_subagents(ctx.subagents).body.text if ctx.subagents else ""
     assert f'documents "Ken\'s private title" (id {DOC})' in shown["sender-ken"]   # control
     assert "Ken's private title" not in shown["sender-mei"] and DOC not in shown["sender-mei"]
     assert shown["sender-mei"].startswith("done · ")
@@ -340,7 +340,7 @@ async def test_a_capped_read_says_at_least():
     view = await _reader(await _store(*jobs), rows=6).read(
         platform=ROOM[0], conversation_id=ROOM[1], person_id=KEN)
     assert view.omitted_at_least and view.omitted == 1
-    assert render_subagents(view).body.splitlines()[-1].startswith("at least 1 more job")
+    assert render_subagents(view).body.text.splitlines()[-1].startswith("at least 1 more job")
 
 
 # -- escaping and cuts ------------------------------------------------------------------
@@ -441,7 +441,7 @@ async def test_a_store_that_leaks_another_rooms_row_still_shows_none_of_it():
     await store.create(_job(task="mine"))
     await store.create(_job(task="other room", room=("signal", "g-other")))
     view = await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1], person_id=KEN)
-    body = render_subagents(view).body
+    body = render_subagents(view).body.text
     assert 'description "mine"' in body
     assert "other room" not in body and len(body.splitlines()) == 1
 

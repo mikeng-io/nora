@@ -23,7 +23,7 @@
   {
     "name": "platform-and-shared-state-have-one-standing-block",
     "file": "nora/language/cognition_render.py",
-    "old": "            source_blocks = [b for b in blocks if b.name == \"standing\"]\n            shared_block = replace(shared_block, body=\"\\n\".join(\n                [shared_block.body, *(b.body for b in source_blocks)],\n            ))\n            blocks = [b for b in blocks if b.name != \"standing\"]\n",
+    "old": "            source_blocks = [b for b in blocks if b.name == \"standing\"]\n            shared_block = replace(shared_block, body=legacy_composed(\"\\n\".join(\n                [shared_block.body.text, *(b.body.text for b in source_blocks)],\n            )))\n            blocks = [b for b in blocks if b.name != \"standing\"]\n",
     "new": "",
     "target": "tests/unit/test_platform_observation_wired.py::test_source_objects_and_shared_state_render_in_one_standing_block"
   }
