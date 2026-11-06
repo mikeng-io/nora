@@ -1,5 +1,19 @@
 # Changelog
 
+## [7.15.16](https://github.com/mikeng-io/nora/compare/v7.15.15...v7.15.16) (2026-11-06)
+
+
+### Features
+
+* **app:** add Mini Nora character study and interactive stage ([265176e](https://github.com/mikeng-io/nora/commit/265176ec221d9cb02d9ee60a98d72cb87c7d3e54))
+* **app:** reconstruct Mini Nora hands and wire local expressions ([a36cee3](https://github.com/mikeng-io/nora/commit/a36cee36a86c9c2d4b9447b0202fe1034b599b48))
+
+
+### Bug Fixes
+
+* **showcase:** allow retry after model load and context failures ([d374477](https://github.com/mikeng-io/nora/commit/d37447780d3990f07b4f3418c108f6fbe7c606b3))
+* **showcase:** repair cloth atlas seams and light the studio ([d90a39c](https://github.com/mikeng-io/nora/commit/d90a39c96daaafd0301ab14e5fc05b0dfff25c0c))
+
 ## [7.15.15](https://github.com/mikeng-io/nora/compare/v7.15.14...v7.15.15) (2026-11-05)
 
 
