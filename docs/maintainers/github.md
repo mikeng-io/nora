@@ -48,18 +48,22 @@ the existing combined artifact build. Portal runs npm check/build; the Go bridge
 runs vet/test with its module toolchain. Manifest changes also require dependency
 review, blocking high/critical vulnerable dependency introductions on PRs.
 
-Hosted Python coverage retains the existing architecture/documentation/deployment
-contract list and adds CI-selection guards and doc readers. This is **not**
-fine-grained backend selection: `nora/` selects ALL in the local selector. The
-full backend suite remains a local gate obligation. Its fixtures require Docker,
-pgvector Postgres 18, RustFS and the migration template; hosted duration and all
-service prerequisites have not been validated. If doc reader selection requires
-ALL because a shared helper reads the document, the contracts job runs the full
-pytest suite with the local gate's eight workers; testcontainers provision the
-services. Selection errors broaden component work and fail the final result.
-Dockerfile/unknown changes retain the
-existing deploy-asset/base-image contracts and conservative component checks;
-dependency review does not establish image vulnerability safety.
+Hosted backend acceptance passes the complete changed-path list to
+`scripts/affected_tests.py`, the same conservative selector used locally.
+Runtime sources and Markdown, shared helpers, dependency inputs and unknown paths
+select ALL; ordinary documents retain their reader selection. The required
+contracts job executes those targets through `scripts.pytest_gate`, including its
+separate serial timing phase. Its failure, cancellation or missing result fails
+checks. Baseline scheduled/manual runs select the complete suite.
+
+Testcontainers provision Docker-backed pgvector Postgres 18, Redis and RustFS
+lazily; deterministic tests own their services and do not assume private host
+configuration or paid model endpoints. The same acceptance run publishes separate
+phase JUnit reports and per-file durations. There is no duplicate nonblocking
+whole-suite measurement on master pushes. Focused local checks remain the iteration
+loop; full-suite acceptance runs hosted. Dockerfile/unknown changes retain deploy
+asset/base-image contracts and conservative component checks; dependency review
+does not establish image vulnerability safety.
 
 CodeQL advanced setup runs full Python, JS/TS, Go and Actions language analysis
 for selected inputs, with no changed-line/path analysis filter. Default-branch
@@ -97,7 +101,7 @@ Official references verified for this implementation:
 [workflow languages, permissions and baseline configuration](https://docs.github.com/en/code-security/reference/code-scanning/workflow-configuration-options),
 [analysis versus vulnerability results](https://docs.github.com/en/code-security/how-tos/manage-security-alerts/manage-code-scanning-alerts/triage-alerts-in-pull-requests),
 [CodeQL Action v4](https://github.com/github/codeql-action).
-Run the local `make gate` once on the final head before landing code.
+Select local checks by impact; do not run the full local suite before a PR.
 
 Native scanning detects supported credential patterns. The completed private PII
 scrub and local identifier gate remain separate; never upload the private denylist

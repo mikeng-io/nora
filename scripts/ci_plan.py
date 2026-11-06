@@ -199,12 +199,11 @@ def main() -> int:
         paths = changed_paths(event, repo) if has_delta else []
         plan = classify(paths, repo) if has_delta else dict.fromkeys(JOBS, True)
         docs = [p for p in paths if affected_tests._is_doc_or_data(p, repo)]
-        targets = affected_tests.select(docs, repo)
-        # A shared helper may read the document: retain the selector's ALL
-        # fallback and let testcontainers provision the full suite's services.
+        targets = affected_tests.select(paths, repo) if has_delta else "ALL"
+        # Use the same conservative selection as local iteration, including code.
         error = ""
     except Exception as exc:  # noqa: BLE001 -- every selector failure broadens and fails CI
-        plan, targets, error = dict.fromkeys(JOBS, True), [], str(exc)
+        plan, targets, error = dict.fromkeys(JOBS, True), "ALL", str(exc)
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
         print("plan=" + json.dumps(plan), file=output)
         print("readers=" + json.dumps(targets), file=output)

@@ -51,7 +51,7 @@ jobs:
     needs: classify
     if: ${{ always() && (needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan)['contracts']) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -72,7 +72,7 @@ jobs:
           install -m 755 "$RUNNER_TEMP/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
           docker compose version
       - name: Architecture and documentation contracts
-        if: needs.classify.outputs.docs_only != 'true' || needs.classify.result != 'success'
+        if: needs.classify.outputs.readers != '"ALL"' && needs.classify.outputs.docs_only != 'true' && needs.classify.result == 'success'
         run: >-
           uv run pytest -q
           tests/architecture/test_contribution_conventions.py
@@ -92,7 +92,7 @@ jobs:
           tests/test_architecture_doc.py tests/test_docs.py
           tests/test_boundaries.py tests/test_deploy_assets.py
           tests/unit/test_release_deployment.py tests/unit/test_verify_deploy.py
-      - name: Document readers selected by the existing selector
+      - name: Selected backend acceptance
         env:
           READERS: ${{ needs.classify.outputs.readers }}
         run: |
@@ -100,59 +100,23 @@ jobs:
           import json, os, subprocess, sys
           targets = json.loads(os.environ['READERS'])
           if targets == 'ALL':
-              subprocess.run([sys.executable, '-m', 'scripts.pytest_gate'], check=True)
+              subprocess.run([sys.executable, '-m', 'scripts.pytest_gate', '--junit-dir', 'backend-results'], check=True)
           elif targets:
-              subprocess.run([sys.executable, '-m', 'scripts.pytest_gate', *targets], check=True)
+              subprocess.run([sys.executable, '-m', 'scripts.pytest_gate', '--junit-dir', 'backend-results', *targets], check=True)
           PYTEST
 
-  # Measurement only (not in `checks`): the full suite's per-file cost on a
-  # hosted runner, the input for sharding it into a required check.
-  suite-timing:
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    env:
-      NORA_TEST_MAX_WORKERS: '4'
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          version: '0.13.4'
-          python-version: '3.12'
-          enable-cache: false
-      - run: uv sync --frozen --extra evals
-      - name: Match the audited Periphery Compose CLI
-        run: |
-          mkdir -p "$HOME/.docker/cli-plugins"
-          curl --fail --silent --show-error --location --retry 3 \
-            https://github.com/docker/compose/releases/download/v5.5.0/docker-compose-linux-x86_64 \
-            -o "$RUNNER_TEMP/docker-compose"
-          echo "c57ab918abd5b05ca7e7d0f275875dd1330a695074f309dc9eab1b49efafcd4b  $RUNNER_TEMP/docker-compose" | sha256sum --check
-          install -m 755 "$RUNNER_TEMP/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
-          docker compose version
-      - name: Parallel phase
-        run: |
-          mapfile -t timing < <(uv run python -c "from scripts.pytest_gate import TIMING_TESTS; print(*TIMING_TESTS, sep='\n')")
-          uv run pytest -q -n "$NORA_TEST_MAX_WORKERS" --dist loadfile "${timing[@]/#/--ignore=}" -o junit_family=xunit1 --junitxml=junit-parallel.xml tests
-      - name: Serial timing contracts
-        if: ${{ !cancelled() }}
-        run: |
-          mapfile -t timing < <(uv run python -c "from scripts.pytest_gate import TIMING_TESTS; print(*TIMING_TESTS, sep='\n')")
-          uv run pytest -q "${timing[@]}" -o junit_family=xunit1 --junitxml=junit-serial.xml
       - name: Per-file durations
         if: ${{ !cancelled() }}
         run: |
           uv run python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-          import json, xml.etree.ElementTree as ET
+          import json, shutil, xml.etree.ElementTree as ET
           from collections import Counter
           from pathlib import Path
+          for receipt in Path(".git").glob("nora-test-cost-*.json"):
+              Path("backend-results").mkdir(exist_ok=True)
+              shutil.copyfile(receipt, Path("backend-results") / receipt.name)
           files, outcomes = Counter(), Counter()
-          for report in ("junit-parallel.xml", "junit-serial.xml"):
-              if not Path(report).exists():
-                  print(f"**{report} missing: that phase did not report.**\n")
-                  continue
+          for report in sorted(Path("backend-results").glob("*.xml")):
               for case in ET.parse(report).iter("testcase"):
                   files[case.get("file") or "<no file>"] += float(case.get("time") or 0)
                   outcomes[next((c.tag for c in case if c.tag in ("failure", "error", "skipped")), "passed")] += 1
@@ -166,10 +130,11 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:
-          name: suite-timing
+          name: backend-acceptance
           path: |
-            junit-*.xml
+            backend-results/*
             test-durations.json
+
 
   portal:
     needs: classify
