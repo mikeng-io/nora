@@ -37,7 +37,7 @@
  {
   "name": "One bad reading does not refuse valid parts",
   "file": "nora/app/cognition_memory.py",
-  "old": "                claims.extend(valid)",
+  "old": "                claims.extend(claim_valid)",
   "new": "                pass",
   "target": "tests/unit/test_orient_kind_table.py::test_bad_reading_keeps_valid_reading_and_graph"
  },
