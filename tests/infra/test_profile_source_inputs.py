@@ -1129,12 +1129,16 @@ async def test_rollup_discovery_and_render_share_exact_pending_with_competing_ti
                 [[2, 'a qualified intention', None, None]], None]
     assert rendered[0].revision == hashlib.sha256(json.dumps(expected).encode()).hexdigest()
 
+    constructed = []
+
     def forbidden(row):
+        constructed.append(row.id)
         raise AssertionError('discovery hydrated a transcript')
 
     monkeypatch.setattr(module, 'transcript_row', forbidden)
     _, _, _, evidence, _ = wired(env)
     assert await evidence.count(key=KEY, after=0) > 0
+    assert constructed == []
     discovered = await source.rollup(key=KEY, unit='unit', rooms=ROOMS,
                                      person=PERSON, limit=12, discover=True)
     assert [(r.source, r.revision) for r in discovered] == [
