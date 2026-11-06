@@ -1,0 +1,28 @@
+
+╔══╗─────────▶╔╗ ╔╗      ╔╗◀───┐
+╚╣╠╝◀─────┐  ╔╝╚╗║║────▶╔╝╚╗   │
+ ║║   ╔══╦══╦╩╗╔╝║║  ╔╦═╩╗╔╝╔═╦══╗
+ ║║╔══╣╔╗║╔╗║╔╣║ ║║ ╔╬╣╔╗║║ ║│║╔═╝
+╔╣╠╣║║║╚╝║╚╝║║║╚╗║╚═╝║║║║║╚╗║═╣║
+╚══╩╩╩╣╔═╩══╩╝╚═╝╚═══╩╩╝╚╩═╩╩═╩╝
+  └──▶║║                    ▲ 
+      ╚╝────────────────────┘
+
+
+---------
+Contracts
+---------
+
+Analyzed 761 files, 6190 dependencies.
+--------------------------------------
+
+domain is framework-free KEPT
+the room policy is composed in, never imported by a lower layer KEPT
+the analytics substrate serves no particular consumer KEPT
+layered architecture KEPT
+the document checker imports nothing of ours KEPT
+only app and __main__ read config KEPT
+the nora package's own __init__ does not read config either KEPT
+evals may only reach nora.app, nora.testing, nora.subject and nora.domain KEPT
+
+Contracts: 8 kept, 0 broken.

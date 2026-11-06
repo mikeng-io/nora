@@ -32,11 +32,10 @@ response finishes reconciling, success or failure.
 from __future__ import annotations
 
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
-
 
 
 class RunBudgetError(RuntimeError):

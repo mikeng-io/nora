@@ -1,0 +1,5 @@
+nora/domain/run_budget.py:200: error: Name "_check_body_shape" is not defined  [name-defined]
+nora/domain/run_budget.py:223: error: Name "_BoundedTransport" is not defined  [name-defined]
+nora/agent/run_budget_transport.py:337: error: Name "gated_create" already defined (possibly by an import)  [no-redef]
+pyproject.toml: note: unused section(s): module = ['nora.analytics.*', 'nora.app.*', 'nora.config', 'nora.doctrine.*', 'nora.engagement.*', 'nora.infra.*', 'nora.ingest.*', 'nora.instructions.*', 'nora.language.*', 'nora.presence.*', 'nora.skills.*', 'nora.web.*']
+Found 3 errors in 2 files (checked 2 source files)

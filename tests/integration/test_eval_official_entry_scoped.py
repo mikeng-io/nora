@@ -30,10 +30,9 @@ import psycopg
 import sqlalchemy as sa
 
 import evals.__main__ as cli
-from tests.fakes import FakeHoncho
-from tests.fakes import FakeHoncho
 from nora.agent import factory
 from nora.subject import sandbox
+from tests.fakes import FakeHoncho
 
 #: The corpus `room_a` snapshot names a PSEUDONYM; the eval translates it
 #: through `NORA_EVAL_PSEUDONYM_MAP`, which this test generates: the

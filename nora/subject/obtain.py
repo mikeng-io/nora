@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import tomlkit
-from pydantic import TypeAdapter
+from pydantic import BaseModel, TypeAdapter
 
 from nora.app.composition import Dependencies, build_dependencies, wall_clock
 from nora.app.memory_routing import build_workspace_router
@@ -490,18 +490,11 @@ def build_config(spec: SubjectSpec) -> Config:
         # composition; `model_copy` alone skips all of them.
         for name in {p.split(".", 1)[0] for p in spec.overrides}:
             section_type = Config.model_fields[name].annotation
-            section_type.model_validate(
-                getattr(cfg, name).model_dump(mode="python"),
-                context={"base": spec.workdir})
-    if spec.overrides:
-        # Re-validate every section an override touched through the real
-        # schema — field constraints and that section's model_validators
-        # run here, before composition; `model_copy` alone skips them.
-        for name in {p.split(".", 1)[0] for p in spec.overrides}:
-            section_type = Config.model_fields[name].annotation
-            section_type.model_validate(
-                getattr(cfg, name).model_dump(mode="python"),
-                context={"base": spec.workdir})
+            if (isinstance(section_type, type)
+                    and issubclass(section_type, BaseModel)):
+                section_type.model_validate(
+                    getattr(cfg, name).model_dump(mode="python"),
+                    context={"base": spec.workdir})
     # Rewrite after overrides, including deployment routes, so host-only callers
     # cannot restore container addresses over the sandbox configuration.
     if not _resolves(_DOCKER_HOST):
@@ -549,7 +542,7 @@ def _pin_memory_to_the_eval_workspace(workdir: Path, workspace: str, deployment:
     identity_doc = tomlkit.parse(identity_path.read_text(encoding="utf-8"))
     strict = "units" in policy_doc
     if strict:
-        for unit in policy_doc["units"].values():  # type: ignore[union-attr]
+        for unit in policy_doc["units"].values():
             unit["workspace"] = _EVAL_WORKSPACE
         policy_path.write_text(tomlkit.dumps(policy_doc), encoding="utf-8")
     if "workspaces" in identity_doc:
@@ -615,9 +608,13 @@ def _conversation_for(spec: SubjectSpec) -> Conversation:
 async def obtain(spec: SubjectSpec) -> Subject:
     """Compose an isolated subject with scoped credentials and database mapping."""
     cfg = build_config(spec)
-    clock: Callable[[], datetime] = (
-        wall_clock if spec.now is None else (lambda at=spec.now: at)
-    )
+    if spec.now is None:
+        clock: Callable[[], datetime] = wall_clock
+    else:
+        _at = spec.now
+
+        def clock() -> datetime:
+            return _at
     var = f"NORA_SUBJECT_DATABASE_URL_{uuid.uuid4().hex}"
     cfg = _with(cfg, "store.database_url_env", var)
     cfg._credentials = {**cfg.credentials, var: spec.database_url}
@@ -697,7 +694,9 @@ def validate_subject_overrides(overrides: dict[str, Any],
         return None
     for name in {p.split(".", 1)[0] for p in overrides}:
         section_type = Config.model_fields[name].annotation
-        section_type.model_validate(
-            getattr(base, name).model_dump(mode="python"),
-            context={"base": context_dir or Path.cwd()})
+        if (isinstance(section_type, type)
+                and issubclass(section_type, BaseModel)):
+            section_type.model_validate(
+                getattr(base, name).model_dump(mode="python"),
+                context={"base": context_dir or Path.cwd()})
     return base

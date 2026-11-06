@@ -1,0 +1,13 @@
+................                                                         [100%]
+=============================== warnings summary ===============================
+tests/conftest.py:32
+  /tmp/nora-eval-pr584/tests/conftest.py:32: DeprecationWarning: testcontainers.postgres is deprecated, use testcontainers.community.postgres instead
+    from testcontainers.postgres import PostgresContainer
+
+tests/conftest.py:33
+  /tmp/nora-eval-pr584/tests/conftest.py:33: DeprecationWarning: testcontainers.redis is deprecated, use testcontainers.community.redis instead
+    from testcontainers.redis import RedisContainer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+16 passed, 2 warnings in 49.46s
+rc=0
