@@ -306,7 +306,7 @@ class _Row:
 def _message_row(
     rec: RecordItem, cues: Sequence[str], *, now_ms: int, tz: tzinfo,
     message_chars: int, fmt: str = "A", target: bool = False,
-    source_key: Sequence[str] | None = None,
+    source_key: Sequence[str] | None = None, context: bool = False,
 ) -> _Row:
     """A person's message, an edit of one, a reaction to one or a deletion of
     one, as `<m n="<message id>" at from ...>words</m>`. `n` is the message's
@@ -319,7 +319,12 @@ def _message_row(
     identity once in the form the tool takes (`from` carries the `@person:`
     handle, the duplicate `person`/`source` attributes go); C/D render the
     shared reply-transcript form (`n` is the closed-set ordinal, `age` not
-    `at`, the person handle moves to the item's `people:` line)."""
+    `at`, the person handle moves to the item's `people:` line).
+
+    `context` marks a row that is never citable (a linked `target`/`delivered`
+    row): its author is rendered BY NAME only — never a `@person:` handle the
+    tool would refuse — and the row contributes nothing to the `people:`
+    legend."""
     when = _when(rec.at_ms, now_ms, tz)
     clock = datetime.fromtimestamp(now_ms / 1000, tz)
     reacted = rec.kind == "reaction"
@@ -375,7 +380,7 @@ def _message_row(
                 (
                     "from",
                     name
-                    if fmt == "A" or not r.person_id
+                    if fmt == "A" or context or not r.person_id
                     else f"{name} @person:{r.person_id}",
                 ),
                 ("source", ":".join(source_key) if source_key and fmt == "A" else None),
@@ -408,7 +413,7 @@ def _message_row(
     return _Row(
         rec.at_ms, rec.message_id, render,
         numbered=fmt in _CLOSED_SET_FORMATS,
-        person=(name, rec.person_id),
+        person=(name, rec.person_id if not context else None),
     )
 
 
@@ -478,7 +483,7 @@ def _own_row(
     return _Row(
         rec.at_ms, rec.message_id, render,
         numbered=fmt in _CLOSED_SET_FORMATS,
-        person=(speaker_of(rec.author), rec.person_id),
+        person=(speaker_of(rec.author), None),
     )
 
 
@@ -751,7 +756,7 @@ def _item_rows(
             message_ids.add(rec.message_id)
             out.append(_message_row(
                 rec, s.cues, now_ms=now_ms, tz=tz,
-                message_chars=message_chars, fmt=fmt,
+                message_chars=message_chars, fmt=fmt, context=True,
                 target=(message_id == event.target_message_id
                         and message_id != event.delivered_message_id),
             ))

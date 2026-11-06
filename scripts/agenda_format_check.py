@@ -355,14 +355,12 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                                         f":r{i}" for i in range(len(ids)))
                                     existing = await rows(
                                         engine,
-                                        "SELECT source_id FROM memory_node "
+                                        "SELECT id FROM entity "
                                         "WHERE kind='person' "
-                                        f"AND source_id IN ({marks})",
+                                        f"AND id IN ({marks})",
                                         binds,
                                     )
-                                    present = {
-                                        r["source_id"] for r in existing
-                                    }
+                                    present = {r["id"] for r in existing}
                                     f["pointers"] += len(ids)
                                     f["pointers_missing"] += sum(
                                         1 for rid in ids if rid not in present

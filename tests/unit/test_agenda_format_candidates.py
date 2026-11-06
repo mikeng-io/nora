@@ -150,6 +150,62 @@ def test_c_renders_the_closed_set_and_legend() -> None:
     assert set(scope.catalogue) == set(ns)
 
 
+def _context_session(fmt: str) -> str:
+    """A session with one citable stimulus row and one context (`target=`) row
+    shown only because a source event affected it."""
+    from nora.domain.observations import SourceEvent
+    stims = {
+        1: _stim(1),
+        10: Stimulus(
+            id=10, unit="u", kind="observation", item="message",
+            ref="platform_observation:10", at_ms=NOW - 300_000,
+            recorded_at_ms=NOW, platform=ROOM.platform,
+            conversation_id=ROOM.conversation_id, cues=(),
+        ),
+    }
+    event = SourceEvent(
+        ref="platform_observation:10", kind="pin", operation="add", at_ms=0,
+        time_quality="unknown", actor="Ming", actor_status="known",
+        handle="pin:generated", summary="Pinned a message",
+        target_message_id=999, received_ms=NOW, revision="source:2",
+        coverage="pin_set partial",
+    )
+    records = {
+        "messages:1": _rec(1, 4471, "citable words", "Ming", "ming"),
+        "messages:999": _rec(999, 999, "context words", "Ada", "ada"),
+    }
+    item = AgendaItem(
+        kind="observation", room=ROOM, summary="1 pin source event", cues=(),
+        surprise=1.0, stimulus_ids=(1, 10),
+    )
+    mem = SimpleNamespace(
+        sources=(Source(("message", "4471"), "record", "u", ("ming",), "citable words"),),
+        snapshot={
+            "record_rows": [
+                _row(4471, "citable words", "ming", "Ming", NOW - 60_000),
+            ],
+            "messages": [], "context": [], "source_keys": {},
+        },
+    )
+    return render_agenda(
+        (item,), stimuli=stims,
+        grounding=Grounding(records=records, room_labels=LABELS,
+                            observations={event.ref: event}),
+        now_ms=NOW, tz=HK, budget=RenderBudget(),
+        memory_items={0: mem}, agenda_format=fmt,
+    )
+
+
+@pytest.mark.parametrize("fmt", ["B", "C", "D"])
+def test_context_row_author_gets_no_handle(fmt: str) -> None:
+    """A context (`target=`/`delivered`) row's author renders by name only:
+    its handle would be refused `unshown`, so the render never shows it."""
+    text = _context_session(fmt)
+    assert "@person:ming" in text, f"{fmt}: citable author's handle missing"
+    assert "@person:ada" not in text, (
+        f"{fmt}: context row's author shown as a handle the tool refuses")
+
+
 def test_d_uses_c_rows_and_statement_preview() -> None:
     text, *_ = _session("D")
     assert "people:" in text and 'person="' not in text
