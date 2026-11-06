@@ -15,16 +15,16 @@ war-stories and specific values; read it when a rule needs its "why".
 load it before the first edit**: the rules say what must hold; the skill gives
 the command order and the check after each step.
 
-## Content checks: operator reversal, 2026-10-25
+## Content checks are off by default
 
 `[content_checks] enabled = false` disables the phone/UUID/coordinate content
 filters, third-party place/person-name screens and location audience
-subset/unknown-person checks. Keep their implementations and enabled-mode tests;
-`true` plus a restart restores enforcement. Credentials and doctrine LeakGuard
-always remain enabled. Admission, unit read scope, location consent/opt-in,
-availability, freshness, budgets and network security are unchanged. Older
-always-on egress/disclosure wording below describes enabled mode; this ruling
-controls the default. See [the decision](docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
+subset/unknown-person checks; `true` plus a restart restores them. Keep their
+implementations and enabled-mode tests. Credentials and doctrine LeakGuard are
+always on. Admission, unit read scope, location consent/opt-in, availability,
+freshness, budgets and network security are unaffected. Egress and disclosure
+rules below describe enabled mode. See
+[ADR 0030](docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
 
 ## The spine: comprehend → measure → serialize
 
@@ -144,6 +144,13 @@ line. The delete-withdrawal incident is in `docs/maintainers/conventions-rationa
 - **Deletion over addition; fewest files; shortest working diff**, but only in
   the right place. A bug fix goes where every caller routes through, not in
   the one path the report names.
+- **A special case is a missing requirement.** An `if` for one value, a
+  parameter for one caller, a swallowed exception, a retry or sleep, a skipped
+  test: before adding one, look for the single fix behind it and its siblings.
+  Two patches to the same seam mean the seam is wrong.
+- **Structure answers "should these change together?"** What changes together
+  lives together; what doesn't, isn't tied; nothing imports what changes more
+  often than itself.
 - **A deliberate corner gets a `# ponytail:` comment** naming its ceiling and
   the upgrade path (`# ponytail: one global lock; per-unit locks if sessions
   contend`).
@@ -324,7 +331,7 @@ and in `docs/maintainers/conventions-rationale.md`, catalogued in `design/dreame
   skipped.
 - **Label vocabularies are DERIVED from the code, never hand-copied.** One named
   constant the code increments against and the help text reads from: `get_args`
-  off a `Literal`, plus a RUNTIME check outside mypy's scope (issue #61).
+  off a `Literal`, plus a RUNTIME check outside mypy's scope.
 - **Pair every zero-assertion with a positive control.** `== 0` is also true of
   a stage that crashed; assert something only a run that RAN produces.
 
@@ -335,6 +342,13 @@ Architecture, rationale and decisions belong in canonical maintained docs, never
 primarily in comments. Apply this across the repository; do not mechanically
 strip existing comments. See [configuration contract](docs/configuration.md) and
 its accepted amendment (DEC-325).
+
+**Root documents are instructions, not logs.** `AGENTS.md`, `ORCHESTRATION.md`
+and the other root guides state what holds now, in the present tense. When a
+rule changes, rewrite it in place: no dates, "operator ruling" labels, reversal
+stories, superseded text or issue/PR links as provenance. History lives in git,
+`CHANGELOG.md`, the ADRs and `design/09-decision-index.md`; link an ADR only
+when the reader needs its reasoning.
 
 ## Conventions (short — full text in `docs/maintainers/conventions-rationale.md`)
 
@@ -372,8 +386,8 @@ its accepted amendment (DEC-325).
    **`--receive-mode=on-start` is load-bearing — never drop it** (without it the
    websocket to Signal never opens and every message is silently dropped). Needs
    **Java 25**.
-4. The legacy Hermes gateway is retired. If migrating an old installation,
-   archive its profile outside the checkout; do not reuse the old profile path.
+4. There is no Hermes gateway. An old installation's profile is archived
+   outside the checkout; never reuse its path.
 5. Dependencies via **`uv add`**, never raw pip.
 
 ## Skills: the procedures
@@ -405,20 +419,17 @@ keeps this table and that directory in step.
 
 ## Orchestrating: who builds, who checks, and how much effort
 
-**[ORCHESTRATION.md](ORCHESTRATION.md) is the canonical engineering-agent policy**
-(operator ruling, 2026-10-27): capability/evidence tiers, adaptive worker admission,
-artifact ownership, independent review and its two-round limit. Claude models
-orchestrate only; they never implement or independently review,
-including small edits. Other models in the operator-facing
-session directly implement small, coherent changes; delegate substantial
-implementation only when its capacity/capability benefit outweighs briefing and
-context loss, or when the operator asks. A delegated builder implements its
-bounded brief. Independent review follows the applicable risk tier. Use isolated
-worktrees, read back the actual head/results, and keep the reviewer independent
-of both builder and brief-author, with a different model vendor from the builder.
-No fixed positive provider/model routing applies. Explicit operator constraints
-and model exclusions remain in the root policy. Superseded provider incidents
-and routing history live in `.agents/skills/nora-land/reference.md`.
+**[ORCHESTRATION.md](ORCHESTRATION.md) is the engineering-agent policy**:
+execution and review tiers, choosing a worker, artifact ownership, independent
+review and its two-round limit. The orchestrator is whichever agent holds the
+operator-facing session, of any vendor. It makes small changes (docs, skill
+wording, one- or two-line fixes) itself and delegates substantial work only when
+a separate worker's capacity or capability outweighs the briefing cost, or the
+operator asks. Claude models are never a delegated builder or an independent
+reviewer. Review depth is the orchestrator's judgement of what the change can
+break; only disclosure, security, concurrency, hot-table migrations and new
+model spending have a fixed minimum. A reviewer is independent of the builder
+and brief-author and on a different model vendor from the builder.
 
 ## Reading order
 
@@ -437,8 +448,6 @@ and routing history live in `.agents/skills/nora-land/reference.md`.
    styling or anything she looks like.
 9. `docs/observability.md`, `docs/eval-sop.md`, `docs/runbook.md` — how to
    instrument, measure behaviour, and operate her. Read the one the task touches.
-
-Historical paths and deprecated tiers: `docs/maintainers/conventions-rationale.md` «Historical reading references».
 
 ## Gate commands
 
@@ -510,34 +519,29 @@ when there is no `[units]`. History and drift-check limits: `docs/maintainers/co
 
 ## Releases
 
-Load **`nora-release`**. The operator's latest 2026-10-28 ruling reverses the
-manual/daily cadence: every ordinary master push automatically handles patch/minor
-releases for shipped changes. Docs, tests, CI, agent tooling and repository-only
-maintenance paths are excluded; unknown paths still qualify. Generated metadata is
-excluded to prevent loops. `scripts/release_plan.py` uses complete git reachability;
-release-please alone tags/publishes. One generated metadata PR may auto-merge
-with an authored subject and exact-head guard after required checks; strict branch
-rules prevent stale-source merges. This authority never merges application or
-implementation PRs. No bypass, alternate token, hand tag or release fragment.
+Load **`nora-release`**.
 
-PATCH is the default for compatible work within an existing capability. A complete
-new product capability or a new/deprecated documented supported integration API/CLI
-uses the explicit commit footer `Release-Bump: minor`. `feat` alone does not force
-minor. Breaking markers anywhere in the unreleased range stop automatic version
-writes; owner-only dispatch can explicitly prepare/release major at an exact full
-current candidate SHA, with drift refusal. Existing versions/tags are preserved.
-
-A stable published Release automatically feeds the existing `release-images.yml`
-→ `deployments` → Komodo pipeline under its existing control. This standing
-release/deployment authority covers automatic patch/minor and explicitly
-owner-prepared major releases. Publication and verified deployment remain separate
-states. Devin release automation is stopped; no AI evaluator or daily/seven-day
-criteria remain. Do not invoke or re-enable it (issue #316 closed not planned).
-
-The owner may separately dispatch **Deploy master** in `release-images.yml`.
-Keep `MASTER_DEPLOY_ENABLED` default-off until the reviewed installed wrapper
-outside the fetched clone is updated and verified (`nora-deploy`). This ruling
-enables no flags and introduces no selective builds or RC/nightly channel.
+- Every ordinary master push releases shipped changes automatically as a patch
+  or minor. Docs, tests, CI, agent tooling and repository-only maintenance paths
+  do not release; unknown paths do. Generated metadata is excluded to prevent
+  loops. `scripts/release_plan.py` decides from complete git reachability;
+  release-please alone tags and publishes.
+- One generated metadata PR may auto-merge with an authored subject and
+  exact-head guard after required checks. That authority never merges
+  application or implementation PRs. No bypass, alternate token, hand tag or
+  release fragment.
+- PATCH is the default. A complete new product capability, or a new or
+  deprecated documented integration API/CLI, carries the commit footer
+  `Release-Bump: minor`; `feat` alone does not. A breaking marker in the
+  unreleased range stops automatic version writes; only owner dispatch prepares
+  a major, at an exact current candidate SHA with drift refusal.
+- A published stable Release feeds `release-images.yml` → `deployments` →
+  Komodo. Publication and verified deployment are separate states.
+- No AI release evaluator: never invoke or enable Devin release automation.
+- The owner may dispatch **Deploy master** in `release-images.yml`. Keep
+  `MASTER_DEPLOY_ENABLED` off until the installed wrapper outside the fetched
+  clone is updated and verified (`nora-deploy`). There are no selective builds
+  and no RC or nightly channel.
 
 ## Adding or changing a tool
 

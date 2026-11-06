@@ -2,7 +2,7 @@
 
 This is the current implementation map. Decisions and their trade-offs belong
 in [ADRs](docs/adr/README.md) and the [design index](design/09-decision-index.md).
-Design proposals and historical measurements do not imply a deployed feature.
+Design proposals do not imply a deployed feature.
 Enabled capabilities and room grants are deployment configuration.
 
 ## Continuity beyond a session
@@ -65,8 +65,7 @@ unavailability. Policy controls disclosure and whether Nora may speak in a
 room, including when queued work is delivered.
 
 Cognition processes stimuli and maintains working state, notes, events and
-reminders. The Dreamer supplies background research, including culture work;
-it is not the retired set of note-extraction/curation/proactive adaptors.
+reminders. The Dreamer supplies background research, including culture work.
 Voice and asynchronous compute are additional paths into this runtime, not
 independent copies of Nora's policy or memory.
 
