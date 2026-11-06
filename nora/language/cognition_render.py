@@ -299,9 +299,7 @@ def _message_row(
             attrs=lambda r: (
                 ("at", when), ("from", speaker_of(r.author)),
                 ("source", ":".join(source_key) if source_key else None),
-                # The handle form the endpoint grammar takes: copying this
-                # value names the author correctly (`@person:<id>`).
-                ("person", f"@person:{r.person_id}" if r.person_id else None),
+                ("person", r.person_id),
                 ("target", "yes" if target else None),
                 ("reaction", emoji_display(r.emoji or "?") if reacted else None),
                 ("reaction_removed", "yes" if reacted and r.removed else None),

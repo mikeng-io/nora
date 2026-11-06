@@ -330,26 +330,3 @@ async def test_an_emitted_preview_relation_can_be_corrected():
         state, items=[0], nothing_here=[], statements=[_correction()])
     assert result["statements"][0]["status"] == "saved"
     assert state.memory.graph.relations["generated-edge"].status == "retired"
-
-
-@pytest.mark.asyncio
-async def test_the_agenda_renders_authors_as_person_handles():
-    """A shown author's id renders in the `@person:<id>` form the endpoint
-    grammar takes: a statement naming it verbatim saves."""
-    from nora.domain.memory_graph import Entity, pointer_entity
-
-    state, prompt = await wake()
-    assert 'person="@person:generated-a"' in prompt
-    person = pointer_entity("person", "generated-unit", "generated-a", "Generated A")
-    state.memory.graph.entities[person.id] = person
-    work = Entity("generated-work", "work", "generated-unit", "Generated work")
-    state.memory.graph.entities[work.id] = work
-    state.shown_keys.add(work.key)
-    statement = {
-        "type": "relation", "rel": "likes",
-        "subject": "@person:generated-a", "object": "@work:generated-work",
-        "cite": [{"source": 101, "quote": "Image attached."}],
-    }
-    result = await state.memory.propose(
-        state, items=[0], nothing_here=[], statements=[statement])
-    assert result["statements"][0]["status"] == "saved", result

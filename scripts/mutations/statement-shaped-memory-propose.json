@@ -105,13 +105,6 @@
   "target": "tests/unit/test_orient_kind_table.py::test_a_relation_a_memory_read_emitted_can_be_corrected"
  },
  {
-  "name": "the agenda renders authors in the endpoint handle form",
-  "file": "nora/language/cognition_render.py",
-  "old": "                (\"person\", f\"@person:{r.person_id}\" if r.person_id else None),",
-  "new": "                (\"person\", r.person_id),",
-  "target": "tests/unit/test_cognition_source_rows.py::test_the_agenda_renders_authors_as_person_handles"
- },
- {
   "name": "a non-handle endpoint refuses with its own reason",
   "file": "nora/app/comprehend.py",
   "old": "        if not isinstance(value, str) or not value.startswith(\"@\"):\n            return None, None, (\"relation\", \"endpoint_not_a_handle\")",

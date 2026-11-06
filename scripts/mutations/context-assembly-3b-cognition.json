@@ -2,8 +2,8 @@
  {
   "name": "3b (a): n is a position (1), not the message's own id: the id shown is no longer the id required",
   "file": "nora/language/cognition_render.py",
-  "old": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"source\", \":\".join(source_key) if source_key else None),",
-  "new": "            [rec], row_id=lambda r: 1,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"source\", \":\".join(source_key) if source_key else None),",
+  "old": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"source\", \":\".join(source_key) if source_key else None),\n                (\"person\", r.person_id),\n                (\"target\", \"yes\" if target else None),\n                (\"reaction\", emoji_display(r.emoji or \"?\") if reacted else None),",
+  "new": "            [rec], row_id=lambda r: 1,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"source\", \":\".join(source_key) if source_key else None),\n                (\"person\", r.person_id),\n                (\"target\", \"yes\" if target else None),\n                (\"reaction\", emoji_display(r.emoji or \"?\") if reacted else None),",
   "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_the_prompt_shows_an_id_the_rows_hold_and_no_other_handle"
  },
  {
@@ -196,14 +196,14 @@
   "target": "tests/unit/test_cognition_block_types_explain_every_field.py::test_the_view_rejects_text_outside_a_block_and_between_an_elements_children"
  },
  {
-  "name": "3b item 3: the objective says «Below the list» again, a shape of the input that no longer exists",
+  "name": "3b item 3: the objective says \u00abBelow the list\u00bb again, a shape of the input that no longer exists",
   "file": "nora/dreamer/objectives/cognition.md",
   "old": "After the agenda is what is already written down",
   "new": "Below the list is what is already written down",
   "target": "tests/unit/test_cognition_wiring.py::test_the_objective_names_none_of_the_old_shapes_of_the_input"
  },
  {
-  "name": "3b item 3: the objective says «the next list» again",
+  "name": "3b item 3: the objective says \u00abthe next list\u00bb again",
   "file": "nora/dreamer/objectives/cognition.md",
   "old": "comes back on the next agenda with a mark against",
   "new": "comes back on the next list with a mark against",
