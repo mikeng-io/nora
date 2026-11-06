@@ -98,6 +98,8 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
                   *, break_evidence_write: bool = False):
     """One real `main()` run of the scoped-browse case against a generated
     source. Returns `(rc, evidence_root, requests)`."""
+    _run_one_case.refusals = []
+    _run_one_case.fd_map = {}
     from nora.infra.sql.migrations_runner import run_migrations
     from tests.sandbox_fixtures import Knowledge, Message, seed_source
 
@@ -105,7 +107,7 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     admin_url = (f"postgresql://{pg_admin.user}:{pg_admin.password}"
                  f"@{pg_admin.host}:{pg_admin.port}/{pg_admin.maintenance_db}")
     with psycopg.connect(admin_url, autocommit=True) as conn:
-        conn.execute('DROP DATABASE IF EXISTS "generated_eval"')
+        conn.execute('DROP DATABASE IF EXISTS "generated_eval" WITH (FORCE)')
         conn.execute('CREATE DATABASE "generated_eval"')
     source_url = (f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
                   f"@{pg_admin.host}:{pg_admin.port}/generated_eval")
@@ -184,9 +186,15 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     if break_evidence_write:
         import os as _os
         original_write = _os.write
+        refusals = _run_one_case.refusals
+        fd_map = _run_one_case.fd_map
 
         def fail_model_request(fd, data):
             if b"nora.model.request" in bytes(data):
+                refusals.append({
+                    "fd": fd, "target": fd_map.get(fd),
+                    "sha256": hashlib.sha256(bytes(data)).hexdigest(),
+                })
                 raise OSError("generated write refusal")
             return original_write(fd, data)
         monkeypatch.setattr(_os, "write", fail_model_request)
@@ -239,14 +247,14 @@ def test_official_entry_composes_scoped_tool_and_records_evidence(
 def test_evidence_write_failure_precludes_any_dispatch(
         tmp_path, monkeypatch, pg_admin, pg_template):
     """A refused `nora.model.request` write is `EvidenceError` BEFORE the
-    request leaves — the transport sees zero requests, positive control."""
-    from nora.subject.eval_evidence import EvidenceError
-    try:
-        rc, _evidence_root, requests, _ = _run_one_case(
-            tmp_path, monkeypatch, pg_admin, pg_template,
-            break_evidence_write=True)
-        assert rc != 0
-    except EvidenceError:
-        requests = []
-        pass                  # the refusal is the point — no dispatch
-    assert requests == []      # nothing left the process
+    request leaves — the transport sees zero requests, exactly one
+    injected refusal, and the run records no successful finish."""
+    rc, evidence_root, requests, _ = _run_one_case(
+        tmp_path, monkeypatch, pg_admin, pg_template,
+        break_evidence_write=True)
+    assert rc != 0                    # sticky failure, invalid run
+    assert _run_one_case.refusals and len(_run_one_case.refusals) == 1
+    assert requests == []             # nothing left the process
+    rows = _rows(evidence_root)
+    assert not [r for r in rows if r["kind"] == "event"
+                and r["name"] == "nora.model.request"]
