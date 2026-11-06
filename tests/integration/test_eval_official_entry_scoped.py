@@ -175,13 +175,20 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     requests: list[dict] = []
     real_create_client = factory.create_client
 
+    transport = httpx.MockTransport(
+        _scripted_respond(evidence_root, requests))
+
     def with_transport(**kwargs):
         kwargs.setdefault("http_client", httpx.AsyncClient(
-            transport=httpx.MockTransport(
-                _scripted_respond(evidence_root, requests))))
+            transport=transport))
         return real_create_client(**kwargs)
 
     monkeypatch.setattr(factory, "create_client", with_transport)
+    # The same injected transport covers SDK-owned provider clients a
+    # bounded run reaches (the declared seam on run_budget).
+    from nora.domain.run_budget import injected_transport_client
+    injected_transport_client.set(
+        httpx.AsyncClient(transport=transport))
 
     if break_evidence_write:
         import os as _os

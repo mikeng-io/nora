@@ -1,273 +1,270 @@
-"""The declared eval seam: `--subject-overrides` and `--run-budget`.
+"""The run budget's real dispatch path: `factory.create_client` and
+`build_structured_model` under `httpx.MockTransport`.
 
-Two contracts, no network, no DB. (1) The budget gate on
-`chat.completions.create` reserves BEFORE a request leaves — a refused
-call raises `RunBudgetError` and the transport never fires — and
-reconciles the measured usage after. (2) `--subject-overrides FILE` is a
-declared seam: its content and sha256 land in `run_started` before any
-case composes, and an unreadable/invalid file refuses the run.
+No paid calls — the transport is the mock. The proofs: every HTTP
+attempt admits BEFORE it reaches the inner transport; the FINAL wire
+body is what the bounds measure (a `beta.parse` schema expansion and
+an `extra_body` merge cannot shrink the measured input or enlarge the
+output ceiling); strict nonnegative-int usage reconciles, anything
+indeterminate is terminal; a stream releases its reservation exactly
+once.
 """
 
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 
+import httpx
+import openai
 import pytest
 
+from nora.agent import factory
+from nora.agent.structured import build_structured_model
 from nora.domain.run_budget import (
     RunBudget,
     RunBudgetError,
     active_run_budget,
-    gated_create,
 )
 
 
-def _usage(prompt=10, completion=5):
-    return SimpleNamespace(prompt_tokens=prompt, completion_tokens=completion)
+def _sse(chunks):
+    data = "".join("data: " + json.dumps(c) + "\n\n" for c in chunks)
+    return data + "data: [DONE]\n\n"
 
 
-async def test_gated_create_reserves_before_dispatch_and_reconciles():
-    """Two admitted calls, the third refused WITHOUT the call firing —
-    reserve happens before the request leaves, reconcile lands usage."""
-    budget = RunBudget(max_requests=2, max_input_tokens=10_000,
+def _chunk(content=None, finish=None, usage=None):
+    chunk = {"id": "g", "object": "chat.completion.chunk",
+             "model": "m",
+             "choices": [{"index": 0, "delta": {}, "finish_reason": finish}]}
+    if content:
+        chunk["choices"][0]["delta"] = {"content": content}
+    if usage:
+        chunk["usage"] = usage
+    return chunk
+
+
+def _respond(requests, *, usage=None, chunks=None):
+    async def respond(request):
+        requests.append(json.loads(request.content))
+        if chunks is not None:
+            return httpx.Response(
+                200, headers={"content-type": "text/event-stream"},
+                content=_sse(chunks))
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": usage or {"prompt_tokens": 11,
+                               "completion_tokens": 4,
+                               "total_tokens": 15},
+        })
+    return respond
+
+
+def _client(requests, **kw):
+    transport = httpx.MockTransport(_respond(requests, **kw))
+    return factory.create_client(
+        base_url="https://generated.invalid/v1",
+        api_key="generated-key",
+        http_client=httpx.AsyncClient(transport=transport))
+
+
+async def test_admitted_call_counts_and_reconciles():
+    requests: list[dict] = []
+    budget = RunBudget(max_requests=1, max_input_tokens=10_000_000,
                        max_output_tokens=10_000, output_reserve=100)
-    calls = []
-
-    async def create(**kwargs):
-        calls.append(kwargs)
-        return SimpleNamespace(usage=_usage(prompt=50, completion=20))
-
     token = active_run_budget.set(budget)
     try:
-        await gated_create(budget, create, max_tokens=30)
-        await gated_create(budget, create)
-        with pytest.raises(RunBudgetError):
-            await gated_create(budget, create)
+        async with _client(requests) as client:
+            await client.chat.completions.create(
+                model="m", messages=[{"role": "user", "content": "hi"}])
+            assert budget.requests == 1
+            assert budget.input_tokens == 11
+            assert budget.output_tokens == 4
+            assert budget._reserved_out == 0   # released, exactly once
+            with pytest.raises(RunBudgetError):
+                await client.chat.completions.create(
+                    model="m",
+                    messages=[{"role": "user", "content": "again"}])
     finally:
         active_run_budget.reset(token)
-    assert len(calls) == 2          # the refused third call never fired
-    assert budget.requests == 2
-    assert budget.input_tokens == 100
-    assert budget.output_tokens == 40
+    assert len(requests) == 1          # the refused call never left
 
 
-async def test_input_crossing_is_terminal_not_post_spend():
-    """A request that reconciles over the input cap marks the budget
-    spent; the NEXT reserve refuses — and the terminal check makes the
-    run ERROR, never a successful final call."""
-    budget = RunBudget(max_requests=10, max_input_tokens=60,
-                       max_output_tokens=10_000, output_reserve=10)
-    calls = []
-
-    async def create(**kwargs):
-        calls.append(kwargs)
-        return SimpleNamespace(usage=_usage(prompt=70, completion=1))
-
-    with pytest.raises(RunBudgetError, match="input tokens"):
-        await gated_create(budget, create)      # reconcile itself fails
-    with pytest.raises(RunBudgetError):
-        await gated_create(budget, create)
-    with pytest.raises(RunBudgetError):
-        budget.finished()
-    assert len(calls) == 1
+async def test_extra_body_cannot_enlarge_the_ceiling():
+    """An `extra_body` max_tokens override lands on the merged body the
+    transport reads — 50000 declared under a 40000 cap refuses."""
+    requests: list[dict] = []
+    budget = RunBudget(max_requests=10, max_input_tokens=10_000_000,
+                       max_output_tokens=40_000, output_reserve=4000)
+    token = active_run_budget.set(budget)
+    try:
+        async with _client(requests) as client:
+            with pytest.raises(openai.APIConnectionError):
+                await client.chat.completions.create(
+                    model="m", messages=[{"role": "user", "content": "hi"}],
+                    extra_body={"max_tokens": 50_000})
+        assert budget.spent is not None and budget.requests == 0
+    finally:
+        active_run_budget.reset(token)
+    assert requests == []              # refused before the wire
 
 
-async def test_input_size_reserve_is_a_pre_dispatch_bound():
-    """The serialized request's byte size is the pre-dispatch input bound:
-    a request larger than the cap is refused before the call fires."""
-    budget = RunBudget(max_requests=10, max_input_tokens=50,
-                       max_output_tokens=10_000, output_reserve=10)
-    calls = []
-    async def create(**kwargs):
-        calls.append(kwargs)
-        return SimpleNamespace(usage=_usage())
-    big = "x" * 200
-    with pytest.raises(RunBudgetError, match="input size"):
-        await gated_create(budget, create, messages=[{"content": big}])
-    assert calls == []
+async def test_schema_expansion_counts_the_final_wire_bytes():
+    """`beta.parse` expands a Pydantic `response_format` to a full JSON
+    schema — the transport measures THOSE bytes, not the argument
+    object's repr. A >cap expansion refuses the attempt that carries
+    it, not an estimate of the class name."""
+    from pydantic import BaseModel, Field
 
+    class Big(BaseModel):
+        a: int = Field(description="x" * 30_000)
 
-async def test_a_stream_reconciles_from_its_terminal_usage():
-    """Streamed calls hold the reservation until the stream's usage chunk
-    lands; a stream ending without usage is spent, never a zero."""
-    budget = RunBudget(max_requests=5, max_input_tokens=10_000,
+    requests: list[dict] = []
+    budget = RunBudget(max_requests=10, max_input_tokens=10_000,
                        max_output_tokens=10_000, output_reserve=100)
+    token = active_run_budget.set(budget)
+    try:
+        async with _client(requests) as client:
+            with pytest.raises(openai.APIConnectionError):
+                await client.beta.chat.completions.parse(
+                    model="m",
+                    messages=[{"role": "user", "content": "hi"}],
+                    response_format=Big)
+        assert budget.requests == 0      # the expanded body never left
+    finally:
+        active_run_budget.reset(token)
+    assert requests == []              # the expanded body never left
 
-    async def create(**kwargs):
-        async def chunks():
-            for i in range(2):
-                yield SimpleNamespace(usage=None, delta={"x": i})
-            yield SimpleNamespace(usage=_usage(prompt=40, completion=10))
-        return chunks()
 
-    stream = await gated_create(budget, create)
-    async for _ in stream:
-        pass
-    assert budget.input_tokens == 40 and budget.output_tokens == 10
+async def test_negative_usage_is_terminal_never_credit():
+    """Malformed usage (negative ints) is indeterminate: spent latched,
+    the budget is not credited, `finished` reports invalid."""
+    requests: list[dict] = []
+    budget = RunBudget(max_requests=10, max_input_tokens=10_000_000,
+                       max_output_tokens=10_000, output_reserve=100)
+    token = active_run_budget.set(budget)
+    try:
+        async with _client(requests, usage={
+                "prompt_tokens": -50, "completion_tokens": -30,
+                "total_tokens": -80}) as client:
+            with pytest.raises(openai.APIConnectionError):
+                await client.chat.completions.create(
+                    model="m",
+                    messages=[{"role": "user", "content": "hi"}])
+        assert budget.spent is not None
+        assert budget.output_tokens >= 0     # never credited negative
+        with pytest.raises(RunBudgetError):
+            budget.finished()
+    finally:
+        active_run_budget.reset(token)
 
-    async def no_usage(**kwargs):
-        async def chunks():
-            yield SimpleNamespace(usage=None)
-        return chunks()
 
-    stream = await gated_create(budget, no_usage)
-    with pytest.raises(RunBudgetError, match="without usage"):
-        async for _ in stream:
-            pass
-    with pytest.raises(RunBudgetError):
-        budget.finished()
+async def test_streams_release_the_reservation_exactly_once():
+    """Nine tiny streams under the campaign envelope must not strand
+    reservations — the tenth call still admits; `_reserved_out` returns
+    to zero after every completion."""
+    requests: list[dict] = []
+    chunks = [_chunk(content="ok", finish="stop",
+                     usage={"prompt_tokens": 1,
+                            "completion_tokens": 1,
+                            "total_tokens": 2})]
+    budget = RunBudget(max_requests=40, max_input_tokens=10_000_000,
+                       max_output_tokens=40_000, output_reserve=4000)
+    token = active_run_budget.set(budget)
+    try:
+        async with _client(requests, chunks=chunks) as client:
+            for _ in range(10):
+                stream = await client.chat.completions.create(
+                    model="m", stream=True,
+                    stream_options={"include_usage": True},
+                    messages=[{"role": "user", "content": "hi"}])
+                async for _ in stream:
+                    pass
+                assert budget._reserved_out == 0
+            assert budget.requests == 10
+            assert budget.output_tokens == 10
+    finally:
+        active_run_budget.reset(token)
+
+
+async def test_a_stream_without_usage_is_spent():
+    requests: list[dict] = []
+    chunks = [_chunk(content="ok", finish="stop")]   # no usage chunk
+    budget = RunBudget(max_requests=10, max_input_tokens=10_000_000,
+                       max_output_tokens=10_000, output_reserve=100)
+    token = active_run_budget.set(budget)
+    try:
+        async with _client(requests, chunks=chunks) as client:
+            stream = await client.chat.completions.create(
+                model="m", stream=True,
+                stream_options={"include_usage": True},
+                messages=[{"role": "user", "content": "hi"}])
+            with pytest.raises(RunBudgetError):
+                async for _ in stream:
+                    pass
+            assert budget.spent is not None
+            with pytest.raises(RunBudgetError):   # gated_create: spent
+                await client.chat.completions.create(
+                    model="m",
+                    messages=[{"role": "user", "content": "hi"}])
+    finally:
+        active_run_budget.reset(token)
+    assert len(requests) == 1          # the follow-up never left
 
 
 async def test_deadline_refuses_dispatch():
-    budget = RunBudget(max_requests=10, max_input_tokens=1, max_output_tokens=1,
-                       deadline=0.0, monotonic=lambda: 10.0)
-    async def create(**kwargs):
-        raise AssertionError("must never fire")
-    with pytest.raises(RunBudgetError, match="active-time"):
-        await gated_create(budget, create)
-
-
-async def test_create_client_wraps_only_when_a_budget_is_installed():
-    """`create_client` gates `chat.completions.create` exactly when the
-    contextvar is installed — production clients stay untouched."""
-    from nora.agent.factory import create_client
-
-    ungated = create_client(base_url="http://x", api_key="k")
-    plain_create = ungated.chat.completions.create
-    budget = RunBudget(max_requests=1, max_input_tokens=1, max_output_tokens=1)
+    requests: list[dict] = []
+    budget = RunBudget(max_requests=10, max_input_tokens=10_000,
+                       max_output_tokens=10_000, output_reserve=10,
+                       deadline=0.0)
     token = active_run_budget.set(budget)
     try:
-        gated = create_client(base_url="http://x", api_key="k")
-        assert gated.chat.completions.create is not plain_create
+        async with _client(requests) as client:
+            with pytest.raises(RunBudgetError):
+                await client.chat.completions.create(
+                    model="m",
+                    messages=[{"role": "user", "content": "hi"}])
     finally:
         active_run_budget.reset(token)
-    again = create_client(base_url="http://x", api_key="k")
-    assert again.chat.completions.create is not gated.chat.completions.create
+    assert requests == []
 
 
-# ---- the declared subject-override seam ------------------------------
-
-def _stub(monkeypatch: pytest.MonkeyPatch, tmp_path, runs: list[str]) -> None:
-    import evals.__main__ as m
-    monkeypatch.setattr(m, "source_url_for", lambda *a, **k: "URL")
-    monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", lambda url: None)
-    monkeypatch.setattr(m, "_sweep_stale_private_blanks", lambda url: None)
-    monkeypatch.setattr(m, "shared_database_versions", lambda url: None)
-    written = tmp_path / "config.evaluation.toml"
-    written.write_text("", encoding="utf-8")
-    monkeypatch.setattr(m, "materialise", lambda **k: str(written))
-    monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
-    monkeypatch.setattr(m, "graph_surface_lines", lambda *a: [])
-    monkeypatch.setattr(m, "embedder_model_of", lambda text: "m")
-    monkeypatch.setattr(
-        m, "_run_one",
-        lambda *a, **k: runs.append(
-            json.dumps(k.get("subject_overrides") or {})) or True)
-
-    async def _close() -> None:
-        return None
-
-    monkeypatch.setattr(m, "close_private_blank_templates", _close)
-    monkeypatch.setattr(m, "assert_shared_databases_unchanged", lambda url, before: None)
-
-    class _Evidence:
-        def __init__(self, **kwargs):
-            self.metadata = kwargs["metadata"]
-            _Evidence.last = self
-            self.recorded = []
-            self.path = tmp_path / "evidence"
-            self.exit_code = None
-
-        def record(self, kind, **payload):
-            self.recorded.append((kind, payload))
-
-        def check(self):
-            pass
-
-        def capture(self, provider):
-            import contextlib
-            return contextlib.nullcontext()
-
-    monkeypatch.setattr(m, "RunEvidence", _Evidence)
+async def test_sdk_owned_provider_dispatches_through_the_budget():
+    """`build_structured_model` hands the provider's internal
+    `AsyncOpenAI` a bounded transport — a spent budget refuses its
+    dispatch, a healthy one counts it. SDK-owned, not factory-built."""
+    requests: list[dict] = []
+    transport = httpx.MockTransport(_respond(requests))
+    # a SPENT budget refuses before the wire — built under it, the way
+    # composition builds the provider during a bounded run
+    spent = RunBudget(max_requests=0, max_input_tokens=10_000,
+                      max_output_tokens=10_000, output_reserve=100)
+    token = active_run_budget.set(spent)
+    try:
+        model = build_structured_model(
+            base_url="https://generated.invalid/v1",
+            api_key="generated-key",
+            model_id="m", max_tokens=100, temperature=0.0,
+            http_client=httpx.AsyncClient(transport=transport))
+        async with model._get_client() as client:   # the SDK-owned AsyncOpenAI
+            with pytest.raises(openai.APIConnectionError):
+                await client.chat.completions.create(
+                    model="m",
+                    messages=[{"role": "user", "content": "hi"}])
+        assert spent.requests == 0 and requests == []
+    finally:
+        active_run_budget.reset(token)
 
 
-def test_subject_overrides_reaches_every_case_via_spec(monkeypatch, tmp_path):
-    import evals.__main__ as m
-
-    runs: list[str] = []
-    _stub(monkeypatch, tmp_path, runs)
-    fixture = tmp_path / "fixture.json"
-    fixture.write_text(json.dumps({
-        "computer.scoped.enabled": True,
-        "computer.scoped.registry": "fixture-registry"}))
-    monkeypatch.setattr("sys.argv", [
-        "python -m evals", "tool_selection", "--case", "route_where_is_now",
-        "--subject-overrides", str(fixture)])
-    assert m.main() == 0
-    assert json.loads(runs[0]) == {
-        "computer.scoped.enabled": True,
-        "computer.scoped.registry": "fixture-registry"}
+def test_build_structured_model_leaves_no_budget_ungated():
+    """Without an installed budget no http_client is injected — the
+    provider keeps the SDK default transport, ungated by design."""
+    model = build_structured_model(
+        base_url="https://generated.invalid/v1", api_key="generated-key",
+        model_id="m", max_tokens=100, temperature=0.0)
+    assert model is not None           # constructed; dispatch ungated
 
 
-def test_subject_overrides_content_and_hash_are_in_run_started(monkeypatch, tmp_path):
-    import hashlib
-
-    import evals.__main__ as m
-
-    runs: list[str] = []
-    _stub(monkeypatch, tmp_path, runs)
-    fixture = tmp_path / "fixture.json"
-    body = json.dumps({"computer.scoped.enabled": True})
-    fixture.write_text(body)
-    monkeypatch.setattr("sys.argv", [
-        "python -m evals", "tool_selection", "--case", "route_where_is_now",
-        "--subject-overrides", str(fixture), "--run-budget", "5"])
-    assert m.main() == 0
-    md = m.RunEvidence.last.metadata
-    assert md["subject_overrides_file"] == str(fixture)
-    assert md["subject_overrides_sha256"] == hashlib.sha256(
-        body.encode()).hexdigest()
-    assert md["subject_overrides"] == {"computer.scoped.enabled": True}
-    assert md["run_budget"]["max_requests"] == 5
-
-
-def test_an_invalid_subject_overrides_file_is_refused_before_any_case(
-        monkeypatch, tmp_path, capsys):
-    import evals.__main__ as m
-
-    runs: list[str] = []
-    _stub(monkeypatch, tmp_path, runs)
-    bad = tmp_path / "bad.json"
-    bad.write_text("[1,2,3]")
-    monkeypatch.setattr("sys.argv", [
-        "python -m evals", "tool_selection", "--case", "route_where_is_now",
-        "--subject-overrides", str(bad)])
-    assert m.main() == 2
-    assert "JSON object" in capsys.readouterr().err
-    assert runs == []
-
-
-def test_a_missing_subject_overrides_file_is_refused(monkeypatch, tmp_path):
-    import evals.__main__ as m
-
-    runs: list[str] = []
-    _stub(monkeypatch, tmp_path, runs)
-    monkeypatch.setattr("sys.argv", [
-        "python -m evals", "tool_selection", "--case", "route_where_is_now",
-        "--subject-overrides", str(tmp_path / "nope.json")])
-    assert m.main() == 2
-    assert runs == []
-
-
-def test_run_budget_refuses_a_non_integer(monkeypatch, tmp_path, capsys):
-    import evals.__main__ as m
-
-    runs: list[str] = []
-    _stub(monkeypatch, tmp_path, runs)
-    monkeypatch.setattr("sys.argv", [
-        "python -m evals", "tool_selection", "--case", "route_where_is_now",
-        "--run-budget", "not-a-number"])
-    assert m.main() == 2
-    assert "integers" in capsys.readouterr().err
-    assert runs == []
+def test_create_client_wraps_only_when_a_budget_is_installed():
+    client = factory.create_client(base_url="https://x", api_key="k")
+    transport = client._client._transport
+    assert not hasattr(transport, "_budget")

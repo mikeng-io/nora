@@ -484,6 +484,24 @@ def build_config(spec: SubjectSpec) -> Config:
     cfg = _baseline(loaded, spec.workdir)
     for path, value in (spec.overrides or {}).items():
         cfg = _with(cfg, path, value)
+    if spec.overrides:
+        # Every section an override touched re-validates through the real
+        # schema — field constraints and model_validators run before
+        # composition; `model_copy` alone skips all of them.
+        for name in {p.split(".", 1)[0] for p in spec.overrides}:
+            section_type = Config.model_fields[name].annotation
+            section_type.model_validate(
+                getattr(cfg, name).model_dump(mode="python"),
+                context={"base": spec.workdir})
+    if spec.overrides:
+        # Re-validate every section an override touched through the real
+        # schema — field constraints and that section's model_validators
+        # run here, before composition; `model_copy` alone skips them.
+        for name in {p.split(".", 1)[0] for p in spec.overrides}:
+            section_type = Config.model_fields[name].annotation
+            section_type.model_validate(
+                getattr(cfg, name).model_dump(mode="python"),
+                context={"base": spec.workdir})
     # Rewrite after overrides, including deployment routes, so host-only callers
     # cannot restore container addresses over the sandbox configuration.
     if not _resolves(_DOCKER_HOST):
@@ -634,10 +652,20 @@ async def obtain(spec: SubjectSpec) -> Subject:
     )
 
 
-def validate_subject_overrides(overrides: dict[str, Any]) -> None:
+def validate_subject_overrides(overrides: dict[str, Any],
+                               base: Config | None = None,
+                               context_dir: Path | None = None,
+                               ) -> Config | None:
     """Every override's dotted path must resolve to a real `Config` field
-    AND its value must be the field's type strictly — no truthy strings,
-    no unknown branches, no scalar model_copy bypass. Credentials stay
+    and its value must satisfy the leaf's REAL constraints — `gt`/`le`
+    ride the field's metadata, which `rebuild_annotation()` restores for
+    `TypeAdapter` (NaN and -1 fail `gt=0`, a truthy string fails a bool).
+    Given `base` (the config the overrides land on) the values are
+    applied the same `_with` way composition applies them and every
+    touched section re-validates — model_validators like
+    `run_timeout <= max_run_timeout` run on the merged values. Without a
+    base only the per-path checks run; `build_config` re-validates the
+    merged config before composition either way. Credentials stay
     named env references, never raw values."""
     for path, value in overrides.items():
         if isinstance(value, str) and ("_key" in path or "secret" in path
@@ -647,28 +675,29 @@ def validate_subject_overrides(overrides: dict[str, Any]) -> None:
                 f"--subject-overrides: {path!r} looks like a raw credential; "
                 "name the env var instead")
         node: Any = Config
+        leaf: Any = None
         for part in path.split("."):
-            field_info = (node.model_fields.get(part)
-                          if hasattr(node, "model_fields") else None)
-            if field_info is None:
+            leaf = (node.model_fields.get(part)
+                    if hasattr(node, "model_fields") else None)
+            if leaf is None:
                 raise ValueError(
                     f"--subject-overrides: {path!r} names no config field")
-            node = field_info.annotation
+            node = leaf.annotation
         if isinstance(node, type) and hasattr(node, "model_fields"):
             raise ValueError(
                 f"--subject-overrides: {path!r} is a section, not a leaf")
-        expected = node
-        if expected is bool and type(value) is not bool:
+        if node is bool and type(value) is not bool:
             raise ValueError(
                 f"--subject-overrides: {path!r} wants a real bool, "
                 f"not {type(value).__name__} {value!r}")
-        if expected is not None and isinstance(expected, type) \
-                and issubclass(expected, (int, float)) \
-                and not isinstance(value, expected):
-            raise ValueError(
-                f"--subject-overrides: {path!r} wants {expected.__name__}, "
-                f"not {type(value).__name__} {value!r}")
-        if expected is str and not isinstance(value, str):
-            raise ValueError(
-                f"--subject-overrides: {path!r} wants str, "
-                f"not {type(value).__name__} {value!r}")
+        TypeAdapter(leaf.rebuild_annotation()).validate_python(value)
+        if base is not None:
+            base = _with(base, path, value)
+    if base is None:
+        return None
+    for name in {p.split(".", 1)[0] for p in overrides}:
+        section_type = Config.model_fields[name].annotation
+        section_type.model_validate(
+            getattr(base, name).model_dump(mode="python"),
+            context={"base": context_dir or Path.cwd()})
+    return base
