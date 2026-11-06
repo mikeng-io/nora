@@ -74,16 +74,35 @@ def _scripted_respond(evidence_root: Path, requests: list[dict]):
         assert body in formatted, (
             "request left before it was durably recorded")
         requests.append(body)
+        names = {t["function"]["name"] for t in body.get("tools", [])}
+        if not names:
+            # A separate post-turn occasion has no tool surface. It must
+            # not receive a fabricated browser call or the turn's tool ids.
+            return httpx.Response(
+                200, headers={"content-type": "text/event-stream"},
+                content=_sse({"role": "assistant", "content": "{}"}, "stop"))
         step = len(requests)
         if step == 1:
+            assert "load_tools" in names
+            assert "computer_browse" not in names
+            assert "computer_browse" in str(body["messages"])
             tool = {"name": "load_tools",
-                    "arguments": json.dumps({"tools": ["computer_browse"]})}
+                    "arguments": json.dumps({"names": ["computer_browse"]})}
         elif step == 2:
+            assert "computer_browse" in names
             tool = {"name": "computer_browse",
                     "arguments": json.dumps(
                         {"objective": "open the page",
                          "start_url": "https://example.com"})}
         else:
+            # The registry is deliberately empty: the real tool must refuse
+            # the missing VM, rather than an unknown-tool call counting as
+            # proof that the browser was admitted.
+            replies = [m for m in body["messages"]
+                       if m.get("role") == "tool" and m.get("tool_call_id") == "c2"]
+            assert len(replies) == 1
+            assert '"unavailable"' in str(replies[0]["content"])
+            assert "send_reply" in names
             tool = {"name": "send_reply",
                     "arguments": json.dumps({"text": "done."})}
         delta = {"role": "assistant", "tool_calls": [
@@ -191,7 +210,8 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     fixture = tmp_path / "scoped.json"
     fixture.write_text(json.dumps({
         "computer.enabled": True,
-        "computer.state_dir": str(tmp_path / "computer-state"),
+        "computer.browse.enabled": True,
+        "llm.defer_tools": True,
         "computer.scoped.enabled": True,
         "computer.scoped.registry": str(registry)}))
     want_sha = hashlib.sha256(fixture.read_bytes()).hexdigest()
@@ -250,13 +270,13 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
 def test_official_entry_composes_scoped_tool_and_records_evidence(
         tmp_path, monkeypatch, pg_admin, pg_template,
         example_config_path,):
-    """The real entry: override reaches the composed scoped computer, the
-    budget counts the real requests, and events.jsonl binds provenance
-    before the transport answers."""
+    """The real entry exposes and loads the browser schema, and the real
+    tool refuses the missing guest. Budget/evidence cover every request;
+    live navigation/capture/export are a separate acceptance journey."""
     rc, evidence_root, requests, want_sha = _run_one_case(
         tmp_path, monkeypatch, pg_admin, pg_template,
         example_config_path=example_config_path)
-    assert rc == 0, "the scripted trajectory routes computer_browse → PASS"
+    assert rc == 0, "the admitted browser must refuse the missing guest cleanly"
     rows = _rows(evidence_root)
     started = next(r for r in rows if r["kind"] == "run_started")
     md = started.get("metadata", started)

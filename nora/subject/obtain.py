@@ -365,6 +365,9 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # `store.data_dir` — media custody lands in the caller's directory, never a
     # shared one.
     cfg = _with(cfg, "store.data_dir", workdir)
+    # Each composed subject owns its journal lock, just like its database
+    # and media. The deployment's computer state cannot be shared by draws.
+    cfg = _with(cfg, "computer.state_dir", str(workdir / "state"))
     # `platforms.signal.account` — the template's default is empty, meaning
     # "derive from the daemon", and `build_dependencies` then makes a REAL HTTP
     # call to signal-cli at startup and raises `StartupError` when nothing
