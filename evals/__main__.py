@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import math
 import os
 import signal
 import statistics
 import sys
+import time
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -404,10 +406,11 @@ def _run_one(
     positions: bool = False,
     context_receipts: list[dict] | None = None,
     memory_index: bool = False,
+    subject_overrides: dict[str, Any] | None = None,
 ) -> bool:
     experiment, task = experiment_for(
         name, source_url=source_url, judge=judge, sample=sample, only=only,
-        memory_index=memory_index,
+        memory_index=memory_index, overrides=subject_overrides,
     )
     report = experiment.run_evaluations(task=task)
     from nora.subject.eval_evidence import current
@@ -663,6 +666,20 @@ def _main(*, lock_fd: int = -1) -> int:
                     help="no-call pin of ORIGINAL export reconciled to original source files")
     ap.add_argument("--coverage-manifest", type=Path,
                     help="exclusive private manifest destination; never derived from input name")
+    ap.add_argument(
+        "--subject-overrides", type=Path, metavar="FILE",
+        help="a JSON object of dotted `SubjectSpec.overrides` keys applied to "
+             "every composed subject (e.g. `computer.scoped.enabled`, "
+             "`computer.scoped.registry`). The file's content and sha256 are "
+             "recorded in `run_started` before any case composes — a declared "
+             "subject seam, not a hidden patch.")
+    ap.add_argument(
+        "--run-budget", metavar="REQUESTS[,IN[,OUT[,MINUTES]]]",
+        help="a hard dispatch bound installed before the first case composes: "
+             "max model requests, max input tokens, max output tokens, max "
+             "active minutes (defaults 40/600000/40000/30). `chat.completions` "
+             "calls that would cross it raise RunBudgetError BEFORE leaving — "
+             "budget exhaustion is ERROR, never PASS.")
     args = ap.parse_args()
     if args.coverage_freeze_input:
         from evals.profile_coverage_input import freeze_manifest
@@ -735,23 +752,76 @@ def _main(*, lock_fd: int = -1) -> int:
     from nora.subject.sandbox import EVAL_HOST_LOCK
 
     _prefill_capture()  # establish the existing SDK provider before attaching durable capture
+    # The declared subject seam, validated and hashed BEFORE any case composes:
+    # a bad file refuses the run with nothing spent, and its exact content is
+    # what `run_started` carries.
+    subject_overrides: dict[str, Any] | None = None
+    if args.subject_overrides is not None:
+        try:
+            raw = args.subject_overrides.read_bytes()
+            parsed = json.loads(raw.decode())
+            if not isinstance(parsed, dict) or not all(
+                    isinstance(k, str) and k and not k.startswith(".")
+                    for k in parsed):
+                raise ValueError("--subject-overrides must be a JSON object of dotted keys")
+            subject_overrides = parsed
+        except (OSError, ValueError) as exc:
+            print(f"refusing to run: {exc}", file=sys.stderr)
+            return 2
+    # The hard dispatch bound: installed before the first case composes, so
+    # even composition's own model reads are counted.
+    budget = None
+    if args.run_budget is not None:
+        from nora.obs.run_budget import RunBudget
+        parts = args.run_budget.split(",")
+        try:
+            vals = [int(p.strip()) for p in parts]
+        except ValueError:
+            print("refusing to run: --run-budget fields must be integers",
+                  file=sys.stderr)
+            return 2
+        if not 1 <= len(vals) <= 4 or any(v <= 0 for v in vals):
+            print("refusing to run: --run-budget takes 1-4 positive integers",
+                  file=sys.stderr)
+            return 2
+        vals += [40, 600000, 40000, 30][len(vals):]
+        budget = RunBudget(
+            max_requests=vals[0], max_input_tokens=vals[1],
+            max_output_tokens=vals[2],
+            deadline=time.monotonic() + vals[3] * 60,
+            output_reserve=4000)
     try:
         evidence = RunEvidence(run_id=RUN_ID, lock_fd=lock_fd, metadata={
             **revision(_REPO_ROOT), "corpora": names, "cases": sorted(only or ()),
             "sample": args.sample, "judge": args.judge, "judge_samples": args.judge_samples,
             "deployment_config_sha256": fingerprint(Path(args.deployment_config)),
             "lock_path": str(EVAL_HOST_LOCK), "lock_acquired": True,
+            **({"subject_overrides_file": str(args.subject_overrides),
+                "subject_overrides_sha256": hashlib.sha256(
+                    args.subject_overrides.read_bytes()).hexdigest(),
+                "subject_overrides": subject_overrides}
+               if subject_overrides is not None else {}),
+            **({"run_budget": budget.as_metadata()} if budget is not None else {}),
         })
     except OSError as exc:
         raise EvidenceError(f"cannot prepare private eval evidence ({type(exc).__name__})") from exc
     print(f"private eval evidence: {evidence.path}")
-    with evidence.capture(trace.get_tracer_provider()):
-        rc = _execute(args, names, only)
-        evidence.exit_code = rc
-        return rc
+    from nora.obs.run_budget import active_run_budget
+    token = active_run_budget.set(budget) if budget is not None else None
+    try:
+        with evidence.capture(trace.get_tracer_provider()):
+            rc = _execute(args, names, only, subject_overrides=subject_overrides)
+            evidence.exit_code = rc
+            if budget is not None:
+                evidence.record("run_budget_final", **budget.as_metadata())
+            return rc
+    finally:
+        if token is not None:
+            active_run_budget.reset(token)
 
 
-def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | None) -> int:
+def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | None,
+             *, subject_overrides: dict[str, Any] | None = None) -> int:
     if "profile_coverage" in names:
         # A frozen read-only measurement has no subject to compose, sandbox to
         # mutate or Honcho workspace to create. It still runs the same task,
@@ -915,7 +985,7 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
                     ok = _run_one(
                         name, source_url=source_url, judge=judge, sample=args.sample,
                         only=only, all_reasons=args.reasons, positions=args.positions,
-                        memory_index=graph,
+                        memory_index=graph, subject_overrides=subject_overrides,
                         context_receipts=(receipts if args.context_arm != "full"
                                           or args.context_report else None),
                     ) and ok

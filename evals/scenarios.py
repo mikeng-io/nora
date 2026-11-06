@@ -562,6 +562,7 @@ def selected_cases(
 def experiment_for(
     name: str, *, source_url: str, judge: Any = None, sample: int = 1,
     only: frozenset[str] | None = None, memory_index: bool = False,
+    overrides: dict[str, Any] | None = None,
 ) -> tuple[Experiment, Any]:
     """A ready-to-run `(Experiment, task)` pair for one corpus.
 
@@ -596,7 +597,8 @@ def experiment_for(
         full_restore=name in FULL_RESTORE_CORPORA,
         overrides=({**(dict(MEMORY_INDEX_OVERRIDES) if memory_index else {}),
                    **(dict(COGNITION_SESSION_OVERRIDES)
-                      if name == "cognition_session" else {})} or None),
+                      if name == "cognition_session" else {}),
+                   **(dict(overrides) if overrides else {})} or None),
         memory_surface="graph" if memory_index else "honcho",
     )
     grader = ToolRouteGrader() if name in ROUTED_CORPORA else MeetsGrader()

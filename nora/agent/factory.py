@@ -74,10 +74,26 @@ def create_client(
 ) -> AsyncOpenAI:
     """`http_client` is the transport seam for an endpoint that wants something
     on EVERY request that the SDK does not send, e.g. OpenCode Go's mandatory
-    `x-opencode-session` (DEC-197). `None` keeps the SDK's own client."""
+    `x-opencode-session` (DEC-197). `None` keeps the SDK's own client.
+
+    When `nora.obs.run_budget.active_run_budget` is installed (an eval run's
+    bound, never production's) every `chat.completions.create`/`parse` on the
+    returned client is reserved BEFORE it leaves and reconciled after — a
+    refused reserve raises `RunBudgetError` without a request being sent."""
     if not api_key:
         raise RuntimeError("api_key is empty — refusing to start")
-    return AsyncOpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
+    client = AsyncOpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
+    from nora.obs.run_budget import active_run_budget, gated_create
+    budget = active_run_budget.get()
+    if budget is not None:
+        completions = client.chat.completions
+        for method in ("create", "parse"):
+            fn = getattr(completions, method, None)
+            if fn is not None:
+                import functools
+                setattr(completions, method,
+                        functools.partial(gated_create, budget, fn))
+    return client
 
 
 def create_model_provider(
