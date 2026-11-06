@@ -1136,8 +1136,10 @@ async def test_rollup_discovery_and_render_share_exact_pending_with_competing_ti
         raise AssertionError('discovery hydrated a transcript')
 
     monkeypatch.setattr(module, 'transcript_row', forbidden)
-    _, _, _, evidence, _ = wired(env)
-    assert await evidence.count(key=KEY, after=0) > 0
+    reads, _, _, evidence, _ = wired(env)
+    boundary, _ = await reads.history_state(key=KEY)
+    await reads.advance_history(key=KEY, cursor=boundary)
+    assert await evidence.count(key=KEY, after=boundary) > 0
     assert constructed == []
     discovered = await source.rollup(key=KEY, unit='unit', rooms=ROOMS,
                                      person=PERSON, limit=12, discover=True)
