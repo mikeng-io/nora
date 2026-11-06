@@ -411,6 +411,7 @@ async def test_one_slip_isolates_the_slipping_statement():
     assert [s["status"] for s in result["statements"]] == ["saved", "refused"]
     assert result["statements"][1]["reason"] == "span_not_in_source"
     assert result["admitted"] == [0] and len(memory.graph.relations) == 1
+    assert state.admitted_indices == {0}
 
 
 async def test_open_and_nothing_here_completion():

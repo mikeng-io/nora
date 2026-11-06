@@ -58,6 +58,7 @@ async def wake(budget=None):
             ("media", "101:generated-image"), "record", "generated-unit", ("generated-a",), NOTICE
         ),
         Source(("message", "102"), "record", "generated-unit", ("generated-b",), "Context from B."),
+        Source(("message", "103"), "record", "generated-unit", (), "Loaded but never shown."),
     )
     at = datetime.fromtimestamp(NOW / 1000, UTC)
     # The first loader's media slot collides with the next real message.
@@ -186,6 +187,24 @@ async def test_budget_omitted_source_cannot_be_cited():
     assert "-1" not in item.snapshot["source_keys"]
     claims, drops = partition_claims({"claims": [claim(-1, "Pending")]}, item.snapshot)
     assert not claims and drops == ["citation_outside_batch"]
+
+
+@pytest.mark.asyncio
+async def test_a_loaded_but_unemitted_row_cannot_be_cited():
+    """A source the loader handed prepare but the agenda never rendered is not
+    citable: custody is the emitted catalogue, not the loaded set."""
+    state, prompt = await wake()
+    assert "Loaded but never shown." not in prompt
+    result = await state.memory.propose(
+        state, items=[0], nothing_here=[],
+        statements=[{
+            "type": "relation", "rel": "at",
+            "subject": {"new": {"kind": "event", "name": "Generated outing"}},
+            "object": {"new": {"kind": "place", "name": "Generated venue"}},
+            "cite": [{"source": 103, "quote": "Loaded but never shown."}],
+        }])
+    assert result["status"] == "refused"
+    assert result["statements"][0]["reason"] == "unseen_source"
 
 
 @pytest.mark.asyncio

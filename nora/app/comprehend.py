@@ -204,7 +204,9 @@ class MemoryProposalAdmission:
         if part not in PARTS or reason not in REFUSAL_REASONS:
             raise ValueError("unknown comprehend refusal")
         await self.records.record_refusal(session, part, reason)
-        self.metrics.inc("nora_comprehend_refused_parts_total", part=part, reason=reason)
+        if self.metrics is not None:
+            self.metrics.inc(
+                "nora_comprehend_refused_parts_total", part=part, reason=reason)
 
     def _endpoint(
         self, value: Endpoint, work: WorkItem,
