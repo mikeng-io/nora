@@ -280,14 +280,15 @@ class ComputerContextReader:
                         # A row bound to a DEAD instance is expired whatever
                         # the sweep has had time to write — the block renders
                         # the live instance's tabs only.
-                        status=("expired" if t.status == "open"
+                        status=("unavailable" if t.status == "open" and instance_read is not None
+                                and instance is None else "expired" if t.status == "open"
                                 and instance is not None
                                 and t.instance != instance else t.status),
                         via=t.via,
                         last_activity=t.last_activity_at,
                         expires_in=((t.last_activity_at + idle - now).total_seconds()
                                     if idle is not None and t.status == "open"
-                                    and (instance is None or t.instance == instance)
+                                    and (instance_read is None or t.instance == instance)
                                     else None),
                         reason=cut(why, 60),
                         last_op=(cut(str((owner.payload or {}).get("tool")

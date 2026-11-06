@@ -469,10 +469,13 @@ enabled explicitly for this acceptance case, alongside scoped mode.
 The subject baseline isolates computer state beneath its own workdir. Do not
 override it with one shared journal directory for a multi-draw run. Use a
 registry containing only the disposable fixture's scopes and its dedicated
-Redis instance. The eval subject composes the same dependencies but does not
-start `App.run`'s computer queue/sweep loops: synchronous tool exposure is
-therefore a separate check from full queue, idle and deferred-delivery
-acceptance. Do not claim the latter from a routing PASS.
+Redis instance. An enabled subject starts the shared computer lifecycle:
+queue, browser and session sweeps use advancing operational time while the
+snapshot's semantic clock stays frozen. Close stops admission and loops,
+drains executors and manager events, then releases Redis and the journal.
+A failed drain retains dependencies for retry rather than closing stores
+under running work. Synchronous tool exposure remains a separate check from
+queue, idle and deferred-delivery acceptance; a routing PASS proves only routing.
 
 Before a paid confirmation, a zero-paid integration must inspect real formatted
 schemas and actual tool results through the official entry. An empty endpoint
@@ -524,7 +527,9 @@ expires every handle bound to the old boot.
 - The queue for a scope's computer segments lives on `nq:computer:<scope>`
   in the DEDICATED credential `NORA_COMPUTER_REDIS_URL` (projected through
   the existing `redis_url_env` mechanism — no parallel loader). The runner
-  needs `XADD`, `XGROUP CREATE`, `XREADGROUP`, `XAUTOCLAIM`, `XACK`, `PING`;
+  needs `XADD`, `XGROUP CREATE`, `XREADGROUP`, `XAUTOCLAIM`, `XACK`, `XTRIM`, `PING`;
+  acknowledged streams are approximately trimmed to 128 entries, with SQL
+  remaining authoritative for pending work and recovery;
   breadth comes from the `computer_tasks` table, so `SCAN`/`KEYS` are NOT
   required and the credential must not grant them.
 - A browser command whose websocket is lost while a CDP reply is pending

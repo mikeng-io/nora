@@ -1742,6 +1742,8 @@ class FakeComputeJobStore:
         self._jobs: dict[UUID, ComputeJob] = {}
 
     async def create(self, job: ComputeJob) -> None:
+        if job.id in self._jobs:
+            raise ValueError("compute job already exists")
         self._jobs[job.id] = normalise_compute_job(job)
 
     async def get(self, job_id: UUID) -> ComputeJob | None:
@@ -2771,6 +2773,7 @@ class FakeComputerTaskStore:
         self._scope_locks: dict[str, asyncio.Lock] = {}
         self._outbox = outbox
         self.filed_jobs: list[Any] = []
+        self._delivery_lock = asyncio.Lock()
 
     def _save(self, task: ComputerTask) -> ComputerTask:
         self.rows[task.id] = task
@@ -2862,19 +2865,25 @@ class FakeComputerTaskStore:
 
     async def elect_delivery(self, task_id: UUID, *, now: datetime,
                              job: Any = None) -> ComputerTask | None:
-        task = self.rows.get(task_id)
-        if task is None or task.delivered_at is not None \
-                or task.status not in TERMINAL:
-            return None
-        # The stamp lands first in memory (the same compare-and-set); the
-        # job filing follows inside this one call — the fake's no-crash
-        # model of the real store's single transaction.
-        task = self._save(replace(task, delivered_at=now, updated_at=now))
-        if job is not None:
-            self.filed_jobs.append(job)
-            if self._outbox is not None:
-                await self._outbox.create(job)
-        return task
+        async with self._delivery_lock:
+            task = self.rows.get(task_id)
+            if task is None or task.delivered_at is not None \
+                    or task.status not in TERMINAL:
+                return None
+            if job is not None and self._outbox is not None:
+                previous = self._outbox._jobs.get(job.id)
+                try:
+                    await self._outbox.create(job)
+                except BaseException:
+                    if previous is None:
+                        self._outbox._jobs.pop(job.id, None)
+                    else:
+                        self._outbox._jobs[job.id] = previous
+                    raise
+            task = self._save(replace(task, delivered_at=now, updated_at=now))
+            if job is not None:
+                self.filed_jobs.append(job)
+            return task
 
     async def undelivered(self, *, limit: int) -> list[ComputerTask]:
         return [t for t in sorted(
@@ -2923,8 +2932,8 @@ class FakeBrowserTabStore:
                          reason: str = "") -> None:
         tab = self.rows.get(tab_id)
         if tab is not None:
-            detail = ({**dict(tab.detail), "close_reason": reason}
-                      if reason else dict(tab.detail))
+            detail = {**dict(tab.detail), "close_reason": reason,
+                      "closed_at": now.isoformat()}
             self._save(replace(tab, status=status, detail=detail))
 
     async def open_scopes(self, *, limit: int) -> list[str]:
@@ -2937,7 +2946,9 @@ class FakeBrowserTabStore:
                  if t.scope == scope and t.status == "open"
                  and t.instance != instance]
         for tab in stale:
-            self._save(replace(tab, status="expired"))
+            self._save(replace(tab, status="expired", detail={
+                **dict(tab.detail), "closed_at": now.isoformat(),
+                "close_reason": "the VM instance changed"}))
         return len(stale)
 
 

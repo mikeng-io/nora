@@ -2,7 +2,7 @@
   {
     "name": "a deferred segment re-checks the requester's CURRENT admission",
     "file": "nora/app/computer_dispatch.py",
-    "old": "        if requester and not self._policy.is_allowed(",
+    "old": "        if actor in (\"tag\", \"subagent\") and not self._policy.is_allowed(",
     "new": "        if False and not self._policy.is_allowed(",
     "target": "tests/unit/test_pr584_astra_readiness.py -k rechecks_revoked_requester",
     "comment": "F1: drop the live-policy re-check and a revoked requester's queued row runs on stale authority."
@@ -37,7 +37,7 @@
     "old": "        await tasks.elect_delivery(row.id, now=clock(), job=job)",
     "new": "        await jobs.create(job)\n        await tasks.mark_delivered(row.id, now=clock())",
     "target": "tests/integration/test_scoped_browser_recovery.py -k retry_retains_consumed",
-    "comment": "F3: the pre-fix shape — a filed job surviving a refused stamp is exactly the double-disposition the election removes."
+    "comment": "F3: the pre-fix shape \u2014 a filed job surviving a refused stamp is exactly the double-disposition the election removes."
   },
   {
     "name": "a popup binds only through its actual openerId",
@@ -45,7 +45,7 @@
     "old": "            opener = str(orphan.get(\"openerId\") or \"\")",
     "new": "            opener = str(orphan.get(\"targetId\") or \"\")",
     "target": "tests/unit/test_pr584_astra_readiness.py -k popup",
-    "comment": "F5: attribution by any field but the real opener can never adopt — the audit's task-activity attribution defect's mirror."
+    "comment": "F5: attribution by any field but the real opener can never adopt \u2014 the audit's task-activity attribution defect's mirror."
   },
   {
     "name": "an empty screenshot is a failed capture, not a picture",
@@ -69,6 +69,6 @@
     "old": "                        and budget.max_input_tokens is None",
     "new": "                        and False",
     "target": "tests/unit/test_pr584_astra_readiness.py -k accepts_vision",
-    "comment": "F6: reverting to always-refuse breaks the browser journey's screenshot admission — the audit's multimodal rejection."
+    "comment": "F6: reverting to always-refuse breaks the browser journey's screenshot admission \u2014 the audit's multimodal rejection."
   }
 ]

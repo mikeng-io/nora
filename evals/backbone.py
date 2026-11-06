@@ -283,16 +283,18 @@ def scrub(text: str, secret: str) -> str:
 async def _close(subject: Any) -> None:
     """Best-effort teardown. Never raises: a case's RESULT must not depend on
     whether its cleanup worked, and a teardown error is not a reading."""
+    lifecycle = getattr(subject.deps, "computer_lifecycle", None)
+    if lifecycle is not None:
+        # Failure leaves the journal and stores alive for retry/recovery.
+        await lifecycle.close()
     for shut in (
         subject.deps.background.cancel_all(),
         # The scoped computer's own close before the stores it writes
         # through: admission stops, executors unwind, its Redis client
         # and journal lock release — the same order `App.shutdown` uses.
-        *( [subject.deps.computer_lifecycle.close()]
-          if getattr(subject.deps, "computer_lifecycle", None) is not None
-          else [] ),
         subject.deps.audit.aclose(),
         subject.deps.client.close(),
+        *(client.close() for client in getattr(subject.deps, "model_clients", ())),
     ):
         with contextlib.suppress(Exception):
             await shut
@@ -2751,75 +2753,63 @@ class ToolRouteGrader(Evaluator):
         return self.evaluate(data)
 
     def _journey(self, data: EvaluationData, ran: list[str]) -> EvaluationOutput | None:
-        """The browser journey's acceptance (`metadata.journey`): routing
-        order is necessary but not sufficient — each verb must have
-        SUCCEEDED, the capture must have run against the tab the browse
-        OWNED (the `task` handle it returned, not a fresh or foreign one),
-        the capture must carry its content digest, and the export must
-        carry its artifact receipt. Read from `NORA_TOOL_RESULTS` and
-        `NORA_TOOL_INPUTS` — what executed — never from the reply's
-        description of it. Returns None on PASS, the verdict otherwise."""
+        """Correlate successful calls to one owned capture and its exported bytes."""
         results = state_of(data, NORA_TOOL_RESULTS)
-        if results is None:
-            return self._out(ERROR, 0.0, "no tool results recorded")
+        inputs = state_of(data, NORA_TOOL_INPUTS)
+        if results is None or inputs is None:
+            return self._out(ERROR, 0.0, "journey inputs/results unavailable")
 
-        def _ok(tool: str) -> dict[str, Any] | None:
-            for name, text in results:
-                if name != tool:
-                    continue
-                for t in _texts_in(text):
+        def successful(tool: str) -> list[tuple[int, dict[str, Any]]]:
+            found = []
+            for index, (_, text) in enumerate(r for r in results if r[0] == tool):
+                for fragment in _texts_in(text):
                     try:
-                        value = json.loads(t)
+                        value = json.loads(fragment)
                     except (ValueError, TypeError):
                         continue
                     if isinstance(value, dict) and value.get("status") == "ok":
-                        return value
-            return None
+                        found.append((index, value))
+                        break
+            return found
 
-        browse = _ok("computer_browse")
-        if "computer_browse" in ran and browse is None:
-            return self._out(
-                FAIL, 0.0, "computer_browse ran but no result answered ok")
-        if "computer_capture" in ran:
-            capture = _ok("computer_capture")
-            if capture is None:
-                return self._out(
-                    FAIL, 0.0, "computer_capture ran but no result answered ok")
-            digest = str(capture.get("sha256") or "")
-            if not digest:
-                return self._out(
-                    FAIL, 0.0,
-                    "computer_capture answered ok without a content digest")
-            if browse is not None:
-                # The handle rule: capture's `task` input must be the task
-                # id the browse returned — a picture of the tab the journey
-                # OWNED, same target, not whatever page happened to be up.
-                handle = str(browse.get("task") or "")
-                inputs = state_of(data, NORA_TOOL_INPUTS)
-                passed = [
-                    text for name, text in (inputs or ())
-                    if name == "computer_capture"
-                ]
-                if not passed:
-                    return self._out(
-                        ERROR, 0.0,
-                        "computer_capture ran but its input was not captured")
-                if not any(handle and handle in text for text in passed):
-                    return self._out(
-                        FAIL, 0.0,
-                        "computer_capture did not continue the browse's own "
-                        f"task handle ({handle or 'none returned'}): "
-                        f"{_seen(passed)}")
-        if "computer_export" in ran:
-            exported = _ok("computer_export")
-            if exported is None:
-                return self._out(
-                    FAIL, 0.0, "computer_export ran but no result answered ok")
-            if not (exported.get("artifact_id") and exported.get("url")):
-                return self._out(
-                    FAIL, 0.0,
-                    "computer_export answered ok without an artifact receipt")
-        return None
+        def arguments(tool: str, index: int) -> dict[str, Any] | None:
+            calls = [text for name, text in inputs if name == tool]
+            try:
+                value = json.loads(calls[index])
+            except (IndexError, TypeError, ValueError):
+                return None
+            return value if isinstance(value, dict) else None
+
+        for _, browse in successful("computer_browse"):
+            handle, target = browse.get("task"), browse.get("tab")
+            if not handle or not target:
+                continue
+            for index, capture in successful("computer_capture"):
+                args = arguments("computer_capture", index)
+                if args is None:
+                    return self._out(ERROR, 0.0, "capture input unavailable")
+                digest = capture.get("sha256")
+                if (args.get("task") != handle or capture.get("tab") != target
+                        or not capture.get("path") or not isinstance(digest, str)
+                        or len(digest) != 64
+                        or any(c not in "0123456789abcdef" for c in digest)):
+                    continue
+                for export_index, exported in successful("computer_export"):
+                    args = arguments("computer_export", export_index)
+                    if args is None:
+                        return self._out(ERROR, 0.0, "export input unavailable")
+                    if (args.get("path") != capture["path"]
+                            or exported.get("sha256") != digest):
+                        continue
+                    destination = args.get("to", "chat")
+                    receipt = ((destination == "keep" and exported.get("kept") is True)
+                               or (destination == "chat" and exported.get("sent") is True)
+                               or (destination == "link" and exported.get("artifact_id")
+                                   and exported.get("url")))
+                    if receipt:
+                        return None
+        return self._out(FAIL, 0.0,
+                         "no successful same-task/target capture and matching export receipt")
 
     @staticmethod
     def _out(verdict: str, score: float, reason: str) -> EvaluationOutput:

@@ -88,11 +88,11 @@ class SqlBrowserTabStore:
     async def set_status(self, tab_id: UUID, *, status: str, now: datetime,
                          reason: str = "") -> None:
         now = ensure_utc_event(now, field="now")
-        values: dict[str, Any] = {"status": status}
-        if reason:
-            row = await self.get(tab_id)
-            values["detail"] = {**(dict(row.detail) if row is not None else {}),
-                                "close_reason": reason}
+        values: dict[str, Any] = {
+            "status": status,
+            "detail": T.c.detail.op("||")({
+                "closed_at": now.isoformat(), "close_reason": reason}),
+        }
         async with self._engine.begin() as conn:
             await conn.execute(
                 sa.update(T).where(T.c.id == tab_id).values(**values))
@@ -112,6 +112,7 @@ class SqlBrowserTabStore:
                 sa.update(T)
                 .where(T.c.scope == scope, T.c.status == OPEN,
                        T.c.instance != instance)
-                .values(status=EXPIRED)
+                .values(status=EXPIRED, detail=T.c.detail.op("||")({
+                    "closed_at": now.isoformat(), "close_reason": "the VM instance changed"}))
             )
         return int(result.rowcount or 0)

@@ -181,6 +181,7 @@ class SegmentRegistry:
         self._pending_path: Path | None = None
         self._lock_fd: int | None = None
         self._closed = False
+        self.accepting = True
         if pending_dir is not None:
             self._open_pending_store()
 
@@ -194,9 +195,12 @@ class SegmentRegistry:
         or the next owner in the same tests — is not refused forever."""
         if self._closed:
             return
+        self.accepting = False
+        if any(not task.done() for task in self._tasks.values()):
+            raise RuntimeError("computer executors still hold the journal")
+        if self._pending_path is not None and self._pending and not self._spill():
+            raise RuntimeError("computer results could not be checkpointed before close")
         self._closed = True
-        if self._pending_path is not None and self._pending:
-            self._spill()  # final checkpoint before the lock goes
         fd, self._lock_fd = self._lock_fd, None
         if fd is not None:
             with contextlib.suppress(OSError):
@@ -381,6 +385,9 @@ class SegmentRegistry:
 
 
 class ComputerAdmission:
+    def deadline_after(self, seconds: float) -> datetime:
+        return self._clock() + timedelta(seconds=seconds)
+
     def __init__(
         self, *, tasks: ComputerTaskStore, redis: Any,
         clock: Callable[[], datetime], poll_seconds: float = 0.25,
@@ -412,6 +419,8 @@ class ComputerAdmission:
         deadline_at: datetime | None = None,
     ) -> SubmittedTask:
         """Admit one segment, FIFO within the scope."""
+        if not self.executors.accepting:
+            raise RuntimeError("computer admission is closing")
         segment_id = current_segment.get()
         if segment_id is not None:
             parent = await self._tasks.get(segment_id)
@@ -835,6 +844,28 @@ class ComputerQueueRunner:
         self._group_ready: set[str] = set()
         self._watchers: set[asyncio.Task[Any]] = set()
 
+    async def stop(self, *, drain_seconds: float = 30.0) -> None:
+        self.stop_admission()
+        active = [t for t in self._executors._tasks.values() if not t.done()]
+        for task in active:
+            if not task.cancelling():
+                task.cancel()
+        if active:
+            _, pending = await asyncio.wait(active, timeout=drain_seconds)
+            if pending:
+                raise TimeoutError("computer executors have not drained")
+
+    def stop_admission(self) -> None:
+        self._executors.accepting = False
+
+    async def close(self) -> None:
+        if any(not t.done() for t in self._executors._tasks.values()):
+            raise RuntimeError("computer executors have not drained")
+        close = getattr(self._redis, "aclose", None)
+        if close is not None:
+            await close()
+        self._executors.close()
+
     def set_dispatch(
         self, kind: str,
         executor: Callable[[ComputerTask], Awaitable[Mapping[str, Any]]],
@@ -906,6 +937,8 @@ class ComputerQueueRunner:
 
     async def tick(self) -> int:
         """One pass over every scope's stream; how many segments were granted."""
+        if not self._executors.accepting:
+            return 0
         await self.reconcile()
         granted = 0
         for scope in await self._scopes():

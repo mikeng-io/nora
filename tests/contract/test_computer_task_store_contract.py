@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Iterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -34,10 +35,11 @@ import sqlalchemy as sa
 from nora.domain.browser_tasks import BrowserTab, BrowserTabStore
 from nora.domain.computer_tasks import ComputerTask, ComputerTaskStore
 from nora.infra.sql.browser_tabs import SqlBrowserTabStore
+from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.computer_tasks import SqlComputerTaskStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.testing import FakeBrowserTabStore, FakeComputerTaskStore
+from nora.testing import FakeBrowserTabStore, FakeComputeJobStore, FakeComputerTaskStore
 
 T0 = datetime(2026, 10, 30, 12, 0, tzinfo=UTC)
 SCOPE = "ab" * 16
@@ -77,6 +79,22 @@ async def tasks(request: Any) -> AsyncIterator[Any]:
         async with engine.begin() as conn:
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(sa.text("TRUNCATE computer_tasks"))
+        await engine.dispose()
+
+
+@pytest.fixture(params=["fake", "sql"])
+async def delivery_stores(request: Any) -> AsyncIterator[Any]:
+    if request.param == "fake":
+        jobs = FakeComputeJobStore()
+        yield FakeComputerTaskStore(outbox=jobs), jobs
+        return
+    engine = create_sql_engine(request.getfixturevalue("_tasks_db"))
+    try:
+        yield SqlComputerTaskStore(engine), SqlComputeJobStore(engine)
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
+            await conn.execute(sa.text("TRUNCATE computer_tasks, compute_jobs"))
         await engine.dispose()
 
 
@@ -183,6 +201,38 @@ async def test_open_scopes_names_only_unfinished_scopes(tasks: Any) -> None:
     await tasks.finish(done.id, status="done", result={}, now=T0)
     scopes = await tasks.open_scopes(limit=10)
     assert scopes == [SCOPE]
+
+
+async def test_cancel_terminal_and_absent_task(tasks: Any) -> None:
+    terminal = _task(status="done")
+    await tasks.enqueue(terminal)
+    assert await tasks.request_cancel(terminal.id, now=T0) == terminal
+    assert await tasks.request_cancel(uuid4(), now=T0) is None
+
+
+async def test_delivery_election_has_one_winner(tasks: Any) -> None:
+    terminal = _task(status="done")
+    await tasks.enqueue(terminal)
+    winners = await asyncio.gather(*(
+        tasks.elect_delivery(terminal.id, now=T0) for _ in range(3)))
+    assert sum(row is not None for row in winners) == 1
+    assert (await tasks.get(terminal.id)).delivered_at == T0
+
+
+async def test_outbox_failure_rolls_back_election_and_allows_retry(delivery_stores):
+    from tests.contract.test_compute_job_store_contract import _job
+
+    tasks, jobs = delivery_stores
+    terminal = _task(status="done")
+    await tasks.enqueue(terminal)
+    job = _job(kind="computer")
+    await jobs.create(job)
+    with pytest.raises((sa.exc.IntegrityError, ValueError)):
+        await tasks.elect_delivery(terminal.id, now=T0, job=job)
+    assert (await tasks.get(terminal.id)).delivered_at is None
+    retry = replace(job, id=uuid4())
+    assert await tasks.elect_delivery(terminal.id, now=T0, job=retry) is not None
+    assert await jobs.get(retry.id) == retry
 
 
 async def test_cancel_and_interrupt_close_the_row(tasks: Any) -> None:

@@ -1883,7 +1883,7 @@ async def build_dependencies(
                 result={"task": str(task.id), "kind": task.kind,
                         "transition": transition}))
 
-        def _browser_event(scope: str, transition: str, subject: Any) -> None:
+        def _browser_event(scope: str, transition: str, subject: Any) -> Any:
             """A browser lifecycle transition (tab expired, browser stopped)
             as its own audit row — the sweep's guest effect, not a guess.
             A transition the room can see dirties its `<computer>` block's
@@ -1904,7 +1904,7 @@ async def build_dependencies(
                     result={"transition": transition,
                             "subject": str(subject or "")}))
             with contextlib.suppress(Exception):
-                asyncio.get_running_loop().create_task(_write())
+                return background.spawn(_write())
 
         computer_admission = ComputerAdmission(
             tasks=computer_tasks, redis=computer_redis, clock=op_clock,
@@ -5386,6 +5386,19 @@ async def build_dependencies(
             max_per_day=cfg.otp.max_per_day,
             clock=lambda: datetime.now(UTC),
         )
+    computer_sweeper = (
+            ComputerSessionSweeper(
+                sessions=computer_sessions, events=computer_events,
+                runtime=computer, leases=computer_leases,
+                rules=SweepRules(
+                    idle_expiry=timedelta(hours=cfg.computer.sessions.idle_expiry_hours),
+                    max_running=timedelta(days=cfg.computer.sessions.max_running_days),
+                    idle_after=timedelta(minutes=cfg.computer.sessions.idle_after_minutes),
+                ),
+                clock=lambda: datetime.now(UTC), metrics=metrics,
+            ) if computer is not None else None
+            )
+
     return Dependencies(
         config_reload=reload_files,
         audit=audit, memory=memory, persons=persons, metrics=metrics,
@@ -5443,18 +5456,7 @@ async def build_dependencies(
         cognition_shutdown=cognition_shutdown,
         subagent_backend=subagent_backend,
         wake_tick_seconds=cfg.cognition.tick_seconds,
-        computer_sweeper=(
-            ComputerSessionSweeper(
-                sessions=computer_sessions, events=computer_events,
-                runtime=computer, leases=computer_leases,
-                rules=SweepRules(
-                    idle_expiry=timedelta(hours=cfg.computer.sessions.idle_expiry_hours),
-                    max_running=timedelta(days=cfg.computer.sessions.max_running_days),
-                    idle_after=timedelta(minutes=cfg.computer.sessions.idle_after_minutes),
-                ),
-                clock=lambda: datetime.now(UTC), metrics=metrics,
-            ) if computer is not None else None
-        ),
+        computer_sweeper=computer_sweeper,
         computer_sweep_seconds=cfg.computer.sessions.sweep_interval_seconds,
         computer_queue_runner=computer_queue_runner,
         browser_manager=browser_manager,
@@ -5462,6 +5464,8 @@ async def build_dependencies(
         computer_lifecycle=(
             ComputerLifecycle(
                 runner=computer_queue_runner, manager=browser_manager,
+                sessions=computer_sweeper,
+                session_seconds=cfg.computer.sessions.sweep_interval_seconds,
                 metrics=metrics,
                 sweep_seconds=cfg.computer.scoped.browser_sweep_seconds,
             ) if computer_queue_runner is not None else None

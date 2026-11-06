@@ -599,12 +599,23 @@ class BrowserPage:
         if not isinstance(data, str) or not data:
             raise BrowserError("no screenshot came back")
         try:
-            png = base64.b64decode(data)
+            png = base64.b64decode(data, validate=True)
         except Exception as exc:
             raise BrowserError("the screenshot was not decodable") from exc
         if not png:
             # A decodable-but-empty frame is a failed capture, not a picture.
             raise BrowserError("the screenshot was empty")
+        from io import BytesIO
+
+        from PIL import Image
+
+        try:
+            with Image.open(BytesIO(png)) as image:
+                if image.format != "PNG":
+                    raise ValueError("capture is not PNG")
+                image.verify()
+        except (OSError, SyntaxError, ValueError) as exc:
+            raise BrowserError("the screenshot was not a valid PNG") from exc
         return png, "image/png", partial
 
 

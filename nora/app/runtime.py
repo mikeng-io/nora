@@ -254,25 +254,26 @@ class ComputerLifecycle:
     subject share it, so a subject runs the same maintenance the
     deployment does instead of composing a queue nothing ticks.
 
-    `close` unwinds in dependency order: `runner.stop()` closes admission
-    and cancels the registered executors (a segment that cannot be
-    confirmed quiet lands `interrupted`, never `done`); `settle` gives
-    their terminal writes a moment to land; `runner.close()` then
-    releases the dedicated Redis client and the journal lock — all before
-    the caller removes SQL/audit state. Both ends are idempotent: a
-    `start` after `close` spawns nothing, a second `close` does nothing.
+    Close stops admission and owned loops, drains executors and manager
+    events, then releases Redis and the journal before dependent stores.
+    Failed cleanup retains resources and can be retried.
     """
 
     def __init__(self, *, runner: Any = None, manager: Any = None,
                  metrics: Metrics, sweep_seconds: float,
-                 tick_seconds: float = 1.0) -> None:
+                 tick_seconds: float = 1.0, sessions: Any = None,
+                 session_seconds: float = 300.0) -> None:
         self._runner = runner
         self._manager = manager
         self._metrics = metrics
         self._sweep_seconds = sweep_seconds
         self._tick_seconds = tick_seconds
+        self._sessions = sessions
+        self._session_seconds = session_seconds
         self._spawned = False
         self._closed = False
+        self._loops: list[asyncio.Task[None]] = []
+        self._close_lock = asyncio.Lock()
 
     def start(self, background: BackgroundTasks) -> None:
         """Spawn the two maintenance loops, once. A `start` on a closed
@@ -280,32 +281,34 @@ class ComputerLifecycle:
         if self._spawned or self._closed:
             return
         self._spawned = True
+        if self._sessions is not None:
+            self._loops.append(background.spawn(computer_sweep_loop(
+                self._sessions, self._metrics, interval_seconds=self._session_seconds)))
         if self._runner is not None:
-            background.spawn(computer_queue_loop(
-                self._runner, self._metrics, tick_seconds=self._tick_seconds))
+            self._loops.append(background.spawn(computer_queue_loop(
+                self._runner, self._metrics, tick_seconds=self._tick_seconds)))
         if self._manager is not None:
-            background.spawn(computer_browser_sweep_loop(
+            self._loops.append(background.spawn(computer_browser_sweep_loop(
                 self._manager, self._metrics,
-                interval_seconds=self._sweep_seconds))
+                interval_seconds=self._sweep_seconds)))
 
     async def close(self, *, settle_seconds: float = 3.0) -> None:
-        """Stop admission, let shielded executors unwind, then release the
-        runner's Redis client and journal lock. Never claims a drain it did
-        not get: executors still alive past `settle_seconds` are logged and
-        the close continues — a hung segment must not hold the app's SQL
-        teardown hostage."""
-        if self._closed:
-            return
-        self._closed = True
-        if self._runner is None:
-            return
-        await self._runner.stop()
-        try:
-            await asyncio.wait_for(
-                self._runner.executors.settle(drained=set()), settle_seconds)
-        except TimeoutError:
-            log.warning("computer lifecycle close: executors did not settle")
-        await self._runner.close()
+        """Close only after executors drain; timeout leaves dependencies owned."""
+        async with self._close_lock:
+            if self._closed:
+                return
+            if self._runner is not None:
+                self._runner.stop_admission()
+            for task in self._loops:
+                task.cancel()
+            await asyncio.gather(*self._loops, return_exceptions=True)
+            if self._runner is not None:
+                await self._runner.stop(drain_seconds=settle_seconds)
+            if self._manager is not None:
+                await self._manager.aclose()
+            if self._runner is not None:
+                await self._runner.close()
+            self._closed = True
 
 
 class _ProbesComputerd(Protocol):

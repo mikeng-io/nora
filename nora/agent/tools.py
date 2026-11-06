@@ -16197,7 +16197,8 @@ Args:
                     # The occasion's surface authority, for the deferred
                     # dispatch's re-admission: the dreamer grant ceiling,
                     # a relayed turn, and the worker job it was built for.
-                    "grant": sorted(grant) if grant else [],
+                    "grant": sorted(grant) if grant is not None else None,
+                    "fire": bool(fire_turn),
                     "relay": bool(relay_turn),
                     "worker": subagent_job or "",
                 }
@@ -16205,8 +16206,8 @@ Args:
                     scope=bound_computer_scope, kind=kind,
                     payload={"tool": fn.__name__, "args": _audit_safe(dict(kwargs))},
                     origin=origin, wait_seconds=wait_seconds,
-                    deadline_at=now_fn() + timedelta(
-                        seconds=_segment_deadline.get(kind, 960.0)))
+                    deadline_at=computer_admission.deadline_after(
+                        _segment_deadline.get(kind, 960.0)))
                 if submitted.inherited:
                     reply = await fn(*args, **kwargs)
                     if dirty:
@@ -16919,7 +16920,7 @@ Args:
                 outcome, row = "ok", {**received, "artifact_id": made, "url": url,
                                       "revised": bool(artifact_id), "blob_key": key,
                                       "recorded": recorded}
-                return {"status": "ok", "url": url, "artifact_id": made,
+                return {"status": "ok", "url": url, "artifact_id": made, "sha256": digest,
                         "media_type": media_type, "size": len(data),
                         "note": "The link opens the file in the portal for people in this "
                                 "room who have signed in. Put it in your reply in your own "
@@ -16972,7 +16973,7 @@ Args:
                                 "claim it arrived."}
             recorded = await _export_record(tool, _export_row(blob_key=key))
             outcome, row = "ok", {**received, "blob_key": key, "recorded": recorded}
-            return {"status": "ok", "sent": True, "media_type": media_type,
+            return {"status": "ok", "sent": True, "media_type": media_type, "sha256": digest,
                     "size": len(data),
                     "note": "The file is already in this chat. Say what it is in your own "
                             "words; don't send it again."}
@@ -17231,7 +17232,9 @@ Args:
                 result = {"path": got.path, "media_type": got.media_type,
                           "size": got.size, "sha256": got.sha256,
                           "url": got.url, "partial": got.partial,
-                          "tab": got.target_id}
+                          "tab": got.target_id, "scope": got.scope,
+                          "instance": got.instance, "task": str(got.task_id),
+                          "captured_at": got.captured_at.isoformat()}
                 status = "ok"
             except BaseException as exc:
                 if isinstance(exc, asyncio.CancelledError):
@@ -17253,6 +17256,8 @@ Args:
             "status": "ok", "path": got.path, "media_type": got.media_type,
             "size": got.size, "sha256": got.sha256, "url": got.url,
             "title": got.title, "partial": got.partial, "tab": got.target_id,
+            "scope": got.scope, "instance": got.instance,
+            "task": str(got.task_id), "captured_at": got.captured_at.isoformat(),
             "note": ("Saved to your workspace — the picture covers the "
                      "visible part only, the page was taller than the capture "
                      "limit." if got.partial else
@@ -17284,6 +17289,15 @@ Args:
                     "note": "That is not a task id — pass the `task` value a "
                             "queued reply or the computer block gives."}
         row = await computer_admission.get(task_uuid)
+        if row is None and browser_manager is not None:
+            closed = await browser_manager.close_task(
+                bound_computer_scope, task_uuid, reason="the task was closed")
+            if closed > 0:
+                return {"status": "ok", "task": str(task_uuid),
+                        "note": "The browser task's tabs are closed."}
+            if closed < 0:
+                return {"status": "unavailable", "task": str(task_uuid),
+                        "note": "The browser task could not be confirmed closed; retry."}
         if row is None or row.scope != bound_computer_scope:
             return {"status": "nothing_found",
                     "reason": "no computer task by that id on your computer",
@@ -17297,11 +17311,27 @@ Args:
         if computer_context_invalidate is not None:
             computer_context_invalidate(bound_computer_scope)
         tabs_note = ""
-        if (row.status in ("cancelled", "interrupted")
-                and row.kind == "browser" and browser_manager is not None):
-            closed = await browser_manager.close_task(
-                bound_computer_scope, row.id,
-                reason="the task was cancelled")
+        if (row.status != "running" and row.kind == "browse"
+                and browser_manager is not None):
+            owner = (row.payload.get("args") or {}).get("task") or row.result.get("task")
+            try:
+                owners = ({owner} if owner else await browser_manager.tasks_for_segment(
+                    bound_computer_scope, row.id))
+                closed = 0
+                for browser_task in owners:
+                    count = await browser_manager.close_task(
+                        bound_computer_scope, browser_task, reason="the task was cancelled")
+                    if count < 0:
+                        closed = -1
+                        break
+                    closed += count
+            except Exception:
+                log.exception("browser cancellation could not confirm owned targets")
+                closed = -1
+            if closed < 0:
+                return {"status": "unavailable", "task": str(row.id),
+                        "note": "Execution stopped, but its browser tabs could not be "
+                                "confirmed closed. Retry closing this task."}
             tabs_note = (
                 " Its browser tabs are closed." if closed >= 0
                 else " Its browser tabs could not be confirmed closed; "

@@ -167,9 +167,26 @@ class ScopeBrowserManager:
         #: arrived while one ran".
         self._drains: dict[str, asyncio.Task[None]] = {}
         self._drain_again: set[str] = set()
+        self._events: set[asyncio.Task[Any]] = set()
 
     def _lock(self, scope: str) -> asyncio.Lock:
         return self._locks.setdefault(scope, asyncio.Lock())
+
+    async def aclose(self) -> None:
+        drains = list(self._drains.values())
+        for task in drains:
+            task.cancel()
+        await asyncio.gather(*drains, return_exceptions=True)
+        self._drains.clear()
+        self._drain_again.clear()
+        await asyncio.gather(*tuple(self._events))
+
+    async def tasks_for_segment(self, scope: str, segment_id: UUID) -> set[UUID]:
+        binding = await self._runtime.binding(scope)
+        if binding is None:
+            raise TabUnavailable("the VM identity is unavailable")
+        return {row.task_id for row in await self._open_rows(scope, binding.instance)
+                if str(row.detail.get("segment_id") or "") == str(segment_id)}
 
     def _note(self, scope: str, transition: str, subject: Any = None) -> None:
         """Lifecycle instrumentation on the existing audit hook — never
@@ -177,7 +194,10 @@ class ScopeBrowserManager:
         if self._on_event is None:
             return
         try:
-            self._on_event(scope, transition, subject)
+            event = self._on_event(scope, transition, subject)
+            if isinstance(event, asyncio.Task):
+                self._events.add(event)
+                event.add_done_callback(self._events.discard)
         except Exception:
             log.exception("browser lifecycle listener failed")
 
@@ -562,7 +582,7 @@ class ScopeBrowserManager:
             got = await cdp.call("Target.closeTarget", {"targetId": target_id})
         except BrowserError as exc:
             return "gone" in str(exc).lower()
-        if isinstance(got, dict) and got.get("success") is not False:
+        if isinstance(got, dict) and got.get("success") is True:
             return True
         try:
             listed = await cdp.call("Target.getTargets")
@@ -580,6 +600,10 @@ class ScopeBrowserManager:
         unless the caller already holds the grant — so a busy scope
         answers `-1` (could not enter safely: retry), never a pretend
         retirement. `0` is the honest "nothing was open"."""
+        try:
+            task_id = UUID(str(task_id))
+        except (ValueError, TypeError):
+            return -1
         if await self._owns(scope):
             reply = await self._close_task_owned(scope, task_id, reason)
         else:

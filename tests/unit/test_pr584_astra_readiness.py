@@ -15,6 +15,8 @@ import json
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -558,3 +560,118 @@ async def test_stream_group_retries_transient_errors():
     assert stream in runner._group_ready
     # A second call proves the group through BUSYGROUP, not another create.
     await runner._group(stream)
+
+
+async def test_fake_election_rolls_back_on_outbox_failure():
+    jobs = FakeComputeJobStore()
+    store = FakeComputerTaskStore(outbox=jobs)
+    admission = ComputerAdmission(tasks=store, redis=FakeStreamRedis(), clock=lambda: NOW)
+    row = (await admission.submit(scope="ab" * 16, kind="native", payload={}, origin={})).task
+    await store.finish(row.id, status="done", result={"task": "original"}, now=NOW)
+    jobs.create = AsyncMock(side_effect=RuntimeError("generated outbox failure"))
+    with pytest.raises(RuntimeError):
+        await store.elect_delivery(row.id, now=NOW, job=SimpleNamespace(id="generated"))
+    assert (await store.get(row.id)).delivered_at is None
+
+
+async def test_malformed_nonempty_capture_is_refused():
+    class CDP:
+        async def call(self, method, params=None, **kwargs):
+            assert method == "Page.captureScreenshot"
+            return {"data": base64.b64encode(b"not a png").decode()}
+
+    page = BrowserPage(cdp=CDP(), session_id="generated", target_id="generated")
+    with pytest.raises(BrowserError):
+        await page.capture_image()
+
+
+async def test_journey_rejects_foreign_handle_and_unrelated_export():
+    from evals.backbone import NORA_TOOL_INPUTS, NORA_TOOL_RESULTS, ToolRouteGrader
+
+    ran = ["computer_browse", "computer_capture", "computer_export"]
+    results = [
+        (
+            "computer_browse",
+            json.dumps({"status": "ok", "task": "owned-handle", "tab": "target-a"}),
+        ),
+        (
+            "computer_capture",
+            json.dumps(
+                {"status": "ok", "sha256": "garbage", "path": "captures/a.png", "tab": "target-b"}
+            ),
+        ),
+        (
+            "computer_export",
+            json.dumps(
+                {
+                    "status": "ok",
+                    "artifact_id": "unrelated",
+                    "url": "https://generated.invalid/unrelated",
+                }
+            ),
+        ),
+    ]
+    results = [(name, json.dumps([{"text": value}])) for name, value in results]
+    inputs = [
+        ("computer_capture", json.dumps({"task": "foreign-owned-handle"})),
+        ("computer_export", json.dumps({"path": "unrelated.txt", "to": "link"})),
+    ]
+    data = SimpleNamespace(
+        actual_environment_state=[
+            SimpleNamespace(name=NORA_TOOL_RESULTS, state=results),
+            SimpleNamespace(name=NORA_TOOL_INPUTS, state=inputs),
+        ]
+    )
+    assert ToolRouteGrader()._journey(data, ran) is not None
+
+
+@pytest.mark.parametrize(
+    "changed", [None, "handle", "target", "path", "digest", "export_digest", "kept"],
+)
+async def test_real_journey_accepts_successful_keep_receipt(changed):
+    from evals.backbone import NORA_TOOL_INPUTS, NORA_TOOL_RESULTS, ToolRouteGrader
+
+    ran = ["computer_browse", "computer_capture", "computer_export"]
+    values = [
+        ("computer_browse", {"status": "ok", "task": "owned-handle", "tab": "target-a"}),
+        (
+            "computer_capture",
+            {"status": "ok", "sha256": "a" * 64, "path": "captures/a.png", "tab": "target-a"},
+        ),
+        (
+            "computer_export",
+            {
+                "status": "ok",
+                "kept": True,
+                "sha256": "a" * 64,
+                "media_type": "image/png",
+                "size": 100,
+            },
+        ),
+    ]
+    capture_input = {"task": "owned-handle"}
+    export_input = {"path": "captures/a.png", "to": "keep"}
+    if changed == "handle":
+        capture_input["task"] = "foreign-owned-handle"
+    elif changed == "target":
+        values[1][1]["tab"] = "target-b"
+    elif changed == "path":
+        export_input["path"] = "unrelated.txt"
+    elif changed == "digest":
+        values[1][1]["sha256"] = "garbage"
+    elif changed == "export_digest":
+        values[2][1]["sha256"] = "b" * 64
+    elif changed == "kept":
+        values[2][1]["kept"] = False
+    results = [(n, json.dumps([{"text": json.dumps(v)}])) for n, v in values]
+    inputs = [
+        ("computer_capture", json.dumps(capture_input)),
+        ("computer_export", json.dumps(export_input)),
+    ]
+    data = SimpleNamespace(
+        actual_environment_state=[
+            SimpleNamespace(name=NORA_TOOL_RESULTS, state=results),
+            SimpleNamespace(name=NORA_TOOL_INPUTS, state=inputs),
+        ]
+    )
+    assert (ToolRouteGrader()._journey(data, ran) is None) == (changed is None)

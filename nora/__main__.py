@@ -362,7 +362,7 @@ class App:
             log.info("story media expiry off ([social] story_expiry_enabled = false)")
         # The computer session sweeper: composition builds it only while
         # `[computer] enabled`.
-        if deps.computer_sweeper is not None:
+        if deps.computer_sweeper is not None and deps.computer_lifecycle is None:
             deps.background.spawn(runtime.computer_sweep_loop(
                 deps.computer_sweeper, deps.metrics,
                 interval_seconds=deps.computer_sweep_seconds,
@@ -424,6 +424,8 @@ class App:
         try:
             await asyncio.gather(*adapter_tasks)
         finally:
+            if deps.computer_lifecycle is not None:
+                await deps.computer_lifecycle.close()
             await deps.background.cancel_all()
 
     async def _adopt_pending(self) -> None:

@@ -136,12 +136,9 @@ class SqlComputerTaskStore:
                     updated_at=now)
                 .returning(T)
             )).first()
-        if row is None:
-            # A terminal row returns itself unchanged — the contract the
-            # fake and this store share, and what lets `computer_cancel`
-            # report a finished task as finished instead of "gone".
-            row = (await conn.execute(
-                sa.select(T).where(T.c.id == task_id))).first()
+            if row is None:
+                row = (await conn.execute(
+                    sa.select(T).where(T.c.id == task_id))).first()
         return _row(row) if row is not None else None
 
     async def unannounced(self, *, limit: int) -> list[ComputerTask]:

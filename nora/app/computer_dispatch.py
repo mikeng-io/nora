@@ -28,6 +28,7 @@ from nora.agent.room import Room
 from nora.agent.surface import ToolScope
 from nora.domain.computer_events import DREAMER_ACTOR_PREFIX
 from nora.domain.computer_tasks import ComputerTask
+from nora.obs.logging import bind_tag_id, clear_tag_id, current_tag_id
 
 log = logging.getLogger("nora.computer.dispatch")
 
@@ -107,7 +108,11 @@ class ComputerToolDispatch:
         dream_adaptor = (actor[len(DREAMER_ACTOR_PREFIX):]
                          if actor.startswith(DREAMER_ACTOR_PREFIX) else "")
         worker = str(origin.get("worker") or "")
-        grant = frozenset(str(g) for g in origin.get("grant") or ())
+        raw_grant = origin.get("grant")
+        grant = None if raw_grant is None else frozenset(str(g) for g in raw_grant)
+        if dream_adaptor:
+            current_grant = self._registry.read_only_tools()
+            grant = current_grant if grant is None else grant & current_grant
         # Re-admission against CURRENT state, before any tool is rebuilt:
         # a revoked requester, a removed room, a moved unit/DM anchor and a
         # grant or occasion that no longer offers the tool all refuse the
@@ -119,9 +124,9 @@ class ComputerToolDispatch:
                 "the task's room is no longer admitted",
                 "That queued computer task could not run: the room it came "
                 "from is not admitted any more; it was never run.")
-        if requester and not self._policy.is_allowed(
+        if actor in ("tag", "subagent") and not self._policy.is_allowed(
                 platform=platform, conversation_id=conversation_id,
-                person_id=requester):
+                person_id=requester or None):
             return _refused(
                 "the task's requester is no longer allowed",
                 "That queued computer task could not run: the person who "
@@ -137,7 +142,7 @@ class ComputerToolDispatch:
                 "against a different computer.")
         scope = ToolScope(
             platform=platform or None,
-            dreamer=bool(dream_adaptor), grant=grant or None,
+            dreamer=bool(dream_adaptor), grant=grant,
             tag_turn=(actor == "tag"), worker=bool(worker),
             relay=bool(origin.get("relay")))
         if not scope.admits(tool):
@@ -146,23 +151,30 @@ class ComputerToolDispatch:
                 "That queued computer task named a tool its occasion can "
                 "no longer use; it was never run.")
         try:
-            specs = self._registry.specs(
-                store=self._store,
-                conversation_id=conversation_id,
-                conversation_type=conversation_type,
-                persons=self._persons, honcho=self._honcho,
+            bindings = {
+                "store": self._store,
+                "conversation_id": conversation_id,
+                "conversation_type": conversation_type,
+                "persons": self._persons, "honcho": self._honcho,
                 # No deliverer, ever: a deferred segment speaks through its
                 # terminal row and the delivery path, never live.
-                deliverer=None, metrics=self._metrics,
-                room=self._room(origin),
+                "deliverer": None, "metrics": self._metrics,
+                "room": self._room(origin),
                 # The deferred call keeps the origin's own provenance: a
                 # Dreamer-launched segment audits as the Dreamer again,
                 # and the origin's grant ceiling rides into the rebuilt
                 # surface — never a wider one.
-                dream_adaptor=dream_adaptor,
-                subagent_job=worker,
-                grant=grant or None,
-            )
+                "dream_adaptor": dream_adaptor,
+                "subagent_job": worker,
+                "grant": grant,
+                "fire_turn": bool(origin.get("fire")) or actor == "fire",
+                "relay_turn": bool(origin.get("relay")),
+            }
+            surface = self._registry.surface(**bindings)
+            if tool not in surface.admitted:
+                return _refused(f"{tool} is not offered now",
+                                "That queued tool is no longer admitted; it was never run.")
+            specs = self._registry.specs(**bindings)
         except Exception as exc:
             log.exception("computer task %s could not rebuild its room", task.id)
             return {"status": "unavailable", "reason": type(exc).__name__,
@@ -176,10 +188,17 @@ class ComputerToolDispatch:
                 "That queued computer task named a tool that is not "
                 "offered any more; it was never run.")
         try:
+            previous_tag = current_tag_id()
+            bind_tag_id(str(origin.get("tag_id") or ""))
             reply = await spec.call(**dict(args))
         except Exception as exc:
             log.exception("computer task %s deferred call failed", task.id)
             return {"status": "unavailable", "reason": type(exc).__name__,
                     "note": "The queued computer task failed while it ran."}
+        finally:
+            if previous_tag:
+                bind_tag_id(previous_tag)
+            else:
+                clear_tag_id()
         return dict(reply) if isinstance(reply, Mapping) else {
             "status": "unavailable", "reason": "the tool answered no result"}
