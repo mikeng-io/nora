@@ -299,8 +299,16 @@ class _BoundedTransport(httpx.AsyncBaseTransport):
             usage = _usage_counts(
                 parsed.get("usage") if isinstance(parsed, dict) else None)
             if usage is None:
+                # a non-2xx/error or non-JSON body must surface its real
+                # diagnosis in the latched reason — never pretend the
+                # spend measured tokens it never received
+                status = getattr(response, "status_code", "?")
+                ctype = response.headers.get("content-type", "?")
+                snippet = raw_body[:160].decode("utf-8", "replace")
                 raise budget._fail(
-                    "run budget: response carried no usage")
+                    "run budget: response carried no usage"
+                    f" (status={status} content-type={ctype}"
+                    f" body={snippet!r})")
             budget.reconcile(input_tokens=usage[0], output_tokens=usage[1])
         except RunBudgetError:
             raise

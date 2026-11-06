@@ -407,3 +407,35 @@ async def test_a_fragmented_sse_stream_still_reconciles_at_done():
         assert budget.spent is None
     finally:
         active_run_budget.reset(token)
+
+
+@pytest.mark.anyio
+async def test_an_error_response_surfaces_its_status_not_a_fake_no_usage():
+    """A non-2xx JSON error body has no usage — the latched reason must
+    carry the real status/content-type/body diagnosis, not just a bare
+    "no usage" that hides what the gateway actually said. A valid
+    200-with-usage still reconciles (positive control)."""
+    requests: list[dict] = []
+
+    async def respond(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            404, headers={"content-type": "application/json"},
+            content=b'{"error": {"code": "model_not_found", "message": "no such id"}}')
+
+    budget = RunBudget(max_requests=10, max_input_bytes=10**7,
+                       max_output_tokens=40_000, output_reserve=4_000)
+    token = active_run_budget.set(budget)
+    try:
+        client = factory.create_client(
+            base_url="https://generated.invalid/v1", api_key="generated-key",
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+        with pytest.raises(
+                (RunBudgetError, openai.APIConnectionError)):
+            await client.chat.completions.create(
+                model="m", max_tokens=200,
+                messages=[{"role": "user", "content": "hi"}])
+        assert "status=404" in (budget.spent or "")
+        assert "model_not_found" in (budget.spent or "")
+    finally:
+        active_run_budget.reset(token)
