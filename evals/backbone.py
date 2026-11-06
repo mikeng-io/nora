@@ -674,12 +674,24 @@ _INPUT_MESSAGES = "gen_ai.input.messages"
 EXCHANGES_ENV = "NORA_EVAL_EXCHANGES"
 
 
+def _exchanges_path(folder: Path, case: str, suffix: str) -> Path:
+    """The case's dump file inside `folder`. A case name may carry a namespace
+    (`probe/standing`), kept as a subpath of the root; an absolute or `..` name
+    would write outside the private root, so it is refused, not relocated."""
+    import uuid
+
+    relative = Path(case)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError(f"eval case name escapes the evidence root: {case!r}")
+    path = folder / f"{case}-{uuid.uuid4().hex[:8]}{suffix}"
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return path
+
+
 def _dump_exchanges(exporter: InMemorySpanExporter, case: str) -> None:
     raw = os.environ.get(EXCHANGES_ENV, "").strip()
     if not raw:
         return
-    import uuid
-
     keys = ("gen_ai.system_instructions", "gen_ai.input.messages", "gen_ai.output.messages",
             "gen_ai.tool.name")
     # Strands puts message content on span EVENTS as well as attributes (see `_tool_inputs`).
@@ -692,20 +704,23 @@ def _dump_exchanges(exporter: InMemorySpanExporter, case: str) -> None:
     ]
     folder = Path(raw).expanduser()
     folder.mkdir(mode=0o700, parents=True, exist_ok=True)
-    path = folder / f"{case}-{uuid.uuid4().hex[:8]}.json"
+    path = _exchanges_path(folder, case, ".json")
     path.write_text(json.dumps(calls, ensure_ascii=False, default=str), encoding="utf-8")
     path.chmod(0o600)
 
 def _dump_judgement(judgement, case: str) -> None:
     """Keep every raw vote beside the private exchanges, including indecisive scores."""
-    import uuid
+    from nora.subject.eval_evidence import current
 
+    if judgement is not None and (evidence := current()):
+        evidence.record("judge_result", case=case, verdict=judgement.verdict,
+                        samples=getattr(judgement, "samples", ()), error=judgement.error)
     raw = os.environ.get(EXCHANGES_ENV, "").strip()
     if not raw or judgement is None:
         return
     folder = Path(raw).expanduser()
     folder.mkdir(mode=0o700, parents=True, exist_ok=True)
-    path = folder / f"{case}-{uuid.uuid4().hex[:8]}-judge.json"
+    path = _exchanges_path(folder, case, "-judge.json")
     path.write_text(json.dumps({
         "criterion": getattr(judgement, "criterion", ""),
         "verdict": judgement.verdict,
@@ -1584,6 +1599,20 @@ async def _sandbox_for(spec: Spec, now: datetime) -> AsyncIterator[str]:
 
 
 async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
+    from nora.subject.eval_evidence import current
+
+    evidence = current()
+    if evidence is None:
+        return await _drive_uncaptured(case, spec)
+    with evidence.case(
+            case.name or "unnamed", input=case.input,
+            metadata={"case": case.model_dump(mode="json"), "entry": spec.entry}):
+        result = await _drive_uncaptured(case, spec)
+        evidence.result(result)
+        return result
+
+
+async def _drive_uncaptured(case: Case, spec: Spec) -> dict[str, Any]:
     """One DRAW, in a Honcho workspace of its own. Raises; `nora_task` catches.
 
     The sandbox database isolates what she knows in Postgres; Honcho is an
@@ -1759,6 +1788,15 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 )
             # SPEAKING NEEDS AN ADAPTER, and the sandbox disables Discord's
             # (a declared divergence — it authenticates for real at startup).
+            from nora.subject.eval_evidence import current, fingerprint
+
+            if evidence := current():
+                evidence.record("subject_ready", files={
+                    name: await asyncio.to_thread(fingerprint, workdir / name)
+                    for name in ("config.toml", "identity.toml", "policy.toml")
+                }, computer_enabled=subject.cfg.computer.enabled,
+                    browse_enabled=subject.cfg.computer.browse.enabled,
+                    defer_tools=subject.cfg.llm.defer_tools)
             # `FirePath._turn` resolves the room's own adapter before it says
             # anything, so a turn case anchored where no adapter is wired dies
             # deep in `fire.py` with a `KeyError`. Refused here, by name,
@@ -1836,7 +1874,8 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                 nora_case, moment=Moment(source_url=spec.source_url, rows=seeded.rows),
             )
             if overlay and overlay.memory:
-                await subject.circle_memory.seed(subject, person=nora_case.person, now_ms=clock_ms)
+                await subject.circle_memory.populate(
+                    subject, person=nora_case.person, now_ms=clock_ms)
             job = None
             if overlay and overlay.job:
                 job_id = await seed_job(subject, overlay, person=nora_case.person, now_ms=clock_ms)

@@ -29,6 +29,8 @@ from typing import Any
 
 from strands.models.openai import OpenAIModel
 
+from .telemetry import record_eval_model_request
+
 # U+2014 EM DASH and U+2015 HORIZONTAL BAR (the 「――」 some IMEs produce),
 # with any spacing around them. NOT U+2013: the en dash marks a range (2 to 5 days)
 # and carries meaning.
@@ -79,4 +81,5 @@ class DashFreeOpenAIModel(OpenAIModel):
         for key in ("messages", "tools"):
             if key in request:
                 request[key] = _clean(request[key])
+        record_eval_model_request(request)
         return request

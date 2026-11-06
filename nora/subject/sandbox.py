@@ -163,7 +163,7 @@ class EvalLockHeldError(RuntimeError):
 
 
 @contextlib.contextmanager
-def eval_host_lock() -> Iterator[None]:
+def eval_host_lock() -> Iterator[int]:
     """Hold the host's exclusive eval lock for the block, and release it when
     the block ends, by exception or not. It never waits: a run that finds the
     lock taken is refused, because two runs initialise and migrate the shared
@@ -178,7 +178,7 @@ def eval_host_lock() -> Iterator[None]:
             raise EvalLockHeldError(
                 f"another eval run holds {EVAL_HOST_LOCK}; wait for it to finish"
             ) from exc
-        yield
+        yield fd
     finally:
         os.close(fd)  # closing the descriptor drops the flock
 

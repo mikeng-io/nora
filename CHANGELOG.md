@@ -1,5 +1,63 @@
 # Changelog
 
+## [7.15.16](https://github.com/mikeng-io/nora/compare/v7.15.15...v7.15.16) (2026-11-06)
+
+
+### Features
+
+* **app:** add Mini Nora character study and interactive stage ([265176e](https://github.com/mikeng-io/nora/commit/265176ec221d9cb02d9ee60a98d72cb87c7d3e54))
+* **app:** reconstruct Mini Nora hands and wire local expressions ([a36cee3](https://github.com/mikeng-io/nora/commit/a36cee36a86c9c2d4b9447b0202fe1034b599b48))
+
+
+### Bug Fixes
+
+* **showcase:** allow retry after model load and context failures ([d374477](https://github.com/mikeng-io/nora/commit/d37447780d3990f07b4f3418c108f6fbe7c606b3))
+* **showcase:** repair cloth atlas seams and light the studio ([d90a39c](https://github.com/mikeng-io/nora/commit/d90a39c96daaafd0301ab14e5fc05b0dfff25c0c))
+
+## [7.15.15](https://github.com/mikeng-io/nora/compare/v7.15.14...v7.15.15) (2026-11-05)
+
+
+### Bug Fixes
+
+* **subject:** route the circle seed through deliver.build and declare its seams ([ee49e5c](https://github.com/mikeng-io/nora/commit/ee49e5c672d692cfe098307e4e8f01517ff42a98))
+
+## [7.15.14](https://github.com/mikeng-io/nora/compare/v7.15.13...v7.15.14) (2026-11-05)
+
+
+### Bug Fixes
+
+* **evals:** dump slash-named cases inside the private evidence root ([327e0b9](https://github.com/mikeng-io/nora/commit/327e0b90ed00cb072006698174579ec384ce93c2))
+
+## [7.15.13](https://github.com/mikeng-io/nora/compare/v7.15.12...v7.15.13) (2026-11-05)
+
+
+### Bug Fixes
+
+* **memory:** state Orient admission scope and reconcile duplicate endpoints ([9a77de8](https://github.com/mikeng-io/nora/commit/9a77de8134ca93b6a4543f39373539ae92e0b4bb))
+
+## [7.15.12](https://github.com/mikeng-io/nora/compare/v7.15.11...v7.15.12) (2026-11-05)
+
+
+### Maintenance
+
+* **evals:** grade quoted notice answers against explicit case contracts ([53d988f](https://github.com/mikeng-io/nora/commit/53d988f7f7806fbc87c305d35d912a409ebe0b0b))
+
+## [7.15.11](https://github.com/mikeng-io/nora/compare/v7.15.10...v7.15.11) (2026-11-05)
+
+
+### Bug Fixes
+
+* **evals:** isolate test evidence and report preparation refusals ([7bd52b5](https://github.com/mikeng-io/nora/commit/7bd52b5fb948acd94e15b978f55d6a3338c7c29c))
+* **evals:** persist private run evidence before model dispatch ([7ec895f](https://github.com/mikeng-io/nora/commit/7ec895f4c0e37c5ce794eb556cfad2929a37cdfc))
+
+## [7.15.10](https://github.com/mikeng-io/nora/compare/v7.15.9...v7.15.10) (2026-11-05)
+
+
+### Bug Fixes
+
+* **cognition:** refuse citations for unrendered agenda items ([3acc9b0](https://github.com/mikeng-io/nora/commit/3acc9b0ed5e17b930d6e4716ff153fce8b46c8b0))
+* **memory:** bind readings to rendered agenda source rows ([c7e9c1c](https://github.com/mikeng-io/nora/commit/c7e9c1ccafb786398fe3649b7f3c028a6ecf6fd3))
+
 ## [7.15.9](https://github.com/mikeng-io/nora/compare/v7.15.8...v7.15.9) (2026-11-05)
 
 

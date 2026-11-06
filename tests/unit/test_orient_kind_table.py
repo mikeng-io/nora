@@ -308,3 +308,53 @@ async def test_a_refused_relation_never_vouches_for_another_persons_end():
         state.graph_fetched, state.session_id)
     assert not result.relations
     assert "unit-1:person:generated-person" not in memory.graph.entities
+
+
+@pytest.mark.parametrize("contract", [
+    "Relation persons must include the union of persons from every cited source",
+    "entity attribute evidence\nrequires sources with empty persons",
+    'name is an entity field, not an attributes key; never cite attribute="name"',
+])
+def test_rendered_orient_states_admission_scope(contract):
+    from nora.language.comprehend_render import render_session_system
+
+    rendered = render_session_system("<!-- cognition-orient -->", "", memory=True)
+    assert '<cognition_orient' in rendered
+    assert contract in rendered
+
+
+async def test_duplicate_recovery_clears_only_connected_entity_orphans():
+    memory = wake_memory()
+    state = _state(memory)
+    payload = _payload()
+    payload["entities"] = [
+        {"id": "generated-event", "kind": "event", "name": "Generated outing"},
+        {"id": "generated-place", "kind": "place", "name": "Generated venue"},
+    ]
+    payload["relations"] = [{
+        "id": "at", "src": ["event", "generated-event"], "rel": "at",
+        "dst": ["place", "generated-place"], "persons": ["generated-person"],
+    }]
+    payload["evidence"][0]["relation_id"] = "at"
+    first, local = await memory.admission._admit(
+        state.memory_items[0].work, GraphWrite.model_validate(payload),
+        state.graph_fetched, state.session_id)
+    assert not local and not first.refused
+    assert len(first.entities) == 2 and len(first.relations) == 1
+
+    payload["entities"].append({
+        "id": "generated-orphan", "kind": "place", "name": "Unconnected venue"})
+    payload["entities"][1]["attributes"] = {"detail": "unproved"}
+    payload["evidence"].append({
+        "source": ["message", "1"], "entity_id": "generated-place",
+        "attribute": "detail", "span": "I like Lantern Game"})
+    retry, local = await memory.admission._admit(
+        state.memory_items[0].work, GraphWrite.model_validate(payload),
+        state.graph_fetched, state.session_id)
+    assert not local
+    assert retry.relations == first.relations
+    assert {(r.id, r.reason) for r in retry.refused} == {
+        ("generated-orphan", "orphan_entity"), ("generated-place", "wrong_ends")}
+    assert not retry.entities
+    assert memory.graph.entities["generated-place"].attributes == {}
+    assert "generated-orphan" not in memory.graph.entities

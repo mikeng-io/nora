@@ -1,4 +1,4 @@
-"""R-1b: the tag path and the heartbeat's fire path are the only two senders.
+"""R-1b: every sending path follows the declared delivery chain.
 
 WHY THIS TEST EXISTS
 --------------------
@@ -6,11 +6,10 @@ R-1 says *"Only the tagging path may cause a send; ambient traffic never
 reaches the agent"*. `test_ambient_reaches_the_agent_only_through_participation_gating`
 (`tests/integration/test_ambient.py`) asserts the ambient clause, but only
 over AMBIENT input: a reminders fire path never enters its harness. This test
-is the brake on a third send path: there are TWO senders, both named, and
-adding a third is a test failure rather than a review comment. (The
-participation occasion speaks THROUGH `FirePath.speak` — it is a fifth occasion
-on the second path, not a third path, and this test is the pin that keeps it
-so.)
+pins the closed set of callers in `CALLERS`: the tag and fire paths, public
+summons staging, fixed one-time codes, and controlled evaluation seeding.
+An undeclared caller fails rather than silently opening another send path.
+Participation still speaks through `FirePath.speak`.
 
 WHAT IT PINS, AND WHY THESE THREE FACTS
 ---------------------------------------
@@ -27,10 +26,9 @@ one of them alone would open a path:
    is what makes (1) enforceable: a second construction site is a second set of
    arguments, and `audience` (which labels every silent-failure counter) has no
    default precisely so it cannot be forgotten there.
-3. **`deliver.build` has exactly two callers** — the tag pipeline and the fire
-   path. That is the rule itself. A third would be a third way for Nora to
-   speak, and unprompted speech is the one capability this repo adds most
-   carefully.
+3. **`deliver.build` has only the callers enumerated in `CALLERS`.** Adding a
+   caller requires amending the rule; unprompted speech remains a capability
+   this repo adds carefully.
 
 AST, NOT GREP. `nora/platform/signal/adapter.py` contains `self._sender.send(...)`
 — the adapter's OWN implementation of the port, delegating to its transport,
@@ -70,6 +68,16 @@ CALLERS = {
     # every guard and the audit-first write still stand between it and the
     # wire (`nora.app.otp`).
     "nora/app/otp.py",
+    # The circle revision's controlled-state seed amends R-1b again
+    # (design/self-growth/31-doctrine-audit.md, the circle amendment):
+    # a `checked_complete` job overlay states a report was DELIVERED, so the
+    # seed puts it there through `deliver.build` — every guard and the
+    # audit-first write still stand between the generated text and the wire,
+    # which in a subject is what `obtain`'s `landed_signal_sends()` captures.
+    # Not a production path: `nora.subject` composes only for callers that
+    # are not the deployment, and its Deliverer is still BUILT in the one
+    # place.
+    "nora/subject/circle.py",
 }
 
 
@@ -131,9 +139,9 @@ def test_only_the_tag_path_and_the_fire_path_can_send():
         "the tag path's"
     )
     assert _modules_where(sources, _is_deliver_build) == CALLERS, (
-        "the tag path, the fire path, the public summons and the one-time code "
-        "are the only senders; another caller of deliver.build is another way "
-        "for Nora to speak unprompted"
+        "the tag path, the fire path, the public summons, the one-time code "
+        "and the eval circle seed are the only callers; another caller of "
+        "deliver.build is another way for Nora to speak unprompted"
     )
 
 

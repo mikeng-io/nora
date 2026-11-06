@@ -43,8 +43,21 @@ ROOT = Path(__file__).resolve().parents[2]
 #: case is graded on other cases' messages — and past 64 rows its own input never
 #: reaches the adaptor at all, while it is graded anyway. WHICH ROOM is plainly not
 #: part of Nora; it is where the world reaches her.
+#:
+#: `circle`: THE CONTROLLED STATE OF THE WORLD AROUND HER — which external
+#: boundary is absent, degraded or held (a job undelivered, the reaction
+#: endpoint down, the GIF provider unconfigured, the index partial or out).
+#: What the world is doing is no more part of her than what time it is;
+#: without the seam a case can only watch her on a world that happens to be
+#: healthy, and a controlled outage can never be asked about at all.
+#:
+#: `signal_rpc_url`: WHERE THE CONTROLLED `sendReaction` ENDPOINT IS — a
+#: draw-owned address `reaction_wire` binds per case, handed in so the
+#: composed adapter's REAL `SignalReactor` meets the controlled outage rather
+#: than a stub of itself. An address the world answers at, not part of her.
 _SEAMS = frozenset({
     "database_url", "workdir", "overrides", "identity", "policy", "now", "room",
+    "circle", "signal_rpc_url",
 })
 
 

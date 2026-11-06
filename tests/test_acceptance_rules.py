@@ -798,7 +798,7 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
 
 
 def test_a_requested_verdict_addresses_people_without_compulsory_tags():
-    """Content ownership only: #575 makes attention contextual, not mandatory.
+    """Content ownership only: the doctrine makes attention contextual, not mandatory.
 
     The composer contract separately checks the actual tagging mechanism.
     This check does not prove the model judges a disagreement well.
