@@ -19,9 +19,9 @@ GUIDES = sorted(
     + list(ROOT.glob(".agents/skills/*/SKILL.md"))
 )
 
-# A bare ISO date; one inside a path or anchor (a-2026-10-22-b) is a name.
+# A bare ISO date; one inside a path or an anchor is part of a name.
 DATE = re.compile(r"(?<![\w/#-])20\d\d-\d\d-\d\d(?![\w-])")
-# An issue/PR reference; a backticked value (`#000`) is not one.
+# An issue/PR reference; a backticked value such as a hex colour is not one.
 REFERENCE = re.compile(r"(?<![\w/&`])#\d{2,5}\b(?!`)|\b(?:issue|PR) #?\d{2,5}\b", re.IGNORECASE)
 
 
