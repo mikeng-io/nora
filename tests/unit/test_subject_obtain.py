@@ -106,12 +106,23 @@ def test_build_config_writes_a_policy_naming_the_room(tmp_path, monkeypatch) -> 
     assert (convo.primary_id, convo.unit) == ("g1", "nora")
 
 
-def test_subjects_have_distinct_computer_journal_ownership(tmp_path, monkeypatch) -> None:
+def test_subjects_have_distinct_computer_journal_ownership(
+    tmp_path, monkeypatch, evaluation_config,
+) -> None:
+    import importlib
+    import json
     import os
 
     from nora.app.computer_queue import SegmentRegistry
 
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    module = importlib.import_module("nora.subject.obtain")
+    template = tmp_path / "template.toml"
+    template.write_text(evaluation_config.read_text().replace(
+        "[computer]\n",
+        "[computer]\nstate_dir = " + json.dumps(str(tmp_path / "shared-state")) + "\n",
+        1))
+    monkeypatch.setattr(module, "_TEMPLATE", template)
     first = build_config(_spec(tmp_path / "first"))
     second = build_config(_spec(tmp_path / "second"))
     owners = []
