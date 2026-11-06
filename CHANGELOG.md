@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.15.21](https://github.com/mikeng-io/nora/compare/v7.15.20...v7.15.21) (2026-11-06)
+
+
+### Bug Fixes
+
+* **comprehend:** ground a shown author's person pointer at admission ([3c209eb](https://github.com/mikeng-io/nora/commit/3c209eba442d8aea3c3f03685f71077f7d49ac46))
+
 ## [7.15.20](https://github.com/mikeng-io/nora/compare/v7.15.19...v7.15.20) (2026-11-06)
 
 
