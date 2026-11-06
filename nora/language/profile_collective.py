@@ -25,7 +25,6 @@ there is nothing to wake on but the evidence count and the stale rule.
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -346,17 +345,11 @@ class ProfileCollectiveAdaptor(ProfilePersonAdaptor):
         # key (the room's culture, the unit's or Nora's Character account) and
         # the rows it cited, once.
         previous = await self._culture.head(key=key) if settled_at is None else None
-        cultures = await asyncio.gather(
-            *(
-                (
-                    self._profile.room_context(key=r.key)
-                    if self._render
-                    else self._culture.head(key=r.key)
-                )
-                for r in ck.rooms
-                if self._kind == "unit"
-            )
-        )
+        cultures = [
+            await (self._profile.room_context(key=r.key) if self._render
+                   else self._culture.head(key=r.key))
+            for r in ck.rooms if self._kind == "unit"
+        ]
         # Read the underlying rows: prose culture is context, never a
         # substitute for a citation's time, speaker and room. The episode
         # sends join ONLY to read their time; her words are never citable

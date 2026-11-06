@@ -2,6 +2,7 @@ name: nora-memory-graph-spike
 services:
   snapshot:
     image: pgvector/pgvector:pg18
+    init: true
     environment:
       POSTGRES_HOST_AUTH_METHOD: trust
       POSTGRES_DB: nora_snapshot
@@ -14,6 +15,7 @@ services:
     volumes: ["snapshot:/var/lib/postgresql"]
   age:
     image: apache/age:release_PG18_1.8.0
+    init: true
     environment:
       POSTGRES_HOST_AUTH_METHOD: trust
       POSTGRES_DB: nora_age_spike

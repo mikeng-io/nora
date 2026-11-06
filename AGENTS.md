@@ -309,7 +309,9 @@ and in `docs/maintainers/conventions-rationale.md`, catalogued in `design/dreame
   re-derivable. Empty traces read as progress; an absence at least asks.
 - **Instruments measure the RESULT; something must measure the COST.** An index
   is used, a call is bounded, a read is scoped: check the PLAN or the bound.
-  Never the answer — a correct answer is compatible with any cost.
+  Never the answer — a correct answer is compatible with any cost. A result
+  LIMIT does not bound recurring read work: measure generated history-size
+  scaling and aggregate concurrent demand, including held election sessions.
 - **R-27's three states on every instrument: `ok` / `nothing_found` /
   `unavailable`.** A wiring gap is `unavailable` — never `nothing_found`, never
   `ok`, and never two of them on one event.

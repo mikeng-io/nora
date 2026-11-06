@@ -5,6 +5,11 @@ description: Follows automatic Nora deployment and verifies it when required; ha
 
 # nora-deploy
 
+PostgreSQL init/process-ownership changes require a planned database recreation;
+a merge or application image rollout does not apply them. Preserve the database
+volume, obtain operator coordination, and read back Docker `HostConfig.Init` plus
+an uninterrupted backend before claiming the ownership repair is live.
+
 Ordinary merged code, doctrine, Dreamer and runtime skills ship through the
 release/image/Komodo pipeline. Do not add a manual deploy to the landing flow.
 Use deployment read-back when acceptance requires live evidence. Manual dispatch,
