@@ -121,6 +121,28 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     pmap = tmp_path / "pseudonyms.map"
     pmap.write_text(f"{PSEUDONYM_ID}==>{REAL_ID}\n")
     monkeypatch.setenv("NORA_EVAL_PSEUDONYM_MAP", str(pmap))
+    # probe: did the seed land messages rows the snapshot reads?
+    import sqlalchemy as sa
+    eng = sa.create_engine(source_url.replace("+asyncpg", "+psycopg"))
+    with eng.connect() as c:
+        n = c.execute(sa.text(
+            "select count(*) from messages where conversation_id = :cid"),
+            {"cid": REAL_ID}).scalar()
+        print(f"\nPROBE messages for room: {n}")
+        cols = [d[0] for d in c.execute(sa.text(
+            "select column_name from information_schema.columns "
+            "where table_name='messages' order by ordinal_position"))]
+        tcols = [x for x in cols if "ts" in x or "at" in x or "time" in x]
+        for r in c.execute(sa.text(
+                f"select {', '.join(tcols)} from messages limit 3")):
+            print("PROBE msg cols:", dict(r._mapping))
+        try:
+            n2 = c.execute(sa.text(
+                "select count(*), min(recorded_at), max(recorded_at) "
+                "from row_history where table_name='messages'")).fetchone()
+            print(f"PROBE row_history: {n2}")
+        except Exception as e:
+            print(f"PROBE row_history err: {e}")
 
     # --- a generated deployment config (never the deployment's own) ---
     deploy_dir = tmp_path / "deploy"
