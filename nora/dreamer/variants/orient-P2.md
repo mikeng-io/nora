@@ -85,8 +85,8 @@ input: «Cat's birthday is 14 March — don't tell her about the cake» — Ben 
 yield: reading (Cat's birthday is 14 March, cites 5210). The cake is not written anywhere: a member asked to keep it from someone.
 </example>
 <example>
-input: «minibus back is $40 a seat, I can book Friday» — Ada [5220]; «yes please book» — Ben [5221]
-yield: event (the outing, `at` its place, each person's plans); the note's Owed line «Ada -> book the minibus -> Friday»; a memo if the group will need the price again.
+input: «Dragon's Back this Saturday, minibus from the station $40 a seat — I can book Friday» — Ada [5220]; «yes please book, I'm in» — Ben [5221]
+yield: event (the hike, `at` Dragon's Back, Ada and Ben each `plans` — a plan said, never `attended`); the note's Owed line «Ada -> book the minibus -> 2026-11-06 Fri [5220, 5221]».
 </example>
 <example>
 input: «lol nice» — Cat [5230]

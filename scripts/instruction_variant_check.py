@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 
 from nora.domain.cognition_ground import Grounding, RecordItem
 from nora.domain.cognition_session import AgendaItem, Room
-from nora.domain.memory_graph import ENTRY, RELATION_RULES, Source
+from nora.domain.memory_graph import RELATION_RULES, Source
 from nora.domain.stimuli import Stimulus
 from nora.instructions.dreamer import DreamerInstructions
 from nora.language.cognition_render import RenderBudget, render_agenda
@@ -29,8 +29,12 @@ from nora.language.comprehend_render import render_session_system
 from nora.language.instruction_variants import (
     INSTRUCTION_VARIANTS,
     SAFETY_SENTENCES,
+    admitted_relations,
     instruction_variant_text,
+    listed_relations,
+    nonadmitted_relation_usage,
     p1_subset_failures,
+    safety_failures,
     safety_report,
 )
 from nora.obs.metrics import Metrics
@@ -49,7 +53,8 @@ def composed_p0() -> str:
         ROOT / "nora" / "dreamer", reload="startup", strict=True, metrics=Metrics())
     loaded = store.for_objective("cognition")
     skill = store.skill("cognition-register")
-    assert skill is not None, "cognition-register skill missing from the store"
+    if skill is None:
+        raise RuntimeError("cognition-register skill missing from the store")
     skills = f"\n\n# Skill: {skill.name}\n\n{skill.instructions}\n"
     return render_session_system(loaded.text, skills, memory=True)
 
@@ -118,16 +123,6 @@ def fixture_agenda(variant: str) -> str:
         instruction_variant=variant)
 
 
-def admitted_relations() -> frozenset[str]:
-    """The names `memory_propose` admits — the same derivation the rendered
-    vocabulary (`_VOCABULARY`) applies."""
-    return frozenset(
-        rel for rel, rule in RELATION_RULES.items()
-        if rule.layer == "notebook"
-        and any(k not in ENTRY for k in rule.sources)
-    )
-
-
 def session_tool_names() -> frozenset[str]:
     """The session's own verbs, read off the tool definitions in
     `CognitionSessionRunner._build_tools` — the names the model may call."""
@@ -141,20 +136,11 @@ _VERBISH = re.compile(
     r"[a-z]+_(?:propose|create|revise|set_status|merge|read|move|cancel))$")
 
 
-def listed_relations(text: str) -> frozenset[str]:
-    """The relation names the arm itself lists as admitted: the `- name:`
-    bullets (P0/P1) or the `names admitted:` enumeration (P2/P3)."""
-    out = set(re.findall(r"^- ([a-z_]+):", text, re.M))
-    enum = re.search(r"names admitted:?\s*\n?([a-z][a-z_,\n ]+?)(?:—|\()", text)
-    if enum:
-        out |= {w.strip() for w in enum.group(1).replace("\n", " ").split(",") if w.strip()}
-    return frozenset(out)
-
-
 def name_check(variant: str, text: str) -> tuple[str, str]:
     """Two verdicts: (the arm's listed vocabulary is exactly the tools'
-    admitted set, and no name it uses is invented; the RELATION_RULES names it
-    mentions that are NOT admitted — P0's known relates-by flaw)."""
+    admitted set, no name it uses is invented, and no non-admitted name is
+    used AS a relation; the RELATION_RULES names it merely mentions that are
+    not admitted — P0's known relates-by flaw)."""
     words = set(re.findall(r"\b[a-z][a-z_]{2,}\b", text))
     admitted = admitted_relations()
     tools = session_tool_names()
@@ -169,6 +155,9 @@ def name_check(variant: str, text: str) -> tuple[str, str]:
         if _VERBISH.match(w) and w not in tools and w not in RELATION_RULES)
     if invented:
         bad.append(f"tool-shaped names not defined: {invented}")
+    misused = sorted(nonadmitted_relation_usage(text))
+    if misused:
+        bad.append(f"non-admitted names used as relations: {misused}")
     extra = sorted(
         w for w in words
         if w in RELATION_RULES and w not in admitted)
@@ -180,7 +169,8 @@ def main() -> int:
     texts = {"P0": p0}
     for v in INSTRUCTION_VARIANTS[1:]:
         text = instruction_variant_text(v)
-        assert text is not None
+        if text is None:
+            raise RuntimeError(f"variant {v} produced no text")
         texts[v] = text
 
     print("== sizes ==")
@@ -189,10 +179,15 @@ def main() -> int:
         print(f"{v}: system={len(texts[v])} chars  agenda={len(agenda)} chars")
 
     print("\n== safety sentences ==")
+    safety_missing: dict[str, list[str]] = {}
     for name, _ in SAFETY_SENTENCES:
         row = [safety_report(texts[v])[name] for v in INSTRUCTION_VARIANTS]
         print(f"{name}: " + "  ".join(
             f"{v}={r}" for v, r in zip(INSTRUCTION_VARIANTS, row, strict=True)))
+    for v in INSTRUCTION_VARIANTS:
+        safety_missing[v] = safety_failures(texts[v])
+    absent = {v: m for v, m in safety_missing.items() if m}
+    print("verdict: " + ("FAIL " + str(absent) if absent else "PASS"))
 
     print("\n== P0 byte-identical ==")
     golden = P0_GOLDEN.read_text() if P0_GOLDEN.exists() else None
@@ -202,9 +197,19 @@ def main() -> int:
     failures = p1_subset_failures(p0, texts["P1"])
     print("PASS" if not failures else "FAIL\n" + "\n".join(failures))
 
-    print("\n== positive control: inserted line breaks the subset ==")
+    print("\n== positive controls: each guard must fire ==")
     doctored = texts["P1"] + "\nThis line was never in P0.\n"
-    print("PASS" if p1_subset_failures(p0, doctored) else "FAIL (inserted line passed)")
+    print("inserted line breaks P1's subset: "
+          + ("PASS" if p1_subset_failures(p0, doctored) else "FAIL (passed)"))
+    stripped = texts["P1"].replace("A plan does not establish attendance.\n", "")
+    if stripped == texts["P1"]:
+        raise RuntimeError("positive control broken: sentence was not in P1")
+    print("missing safety sentence detected: "
+          + ("PASS" if safety_failures(stripped) else "FAIL (passed)"))
+    verdict, _ = name_check(
+        "P1", texts["P1"] + "\nuse relation `settles` and X -cancels-> Y here.\n")
+    print("non-admitted relation use detected: "
+          + ("PASS" if verdict.startswith("FAIL") else "FAIL (passed)"))
 
     print("\n== relation and tool names are the defined ones ==")
     name_results: dict[str, str] = {}
@@ -224,8 +229,11 @@ def main() -> int:
     bad = (
         golden != p0 or bool(failures)
         or not p1_subset_failures(p0, doctored)
+        or not safety_failures(stripped)
         or any(name_results[v] != "PASS" for v in INSTRUCTION_VARIANTS)
-        or bool(drift)
+        or bool(absent) or bool(drift)
+        or not name_check(
+            "P1", texts["P1"] + "\nuse relation `settles`.\n")[0].startswith("FAIL")
     )
     return 1 if bad else 0
 

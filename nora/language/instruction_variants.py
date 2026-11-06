@@ -21,6 +21,7 @@ only arm that composes.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 INSTRUCTION_VARIANTS = ("P0", "P1", "P2", "P3")
@@ -85,6 +86,9 @@ SAFETY_SENTENCES: tuple[tuple[str, tuple[str, ...]], ...] = (
         "A reminder is the only thing that reaches a room.",
         "A reminder is the only way anything you decide reaches a group.",
     )),
+    ("inferred_question", (
+        "A value that is only inferred, and not said, goes out as a question.",
+    )),
     ("reminder_moves", (
         "Never move or cancel a reminder a person set.",
         "You may move or cancel a reminder you wrote yourself, and never one "
@@ -106,6 +110,62 @@ def safety_report(text: str) -> dict[str, str]:
         hit = next((i for i, form in enumerate(forms) if normalise(form) in flat), None)
         out[name] = "ABSENT" if hit is None else f"PRESENT[{hit}]"
     return out
+
+
+def safety_failures(text: str) -> list[str]:
+    """The safety sentences ABSENT from the text — the fail-closed form of
+    `safety_report` the check and its unit test share."""
+    return [name for name, hit in safety_report(text).items() if hit == "ABSENT"]
+
+
+def admitted_relations() -> frozenset[str]:
+    """The names `memory_propose` admits — the same derivation the rendered
+    vocabulary (`_VOCABULARY`) applies."""
+    from nora.domain.memory_graph import ENTRY, RELATION_RULES
+    return frozenset(
+        rel for rel, rule in RELATION_RULES.items()
+        if rule.layer == "notebook"
+        and any(k not in ENTRY for k in rule.sources)
+    )
+
+
+def listed_relations(text: str) -> frozenset[str]:
+    """The relation names a text itself lists as admitted: the `- name:`
+    bullets (P0/P1) or the `names admitted:` enumeration (P2/P3)."""
+    out = set(re.findall(r"^- ([a-z_]+):", text, re.M))
+    enum = re.search(r"names admitted:?\s*\n?([a-z][a-z_,\n ]+?)(?:—|\()", text)
+    if enum:
+        out |= {w.strip() for w in enum.group(1).replace("\n", " ").split(",") if w.strip()}
+    return frozenset(out)
+
+
+#: Shapes in which a name is used AS a relation — never plain English: a
+#: backticked name, an `X -name-> Y` arrow, or `relation: name`/`relation(name)`.
+#: Ordinary prose («whatever settles one settles the other», «records what was
+#: said») matches none of them, which is what keeps the check honest.
+_RELATION_USAGE = (
+    re.compile(r"`([a-z_]+)`"),
+    re.compile(r"[-—]([a-z_]+)->"),
+    re.compile(r"\brelation\s*[:(]\s*`?([a-z_]+)`?", re.I),
+)
+
+
+def relations_used_as_relations(text: str) -> frozenset[str]:
+    """Every name the text uses in a relation position, per `_RELATION_USAGE`."""
+    used: set[str] = set()
+    for pattern in _RELATION_USAGE:
+        used |= set(pattern.findall(text))
+    return frozenset(used)
+
+
+def nonadmitted_relation_usage(text: str) -> frozenset[str]:
+    """Defined-but-not-admitted RELATION_RULES names the text uses AS a
+    relation — the relates-by flaw, caught wherever it recurs."""
+    from nora.domain.memory_graph import RELATION_RULES
+    return frozenset(
+        relations_used_as_relations(text)
+        & (set(RELATION_RULES) - admitted_relations())
+    )
 
 
 #: Characters a kept unit may END on: the sentence- and clause-final marks P0
@@ -239,8 +299,13 @@ def p1_subset_failures(p0: str, p1: str) -> list[str]:
 __all__ = [
     "INSTRUCTION_VARIANTS",
     "SAFETY_SENTENCES",
+    "admitted_relations",
     "instruction_variant_text",
+    "listed_relations",
+    "nonadmitted_relation_usage",
     "normalise",
     "p1_subset_failures",
+    "relations_used_as_relations",
+    "safety_failures",
     "safety_report",
 ]
