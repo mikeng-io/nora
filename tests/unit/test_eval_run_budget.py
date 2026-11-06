@@ -325,18 +325,33 @@ async def test_a_request_without_an_output_ceiling_refuses_before_http():
 
 
 @pytest.mark.anyio
-async def test_both_ceiling_fields_take_the_smaller_not_the_first():
-    """max_tokens=800 and max_completion_tokens=200 on the same body:
-    the enforced ceiling is 200 — never a value the provider could
-    exceed by honouring the other field."""
-    from nora.agent.run_budget_transport import _declared_ceiling
-    assert _declared_ceiling(
-        {"max_tokens": 800, "max_completion_tokens": 200}) == 200
-    assert _declared_ceiling(
-        {"max_tokens": 200, "max_completion_tokens": 800}) == 200
-    assert _declared_ceiling({}) is None
-    assert _declared_ceiling({"max_tokens": 0}) is None
-    assert _declared_ceiling({"max_tokens": "200"}) is None
+async def test_a_dual_ceiling_body_refuses_before_http():
+    """max_tokens AND max_completion_tokens on the final wire is a
+    contradictory declaration — the provider's own precedence is not
+    ours to guess, so the budget refuses it before the inner transport
+    on either order. One positive field alone is still admitted."""
+    requests: list[dict] = []
+    budget = RunBudget(max_requests=10, max_input_bytes=10**7,
+                       max_output_tokens=40_000, output_reserve=4_000)
+    token = active_run_budget.set(budget)
+    try:
+        transport = httpx.MockTransport(_respond(requests))
+        client = factory.create_client(
+            base_url="https://generated.invalid/v1", api_key="generated-key",
+            http_client=httpx.AsyncClient(transport=transport))
+        for dual in ({"max_tokens": 1, "max_completion_tokens": 50_000},
+                     {"max_tokens": 50_000, "max_completion_tokens": 1}):
+            with pytest.raises(
+                    (RunBudgetError, openai.APIConnectionError)):
+                await client.chat.completions.create(
+                    model="m",
+                    messages=[{"role": "user", "content": "hi"}],
+                    extra_body=dual)
+        assert requests == []
+        assert budget.requests == 0
+        assert "ceiling" in (budget.spent or "")
+    finally:
+        active_run_budget.reset(token)
 
 
 @pytest.mark.anyio

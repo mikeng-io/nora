@@ -71,13 +71,14 @@ def _check_body_shape(body: dict[str, Any]) -> None:
 def _declared_ceiling(body: dict[str, Any]) -> int | None:
     """The request's own output bound read from the FINAL body, after
     `extra_body` merges. Both `max_tokens` and `max_completion_tokens`
-    may be set; the enforced ceiling is the SMALLER — never a value the
-    provider might exceed. `None` means the body declares no valid
-    ceiling at all: an unbounded output is unsupported, so the call
-    refuses before dispatch rather than pretend a reservation."""
+    may be set; the provider's own precedence is not ours to guess —
+    BOTH is a contradictory declaration the budget cannot bound, so it
+    is refused (a `None` return means "no valid ceiling": unbounded or
+    contradictory output is unsupported, refused before dispatch
+    rather than admitted under a pretend reservation)."""
     ceilings = [v for k in ("max_tokens", "max_completion_tokens")
                 if type((v := body.get(k))) is int and v > 0]
-    return min(ceilings) if ceilings else None
+    return ceilings[0] if len(ceilings) == 1 else None
 
 
 class _BoundedStream:
