@@ -111,7 +111,6 @@ def test_subjects_have_distinct_computer_journal_ownership(
 ) -> None:
     import importlib
     import json
-    import os
 
     from nora.app.computer_queue import SegmentRegistry
 
@@ -132,7 +131,7 @@ def test_subjects_have_distinct_computer_journal_ownership(
         assert first.computer.state_dir != second.computer.state_dir
     finally:
         for owner in owners:
-            os.close(owner._lock_fd)
+            owner.close()
 
 
 def test_an_explicit_policy_is_used_verbatim(tmp_path, monkeypatch) -> None:

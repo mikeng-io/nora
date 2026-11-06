@@ -1643,7 +1643,9 @@ async def test_pending_results_survive_a_restart(tmp_path) -> None:
     first.retain(tid, "done", {"status": "ok", "note": "written"})
     first.mark_consumed(tid)
     import os as _os
-    _os.close(first._lock_fd)  # simulate process death: release the store
+    first._closed = True  # the old process cannot run cleanup after its death
+    fd, first._lock_fd = first._lock_fd, None
+    _os.close(fd)  # simulate process death: release the store
 
     second = SegmentRegistry(pending_dir=path)  # the restart
     pending = second.pending_result(tid)
@@ -1651,7 +1653,7 @@ async def test_pending_results_survive_a_restart(tmp_path) -> None:
         and pending.result["note"] == "written" and pending.consumed
 
     second.clear_pending(tid)
-    _os.close(second._lock_fd)  # release before the next owner
+    second.close()  # release before the next owner
     third = SegmentRegistry(pending_dir=path)
     assert third.pending_result(tid) is None
 
@@ -1673,7 +1675,9 @@ async def test_a_retained_pending_is_persisted_terminal_and_delivered(tmp_path) 
     first.mark_consumed(tid)
 
     import os as _os
-    _os.close(first._lock_fd)  # simulate process death
+    first._closed = True  # the old process cannot run cleanup after its death
+    fd, first._lock_fd = first._lock_fd, None
+    _os.close(fd)  # simulate process death
     second = SegmentRegistry(pending_dir=path)  # the restart
     assert await _persist_pending(
         executors=second, tasks=store, clock=clock(), task_id=tid)

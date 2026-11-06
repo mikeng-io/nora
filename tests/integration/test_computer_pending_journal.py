@@ -71,6 +71,32 @@ def _rig(pending_dir, *, reconcile=None):
     return executors, tasks, admission
 
 
+def _crash(registry):
+    """Release the dead process's fd without checkpointing or later GC cleanup."""
+    registry._closed = True
+    fd, registry._lock_fd = registry._lock_fd, None
+    os.close(fd)
+
+
+async def test_a_crashed_registry_cannot_close_or_rewrite_its_successor(tmp_path):
+    directory = tmp_path / "pending"
+    first = SegmentRegistry(pending_dir=directory)
+    task_id = uuid.uuid4()
+    assert first.retain(task_id, "done", {"value": "old"})
+    _crash(first)
+    second = SegmentRegistry(pending_dir=directory)
+    try:
+        assert second.retain(task_id, "done", {"value": "new"})
+        first.close()  # the abandoned object's eventual destructor
+        os.fstat(second._lock_fd)  # its live descriptor must remain open
+        assert json.loads((directory / "pending-results.json").read_text())[
+            str(task_id)]["result"] == {"value": "new"}
+        with pytest.raises(RuntimeError, match="second owner"):
+            SegmentRegistry(pending_dir=directory)
+    finally:
+        second.close()
+
+
 def _seal(directory: Path):
     directory.chmod(0o500)
 
@@ -139,10 +165,10 @@ async def test_failed_consumed_checkpoint_returns_identity_not_the_result(tmp_pa
     # Recovery: SQL alone takes the terminal result and the deferred stamp.
     tasks.fail_delivered = False
     _open(directory)
-    os.close(executors._lock_fd)  # simulate process death
+    _crash(executors)  # simulate process death
     second = SegmentRegistry(pending_dir=directory)
     assert [r.id for r in await tasks.undelivered(limit=10)] == [task.id]
-    os.close(second._lock_fd)
+    second.close()
 
 
 async def test_sql_mark_delivered_failure_keeps_the_result_deliverable(tmp_path):
@@ -176,7 +202,7 @@ async def test_a_corrupt_journal_refuses_every_construction(tmp_path):
     directory = tmp_path / "pending"
     reg = SegmentRegistry(pending_dir=directory)
     assert reg.retain(uuid.uuid4(), "done", {"v": 1})
-    os.close(reg._lock_fd)
+    _crash(reg)
     active = directory / "pending-results.json"
     active.write_text("{not json")
     for _ in range(2):
@@ -207,7 +233,7 @@ async def test_the_result_is_journaled_before_the_sql_finish_wait(tmp_path):
     assert reply["v"] == 9
     assert reply["v"] == 9
     assert (await tasks.get(task.id)).status == "running"  # SQL never took it
-    os.close(executors._lock_fd)
+    _crash(executors)
 
     second = SegmentRegistry(pending_dir=tmp_path / "pending")
     pending = second.pending_result(task.id)
@@ -257,7 +283,7 @@ async def test_a_stale_consumed_claim_cannot_suppress_the_deferred_handoff(tmp_p
     # deferred-eligible (delivered_at never stamped) and the deferred path
     # delivers the original result once.
     tasks.fail_delivered = False
-    os.close(executors._lock_fd)  # simulate process death
+    _crash(executors)  # simulate process death
     second = SegmentRegistry(pending_dir=directory)
     recovered = second.pending_result(task.id)
     assert recovered is not None and not recovered.consumed
@@ -266,7 +292,7 @@ async def test_a_stale_consumed_claim_cannot_suppress_the_deferred_handoff(tmp_p
     row = await tasks.get(task.id)
     assert row.status == "done" and row.delivered_at is None
     assert [r.id for r in await tasks.undelivered(limit=10)] == [task.id]
-    os.close(second._lock_fd)
+    second.close()
 
 
 async def test_the_shared_finish_path_journals_before_its_waits(tmp_path):
@@ -291,7 +317,7 @@ async def test_the_shared_finish_path_journals_before_its_waits(tmp_path):
         task, "done", {"status": "ok", "v": 13, "stdout": "kept"}))
     await asyncio.sleep(0.05)  # inside the quiet wait
 
-    os.close(executors._lock_fd)  # simulate process death mid-wait
+    _crash(executors)  # simulate process death mid-wait
     second = SegmentRegistry(pending_dir=directory)
     pending = second.pending_result(task.id)
     assert pending is not None, (
@@ -301,7 +327,7 @@ async def test_the_shared_finish_path_journals_before_its_waits(tmp_path):
     quiet.set()
     assert await holding is False  # quiet never proved: row stays running
     assert (await tasks.get(task.id)).status == "running"
-    os.close(second._lock_fd)
+    second.close()
 
 
 async def test_a_siblings_checkpoint_cannot_leak_an_unconfirmed_consumption(tmp_path):
@@ -366,7 +392,7 @@ async def test_a_siblings_checkpoint_cannot_leak_an_unconfirmed_consumption(tmp_
     assert snapshot[str(task_a.id)]["consumed"] is False
 
     # Reconstruction: A stays deferred-eligible; B's entry is intact.
-    os.close(executors._lock_fd)  # simulate process death
+    _crash(executors)  # simulate process death
     second = SegmentRegistry(pending_dir=directory)
     recovered = second.pending_result(task_a.id)
     assert recovered is not None and not recovered.consumed
@@ -377,4 +403,4 @@ async def test_a_siblings_checkpoint_cannot_leak_an_unconfirmed_consumption(tmp_
     row = await tasks.get(task_a.id)
     assert row.status == "done" and row.delivered_at is None
     assert task_a.id in [r.id for r in await tasks.undelivered(limit=10)]
-    os.close(second._lock_fd)
+    second.close()

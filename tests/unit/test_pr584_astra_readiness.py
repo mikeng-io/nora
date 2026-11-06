@@ -9,10 +9,8 @@ values only; no production fixtures.
 """
 import asyncio
 import base64
-import contextlib
 import gc
 import json
-import os
 import uuid
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -198,18 +196,10 @@ async def test_a_running_but_unowned_segment_cannot_authorize_nested_work():
 
 async def test_abandoned_registry_releases_lifetime_lock(tmp_path):
     owner = SegmentRegistry(pending_dir=tmp_path / "journal")
-    fd = owner._lock_fd
     del owner
     gc.collect()
-    replacement = None
-    try:
-        replacement = SegmentRegistry(pending_dir=tmp_path / "journal")
-    finally:
-        if replacement is not None and replacement._lock_fd is not None:
-            os.close(replacement._lock_fd)
-        if fd is not None:
-            with contextlib.suppress(OSError):
-                os.close(fd)
+    replacement = SegmentRegistry(pending_dir=tmp_path / "journal")
+    replacement.close()
 
 
 def _authority_harness(tmp_path, *, requester: str):
