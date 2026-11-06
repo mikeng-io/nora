@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.15.22](https://github.com/mikeng-io/nora/compare/v7.15.21...v7.15.22) (2026-11-06)
+
+
+### Bug Fixes
+
+* **database:** bound Dreamer store demand and remove recurring media rescans ([fa60b56](https://github.com/mikeng-io/nora/commit/fa60b56ff0969c044ab1d098a6ea8fca593ad5c8))
+
 ## [7.15.21](https://github.com/mikeng-io/nora/compare/v7.15.20...v7.15.21) (2026-11-06)
 
 
