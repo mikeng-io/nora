@@ -210,37 +210,38 @@ class MemoryProposalAdmission:
 
     def _endpoint(
         self, value: Endpoint, work: WorkItem,
-    ) -> tuple[Key | None, Entity | None, str | None, str | None]:
+    ) -> tuple[Key | None, Entity | None, tuple[str, str] | None]:
         """Resolve one endpoint: a shown handle or an inline new entity.
 
-        Returns (key, entity_or_none, refusal_reason_or_none); a `{new: …}`
-        endpoint's refusal is the entity's part, a bad handle's the relation's."""
+        Returns (key, entity_or_none, failure_or_none) where failure is
+        (part, reason); a `{new: …}` endpoint's refusal is the entity's part,
+        a bad handle's the relation's."""
         if isinstance(value, NewEndpoint):
             e = value.new
             if e.kind in POINTER_KINDS:
-                return None, None, "identity_pointer", "entity"
+                return None, None, ("entity", "identity_pointer")
             if e.kind not in PROPOSED_KINDS or not any(
                     row.kind == e.kind for row in MEMORY_KINDS):
-                return None, None, "vocabulary", "entity"
+                return None, None, ("entity", "vocabulary")
             entity = Entity(
                 _stable(work, "entity:" + json.dumps(
                     e.model_dump(mode="json"), sort_keys=True)),
                 e.kind, work.unit, e.name, tuple(e.aliases),
                 {name: cited.value for name, cited in e.attributes.items()},
             )
-            return entity.key, entity, None, None
+            return entity.key, entity, None
         if not isinstance(value, str) or not value.startswith("@"):
-            return None, None, "schema", "relation"
+            return None, None, ("relation", "schema")
         kind, _, ref = value[1:].partition(":")
         if not kind or not ref:
-            return None, None, "schema", "relation"
+            return None, None, ("relation", "schema")
         if kind in POINTER_KINDS:
             if not ref.startswith(f"{work.unit}:{kind}:"):
                 ref = f"{work.unit}:{kind}:{ref}"
-            return (kind, ref), None, None, None
+            return (kind, ref), None, None
         # Entity and record kinds name graph nodes; admission's wrong_ends is
         # the boundary (unknown id, wrong unit, wrong kind for the verb).
-        return (kind, ref), None, None, None
+        return (kind, ref), None, None
 
     def _cited(
         self, cites: list[Citation], scope: Scope, fetched: GraphFetched,
@@ -286,23 +287,21 @@ class MemoryProposalAdmission:
             index: int, st: RelationStatement,
         ) -> str | None:
             """Returns the staged relation id, or None with the refusal recorded."""
-            src = dst = None
+            keys: dict[str, Key] = {}
             for endpoint, slot in ((st.subject, "src"), (st.object, "dst")):
-                key, entity, reason, part = self._endpoint(endpoint, work)
-                if reason is not None:
-                    assert part is not None
+                key, entity, failure = self._endpoint(endpoint, work)
+                if failure is not None:
+                    part, reason = failure
                     report[index] = {"status": "refused", "reason": reason,
                                      "kind": "relation"}
                     await refuse(part, reason)
                     return None
-                if slot == "src":
-                    src = key
-                else:
-                    dst = key
-                if entity is not None:
+                if key is None:
+                    return None
+                keys[slot] = key
+                if entity is not None and isinstance(endpoint, NewEndpoint):
                     entities.append(entity)
                     entity_stmt[entity.id] = index
-                    assert isinstance(endpoint, NewEndpoint)
                     for name, cited in endpoint.new.attributes.items():
                         attr_sources, _ = self._cited(cited.cite, scope, fetched)
                         for cite in cited.cite:
@@ -331,7 +330,7 @@ class MemoryProposalAdmission:
                                  "kind": "relation"}
                 await refuse("relation", cite_reason)
                 return None
-            assert src is not None and dst is not None
+            src, dst = keys["src"], keys["dst"]
             rel_id = stable("relation:" + json.dumps(
                 st.model_dump(mode="json"), sort_keys=True))
             persons = sorted({p for s in sources.values() for p in s.persons})
