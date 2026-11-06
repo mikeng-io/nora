@@ -32,7 +32,9 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 81, (
+    assert len(dataclasses.fields(Dependencies)) == 82, (
+        "81 -> 82: `computer_lifecycle`, the shared computer startup/drain owner "
+        "used by App and enabled subjects. "
         "78 -> 81 on 2026-11-04: `computer_queue_runner`, `browser_manager` "
         "and `browser_sweep_seconds`, the scoped computer's queue granter, "
         "tab manager and sweep interval `nora/__main__.py` spawns loops on "
