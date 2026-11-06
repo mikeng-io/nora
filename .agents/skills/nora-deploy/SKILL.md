@@ -91,7 +91,6 @@ The installed wrapper holds the shared deploy lock, validates config, reconciles
 changed services through native Compose and verifies the whole owned cohort, then
 writes `release-deploy.json`. A complete bundle can reuse proven unchanged adapter
 artifacts with their original provenance; Nora always rebuilds for its baked stamp.
-v6.5.0 completed this path without host commands on 2026-10-21.
 
 ## 2. Read back the selected release
 

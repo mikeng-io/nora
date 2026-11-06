@@ -83,7 +83,7 @@ PASS: `GATE_RC=0`, then either fresh checks/reader results (three static steps f
 code), or the runner's validated matching success receipt. A changed candidate,
 base or execution context requires impact reassessment. Receipt refreshes rerun nothing.
 
-- Never `make gate | tail`: the rc is tail's (2026-09-22, merged a red master).
+- Never `make gate | tail`: the rc is tail's (merged a red master).
 - In the background read `$LOG/gate.rc`, not the notice (last command's rc).
   Kill only a PID you recorded, never `pkill -f`: it kills other sessions' gates.
 
@@ -175,7 +175,7 @@ gh pr merge <N> --merge --match-head-commit "$(git rev-parse HEAD)" \
   subject does not follow this repository's convention.
 - `--merge` only, never `--squash` or `--rebase`.
 - Stacked PR: `gh pr edit <child> --base master` BEFORE merging its base with
-  `--delete-branch`, or the child is closed (2026-09-23, #411 closed #413).
+  `--delete-branch`, or the child is closed.
 ## 9. Read back
 
 ```bash

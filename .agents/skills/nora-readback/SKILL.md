@@ -55,7 +55,7 @@ Langfuse runs as its own compose project on nora-host, port 3100. The key is
 `LANGFUSE_OTLP_HEADERS`, resolved through the deployment's credential source —
 `scripts/secret_delivery.py`'s `source()`, process env > `.env` > `secret.toml`
 — shaped `Authorization=Basic%20<base64>`; its `=` padding is URL-encoded, and
-without decoding `%3D` every call is 401 (measured 2026-09-24). Decode and send
+without decoding `%3D` every call is 401. Decode and send
 inside one Python process: the value never reaches argv, a log or stdout, and
 missing/empty fails closed. (`--compose-exec` is exec-only, not a curl wrapper.)
 
@@ -94,22 +94,22 @@ Check: `HTTP=200` and a `meta.totalItems`. Other reads, same header:
 Traps, one line each:
 
 - A short window reads a rare tool as dead: 3 days said 22 of 54 tools unused,
-  40 days said 4 (2026-09-22). Page to 2,000 or more rows and print the
+  40 days said 4. Page to 2,000 or more rows and print the
   `startTime` min and max beside every count.
 - A token split that sums to `input_tokens` proves nothing. Cross-check it
   against `cache_read_input_tokens` (in `usageDetails` and
   `metadata.attributes["gen_ai.usage.cache_read_input_tokens"]`); a match to
-  1.1% is what placed the tool schemas at 62% (2026-09-22). Tool schemas are
+  1.1% is what placed the tool schemas at 62%. Tool schemas are
   not in the trace input; build them locally. The field is absent on some
   generations: absent is not 0.
 - Tokens are not cost under a prefix cache: deferring tools cut input 36% and
-  cost more, because uncached input doubled (2026-09-23). Price the cached and
+  cost more, because uncached input doubled. Price the cached and
   uncached split per turn.
 - Not in Jaeger is not dropped: generations go to Langfuse only, and Jaeger
   holds the rest (`docs/observability.md`).
 
 **Replaying recorded turns** (for a doctrine, voice or tool-description arm;
-the 2026-09-24 scripts are not in the repo, rebuild them): take each
+the scripts are not in the repo, rebuild them): take each
 `engagement` trace's first GENERATION `input`; export tool schemas locally
 from `ToolRegistry` specs (the trace holds only names); render the arm's
 doctrine and first check the unchanged render is byte-identical to the
@@ -133,17 +133,14 @@ EOF
 ```
 
 - An absent series means "nothing since the last restart", never "never
-  happened": labels are created lazily and nora restarted 19 times in 7 days
-  (2026-09-17). A 2026-09-12 design doc concluded "the gate never admitted"
-  from exactly that.
-- A rare counter reads empty almost always; never close an issue on one
-  (#118, #232). Ask a durable row or a trace instead.
+  happened": labels are created lazily and restarts are frequent.
+- A rare counter reads empty almost always; never close an issue on one. Ask a durable row or a trace instead.
 - "Ever / how often": `query_range` over the retention, sum positive deltas and
   treat a drop as a reset. `increase()` extrapolates to non-integers.
-- Retention: flag `30d`; on 2026-09-24 `up` reached back about 15 days. Measure
+- Retention: flag `30d`, but `up` has reached back only about 15 days. Measure
   with `count_over_time(up[30d])` before quoting a window.
 - A query with `[...]` goes through `curl -G --data-urlencode` (or `-g`); curl
-  otherwise treats the brackets as a glob and fetches nothing (2026-09-24).
+  otherwise treats the brackets as a glob and fetches nothing.
 - A zero needs a positive control: a crashed stage also reads 0.
 
 ## 4. Postgres rows (what was written)
@@ -175,7 +172,7 @@ EOF
 - An idle process logs nothing at INFO, so the log alone does not separate
   idle from dead; read `/health` or a counter.
 - A recreate discards the old container's log: capture it before recreating.
-- `data/nora.log` is stale (logs moved to stdout 2026-09-09).
+- `data/nora.log` is stale; logs go to stdout.
 
 ## 6. Inside the container
 
@@ -184,7 +181,7 @@ ssh nora-host 'python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-roo
 ```
 
 - Plain `python` lacks the dependencies; `uv run` installed 33 dev packages
-  into the live venv (2026-09-17). Use `/app/.venv/bin/python` only.
+  into the live venv. Use `/app/.venv/bin/python` only.
 - This reads the FILE, not the running process. For a loaded-once file it is
   the process's value only when `StartedAt` is after the edit and
   `curl -s localhost:9100/health | jq .config` shows `"stale": false`.
