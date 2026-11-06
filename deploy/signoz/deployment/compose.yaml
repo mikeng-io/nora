@@ -90,6 +90,7 @@ services:
       - pg_isready -U signoz -d signoz
       timeout: 10s
     image: postgres:16.11
+    init: true
     networks:
     - signoz-network
     restart: unless-stopped

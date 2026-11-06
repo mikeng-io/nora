@@ -1,0 +1,51 @@
+[
+  {
+    "name": "media discovery cannot rescan owning store per reference",
+    "file": "nora/infra/sql/profile_inputs.py",
+    "old": "        refs = sa.select(sa.func.coalesce(m.media_json, '').label('ref')).distinct().cte(\n            'profile_attachment_refs').prefix_with('MATERIALIZED')\n        keys = _media_keys(refs.c.ref).subquery().lateral()\n        links = sa.select(refs.c.ref, keys.c.sha).select_from(\n            refs.join(keys, sa.true())).cte('profile_attachment_keys').prefix_with('MATERIALIZED')\n        objects = MEDIA_OBJECTS.c\n        joined = sa.select(links.c.ref,\n            sa.func.jsonb_agg(aggregate_order_by(sa.func.jsonb_build_array(\n                objects.sha256, objects.title, objects.description, objects.content,\n                objects.describe_model, objects.provenance), objects.sha256)).label('media'),\n            sa.func.bool_or(sa.or_(*(sa.func.coalesce(objects[f], '') != ''\n                for f in ('title', 'description', 'content')))).label('ready'),\n        ).select_from(links.join(MEDIA_OBJECTS, objects.sha256 == links.c.sha)\n        ).group_by(links.c.ref).subquery()\n        # Materialize one keyed join, shared by revision, eligibility and recovery.\n        # ponytail: discovery is linear in scoped history; no history-sized media\n        # rescans. A durable source change feed is the next rung if that grows.\n        cache = sa.select(refs.c.ref, joined.c.media,\n            sa.func.coalesce(joined.c.ready, False).label('ready')).select_from(\n                refs.outerjoin(joined, joined.c.ref == refs.c.ref)\n            ).cte('profile_message_media').prefix_with('MATERIALIZED')\n",
+    "new": "        refs = sa.select(sa.func.coalesce(m.media_json, '').label('ref')).distinct().subquery()\n        ready = sa.exists().where(\n            sa.func.strpos(refs.c.ref, MEDIA_OBJECTS.c.sha256) > 0,\n            sa.or_(*(sa.func.coalesce(MEDIA_OBJECTS.c[f], '') != ''\n                     for f in ('title', 'description', 'content'))))\n        cache = sa.select(refs.c.ref, _media_revision(refs.c.ref).label('media'),\n            ready.label('ready')).cte('profile_message_media').prefix_with('MATERIALIZED')\n",
+    "target": "tests/infra/test_profile_source_inputs.py::test_fixed_pending_batch_media_work_scales_with_generated_history"
+  },
+  {
+    "name": "normal population admits at most two store phases",
+    "file": "nora/app/runtime.py",
+    "old": "    store_slots = asyncio.Semaphore(2)",
+    "new": "    store_slots = asyncio.Semaphore(72)",
+    "target": "tests/unit/test_runtime.py::test_normal_dream_population_admits_two_reads_and_releases_for_models"
+  },
+  {
+    "name": "store admission is released during model execution",
+    "file": "nora/agent/dream_store.py",
+    "old": "    if lease is not None:\n        lease.release()\n    try:",
+    "new": "    if lease is not None:\n        pass\n    try:",
+    "target": "tests/unit/test_dream_store_admission.py::test_store_admission_cancellation_failure_and_model_release"
+  },
+  {
+    "name": "wake discovery does not construct full transcripts",
+    "file": "nora/language/profile.py",
+    "old": "n = len(await self._sources(key, self._wake_batch, max(after, boundary), discover=True))",
+    "new": "n = len(await self._sources(key, self._wake_batch, max(after, boundary), discover=False))",
+    "target": "tests/infra/test_profile_source_inputs.py::test_profile_count_discovers_without_constructing_message_evidence"
+  },
+  {
+    "name": "completed initial recovery does not inventory history again",
+    "file": "nora/infra/sql/profile_inputs.py",
+    "old": "            if discover and swept:",
+    "new": "            if False:",
+    "target": "tests/infra/test_profile_source_inputs.py::test_wake_discovery_does_not_load_transcripts_or_repeat_completed_sweep"
+  },
+  {
+    "name": "runtime Postgres does not own orphaned probe children",
+    "file": "docker-compose.yml",
+    "old": "    image: pgvector/pgvector:pg18\n    init: true",
+    "new": "    image: pgvector/pgvector:pg18\n    init: false",
+    "target": "tests/architecture/test_postgres_process_ownership.py::test_postgres_services_have_init"
+  },
+  {
+    "name": "admission queue does not consume operation deadline",
+    "file": "nora/agent/dream_store.py",
+    "old": "            deadline.reschedule(None)",
+    "new": "            pass",
+    "target": "tests/unit/test_dream_store_admission.py::test_admission_wait_does_not_consume_the_unit_deadline"
+  }
+]

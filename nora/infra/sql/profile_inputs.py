@@ -72,11 +72,21 @@ def _scope(key: str, source: str) -> str:
     return key + '\x1f' + source
 
 
+def _media_keys(ref: Any) -> Any:
+    keys = sa.func.unnest(sa.func.nora_media_keys(ref)).table_valued('sha').render_derived()
+    return sa.select(keys.c.sha)
+
+
 def _media_revision(ref: Any) -> Any:
-    m = MEDIA_OBJECTS.c
+    keys = _media_keys(ref).subquery()
+    # OFFSET fences the parameterized primary-key lookup: a semi-join may
+    # otherwise choose a complete media scan for every distinct attachment.
+    found = sa.select(MEDIA_OBJECTS).where(
+        MEDIA_OBJECTS.c.sha256 == keys.c.sha).offset(0).lateral()
+    m = found.c
     return sa.select(sa.func.jsonb_agg(aggregate_order_by(sa.func.jsonb_build_array(
         m.sha256, m.title, m.description, m.content, m.describe_model, m.provenance,
-    ), m.sha256))).where(sa.func.strpos(sa.func.coalesce(ref, ''), m.sha256) > 0).scalar_subquery()
+    ), m.sha256))).select_from(keys.join(found, sa.true())).scalar_subquery()
 
 
 def _stamp(value: Any) -> str:
@@ -172,82 +182,113 @@ class SqlProfileInputs:
                 ))
 
     def _messages(self, *, rooms: Sequence[tuple[str, str]], person: str,
-                  message_ids: Sequence[int] | None = None) -> Any:
-        m = MESSAGES.c
+                  message_ids: Sequence[int] | None = None, evidence: bool = True,
+                  key: str | None = None) -> Any:
+        m: Any = MESSAGES.c
         scope = [_in_rooms(rooms), m.is_nora == 0]
         if message_ids is not None:
             scope.append(m.id.in_(message_ids))
-        refs = sa.select(sa.func.coalesce(m.media_json, '').label('ref')).where(
-            *scope).distinct().subquery()
-        ready = sa.exists().where(
-            sa.func.strpos(refs.c.ref, MEDIA_OBJECTS.c.sha256) > 0,
-            sa.or_(*(sa.func.coalesce(MEDIA_OBJECTS.c[f], '') != ''
-                     for f in ('title', 'description', 'content'))),
-        )
-        # ponytail: two media scans per distinct attachment ref; use a relational
-        # message-to-media index if distinct refs make this read exceed its budget.
-        # Reuse each attachment lookup across messages, revision comparisons,
-        # ordering and recovery counts instead of flattening correlated scans.
-        cache = sa.select(refs.c.ref, _media_revision(refs.c.ref).label('media'),
-            ready.label('ready')).cte('profile_message_media').prefix_with('MATERIALIZED')
-        media = cache.c.media
-        edits = sa.select(sa.func.max(MESSAGE_EDIT.c.id)).where(
-            MESSAGE_EDIT.c.message_id == m.id).scalar_subquery()
-        deleted = sa.exists().where(MESSAGE_DELETE.c.message_id == m.id)
-        edited_mentions = sa.select(MESSAGE_EDIT.c.mention_persons_json).where(
-            MESSAGE_EDIT.c.message_id == m.id).order_by(MESSAGE_EDIT.c.id.desc()
-            ).limit(1).scalar_subquery()
+        edit_ids = sa.select(MESSAGE_EDIT.c.message_id,
+            sa.func.max(MESSAGE_EDIT.c.id).label('head')).select_from(
+                MESSAGE_EDIT.join(MESSAGES, MESSAGE_EDIT.c.message_id == m.id)
+            ).where(*scope).group_by(MESSAGE_EDIT.c.message_id).subquery()
+        edit = sa.select(MESSAGE_EDIT.c.id, MESSAGE_EDIT.c.message_id,
+            MESSAGE_EDIT.c.mention_persons_json).select_from(MESSAGE_EDIT.join(
+                edit_ids, MESSAGE_EDIT.c.id == edit_ids.c.head)
+            ).cte('profile_edit_heads').prefix_with('MATERIALIZED')
         eligible = sa.or_(m.person_id == person, sa.cast(sa.func.coalesce(
-            edited_mentions, m.mention_persons_json), JSONB).contains([person]))
+            edit.c.mention_persons_json, m.mention_persons_json), JSONB).contains([person]))
+        edits = edit.c.id
+        deleted: Any = sa.exists().where(MESSAGE_DELETE.c.message_id == m.id)
+        heads = sa.select(m.id, m.media_json, m.body, m.hidden_at, m.person_id,
+            m.mention_persons_json, m.conversation_id,
+            edits.label('edit_head'), deleted.label('deleted'),
+            sa.func.coalesce(eligible, False).label('eligible'),
+            sa.or_(m.person_id == person, sa.cast(m.mention_persons_json, JSONB)
+                   .contains([person])).label('originally_eligible'),
+        ).select_from(MESSAGES.outerjoin(edit, edit.c.message_id == m.id)).where(
+            *scope).cte('profile_message_heads').prefix_with('MATERIALIZED')
+        m = heads.c
+        seen: Any = sa.false()
+        source: Any = heads
+        if key is not None:
+            source = heads.outerjoin(W, sa.and_(
+                W.c.consolidator_name == 'profile-person:source:message',
+                W.c.scope_id == sa.literal(key + '\x1fmessage:') + sa.cast(m.id, sa.Text)))
+            seen = W.c.scope_id.is_not(None)
+        candidates = sa.select(heads, seen.label('seen')).select_from(source).where(
+            sa.or_(m.eligible, m.originally_eligible, seen)).cte(
+                'profile_message_candidates').prefix_with('MATERIALIZED')
+        m = candidates.c
+        refs = sa.select(sa.func.coalesce(m.media_json, '').label('ref')).distinct().cte(
+            'profile_attachment_refs').prefix_with('MATERIALIZED')
+        keys = _media_keys(refs.c.ref).subquery().lateral()
+        links = sa.select(refs.c.ref, keys.c.sha).select_from(
+            refs.join(keys, sa.true())).cte('profile_attachment_keys').prefix_with('MATERIALIZED')
+        objects = MEDIA_OBJECTS.c
+        joined = sa.select(links.c.ref,
+            sa.func.jsonb_agg(aggregate_order_by(sa.func.jsonb_build_array(
+                objects.sha256, objects.title, objects.description, objects.content,
+                objects.describe_model, objects.provenance), objects.sha256)).label('media'),
+            sa.func.bool_or(sa.or_(*(sa.func.coalesce(objects[f], '') != ''
+                for f in ('title', 'description', 'content')))).label('ready'),
+        ).select_from(links.join(MEDIA_OBJECTS, objects.sha256 == links.c.sha)
+        ).group_by(links.c.ref).subquery()
+        # Materialize one keyed join, shared by revision, eligibility and recovery.
+        # ponytail: discovery is linear in scoped history; no history-sized media
+        # rescans. A durable source change feed is the next rung if that grows.
+        cache = sa.select(refs.c.ref, joined.c.media,
+            sa.func.coalesce(joined.c.ready, False).label('ready')).select_from(
+                refs.outerjoin(joined, joined.c.ref == refs.c.ref)
+            ).cte('profile_message_media').prefix_with('MATERIALIZED')
+        media = cache.c.media
+        edits, deleted = m.edit_head, m.deleted
         snapshot = sa.func.jsonb_build_array(
             edits, deleted, m.body, m.media_json, m.hidden_at, m.person_id,
             m.mention_persons_json, media,
         )
-        # transcript_select excludes hidden rows. Select its named columns
-        # explicitly here so a withdrawal yields metadata without content.
-        latest = _latest_edit()
+        # Withdrawals retain metadata; transcript evidence loads after discovery.
         stmt = sa.select(
-            m.id, m.sender_id, m.sender_name, m.ts, m.body, m.is_nora,
-            m.delivery_status, m.raw_json, m.quoted_ts, m.media_json, m.person_id,
-            turn_id_for_message().label("turn_id"),
-            m.external_files_json, latest.c.ts.label('edit_ts'),
-            latest.c.body.label('edit_body'), latest.c.raw_json.label('edit_raw_json'),
-
+            m.id, m.media_json,
             m.conversation_id, (sa.literal('message:') + sa.cast(m.id, sa.Text)).label('source'),
             _revision(snapshot).label('revision'), m.hidden_at, deleted.label('deleted'),
             cache.c.ready.label('cache_ready'), media.label('cached_media'),
             sa.or_(edits.is_not(None), deleted, m.hidden_at.is_not(None)).label('changed'),
-            sa.func.coalesce(eligible, False).label('eligible'),
-            sa.or_(m.person_id == person, sa.cast(m.mention_persons_json, JSONB)
-                   .contains([person])).label('originally_eligible'),
-        ).select_from(MESSAGES.join(cache, cache.c.ref == sa.func.coalesce(m.media_json, ''))
-                      .outerjoin(latest, sa.true())).where(*scope)
+            m.eligible, m.originally_eligible, m.seen,
+        ).select_from(candidates.join(cache, cache.c.ref == sa.func.coalesce(m.media_json, '')))
         # Pending predicates and ordering must reuse the revision projection.
         # Keep provenance outside this fence: it is needed only for delivered rows.
         q = stmt.cte('profile_messages').prefix_with('MATERIALIZED')
+        if not evidence:
+            return sa.select(q)
         message_at = sa.select(sa.func.max(ROW_HISTORY.c.recorded_at)).where(
             ROW_HISTORY.c.table_name == 'messages',
             ROW_HISTORY.c.row_key == sa.func.jsonb_build_object('id', q.c.id),
         ).scalar_subquery()
+        reading_keys = _media_keys(q.c.media_json).subquery()
         reading_at = sa.select(sa.func.max(ROW_HISTORY.c.recorded_at)).where(
             ROW_HISTORY.c.table_name == 'media_objects',
-            sa.func.strpos(sa.func.coalesce(q.c.media_json, ''),
-                           ROW_HISTORY.c.row_key['sha256'].astext) > 0,
+            ROW_HISTORY.c.row_key.in_(sa.select(sa.func.jsonb_build_object(
+                'sha256', reading_keys.c.sha))),
         ).scalar_subquery()
         edit_at = sa.select(sa.func.max(MESSAGE_EDIT.c.recorded_at)).where(
             MESSAGE_EDIT.c.message_id == q.c.id).scalar_subquery()
-        return sa.select(q, sa.func.greatest(message_at, reading_at, edit_at)
-                         .label('recorded_at'))
+        latest = _latest_edit()
+        m = MESSAGES.c
+        return sa.select(q, m.sender_id, m.sender_name, m.ts, m.body, m.is_nora,
+            m.delivery_status, m.raw_json, m.quoted_ts, m.person_id,
+            turn_id_for_message().label('turn_id'), m.external_files_json,
+            latest.c.ts.label('edit_ts'), latest.c.body.label('edit_body'),
+            latest.c.raw_json.label('edit_raw_json'),
+            sa.func.greatest(message_at, reading_at, edit_at).label('recorded_at'),
+        ).select_from(q.join(MESSAGES, m.id == q.c.id).outerjoin(latest, sa.true()))
 
     async def messages(
         self, *, key: str, rooms: Sequence[tuple[str, str]], person: str, limit: int,
-        after: int = 0,
+        after: int = 0, discover: bool = False,
     ) -> list[PersonSourceRevision]:
-        q = self._messages(rooms=rooms, person=person).subquery()
-        seen = sa.exists().where(
-            W.c.consolidator_name == 'profile-person:source:message',
-            W.c.scope_id == sa.literal(key + '\x1f') + q.c.source,
-        )
+        q = self._messages(rooms=rooms, person=person, evidence=False, key=key).subquery()
+        seen = q.c.seen
         # Initial recovery rehands eligible EXISTING cache, without replaying
         # every consumed plain message or resetting either history cursor. Edits
         # and withdrawals are independent candidates, including pre-upgrade rows;
@@ -256,7 +297,18 @@ class SqlProfileInputs:
             sa.and_(q.c.changed, q.c.originally_eligible)),
             sa.or_(q.c.id > after, q.c.cache_ready, q.c.changed, seen))
         rows = await self._pending(key=key, domain='message', stmt=stmt, limit=limit)
-        out = [PersonSourceRevision(
+        if not discover and rows:
+            # Discover identities before loading transcript/provenance. A concurrent
+            # edit is delivered at its new revision; settlement binds that read.
+            async with self._engine.connect() as conn:
+                loaded = (await conn.execute(self._messages(rooms=rooms, person=person,
+                    message_ids=[r.id for r in rows], key=key))).all()
+            by_id = {r.id: r for r in loaded}
+            rows = [by_id[r.id] for r in rows if r.id in by_id]
+        out = [PersonSourceRevision(domain='message', source=r.source,
+            revision=r.revision, state='readable', recorded_at='unknown')
+            for r in rows] if discover else [
+            PersonSourceRevision(
             domain='message', source=r.source, revision=r.revision,
             state='ineligible' if not r.eligible else 'hidden'
                   if r.hidden_at is not None or r.deleted else 'readable',
@@ -295,7 +347,7 @@ class SqlProfileInputs:
 
     async def media_recovery(
         self, *, key: str, rooms: Sequence[tuple[str, str]], person: str,
-        initialize: bool = False,
+        initialize: bool = False, discover: bool = False,
     ) -> dict[str, int | bool]:
         """Counts only, read-only unless the ordinary loop freezes its boundary.
 
@@ -315,7 +367,9 @@ class SqlProfileInputs:
                 W.c.consolidator_name == name, W.c.scope_id == key))).one_or_none()
             boundary = None if boundary_row is None else boundary_row.last_message_id
             swept = boundary_row is not None and boundary_row.source_read_revision == 'swept'
-            q = self._messages(rooms=rooms, person=person).subquery()
+            if discover and swept:
+                return {'initial_sweep_complete': True, 'unattempted_cached': 0}
+            q = self._messages(rooms=rooms, person=person, evidence=False, key=key).subquery()
             visible = sa.and_(q.c.eligible, q.c.hidden_at.is_(None), ~q.c.deleted)
             bounded = q.c.id <= (head if boundary is None else boundary)
             scope = sa.literal(key + '\x1f') + q.c.source
@@ -528,7 +582,7 @@ class SqlProfileInputs:
                         person=person, limit=6, row_ids={kind: resolved.row_ids}))
             if r.source.startswith('memo:') and not linked:
                 q = self._messages(rooms=rooms, person=person,
-                    message_ids=[x.row.id for x in roots]).subquery()
+                    message_ids=[x.row.id for x in roots], evidence=False).subquery()
                 async with self._engine.connect() as conn:
                     relevant = (await conn.execute(sa.select(q.c.id).where(q.c.eligible,
                         q.c.id.in_([x.row.id for x in roots])).limit(1))).first()

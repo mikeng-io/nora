@@ -5,6 +5,10 @@ description: Review a Nora change against its original scope and acceptance at a
 
 # nora-review
 
+For recurring database reads, inspect work as history grows with a fixed pending
+batch, and admission across cursor/input/commit boundaries. Account for held
+reader elections; verify foreground progress and release on failure/cancellation.
+
 `ORCHESTRATION.md` owns tier selection, independence, finding dispositions and
 stopping rules; `REVIEW.md` is the shared reviewer contract. Read both first.
 This skill supplies the order, not another policy or automatic enforcement.

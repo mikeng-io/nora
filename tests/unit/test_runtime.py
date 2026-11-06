@@ -2487,3 +2487,50 @@ async def test_an_evidences_second_cursor_settles_only_after_a_run_that_was_not_
         sched=None, batch_limit=10, max_age_seconds=0.0,
     )
     assert evidence.settled == settled
+
+
+async def test_normal_dream_population_admits_two_reads_and_releases_for_models():
+    entered = asyncio.Queue()
+    modeled = asyncio.Queue()
+    release = asyncio.Event()
+    model_release = asyncio.Event()
+    active = 0
+    peak = 0
+
+    class Evidence(_Evidence):
+        async def count(self, *, key, after):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await entered.put(key)
+            try:
+                await release.wait()
+                return 1
+            finally:
+                active -= 1
+
+    class Runner:
+        async def run(self, *, adaptor, key, batch):
+            await modeled.put(key)
+            await model_release.wait()
+            return _StubOutcome(status='ok')
+
+    keys = tuple(f'generated-{i}' for i in range(72))
+    task = asyncio.create_task(dream_loop(
+        _FakeRecord({}), _KeyedLanguage(lag=99), Metrics(), scopes=lambda: (),
+        tick_seconds=0.01, safety_lag=0, quiet_seconds=0, max_age_seconds=0,
+        batch_limit=20, adaptors=[_EntityAdaptor('profile-person', Evidence([1]), keys)],
+        runtime=Runner(),
+    ))
+    try:
+        async with asyncio.timeout(10):
+            assert {await entered.get(), await entered.get()} == set(keys[:2])
+            assert entered.empty() and peak == 2
+            release.set()
+            # All model calls can start while earlier ones remain blocked.
+            assert {await modeled.get() for _ in keys} == set(keys)
+            assert peak == 2 and active == 0
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task

@@ -95,6 +95,7 @@ from ..obs.tracing import TRACE_KIND, annotate, span
 from . import factory
 from .dream_guard import DreamGuard
 from .dream_screen import offence, screen
+from .dream_store import store_phase
 from .ports import ToolSpec, adapt
 from .reasoning_strip import ReasoningStripWatch
 from .registry import ToolRegistry
@@ -1153,25 +1154,26 @@ class DreamerRuntime:
         claim is «the unit is released when the phase can be cancelled», not «a
         hang cannot happen».
         """
-        bound = self.store_bound_for(adaptor)
-        try:
-            async with asyncio.timeout(bound) as cm:
-                return await call()
-        except TimeoutError:
-            if not cm.expired():
-                # The COLLABORATOR's own clock, not ours. Untouched, uncounted
-                # on this series, and `unavailable` by the ordinary path.
+        async with store_phase():
+            bound = self.store_bound_for(adaptor)
+            try:
+                async with asyncio.timeout(bound) as cm:
+                    return await call()
+            except TimeoutError:
+                if not cm.expired():
+                    # The COLLABORATOR's own clock, not ours. Untouched, uncounted
+                    # on this series, and `unavailable` by the ordinary path.
+                    raise
+                self._metrics.inc(
+                    "nora_dream_store_timeout_total",
+                    adaptor=adaptor.name, phase=phase,
+                )
+                log.error(
+                    "dream %s timed out after %.0fs (adaptor=%s key=%s) — a store "
+                    "call did not return; the unit is released rather than held",
+                    phase, bound, adaptor.name, key,
+                )
                 raise
-            self._metrics.inc(
-                "nora_dream_store_timeout_total",
-                adaptor=adaptor.name, phase=phase,
-            )
-            log.error(
-                "dream %s timed out after %.0fs (adaptor=%s key=%s) — a store "
-                "call did not return; the unit is released rather than held",
-                phase, bound, adaptor.name, key,
-            )
-            raise
 
     def grant_for(self, adaptor_name: str) -> AdaptorGrant:
         """This adaptor's allowance: `AdaptorGrant()` (nothing) for an adaptor with

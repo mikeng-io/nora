@@ -51,7 +51,6 @@ rooms whose `location` flags differ, and R-31 is never simplified away.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 import unicodedata
@@ -780,7 +779,7 @@ class CharacterPersonAdaptor(EntitySessions):
             entities={pk.person.name: None}, batch_start=self.evidence.held(key),
         )
         previous = await self._culture.head(key=key)
-        heads = await asyncio.gather(*(self._culture.head(key=r.key) for r in pk.rooms))
+        heads = [await self._culture.head(key=r.key) for r in pk.rooms]
         parts: list[ContextBlock | None] = [
             ContextBlock(
                 name="about_person", **_at("about_person"),
@@ -937,7 +936,7 @@ class CharacterUnitAdaptor(EntitySessions):
             return ""
         now = self._clock()
         previous = await self._culture.head(key=key)
-        heads = await asyncio.gather(*(self._culture.head(key=r.key) for r in uk.rooms))
+        heads = [await self._culture.head(key=r.key) for r in uk.rooms]
         citable = frozenset(
             int(c) for h in heads if h is not None for c in h.citations if c.isdigit()
         )
