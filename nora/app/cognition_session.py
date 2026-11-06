@@ -463,6 +463,11 @@ class _RunState:
     #: every proposal's connected subgraph, plus admitted relation endpoints):
     #: the only targets a Register `associations` argument may name.
     shown_keys: set[Any] = field(default_factory=set)
+    #: Relation ids this session was actually shown — the wake preview's
+    #: emitted edge rows, a proposal's connected subgraph, and the edge rows
+    #: a `memory_search`/`memory_read` result emitted: the only targets a
+    #: correction may name (the `shown_keys` rule, one axis over).
+    shown_relations: set[str] = field(default_factory=set)
     #: `object` handles this session was actually shown, to the room the
     #: grounder read them from — the only refs a note's `object_refs` may
     #: name (the `shown_keys` rule, one axis over).
@@ -1711,7 +1716,8 @@ class CognitionSessionRunner:
                 self._memory.records, self._metrics, self._memory.private_names,
                 persons=tuple({p for v in state.memory_items.values()
                                for source in v.sources for p in source.persons}),
-                shown_keys=state.shown_keys)
+                shown_keys=state.shown_keys,
+                shown_relations=state.shown_relations)
 
             def on_rows(rows: Sequence[Any]) -> None:
                 """A transcript read's handed-out rows, kept as the citable

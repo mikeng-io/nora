@@ -23,7 +23,7 @@
   {
     "name": "wake graph preview screens identifiers",
     "file": "nora/app/cognition_memory.py",
-    "old": "        if scan_identifiers(state.graph_text, content_checks=self.content_checks):\n            state.graph_text = \"\"\n            self.metrics.inc(\"nora_errors_total\", stage=\"wake_prefetch\")",
+    "old": "        if scan_identifiers(state.graph_text, content_checks=self.content_checks):\n            # A withheld block contributes nothing: its keys and its correction\n            # catalogue are withheld with it.\n            state.graph_text = \"\"\n            shown_keys.clear()\n            shown_relations.clear()\n            self.metrics.inc(\"nora_errors_total\", stage=\"wake_prefetch\")",
     "new": "        # Previous behavior: graph preview was not screened.",
     "target": "tests/unit/test_cognition_session_runner.py::test_identifier_graph_node_is_dropped_from_wake_input"
   },

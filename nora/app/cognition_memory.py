@@ -272,14 +272,21 @@ class WakeMemory:
         # `shown_keys`/`shown_relations` are the renderer's own emitted-rows
         # provenance: a row the budget omits was never shown, whatever the walk
         # returned. Emitted edge ids are the only targets a correction may name.
-        state.shown_relations = set()
+        shown_keys: set[Key] = set()
+        shown_relations: set[str] = set()
         state.graph_text = preview_text(
             Preview(seeds, graph, tuple(candidates), (at, at)),
-            shown_keys=state.shown_keys,
-            shown_relations=state.shown_relations)
+            shown_keys=shown_keys,
+            shown_relations=shown_relations)
         if scan_identifiers(state.graph_text, content_checks=self.content_checks):
+            # A withheld block contributes nothing: its keys and its correction
+            # catalogue are withheld with it.
             state.graph_text = ""
+            shown_keys.clear()
+            shown_relations.clear()
             self.metrics.inc("nora_errors_total", stage="wake_prefetch")
+        state.shown_keys.update(shown_keys)
+        state.shown_relations = shown_relations
 
     def register_shown(self, state: Any) -> None:
         """The citable graph sources are exactly the rows the agenda emitted:
