@@ -39,8 +39,41 @@ from scripts.memory_graph_spike import (
 )
 
 _N = re.compile(r'<m n="(\d+)"')
-_HANDLE = re.compile(r"@([a-z_]+):([^\s\";<>)]]+)")
+_HANDLE = re.compile(r'@([a-z_]+):([^\s"<>);\]]+)')
 _EARLIER = re.compile(r'earlier_not_shown="(\d+)"[^>]*earlier_range="(\d+) to (\d+)"')
+_TIME = re.compile(r'\([^)]*ago[^)]*\)|age="[^"]*"|window="[^"]*"')
+
+
+def _norm_time(text: str) -> str:
+    """Relative-time strings differ run to run on identical input; nothing else
+    about an agenda may legitimately drift."""
+    return _TIME.sub("T", text)
+
+
+def _agenda_diff(mine: str, recorded: str) -> dict[str, Any]:
+    """A rendered agenda against the recording's: matching is by line, with
+    relative times normalised. Only tag and ATTRIBUTE NAMES are ever reported —
+    never a line's content."""
+    mine_lines, rec_lines = _norm_time(mine).splitlines(), _norm_time(recorded).splitlines()
+    diffs = []
+    for i in range(max(len(mine_lines), len(rec_lines))):
+        mine_line = mine_lines[i] if i < len(mine_lines) else ""
+        rec_line = rec_lines[i] if i < len(rec_lines) else ""
+        if mine_line == rec_line:
+            continue
+        tag = re.match(r"<([a-z_]+)", mine_line or rec_line)
+        diffs.append({
+            "line": i,
+            "tag": tag.group(1) if tag else "?",
+            "attrs_mine": sorted(set(re.findall(r"[a-z_]+=", mine_line))),
+            "attrs_rec": sorted(set(re.findall(r"[a-z_]+=", rec_line))),
+        })
+    return {
+        "lines": len(rec_lines),
+        "differing": len(diffs),
+        "diffs": diffs[:8],
+        "match": not diffs,
+    }
 
 
 def _catalogue(custody: dict[str, Any]) -> dict[int, tuple[str, str]]:
@@ -218,9 +251,17 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                 "unresolved_n": [], "unresolved_handles": [],
                 "fabricated_resolves": False, "clipped_resolves": [],
                 "clipped_items": 0, "person_rows": 0, "node_keys": 0,
-                "relation_ids": 0, "errors": 0}
+                "relation_ids": 0, "reality": [], "errors": 0}
             for f in AGENDA_FORMATS
         }
+        recorded: dict[int, str] = {}
+        if args.recorded_dir is not None:
+            for path in sorted(Path(args.recorded_dir).glob("session-*.json")):
+                try:
+                    entry = json.loads(path.read_text())
+                    recorded[entry["wake"]["id"]] = entry["inspection"]["agenda"]
+                except Exception:  # noqa: BLE001 - a missing/garbled recording is no control
+                    continue
         for wake in selected.values():
             replay_ms, view = await recorded_wake(engine, wake["id"])
             at = datetime.fromtimestamp(replay_ms / 1000, UTC)
@@ -275,6 +316,11 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                                 f["unresolved_handles"] += got["unresolved_handles"]
                                 f["fabricated_resolves"] |= got["fabricated_resolves"]
                                 custody = inspection.get("custody") or {}
+                                if fmt == "A" and wake["id"] in recorded:
+                                    f["reality"].append({
+                                        "wake": wake["id"],
+                                        **_agenda_diff(agenda, recorded[wake["id"]]),
+                                    })
                                 f["person_rows"] += len(custody.get("shown_persons", []))
                                 f["node_keys"] += len(custody.get("shown_node_keys", []))
                                 f["relation_ids"] += len(
@@ -325,6 +371,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                 and not f["fabricated_resolves"]
                 and not f["clipped_resolves"]
                 and control.get(fmt) == "PASS"
+                and all(r["match"] for r in f["reality"])
                 else "FAIL"
             )
         report["formats"] = per_format
@@ -342,6 +389,10 @@ def main() -> int:
     parser.add_argument("--database-url", required=True)
     parser.add_argument("--snapshot", action="store_true")
     parser.add_argument("--seed", type=int, default=20261029)
+    parser.add_argument(
+        "--recorded-dir", type=Path, default=None,
+        help="Reality control: a smoke output dir whose session-N.json recorded "
+             "inspections the format-A render must match (times normalised)")
     args = parser.parse_args()
     try:
         report = asyncio.run(run(args))
@@ -361,6 +412,16 @@ def main() -> int:
             f"{f['person_rows']:>4} {f['node_keys']:>5} {f['relation_ids']:>4} "
             f"{f['status']}"
         )
+        for r in f["reality"]:
+            label = "MATCH" if r["match"] else (
+                f"MISMATCH {r['differing']}/{r['lines']} lines")
+            print(
+                f"    reality wake={r['wake']}: {label}"
+                + "".join(
+                    f" [{d['tag']} mine-only={d['attrs_mine']} rec-only={d['attrs_rec']}]"
+                    for d in r["diffs"]
+                )
+            )
     print(json.dumps({"wakes": report["wakes"], "seed": report["seed"],
                       "control": report["control"],
                       "status": {k: v["status"] for k, v in report["formats"].items()}},
