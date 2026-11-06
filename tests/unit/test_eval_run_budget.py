@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from nora.obs.run_budget import (
+from nora.domain.run_budget import (
     RunBudget,
     RunBudgetError,
     active_run_budget,

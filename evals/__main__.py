@@ -772,7 +772,7 @@ def _main(*, lock_fd: int = -1) -> int:
     # even composition's own model reads are counted.
     budget = None
     if args.run_budget is not None:
-        from nora.obs.run_budget import RunBudget
+        from nora.domain.run_budget import RunBudget
         parts = args.run_budget.split(",")
         try:
             vals = [int(p.strip()) for p in parts]
@@ -806,7 +806,7 @@ def _main(*, lock_fd: int = -1) -> int:
     except OSError as exc:
         raise EvidenceError(f"cannot prepare private eval evidence ({type(exc).__name__})") from exc
     print(f"private eval evidence: {evidence.path}")
-    from nora.obs.run_budget import active_run_budget
+    from nora.domain.run_budget import active_run_budget
     token = active_run_budget.set(budget) if budget is not None else None
     try:
         with evidence.capture(trace.get_tracer_provider()):
