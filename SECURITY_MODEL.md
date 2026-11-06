@@ -2,7 +2,7 @@
 
 The threat model for Nora: what is exposed, to whom, what matters, and what the
 operator has ruled out of scope. Attackers, critical assets, scope and accepted
-risk are operator rulings (2026-10-27); the component map and controls are read
+risk are set by the operator; the component map and controls are read
 from the code. Security scans and finding triage start from this file. Vulnerability
 reporting is in [`SECURITY.md`](SECURITY.md).
 
