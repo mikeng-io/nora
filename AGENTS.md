@@ -144,6 +144,13 @@ line. The delete-withdrawal incident is in `docs/maintainers/conventions-rationa
 - **Deletion over addition; fewest files; shortest working diff**, but only in
   the right place. A bug fix goes where every caller routes through, not in
   the one path the report names.
+- **A special case is a missing requirement.** An `if` for one value, a
+  parameter for one caller, a swallowed exception, a retry or sleep, a skipped
+  test: before adding one, look for the single fix behind it and its siblings.
+  Two patches to the same seam mean the seam is wrong.
+- **Structure answers "should these change together?"** What changes together
+  lives together; what doesn't, isn't tied; nothing imports what changes more
+  often than itself.
 - **A deliberate corner gets a `# ponytail:` comment** naming its ceiling and
   the upgrade path (`# ponytail: one global lock; per-unit locks if sessions
   contend`).
@@ -407,8 +414,9 @@ keeps this table and that directory in step.
 
 **[ORCHESTRATION.md](ORCHESTRATION.md) is the canonical engineering-agent policy**
 (operator ruling, 2026-10-27): capability/evidence tiers, adaptive worker admission,
-artifact ownership, independent review and its two-round limit. Claude models
-orchestrate only; they never implement or independently review,
+artifact ownership, independent review and its two-round limit. The
+orchestrator is whichever agent holds the operator-facing session, of any
+vendor. Claude models orchestrate only; they never implement or independently review,
 including small edits. Other models in the operator-facing
 session directly implement small, coherent changes; delegate substantial
 implementation only when its capacity/capability benefit outweighs briefing and

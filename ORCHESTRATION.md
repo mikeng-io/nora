@@ -135,6 +135,16 @@ result only on new evidence or an explicit change of requirement.
 
 ## Resolve a worker at launch
 
+**The orchestrator is a role, not a vendor (operator, 2026-11-07).** Whichever
+agent holds the operator-facing session (Claude Code, Codex, Devin or another
+coding agent) is the orchestrator and owns the outcome under this policy. The
+vendor restrictions below narrow what a given model may also do; they never
+change the orchestrator's duties. Delegate through the session's own mechanism
+(a native subagent, `delegate_task` or the host's equivalent); brief, admission
+and read-back rules are the same for each. An orchestrator that implements
+directly is also the builder for review independence: its reviewer is a fresh
+session on a different model vendor from the orchestrator's.
+
 **Claude role restriction (operator, 2026-11-04):** Claude models are eligible
 only for orchestration: scope, brief, dispatch, reconcile evidence, triage, land
 and report. Never select Claude as an implementation worker or independent
