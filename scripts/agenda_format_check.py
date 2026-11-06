@@ -71,24 +71,12 @@ def _check(agenda: str, custody: dict[str, Any]) -> dict[str, Any]:
         catalogue.get(fabricated) in shown_sources
         or ("message", str(fabricated)) in shown_sources
     )
-    # Negative: the clipped tail. `earlier_range` is the FIRST and LAST row of
-    # the dropped set — the bound rows themselves, not every number between
-    # them (numbers in the interval may be shown rows, so only the bounds are
-    # tested).
-    clipped_resolves = []
-    for _c, a, b in _EARLIER.findall(agenda):
-        for n in {int(a), int(b)}:
-            if catalogue.get(n) in shown_sources or (
-                ("message", str(n)) in shown_sources
-            ):
-                clipped_resolves.append(n)
     return {
         "m_rows": len(ns),
         "handles": len(_HANDLE.findall(agenda)),
         "unresolved_n": unresolved_n,
         "unresolved_handles": unresolved_handles,
         "fabricated_resolves": fabricated_resolves,
-        "clipped_resolves": clipped_resolves,
         "clipped_items": sum(1 for _ in _EARLIER.findall(agenda)),
     }
 
@@ -292,9 +280,14 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                                 f["relation_ids"] += len(
                                     custody.get("shown_relation_ids", []))
                                 # The clipped tail: force the budget so older
-                                # rows fall out; their bound rows must not
-                                # resolve (the range is first..last of the
-                                # dropped set, not every number in it).
+                                # rows fall out. A dropped row is one whose
+                                # shown number disappears with the tighter
+                                # budget — dropped_ns = shown before − shown
+                                # after — and each of THOSE must not resolve
+                                # in the clipped custody. (Testing
+                                # earlier_range's bounds is wrong: under A a
+                                # dropped reaction's `n` is its TARGET
+                                # message's id, which may be shown.)
                                 clipped = await frunner.with_collaborators(
                                     render_budget=RenderBudget(
                                         record_chars=300, min_item_chars=100,
@@ -303,7 +296,20 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                                 clip_check = _check(
                                     clipped["agenda"], clipped.get("custody") or {})
                                 f["clipped_items"] += clip_check["clipped_items"]
-                                f["clipped_resolves"] += clip_check["clipped_resolves"]
+                                ccust = _catalogue(clipped.get("custody") or {})
+                                cshown = {
+                                    tuple(s)
+                                    for s in (clipped.get("custody") or {})
+                                    .get("shown_sources", [])
+                                }
+                                dropped = {
+                                    int(n) for n in _N.findall(agenda)
+                                } - {int(n) for n in _N.findall(clipped["agenda"])}
+                                for n in dropped:
+                                    if ccust.get(n) in cshown or (
+                                        ("message", str(n)) in cshown
+                                    ):
+                                        f["clipped_resolves"].append(n)
                             except Exception:  # noqa: BLE001 - keep the run, mark the format
                                 f["errors"] += 1
                     finally:
