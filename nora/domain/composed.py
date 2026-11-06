@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from types import FrameType
 
 COMPOSERS = frozenset(
@@ -49,6 +50,7 @@ COMPOSERS = frozenset(
         "nora.language.subagents_render:render_subagents",
         "nora.skills.loader:SkillStore.render_available",
         "nora.testing.context_blocks:compose_fixture",
+        "scripts.memory_graph_spike:prompt",
     }
 )
 
@@ -113,7 +115,17 @@ def _caller(frame: FrameType) -> str:
     qualname = frame.f_code.co_qualname.replace(".<locals>", "")
     for suffix in (".<genexpr>", ".<listcomp>", ".<dictcomp>", ".<setcomp>"):
         qualname = qualname.removesuffix(suffix)
-    return str(frame.f_globals["__name__"]) + ":" + qualname
+    module = str(frame.f_globals["__name__"])
+    if module == "__main__":
+        try:
+            script = Path(frame.f_code.co_filename).resolve().relative_to(
+                Path(__file__).resolve().parents[2]
+            )
+        except ValueError:
+            pass
+        else:
+            module = ".".join(script.with_suffix("").parts)
+    return module + ":" + qualname
 
 
 def compose_body(text: str) -> Composed:

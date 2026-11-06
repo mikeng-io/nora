@@ -26,6 +26,7 @@ from nora.agent.structured import ask_text, build_structured_model
 from nora.app.graph_project import graph_project, projection_context
 from nora.config import load
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
+from nora.domain.composed import compose_body
 from nora.domain.memory_graph import Walk
 from nora.domain.prompt import escape
 from nora.infra.sql.engine import create_sql_engine
@@ -54,7 +55,7 @@ def prompt(payload: Any) -> str:
             restamp(
                 ContextBlock(
                     name="cited_sources",
-                    body=escape(json.dumps(payload, default=str, ensure_ascii=False)),
+                    body=compose_body(escape(json.dumps(payload, default=str, ensure_ascii=False))),
                 ),
                 _ROW,
             )
