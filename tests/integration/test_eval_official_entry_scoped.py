@@ -249,13 +249,13 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
 
 def test_official_entry_composes_scoped_tool_and_records_evidence(
         tmp_path, monkeypatch, pg_admin, pg_template,
-        example_config_path=Path(__file__).parents[2] / "config.example.toml"):
+        example_config_path,):
     """The real entry: override reaches the composed scoped computer, the
     budget counts the real requests, and events.jsonl binds provenance
     before the transport answers."""
     rc, evidence_root, requests, want_sha = _run_one_case(
         tmp_path, monkeypatch, pg_admin, pg_template,
-        example_config_path=Path(__file__).parents[2] / "config.example.toml")
+        example_config_path=example_config_path)
     assert rc == 0, "the scripted trajectory routes computer_browse → PASS"
     rows = _rows(evidence_root)
     started = next(r for r in rows if r["kind"] == "run_started")
@@ -280,14 +280,14 @@ def test_official_entry_composes_scoped_tool_and_records_evidence(
 
 def test_evidence_write_failure_precludes_any_dispatch(
         tmp_path, monkeypatch, pg_admin, pg_template,
-        example_config_path=Path(__file__).parents[2] / "config.example.toml"):
+        example_config_path,):
     """A refused `nora.model.request` write is `EvidenceError` BEFORE the
     request leaves — the transport sees zero requests, exactly one
     injected refusal, and the run records no successful finish."""
     rc, evidence_root, requests, _ = _run_one_case(
         tmp_path, monkeypatch, pg_admin, pg_template,
         break_evidence_write=True,
-        example_config_path=Path(__file__).parents[2] / "config.example.toml")
+        example_config_path=example_config_path)
     assert rc != 0                    # sticky failure, invalid run
     assert _run_one_case.refusals and len(_run_one_case.refusals) == 1
     assert requests == []             # nothing left the process
