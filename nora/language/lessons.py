@@ -52,6 +52,7 @@ from nora.domain.blocks import (
     render_group,
     render_row_window,
 )
+from nora.domain.composed import legacy_composed
 from nora.domain.culture import MAX_CONSECUTIVE_REJECTIONS, Citable, Episode, RoomMessage
 from nora.domain.errors import AccountNotRecordableError
 from nora.domain.lessons import LESSON_MIN_EPISODES, LESSONS_OUTCOMES, Lesson, is_correction
@@ -373,13 +374,13 @@ class LessonsAdaptor:
         handle_of = {i: h for h, i in handles.items()}
         parts: list[ContextBlock | None] = [
             ContextBlock(
-                name="lesson_unit", **_at("lesson_unit"), body="",
+                name="lesson_unit", **_at("lesson_unit"), body=legacy_composed(""),
                 when_empty="self_close",
                 attrs=(("rooms", ", ".join(r.label or "unnamed room" for r in lk.rooms)),),
             ),
             None if not held else ContextBlock(
                 name="held_lessons", **_at("held_lessons"), body=(
-                render_elements(
+                legacy_composed(render_elements(
                     held, tag="lesson",
                     attrs=lambda x, _i: (
                         ("id", handle_of[x.id]),
@@ -387,20 +388,20 @@ class LessonsAdaptor:
                         ("revision", str(x.head.seq)),
                     ),
                     body=lambda x: x.head.body,
-                )
+                ))
             )),
             None if not corrections else ContextBlock(
                 name="lesson_corrections", **_at("lesson_corrections"),
-                body=render_row_window(
+                body=legacy_composed(render_row_window(
                     corrections, row_id=lambda m: m.row.id,
                     attrs=lambda m: (("from", self._name_of(m.row.person_id)),
                                      ("room", labels.get(m.room) or "unnamed room")),
                     body=lambda m: m.row.body or "",
-                ),
+                )),
             ),
             None if not episodes else ContextBlock(
                 name="lesson_episodes", **_at("lesson_episodes"),
-                body="\n".join(self._episode(e, labels) for e in episodes),
+                body=legacy_composed("\n".join(self._episode(e, labels) for e in episodes)),
             ),
         ]
         return assemble([p for p in parts if p is not None], sep="\n\n")

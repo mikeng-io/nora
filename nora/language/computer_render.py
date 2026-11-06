@@ -33,6 +33,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from nora.domain.composed import compose_body
+
 from ..domain.blocks import ContextBlock, render_bullets
 from ..domain.computer_context import ComputerView, SessionLine
 from ..domain.computer_sessions import age, progress_text
@@ -167,7 +169,7 @@ def render_computer(view: ComputerView | None) -> ContextBlock | None:
     body = render_bullets([line.text for line in lines], mark="")
     if not body:
         return None
-    return ContextBlock(name="computer", body=body)
+    return ContextBlock(name="computer", body=compose_body(body))
 
 
 def _within_ceiling(lines: list[_Line], max_tokens: int, now: datetime) -> list[_Line]:

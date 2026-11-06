@@ -33,6 +33,7 @@ import time
 from typing import Any, Protocol
 
 from nora.domain.blocks import BlockKey, ContextBlock, assemble
+from nora.domain.composed import legacy_composed
 from nora.domain.prompt import escape
 from nora.domain.speech_markup import (
     FormatOutcome,
@@ -86,7 +87,7 @@ def render_input(base: str) -> str:
     end the block early (R-13b)."""
     order, key = _ROW["spoken_reply"]
     return assemble((
-        ContextBlock(name="spoken_reply", order=order, key=key, body=escape(base)),
+        ContextBlock(name="spoken_reply", order=order, key=key, body=legacy_composed(escape(base))),
     )).rstrip("\n")
 
 

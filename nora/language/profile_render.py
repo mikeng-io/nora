@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Protocol
 
 from nora.domain.character_card import format_card
+from nora.domain.composed import compose_body
 
 from ..domain.blocks import ContextBlock
 from ..domain.profile import ProfileLine, ProfileView, identity_text
@@ -223,7 +224,7 @@ def render_profile(
     shown = _cut(body, cap)
     if not shown:
         return None
-    return ContextBlock(name="profile", attrs=attrs, body=escape(shown))
+    return ContextBlock(name="profile", attrs=attrs, body=compose_body(escape(shown)))
 
 
 def render_profile_people(
@@ -271,6 +272,9 @@ def render_profile_people(
         # Keep the notice inside an identified profile, like `_cut`'s marker;
         # a separate <profile> would have no subject or author (ADR 0029).
         blocks[-1] = replace(
-            blocks[-1], body=blocks[-1].body + f"\n[{omitted} more characters not shown]",
+            blocks[-1],
+            body=compose_body(
+                blocks[-1].body.text + f"\n[{omitted} more characters not shown]"
+            ),
         )
     return tuple(blocks)

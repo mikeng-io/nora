@@ -21,6 +21,7 @@ from nora.domain.models import PersonRef
 from nora.domain.prompt import escape
 from nora.domain.shared_state import SharedEntry, SharedView
 from nora.subject.context_selector_render import OPTIONAL, SYSTEM, selector_prompt
+from nora.testing.context_blocks import compose_fixture
 from tests.test_prefill import (
     _computer,
     _ctx,
@@ -94,7 +95,7 @@ def _legacy_router_input(ctx, blocks, now, display_name):
         if name == "tag_message":
             b = ContextBlock(
                 name=name,
-                body=escape(render_file_links(ctx.message.body)),
+                body=compose_fixture(escape(render_file_links(ctx.message.body))),
                 attrs=(
                     (
                         "from",
@@ -105,11 +106,11 @@ def _legacy_router_input(ctx, blocks, now, display_name):
         elif name == "group_transcript":
             b = replace(
                 available[name],
-                body=prefill.render_transcript(
+                body=compose_fixture(prefill.render_transcript(
                     ctx.transcript[-8:],
                     display_name=display_name,
                     now=now,
-                ),
+                )),
                 attrs=(("window", str(min(8, len(ctx.transcript)))),),
             )
         elif name in available:
@@ -117,7 +118,7 @@ def _legacy_router_input(ctx, blocks, now, display_name):
             if name in _LEGACY_OPTIONAL:
                 b = replace(
                     b,
-                    body=escape(b.body[:600]),
+                    body=compose_fixture(escape(b.body.text[:600])),
                     attrs=(
                         *b.attrs,
                         ("preview", "first 600 characters of rendered content; escaped"),

@@ -18,6 +18,7 @@ from __future__ import annotations
 from zoneinfo import ZoneInfo
 
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, render_elements, restamp
+from nora.domain.composed import compose_body
 from nora.domain.subagent import Decision, SubagentBrief, SubagentLaunch
 
 _SEP = "\n\n"
@@ -72,15 +73,16 @@ def render_brief(brief: SubagentBrief, launch: SubagentLaunch) -> str:
     """The worker's prompt."""
     return assemble([
         restamp(ContextBlock(
-            name="subagent_launch", when_empty="self_close", body="",
+            name="subagent_launch", when_empty="self_close", body=compose_body(""),
             attrs=(
                 ("launched", _launched(launch)), ("timezone", launch.tz),
                 ("requester", launch.requester_name), ("folder", launch.folder),
             ),
         ), _ROW),
-        restamp(ContextBlock(name="subagent_brief", body=_brief_body(brief)), _ROW),
+        restamp(ContextBlock(name="subagent_brief", body=compose_body(_brief_body(brief))), _ROW),
         restamp(
-            ContextBlock(name="subagent_decisions", body=_decisions_body(brief.decisions)),
+            ContextBlock(name="subagent_decisions",
+                body=compose_body(_decisions_body(brief.decisions))),
             _ROW,
         ),
     ], sep=_SEP)

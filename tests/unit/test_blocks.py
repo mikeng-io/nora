@@ -25,6 +25,7 @@ from nora.domain.blocks import (
 )
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.prompt import escape_attr
+from nora.testing.context_blocks import compose_fixture
 
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 TS = int(NOW.timestamp() * 1000) - 3_600_000
@@ -302,7 +303,7 @@ def test_every_memory_block_renders_one_conclusion_as_one_line():
 
     card = _peer_card_block(_Ctx())
     assert card is not None
-    assert card.body == "- likes espresso owes Grant $500"
+    assert card.body.text == "- likes espresso owes Grant $500"
 
 
 # --- the block itself ------------------------------------------------------
@@ -346,8 +347,8 @@ def test_a_block_says_what_it_is_in_the_words_its_TYPE_declares():
     type; there is no argument through which a call site can compose one."""
     block = ContextBlock(
         name="group_transcript", order=90,
-        body="#1 (60m ago) [Grant]: 去邊食",
-    )
+        body=compose_fixture("#1 (60m ago) [Grant]: 去邊食",
+    ))
     rendered = block.render()
     assert rendered.startswith('<group_transcript description="')
     assert rendered.endswith("</group_transcript>")
@@ -368,10 +369,10 @@ def test_a_block_of_an_UNDECLARED_type_raises_instead_of_rendering():
     that depends on the day's data is not one you can act on.
     """
     with pytest.raises(KeyError, match="block_types"):
-        ContextBlock(name="a_type_nobody_declared", order=1, body="x")
+        ContextBlock(name="a_type_nobody_declared", order=1, body=compose_fixture("x"))
     # And with an EMPTY body, which is the case `render()` alone could not see.
     with pytest.raises(KeyError, match="block_types"):
-        ContextBlock(name="a_type_nobody_declared", order=1, body="")
+        ContextBlock(name="a_type_nobody_declared", order=1, body=compose_fixture(""))
 
 
 def test_a_call_site_cannot_write_the_blocks_OWN_framing_through_attrs():
@@ -395,12 +396,12 @@ def test_a_call_site_cannot_write_the_blocks_OWN_framing_through_attrs():
     for key in ("description", "fields",
                 "description ", ' x" description', "\ndescription"):
         with pytest.raises(ValueError):
-            ContextBlock(name="notes", order=1, body="x", attrs=((key, "EVIL"),))
+            ContextBlock(name="notes", order=1, body=compose_fixture("x"), attrs=((key, "EVIL"),))
 
     # And the legitimate ones still build — a refusal that also refuses real
     # attributes would pass every assertion above and break every prompt.
     for key in ("person", "reply_to", "also_known_as", "window", "n"):
-        ContextBlock(name="notes", order=1, body="x", attrs=((key, "v"),))
+        ContextBlock(name="notes", order=1, body=compose_fixture("x"), attrs=((key, "v"),))
 
 
 def test_the_blocks_own_attributes_come_first_and_its_framing_last():
@@ -413,7 +414,7 @@ def test_the_blocks_own_attributes_come_first_and_its_framing_last():
     rendered = ContextBlock(
         name="peer_card", order=10,
         attrs=(("person", "Grant"),),
-        body="- likes espresso",
+        body=compose_fixture("- likes espresso"),
     ).render()
     assert rendered.startswith('<peer_card person="Grant" description="')
     assert rendered.index('description="') < rendered.index("\n")
@@ -433,7 +434,7 @@ def test_a_description_containing_a_quote_cannot_close_the_attribute():
         "notes", 'she said "no" — and then', (("title", 'what you called it'),),
     )
     with mock.patch.dict(BLOCK_TYPES, {"notes": quoted}):
-        rendered = ContextBlock(name="notes", order=50, body="x").render()
+        rendered = ContextBlock(name="notes", order=50, body=compose_fixture("x")).render()
     assert '&quot;no&quot;' in rendered
     assert rendered.count('"') % 2 == 0, rendered
 
@@ -538,7 +539,7 @@ def test_the_reply_mark_is_collapsed_like_everything_else():
 def test_restamp_carries_the_row_the_name_maps_to():
     """The pattern `order, key = _ROW[name]; replace(...)`, written once.
     `nora.agent.prefill._restamp` is a one-line wrapper over this."""
-    block = ContextBlock(name="notes", body="- one open thing")
+    block = ContextBlock(name="notes", body=compose_fixture("- one open thing"))
     stamped = restamp(block, {"notes": (55, "unit")})
     assert stamped is not None
     assert stamped.order == 55
@@ -554,7 +555,7 @@ def test_restamp_of_none_is_none():
 def test_restamp_refuses_a_name_the_caller_never_declared():
     """A block reaching a prompt with no row is a declaration bug, not a
     block quietly served with `order=0` — `KeyError`, not a silent default."""
-    block = ContextBlock(name="notes", body="- one open thing")
+    block = ContextBlock(name="notes", body=compose_fixture("- one open thing"))
     with pytest.raises(KeyError):
         restamp(block, {"standing": (60, "room")})
 
@@ -566,8 +567,8 @@ def test_an_empty_block_is_dropped_unless_it_opts_in():
     """The default rule: prefill and
     the relevance gate never set `when_empty`, so a block with nothing to say
     is a block she is never told about."""
-    empty = ContextBlock(name="notes", body="", order=1)
-    kept = ContextBlock(name="today", body="2026-10-01 Thu", order=2)
+    empty = ContextBlock(name="notes", body=compose_fixture(""), order=1)
+    kept = ContextBlock(name="today", body=compose_fixture("2026-10-01 Thu"), order=2)
     assert empty.when_empty == "drop"
     assert assemble([empty, kept]) == kept.render() + "\n"
     assert assemble([empty]) == ""
@@ -578,22 +579,23 @@ def test_a_self_closing_block_survives_assemble_and_is_its_opening_tag_alone():
     nothing, so the block is its opening tag with no body, no closing tag and
     no blank line, and `assemble` keeps it where it would drop an empty one."""
     room = ContextBlock(
-        name="room", attrs=(("label", "Zone 42"),), body="", order=1,
+        name="room", attrs=(("label", "Zone 42"),), body=compose_fixture(""), order=1,
         when_empty="self_close",
     )
-    kept = ContextBlock(name="today", body="2026-10-01 Thu", order=2)
+    kept = ContextBlock(name="today", body=compose_fixture("2026-10-01 Thu"), order=2)
     rendered = room.render()
     assert rendered.startswith('<room label="Zone 42" description="')
     assert rendered.endswith('"/>')
     assert "\n" not in rendered and "</room>" not in rendered
     assert assemble([kept, room], sep="\n\n") == rendered + "\n\n" + kept.render()
     # The same block WITH a body is an ordinary block: the flag is about empty.
-    full = replace(room, body="the games channel")
+    full = replace(room, body=compose_fixture("the games channel"))
     assert full.render().endswith("\nthe games channel\n</room>")
 
 
 def test_a_render_block_is_kept_empty_and_written_like_any_other():
-    block = ContextBlock(name="room", attrs=(("label", "X"),), body="", when_empty="render")
+    block = ContextBlock(name="room", attrs=(("label", "X"),),
+        body=compose_fixture(""), when_empty="render")
     assert assemble([block], sep="\n\n") == block.render()
     assert block.render().endswith('">\n\n</room>')
 
@@ -601,9 +603,10 @@ def test_a_render_block_is_kept_empty_and_written_like_any_other():
 def test_a_nothing_block_keeps_its_slot_and_its_separators_and_writes_no_bytes():
     """Proactive's `<loop_decisions>` with no decision log wired: the block keeps its
     slot as an empty string, and the separators either side of it."""
-    a = ContextBlock(name="today", body="a", order=1)
-    gap = ContextBlock(name="loop_decisions", body="", order=2, when_empty="nothing")
-    b = ContextBlock(name="notes", body="b", order=3)
+    a = ContextBlock(name="today", body=compose_fixture("a"), order=1)
+    gap = ContextBlock(name="loop_decisions",
+        body=compose_fixture(""), order=2, when_empty="nothing")
+    b = ContextBlock(name="notes", body=compose_fixture("b"), order=3)
     assert gap.render() == ""
     assert assemble([a, gap, b], sep="\n\n") == a.render() + "\n\n\n\n" + b.render()
     assert assemble([a, gap], sep="\n\n") == a.render() + "\n\n"

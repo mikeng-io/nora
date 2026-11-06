@@ -72,6 +72,7 @@ from nora.domain.blocks import (
     restamp,
     speaker_name,
 )
+from nora.domain.composed import compose_body, legacy_composed
 from nora.domain.culture import (
     CULTURE_OUTCOMES,
     Citable,
@@ -481,7 +482,7 @@ class CultureAdaptor(EntitySessions):
                     name="previous_account", order=account_order, key=account_key,
                     # HERS, not the room's — the account she wrote last time.
                     # The marker names the wrong axis, so this block drops it.
-                    body=escape(previous.body),
+                    body=legacy_composed(escape(previous.body)),
                 )
             )
         # WHAT THE ROOM HAS OPEN: the note store is keyed by UNIT (DEC-105),
@@ -545,7 +546,7 @@ class CultureAdaptor(EntitySessions):
             ContextBlock(
                 name="room_messages", order=_ROW["room_messages"][0],
                 key=_ROW["room_messages"][1],
-                body=_render_batch(batch),
+                body=legacy_composed(_render_batch(batch)),
             )
         )
         return assemble(parts, sep="\n\n")
@@ -575,7 +576,7 @@ class CultureAdaptor(EntitySessions):
             # The OPERATOR's sentence and the room's own name — neither is
             # member-authored, and this block is what tells the model how to
             # read the ones that are.
-            body=escape(description or ""),
+            body=compose_body(escape(description or "")),
             # Self-closing when the operator wrote nothing: an empty body would
             # read as «the operator said this room is nothing» rather than
             # «nobody has said». And rendered even when `description` is truthy

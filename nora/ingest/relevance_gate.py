@@ -80,6 +80,7 @@ from nora.domain.blocks import (
     render_messages,
     speaker_name,
 )
+from nora.domain.composed import legacy_composed
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.ports import RecordStore
@@ -477,7 +478,7 @@ def render_context(
             # annotates this field, so a block that renders no `window` is one
             # whose caller did not know the bound — visible, not silently 40.
             attrs=(("window", str(window)),) if window is not None else (),
-            body=transcript_block,
+            body=legacy_composed(transcript_block),
         ),
         ContextBlock(
             name="standing", order=standing_order, key=standing_key,
@@ -485,7 +486,7 @@ def render_context(
                 (("written", _age(written, clock)),) if written is not None
                 else ()
             ),
-            body=standing_block,
+            body=legacy_composed(standing_block),
         ),
     )).rstrip("\n")
 

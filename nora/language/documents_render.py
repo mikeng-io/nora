@@ -13,6 +13,8 @@ field nor close the tag.
 
 from __future__ import annotations
 
+from nora.domain.composed import compose_body
+
 from ..domain.blocks import ContextBlock, render_bullets
 from ..domain.computer_sessions import age
 from ..domain.documents_context import TITLE_CHARS, DocumentLine, DocumentsView
@@ -45,4 +47,4 @@ def render_documents(view: DocumentsView | None) -> ContextBlock | None:
     body = render_bullets(rows, mark="")
     if not body:
         return None
-    return ContextBlock(name="documents", body=body)
+    return ContextBlock(name="documents", body=compose_body(body))

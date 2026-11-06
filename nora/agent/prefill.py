@@ -15,6 +15,8 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
+from nora.domain.composed import Composed, compose_body, legacy_composed
+
 from ..domain.blocks import (
     BlockKey,
     ContextBlock,
@@ -239,7 +241,7 @@ _ROW: dict[str, tuple[int, BlockKey]] = {
 
 
 def _block(
-    name: str, *, body: str, attrs: tuple[tuple[str, str], ...] = (),
+    name: str, *, body: Composed, attrs: tuple[tuple[str, str], ...] = (),
 ) -> ContextBlock:
     """One block, built from the table's row plus the two things only this
     render knows: its `body` and its own attributes.
@@ -295,13 +297,13 @@ def _declared(rendered: Sequence[ContextBlock | None]) -> list[ContextBlock]:
     out = [
         built.get(name) or ContextBlock(
             name=name, order=order, key=key,
-            body="",
+            body=compose_body(""),
         )
         for name, order, key in _BLOCKS
     ]
     out += [
         ContextBlock(name=name, order=order, key="turn",
-                     body="")
+                     body=compose_body(""))
         for name, order in _TAG_MESSAGE_BLOCKS
     ]
     return out
@@ -364,7 +366,8 @@ def _context_header(header: str = TAG_HEADER) -> str:
     # What is left is the SITUATION (why this turn is happening) and the one
     # sentence telling her the blocks are material rather than scenery. That
     # sentence says what to DO with what follows, which nothing else says.
-    return ContextBlock(name="context_header", body=ContextHeader(header).render()).render()
+    return ContextBlock(name="context_header",
+        body=legacy_composed(ContextHeader(header).render())).render()
 
 
 def _label(row: TranscriptRow, display_name: str) -> str:
@@ -629,7 +632,7 @@ def _transcript_block(
         attrs=(("window", str(len(ctx.transcript))),
                ("source_more", str(ctx.source_events_more)))
         if ctx.source_events_more else (("window", str(len(ctx.transcript))),),
-        body=rows,
+        body=compose_body(rows),
     )
 
 
@@ -653,7 +656,7 @@ def _peer_card_block(ctx: TagContext) -> ContextBlock | None:
     return _block(
         "peer_card",
         attrs=(("person", ctx.tagger.name if ctx.tagger else "them"),),
-        body=render_bullets(ctx.peer_card),
+        body=compose_body(render_bullets(ctx.peer_card)),
     )
 
 
@@ -699,7 +702,7 @@ def _peer_history_block(ctx: TagContext) -> ContextBlock | None:
     return _block(
         "peer_history",
         attrs=(("person", ctx.tagger.name if ctx.tagger else "them"),),
-        body=render_bullets(ctx.tagger_card),
+        body=compose_body(render_bullets(ctx.tagger_card)),
     )
 
 
@@ -723,7 +726,7 @@ def _room_members_block(ctx: TagContext) -> ContextBlock | None:
         if ref.aliases else one_line(ref.name)
         for ref in ctx.room_members
     ]
-    return _block("room_members", body=escape("\n".join(lines)))
+    return _block("room_members", body=compose_body(escape("\n".join(lines))))
 
 
 def _people_in_window_block(ctx: TagContext) -> ContextBlock | None:
@@ -766,7 +769,7 @@ def _people_in_window_block(ctx: TagContext) -> ContextBlock | None:
     # would read as a second, narrower claim about the same text.
     rows = "\n".join(
         ContextBlock(
-            name="person", attrs=(("name", name),), body=render_bullets(conclusions),
+            name="person", attrs=(("name", name),), body=compose_body(render_bullets(conclusions)),
         ).render()
         for name, conclusions in ctx.people_in_window
         if conclusions
@@ -775,7 +778,7 @@ def _people_in_window_block(ctx: TagContext) -> ContextBlock | None:
         return None
     return _block(
         "people_in_window",
-        body=rows,
+        body=compose_body(rows),
     )
 
 
@@ -845,7 +848,7 @@ def _recalled_block(ctx: TagContext) -> ContextBlock | None:
         escape(json.dumps(item, ensure_ascii=False)) for item in ctx.recalled
     )
     return _block(
-        "recalled", body=body,
+        "recalled", body=compose_body(body),
         attrs=(("partial", "yes"),) if ctx.recalled_partial else (),
     )
 
@@ -947,7 +950,7 @@ def _spoken_turn_block(ctx: TagContext) -> ContextBlock | None:
     """
     if not ctx.message.voice:
         return None
-    return _block("spoken_turn", body=SPOKEN_TURN)
+    return _block("spoken_turn", body=compose_body(SPOKEN_TURN))
 
 
 def _standing_block(
@@ -1039,9 +1042,9 @@ def _standing_block(
             objects = (f"{objects}\n<source_objects_more "
                        f"count=\"{ctx.source_objects_more}\"/>")
         if block is None:
-            block = ContextBlock(name="standing", body=objects)
+            block = ContextBlock(name="standing", body=legacy_composed(objects))
         else:
-            block = replace(block, body="\n".join((block.body, objects)))
+            block = replace(block, body=legacy_composed("\n".join((block.body.text, objects))))
     # The retained lane (design/platform-observations 03): an ongoing
     # matter's curated `object_refs`, resolved NOW through the store — an
     # old tracked poll keeps its CURRENT state in view after the recency
@@ -1088,9 +1091,9 @@ def _standing_block(
                 attrs=lambda count, _: (("count", str(count)),), body=lambda _: ""))
         retained = "\n".join(retained_rows)
         if block is None:
-            block = ContextBlock(name="standing", body=retained)
+            block = ContextBlock(name="standing", body=legacy_composed(retained))
         else:
-            block = replace(block, body="\n".join((block.body, retained)))
+            block = replace(block, body=legacy_composed("\n".join((block.body.text, retained))))
     return block
 
 
@@ -1222,7 +1225,7 @@ def build_prefill(
             # load. A parameter rather than a `TagContext` field: it is a fact
             # about the tools, which are built beside the prefill, not about
             # what the context assembler read.
-            _block("tool_catalogue", body=catalogue) if catalogue else None,
+            _block("tool_catalogue", body=legacy_composed(catalogue)) if catalogue else None,
             _room_members_block(ctx),
             None if switched else _restamp(render_self(ctx.self_account, now=clock)),
             _restamp(render_lessons(ctx.lessons)),
@@ -1274,7 +1277,7 @@ def build_prefill(
             "nora.prefill.blocks_empty": ",".join(
                 b.name for b in declared if not b.body
             ),
-            "nora.prefill.size_chars": sum(len(b.body) for b in rendered),
+            "nora.prefill.size_chars": sum(len(b.body.text) for b in rendered),
         })
         return [
             _message("user", _context_header(header)),
@@ -1323,7 +1326,7 @@ def _replying_to_block(ctx: TagContext, display_name: str) -> str:
     # `build_tag_message`.
     return ContextBlock(
         name="replying_to", attrs=(("author", _label(parent, display_name)),),
-        body=escape(render_file_links(parent.body or "")),
+        body=legacy_composed(escape(render_file_links(parent.body or ""))),
     ).render() + "\n"
 
 
@@ -1350,5 +1353,5 @@ def build_tag_message(ctx: TagContext, *, tagger_name: str, display_name: str) -
         # paraphrase: a paraphrase can carry the meaning and still match
         # neither spelling the framing gate accepts, so the block would ship
         # with a marker and a clause the gate cannot see.
-        body=f"{quoted}{escape(render_file_links(ctx.message.body))}",
+        body=legacy_composed(f"{quoted}{escape(render_file_links(ctx.message.body))}"),
     ).render()
