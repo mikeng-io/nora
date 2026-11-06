@@ -242,8 +242,18 @@ def wake_memory():
 
 
 def proposal(items=None):
-    return {"readings": [], "entities": [], "relations": [], "evidence": [],
-            "corrections": [], "items": [0] if items is None else items}
+    """An explicit no-change over `items` — the statement contract's
+    `nothing_here` declaration."""
+    items = [0] if items is None else items
+    return {"items": items, "statements": [], "nothing_here": items}
+
+
+def relation_statement(dst, *, rel="about", src="@reading:generated-r",
+                       cite=({"source": 101},)):
+    """One relation statement over shown row 101, endpoints as handles."""
+    return {"type": "relation", "rel": rel, "subject": src,
+            "object": dst if isinstance(dst, dict) else f"@{dst[0]}:{dst[1]}",
+            "cite": list(cite)}
 
 
 async def test_cognition_01_act_refused_before_admitted_proposal():
@@ -277,8 +287,9 @@ async def test_an_unprojected_message_still_runs_its_wake_on_its_own_text():
 
 async def test_cognition_08_proposal_answer_lists_refusal_with_reason():
     payload = proposal()
-    payload["relations"] = [{"id": "generated-wrong", "src": ["person", "generated"],
-        "rel": "invented", "dst": ["topic", "generated-topic"]}]
+    payload["nothing_here"] = []
+    payload["statements"] = [relation_statement(
+        ["topic", "generated-topic"], rel="invented", src="@person:generated")]
     fake = FakeCognitionAgentRunner(script=[("memory_propose", payload)])
     runner, store, _ = _runner(agent_runner=fake, memory=wake_memory())
     await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
@@ -376,18 +387,17 @@ async def test_rows_a_read_shows_become_the_evidence_a_proposal_may_cite():
             return {"messages": [{"sender": "Ada", "body": "dinner at eight"}]}
         return [load_transcript]
 
-    def proposing(cited: str, relation_id: str) -> dict[str, Any]:
+    def proposing(cited: str) -> dict[str, Any]:
         payload = proposal()
-        payload["relations"] = [
-            {"id": relation_id, "src": ["reading", "generated-r"], "rel": "about",
-             "dst": ["event", "u:event:generated-gala"], "persons": ["p_ada"]}]
-        payload["evidence"] = [{"source": ["message", cited], "relation_id": relation_id}]
+        payload["nothing_here"] = []
+        payload["statements"] = [relation_statement(
+            ["event", "u:event:generated-gala"], cite=({"source": int(cited)},))]
         return payload
 
     fake = FakeCognitionAgentRunner(script=[
         ("load_transcript", {}),
-        ("memory_propose", proposing("101", "r-shown")),
-        ("memory_propose", proposing("102", "r-withheld")),
+        ("memory_propose", proposing("101")),
+        ("memory_propose", proposing("102")),
     ])
     runner, _, _ = _runner(
         agent_runner=fake, memory=memory, read_tools_for=reads,
@@ -408,10 +418,7 @@ async def test_probe_prepares_memory_and_uses_the_wakes_instruction():
             self.system_prompt = kwargs["system_prompt"]
             return await super().run(**kwargs)
 
-    agent = Capture(script=[("memory_propose", {
-        "items": [0], "readings": [], "entities": [], "relations": [],
-        "evidence": [], "corrections": [],
-    })])
+    agent = Capture(script=[("memory_propose", proposal())])
     memory = wake_memory()
     runner, _, _ = _runner(agent_runner=agent, memory=memory)
     await runner.probe(unit="unit-1", summary="a generated review", now_ms=NOW)
@@ -471,7 +478,10 @@ async def test_agenda_carry_and_strike_keep_uncomprehended_stimuli_pending():
 
 async def test_refused_session_leaves_stimuli_pending():
     payload = proposal()
-    payload["entities"] = [{"id": "generated-person", "kind": "person", "name": "Generated"}]
+    payload["nothing_here"] = []
+    payload["statements"] = [relation_statement(
+        {"new": {"kind": "person", "name": "Generated"}},
+        src={"new": {"kind": "work", "name": "Generated work"}})]
     stimuli = _seeded()
     fake = FakeCognitionAgentRunner(script=[("memory_propose", payload)])
     runner, _, _ = _runner(agent_runner=fake, stimuli=stimuli, memory=wake_memory())
@@ -497,8 +507,10 @@ async def test_failed_session_keeps_stimuli_pending_and_counts_failure():
 
 async def test_schema_refusal_is_returned_and_never_unlocks_acts():
     payload = proposal()
-    payload["relations"] = [{"id": "generated-relation", "src": ["person", "generated"],
-        "rel": "likes", "dst": ["place", "generated-place"], "valid_from": "bad-time"}]
+    payload["nothing_here"] = []
+    payload["statements"] = [dict(
+        relation_statement(["place", "generated-place"], rel="likes",
+                           src="@person:generated"), valid_from="bad-time")]
     fake = FakeCognitionAgentRunner(script=[("memory_propose", payload),
         ("wake_at", {"subject_rows": ["event:1"], "at": iso(NOW + 3600000), "why": "check"})])
     runner, store, _ = _runner(agent_runner=fake, memory=wake_memory())
@@ -576,9 +588,9 @@ def _register_load(stores):
 
 def _about_proposal(entity_id: str, relation_id: str = "r-about"):
     payload = proposal()
-    payload["relations"] = [{"id": relation_id, "src": ["reading", "generated-r"],
-        "rel": "about", "dst": ["event", entity_id], "persons": ["p_ada"]}]
-    payload["evidence"] = [{"source": ["message", "101"], "relation_id": relation_id}]
+    payload["nothing_here"] = []
+    payload["statements"] = [relation_statement(
+        ["event", entity_id], cite=({"source": 101},))]
     return payload
 
 
@@ -1013,8 +1025,7 @@ async def test_stays_and_plays_join_the_same_proposal_coverage():
     assert {s.key[0] for s in state.memory_items[0].sources} == {"play", "rollup"}
     assert "Generated track" in next(s.text for s in state.memory_items[0].sources
                                      if s.key[0] == "play")
-    answer = await memory.propose(state, items=[0], payload={k: v for k, v in proposal().items()
-                                                            if k != "items"})
+    answer = await memory.propose(state, items=[0], statements=[], nothing_here=[0])
     assert answer["admitted"] == [0]
 
 
@@ -1224,13 +1235,12 @@ async def test_native_transcript_rendered_file_text_is_the_proposals_evidence():
         await by["load_transcript"]()
         shown = responses[-1]["messages"][0]["body"]
         assert shown != raw and "docs.google.com" not in shown
-        for span, relation_id in ((shown, "shown-file"), (raw, "raw-file")):
+        for span in (shown, raw):
             payload = proposal()
-            payload["relations"] = [{
-                "id": relation_id, "src": list(person.key), "rel": "likes",
-                "dst": list(event.key), "persons": ["p_ada"]}]
-            payload["evidence"] = [{"source": ["message", str(message_id)],
-                                    "relation_id": relation_id, "span": span}]
+            payload["nothing_here"] = [0]
+            payload["statements"] = [relation_statement(
+                list(event.key), rel="likes", src="@" + ":".join(person.key),
+                cite=({"source": message_id, "quote": span},))]
             answer = await by["memory_propose"](**payload)
             responses.append(answer)
 
@@ -1242,4 +1252,5 @@ async def test_native_transcript_rendered_file_text_is_the_proposals_evidence():
     await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
         last_activity_ms=None, last_wake=None), now_ms=NOW)
     assert responses[1]["admitted"] == [0], responses[1]
+    assert responses[1]["statements"][0]["status"] == "saved"
     assert any(r["reason"] == "span_not_in_source" for r in responses[2]["refused"])

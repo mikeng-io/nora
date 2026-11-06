@@ -116,6 +116,7 @@ async def wake(budget=None):
         budget=budget,
         memory_items=state.memory_items,
     )
+    memory.register_shown(state)
     return state, prompt
 
 
@@ -141,14 +142,14 @@ async def test_colliding_loader_slot_keeps_image_author_and_clock():
         {"claims": [claim(rid, "Pending: collect tomorrow")]}, item.snapshot
     )
     assert not drops
-    output = {
-        "entities": [],
-        "relations": [],
-        "evidence": [],
-        "corrections": [],
-        "readings": [claim(rid, "Pending")],
-    }
-    result = await state.memory.propose(state, items=[0], payload=output)
+    result = await state.memory.propose(
+        state, items=[0], nothing_here=[],
+        statements=[{
+            "type": "reading", "about": [], "what": "Generated pending collection",
+            "happened_at": {"source": rid, "expression": None},
+            "where": None, "how": "reported",
+            "cite": [{"source": rid, "quote": "Pending"}],
+        }])
     assert result["status"] == "ok", result
     assert state.memory.records.claims
     assert claims[0]["assertions"] == [

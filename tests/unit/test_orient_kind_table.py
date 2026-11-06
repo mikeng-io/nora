@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from nora.agent.fetch_watch import GraphFetched
-from nora.app.comprehend import GraphWrite
+from nora.app.comprehend import Proposal, proposal_scope
 from nora.domain.cognition_ground import Grounding, RecordItem
 from nora.domain.cognition_session import AgendaItem
 from nora.domain.comprehend import ComprehendItem
@@ -49,22 +49,32 @@ def _state(memory, *, text=TEXT, now=AT):
 
 
 def _payload():
-    result = proposal()
-    result.pop("items")
-    result["entities"] = [{"id": "generated-game", "kind": "work", "name": "Lantern Game"}]
-    result["relations"] = [{"id": "like", "src": ["person", "generated-person"],
-                            "rel": "likes", "dst": ["work", "generated-game"],
-                            "persons": ["generated-person"]}]
-    result["evidence"] = [{"source": ["message", "1"], "relation_id": "like",
-                           "span": "I like Lantern Game"}]
-    return result
+    """One relation statement: a person likes an inline new work, citing row 1."""
+    return {"statements": [{
+        "type": "relation", "rel": "likes",
+        "subject": "@person:generated-person",
+        "object": {"new": {"kind": "work", "name": "Lantern Game"}},
+        "cite": [{"source": 1, "quote": "I like Lantern Game"}]}]}
+
+
+def _admit_args(state, payload=None):
+    """The `_admit` arguments over a hand-built single-item state."""
+    item = state.memory_items[0]
+    return (
+        item.work,
+        Proposal.model_validate(payload or _payload()),
+        state.graph_fetched,
+        state.session_id,
+        proposal_scope([item], state.graph_fetched),
+    )
 
 
 def _reading(quote):
-    return {"about": [{"person_id": "generated-person", "reference": "I"}],
+    return {"type": "reading",
+            "about": [{"person_id": "generated-person", "reference": "I"}],
             "what": "has a spare controller", "where": None, "how": "stated",
-            "happened_at": {"source_id": 1, "expression": None}, "source_ids": [1],
-            "evidence": [{"source_id": 1, "quote": quote}]}
+            "happened_at": {"source": 1, "expression": None},
+            "cite": [{"source": 1, "quote": quote}]}
 
 
 def test_orient_renders_the_kind_constant():
@@ -90,9 +100,7 @@ async def test_admission_uses_the_kind_constant(monkeypatch, removed, part):
     monkeypatch.setattr(admission, "MEMORY_KINDS", rows)
     memory = wake_memory()
     state = _state(memory)
-    result, local = await memory.admission._admit(
-        state.memory_items[0].work, GraphWrite.model_validate(_payload()),
-        state.graph_fetched, state.session_id)
+    result, local, _ = await memory.admission._admit(*_admit_args(state))
     assert {"kind": part, "reason": "vocabulary"} in local
     assert not result.entities if part == "entity" else not result.relations
 
@@ -103,11 +111,8 @@ async def test_a_notebook_row_is_refused_as_an_entity_kind(kind):
     memory = wake_memory()
     state = _state(memory)
     payload = _payload()
-    payload["entities"] = [{"id": "generated-entry", "kind": kind, "name": "Generated"}]
-    payload["relations"], payload["evidence"] = [], []
-    result, local = await memory.admission._admit(
-        state.memory_items[0].work, GraphWrite.model_validate(payload),
-        state.graph_fetched, state.session_id)
+    payload["statements"][0]["object"] = {"new": {"kind": kind, "name": "Generated"}}
+    result, local, _ = await memory.admission._admit(*_admit_args(state, payload))
     assert {"kind": "entity", "reason": "vocabulary"} in local
     assert not result.entities
 
@@ -116,31 +121,38 @@ async def test_bad_reading_keeps_valid_reading_and_graph():
     memory = wake_memory()
     state = _state(memory)
     payload = _payload()
-    payload["readings"] = [_reading("I have a spare controller"), _reading("not in the source")]
-    result = await memory.propose(state, items=[0], payload=payload)
+    payload["statements"] += [
+        _reading("I have a spare controller"), _reading("not in the source")]
+    result = await memory.propose(state, items=[0], statements=payload["statements"])
     assert result["status"] == "ok", result
     assert result["admitted"] == [0]
     assert len(result["committed"]) == 1
-    assert memory.graph.entities["generated-game"].kind == "work"
+    entity = next(e for e in memory.graph.entities.values() if e.name == "Lantern Game")
+    assert entity.kind == "work"
     assert [c["what"] for claims in memory.records.claims.values() for c in claims] == [
         "has a spare controller"]
-    assert len(result["refused"]) == 1
+    statuses = [s["status"] for s in result["statements"]]
+    assert statuses == ["saved", "saved", "refused"]
     assert memory.records.refusals == [(1, "reading", "evidence_absent")]
 
 
 async def test_later_contradiction_supersedes_current_relation():
     memory = wake_memory()
-    first = await memory.propose(_state(memory), items=[0], payload=_payload())
+    first = await memory.propose(
+        _state(memory), items=[0], statements=_payload()["statements"])
     old_id = first["committed"][0]
     state = _state(memory, text="I dislike Lantern Game now.", now=AT + timedelta(days=1))
-    payload = _payload()
-    payload["entities"] = []
-    payload["relations"][0].update(id="dislike", rel="dislikes")
-    payload["evidence"][0].update(relation_id="dislike", span="I dislike Lantern Game now")
-    payload["corrections"] = [{"relation_id": old_id, "kind": "supersede",
-                                "at": state.memory_items[0].work.as_of.isoformat(),
-                                "by": "dislike", "evidence": [["message", "1"]]}]
-    later = await memory.propose(state, items=[0], payload=payload)
+    work_key = memory.graph.relations[old_id].dst
+    replacement = dict(_payload()["statements"][0], rel="dislikes",
+                       object=f"@{work_key[0]}:{work_key[1]}",
+                       cite=[{"source": 1, "quote": "I dislike Lantern Game now"}])
+    statements = [{
+        "type": "correction", "relation": old_id, "change": "supersede",
+        "at": state.memory_items[0].work.as_of.isoformat(),
+        "replacement": replacement,
+        "cite": [{"source": 1, "quote": "I dislike Lantern Game now"}],
+    }]
+    later = await memory.propose(state, items=[0], statements=statements)
     assert later["status"] == "ok", later
     assert memory.graph.relations[old_id].status == "superseded"
     assert memory.graph.relations[old_id].superseded_by == later["committed"][0]
@@ -208,12 +220,12 @@ async def test_assembled_session_puts_orient_before_act():
 async def test_only_invalid_reading_leaves_the_item_pending():
     memory = wake_memory()
     state = _state(memory)
-    payload = proposal()
-    payload.pop("items")
-    payload["readings"] = [_reading("not in the source")]
-    result = await memory.propose(state, items=[0], payload=payload)
+    result = await memory.propose(
+        state, items=[0], statements=[_reading("not in the source")])
     assert result["status"] == "refused"
-    assert result["refused"] == [{"kind": "reading", "reason": "evidence_absent"}]
+    assert result["statements"] == [
+        {"index": 0, "status": "refused", "kind": "reading",
+         "reason": "evidence_absent"}]
     assert not state.admitted_indices
     assert not memory.records.claims
 
@@ -240,14 +252,14 @@ async def test_an_admitted_memory_write_backs_a_written_close(monkeypatch, wrote
     something closes `written`; an empty proposal still cannot claim it."""
     memory = wake_memory()
 
-    async def admitted(state, *, items, payload):
+    async def admitted(state, *, items, statements, nothing_here=()):
         state.admitted_indices.update(items)  # as WakeMemory.propose records it
         return {"status": "ok", "admitted": items, "refused": [], "committed": [],
                 "connected": {"status": "ok", "nodes": [], "relations": []}}
     monkeypatch.setattr(memory, "propose", admitted)
     payload = proposal()
     if wrote:
-        payload["readings"] = [_reading("I have a spare controller")]
+        payload["statements"] = [_reading("I have a spare controller")]
     fake = FakeCognitionAgentRunner(script=[
         ("memory_propose", payload), ("close", {"item_index": 0, "reason": "written"})])
     runner, _, _ = _runner(agent_runner=fake, memory=memory)
@@ -267,12 +279,9 @@ async def test_a_write_as_the_model_writes_it_is_admitted(author, admitted):
     state = _state(memory)
     memory.graph.entities.clear()
     payload = _payload()
-    payload["relations"][0].update(src=["person", author], persons=[author, "generated-person"],
+    payload["statements"][0].update(subject=f"@person:{author}",
                                    valid_from="2026-10-17")
-    payload["evidence"][0]["source"] = ["message", 1]
-    result, local = await memory.admission._admit(
-        state.memory_items[0].work, GraphWrite.model_validate(payload),
-        state.graph_fetched, state.session_id)
+    result, local, _ = await memory.admission._admit(*_admit_args(state, payload))
     assert not local
     if admitted:
         assert [r.rel for r in result.relations] == ["likes"]
@@ -294,24 +303,21 @@ async def test_a_refused_relation_never_vouches_for_another_persons_end():
     memory.graph.entities.clear()
     other = Source(("message", "2"), "record", "unit-1", ("someone-else",), "Lantern Game rocks")
     state.graph_fetched.show(other)
-    payload = _payload()
-    a = {"id": "a", "src": ["person", "generated-person"], "rel": "likes",
-         "dst": ["work", "never-proposed"], "persons": ["generated-person"]}
-    b = {**payload["relations"][0],
-         "persons": ["generated-person", "someone-else"]}
-    payload["relations"] = [a, b]
-    payload["evidence"] = [
-        {"source": ["message", 1], "relation_id": "a", "span": "I like Lantern Game"},
-        {"source": ["message", 2], "relation_id": "like", "span": "Lantern Game rocks"}]
-    result, _ = await memory.admission._admit(
-        state.memory_items[0].work, GraphWrite.model_validate(payload),
-        state.graph_fetched, state.session_id)
+    statements = [
+        {"type": "relation", "rel": "likes", "subject": "@person:generated-person",
+         "object": "@work:never-proposed",
+         "cite": [{"source": 1, "quote": "I like Lantern Game"}]},
+        {**_payload()["statements"][0],
+         "cite": [{"source": 2, "quote": "Lantern Game rocks"}]},
+    ]
+    result, _, _ = await memory.admission._admit(
+        *_admit_args(state, {"statements": statements}))
     assert not result.relations
     assert "unit-1:person:generated-person" not in memory.graph.entities
 
 
 @pytest.mark.parametrize("contract", [
-    "Relation persons must include the union of persons from every cited source",
+    "cite only rows actually shown",
     "entity attribute evidence\nrequires sources with empty persons",
     'name is an entity field, not an attributes key; never cite attribute="name"',
 ])
@@ -326,35 +332,153 @@ def test_rendered_orient_states_admission_scope(contract):
 async def test_duplicate_recovery_clears_only_connected_entity_orphans():
     memory = wake_memory()
     state = _state(memory)
-    payload = _payload()
-    payload["entities"] = [
-        {"id": "generated-event", "kind": "event", "name": "Generated outing"},
-        {"id": "generated-place", "kind": "place", "name": "Generated venue"},
-    ]
-    payload["relations"] = [{
-        "id": "at", "src": ["event", "generated-event"], "rel": "at",
-        "dst": ["place", "generated-place"], "persons": ["generated-person"],
-    }]
-    payload["evidence"][0]["relation_id"] = "at"
-    first, local = await memory.admission._admit(
-        state.memory_items[0].work, GraphWrite.model_validate(payload),
-        state.graph_fetched, state.session_id)
+    statement = {
+        "type": "relation", "rel": "at",
+        "subject": {"new": {"kind": "event", "name": "Generated outing"}},
+        "object": {"new": {"kind": "place", "name": "Generated venue"}},
+        "cite": [{"source": 1, "quote": "I like Lantern Game"}],
+    }
+    first, local, _ = await memory.admission._admit(
+        *_admit_args(state, {"statements": [statement]}))
     assert not local and not first.refused
     assert len(first.entities) == 2 and len(first.relations) == 1
+    place = next(e for e in first.entities if e.name == "Generated venue")
 
-    payload["entities"].append({
-        "id": "generated-orphan", "kind": "place", "name": "Unconnected venue"})
-    payload["entities"][1]["attributes"] = {"detail": "unproved"}
-    payload["evidence"].append({
-        "source": ["message", "1"], "entity_id": "generated-place",
-        "attribute": "detail", "span": "I like Lantern Game"})
-    retry, local = await memory.admission._admit(
-        state.memory_items[0].work, GraphWrite.model_validate(payload),
-        state.graph_fetched, state.session_id)
-    assert not local
+    retry_statements = [
+        statement,
+        {**statement,
+         "object": {"new": {"kind": "place", "name": "Unconnected venue",
+                            "attributes": {"detail": {"value": "unproved",
+                                        "cite": [{"source": 99}]}}}},
+         "cite": [{"source": 99, "quote": "not shown"}]},
+    ]
+    retry, local, _ = await memory.admission._admit(
+        *_admit_args(state, {"statements": retry_statements}))
     assert retry.relations == first.relations
-    assert {(r.id, r.reason) for r in retry.refused} == {
-        ("generated-orphan", "orphan_entity"), ("generated-place", "wrong_ends")}
-    assert not retry.entities
-    assert memory.graph.entities["generated-place"].attributes == {}
-    assert "generated-orphan" not in memory.graph.entities
+    assert {"unseen_source", "schema"} & {r["reason"] for r in local}
+    assert memory.graph.entities[place.id].attributes == {}
+    assert not any(e.name == "Unconnected venue" for e in memory.graph.entities.values())
+
+
+async def test_citing_a_message_derives_relation_persons_from_the_source():
+    """persons is the union of the cited Source.persons, never model-authored."""
+    memory = wake_memory()
+    state = _state(memory)
+    result = await memory.propose(state, items=[0], statements=_payload()["statements"])
+    assert result["status"] == "ok", result
+    relation = memory.graph.relations[result["committed"][0]]
+    assert relation.persons == ("generated-person",)
+
+
+async def test_a_cross_unit_citation_is_refused():
+    memory = wake_memory()
+    state = _state(memory)
+    state.graph_fetched.show(Source(("message", "2"), "record", "unit-2",
+                                    ("generated-person",), "I like Lantern Game"))
+    statements = [dict(_payload()["statements"][0],
+                       cite=[{"source": 2, "quote": "I like Lantern Game"}])]
+    result = await memory.propose(state, items=[0], statements=statements)
+    assert result["status"] == "refused"
+    assert result["statements"][0]["status"] == "refused"
+    assert not memory.graph.relations
+
+
+async def test_a_loaded_but_unshown_row_is_refused():
+    """One custody: a loaded row absent from the rendered catalogue and the
+    fetched set cannot be cited."""
+    from dataclasses import replace as _replace
+    memory = wake_memory()
+    state = _state(memory)
+    item = state.memory_items[0]
+    extra = Source(("message", "2"), "record", "unit-1",
+                   ("generated-person",), "hidden row")
+    state.memory_items[0] = _replace(item, sources=(*item.sources, extra))
+    statements = [dict(_payload()["statements"][0],
+                       cite=[{"source": 2, "quote": "hidden row"}])]
+    result = await memory.propose(state, items=[0], statements=statements)
+    assert result["statements"][0]["reason"] == "unseen_source"
+    assert not memory.graph.relations
+
+
+async def test_one_slip_isolates_the_slipping_statement():
+    """A bad quote refuses only its own statement; the sibling commits."""
+    memory = wake_memory()
+    state = _state(memory)
+    good = _payload()["statements"][0]
+    bad = dict(good, cite=[{"source": 1, "quote": "never said"}])
+    result = await memory.propose(state, items=[0], statements=[good, bad])
+    assert result["status"] == "ok", result
+    assert [s["status"] for s in result["statements"]] == ["saved", "refused"]
+    assert result["statements"][1]["reason"] == "span_not_in_source"
+    assert result["admitted"] == [0] and len(memory.graph.relations) == 1
+
+
+async def test_open_and_nothing_here_completion():
+    memory = wake_memory()
+    result = await memory.propose(
+        _state(memory), items=[0], statements=[], nothing_here=[0])
+    assert result["status"] == "ok"
+    assert result["admitted"] == [0] and result["open"] == []
+    open_result = await memory.propose(_state(memory), items=[0], statements=[])
+    assert open_result["status"] == "refused"
+    assert open_result["open"] == [0] and open_result["admitted"] == []
+
+
+async def test_an_identity_pointer_is_never_a_new_entity():
+    memory = wake_memory()
+    state = _state(memory)
+    statement = dict(_payload()["statements"][0],
+                     object={"new": {"kind": "person", "name": "Generated"}})
+    result = await memory.propose(state, items=[0], statements=[statement])
+    assert result["statements"][0]["reason"] == "identity_pointer"
+    assert not memory.graph.relations
+
+
+async def test_replaying_the_same_statement_is_idempotent():
+    memory = wake_memory()
+    statements = _payload()["statements"]
+    first = await memory.propose(_state(memory), items=[0], statements=statements)
+    again = await memory.propose(_state(memory), items=[0], statements=statements)
+    assert first["status"] == again["status"] == "ok"
+    assert first["committed"] == again["committed"]
+    assert again["statements"][0]["status"] == "saved"
+    assert len(memory.graph.relations) == 1
+
+
+async def test_memory_propose_schema_is_derived_from_the_proposal_types():
+    """The tool spec is generated from the statement types: a field on the type
+    appears in the generated schema."""
+    from nora.agent.ports import ToolSpec, adapt
+    from nora.app.cognition_agent_runner import DEFAULT_TOOL_BUDGET
+
+    captured = {}
+
+    class Capture(FakeCognitionAgentRunner):
+        async def run(self, **kwargs):
+            captured["tools"] = {t.__name__: t for t in kwargs["tools"]}
+            return await super().run(**kwargs)
+
+    agent = Capture(script=[("memory_propose", proposal())])
+    runner, _, _ = _runner(agent_runner=agent, memory=wake_memory())
+    await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
+        last_activity_ms=None, last_wake=None), now_ms=NOW)
+    tool = adapt(ToolSpec(name="memory_propose", description="", schema={},
+                          call=captured["tools"]["memory_propose"],
+                          budget=DEFAULT_TOOL_BUDGET))
+    schema = tool.tool_spec["inputSchema"]["json"]
+    assert schema["properties"]["statements"]["items"]["oneOf"]
+    defs = schema["$defs"]
+    assert "valid_from" in defs["RelationStatement"]["properties"]
+    assert "nothing_here" in schema["properties"]
+
+
+async def test_a_statement_without_citations_refuses():
+    """Every evidence row exists because a citation named it — a statement with
+    no citation can emit no evidence and refuses on shape."""
+    memory = wake_memory()
+    state = _state(memory)
+    statement = dict(_payload()["statements"][0], cite=[])
+    result = await memory.propose(state, items=[0], statements=[statement])
+    assert result["status"] == "refused"
+    assert result["refused"][0]["reason"] == "schema"
+    assert not memory.graph.relations

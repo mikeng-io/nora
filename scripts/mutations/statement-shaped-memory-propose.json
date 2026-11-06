@@ -1,0 +1,30 @@
+[
+ {
+  "name": "relation persons is derived from the cited Source.persons",
+  "file": "nora/app/comprehend.py",
+  "old": "            persons = sorted({p for s in sources.values() for p in s.persons})",
+  "new": "            persons = []",
+  "target": "tests/unit/test_orient_kind_table.py::test_citing_a_message_derives_relation_persons_from_the_source"
+ },
+ {
+  "name": "only the rendered rows hydrate citable sources",
+  "file": "nora/app/cognition_memory.py",
+  "old": "            state.memory_items[index] = item\n        persons = frozenset(",
+  "new": "            state.memory_items[index] = item\n            for source in sources:\n                state.graph_fetched.show(source)\n        persons = frozenset(",
+  "target": "tests/unit/test_orient_kind_table.py::test_a_loaded_but_unshown_row_is_refused"
+ },
+ {
+  "name": "a refused statement never withholds covered items",
+  "file": "nora/app/cognition_memory.py",
+  "old": "        if admitted:",
+  "new": "        if admitted and not refused:",
+  "target": "tests/unit/test_orient_kind_table.py::test_one_slip_isolates_the_slipping_statement"
+ },
+ {
+  "name": "the memory_propose schema is generated from the statement types",
+  "file": "nora/app/cognition_session.py",
+  "old": "            items: list[int], statements: list[Statement],",
+  "new": "            items: list[int], statements: list[dict[str, Any]],",
+  "target": "tests/unit/test_orient_kind_table.py::test_memory_propose_schema_is_derived_from_the_proposal_types"
+ }
+]

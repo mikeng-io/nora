@@ -417,7 +417,7 @@ async def test_session_quality_uses_shown_input_and_only_committed_relations():
             {"name": "profile_revise", "input": {}, "result": {"status": "ok"}},
             {
                 "name": "memory_propose",
-                "input": {"readings": [{"text": "Generated claim"}]},
+                "input": {"statements": [{"type": "reading", "what": "Generated claim"}]},
                 "result": {
                     "admitted": [0],
                     "committed": ["generated-committed", "generated-merge"],

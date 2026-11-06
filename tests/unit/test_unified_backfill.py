@@ -630,9 +630,9 @@ async def test_propose_writes_a_receipt_per_admitted_item():
             self.refused: list[Any] = []
 
     class _Admission:
-        async def _admit(self, work: Any, output: Any,
-                         fetched: Any, session: int) -> Any:
-            return _Result(), []
+        async def _admit(self, work: Any, output: Any, fetched: Any,
+                         session: int, scope: Any) -> Any:
+            return _Result(), [], {"report": {}, "claims": {}, "cited_items": {}}
 
     class _Graph:
         async def walk(self, seeds: Any, scope: Any) -> Any:
@@ -655,11 +655,11 @@ async def test_propose_writes_a_receipt_per_admitted_item():
                             room="c1", snapshot={"messages": []})
     state = SimpleNamespace(
         memory_items={0: item_a, 1: item_b}, session_id=7, unit="u1",
-        graph_fetched=SimpleNamespace(nodes=[], relations=[]),
+        graph_fetched=SimpleNamespace(nodes=[], relations=[], sources={}),
         shown_keys=set(), admitted_relations={}, admitted_evidence=[],
         admitted_indices=set(), graph_text="", historical=False)
-    payload = {key: [] for key in ("entities", "relations", "evidence", "corrections", "readings")}
-    out = await memory.propose(state, items=[0, 1], payload=payload)
+    out = await memory.propose(
+        state, items=[0, 1], statements=[], nothing_here=[0, 1])
     assert out["status"] == "ok"
     assert len(written) == 1
     assert [(v["work_id"], v["input_hash"]) for v in written[0]] == [

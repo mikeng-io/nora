@@ -175,7 +175,9 @@ async def test_historical_proposal_result_uses_safe_graph_payload():
                 (GraphEdge(relation, 0),))
     class Admitter:
         async def _admit(self, *args):
-            return Admission(relations=(relation,)), []
+            return (Admission(relations=(relation,)), [],
+                    {"report": {0: {"status": "saved", "kind": "relation"}},
+                     "claims": {}, "cited_items": {0: {0}}})
     memory = WakeMemory(records=Records(), graph=Graph(), metrics=None, content_checks=False)
     memory.admission = Admitter()
     state = SimpleNamespace(unit="u1", session_id=1, historical=True,
@@ -184,13 +186,12 @@ async def test_historical_proposal_result_uses_safe_graph_payload():
             "signal", "c1", snapshot={"messages": []})},
         graph_fetched=GraphFetched(), shown_keys=set(), admitted_indices=set(),
         admitted_relations={}, admitted_evidence=[])
-    payload = {key: [] for key in (
-        "entities", "relations", "evidence", "corrections", "readings")}
-    payload["relations"] = [{"id": "plan", "src": ["person", "p1"], "rel": "plans",
-                             "dst": ["event", "e1"], "persons": ["p1"]}]
-    payload["evidence"] = [{"source": ["message", "1"], "relation_id": "plan",
-                            "span": "plan"}]
-    result = await memory.propose(state, items=[0], payload=payload)
+    state.graph_fetched.show(
+        Source(("message", "1"), "record", "u1", ("p1",), "a plan"))
+    statements = [{
+        "type": "relation", "rel": "plans", "subject": "@person:p1",
+        "object": "@event:e1", "cite": [{"source": 1, "quote": "plan"}]}]
+    result = await memory.propose(state, items=[0], statements=statements)
     assert result["status"] == "ok"
     assert "future-private-name" not in str(result)
     assert result["connected"]["nodes"][0]["key"] == ["event", "e1"]
