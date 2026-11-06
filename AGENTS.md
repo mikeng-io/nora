@@ -241,9 +241,6 @@ the decision.
 - **Never reference the archived legacy path** (`~/.hermes/profiles/nora/`).
 - **Never assert a per-tag object was cleaned up by checking an attribute was
   deleted** — count live `gc`-tracked objects instead.
-- **Never rewrite a model's instruction before reading its input** — if the
-  judgement turns on *when*, check the block carries a time; on *who*, an
-  index; on *still open*, the thing that would close it.
 - **Never build a model prompt outside context assembly** — a `_BLOCKS` table walked by
   `assemble`; no debt ledger, no exception for an occasion (DEC-273, ADR 0021).
   `tests/architecture/test_every_model_call_is_a_declared_occasion.py` fails on one;
@@ -374,7 +371,7 @@ when the reader needs its reasoning.
 - **A fake standing in for a port lives in `nora/testing/`** and is
   parametrized into that port's contract suite. Inline classes are local
   scaffolding only; `tests/architecture/test_port_fakes_live_in_nora_testing.py`
-  is the gate and its `_ALLOWED` list only shrinks. Issue #113 for all three.
+  is the gate and its `_ALLOWED` list only shrinks.
 
 ## The five operational constraints (full text in `docs/maintainers/conventions-rationale.md`)
 
@@ -396,8 +393,8 @@ Each skill is a `SKILL.md` under `.agents/skills/` (the cross-tool location);
 `.claude/skills/<name>` is a symlink to it, so Claude Code reads the same
 files and there is one copy. A skill is the ORDER of the commands and the check after
 each one; the reasons stay in the documents it links. Load the skill when the
-task starts, not when it goes wrong: the audit behind them (ADR 0017) found the
-rules were written down and not read at the moment they applied.
+task starts, not when it goes wrong: a rule that is written down but not read
+at the moment it applies does nothing.
 
 | when the task is | load |
 |---|---|
