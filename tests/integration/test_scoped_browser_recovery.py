@@ -438,3 +438,18 @@ async def test_retry_retains_consumed_marker_until_delivery_stamp_persists(fail_
         str(got.task.id), str(other.task.id)}
     polled = await queue_module.ComputerTaskBackend(tasks=store).poll(job_id=str(other.task.id))
     assert "generated-output" in polled.report
+
+    # `_settle` converges an UNCONSUMED retained entry on a terminal row
+    # too — not only the `_deliver_pending` sweep. Without that clause the
+    # journal lingers: the row is already the authority.
+    third = await admission.submit(
+        scope=UNIT_SCOPE, kind="native", payload={}, origin={})
+    assert third.granted
+    admission.executors.retain(
+        third.task.id, "done", {"status": "ok", "answer": "settle-path"})
+    await store.finish(third.task.id, status="done", now=NOW,
+                       result={"status": "ok", "answer": "settle-path"})
+    await runner._settle(
+        "stream-settle", "0-9", await store.get(third.task.id))
+    assert admission.executors.pending_result(third.task.id) is None
+    assert (await store.get(third.task.id)).delivered_at is not None
