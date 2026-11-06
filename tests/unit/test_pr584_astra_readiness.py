@@ -613,6 +613,7 @@ async def test_journey_rejects_foreign_handle_and_unrelated_export():
     ]
     results = [(name, json.dumps([{"text": value}])) for name, value in results]
     inputs = [
+        ("computer_browse", json.dumps({"objective": "inspect the generated page"})),
         ("computer_capture", json.dumps({"task": "foreign-owned-handle"})),
         ("computer_export", json.dumps({"path": "unrelated.txt", "to": "link"})),
     ]
@@ -665,6 +666,7 @@ async def test_real_journey_accepts_successful_keep_receipt(changed):
         values[2][1]["kept"] = False
     results = [(n, json.dumps([{"text": json.dumps(v)}])) for n, v in values]
     inputs = [
+        ("computer_browse", json.dumps({"objective": "inspect the generated page"})),
         ("computer_capture", json.dumps(capture_input)),
         ("computer_export", json.dumps(export_input)),
     ]

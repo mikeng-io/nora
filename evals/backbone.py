@@ -2759,45 +2759,56 @@ class ToolRouteGrader(Evaluator):
         if results is None or inputs is None:
             return self._out(ERROR, 0.0, "journey inputs/results unavailable")
 
-        def successful(tool: str) -> list[tuple[int, dict[str, Any]]]:
-            found = []
-            for index, (_, text) in enumerate(r for r in results if r[0] == tool):
-                for fragment in _texts_in(text):
-                    try:
-                        value = json.loads(fragment)
-                    except (ValueError, TypeError):
-                        continue
-                    if isinstance(value, dict) and value.get("status") == "ok":
-                        found.append((index, value))
-                        break
-            return found
-
-        def arguments(tool: str, index: int) -> dict[str, Any] | None:
-            calls = [text for name, text in inputs if name == tool]
+        tools = ("computer_browse", "computer_capture", "computer_export")
+        ordered_inputs = [(name, text) for name, text in inputs if name in tools]
+        ordered_results = [(name, text) for name, text in results if name in tools]
+        expected = [name for name in ran if name in tools]
+        if ([name for name, _ in ordered_inputs] != expected
+                or [name for name, _ in ordered_results] != expected):
+            return self._out(ERROR, 0.0, "journey call inputs/results do not align")
+        successful: dict[str, list[tuple[int, dict[str, Any], dict[str, Any]]]] = {
+            tool: [] for tool in tools
+        }
+        # Both extractors retain every tool span in start order, including missing evidence.
+        for index, ((name, raw_input), (_, raw_result)) in enumerate(
+            zip(ordered_inputs, ordered_results, strict=True)
+        ):
             try:
-                value = json.loads(calls[index])
-            except (IndexError, TypeError, ValueError):
-                return None
-            return value if isinstance(value, dict) else None
+                args = json.loads(raw_input)
+            except (ValueError, TypeError):
+                args = None
+            if not isinstance(args, dict):
+                return self._out(ERROR, 0.0, f"{name} input unavailable")
+            result = None
+            for fragment in _texts_in(raw_result):
+                try:
+                    value = json.loads(fragment)
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(value, dict) and isinstance(value.get("status"), str):
+                    result = value
+                    break
+            if result is None or not result["status"]:
+                return self._out(ERROR, 0.0, f"{name} result unavailable")
+            if result["status"] == "ok":
+                successful[name].append((index, args, result))
 
-        for _, browse in successful("computer_browse"):
+        for browse_index, _, browse in successful["computer_browse"]:
             handle, target = browse.get("task"), browse.get("tab")
             if not handle or not target:
                 continue
-            for index, capture in successful("computer_capture"):
-                args = arguments("computer_capture", index)
-                if args is None:
-                    return self._out(ERROR, 0.0, "capture input unavailable")
+            for capture_index, args, capture in successful["computer_capture"]:
+                if capture_index <= browse_index:
+                    continue
                 digest = capture.get("sha256")
                 if (args.get("task") != handle or capture.get("tab") != target
                         or not capture.get("path") or not isinstance(digest, str)
                         or len(digest) != 64
                         or any(c not in "0123456789abcdef" for c in digest)):
                     continue
-                for export_index, exported in successful("computer_export"):
-                    args = arguments("computer_export", export_index)
-                    if args is None:
-                        return self._out(ERROR, 0.0, "export input unavailable")
+                for export_index, args, exported in successful["computer_export"]:
+                    if export_index <= capture_index:
+                        continue
                     if (args.get("path") != capture["path"]
                             or exported.get("sha256") != digest):
                         continue
