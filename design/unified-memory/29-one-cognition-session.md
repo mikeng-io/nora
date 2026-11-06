@@ -224,7 +224,7 @@ sample, is clearly worse on reading or relation precision than the separate
 step 1 was. Then a separate memory step returns, with that measurement behind
 it.
 
-## Amendment 2026-11-08: the proposal contract, statement-shaped
+## Amendment 2026-11-06: the proposal contract, statement-shaped
 
 Amends §2's `memory_propose` row without touching the session shape. The model
 emits a `statements` list (relation / correction / reading), an `items` list

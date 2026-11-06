@@ -998,7 +998,7 @@ This order holds unless a same-head reproduction or an actual assembled/deployed
 input overturns a finding. Passing structural tests, a shadow receipt or a tool-call
 name alone cannot close the semantic requirement.
 
-## Amendment 2026-11-08: statement-shaped `memory_propose`
+## Amendment 2026-11-06: statement-shaped `memory_propose`
 
 Operator-approved simplification of the §7 step-1 write contract (audit
 items 1–5); the stores, layers, vocabulary and admission of this node stand.

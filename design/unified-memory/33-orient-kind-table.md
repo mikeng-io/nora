@@ -146,7 +146,7 @@ read rates over the whole replay set.
 - Readings written only where no relation fits make retrieval measurably
   worse in replies: then the `reading` row narrows.
 
-## Amendment 2026-11-08
+## Amendment 2026-11-06
 
 §4.3's part-wise keep is extended to the statement contract: `memory_propose`
 carries self-contained statements (relation, correction, reading) with
