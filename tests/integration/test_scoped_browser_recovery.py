@@ -36,6 +36,13 @@ ROOT = Path(__file__).resolve().parents[2]
 TOKEN = "generated"  # noqa: S105 - synthetic local guest credential
 
 
+def _body_text(b):
+    """`Composed` carries `.text` under the merged tree; the
+    older runtime returns `str` — either shape reads the same
+    canonical body text."""
+    return b.text if hasattr(b, "text") else b
+
+
 def guest():
     spec = importlib.util.spec_from_file_location(
         "r4_computerd", ROOT / "deploy/computer/computerd.py"
@@ -190,7 +197,7 @@ async def test_context_joins_browser_handle_to_execution_segment(monkeypatch):
         and view.tabs[0].last_op == "computer_browse"
         and view.tabs[0].last_result == "done"
     )
-    assert "browse" in render_computer(view).body
+    assert "browse" in _body_text(render_computer(view).body)
     handle = __import__("uuid").UUID(reply["task"])
     for tool in ("computer_browse", "computer_capture"):
         next_segment = await admission.submit(

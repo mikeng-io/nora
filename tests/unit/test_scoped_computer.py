@@ -71,6 +71,13 @@ OTHER = "f6e5d4c3b2a19876"
 UNIT_SCOPE = computer_unit_scope("unit-x")
 
 
+def _body_text(b):
+    """`Composed` carries `.text` under the merged tree; the
+    older runtime returns `str` — either shape reads the same
+    canonical body text."""
+    return b.text if hasattr(b, "text") else b
+
+
 def clock(t: datetime = NOW):
     return lambda: t
 
@@ -450,7 +457,7 @@ async def test_idle_expiry_sweeps_and_context_reports_it(monkeypatch) -> None:
     view = await reader.read(platform="signal", conversation_id="room-a")
     assert view is not None and view.tabs
     block = render_computer(view)
-    assert block is not None and "expired" in block.body
+    assert block is not None and "expired" in _body_text(block.body)
 
 
 async def test_capture_writes_the_workspace_with_provenance(monkeypatch) -> None:
@@ -692,7 +699,7 @@ async def test_context_renders_full_opaque_handles(monkeypatch) -> None:
     assert view is not None and view.tasks
     assert view.tasks[0].task_id == str(row.id)  # the full UUID handle
     block = render_computer(view)
-    assert block is not None and str(row.id) in block.body
+    assert block is not None and str(row.id) in _body_text(block.body)
 
 
 async def store_row(tasks: FakeComputerTaskStore, row: ComputerTask) -> None:
@@ -1018,7 +1025,7 @@ async def test_context_stamps_instance_revision_and_the_reads_own_time(
     assert first is not None and first.instance == "boot-1"
     assert first.revision == 1 and first.state_at == NOW
     body = render_computer(first)
-    assert body is not None and "boot-1" in body.body
+    assert body is not None and "boot-1" in _body_text(body.body)
     # A cached read (the monotonic clock stays inside the cache window): the
     # block stamps the ORIGINAL read's time and a new revision.
     tick[0] = NOW + timedelta(minutes=2)
@@ -1026,7 +1033,7 @@ async def test_context_stamps_instance_revision_and_the_reads_own_time(
     second = await reader.read(platform="signal", conversation_id="room-a")
     assert second.revision == 2 and second.state_at == NOW  # the read's own
     body = render_computer(second)
-    assert body is not None and "2 min ago" in body.body
+    assert body is not None and "2 min ago" in _body_text(body.body)
 
 
 async def test_context_marks_a_dead_instances_tab_expired(monkeypatch) -> None:

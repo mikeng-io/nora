@@ -84,7 +84,8 @@ async def test_the_budget_counts_and_caps_the_real_dispatch_path():
     assert len(requests) == 1          # the refused call never left
 
 
-def test_the_override_file_is_schema_validated_before_composition():
+def test_the_override_file_is_schema_validated_before_composition(
+        example_config_path):
     """`validate_subject_overrides` accepts the scoped fixture's real
     fields and refuses a truthy string, an unknown path, a section, and
     a raw credential — all before any case composes."""
@@ -105,23 +106,21 @@ def test_the_override_file_is_schema_validated_before_composition():
     # validators against the base the overrides land on, not just
     # path/type existence.
     import math
-    from pathlib import Path
 
     from nora.config import load as load_config
-    example = Path(__file__).parents[2] / "config.example.toml"
-    base = load_config(example, require_secrets=False)
+    base = load_config(example_config_path, require_secrets=False)
     for bad in (-1.0, math.nan):
         with pytest.raises(ValueError):
             validate_subject_overrides(
                 {"computer.scoped.browser_sweep_seconds": bad},
-                base=base, context_dir=example.parent)
+                base=base, context_dir=example_config_path.parent)
     # A relational invariant: run_timeout_seconds must not exceed
     # max_run_timeout_seconds — individually-legal scalars that break
     # the model validator still refuse.
     with pytest.raises(ValueError):
         validate_subject_overrides(
             {"computer.run_timeout_seconds": 9_999_999},
-            base=base, context_dir=example.parent)
+            base=base, context_dir=example_config_path.parent)
 
 
 def test_a_non_private_evidence_dir_is_refused_before_dispatch(

@@ -47,6 +47,13 @@ SCOPE = computer_unit_scope(ROOM)
 AGE = re.compile(r"(\d+ (min|h|d)( \d+ min)? ago|just now)")
 
 
+def _body_text(b):
+    """`Composed` carries `.text` under the merged tree; the
+    older runtime returns `str` — either shape reads the same
+    canonical body text."""
+    return b.text if hasattr(b, "text") else b
+
+
 def _session(i: int, *, status="open", minutes_ago=0, objective=None) -> ComputerSession:
     at = NOW - timedelta(minutes=minutes_ago)
     return ComputerSession(
@@ -70,7 +77,7 @@ def _view(**fields) -> ComputerView:
 
 
 def _lines(block) -> list[str]:
-    return block.body.splitlines()
+    return _body_text(block.body).splitlines()
 
 
 # -- the gate ---------------------------------------------------------------
@@ -158,8 +165,8 @@ async def test_an_active_room_renders_recent_files_and_runs_with_ages():
         platform="signal", conversation_id=ROOM)
     block = render_computer(view)
     assert block is not None
-    assert "file projects/trip/prices.csv · 3 B · changed 12 min ago" in block.body
-    assert "ran `python fit.py` · exit 2 · 5 min ago" in block.body
+    assert "file projects/trip/prices.csv · 3 B · changed 12 min ago" in _body_text(block.body)
+    assert "ran `python fit.py` · exit 2 · 5 min ago" in _body_text(block.body)
 
 
 async def test_files_older_than_the_recent_window_are_left_out():
@@ -184,8 +191,8 @@ async def test_a_lapsed_task_shows_within_its_window_and_is_gone_after():
     view = await _reader(runtime, sessions, events).read(platform="signal", conversation_id=ROOM)
     block = render_computer(view)
     assert block is not None
-    assert "lapsed task, stopped 23 h ago (no activity; files kept)" in block.body
-    assert "book a table" in block.body
+    assert "lapsed task, stopped 23 h ago (no activity; files kept)" in _body_text(block.body)
+    assert "book a table" in _body_text(block.body)
     later = ComputerContextReader(
         unit_for=lambda platform, cid: cid, sessions=sessions, events=events, runtime=runtime,
                                   caps=ComputerContextCaps(), metrics=Metrics(),
@@ -203,7 +210,7 @@ async def test_a_machine_that_cannot_be_read_still_renders_the_database_half():
         platform="signal", conversation_id=ROOM)
     block = render_computer(view)
     assert block is not None
-    assert "open task" in block.body and "could not be read" in block.body
+    assert "open task" in _body_text(block.body) and "could not be read" in _body_text(block.body)
 
 
 # -- caps ------------------------------------------------------------------
@@ -221,7 +228,7 @@ def test_each_section_is_capped_with_a_line_saying_how_many_more():
         runs=tuple(RunLine(f"cmd {i}", 0, True, NOW - timedelta(minutes=i)) for i in range(9)),
         caps=ComputerContextCaps(max_tokens=100_000),
     )
-    body = render_computer(view).body
+    body = _body_text(render_computer(view).body)
     assert body.count("open task,") == 5 and "+2 more open tasks" in body
     assert body.count("lapsed task,") == 3 and "+2 more lapsed tasks" in body
     assert body.count('tmux "') == 5 and "+2 more tmux sessions" in body
@@ -270,7 +277,7 @@ def test_a_cjk_objective_cannot_slip_past_the_ceiling():
     view = _view(open_sessions=tuple(
         SessionLine(_session(i, minutes_ago=i, objective=long_cjk), "active", None)
         for i in range(3)), caps=ComputerContextCaps(max_tokens=200))
-    body = render_computer(view).body
+    body = _body_text(render_computer(view).body)
     enc = tiktoken.get_encoding("cl100k_base")
     assert len(enc.encode(body)) <= 200
 
@@ -337,8 +344,8 @@ async def test_a_slow_machine_does_not_delay_the_block_past_its_budget():
     assert time.monotonic() - started < 1.0
     block = render_computer(view)
     assert block is not None
-    assert "scrape prices" in block.body  # the database half still renders
-    assert "the computer itself could not be read" in block.body
+    assert "scrape prices" in _body_text(block.body)  # the database half still renders
+    assert "the computer itself could not be read" in _body_text(block.body)
     assert metrics.get("nora_computer_context_machine_unread_total", reason="timeout") == 1
 
 
@@ -349,7 +356,7 @@ async def test_an_unreadable_machine_shows_an_open_task_as_running_unknown_never
     runtime.down = True
     view = await _reader(runtime, sessions, FakeComputerEventStore()).read(
         platform="signal", conversation_id=ROOM)
-    body = render_computer(view).body
+    body = _body_text(render_computer(view).body)
     assert "open task, running unknown" in body and "idle" not in body
 
 
@@ -374,7 +381,7 @@ async def test_a_good_machine_read_is_kept_for_the_cache_window():
 
 def test_a_task_whose_jobs_ended_says_its_files_were_kept():
     view = _view(lapsed_sessions=(SessionLine(_lapsed_jobs_ended(), "lapsed", None),))
-    assert "its tmux jobs ended; files kept" in render_computer(view).body
+    assert "its tmux jobs ended; files kept" in _body_text(render_computer(view).body)
 
 
 def _lapsed_jobs_ended() -> ComputerSession:
@@ -393,7 +400,7 @@ def test_the_ceiling_counts_the_escaped_text():
     view = _view(runs=(RunLine(amp, 0, True, NOW),),
                  files=(StateFile("f.txt", 1, NOW - timedelta(minutes=1)),),
                  caps=ComputerContextCaps(max_tokens=150))
-    body = render_computer(view).body
+    body = _body_text(render_computer(view).body)
     assert estimate_tokens(body) <= 150
 
 
@@ -431,7 +438,7 @@ async def test_a_link_the_room_made_shows_with_the_artifact_id_that_revises_it()
         await events.append(row)
     view = await _reader(FakeSandboxRuntime(clock=lambda: NOW), FakeComputerSessionStore(),
                          events).read(platform="signal", conversation_id=ROOM)
-    body = render_computer(view).body
+    body = _body_text(render_computer(view).body)
     assert ('link "Trip report" · artifact_id art_1 · https://portal.example.net/artifacts/art_1 · '
             "from out/r.html · revised 10 min ago") in body
     assert body.count("artifact_id art_1") == 1
@@ -446,7 +453,7 @@ def test_links_are_capped_with_a_line_saying_how_many_more():
                              False, NOW - timedelta(minutes=i)) for i in range(5)),
         caps=ComputerContextCaps(max_tokens=100_000),
     )
-    body = render_computer(view).body
+    body = _body_text(render_computer(view).body)
     assert body.count("link \"page") == 3 and "+2 more links" in body
 
 
@@ -463,7 +470,7 @@ async def test_a_nohup_job_shows_as_running_and_keeps_its_task_active():
     await _open_session(sessions)  # last active 3 h ago: idle without a job
     view = await _reader(runtime, sessions, FakeComputerEventStore()).read(
         platform="signal", conversation_id=ROOM)
-    body = render_computer(view).body
+    body = _body_text(render_computer(view).body)
     assert "process 159 `python tick.py --every 60` · running · started 17 min ago" in body
     assert "open task, active," in body
 
@@ -473,7 +480,7 @@ def test_a_command_is_escaped_exactly_once():
     escapes each line (`render_bullets`), nothing escapes it before."""
     view = _view(runs=(RunLine("python a.py > out.txt && echo ok", 0, True, NOW),),
                  caps=ComputerContextCaps(max_tokens=100_000))
-    body = render_computer(view).body
+    body = _body_text(render_computer(view).body)
     assert "python a.py &gt; out.txt &amp;&amp; echo ok" in body
     assert "&amp;gt;" not in body and "&amp;amp;" not in body
 
@@ -511,4 +518,4 @@ async def test_a_maintenance_row_never_renders_beside_real_work():
     assert view is not None and view.tasks is not None
     assert [t.kind for t in view.tasks] == ["native"]
     block = render_computer(view)
-    assert block is not None and "maintenance" not in block.body
+    assert block is not None and "maintenance" not in _body_text(block.body)
