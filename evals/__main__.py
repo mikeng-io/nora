@@ -756,16 +756,19 @@ def _main(*, lock_fd: int = -1) -> int:
     # a bad file refuses the run with nothing spent, and its exact content is
     # what `run_started` carries.
     subject_overrides: dict[str, Any] | None = None
+    overrides_sha: str | None = None
     if args.subject_overrides is not None:
         try:
-            raw = args.subject_overrides.read_bytes()
+            raw = args.subject_overrides.read_bytes()          # read ONCE
+            overrides_sha = hashlib.sha256(raw).hexdigest()    # hash THOSE bytes
             parsed = json.loads(raw.decode())
             if not isinstance(parsed, dict) or not all(
                     isinstance(k, str) and k and not k.startswith(".")
                     for k in parsed):
                 raise ValueError("--subject-overrides must be a JSON object of dotted keys")
             subject_overrides = parsed
-        except (OSError, ValueError) as exc:
+            _validate_subject_overrides(subject_overrides)
+        except (OSError, ValueError, TypeError) as exc:
             print(f"refusing to run: {exc}", file=sys.stderr)
             return 2
     # The hard dispatch bound: installed before the first case composes, so
@@ -797,8 +800,7 @@ def _main(*, lock_fd: int = -1) -> int:
             "deployment_config_sha256": fingerprint(Path(args.deployment_config)),
             "lock_path": str(EVAL_HOST_LOCK), "lock_acquired": True,
             **({"subject_overrides_file": str(args.subject_overrides),
-                "subject_overrides_sha256": hashlib.sha256(
-                    args.subject_overrides.read_bytes()).hexdigest(),
+                "subject_overrides_sha256": overrides_sha,
                 "subject_overrides": subject_overrides}
                if subject_overrides is not None else {}),
             **({"run_budget": budget.as_metadata()} if budget is not None else {}),
@@ -811,13 +813,59 @@ def _main(*, lock_fd: int = -1) -> int:
     try:
         with evidence.capture(trace.get_tracer_provider()):
             rc = _execute(args, names, only, subject_overrides=subject_overrides)
-            evidence.exit_code = rc
             if budget is not None:
                 evidence.record("run_budget_final", **budget.as_metadata())
+                # A spent/invalid budget can never read as success — the
+                # terminal check turns a last-call overrun into rc 1, never 0.
+                if budget.spent is not None:
+                    evidence.record("run_budget_spent", reason=budget.spent)
+                    rc = 1
+            evidence.exit_code = rc
             return rc
     finally:
         if token is not None:
             active_run_budget.reset(token)
+
+
+def _validate_subject_overrides(overrides: dict[str, Any]) -> None:
+    """Every override's dotted path must resolve to a real `Config` field
+    AND its value must be the field's type strictly — no truthy strings,
+    no unknown branches, no scalar model_copy bypass. Credentials stay
+    named env references, never raw values."""
+    from nora.config import Config
+    for path, value in overrides.items():
+        node: Any = Config
+        for part in path.split("."):
+            field_info = (node.model_fields.get(part)
+                          if hasattr(node, "model_fields") else None)
+            if field_info is None:
+                raise ValueError(
+                    f"--subject-overrides: {path!r} names no config field")
+            node = field_info.annotation
+        if isinstance(node, type) and hasattr(node, "model_fields"):
+            raise ValueError(
+                f"--subject-overrides: {path!r} is a section, not a leaf")
+        expected = node
+        if expected is bool and type(value) is not bool:
+            raise ValueError(
+                f"--subject-overrides: {path!r} wants a real bool, "
+                f"not {type(value).__name__} {value!r}")
+        if expected is not None and isinstance(expected, type) \
+                and issubclass(expected, (int, float)) \
+                and not isinstance(value, expected):
+            raise ValueError(
+                f"--subject-overrides: {path!r} wants {expected.__name__}, "
+                f"not {type(value).__name__} {value!r}")
+        if expected is str and not isinstance(value, str):
+            raise ValueError(
+                f"--subject-overrides: {path!r} wants str, "
+                f"not {type(value).__name__} {value!r}")
+        if isinstance(value, str) and ("_key" in path or "secret" in path
+                                       or "token" in path) \
+                and not path.endswith("_env"):
+            raise ValueError(
+                f"--subject-overrides: {path!r} looks like a raw credential; "
+                "name the env var instead")
 
 
 def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | None,

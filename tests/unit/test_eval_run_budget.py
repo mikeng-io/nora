@@ -52,9 +52,10 @@ async def test_gated_create_reserves_before_dispatch_and_reconciles():
     assert budget.output_tokens == 40
 
 
-async def test_input_token_cross_blocks_the_next_reserve():
-    """Reconcile crossing the input cap marks the budget spent; the NEXT
-    reserve refuses — the call that crossed is reported, not hidden."""
+async def test_input_crossing_is_terminal_not_post_spend():
+    """A request that reconciles over the input cap marks the budget
+    spent; the NEXT reserve refuses — and the terminal check makes the
+    run ERROR, never a successful final call."""
     budget = RunBudget(max_requests=10, max_input_tokens=60,
                        max_output_tokens=10_000, output_reserve=10)
     calls = []
@@ -63,10 +64,59 @@ async def test_input_token_cross_blocks_the_next_reserve():
         calls.append(kwargs)
         return SimpleNamespace(usage=_usage(prompt=70, completion=1))
 
-    await gated_create(budget, create)          # lands 70 > 60: spent
     with pytest.raises(RunBudgetError, match="input tokens"):
+        await gated_create(budget, create)      # reconcile itself fails
+    with pytest.raises(RunBudgetError):
         await gated_create(budget, create)
+    with pytest.raises(RunBudgetError):
+        budget.finished()
     assert len(calls) == 1
+
+
+async def test_input_size_reserve_is_a_pre_dispatch_bound():
+    """The serialized request's byte size is the pre-dispatch input bound:
+    a request larger than the cap is refused before the call fires."""
+    budget = RunBudget(max_requests=10, max_input_tokens=50,
+                       max_output_tokens=10_000, output_reserve=10)
+    calls = []
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(usage=_usage())
+    big = "x" * 200
+    with pytest.raises(RunBudgetError, match="input size"):
+        await gated_create(budget, create, messages=[{"content": big}])
+    assert calls == []
+
+
+async def test_a_stream_reconciles_from_its_terminal_usage():
+    """Streamed calls hold the reservation until the stream's usage chunk
+    lands; a stream ending without usage is spent, never a zero."""
+    budget = RunBudget(max_requests=5, max_input_tokens=10_000,
+                       max_output_tokens=10_000, output_reserve=100)
+
+    async def create(**kwargs):
+        async def chunks():
+            for i in range(2):
+                yield SimpleNamespace(usage=None, delta={"x": i})
+            yield SimpleNamespace(usage=_usage(prompt=40, completion=10))
+        return chunks()
+
+    stream = await gated_create(budget, create)
+    async for _ in stream:
+        pass
+    assert budget.input_tokens == 40 and budget.output_tokens == 10
+
+    async def no_usage(**kwargs):
+        async def chunks():
+            yield SimpleNamespace(usage=None)
+        return chunks()
+
+    stream = await gated_create(budget, no_usage)
+    with pytest.raises(RunBudgetError, match="without usage"):
+        async for _ in stream:
+            pass
+    with pytest.raises(RunBudgetError):
+        budget.finished()
 
 
 async def test_deadline_refuses_dispatch():
