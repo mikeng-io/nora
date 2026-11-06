@@ -23,8 +23,9 @@ from deploy.computer.computerd import Browser
 pytestmark = pytest.mark.skipif(sys.platform != "linux",
                                 reason="the wrapper needs /proc")
 
-# Unique argv markers so residue checks can never match another
-# session's processes.
+# Unique argv markers so the fixture's commands cannot collide with
+# another session's sleeps when a human inspects the host — they are
+# names, not a scan key: cleanup tracks only pids actually observed.
 HELPER_CMD, CHROME_CMD, NATIVE_CMD = "sleep 611", "sleep 613", "sleep 617"
 
 
@@ -76,31 +77,20 @@ def _reap_child(proc: subprocess.Popen) -> None:
             continue
 
 
-def _kill_orphans(pids) -> None:
-    """Orphaned fixture pids: SIGKILL, then require /proc absent — init
-    reaps them; an absent entry is the only honest proof of reaping."""
-    for pid in pids:
+def _kill_absent(pid: int, label: str) -> None:
+    """Bounded TERM then KILL, and REQUIRE /proc absent: a zombie or a
+    surviving entry is a failed cleanup — assert, never silently time
+    out. Init reaps an orphan; the test itself reaps direct children
+    via wait() before this is asked of them."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
         with contextlib.suppress(ProcessLookupError):
-            os.kill(pid, signal.SIGKILL)
-    for pid in pids:
+            os.kill(pid, sig)
         deadline = time.monotonic() + 3
         while not _gone(pid) and time.monotonic() < deadline:
             time.sleep(0.05)
-
-
-def _residue() -> list[int]:
-    """Any surviving process carrying a fixture argv marker."""
-    out = []
-    for entry in Path("/proc").iterdir():
-        if not entry.name.isdigit():
-            continue
-        try:
-            cmd = (entry / "cmdline").read_text()
-        except OSError:
-            continue
-        if any(c in cmd for c in (HELPER_CMD, CHROME_CMD, NATIVE_CMD)):
-            out.append(int(entry.name))
-    return out
+        if _gone(pid):
+            return
+    raise AssertionError(f"fixture {label} {pid} still holds a /proc entry")
 
 
 @pytest.mark.asyncio
@@ -174,15 +164,22 @@ async def test_the_flood_guard_kills_through_the_owner_not_the_group(
         if rfd is not None:
             with contextlib.suppress(OSError):
                 os.close(rfd)
-        # Every fixture process is reaped — direct children via wait(),
-        # orphans via KILL + /proc-absence (init reaps them). This holds
-        # on partial setup and under the old killpg mutant too.
-        if wrapper is not None and wrapper.returncode is None:
-            _reap_child(wrapper)
+        # Every OBSERVED fixture pid must end with no /proc entry —
+        # direct children reaped by wait() then asserted absent, the
+        # orphaned helper and any still-live descendants killed then
+        # asserted absent. A zombie anywhere is a failed cleanup.
+        owned = set()
+        if wrapper is not None:
+            owned |= _descendants(wrapper.pid)  # before the wrapper dies
         if helper_pid is not None:
-            _kill_orphans({helper_pid})
-        if native is not None and native.returncode is None:
-            _reap_child(native)
-        # Nothing carrying a fixture marker survives — zombies count.
-        _kill_orphans(set(_residue()))
-        assert not _residue()
+            owned.add(helper_pid)
+        if wrapper is not None:
+            if wrapper.returncode is None:
+                _reap_child(wrapper)
+            assert _gone(wrapper.pid), "wrapper was never reaped"
+        if native is not None:
+            if native.returncode is None:
+                _reap_child(native)
+            assert _gone(native.pid), "native control was never reaped"
+        for pid in owned:
+            _kill_absent(pid, "fixture")
