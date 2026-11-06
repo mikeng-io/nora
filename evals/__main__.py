@@ -834,6 +834,12 @@ def _validate_subject_overrides(overrides: dict[str, Any]) -> None:
     named env references, never raw values."""
     from nora.config import Config
     for path, value in overrides.items():
+        if isinstance(value, str) and ("_key" in path or "secret" in path
+                                       or "token" in path) \
+                and not path.endswith("_env"):
+            raise ValueError(
+                f"--subject-overrides: {path!r} looks like a raw credential; "
+                "name the env var instead")
         node: Any = Config
         for part in path.split("."):
             field_info = (node.model_fields.get(part)
