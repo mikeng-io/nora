@@ -468,6 +468,11 @@ class _RunState:
     #: a `memory_search`/`memory_read` result emitted: the only targets a
     #: correction may name (the `shown_keys` rule, one axis over).
     shown_relations: set[str] = field(default_factory=set)
+    #: Person ids the session's emitted rows were authored by — the only
+    #: `@person:` handles a statement may name (the `shown_keys` rule, one
+    #: axis over). The agenda's rendered rows are read back at `propose`;
+    #: a read tool's handed-out rows add theirs in `on_rows`.
+    shown_persons: set[str] = field(default_factory=set)
     #: `object` handles this session was actually shown, to the room the
     #: grounder read them from — the only refs a note's `object_refs` may
     #: name (the `shown_keys` rule, one axis over).
@@ -1729,6 +1734,8 @@ class CognitionSessionRunner:
                 for r in rows:
                     if r.body is None:
                         continue
+                    if r.person_id:
+                        state.shown_persons.add(r.person_id)
                     state.graph_fetched.show(Source(
                         ("message", str(r.id)), "record", unit,
                         (r.person_id,) if r.person_id else (),

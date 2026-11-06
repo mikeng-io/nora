@@ -35,6 +35,13 @@
   "target": "tests/unit/test_cognition_source_rows.py::test_a_clipped_row_tail_is_not_citable"
  },
  {
+  "name": "a person handle is citable only for an emitted row's author",
+  "file": "nora/app/comprehend.py",
+  "old": "        shown_persons=frozenset(shown_persons) | frozenset(\n            str(r[\"person_id\"]) for item in inputs\n            for r in item.snapshot.get(\"messages\", ())\n            if r.get(\"person_id\")),",
+  "new": "        shown_persons=frozenset(\n            p for s in fetched.sources.values() for p in s.persons),",
+  "target": "tests/unit/test_cognition_source_rows.py::test_an_emitted_rows_author_is_handle_citable_without_source_scope"
+ },
+ {
   "name": "an unshown node or pointer handle is refused before flattening",
   "file": "nora/app/comprehend.py",
   "old": "        key = (kind, ref)\n        # Entity and record kinds name graph nodes the session must have\n        # shown; existing-in-store is not shown-to-this-session.\n        if key in scope.shown_keys:\n            return key, None, None\n        return None, None, (\"relation\", \"unshown\")",
