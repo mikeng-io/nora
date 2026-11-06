@@ -42,6 +42,7 @@ class FakeMemoryGraph(AdmissionState):
         evidence: tuple[Evidence, ...],
         sources: Mapping[Key, Source],
         corrections: tuple[Correction, ...] = (),
+        shown_persons: frozenset[str] = frozenset(),
     ) -> Admission:
         return await self._admit(
             entities=entities,
@@ -49,6 +50,7 @@ class FakeMemoryGraph(AdmissionState):
             evidence=evidence,
             sources=sources,
             corrections=corrections,
+            shown_persons=shown_persons,
         )
 
     async def walk(self, seeds: tuple[Key, ...], query: Walk) -> Subgraph:
