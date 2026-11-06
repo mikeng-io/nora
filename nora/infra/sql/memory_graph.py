@@ -406,6 +406,7 @@ class SqlMemoryGraph:
         evidence: tuple[Evidence, ...],
         sources: Mapping[Key, Source],
         corrections: tuple[Correction, ...] = (),
+        shown_persons: frozenset[str] = frozenset(),
     ) -> Admission:
         async with self.engine.begin() as conn:
             # ponytail: serialize admission globally; use per-unit advisory locks
@@ -442,6 +443,7 @@ class SqlMemoryGraph:
                 evidence=evidence,
                 sources=sources,
                 corrections=corrections,
+                shown_persons=shown_persons,
             )
             for e in admitted.entities:
                 await upsert_entity(conn, e)

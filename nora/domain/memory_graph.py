@@ -471,6 +471,7 @@ class MemoryGraph(Protocol):
         evidence: tuple[Evidence, ...],
         sources: Mapping[Key, Source],
         corrections: tuple[Correction, ...] = (),
+        shown_persons: frozenset[str] = frozenset(),
     ) -> Admission: ...
     async def topic_activity(self, *, unit: str, topic: Key, at: datetime) -> TopicActivity:
         """Unit-internal evidence counts of current interests, valid at the supplied clock."""

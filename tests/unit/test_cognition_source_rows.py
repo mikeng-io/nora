@@ -368,6 +368,35 @@ async def test_an_emitted_rows_author_is_handle_citable_without_source_scope(his
 
 
 @pytest.mark.asyncio
+async def test_a_shown_author_grounds_a_pointer_the_projection_has_not_written():
+    """No pointer exists for the emitted row's author — the projection has
+    not reached her, and the group room's Sources are scoped to no one.
+    Admission stages the unit's pointer from shown authorship alone: the
+    statement saves, the pointer is committed, and the relation's persons
+    stay the cited sources' empty union."""
+    from dataclasses import replace as _replace
+
+    state, prompt = await wake()
+    assert 'person="generated-a"' in prompt
+    assert "generated-unit:person:generated-a" not in state.memory.graph.entities
+    for source in list(state.graph_fetched.sources.values()):
+        state.graph_fetched.show(_replace(source, persons=()))
+    result = await state.memory.propose(
+        state, items=[0], nothing_here=[],
+        statements=[{
+            "type": "relation", "rel": "likes",
+            "subject": "@person:generated-a",
+            "object": {"new": {"kind": "work", "name": "Generated work"}},
+            "cite": [{"source": 101, "quote": "Image attached."}],
+        }])
+    assert result["statements"][0]["status"] == "saved", result
+    pointer = state.memory.graph.entities["generated-unit:person:generated-a"]
+    assert pointer.attributes == {"ref": "generated-a"}
+    relation = state.memory.graph.relations[result["committed"][0]]
+    assert relation.persons == ()
+
+
+@pytest.mark.asyncio
 async def test_a_clipped_rows_author_is_not_a_shown_person():
     """The budget clips row 101 and the media row: their author was never
     emitted as `person=`, so `@person:generated-a` refuses `unshown` even

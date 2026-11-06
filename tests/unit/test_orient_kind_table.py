@@ -303,23 +303,29 @@ async def test_a_write_as_the_model_writes_it_is_admitted(author, admitted):
 
 
 async def test_a_refused_relation_never_vouches_for_another_persons_end():
-    """A stages the author's pointer then fails; B cites someone else's message."""
+    """A stages the author's pointer then fails on its object; B names a person
+    the preview showed but no emitted row authored — someone else's cited row
+    cannot ground them, and neither pointer commits."""
     memory = wake_memory()
     state = _state(memory)
     memory.graph.entities.clear()
+    state.shown_keys.update(
+        {("person", "unit-1:person:other"), ("work", "shown-work")})
     other = Source(("message", "2"), "record", "unit-1", ("someone-else",), "Lantern Game rocks")
     state.graph_fetched.show(other)
     statements = [
         {"type": "relation", "rel": "likes", "subject": "@person:generated-person",
-         "object": "@work:never-proposed",
+         "object": "@work:shown-work",
          "cite": [{"source": 1, "quote": "I like Lantern Game"}]},
-        {**_payload()["statements"][0],
+        {"type": "relation", "rel": "likes", "subject": "@person:other",
+         "object": {"new": {"kind": "work", "name": "Lantern Game"}},
          "cite": [{"source": 2, "quote": "Lantern Game rocks"}]},
     ]
     result, _, _ = await memory.admission._admit(
         *_admit_args(state, {"statements": statements}))
     assert not result.relations
     assert "unit-1:person:generated-person" not in memory.graph.entities
+    assert "unit-1:person:other" not in memory.graph.entities
 
 
 @pytest.mark.parametrize("contract", [

@@ -493,6 +493,7 @@ class MemoryProposalAdmission:
             evidence=tuple(evidence),
             sources=fetched.sources,
             corrections=tuple(corrections),
+            shown_persons=scope.shown_persons,
         )
         duplicates = {r.id for r in admission.refused if r.reason == "duplicate_relation"}
         if duplicates:
