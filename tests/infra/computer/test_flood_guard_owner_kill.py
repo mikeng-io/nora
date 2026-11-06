@@ -23,42 +23,9 @@ from deploy.computer.computerd import Browser
 pytestmark = pytest.mark.skipif(sys.platform != "linux",
                                 reason="the wrapper needs /proc")
 
-
-def _detached_child_of(owner: int) -> int | None:
-    """A descendant of `owner` whose process group is NOT the owner's —
-    the setsid'd helper shape killpg cannot reach. Its immediate parent
-    is the exec'd 'chrome' child, so scan the owner's children too."""
-    kids = {owner}
-    found = None
-    for _ in range(2):  # owner -> chrome child -> detached helper
-        nxt = set()
-        for entry in Path("/proc").iterdir():
-            if not entry.name.isdigit():
-                continue
-            try:
-                # fields after `) ` start at state: [1]=ppid, [2]=pgrp
-                rest = (entry / "stat").read_text().rsplit(") ", 1)[1].split()
-                pid, ppid, pgrp = int(entry.name), int(rest[1]), int(rest[2])
-            except (OSError, IndexError, ValueError):
-                continue
-            if ppid in kids:
-                nxt.add(pid)
-                if pgrp != owner:
-                    found = pid
-        kids = nxt
-        if found is not None:
-            return found
-    return None
-
-
-def _children_of(pid: int) -> list[int]:
-    return [int(p) for p in Path(
-        f"/proc/{pid}/task/{pid}/children").read_text().split()]
-
-
-def _ppid_of(pid: int) -> int:
-    return int(
-        Path(f"/proc/{pid}/stat").read_text().rsplit(") ", 1)[1].split()[1])
+# Unique argv markers so residue checks can never match another
+# session's processes.
+HELPER_CMD, CHROME_CMD, NATIVE_CMD = "sleep 611", "sleep 613", "sleep 617"
 
 
 def _gone(pid: int) -> bool:
@@ -66,14 +33,74 @@ def _gone(pid: int) -> bool:
     return not os.path.exists(f"/proc/{pid}")
 
 
-def _kill_tree(pid: int) -> None:
-    """Bounded teardown for a known fixture pid: TERM, wait, then KILL."""
-    for sig, wait in ((signal.SIGTERM, 0.5), (signal.SIGKILL, 0.5)):
+def _descendants(root: int) -> set[int]:
+    """Every live pid in `root`'s tree (breadth-first over /proc)."""
+    tree, frontier = set(), {root}
+    while frontier:
+        nxt = set()
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                rest = (entry / "stat").read_text().rsplit(") ", 1)[1].split()
+                pid, ppid = int(entry.name), int(rest[1])
+            except (OSError, IndexError, ValueError):
+                continue
+            if ppid in frontier and pid not in tree:
+                nxt.add(pid)
+        tree |= nxt
+        frontier = nxt
+    return tree - {root}
+
+
+def _detached_in(root: int, owner_pgid: int) -> int | None:
+    """A descendant of `root` in a different process group — the shape
+    killpg cannot reach."""
+    for pid in _descendants(root):
+        with contextlib.suppress(OSError):
+            if os.getpgid(pid) != owner_pgid:
+                return pid
+    return None
+
+
+def _reap_child(proc: subprocess.Popen) -> None:
+    """Bounded TERM + wait, then KILL + wait — a direct child we spawned
+    is never left as our zombie."""
+    for act in (proc.terminate, proc.kill):
         with contextlib.suppress(ProcessLookupError):
-            os.kill(pid, sig)
-        deadline = time.monotonic() + wait
+            act()
+        try:
+            proc.wait(timeout=3)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def _kill_orphans(pids) -> None:
+    """Orphaned fixture pids: SIGKILL, then require /proc absent — init
+    reaps them; an absent entry is the only honest proof of reaping."""
+    for pid in pids:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
+    for pid in pids:
+        deadline = time.monotonic() + 3
         while not _gone(pid) and time.monotonic() < deadline:
             time.sleep(0.05)
+
+
+def _residue() -> list[int]:
+    """Any surviving process carrying a fixture argv marker."""
+    out = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            cmd = (entry / "cmdline").read_text()
+        except OSError:
+            continue
+        if any(c in cmd for c in (HELPER_CMD, CHROME_CMD, NATIVE_CMD)):
+            out.append(int(entry.name))
+    return out
 
 
 @pytest.mark.asyncio
@@ -81,39 +108,38 @@ async def test_the_flood_guard_kills_through_the_owner_not_the_group(
         tmp_path, monkeypatch):
     """The detached helper dies with the browser it detached FROM — never
     abandoned to init — and an unrelated native job is never in the kill."""
-    fixture = tmp_path / "wrap.py"
-    fixture.write_text(
-        "import os,sys\n"
-        "sys.path.insert(0, os.environ['REPO'])\n"
-        "r,w = os.pipe(); os.dup2(r,3); os.dup2(w,4)\n"
-        "from deploy.computer.computerd import run_browser_child\n"
-        "child = 'setsid sleep 600 & exec sleep 300'\n"
-        "raise SystemExit(run_browser_child(['bash', '-c', child]))\n")
-    env = dict(os.environ, REPO=os.getcwd())
-    # start_new_session mirrors production's spawn: the wrapper leads its
-    # OWN process group, so killpg(pid) actually reaches it — the property
-    # the killpg mutation must violate for a REAL red, not a suppressed
-    # ESRCH.
-    wrapper = subprocess.Popen(  # noqa: ASYNC220,S603 - fixture wrapper
-        [sys.executable, str(fixture)], env=env, start_new_session=True)
-    native = subprocess.Popen(  # noqa: ASYNC220 - a fixture process
-        ["setsid", "sleep", "600"], start_new_session=False)
-    helper_pid = None
-    rfd = wfd = None
+    wrapper = native = None
+    helper_pid = rfd = wfd = None
     try:
-        # The helper execs AFTER the setsid fork — it reparents to the
-        # wrapper (subreaper) in its own process group.
+        fixture = tmp_path / "wrap.py"
+        fixture.write_text(
+            "import os,sys\n"
+            "sys.path.insert(0, os.environ['REPO'])\n"
+            "r,w = os.pipe(); os.dup2(r,3); os.dup2(w,4)\n"
+            "from deploy.computer.computerd import run_browser_child\n"
+            f"child = 'setsid {HELPER_CMD} & exec {CHROME_CMD}'\n"
+            "raise SystemExit(run_browser_child(['bash', '-c', child]))\n")
+        env = dict(os.environ, REPO=os.getcwd())
+        # start_new_session mirrors production's spawn: the wrapper leads
+        # its OWN process group, so killpg(pid) actually reaches it — the
+        # property the killpg mutation must violate for a REAL red, not a
+        # suppressed ESRCH.
+        wrapper = subprocess.Popen(  # noqa: ASYNC220,S603 - fixture wrapper
+            [sys.executable, str(fixture)], env=env, start_new_session=True)
+        native = subprocess.Popen(  # noqa: ASYNC220,S603 - fixture proc
+            ["setsid", *NATIVE_CMD.split()])
+
+        # The helper execs after the setsid fork — a descendant of the
+        # wrapper's tree in a DIFFERENT process group: the exact shape
+        # killpg cannot reach.
         deadline = time.monotonic() + 10
         while helper_pid is None and time.monotonic() < deadline:
-            helper_pid = _detached_child_of(wrapper.pid)
+            helper_pid = _detached_in(wrapper.pid, wrapper.pid)
             await asyncio.sleep(0.1)
         assert helper_pid is not None, "fixture helper never appeared"
-        # The helper exists, is a descendant of the wrapper's tree, and is
-        # in a DIFFERENT process group — the exact shape killpg cannot see.
         assert not _gone(helper_pid)
-        assert os.getpgid(helper_pid) != os.getpgid(wrapper.pid)
-        assert _ppid_of(helper_pid) in {
-            wrapper.pid, *_children_of(wrapper.pid)}
+        assert os.getpgid(helper_pid) != wrapper.pid
+        assert os.getpgid(native.pid) != wrapper.pid
 
         browser = object.__new__(Browser)
         browser.chrome = types.SimpleNamespace(
@@ -129,9 +155,6 @@ async def test_the_flood_guard_kills_through_the_owner_not_the_group(
         # The REAL flood branch: buffer crosses the cap, the guard fires.
         await asyncio.wait_for(Browser._read(browser, rfd), timeout=10)
 
-        # The wrapper exits on its own SIGTERM handling — wait on it
-        # directly, then the helper's /proc entry must be ABSENT (a zombie
-        # is a failed reap, not a clean kill).
         # The wrapper exits on its SIGTERM handler — REAP it directly; a
         # child we never wait() stays a zombie under this test process.
         await asyncio.wait_for(
@@ -151,10 +174,15 @@ async def test_the_flood_guard_kills_through_the_owner_not_the_group(
         if rfd is not None:
             with contextlib.suppress(OSError):
                 os.close(rfd)
-        _kill_tree(wrapper.pid)
+        # Every fixture process is reaped — direct children via wait(),
+        # orphans via KILL + /proc-absence (init reaps them). This holds
+        # on partial setup and under the old killpg mutant too.
+        if wrapper is not None and wrapper.returncode is None:
+            _reap_child(wrapper)
         if helper_pid is not None:
-            _kill_tree(helper_pid)
-        with contextlib.suppress(ProcessLookupError):
-            native.terminate()
-        with contextlib.suppress(Exception):
-            native.wait(timeout=2)
+            _kill_orphans({helper_pid})
+        if native is not None and native.returncode is None:
+            _reap_child(native)
+        # Nothing carrying a fixture marker survives — zombies count.
+        _kill_orphans(set(_residue()))
+        assert not _residue()
