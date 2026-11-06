@@ -68,14 +68,16 @@ def _check_body_shape(body: dict[str, Any]) -> None:
             "cover image/audio/other input shapes")
 
 
-def _declared_ceiling(body: dict[str, Any]) -> int:
-    """The request's own output bound read from the FINAL body — after
-    `extra_body` merges, an override cannot enlarge the ceiling."""
-    for key in ("max_tokens", "max_completion_tokens"):
-        value = body.get(key)
-        if type(value) is int and value > 0:
-            return value
-    return 0
+def _declared_ceiling(body: dict[str, Any]) -> int | None:
+    """The request's own output bound read from the FINAL body, after
+    `extra_body` merges. Both `max_tokens` and `max_completion_tokens`
+    may be set; the enforced ceiling is the SMALLER — never a value the
+    provider might exceed. `None` means the body declares no valid
+    ceiling at all: an unbounded output is unsupported, so the call
+    refuses before dispatch rather than pretend a reservation."""
+    ceilings = [v for k in ("max_tokens", "max_completion_tokens")
+                if type((v := body.get(k))) is int and v > 0]
+    return min(ceilings) if ceilings else None
 
 
 class _BoundedStream:
@@ -91,6 +93,7 @@ class _BoundedStream:
         budget = self._budget
         usage: tuple[int, int] | None = None
         saw_done = False
+        pending = b""
         if hasattr(self._inner, "__aiter__"):
             it = self._inner.__aiter__()
         else:
@@ -112,21 +115,32 @@ class _BoundedStream:
                     else:
                         chunk = await it.__anext__()
                 except StopAsyncIteration:
+                    if pending.strip():
+                        for line in pending.splitlines():
+                            if line.startswith(b"data:"):
+                                line = line[len(b"data:"):].strip()
+                                if line == b"[DONE]":
+                                    saw_done = True
                     break
-                for line in chunk.split(b"data: ")[1:]:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    if line == b"[DONE]":
-                        saw_done = True
-                        continue
-                    try:
-                        parsed = json.loads(line)
-                    except ValueError:
-                        continue
-                    found = _usage_counts(parsed.get("usage"))
-                    if found is not None:
-                        usage = found
+                pending += chunk
+                while b"\n\n" in pending:
+                    event, pending = pending.split(b"\n\n", 1)
+                    for line in event.splitlines():
+                        if not line.startswith(b"data:"):
+                            continue
+                        line = line[len(b"data:"):].strip()
+                        if not line:
+                            continue
+                        if line == b"[DONE]":
+                            saw_done = True
+                            continue
+                        try:
+                            parsed = json.loads(line)
+                        except ValueError:
+                            continue
+                        found = _usage_counts(parsed.get("usage"))
+                        if found is not None:
+                            usage = found
                 if saw_done:
                     # The consumer may never ask for another chunk once it
                     # sees [DONE] in these bytes — reconcile and release
@@ -206,9 +220,17 @@ class _BoundedTransport(httpx.AsyncBaseTransport):
                 "run budget: non-JSON request body — unsupported shape"
             ) from exc
         _check_body_shape(body)
+        ceiling = _declared_ceiling(body)
+        if ceiling is None:
+            budget.invalidate(
+                "run budget: request declares no valid output ceiling")
+            raise budget._fail(
+                "run budget: request declares no valid output ceiling — "
+                "max_tokens/max_completion_tokens must be a positive "
+                "integer on the final wire body")
         reservation = budget.admit(
             input_bytes=len(raw),
-            declared_output_tokens=_declared_ceiling(body))
+            declared_output_tokens=ceiling)
         left = budget.remaining()
         try:
             if left is not None:
@@ -262,7 +284,13 @@ class _BoundedTransport(httpx.AsyncBaseTransport):
                 raise RunBudgetError(
                     "run budget: unwrappable stream response") from exc
         try:
-            raw_body = await response.aread()
+            left = budget.remaining()
+            if left is not None and left <= 0:
+                raise budget._fail("run budget: deadline during response")
+            if left is not None:
+                raw_body = await asyncio.wait_for(response.aread(), left)
+            else:
+                raw_body = await response.aread()
             try:
                 parsed = json.loads(raw_body)
             except ValueError:
@@ -274,6 +302,9 @@ class _BoundedTransport(httpx.AsyncBaseTransport):
                     "run budget: response carried no usage")
             budget.reconcile(input_tokens=usage[0], output_tokens=usage[1])
         except RunBudgetError:
+            raise
+        except (TimeoutError, asyncio.CancelledError):
+            budget.invalidate("run budget: response body timed out")
             raise
         except Exception as exc:
             budget.invalidate(

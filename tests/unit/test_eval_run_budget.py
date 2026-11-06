@@ -75,14 +75,14 @@ async def test_admitted_call_counts_and_reconciles():
     try:
         async with _client(requests) as client:
             await client.chat.completions.create(
-                model="m", messages=[{"role": "user", "content": "hi"}])
+                model="m", max_tokens=200, messages=[{"role": "user", "content": "hi"}])
             assert budget.requests == 1
             assert budget.input_tokens == 11
             assert budget.output_tokens == 4
             assert budget._reserved_out == 0   # released, exactly once
             with pytest.raises(RunBudgetError):
                 await client.chat.completions.create(
-                    model="m",
+                    model="m", max_tokens=200,
                     messages=[{"role": "user", "content": "again"}])
     finally:
         active_run_budget.reset(token)
@@ -100,7 +100,7 @@ async def test_extra_body_cannot_enlarge_the_ceiling():
         async with _client(requests) as client:
             with pytest.raises(openai.APIConnectionError):
                 await client.chat.completions.create(
-                    model="m", messages=[{"role": "user", "content": "hi"}],
+                    model="m", max_tokens=200, messages=[{"role": "user", "content": "hi"}],
                     extra_body={"max_tokens": 50_000})
         assert budget.spent is not None and budget.requests == 0
     finally:
@@ -126,7 +126,7 @@ async def test_schema_expansion_counts_the_final_wire_bytes():
         async with _client(requests) as client:
             with pytest.raises(openai.APIConnectionError):
                 await client.beta.chat.completions.parse(
-                    model="m",
+                    model="m", max_tokens=200,
                     messages=[{"role": "user", "content": "hi"}],
                     response_format=Big)
         assert budget.requests == 0      # the expanded body never left
@@ -148,7 +148,7 @@ async def test_negative_usage_is_terminal_never_credit():
                 "total_tokens": -80}) as client:
             with pytest.raises(openai.APIConnectionError):
                 await client.chat.completions.create(
-                    model="m",
+                    model="m", max_tokens=200,
                     messages=[{"role": "user", "content": "hi"}])
         assert budget.spent is not None
         assert budget.output_tokens >= 0     # never credited negative
@@ -174,7 +174,7 @@ async def test_streams_release_the_reservation_exactly_once():
         async with _client(requests, chunks=chunks) as client:
             for _ in range(10):
                 stream = await client.chat.completions.create(
-                    model="m", stream=True,
+                    model="m", max_tokens=200, stream=True,
                     stream_options={"include_usage": True},
                     messages=[{"role": "user", "content": "hi"}])
                 async for _ in stream:
@@ -195,7 +195,7 @@ async def test_a_stream_without_usage_is_spent():
     try:
         async with _client(requests, chunks=chunks) as client:
             stream = await client.chat.completions.create(
-                model="m", stream=True,
+                model="m", max_tokens=200, stream=True,
                 stream_options={"include_usage": True},
                 messages=[{"role": "user", "content": "hi"}])
             with pytest.raises(RunBudgetError):
@@ -204,7 +204,7 @@ async def test_a_stream_without_usage_is_spent():
             assert budget.spent is not None
             with pytest.raises(RunBudgetError):   # gated_create: spent
                 await client.chat.completions.create(
-                    model="m",
+                    model="m", max_tokens=200,
                     messages=[{"role": "user", "content": "hi"}])
     finally:
         active_run_budget.reset(token)
@@ -221,7 +221,7 @@ async def test_deadline_refuses_dispatch():
         async with _client(requests) as client:
             with pytest.raises(RunBudgetError):
                 await client.chat.completions.create(
-                    model="m",
+                    model="m", max_tokens=200,
                     messages=[{"role": "user", "content": "hi"}])
     finally:
         active_run_budget.reset(token)
@@ -248,7 +248,7 @@ async def test_sdk_owned_provider_dispatches_through_the_budget():
         async with model._get_client() as client:   # the SDK-owned AsyncOpenAI
             with pytest.raises(openai.APIConnectionError):
                 await client.chat.completions.create(
-                    model="m",
+                    model="m", max_tokens=200,
                     messages=[{"role": "user", "content": "hi"}])
         assert spent.requests == 0 and requests == []
     finally:
@@ -288,12 +288,103 @@ async def test_a_strict_input_token_bound_refuses_before_any_http():
             http_client=httpx.AsyncClient(transport=transport))
         with pytest.raises(RunBudgetError, match="unsupported"):
             await client.chat.completions.create(
-                model="m",
+                model="m", max_tokens=200,
                 messages=[{"role": "user", "content": "hi"}])
         assert requests == []                # zero transport attempts
         assert budget.requests == 0
         assert budget.spent is not None and "unsupported" in budget.spent
         with pytest.raises(RunBudgetError):   # serializes as a failure
             budget.finished()
+    finally:
+        active_run_budget.reset(token)
+
+
+@pytest.mark.anyio
+async def test_a_request_without_an_output_ceiling_refuses_before_http():
+    """A final body with no positive max_tokens/max_completion_tokens
+    declares an unbounded output — the budget refuses it BEFORE the
+    inner transport rather than admit under a pretend reservation."""
+    requests: list[dict] = []
+    budget = RunBudget(max_requests=10, max_input_bytes=10**7,
+                       max_output_tokens=40_000, output_reserve=4_000)
+    token = active_run_budget.set(budget)
+    try:
+        transport = httpx.MockTransport(_respond(requests))
+        client = factory.create_client(
+            base_url="https://generated.invalid/v1", api_key="generated-key",
+            http_client=httpx.AsyncClient(transport=transport))
+        with pytest.raises(openai.APIConnectionError):
+            await client.chat.completions.create(
+                model="m",
+                messages=[{"role": "user", "content": "hi"}])
+        assert requests == []                    # zero transport attempts
+        assert budget.requests == 0
+        assert "ceiling" in (budget.spent or "")
+    finally:
+        active_run_budget.reset(token)
+
+
+@pytest.mark.anyio
+async def test_both_ceiling_fields_take_the_smaller_not_the_first():
+    """max_tokens=800 and max_completion_tokens=200 on the same body:
+    the enforced ceiling is 200 — never a value the provider could
+    exceed by honouring the other field."""
+    from nora.agent.run_budget_transport import _declared_ceiling
+    assert _declared_ceiling(
+        {"max_tokens": 800, "max_completion_tokens": 200}) == 200
+    assert _declared_ceiling(
+        {"max_tokens": 200, "max_completion_tokens": 800}) == 200
+    assert _declared_ceiling({}) is None
+    assert _declared_ceiling({"max_tokens": 0}) is None
+    assert _declared_ceiling({"max_tokens": "200"}) is None
+
+
+@pytest.mark.anyio
+async def test_a_fragmented_sse_stream_still_reconciles_at_done():
+    """Real SSE can split `data:` payloads mid-line across chunks — the
+    framed buffer must reassemble the terminal usage/[DONE] events so
+    a real stream finishes and releases instead of falsely reporting
+    missing usage."""
+    body = b"data: " + json.dumps({
+        "id": "g", "choices": [{"index": 0, "delta": {"content": "ok"},
+                                "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1,
+                  "total_tokens": 2}}).encode() + b"\n\ndata: [DONE]\n\n"
+    # fragment at every byte offset class: split the payload mid-`data:`
+
+    requests: list[dict] = []
+
+    async def respond(request):
+        requests.append(json.loads(request.content))
+        import httpx as _h
+        # a response whose stream yields ~7-byte fragments
+        class _Frag(_h.AsyncByteStream):
+            def __init__(self, data: bytes) -> None:
+                self._d = data
+            async def __aiter__(self):
+                i = 0
+                while i < len(self._d):
+                    yield self._d[i:i + 7]
+                    i += 7
+            async def aclose(self) -> None: ...
+        return _h.Response(200, headers={"content-type": "text/event-stream"},
+                           stream=_Frag(body))
+
+    budget = RunBudget(max_requests=10, max_input_bytes=10**7,
+                       max_output_tokens=40_000, output_reserve=4_000)
+    token = active_run_budget.set(budget)
+    try:
+        client = factory.create_client(
+            base_url="https://generated.invalid/v1", api_key="generated-key",
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+        stream = await client.chat.completions.create(
+            model="m", max_tokens=200, stream=True,
+            stream_options={"include_usage": True},
+            messages=[{"role": "user", "content": "hi"}])
+        async for _ in stream:
+            pass
+        assert budget.output_tokens == 1
+        assert budget._reserved_out == 0
+        assert budget.spent is None
     finally:
         active_run_budget.reset(token)

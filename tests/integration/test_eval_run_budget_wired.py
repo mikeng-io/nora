@@ -67,7 +67,7 @@ async def test_the_budget_counts_and_caps_the_real_dispatch_path():
                 base_url="https://generated.invalid/v1",
                 api_key="generated-key", http_client=transport)
             stream = await client.chat.completions.create(
-                model="generated-model", stream=True,
+                model="generated-model", max_tokens=200, stream=True,
                 stream_options={"include_usage": True},
                 messages=[{"role": "user", "content": "hi"}])
             async for _ in stream:
@@ -76,7 +76,7 @@ async def test_the_budget_counts_and_caps_the_real_dispatch_path():
             assert budget.input_tokens == 11 and budget.output_tokens == 4
             with pytest.raises(RunBudgetError):
                 await client.chat.completions.create(
-                    model="generated-model", stream=True,
+                    model="generated-model", max_tokens=200, stream=True,
                     stream_options={"include_usage": True},
                     messages=[{"role": "user", "content": "again"}])
     finally:
