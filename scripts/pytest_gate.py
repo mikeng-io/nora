@@ -186,6 +186,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workers", type=int, choices=range(MAX_WORKERS + 1), default=MAX_WORKERS)
+    parser.add_argument("--junit-dir", type=Path)
     parser.add_argument("targets", nargs="*")
     args = parser.parse_args(argv)
     generation = os.environ.pop(_GENERATION_ENV, None)
@@ -195,7 +196,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             commands = phases(args.targets, args.workers)
             before = pytest_cost.vm_snapshot()
             try:
-                for command in commands:
+                for phase, command in enumerate(commands):
+                    if args.junit_dir is not None:
+                        command.extend([
+                            "-o", "junit_family=xunit1",
+                            f"--junitxml={args.junit_dir / f'phase-{phase}.xml'}",
+                        ])
                     print("test phase:", " ".join(command[3:]), flush=True)
                     rc = _run(command, env)
                     if rc != 0 and not (rc == 5 and len(commands) > 1 and command is commands[0]):

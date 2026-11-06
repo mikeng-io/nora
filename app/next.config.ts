@@ -63,6 +63,16 @@ const nextConfig: NextConfig = {
     return [
       { source: "/:path*", headers: SECURITY_HEADERS },
       {
+        source: "/:locale(zh-Hant|en)/nora/showcase",
+        // Meshopt and embedded texture reads belong to this opt-in page.
+        headers: [{
+          key: "Content-Security-Policy",
+          value: CSP
+            .replace("script-src 'self' 'unsafe-inline'", "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'")
+            .replace("connect-src 'self' https: wss:", "connect-src 'self' blob: https: wss:"),
+        }],
+      },
+      {
         // The worker must never be served from an HTTP cache, or an update
         // waits on the cache's expiry instead of the next visit.
         source: "/sw.js",

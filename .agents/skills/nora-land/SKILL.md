@@ -45,7 +45,6 @@ Check: `## <type>/<slug>...origin/master`, no ahead/behind; hooksPath ends `.git
 ```bash
 make test                           # incremental; aliases: test-fast, test-affected
 uv run python -m scripts.pytest_gate tests/unit/test_example.py::test_named
-make test-all                       # explicit full serial suite, when needed
 ```
 
 Incremental entries compare staged/unstaged/untracked work to HEAD, or HEAD~1 when clean; `BASE=<ref>` overrides auto. Only exact generated untracked LFS post-hooks are ignored.
@@ -62,7 +61,8 @@ slot just for these edits. Runtime prompts/config and executable skill helpers
 follow their actual behavior/risk. Investigate unknown impact first; do not use
 a full suite as a substitute for understanding. Keep explicit acceptance intact.
 
-For code/mixed changes that need the gate, run it once per candidate tree:
+Use focused local checks; required hosted contracts own full-suite PR acceptance.
+For an explicitly selected local gate (not a PR prerequisite), run once per candidate:
 
 ```bash
 make gate > "$LOG/gate.log" 2>&1; GATE_RC=$?; echo "GATE_RC=$GATE_RC" > "$LOG/gate.rc"

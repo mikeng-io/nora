@@ -18,6 +18,8 @@ reaches here; the failure is the controlled word `failure_reason`.
 
 from __future__ import annotations
 
+from nora.domain.composed import compose_body
+
 from ..domain.blocks import ContextBlock, render_bullets
 from ..domain.computer_sessions import age
 from ..domain.subagent import TITLE_CHARS as JOB_TITLE_CHARS
@@ -100,4 +102,4 @@ def render_subagents(view: SubagentsView | None) -> ContextBlock | None:
     body = "\n".join(r for r in rows if r)
     if not body:
         return None
-    return ContextBlock(name="subagents", body=body)
+    return ContextBlock(name="subagents", body=compose_body(body))

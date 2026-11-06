@@ -1,58 +1,58 @@
 [
-  {
-    "name": "Orient renders the kind table",
-    "file": "nora/language/comprehend_render.py",
-    "old": "+ render_kind_table() + \"\\n\\n\" + COMPREHEND",
-    "new": "+ \"\" + \"\\n\\n\" + COMPREHEND",
-    "target": "tests/unit/test_orient_kind_table.py::test_orient_renders_the_kind_constant"
-  },
-  {
-    "name": "Entity admission uses kind rows",
-    "file": "nora/app/comprehend.py",
-    "old": "elif e.kind not in PROPOSED_KINDS or not any(\n                    row.kind == e.kind for row in MEMORY_KINDS):",
-    "new": "elif False:",
-    "target": "tests/unit/test_orient_kind_table.py::test_admission_uses_the_kind_constant[work-entity]"
-  },
-  {
-    "name": "A Notebook row is never a graph entity kind",
-    "file": "nora/app/comprehend.py",
-    "old": "elif e.kind not in PROPOSED_KINDS or not any(",
-    "new": "elif not any(",
-    "target": "tests/unit/test_orient_kind_table.py::test_a_notebook_row_is_refused_as_an_entity_kind"
-  },
-  {
-    "name": "Relation admission uses kind rows",
-    "file": "nora/app/comprehend.py",
-    "old": "if not any(r.rel in row.relates_by for row in MEMORY_KINDS):",
-    "new": "if False:",
-    "target": "tests/unit/test_orient_kind_table.py::test_admission_uses_the_kind_constant[likes-relation]"
-  },
-  {
-    "name": "The live preview includes resolution candidates",
-    "file": "nora/app/cognition_memory.py",
-    "old": "Preview(seeds, graph, tuple(candidates), (at, at))",
-    "new": "Preview(seeds, graph, (), (at, at))",
-    "target": "tests/unit/test_orient_kind_table.py::test_live_preview_carries_alias_candidates_with_shown_provenance"
-  },
-  {
-    "name": "One bad reading does not refuse valid parts",
-    "file": "nora/app/cognition_memory.py",
-    "old": "        for reason in drops:\n            await self.admission._refuse(state.session_id, \"reading\", reason)",
-    "new": "        if drops:\n            return {\"status\": \"refused\", \"admitted\": [],\n                    \"refused\": [{\"reason\": r} for r in drops]}",
-    "target": "tests/unit/test_orient_kind_table.py::test_bad_reading_keeps_valid_reading_and_graph"
-  },
-  {
-    "name": "The session applies a contradicting correction",
-    "file": "nora/app/comprehend.py",
-    "old": "            corrections=corrections,",
-    "new": "            corrections=(),",
-    "target": "tests/unit/test_orient_kind_table.py::test_later_contradiction_supersedes_current_relation"
-  },
-  {
-    "name": "Orient precedes Act in the actual wake input",
-    "file": "nora/language/comprehend_render.py",
-    "old": "        return doctrine.replace(\"<!-- cognition-orient -->\", orient).replace(\n            \"<!-- cognition-act-skill -->\", skills)",
-    "new": "        return doctrine.replace(\"<!-- cognition-orient -->\", \"\").replace(\n            \"<!-- cognition-act-skill -->\", skills) + orient",
-    "target": "tests/unit/test_orient_kind_table.py::test_assembled_session_puts_orient_before_act"
-  }
+ {
+  "name": "Orient renders the kind table",
+  "file": "nora/language/comprehend_render.py",
+  "old": "+ render_kind_table() + \"\\n\\n\" + COMPREHEND",
+  "new": "+ \"\" + \"\\n\\n\" + COMPREHEND",
+  "target": "tests/unit/test_orient_kind_table.py::test_orient_renders_the_kind_constant"
+ },
+ {
+  "name": "Entity admission uses kind rows",
+  "file": "nora/app/comprehend.py",
+  "old": "            if e.kind not in PROPOSED_KINDS or not any(\n                    row.kind == e.kind for row in MEMORY_KINDS):",
+  "new": "            if False:",
+  "target": "tests/unit/test_orient_kind_table.py::test_admission_uses_the_kind_constant[work-entity]"
+ },
+ {
+  "name": "A Notebook row is never a graph entity kind",
+  "file": "nora/app/comprehend.py",
+  "old": "            if e.kind not in PROPOSED_KINDS or not any(",
+  "new": "            if not any(",
+  "target": "tests/unit/test_orient_kind_table.py::test_a_notebook_row_is_refused_as_an_entity_kind"
+ },
+ {
+  "name": "Relation admission uses kind rows",
+  "file": "nora/app/comprehend.py",
+  "old": "            if not any(st.rel in row.relates_by for row in MEMORY_KINDS):",
+  "new": "            if False:",
+  "target": "tests/unit/test_orient_kind_table.py::test_admission_uses_the_kind_constant[likes-relation]"
+ },
+ {
+  "name": "The live preview includes resolution candidates",
+  "file": "nora/app/cognition_memory.py",
+  "old": "Preview(seeds, graph, tuple(candidates), (at, at))",
+  "new": "Preview(seeds, graph, (), (at, at))",
+  "target": "tests/unit/test_orient_kind_table.py::test_live_preview_carries_alias_candidates_with_shown_provenance"
+ },
+ {
+  "name": "One bad reading does not refuse valid parts",
+  "file": "nora/app/cognition_memory.py",
+  "old": "                claims.extend(claim_valid)",
+  "new": "                pass",
+  "target": "tests/unit/test_orient_kind_table.py::test_bad_reading_keeps_valid_reading_and_graph"
+ },
+ {
+  "name": "The session applies a contradicting correction",
+  "file": "nora/app/comprehend.py",
+  "old": "            corrections=tuple(corrections),",
+  "new": "            corrections=(),",
+  "target": "tests/unit/test_orient_kind_table.py::test_later_contradiction_supersedes_current_relation"
+ },
+ {
+  "name": "Orient precedes Act in the actual wake input",
+  "file": "nora/language/comprehend_render.py",
+  "old": "        return doctrine.replace(\"<!-- cognition-orient -->\", orient).replace(\n            \"<!-- cognition-act-skill -->\", skills)",
+  "new": "        return doctrine.replace(\"<!-- cognition-orient -->\", \"\").replace(\n            \"<!-- cognition-act-skill -->\", skills) + orient",
+  "target": "tests/unit/test_orient_kind_table.py::test_assembled_session_puts_orient_before_act"
+ }
 ]

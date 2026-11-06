@@ -71,6 +71,7 @@ from typing import Any, ClassVar, Literal, Protocol
 from nora.agent import cognition_pace as pace
 from nora.agent.dream_screen import offence
 from nora.agent.fetch_watch import Fetched, GraphFetched, watch_reads
+from nora.app.comprehend import Statement
 from nora.app.proactive_screen import CANCELLED_NOTE_RETIRED
 from nora.domain.cognition_ground import Grounding, RecordItem, rollup_status
 from nora.domain.cognition_pace import (
@@ -462,6 +463,11 @@ class _RunState:
     #: every proposal's connected subgraph, plus admitted relation endpoints):
     #: the only targets a Register `associations` argument may name.
     shown_keys: set[Any] = field(default_factory=set)
+    #: Relation ids this session was actually shown — the wake preview's
+    #: emitted edge rows, a proposal's connected subgraph, and the edge rows
+    #: a `memory_search`/`memory_read` result emitted: the only targets a
+    #: correction may name (the `shown_keys` rule, one axis over).
+    shown_relations: set[str] = field(default_factory=set)
     #: `object` handles this session was actually shown, to the room the
     #: grounder read them from — the only refs a note's `object_refs` may
     #: name (the `shown_keys` rule, one axis over).
@@ -1339,6 +1345,11 @@ class CognitionSessionRunner:
             memory_items=state.memory_items,
             shared=shared_view,
         )
+        if self._memory is not None:
+            # ONE evidence custody: the agenda's emitted rows are the only
+            # sources a graph statement may cite (the loaded-but-clipped rest
+            # was never shown).
+            self._memory.register_shown(state)
         return state, tools, system_prompt, prompt
 
     async def _run_session(
@@ -1705,7 +1716,8 @@ class CognitionSessionRunner:
                 self._memory.records, self._metrics, self._memory.private_names,
                 persons=tuple({p for v in state.memory_items.values()
                                for source in v.sources for p in source.persons}),
-                shown_keys=state.shown_keys)
+                shown_keys=state.shown_keys,
+                shown_relations=state.shown_relations)
 
             def on_rows(rows: Sequence[Any]) -> None:
                 """A transcript read's handed-out rows, kept as the citable
@@ -3318,32 +3330,32 @@ class CognitionSessionRunner:
             return call
 
         async def memory_propose(
-            readings: list[dict[str, Any]], entities: list[dict[str, Any]],
-            relations: list[dict[str, Any]], evidence: list[dict[str, Any]],
-            corrections: list[dict[str, Any]], items: list[int],
+            items: list[int], statements: list[Statement],
+            nothing_here: list[int] | None = None,
         ) -> dict[str, Any]:
             """Admit understanding. Call this when agenda items are understood.
 
-            Returns admitted items, refusals with reasons and the connected subgraph.
-            Empty lists record that no item fits a memory kind.
-            A bad reading citation refuses that reading; valid parts commit.
+            Returns one result per statement — saved, or refused with its reason —
+            the items now covered, the items still open, and the connected
+            subgraph. An item is done when a saved statement cites one of its
+            shown rows or it is named in `nothing_here`.
 
             Args:
-                readings: Grounded readings of the shown sources.
-                entities: Proposed entities.
-                relations: Proposed relations.
-                evidence: Shown source keys and exact spans.
-                corrections: Changes to existing relations.
-                items: Agenda indices covered by this understanding.
+                items: Agenda indices this proposal is about.
+                statements: Self-contained statements: a relation (verb, subject,
+                    object, validity and citations), a correction (a held
+                    relation's shown id, change and citations) or a reading
+                    (about, what, happened_at, where, how and citations).
+                nothing_here: Agenda indices understood and holding nothing to keep.
             """
             if self._memory is None:
                 return {"status": "unavailable", "note": "Memory admission is unavailable."}
-            result: dict[str, Any] = await self._memory.propose(state, items=items, payload={
-                "readings": readings, "entities": entities, "relations": relations,
-                "evidence": evidence, "corrections": corrections})
+            result: dict[str, Any] = await self._memory.propose(
+                state, items=items, statements=statements,
+                nothing_here=nothing_here or [])
             # An admitted memory write backs `close(reason="written")` for its items,
             # as a notebook write does: memory is a write, not a no-change.
-            if result.get("admitted") and (readings or entities or relations or corrections):
+            if result.get("admitted") and statements:
                 for index in result["admitted"]:
                     item = state.items_by_index.get(index)
                     if item is not None:

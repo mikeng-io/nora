@@ -38,6 +38,7 @@ from nora.domain.blocks import (
     row_speaker,
     speaker_label,
 )
+from nora.domain.composed import compose_body
 from nora.domain.external_files import render_file_links
 from nora.domain.media import GifCandidate
 from nora.domain.models import TranscriptRow
@@ -196,10 +197,10 @@ class ReactionPicker:
             return None
         material = [
             restamp(ContextBlock(
-                name="recent_chat", body=recent, when_empty="render",
+                name="recent_chat", body=compose_body(recent), when_empty="render",
             ), _ROW),
             restamp(ContextBlock(
-                name="nora_reply", body=escape(reply), when_empty="render",
+                name="nora_reply", body=compose_body(escape(reply)), when_empty="render",
             ), _ROW),
         ]
 
@@ -231,7 +232,7 @@ class ReactionPicker:
             ensure_ascii=False,
         )
         candidates = restamp(ContextBlock(
-            name="gif_candidates", body=escape(listing), attrs=(("query", query),),
+            name="gif_candidates", body=compose_body(escape(listing)), attrs=(("query", query),),
             when_empty="render",
         ), _ROW)
         second = await self._client.complete(

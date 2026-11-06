@@ -14,6 +14,7 @@ worse. Abilities are the tool catalogue's.
 from __future__ import annotations
 
 from nora.domain.blocks import ContextBlock
+from nora.domain.composed import compose_body
 from nora.domain.prompt import escape
 from nora.domain.self_presence import (
     PLATFORM_NAMES,
@@ -144,5 +145,5 @@ def render_presence(presence: Presence, *, room_is: str | None = None) -> Contex
         (("this_room_is", room_is),) if room_is else ()
     )
     return ContextBlock(
-        name="presence", attrs=attrs, body="\n".join(line for line in lines if line),
+        name="presence", attrs=attrs, body=compose_body("\n".join(line for line in lines if line)),
     )

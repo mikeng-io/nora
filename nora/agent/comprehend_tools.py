@@ -71,6 +71,7 @@ class LookupState:
     private_names: tuple[str, ...]
     persons: tuple[str, ...] = ()
     shown_keys: set = field(default_factory=set)
+    shown_relations: set = field(default_factory=set)
     limits: dict[str, int] = field(default_factory=lambda: {"web_search": 3, "web_fetch": 3})
     used: dict[str, int] = field(default_factory=dict)
 
@@ -166,10 +167,15 @@ class ComprehendRead(AgentTool):
                 # Record source, and cannot launder those judgements into evidence.
                 # `keys` is the renderer's own emitted-node list — the only
                 # authority on which graph keys the session was shown.
+                # `relations` is the same authority one axis over: the edge
+                # ids the read actually emitted, which a correction may name.
                 if isinstance(answer, dict) and answer.get("status") in ("ok", "partial"):
                     state.shown_keys.update(
                         tuple(k) for k in answer.get("keys") or ()
                         if isinstance(k, (list, tuple)) and len(k) == 2)
+                    state.shown_relations.update(
+                        r for r in answer.get("relations") or ()
+                        if isinstance(r, str))
                 yield event
                 continue
             if isinstance(answer, dict) and answer.get("status") == "ok":

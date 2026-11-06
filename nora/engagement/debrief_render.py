@@ -68,6 +68,7 @@ from nora.domain.blocks import (
     restamp,
     speaker_name,
 )
+from nora.domain.composed import compose_body
 from nora.domain.culture import CultureRevision
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.profile import ProfileView
@@ -320,14 +321,14 @@ def _standing_prior(prior: Standing | None, *, now_ms: int) -> ContextBlock:
     if prior is None or not prior.body.strip():
         return _stamp(ContextBlock(
             name="standing_prior",
-            body="(no position yet — this is the first fold for this conversation)",
-        ))
+            body=compose_body("(no position yet — this is the first fold for this conversation)",
+)        ))
     return _stamp(ContextBlock(
         name="standing_prior",
         attrs=(("written", age(
             prior.updated_at, datetime.fromtimestamp(now_ms / 1000, tz=UTC),
         )),),
-        body=escape(prior.body.strip()),
+        body=compose_body(escape(prior.body.strip())),
     ))
 
 
@@ -352,7 +353,7 @@ def _standing_working_set_prior(
     if not working_set:
         return _stamp(ContextBlock(
             name="standing_working_set_prior",
-            body="(no working set yet)",
+            body=compose_body("(no working set yet)"),
         ))
     now = datetime.fromtimestamp(now_ms / 1000, tz=UTC)
     body = render_elements(
@@ -364,7 +365,7 @@ def _standing_working_set_prior(
         ),
         body=lambda item: item.what,
     )
-    return _stamp(ContextBlock(name="standing_working_set_prior", body=body))
+    return _stamp(ContextBlock(name="standing_working_set_prior", body=compose_body(body)))
 
 
 
@@ -387,8 +388,8 @@ def _standing_ledger_prior(
     if not entries:
         return _stamp(ContextBlock(
             name="standing_ledger_prior",
-            body="(no scoped unit entries yet — nothing to re-judge)",
-        ))
+            body=compose_body("(no scoped unit entries yet — nothing to re-judge)",
+)        ))
     rows = [
         (
             f"entry-{i}",
@@ -405,7 +406,7 @@ def _standing_ledger_prior(
         ),
         body=lambda r: r[1],
     )
-    return _stamp(ContextBlock(name="standing_ledger_prior", body=body))
+    return _stamp(ContextBlock(name="standing_ledger_prior", body=compose_body(body)))
 
 
 def shown_step_tool_names(messages: Sequence[Mapping[str, Any]]) -> frozenset[str]:
@@ -669,10 +670,10 @@ def _turn_block(
         "%Y-%m-%d %H:%M %Z"
     ).strip()
     inner = assemble([
-        _stamp(ContextBlock(name="what_happened", body=escape(gloss))),
+        _stamp(ContextBlock(name="what_happened", body=compose_body(escape(gloss)))),
         _stamp(ContextBlock(
             name="transcript",
-            body=_transcript(rows, display_name=display_name, tz=tz),
+            body=compose_body(_transcript(rows, display_name=display_name, tz=tz)),
         )),
         _stamp(ContextBlock(
             name="steps",
@@ -681,7 +682,7 @@ def _turn_block(
             # profile names, so this block carries what people typed even though
             # the steps around it are hers. `tests/test_prefill.py`'s own
             # classification names "a tool result" in the marked class.
-            body=_steps(trace.messages, metrics=metrics),
+            body=compose_body(_steps(trace.messages, metrics=metrics)),
         )),
     ], sep="\n")
     return _stamp(ContextBlock(
@@ -689,7 +690,7 @@ def _turn_block(
         # The ENVELOPE is this process's own record of a turn. The
         # member-authored text inside it is `<transcript>`, which carries its
         # own marker.
-        body=inner,
+        body=compose_body(inner),
     ))
 
 

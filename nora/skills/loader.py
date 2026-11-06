@@ -65,6 +65,7 @@ from typing import Any
 import yaml
 
 from nora.domain.blocks import ContextBlock, render_elements
+from nora.domain.composed import compose_body
 
 # The AgentSkills.io name rule (strands...skills.skill._SKILL_NAME_PATTERN),
 # reproduced so a file loaded here loads identically under the vended
@@ -239,7 +240,7 @@ class SkillStore:
                 body=lambda _sk: "",
             )
         return ContextBlock(
-            name="available_skills", body=body,
+            name="available_skills", body=compose_body(body),
         ).render()
 
 

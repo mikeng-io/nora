@@ -51,8 +51,8 @@
  {
   "name": "a previewed candidate loses its preview mark",
   "file": "nora/subject/context_selector_render.py",
-  "old": "            name=\"peer_history\", body=escape(b.body[:_PREVIEW_CHARS]),\n            attrs=(*b.attrs, (\"preview\", _PREVIEW_NOTE)),",
-  "new": "            name=\"peer_history\", body=escape(b.body[:_PREVIEW_CHARS]),\n            attrs=b.attrs,",
+  "old": "            name=\"peer_history\", body=legacy_composed(escape(b.body.text[:_PREVIEW_CHARS])),\n            attrs=(*b.attrs, (\"preview\", _PREVIEW_NOTE)),",
+  "new": "            name=\"peer_history\", body=legacy_composed(escape(b.body.text[:_PREVIEW_CHARS])),\n            attrs=b.attrs,",
   "target": "tests/unit/test_context_selector_render.py"
  }
 ]

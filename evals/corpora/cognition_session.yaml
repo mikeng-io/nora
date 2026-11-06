@@ -35,7 +35,7 @@ cases:
   category: cognition
   expect: reply
   input: room A has new messages
-  expected_output: 'Explicit empty proposal: no readings, entities, relations or corrections; no act.'
+  expected_output: 'Explicit no-change: empty statements with nothing_here; no act.'
   metadata:
     scenario: 2
     held_out: false
@@ -69,11 +69,8 @@ cases:
     - standing_revise
     args_include:
       memory_propose:
-      - '"relations": []'
-      - '"readings": []'
-      - '"entities": []'
-      - '"evidence": []'
-      - '"corrections": []'
+      - '"statements": []'
+      - '"nothing_here"'
   parked:
     reason: 'anchor pending: chosen privately on the deploy host'
     why: No private clone has been inspected for this case. No anchor is asserted.
@@ -120,7 +117,7 @@ cases:
     args_include:
       memory_propose:
       - plans
-      - '"readings": [{'
+      - '"type": "reading"'
   parked:
     reason: 'anchor pending: chosen privately on the deploy host'
     why: No private clone has been inspected for this case. No anchor is asserted.
@@ -316,7 +313,7 @@ cases:
     - standing_revise
     args_include:
       memory_propose:
-      - '"readings": [{'
+      - '"type": "reading"'
   parked:
     reason: 'anchor pending: chosen privately on the deploy host'
     why: No private clone has been inspected for this case. No anchor is asserted.
@@ -448,7 +445,7 @@ cases:
     not_tools: []
     args_include:
       memory_propose:
-      - source_ids
+      - cite
 - name: r02_restored_backup_is_read
   entry: dreamer
   category: cognition
@@ -469,7 +466,7 @@ cases:
     not_tools: []
     args_include:
       memory_propose:
-      - source_ids
+      - cite
 - name: r03_repeated_preference_is_read
   entry: dreamer
   category: cognition
@@ -490,7 +487,7 @@ cases:
     not_tools: []
     args_include:
       memory_propose:
-      - source_ids
+      - cite
 - name: r04_tentative_purchase_keeps_its_mode
   entry: dreamer
   category: cognition
@@ -536,7 +533,7 @@ cases:
     - send_reply
     args_exclude:
       memory_propose:
-      - source_ids
+      - cite
 - name: r06_second_banter_stays_silent
   entry: dreamer
   category: cognition
@@ -565,4 +562,4 @@ cases:
     - send_reply
     args_exclude:
       memory_propose:
-      - source_ids
+      - cite

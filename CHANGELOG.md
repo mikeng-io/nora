@@ -1,5 +1,53 @@
 # Changelog
 
+## [7.15.19](https://github.com/mikeng-io/nora/compare/v7.15.18...v7.15.19) (2026-11-06)
+
+
+### Bug Fixes
+
+* **cognition:** drop the handle-form agenda render pending the format experiment ([26f5a84](https://github.com/mikeng-io/nora/commit/26f5a8401d32c663648c8a71f5b900e69016d48a))
+* **cognition:** keep the correction catalogue inside what was shown ([6387ac5](https://github.com/mikeng-io/nora/commit/6387ac5ef462172ea3ea9093c9cd9aa08e4fc8cc))
+
+## [7.15.18](https://github.com/mikeng-io/nora/compare/v7.15.17...v7.15.18) (2026-11-06)
+
+
+### Bug Fixes
+
+* **memory:** bind custody/completion guards, guard metrics=None ([e93fd56](https://github.com/mikeng-io/nora/commit/e93fd56cf8efcae71fe83f8588e770f1f30d5949))
+* **memory:** correction catalogue is emitted rows, plus connected targets ([7b6bf80](https://github.com/mikeng-io/nora/commit/7b6bf80b28b2ad5dc56f1febd7e7e3addf55afd8))
+* **memory:** shown-custody at the endpoint, correction custody, retry merges, per-statement refusal ([2aa7eee](https://github.com/mikeng-io/nora/commit/2aa7eee32a9730375c5afea65c211147a9889e85))
+
+## [7.15.17](https://github.com/mikeng-io/nora/compare/v7.15.16...v7.15.17) (2026-11-06)
+
+
+### Maintenance
+
+* **context:** enforce composed block bodies with a typed boundary ([3069eba](https://github.com/mikeng-io/nora/commit/3069eba2b5b3bea7215a9a3b09a9119ed95ceca2))
+* **context:** read composed text in remaining block consumers ([4d269d6](https://github.com/mikeng-io/nora/commit/4d269d6cb079ab18850d8123895e401b5fb557e2))
+* **context:** type the operator script body and presence assertions ([20cb34c](https://github.com/mikeng-io/nora/commit/20cb34cb1ea3681b6b358157dd8e10f62d3a8bc4))
+* Merge branch 'master' into test/one-context-composer ([c25779b](https://github.com/mikeng-io/nora/commit/c25779bb21369cbb49a08ae078646ce83481ca80))
+
+## [7.15.16](https://github.com/mikeng-io/nora/compare/v7.15.15...v7.15.16) (2026-11-06)
+
+
+### Features
+
+* **app:** add Mini Nora character study and interactive stage ([265176e](https://github.com/mikeng-io/nora/commit/265176ec221d9cb02d9ee60a98d72cb87c7d3e54))
+* **app:** reconstruct Mini Nora hands and wire local expressions ([a36cee3](https://github.com/mikeng-io/nora/commit/a36cee36a86c9c2d4b9447b0202fe1034b599b48))
+
+
+### Bug Fixes
+
+* **showcase:** allow retry after model load and context failures ([d374477](https://github.com/mikeng-io/nora/commit/d37447780d3990f07b4f3418c108f6fbe7c606b3))
+* **showcase:** repair cloth atlas seams and light the studio ([d90a39c](https://github.com/mikeng-io/nora/commit/d90a39c96daaafd0301ab14e5fc05b0dfff25c0c))
+
+## [7.15.15](https://github.com/mikeng-io/nora/compare/v7.15.14...v7.15.15) (2026-11-05)
+
+
+### Bug Fixes
+
+* **subject:** route the circle seed through deliver.build and declare its seams ([ee49e5c](https://github.com/mikeng-io/nora/commit/ee49e5c672d692cfe098307e4e8f01517ff42a98))
+
 ## [7.15.14](https://github.com/mikeng-io/nora/compare/v7.15.13...v7.15.14) (2026-11-05)
 
 

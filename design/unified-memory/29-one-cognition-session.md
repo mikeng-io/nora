@@ -223,3 +223,15 @@ projected dump, before any full run.
 sample, is clearly worse on reading or relation precision than the separate
 step 1 was. Then a separate memory step returns, with that measurement behind
 it.
+
+## Amendment 2026-11-06: the proposal contract, statement-shaped
+
+Amends §2's `memory_propose` row without touching the session shape. The model
+emits a `statements` list (relation / correction / reading), an `items` list
+and a `nothing_here` list; endpoints are shown `@kind:id` handles or inline
+`{new: …}` descriptors, and relation `persons` is derived by admission from the
+cited sources rather than authored. §2's answer-back gains the completion rule:
+an input is covered by a saved statement citing one of its rendered rows or by
+an explicit `nothing_here`; inputs neither covered nor declared stay open and
+are what the model retries. A refused statement reports one primary reason and
+no longer withholds other items' readings or completion.

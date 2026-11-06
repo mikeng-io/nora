@@ -19,6 +19,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime, tzinfo
 
+from nora.domain.composed import compose_body
+
 from ..domain.blocks import ContextBlock, render_elements
 from ..domain.memo import Memo
 
@@ -69,7 +71,7 @@ def render_memos(memos: Sequence[Memo], *, tz: tzinfo) -> ContextBlock | None:
     if not rows and not left_out:
         return None
     return ContextBlock(
-        name="memos", body="\n".join(rows),
+        name="memos", body=compose_body("\n".join(rows)),
         attrs=(("not_listed", str(left_out)),) if left_out else (),
         when_empty="self_close",
     )

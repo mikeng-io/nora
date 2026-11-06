@@ -327,6 +327,8 @@ class JournalPublisher:
                     await self._on_enqueued(env, canonical_id)
             if self._retry_pending is not None:
                 await self._retry_pending()
+            if self._stop.is_set():
+                return
             if blocked or self._has_pending():
                 # Blocked head OR parked receipts: short cadence — pending
                 # work retries without a restart, never on the idle poll.

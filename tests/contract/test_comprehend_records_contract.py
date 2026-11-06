@@ -134,6 +134,25 @@ async def test_reading_writer_is_idempotent_per_work_hash(store):
         assert len(records.claims) == 1
 
 
+async def test_a_retry_persists_additional_distinct_claims(store):
+    """A partial completion retry for the same work must not drop the new
+    claim — the writer merges additional distinct admitted claims."""
+    records, engine = store
+    first = [{"what": "Generated first claim", "source_ids": [1]}]
+    second = [{"what": "Generated second claim", "source_ids": [1]}]
+    await records.readings(WORK, 1, ITEM, first)
+    stored = await records.readings(WORK, 2, ITEM, second)
+    if engine:
+        async with engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(EXTRACTION_CLAIM.c.content)
+                .order_by(EXTRACTION_CLAIM.c.ordinal))).scalars().all()
+        assert len(rows) == 2
+    else:
+        assert len(records.claims[(WORK.id, WORK.input_hash)]) == 2
+    assert first[0] in stored and second[0] in stored
+
+
 async def test_refusals_keep_reason_without_private_content(store):
     records, engine = store
     await records.record_refusal(1, "relation", "unseen_source")

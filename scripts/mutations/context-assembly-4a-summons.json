@@ -37,8 +37,8 @@
   {
     "name": "4a: a stranger's words are not escaped, so a caption writes a closing tag (R-13)",
     "file": "nora/domain/summons.py",
-    "old": "body=escape(text),",
-    "new": "body=text,",
+    "old": "body=compose_body(escape(text)),",
+    "new": "body=compose_body(text),",
     "target": "tests/unit/test_summons_assembly_goldens.py::test_the_prompt_is_byte_identical_to_master"
   },
   {

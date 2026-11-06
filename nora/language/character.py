@@ -68,6 +68,7 @@ from nora.domain.blocks import (
     render_group,
     render_row_window,
 )
+from nora.domain.composed import legacy_composed
 from nora.domain.culture import (
     CHARACTER_KINDS,
     CHARACTER_OUTCOMES,
@@ -444,7 +445,8 @@ def room_cultures_block(
             if head is not None and head.body.strip() and head.citations]
     if not rows:
         return None
-    return ContextBlock(name="room_cultures", **_at("room_cultures"), body=render_elements(
+    return ContextBlock(name="room_cultures", **_at("room_cultures"),
+        body=legacy_composed(render_elements(
         rows, tag="room_culture",
         attrs=lambda pair, _i: (
             ("room", pair[0].label or "unnamed room"),
@@ -452,7 +454,7 @@ def room_cultures_block(
             ("cites", (", ".join(pair[1].citations) or None) if cites else None),
         ),
         body=lambda pair: pair[1].body,
-    ))
+    )))
 
 
 Owners = Callable[[str], frozenset[str]]
@@ -666,9 +668,10 @@ def _social_block(rows: Sequence[_Shown], now: datetime) -> ContextBlock:
              else age(int(counts.read_at.timestamp() * 1000), now)),
         )
 
-    return ContextBlock(name="social_items", **_at("social_items"), body=render_elements(
+    return ContextBlock(name="social_items", **_at("social_items"),
+        body=legacy_composed(render_elements(
         ordered, tag="item", attrs=attrs, body=lambda r: r.caption,
-    ))
+    )))
 
 
 def _within_budget(
@@ -780,7 +783,8 @@ class CharacterPersonAdaptor(EntitySessions):
         heads = await asyncio.gather(*(self._culture.head(key=r.key) for r in pk.rooms))
         parts: list[ContextBlock | None] = [
             ContextBlock(
-                name="about_person", **_at("about_person"), body="", when_empty="self_close",
+                name="about_person", **_at("about_person"),
+                    body=legacy_composed(""), when_empty="self_close",
                 attrs=(("name", pk.person.name),) + (
                     (("aliases", ", ".join(pk.person.aliases)),)
                     if pk.person.aliases else ()
@@ -788,16 +792,17 @@ class CharacterPersonAdaptor(EntitySessions):
             ),
             None if previous is None else ContextBlock(
                 name="previous_character", **_at("previous_character"),
-                body=escape(previous.body),
+                body=legacy_composed(escape(previous.body)),
                 attrs=(("written", age(previous.written_at, now)),),
             ),
             room_cultures_block(pk.rooms, heads, now),
-            ContextBlock(name="person_messages", **_at("person_messages"), body=render_row_window(
+            ContextBlock(name="person_messages", **_at("person_messages"),
+                body=legacy_composed(render_row_window(
                 messages,
                 row_id=lambda m: m.row.id,
                 attrs=lambda m: (("room", labels.get(m.room) or "unnamed room"),),
                 body=lambda m: m.row.body or "",
-            )),
+            ))),
             social_block,
         ]
         return assemble([p for p in parts if p is not None], sep="\n\n")
@@ -946,12 +951,13 @@ class CharacterUnitAdaptor(EntitySessions):
         )
         parts: list[ContextBlock | None] = [
             ContextBlock(
-                name="about_unit", **_at("about_unit"), body="", when_empty="self_close",
+                name="about_unit", **_at("about_unit"),
+                    body=legacy_composed(""), when_empty="self_close",
                 attrs=(("rooms", ", ".join(r.label or "unnamed room" for r in uk.rooms)),),
             ),
             None if previous is None else ContextBlock(
                 name="previous_character", **_at("previous_character"),
-                body=escape(previous.body),
+                body=legacy_composed(escape(previous.body)),
                 attrs=(("written", age(previous.written_at, now)),),
             ),
             room_cultures_block(uk.rooms, heads, now, cites=True),
@@ -1121,12 +1127,12 @@ class CharacterNoraAdaptor(EntitySessions):
         parts: list[ContextBlock | None] = [
             None if previous is None else ContextBlock(
                 name="previous_character", **_at("previous_character"),
-                body=escape(previous.body),
+                body=legacy_composed(escape(previous.body)),
                 attrs=(("written", age(previous.written_at, now)),),
             ),
             ContextBlock(
                 name="episodes", **_at("episodes"),
-                body="\n".join(self._episode(e, labels) for e in episodes),
+                body=legacy_composed("\n".join(self._episode(e, labels) for e in episodes)),
             ),
         ]
         return assemble([p for p in parts if p is not None], sep="\n\n")

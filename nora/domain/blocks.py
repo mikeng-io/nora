@@ -33,6 +33,7 @@ from datetime import datetime, tzinfo
 from typing import Literal, Protocol, TypeVar, overload
 
 from nora.domain.block_types import BLOCK_TYPES
+from nora.domain.composed import Composed, compose_body
 from nora.domain.external_files import render_file_links
 from nora.domain.prompt import age, escape, escape_attr, one_line
 
@@ -195,7 +196,7 @@ class ContextBlock:
     name: str
     #: What goes between the tags. Already escaped by whoever built it — a
     #: transcript through `render_messages`, a fact list through `escape`.
-    body: str
+    body: Composed
     #: Ascending. The tag prompt's order is an argument its own docstring makes
     #: (her past, then theirs, then the unit's open questions, then the
     #: room), and it is data here rather than the order of `+` operators in one
@@ -231,6 +232,8 @@ class ContextBlock:
         block that cannot say what it is should not exist, so the failure
         belongs at construction.
         """
+        if not isinstance(self.body, Composed):
+            raise TypeError("ContextBlock.body requires a Composed value")
         for key, _ in self.attrs:
             if not _ATTR_NAME.match(key):
                 raise ValueError(
@@ -347,7 +350,7 @@ def wrap_outside_text(name: str, source: str, text: str) -> str:
     packages need it.
     """
     return ContextBlock(
-        name=name, attrs=(("source", source),), body=escape(text),
+        name=name, attrs=(("source", source),), body=compose_body(escape(text)),
     ).render()
 
 

@@ -57,6 +57,7 @@ from nora.domain.blocks import (
     render_row_window,
     restamp,
 )
+from nora.domain.composed import legacy_composed
 from nora.domain.culture import (
     CultureRevision,
     Episode,
@@ -959,7 +960,7 @@ class ProfilePersonAdaptor:
             ContextBlock(
                 name="about_person",
                 **_at("about_person"),
-                body="",
+                body=legacy_composed(""),
                 when_empty="self_close",
                 attrs=(("name", pk.person.name),
                        ("now", now.astimezone(PROFILE_HKT).isoformat()),
@@ -973,21 +974,21 @@ class ProfilePersonAdaptor:
             else ContextBlock(
                 name="profile_lines",
                 **_at("profile_lines"),
-                body=render_elements(
+                body=legacy_composed(render_elements(
                     held,
                     tag="line",
                     attrs=lambda x, _i: _line_attrs(x, handle_of[x.id], now, self._name_of),
                     body=lambda x: (
                         identity_text(x, name_of=identity_name) or "legacy untyped: " + x.text
                     ),
-                ),
+                )),
             ),
             None
             if previous is None
             else ContextBlock(
                 name="previous_character",
                 **_at("previous_character"),
-                body=escape(previous.body),
+                body=legacy_composed(escape(previous.body)),
                 attrs=(("written", age(previous.written_at, now)),)
                 + ((("cites", ", ".join(str(m.row.id) for m in old_cited)),) if old_cited else ()),
             ),
@@ -997,7 +998,7 @@ class ProfilePersonAdaptor:
             else ContextBlock(
                 name="profile_disputes",
                 **_at("profile_disputes"),
-                body=render_elements(
+                body=legacy_composed(render_elements(
                     disputes,
                     tag="dispute",
                     attrs=lambda d, _i: (
@@ -1008,14 +1009,14 @@ class ProfilePersonAdaptor:
                         ("line", handle_of.get(d.line_id or "")),
                     ),
                     body=lambda d: d.claim,
-                ),
+                )),
             ),
             None
             if not messages
             else ContextBlock(
                 name="profile_messages",
                 **_at("profile_messages"),
-                body=render_row_window(
+                body=legacy_composed(render_row_window(
                     messages,
                     row_id=lambda m: m.row.id,
                     attrs=lambda m: (
@@ -1026,14 +1027,14 @@ class ProfilePersonAdaptor:
                             _said(m).ts / 1000, PROFILE_HKT).isoformat()),
                     ),
                     body=lambda m: bodies[m.row.id],
-                ),
+                )),
             ),
             None
             if not mentions
             else ContextBlock(
                 name="profile_mentions",
                 **_at("profile_mentions"),
-                body=render_row_window(
+                body=legacy_composed(render_row_window(
                     mentions,
                     row_id=lambda m: m.row.id,
                     attrs=lambda m: (
@@ -1045,17 +1046,17 @@ class ProfilePersonAdaptor:
                             _said(m).ts / 1000, PROFILE_HKT).isoformat()),
                     ),
                     body=lambda m: bodies[m.row.id],
-                ),
+                )),
             ),
             None
             if not replies
             else ContextBlock(
                 name="profile_episodes",
                 **_at("profile_episodes"),
-                body="\n".join(
+                body=legacy_composed("\n".join(
                     self._episode(e, person, labels, bodies)
                     for e in episodes if e.send_id in replies
-                ),
+                )),
             ),
             # The block is built by `character._within_budget`, which stamps
             # it with CHARACTER's row (order 45); this prompt's table puts it
@@ -1066,7 +1067,7 @@ class ProfilePersonAdaptor:
             else ContextBlock(
                 name="profile_ties",
                 **_at("profile_ties"),
-                body=render_elements(
+                body=legacy_composed(render_elements(
                     ties,
                     tag="tie",
                     attrs=lambda t, _i: (
@@ -1080,13 +1081,13 @@ class ProfilePersonAdaptor:
                         ("reacted_by", str(t[6])),
                     ),
                     body=lambda _t: None,
-                ),
+                )),
             ),
         ]
         if selected:
             parts.append(ContextBlock(
                 name="profile_source_revisions", **_at("profile_source_revisions"),
-                body=render_elements(selected, tag="source", attrs=lambda r, _i: (
+                body=legacy_composed(render_elements(selected, tag="source", attrs=lambda r, _i: (
                     ("domain", r.domain), ("handle", r.source), ("state", r.state),
                     ("subject", self._name_of(r.subject) if r.subject else None),
                     ("revision", r.revision), ("recorded", r.recorded_at),
@@ -1099,7 +1100,7 @@ class ProfilePersonAdaptor:
                     "authority": ("context and links only; never cite this Register entry; "
                                   "open/cancelled is not an occurrence")
                     if r.domain == "register" else "Record or deterministic Rollup",
-                }, ensure_ascii=False)),
+                }, ensure_ascii=False))),
             ))
         return self._checked_input(key, assemble([p for p in parts if p is not None], sep="\n\n"))
 

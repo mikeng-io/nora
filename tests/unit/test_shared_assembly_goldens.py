@@ -33,6 +33,7 @@ from nora.domain.blocks import (
 )
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.language.note_render import today_block
+from nora.testing.context_blocks import compose_fixture
 
 GOLDEN: dict[str, str] = json.loads(
     (Path(__file__).parent.parent / "fixtures" / "context_assembly_step1_goldens.json")
@@ -45,10 +46,10 @@ def _blocks() -> list[ContextBlock]:
     characters a renderer must leave alone (`assemble` renders; it never
     escapes)."""
     return [
-        ContextBlock(name="notes", body="n body", order=20),
-        ContextBlock(name="today", body="2026-10-01 Thu", order=10),
-        ContextBlock(name="events", body="", order=15),
-        ContextBlock(name="standing", body="a & b <c>\nline2", order=40),
+        ContextBlock(name="notes", body=compose_fixture("n body"), order=20),
+        ContextBlock(name="today", body=compose_fixture("2026-10-01 Thu"), order=10),
+        ContextBlock(name="events", body=compose_fixture(""), order=15),
+        ContextBlock(name="standing", body=compose_fixture("a & b <c>\nline2"), order=40),
     ]
 
 

@@ -22,6 +22,7 @@ from nora.agent.telemetry import (
 )
 from nora.config import ExtractionConfig
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
+from nora.domain.composed import legacy_composed
 from nora.domain.extraction import (
     EXTRACTION_FAILURE_STAGES,
     VERSION,
@@ -217,7 +218,7 @@ class ExtractionWorker:
                 restamp(
                     ContextBlock(
                         name="cited_sources",
-                        body=escape(payload),
+                        body=legacy_composed(escape(payload)),
                     ),
                     _ROW,
                 )

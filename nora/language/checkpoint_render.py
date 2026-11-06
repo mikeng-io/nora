@@ -32,6 +32,7 @@ from typing import Literal
 
 from nora.domain.blocks import ContextBlock
 from nora.domain.checkpoint import SECTIONS, Checkpoint, Outputs
+from nora.domain.composed import compose_body
 from nora.domain.prompt import ago, escape, one_line
 
 Mode = Literal["block", "read", "anchor", "delivery"]
@@ -88,4 +89,4 @@ def render_checkpoint(
     attrs: tuple[tuple[str, str], ...] = (("job", title),)
     if checkpoint is not None and not checkpoint.empty and checkpoint.at is not None:
         attrs += (("updated", ago(int((now - checkpoint.at).total_seconds() * 1000))),)
-    return ContextBlock(name="subagent_checkpoint", body=body, attrs=attrs).render()
+    return ContextBlock(name="subagent_checkpoint", body=compose_body(body), attrs=attrs).render()

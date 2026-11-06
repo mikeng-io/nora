@@ -26,6 +26,7 @@ from nora.agent.structured import ask_text, build_structured_model
 from nora.app.graph_project import graph_project, projection_context
 from nora.config import load
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
+from nora.domain.composed import compose_body
 from nora.domain.memory_graph import Walk
 from nora.domain.prompt import escape
 from nora.infra.sql.engine import create_sql_engine
@@ -54,7 +55,7 @@ def prompt(payload: Any) -> str:
             restamp(
                 ContextBlock(
                     name="cited_sources",
-                    body=escape(json.dumps(payload, default=str, ensure_ascii=False)),
+                    body=compose_body(escape(json.dumps(payload, default=str, ensure_ascii=False))),
                 ),
                 _ROW,
             )
@@ -621,10 +622,15 @@ async def session_quality(
         if exchange["name"] != "memory_propose" or not isinstance(exchange["result"], dict):
             continue
         result, proposal = exchange["result"], exchange["input"]
-        if result.get("admitted"):
-            readings.extend(proposal.get("readings", []))
-            for reading in proposal.get("readings", []):
-                await score("reading_precision", reading)
+        statements = proposal.get("statements", []) if result.get("admitted") else []
+        new_entities = [
+            endpoint["new"] for st in statements if st.get("type") == "relation"
+            for endpoint in (st.get("subject"), st.get("object"))
+            if isinstance(endpoint, dict) and isinstance(endpoint.get("new"), dict)
+        ]
+        for reading in (s for s in statements if s.get("type") == "reading"):
+            readings.append(reading)
+            await score("reading_precision", reading)
         committed = set(result.get("committed", []))
         committed_ids |= committed
         for edge in result.get("connected", {}).get("relations", []):
@@ -635,13 +641,13 @@ async def session_quality(
                 await score("relation_precision", relation)
                 if relation["rel"] == "same_as":
                     await score("wrong_merges", {"different_entities": relation})
-        for entity in proposal.get("entities", []) if result.get("admitted") else []:
-            for attr, value in entity.get("attributes", {}).items():
+        for entity in new_entities:
+            for attr, cited in entity.get("attributes", {}).items():
                 await score(
                     "enrichment_support",
                     {
                         "attribute": attr,
-                        "value": value,
+                        "value": cited.get("value"),
                         "requirement": "supported by the cited fetched page",
                     },
                 )

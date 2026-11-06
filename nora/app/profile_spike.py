@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
 from nora.domain.character_card import format_card, format_line
+from nora.domain.composed import legacy_composed
 from nora.domain.culture import RoomMessage
 from nora.domain.profile import PROFILE_HKT, ProfileLine
 from nora.domain.prompt import escape
@@ -209,9 +210,9 @@ async def event_judge(*, line: ProfileLine, evidence: list[dict[str, Any]],
         prompt=assemble([
             restamp(ContextBlock(name="trait_check",
                                  attrs=(("of", name_of(person) if person else kind),),
-                                 body=escape(format_line(line))), _ROW),
-            restamp(ContextBlock(name="cited_sources", body=escape(json.dumps(
-                evidence, ensure_ascii=False))), _ROW),
+                                 body=legacy_composed(escape(format_line(line)))), _ROW),
+            restamp(ContextBlock(name="cited_sources", body=legacy_composed(escape(json.dumps(
+                evidence, ensure_ascii=False)))), _ROW),
         ]),
         timeout_seconds=120)
     return (result.content.strip() if result.finish_reason not in ("length", "error")

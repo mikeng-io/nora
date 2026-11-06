@@ -133,8 +133,8 @@ async def test_a_withheld_destination_keeps_the_entry_without_disclosing_content
         )
         assert view.entries and all(not e.permitted for e in view.entries)
         block = render_shared_state(view, now_ms=2000)
-        assert block is not None and "withheld" in block.body.lower()
-        assert "generated pending check" not in block.body
+        assert block is not None and "withheld" in block.body.text.lower()
+        assert "generated pending check" not in block.body.text
         checked.append(occasion.platform)
         return view
 
