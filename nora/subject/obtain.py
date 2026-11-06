@@ -632,3 +632,43 @@ async def obtain(spec: SubjectSpec) -> Subject:
         unit=convo.unit, culture_key=convo.primary_id,
         listed_persons=convo.persons, circle_memory=circle_memory,
     )
+
+
+def validate_subject_overrides(overrides: dict[str, Any]) -> None:
+    """Every override's dotted path must resolve to a real `Config` field
+    AND its value must be the field's type strictly — no truthy strings,
+    no unknown branches, no scalar model_copy bypass. Credentials stay
+    named env references, never raw values."""
+    for path, value in overrides.items():
+        if isinstance(value, str) and ("_key" in path or "secret" in path
+                                       or "token" in path) \
+                and not path.endswith("_env"):
+            raise ValueError(
+                f"--subject-overrides: {path!r} looks like a raw credential; "
+                "name the env var instead")
+        node: Any = Config
+        for part in path.split("."):
+            field_info = (node.model_fields.get(part)
+                          if hasattr(node, "model_fields") else None)
+            if field_info is None:
+                raise ValueError(
+                    f"--subject-overrides: {path!r} names no config field")
+            node = field_info.annotation
+        if isinstance(node, type) and hasattr(node, "model_fields"):
+            raise ValueError(
+                f"--subject-overrides: {path!r} is a section, not a leaf")
+        expected = node
+        if expected is bool and type(value) is not bool:
+            raise ValueError(
+                f"--subject-overrides: {path!r} wants a real bool, "
+                f"not {type(value).__name__} {value!r}")
+        if expected is not None and isinstance(expected, type) \
+                and issubclass(expected, (int, float)) \
+                and not isinstance(value, expected):
+            raise ValueError(
+                f"--subject-overrides: {path!r} wants {expected.__name__}, "
+                f"not {type(value).__name__} {value!r}")
+        if expected is str and not isinstance(value, str):
+            raise ValueError(
+                f"--subject-overrides: {path!r} wants str, "
+                f"not {type(value).__name__} {value!r}")

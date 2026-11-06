@@ -66,7 +66,6 @@ async def test_the_budget_counts_and_caps_the_real_dispatch_path():
             client = factory.create_client(
                 base_url="https://generated.invalid/v1",
                 api_key="generated-key", http_client=transport)
-            # The real OpenAIModel stream path: create + consume chunks
             stream = await client.chat.completions.create(
                 model="generated-model", stream=True,
                 stream_options={"include_usage": True},
@@ -86,22 +85,22 @@ async def test_the_budget_counts_and_caps_the_real_dispatch_path():
 
 
 def test_the_override_file_is_schema_validated_before_composition():
-    """`_validate_subject_overrides` accepts the scoped fixture's real
+    """`validate_subject_overrides` accepts the scoped fixture's real
     fields and refuses a truthy string, an unknown path, a section, and
     a raw credential — all before any case composes."""
-    import evals.__main__ as m
+    from nora.subject.obtain import validate_subject_overrides
 
-    m._validate_subject_overrides({
+    validate_subject_overrides({
         "computer.scoped.enabled": True,
         "computer.scoped.registry": "generated-registry"})
     with pytest.raises(ValueError, match="real bool"):
-        m._validate_subject_overrides({"computer.scoped.enabled": "false"})
+        validate_subject_overrides({"computer.scoped.enabled": "false"})
     with pytest.raises(ValueError, match="no config field"):
-        m._validate_subject_overrides({"computer.scoped.nope": 1})
+        validate_subject_overrides({"computer.scoped.nope": 1})
     with pytest.raises(ValueError, match="section"):
-        m._validate_subject_overrides({"computer.scoped": {}})
+        validate_subject_overrides({"computer.scoped": {}})
     with pytest.raises(ValueError, match="credential"):
-        m._validate_subject_overrides({"computer.token": "sk-raw"})
+        validate_subject_overrides({"computer.token": "sk-raw"})
 
 
 def test_a_non_private_evidence_dir_is_refused_before_dispatch(
@@ -124,4 +123,3 @@ def test_a_non_private_evidence_dir_is_refused_before_dispatch(
                         metadata={"corpus": "generated"})
     finally:
         os.close(lock)
-

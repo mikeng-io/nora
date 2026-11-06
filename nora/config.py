@@ -2350,6 +2350,10 @@ class ComputerConfig(BaseModel):
     enabled: bool = False
     base_url: str = "http://172.17.0.1:18765"
     token_env: str = "NORA_COMPUTER_TOKEN"  # noqa: S105 — names an env var, not a secret
+    # `pending_dir`/`state_dir` live under this app-owned private root —
+    # `/app/state` in the deployment; an eval subject points it at its
+    # case workdir through `Spec.overrides`, never a shared path.
+    state_dir: str = "/app/state"
     request_timeout_seconds: float = Field(default=30.0, gt=0)
     run_timeout_seconds: int = Field(default=120, gt=0)
     max_run_timeout_seconds: int = Field(default=900, gt=0)

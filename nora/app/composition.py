@@ -1825,7 +1825,7 @@ async def build_dependencies(
         # re-deliver. The read-only provisioner scope registry is untouched;
         # one process owns the store for its lifetime (exclusive flock).
         computer_segments = SegmentRegistry(
-            pending_dir=Path("/app/state") / "computer")
+            pending_dir=Path(cfg.computer.state_dir) / "computer")
 
         async def _deliver_computer_task(row: Any) -> None:
             await deliver_computer_task(
