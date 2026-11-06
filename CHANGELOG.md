@@ -1,5 +1,15 @@
 # Changelog
 
+## [7.15.17](https://github.com/mikeng-io/nora/compare/v7.15.16...v7.15.17) (2026-11-06)
+
+
+### Maintenance
+
+* **context:** enforce composed block bodies with a typed boundary ([3069eba](https://github.com/mikeng-io/nora/commit/3069eba2b5b3bea7215a9a3b09a9119ed95ceca2))
+* **context:** read composed text in remaining block consumers ([4d269d6](https://github.com/mikeng-io/nora/commit/4d269d6cb079ab18850d8123895e401b5fb557e2))
+* **context:** type the operator script body and presence assertions ([20cb34c](https://github.com/mikeng-io/nora/commit/20cb34cb1ea3681b6b358157dd8e10f62d3a8bc4))
+* Merge branch 'master' into test/one-context-composer ([c25779b](https://github.com/mikeng-io/nora/commit/c25779bb21369cbb49a08ae078646ce83481ca80))
+
 ## [7.15.16](https://github.com/mikeng-io/nora/compare/v7.15.15...v7.15.16) (2026-11-06)
 
 
