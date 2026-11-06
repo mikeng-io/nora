@@ -64,7 +64,7 @@ def _view(**fields) -> ComputerView:
 
 
 def _lines(block) -> list[str]:
-    return block.body.splitlines()
+    return block.body.text.splitlines()
 
 
 # -- the gate ---------------------------------------------------------------
@@ -152,8 +152,8 @@ async def test_an_active_room_renders_recent_files_and_runs_with_ages():
         platform="signal", conversation_id=ROOM)
     block = render_computer(view)
     assert block is not None
-    assert "file projects/trip/prices.csv · 3 B · changed 12 min ago" in block.body
-    assert "ran `python fit.py` · exit 2 · 5 min ago" in block.body
+    assert "file projects/trip/prices.csv · 3 B · changed 12 min ago" in block.body.text
+    assert "ran `python fit.py` · exit 2 · 5 min ago" in block.body.text
 
 
 async def test_files_older_than_the_recent_window_are_left_out():
@@ -178,8 +178,8 @@ async def test_a_lapsed_task_shows_within_its_window_and_is_gone_after():
     view = await _reader(runtime, sessions, events).read(platform="signal", conversation_id=ROOM)
     block = render_computer(view)
     assert block is not None
-    assert "lapsed task, stopped 23 h ago (no activity; files kept)" in block.body
-    assert "book a table" in block.body
+    assert "lapsed task, stopped 23 h ago (no activity; files kept)" in block.body.text
+    assert "book a table" in block.body.text
     later = ComputerContextReader(
         unit_for=lambda platform, cid: cid, sessions=sessions, events=events, runtime=runtime,
                                   caps=ComputerContextCaps(), metrics=Metrics(),
@@ -197,7 +197,7 @@ async def test_a_machine_that_cannot_be_read_still_renders_the_database_half():
         platform="signal", conversation_id=ROOM)
     block = render_computer(view)
     assert block is not None
-    assert "open task" in block.body and "could not be read" in block.body
+    assert "open task" in block.body.text and "could not be read" in block.body.text
 
 
 # -- caps ------------------------------------------------------------------
@@ -215,7 +215,7 @@ def test_each_section_is_capped_with_a_line_saying_how_many_more():
         runs=tuple(RunLine(f"cmd {i}", 0, True, NOW - timedelta(minutes=i)) for i in range(9)),
         caps=ComputerContextCaps(max_tokens=100_000),
     )
-    body = render_computer(view).body
+    body = render_computer(view).body.text
     assert body.count("open task,") == 5 and "+2 more open tasks" in body
     assert body.count("lapsed task,") == 3 and "+2 more lapsed tasks" in body
     assert body.count('tmux "') == 5 and "+2 more tmux sessions" in body
@@ -250,12 +250,12 @@ def test_the_ceiling_drops_the_oldest_lines_first_and_says_how_many():
                                  caps=ComputerContextCaps(max_tokens=100_000)))
     capped = render_computer(_view(files=files, runs=runs,
                                    caps=ComputerContextCaps(max_tokens=120)))
-    assert estimate_tokens(capped.body) <= 120 < estimate_tokens(full.body)
+    assert estimate_tokens(capped.body.text) <= 120 < estimate_tokens(full.body.text)
     last = _lines(capped)[-1]
     dropped = int(re.match(r"\+(\d+) older lines left out", last).group(1))
     assert dropped == len(_lines(full)) - (len(_lines(capped)) - 1)
     # The oldest go first: every run (30+ min old) before the newest file.
-    assert "file_00.csv" in capped.body and "step_4.py" not in capped.body
+    assert "file_00.csv" in capped.body.text and "step_4.py" not in capped.body.text
     assert "the newest of them" in last and AGE.search(last)
 
 
@@ -264,7 +264,7 @@ def test_a_cjk_objective_cannot_slip_past_the_ceiling():
     view = _view(open_sessions=tuple(
         SessionLine(_session(i, minutes_ago=i, objective=long_cjk), "active", None)
         for i in range(3)), caps=ComputerContextCaps(max_tokens=200))
-    body = render_computer(view).body
+    body = render_computer(view).body.text
     enc = tiktoken.get_encoding("cl100k_base")
     assert len(enc.encode(body)) <= 200
 
@@ -288,7 +288,7 @@ def test_a_full_block_is_about_four_hundred_tokens_or_fewer(n, capsys):
     )
     block = render_computer(view)
     enc = tiktoken.get_encoding("cl100k_base")
-    body_tokens, whole_tokens = len(enc.encode(block.body)), len(enc.encode(block.render()))
+    body_tokens, whole_tokens = len(enc.encode(block.body.text)), len(enc.encode(block.render()))
     print(f"computer block: body {body_tokens} tokens, whole {whole_tokens} (cl100k)")
     assert body_tokens <= 400
 
@@ -331,8 +331,8 @@ async def test_a_slow_machine_does_not_delay_the_block_past_its_budget():
     assert time.monotonic() - started < 1.0
     block = render_computer(view)
     assert block is not None
-    assert "scrape prices" in block.body  # the database half still renders
-    assert "the computer itself could not be read" in block.body
+    assert "scrape prices" in block.body.text  # the database half still renders
+    assert "the computer itself could not be read" in block.body.text
     assert metrics.get("nora_computer_context_machine_unread_total", reason="timeout") == 1
 
 
@@ -343,7 +343,7 @@ async def test_an_unreadable_machine_shows_an_open_task_as_running_unknown_never
     runtime.down = True
     view = await _reader(runtime, sessions, FakeComputerEventStore()).read(
         platform="signal", conversation_id=ROOM)
-    body = render_computer(view).body
+    body = render_computer(view).body.text
     assert "open task, running unknown" in body and "idle" not in body
 
 
@@ -368,7 +368,7 @@ async def test_a_good_machine_read_is_kept_for_the_cache_window():
 
 def test_a_task_whose_jobs_ended_says_its_files_were_kept():
     view = _view(lapsed_sessions=(SessionLine(_lapsed_jobs_ended(), "lapsed", None),))
-    assert "its tmux jobs ended; files kept" in render_computer(view).body
+    assert "its tmux jobs ended; files kept" in render_computer(view).body.text
 
 
 def _lapsed_jobs_ended() -> ComputerSession:
@@ -387,7 +387,7 @@ def test_the_ceiling_counts_the_escaped_text():
     view = _view(runs=(RunLine(amp, 0, True, NOW),),
                  files=(StateFile("f.txt", 1, NOW - timedelta(minutes=1)),),
                  caps=ComputerContextCaps(max_tokens=150))
-    body = render_computer(view).body
+    body = render_computer(view).body.text
     assert estimate_tokens(body) <= 150
 
 
@@ -425,7 +425,7 @@ async def test_a_link_the_room_made_shows_with_the_artifact_id_that_revises_it()
         await events.append(row)
     view = await _reader(FakeSandboxRuntime(clock=lambda: NOW), FakeComputerSessionStore(),
                          events).read(platform="signal", conversation_id=ROOM)
-    body = render_computer(view).body
+    body = render_computer(view).body.text
     assert ('link "Trip report" · artifact_id art_1 · https://portal.example.net/artifacts/art_1 · '
             "from out/r.html · revised 10 min ago") in body
     assert body.count("artifact_id art_1") == 1
@@ -440,7 +440,7 @@ def test_links_are_capped_with_a_line_saying_how_many_more():
                              False, NOW - timedelta(minutes=i)) for i in range(5)),
         caps=ComputerContextCaps(max_tokens=100_000),
     )
-    body = render_computer(view).body
+    body = render_computer(view).body.text
     assert body.count("link \"page") == 3 and "+2 more links" in body
 
 
@@ -457,7 +457,7 @@ async def test_a_nohup_job_shows_as_running_and_keeps_its_task_active():
     await _open_session(sessions)  # last active 3 h ago: idle without a job
     view = await _reader(runtime, sessions, FakeComputerEventStore()).read(
         platform="signal", conversation_id=ROOM)
-    body = render_computer(view).body
+    body = render_computer(view).body.text
     assert "process 159 `python tick.py --every 60` · running · started 17 min ago" in body
     assert "open task, active," in body
 
@@ -467,6 +467,6 @@ def test_a_command_is_escaped_exactly_once():
     escapes each line (`render_bullets`), nothing escapes it before."""
     view = _view(runs=(RunLine("python a.py > out.txt && echo ok", 0, True, NOW),),
                  caps=ComputerContextCaps(max_tokens=100_000))
-    body = render_computer(view).body
+    body = render_computer(view).body.text
     assert "python a.py &gt; out.txt &amp;&amp; echo ok" in body
     assert "&amp;gt;" not in body and "&amp;amp;" not in body

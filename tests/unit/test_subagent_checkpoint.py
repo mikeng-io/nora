@@ -336,7 +336,7 @@ async def _block_body(store, worker=None) -> str:
         reader.attach(worker)
     view = await reader.read(platform=PLATFORM, conversation_id=ROOM, person_id="ken")
     block = render_subagents(view)
-    return "" if block is None else block.body
+    return "" if block is None else block.body.text
 
 
 async def test_the_block_shows_doing_and_next_for_a_running_job_from_memory_or_the_row():
@@ -369,7 +369,7 @@ async def test_a_finished_job_in_the_block_shows_no_checkpoint():
 def test_a_running_line_without_a_checkpoint_is_unchanged():
     line = SubagentLine(id="1", state="running", title="T", objective="o", created_at=NOW,
                         progress_known=True, rounds=3, last_tool="x")
-    body = render_subagents(SubagentsView(lines=(line,), now=NOW)).body
+    body = render_subagents(SubagentsView(lines=(line,), now=NOW)).body.text
     assert "subagent_checkpoint" not in body and "3 rounds used" in body
 
 

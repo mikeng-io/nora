@@ -549,4 +549,4 @@ async def fold_recorded_unit(
     block = render_shared_state(dataclasses.replace(view, entries=ledger_entries), now_ms=now_ms)
     if block is None:
         raise LookupError("unit Standing projection unavailable")
-    return Folded(moved[0], block.body, (), ()), shown, rendered
+    return Folded(moved[0], block.body.text, (), ()), shown, rendered
