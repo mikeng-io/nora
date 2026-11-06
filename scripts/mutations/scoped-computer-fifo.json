@@ -37,8 +37,8 @@
   {
     "name": "a moved scope is refused, never retargeted",
     "file": "nora/app/computer_queue.py",
-    "old": "            if parent is not None and parent.scope == scope:",
-    "new": "            if parent is not None:",
+    "old": "            if live and parent is not None and parent.scope == scope:",
+    "new": "            if live and parent is not None:",
     "target": "tests/unit/test_scoped_computer.py::test_submit_refuses_a_scope_that_moved"
   },
   {
@@ -70,10 +70,10 @@
     "target": "tests/unit/test_scoped_computer.py::test_binding_refuses_empty_and_mismatched_instance"
   },
   {
-    "name": "a popup is bound to the task that owns the scope",
+    "name": "a popup binds only through its actual openerId",
     "file": "nora/infra/computer/manager.py",
-    "old": "            if owner is not None and room > 0:",
-    "new": "            if owner is not None and room > 99:",
+    "old": "            opener = str(orphan.get(\"openerId\") or \"\")",
+    "new": "            opener = str(orphan.get(\"targetId\") or \"\")",
     "target": "tests/unit/test_scoped_computer.py::test_popup_adopted_to_the_running_task"
   },
   {

@@ -38,6 +38,7 @@ from nora.agent.factory import (
 )
 from nora.domain.computer import BrowseOutcome
 from nora.infra.computer.browser import BrowserError, BrowserPage, open_browser
+from nora.language.browse_render import render_browse_brief
 
 log = logging.getLogger(__name__)
 
@@ -368,9 +369,11 @@ class BrowseAgentRunner:
                      record: Callable[..., Awaitable[None]] | None = None,
                      ) -> BrowseOutcome:
         task = _Task(page, self._settings, record=record)
-        brief = f"Task: {objective.strip()}"
-        if start_url:
-            brief += f"\nStart at: {start_url.strip()}"
+        # The brief is assembled (`nora.language.browse_render`), not
+        # f-stringed beside the model call: the occasion's prompt goes
+        # through the same `ContextBlock`/`assemble` path every other
+        # declared occasion does.
+        brief = render_browse_brief(objective, start_url)
         agent = create_browse_agent(
             model=self._models.create(), system_prompt=SYSTEM_PROMPT, tools=_tools(task),
             trace_attributes={"nora.agent": "browse"}, retry=self._retry,

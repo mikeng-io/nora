@@ -596,9 +596,16 @@ class BrowserPage:
             params["captureBeyondViewport"] = True
         got = await self._page("Page.captureScreenshot", params)
         data = got.get("data")
-        if not isinstance(data, str):
+        if not isinstance(data, str) or not data:
             raise BrowserError("no screenshot came back")
-        return base64.b64decode(data), "image/png", partial
+        try:
+            png = base64.b64decode(data)
+        except Exception as exc:
+            raise BrowserError("the screenshot was not decodable") from exc
+        if not png:
+            # A decodable-but-empty frame is a failed capture, not a picture.
+            raise BrowserError("the screenshot was empty")
+        return png, "image/png", partial
 
 
 def draw_marks(jpeg: bytes, boxes: list[tuple[str, float, float, float, float]]) -> bytes:

@@ -168,12 +168,16 @@ class ComputerContextReader:
         )
         used = any(r.actor != "sweeper" for r in rows)
         task_rows: list[ComputerTask] = []
+        tasks_unavailable = False
         if self._tasks is not None:
             try:
                 task_rows = await self._tasks.open_for_scope(scope, limit=8)
             except Exception:
                 log.exception("computer tasks read failed")
                 task_rows = []
+                # A wired store that could not be read renders
+                # `unavailable`, never a guessed empty queue.
+                tasks_unavailable = True
         # Housekeeping is not the room's work: a `maintenance` segment (the
         # browser lifecycle sweep claiming the scope's owner) is neither a
         # task the model can act on nor proof of activity, so it never
@@ -228,7 +232,8 @@ class ComputerContextReader:
                           for s in lapsed_rows[caps.max_lapsed_sessions:]))
         tasks: tuple[TaskLine, ...] | None = None
         tabs: tuple[TabLine, ...] | None = None
-        if self._tasks is not None:
+        tabs_unavailable = False
+        if self._tasks is not None and not tasks_unavailable:
             try:
                 tasks = tuple(TaskLine(
                     # The FULL id: `task=` on computer_browse/capture/cancel
@@ -240,6 +245,7 @@ class ComputerContextReader:
             except Exception:
                 log.exception("computer tasks read failed")
                 tasks = None
+                tasks_unavailable = True
         instance: str | None = None
         instance_read = getattr(self._runtime, "instance", None)
         if instance_read is not None:
@@ -295,6 +301,7 @@ class ComputerContextReader:
             except Exception:
                 log.exception("browser tabs read failed")
                 tabs = None
+                tabs_unavailable = True
         self._revisions[scope] = self._revisions.get(scope, 0) + 1
         return ComputerView(
             now=now, caps=caps, open_sessions=tuple(open_lines),
@@ -302,7 +309,10 @@ class ComputerContextReader:
             tmux=tmux, processes=processes,
             processes_truncated=state.processes_truncated if state is not None else False,
             files=files, runs=_runs(rows), links=_links(rows),
-            tasks=tasks, tabs=tabs, instance=instance, state_at=state_at,
+            tasks=tasks, tabs=tabs,
+            tasks_unavailable=tasks_unavailable,
+            tabs_unavailable=tabs_unavailable,
+            instance=instance, state_at=state_at,
             revision=self._revisions[scope],
             machine_read=machine_read,
         )

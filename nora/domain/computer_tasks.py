@@ -196,6 +196,18 @@ class ComputerTaskStore(Protocol):
         `delivered_at`, bookkeeping only — the result row already stands."""
         ...
 
+    async def elect_delivery(self, task_id: UUID, *, now: datetime,
+                             job: Any = None) -> ComputerTask | None:
+        """The ONE durable delivery disposition, as a compare-and-set:
+        `delivered_at` is written only while it is still NULL, and only on a
+        terminal row — the returned row says THIS call won; `None` says
+        another disposition (live handoff or deferred outbox) already
+        landed, and the caller must not deliver again. When `job` is a
+        `ComputeJob`, it is filed in the SAME transaction as the stamp, so
+        a crash cannot leave a stamped row with no outbox entry, nor an
+        outbox entry an election never granted."""
+        ...
+
     async def undelivered(self, *, limit: int) -> list[ComputerTask]:
         """TERMINAL rows whose `delivered_at` is still empty: the durable
         delivery retry's discovery read — independent of open work, so the

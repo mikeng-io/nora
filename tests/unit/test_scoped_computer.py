@@ -132,11 +132,17 @@ async def test_nested_call_inherits_the_slot() -> None:
     admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
     parent = task(scope=SCOPE)
     await store.enqueue(parent)
+    # Inheritance needs a LIVE grant: the row running and this registry
+    # owning its executor — a bare queued row or a contextvar alone is dead
+    # authority and the child falls through to its own admission.
+    parent = await store.claim(parent.id, now=NOW)
+    admission.executors.register(parent.id, asyncio.current_task())
     token = current_segment.set(parent.id)
     try:
         got = await admission.submit(scope=SCOPE, kind="native", payload={}, origin={})
     finally:
         current_segment.reset(token)
+        admission.executors.unregister(parent.id, asyncio.current_task())
     assert got.inherited and not got.granted
     # No new row, no stream entry: a child never queues behind its parent.
     assert [r.id for r in store.rows.values()] == [parent.id]
@@ -145,7 +151,9 @@ async def test_nested_call_inherits_the_slot() -> None:
 
 async def test_runner_grants_head_then_executes_and_delivers() -> None:
     store, redis = FakeComputerTaskStore(), FakeStreamRedis()
-    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    admission = ComputerAdmission(
+        tasks=store, redis=redis, clock=clock(),
+        reconcile=lambda scope: asyncio.sleep(0, "quiet"))
     delivered: list[ComputerTask] = []
     ran: list[str] = []
 
@@ -162,7 +170,8 @@ async def test_runner_grants_head_then_executes_and_delivers() -> None:
 
     runner = ComputerQueueRunner(
         tasks=store, redis=redis, clock=clock(), watch_seconds=0.01,
-        on_terminal=collect, dispatch={"native": executor})
+        on_terminal=collect, dispatch={"native": executor},
+        reconcile=lambda scope: asyncio.sleep(0, "quiet"))
     blocker = await admission.submit(scope=SCOPE, kind="native", payload={}, origin={})
     queued = await admission.submit(scope=SCOPE, kind="native",
                                     payload={"tool": "computer_run",
@@ -258,7 +267,8 @@ class _Cdp:
         if method == "Target.getTargets":
             return {"targetInfos": [
                 {"targetId": tid, "type": "page",
-                 "url": t.get("url", ""), "title": t.get("title", "")}
+                 "url": t.get("url", ""), "title": t.get("title", ""),
+                 "openerId": t.get("openerId", "")}
                 for tid, t in self.targets.items()]}
         if method == "Target.closeTarget":
             tid = (params or {})["targetId"]
@@ -602,7 +612,8 @@ async def test_deferred_dispatch_rebuilds_the_durable_request() -> None:
     # A NEW runner, a NEW admission — the in-process state is gone.
     runner = ComputerQueueRunner(
         tasks=store, redis=redis, clock=clock(),
-        dispatch={"native": executor})
+        dispatch={"native": executor},
+        reconcile=lambda scope: asyncio.sleep(0, "quiet"))
     assert await runner.tick() == 1
     for _ in range(50):
         fresh = await store.get(row.id)
@@ -663,20 +674,30 @@ async def test_foreign_and_invented_handles_are_refused(monkeypatch) -> None:
 
 
 async def test_popup_adopted_to_the_running_task(monkeypatch) -> None:
-    """A page target with no row — a popup — is bound to the task executing
-    when it is found (`via="popup"`), counted toward the four-cap."""
+    """A page target with no row — a popup — is bound to the task that owns
+    its ACTUAL `openerId` (`via="popup"`), never whichever task happened to
+    trigger the reconcile; a popup no bound target opened is closed, not
+    exposed unattributed."""
     rig = _wired(monkeypatch)
     _register(rig.runtime)
     owner = uuid.uuid4()
-    async with rig.manager.acquire(SCOPE, owner):
-        # The segment's own click spawned a page target.
-        rig.cdp.targets["popup-1"] = {"url": "https://x", "title": "pop"}
+    async with rig.manager.acquire(SCOPE, owner) as bound:
+        opener = bound.tab.target_id
+        # The owner's click spawned a page target FROM its own tab.
+        rig.cdp.targets["popup-1"] = {
+            "url": "https://x", "title": "pop", "openerId": opener}
         rig.cdp.fire("Target.targetCreated",
-                     {"targetInfo": {"targetId": "popup-1", "type": "page"}})
+                     {"targetInfo": {"targetId": "popup-1", "type": "page",
+                                     "openerId": opener}})
+        # And one nobody opened — the unattributed page is refused.
+        rig.cdp.targets["popup-2"] = {"url": "https://y", "title": "mystery"}
+        rig.cdp.fire("Target.targetCreated",
+                     {"targetInfo": {"targetId": "popup-2", "type": "page"}})
         await asyncio.sleep(0.05)
         adopted = [r for r in rig.tabs.rows.values() if r.via == "popup"]
         assert adopted and adopted[0].task_id == owner
         assert adopted[0].target_id == "popup-1"
+        assert "popup-2" in rig.cdp.closed or "popup-2" not in rig.cdp.targets
 
 
 async def test_context_renders_full_opaque_handles(monkeypatch) -> None:
@@ -794,6 +815,10 @@ async def test_submit_refuses_a_scope_that_moved() -> None:
     admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
     parent = task(scope=SCOPE)
     await store.enqueue(parent)
+    # A live parent — running, owned by a registered executor — is the
+    # authority the foreign-scope refusal is checked against.
+    parent = await store.claim(parent.id, now=NOW)
+    admission.executors.register(parent.id, asyncio.current_task())
     token = current_segment.set(parent.id)
     try:
         moved = await admission.submit(scope=OTHER, kind="native",
@@ -802,6 +827,7 @@ async def test_submit_refuses_a_scope_that_moved() -> None:
                                       payload={}, origin={})
     finally:
         current_segment.reset(token)
+        admission.executors.unregister(parent.id, asyncio.current_task())
     assert not moved.granted and not moved.inherited
     assert moved.result is not None and moved.result.status == "unavailable"
     assert "scope moved" in (moved.result.result or {}).get("reason", "")
@@ -1077,7 +1103,9 @@ async def test_cleanup_claims_the_scopes_elected_owner(monkeypatch) -> None:
     `run_segment`, and closed `done` — the cleanup is a segment, not a
     second admission path beside the FIFO."""
     store, redis = FakeComputerTaskStore(), FakeStreamRedis()
-    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    admission = ComputerAdmission(
+        tasks=store, redis=redis, clock=clock(),
+        reconcile=lambda scope: asyncio.sleep(0, "quiet"))
     rig = _wired(monkeypatch, tasks=store, segments=admission)
     _register(rig.runtime)
     # An idle OPEN row gives the pass real work.
@@ -1139,7 +1167,9 @@ async def test_a_submit_waits_for_cleanup_then_takes_the_scope(
     closes, that same row can be granted — the successor runs only after
     the cleanup owner released the scope."""
     store, redis = FakeComputerTaskStore(), FakeStreamRedis()
-    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    admission = ComputerAdmission(
+        tasks=store, redis=redis, clock=clock(),
+        reconcile=lambda scope: asyncio.sleep(0, "quiet"))
     rig = _wired(monkeypatch, tasks=store, segments=admission)
     _register(rig.runtime)
     rig.runtime.browser_running = True
@@ -1199,7 +1229,8 @@ async def test_a_leaked_queued_maintenance_row_is_closed_never_started() -> None
 
     runner = ComputerQueueRunner(
         tasks=store, redis=redis, clock=clock(), watch_seconds=0.01,
-        dispatch={"native": executor})
+        dispatch={"native": executor},
+        reconcile=lambda scope: asyncio.sleep(0, "quiet"))
     assert await runner.tick() >= 0
     leaked_row = await store.get(leaked.id)
     assert leaked_row is not None and leaked_row.status == "cancelled"
@@ -1314,7 +1345,8 @@ async def test_an_uncertain_queued_reply_holds_the_scope() -> None:
         return verdict["v"]
 
     store, redis = FakeComputerTaskStore(), FakeStreamRedis()
-    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock(),
+                                  reconcile=reconcile)
     blocker = await admission.submit(scope=SCOPE, kind="native", payload={},
                                      origin={})
     queued = await admission.submit(scope=SCOPE, kind="native",
@@ -1322,7 +1354,9 @@ async def test_an_uncertain_queued_reply_holds_the_scope() -> None:
                                              "args": {"command": "true"}},
                                     origin={}, wait_seconds=0.0)
     assert blocker.granted and not queued.granted
+    verdict["v"] = "quiet"
     await admission.finish(blocker.task.id, status="done", result={})
+    verdict["v"] = "busy"
 
     async def executor(row: ComputerTask) -> dict:
         return {"status": "unavailable", "uncertain": True,
@@ -1419,7 +1453,9 @@ async def test_a_failed_finish_on_the_runner_retries_before_delivery() -> None:
     stream entry stays pending (never acked, never delivered) and the
     next reconcile persists the ORIGINAL result — not `interrupted`."""
     store, redis = FakeComputerTaskStore(), FakeStreamRedis()
-    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    admission = ComputerAdmission(
+        tasks=store, redis=redis, clock=clock(),
+        reconcile=lambda scope: asyncio.sleep(0, "quiet"))
     blocker = await admission.submit(scope=SCOPE, kind="native", payload={},
                                      origin={})
     queued = await admission.submit(scope=SCOPE, kind="native",
@@ -1527,7 +1563,9 @@ async def test_maintenance_cannot_run_beside_a_running_task() -> None:
     work: while a task is running, `browser_stop` cannot be admitted —
     the guest reaper is not a second lifecycle owner."""
     store, redis = FakeComputerTaskStore(), FakeStreamRedis()
-    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    admission = ComputerAdmission(
+        tasks=store, redis=redis, clock=clock(),
+        reconcile=lambda scope: asyncio.sleep(0, "quiet"))
     first = await admission.submit(scope=SCOPE, kind="native", payload={},
                                    origin={})
     assert first.granted

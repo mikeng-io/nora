@@ -51,21 +51,23 @@ class _FailingTasks(FakeComputerTaskStore):
             raise RuntimeError("injected SQL finish failure")
         return await super().finish(task_id, status=status, result=result, now=now)
 
-    async def mark_delivered(self, task_id, *, now):
+    async def elect_delivery(self, task_id, *, now, job=None):
         if self.fail_delivered:
-            raise RuntimeError("injected SQL mark_delivered failure")
-        return await super().mark_delivered(task_id, now=now)
+            raise RuntimeError("injected SQL delivery-election failure")
+        return await super().elect_delivery(task_id, now=now, job=job)
 
 
 async def _work(result):
     return result
 
 
-def _rig(pending_dir):
+def _rig(pending_dir, *, reconcile=None):
     executors = SegmentRegistry(pending_dir=pending_dir)
     tasks = _FailingTasks()
-    admission = ComputerAdmission(tasks=tasks, redis=FakeStreamRedis(),
-                                  clock=lambda: NOW, executors=executors)
+    admission = ComputerAdmission(
+        tasks=tasks, redis=FakeStreamRedis(),
+        clock=lambda: NOW, executors=executors,
+        reconcile=reconcile or (lambda scope: asyncio.sleep(0, "quiet")))
     return executors, tasks, admission
 
 
@@ -274,20 +276,19 @@ async def test_the_shared_finish_path_journals_before_its_waits(tmp_path):
     sees the real payload, not an empty registry that would close the row
     as a generic interruption."""
     directory = tmp_path / "pending"
-    executors, tasks, admission = _rig(directory)
-    task = _task()
-    await tasks.enqueue(task)
-    await tasks.try_claim_head(task.id, now=NOW)
-
     quiet = asyncio.Event()
 
     async def gate(scope: str) -> str:
         await quiet.wait()
         return "busy"  # never proves quiet: the row must stay running
 
+    executors, tasks, admission = _rig(directory, reconcile=gate)
+    task = _task()
+    await tasks.enqueue(task)
+    await tasks.try_claim_head(task.id, now=NOW)
+
     holding = asyncio.ensure_future(admission._finish_guarded(
-        task, "done", {"status": "ok", "v": 13, "stdout": "kept"},
-        uncertain=True))
+        task, "done", {"status": "ok", "v": 13, "stdout": "kept"}))
     await asyncio.sleep(0.05)  # inside the quiet wait
 
     os.close(executors._lock_fd)  # simulate process death mid-wait
@@ -324,16 +325,16 @@ async def test_a_siblings_checkpoint_cannot_leak_an_unconfirmed_consumption(tmp_
     gate = asyncio.Event()
     inside = asyncio.Event()
     fail = {"on": False}
-    real_mark = tasks.mark_delivered
+    real_elect = tasks.elect_delivery
 
-    async def pausing(task_id, *, now):
+    async def pausing(task_id, *, now, job=None):
         inside.set()
         await gate.wait()
         if fail["on"]:
-            raise OSError("mark_delivered offline")
-        return await real_mark(task_id, now=now)
+            raise OSError("delivery election offline")
+        return await real_elect(task_id, now=now, job=job)
 
-    tasks.mark_delivered = pausing  # type: ignore[method-assign]
+    tasks.elect_delivery = pausing  # type: ignore[method-assign]
     call = asyncio.ensure_future(
         admission.run_segment(task_a, _work({"status": "ok", "v": 17})))
     await inside.wait()
@@ -357,7 +358,7 @@ async def test_a_siblings_checkpoint_cannot_leak_an_unconfirmed_consumption(tmp_
     assert "v" not in reply
     executors._spill = real_spill
     tasks.fail_delivered = False
-    tasks.mark_delivered = real_mark  # type: ignore[method-assign]
+    tasks.elect_delivery = real_elect  # type: ignore[method-assign]
 
     # The disk must never hold a `True` the SQL authority did not confirm.
     snapshot = json.loads(
@@ -370,7 +371,7 @@ async def test_a_siblings_checkpoint_cannot_leak_an_unconfirmed_consumption(tmp_
     recovered = second.pending_result(task_a.id)
     assert recovered is not None and not recovered.consumed
     assert second.pending_result(task_b.id).result["v"] == 2
-    tasks.mark_delivered = real_mark  # type: ignore[method-assign]
+    tasks.elect_delivery = real_elect  # type: ignore[method-assign]
     assert await _persist_pending(
         executors=second, tasks=tasks, clock=lambda: NOW, task_id=task_a.id)
     row = await tasks.get(task_a.id)

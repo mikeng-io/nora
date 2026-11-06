@@ -14,6 +14,7 @@ they prove schema/request formatting, not zero model activity.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime
 
@@ -95,7 +96,8 @@ def _rig(persons):
         browser=FakeBrowserRunner(),
         computer_admission=ComputerAdmission(
             tasks=FakeComputerTaskStore(), redis=FakeStreamRedis(),
-            clock=lambda: NOW),
+            clock=lambda: NOW,
+            reconcile=lambda scope: asyncio.sleep(0, "quiet")),
         browser_manager=object(),
         computer_dm_scope_for=lambda platform, cid: "dm-anchor-1",
         artifact_link_base="https://portal.test/",

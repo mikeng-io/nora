@@ -42,30 +42,42 @@ def _usage_counts(usage: Any) -> tuple[int, int] | None:
     return (inp, out)  # strictness is reconcile's job, not extraction's
 
 
-def _check_body_shape(body: dict[str, Any]) -> None:
-    """A bounded run only admits text-shaped messages: `str` content or
-    parts of `{"type": "text"}` — the only shapes the byte bound can
-    cover. Checked on the FINAL body, after every SDK transform."""
+def _check_body_shape(body: dict[str, Any], budget: RunBudget) -> None:
+    """A bounded run admits the request shapes it can honestly measure:
+    `str` content, `{"type": "text"}` parts, and `{"type": "image_url"}`
+    parts — the browser journey's screenshots. Image input is measured
+    by the provider's own `usage` reconcile, so it is admitted only while
+    the budget carries no hard input-TOKEN bound (a `max_input_tokens`
+    budget is already `spent` at construction, so nothing dispatches
+    under one anyway); the serialized-input byte bound still caps the
+    wire body, image bytes included. Any other shape refuses AND LATCHES
+    the budget — an unsupported shape that only raised would let the
+    run's `finished` report success over a request the budget never
+    understood. Checked on the FINAL body, after every SDK transform."""
     messages = body.get("messages")
     if messages is None:
         return
     if not isinstance(messages, list):
-        raise RunBudgetError(
+        raise budget._fail(
             "run budget: non-list messages — unsupported input shape")
     for msg in messages:
         if not isinstance(msg, dict):
-            raise RunBudgetError(
+            raise budget._fail(
                 "run budget: non-dict message — unsupported input shape")
         content = msg.get("content")
         if content is None or isinstance(content, str):
             continue
         if isinstance(content, list) and all(
-                isinstance(p, dict) and p.get("type") == "text"
+                isinstance(p, dict) and (
+                    p.get("type") == "text"
+                    or (p.get("type") == "image_url"
+                        and budget.max_input_tokens is None
+                        and isinstance(p.get("image_url"), dict)))
                 for p in content):
             continue
-        raise RunBudgetError(
-            "run budget: non-text message part — the byte bound cannot "
-            "cover image/audio/other input shapes")
+        raise budget._fail(
+            "run budget: unsupported message part — admitted shapes are "
+            "text and, while input is measured not capped, image_url")
 
 
 def _declared_ceiling(body: dict[str, Any]) -> int | None:
@@ -220,7 +232,7 @@ class _BoundedTransport(httpx.AsyncBaseTransport):
             raise budget._fail(
                 "run budget: non-JSON request body — unsupported shape"
             ) from exc
-        _check_body_shape(body)
+        _check_body_shape(body, budget)
         ceiling = _declared_ceiling(body)
         if ceiling is None:
             budget.invalidate(
@@ -381,7 +393,7 @@ async def gated_create(budget: RunBudget, create: Any,
     wire-input bound and usage reconcile stay at the transport, which is
     the only authoritative measure; this layer never admits anything."""
     budget.would_admit()
-    _check_body_shape(kwargs)
+    _check_body_shape(kwargs, budget)
     return await create(*args, **kwargs)
 
 

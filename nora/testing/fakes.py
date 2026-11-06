@@ -2758,12 +2758,19 @@ class FakeScopeEndpoints:
 class FakeComputerTaskStore:
     """In-memory `ComputerTaskStore` with the same compare-and-set semantics:
     `claim` only moves a row still `queued`; `request_cancel` takes queued to
-    cancelled and flags running; `finish` only writes a running row."""
+    cancelled and flags running; `finish` only writes a running row.
 
-    def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
+    `outbox` is the `FakeComputeJobStore` `elect_delivery` files a deferred
+    job into — the fake's image of "same database, one transaction": the
+    stamp and the filing land together or not at all."""
+
+    def __init__(self, *, clock: Callable[[], datetime] | None = None,
+                 outbox: Any = None) -> None:
         self.rows: dict[UUID, ComputerTask] = {}
         self._clock = clock or (lambda: datetime.now(UTC))
         self._scope_locks: dict[str, asyncio.Lock] = {}
+        self._outbox = outbox
+        self.filed_jobs: list[Any] = []
 
     def _save(self, task: ComputerTask) -> ComputerTask:
         self.rows[task.id] = task
@@ -2853,6 +2860,22 @@ class FakeComputerTaskStore:
         if task is not None:
             self._save(replace(task, delivered_at=now, updated_at=now))
 
+    async def elect_delivery(self, task_id: UUID, *, now: datetime,
+                             job: Any = None) -> ComputerTask | None:
+        task = self.rows.get(task_id)
+        if task is None or task.delivered_at is not None \
+                or task.status not in TERMINAL:
+            return None
+        # The stamp lands first in memory (the same compare-and-set); the
+        # job filing follows inside this one call — the fake's no-crash
+        # model of the real store's single transaction.
+        task = self._save(replace(task, delivered_at=now, updated_at=now))
+        if job is not None:
+            self.filed_jobs.append(job)
+            if self._outbox is not None:
+                await self._outbox.create(job)
+        return task
+
     async def undelivered(self, *, limit: int) -> list[ComputerTask]:
         return [t for t in sorted(
             self.rows.values(), key=lambda t: t.finished_at or t.updated_at)
@@ -2941,6 +2964,9 @@ class FakeStreamRedis:
 
     async def xgroup_create(self, stream: str, group: str, id: str = "0",
                             mkstream: bool = False) -> None:
+        if group in self.groups.get(stream, set()):
+            raise RuntimeError(
+                f"BUSYGROUP Consumer Group name already exists: {group}")
         self.groups.setdefault(stream, set()).add(group)
         self.streams.setdefault(stream, [])
 
@@ -2950,7 +2976,9 @@ class FakeStreamRedis:
         out = []
         for stream, after in streams.items():
             if group not in self.groups.get(stream, set()):
-                continue
+                raise RuntimeError(
+                    f"NOGROUP No such key '{stream}' or consumer group "
+                    f"'{group}' in XREADGROUP with GROUP option")
             if after == "0":
                 # Pending entries already delivered to this group, unacked —
                 # real XREADGROUP "0" answers these without re-delivering.
@@ -2983,6 +3011,17 @@ class FakeStreamRedis:
             ids.remove(mid)
             return 1
         return 0
+
+    async def xtrim(self, stream: str, maxlen: int,
+                    approximate: bool = True) -> int:
+        """Keep at most the newest `maxlen` entries — the real `XTRIM
+        MAXLEN ~` the runner calls after acking, bounding a pointer that
+        the `computer_tasks` row is always the authority over."""
+        entries = self.streams.get(stream, [])
+        drop = max(0, len(entries) - maxlen)
+        if drop:
+            del entries[:drop]
+        return drop
 
     async def scan_iter(self, match: str = "*", count: int = 100):
         import fnmatch as _fn

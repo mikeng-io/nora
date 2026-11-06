@@ -69,6 +69,9 @@ log = logging.getLogger("nora.computer.queue")
 STREAM_PREFIX = "nq:computer:"
 GROUP = "nora-computer"
 CONSUMER = "nora"
+#: The stream's approximate bound. It is a POINTER, never the record —
+#: `computer_tasks` holds every segment; a lost pointer is reconcilable.
+STREAM_MAX = 128
 #: A `running` row with no deadline that stays unfinished this long is
 #: orphaned: its owner died mid-segment. Never re-run — close `interrupted`.
 ORPHAN_AFTER = timedelta(minutes=45)
@@ -177,8 +180,30 @@ class SegmentRegistry:
         self._pending_dir = pending_dir
         self._pending_path: Path | None = None
         self._lock_fd: int | None = None
+        self._closed = False
         if pending_dir is not None:
             self._open_pending_store()
+
+    def close(self) -> None:
+        """Release the lifetime lock for explicit shutdown and for GC.
+
+        One process owns the journal for its lifetime; `close` is how that
+        lifetime ENDS cleanly — a final checkpoint, then the fd (whose close
+        drops the flock). Idempotent, and safe from `__del__`: an
+        abandoned registry still releases its lock, so the next process —
+        or the next owner in the same tests — is not refused forever."""
+        if self._closed:
+            return
+        self._closed = True
+        if self._pending_path is not None and self._pending:
+            self._spill()  # final checkpoint before the lock goes
+        fd, self._lock_fd = self._lock_fd, None
+        if fd is not None:
+            with contextlib.suppress(OSError):
+                os.close(fd)  # closing the fd releases the flock
+
+    def __del__(self) -> None:
+        self.close()
 
     def _open_pending_store(self) -> None:
         """Take exclusive lifetime ownership and recover the durable map.
@@ -390,23 +415,37 @@ class ComputerAdmission:
         segment_id = current_segment.get()
         if segment_id is not None:
             parent = await self._tasks.get(segment_id)
-            if parent is not None and parent.scope == scope:
-                return SubmittedTask(task=_ephemeral(scope, kind, self._clock()),
+            now = self._clock()
+            # Inheritance needs a LIVE grant: `running`, not cancel-flagged,
+            # not past its deadline, and still OWNED by a registered
+            # executor of this registry. A terminal, cancelled, expired or
+            # owner-lost parent — or a segment id nothing owns — cannot
+            # authorize new work under its slot; the call falls through to
+            # a FRESH admission on the caller's own authority.
+            live = (
+                parent is not None and parent.status == RUNNING
+                and parent.cancel_requested_at is None
+                and (parent.deadline_at is None or parent.deadline_at > now)
+                and self.executors.executor(parent.id) is not None)
+            if live and parent is not None and parent.scope == scope:
+                return SubmittedTask(task=_ephemeral(scope, kind, now),
                                      inherited=True)
-            # The durable row is bound to the scope it was admitted for. A
-            # rebuilt call that resolves a DIFFERENT partition — the room's
-            # unit or DM anchor moved under the queued row — is never run
-            # under the old grant and never retargeted: it is unavailable.
-            moved = _ephemeral(scope, kind, self._clock())
-            return SubmittedTask(task=moved, result=replace(
-                moved, status=UNAVAILABLE, finished_at=self._clock(),
-                result={
-                    "status": "unavailable",
-                    "reason": "the task's scope moved while it was queued",
-                    "note": "That computer task could not run: the unit or DM "
-                            "it belonged to changed while it waited, and it is "
-                            "never run against a different computer.",
-                }))
+            if live:
+                # The durable row is bound to the scope it was admitted for. A
+                # rebuilt call that resolves a DIFFERENT partition — the room's
+                # unit or DM anchor moved under the queued row — is never run
+                # under the old grant and never retargeted: it is unavailable.
+                moved = _ephemeral(scope, kind, now)
+                return SubmittedTask(task=moved, result=replace(
+                    moved, status=UNAVAILABLE, finished_at=self._clock(),
+                    result={
+                        "status": "unavailable",
+                        "reason": "the task's scope moved while it was queued",
+                        "note": "That computer task could not run: the unit or DM "
+                                "it belonged to changed while it waited, and it is "
+                                "never run against a different computer.",
+                        "no_guest_effect": True,
+                    }))
         now = self._clock()
         task = ComputerTask(
             id=uuid.uuid4(), scope=scope, kind=kind, status=QUEUED,
@@ -475,13 +514,11 @@ class ComputerAdmission:
                 # surviving work — a stopped HTTP awaiter is not a stopped
                 # guest command. Busy or unreadable leaves the row
                 # `running`: owner-lost, the watchdog's reconcile owns it.
-                await self._finish_guarded(task, "cancelled", reply,
-                                           uncertain=True)
+                await self._finish_guarded(task, "cancelled", reply)
                 raise
             except BaseException as exc:
                 reply = {"status": "unavailable", "reason": type(exc).__name__}
-                await self._finish_guarded(task, "unavailable", reply,
-                                           uncertain=True)
+                await self._finish_guarded(task, "unavailable", reply)
                 raise
             else:
                 # `_finish_guarded` journals the returned outcome before its
@@ -490,9 +527,7 @@ class ComputerAdmission:
                 # is NOT cleared after a successful finish: `consumed`/
                 # `delivered` disposition is only durably settled by
                 # `delivered()` (live handoff) or the deferred path.
-                await self._finish_guarded(
-                    task, row_status(reply), reply,
-                    uncertain=bool(reply.get("uncertain")))
+                await self._finish_guarded(task, row_status(reply), reply)
                 outcome["reply"] = reply
             finally:
                 current_segment.reset(token)
@@ -552,12 +587,11 @@ class ComputerAdmission:
 
     async def _finish_guarded(
         self, task: ComputerTask, status: str, reply: Mapping[str, Any],
-        *, uncertain: bool,
     ) -> bool:
         return await _finish_guarded(
             executors=self.executors, reconcile=self._reconcile,
             finish=self._safe_finish, task=task, status=status,
-            reply=reply, uncertain=uncertain)
+            reply=reply)
 
     async def _safe_finish(
         self, task_id: UUID, status: str, result: Mapping[str, Any],
@@ -572,8 +606,14 @@ class ComputerAdmission:
 
     async def finish(self, task_id: UUID, *, status: str,
                      result: Mapping[str, Any]) -> None:
-        """The executing caller's close: terminal row persisted."""
-        await self._safe_finish(task_id, status, result)
+        """The executing caller's close: terminal row persisted, under the
+        same guest-quiet gate every executor honors — a worker whose nested
+        segments left detached guest work stays `running` until the VM is
+        observed quiet."""
+        task = await self._tasks.get(task_id)
+        if task is None:
+            return
+        await self._finish_guarded(task, status, result)
 
     async def cancel(self, task_id: UUID) -> ComputerTask | None:
         """Cancel a task AND drain its executor. A queued row closes
@@ -634,11 +674,20 @@ class ComputerAdmission:
         # disk and a restart would stamp a never-delivered result.
         self.executors.retain(task_id, row.status, row.result)
         try:
-            await self._tasks.mark_delivered(task_id, now=self._clock())
+            # The election IS the durable disposition: a deferred outbox
+            # filing that beats this stamp means the room is being told
+            # through the job — the caller must NOT also get the result.
+            won = await self._tasks.elect_delivery(task_id, now=self._clock())
         except Exception:  # noqa: BLE001 - the stamp store is the boundary; it must answer
             log.error("computer task %s delivery stamp could not be "
                       "committed; the original result stays "
                       "deferred-eligible", task_id)
+            return False
+        if won is None:
+            # Another disposition landed first (the deferred outbox elected
+            # itself): the result is owned elsewhere, not by this caller.
+            log.info("computer task %s live delivery lost the election; the "
+                     "deferred outbox owns it", task_id)
             return False
         self.executors.clear_pending(task_id)
         return True
@@ -661,18 +710,18 @@ async def _finish_guarded(
     reconcile: Callable[[str], Awaitable[str]] | None,
     finish: Callable[[UUID, str, Mapping[str, Any]], Awaitable[bool]],
     task: ComputerTask, status: str, reply: Mapping[str, Any],
-    uncertain: bool,
 ) -> bool:
     """Terminalize, gated on the guest having actually stopped.
 
-    An UNCERTAIN exit — the transport dropped mid-command, the executor
-    raised, the caller cancelled, the outcome itself says so — cannot say
-    the guest's work ended. Only an observed `quiet` verdict proves it:
-    busy or unknown keeps the row `running` and the scope blocked, with
-    the real outcome retained for the reconcile pass to persist (never
-    replayed). A certain exit — an answered result or refusal — finishes
-    straight away; a finish the store refuses is retained the same way,
-    so the durable row is written before delivery rather than lost."""
+    EVERY guest-effectful outcome — answered, refused mid-run, uncertain or
+    cancelled — holds the scope's exclusion until the guest reports quiet:
+    an answered `computer_run` can leave a detached `nohup` or tmux job
+    behind, and the HTTP reply is not proof the work stopped. Only an
+    observed `quiet` verdict proves it: busy or unknown keeps the row
+    `running` and the scope blocked, with the real outcome retained for
+    the reconcile pass to persist (never replayed). The one exception is a
+    reply that provably never reached the guest (`no_guest_effect` — a
+    pre-admission refusal); it terminalizes at once."""
     # The ORIGINAL outcome is journaled before ANY wait — quiet-check or
     # SQL write — because a restart inside either would otherwise lose it
     # and a fresh owner would close the row as a generic interruption.
@@ -682,10 +731,8 @@ async def _finish_guarded(
         log.error("computer task %s outcome retained in memory only; the "
                   "durable journal did not take it", task.id)
     persisted = False
-    if uncertain and not await _guest_quiet(reconcile, task.scope,
-                                            seconds=DRAIN_SECONDS):
-        pass
-    else:
+    if reply.get("no_guest_effect") or await _guest_quiet(
+            reconcile, task.scope, seconds=DRAIN_SECONDS):
         persisted = await finish(task.id, status, reply)
     if not persisted:
         log.error("computer task %s terminal row did not land; the retained "
@@ -717,7 +764,9 @@ async def _persist_pending(
     if row is not None and row.status in TERMINAL:
         if pending.consumed and row.delivered_at is None:
             try:
-                await tasks.mark_delivered(task_id, now=clock())
+                # A caller-consumed row elects the stamp alone — never a
+                # deferred job, the reply already went out live.
+                await tasks.elect_delivery(task_id, now=clock())
             except Exception:
                 log.exception("computer task consumed disposition failed (retained)")
                 return False
@@ -796,10 +845,18 @@ class ComputerQueueRunner:
             self._dispatch[kind] = executor
 
     async def _group(self, stream: str) -> None:
+        """Create the consumer group once per stream. Only an actual create
+        or the group's own BUSYGROUP answer marks it ready — a transient or
+        NOGROUP failure is retried next pass, never cached as success."""
         if stream in self._group_ready:
             return
-        with contextlib.suppress(Exception):
+        try:
             await self._redis.xgroup_create(stream, GROUP, id="0", mkstream=True)
+        except Exception as exc:  # noqa: BLE001 - BUSYGROUP is the only ready verdict
+            if "BUSYGROUP" not in str(exc):
+                log.warning("computer queue group create failed for %s; "
+                            "retried next pass", stream)
+                return
         self._group_ready.add(stream)
 
     async def _scopes(self) -> list[str]:
@@ -891,6 +948,7 @@ class ComputerQueueRunner:
     async def _dispatch_scope(self, scope: str) -> int:
         stream = _stream(scope)
         await self._group(stream)
+        seen: list[tuple[Any, Mapping[str, Any]]] = []
         try:
             auto = await self._redis.xautoclaim(
                 stream, GROUP, CONSUMER, min_idle_time=60_000, start_id="0-0",
@@ -904,13 +962,17 @@ class ComputerQueueRunner:
                 have = {mid for mid, _ in pending}
                 pending.extend((mid, fields) for mid, fields in items
                                if mid not in have)
-        except Exception:
+            for _, items in fresh or []:
+                seen.extend((mid, fields) for mid, fields in items)
+            seen.extend(pending)
+        except Exception as exc:
+            # NOGROUP means the cached "group exists" went stale (a flush or
+            # a trimmed stream dropped it): re-create next pass rather than
+            # stay broken behind the cache. The table-side maintenance
+            # below still runs — its authority is the row, not the stream.
+            if "NOGROUP" in str(exc):
+                self._group_ready.discard(stream)
             log.exception("computer queue read failed")
-            return 0
-        seen: list[tuple[Any, Mapping[str, Any]]] = []
-        for _, items in fresh or []:
-            seen.extend((mid, fields) for mid, fields in items)
-        seen.extend(pending)
         try:
             open_rows = await self._tasks.open_for_scope(scope, limit=self._batch)
         except Exception:
@@ -1001,8 +1063,15 @@ class ComputerQueueRunner:
             log.error("computer queue worker died", exc_info=exc)
 
     async def _ack(self, stream: str, mid: Any) -> None:
+        """Ack the pointer, then bound the stream: the `computer_tasks` row
+        is the record of truth, so a trimmed pointer loses nothing — an
+        unannounced `queued` row is republished by reconcile, an acked one
+        needs no entry at all. `MAXLEN ~` trims whole nodes: cheap and
+        approximate is the right bound here."""
         with contextlib.suppress(Exception):
             await self._redis.xack(stream, GROUP, mid)
+        with contextlib.suppress(Exception):
+            await self._redis.xtrim(stream, maxlen=STREAM_MAX, approximate=True)
 
     async def _settle(self, stream: str, mid: Any, row: ComputerTask) -> None:
         """Terminal delivery THEN ack: the row stands first, then the room
@@ -1048,18 +1117,14 @@ class ComputerQueueRunner:
                 # `cancelled` only on an observed-quiet guest — the same
                 # rule as the submitter side: a stopped awaiter is not a
                 # stopped guest command.
-                await self._finish_guarded(task, "cancelled", reply,
-                                           uncertain=True)
+                await self._finish_guarded(task, "cancelled", reply)
                 raise
             except Exception as exc:
                 log.exception("computer task %s dispatch failed", task.id)
                 reply = {"status": "unavailable", "reason": type(exc).__name__}
-                await self._finish_guarded(task, "unavailable", reply,
-                                           uncertain=True)
+                await self._finish_guarded(task, "unavailable", reply)
             else:
-                await self._finish_guarded(
-                    task, row_status(reply), reply,
-                    uncertain=bool(reply.get("uncertain")))
+                await self._finish_guarded(task, row_status(reply), reply)
             finally:
                 current_segment.reset(token)
             row = await self._tasks.get(task.id)
@@ -1071,12 +1136,11 @@ class ComputerQueueRunner:
 
     async def _finish_guarded(
         self, task: ComputerTask, status: str, reply: Mapping[str, Any],
-        *, uncertain: bool,
     ) -> bool:
         return await _finish_guarded(
             executors=self._executors, reconcile=self._reconcile_scope,
             finish=self._safe_finish, task=task, status=status,
-            reply=reply, uncertain=uncertain)
+            reply=reply)
 
     async def _safe_finish(self, task_id: UUID, status: str,
                            result: Mapping[str, Any]) -> bool:
@@ -1211,7 +1275,7 @@ async def deliver_computer_task(
         tool = str(row.payload.get("tool") or row.kind)
         task_text = _json.dumps({"kind": row.kind, "payload": row.payload},
                                 sort_keys=True, default=str)
-        await jobs.create(normalise_compute_job(ComputeJob(
+        job = normalise_compute_job(ComputeJob(
             id=uuid4(), backend_job_id=str(row.id),
             task=f"computer {row.kind}: {tool}",
             artifact_id=None, platform=platform,
@@ -1226,8 +1290,15 @@ async def deliver_computer_task(
             kind="computer",
             tag_id=str(origin.get("tag_id") or "") or None,
             payload={"task": str(row.id), "tool": tool, "kind": row.kind},
-        )))
+        ))
+        # Election AND filing in one durable step: `elect_delivery` stamps
+        # `delivered_at` and writes the outbox row in the same transaction,
+        # so a live `delivered()` stamp landing in this window wins the
+        # election and the job is never created — the single-disposition
+        # rule `delivered_at` alone could not make atomic.
+        await tasks.elect_delivery(row.id, now=clock(), job=job)
+        return
     # `delivered_at`, whether or not a room was named: the row's terminal
     # state was dispositioned, so a second `on_terminal` call cannot file a
     # duplicate delivery.
-    await tasks.mark_delivered(row.id, now=clock())
+    await tasks.elect_delivery(row.id, now=clock())

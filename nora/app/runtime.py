@@ -246,6 +246,68 @@ async def computer_browser_sweep_loop(
             metrics.inc("nora_errors_total", stage="computer_browser_sweep")
 
 
+class ComputerLifecycle:
+    """The scoped computer's ONE start/close owner ([computer.scoped]).
+
+    `start` spawns the queue loop and the browser tab sweep — once —
+    through the caller's `BackgroundTasks`. `__main__` and the eval
+    subject share it, so a subject runs the same maintenance the
+    deployment does instead of composing a queue nothing ticks.
+
+    `close` unwinds in dependency order: `runner.stop()` closes admission
+    and cancels the registered executors (a segment that cannot be
+    confirmed quiet lands `interrupted`, never `done`); `settle` gives
+    their terminal writes a moment to land; `runner.close()` then
+    releases the dedicated Redis client and the journal lock — all before
+    the caller removes SQL/audit state. Both ends are idempotent: a
+    `start` after `close` spawns nothing, a second `close` does nothing.
+    """
+
+    def __init__(self, *, runner: Any = None, manager: Any = None,
+                 metrics: Metrics, sweep_seconds: float,
+                 tick_seconds: float = 1.0) -> None:
+        self._runner = runner
+        self._manager = manager
+        self._metrics = metrics
+        self._sweep_seconds = sweep_seconds
+        self._tick_seconds = tick_seconds
+        self._spawned = False
+        self._closed = False
+
+    def start(self, background: BackgroundTasks) -> None:
+        """Spawn the two maintenance loops, once. A `start` on a closed
+        lifecycle spawns nothing — a reopened app composes a new one."""
+        if self._spawned or self._closed:
+            return
+        self._spawned = True
+        if self._runner is not None:
+            background.spawn(computer_queue_loop(
+                self._runner, self._metrics, tick_seconds=self._tick_seconds))
+        if self._manager is not None:
+            background.spawn(computer_browser_sweep_loop(
+                self._manager, self._metrics,
+                interval_seconds=self._sweep_seconds))
+
+    async def close(self, *, settle_seconds: float = 3.0) -> None:
+        """Stop admission, let shielded executors unwind, then release the
+        runner's Redis client and journal lock. Never claims a drain it did
+        not get: executors still alive past `settle_seconds` are logged and
+        the close continues — a hung segment must not hold the app's SQL
+        teardown hostage."""
+        if self._closed:
+            return
+        self._closed = True
+        if self._runner is None:
+            return
+        await self._runner.stop()
+        try:
+            await asyncio.wait_for(
+                self._runner.executors.settle(drained=set()), settle_seconds)
+        except TimeoutError:
+            log.warning("computer lifecycle close: executors did not settle")
+        await self._runner.close()
+
+
 class _ProbesComputerd(Protocol):
     """The one method `computer_probe_loop` needs
     (`nora.infra.computer.probe.ComputerdProbe`)."""

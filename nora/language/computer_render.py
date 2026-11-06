@@ -118,12 +118,16 @@ def render_computer(view: ComputerView | None) -> ContextBlock | None:
     # `computer_browse`/`computer_capture`/`computer_cancel` take — then the
     # task-owned tabs with their idle state. Both sections only render when
     # the stores are wired (shared-VM keeps its old block).
+    if view.tasks_unavailable:
+        lines.append(_Line("queued tasks could not be read", None))
     if view.tasks is not None:
         for task in view.tasks:
             note = f" · {task.note}" if task.note else ""
             lines.append(_Line(
                 f"task {task.task_id} · {task.kind} · {task.status}{note} · "
                 f"queued {age(task.created, now)}", task.created))
+    if view.tabs_unavailable:
+        lines.append(_Line("browser tabs could not be read", None))
     if view.tabs is not None:
         for tab in view.tabs:
             where = tab.url or "about:blank"

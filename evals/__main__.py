@@ -677,7 +677,10 @@ def _main(*, lock_fd: int = -1) -> int:
         "--run-budget", metavar="REQUESTS[,IN[,OUT[,MINUTES]]]",
         help="a hard dispatch bound installed before the first case composes: "
              "max model requests, max input tokens, max output tokens, max "
-             "active minutes (defaults 40/600000/40000/30). `chat.completions` "
+             "active minutes (defaults 40/measured/40000/30). An empty or "
+             "`none` IN field means input is measured from provider usage, "
+             "not capped — a strict input-token bound has no honest "
+             "pre-dispatch measure and refuses every call. `chat.completions` "
              "calls that would cross it raise RunBudgetError BEFORE leaving — "
              "budget exhaustion is ERROR, never PASS.")
     args = ap.parse_args()
@@ -778,17 +781,28 @@ def _main(*, lock_fd: int = -1) -> int:
     if args.run_budget is not None:
         from nora.domain.run_budget import RunBudget
         parts = args.run_budget.split(",")
-        try:
-            vals = [int(p.strip()) for p in parts]
-        except ValueError:
-            print("refusing to run: --run-budget fields must be integers",
+        if not 1 <= len(parts) <= 4:
+            print("refusing to run: --run-budget takes 1-4 fields",
                   file=sys.stderr)
             return 2
-        if not 1 <= len(vals) <= 4 or any(v <= 0 for v in vals):
-            print("refusing to run: --run-budget takes 1-4 positive integers",
+        defaults: list[int | None] = [40, None, 40000, 30]
+        vals: list[int | None] = []
+        bad = False
+        for i, p in enumerate(parts):
+            p = p.strip()
+            if not p or p.lower() in ("none", "-"):
+                vals.append(defaults[i])
+                continue
+            try:
+                vals.append(int(p))
+            except ValueError:
+                bad = True
+        if bad or any(v is not None and v <= 0 for v in vals):
+            print("refusing to run: --run-budget fields must be positive "
+                  "integers (empty or `none` IN = measured, not capped)",
                   file=sys.stderr)
             return 2
-        vals += [40, None, 40000, 30][len(vals):]
+        vals += defaults[len(vals):]
         budget = RunBudget(
             max_requests=vals[0], max_input_tokens=vals[1],
             max_output_tokens=vals[2],

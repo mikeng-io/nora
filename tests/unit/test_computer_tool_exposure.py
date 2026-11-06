@@ -73,7 +73,8 @@ class _Rig:
         self.exports = FakeComputerExportStore()
         self.tasks = FakeComputerTaskStore()
         self.admission = ComputerAdmission(
-            tasks=self.tasks, redis=FakeStreamRedis(), clock=lambda: NOW)
+            tasks=self.tasks, redis=FakeStreamRedis(), clock=lambda: NOW,
+            reconcile=lambda scope: asyncio.sleep(0, "quiet"))
         self.registry = ToolRegistry(
             unit_for=lambda platform, cid: UNIT,
             blobs=FakeBlobStore(),
@@ -197,8 +198,8 @@ async def test_the_wait_window_caller_never_hands_out_an_uncommitted_result(pers
         payload={}, origin={}, created_at=NOW, updated_at=NOW)
     await rig.tasks.enqueue(holder)
 
-    async def refusing(task_id, *, now):
-        raise OSError("computer_task_store mark_delivered offline")
+    async def refusing(task_id, *, now, job=None):
+        raise OSError("computer_task_store delivery election offline")
 
     call = asyncio.ensure_future(specs["computer_write"].call(
         path="report.csv", content="a,b\n1,2\n"))
@@ -208,7 +209,7 @@ async def test_the_wait_window_caller_never_hands_out_an_uncommitted_result(pers
     # turns terminal INSIDE the caller's wait window.
     await rig.tasks.finish(holder.id, status="done", result={}, now=NOW)
     assert await rig.tasks.try_claim_head(row.id, now=NOW) is not None
-    rig.tasks.mark_delivered = refusing  # type: ignore[method-assign]
+    rig.tasks.elect_delivery = refusing
     await rig.tasks.finish(row.id, status="done",
                            result={"status": "ok", "path": "report.csv"},
                            now=NOW)

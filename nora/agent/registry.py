@@ -1113,6 +1113,7 @@ class ToolRegistry:
         dream_adaptor: str = "",
         subagent_job: str = "",
         checkpoint_sink: Any = None,
+        grant: frozenset[str] | None = None,
         shelf: ToolShelf | None = None,
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
     ) -> tuple[ToolSpec, ...]:
@@ -1188,6 +1189,7 @@ class ToolRegistry:
             ai_peer=self._ai_peer, fire_turn=fire_turn, relay_turn=relay_turn,
             dream_adaptor=dream_adaptor,
             subagent_job=subagent_job, checkpoint_sink=checkpoint_sink,
+            grant=grant,
             reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
             events=self._events,
             notes=self._notes, note_unit=self._note_unit, memos=self._memos,
@@ -1351,7 +1353,7 @@ class ToolRegistry:
             location_trusted=location_trusted, links=links,
             supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
             subagent_job=subagent_job, checkpoint_sink=checkpoint_sink,
-            shelf=shelf, on_rows=on_rows,
+            grant=grant, shelf=shelf, on_rows=on_rows,
         )
         loader = next(spec for spec in specs if spec.name == LOADER_TOOL)
         admitted = [

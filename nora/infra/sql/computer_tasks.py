@@ -136,6 +136,12 @@ class SqlComputerTaskStore:
                     updated_at=now)
                 .returning(T)
             )).first()
+        if row is None:
+            # A terminal row returns itself unchanged — the contract the
+            # fake and this store share, and what lets `computer_cancel`
+            # report a finished task as finished instead of "gone".
+            row = (await conn.execute(
+                sa.select(T).where(T.c.id == task_id))).first()
         return _row(row) if row is not None else None
 
     async def unannounced(self, *, limit: int) -> list[ComputerTask]:
@@ -190,6 +196,31 @@ class SqlComputerTaskStore:
             await conn.execute(
                 sa.update(T).where(T.c.id == task_id)
                 .values(delivered_at=now, updated_at=now))
+
+    async def elect_delivery(self, task_id: UUID, *, now: datetime,
+                             job: Any = None) -> ComputerTask | None:
+        """One transaction: stamp `delivered_at` where still unset (and the
+        row is terminal), then — when `job` rides along — file the
+        `compute_jobs` outbox row in the same commit. The live handoff and
+        the deferred path both elect; exactly one wins."""
+        from nora.infra.sql.compute_jobs import _job_values
+        from nora.infra.sql.schema import COMPUTE_JOBS
+
+        now = ensure_utc_event(now, field="now")
+        async with self._engine.begin() as conn:
+            row = (await conn.execute(
+                sa.update(T)
+                .where(T.c.id == task_id, T.c.delivered_at.is_(None),
+                       T.c.status.in_(tuple(sorted(TERMINAL))))
+                .values(delivered_at=now, updated_at=now)
+                .returning(T)
+            )).first()
+            if row is None:
+                return None
+            if job is not None:
+                await conn.execute(
+                    sa.insert(COMPUTE_JOBS).values(**_job_values(job)))
+        return _row(row)
 
     async def undelivered(self, *, limit: int) -> list[ComputerTask]:
         async with self._engine.connect() as conn:

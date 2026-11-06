@@ -41,6 +41,31 @@ def _row_to_job(r: Row[Any]) -> ComputeJob:
     )
 
 
+def _job_values(job: ComputeJob) -> dict[str, Any]:
+    """The `compute_jobs` insert mapping, shared by `create` and by
+    `SqlComputerTaskStore.elect_delivery` — the deferred-delivery election
+    files this row inside ITS transaction, so the mapping lives once."""
+    row = normalise_compute_job(job)
+    return {
+        "id": row.id, "backend_job_id": row.backend_job_id, "task": row.task,
+        "artifact_id": row.artifact_id, "platform": row.platform,
+        "conversation_id": row.conversation_id,
+        "conversation_type": row.conversation_type,
+        "requester_person_id": row.requester_person_id,
+        "created_at": row.created_at, "state": row.state.value,
+        "task_sha256": row.task_sha256, "context_sha256": row.context_sha256,
+        "kind": row.kind, "tag_id": row.tag_id,
+        "failure_reason": row.failure_reason,
+        "payload": dict(row.payload), "result_report": row.result_report,
+        "result_document_ids": (
+            list(row.result_document_ids) if row.result_document_ids else None
+        ),
+        "trace_id": row.trace_id,
+        "checkpoint": None if row.checkpoint is None else dict(row.checkpoint),
+        "checkpoint_at": row.checkpoint_at,
+    }
+
+
 class SqlComputeJobStore:
     """Satisfies `nora.domain.compute.ComputeJobStore`."""
 
@@ -48,26 +73,8 @@ class SqlComputeJobStore:
         self._engine = engine
 
     async def create(self, job: ComputeJob) -> None:
-        row = normalise_compute_job(job)
-        stmt = sa.insert(COMPUTE_JOBS).values(
-            id=row.id, backend_job_id=row.backend_job_id, task=row.task,
-            artifact_id=row.artifact_id, platform=row.platform,
-            conversation_id=row.conversation_id,
-            conversation_type=row.conversation_type,
-            requester_person_id=row.requester_person_id,
-            created_at=row.created_at, state=row.state.value,
-            task_sha256=row.task_sha256, context_sha256=row.context_sha256,
-            kind=row.kind, tag_id=row.tag_id, failure_reason=row.failure_reason,
-            payload=dict(row.payload), result_report=row.result_report,
-            result_document_ids=(
-                list(row.result_document_ids) if row.result_document_ids else None
-            ),
-            trace_id=row.trace_id,
-            checkpoint=None if row.checkpoint is None else dict(row.checkpoint),
-            checkpoint_at=row.checkpoint_at,
-        )
         async with self._engine.begin() as conn:
-            await conn.execute(stmt)
+            await conn.execute(sa.insert(COMPUTE_JOBS).values(**_job_values(job)))
 
     async def get(self, job_id: UUID) -> ComputeJob | None:
         stmt = sa.select(COMPUTE_JOBS).where(COMPUTE_JOBS.c.id == job_id)

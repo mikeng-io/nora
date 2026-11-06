@@ -22,6 +22,7 @@ from nora.engagement.computer_context import ComputerContextReader
 from nora.language.computer_render import render_computer
 from nora.persons import load_persons
 from nora.testing import (
+    FakeComputeJobStore,
     FakeComputerEventStore,
     FakeComputerSessionStore,
     FakeComputerTaskStore,
@@ -141,7 +142,9 @@ async def test_context_joins_browser_handle_to_execution_segment(monkeypatch):
         return BrowseOutcome(status="ok", answer="generated", task_id=task_id, tab=tab)
 
     monkeypatch.setattr(BrowseAgentRunner, "_drive", drive)
-    admission = ComputerAdmission(tasks=store, redis=redis, clock=clock())
+    admission = ComputerAdmission(
+        tasks=store, redis=redis, clock=clock(),
+        reconcile=lambda scope: asyncio.sleep(0, "quiet"))
     segment = await admission.submit(
         scope=UNIT_SCOPE, kind="browse", payload={"tool": "computer_browse", "args": {}}, origin={}
     )
@@ -352,7 +355,8 @@ def test_manifest_preserves_guest_owners_and_verifies_restore(tmp_path):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("fail_terminal", [False, True])
 async def test_retry_retains_consumed_marker_until_delivery_stamp_persists(fail_terminal):
-    store = FakeComputerTaskStore()
+    jobs = FakeComputeJobStore()
+    store = FakeComputerTaskStore(outbox=jobs)
     redis = FakeStreamRedis()
     admission = ComputerAdmission(
         tasks=store, redis=redis, clock=clock(), reconcile=lambda scope: asyncio.sleep(0, "quiet")
@@ -374,12 +378,12 @@ async def test_retry_retains_consumed_marker_until_delivery_stamp_persists(fail_
 
     if fail_terminal:
         store.finish = fail_finish
-    mark_delivered = store.mark_delivered
+    elect_delivery = store.elect_delivery
 
-    async def fail_stamp(*a, **k):
+    async def fail_stamp(task_id, *, now, job=None):
         raise OSError("generated delivery-stamp outage")
 
-    store.mark_delivered = fail_stamp
+    store.elect_delivery = fail_stamp
 
     async def work():
         return {"status": "ok", "answer": "already-consumed-generated-answer"}
@@ -396,9 +400,6 @@ async def test_retry_retains_consumed_marker_until_delivery_stamp_persists(fail_
     assert pending is not None and not pending.consumed
     store.finish = finish
     from nora.app.computer_queue import deliver_computer_task
-    from nora.testing import FakeComputeJobStore
-
-    jobs = FakeComputeJobStore()
 
     async def deliver(row):
         await deliver_computer_task(row, jobs=jobs, tasks=store, clock=clock())
@@ -412,17 +413,21 @@ async def test_retry_retains_consumed_marker_until_delivery_stamp_persists(fail_
         on_terminal=deliver,
     )
     # The deferred path IS the single handoff for a caller told
-    # `unavailable`: the job is filed once (deduped by backend_job_id) even
-    # while the stamp keeps failing — it is never suppressed.
+    # `unavailable`. The election is ONE transaction — stamp + outbox job
+    # land together or not at all — so while the stamp refuses, NOTHING is
+    # filed: no pre-filed job that could outlive its stamp.
     for _ in range(3):
         await runner.tick()
+    assert await jobs.pending(limit=10) == []
+    assert (await store.get(got.task.id)).delivered_at is None
+    store.elect_delivery = elect_delivery
+    await runner.tick()
+    assert (await store.get(got.task.id)).delivered_at is not None
+    # Exactly one job, filed inside the winning election — never re-filed.
     pending_jobs = await jobs.pending(limit=10)
     assert len(pending_jobs) == 1
     assert pending_jobs[0].backend_job_id == str(got.task.id)
-    store.mark_delivered = mark_delivered
     await runner.tick()
-    assert (await store.get(got.task.id)).delivered_at is not None
-    # Still exactly one job — recovery re-stamps, never re-files.
     assert len(await jobs.pending(limit=10)) == 1
     polled = await queue_module.ComputerTaskBackend(tasks=store).poll(job_id=str(got.task.id))
     assert "already-consumed-generated-answer" in polled.report

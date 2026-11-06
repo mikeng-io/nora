@@ -133,6 +133,10 @@ class ComputerView:
     links: tuple[LinkLine, ...] = ()
     tasks: tuple[TaskLine, ...] | None = None
     tabs: tuple[TabLine, ...] | None = None
+    #: A wired store that could not be READ is `unavailable`, never a
+    #: guessed empty list: the renderer says so explicitly.
+    tasks_unavailable: bool = False
+    tabs_unavailable: bool = False
     #: The VM instance the block's state and tabs were verified against —
     #: typed provenance: an `instance` change means every handle in this
     #: block was minted on a dead VM.

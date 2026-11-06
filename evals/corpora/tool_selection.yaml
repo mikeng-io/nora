@@ -348,6 +348,7 @@ cases:
       tools: [computer_browse]
       required_tools: [computer_browse, computer_capture, computer_export]
       before: {computer_browse: [computer_capture], computer_capture: [computer_export]}
+      journey: true
       not_tools: [web_fetch, computer_run]
     snapshot: *room_a
 

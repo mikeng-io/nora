@@ -628,7 +628,14 @@ async def obtain(spec: SubjectSpec) -> Subject:
         landed_signal_sends(),
         external_boundaries(spec.circle, signal_url=spec.signal_rpc_url, memory=circle_memory),
     ):
-        deps = await build_dependencies(cfg, clock=clock)
+        deps = await build_dependencies(
+            cfg, clock=clock,
+            # The frozen `spec.now` is the SEMANTIC clock only — what the
+            # block renders and the turn sees. Queue deadlines, lease and
+            # idle arithmetic are operational: they run on the wall clock
+            # or the scoped computer's tasks would never time out and its
+            # tabs never idle inside a draw.
+            operational_clock=wall_clock)
     # NO EMBEDDING WORKER, whatever `[memory.index] embed` says. The flag also
     # switches the graph surface's query embedding on (`composition.py`), so
     # it stays as deployed; the worker is the write half, which only
@@ -639,6 +646,13 @@ async def obtain(spec: SubjectSpec) -> Subject:
     # for it. A sandbox's vectors are adopted from the source instead
     # (`nora.subject.sandbox_index`).
     deps = dataclasses.replace(deps, memory_embed=None)
+    # The scoped computer's maintenance IS part of the composed graph:
+    # the same `ComputerLifecycle` `__main__` starts — a subject with
+    # `[computer.scoped]` enabled ticks its queue and sweeps its tabs,
+    # and `backbone._close` closes it in the same order the app's
+    # shutdown does.
+    if deps.computer_lifecycle is not None:
+        deps.computer_lifecycle.start(deps.background)
     # The variable is GONE, so the config must not go on naming it: anything
     # that re-read `os.environ[cfg.store.database_url_env]` would get a
     # KeyError. `Subject.database_url` is the field to read, and this makes the

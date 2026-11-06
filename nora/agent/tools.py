@@ -5047,6 +5047,11 @@ def build_tool_specs(
     # refused here as well as left off the surface (8765_44837).
     relay_turn: bool = False,
     dream_adaptor: str = "",
+    # The Dreamer adaptor's tool ceiling (`surface(grant=...)`), kept here
+    # only so a queued computer segment's durable origin can record what it
+    # was admitted under; the deferred dispatch re-applies it through
+    # `ToolScope`. Never read by the live path — `surface` enforces it.
+    grant: frozenset[str] | None = None,
     # THE THIRD provenance: the id of the background job this set
     # is built for, `""` for every tag, fire turn and Dreamer pass. Non-empty makes the
     # computer and document actor `subagent`, the audit path `subagent`, and the
@@ -16189,6 +16194,12 @@ Args:
                     "requester_person_id": _computer_requester(),
                     "tag_id": current_tag_id(), "job": "",
                     "tool": fn.__name__,
+                    # The occasion's surface authority, for the deferred
+                    # dispatch's re-admission: the dreamer grant ceiling,
+                    # a relayed turn, and the worker job it was built for.
+                    "grant": sorted(grant) if grant else [],
+                    "relay": bool(relay_turn),
+                    "worker": subagent_job or "",
                 }
                 submitted = await computer_admission.submit(
                     scope=bound_computer_scope, kind=kind,
@@ -17285,9 +17296,19 @@ Args:
                             "check the computer block for its state."}
         if computer_context_invalidate is not None:
             computer_context_invalidate(bound_computer_scope)
+        tabs_note = ""
+        if (row.status in ("cancelled", "interrupted")
+                and row.kind == "browser" and browser_manager is not None):
+            closed = await browser_manager.close_task(
+                bound_computer_scope, row.id,
+                reason="the task was cancelled")
+            tabs_note = (
+                " Its browser tabs are closed." if closed >= 0
+                else " Its browser tabs could not be confirmed closed; "
+                     "the sweep retires them.")
         if row.status in ("cancelled", "interrupted"):
             return {"status": "ok", "task": str(row.id),
-                    "note": "The task is stopped."}
+                    "note": "The task is stopped." + tabs_note}
         if row.status in ("done", "failed", "unavailable"):
             return {"status": "ok", "task": str(row.id),
                     "note": f"The task already finished ({row.status})."}

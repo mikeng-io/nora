@@ -348,7 +348,7 @@ from .gatherings import GatheringService, room_event_shown, screened_area
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .participation import ParticipationTrigger
 from .proactive_screen import ProactiveScreen
-from .runtime import BackgroundTasks
+from .runtime import BackgroundTasks, ComputerLifecycle
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
@@ -1442,6 +1442,14 @@ class Dependencies:
     computer_queue_runner: Any = None
     browser_manager: Any = None
     browser_sweep_seconds: float = 30.0
+    # The scoped computer's ONE start/close owner
+    # (`nora.app.runtime.ComputerLifecycle`): `start` spawns the queue and
+    # tab-sweep loops, `close` stops admission and releases the Redis
+    # client and journal lock before the SQL/audit teardown. `None`
+    # unless `[computer.scoped] enabled`. `__main__` and the eval subject
+    # share it, so a subject runs the same maintenance the deployment
+    # does.
+    computer_lifecycle: Any = None
     # The timed probe of computerd (`nora.infra.computer.probe`): `None`
     # unless `[computer] enabled`. `nora/__main__.py` spawns
     # `runtime.computer_probe_loop` on it.
@@ -1592,6 +1600,7 @@ def _story_frames_embedded(
 
 async def build_dependencies(
     cfg: Config, *, clock: Callable[[], datetime] = wall_clock,
+    operational_clock: Callable[[], datetime] | None = None,
 ) -> Dependencies:
     """Build the object graph from `cfg`.
 
@@ -1610,7 +1619,18 @@ async def build_dependencies(
     judgement is about time (is this note due, has this position gone stale,
     is now the moment), and a harness asks it a question at a fixed instant by
     passing a clock.
+
+    **`operational_clock` is the maintenance clock.** A frozen `clock` is a
+    semantic statement («the turn sees this instant»); it must not freeze the
+    queue's deadline, lease and idle arithmetic — under a frozen snapshot the
+    scoped computer's tasks would never time out and its tabs never idle.
+    The scoped-computer machinery (`ComputerAdmission`, `ComputerQueueRunner`,
+    `ScopeBrowserManager`, the deferred outbox's stamp) reads
+    `operational_clock`, which defaults to `clock`; the eval subject passes
+    the wall clock so maintenance keeps moving while the block's time stands
+    still.
     """
+    op_clock = operational_clock or clock
     content_checks = cfg.content_checks.enabled
     metrics = Metrics()
     # The ONE channel directory a `guild` server entry expands through. The
@@ -1829,7 +1849,7 @@ async def build_dependencies(
 
         async def _deliver_computer_task(row: Any) -> None:
             await deliver_computer_task(
-                row, jobs=compute_jobs, tasks=computer_tasks, clock=clock)
+                row, jobs=compute_jobs, tasks=computer_tasks, clock=op_clock)
 
         async def _reconcile_scope(scope: str) -> str:
             """Is work REALLY running on the scope's VM? Read through
@@ -1887,18 +1907,18 @@ async def build_dependencies(
                 asyncio.get_running_loop().create_task(_write())
 
         computer_admission = ComputerAdmission(
-            tasks=computer_tasks, redis=computer_redis, clock=clock,
+            tasks=computer_tasks, redis=computer_redis, clock=op_clock,
             executors=computer_segments, reconcile=_reconcile_scope,
             audit=_queue_audit)
         browser_manager = ScopeBrowserManager(
             runtime=computer, tabs=browser_tabs, tasks=computer_tasks,
             segments=computer_admission,
-            token=computer_token, clock=clock,
+            token=computer_token, clock=op_clock,
             idle_after=timedelta(seconds=scoped_cfg.browser_idle_seconds),
             on_event=_browser_event)
         computer_task_backend = ComputerTaskBackend(tasks=computer_tasks)
         computer_queue_runner = ComputerQueueRunner(
-            tasks=computer_tasks, redis=computer_redis, clock=clock,
+            tasks=computer_tasks, redis=computer_redis, clock=op_clock,
             metrics=metrics, on_terminal=_deliver_computer_task,
             reconcile=_reconcile_scope, executors=computer_segments,
             audit=_queue_audit)
@@ -3711,7 +3731,10 @@ async def build_dependencies(
         _computer_dispatch = ComputerToolDispatch(
             registry=tool_registry, store=audit, persons=persons,
             honcho=memory, metrics=metrics, rosters=rosters,
-            self_ids=registry.self_aliases())
+            self_ids=registry.self_aliases(),
+            # Re-admission is decided at EXECUTION time: current policy and
+            # the live scope resolver, never the queue-time row's word.
+            policy=allowlist, scope_for=computer_scope_for)
         for _kind in ("native", "browse", "capture"):
             computer_queue_runner.set_dispatch(_kind, _computer_dispatch)
     if computer_task_backend is not None:
@@ -5436,6 +5459,13 @@ async def build_dependencies(
         computer_queue_runner=computer_queue_runner,
         browser_manager=browser_manager,
         browser_sweep_seconds=cfg.computer.scoped.browser_sweep_seconds,
+        computer_lifecycle=(
+            ComputerLifecycle(
+                runner=computer_queue_runner, manager=browser_manager,
+                metrics=metrics,
+                sweep_seconds=cfg.computer.scoped.browser_sweep_seconds,
+            ) if computer_queue_runner is not None else None
+        ),
         computer_probe=computer_probe,
         health_recorder=AdapterHealthRecorder(
             log=SqlSourceHealthLog(engine), metrics=metrics,
