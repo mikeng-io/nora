@@ -146,6 +146,7 @@ def test_selection_error_broadens_work_but_exits_nonzero(tmp_path, monkeypatch):
     assert ci_plan.main() == 1
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert all(json.loads(values["plan"]).values())
+    assert json.loads(values["readers"]) == "ALL"
     assert json.loads(values["selection_error"])
 
 
@@ -235,9 +236,10 @@ def test_timing_contracts_run_without_competing_pytest_workers(monkeypatch, targ
     root = Path(__file__).resolve().parents[2]
     workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())
     step = next(s for s in workflow["jobs"]["contracts"]["steps"]
-                if s.get("name") == "Document readers selected by the existing selector")
+                if s.get("name") == "Selected backend acceptance")
     source = step["run"].split("<<'PYTEST'\n", 1)[1].rsplit("PYTEST", 1)[0]
-    runner = [sys.executable, "-m", "scripts.pytest_gate"]
+    runner = [sys.executable, "-m", "scripts.pytest_gate",
+              "--junit-dir", "backend-results"]
     expected = ([runner] if targets == "ALL"
                 else [[*runner, *targets]] if targets else [])
     calls = []
@@ -348,3 +350,63 @@ def test_hosted_go_jobs_cover_each_deployed_module():
         builds = [step for step in job["steps"] if step.get("run", "").startswith("go ")]
         assert builds
         assert all(step["working-directory"] == "${{ matrix.module }}" for step in builds)
+
+
+@pytest.mark.parametrize("paths", [
+    ["nora/app.py"], ["nora/doctrine/core.md"], ["evals/rebuilt/entry.py"],
+    ["tests/conftest.py"], ["uv.lock"], ["unknown.xyz"],
+    ["docs/runbook.md", "nora/app.py"],
+    ["nora/renamed_away.py", "docs/new.md"],
+])
+def test_backend_acceptance_uses_the_complete_diff(tmp_path, monkeypatch, paths):
+    event = tmp_path / "event.json"
+    event.write_text(json.dumps({"pull_request": {}}))
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setattr("sys.argv", ["ci_plan"])
+    monkeypatch.setattr(ci_plan, "changed_paths", lambda event, repo: paths)
+    assert ci_plan.main() == 0
+    values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert json.loads(values["readers"]) == "ALL"
+    assert values["docs_only"] == "false"
+    plan = json.loads(values["plan"])
+    needs = {job: {"result": "success" if chosen else "skipped"}
+             for job, chosen in plan.items()}
+    needs["classify"] = {"result": "success"}
+    assert ci_plan.verify(plan, needs)
+    for damage in ("failure", "cancelled", "skipped"):
+        needs["contracts"]["result"] = damage
+        assert not ci_plan.verify(plan, needs)
+    del needs["contracts"]
+    assert not ci_plan.verify(plan, needs)
+
+
+@pytest.mark.parametrize("event_data", [{}, {"schedule": "weekly"}])
+def test_baseline_events_select_the_full_backend(tmp_path, monkeypatch, event_data):
+    event = tmp_path / "event.json"
+    event.write_text(json.dumps(event_data))
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setattr("sys.argv", ["ci_plan"])
+    assert ci_plan.main() == 0
+    values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert json.loads(values["readers"]) == "ALL"
+    assert all(json.loads(values["plan"]).values())
+
+
+def test_full_backend_replaces_the_nonblocking_measurement():
+    root = Path(__file__).resolve().parents[2]
+    jobs = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())["jobs"]
+    assert "suite-timing" not in jobs
+    assert "contracts" in jobs["checks"]["needs"]
+    assert jobs["contracts"]["env"]["NORA_TEST_MAX_WORKERS"] == "4"
+    steps = jobs["contracts"]["steps"]
+    fixed = next(step for step in steps
+                 if step.get("name") == "Architecture and documentation contracts")
+    assert "needs.classify.outputs.readers != '\"ALL\"'" in fixed["if"]
+    upload = next(step for step in steps
+                  if step.get("uses", "").startswith("actions/upload-artifact@"))
+    assert upload["if"] == "${{ !cancelled() }}"
+    assert "backend-results/*" in upload["with"]["path"]

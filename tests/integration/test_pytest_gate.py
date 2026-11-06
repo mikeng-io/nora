@@ -315,3 +315,29 @@ def test_failed_run_keeps_a_cost_receipt_without_double_counting_workers(tmp_pat
     assert len(phase["selected_sha256"]) == 64
     assert phase["outcome_counts"] == {"failed": 2, "passed": 1, "xfailed": 1, "xpassed": 1}
     assert phase["servers"] == []
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_phase_reports_preserve_failures_and_do_not_overwrite_each_other(
+    tmp_path, monkeypatch, failure,
+):
+    import xml.etree.ElementTree as ET
+
+    root, lock = _project(tmp_path / "project")
+    timing = root / gate.TIMING_TESTS[0]
+    timing.parent.mkdir(parents=True)
+    timing.write_text(f"def test_timing():\n    assert {not failure!r}\n")
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(gate, "LOCK_PATH", lock)
+    monkeypatch.setattr(gate, "PROJECT_ROOT", root)
+    monkeypatch.setenv("PYTHONPATH", str(ROOT))
+    monkeypatch.setenv("PYTEST_ADDOPTS", "")
+    reports = tmp_path / "results"
+    rc = gate.main(["--workers", "0", "--junit-dir", str(reports),
+                    str(root / "test_generated.py"), str(timing)])
+    assert rc == int(failure)
+    reports = sorted(reports.glob("*.xml"))
+    assert len(reports) == 2
+    cases = [case for report in reports for case in ET.parse(report).iter("testcase")]  # noqa: S314 — generated local reports
+    assert len(cases) == 3
+    assert sum(case.find("failure") is not None for case in cases) == int(failure)

@@ -52,10 +52,18 @@ and selector errors run the full suite; the command reports its base and scope.
 `make test-all` explicitly runs the full serial suite. For a named file/function,
 use `uv run python -m scripts.pytest_gate <file-or-node>`.
 
-Run `make test-affected` (or the tests you touched) while iterating, and
-`make gate` once, on the final head, before claiming a PR is done — never a
-gate per fix round. `make full-gate` runs the whole suite serially and
-unconditionally (`AGENTS.md`, *Gate commands*).
+Run `make test-affected` (or the tests you touched) while iterating. Select
+validation by impact on the final candidate; the full suite runs hosted rather
+than as a local pre-PR gate. `make full-gate` remains an explicit serial full-suite
+command (`AGENTS.md`, *Gate commands*).
+
+Hosted CI passes the full changed-path list through the same selector and runs
+the selected backend workload in the required contracts job. Runtime/shared/unknown
+changes select the full suite; ordinary docs keep their reader checks. The canonical
+runner separates timing tests from parallel work and accepts `--junit-dir` to keep
+one report per phase. CI publishes those reports and per-file durations from the
+acceptance run. Full-suite acceptance belongs on the hosted runner; local iteration
+uses focused checks.
 
 Disposable PostgreSQL reuse:
 
