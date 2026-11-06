@@ -610,3 +610,131 @@ async def test_a_relation_returned_in_connected_can_be_corrected():
     result = await memory.propose(state, items=[0], statements=[correction])
     assert result["statements"][0]["status"] == "saved"
     assert memory.graph.relations[edge.id].status == "retired"
+
+
+async def _read_through_the_tool(state, memory, edge, **kwargs):
+    """A real `memory_search` read delivered through `ComprehendRead`, so its
+    emitted edge ids land in the session's catalogue the way the session
+    wires it."""
+    from nora.agent.comprehend_tools import ComprehendRead, LookupState
+    from nora.agent.memory_search import MemorySearch
+    from nora.domain.lineage import RenderRoom, RoomFacts
+
+    target = RenderRoom(RoomFacts("signal", frozenset({"home-room"}), "unit-1",
+                                  frozenset({"generated-person"})))
+    answer = await MemorySearch(
+        None, SimpleNamespace(inc=lambda *a, **k: None), graph=memory.graph
+    ).read(seed=edge.src, depth=1, target=target, now_ms=NOW,
+           social_off=(), content_checks=False, **kwargs)
+    assert answer["status"] == "ok", answer
+
+    class _Delivery:
+        tool_name = "memory_search"
+
+        async def stream(self, use, invocation_state, **kw):
+            yield ComprehendRead._event(use, answer)
+
+    tool = ComprehendRead(_Delivery(), LookupState(
+        state.graph_fetched, state.unit, state.session_id, memory.records,
+        None, (), shown_keys=state.shown_keys,
+        shown_relations=state.shown_relations))
+    async for _event in tool.stream(
+            {"toolUseId": "generated-read", "name": "memory_search",
+             "input": {}}, {}):
+        pass
+    return answer
+
+
+@pytest.mark.asyncio
+async def test_a_relation_a_memory_read_emitted_can_be_corrected():
+    """A relation the memory read actually emitted is a shown target, like a
+    preview row: the tool result carries its id into the session's
+    correction catalogue."""
+    memory = wake_memory()
+    state = _state(memory)
+    work = Entity("generated-tool-work", "work", "unit-1", "Generated tool work")
+    memory.graph.entities[work.id] = work
+    edge = Relation("generated-tool-edge",
+                    ("person", "unit-1:person:generated-person"), "likes",
+                    work.key, "notebook", "unit-1", ("generated-person",),
+                    asserted_at=AT)
+    memory.graph.relations[edge.id] = edge
+    answer = await _read_through_the_tool(state, memory, edge)
+    assert edge.id in answer["preview"] and edge.id in state.shown_relations
+    correction = {"type": "correction", "relation": edge.id, "change": "retire",
+                  "cite": [{"source": 1, "quote": "I like Lantern Game"}]}
+    result = await memory.propose(state, items=[0], statements=[correction])
+    assert result["statements"][0]["status"] == "saved"
+    assert memory.graph.relations[edge.id].status == "retired"
+
+
+@pytest.mark.asyncio
+async def test_a_relation_a_memory_read_filtered_out_cannot_be_corrected():
+    """A relation that exists but the read's own narrowing never emitted
+    carries no correction authority: `relations` holds only the emitted
+    edge rows."""
+    memory = wake_memory()
+    state = _state(memory)
+    work = Entity("generated-tool-work", "work", "unit-1", "Generated tool work")
+    memory.graph.entities[work.id] = work
+    edge = Relation("generated-tool-edge",
+                    ("person", "unit-1:person:generated-person"), "likes",
+                    work.key, "notebook", "unit-1", ("generated-person",),
+                    asserted_at=AT)
+    memory.graph.relations[edge.id] = edge
+    answer = await _read_through_the_tool(state, memory, edge, kinds=("work",))
+    assert edge.id not in answer["relations"]
+    assert edge.id not in state.shown_relations
+    correction = {"type": "correction", "relation": edge.id, "change": "retire",
+                  "cite": [{"source": 1, "quote": "I like Lantern Game"}]}
+    result = await memory.propose(state, items=[0], statements=[correction])
+    assert result["statements"][0]["status"] == "refused"
+    assert result["statements"][0]["reason"] == "unshown"
+    assert memory.graph.relations[edge.id].status == "current"
+
+
+@pytest.mark.asyncio
+async def test_a_bare_endpoint_id_refuses_with_the_handle_reason():
+    """A bare id is not a handle: the refusal names the grammar the endpoint
+    must take, not a bare `schema`."""
+    memory = wake_memory()
+    state = _state(memory)
+    statement = dict(_payload()["statements"][0], subject="generated-person")
+    result = await memory.propose(state, items=[0], statements=[statement])
+    assert result["statements"][0]["status"] == "refused"
+    assert result["statements"][0]["reason"] == "endpoint_not_a_handle"
+
+
+@pytest.mark.asyncio
+async def test_an_unparseable_time_refuses_with_the_field():
+    """A time the parser cannot read refuses with the field's own name, so
+    the retry knows which argument to fix."""
+    memory = wake_memory()
+    state = _state(memory)
+    for field in ("valid_from", "valid_to"):
+        statement = dict(_payload()["statements"][0], **{field: "not a time"})
+        result = await memory.propose(state, items=[0], statements=[statement])
+        assert result["statements"][0]["status"] == "refused"
+        assert result["statements"][0]["reason"] == "unparseable_time"
+        assert result["statements"][0]["detail"] == field
+
+
+@pytest.mark.asyncio
+async def test_a_replacement_on_a_retire_refuses_with_its_reason():
+    """A replacement is only a supersede's payload: on another change it
+    refuses with the reason that says so."""
+    memory = wake_memory()
+    first = await memory.propose(
+        _state(memory), items=[0], statements=_payload()["statements"])
+    old_id = first["committed"][0]
+    state = _state(memory, text="I dislike Lantern Game now.")
+    state.shown_relations = {old_id}
+    correction = {
+        "type": "correction", "relation": old_id, "change": "retire",
+        "replacement": _payload()["statements"][0],
+        "cite": [{"source": 1, "quote": "I dislike Lantern Game now"}],
+    }
+    result = await memory.propose(state, items=[0], statements=[correction])
+    assert result["statements"][0]["status"] == "refused"
+    assert result["statements"][0]["reason"] == "unexpected_replacement"
+    assert memory.graph.relations[old_id].status == "current"
