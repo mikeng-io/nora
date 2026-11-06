@@ -314,7 +314,8 @@ class _SourceInputs(Protocol):
     async def register(self, *, key: str, unit: str, rooms: Sequence[tuple[str, str]],
                        person: str, limit: int) -> list[PersonSourceRevision]: ...
     async def rollup(self, *, key: str, unit: str, rooms: Sequence[tuple[str, str]],
-                     person: str, limit: int) -> list[PersonSourceRevision]: ...
+                     person: str, limit: int, discover: bool = False,
+                     ) -> list[PersonSourceRevision]: ...
     async def settle(self, *, key: str, revisions: Sequence[PersonSourceRevision],
                      attempted: Sequence[PersonSourceRevision] = ()) -> None: ...
 
@@ -395,7 +396,8 @@ class ProfileEvidence:
             ("social", lambda: source.social(key=key, persons=self._ids(pk.person.person_id),
                                              limit=SOCIAL_ITEMS_MAX)),
             ("register", lambda: source.register(**args, unit=pk.unit, limit=SOCIAL_ITEMS_MAX)),
-            ("rollup", lambda: source.rollup(**args, unit=pk.unit, limit=EPISODES_MAX)),
+            ("rollup", lambda: source.rollup(
+                **args, unit=pk.unit, limit=EPISODES_MAX, discover=discover)),
         )
         for domain, read in readers:
             try:

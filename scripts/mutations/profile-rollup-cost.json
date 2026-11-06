@@ -1,0 +1,30 @@
+[
+  {
+    "name": "compute root counts in the same window scan",
+    "file": "nora/infra/sql/profile_inputs.py",
+    "old": "            counts = [roots.c['root_count_' + str(i)] for i in range(len(flags))]",
+    "new": "            counts = [sa.select(sa.func.count()).select_from(MESSAGES).where(\n                *scope, f).scalar_subquery().label('root_count_' + str(i))\n                for i, f in enumerate(flags)]",
+    "target": "tests/infra/test_profile_source_inputs.py::test_rollup_total_work_scales_with_history_and_fixed_page"
+  },
+  {
+    "name": "quote parent belongs to this tie",
+    "file": "nora/infra/sql/profile_inputs.py",
+    "old": "                    ).correlate(MESSAGES, table)",
+    "new": "                    )",
+    "target": "tests/infra/test_profile_source_inputs.py::test_rollup_discovery_and_render_share_exact_pending_with_competing_ties"
+  },
+  {
+    "name": "wake forwards rollup discovery",
+    "file": "nora/language/profile.py",
+    "old": "**args, unit=pk.unit, limit=EPISODES_MAX, discover=discover)",
+    "new": "**args, unit=pk.unit, limit=EPISODES_MAX)",
+    "target": "tests/infra/test_profile_source_inputs.py::test_rollup_discovery_and_render_share_exact_pending_with_competing_ties"
+  },
+  {
+    "name": "hydrate shared selected roots once per kind",
+    "file": "nora/infra/sql/profile_inputs.py",
+    "old": "            loaded = () if discover else await self._roots(\n                refs=[str(i) for i in sorted({i for r in rows for i in (r.root_ids or ())})],\n                rooms=rooms)\n            by_id = {x.row.id: x for x in loaded}\n            for r in rows:\n                if discover:\n                    out.append(PersonSourceRevision(domain='rollup', source=r.source,\n                        revision=r.revision, state='computed', recorded_at=f'build:{r.build_id}'))\n                    if len(out) >= limit:\n                        return [*presence, *out]\n                    continue\n                ids = r.root_ids or []\n                if not ids or len(ids) > 100 or not any(int(getattr(r, f)) for f in fields) or any(\n                    int(getattr(r, f)) != int(getattr(r, 'root_count_' + str(i)))\n                    for i, f in enumerate(fields)\n                ):\n                    continue  # unavailable/incomplete roots never settle\n                origin = tuple(by_id[i] for i in sorted(ids) if i in by_id)",
+    "new": "            loaded = ()\n            by_id = {x.row.id: x for x in loaded}\n            for r in rows:\n                if discover:\n                    out.append(PersonSourceRevision(domain='rollup', source=r.source,\n                        revision=r.revision, state='computed', recorded_at=f'build:{r.build_id}'))\n                    if len(out) >= limit:\n                        return [*presence, *out]\n                    continue\n                ids = r.root_ids or []\n                if not ids or len(ids) > 100 or not any(int(getattr(r, f)) for f in fields) or any(\n                    int(getattr(r, f)) != int(getattr(r, 'root_count_' + str(i)))\n                    for i, f in enumerate(fields)\n                ):\n                    continue  # unavailable/incomplete roots never settle\n                origin = await self._roots(refs=[str(i) for i in ids], rooms=rooms)",
+    "target": "tests/infra/test_profile_source_inputs.py::test_rollup_discovery_and_render_share_exact_pending_with_competing_ties"
+  }
+]
