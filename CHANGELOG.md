@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.15.25](https://github.com/mikeng-io/nora/compare/v7.15.24...v7.15.25) (2026-11-06)
+
+
+### Maintenance
+
+* bring origin/master into docs/root-guides-instructions ([421e5ad](https://github.com/mikeng-io/nora/commit/421e5ad48a84eac9e829ead67d4c8e2100a30fa6))
+
 ## [7.15.24](https://github.com/mikeng-io/nora/compare/v7.15.23...v7.15.24) (2026-11-06)
 
 
