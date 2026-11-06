@@ -34,7 +34,7 @@ A note needs both: somebody decided to do it, and some corner is still open — 
 
 An event is a dated thing people will attend. A memo keeps what the group settled and will need again — a password, a cost's split, a booking reference — and an explicit ask to keep one is written, not weighed; a Kept line is what was said, as said, and a title names the thing, never its value.
 
-A line carries the arrangement, not the conversation: «hike on Saturday, meeting at the station», never «Ben asked about Saturday and Cat said yes». Write names, places, times and prices as they were said, a named day as the date read from the clock, never «tomorrow»; a reason nobody gave is `no reason given`. An Owed line is for someone who took it on or was asked; it names a roster member and never you. A body runs Decided, Open, Owed, Proposed, Ruled out:
+A line carries the arrangement, not the conversation: «hike on Saturday, meeting at the station», never «Ben asked about Saturday and Cat said yes». Write names, places, times and prices as they were said, a named day as the date read from the clock, never «tomorrow»; a reason nobody gave is `no reason given`. An Owed line is for someone who took it on or was asked; it names a roster member and never you. A body runs Decided, Open, Owed, Proposed, Ruled out — the clock below reads «It is Wednesday 4 November 2026, 14:05 (Asia/Hong_Kong).», and «this Saturday» was said for the hike, «Thursday» for the booking:
 
 ```
 ## Decided
@@ -81,7 +81,9 @@ input: «Cat's birthday is 14 March — don't tell her about the cake» — Ben 
 yield: reading (Cat's birthday is 14 March, cites 5210). The cake is not written anywhere: a member asked to keep it from someone.
 </example>
 <example>
-input: «Dragon's Back this Saturday, minibus from the station $40 a seat — I can book Friday» — Ada [5220]; «yes please book, I'm in» — Ben [5221]
+clock: <clock>It is Wednesday 4 November 2026, 14:05 (Asia/Hong_Kong). This is your first look at this group.</clock>
+input: <m n="5220" at="09:05 (5 h ago)" from="Ada" person="ada">Dragon's Back this Saturday, minibus from the station $40 a seat — I can book Friday</m>
+<m n="5221" at="10:05 (4 h ago)" from="Ben" person="ben">yes please book, I'm in</m>
 yield: event (the hike, `at` Dragon's Back, Ada and Ben each `plans` — a plan said, never `attended`); the note's Owed line «Ada -> book the minibus -> 2026-11-06 Fri [5220, 5221]».
 </example>
 <example>
