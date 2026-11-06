@@ -61,6 +61,7 @@ class RunBudget:
     input_reserved: int = 0
     _reserved_out: int = field(default=0, repr=False)
     _spent_reason: str | None = field(default=None, repr=False)
+    _in_call: int = field(default=0, repr=False)
     monotonic: Any = time.monotonic
 
     @property
@@ -100,7 +101,7 @@ class RunBudget:
         out = declared_output_tokens or self.output_reserve
         if out <= 0:
             raise self._fail("run budget: no output ceiling to enforce")
-        if self._reserved_out + out > self.max_output_tokens:
+        if self.output_tokens + self._reserved_out + out > self.max_output_tokens:
             raise self._fail(
                 f"run budget: reserved output {self._reserved_out + out} "
                 f"> {self.max_output_tokens}")
@@ -208,17 +209,25 @@ async def _bounded_stream(budget: RunBudget, stream: Any,
     """Consume a chat stream under the budget: terminal usage reconciled,
     deadline bounded per chunk, anything indeterminate spent."""
     saw_usage = False
+    it = stream.__aiter__()
     try:
-        async for chunk in stream:
+        while True:
+            left = budget.remaining()
+            if left is not None and left <= 0:
+                raise budget._fail("run budget: deadline during stream")
+            try:
+                if left is not None:
+                    chunk = await asyncio.wait_for(it.__anext__(), left)
+                else:
+                    chunk = await it.__anext__()
+            except StopAsyncIteration:
+                break
             u = getattr(chunk, "usage", None)
             if u is not None:
                 saw_usage = True
                 budget.reconcile(
                     input_tokens=getattr(u, "prompt_tokens", None),
                     output_tokens=getattr(u, "completion_tokens", None))
-            left = budget.remaining()
-            if left is not None and left <= 0:
-                raise budget._fail("run budget: deadline during stream")
             yield chunk
         if not saw_usage:
             raise budget._fail("run budget: stream ended without usage")
@@ -239,15 +248,40 @@ async def _bounded_stream(budget: RunBudget, stream: Any,
                 await close()
 
 
+def _check_input_shape(kwargs: dict[str, Any]) -> None:
+    """A bounded run only admits text-shaped messages: `str` content or
+    parts of `{"type": "text"}` — the only shape the serialized-byte
+    input bound is valid for. Image/audio/other parts, or a message the
+    bound cannot speak for, refuse BEFORE dispatch."""
+    for msg in kwargs.get("messages") or ():
+        if not isinstance(msg, dict):
+            raise RunBudgetError(
+                "run budget: non-dict message — unsupported input shape")
+        content = msg.get("content")
+        if content is None or isinstance(content, str):
+            continue
+        if isinstance(content, list) and all(
+                isinstance(p, dict) and p.get("type") == "text"
+                for p in content):
+            continue
+        raise RunBudgetError(
+            "run budget: non-text message part — the byte bound cannot "
+            "cover image/audio/other input shapes")
+
+
 async def gated_create(budget: RunBudget, create: Any,
                        *args: Any, **kwargs: Any) -> Any:
     """`chat.completions.create`/`parse` under a run budget."""
+    if budget._in_call:
+        return await create(*args, **kwargs)  # parse->create: one admission
+    _check_input_shape(kwargs)
     ceiling = budget.reserve(
         input_bytes=_request_bytes(args, kwargs),
         declared_output_tokens=declared_output(kwargs))
     if declared_output(kwargs) is None and ceiling:
         kwargs["max_tokens"] = ceiling
     left = budget.remaining()
+    budget._in_call += 1
     try:
         if left is not None:
             response = await asyncio.wait_for(create(*args, **kwargs), left)
@@ -257,6 +291,12 @@ async def gated_create(budget: RunBudget, create: Any,
         budget.invalidate(
             f"run budget: dispatch {type(exc).__name__}")
         raise
+    except Exception as exc:
+        budget.invalidate(
+            f"run budget: dispatch failed: {type(exc).__name__}")
+        raise
+    finally:
+        budget._in_call = max(0, budget._in_call - 1)
     if hasattr(response, "__aiter__"):
         # A stream: reservation held through full consumption; terminal
         # usage reconciles it — no stream ever reads as zero.
