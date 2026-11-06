@@ -530,9 +530,10 @@ class SqlExtraction:
 async def write_claims(
     conn: AsyncConnection, *, extraction_id: int, unit: str,
     platform: str, origin_room: str, claims: list[dict[str, Any]],
+    start_ordinal: int = 0,
 ) -> None:
     """The shared Record claim writer, after the caller's span/admission checks."""
-    for ordinal, content in enumerate(claims):
+    for ordinal, content in enumerate(claims, start=start_ordinal):
         message_ids = content["source_ids"]
         if "source_keys" in content:
             # Step one's numeric span-check slots can name attachments/social

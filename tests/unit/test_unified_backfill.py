@@ -631,7 +631,7 @@ async def test_propose_writes_a_receipt_per_admitted_item():
 
     class _Admission:
         async def _admit(self, work: Any, output: Any, fetched: Any,
-                         session: int, scope: Any) -> Any:
+                         session: int, scope: Any, indices: Any = None) -> Any:
             return _Result(), [], {"report": {}, "claims": {}, "cited_items": {}}
 
     class _Graph:

@@ -564,8 +564,14 @@ class SqlComprehendRecords:
 
     async def readings(
         self, work: WorkItem, session: int, item: ComprehendItem, claims: list[dict[str, Any]]
-    ) -> None:
+    ) -> list[dict[str, Any]]:
         from nora.infra.sql.extraction import write_claims
+        from nora.infra.sql.schema import EXTRACTION_CLAIM
+
+        envelope = ("source_keys", "writer", "session_id")
+
+        def canonical(content: dict[str, Any]) -> dict[str, Any]:
+            return {k: v for k, v in content.items() if k not in envelope}
 
         async with self.engine.begin() as conn:
             # Transaction lock is per work/hash, not over a model await.
@@ -578,19 +584,37 @@ class SqlComprehendRecords:
                 RESULT.c.input_hash == work.input_hash,
                 RESULT.c.part == "readings",
             ).order_by(RESULT.c.id).limit(1))).scalar_one_or_none()
+            source_keys = item.snapshot.get("source_keys", {})
+            contents = [
+                {
+                    **c,
+                    "source_keys": source_keys,
+                    "writer": "cognition:comprehend",
+                    "session_id": session,
+                }
+                for c in claims
+            ]
             if existing is not None:
                 extraction = existing["extraction_id"]
+                # A retry for the same input reuses the first extraction but
+                # still persists additional distinct claims — idempotent
+                # replay skips what is already there.
+                prior = (await conn.execute(sa.select(EXTRACTION_CLAIM.c.content).where(
+                    EXTRACTION_CLAIM.c.extraction_id == extraction,
+                ).order_by(EXTRACTION_CLAIM.c.ordinal))).scalars().all()
+                stored = [canonical(c) for c in prior]
+                new = [c for c in contents if canonical(c) not in stored]
+                await write_claims(
+                    conn,
+                    extraction_id=extraction,
+                    unit=work.unit,
+                    platform=item.platform,
+                    origin_room=item.room,
+                    claims=new,
+                    start_ordinal=len(stored),
+                )
+                stored.extend(canonical(c) for c in new)
             else:
-                source_keys = item.snapshot.get("source_keys", {})
-                contents = [
-                    {
-                        **c,
-                        "source_keys": source_keys,
-                        "writer": "cognition:comprehend",
-                        "session_id": session,
-                    }
-                    for c in claims
-                ]
                 extraction = (
                     await conn.execute(
                         sa.insert(EXTRACTION)
@@ -627,6 +651,7 @@ class SqlComprehendRecords:
                         payload={"extraction_id": extraction},
                     )
                 )
+                stored = [canonical(c) for c in contents]
 
             # Completion points to this ONE validated union extraction. It never
             # rewrites union claims with a follower's room or source map.
@@ -646,6 +671,7 @@ class SqlComprehendRecords:
                             work_id=work_id, input_hash=digest,
                             session_id=session, part=part,
                             payload={"extraction_id": extraction}))
+        return stored
 
     async def graph_write(self, work: WorkItem, session: int, admission: Admission) -> None:
         # Retain changed endpoints for reshape if its model fails after admission.

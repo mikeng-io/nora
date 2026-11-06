@@ -224,3 +224,26 @@ async def test_unrendered_item_sources_cannot_be_cited(now_ms, index):
     assert item.snapshot["source_keys"] == {}
     claims, drops = partition_claims({"claims": [claim(-1, "Pending")]}, item.snapshot)
     assert not claims and drops == ["citation_outside_batch"]
+
+
+@pytest.mark.asyncio
+async def test_a_clipped_row_tail_is_not_citable():
+    """A tail the budget clipped was never shown — graph custody is the
+    emitted body, so quoting the clipped-off tail must refuse."""
+    state, _prompt = await wake(RenderBudget(message_chars=100))
+    item = state.memory_items[0]
+    n, _key = next((int(n), k) for n, k in item.snapshot["source_keys"].items()
+                   if k[0] == "media")
+    row = next(r for r in item.snapshot["messages"] if r["id"] == n)
+    tail = "Pending: collect tomorrow; not collected."
+    assert tail not in row["body"]
+    result = await state.memory.propose(
+        state, items=[0], nothing_here=[],
+        statements=[{
+            "type": "relation", "rel": "at",
+            "subject": {"new": {"kind": "event", "name": "Generated outing"}},
+            "object": {"new": {"kind": "place", "name": "Generated venue"}},
+            "cite": [{"source": n, "quote": tail}],
+        }])
+    assert result["statements"][0]["status"] == "refused"
+    assert result["statements"][0]["reason"] == "span_not_in_source"

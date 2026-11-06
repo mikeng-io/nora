@@ -248,7 +248,7 @@ def proposal(items=None):
     return {"items": items, "statements": [], "nothing_here": items}
 
 
-def relation_statement(dst, *, rel="about", src="@reading:generated-r",
+def relation_statement(dst, *, rel="likes", src="@person:p_ada",
                        cite=({"source": 101},)):
     """One relation statement over shown row 101, endpoints as handles."""
     return {"type": "relation", "rel": rel, "subject": src,
@@ -289,7 +289,8 @@ async def test_cognition_08_proposal_answer_lists_refusal_with_reason():
     payload = proposal()
     payload["nothing_here"] = []
     payload["statements"] = [relation_statement(
-        ["topic", "generated-topic"], rel="invented", src="@person:generated")]
+        ["topic", "generated-topic"], rel="invented",
+        src={"new": {"kind": "work", "name": "Generated thing"}})]
     fake = FakeCognitionAgentRunner(script=[("memory_propose", payload)])
     runner, store, _ = _runner(agent_runner=fake, memory=wake_memory())
     await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
@@ -369,7 +370,7 @@ async def test_rows_a_read_shows_become_the_evidence_a_proposal_may_cite():
     from nora.domain.models import DeliveryStatus, TranscriptRow
 
     memory = wake_memory()
-    _seed_event(memory, "u:event:generated-gala")
+    _seed_event(memory, "u:event:generated-gala", unit="unit-1")
     shown = TranscriptRow(
         id=101, sender_id="+85200000001", sender_name="Ada", ts=NOW,
         body="dinner at eight", is_nora=False,
@@ -510,7 +511,8 @@ async def test_schema_refusal_is_returned_and_never_unlocks_acts():
     payload["nothing_here"] = []
     payload["statements"] = [dict(
         relation_statement(["place", "generated-place"], rel="likes",
-                           src="@person:generated"), valid_from="bad-time")]
+                           src={"new": {"kind": "work", "name": "Generated thing"}}),
+        valid_from="bad-time")]
     fake = FakeCognitionAgentRunner(script=[("memory_propose", payload),
         ("wake_at", {"subject_rows": ["event:1"], "at": iso(NOW + 3600000), "why": "check"})])
     runner, store, _ = _runner(agent_runner=fake, memory=wake_memory())
@@ -594,11 +596,25 @@ def _about_proposal(entity_id: str, relation_id: str = "r-about"):
     return payload
 
 
-def _seed_event(memory, entity_id: str, name: str = "generated gala"):
+def _seed_event(memory, entity_id: str, name: str = "generated gala", *,
+                shown: bool = True, unit: str = "u"):
     from nora.domain.memory_graph import Entity
-    entity = Entity(entity_id, "event", "u", name)
+    entity = Entity(entity_id, "event", unit, name)
     memory.graph.entities[entity.id] = entity
+    if shown:
+        _show_in_preview(memory, entity, unit)
     return entity
+
+
+def _show_in_preview(memory, entity, unit: str = "u") -> None:
+    """A unit→node edge puts the node in the wake preview, which is how a
+    session honestly sees it: handles and associations name shown keys."""
+    from nora.domain.memory_graph import Relation
+    link = Relation(
+        f"preview-{entity.id}", ("unit", f"{unit}:unit:{unit}"), "hosts",
+        entity.key, "notebook", entity.unit, (),
+        asserted_at=datetime.fromtimestamp(NOW / 1000, UTC))
+    memory.graph.relations[link.id] = link
 
 
 async def test_alias_free_admitted_association_survives_create_and_later_read():
@@ -636,7 +652,7 @@ async def test_explicit_association_excludes_unshown_body_alias():
     stores = Stores()
     memory.records.load = _register_load(stores)
     chosen = _seed_event(memory, "u:event:chosen", "chosen gathering")
-    unshown = _seed_event(memory, "u:event:unshown", "which place")
+    unshown = _seed_event(memory, "u:event:unshown", "which place", shown=False)
     answers = []
 
     async def behave(by, tools):
@@ -1214,6 +1230,7 @@ async def test_native_transcript_rendered_file_text_is_the_proposals_evidence():
     person = pointer_entity("person", "unit-1", "p_ada", "Ada")
     event = Entity("unit-1:event:generated-gala", "event", "unit-1", "generated gala")
     memory.graph.entities.update({person.id: person, event.id: event})
+    _show_in_preview(memory, event, "unit-1")
     responses = []
 
     def reads(unit, rooms, **kw):

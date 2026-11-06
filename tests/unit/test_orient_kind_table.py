@@ -143,6 +143,9 @@ async def test_later_contradiction_supersedes_current_relation():
     old_id = first["committed"][0]
     state = _state(memory, text="I dislike Lantern Game now.", now=AT + timedelta(days=1))
     work_key = memory.graph.relations[old_id].dst
+    # prepare's preview would have shown both; the fresh fixture seeds it directly.
+    state.shown_relations = {old_id}
+    state.shown_keys.add(work_key)
     replacement = dict(_payload()["statements"][0], rel="dislikes",
                        object=f"@{work_key[0]}:{work_key[1]}",
                        cite=[{"source": 1, "quote": "I dislike Lantern Game now"}])
@@ -282,8 +285,8 @@ async def test_a_write_as_the_model_writes_it_is_admitted(author, admitted):
     payload["statements"][0].update(subject=f"@person:{author}",
                                    valid_from="2026-10-17")
     result, local, _ = await memory.admission._admit(*_admit_args(state, payload))
-    assert not local
     if admitted:
+        assert not local
         assert [r.rel for r in result.relations] == ["likes"]
         assert result.relations[0].valid_from == datetime(2026, 10, 17, tzinfo=AT.tzinfo)
         pointer = memory.graph.entities["unit-1:person:generated-person"]
@@ -292,7 +295,9 @@ async def test_a_write_as_the_model_writes_it_is_admitted(author, admitted):
         assert not any(r.reason == "missing_evidence" for r in result.refused)
     else:
         assert not result.relations
-        assert {r.reason for r in result.refused} >= {"wrong_ends"}
+        # someone-else was never shown this session — the handle boundary
+        # refuses before admission's wrong_ends ever sees it.
+        assert {r["reason"] for r in local} >= {"unshown"}
         assert "unit-1:person:someone-else" not in memory.graph.entities
 
 
@@ -483,3 +488,102 @@ async def test_a_statement_without_citations_refuses():
     assert result["status"] == "refused"
     assert result["refused"][0]["reason"] == "schema"
     assert not memory.graph.relations
+
+
+@pytest.mark.asyncio
+async def test_an_unshown_node_handle_is_refused():
+    """Existing-in-store is not shown-to-this-session: a handle for a node the
+    session never displayed refuses before admission."""
+    memory = wake_memory()
+    memory.graph.entities["hidden-work"] = Entity(
+        "hidden-work", "work", "unit-1", "Hidden work")
+    state = _state(memory)
+    statement = dict(_payload()["statements"][0], object="@work:hidden-work")
+    result = await memory.propose(state, items=[0], statements=[statement])
+    assert result["statements"][0]["status"] == "refused"
+    assert result["statements"][0]["reason"] == "unshown"
+    assert not memory.graph.relations
+
+
+@pytest.mark.asyncio
+async def test_retiring_a_relation_not_shown_is_refused():
+    """A correction may only name a relation this session showed or committed."""
+    memory = wake_memory()
+    first = await memory.propose(
+        _state(memory), items=[0], statements=_payload()["statements"])
+    old_id = first["committed"][0]
+    state = _state(memory, text="I dislike Lantern Game now.")
+    correction = {"type": "correction", "relation": old_id, "change": "retire",
+                  "cite": [{"source": 1, "quote": "I dislike Lantern Game now"}]}
+    result = await memory.propose(state, items=[0], statements=[correction])
+    assert result["statements"][0]["status"] == "refused"
+    assert result["statements"][0]["reason"] == "unshown"
+    assert memory.graph.relations[old_id].status == "current"
+
+
+@pytest.mark.asyncio
+async def test_a_correction_cannot_cite_a_fabricated_quote():
+    """Correction cites carry quotes; each is checked against the shown source."""
+    memory = wake_memory()
+    state = _state(memory)
+    first = await memory.propose(state, items=[0], statements=_payload()["statements"])
+    old_id = first["committed"][0]
+    correction = {"type": "correction", "relation": old_id, "change": "retire",
+                  "cite": [{"source": 1, "quote": "THIS WAS NEVER SAID"}]}
+    result = await memory.propose(state, items=[0], statements=[correction])
+    assert result["statements"][0]["status"] == "refused"
+    assert result["statements"][0]["reason"] == "span_not_in_source"
+    assert memory.graph.relations[old_id].status == "current"
+
+
+@pytest.mark.asyncio
+async def test_one_malformed_statement_does_not_withhold_siblings():
+    """Per-statement outcomes: a schema-invalid sibling refuses alone while a
+    valid relation statement still commits."""
+    memory = wake_memory()
+    state = _state(memory)
+    good = _payload()["statements"][0]
+    bad = dict(good, cite=[])
+    result = await memory.propose(state, items=[0], statements=[good, bad])
+    report = {s["index"]: s for s in result["statements"]}
+    assert report[0]["status"] == "saved"
+    assert report[1]["status"] == "refused" and report[1]["reason"] == "schema"
+    assert len(memory.graph.relations) == 1
+    assert result["status"] == "ok" and result["admitted"] == [0]
+
+
+@pytest.mark.asyncio
+async def test_a_retry_persists_and_covers_a_repaired_reading():
+    """Partial completion: an open item's corrected reading stores and admits."""
+    memory = wake_memory()
+    state = _state(memory, text="We met at Lantern Park.")
+    other = Source(("message", "2"), "record", "unit-1",
+                   ("generated-person",), "We went to Lantern Park yesterday.")
+    item1 = ComprehendItem(
+        WorkItem("generated-wake-2", other.key, "unit-1", other.text, AT),
+        (other,), "signal", "home-room",
+        snapshot={"messages": [{"id": 2, "body": other.text, "ts": NOW,
+                                "person_id": "generated-person", "mentions": []}],
+                  "context": [], "source_keys": {"2": list(other.key)}})
+    state.memory_items[1] = item1
+    state.graph_fetched.show(other)
+
+    def reading(n, quote, what):
+        return {"type": "reading",
+                "about": [{"person_id": "generated-person", "reference": "they"}],
+                "what": what,
+                "happened_at": {"source": n, "expression": "We"},
+                "where": "Lantern Park", "how": "stated",
+                "cite": [{"source": n, "quote": quote}]}
+    first = await memory.propose(
+        state, items=[0, 1],
+        statements=[reading(1, "We met at Lantern Park.", "met at park"),
+                    reading(2, "never-said-this", "went yesterday")])
+    assert 1 in first["open"]
+    retry = await memory.propose(
+        state, items=[0, 1],
+        statements=[reading(2, "We went to Lantern Park yesterday.",
+                            "went yesterday")])
+    assert retry["status"] == "ok" and 1 in retry["admitted"]
+    claims = next(iter(memory.records.claims.values()))
+    assert len(claims) == 2

@@ -68,17 +68,14 @@ A plan does not establish attendance. Enrich public places, works, organisations
 only. Web pages never establish anything about a private person.
 Call memory_propose with the agenda indices in items, one statements list, and
 nothing_here naming items that state nothing worth keeping. All relations have
-layer notebook. A citation {source: n, quote} names a rendered row's n and quotes
-it exactly; cite only rows actually shown. An endpoint is a shown @kind:id handle
-(a preview row's key with @, or a person id as @person:id) or
-{new: {kind, name, aliases, attributes}} — a new entity only ever inline in an
-endpoint, each attribute value carrying its own cite.
+layer notebook. Citations name a rendered row's n and quote it exactly;
+cite only rows actually shown. Endpoints name a shown node or a person the
+evidence authored — never an id carried from elsewhere. New entities go
+inline in an endpoint's new object; each attribute value carries its own cite.
 name is an entity field, not an attributes key; never cite attribute="name".
-A correction names a held
-relation by its shown id; a supersede nests the replacement relation statement.
-A reading holds about=[{person_id,reference}], what, happened_at={source:n,
-expression} (the source's exact words for the time, or null — never a date you
-computed), where, how (stated/said_by_another/planned/asked/reported) and cite.
+A correction names a held relation by its shown id; a supersede nests the
+replacement relation statement. For happened_at use the source's own time
+words or null — never a date you computed.
 """
     + _VOCABULARY
     + "\n"

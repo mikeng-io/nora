@@ -73,10 +73,12 @@ class InMemoryComprehendRecords:
 
     async def readings(
         self, work: WorkItem, session: int, item: Any, claims: list[dict[str, Any]]
-    ) -> None:
+    ) -> list[dict[str, Any]]:
         if "readings" in self.fail_on:
             raise RuntimeError("writer unavailable")
-        self.claims.setdefault((work.id, work.input_hash), claims)
+        stored = self.claims.setdefault((work.id, work.input_hash), [])
+        stored.extend(c for c in claims if c not in stored)
+        return list(stored)
 
     async def graph_write(self, work: WorkItem, session: int, admission: Admission) -> None:
         if "graph_write" in self.fail_on:

@@ -170,16 +170,33 @@ def _time(value: str | None, tz: tzinfo | None) -> datetime | None:
 
 @dataclass
 class Scope:
-    """What one proposal may cite, built from the shown rows only."""
+    """What one proposal may cite and name, built from the shown rows only."""
 
     catalogue: dict[int, Key] = field(default_factory=dict)
     key_to_items: dict[Key, set[int]] = field(default_factory=dict)
+    shown_keys: frozenset[Key] = frozenset()
+    shown_relations: frozenset[str] = frozenset()
+    shown_persons: frozenset[str] = frozenset()
+    admitted: frozenset[str] = frozenset()
 
 
-def proposal_scope(inputs: list[Any], fetched: GraphFetched) -> Scope:
+def proposal_scope(
+    inputs: list[Any], fetched: GraphFetched, *,
+    shown_keys: Any = frozenset(), shown_relations: Any = frozenset(),
+    admitted: Any = frozenset(),
+) -> Scope:
     """The citable catalogue of one proposal call: the union of the named
-    items' rendered rows, plus the tool-fetched rows the session was shown."""
-    scope = Scope()
+    items' rendered rows, plus the tool-fetched rows the session was shown.
+    Handles are citable only when the session showed them: node keys in
+    `shown_keys`, correction targets in `shown_relations` or `admitted`, and
+    person handles authored by a shown row."""
+    scope = Scope(
+        shown_keys=frozenset(shown_keys) | frozenset(fetched.sources),
+        shown_relations=frozenset(shown_relations),
+        shown_persons=frozenset(
+            p for s in fetched.sources.values() for p in s.persons),
+        admitted=frozenset(admitted),
+    )
     for index, item in enumerate(inputs):
         for n, key in item.snapshot.get("source_keys", {}).items():
             try:
@@ -209,7 +226,7 @@ class MemoryProposalAdmission:
                 "nora_comprehend_refused_parts_total", part=part, reason=reason)
 
     def _endpoint(
-        self, value: Endpoint, work: WorkItem,
+        self, value: Endpoint, work: WorkItem, scope: Scope,
     ) -> tuple[Key | None, Entity | None, tuple[str, str] | None]:
         """Resolve one endpoint: a shown handle or an inline new entity.
 
@@ -238,10 +255,19 @@ class MemoryProposalAdmission:
         if kind in POINTER_KINDS:
             if not ref.startswith(f"{work.unit}:{kind}:"):
                 ref = f"{work.unit}:{kind}:{ref}"
-            return (kind, ref), None, None
-        # Entity and record kinds name graph nodes; admission's wrong_ends is
-        # the boundary (unknown id, wrong unit, wrong kind for the verb).
-        return (kind, ref), None, None
+            key = (kind, ref)
+            # A person handle is shown when a rendered row authored them or
+            # the pointer was already shown/committed this session.
+            if (kind == "person" and ref.rpartition(":")[2] in scope.shown_persons) \
+                    or key in scope.shown_keys:
+                return key, None, None
+            return None, None, ("relation", "unshown")
+        key = (kind, ref)
+        # Entity and record kinds name graph nodes the session must have
+        # shown; existing-in-store is not shown-to-this-session.
+        if key in scope.shown_keys:
+            return key, None, None
+        return None, None, ("relation", "unshown")
 
     def _cited(
         self, cites: list[Citation], scope: Scope, fetched: GraphFetched,
@@ -259,10 +285,12 @@ class MemoryProposalAdmission:
 
     async def _admit(
         self, work: WorkItem, output: Proposal, fetched: GraphFetched,
-        session: int, scope: Scope,
+        session: int, scope: Scope, indices: list[int] | None = None,
     ) -> tuple[Admission, list[dict[str, str]], dict[str, Any]]:
         """Flatten the statements into the existing domain objects, admit them,
-        and report one outcome per statement."""
+        and report one outcome per statement. `indices` maps each valid
+        statement's position back to its index in the original call, so a
+        schema-refused sibling neither shifts results nor withholds admission."""
         local_refusals: list[dict[str, str]] = []
         report: dict[int, dict[str, Any]] = {}
 
@@ -287,9 +315,22 @@ class MemoryProposalAdmission:
             index: int, st: RelationStatement,
         ) -> str | None:
             """Returns the staged relation id, or None with the refusal recorded."""
+            if not any(st.rel in row.relates_by for row in MEMORY_KINDS):
+                report[index] = {"status": "refused", "reason": "vocabulary",
+                                 "kind": "relation"}
+                await refuse("relation", "vocabulary")
+                return None
+            try:
+                valid_from = _time(st.valid_from, work.as_of.tzinfo)
+                valid_to = _time(st.valid_to, work.as_of.tzinfo)
+            except ValueError:
+                report[index] = {"status": "refused", "reason": "schema",
+                                 "kind": "relation"}
+                await refuse("relation", "schema")
+                return None
             keys: dict[str, Key] = {}
             for endpoint, slot in ((st.subject, "src"), (st.object, "dst")):
-                key, entity, failure = self._endpoint(endpoint, work)
+                key, entity, failure = self._endpoint(endpoint, work, scope)
                 if failure is not None:
                     part, reason = failure
                     report[index] = {"status": "refused", "reason": reason,
@@ -311,19 +352,6 @@ class MemoryProposalAdmission:
                                 evidence.append(Evidence(
                                     ekey, entity_id=entity.id,
                                     attribute=name, span=cite.quote))
-            if not any(st.rel in row.relates_by for row in MEMORY_KINDS):
-                report[index] = {"status": "refused", "reason": "vocabulary",
-                                 "kind": "relation"}
-                await refuse("relation", "vocabulary")
-                return None
-            try:
-                valid_from = _time(st.valid_from, work.as_of.tzinfo)
-                valid_to = _time(st.valid_to, work.as_of.tzinfo)
-            except ValueError:
-                report[index] = {"status": "refused", "reason": "schema",
-                                 "kind": "relation"}
-                await refuse("relation", "schema")
-                return None
             sources, cite_reason = self._cited(st.cite, scope, fetched)
             if cite_reason is not None:
                 report[index] = {"status": "refused", "reason": cite_reason,
@@ -362,7 +390,8 @@ class MemoryProposalAdmission:
                 i for key in sources for i in scope.key_to_items.get(key, ()))
             return rel_id
 
-        for index, st in enumerate(output.statements):
+        for pos, st in enumerate(output.statements):
+            index = indices[pos] if indices is not None else pos
             if isinstance(st, ReadingStatement):
                 claims[index] = {
                     "about": [s.model_dump() for s in st.about],
@@ -387,11 +416,29 @@ class MemoryProposalAdmission:
                     i for key in keys for i in scope.key_to_items.get(key, ()))
                 report[index] = {"status": "pending", "kind": "reading"}
             elif isinstance(st, CorrectionStatement):
+                if st.relation not in scope.shown_relations | scope.admitted:
+                    report[index] = {"status": "refused", "reason": "unshown",
+                                     "kind": "correction"}
+                    await refuse("correction", "unshown")
+                    continue
                 sources, cite_reason = self._cited(st.cite, scope, fetched)
                 if cite_reason is not None:
                     report[index] = {"status": "refused", "reason": cite_reason,
                                      "kind": "correction"}
                     await refuse("correction", cite_reason)
+                    continue
+                bad_quote = next(
+                    (c for c in st.cite
+                     if c.quote is not None and c.quote not in sources[
+                         scope.catalogue.get(c.source)
+                         or ("message", str(c.source))].text),
+                    None,
+                )
+                if bad_quote is not None:
+                    report[index] = {"status": "refused",
+                                     "reason": "span_not_in_source",
+                                     "kind": "correction"}
+                    await refuse("correction", "span_not_in_source")
                     continue
                 by = None
                 if st.change == "supersede":
@@ -491,7 +538,8 @@ class MemoryProposalAdmission:
             await self._refuse(session, refusal.kind, refusal.reason)
         await self.records.graph_write(work, session, admission)
 
-        for index, st in enumerate(output.statements):
+        for pos, st in enumerate(output.statements):
+            index = indices[pos] if indices is not None else pos
             if index in report and report[index]["status"] != "pending":
                 continue
             if isinstance(st, ReadingStatement):

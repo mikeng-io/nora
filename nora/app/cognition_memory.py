@@ -8,13 +8,14 @@ from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy.exc import NoResultFound
 
 from nora.agent.egress import scan_identifiers
 from nora.app.comprehend import (
     MemoryProposalAdmission,
     Proposal,
+    Statement,
     _shape_errors,
     proposal_scope,
 )
@@ -70,6 +71,9 @@ def historical_graph(graph: Subgraph, at: datetime) -> Subgraph:
 def _source_payload(sources: Iterable[Source]) -> list[dict[str, Any]]:
     rows = [{**asdict(source), "persons": sorted(source.persons)} for source in sources]
     return sorted(rows, key=lambda row: json.dumps(row, sort_keys=True, default=str))
+
+
+_STATEMENT: TypeAdapter[Statement] = TypeAdapter(Statement)
 
 
 class WakeMemory:
@@ -266,7 +270,13 @@ class WakeMemory:
         if state.historical:
             candidates = [historical_graph(candidate, at) for candidate in candidates]
         # `shown_keys` is the renderer's own emitted-rows provenance: a row the
-        # budget omits was never shown, whatever the walk returned.
+        # budget omits was never shown, whatever the walk returned. The preview
+        # rows' relation ids are the only targets a correction may name.
+        state.shown_relations = {
+            e.relation.id for e in graph.relations
+        } | {
+            e.relation.id for c in candidates for e in c.relations
+        }
         state.graph_text = preview_text(Preview(seeds, graph, tuple(candidates), (at, at)),
                                         shown_keys=state.shown_keys)
         if scan_identifiers(state.graph_text, content_checks=self.content_checks):
@@ -276,13 +286,21 @@ class WakeMemory:
     def register_shown(self, state: Any) -> None:
         """The citable graph sources are exactly the rows the agenda emitted:
         `render_agenda` has rewritten each item's `source_keys` to the rows it
-        actually rendered (after clipping/dropping); only those hydrate."""
+        actually rendered (after clipping/dropping); only those hydrate, and
+        with the emitted body — a tail the budget clipped was never shown.
+        Code keeps the Source's key/layer/unit/persons; only a later explicit
+        tool read may grant a larger snapshot."""
         for item in state.memory_items.values():
+            emitted = {
+                str(r["id"]): r["body"]
+                for r in item.snapshot.get("messages", [])
+            }
             by_key = {s.key: s for s in item.sources}
-            for key in item.snapshot.get("source_keys", {}).values():
+            for n, key in item.snapshot.get("source_keys", {}).items():
                 source = by_key.get(tuple(key))
                 if source is not None:
-                    state.graph_fetched.show(source)
+                    state.graph_fetched.show(
+                        replace(source, text=emitted.get(n, source.text)))
 
     async def propose(
         self, state: Any, *, items: list[int], statements: list[Any],
@@ -295,11 +313,20 @@ class WakeMemory:
         if any(i not in state.memory_items for i in nothing_here):
             return {"status": "refused", "admitted": [], "statements": [],
                     "refused": [{"reason": "no_such_item"}]}
-        try:
-            output = Proposal.model_validate({"statements": statements})
-        except ValidationError as error:
-            return {"status": "refused", "admitted": [], "statements": [],
-                    "refused": [{"reason": "schema", "errors": _shape_errors(error)}]}
+        # Statements are validated individually at the admission boundary:
+        # one malformed entry takes only its own slot, never a sibling's.
+        valid: list[Statement] = []
+        indices: list[int] = []
+        pre_refused: dict[int, dict[str, Any]] = {}
+        for i, raw in enumerate(statements):
+            try:
+                valid.append(_STATEMENT.validate_python(raw))
+                indices.append(i)
+            except ValidationError as error:
+                pre_refused[i] = {"status": "refused", "kind": "schema",
+                                  "reason": "schema",
+                                  "errors": _shape_errors(error)}
+        output = Proposal(statements=valid)
         # Each proposal has one evidence scope. A multi-item proposal is validated
         # against their union, then consumes only the explicitly named items.
         inputs = [state.memory_items[i] for i in items]
@@ -317,29 +344,48 @@ class WakeMemory:
         combined = replace(combined, work=replace(combined.work, input_hash=hashlib.sha256(
             json.dumps(_source_payload(combined.sources),
                        sort_keys=True).encode()).hexdigest()))
-        scope = proposal_scope(inputs, state.graph_fetched)
+        scope = proposal_scope(
+            inputs, state.graph_fetched,
+            shown_keys=getattr(state, "shown_keys", frozenset()),
+            shown_relations=getattr(state, "shown_relations", frozenset()),
+            admitted=set(getattr(state, "admitted_relations", ())))
         result, local_refusals, aux = await self.admission._admit(
-            combined.work, output, state.graph_fetched, state.session_id, scope)
+            combined.work, output, state.graph_fetched, state.session_id, scope,
+            indices)
         report: dict[int, dict[str, Any]] = aux["report"]
         cited_items: dict[int, set[int]] = aux["cited_items"]
         claims: list[dict[str, Any]] = []
+        claim_of: dict[int, dict[str, Any]] = {}
         for index, claim in aux["claims"].items():
-            valid, drops = partition_claims({"claims": [claim]}, combined.snapshot)
+            claim_valid, drops = partition_claims(
+                {"claims": [claim]}, combined.snapshot)
             if drops:
                 await self.admission._refuse(state.session_id, "reading", drops[0])
                 report[index] = {"status": "refused", "kind": "reading",
                                  "reason": drops[0]}
             else:
-                claims.extend(valid)
+                claims.extend(claim_valid)
+                claim_of[index] = claim_valid[0]
                 report[index] = {"status": "saved", "kind": "reading"}
-        # Completion: an input is done when a saved statement cites one of its
-        # rendered rows, or the model explicitly declared it nothing_here.
+        # Claims persist before coverage is decided: an input is done only
+        # when its saved statement's claim is actually stored (the writer
+        # merges additional claims idempotently for the same input), or the
+        # model explicitly declared it nothing_here.
+        persisted = (await self.records.readings(
+            combined.work, state.session_id,
+            replace(combined, snapshot={**combined.snapshot, "completion": []}),
+            claims) or []) if claims else []
         covered = set(nothing_here)
         for index, entry in report.items():
-            if entry["status"] == "saved":
-                covered.update(items[i] for i in cited_items.get(index, set()))
+            if entry["status"] != "saved":
+                continue
+            if index in claim_of and claim_of[index] not in persisted:
+                continue
+            covered.update(items[i] for i in cited_items.get(index, set()))
         admitted = sorted(covered)
-        refused = [*[asdict(r) for r in result.refused], *local_refusals]
+        refused = [*[asdict(r) for r in result.refused], *local_refusals,
+                   *({"kind": "schema", "reason": "schema"}
+                     for _i in pre_refused)]
         if admitted:
             record_item = replace(combined, snapshot={
                 **combined.snapshot,
@@ -349,7 +395,7 @@ class WakeMemory:
                     for v in (state.memory_items[i] for i in admitted)],
             })
             await self.records.readings(
-                combined.work, state.session_id, record_item, claims)
+                combined.work, state.session_id, record_item, [])
             state.admitted_indices.update(admitted)
         seeds = tuple(dict.fromkeys(k for r in result.relations for k in (r.src, r.dst)))
         graph = await self.graph.walk(seeds, Walk(unit=state.unit, depth=1,
@@ -369,13 +415,16 @@ class WakeMemory:
         # Per-statement results: saved, or refused with ONE primary reason;
         # dependent cascade diagnostics are recorded, never returned.
         statements_report = [
-            {"index": index, **report.get(index, {"status": "refused",
-                                                 "reason": "ungrounded"})}
-            for index in range(len(output.statements))
+            {"index": i, **(pre_refused.get(i) or report.get(
+                i, {"status": "refused", "reason": "ungrounded"}))}
+            for i in range(len(statements))
         ]
         primary = [
             {"statement": index, "kind": entry["kind"], "reason": entry["reason"]}
             for index, entry in report.items() if entry["status"] == "refused"
+        ] + [
+            {"statement": i, "kind": "schema", "reason": "schema"}
+            for i in pre_refused
         ] + [
             {"statement": index, **part}
             for index, entry in report.items() if entry["status"] == "saved"
