@@ -354,10 +354,19 @@ class WakeMemory:
         combined = replace(combined, work=replace(combined.work, input_hash=hashlib.sha256(
             json.dumps(_source_payload(combined.sources),
                        sort_keys=True).encode()).hexdigest()))
+        # `shown_persons` is emitted-row authorship, never a source's scope:
+        # every item's rendered rows (a clipped or withheld row contributes
+        # nothing) plus the rows the read tools handed out (`on_rows`).
         scope = proposal_scope(
             inputs, state.graph_fetched,
             shown_keys=getattr(state, "shown_keys", frozenset()),
             shown_relations=getattr(state, "shown_relations", frozenset()),
+            shown_persons={
+                str(r["person_id"])
+                for item in state.memory_items.values()
+                for r in item.snapshot.get("messages", ())
+                if r.get("person_id")
+            } | set(getattr(state, "shown_persons", ())),
             admitted=set(getattr(state, "admitted_relations", ())))
         result, local_refusals, aux = await self.admission._admit(
             combined.work, output, state.graph_fetched, state.session_id, scope,

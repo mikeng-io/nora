@@ -29,10 +29,8 @@ hooks:
 	@if [ -f "$${NORA_PII_KEEP_PHRASES:-$$HOME/.config/nora/pii-keep-phrases.txt}" ]; then echo "pii keep-phrases: present"; else echo "pii keep-phrases: none (optional)"; fi
 	@if [ -f "$${NORA_PII_PSEUDONYMS:-$$HOME/.config/nora/pii-pseudonyms.txt}" ]; then echo "pii pseudonyms: present"; else echo "pii pseudonyms: none (optional)"; fi
 
-# --- gate (AGENTS.md: `make gate` once per PR, on the final head, before
-# claiming it done; `make test-affected` or the tests you touched while
-# iterating — never a gate per fix round; `make full-gate` for the whole
-# serial suite unconditionally) ---
+# --- validation (focused local checks by impact; required hosted contracts
+# own full-suite PR acceptance; make gate/full-gate remain explicit commands) ---
 
 test-all:
 	uv run python -m scripts.pytest_gate --workers 0

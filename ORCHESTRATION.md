@@ -187,7 +187,7 @@ A brief links the issue/design acceptance and input revisions, names allowed
 paths/non-goals, worktree/base/branch, skills, named checks and reporting/stop
 boundary. It carries task-specific deltas, not another full spec. Builders run
 the named focused checks once and stop at the agreed handoff; the orchestrator
-owns the final gate once on the final head. No extra handling, tests, reviewers
+owns final acceptance: focused local evidence plus required hosted checks. No extra handling, tests, reviewers
 or scope expansion: report an adjacent concern instead. Review briefs include
 claims, diff command and **do not spawn sub-agents; do the work yourself**.
 For a T3 delegated worktree, start a build with

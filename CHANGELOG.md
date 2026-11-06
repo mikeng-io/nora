@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.15.19](https://github.com/mikeng-io/nora/compare/v7.15.18...v7.15.19) (2026-11-06)
+
+
+### Bug Fixes
+
+* **cognition:** drop the handle-form agenda render pending the format experiment ([26f5a84](https://github.com/mikeng-io/nora/commit/26f5a8401d32c663648c8a71f5b900e69016d48a))
+* **cognition:** keep the correction catalogue inside what was shown ([6387ac5](https://github.com/mikeng-io/nora/commit/6387ac5ef462172ea3ea9093c9cd9aa08e4fc8cc))
+
 ## [7.15.18](https://github.com/mikeng-io/nora/compare/v7.15.17...v7.15.18) (2026-11-06)
 
 

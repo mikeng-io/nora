@@ -160,20 +160,30 @@ async def _spawn(cfg, *, store=None, redis_client=None):
     """One Bridge + publisher + /v1 client — the real runtime shape."""
     bridge = wrapper.Bridge(cfg, store=store, redis_client=redis_client)
     bridge.journal.probe()  # what supervise() does before the child may run
-    publisher = asyncio.ensure_future(bridge.replay_journal())
+    started = asyncio.Event()
+
+    async def publish():
+        started.set()
+        await bridge.replay_journal()
+
+    publisher = asyncio.create_task(publish())
+    await started.wait()
     client = TestClient(TestServer(bridge.routes()))
-    await client.start_server()
+    try:
+        await client.start_server()
+    except BaseException:
+        await _teardown(bridge, publisher, client)
+        raise
     return bridge, publisher, client
 
 
 async def _teardown(bridge, publisher, client) -> None:
-    bridge.stop_replay()
-    publisher.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
+    async with contextlib.AsyncExitStack() as resources:
+        resources.push_async_callback(bridge.redis.aclose)
+        resources.push_async_callback(bridge.store._engine.dispose)
+        resources.push_async_callback(client.close)
+        bridge.stop_replay()
         await publisher
-    await client.close()
-    await bridge.store._engine.dispose()
-    await bridge.redis.aclose()
 
 
 @pytest.fixture
@@ -182,8 +192,10 @@ async def bridge_app(clean_pg_url, redis_client, tmp_path, daemon):
     cfg = _cfg(tmp_path, signal_http=daemon.url,
                redis_url=_redis_url(redis_client), database_url=clean_pg_url)
     bridge, publisher, client = await _spawn(cfg)
-    yield bridge, client, daemon
-    await _teardown(bridge, publisher, client)
+    try:
+        yield bridge, client, daemon
+    finally:
+        await _teardown(bridge, publisher, client)
 
 
 def _send(aid: str, owner: dict, text: str = "hello") -> dict:
@@ -284,6 +296,8 @@ async def _captured(bridge, daemon, events: list, deadline_s: float = 5.0):
             await asyncio.sleep(0.05)
     finally:
         cap.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await cap
 
 
 async def _stream_envelopes(redis_client):
@@ -669,10 +683,15 @@ async def test_receipt_sent_once_for_addressed_event(bridge_app):
     import sqlalchemy as sa
 
     from nora.infra.sql.schema import BRIDGE_ACTION
-    async with bridge.store._engine.connect() as conn:
-        rows = (await conn.execute(sa.select(BRIDGE_ACTION).where(
-            BRIDGE_ACTION.c.op == "react"))).mappings().all()
-    assert len(rows) == 1 and rows[0]["state"] == "confirmed"
+    async with asyncio.timeout(8):
+        while True:
+            async with bridge.store._engine.connect() as conn:
+                rows = (await conn.execute(sa.select(BRIDGE_ACTION).where(
+                    BRIDGE_ACTION.c.op == "react"))).mappings().all()
+            if len(rows) == 1 and rows[0]["state"] == "confirmed":
+                break
+            await asyncio.sleep(0.05)
+    assert len(daemon.reactions) == 1
     assert rows[0]["action_id"].startswith("receipt:v1:")
 
 
@@ -1281,3 +1300,61 @@ async def test_an_invalid_or_absent_action_context_never_blocks(
                 if s.name == "queue.deliver"]
     assert len(delivers) == 3
     assert all(not s.links for s in delivers)
+
+
+@pytest.mark.parametrize("refused", [False, True])
+async def test_teardown_finishes_an_inflight_receipt_before_disposing_its_database(
+    clean_pg_url, redis_client, tmp_path, daemon, refused,
+):
+    from aiohttp import web
+
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def delayed_response(request):
+        response = await daemon.rpc(request)
+        entered.set()
+        await release.wait()
+        return response
+
+    if refused:
+        daemon.rpc_errors.add("sendReaction")
+    app = web.Application()
+    app.router.add_post("/api/v1/rpc", delayed_response)
+    upstream = TestClient(TestServer(app))
+    await upstream.start_server()
+    _projection(tmp_path)
+    cfg = _cfg(tmp_path, signal_http=str(upstream.make_url("")).rstrip("/"),
+               redis_url=_redis_url(redis_client), database_url=clean_pg_url)
+    bridge, publisher, client = await _spawn(cfg)
+    shutdown = None
+    try:
+        env = _envelope("delayed-receipt", receipt={"emoji": "👍"})
+        env.message["mentions"] = [OWN]
+        bridge.journal.append({"envelope": env.to_fields()})
+        bridge._publisher.wake()
+        async with asyncio.timeout(8):
+            await entered.wait()
+            assert daemon.rpc_calls == ["sendReaction"]
+            action_id = bridge._receipt_action_id(env.event_id)
+            assert (await bridge.store.action(action_id))["state"] == "started"
+            shutdown = asyncio.create_task(_teardown(bridge, publisher, client))
+            await bridge._publisher._stop.wait()
+            assert publisher.cancelling() == 0
+            assert not publisher.done()
+            release.set()
+            done, _ = await asyncio.wait({shutdown}, timeout=5)
+            assert shutdown in done, "publisher stop lost its wake during receipt completion"
+            await shutdown
+        assert not publisher.cancelled()
+        try:
+            row = await bridge.store.action(action_id)
+            assert row["state"] == ("uncertain" if refused else "confirmed")
+        finally:
+            await bridge.store._engine.dispose()
+    finally:
+        release.set()
+        if shutdown is None:
+            await _teardown(bridge, publisher, client)
+        else:
+            await shutdown
+        await upstream.close()
