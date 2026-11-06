@@ -145,3 +145,13 @@ read rates over the whole replay set.
   not a row.
 - Readings written only where no relation fits make retrieval measurably
   worse in replies: then the `reading` row narrows.
+
+## Amendment 2026-11-06
+
+§4.3's part-wise keep is extended to the statement contract: `memory_propose`
+carries self-contained statements (relation, correction, reading) with
+`@kind:id` handles or `{new: …}` endpoints and rendered-row citations;
+`persons` is derived from cited sources, the schema is generated from the typed
+proposal models, and an item completes when a saved statement cites it or it is
+declared `nothing_here`. The kind table, its «create when» rows and the
+silence-is-correct rule are unchanged.

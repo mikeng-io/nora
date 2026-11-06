@@ -522,6 +522,7 @@ async def test_prepare_keeps_each_social_sources_real_provenance() -> None:
                         surprise=0, stimulus_ids=(1, 2, 3, 4))
     render_agenda([agenda], stimuli=stimuli, grounding=Grounding(), now_ms=NOW_MS,
                   memory_items=state.memory_items)
+    memory.register_shown(state)
     await memory.account_view(state, ["person", PERSON])
     account = state.profile_accounts[PERSON_ACCOUNT_KEY]["account"]
     citable = memory._citable_for(state, account)

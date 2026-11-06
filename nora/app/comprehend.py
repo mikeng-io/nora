@@ -1,20 +1,29 @@
-"""Cognition steps one and two. Only the graph and Record/shadow rows are written."""
+"""Cognition's one write verb: statement-shaped proposals.
+
+The model POINTS — which meaning, which shown source row, which shown entity —
+and code CONNECTS: ids, identity pointers, unit, persons, evidence links,
+source_ids, dates. Code never invents meaning (no relation, subject, place or
+date derived from a citation); the model never maintains bookkeeping (no
+local ids, no foreign keys between lists, no persons unions).
+
+Admission is unchanged: `stage_and_admit` → `AdmissionState._admit` →
+`validate_relation`; what changed is only what the model is asked for.
+Only the graph and Record/shadow rows are written.
+"""
 
 from __future__ import annotations
 
 import json
 import logging
 import re
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, tzinfo
-from typing import Any, Literal, get_args
+from typing import Annotated, Any, Literal, get_args
 from uuid import NAMESPACE_URL, uuid5
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
-from pydantic_core import PydanticCustomError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from nora.agent.fetch_watch import GraphFetched
-from nora.app.extraction import ExtractionClaim
 from nora.domain.comprehend import PARTS, REFUSAL_REASONS
 from nora.domain.memory_graph import (
     MEMORY_KINDS,
@@ -27,6 +36,7 @@ from nora.domain.memory_graph import (
     Key,
     MemoryGraph,
     Relation,
+    Source,
     Walk,
     WorkItem,
 )
@@ -38,56 +48,85 @@ class Shape(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
-class ProposedEntity(Shape):
-    id: str
+class Citation(Shape):
+    """One shown source row: its `n` and an exact quote from its body."""
+
+    source: int
+    quote: str | None = None
+
+
+class CitedValue(Shape):
+    """A public attribute value with the citations that establish it."""
+
+    value: Any
+    cite: list[Citation] = Field(default_factory=list)
+
+
+class NewEntity(Shape):
+    """An entity with no matching shown candidate, nested inside an endpoint."""
+
     kind: str
     name: str
     aliases: list[str] = Field(default_factory=list)
-    attributes: dict[str, Any] = Field(default_factory=dict)
+    attributes: dict[str, CitedValue] = Field(default_factory=dict)
 
 
-class ProposedRelation(Shape):
-    id: str
-    src: list[str] = Field(min_length=2, max_length=2)
+class NewEndpoint(Shape):
+    new: NewEntity
+
+
+# An endpoint is a shown `@kind:id` handle (a preview row, an admitted
+# relation's end, a person id as `@person:<id>`) or an inline new entity.
+Endpoint = str | NewEndpoint
+
+
+class RelationStatement(Shape):
+    type: Literal["relation"]
     rel: str
-    dst: list[str] = Field(min_length=2, max_length=2)
-    persons: list[str] = Field(default_factory=list)
+    subject: Endpoint
+    object: Endpoint
     valid_from: str | None = None
     valid_to: str | None = None
+    cite: list[Citation] = Field(min_length=1)
 
 
-class ProposedEvidence(Shape):
-    # A source id is accepted as written: readings cite it as an integer.
-    source: list[str | int] = Field(min_length=2, max_length=2)
-    relation_id: str | None = None
-    entity_id: str | None = None
-    attribute: str | None = None
-    role: Literal["supports", "contradicts"] = "supports"
-    span: str | None = None
-
-    @model_validator(mode="after")
-    def _targets_something(self) -> ProposedEvidence:
-        # Evidence that names neither a relation nor an attribute supports
-        # nothing; refused here so the model is told, not silently orphaned.
-        if self.relation_id is None and (self.entity_id is None or self.attribute is None):
-            raise PydanticCustomError("evidence_target_missing", "evidence names no target")
-        return self
+class CorrectionStatement(Shape):
+    type: Literal["correction"]
+    relation: str
+    change: Literal["close", "supersede", "dispute", "retire"]
+    at: str | None = None
+    replacement: RelationStatement | None = None
+    cite: list[Citation] = Field(min_length=1)
 
 
-class ProposedCorrection(Shape):
-    relation_id: str
-    kind: Literal["close", "supersede", "dispute", "retire"]
-    at: str
-    by: str | None = None
-    evidence: list[list[str | int]] = Field(default_factory=list)
+class HappenedAt(Shape):
+    source: int
+    expression: str | None = None
 
 
-class GraphWrite(Shape):
-    entities: list[ProposedEntity]
-    relations: list[ProposedRelation]
-    evidence: list[ProposedEvidence]
-    corrections: list[ProposedCorrection]
-    readings: list[ExtractionClaim]
+class ReadingSubject(Shape):
+    person_id: str | None = None
+    reference: str
+
+
+class ReadingStatement(Shape):
+    type: Literal["reading"]
+    about: list[ReadingSubject] = Field(default_factory=list)
+    what: str
+    happened_at: HappenedAt
+    where: str | None = None
+    how: Literal["stated", "said_by_another", "planned", "asked", "reported"]
+    cite: list[Citation] = Field(min_length=1)
+
+
+Statement = Annotated[
+    RelationStatement | CorrectionStatement | ReadingStatement,
+    Field(discriminator="type"),
+]
+
+
+class Proposal(Shape):
+    statements: list[Statement] = Field(default_factory=list)
 
 
 _FIELD = re.compile(r"[a-z][a-z0-9_]{0,39}")
@@ -95,8 +134,8 @@ _FIELD = re.compile(r"[a-z][a-z0-9_]{0,39}")
 
 def _field_names(model: type[BaseModel]) -> set[str]:
     names = set(model.model_fields)
-    for field in model.model_fields.values():
-        for arg in (field.annotation, *get_args(field.annotation)):
+    for info in model.model_fields.values():
+        for arg in (info.annotation, *get_args(info.annotation)):
             for inner in (arg, *get_args(arg)):
                 if isinstance(inner, type) and issubclass(inner, BaseModel):
                     names |= _field_names(inner)
@@ -104,15 +143,8 @@ def _field_names(model: type[BaseModel]) -> set[str]:
 
 
 def _shape_errors(error: ValidationError, limit: int = 20) -> list[str]:
-    """Where the shape is wrong, in the schema's own words only.
-
-    A path part the schema does not define is a key the model wrote. It is
-    echoed only when shaped like a field name (`target`); anything else is
-    redacted. A one-word key from the source still echoes, which reveals
-    nothing new: the same model wrote it in this call. The reason is pydantic's
-    error type, never its message, which a validator may build from the value.
-    """
-    known = _field_names(GraphWrite)
+    """Where the shape is wrong, in the schema's own words only."""
+    known = _field_names(Proposal)
     return [
         ".".join(
             str(p) if isinstance(p, int) or p in known or _FIELD.fullmatch(p) else "<unknown field>"
@@ -122,21 +154,6 @@ def _shape_errors(error: ValidationError, limit: int = 20) -> list[str]:
         + e["type"]
         for e in error.errors(include_input=False, include_url=False)[:limit]
     ]
-
-
-def _endpoint(value: list[str], unit: str) -> Key:
-    """A relation end; a person, room, unit or Nora named by its authored id
-    becomes the unit's pointer (27 §3), which code supplies, not the model."""
-    kind, ref = _key(value)
-    if kind in POINTER_KINDS and not ref.startswith(f"{unit}:{kind}:"):
-        return kind, f"{unit}:{kind}:{ref}"
-    return kind, ref
-
-
-def _key(value: list[str] | list[str | int]) -> Key:
-    if len(value) != 2:
-        raise ValueError("source key requires kind and id")
-    return str(value[0]), str(value[1])
 
 
 def _time(value: str | None, tz: tzinfo | None) -> datetime | None:
@@ -151,6 +168,49 @@ def _time(value: str | None, tz: tzinfo | None) -> datetime | None:
     return at
 
 
+@dataclass
+class Scope:
+    """What one proposal may cite and name, built from the shown rows only."""
+
+    catalogue: dict[int, Key] = field(default_factory=dict)
+    key_to_items: dict[Key, set[int]] = field(default_factory=dict)
+    shown_keys: frozenset[Key] = frozenset()
+    shown_relations: frozenset[str] = frozenset()
+    shown_persons: frozenset[str] = frozenset()
+    admitted: frozenset[str] = frozenset()
+
+
+def proposal_scope(
+    inputs: list[Any], fetched: GraphFetched, *,
+    shown_keys: Any = frozenset(), shown_relations: Any = frozenset(),
+    admitted: Any = frozenset(),
+) -> Scope:
+    """The citable catalogue of one proposal call: the union of the named
+    items' rendered rows, plus the tool-fetched rows the session was shown.
+    Handles are citable only when the session showed them: node keys in
+    `shown_keys`, correction targets in `shown_relations` or `admitted`, and
+    person handles authored by a shown row."""
+    scope = Scope(
+        shown_keys=frozenset(shown_keys) | frozenset(fetched.sources),
+        shown_relations=frozenset(shown_relations),
+        shown_persons=frozenset(
+            p for s in fetched.sources.values() for p in s.persons),
+        admitted=frozenset(admitted),
+    )
+    for index, item in enumerate(inputs):
+        for n, key in item.snapshot.get("source_keys", {}).items():
+            try:
+                key = tuple(key)
+                scope.catalogue[int(n)] = key
+            except (TypeError, ValueError):
+                continue
+            scope.key_to_items.setdefault(key, set()).add(index)
+        for source in item.sources:
+            if source.key in fetched.sources:
+                scope.key_to_items.setdefault(source.key, set()).add(index)
+    return scope
+
+
 class MemoryProposalAdmission:
     """Admission only; the wake owns the model session and its clock."""
 
@@ -161,104 +221,266 @@ class MemoryProposalAdmission:
         if part not in PARTS or reason not in REFUSAL_REASONS:
             raise ValueError("unknown comprehend refusal")
         await self.records.record_refusal(session, part, reason)
-        self.metrics.inc("nora_comprehend_refused_parts_total", part=part, reason=reason)
+        if self.metrics is not None:
+            self.metrics.inc(
+                "nora_comprehend_refused_parts_total", part=part, reason=reason)
+
+    def _endpoint(
+        self, value: Endpoint, work: WorkItem, scope: Scope,
+    ) -> tuple[Key | None, Entity | None, tuple[str, str] | None]:
+        """Resolve one endpoint: a shown handle or an inline new entity.
+
+        Returns (key, entity_or_none, failure_or_none) where failure is
+        (part, reason); a `{new: …}` endpoint's refusal is the entity's part,
+        a bad handle's the relation's."""
+        if isinstance(value, NewEndpoint):
+            e = value.new
+            if e.kind in POINTER_KINDS:
+                return None, None, ("entity", "identity_pointer")
+            if e.kind not in PROPOSED_KINDS or not any(
+                    row.kind == e.kind for row in MEMORY_KINDS):
+                return None, None, ("entity", "vocabulary")
+            entity = Entity(
+                _stable(work, "entity:" + json.dumps(
+                    e.model_dump(mode="json"), sort_keys=True)),
+                e.kind, work.unit, e.name, tuple(e.aliases),
+                {name: cited.value for name, cited in e.attributes.items()},
+            )
+            return entity.key, entity, None
+        if not isinstance(value, str) or not value.startswith("@"):
+            return None, None, ("relation", "schema")
+        kind, _, ref = value[1:].partition(":")
+        if not kind or not ref:
+            return None, None, ("relation", "schema")
+        if kind in POINTER_KINDS:
+            if not ref.startswith(f"{work.unit}:{kind}:"):
+                ref = f"{work.unit}:{kind}:{ref}"
+            key = (kind, ref)
+            # A person handle is shown when a rendered row authored them or
+            # the pointer was already shown/committed this session.
+            if (kind == "person" and ref.rpartition(":")[2] in scope.shown_persons) \
+                    or key in scope.shown_keys:
+                return key, None, None
+            return None, None, ("relation", "unshown")
+        key = (kind, ref)
+        # Entity and record kinds name graph nodes the session must have
+        # shown; existing-in-store is not shown-to-this-session.
+        if key in scope.shown_keys:
+            return key, None, None
+        return None, None, ("relation", "unshown")
+
+    def _cited(
+        self, cites: list[Citation], scope: Scope, fetched: GraphFetched,
+    ) -> tuple[dict[Key, Source], str | None]:
+        """Resolve a statement's citations to shown source snapshots."""
+        keys: list[Key] = []
+        for cite in cites:
+            key = scope.catalogue.get(cite.source)
+            if key is None:
+                key = ("message", str(cite.source))
+            if key not in fetched.sources:
+                return {}, "unseen_source"
+            keys.append(key)
+        return {key: fetched.sources[key] for key in keys}, None
 
     async def _admit(
-        self, work: WorkItem, output: GraphWrite, fetched: GraphFetched, session: int
-    ) -> tuple[Admission, list[dict[str, str]]]:
+        self, work: WorkItem, output: Proposal, fetched: GraphFetched,
+        session: int, scope: Scope, indices: list[int] | None = None,
+    ) -> tuple[Admission, list[dict[str, str]], dict[str, Any]]:
+        """Flatten the statements into the existing domain objects, admit them,
+        and report one outcome per statement. `indices` maps each valid
+        statement's position back to its index in the original call, so a
+        schema-refused sibling neither shifts results nor withholds admission."""
         local_refusals: list[dict[str, str]] = []
+        report: dict[int, dict[str, Any]] = {}
 
-        async def refuse(part: Literal["entity", "relation", "evidence", "correction"],
-                         reason: str) -> None:
+        async def refuse(part: str, reason: str) -> None:
             local_refusals.append({"kind": part, "reason": reason})
             await self._refuse(session, part, reason)
 
         def stable(label: str) -> str:
-            return str(uuid5(NAMESPACE_URL, f"{work.id}:{work.input_hash}:{label}"))
+            return _stable(work, label)
 
-        ids = {r.id: stable(json.dumps(r.model_dump(), sort_keys=True)) for r in output.relations}
-        entities = []
-        for e in output.entities:
-            if e.kind in ("person", "room", "unit", "nora"):
-                await refuse("entity", "identity_pointer")
-            elif e.kind not in PROPOSED_KINDS or not any(
-                    row.kind == e.kind for row in MEMORY_KINDS):
-                # A Notebook row (note, lesson, …) names a kind, never a graph entity.
-                await refuse("entity", "vocabulary")
-            else:
-                entities.append(
-                    Entity(e.id, e.kind, work.unit, e.name, tuple(e.aliases), e.attributes)
-                )
-        evidence_parts = []
-        for proposed in output.evidence:
-            try:
-                evidence_parts.append(Evidence(
-                _key(proposed.source),
-                (ids.get(proposed.relation_id, proposed.relation_id)
-                 if proposed.relation_id is not None else None),
-                proposed.entity_id,
-                proposed.attribute,
-                proposed.role,
-                proposed.span,
-            ))
-            except ValueError:
-                await refuse("evidence", "schema")
-        evidence = tuple(evidence_parts)
-        sources = fetched.hydrate(
-            [e.source for e in evidence]
-        )
-        relations = []
-        for r in output.relations:
-            if not any(r.rel in row.relates_by for row in MEMORY_KINDS):
+        entities: list[Entity] = []
+        entity_stmt: dict[str, int] = {}
+        relations: list[Relation] = []
+        relation_stmt: dict[str, int] = {}
+        evidence: list[Evidence] = []
+        corrections: list[Correction] = []
+        correction_stmt: dict[Correction, int] = {}
+        claims: dict[int, dict[str, Any]] = {}
+        cited_items: dict[int, set[int]] = {}
+
+        async def flatten_relation(
+            index: int, st: RelationStatement,
+        ) -> str | None:
+            """Returns the staged relation id, or None with the refusal recorded."""
+            if not any(st.rel in row.relates_by for row in MEMORY_KINDS):
+                report[index] = {"status": "refused", "reason": "vocabulary",
+                                 "kind": "relation"}
                 await refuse("relation", "vocabulary")
-                continue
-            src, dst = _endpoint(r.src, work.unit), _endpoint(r.dst, work.unit)
-            cited = [
-                sources[e.source]
-                for e in evidence
-                if e.relation_id == ids[r.id] and e.source in sources
-            ]
-            if any(s.key[0] == "web_page" for s in cited) and (
-                "person" in (src[0], dst[0]) or r.persons
-            ):
-                await refuse("relation", "private_web_evidence")
-                continue
+                return None
             try:
-                relations.append(
-                    Relation(
-                        ids[r.id],
-                        src,
-                        r.rel,
-                        dst,
-                        "notebook",
-                        work.unit,
-                        tuple(r.persons),
-                        _time(r.valid_from, work.as_of.tzinfo),
-                        _time(r.valid_to, work.as_of.tzinfo),
-                        asserted_at=work.as_of,
-                        written_by=f"cognition:comprehend:{session}",
-                    )
+                valid_from = _time(st.valid_from, work.as_of.tzinfo)
+                valid_to = _time(st.valid_to, work.as_of.tzinfo)
+            except ValueError:
+                report[index] = {"status": "refused", "reason": "schema",
+                                 "kind": "relation"}
+                await refuse("relation", "schema")
+                return None
+            keys: dict[str, Key] = {}
+            for endpoint, slot in ((st.subject, "src"), (st.object, "dst")):
+                key, entity, failure = self._endpoint(endpoint, work, scope)
+                if failure is not None:
+                    part, reason = failure
+                    report[index] = {"status": "refused", "reason": reason,
+                                     "kind": "relation"}
+                    await refuse(part, reason)
+                    return None
+                if key is None:
+                    return None
+                keys[slot] = key
+                if entity is not None and isinstance(endpoint, NewEndpoint):
+                    entities.append(entity)
+                    entity_stmt[entity.id] = index
+                    for name, cited in endpoint.new.attributes.items():
+                        attr_sources, _ = self._cited(cited.cite, scope, fetched)
+                        for cite in cited.cite:
+                            ekey = scope.catalogue.get(cite.source) or (
+                                "message", str(cite.source))
+                            if ekey in attr_sources:
+                                evidence.append(Evidence(
+                                    ekey, entity_id=entity.id,
+                                    attribute=name, span=cite.quote))
+            sources, cite_reason = self._cited(st.cite, scope, fetched)
+            if cite_reason is not None:
+                report[index] = {"status": "refused", "reason": cite_reason,
+                                 "kind": "relation"}
+                await refuse("relation", cite_reason)
+                return None
+            src, dst = keys["src"], keys["dst"]
+            rel_id = stable("relation:" + json.dumps(
+                st.model_dump(mode="json"), sort_keys=True))
+            persons = sorted({p for s in sources.values() for p in s.persons})
+            if any(s.key[0] == "web_page" for s in sources.values()) and (
+                "person" in (src[0], dst[0]) or persons
+            ):
+                report[index] = {"status": "refused",
+                                 "reason": "private_web_evidence", "kind": "relation"}
+                await refuse("relation", "private_web_evidence")
+                return None
+            try:
+                relation = Relation(
+                    rel_id, src, st.rel, dst, "notebook", work.unit,
+                    tuple(persons), valid_from, valid_to,
+                    asserted_at=work.as_of,
+                    written_by=f"cognition:comprehend:{session}",
                 )
             except ValueError:
+                report[index] = {"status": "refused", "reason": "schema",
+                                 "kind": "relation"}
                 await refuse("relation", "schema")
-        correction_parts = []
-        for c in output.corrections:
-            try:
-                correction_parts.append(Correction(
-                    c.relation_id, c.kind, _time(c.at, work.as_of.tzinfo) or work.as_of,
-                    ids.get(c.by, c.by) if c.by is not None else None,
-                    tuple(_key(k) for k in c.evidence),
-                ))
-            except ValueError:
-                await refuse("correction", "schema")
-        corrections = tuple(correction_parts)
-        sources.update(fetched.hydrate([key for c in corrections for key in c.evidence]))
+                return None
+            relations.append(relation)
+            relation_stmt[rel_id] = index
+            for cite in st.cite:
+                key = scope.catalogue.get(cite.source) or ("message", str(cite.source))
+                evidence.append(Evidence(key, relation_id=rel_id, span=cite.quote))
+            cited_items.setdefault(index, set()).update(
+                i for key in sources for i in scope.key_to_items.get(key, ()))
+            return rel_id
+
+        for pos, st in enumerate(output.statements):
+            index = indices[pos] if indices is not None else pos
+            if isinstance(st, ReadingStatement):
+                claims[index] = {
+                    "about": [s.model_dump() for s in st.about],
+                    "what": st.what,
+                    "happened_at": {
+                        "source_id": st.happened_at.source,
+                        "expression": st.happened_at.expression,
+                    },
+                    "where": st.where,
+                    "how": st.how,
+                    "source_ids": [c.source for c in st.cite],
+                    "evidence": [
+                        {"source_id": c.source, "quote": c.quote}
+                        for c in st.cite if c.quote is not None
+                    ],
+                }
+                keys = [
+                    scope.catalogue.get(c.source) or ("message", str(c.source))
+                    for c in st.cite
+                ]
+                cited_items.setdefault(index, set()).update(
+                    i for key in keys for i in scope.key_to_items.get(key, ()))
+                report[index] = {"status": "pending", "kind": "reading"}
+            elif isinstance(st, CorrectionStatement):
+                if st.relation not in scope.shown_relations | scope.admitted:
+                    report[index] = {"status": "refused", "reason": "unshown",
+                                     "kind": "correction"}
+                    await refuse("correction", "unshown")
+                    continue
+                sources, cite_reason = self._cited(st.cite, scope, fetched)
+                if cite_reason is not None:
+                    report[index] = {"status": "refused", "reason": cite_reason,
+                                     "kind": "correction"}
+                    await refuse("correction", cite_reason)
+                    continue
+                bad_quote = next(
+                    (c for c in st.cite
+                     if c.quote is not None and c.quote not in sources[
+                         scope.catalogue.get(c.source)
+                         or ("message", str(c.source))].text),
+                    None,
+                )
+                if bad_quote is not None:
+                    report[index] = {"status": "refused",
+                                     "reason": "span_not_in_source",
+                                     "kind": "correction"}
+                    await refuse("correction", "span_not_in_source")
+                    continue
+                by = None
+                if st.change == "supersede":
+                    if st.replacement is None:
+                        report[index] = {"status": "refused",
+                                         "reason": "missing_replacement",
+                                         "kind": "correction"}
+                        await refuse("correction", "missing_replacement")
+                        continue
+                    by = await flatten_relation(index, st.replacement)
+                    if by is None:
+                        continue
+                elif st.replacement is not None:
+                    report[index] = {"status": "refused", "reason": "schema",
+                                     "kind": "correction"}
+                    await refuse("correction", "schema")
+                    continue
+                try:
+                    correction = Correction(
+                        st.relation, st.change,
+                        _time(st.at, work.as_of.tzinfo) or work.as_of,
+                        by=by,
+                        evidence=tuple(sources.keys()),
+                    )
+                except ValueError:
+                    report[index] = {"status": "refused", "reason": "schema",
+                                     "kind": "correction"}
+                    await refuse("correction", "schema")
+                    continue
+                corrections.append(correction)
+                correction_stmt[correction] = index
+                cited_items.setdefault(index, set()).update(
+                    i for key in sources for i in scope.key_to_items.get(key, ()))
+            else:
+                await flatten_relation(index, st)
+
         admission = await self.graph.stage_and_admit(
             entities=tuple(entities),
             relations=tuple(relations),
-            evidence=evidence,
-            sources=sources,
-            corrections=corrections,
+            evidence=tuple(evidence),
+            sources=fetched.sources,
+            corrections=tuple(corrections),
         )
         duplicates = {r.id for r in admission.refused if r.reason == "duplicate_relation"}
         if duplicates:
@@ -294,8 +516,73 @@ class MemoryProposalAdmission:
                                and r.id in connected_ids)
                 ),
             )
+        admitted_relation_ids = {r.id for r in admission.relations}
+        admitted_correction_targets = {c.relation_id for c in admission.corrections}
+        refused_by_stmt: dict[int, list[Any]] = {}
+        for refusal in admission.refused:
+            owner: int | None = None
+            if refusal.kind == "relation" and refusal.id in relation_stmt:
+                owner = relation_stmt[refusal.id]
+            elif refusal.kind == "correction" and refusal.id in {
+                    c.relation_id for c in correction_stmt}:
+                owner = next(i for c, i in correction_stmt.items()
+                             if c.relation_id == refusal.id)
+            elif refusal.kind == "entity" and refusal.id in entity_stmt:
+                owner = entity_stmt[refusal.id]
+            elif refusal.kind == "evidence":
+                owner = relation_stmt.get(
+                    refusal.id, entity_stmt.get(refusal.id))
+            if owner is not None:
+                refused_by_stmt.setdefault(owner, []).append(refusal)
         for refusal in admission.refused:
             await self._refuse(session, refusal.kind, refusal.reason)
         await self.records.graph_write(work, session, admission)
-        return admission, local_refusals
 
+        for pos, st in enumerate(output.statements):
+            index = indices[pos] if indices is not None else pos
+            if index in report and report[index]["status"] != "pending":
+                continue
+            if isinstance(st, ReadingStatement):
+                continue
+            saved = False
+            if isinstance(st, CorrectionStatement):
+                saved = st.relation in admitted_correction_targets
+            else:
+                rel_id = stable("relation:" + json.dumps(
+                    st.model_dump(mode="json"), sort_keys=True))
+                saved = rel_id in admitted_relation_ids
+            refused_here = refused_by_stmt.get(index, [])
+            if saved:
+                entry: dict[str, Any] = {"status": "saved", "kind": st.type}
+                parts = [{"kind": r.kind, "reason": r.reason} for r in refused_here]
+                if parts:
+                    entry["refused_parts"] = parts
+                report[index] = entry
+            else:
+                principal = None
+                if isinstance(st, CorrectionStatement):
+                    corr = next((r for r in refused_here if r.kind == "correction"), None)
+                    rel = next((r for r in refused_here if r.kind == "relation"), None)
+                    # missing_replacement is the cascade of the replacement's own
+                    # refusal; the relation's reason is the primary one.
+                    principal = (
+                        rel if corr is not None and corr.reason == "missing_replacement"
+                               and rel is not None else corr or rel)
+                else:
+                    principal = next(
+                        (r for r in refused_here if r.kind == "relation"), None)
+                if principal is None and refused_here:
+                    principal = refused_here[0]
+                report[index] = {
+                    "status": "refused",
+                    "kind": st.type,
+                    "reason": principal.reason if principal else "ungrounded",
+                }
+        return admission, local_refusals, {
+            "report": report, "claims": claims, "cited_items": cited_items,
+            "refused_by_stmt": refused_by_stmt,
+        }
+
+
+def _stable(work: WorkItem, label: str) -> str:
+    return str(uuid5(NAMESPACE_URL, f"{work.id}:{work.input_hash}:{label}"))

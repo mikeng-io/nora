@@ -46,15 +46,6 @@ ITEM = ComprehendItem(
         "context": [],
     },
 )
-EMPTY = {"entities": [], "relations": [], "evidence": [], "corrections": [], "readings": []}
-WRITE = {
-    **EMPTY,
-    "relations": [{"id": "like", "src": list(PERSON.key), "rel": "likes", "dst": list(PLACE.key)}],
-    "evidence": [{"source": list(SOURCE.key), "relation_id": "like", "span": "like Hall"}],
-}
-
-
-
 
 @pytest.mark.parametrize(
     ("text", "reason"),

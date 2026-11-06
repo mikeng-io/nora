@@ -26,7 +26,7 @@ NOTICE = (
 )
 
 
-async def wake(budget=None):
+async def wake(budget=None, seed=None):
     stimuli = {
         i: Stimulus(
             id=i,
@@ -58,6 +58,7 @@ async def wake(budget=None):
             ("media", "101:generated-image"), "record", "generated-unit", ("generated-a",), NOTICE
         ),
         Source(("message", "102"), "record", "generated-unit", ("generated-b",), "Context from B."),
+        Source(("message", "103"), "record", "generated-unit", (), "Loaded but never shown."),
     )
     at = datetime.fromtimestamp(NOW / 1000, UTC)
     # The first loader's media slot collides with the next real message.
@@ -84,6 +85,8 @@ async def wake(budget=None):
         metrics=None,
         content_checks=False,
     )
+    if seed is not None:
+        seed(memory)
     items = build_situation(
         unit="generated-unit",
         pending=tuple(stimuli.values()),
@@ -116,6 +119,7 @@ async def wake(budget=None):
         budget=budget,
         memory_items=state.memory_items,
     )
+    memory.register_shown(state)
     return state, prompt
 
 
@@ -141,14 +145,14 @@ async def test_colliding_loader_slot_keeps_image_author_and_clock():
         {"claims": [claim(rid, "Pending: collect tomorrow")]}, item.snapshot
     )
     assert not drops
-    output = {
-        "entities": [],
-        "relations": [],
-        "evidence": [],
-        "corrections": [],
-        "readings": [claim(rid, "Pending")],
-    }
-    result = await state.memory.propose(state, items=[0], payload=output)
+    result = await state.memory.propose(
+        state, items=[0], nothing_here=[],
+        statements=[{
+            "type": "reading", "about": [], "what": "Generated pending collection",
+            "happened_at": {"source": rid, "expression": None},
+            "where": None, "how": "reported",
+            "cite": [{"source": rid, "quote": "Pending"}],
+        }])
     assert result["status"] == "ok", result
     assert state.memory.records.claims
     assert claims[0]["assertions"] == [
@@ -188,6 +192,24 @@ async def test_budget_omitted_source_cannot_be_cited():
 
 
 @pytest.mark.asyncio
+async def test_a_loaded_but_unemitted_row_cannot_be_cited():
+    """A source the loader handed prepare but the agenda never rendered is not
+    citable: custody is the emitted catalogue, not the loaded set."""
+    state, prompt = await wake()
+    assert "Loaded but never shown." not in prompt
+    result = await state.memory.propose(
+        state, items=[0], nothing_here=[],
+        statements=[{
+            "type": "relation", "rel": "at",
+            "subject": {"new": {"kind": "event", "name": "Generated outing"}},
+            "object": {"new": {"kind": "place", "name": "Generated venue"}},
+            "cite": [{"source": 103, "quote": "Loaded but never shown."}],
+        }])
+    assert result["status"] == "refused"
+    assert result["statements"][0]["reason"] == "unseen_source"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("now_ms, index", [(None, 0), (NOW, 99)])
 async def test_unrendered_item_sources_cannot_be_cited(now_ms, index):
     state, shown = await wake()
@@ -204,3 +226,58 @@ async def test_unrendered_item_sources_cannot_be_cited(now_ms, index):
     assert item.snapshot["source_keys"] == {}
     claims, drops = partition_claims({"claims": [claim(-1, "Pending")]}, item.snapshot)
     assert not claims and drops == ["citation_outside_batch"]
+
+
+@pytest.mark.asyncio
+async def test_a_clipped_row_tail_is_not_citable():
+    """A tail the budget clipped was never shown — graph custody is the
+    emitted body, so quoting the clipped-off tail must refuse."""
+    state, _prompt = await wake(RenderBudget(message_chars=100))
+    item = state.memory_items[0]
+    n, _key = next((int(n), k) for n, k in item.snapshot["source_keys"].items()
+                   if k[0] == "media")
+    row = next(r for r in item.snapshot["messages"] if r["id"] == n)
+    tail = "Pending: collect tomorrow; not collected."
+    assert tail not in row["body"]
+    result = await state.memory.propose(
+        state, items=[0], nothing_here=[],
+        statements=[{
+            "type": "relation", "rel": "at",
+            "subject": {"new": {"kind": "event", "name": "Generated outing"}},
+            "object": {"new": {"kind": "place", "name": "Generated venue"}},
+            "cite": [{"source": n, "quote": tail}],
+        }])
+    assert result["statements"][0]["status"] == "refused"
+    assert result["statements"][0]["reason"] == "span_not_in_source"
+
+
+@pytest.mark.asyncio
+async def test_a_relation_clipped_from_the_preview_cannot_be_corrected():
+    """The correction catalogue is the emitted rows' ids, not the loaded
+    walk's: a relation the preview budget cut was never shown, so retiring
+    it must refuse unshown."""
+    from nora.domain.memory_graph import Entity, Relation
+
+    def seed(memory):
+        unit_key = ("unit", "generated-unit:unit:generated-unit")
+        for i in range(12):
+            work = Entity(f"work-{i}", "work", "generated-unit", "w" * 900)
+            memory.graph.entities[work.id] = work
+            edge = Relation(
+                f"edge-{i}", unit_key, "hosts", work.key, "notebook",
+                "generated-unit", (),
+                asserted_at=datetime.fromtimestamp(NOW / 1000, UTC))
+            memory.graph.relations[edge.id] = edge
+
+    state, _prompt = await wake(seed=seed)
+    emitted = set(state.shown_relations)
+    clipped = next(rid for rid in state.memory.graph.relations
+                   if rid.startswith("edge-") and rid not in emitted
+                   and rid not in state.graph_text)
+    correction = {"type": "correction", "relation": clipped, "change": "retire",
+                  "cite": [{"source": 101, "quote": "Image attached."}]}
+    result = await state.memory.propose(
+        state, items=[0], nothing_here=[], statements=[correction])
+    assert result["statements"][0]["status"] == "refused"
+    assert result["statements"][0]["reason"] == "unshown"
+    assert state.memory.graph.relations[clipped].status == "current"

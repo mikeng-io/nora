@@ -997,3 +997,31 @@ account and a later turn. These are evaluation properties, not production rules.
 This order holds unless a same-head reproduction or an actual assembled/deployed
 input overturns a finding. Passing structural tests, a shadow receipt or a tool-call
 name alone cannot close the semantic requirement.
+
+## Amendment 2026-11-06: statement-shaped `memory_propose`
+
+Operator-approved simplification of the §7 step-1 write contract (audit
+items 1–5); the stores, layers, vocabulary and admission of this node stand.
+
+- **Relation `persons` is derived, not authored.** §3's rule — `persons` copied
+  from the strictest evidence — is now computed in admission as the union of
+  the cited `Source.persons`; the model never writes the field. `validate_relation`'s
+  subset check stays as the independent boundary.
+- **One evidence custody.** The citable sources are exactly the rows the agenda
+  actually rendered (after clipping/dropping), not everything loaded; tool-read
+  rows are still shown by `fetch_watch`. A graph-preview label alone is not having
+  read a source body.
+- **Statements replace parallel lists.** `memory_propose` takes self-contained
+  statements — a relation (verb, subject, object, validity, citations), a
+  correction (a held relation's shown id, change, citations, a nested replacement
+  on supersede), a reading (about, what, happened_at, where, how, citations).
+  Endpoints are shown `@kind:id` handles or `{new: {kind, name, aliases,
+  attributes}}`; identity pointers are only ever handles, never created. Code
+  allocates ids, flattens to the existing `Entity`/`Relation`/`Evidence` rows and
+  derives a reading's `source_ids` from its citations. The tool schema is
+  generated from the same typed proposal models admission consumes.
+- **Completion is per input, never per batch.** An agenda input is done when a
+  saved statement cites one of its rendered rows or the model declares it
+  `nothing_here`; a refused statement no longer withholds the rest. Each statement
+  reports saved, or refused with one primary reason — no dependent-cascade
+  diagnostics.

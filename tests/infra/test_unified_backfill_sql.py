@@ -177,16 +177,18 @@ async def test_multi_item_receipt_covers_each_admitted_work(engine):
     state = SimpleNamespace(unit="u1", session_id=10, historical=True,
         memory_items=items, graph_fetched=GraphFetched(), shown_keys=set(),
         admitted_indices=set(), admitted_relations={}, admitted_evidence=[])
-    claims = []
-    for ids in ([1], [1, 2]):
-        claims.append({"about": [], "what": " and ".join(f"body {i}" for i in ids),
-            "happened_at": {"source_id": 1, "expression": None}, "where": None,
-            "how": "stated", "source_ids": ids,
-            "evidence": [{"source_id": i, "quote": f"body {i}"} for i in ids]})
-    payload = {key: [] for key in ("entities", "relations", "evidence", "corrections")}
-    payload["readings"] = claims
+    for it in items.values():
+        for s in it.sources:
+            state.graph_fetched.show(s)
+    statements = [
+        {"type": "reading", "about": [],
+         "what": " and ".join(f"body {i}" for i in ids),
+         "happened_at": {"source": 1, "expression": None}, "where": None,
+         "how": "stated",
+         "cite": [{"source": i, "quote": f"body {i}"} for i in ids]}
+        for ids in ([1], [1, 2])]
     for _ in range(2):
-        result = await memory.propose(state, items=[0, 1], payload=payload)
+        result = await memory.propose(state, items=[0, 1], statements=statements)
         assert result["status"] == "ok"
     async with engine.connect() as conn:
         extracts = (await conn.execute(sa.select(EXTRACTION))).mappings().all()
