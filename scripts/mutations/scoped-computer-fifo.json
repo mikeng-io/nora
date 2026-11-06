@@ -1,142 +1,142 @@
 [
- {
-  "name": "a running row blocks the scope's next claim",
-  "file": "nora/infra/sql/computer_tasks.py",
-  "old": "T.c.id == head, ~sa.exists(running))",
-  "new": "T.c.id == head)",
-  "target": "tests/contract/test_computer_task_store_contract.py::test_late_committed_older_row_cannot_overlap"
- },
- {
-  "name": "the scope's advisory lock serializes claims",
-  "file": "nora/infra/sql/computer_tasks.py",
-  "old": "            await conn.execute(\n                sa.text(\"SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))\"),\n                {\"scope\": str(owner)})",
-  "new": "            pass  # no scope serialization",
-  "target": "tests/contract/test_computer_task_store_contract.py::test_claim_waits_on_an_uncommitted_running_row"
- },
- {
-  "name": "an existing-handle call never creates a tab",
-  "file": "nora/infra/computer/manager.py",
-  "old": "            elif must_exist:\n                raise TabUnavailable(\"expired\")",
-  "new": "            elif must_exist:\n                wanted = None",
-  "target": "tests/unit/test_scoped_computer.py::test_capture_never_creates_a_tab"
- },
- {
-  "name": "a dead instance's rows expire on rebind",
-  "file": "nora/infra/computer/manager.py",
-  "old": "            await self._expire_other_instances(scope, binding.instance)",
-  "new": "            pass  # stale rows are trusted as-is",
-  "target": "tests/unit/test_scoped_computer.py::test_stale_instance_expires_the_binding"
- },
- {
-  "name": "nested calls inherit the parent slot",
-  "file": "nora/app/computer_queue.py",
-  "old": "        segment_id = current_segment.get()",
-  "new": "        segment_id = None",
-  "target": "tests/unit/test_scoped_computer.py::test_nested_call_inherits_the_slot"
- },
- {
-  "name": "a moved scope is refused, never retargeted",
-  "file": "nora/app/computer_queue.py",
-  "old": "            if parent is not None and parent.scope == scope:",
-  "new": "            if parent is not None:",
-  "target": "tests/unit/test_scoped_computer.py::test_submit_refuses_a_scope_that_moved"
- },
- {
-  "name": "cancel drains the real executor",
-  "file": "nora/app/computer_queue.py",
-  "old": "            return await self._tasks.get(task_id)\n        executor.cancel()",
-  "new": "            return await self._tasks.get(task_id)",
-  "target": "tests/unit/test_scoped_computer.py::test_run_segment_cancel_reaches_the_executor"
- },
- {
-  "name": "a busy VM never closes on a flag",
-  "file": "nora/app/computer_queue.py",
-  "old": "            if await _guest_quiet(self._reconcile, row.scope, seconds=DRAIN_SECONDS) \\",
-  "new": "            if True \\",
-  "target": "tests/unit/test_scoped_computer.py::test_cancel_without_executor_keeps_a_busy_vm_blocked"
- },
- {
-  "name": "a quiet VM lets the lost owner close",
-  "file": "nora/app/computer_queue.py",
-  "old": "                if verdict != \"quiet\":\n                    continue  # busy or unreadable: never closed on age alone",
-  "new": "                pass  # age alone closes",
-  "target": "tests/unit/test_scoped_computer.py::test_orphan_bound_never_closes_a_busy_vm"
- },
- {
-  "name": "the live instance must match the record's exactly",
-  "file": "nora/infra/computer/scoped.py",
-  "old": "        if not instance or instance != endpoint.instance:",
-  "new": "        if not instance:",
-  "target": "tests/unit/test_scoped_computer.py::test_binding_refuses_empty_and_mismatched_instance"
- },
- {
-  "name": "a popup is bound to the task that owns the scope",
-  "file": "nora/infra/computer/manager.py",
-  "old": "            if owner is not None and room > 0:",
-  "new": "            if owner is not None and room > 99:",
-  "target": "tests/unit/test_scoped_computer.py::test_popup_adopted_to_the_running_task"
- },
- {
-  "name": "the browser sweep sees registry scopes too",
-  "file": "nora/infra/computer/manager.py",
-  "old": "            with contextlib.suppress(Exception):\n                scopes.update(await registered())",
-  "new": "            pass  # tab rows alone drive discovery",
-  "target": "tests/unit/test_scoped_computer.py::test_sweep_retries_a_failed_stop_until_the_browser_is_down"
- },
- {
-  "name": "the stop joins the execution owner",
-  "file": "nora/infra/computer/manager.py",
-  "old": "            if busy:\n                return False",
-  "new": "            pass  # stop regardless of a running segment",
-  "target": "tests/unit/test_scoped_computer.py::test_browser_stop_refuses_while_a_task_runs"
- },
- {
-  "name": "undelivered terminal rows are rediscovered from the table",
-  "file": "nora/app/computer_queue.py",
-  "old": "        await self._deliver_pending()",
-  "new": "        pass  # the stream alone drives delivery",
-  "target": "tests/unit/test_scoped_computer.py::test_terminal_undelivered_row_is_rediscovered"
- },
- {
-  "name": "a non-terminal row is never acked",
-  "file": "nora/app/computer_queue.py",
-  "old": "        if row.status not in TERMINAL:\n            return",
-  "new": "        pass  # settle regardless",
-  "target": "tests/unit/test_scoped_computer.py::test_settle_never_acks_a_row_that_is_not_terminal"
- },
- {
-  "name": "poll hands the typed result, stdout included",
-  "file": "nora/app/computer_queue.py",
-  "old": "        for key in (\"stdout\", \"stderr\"):",
-  "new": "        for key in ():",
-  "target": "tests/unit/test_scoped_computer.py::test_poll_delivers_the_typed_result"
- },
- {
-  "name": "the block renders the full UUID handle",
-  "file": "nora/engagement/computer_context.py",
-  "old": "                    task_id=str(t.id), kind=t.kind, status=t.status,",
-  "new": "                    task_id=str(t.id)[:8], kind=t.kind, status=t.status,",
-  "target": "tests/unit/test_scoped_computer.py::test_context_renders_full_opaque_handles"
- },
- {
-  "name": "a scoped computerd refuses a missing or wrong instance",
-  "file": "deploy/computer/computerd.py",
-  "old": "        return request.headers.get(\"X-Computerd-Instance\") == boot_id",
-  "new": "        return True",
-  "target": "tests/unit/test_computerd_instance.py::test_scoped_computerd_refuses_missing_and_wrong_instance"
- },
- {
-  "name": "the client refuses an unstamped answer",
-  "file": "nora/infra/computer/client.py",
-  "old": "        if response.headers.get(\"X-Computerd-Instance\") != self._instance:",
-  "new": "        if False:",
-  "target": "tests/unit/test_computerd_instance.py::test_client_sends_the_header_and_refuses_an_unstamped_answer"
- },
- {
-  "name": "a dropped caller kills the command's group",
-  "file": "deploy/computer/computerd.py",
-  "old": "                if disconnected is not None and disconnected():",
-  "new": "                if disconnected is not None and False:",
-  "target": "tests/unit/test_computerd_instance.py::test_disconnect_kills_the_guest_command_group"
- }
+  {
+    "name": "a running row blocks the scope's next claim",
+    "file": "nora/infra/sql/computer_tasks.py",
+    "old": "T.c.id == head, ~sa.exists(running))",
+    "new": "T.c.id == head)",
+    "target": "tests/contract/test_computer_task_store_contract.py::test_late_committed_older_row_cannot_overlap"
+  },
+  {
+    "name": "the scope's advisory lock serializes claims",
+    "file": "nora/infra/sql/computer_tasks.py",
+    "old": "            await conn.execute(\n                sa.text(\"SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))\"),\n                {\"scope\": str(owner)})",
+    "new": "            pass  # no scope serialization",
+    "target": "tests/contract/test_computer_task_store_contract.py::test_claim_waits_on_an_uncommitted_running_row"
+  },
+  {
+    "name": "an existing-handle call never creates a tab",
+    "file": "nora/infra/computer/manager.py",
+    "old": "            elif must_exist:\n                raise TabUnavailable(\"expired\")",
+    "new": "            elif must_exist:\n                wanted = None",
+    "target": "tests/unit/test_scoped_computer.py::test_capture_never_creates_a_tab"
+  },
+  {
+    "name": "a dead instance's rows expire on rebind",
+    "file": "nora/infra/computer/manager.py",
+    "old": "            await self._expire_other_instances(scope, binding.instance)",
+    "new": "            pass  # stale rows are trusted as-is",
+    "target": "tests/unit/test_scoped_computer.py::test_stale_instance_expires_the_binding"
+  },
+  {
+    "name": "nested calls inherit the parent slot",
+    "file": "nora/app/computer_queue.py",
+    "old": "        segment_id = current_segment.get()",
+    "new": "        segment_id = None",
+    "target": "tests/unit/test_scoped_computer.py::test_nested_call_inherits_the_slot"
+  },
+  {
+    "name": "a moved scope is refused, never retargeted",
+    "file": "nora/app/computer_queue.py",
+    "old": "            if parent is not None and parent.scope == scope:",
+    "new": "            if parent is not None:",
+    "target": "tests/unit/test_scoped_computer.py::test_submit_refuses_a_scope_that_moved"
+  },
+  {
+    "name": "cancel drains the real executor",
+    "file": "nora/app/computer_queue.py",
+    "old": "            return await self._tasks.get(task_id)\n        executor.cancel()",
+    "new": "            return await self._tasks.get(task_id)",
+    "target": "tests/unit/test_scoped_computer.py::test_run_segment_cancel_reaches_the_executor"
+  },
+  {
+    "name": "a busy VM never closes on a flag",
+    "file": "nora/app/computer_queue.py",
+    "old": "            if await _guest_quiet(self._reconcile, row.scope, seconds=DRAIN_SECONDS) \\",
+    "new": "            if True \\",
+    "target": "tests/unit/test_scoped_computer.py::test_cancel_without_executor_keeps_a_busy_vm_blocked"
+  },
+  {
+    "name": "a quiet VM lets the lost owner close",
+    "file": "nora/app/computer_queue.py",
+    "old": "                if verdict != \"quiet\":\n                    continue  # busy or unreadable: never closed on age alone",
+    "new": "                pass  # age alone closes",
+    "target": "tests/unit/test_scoped_computer.py::test_orphan_bound_never_closes_a_busy_vm"
+  },
+  {
+    "name": "the live instance must match the record's exactly",
+    "file": "nora/infra/computer/scoped.py",
+    "old": "        if not instance or instance != endpoint.instance:",
+    "new": "        if not instance:",
+    "target": "tests/unit/test_scoped_computer.py::test_binding_refuses_empty_and_mismatched_instance"
+  },
+  {
+    "name": "a popup is bound to the task that owns the scope",
+    "file": "nora/infra/computer/manager.py",
+    "old": "            if owner is not None and room > 0:",
+    "new": "            if owner is not None and room > 99:",
+    "target": "tests/unit/test_scoped_computer.py::test_popup_adopted_to_the_running_task"
+  },
+  {
+    "name": "the browser sweep sees registry scopes too",
+    "file": "nora/infra/computer/manager.py",
+    "old": "            with contextlib.suppress(Exception):\n                scopes.update(await registered())",
+    "new": "            pass  # tab rows alone drive discovery",
+    "target": "tests/unit/test_scoped_computer.py::test_sweep_retries_a_failed_stop_until_the_browser_is_down"
+  },
+  {
+    "name": "the stop joins the execution owner",
+    "file": "nora/infra/computer/manager.py",
+    "old": "            if busy:\n                return False",
+    "new": "            pass  # stop regardless of a running segment",
+    "target": "tests/unit/test_scoped_computer.py::test_browser_stop_refuses_while_a_task_runs"
+  },
+  {
+    "name": "undelivered terminal rows are rediscovered from the table",
+    "file": "nora/app/computer_queue.py",
+    "old": "        await self._deliver_pending()",
+    "new": "        pass  # the stream alone drives delivery",
+    "target": "tests/unit/test_scoped_computer.py::test_terminal_undelivered_row_is_rediscovered"
+  },
+  {
+    "name": "a non-terminal row is never acked",
+    "file": "nora/app/computer_queue.py",
+    "old": "        if row.status not in TERMINAL:\n            return\n        pending = self._executors.pending_result(row.id)",
+    "new": "        pass  # settle regardless\n        pending = self._executors.pending_result(row.id)",
+    "target": "tests/unit/test_scoped_computer.py::test_settle_never_acks_a_row_that_is_not_terminal"
+  },
+  {
+    "name": "poll hands the typed result, stdout included",
+    "file": "nora/app/computer_queue.py",
+    "old": "        for key in (\"stdout\", \"stderr\"):",
+    "new": "        for key in ():",
+    "target": "tests/unit/test_scoped_computer.py::test_poll_delivers_the_typed_result"
+  },
+  {
+    "name": "the block renders the full UUID handle",
+    "file": "nora/engagement/computer_context.py",
+    "old": "                    task_id=str(t.id), kind=t.kind, status=t.status,",
+    "new": "                    task_id=str(t.id)[:8], kind=t.kind, status=t.status,",
+    "target": "tests/unit/test_scoped_computer.py::test_context_renders_full_opaque_handles"
+  },
+  {
+    "name": "a scoped computerd refuses a missing or wrong instance",
+    "file": "deploy/computer/computerd.py",
+    "old": "        return request.headers.get(\"X-Computerd-Instance\") == boot_id",
+    "new": "        return True",
+    "target": "tests/unit/test_computerd_instance.py::test_scoped_computerd_refuses_missing_and_wrong_instance"
+  },
+  {
+    "name": "the client refuses an unstamped answer",
+    "file": "nora/infra/computer/client.py",
+    "old": "        if response.headers.get(\"X-Computerd-Instance\") != self._instance:",
+    "new": "        if False:",
+    "target": "tests/unit/test_computerd_instance.py::test_client_sends_the_header_and_refuses_an_unstamped_answer"
+  },
+  {
+    "name": "a dropped caller kills the command's group",
+    "file": "deploy/computer/computerd.py",
+    "old": "                if disconnected is not None and disconnected():",
+    "new": "                if disconnected is not None and False:",
+    "target": "tests/unit/test_computerd_instance.py::test_disconnect_kills_the_guest_command_group"
+  }
 ]

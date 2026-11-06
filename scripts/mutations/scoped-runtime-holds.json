@@ -16,8 +16,8 @@
   {
     "name": "finish-guard-drops-the-retained-result",
     "file": "nora/app/computer_queue.py",
-    "old": "        executors.retain(task.id, status, cut_result(dict(reply)))",
-    "new": "        pass",
+    "old": "    if not executors.retain(task.id, status, cut_result(dict(reply))):",
+    "new": "    if not True:",
     "target": "tests/unit/test_scoped_computer.py::test_a_failed_finish_keeps_the_result_with_its_owner"
   },
   {

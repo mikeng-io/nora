@@ -378,8 +378,15 @@ async def test_retry_retains_consumed_marker_until_delivery_stamp_persists(fail_
         return {"status": "ok", "answer": "already-consumed-generated-answer"}
 
     reply = await admission.run_segment(got.task, work())
-    assert reply["answer"] == "already-consumed-generated-answer"
-    assert admission.executors.pending_result(got.task.id).consumed
+    # No durable disposition exists (finish and/or delivery stamp refused):
+    # the live handoff cannot be committed — the caller gets `unavailable`
+    # with the task's identity, NEVER the result body, and the original
+    # outcome stays journaled unconsumed for its one deferred delivery.
+    assert reply["status"] == "unavailable"
+    assert reply["task"] == str(got.task.id)
+    assert "answer" not in reply
+    pending = admission.executors.pending_result(got.task.id)
+    assert pending is not None and not pending.consumed
     store.finish = finish
     from nora.app.computer_queue import deliver_computer_task
     from nora.testing import FakeComputeJobStore
@@ -397,17 +404,21 @@ async def test_retry_retains_consumed_marker_until_delivery_stamp_persists(fail_
         reconcile=lambda scope: asyncio.sleep(0, "quiet"),
         on_terminal=deliver,
     )
+    # The deferred path IS the single handoff for a caller told
+    # `unavailable`: the job is filed once (deduped by backend_job_id) even
+    # while the stamp keeps failing — it is never suppressed.
     for _ in range(3):
         await runner.tick()
     pending_jobs = await jobs.pending(limit=10)
-    assert pending_jobs == []
-    assert admission.executors.pending_result(got.task.id).consumed
+    assert len(pending_jobs) == 1
+    assert pending_jobs[0].backend_job_id == str(got.task.id)
     store.mark_delivered = mark_delivered
     await runner.tick()
     assert (await store.get(got.task.id)).delivered_at is not None
-    assert await jobs.pending(limit=10) == []
+    # Still exactly one job — recovery re-stamps, never re-files.
+    assert len(await jobs.pending(limit=10)) == 1
     polled = await queue_module.ComputerTaskBackend(tasks=store).poll(job_id=str(got.task.id))
-    assert reply["answer"] in polled.report
+    assert "already-consumed-generated-answer" in polled.report
     assert admission.executors.pending_result(got.task.id) is None
 
     # A genuinely unconsumed terminal result still receives exactly one outbox handoff.
@@ -423,7 +434,7 @@ async def test_retry_retains_consumed_marker_until_delivery_stamp_persists(fail_
     await runner.tick()
     await runner.tick()
     pending_jobs = await jobs.pending(limit=10)
-    assert len(pending_jobs) == 1
-    assert pending_jobs[0].backend_job_id == str(other.task.id)
+    assert {j.backend_job_id for j in pending_jobs} == {
+        str(got.task.id), str(other.task.id)}
     polled = await queue_module.ComputerTaskBackend(tasks=store).poll(job_id=str(other.task.id))
     assert "generated-output" in polled.report

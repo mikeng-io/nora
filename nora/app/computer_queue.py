@@ -881,6 +881,12 @@ class ComputerQueueRunner:
             except Exception:
                 log.exception(
                     "computer task %s delivery failed; retried next pass", row.id)
+            else:
+                # The handoff landed (`on_terminal` stamped `delivered_at`):
+                # the journal's duty is done — an unconsumed entry left
+                # here would linger until the next process's persist pass.
+                if pending is not None:
+                    self._executors.clear_pending(row.id)
 
     async def _dispatch_scope(self, scope: str) -> int:
         stream = _stream(scope)
@@ -1008,7 +1014,11 @@ class ComputerQueueRunner:
         if row.status not in TERMINAL:
             return
         pending = self._executors.pending_result(row.id)
-        if pending is not None and pending.consumed:
+        if pending is not None:
+            # Any retained entry on a terminal row converges: `consumed`
+            # decides whether the stamp is owed inside `_persist_pending`;
+            # the journal is then cleared either way — the row is the
+            # authority, `undelivered()` drives the one deferred handoff.
             if not await _persist_pending(
                     executors=self._executors, tasks=self._tasks,
                     clock=self._clock, task_id=row.id):
