@@ -446,8 +446,9 @@ it. Small document, agent-skill wording and image-only changes with no runtime o
 executable-tooling effect need a diff/content read and relevant file/reference
 checks, not a local gate or independent reviewer. Commit, PR, merge and read back;
 required hosted checks remain. Runtime prompts/config and executable helpers follow
-their behavior/risk. When a gate is needed, run it once on the final candidate;
-use focused checks while iterating. See `ORCHESTRATION.md` for the boundary.
+their behavior/risk. Full-suite acceptance runs in the required hosted contracts
+job; a full local gate is not a PR prerequisite. Use focused local checks by impact.
+When an explicit local gate is needed, run it once on the final candidate. See `ORCHESTRATION.md` for the boundary.
 `make test` is incremental; `make test-fast` and `make test-affected` are aliases.
 They compare staged, unstaged and untracked changes against HEAD, or the last
 commit (HEAD~1) when clean. Only exact generated untracked LFS post-hooks are

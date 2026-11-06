@@ -137,10 +137,15 @@ lands an indexed decision, and these headings in order:
 - **Closes**: `Closes #N` only when the PR fully resolves it; otherwise reference
   `issue #N` in the prose. Omit when there is no issue.
 
-Run **`make gate` once on the final head**, including the latest target branch.
-For code/mixed changes it runs full static checks and tests affected by the diff
-against `origin/master`; ordinary documentation uses its reader tests without
-static steps. Unknown changes or selector failures broaden to the full suite.
+Select local validation by impact on the final candidate, including relevant
+changes from the latest target branch. Use focused checks while iterating; the
+required hosted contracts job owns full-suite acceptance. Do not run the full
+local suite before a PR. Ordinary documentation uses its reader checks without
+application static checks. The shared selector broadens runtime/shared/unknown
+changes and selection failures to the full suite on CI.
+
+`make gate` remains an explicit impact-based command against `origin/master`;
+for runtime changes it selects the full suite, so it is not a local PR prerequisite.
 Local `make gate` can reuse a successful receipt for an identical clean candidate
 and verified execution context; it prints `REUSED` when no checks were rerun.
 `make gate-reuse` only checks for reuse and fails without executing on a miss.

@@ -401,6 +401,7 @@ def test_full_backend_replaces_the_nonblocking_measurement():
     jobs = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())["jobs"]
     assert "suite-timing" not in jobs
     assert "contracts" in jobs["checks"]["needs"]
+    assert jobs["contracts"]["env"]["NORA_TEST_MAX_WORKERS"] == "4"
     steps = jobs["contracts"]["steps"]
     fixed = next(step for step in steps
                  if step.get("name") == "Architecture and documentation contracts")
