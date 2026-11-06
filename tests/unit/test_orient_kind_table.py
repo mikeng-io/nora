@@ -45,6 +45,7 @@ def _state(memory, *, text=TEXT, now=AT):
     fetched.show(source)
     return SimpleNamespace(memory_items={0: item}, graph_fetched=fetched, session_id=1,
                            unit="unit-1", historical=False, shown_keys=set(),
+                           shown_relations=set(),
                            admitted_indices=set(), admitted_relations={}, admitted_evidence=[])
 
 
@@ -587,3 +588,25 @@ async def test_a_retry_persists_and_covers_a_repaired_reading():
     assert retry["status"] == "ok" and 1 in retry["admitted"]
     claims = next(iter(memory.records.claims.values()))
     assert len(claims) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_relation_returned_in_connected_can_be_corrected():
+    """A relation the connected result actually returned is a shown target:
+    the session may retire it even though the preview never emitted it."""
+    from nora.domain.memory_graph import pointer_entity
+    memory = wake_memory()
+    person = pointer_entity("person", "unit-1", "generated-person", "Generated")
+    work = Entity("existing-work", "work", "unit-1", "Existing work")
+    memory.graph.entities[work.id] = work
+    edge = Relation("existing-edge", person.key, "likes", work.key,
+                    "notebook", "unit-1", ("generated-person",), asserted_at=AT)
+    memory.graph.relations[edge.id] = edge
+    state = _state(memory)
+    await memory.propose(state, items=[0], statements=_payload()["statements"])
+    assert edge.id in state.shown_relations
+    correction = {"type": "correction", "relation": edge.id, "change": "retire",
+                  "cite": [{"source": 1, "quote": "I like Lantern Game"}]}
+    result = await memory.propose(state, items=[0], statements=[correction])
+    assert result["statements"][0]["status"] == "saved"
+    assert memory.graph.relations[edge.id].status == "retired"

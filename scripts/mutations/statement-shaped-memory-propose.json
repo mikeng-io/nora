@@ -75,5 +75,19 @@
   "old": "        valid: list[Statement] = []\n        indices: list[int] = []\n        pre_refused: dict[int, dict[str, Any]] = {}\n        for i, raw in enumerate(statements):\n            try:\n                valid.append(_STATEMENT.validate_python(raw))\n                indices.append(i)\n            except ValidationError as error:\n                pre_refused[i] = {\"status\": \"refused\", \"kind\": \"schema\",\n                                  \"reason\": \"schema\",\n                                  \"errors\": _shape_errors(error)}\n        output = Proposal(statements=valid)",
   "new": "        output = Proposal(statements=statements)\n        valid = list(output.statements)\n        indices = list(range(len(valid)))\n        pre_refused: dict[int, dict[str, Any]] = {}",
   "target": "tests/unit/test_orient_kind_table.py::test_one_malformed_statement_does_not_withhold_siblings"
+ },
+ {
+  "name": "the correction catalogue is emitted preview rows, not the loaded walk",
+  "file": "nora/app/cognition_memory.py",
+  "old": "        state.shown_relations = set()\n        state.graph_text = preview_text(\n            Preview(seeds, graph, tuple(candidates), (at, at)),\n            shown_keys=state.shown_keys,\n            shown_relations=state.shown_relations)",
+  "new": "        state.shown_relations = {\n            e.relation.id for e in graph.relations\n        } | {\n            e.relation.id for c in candidates for e in c.relations\n        }\n        state.graph_text = preview_text(\n            Preview(seeds, graph, tuple(candidates), (at, at)),\n            shown_keys=state.shown_keys,\n            shown_relations=state.shown_relations)",
+  "target": "tests/unit/test_cognition_source_rows.py::test_a_relation_clipped_from_the_preview_cannot_be_corrected"
+ },
+ {
+  "name": "relations returned in connected are correction-eligible",
+  "file": "nora/app/cognition_memory.py",
+  "old": "        if getattr(state, \"shown_relations\", None) is None:\n            state.shown_relations = set()\n        state.shown_relations.update(e.relation.id for e in graph.relations)",
+  "new": "        pass",
+  "target": "tests/unit/test_orient_kind_table.py::test_a_relation_returned_in_connected_can_be_corrected"
  }
 ]

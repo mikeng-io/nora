@@ -269,16 +269,14 @@ class WakeMemory:
                 self.graph, item, aliases, seeds, item_window(item.text, at)))
         if state.historical:
             candidates = [historical_graph(candidate, at) for candidate in candidates]
-        # `shown_keys` is the renderer's own emitted-rows provenance: a row the
-        # budget omits was never shown, whatever the walk returned. The preview
-        # rows' relation ids are the only targets a correction may name.
-        state.shown_relations = {
-            e.relation.id for e in graph.relations
-        } | {
-            e.relation.id for c in candidates for e in c.relations
-        }
-        state.graph_text = preview_text(Preview(seeds, graph, tuple(candidates), (at, at)),
-                                        shown_keys=state.shown_keys)
+        # `shown_keys`/`shown_relations` are the renderer's own emitted-rows
+        # provenance: a row the budget omits was never shown, whatever the walk
+        # returned. Emitted edge ids are the only targets a correction may name.
+        state.shown_relations = set()
+        state.graph_text = preview_text(
+            Preview(seeds, graph, tuple(candidates), (at, at)),
+            shown_keys=state.shown_keys,
+            shown_relations=state.shown_relations)
         if scan_identifiers(state.graph_text, content_checks=self.content_checks):
             state.graph_text = ""
             self.metrics.inc("nora_errors_total", stage="wake_prefetch")
@@ -410,6 +408,11 @@ class WakeMemory:
         state.shown_keys.update(
             k for e in graph.relations for k in (e.relation.src, e.relation.dst))
         state.shown_keys.update(k for r in result.relations for k in (r.src, r.dst))
+        # Relations the connected walk actually returned were shown to the
+        # session: they become correction-eligible alongside preview rows.
+        if getattr(state, "shown_relations", None) is None:
+            state.shown_relations = set()
+        state.shown_relations.update(e.relation.id for e in graph.relations)
         state.admitted_relations.update({r.id: r for r in result.relations})
         state.admitted_evidence.extend(result.evidence)
         # Per-statement results: saved, or refused with ONE primary reason;

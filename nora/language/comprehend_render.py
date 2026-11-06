@@ -94,14 +94,18 @@ no live Character, culture, Lessons or entry store changes. Empty proposals mean
 
 
 def preview_text(preview: Preview, *, tokens: int = 1500,
-                 shown_keys: set[tuple[str, str]] | None = None) -> str:
+                 shown_keys: set[tuple[str, str]] | None = None,
+                 shown_relations: set[str] | None = None) -> str:
     """Whole labelled rows within the budget; an omitted row always says more.
 
     `shown_keys`, when handed a set, collects the node keys of the rows the
-    budget actually emitted — never an omitted, truncated or merely-cited key."""
+    budget actually emitted — never an omitted, truncated or merely-cited key.
+    `shown_relations` collects the relation ids of the emitted edge rows the
+    same way — the correction catalogue, which cannot out-live the prompt."""
     graphs = (preview.graph, *preview.candidates)
     rows: list[str] = []
     row_keys: dict[str, tuple[tuple[str, str], ...]] = {}
+    row_relations: dict[str, str] = {}
     seen: set[str] = set()
     for graph in graphs:
         for node in graph.nodes:
@@ -150,6 +154,7 @@ def preview_text(preview: Preview, *, tokens: int = 1500,
             )
             rows.append(row)
             row_keys.setdefault(row, (r.src, r.dst))
+            row_relations.setdefault(row, r.id)
     kept: list[str] = []
     partial = any(g.status == "partial" for g in graphs)
     for row in rows:
@@ -163,6 +168,8 @@ def preview_text(preview: Preview, *, tokens: int = 1500,
         kept.append(row)
         if shown_keys is not None:
             shown_keys.update(row_keys.get(row, ()))
+        if shown_relations is not None and row in row_relations:
+            shown_relations.add(row_relations[row])
     return "more=" + ("available" if partial else "none") + "\n" + "\n".join(kept)
 
 

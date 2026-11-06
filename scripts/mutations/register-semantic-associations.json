@@ -79,7 +79,7 @@
  {
   "name": "wake preview: a key the budget cut was never shown",
   "file": "nora/app/cognition_memory.py",
-  "old": "        state.graph_text = preview_text(Preview(seeds, graph, tuple(candidates), (at, at)),\n                                        shown_keys=state.shown_keys)",
+  "old": "        state.graph_text = preview_text(\n            Preview(seeds, graph, tuple(candidates), (at, at)),\n            shown_keys=state.shown_keys,\n            shown_relations=state.shown_relations)",
   "new": "        state.shown_keys.update(n.key for n in graph.nodes)\n        state.shown_keys.update(\n            k for e in graph.relations for k in (e.relation.src, e.relation.dst))\n        state.graph_text = preview_text(Preview(seeds, graph, tuple(candidates), (at, at)),\n                                        shown_keys=state.shown_keys)",
   "target": "tests/unit/test_cognition_session_runner.py::test_wake_preview_admits_only_the_keys_the_renderer_emitted"
  },

@@ -26,7 +26,7 @@ NOTICE = (
 )
 
 
-async def wake(budget=None):
+async def wake(budget=None, seed=None):
     stimuli = {
         i: Stimulus(
             id=i,
@@ -85,6 +85,8 @@ async def wake(budget=None):
         metrics=None,
         content_checks=False,
     )
+    if seed is not None:
+        seed(memory)
     items = build_situation(
         unit="generated-unit",
         pending=tuple(stimuli.values()),
@@ -247,3 +249,35 @@ async def test_a_clipped_row_tail_is_not_citable():
         }])
     assert result["statements"][0]["status"] == "refused"
     assert result["statements"][0]["reason"] == "span_not_in_source"
+
+
+@pytest.mark.asyncio
+async def test_a_relation_clipped_from_the_preview_cannot_be_corrected():
+    """The correction catalogue is the emitted rows' ids, not the loaded
+    walk's: a relation the preview budget cut was never shown, so retiring
+    it must refuse unshown."""
+    from nora.domain.memory_graph import Entity, Relation
+
+    def seed(memory):
+        unit_key = ("unit", "generated-unit:unit:generated-unit")
+        for i in range(12):
+            work = Entity(f"work-{i}", "work", "generated-unit", "w" * 900)
+            memory.graph.entities[work.id] = work
+            edge = Relation(
+                f"edge-{i}", unit_key, "hosts", work.key, "notebook",
+                "generated-unit", (),
+                asserted_at=datetime.fromtimestamp(NOW / 1000, UTC))
+            memory.graph.relations[edge.id] = edge
+
+    state, _prompt = await wake(seed=seed)
+    emitted = set(state.shown_relations)
+    clipped = next(rid for rid in state.memory.graph.relations
+                   if rid.startswith("edge-") and rid not in emitted
+                   and rid not in state.graph_text)
+    correction = {"type": "correction", "relation": clipped, "change": "retire",
+                  "cite": [{"source": 101, "quote": "Image attached."}]}
+    result = await state.memory.propose(
+        state, items=[0], nothing_here=[], statements=[correction])
+    assert result["statements"][0]["status"] == "refused"
+    assert result["statements"][0]["reason"] == "unshown"
+    assert state.memory.graph.relations[clipped].status == "current"
