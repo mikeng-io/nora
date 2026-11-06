@@ -30,6 +30,7 @@ import psycopg
 import sqlalchemy as sa
 
 import evals.__main__ as cli
+from tests.fakes import FakeHoncho
 from nora.agent import factory
 from nora.subject import sandbox
 
@@ -95,7 +96,8 @@ def _scripted_respond(evidence_root: Path, requests: list[dict]):
 
 
 def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
-                  *, break_evidence_write: bool = False):
+                  *, break_evidence_write: bool = False,
+                  example_config_path: Path):
     """One real `main()` run of the scoped-browse case against a generated
     source. Returns `(rc, evidence_root, requests)`."""
     _run_one_case.refusals = []
@@ -137,13 +139,34 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     # --- a generated deployment config (never the deployment's own) ---
     deploy_dir = tmp_path / "deploy"
     deploy_dir.mkdir()
-    example = Path("config.example.toml").read_text()
+    # Honcho: the generated subject's memory traffic and the per-draw
+    # workspace must reach a REAL workspace server, not the deploy host's
+    # — the existing FakeHoncho served on its own loop in a thread.
+    import asyncio, importlib, threading
+    _obtain_mod = importlib.import_module("nora.subject.obtain")
+    fake = FakeHoncho()
+    honcho_loop = asyncio.new_event_loop()
+    ready = threading.Event()
+    def _serve():
+        asyncio.set_event_loop(honcho_loop)
+        url = honcho_loop.run_until_complete(fake.start())
+        ready.url = url
+        ready.set()
+        honcho_loop.run_forever()
+    threading.Thread(target=_serve, daemon=True).start()
+    ready.wait(timeout=10)
+    monkeypatch.setattr(_obtain_mod, "memory_endpoint",
+                        lambda: (ready.url, "nora"))
+
+    example = example_config_path.read_text()
     assert 'database_url_env = "DATABASE_URL"' in example
     (deploy_dir / "config.toml").write_text(example.replace(
         'database_url_env = "DATABASE_URL"',
         'database_url_env = "GEN_DB_URL"', 1).replace(
         'model_path = "/app/models/喂Nora.onnx"',
-        f'model_path = "{tmp_path}/wake.onnx"'))
+        f'model_path = "{tmp_path}/wake.onnx"').replace(
+        'base_url = "http://127.0.0.1:8000"',
+        f'base_url = "{ready.url}"'))
     # The subject's policy/identity are the deployment's OWN files — the
     # generated deployment carries a generated room and generated identity,
     # never the real host's.
@@ -186,7 +209,7 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     monkeypatch.setattr(factory, "create_client", with_transport)
     # The same injected transport covers SDK-owned provider clients a
     # bounded run reaches (the declared seam on run_budget).
-    from nora.domain.run_budget import injected_transport_client
+    from nora.subject.run_budget_transport import injected_transport_client
     injected_transport_client.set(
         httpx.AsyncClient(transport=transport))
 
@@ -223,12 +246,14 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
 
 
 def test_official_entry_composes_scoped_tool_and_records_evidence(
-        tmp_path, monkeypatch, pg_admin, pg_template):
+        tmp_path, monkeypatch, pg_admin, pg_template,
+        example_config_path=Path(__file__).parents[2] / "config.example.toml"):
     """The real entry: override reaches the composed scoped computer, the
     budget counts the real requests, and events.jsonl binds provenance
     before the transport answers."""
     rc, evidence_root, requests, want_sha = _run_one_case(
-        tmp_path, monkeypatch, pg_admin, pg_template)
+        tmp_path, monkeypatch, pg_admin, pg_template,
+        example_config_path=Path(__file__).parents[2] / "config.example.toml")
     assert rc == 0, "the scripted trajectory routes computer_browse → PASS"
     rows = _rows(evidence_root)
     started = next(r for r in rows if r["kind"] == "run_started")
@@ -252,13 +277,15 @@ def test_official_entry_composes_scoped_tool_and_records_evidence(
 
 
 def test_evidence_write_failure_precludes_any_dispatch(
-        tmp_path, monkeypatch, pg_admin, pg_template):
+        tmp_path, monkeypatch, pg_admin, pg_template,
+        example_config_path=Path(__file__).parents[2] / "config.example.toml"):
     """A refused `nora.model.request` write is `EvidenceError` BEFORE the
     request leaves — the transport sees zero requests, exactly one
     injected refusal, and the run records no successful finish."""
     rc, evidence_root, requests, _ = _run_one_case(
         tmp_path, monkeypatch, pg_admin, pg_template,
-        break_evidence_write=True)
+        break_evidence_write=True,
+        example_config_path=Path(__file__).parents[2] / "config.example.toml")
     assert rc != 0                    # sticky failure, invalid run
     assert _run_one_case.refusals and len(_run_one_case.refusals) == 1
     assert requests == []             # nothing left the process

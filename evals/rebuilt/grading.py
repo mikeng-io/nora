@@ -116,7 +116,7 @@ class Judge:
 
     def _client(self) -> AsyncOpenAI:
         url, key, _ = self._endpoint()
-        from nora.domain.run_budget import gate_client
+        from nora.subject.run_budget_transport import gate_client
         return gate_client(AsyncOpenAI(
             base_url=url,
             api_key=key,

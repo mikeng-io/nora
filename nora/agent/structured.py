@@ -126,7 +126,7 @@ def build_structured_model(
     # wraps whatever transport is present (a real one when unset) so the
     # AsyncOpenAI `_get_client` builds inside the provider admits through
     # the same budget. None with no budget installed — the SDK default.
-    from nora.domain.run_budget import bounded_http_client
+    from nora.agent.run_budget_transport import bounded_http_client
     bounded = bounded_http_client(http_client)
     if bounded is not None:
         client_args["http_client"] = bounded

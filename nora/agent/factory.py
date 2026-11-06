@@ -83,7 +83,7 @@ def create_client(
     if not api_key:
         raise RuntimeError("api_key is empty — refusing to start")
     client = AsyncOpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
-    from nora.domain.run_budget import gate_client
+    from nora.agent.run_budget_transport import gate_client
     return gate_client(client)
 
 
