@@ -65,7 +65,7 @@ def _rec(sid: int, kind: str, *, mid: int, text: str | None, room: Room = A, emo
     )
 
 
-def _everything() -> str:
+def _everything(fmt: str = "A") -> str:
     """A prompt that makes every element carry every attribute it can: a message
     with cues and an edit, a reaction, a deletion, a withdrawn body, her own send,
     a Rollup row, a returning item, an item with older messages cut and one with an
@@ -120,10 +120,11 @@ def _everything() -> str:
     return render_agenda(
         agenda, stimuli=stims, grounding=grounding, now_ms=NOW, tz=HK,
         budget=RenderBudget(record_chars=1200, min_item_chars=100, register_lines=1),
+        agenda_format=fmt,
     )
 
 
-def _source_prompt() -> str:
+def _source_prompt(fmt: str = "A") -> str:
     stimulus = _stim(10, A, kind="observation", ref="platform_observation:10")
     event = SourceEvent(
         ref=stimulus.ref, kind="pin", operation="add", at_ms=0,
@@ -138,21 +139,24 @@ def _source_prompt() -> str:
         (item,), stimuli={10: stimulus},
         grounding=Grounding(records={"messages:777": rec},
                             observations={stimulus.ref: event}),
-        now_ms=NOW, tz=HK)
+        now_ms=NOW, tz=HK, agenda_format=fmt)
 
 
 def _emitted() -> dict[str, set[str]]:
-    """Every emitted attribute, including the non-message source occasion."""
+    """Every emitted attribute across every agenda-format candidate (the
+    experiment's formats share one block type; the union is what the type's
+    glosses must explain), including the non-message source occasion."""
     seen: dict[str, set[str]] = defaultdict(set)
-    for prompt in (_everything(), _source_prompt()):
-        for block in blocks(prompt):
-            if block.tag in ("note_index", "events"):
-                seen[block.tag].update(
-                    k for k in block.attrib if k not in ("description", "fields"))
-            for el in block.iter():
-                if el is block or el.tag not in TYPE_OF:
-                    continue
-                seen[TYPE_OF[el.tag]].update(el.attrib)
+    for fmt in ("A", "B", "C", "D"):
+        for prompt in (_everything(fmt), _source_prompt(fmt)):
+            for block in blocks(prompt):
+                if block.tag in ("note_index", "events"):
+                    seen[block.tag].update(
+                        k for k in block.attrib if k not in ("description", "fields"))
+                for el in block.iter():
+                    if el is block or el.tag not in TYPE_OF:
+                        continue
+                    seen[TYPE_OF[el.tag]].update(el.attrib)
     return seen
 
 
@@ -172,7 +176,7 @@ def test_the_fixture_makes_every_element_carry_every_attribute_it_can():
     seen = _emitted()
     assert seen["agenda"] == {
         "index", "kind", "room", "summary", "returning", "window", "earlier_not_shown",
-        "earlier_range", "unreadable", "n", "at", "from", "edited", "reaction",
+        "earlier_range", "unreadable", "n", "at", "from", "age", "edited", "reaction",
         "reaction_removed", "reactions", "reactions_observed",
         "withdrawn", "deleted", "own", "cues", "turn", "target",
         "op", "actor", "time", "received", "rev", "coverage", "object",

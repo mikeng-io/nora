@@ -71,19 +71,121 @@ def _check(agenda: str, custody: dict[str, Any]) -> dict[str, Any]:
         catalogue.get(fabricated) in shown_sources
         or ("message", str(fabricated)) in shown_sources
     )
+    # Negative: the clipped tail. `earlier_range` is the FIRST and LAST row of
+    # the dropped set — the bound rows themselves, not every number between
+    # them (numbers in the interval may be shown rows, so only the bounds are
+    # tested).
+    clipped_resolves = []
+    for _c, a, b in _EARLIER.findall(agenda):
+        for n in {int(a), int(b)}:
+            if catalogue.get(n) in shown_sources or (
+                ("message", str(n)) in shown_sources
+            ):
+                clipped_resolves.append(n)
     return {
         "m_rows": len(ns),
         "handles": len(_HANDLE.findall(agenda)),
         "unresolved_n": unresolved_n,
         "unresolved_handles": unresolved_handles,
         "fabricated_resolves": fabricated_resolves,
-        "clipped": [
-            (int(a), int(b)) for _c, a, b in _EARLIER.findall(agenda)
-        ],
+        "clipped_resolves": clipped_resolves,
+        "clipped_items": sum(1 for _ in _EARLIER.findall(agenda)),
     }
 
 
+def _positive_control() -> dict[str, str]:
+    """A generated fixture (no production rows) that MUST pass the same
+    custody check: renders every candidate, registers the shown rows, and
+    confirms each shown citation resolves while a fabricated and a clipped
+    bound never do. If this fails the instrument is suspect, not the data."""
+    from types import SimpleNamespace
+    from zoneinfo import ZoneInfo
+
+    from nora.agent.fetch_watch import GraphFetched
+    from nora.app.cognition_memory import WakeMemory
+    from nora.app.comprehend import proposal_scope
+    from nora.domain.cognition_ground import Grounding, RecordItem
+    from nora.domain.cognition_session import AgendaItem, Room
+    from nora.domain.memory_graph import Source
+    from nora.domain.stimuli import Stimulus
+    from nora.language.cognition_render import render_agenda
+
+    hk, now = ZoneInfo("Asia/Hong_Kong"), 1_800_000_000_000
+    room = Room("signal", "room-a")
+
+    def stim(sid):
+        return Stimulus(
+            id=sid, unit="u", kind="message", item="message",
+            ref=f"messages:{sid}", at_ms=now - sid * 60_000,
+            recorded_at_ms=now, platform="signal",
+            conversation_id="room-a", cues=())
+
+    def rec(sid, mid, text, author, pid):
+        return RecordItem(
+            ref=f"messages:{sid}", kind="message", message_id=mid, room=room,
+            author=author, at_ms=now - sid * 60_000, text=text, person_id=pid)
+
+    def row(mid, body, pid, author, ts):
+        return {"id": mid, "body": body, "ts": ts, "person_id": pid,
+                "author": author, "mentions": [],
+                "source_key": ["message", str(mid)]}
+
+    out = {}
+    for fmt in AGENDA_FORMATS:
+        stims = {i: stim(i) for i in (1, 2, 3)}
+        records = {
+            "messages:1": rec(1, 4471, "first words", "Ming", "ming"),
+            "messages:2": rec(2, 4472, "second words", "Ada", "ada"),
+            "messages:3": rec(3, 4473, "third words", "Ming", "ming"),
+        }
+        item = AgendaItem(kind="message", room=room, summary="3 new", cues=(),
+                          surprise=1.0, stimulus_ids=(1, 2, 3))
+        mem = SimpleNamespace(
+            sources=(
+                Source(("message", "4471"), "record", "u", ("ming",), "first words"),
+                Source(("message", "4472"), "record", "u", ("ada",), "second words"),
+                Source(("message", "4473"), "record", "u", ("ming",), "third words"),
+            ),
+            snapshot={
+                "record_rows": [
+                    row(4471, "first words", "ming", "Ming", now - 60_000),
+                    row(4472, "second words", "ada", "Ada", now - 120_000),
+                    row(4473, "third words", "ming", "Ming", now - 180_000),
+                ],
+                "messages": [], "context": [], "source_keys": {},
+            },
+        )
+        try:
+            text = render_agenda(
+                (item,), stimuli=stims,
+                grounding=Grounding(records=records,
+                                    room_labels={"signal:room-a": "Room A"}),
+                now_ms=now, tz=hk, budget=RenderBudget(),
+                memory_items={0: mem}, agenda_format=fmt)
+            state = SimpleNamespace(memory_items={0: mem},
+                                    graph_fetched=GraphFetched())
+            WakeMemory(graph=None, records=None,
+                       metrics=None).register_shown(state)
+            scope = proposal_scope([mem], state.graph_fetched)
+            ns = _N.findall(text)
+            shown_ok = all(
+                int(n) in scope.catalogue
+                and scope.catalogue[int(n)] in state.graph_fetched.sources
+                for n in ns
+            )
+            fabricated = (max((int(n) for n in ns), default=0) + 1)
+            fab_ok = (
+                fabricated not in scope.catalogue
+                and ("message", str(fabricated)) not in state.graph_fetched.sources
+            )
+            out[fmt] = "PASS" if ns and shown_ok and fab_ok else "FAIL"
+        except Exception:  # noqa: BLE001 - fail closed
+            out[fmt] = "FAIL"
+    return out
+
+
 async def run(args: argparse.Namespace) -> dict[str, Any]:
+    control = _positive_control()
     cfg = load(args.config)
     production = credentials()[cfg.store.database_url_env]
     snapshot_only(args.database_url, production, args.snapshot)
@@ -127,7 +229,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             f: {"sessions": 0, "chars": 0, "tokens": 0, "m_rows": 0, "handles": 0,
                 "unresolved_n": [], "unresolved_handles": [],
                 "fabricated_resolves": False, "clipped_resolves": [],
-                "clip_exercised": False, "errors": 0}
+                "clipped_items": 0, "person_rows": 0, "node_keys": 0,
+                "relation_ids": 0, "errors": 0}
             for f in AGENDA_FORMATS
         }
         for wake in selected.values():
@@ -183,28 +286,24 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                                 f["unresolved_n"] += got["unresolved_n"]
                                 f["unresolved_handles"] += got["unresolved_handles"]
                                 f["fabricated_resolves"] |= got["fabricated_resolves"]
+                                custody = inspection.get("custody") or {}
+                                f["person_rows"] += len(custody.get("shown_persons", []))
+                                f["node_keys"] += len(custody.get("shown_node_keys", []))
+                                f["relation_ids"] += len(
+                                    custody.get("shown_relation_ids", []))
                                 # The clipped tail: force the budget so older
-                                # rows fall out; their numbers must not resolve.
+                                # rows fall out; their bound rows must not
+                                # resolve (the range is first..last of the
+                                # dropped set, not every number in it).
                                 clipped = await frunner.with_collaborators(
                                     render_budget=RenderBudget(
                                         record_chars=300, min_item_chars=100,
                                     ),
                                 ).inspect(view=view, now_ms=replay_ms)
-                                ccust = _catalogue(clipped.get("custody") or {})
-                                cshown = {
-                                    tuple(s)
-                                    for s in (clipped.get("custody") or {}).get(
-                                        "shown_sources", [])
-                                }
-                                for lo, hi in _check(
-                                    clipped["agenda"], clipped.get("custody") or {}
-                                )["clipped"]:
-                                    f["clip_exercised"] = True
-                                    for n in range(lo, hi + 1):
-                                        if ccust.get(n) in cshown or (
-                                            ("message", str(n)) in cshown
-                                        ):
-                                            f["clipped_resolves"].append(n)
+                                clip_check = _check(
+                                    clipped["agenda"], clipped.get("custody") or {})
+                                f["clipped_items"] += clip_check["clipped_items"]
+                                f["clipped_resolves"] += clip_check["clipped_resolves"]
                             except Exception:  # noqa: BLE001 - keep the run, mark the format
                                 f["errors"] += 1
                     finally:
@@ -219,9 +318,11 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                 and not f["unresolved_handles"]
                 and not f["fabricated_resolves"]
                 and not f["clipped_resolves"]
+                and control.get(fmt) == "PASS"
                 else "FAIL"
             )
         report["formats"] = per_format
+        report["control"] = control
         return report
     finally:
         await engine.dispose()
@@ -241,17 +342,21 @@ def main() -> int:
     except Exception:  # noqa: BLE001 - fail closed without private exception text
         print('{"status":"ERROR","reason":"format check failed; inspect private host state"}')
         return 2
-    print(f"{'fmt':<4} {'sessions':>8} {'chars':>8} {'~tokens':>8} {'m_rows':>6} "
-          f"{'handles':>7} {'unres_n':>7} {'unres_h':>7} {'fabr':>4} {'clip':>4} {'verdict'}")
+    print(f"{'fmt':<4} {'ctrl':>4} {'sessions':>8} {'chars':>8} {'~tokens':>8} {'m_rows':>6} "
+          f"{'handles':>7} {'unres_n':>7} {'unres_h':>7} {'fabr':>4} {'clip':>4} "
+          f"{'clips':>5} {'pers':>4} {'nodes':>5} {'rels':>4} {'verdict'}")
     for fmt, f in report["formats"].items():
         print(
-            f"{fmt:<4} {f['sessions']:>8} {f['chars']:>8} {f['tokens']:>8} "
-            f"{f['m_rows']:>6} {f['handles']:>7} {len(f['unresolved_n']):>7} "
-            f"{len(f['unresolved_handles']):>7} "
+            f"{fmt:<4} {report['control'].get(fmt,'?'):>4} {f['sessions']:>8} "
+            f"{f['chars']:>8} {f['tokens']:>8} {f['m_rows']:>6} {f['handles']:>7} "
+            f"{len(f['unresolved_n']):>7} {len(f['unresolved_handles']):>7} "
             f"{'Y' if f['fabricated_resolves'] else 'n':>4} "
-            f"{len(f['clipped_resolves']):>4} {f['status']}"
+            f"{len(f['clipped_resolves']):>4} {f['clipped_items']:>5} "
+            f"{f['person_rows']:>4} {f['node_keys']:>5} {f['relation_ids']:>4} "
+            f"{f['status']}"
         )
     print(json.dumps({"wakes": report["wakes"], "seed": report["seed"],
+                      "control": report["control"],
                       "status": {k: v["status"] for k, v in report["formats"].items()}},
                      sort_keys=True))
     return 0 if all(f["status"] == "PASS" for f in report["formats"].values()) else 1
