@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.15.23](https://github.com/mikeng-io/nora/compare/v7.15.22...v7.15.23) (2026-11-06)
+
+
+### Bug Fixes
+
+* **profile:** compute rollup support in one lossless window read ([396a8e6](https://github.com/mikeng-io/nora/commit/396a8e60de9aad9fc7413c4c09f3dcfdfef294da))
+
 ## [7.15.22](https://github.com/mikeng-io/nora/compare/v7.15.21...v7.15.22) (2026-11-06)
 
 
