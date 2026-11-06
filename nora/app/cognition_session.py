@@ -521,9 +521,14 @@ def _custody(state: _RunState) -> dict[str, Any]:
         "shown_sources": sorted(
             [k, r] for k, r in state.graph_fetched.sources
         ),
-        "shown_persons": sorted({
-            p for s in state.graph_fetched.sources.values() for p in s.persons
-        }),
+        "shown_persons": sorted(
+            {
+                str(r["person_id"])
+                for item in state.memory_items.values()
+                for r in item.snapshot.get("messages", ())
+                if r.get("person_id")
+            } | set(state.shown_persons)
+        ),
         "shown_node_keys": sorted(
             [k, r] for k, r in state.shown_keys
         ),
