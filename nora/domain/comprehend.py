@@ -207,7 +207,8 @@ Lookup = Literal["web_search", "web_fetch"]
 EgressReason = Literal["private_person", "identifier", "coordinate", "lookup_cap", "bad_arguments"]
 ExtraRefusal = Literal[
     "schema", "identity_pointer", "private_web_evidence", "ungrounded",
-    "already_staged", "unshown",
+    "already_staged", "unshown", "endpoint_not_a_handle", "unparseable_time",
+    "invalid_relation", "unexpected_replacement",
 ]
 ITEM_OUTCOMES = get_args(ItemOutcome)
 LANES = get_args(Lane)

@@ -518,7 +518,7 @@ async def test_schema_refusal_is_returned_and_never_unlocks_acts():
     runner, store, _ = _runner(agent_runner=fake, memory=wake_memory())
     await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
         last_activity_ms=None, last_wake=None), now_ms=NOW)
-    assert any(r["reason"] == "schema" for r in fake.results[0]["refused"])
+    assert any(r["reason"] == "unparseable_time" for r in fake.results[0]["refused"])
     assert fake.results[1]["reason"] == "proposal_required"
     assert not store.paces
 
@@ -762,6 +762,9 @@ async def test_unshown_or_out_of_unit_association_cannot_persist():
 
 async def test_projection_outage_keeps_created_row_and_retry_relinks_same_association():
     memory = wake_memory()
+    # The retry session's preview carries the committed note's UUID id; the
+    # content screen is off in production, so this rig runs the same way.
+    memory.content_checks = False
     stores = Stores()
     memory.records.load = _register_load(stores)
     event = _seed_event(memory, "u:event:generated-gala")
@@ -891,6 +894,9 @@ async def test_revise_with_empty_associations_clears_the_link():
 async def test_revise_commit_then_projection_crash_retries_and_relinks():
     from nora.app import register_graph
     memory = wake_memory()
+    # As above: the later sessions' preview carries the committed note's
+    # UUID id; the content screen is off in production.
+    memory.content_checks = False
     stores = Stores()
     memory.records.load = _register_load(stores)
     first = _seed_event(memory, "u:event:generated-gala")

@@ -79,9 +79,58 @@
  {
   "name": "the correction catalogue is emitted preview rows, not the loaded walk",
   "file": "nora/app/cognition_memory.py",
-  "old": "        state.shown_relations = set()\n        state.graph_text = preview_text(\n            Preview(seeds, graph, tuple(candidates), (at, at)),\n            shown_keys=state.shown_keys,\n            shown_relations=state.shown_relations)",
-  "new": "        state.shown_relations = {\n            e.relation.id for e in graph.relations\n        } | {\n            e.relation.id for c in candidates for e in c.relations\n        }\n        state.graph_text = preview_text(\n            Preview(seeds, graph, tuple(candidates), (at, at)),\n            shown_keys=state.shown_keys,\n            shown_relations=state.shown_relations)",
+  "old": "        shown_keys: set[Key] = set()\n        shown_relations: set[str] = set()\n        state.graph_text = preview_text(\n            Preview(seeds, graph, tuple(candidates), (at, at)),\n            shown_keys=shown_keys,\n            shown_relations=shown_relations)",
+  "new": "        shown_keys: set[Key] = set()\n        shown_relations: set[str] = {\n            e.relation.id for e in graph.relations\n        } | {\n            e.relation.id for c in candidates for e in c.relations\n        }\n        state.graph_text = preview_text(\n            Preview(seeds, graph, tuple(candidates), (at, at)),\n            shown_keys=shown_keys,\n            shown_relations=shown_relations)",
   "target": "tests/unit/test_cognition_source_rows.py::test_a_relation_clipped_from_the_preview_cannot_be_corrected"
+ },
+ {
+  "name": "a withheld graph block keeps no correction catalogue",
+  "file": "nora/app/cognition_memory.py",
+  "old": "            state.graph_text = \"\"\n            shown_keys.clear()\n            shown_relations.clear()\n            self.metrics.inc(\"nora_errors_total\", stage=\"wake_prefetch\")",
+  "new": "            state.graph_text = \"\"\n            self.metrics.inc(\"nora_errors_total\", stage=\"wake_prefetch\")",
+  "target": "tests/unit/test_cognition_source_rows.py::test_a_withheld_graph_keeps_no_correction_authority"
+ },
+ {
+  "name": "a memory read reports only the edge rows it emitted",
+  "file": "nora/agent/memory_search.py",
+  "old": "            emitted: set[tuple[str, str]] = set()\n            emitted_relations: set[str] = set()\n            text = preview_text(Preview(seeds, graph, (), (now, now)),\n                                tokens=max(0, PREFETCH_TOKENS - overhead + 100),\n                                shown_keys=emitted,\n                                shown_relations=emitted_relations)",
+  "new": "            emitted: set[tuple[str, str]] = set()\n            emitted_relations: set[str] = set()\n            text = preview_text(Preview(seeds, graph, (), (now, now)),\n                                tokens=max(0, PREFETCH_TOKENS - overhead + 100),\n                                shown_keys=emitted)",
+  "target": "tests/unit/test_orient_kind_table.py::test_a_relation_a_memory_read_emitted_can_be_corrected"
+ },
+ {
+  "name": "a relation a memory read emitted is correction-eligible",
+  "file": "nora/agent/comprehend_tools.py",
+  "old": "                    state.shown_relations.update(\n                        r for r in answer.get(\"relations\") or ()\n                        if isinstance(r, str))",
+  "new": "                    pass",
+  "target": "tests/unit/test_orient_kind_table.py::test_a_relation_a_memory_read_emitted_can_be_corrected"
+ },
+ {
+  "name": "the agenda renders authors in the endpoint handle form",
+  "file": "nora/language/cognition_render.py",
+  "old": "                (\"person\", f\"@person:{r.person_id}\" if r.person_id else None),",
+  "new": "                (\"person\", r.person_id),",
+  "target": "tests/unit/test_cognition_source_rows.py::test_the_agenda_renders_authors_as_person_handles"
+ },
+ {
+  "name": "a non-handle endpoint refuses with its own reason",
+  "file": "nora/app/comprehend.py",
+  "old": "        if not isinstance(value, str) or not value.startswith(\"@\"):\n            return None, None, (\"relation\", \"endpoint_not_a_handle\")",
+  "new": "        if not isinstance(value, str) or not value.startswith(\"@\"):\n            return None, None, (\"relation\", \"schema\")",
+  "target": "tests/unit/test_orient_kind_table.py::test_a_bare_endpoint_id_refuses_with_the_handle_reason"
+ },
+ {
+  "name": "an unparseable time names its field",
+  "file": "nora/app/comprehend.py",
+  "old": "            try:\n                valid_from = _time(st.valid_from, work.as_of.tzinfo)\n            except ValueError:\n                report[index] = {\"status\": \"refused\", \"reason\": \"unparseable_time\",\n                                 \"kind\": \"relation\", \"detail\": \"valid_from\"}\n                await refuse(\"relation\", \"unparseable_time\")\n                return None",
+  "new": "            valid_from = _time(st.valid_from, work.as_of.tzinfo)",
+  "target": "tests/unit/test_orient_kind_table.py::test_an_unparseable_time_refuses_with_the_field"
+ },
+ {
+  "name": "a replacement is only a supersede's payload",
+  "file": "nora/app/comprehend.py",
+  "old": "                    report[index] = {\"status\": \"refused\",\n                                     \"reason\": \"unexpected_replacement\",\n                                     \"kind\": \"correction\"}\n                    await refuse(\"correction\", \"unexpected_replacement\")",
+  "new": "                    report[index] = {\"status\": \"refused\",\n                                     \"reason\": \"schema\",\n                                     \"kind\": \"correction\"}\n                    await refuse(\"correction\", \"schema\")",
+  "target": "tests/unit/test_orient_kind_table.py::test_a_replacement_on_a_retire_refuses_with_its_reason"
  },
  {
   "name": "relations returned in connected are correction-eligible",

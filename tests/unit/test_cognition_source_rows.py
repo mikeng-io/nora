@@ -269,11 +269,11 @@ async def test_a_relation_clipped_from_the_preview_cannot_be_corrected():
                 asserted_at=datetime.fromtimestamp(NOW / 1000, UTC))
             memory.graph.relations[edge.id] = edge
 
-    state, _prompt = await wake(seed=seed)
-    emitted = set(state.shown_relations)
+    state, prompt = await wake(seed=seed)
+    # The target is chosen from the rendered prompt itself, never from the
+    # catalogue under test: a stored edge row the budget cut was never shown.
     clipped = next(rid for rid in state.memory.graph.relations
-                   if rid.startswith("edge-") and rid not in emitted
-                   and rid not in state.graph_text)
+                   if rid.startswith("edge-") and f"{rid}:" not in prompt)
     correction = {"type": "correction", "relation": clipped, "change": "retire",
                   "cite": [{"source": 101, "quote": "Image attached."}]}
     result = await state.memory.propose(
@@ -281,3 +281,75 @@ async def test_a_relation_clipped_from_the_preview_cannot_be_corrected():
     assert result["statements"][0]["status"] == "refused"
     assert result["statements"][0]["reason"] == "unshown"
     assert state.memory.graph.relations[clipped].status == "current"
+
+
+def _seed_key_shaped_label(memory, *, blocked):
+    """One person→work `likes` edge; `blocked` gives the work an
+    identifier-shaped label the always-on screen withholds the whole block
+    for."""
+    from nora.domain.memory_graph import Entity, Relation, pointer_entity
+
+    memory.metrics = SimpleNamespace(inc=lambda *a, **k: None)
+    person = pointer_entity("person", "generated-unit", "generated-a", "Generated A")
+    memory.graph.entities[person.id] = person
+    work = Entity("generated-work", "work", "generated-unit",
+                  "sk-" + "GENERATED" * 4 if blocked else "Generated work")
+    memory.graph.entities[work.id] = work
+    memory.graph.relations["generated-edge"] = Relation(
+        "generated-edge", person.key, "likes", work.key, "notebook",
+        "generated-unit", ("generated-a",),
+        asserted_at=datetime.fromtimestamp(NOW / 1000, UTC))
+
+
+def _correction(rid="generated-edge"):
+    return {"type": "correction", "relation": rid, "change": "retire",
+            "cite": [{"source": 101, "quote": "Image attached."}]}
+
+
+@pytest.mark.asyncio
+async def test_a_withheld_graph_keeps_no_correction_authority():
+    """When the identifier screen withholds the whole graph block, its
+    catalogue is withheld with it: a relation in a graph the session was
+    never shown refuses `unshown` and stays `current`."""
+    state, prompt = await wake(seed=lambda m: _seed_key_shaped_label(m, blocked=True))
+    assert state.graph_text == "" and "generated-edge:" not in prompt
+    result = await state.memory.propose(
+        state, items=[0], nothing_here=[], statements=[_correction()])
+    assert result["statements"][0]["status"] == "refused"
+    assert result["statements"][0]["reason"] == "unshown"
+    assert state.memory.graph.relations["generated-edge"].status == "current"
+
+
+@pytest.mark.asyncio
+async def test_an_emitted_preview_relation_can_be_corrected():
+    """Positive control for the withheld case: an edge row the preview did
+    emit keeps correction authority — retiring it saves and retires."""
+    state, prompt = await wake(seed=lambda m: _seed_key_shaped_label(m, blocked=False))
+    assert "generated-edge:" in prompt
+    result = await state.memory.propose(
+        state, items=[0], nothing_here=[], statements=[_correction()])
+    assert result["statements"][0]["status"] == "saved"
+    assert state.memory.graph.relations["generated-edge"].status == "retired"
+
+
+@pytest.mark.asyncio
+async def test_the_agenda_renders_authors_as_person_handles():
+    """A shown author's id renders in the `@person:<id>` form the endpoint
+    grammar takes: a statement naming it verbatim saves."""
+    from nora.domain.memory_graph import Entity, pointer_entity
+
+    state, prompt = await wake()
+    assert 'person="@person:generated-a"' in prompt
+    person = pointer_entity("person", "generated-unit", "generated-a", "Generated A")
+    state.memory.graph.entities[person.id] = person
+    work = Entity("generated-work", "work", "generated-unit", "Generated work")
+    state.memory.graph.entities[work.id] = work
+    state.shown_keys.add(work.key)
+    statement = {
+        "type": "relation", "rel": "likes",
+        "subject": "@person:generated-a", "object": "@work:generated-work",
+        "cite": [{"source": 101, "quote": "Image attached."}],
+    }
+    result = await state.memory.propose(
+        state, items=[0], nothing_here=[], statements=[statement])
+    assert result["statements"][0]["status"] == "saved", result

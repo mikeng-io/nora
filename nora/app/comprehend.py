@@ -248,10 +248,10 @@ class MemoryProposalAdmission:
             )
             return entity.key, entity, None
         if not isinstance(value, str) or not value.startswith("@"):
-            return None, None, ("relation", "schema")
+            return None, None, ("relation", "endpoint_not_a_handle")
         kind, _, ref = value[1:].partition(":")
         if not kind or not ref:
-            return None, None, ("relation", "schema")
+            return None, None, ("relation", "endpoint_not_a_handle")
         if kind in POINTER_KINDS:
             if not ref.startswith(f"{work.unit}:{kind}:"):
                 ref = f"{work.unit}:{kind}:{ref}"
@@ -322,11 +322,17 @@ class MemoryProposalAdmission:
                 return None
             try:
                 valid_from = _time(st.valid_from, work.as_of.tzinfo)
+            except ValueError:
+                report[index] = {"status": "refused", "reason": "unparseable_time",
+                                 "kind": "relation", "detail": "valid_from"}
+                await refuse("relation", "unparseable_time")
+                return None
+            try:
                 valid_to = _time(st.valid_to, work.as_of.tzinfo)
             except ValueError:
-                report[index] = {"status": "refused", "reason": "schema",
-                                 "kind": "relation"}
-                await refuse("relation", "schema")
+                report[index] = {"status": "refused", "reason": "unparseable_time",
+                                 "kind": "relation", "detail": "valid_to"}
+                await refuse("relation", "unparseable_time")
                 return None
             keys: dict[str, Key] = {}
             for endpoint, slot in ((st.subject, "src"), (st.object, "dst")):
@@ -377,9 +383,9 @@ class MemoryProposalAdmission:
                     written_by=f"cognition:comprehend:{session}",
                 )
             except ValueError:
-                report[index] = {"status": "refused", "reason": "schema",
+                report[index] = {"status": "refused", "reason": "invalid_relation",
                                  "kind": "relation"}
-                await refuse("relation", "schema")
+                await refuse("relation", "invalid_relation")
                 return None
             relations.append(relation)
             relation_stmt[rel_id] = index
@@ -452,9 +458,10 @@ class MemoryProposalAdmission:
                     if by is None:
                         continue
                 elif st.replacement is not None:
-                    report[index] = {"status": "refused", "reason": "schema",
+                    report[index] = {"status": "refused",
+                                     "reason": "unexpected_replacement",
                                      "kind": "correction"}
-                    await refuse("correction", "schema")
+                    await refuse("correction", "unexpected_replacement")
                     continue
                 try:
                     correction = Correction(
@@ -464,9 +471,10 @@ class MemoryProposalAdmission:
                         evidence=tuple(sources.keys()),
                     )
                 except ValueError:
-                    report[index] = {"status": "refused", "reason": "schema",
-                                     "kind": "correction"}
-                    await refuse("correction", "schema")
+                    report[index] = {"status": "refused",
+                                     "reason": "unparseable_time",
+                                     "kind": "correction", "detail": "at"}
+                    await refuse("correction", "unparseable_time")
                     continue
                 corrections.append(correction)
                 correction_stmt[correction] = index
