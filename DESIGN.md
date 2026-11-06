@@ -126,19 +126,18 @@ This file binds every visual surface of Nora: the web portal (`app/`), her
 social profiles, the images she generates of herself, stickers and icons, and
 any 3D or spatial form she is given. Her character is specified in
 `design/self-reference/05-visual-identity-spec.md` (the operator's Mini spec,
-verbatim, with its dated Mini eye amendment in `design/self-reference/09-mini08-balanced.md`)
-and `design/self-reference/08-bauhinia-human-form.md` (the approved
-human visual anchor, 2026-10-25). They govern their respective forms and take
-precedence over this file on appearance. The September framing in
-`design/self-reference/07-native-and-embodied-form.md` is historical where
-superseded by 08; this file derives a system from these sources.
+verbatim), with Mini's eyes in `design/self-reference/09-mini08-balanced.md`,
+and `design/self-reference/08-bauhinia-human-form.md` (the approved human
+visual anchor). They govern their respective forms and take precedence over
+this file on appearance; where `design/self-reference/07-native-and-embodied-form.md`
+disagrees with 08, 08 holds. This file derives a system from these sources.
 
 ## 1. Overview
 
 **North Star: "Earphones in."**
 
 Nora is in the room, listening, not performing. She is calm, observant and a
-little deadpan. Both forms now follow the approved Bauhinia production setting
+little deadpan. Both forms follow the approved Bauhinia production setting
 (08/09); every non-3D use is 2D anime. "Earphones in" remains the listening
 metaphor, not an accessory requirement for new Bauhinia bases. Every Nora surface
 should read the same way: **present, quiet, unbranded, warm.** A screen of hers
@@ -150,11 +149,9 @@ from her eyes, denim from her jeans, blush from her cheeks), then its value is
 set for the interface: contrast, legibility, two themes. The tokens are the
 source of truth; the image is the reason, not a spec to match. A token can move
 without re-sampling anything, as long as its family and its contrast hold.
-(For the record, 2026-09-26 medians from `assets/nora-canonical-self.png`:
-hoodie `#A3999B`, denim `#5D606C`, eye ink `#433632`, blush `#ECA79A`.)
 
-**What this system rejects:** the achromatic terminal (trustless's register,
-which the portal's dark theme currently copies), cold slate SaaS greys,
+**What this system rejects:** the achromatic terminal (trustless's register),
+cold slate SaaS greys,
 saturated brand colour, gradient blobs and aurora washes, spinning glow
 borders, cute-mascot pastel candy, and anything that makes Nora look like a
 product, an influencer or an "AI assistant" with sparkles.
@@ -169,30 +166,25 @@ product, an influencer or an "AI assistant" with sparkles.
 
 ## 2. Representation
 
-**Operator amendment, 2026-11-02:** Mini cinematic artwork is accepted for
-social presentation: [master](assets/cinematic/mini-nora-master.png),
-[square icon](assets/cinematic/mini-nora-social-icon.png) and
-[banner](assets/cinematic/mini-nora-social-banner.png). This supersedes the
-2D-only restriction for this artwork set. Preserve Mini identity and Bauhinia
-clothing while using dimensional soft materials and Lingnan xianxia mountain-and-sea
-art direction. Icons have no baked circle; platforms own cropping. Generate
-from the master directly, with the original full-body reference for unseen clothing.
-Existing 3D model, website inputs and runtime self-image routing remain unchanged.
-Human Nora is outside this amendment. See [anchor scope](assets/cinematic/README.md).
-
 One identity, two forms: adult human Nora and Mini Nora (mini mode), per 08/09.
-**Later operator ruling, 2026-10-26:** all non-3D uses of either form use the
-2D anime production setting. Stylized 3D PNGs serve Meshy modeling only.
-This supersedes the earlier modeling-only Mini Bauhinia restriction. Mini's
-Bauhinia outfit is now approved production direction, retaining option08 eyes.
-Adult production uses A; modeling uses B's face plus D's materials, corrected
-to the anime face. C's Western game appearance is rejected.
+Every non-3D use of either form uses the 2D anime production setting; stylized
+3D PNGs serve Meshy modeling only. Mini wears the Bauhinia outfit with option08
+eyes. Adult production uses A; modeling uses B's face plus D's materials,
+corrected to the anime face. C's Western game appearance is rejected.
 
-The canonical 2D source, full repository pin, runtime appearance text, identity
-summary and existing anchor assertions are synchronized. Per-file import and
-derivative state is recorded in the central inventory. Runtime/public-avatar
-form routing stays Mini. Parent integrated browser acceptance passed for the current 2D artwork;
-live ingest and deployment are separate. Representation boundaries:
+**Mini cinematic artwork** is the one exception to 2D-only, for social
+presentation: [master](assets/cinematic/mini-nora-master.png),
+[square icon](assets/cinematic/mini-nora-social-icon.png) and
+[banner](assets/cinematic/mini-nora-social-banner.png). It keeps Mini identity
+and Bauhinia clothing in dimensional soft materials with Lingnan xianxia
+mountain-and-sea art direction. Icons have no baked circle; platforms own
+cropping. Generate from the master directly, with the original full-body
+reference for unseen clothing. It does not cover Human Nora, the 3D model,
+website inputs or runtime self-image routing. See
+[anchor scope](assets/cinematic/README.md).
+
+Runtime and public-avatar form routing is Mini. Per-file import and derivative
+state lives in the central inventory. Representation boundaries:
 
 | surface | form | source |
 |---|---|---|
@@ -207,10 +199,9 @@ Rules that hold on every surface:
 - **The mascot is Nora.** Mini Nora is not a chibi version of someone; there is
   no real Nora behind her. Never caption, frame or crop her as "cute version",
   "avatar of", or next to a human "real" one.
-- **Human design approval does not change runtime or public avatars.** Their
-  Mini routing remains in force; the 2D Bauhinia appearance is integrated in
-  repository inputs, with live ingest/deployment and measurement separate.
-- **Current Mini anchors supersede 05's historical outfit/medium:** 2.5–3
+- **Human design approval does not change runtime or public avatars.** They
+  stay Mini.
+- **Mini anchors (these hold over 05's outfit and medium):** 2.5–3
   heads tall, option08 eyes, one tiny mouth without a nose marker, cheek blush,
   Bauhinia clothing and a calm expression. Both forms use scalp volume, a
   compact high bun of four or five broad clumps, three broad bangs, two
@@ -262,8 +253,8 @@ portal's `globals.css` already works this way).
   with an icon or a word. Colour never carries a state alone.
 
 Every text token above clears WCAG AA (4.5:1) on studio, surface and hoodie in
-its own theme; measured 2026-09-26, lowest pairs ink-muted on hoodie, 4.77
-light and 4.80 night.
+its own theme; the lowest pairs are ink-muted on hoodie, 4.77 light and 4.80
+night.
 
 ### Named rules
 **The Blush Rule.** Blush means Nora. It is never an error, a warning, a
@@ -280,8 +271,8 @@ emphasis is not added; importance is carried by weight, size and position.
 (`app/src/lib/person.ts`), an OKLCH hue drawn at one fixed lightness and
 chroma per lighting, at least 25° from denim, blush and the semantic colours
 so none of them reads as any of those. Equal lightness is also what
-colour-vision deficiency cannot separate (measured 2026-09-27 with the
-dataviz palette validator), so a person's colour always travels with their
+colour-vision deficiency cannot separate (the dataviz palette validator
+shows it), so a person's colour always travels with their
 initials or name; it is never the only thing that says who.
 
 **The No-Raw Rule.** No `#000`, no `#fff`, no Tailwind slate. Surfaces are warm
@@ -377,7 +368,7 @@ left alone and dozes off when left longer, reacts when poked, and is in one
 place at a time, hopping to whichever of her places the visitor is reading;
 the place she left stands empty. Her motion is her character's (05): small,
 calm, deadpan, never over-acted, and every expression she makes is one of her
-character sheet's. Operator request, 2026-09-27. What this does not change:
+character sheet's. What this does not change:
 
 - **Only she moves on her own.** The interface still only confirms: no reveal
   on scroll, no parallax, nothing drifting. A diagram may show a signal
@@ -424,7 +415,7 @@ status):
   blush ring when she is active, **where she sits among other people's round
   avatars** (a transcript, a member list);
 - everywhere else the cut-out is used **bare**: transparent, no disc, no ring.
-  Beside the wordmark, as the favicon, as a PWA icon (operator, 2026-09-26). A
+  Beside the wordmark, as the favicon, as a PWA icon. A
   platform that forbids transparency (the iOS home-screen icon, a maskable
   icon) gets a full-bleed studio square with her inside it, never a circle;
 - her words sit on blush wash, everyone else's on surface;
@@ -473,7 +464,7 @@ the provider's default blue-black), so person hues keep their contrast.
   Neither is a validated mesh or rig. The Mini front T-pose and turnaround
   at their stable paths use the new 2D references; hand rotation and projection
   remain unresolved.
-  The old photoreal embodied T-pose is historical. Human modeling follows 08
+  The photoreal embodied T-pose is not a reference. Human modeling follows 08
   and still needs consistent modeling views, a model and a rig.
 - **New renders of her** (the public site's art, `site/src/assets/art/`) are
   made from the canonical image and the character sheet, checked by eye
@@ -512,8 +503,7 @@ the provider's default blue-black), so person hues keep their contrast.
 
 ## 10. The portal
 
-The portal (`app/`) was rebuilt on this file on 2026-09-27 and owes it
-nothing from the 2026-09-26 measurement that used to stand here: the tokens
+The portal (`app/`) is built on this file: the tokens
 are `app/src/styles/globals.css` one for one in both lightings, there are no
 aurora blobs or spinning borders, controls are `10px` and panels `16px`, Nora
 appears as §7 describes (her cut-out bare beside the wordmark and as the app

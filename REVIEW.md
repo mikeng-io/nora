@@ -18,7 +18,8 @@ reviewer who is neither builder nor brief-author, with evidenced different model
 vendor. Devin Review is supplemental evidence; Fusion's internal review does
 not establish that independence.
 
-Report at most six findings, most severe first. NONE is valid. Each finding
+Report every finding you can ground, most severe first; NONE is valid. Do not
+drop one to stay short: the orchestrator triages and filters. Each finding
 needs a file/line, reachable trigger, concrete harm, failed five C (Coherence,
 Consistency, Conformance, Correctness or Completeness), evidence, remedy and
 whether this diff caused it. Tie it to a stated requirement or repository rule;

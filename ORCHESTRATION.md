@@ -175,9 +175,10 @@ second worktree. Reviews check out the exact review head.
 
 ## Bounded independent review
 
-The orchestrator triages findings. Each names a reachable path, the harm, the
-failed C and whether this diff caused it. At most six, most severe first; NONE
-is valid. Mark pre-existing findings.
+Reviewers report every finding they can ground; NONE is valid. Each names a
+reachable path, the harm, the failed C and whether this diff caused it, and
+pre-existing findings are marked. The orchestrator triages them and carries at
+most six into the PR, most severe first.
 
 | Verdict | Consequence |
 |---|---|

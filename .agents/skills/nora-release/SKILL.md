@@ -12,8 +12,7 @@ GitHub auto-merge on its exact head, with an authored merge subject. Required
 checks and the strict up-to-date branch rule govern the merge; the App has no
 bypass. This standing authority covers generated metadata only, never application
 or implementation PRs. There is no daily wait, paid agent or release evaluator.
-Devin release automation is stopped (operator, 2026-10-28; issue #316 closed as
-not planned). Do not invoke or re-enable it.
+There is no AI release evaluator: never invoke or enable Devin release automation.
 
 ## 1. Author the product bump
 

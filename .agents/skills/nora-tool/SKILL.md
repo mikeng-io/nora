@@ -19,10 +19,10 @@ it does not restate the reasons. Every tool lives in `nora/agent/tools.py`.
 2. **Search the published convention** before choosing a new shape (split or
    unify, a new verb, a new result form): vendor tool-use docs, the MCP tools
    spec, and 0015's Sources as the starting set. A good measurement of the
-   problem is not evidence the structure is right (2026-09-22).
+   problem is not evidence the structure is right.
 3. **Read the siblings.** `grep -n '"<domain>_' nora/agent/tools.py` lists the
-   same-domain tools; copy a recent one's shape (`x_search`, `x_read`,
-   `linkedin_read` were written to 0015 on 2026-09-24).
+   same-domain tools; copy the shape of one written to 0015 (`x_search`,
+   `x_read`, `linkedin_read`).
 
 ## 2. The name
 
@@ -102,7 +102,7 @@ echo "RC=$RC"; grep -E 'passed|failed|error' "${TMPDIR:-/tmp}/tool-tests.log"
 ```
 PASS is `RC=0` and a passed count. Then `make gate` through `nora-land`.
 
-What the tests enforce today (checked 2026-09-24, working tree):
+What the tests enforce:
 - **Enforced:** charset and `<domain>_<verb>` (`tests/architecture/test_tool_names.py`);
   the 40-token opening with a when-clause, a level on every tool, the level
   ceiling, no dashes and at most one non-English string over the whole sent
@@ -142,8 +142,7 @@ What the tests enforce today (checked 2026-09-24, working tree):
 3. **Check the eval feeds the tool what production does.** A tool's next step
    depends on what the previous tool RETURNED. If an eval case gets a different
    result shape than a live call would (a fake handle, a missing backend), the
-   run cannot gate the change: say so in the PR and verify live. (#454: about 8
-   in 10 in the eval, 0 of 2 live.)
+   run cannot gate the change: say so in the PR and verify live.
 4. **Put the numbers in the PR**: both arms, n, the cases that moved, the
    commands, and that the humanizer ran.
 

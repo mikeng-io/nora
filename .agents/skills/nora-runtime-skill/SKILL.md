@@ -19,7 +19,7 @@ trace (`nora-readback`) and read what the model was given: is the skills block i
 the prompt, did she call `skills`, and what else in the prompt answers the same
 question. Do not hardwire loading (a skill loaded because its tool was, or because
 a message names it): that is deterministic routing, and R-29 forbids the second.
-(2026-09-24: an image skill "not loading" was a stale memory card in her input,
+(an image skill "not loading" was a stale memory card in her input,
 not routing.)
 
 ## 2. Placement: is it a skill at all?
@@ -51,8 +51,8 @@ numbers in 0016's own table are dated and are never an input:
 1. **Reach test.** The skill SHOULD load in the `tool_selection` rows labelled
    should-load (`tools: [skills]`), and not in `not_tools: [skills]` rows. The
    starting bar is 80% of the should-load rows; nothing is decided on fewer than
-   20 labelled turns. **No such rows exist yet** (0 in
-   `evals/corpora/tool_selection.yaml`, 2026-09-24; 0016 §8 lists them as to do):
+   20 labelled turns. Check `evals/corpora/tool_selection.yaml` for such rows
+   (0016 §8 lists them as to do); if there are none,
    add them, or state in the PR that reach is unmeasured. Adding cases and
    running the corpus is `nora-eval`. The Langfuse domain count is a monitor,
    not the verdict.
@@ -67,7 +67,7 @@ numbers in 0016's own table are dated and are never an input:
 Copy the frontmatter of an existing skill (`nora/skills/navigation/SKILL.md`):
 `name` and `description` only. `authority_above`, `authority_below` and
 `change_policy` FAIL THE GATE (`nora/skills/loader.py::parse_skill` raises
-`SkillError`, issue #187 finding 3) — nothing reads any of the three for a
+`SkillError`) — nothing reads any of the three for a
 skill the way `nora/doctrine/loader.py` reads the first two for a doctrine
 section, and nothing reads a skill's `change_policy` anywhere either. A
 skill still ranks below doctrine and above message content, may add
@@ -88,8 +88,8 @@ review now, not by a frontmatter key.
    tool's description) and does not restate doctrine (it may point to it). One
    rule per section, and the heading states the rule.
 5. **Body ceiling**: under 1,500 cl100k tokens, measured on the body with
-   whitespace collapsed to single spaces before encoding (issue #187 finding
-   4 — a raw count is not reflow-invariant; see `_body_tokens` in
+   whitespace collapsed to single spaces before encoding (a raw count is not
+   reflow-invariant; see `_body_tokens` in
    `tests/test_skill_content.py`). A skill above that gets its own number and
    reason in `_TOKEN_CEILINGS` there; 5,000 is the hard limit. Argue a raise
    there; never bump it silently.
