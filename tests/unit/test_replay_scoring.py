@@ -76,7 +76,8 @@ async def test_support_uses_recorded_author_and_room():
                 'person="aster" at="now">train arrives</m></item>')
     events = [
         {"kind": "event", "name": "nora.model.request", "attributes": {
-            "nora.model.request.body": json.dumps({"messages": [{"content": rendered}]})}},
+            "nora.model.request.body": json.dumps({"messages": [
+                {"role": "user", "content": rendered}]})}},
         {"kind": "event", "name": "nora.proposal.sources", "span_id": "generated",
          "attributes": {"body": json.dumps({"1": {"text": "train arrives"}})}},
         {"kind": "tool_finished", "span_id": "generated", "tool": {
@@ -257,6 +258,13 @@ async def test_rescore_generated_run_directory(tmp_path, monkeypatch, disagree):
         assert [r["facts_missed"] for r in result["results"]] == [1, 1]
         assert validate_events(events)["status"] == "PASS"
         assert len(calls) == 4
+        facts = [e for e in events if e["kind"] == "fact_verdict"]
+        verdicts = [e for e in events if e["kind"] == "judge_verdict" and e["verdict"] == "missed"]
+        assert len(facts) == len(verdicts) == 2
+        for fact, verdict in zip(facts, verdicts, strict=True):
+            assert fact.get("session_event_ids") == verdict["session_event_ids"]
+            assert fact.get("source_sha256") == spike.fingerprint(original.path / "events.jsonl")
+            assert fact["session_event_ids"]
         assert any(e["kind"] == "rescore_source" for e in events)
         mismatches = [e for e in events if e["kind"] == "scope_mismatch"]
         if disagree == "scope":
@@ -339,7 +347,8 @@ async def test_negative_social_source_numbers_are_scored():
     statement = {"what": "Generated author likes tea", "cite": [{"source": -1}]}
     events = [
         {"kind": "event", "name": "nora.model.request", "attributes": {
-            "nora.model.request.body": json.dumps({"messages": [{"content": agenda}]})}},
+            "nora.model.request.body": json.dumps({"messages": [
+                {"role": "user", "content": agenda}]})}},
         {"kind": "event", "name": "nora.proposal.sources", "span_id": "generated",
          "attributes": {"body": json.dumps({"-1": {"text": caption}})}},
         {"kind": "tool_finished", "span_id": "generated", "tool": {
@@ -422,3 +431,73 @@ async def test_raw_identity_capture_for_each_response_shape(tmp_path, stream, pr
     assert responses
     assert all(e["identity_availability"] == ("observed" if present else "unavailable")
                for e in responses)
+
+
+def generated_agenda_with_empty_items(position):
+    from nora.domain.blocks import render_group
+    row = ('<m n="7" from="Generated Aster" person="generated-aster" at="now">'
+           'Generated &amp; 茶 &lt;item/&gt;</m>')
+    normal = render_group("item", [("index", "1"), ("kind", "message"),
+                                  ("room", "Generated & room")], row)
+    empty = render_group("item", [("index", "0"), ("kind", "message"),
+                                 ("room", "Generated empty room"), ("unreadable", "2")], "")
+    items = ([empty] if position in {"before", "both"} else []) + [normal]
+    items += [empty] if position in {"after", "both"} else []
+    return "<agenda>" + "\n".join(items) + "</agenda>", row
+
+
+@pytest.mark.parametrize("consumer", ["inspection", "exchanges"])
+@pytest.mark.parametrize("position", ["before", "after", "both"])
+def test_self_closing_agenda_items_keep_sources_and_rooms(consumer, position):
+    from nora.language.cognition_render import rendered_new_sources
+    from scripts.memory_graph_spike import evidence_exchanges
+    agenda, row = generated_agenda_with_empty_items(position)
+    if consumer == "inspection":
+        assert rendered_new_sources(agenda) == {
+            "7": {"key": ["message", "7"], "text": "Generated & 茶 <item/>"}}
+    else:
+        events = [
+            {"kind": "event", "name": "nora.model.request", "attributes": {
+                "nora.model.request.body": json.dumps({"messages": [
+                    {"role": "user", "content": agenda}]})}},
+            {"kind": "event", "name": "nora.proposal.sources", "attributes": {
+                "body": json.dumps({"7": {"text": "Generated & 茶 <item/>"}})}},
+            {"kind": "tool_finished", "tool": {"name": "memory_propose", "input": {}},
+             "result": {"content": [{"json": {"status": "ok"}}]}}]
+        sources = evidence_exchanges(events)[0]["source_rows"]
+        assert sources == {"7": {"rendered": row, "room": 'room="Generated &amp; room"'}}
+
+
+@pytest.mark.parametrize("role", ["system", "assistant", "developer", "tool"])
+@pytest.mark.parametrize("content_blocks", [False, True])
+def test_non_user_markup_cannot_overwrite_cited_row(role, content_blocks):
+    from nora.subject.replay_diagnosis import _items
+    from scripts.memory_graph_spike import evidence_exchanges
+    agenda, row = generated_agenda_with_empty_items("after")
+    spoof = '<item room="Wrong room"><m n="7">Wrong attributed text</m></item>'
+    user = [{"text": agenda}] if content_blocks else agenda
+    messages = [{"role": "user", "content": user}, {"role": role, "content": spoof}]
+    request = {"messages": messages}
+    events = [
+        {"kind": "event", "name": "nora.model.request", "attributes": {
+            "nora.model.request.body": json.dumps(request)}},
+        {"kind": "event", "name": "nora.proposal.sources", "attributes": {
+            "body": json.dumps({"7": {"text": "Generated & 茶 <item/>"}})}},
+        {"kind": "tool_finished", "tool": {"name": "memory_propose", "input": {}},
+         "result": {"content": [{"json": {"status": "ok"}}]}}]
+    sources = evidence_exchanges(events)[0]["source_rows"]
+    assert sources == {"7": {"rendered": row, "room": 'room="Generated &amp; room"'}}
+    assert len(_items(request)) == 2
+    assert "Wrong attributed text" not in json.dumps(_items(request), default=str)
+
+
+def test_rendered_agenda_parser_is_public_and_preserves_empty_items():
+    from nora.language import cognition_render as render
+    assert {"parse_rendered_agenda", "rendered_new_sources"} <= set(render.__all__)
+    agenda, row = generated_agenda_with_empty_items("both")
+    items = render.parse_rendered_agenda(agenda)
+    assert len(items) == 3
+    assert items[0].rows == items[2].rows == ()
+    assert items[0].rendered == items[2].rendered
+    assert items[0].rendered.endswith('/>') and "</agenda>" not in items[2].rendered
+    assert items[1].rows[0].rendered == row

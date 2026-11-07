@@ -5,22 +5,28 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
-from xml.etree import ElementTree
 
-OBSERVATIONS = frozenset(
-    {
+from nora.language.cognition_render import parse_rendered_agenda
+
+OBSERVATIONS_BY_KIND = {
+    "unsupported": frozenset({
         "uncited_detail",
         "inference_as_said",
         "wrong_subject",
         "other",
+        "insufficient_evidence",
+    }),
+    "missed": frozenset({
         "rejected_as_not_memory",
         "mentioned_without_statement",
         "refused_not_retried",
         "named_bound",
         "not_mentioned",
+        "other",
         "insufficient_evidence",
-    }
-)
+    }),
+}
+OBSERVATIONS = frozenset().union(*OBSERVATIONS_BY_KIND.values())
 
 
 # ponytail: fixed final-prompt byte ceiling; revise only from audited judge-input receipts.
@@ -39,19 +45,10 @@ def cited_source_numbers(value: Any) -> set[str]:
 
 
 def _items(request: dict[str, Any]) -> list[dict[str, Any]]:
-    items = []
-    for message in request.get("messages", []):
-        if message.get("role") != "user":
-            continue
-        content = message.get("content", "")
-        if isinstance(content, list):
-            content = "\n".join(p.get("text", "") for p in content)
-        for index, match in enumerate(re.finditer(r"<item\b[^>]*>.*?</item>", content, re.S)):
-            element = ElementTree.fromstring(match.group())  # noqa: S314 - recorded escaped renderer
-            items.append({"index": int(element.get("index", str(index))),
-                          "rendered": match.group(),
-                          "numbers": {row.get("n") for row in element if row.get("n")}})
-    return items
+    return [{"index": int(item.attributes.get("index", str(index))),
+             "rendered": item.rendered, "rows": item.rows,
+             "numbers": {row.attributes["n"] for row in item.rows}}
+            for index, item in enumerate(parse_rendered_agenda(request))]
 
 
 def _proposal_end(statement: dict[str, Any], events: list[dict[str, Any]]) -> tuple[int, set[int]]:
@@ -127,11 +124,11 @@ def compact_trajectory(statement: dict[str, Any], events: list[dict[str, Any]]) 
             rows = json.loads(event["attributes"]["body"])
             cited.update({n: {**row, "event_id": event["event_id"]}
                           for n, row in rows.items() if n in numbers})
-    for item in agenda:
-        for row in re.finditer(r'<(\w+)\b[^>]*\bn="(-?\d+)"[^>]*>.*?</\1>',
-                               item["rendered"], re.S):
-            if row[2] in numbers:
-                cited[row[2]] = {"rendered": row.group(), "event_id": item["event_id"]}
+    for item in selected:
+        for row in item["rows"]:
+            n = row.attributes["n"]
+            if n in numbers:
+                cited[n] = {"rendered": row.rendered, "event_id": events[shown]["event_id"]}
     calls = []
     active: dict[tuple[Any, Any], dict[str, Any]] = {}
     tools = []
@@ -190,7 +187,8 @@ def diagnose(
     ]
     if not any(a == "observed" for a in availability):
         return insufficient
-    if not isinstance(verdict, dict) or verdict.get("observation") not in OBSERVATIONS:
+    allowed = OBSERVATIONS_BY_KIND.get(statement.get("kind", ""), frozenset())
+    if not isinstance(verdict, dict) or verdict.get("observation") not in allowed:
         return insufficient
     ids = verdict.get("event_ids")
     if not isinstance(ids, list) or not ids or not verdict.get("reason"):
@@ -234,12 +232,6 @@ def diagnose(
         ]
         if not any(_proposal_refused(e) for e in tools):
             return insufficient
-    if statement.get("kind") == "missed" and observation in {
-        "uncited_detail",
-        "inference_as_said",
-        "wrong_subject",
-    }:
-        return insufficient
     return {**verdict, "statement": statement}
 
 

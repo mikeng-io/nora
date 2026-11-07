@@ -72,8 +72,8 @@
   {
     "name": "negative citation rows retain attribution",
     "file": "scripts/memory_graph_spike.py",
-    "old": "n=\"(-?\\d+)\"",
-    "new": "n=\"(\\d+)\"",
+    "old": "                    rendered[n] = {\"rendered\": row.rendered,",
+    "new": "                    rendered[n.lstrip(\"-\")] = {\"rendered\": row.rendered,",
     "target": "tests/unit/test_replay_scoring.py::test_negative_social_source_numbers_are_scored"
   },
   {
@@ -187,5 +187,47 @@
     "old": "        if not any(_proposal_refused(e) for e in tools):",
     "new": "        all_tools = [e for e in events if e[\"kind\"] == \"tool_finished\"\n                     and e.get(\"tool\", {}).get(\"name\") == \"memory_propose\"]\n        if len(all_tools) != 1 or all_tools[0] not in selected:",
     "target": "tests/unit/test_replay_diagnosis.py::test_refused_proposal_accepts_other_proposals_in_trajectory"
+  },
+  {
+    "name": "agenda parsing follows self-closing element structure",
+    "file": "nora/language/cognition_render.py",
+    "old": "    payload = (\"<root>\" + agenda + \"</root>\").encode(\"utf-8\")",
+    "new": "    import re\n    fragments = re.findall(r\"<item\\b[^>]*>.*?</item>\", agenda, re.S)\n    for fragment in fragments:\n        ElementTree.fromstring(fragment)\n    payload = (\"<root>\" + \"\".join(fragments) + \"</root>\").encode(\"utf-8\")",
+    "target": "tests/unit/test_replay_scoring.py::test_self_closing_agenda_items_keep_sources_and_rooms tests/unit/test_replay_diagnosis.py::test_compact_trajectory_preserves_self_closing_agenda_items"
+  },
+  {
+    "name": "only user-role agendas supply rendered evidence",
+    "file": "nora/language/cognition_render.py",
+    "old": "            if message.get(\"role\") != \"user\":\n                continue",
+    "new": "            if False:\n                continue",
+    "target": "tests/unit/test_replay_scoring.py::test_non_user_markup_cannot_overwrite_cited_row"
+  },
+  {
+    "name": "missed-only observations cannot diagnose unsupported statements",
+    "file": "nora/subject/replay_diagnosis.py",
+    "old": "    allowed = OBSERVATIONS_BY_KIND.get(statement.get(\"kind\", \"\"), frozenset())",
+    "new": "    allowed = OBSERVATIONS",
+    "target": "tests/unit/test_replay_diagnosis.py::test_missed_only_observations_reject_unsupported_statements"
+  },
+  {
+    "name": "rendered agenda parsing is exported",
+    "file": "nora/language/cognition_render.py",
+    "old": "    \"parse_rendered_agenda\", \"render_agenda\", \"rendered_new_sources\", \"returning\", \"room_key\",",
+    "new": "    \"render_agenda\", \"returning\", \"room_key\",",
+    "target": "tests/unit/test_replay_scoring.py::test_rendered_agenda_parser_is_public_and_preserves_empty_items"
+  },
+  {
+    "name": "duplicate fact-judge verdicts cost one diagnostic per session",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "        if identity in seen:\n            continue",
+    "new": "        if False and identity in seen:\n            continue",
+    "target": "tests/unit/test_replay_diagnosis.py::test_decision_deduplicates_verdicts_without_collapsing_sessions"
+  },
+  {
+    "name": "per-fact decisions retain source and session provenance",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "                record(\"fact_verdict\", alias=model, fact=entry,\n                       session_event_ids=session_ids, source_sha256=source_sha256,",
+    "new": "                record(\"fact_verdict\", alias=model, fact=entry,",
+    "target": "tests/unit/test_replay_scoring.py::test_rescore_generated_run_directory[False]"
   }
 ]

@@ -30,10 +30,11 @@ from nora.config import load
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
 from nora.domain.composed import compose_body
 from nora.domain.memory_graph import Walk
-from nora.domain.prompt import escape
+from nora.domain.prompt import escape, escape_attr
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.memory_graph import WALK_SQL, walk_parameters
 from nora.infra.sql.schema import METADATA
+from nora.language.cognition_render import parse_rendered_agenda
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy
@@ -592,16 +593,12 @@ def evidence_exchanges(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for event in events:
         if event.get("name") == "nora.model.request":
             request = json.loads(event["attributes"]["nora.model.request.body"])
-            for message in request.get("messages", []):
-                content = message.get("content", "")
-                if not isinstance(content, str):
-                    content = "\n".join(p.get("text", "") for p in content or [])
-                for item in re.finditer(r"<item\b[^>]*>.*?</item>", content, re.S):
-                    room = re.search(r'\broom="[^"\n]*"', item.group().split(">", 1)[0])
-                    for row in re.finditer(r'<(\w+)\b[^>]*\bn="(-?\d+)"[^>]*>.*?</\1>',
-                                           item.group(), re.S):
-                        rendered[row[2]] = {"rendered": row.group(),
-                                            "room": room.group() if room else "unavailable"}
+            for item in parse_rendered_agenda(request):
+                room = item.attributes.get("room")
+                for row in item.rows:
+                    n = row.attributes["n"]
+                    rendered[n] = {"rendered": row.rendered,
+                                   "room": f'room="{escape_attr(room)}"' if room else "unavailable"}
 
         if event["kind"] != "tool_finished":
             continue
@@ -771,6 +768,7 @@ async def smoke_fact_support(
             for entry in parsed["missed"]:
                 inside = miss_in_new_sources(entry, new_sources)
                 record("fact_verdict", alias=model, fact=entry,
+                       session_event_ids=session_ids, source_sha256=source_sha256,
                        verdict="missed" if inside else "miss_outside_new_sources",
                        reason=entry["reason"])
                 if inside:
@@ -1318,6 +1316,7 @@ async def decision_judge(directory: Path, judges: Judges) -> dict[str, Any]:
     from nora.subject.replay_diagnosis import (
         MAX_DIAGNOSTIC_INPUT_BYTES,
         OBSERVATIONS,
+        OBSERVATIONS_BY_KIND,
         compact_trajectory,
         diagnose,
     )
@@ -1363,27 +1362,33 @@ async def decision_judge(directory: Path, judges: Judges) -> dict[str, Any]:
     results = []
     instruction = (
         "Diagnose each statement only from recorded evidence. Return JSON with observation, "
-        "event_ids and reason. Observations: uncited_detail, inference_as_said, wrong_subject, "
-        "other (name it in reason), rejected_as_not_memory (quote reasoning), "
-        "mentioned_without_statement, refused_not_retried, named_bound, not_mentioned, "
-        "insufficient_evidence. Not mentioned is only an observation about emitted reasoning. "
+        "event_ids and reason. Use this statement kind's allowed_observations from the input. "
+        "For other, name the observation in reason; for rejected_as_not_memory, quote reasoning. "
+        "Not mentioned is only an observation about emitted reasoning. "
         "Input is a compact trajectory: model_call rows assemble streamed reasoning, text and "
         "tool calls; event_id is a real source anchor and last_event_id closes its source range. "
         "Cite anchors shown in events, agenda_items or cited_rows, including call range endpoints. "
         "refused_not_retried must cite a refused memory_propose result; judge relevant retries "
         "from proposal contents, not the total number of proposals. "
-        "uncited_detail, inference_as_said and wrong_subject describe unsupported statements only. "
         "Use only reasoning marked observed. not_mentioned describes only observed reasoning, "
         "never absent/redacted calls or what the model privately noticed. Cite event ids."
     )
+    seen = set()
     for statement in statements:
+        identity = json.dumps({k: statement[k] for k in (
+            "kind", "statement", "fact", "location", "session_event_ids", "source_sha256")
+            if k in statement}, sort_keys=True)
+        if identity in seen:
+            continue
+        seen.add(identity)
         scoped = statement.pop("events")
         judge_statement = {k: v for k, v in statement.items() if k != "session_event_ids"}
         cause = "trajectory_unavailable"
         result: dict[str, Any]
         try:
             trajectory = compact_trajectory(statement, scoped)
-            payload = {"statement": judge_statement, "trajectory": trajectory}
+            payload = {"statement": judge_statement, "trajectory": trajectory,
+                       "allowed_observations": sorted(OBSERVATIONS_BY_KIND[statement["kind"]])}
             input_bytes = len(prompt(payload).encode("utf-8"))
             truncated = input_bytes > MAX_DIAGNOSTIC_INPUT_BYTES
             record("decision_input", input_bytes=input_bytes,

@@ -57,12 +57,12 @@ its lines) stay in `nora.domain`.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, tzinfo
 from typing import Any
 from xml.etree import ElementTree
+from xml.parsers import expat
 
 from nora.domain.blocks import (
     BlockKey,
@@ -646,24 +646,84 @@ def _item_rows(
     return out, unreadable
 
 
+@dataclass(frozen=True)
+class RenderedAgendaRow:
+    attributes: dict[str, str]
+    text: str
+    rendered: str
+
+
+@dataclass(frozen=True)
+class RenderedAgendaItem:
+    attributes: dict[str, str]
+    rendered: str
+    rows: tuple[RenderedAgendaRow, ...]
+
+
+def parse_rendered_agenda(agenda: str | Mapping[str, Any]) -> list[RenderedAgendaItem]:
+    """Read emitted item structure, retaining exact bytes and only user-role request content."""
+    if isinstance(agenda, Mapping):
+        items = []
+        for message in agenda.get("messages", []):
+            if message.get("role") != "user":
+                continue
+            content = message.get("content", "")
+            if not isinstance(content, str):
+                content = "\n".join(p.get("text", "") for p in content or [])
+            items.extend(parse_rendered_agenda(content))
+        return items
+    payload = ("<root>" + agenda + "</root>").encode("utf-8")
+    parser = expat.ParserCreate()
+    stack: list[dict[str, Any]] = []
+    items = []
+
+    def start(tag: str, attributes: dict[str, str]) -> None:
+        if stack:
+            stack[-1]["children"] += 1
+        stack.append({"tag": tag, "attributes": attributes, "start": parser.CurrentByteIndex,
+                      "text": [], "rows": [], "children": 0})
+
+    def text(value: str) -> None:
+        stack[-1]["text"].append(value)
+
+    def end(tag: str) -> None:
+        node = stack.pop()
+        stop = parser.CurrentByteIndex
+        self_closed = (not node["children"] and not node["text"]
+                       and payload[stop - 2:stop] == b"/>")
+        if not self_closed:
+            stop = payload.index(b">", stop) + 1
+        rendered = payload[node["start"]:stop].decode("utf-8")
+        if tag == "item":
+            items.append(RenderedAgendaItem(node["attributes"], rendered, tuple(node["rows"])))
+        elif stack and stack[-1]["tag"] == "item" and "n" in node["attributes"]:
+            stack[-1]["rows"].append(RenderedAgendaRow(
+                node["attributes"], "".join(node["text"]), rendered))
+
+    parser.StartElementHandler = start
+    parser.CharacterDataHandler = text
+    parser.EndElementHandler = end
+    parser.Parse(payload, True)
+    return items
+
+
 def rendered_new_sources(agenda: str) -> dict[str, Any]:
     """Fresh citable rows from the emitted agenda, after source expansion and clipping."""
     new_sources = {}
-    for item in re.finditer(r"<item\b[^>]*>.*?</item>", agenda, re.S):
-        element = ElementTree.fromstring(item.group())  # noqa: S314 - escaped renderer output
-        for row in element:
-            n = row.get("n")
-            if n is None or row.get("own") or row.get("target"):
+    for item in parse_rendered_agenda(agenda):
+        for row in item.rows:
+            n = row.attributes.get("n")
+            if n is None or row.attributes.get("own") or row.attributes.get("target"):
                 continue
-            source = row.get("source")
+            source = row.attributes.get("source")
             # Context message rows carry source=; fresh messages do not.
             # Other fresh record families carry their typed source key.
-            if source and source.split(":", 1)[0] != element.get("kind"):
+            if source and source.split(":", 1)[0] != item.attributes.get("kind"):
                 continue
             if source and source.startswith("message:"):
                 continue
             key = source.split(":", 1) if source else ["message", n]
-            new_sources[n] = {"key": key, "text": row.text or ""}
+            new_sources[n] = {"key": key, "text": row.text}
     return new_sources
 
 
@@ -1081,6 +1141,7 @@ def render_agenda(
 
 
 __all__ = [
-    "RenderBudget", "clock_line", "render_agenda", "returning", "room_key", "room_label",
-    "speaker_of",
+    "RenderBudget", "RenderedAgendaItem", "RenderedAgendaRow", "clock_line",
+    "parse_rendered_agenda", "render_agenda", "rendered_new_sources", "returning", "room_key",
+    "room_label", "speaker_of",
 ]
