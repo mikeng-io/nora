@@ -152,5 +152,12 @@
     "old": "        if kind == \"decision_input\" and event.get(\"truncated\"):\n            causes.add(\"truncated\")",
     "new": "",
     "target": "tests/unit/test_replay_diagnosis.py::test_decision_resolves_fingerprinted_writer_events[oversized]"
+  },
+  {
+    "name": "failed proposals are not saved-proposal boundaries",
+    "file": "nora/subject/replay_diagnosis.py",
+    "old": "result.get(\"status\") == \"error\" or not isinstance(inputs, list)",
+    "new": "not isinstance(inputs, list)",
+    "target": "tests/unit/test_replay_diagnosis.py::test_compact_statement_scope_excludes_later_absent_call"
   }
 ]

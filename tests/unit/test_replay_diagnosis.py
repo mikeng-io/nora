@@ -268,7 +268,8 @@ async def test_decision_resolves_fingerprinted_writer_events(tmp_path, monkeypat
             assert diagnostic["result"]["observation"] == "rejected_as_not_memory"
 
 
-def generated_trajectory(*, later_absent=False, mixed=False, chunks=3, text="not memory"):
+def generated_trajectory(*, later_absent=False, mixed=False, chunks=3, text="not memory",
+                         failed_proposal=False):
     """Generated recorded request, streamed call, saved proposal and optional unrelated call."""
     import json
     events = []
@@ -282,15 +283,23 @@ def generated_trajectory(*, later_absent=False, mixed=False, chunks=3, text="not
         "messages": [{"role": "system", "content": (
             '<item index="0"><m n="99">System example</m></item>')},
                      {"role": "user", "content": agenda}]})})
+    statement = {"what": "Generated fact", "cite": [{"source": 1}]}
+    arguments = json.dumps({"items": [0], "statements": [statement]})
     emit("transport_started", attempt_id="generated-one")
     for index in range(chunks):
         emit("transport_response", attempt_id="generated-one", response={"choices": [{
             "delta": {"reasoning_content": text if index == 0 else "x"}}]})
+    if failed_proposal:
+        emit("transport_response", attempt_id="generated-one", response={"choices": [{"delta": {
+            "tool_calls": [{"index": 0, "id": "failed-one", "function": {
+                "name": "memory_propose", "arguments": arguments}}]}}]})
+    tool_index = int(failed_proposal)
     emit("transport_response", attempt_id="generated-one", response={"choices": [{"delta": {
-        "content": "Generated assistant text", "tool_calls": [{"index": 0, "id": "proposal-one",
-        "function": {"name": "memory_propose", "arguments": '{"items":'}}]}}]})
+        "content": "Generated assistant text", "tool_calls": [{"index": tool_index,
+        "id": "proposal-one", "function": {"name": "memory_pro", "arguments": arguments[:10]}}]}}]})
     emit("transport_response", attempt_id="generated-one", response={"choices": [{"delta": {
-        "tool_calls": [{"index": 0, "function": {"arguments": "[0]}"}}]},
+        "tool_calls": [{"index": tool_index, "function": {
+            "name": "pose", "arguments": arguments[10:]}}]},
         "finish_reason": "tool_calls"}]})
     emit("transport_finished", attempt_id="generated-one", reasoning_availability="observed")
 
@@ -305,6 +314,11 @@ def generated_trajectory(*, later_absent=False, mixed=False, chunks=3, text="not
     statement = {"what": "Generated fact", "cite": [{"source": 1}]}
     use = {"toolUseId": "proposal-one", "name": "memory_propose", "input": {
         "items": [0], "statements": [statement]}}
+    if failed_proposal:
+        failed = {**use, "toolUseId": "failed-one"}
+        emit("tool_started", tool=failed)
+        emit("tool_finished", tool=failed, result={"status": "error", "content": [
+            {"text": "Generated failed proposal"}]})
     emit("tool_started", tool=use)
     emit("event", name="nora.proposal.sources", attributes={"body": json.dumps({
         "1": {"text": "Generated fact"}})})
@@ -318,15 +332,21 @@ def generated_trajectory(*, later_absent=False, mixed=False, chunks=3, text="not
 
 def test_compact_statement_scope_excludes_later_absent_call():
     from nora.subject.replay_diagnosis import compact_trajectory
-    statement, events = generated_trajectory(later_absent=True)
+    statement, events = generated_trajectory(later_absent=True, failed_proposal=True)
     trajectory = compact_trajectory(statement, events)
     calls = [e for e in trajectory["events"] if e["kind"] == "model_call"]
     assert len(calls) == 1 and len(trajectory["agenda_items"]) == 1
     assert "System example" not in trajectory["agenda_items"][0]["rendered"]
     assert calls[0]["reasoning"] == "not memoryxx"
     assert calls[0]["assistant_text"] == "Generated assistant text"
-    assert calls[0]["tool_calls"] == [
-        {"id": "proposal-one", "name": "memory_propose", "arguments": '{"items":[0]}'}]
+    import json
+    assert [t["id"] for t in calls[0]["tool_calls"]] == ["failed-one", "proposal-one"]
+    proposal = calls[0]["tool_calls"][1]
+    assert proposal["name"] == "memory_propose"
+    assert json.loads(proposal["arguments"]) == {
+        "items": [0], "statements": [{"what": "Generated fact", "cite": [{"source": 1}]}]}
+    tools = [e for e in trajectory["events"] if e["kind"] == "tool_finished"]
+    assert tools[0]["result"]["status"] == "error" and len(tools) == 2
     assert all(e["kind"] != "transport_response" for e in trajectory["events"])
     assert trajectory["cited_rows"]["1"]["rendered"].endswith("Generated fact</m>")
     verdict = {"observation": "rejected_as_not_memory", "event_ids": [calls[0]["event_id"]],

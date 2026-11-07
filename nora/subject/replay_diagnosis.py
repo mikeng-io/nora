@@ -67,6 +67,9 @@ def _proposal_end(statement: dict[str, Any], events: list[dict[str, Any]]) -> tu
         tool = event["tool"]
         inputs = tool["input"].get("statements", [])
         result = event.get("result", {})
+        if (result.get("status") == "error" or not isinstance(inputs, list)
+                or statement["statement"] not in inputs):
+            continue
         if "content" in result:
             parts = result["content"]
             result = next((p["json"] if "json" in p else json.loads(p["text"])
