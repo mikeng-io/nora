@@ -2,8 +2,7 @@
 
 Operator ruling: a change runs the tests it can affect and no others. A one-word
 front-end edit or a renamed local variable must not buy the 21,000-test suite.
-The decision number is allocated from current `origin/master` immediately before
-merge (`nora-decision`); this draft does not reserve one.
+Recorded as DEC-327 and [ADR 0036](../../docs/adr/0036-pull-requests-run-the-tests-their-diff-can-affect.md).
 
 ## Intent
 
