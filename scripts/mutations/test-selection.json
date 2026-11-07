@@ -33,5 +33,54 @@
     "old": "            targets.update(readers | importers)",
     "new": "            targets.update(readers)",
     "target": "tests/unit/test_testmon_selection.py::test_a_module_level_constant_edit_selects_the_importing_test"
+  },
+  {
+    "name": "imports follow transitively through production modules",
+    "file": "scripts/affected_tests.py",
+    "old": "    if graph is not None:\n        frontier |= _module_closure(_dotted(path), graph)",
+    "new": "    if graph is not None:\n        frontier |= set()",
+    "target": "tests/unit/test_testmon_selection.py::test_a_constant_edit_follows_imports_through_production_modules"
+  },
+  {
+    "name": "a fork head is never release-eligible",
+    "file": "scripts/ci_plan.py",
+    "old": "    if (head.get(\"repo\") or {}).get(\"full_name\") != os.environ.get(\n        \"GITHUB_REPOSITORY\"\n    ):",
+    "new": "    if False:",
+    "target": "tests/architecture/test_ci_plan.py::test_a_fork_head_is_not_eligible"
+  },
+  {
+    "name": "a diff outside the release files is never eligible",
+    "file": "scripts/ci_plan.py",
+    "old": "        if not files or any(f not in _RELEASE_FILES for f in files):\n            return False",
+    "new": "        if not files:\n            return False",
+    "target": "tests/architecture/test_ci_plan.py::test_a_runtime_or_content_change_is_not_eligible[extra0]"
+  },
+  {
+    "name": "non-version lines inside a strict release file are not eligible",
+    "file": "scripts/ci_plan.py",
+    "old": "            if not changed or not all(pattern.match(line) for line in changed):\n                return False",
+    "new": "            if not changed:\n                return False",
+    "target": "tests/architecture/test_ci_plan.py::test_a_runtime_or_content_change_is_not_eligible[extra1]"
+  },
+  {
+    "name": "non-pull-request events run the whole suite",
+    "file": "scripts/ci_plan.py",
+    "old": "        targets = affected_tests.select(paths, repo, testmon=False) if is_pr else \"ALL\"",
+    "new": "        targets = affected_tests.select(paths, repo, testmon=False)",
+    "target": "tests/architecture/test_ci_plan.py::test_non_pull_request_events_select_the_full_suite[event0]"
+  },
+  {
+    "name": "an artifact from the wrong run is never trusted",
+    "file": "scripts/testmon_record.py",
+    "old": "            if not _provenance_ok(run, name, artifact[\"name\"]):\n                continue",
+    "new": "            if False:\n                continue",
+    "target": "tests/unit/test_testmon_record.py::test_a_wrong_run_is_not_accepted[bad_run0]"
+  },
+  {
+    "name": "the escape report never reports a made-up selection",
+    "file": "scripts/ci_plan.py",
+    "old": "        except Exception as exc:  # noqa: BLE001 - never report a made-up selection\n            return [\n                \"### Escape report\",\n                f\"unavailable: could not reconstruct the merged diff's selection ({exc})\",\n            ]",
+    "new": "        except Exception:  # noqa: BLE001\n            selected = affected_tests.ALL",
+    "target": "tests/architecture/test_ci_plan.py::test_the_escape_report_is_unavailable_when_the_diff_cannot_be_read"
   }
 ]

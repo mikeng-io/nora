@@ -26,9 +26,13 @@ def _mini(root: Path) -> Path:
         "def helper(x):\n    return x + 1\n\ndef other(y):\n    return y * 2\n"
     )
     (root / "pkg/settings.py").write_text("LIMIT = 10\n")
+    (root / "pkg/api.py").write_text("from pkg.settings import LIMIT\n")
     (root / "pkg/unused.py").write_text("def never():\n    return 0\n")
     tests = root / "tests"
     tests.mkdir()
+    (tests / "test_api.py").write_text(
+        "from pkg.api import LIMIT\n\ndef test_api():\n    assert LIMIT == 10\n"
+    )
     (tests / "test_core.py").write_text(
         "from pkg.core import helper\n\ndef test_helper():\n    assert helper(1) == 2\n"
     )
@@ -83,7 +87,28 @@ def test_a_module_level_constant_edit_selects_the_importing_test(recorded):
     selected = select(["pkg/settings.py"], recorded)
     assert selected != ALL
     assert "tests/test_settings.py" in selected
+    assert "tests/test_api.py" in selected  # reaches it through pkg.api
     assert "tests/test_core.py" not in selected
+
+
+def test_a_constant_edit_follows_imports_through_production_modules(recorded):
+    """`from pkg.api import LIMIT` never names pkg.settings — only the
+    transitive production import graph selects this test (the record cannot
+    see a collection-time import)."""
+    (recorded / "pkg/settings.py").write_text("LIMIT = 111\n")
+    selected = select(["pkg/settings.py"], recorded)
+    assert selected != ALL
+    assert "tests/test_api.py" in selected
+    # and the selection really is the transitive one, not everything
+    assert "tests/test_unrelated.py" not in selected
+
+
+def test_unresolvable_importers_fail_closed_to_all(recorded, monkeypatch):
+    monkeypatch.setattr(
+        "scripts.affected_tests._import_graph",
+        lambda repo: 1 / 0,
+    )
+    assert select(["pkg/settings.py"], recorded) == ALL
 
 
 def test_a_data_file_a_test_reads_selects_that_reader(recorded):

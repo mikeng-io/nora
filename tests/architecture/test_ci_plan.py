@@ -168,11 +168,17 @@ def test_document_readers_come_from_the_existing_selector(tmp_path, monkeypatch,
     monkeypatch.setattr(ci_plan.affected_tests, "select", readers)
     assert ci_plan.main() == 0
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
-    assert calls == [["docs/runbook.md"]]
-    assert json.loads(values["readers"]) == ["tests/test_docs.py"]
+    if "pull_request" in event_data:
+        assert calls == [["docs/runbook.md"]]
+        assert json.loads(values["readers"]) == ["tests/test_docs.py"]
+        assert not json.loads(values["plan"])["python"]
+    else:
+        # non-PR events record: the whole suite runs, never a subset
+        assert calls == []
+        assert json.loads(values["readers"]) == "ALL"
+        assert all(json.loads(values["plan"]).values())
     assert values["docs_only"] == "true"
     assert values["testmon"] == "false"
-    assert not json.loads(values["plan"])["python"]
 
 
 @pytest.mark.parametrize("canonical", [True, False])
@@ -227,32 +233,69 @@ def test_shared_document_reader_keeps_full_suite_fallback(tmp_path, monkeypatch)
     assert not any(selected for name, selected in plan.items() if name.startswith("codeql-"))
 
 
+def _acceptance_source() -> tuple[str, dict]:
+    root = Path(__file__).resolve().parents[2]
+    workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())
+    step = next(s for s in workflow["jobs"]["contracts"]["steps"]
+                if s.get("name") == "Selected backend acceptance")
+    source = step["run"].split("<<'PYTEST'\n", 1)[1].rsplit("PYTEST", 1)[0]
+    return source, step
+
+
+def _acceptance_env(monkeypatch, tmp_path, readers, *, testmon=None,
+                    event_name="pull_request", base_sha="b" * 40,
+                    record: bool = False):
+    """The script's whole input surface, set — never ambient. The exec'd
+    workflow step reads READERS, TESTMON, BASE_SHA, EVENT_NAME and
+    .testmondata in its cwd; inheriting any of them from the pytest process
+    (hosted: TESTMON=true from the step env; local: a gitignored record) made
+    this test pass locally and fail hosted."""
+    monkeypatch.setenv("READERS", json.dumps(readers))
+    monkeypatch.setenv("EVENT_NAME", event_name)
+    monkeypatch.setenv("BASE_SHA", base_sha)
+    if testmon is None:
+        monkeypatch.delenv("TESTMON", raising=False)
+    else:
+        monkeypatch.setenv("TESTMON", testmon)
+    monkeypatch.chdir(tmp_path)
+    if record:
+        (tmp_path / ".testmondata").write_bytes(b"record")
+
+
+def _fake_run(calls, failure, selected_line=None):
+    """Subprocess.run for the exec'd step: answers the selector call with a
+    fixed selection and records the gate command. A fake behaves like the
+    real subprocess, including the wrong-call shapes."""
+    def run(command, **kwargs):
+        if "affected_tests.py" in " ".join(map(str, command)):
+            assert kwargs.get("capture_output") is True
+            return subprocess.CompletedProcess(
+                command, 0, stdout=f"{selected_line}\n")
+        assert kwargs.get("check") is True
+        calls.append(command)
+        if len(calls) - 1 == failure:
+            raise subprocess.CalledProcessError(1, command)
+        return subprocess.CompletedProcess(command, 0)
+    return run
+
+
 @pytest.mark.parametrize("targets", [
     "ALL", ["tests/integration/test_latency.py"],
     ["tests/unit/test_engagement_pipeline.py",
      "tests/integration/test_bridge_queue_telemetry.py"], [],
 ])
 @pytest.mark.parametrize("failure", [None, 0, 1])
-def test_timing_contracts_run_without_competing_pytest_workers(monkeypatch, targets, failure):
-    root = Path(__file__).resolve().parents[2]
-    workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())
-    step = next(s for s in workflow["jobs"]["contracts"]["steps"]
-                if s.get("name") == "Selected backend acceptance")
-    source = step["run"].split("<<'PYTEST'\n", 1)[1].rsplit("PYTEST", 1)[0]
+def test_timing_contracts_run_without_competing_pytest_workers(
+    monkeypatch, tmp_path, targets, failure,
+):
+    source, _ = _acceptance_source()
     runner = [sys.executable, "-m", "scripts.pytest_gate",
               "--junit-dir", "backend-results"]
     expected = ([runner] if targets == "ALL"
                 else [[*runner, *targets]] if targets else [])
     calls = []
-
-    def run(command, *, check):
-        assert check is True
-        calls.append(command)
-        if len(calls) - 1 == failure:
-            raise subprocess.CalledProcessError(1, command)
-
-    monkeypatch.setenv("READERS", json.dumps(targets))
-    monkeypatch.setattr(subprocess, "run", run)
+    _acceptance_env(monkeypatch, tmp_path, targets)
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, failure))
     if failure is not None and failure < len(expected):
         with pytest.raises(subprocess.CalledProcessError):
             exec(compile(source, ".github/workflows/ci.yml", "exec"), {})  # noqa: S102 — trusted repo workflow
@@ -260,6 +303,51 @@ def test_timing_contracts_run_without_competing_pytest_workers(monkeypatch, targ
     else:
         exec(compile(source, ".github/workflows/ci.yml", "exec"), {})  # noqa: S102 — trusted repo workflow
         assert calls == expected
+
+
+def test_a_pull_request_without_a_record_runs_the_whole_suite(
+    monkeypatch, tmp_path,
+):
+    """TESTMON=true with no .testmondata resolves to ALL, never a subset."""
+    source, _ = _acceptance_source()
+    calls = []
+    _acceptance_env(monkeypatch, tmp_path, ["tests/test_docs.py"],
+                    testmon="true", record=False)
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, None))
+    exec(compile(source, ".github/workflows/ci.yml", "exec"), {})  # noqa: S102
+    assert calls == [[sys.executable, "-m", "scripts.pytest_gate",
+                      "--junit-dir", "backend-results"]]
+
+
+def test_a_pull_request_with_a_record_uses_the_resolved_selection(
+    monkeypatch, tmp_path,
+):
+    """The step resolves the real selector's line with the record present."""
+    source, _ = _acceptance_source()
+    calls = []
+    _acceptance_env(monkeypatch, tmp_path, ["docs-reader"],
+                    testmon="true", record=True)
+    monkeypatch.setattr(
+        subprocess, "run",
+        _fake_run(calls, None, selected_line="tests/test_docs.py"))
+    exec(compile(source, ".github/workflows/ci.yml", "exec"), {})  # noqa: S102
+    assert calls == [[sys.executable, "-m", "scripts.pytest_gate",
+                      "--junit-dir", "backend-results", "tests/test_docs.py"]]
+
+
+@pytest.mark.parametrize("event_name", ["push", "schedule", "workflow_dispatch"])
+def test_a_non_pull_request_run_records_the_whole_suite(
+    monkeypatch, tmp_path, event_name,
+):
+    """Push/schedule/dispatch run the full suite WITH recording — a partial
+    record would lie about coverage."""
+    source, _ = _acceptance_source()
+    calls = []
+    _acceptance_env(monkeypatch, tmp_path, "ALL", event_name=event_name)
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, None))
+    exec(compile(source, ".github/workflows/ci.yml", "exec"), {})  # noqa: S102
+    assert calls == [[sys.executable, "-m", "scripts.pytest_gate",
+                      "--junit-dir", "backend-results", "--testmon"]]
 
 
 @pytest.mark.parametrize(
@@ -408,6 +496,112 @@ def test_baseline_events_select_the_full_backend(tmp_path, monkeypatch, event_da
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert json.loads(values["readers"]) == "ALL"
     assert all(json.loads(values["plan"]).values())
+
+
+def _release_repo(root: Path, edits: dict[str, str]) -> dict:
+    """A real git repo + release-shaped event for release_eligible."""
+    def run(*args):
+        return subprocess.run(["git", *args], cwd=root, check=True,  # noqa: S603 - fixed git argv, tmp repo
+                              capture_output=True, text=True)
+    run("init", "-q")
+    run("config", "user.email", "t@t")
+    run("config", "user.name", "t")
+    (root / "nora").mkdir()
+    (root / "nora/__init__.py").write_text('__version__ = "1.0.0"\n')
+    (root / "pyproject.toml").write_text('[project]\nversion = "1.0.0"\n')
+    (root / "uv.lock").write_text('name = "nora"\nversion = "1.0.0"\n')
+    (root / ".release-please-manifest.json").write_text('{".": "1.0.0"}\n')
+    (root / "CHANGELOG.md").write_text("# changelog\n")
+    run("add", ".")
+    run("commit", "-qm", "base")
+    base = run("rev-parse", "HEAD").stdout.strip()
+    for rel, content in edits.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(content)
+    run("add", ".")
+    run("commit", "-qm", "release bump")
+    head = run("rev-parse", "HEAD").stdout.strip()
+    return {"pull_request": {
+        "base": {"sha": base},
+        "head": {"sha": head, "ref": ci_plan.RELEASE_HEAD_REF,
+                 "repo": {"full_name": "mikeng-io/nora"}},
+    }}
+
+
+_RELEASE_BUMP = {
+    "nora/__init__.py": '__version__ = "1.0.1"\n',
+    "pyproject.toml": '[project]\nversion = "1.0.1"\n',
+    "uv.lock": 'name = "nora"\nversion = "1.0.1"\n',
+    ".release-please-manifest.json": '{".": "1.0.1"}\n',
+    "CHANGELOG.md": "# changelog\n\n## 1.0.1\n",
+}
+
+
+def test_a_real_release_diff_is_eligible(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
+    event = _release_repo(tmp_path, _RELEASE_BUMP)
+    assert ci_plan.release_eligible(tmp_path, event)
+
+
+@pytest.mark.parametrize("extra", [
+    {"nora/agent/whereis.py": "x = 1\n"},
+    {"nora/__init__.py": '__version__ = "1.0.1"\nprint("hi")\n'},
+    {"scripts/affected_tests.py": "x = 1\n"},
+])
+def test_a_runtime_or_content_change_is_not_eligible(tmp_path, monkeypatch, extra):
+    monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
+    event = _release_repo(tmp_path, {**_RELEASE_BUMP, **extra})
+    assert not ci_plan.release_eligible(tmp_path, event)
+
+
+def test_a_fork_head_is_not_eligible(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
+    event = _release_repo(tmp_path, _RELEASE_BUMP)
+    event["pull_request"]["head"]["repo"]["full_name"] = "someone-else/nora"
+    assert not ci_plan.release_eligible(tmp_path, event)
+
+
+def test_an_unrelated_branch_name_is_not_eligible(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
+    event = _release_repo(tmp_path, _RELEASE_BUMP)
+    event["pull_request"]["head"]["ref"] = "feature/x"
+    assert not ci_plan.release_eligible(tmp_path, event)
+
+
+@pytest.mark.parametrize("event", [
+    {"before": "a" * 40, "after": "b" * 40},
+    {"schedule": "cron"},
+    {"workflow_dispatch": {}},
+])
+def test_non_pull_request_events_select_the_full_suite(tmp_path, monkeypatch, event):
+    """Push, schedule and dispatch record the whole suite — a subset record
+    would lie about coverage and the release check could not trust it."""
+    event_file = tmp_path / "event.json"
+    event_file.write_text(json.dumps(event))
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_file))
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setattr("sys.argv", ["ci_plan"])
+    monkeypatch.setattr(ci_plan, "changed_paths", lambda e, r: ["docs/runbook.md"])
+    monkeypatch.setattr(
+        ci_plan.affected_tests, "select", lambda p, r, **_k: ["tests/test_docs.py"],
+    )
+    assert ci_plan.main() == 0
+    values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert json.loads(values["readers"]) == "ALL"
+
+
+def test_the_escape_report_is_unavailable_when_the_diff_cannot_be_read(
+    tmp_path, monkeypatch,
+):
+    def broken(event, repo):
+        raise RuntimeError("object not found")
+    monkeypatch.setattr(ci_plan, "changed_paths", broken)
+    monkeypatch.setattr(ci_plan.testmon_record, "fetch", lambda repo: None)
+    lines = ci_plan._escape(tmp_path, {"before": "a", "after": "b"})
+    assert lines[0] == "### Escape report"
+    assert "unavailable" in lines[1]
+    assert "object not found" in lines[1]
 
 
 @pytest.mark.parametrize(("runs", "verdict"), [
