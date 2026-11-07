@@ -103,44 +103,54 @@ def test_a_real_test_file_alone_still_selects_narrowly():
 
 
 @pytest.mark.parametrize("path", [
-    # a path no rule names (the default is ALL, not "nothing")
-    "some/new/top-level-thing.txt",
-    "some_new_top_level_file",
-    # application source and everything under nora/, any extension
-    "nora/language/router.py",
+    # environment and build files that change every test's world — the
+    # "stays ALL" list — plus any conftest.py
+    "pyproject.toml", "uv.lock", "Makefile", "Dockerfile", "docker-compose.yml",
+    "alembic.ini", "conftest.py", "tests/builders.py", ".github/workflows/ci.yml",
+    # non-.py under nora/: opened by loader code at runtime-computed paths,
+    # which neither dependency source can see
     "nora/documents/catalog-prompt.md",     # loaded at RUNTIME (nora/documents/__init__.py)
     "nora/alembic/script.py.mako",
     "nora/anything/data.json",
     "nora/anything/data.txt",
     "nora/anything/data.yaml",
-    # build, dependency and image definitions
-    "pyproject.toml", "uv.lock", "Makefile", "Dockerfile", "docker-compose.yml",
-    "alembic.ini", "requirements.txt",
-    # the templates tests/builders.py and the loaders copy
-    "config.example.toml", "policy.example.toml", "identity.example.toml",
     # the gitignored live config can never be in a diff; if it ever were,
     # nothing narrows it
     "config.toml",
-    # code and data outside tests/ that tests import or read
-    "scripts/affected_tests.py", "scripts/mutations/context_assembly.json",
-    "scripts/mutations/README.md", "evals/corpora/near_miss.yaml",
-    "evals/harness.py", "app/src/main.tsx", "app/package.json",
-    "deploy/computer/nora-computer", "deploy/computer/requirements.txt",
+    # a shared test helper names it, so a reader's import set is unbounded
+    "config.example.toml",
+    "deploy/computer/nora-computer",
     "deploy/instagram-bridge/compose.fragment.yml",
     "deploy/prometheus/rules/nora.yml",
-    ".github/workflows/ci.yml", ".github/ISSUE_TEMPLATE/config.yml",
-    ".githooks/commit-msg", ".mcp.json", ".gitignore",
-    # an executable or script that merely lives in a docs tree
-    "docs/tool.py", "design/render.sh",
+    "deploy/computer/README.md",
 ])
-def test_every_unmapped_path_class_selects_all(path):
+def test_every_stays_all_path_class_selects_all(path):
     assert select([path]) == ALL
 
 
-def test_mixed_docs_and_python_change_selects_all():
+@pytest.mark.parametrize(("path", "readers"), [
+    # formerly-unmapped paths now narrow to whatever the scan finds
+    (".gitignore", ["tests/unit/test_pii_scan.py",
+                    "tests/architecture/test_doc_references_resolve.py"]),
+    ("app/src/main.tsx", ["tests/test_boundaries.py"]),
+    ("evals/README.md", ["tests/architecture/test_doc_references_resolve.py"]),
+    (".github/ISSUE_TEMPLATE/config.yml",
+     ["tests/architecture/test_contribution_conventions.py"]),
+])
+def test_a_path_the_scan_answers_for_selects_its_readers(path, readers):
+    selected = select([path], testmon=False)
+    assert selected != ALL
+    missing = [r for r in readers if r not in selected]
+    assert not missing, f"{path} did not select {missing}"
+
+
+def test_mixed_docs_and_python_change_selects_all(tmp_path):
     """A change touching both a doc and a source file must not be narrowed to
-    the doc-only subset — the .py file makes the whole diff unrecognised."""
-    assert select(["docs/README.md", "nora/language/router.py"]) == ALL
+    the doc-only subset — with no usable record the .py file is ALL, and with
+    one it unions the map's answer with the doc readers (the mini-package
+    tests prove the union)."""
+    repo = _synthetic(tmp_path, **{"test_a.py": _TRIVIAL})
+    assert select(["docs/README.md", "nora/language/router.py"], repo) == ALL
 
 
 def test_empty_diff_selects_nothing():
@@ -446,8 +456,8 @@ def test_git_changed_paths_reads_the_real_diff(tiny_repo: Path):
     assert sorted(changed) == ["docs/readme.md", "new.txt"]
 
 
-def test_main_prints_all_for_an_unmapped_change(tiny_repo, capsys):
-    (tiny_repo / "new.txt").write_text("x\n")
+def test_main_prints_all_for_an_environment_file_change(tiny_repo, capsys):
+    (tiny_repo / "Makefile").write_text("x: y\n")
     _run_git(tiny_repo, "add", ".")
     _run_git(tiny_repo, "commit", "-q", "-m", "change")
 
@@ -971,9 +981,23 @@ def test_a_trailing_part_of_the_path_names_the_file(tmp_path):
 
 @pytest.mark.parametrize("path", ["evals/README.md", "scripts/NOTES.md",
                                   "evals/corpora/notes.md"])
-def test_markdown_under_the_code_trees_is_all_not_docs(tmp_path, path):
+def test_markdown_under_evals_and_scripts_narrows_to_its_readers(tmp_path, path):
+    """Only nora/ non-.py stays ALL outright; evals/ and scripts/ markdown
+    narrows to the universal doc reader plus whatever else reads it."""
     repo = _tree(tmp_path, {"tests/test_a.py": _TRIVIAL})
-    assert select([path], repo) == ALL
+    assert select([path], repo) == [UNIVERSAL_DOC_READER]
+
+
+def test_a_dotted_module_literal_names_its_py_file():
+    """A test that runs `python -m tools.worker` reads tools/worker.py: the
+    dotted name counts as a literal, which the dependency map cannot see."""
+    facts = affected._facts_of(
+        "import subprocess, sys\n"
+        "def test_x():\n"
+        "    subprocess.run([sys.executable, '-m', 'tools.worker'])\n"
+    )
+    assert affected._reads(facts, "tools/worker.py", loose=False)
+    assert not affected._reads(facts, "tools/other.py", loose=False)
 
 
 def test_a_directory_named_like_a_test_is_not_a_test_file(tmp_path):
@@ -1157,7 +1181,7 @@ def test_auto_base_selects_current_work_instead_of_previous_broad_commit(tiny_re
     assert capsys.readouterr().out.strip() == ALL
 
 
-@pytest.mark.parametrize('path', ['tests/conftest.py', 'unknown.txt', 'nora/source.py'])
+@pytest.mark.parametrize('path', ['tests/conftest.py', 'Makefile', 'nora/source.py'])
 def test_auto_base_retains_full_fallback_for_helpers_unmapped_and_runtime(tiny_repo, capsys, path):
     file = tiny_repo / path
     file.parent.mkdir(parents=True, exist_ok=True)
