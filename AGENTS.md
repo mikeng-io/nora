@@ -460,8 +460,11 @@ When an explicit local gate is needed, run it once on the final candidate. See `
 `make test` is incremental; `make test-fast` and `make test-affected` are aliases.
 They compare staged, unstaged and untracked changes against HEAD, or the last
 commit (HEAD~1) when clean. Only exact generated untracked LFS post-hooks are
-ignored. `BASE=<ref>` overrides auto selection. Unmapped/shared-helper changes
-and selector errors run the full suite; the command reports its base and scope.
+ignored. `BASE=<ref>` overrides auto selection. Environment/shared-helper changes,
+a missing or unusable `.testmondata` dependency record, and selector errors run
+the full suite; the command reports its base and scope. Selection combines the
+recorded dependency map (`.py` outside `tests/`) with the reader scan; the map
+is fetched as the `testmon-data` artifact when needed and absent means ALL.
 `make test-all` explicitly runs the full serial suite. For a named file/function,
 use `uv run python -m scripts.pytest_gate <file-or-node>`.
 

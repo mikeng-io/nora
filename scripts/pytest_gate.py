@@ -187,6 +187,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workers", type=int, choices=range(MAX_WORKERS + 1), default=MAX_WORKERS)
     parser.add_argument("--junit-dir", type=Path)
+    parser.add_argument(
+        "--testmon", action="store_true",
+        help="record the testmon dependency map (.testmondata) in both phases",
+    )
     parser.add_argument("targets", nargs="*")
     args = parser.parse_args(argv)
     generation = os.environ.pop(_GENERATION_ENV, None)
@@ -194,6 +198,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         with host_lease(LOCK_PATH, generation) as token:
             env = {**os.environ, _GENERATION_ENV: token}
             commands = phases(args.targets, args.workers)
+            if args.testmon:
+                commands = [[*command, "--testmon"] for command in commands]
             before = pytest_cost.vm_snapshot()
             try:
                 for phase, command in enumerate(commands):
