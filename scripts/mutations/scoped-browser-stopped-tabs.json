@@ -1,0 +1,9 @@
+[
+  {
+    "name": "confirmed browser retirement frees the old target capacity",
+    "file": "nora/infra/computer/manager.py",
+    "old": "        if stopped:\n            for row in await self._open_rows(scope, binding.instance):\n                await self._tabs.set_status(\n                    row.id, status=\"expired\", now=self._clock(),\n                    reason=\"the browser stopped\")\n                self._note(scope, \"tab_expired\", row.id)\n            self._note(scope, \"browser_stopped\", scope)\n        return stopped",
+    "new": "        if stopped:\n            self._note(scope, \"browser_stopped\", scope)\n        return stopped",
+    "target": "tests/unit/test_scoped_computer.py::test_confirmed_browser_stop_retires_full_capacity_before_a_new_task"
+  }
+]

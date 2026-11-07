@@ -81,6 +81,10 @@ _SPECS_ONLY = frozenset({
     # The third provenance, threaded from `ToolRegistry.specs` by
     # `SubagentToolSource`. `build_tools` is the legacy wrapper no worker is built through.
     "subagent_job",
+    # The occasion's grant ceiling, threaded the same way as `subagent_job`:
+    # only a `specs` caller (the tagger, a Dreamer, the deferred computer
+    # dispatch) carries one; a legacy `build_tools` caller has no grant.
+    "grant",
     # The worker's progress record, where `checkpoint_update` writes;
     # threaded the same way as `subagent_job`.
     "checkpoint_sink",
@@ -107,6 +111,14 @@ _SPECS_ONLY = frozenset({
     # same way as the computer runtime above; its tests build through
     # `build_tool_specs` (tests/unit/test_computer_browse_tool.py).
     "browser",
+    # The scoped computer's per-scope FIFO and task-tab manager,
+    # threaded from the composition root through `ToolRegistry.build`
+    # like `browser`; built only under `[computer.scoped]`.
+    "computer_admission", "browser_manager",
+    # The scoped pair's process-lifetime helpers, threaded the same way:
+    # the canonical-DM scope resolver and the computer block's cache
+    # invalidation, both owned by `ToolRegistry.surface`.
+    "computer_dm_scope_for", "computer_context_invalidate",
     # `file_fetch`'s source, threaded from the
     # composition root through `ToolRegistry.build` like `browser`; its tests
     # build through `build_tool_specs` (tests/unit/test_file_fetch_tool.py).

@@ -20,7 +20,7 @@ import logging
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from nora.agent.subagent_progress import SubagentProgress
@@ -48,6 +48,9 @@ class _Job:
     outcome: SubagentOutcome | None = None
     cancelled: bool = False
     finished_at: datetime | None = None
+    # The queue segment this job holds, when it was admitted through the
+    # scoped computer's FIFO: `cancel` drains it there first.
+    segment_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -71,12 +74,22 @@ class SubagentBackend:
     def __init__(
         self, *, runner: SubagentRunner, metrics: Metrics, clock: Callable[[], datetime],
         requester_name: Callable[[str], str], jobs: ComputeJobStore | None = None,
+        admission: Any = None,
+        scope_for: Callable[[str, str, str], str] | None = None,
+        worker_seconds: float = 960.0,
     ) -> None:
         self._store = jobs
         self._runner = runner
         self._metrics = metrics
         self._clock = clock
         self._requester_name = requester_name
+        # The scoped computer's queue admission and scope resolver: when both
+        # are wired AND resolve a scope for the job's room, the job runs as a
+        # `worker` segment — its own durable row the queue's cancel/drain can
+        # reach, so a worker never executes outside the FIFO it calls into.
+        self._admission = admission
+        self._scope_for = scope_for
+        self._worker_seconds = worker_seconds
         self._jobs: dict[str, _Job] = {}
 
     async def launch(self, *, request: LaunchRequest) -> str:
@@ -105,11 +118,7 @@ class SubagentBackend:
 
     async def _work(self, job: _Job) -> None:
         try:
-            job.outcome = await self._runner.run(
-                job_id=job.id, request=job.request,
-                requester_name=self._requester_name(job.request.requester_person_id),
-                progress=job.progress,
-            )
+            job.outcome = await self._run_admitted(job)
         except asyncio.CancelledError:
             self._mark_cancelled(job)
             raise
@@ -122,6 +131,85 @@ class SubagentBackend:
         self._metrics.inc(
             "nora_subagent_jobs_total", outcome=job.outcome.failure_reason or "done",
         )
+
+    async def _run_admitted(self, job: _Job) -> SubagentOutcome:
+        """Run the job — inside the scope's `worker` segment when the queue
+        is wired for its room.
+
+        The job's own row is the FIFO slot: it queues behind the scope's
+        segments like anything else, `wait_for_grant` claims it when it
+        reaches the head (the runner never executes `worker` rows — only the
+        submitter may), and `run_segment` registers the executor so a
+        cancel drains THIS task. Inside, `current_segment` is set, so the
+        worker's own `computer_run`/`computer_import` calls inherit the
+        slot rather than queueing behind themselves. The job's own
+        `compute_jobs` row remains the room's delivery channel
+        (`origin.deliver == "job"` keeps the queue from filing a second
+        one)."""
+        request = job.request
+
+        async def run() -> SubagentOutcome:
+            return await self._runner.run(
+                job_id=job.id, request=request,
+                requester_name=self._requester_name(request.requester_person_id),
+                progress=job.progress,
+            )
+
+        scope = ""
+        if self._admission is not None and self._scope_for is not None:
+            try:
+                scope = self._scope_for(
+                    str(request.platform), str(request.conversation_id),
+                    str(request.conversation_type or "group")) or ""
+            except Exception:
+                log.exception("sub-agent %s scope resolution failed", job.id)
+                scope = ""
+        if not scope:
+            return await run()
+        submitted = await self._admission.submit(
+            scope=scope, kind="worker",
+            payload={"job": job.id},
+            origin={
+                "platform": request.platform,
+                "conversation_id": request.conversation_id,
+                "conversation_type": request.conversation_type or "group",
+                "actor": "subagent",
+                "requester_person_id": request.requester_person_id,
+                "deliver": "job",
+            },
+            wait_seconds=0.0,
+            deadline_at=self._clock() + timedelta(seconds=self._worker_seconds))
+        task = submitted.task
+        if submitted.inherited:
+            return await run()
+        job.segment_id = task.id
+        if not submitted.granted:
+            granted = await self._admission.wait_for_grant(
+                task.id, until=task.deadline_at or self._clock())
+            if granted is None or granted.status != "running":
+                return SubagentOutcome(
+                    document_ids=(), failure_reason="cancelled")
+            task = granted
+        outcome_holder: dict[str, SubagentOutcome] = {}
+
+        async def segment() -> dict[str, Any]:
+            outcome = await run()
+            outcome_holder["outcome"] = outcome
+            return {
+                "status": "ok" if outcome.failure_reason is None else "failed",
+                "job": job.id,
+                "note": outcome.error or "the worker segment finished",
+                "report": (outcome.report or "")[:2000],
+            }
+
+        await self._admission.run_segment(task, segment())
+        outcome = outcome_holder.get("outcome")
+        if outcome is None:
+            return SubagentOutcome(
+                document_ids=job.progress.document_ids,
+                failure_reason="cancelled",
+            )
+        return outcome
 
     def _prune(self) -> None:
         """Drop jobs that finished more than `FINISHED_TTL_SECONDS` ago (the row keeps them)."""
@@ -175,6 +263,14 @@ class SubagentBackend:
         job = self._jobs.get(job_id)
         if job is None or job.task is None or job.task.done():
             return
+        # Drain the queue segment FIRST when one is held: the executor
+        # registry cancels the worker's computer effects and the row closes
+        # `cancelled`/`interrupted`, never left `running` behind a dead job.
+        if job.segment_id is not None and self._admission is not None:
+            try:
+                await self._admission.cancel(job.segment_id)
+            except Exception:
+                log.exception("sub-agent %s segment drain failed", job.id)
         job.task.cancel()
         await asyncio.gather(job.task, return_exceptions=True)
         self._mark_cancelled(job)

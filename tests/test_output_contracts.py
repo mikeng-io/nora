@@ -63,7 +63,7 @@ def test_the_core_is_r27s_three_states() -> None:
 def test_every_declared_extension_is_named_and_documented() -> None:
     """ADR 0009 §1: each extension is a NAMED, documented value — not a hole.
 
-    The ten are pinned by value so one cannot be added in passing, and each
+    They are pinned by value so one cannot be added in passing, and each
     one's meaning is asserted non-empty because a mapping whose values drift to
     `""` is a `frozenset` wearing a costume: the documentation is the whole
     reason this is a mapping rather than a set.
@@ -84,6 +84,11 @@ def test_every_declared_extension_is_named_and_documented() -> None:
         # DEC-283: a background job was launched and has no result yet. Not `ok` (that
         # reads as done) and not `unavailable` (it did start).
         "started",
+        # The scoped computer's durable FIFO: the call was accepted but waits
+        # behind the scope's running work; `task` is its id and the result is
+        # delivered later. Not `started` (not yet running) and never
+        # `unavailable` for a store failure, which says so instead.
+        "queued",
         # The memory index answered while a rebuild is incomplete or its queue is not
         # empty; what it did not find may still exist, so never `nothing_found`.
         "partial",

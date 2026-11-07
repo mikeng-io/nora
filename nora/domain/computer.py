@@ -17,6 +17,8 @@ Every result carries a `status` in R-27's vocabulary plus `denied`:
 from __future__ import annotations
 
 import hashlib
+import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -80,6 +82,35 @@ def computer_unit_scope(unit: str) -> str:
     return hashlib.sha256(f"unit:{unit}".encode()).hexdigest()[:32]
 
 
+#: The namespace `dm_scope_id`s are minted under: a stable, opaque, canonical
+#: UUID5 of the `(person, anchor unit)` pair, so every platform transport
+#: that resolves the same pair lands on the same DM scope — and no other
+#: pair can collide into it. Derived, never a literal: UUID5 output is the
+#: same on every host and version, so the namespace is stable by
+#: construction (a pinned spec constant, not a deploy secret).
+DM_SCOPE_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "nora/computer/dm-scope")
+
+
+def dm_scope_id(person_id: str, anchor_unit: str) -> str | None:
+    """The canonical private-DM scope id (`design/private-dm/05-cross-platform.md`):
+    `uuid5(DM_SCOPE_NAMESPACE, "<person_id>:<anchor_unit>")`, rendered in
+    canonical lowercase hyphenated form. `None` when either half is empty —
+    a DM scope is NEVER minted from a person alone or a guessed unit."""
+    if not person_id or not anchor_unit:
+        return None
+    return str(uuid.uuid5(DM_SCOPE_NAMESPACE, f"{person_id}:{anchor_unit}"))
+
+
+def computer_dm_scope(dm_scope_id: str) -> str:
+    """Opaque canonical-DM workspace key
+    (`design/private-dm/05-cross-platform.md` «Computer, browser and export»):
+    `sha256("dm:" + dm_scope_id)[:32]`, the scope id rendered in canonical
+    lowercase hyphenated form. The `(person, anchor unit)` binding that
+    produces `dm_scope_id` is DM admission's — it is resolved by the caller,
+    never inferred here."""
+    return hashlib.sha256(f"dm:{dm_scope_id}".encode()).hexdigest()[:32]
+
+
 @dataclass(frozen=True)
 class RunResult:
     status: SandboxStatus
@@ -89,6 +120,10 @@ class RunResult:
     truncated: bool = False
     duration_ms: int | None = None
     reason: str | None = None
+    #: False when computerd never answered the request itself (a refused or
+    #: timed-out connection): the command may still be running on the guest.
+    #: The queue terminalizes such an exit only after observing guest quiet.
+    answered: bool = True
 
 
 @dataclass(frozen=True)
@@ -144,6 +179,14 @@ class BrowseOutcome:
     url: str = ""
     steps: int = 0
     needs_human: bool = False
+    # Scoped-tab binding: the computer task that owns the tab this outcome
+    # ran on, and the browser target id. Empty on the shared-VM path.
+    task_id: str = ""
+    tab: str = ""
+    #: True when the outcome came from an exit whose effects were not
+    #: confirmed ended (a dead connection, a task cut at its time limit):
+    #: the queue terminalizes it only after observing guest quiet.
+    uncertain: bool = False
 
 
 @dataclass(frozen=True)
@@ -217,17 +260,30 @@ class StateResult:
     processes: tuple[ScopeProcess, ...] | None = None
     processes_truncated: bool = False
     processes_reason: str | None = None
+    #: What computerd reports of the scope's browser (`{"running", "started",
+    #: "attached"}`), or None when the answer carried none — unknown, never
+    #: «no browser». A capture or stop's confirmation reads it.
+    browser: Mapping[str, object] | None = None
+    #: computerd's count of `run` calls still executing in the scope, or
+    #: None when the answer carried none (an old computerd — unknown, never
+    #: «none»). The managed browser's own processes are not jobs and do not
+    #: count here or in `processes`.
+    runs: int | None = None
 
 
 def anything_running(state: StateResult) -> bool | None:
-    """Whether the scope is running a job: a tmux pane with one, or ANY
-    process its user owns (a `nohup … &` job has no tmux session at all).
-    True as soon as either source shows one; None when neither shows one and
-    either could not be read (unknown is never «nothing running»)."""
+    """Whether the scope is running a job: a tmux pane with one, ANY
+    process its user owns (a `nohup … &` job has no tmux session at all),
+    or a `run` call still executing on the guest. True as soon as one
+    source shows one; None when none shows one and one could not be read
+    (unknown is never «nothing running»)."""
     tmux_running = state.tmux is not None and any(t.running for t in state.tmux)
-    if tmux_running or state.processes:
+    pending_actions = (state.browser or {}).get("pending_actions", 0)
+    if (tmux_running or state.processes or (state.runs or 0) > 0
+            or (isinstance(pending_actions, int) and pending_actions > 0)):
         return True
-    if state.tmux is None or state.processes is None:
+    if (state.tmux is None or state.processes is None
+            or not isinstance(pending_actions, int)):
         return None
     return False
 

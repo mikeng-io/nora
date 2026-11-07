@@ -16,8 +16,10 @@ function, construct `App`.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import functools
 import logging
+import uuid
 from collections.abc import Awaitable, Callable, Collection, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -120,7 +122,7 @@ from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.compute import ComputeJobStore
 from nora.domain.computer import ComputerToolSettings
 from nora.domain.computer_context import ComputerContextCaps
-from nora.domain.computer_events import ComputerEventStore
+from nora.domain.computer_events import ComputerEvent, ComputerEventStore
 from nora.domain.computer_exports import ComputerExportStore
 from nora.domain.computer_leases import ComputerLeases
 from nora.domain.computer_sessions import ComputerSessionStore
@@ -346,7 +348,7 @@ from .gatherings import GatheringService, room_event_shown, screened_area
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .participation import ParticipationTrigger
 from .proactive_screen import ProactiveScreen
-from .runtime import BackgroundTasks
+from .runtime import BackgroundTasks, ComputerLifecycle
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
@@ -1433,6 +1435,21 @@ class Dependencies:
     # `runtime.computer_sweep_loop` on it every `sweep_seconds`.
     computer_sweeper: ComputerSessionSweeper | None = None
     computer_sweep_seconds: float = 300.0
+    # The scoped computer's queue granter (`ComputerQueueRunner`) and tab
+    # manager: `None` unless `[computer.scoped] enabled`. `nora/__main__.py`
+    # spawns `runtime.computer_queue_loop` on the runner and
+    # `runtime.computer_browser_sweep_loop` on the manager.
+    computer_queue_runner: Any = None
+    browser_manager: Any = None
+    browser_sweep_seconds: float = 30.0
+    # The scoped computer's ONE start/close owner
+    # (`nora.app.runtime.ComputerLifecycle`): `start` spawns the queue and
+    # tab-sweep loops, `close` stops admission and releases the Redis
+    # client and journal lock before the SQL/audit teardown. `None`
+    # unless `[computer.scoped] enabled`. `__main__` and the eval subject
+    # share it, so a subject runs the same maintenance the deployment
+    # does.
+    computer_lifecycle: Any = None
     # The timed probe of computerd (`nora.infra.computer.probe`): `None`
     # unless `[computer] enabled`. `nora/__main__.py` spawns
     # `runtime.computer_probe_loop` on it.
@@ -1583,6 +1600,7 @@ def _story_frames_embedded(
 
 async def build_dependencies(
     cfg: Config, *, clock: Callable[[], datetime] = wall_clock,
+    operational_clock: Callable[[], datetime] | None = None,
 ) -> Dependencies:
     """Build the object graph from `cfg`.
 
@@ -1601,7 +1619,18 @@ async def build_dependencies(
     judgement is about time (is this note due, has this position gone stale,
     is now the moment), and a harness asks it a question at a fixed instant by
     passing a clock.
+
+    **`operational_clock` is the maintenance clock.** A frozen `clock` is a
+    semantic statement («the turn sees this instant»); it must not freeze the
+    queue's deadline, lease and idle arithmetic — under a frozen snapshot the
+    scoped computer's tasks would never time out and its tabs never idle.
+    The scoped-computer machinery (`ComputerAdmission`, `ComputerQueueRunner`,
+    `ScopeBrowserManager`, the deferred outbox's stamp) reads
+    `operational_clock`, which defaults to `clock`; the eval subject passes
+    the wall clock so maintenance keeps moving while the block's time stands
+    still.
     """
+    op_clock = operational_clock or clock
     content_checks = cfg.content_checks.enabled
     metrics = Metrics()
     # The ONE channel directory a `guild` server entry expands through. The
@@ -1749,6 +1778,170 @@ async def build_dependencies(
             base_url=cfg.computer.base_url, token=computer_token,
             observer=computer_metrics,
         )
+    # The scoped computer ([computer.scoped], design/browser-runtime): one microVM per
+    # computer scope, resolved through the `nora-computer scope provision`
+    # registry — built INSTEAD of the shared-VM client, so a call for a scope
+    # with no record answers `unavailable`, never the shared VM. The probe
+    # stays None in this mode: `nora_computer_up` measures the configured
+    # shared endpoint, and there is none here (a scope's health is the
+    # binding check, made on every call).
+    computer_admission: Any = None
+    browser_manager: Any = None
+    computer_queue_runner: Any = None
+    computer_task_backend: Any = None
+    computer_tasks: Any = None
+    browser_tabs: Any = None
+    #: The canonical scope resolvers ([computer.scoped]); `None` in the
+    #: shared-VM shape, where nothing scoped may resolve.
+    computer_scope_for: Any = None
+    computer_dm_scope_for: Any = None
+    if cfg.computer.enabled and cfg.computer.scoped.enabled:
+        scoped_cfg = cfg.computer.scoped
+        if not scoped_cfg.registry:
+            raise StartupError(
+                "[computer.scoped] enabled but `registry` is empty: it must "
+                "name the directory `nora-computer scope provision` writes.")
+        computer_redis_url = cfg.credentials.get(scoped_cfg.redis_url_env, "")
+        if not computer_redis_url:
+            raise StartupError(
+                f"[computer.scoped] enabled but ${scoped_cfg.redis_url_env} "
+                "(the dedicated nq:computer:* streams) is not set.")
+        from nora.app.computer_queue import (
+            ComputerAdmission,
+            ComputerQueueRunner,
+            ComputerTaskBackend,
+            SegmentRegistry,
+            deliver_computer_task,
+        )
+        from nora.domain.computer import (
+            anything_running,
+            computer_dm_scope,
+            computer_unit_scope,
+            dm_scope_id,
+        )
+        from nora.domain.computer_vms import FileScopeEndpoints
+        from nora.infra.computer.manager import ScopeBrowserManager
+        from nora.infra.computer.scoped import ScopedComputerdRuntime
+        from nora.infra.sql.browser_tabs import SqlBrowserTabStore
+        from nora.infra.sql.computer_tasks import SqlComputerTaskStore
+
+        computer_redis = aioredis.from_url(computer_redis_url)
+        computer = ScopedComputerdRuntime(
+            endpoints=FileScopeEndpoints(scoped_cfg.registry),
+            token=computer_token,
+            timeout_seconds=cfg.computer.request_timeout_seconds,
+            max_output_chars=cfg.computer.max_output_chars,
+            observer=computer_metrics,
+        )
+        computer_probe = None
+        computer_tasks = SqlComputerTaskStore(engine)
+        browser_tabs = SqlBrowserTabStore(engine)
+        # ONE registry of live executors, shared by the submitter side
+        # (admission) and the granter side (runner): a `running` row with no
+        # executor here is owner-lost, and a cancel can reach the real work.
+        # `pending_dir` journals retained results/consumed markers to
+        # `/app/state/computer` — the same app-owned private persistent root
+        # OAuth state uses — so an application restart cannot lose them or
+        # re-deliver. The read-only provisioner scope registry is untouched;
+        # one process owns the store for its lifetime (exclusive flock).
+        computer_segments = SegmentRegistry(
+            pending_dir=Path(cfg.computer.state_dir) / "computer")
+
+        async def _deliver_computer_task(row: Any) -> None:
+            await deliver_computer_task(
+                row, jobs=compute_jobs, tasks=computer_tasks, clock=op_clock)
+
+        async def _reconcile_scope(scope: str) -> str:
+            """Is work REALLY running on the scope's VM? Read through
+            `state` — quiet/busy/unknown, never a guess (an idle timeout is
+            not proof the old command stopped)."""
+            state = await computer.state(scope=scope)
+            verdict = anything_running(state)
+            return ("busy" if verdict is True
+                    else "quiet" if verdict is False else "unknown")
+
+        async def _queue_audit(task: Any, transition: str) -> None:
+            """A queue lifecycle transition (granted/cancelled/interrupted/
+            delivered) as its own audit row — the executor's own calls audit
+            inside the segment; this records the QUEUE's acts."""
+            if computer_events is None:
+                return
+            origin = dict(task.origin or {})
+            await computer_events.append(ComputerEvent(
+                id=uuid.uuid4(), operation_id=task.id, phase="finished",
+                created_at=clock(),
+                started_at=task.started_at or task.created_at,
+                finished_at=clock(), actor="sweeper",
+                requester_person_id=str(origin.get("requester_person_id") or "")
+                or None,
+                platform=str(origin.get("platform") or ""),
+                conversation_id=str(origin.get("conversation_id") or ""),
+                conversation_type=str(origin.get("conversation_type") or "group"),
+                tag_id=str(origin.get("tag_id") or ""),
+                scope=task.scope, tool="computer_queue", path="direct",
+                trace_id="", span_id="", status=transition,
+                result={"task": str(task.id), "kind": task.kind,
+                        "transition": transition}))
+
+        def _browser_event(scope: str, transition: str, subject: Any) -> Any:
+            """A browser lifecycle transition (tab expired, browser stopped)
+            as its own audit row — the sweep's guest effect, not a guess.
+            A transition the room can see dirties its `<computer>` block's
+            cached read too, so the next turn re-observes."""
+            if computer_context is not None:
+                computer_context.invalidate(scope)
+            if computer_events is None:
+                return
+
+            async def _write() -> None:
+                await computer_events.append(ComputerEvent(
+                    id=uuid.uuid4(), operation_id=uuid.uuid4(), phase="finished",
+                    created_at=clock(), started_at=clock(), finished_at=clock(),
+                    actor="sweeper", requester_person_id=None,
+                    platform="", conversation_id="", conversation_type="",
+                    tag_id="", scope=scope, tool="computer_browser",
+                    path="direct", trace_id="", span_id="", status=transition,
+                    result={"transition": transition,
+                            "subject": str(subject or "")}))
+            with contextlib.suppress(Exception):
+                return background.spawn(_write())
+
+        computer_admission = ComputerAdmission(
+            tasks=computer_tasks, redis=computer_redis, clock=op_clock,
+            executors=computer_segments, reconcile=_reconcile_scope,
+            audit=_queue_audit)
+        browser_manager = ScopeBrowserManager(
+            runtime=computer, tabs=browser_tabs, tasks=computer_tasks,
+            segments=computer_admission,
+            token=computer_token, clock=op_clock,
+            idle_after=timedelta(seconds=scoped_cfg.browser_idle_seconds),
+            on_event=_browser_event)
+        computer_task_backend = ComputerTaskBackend(tasks=computer_tasks)
+        computer_queue_runner = ComputerQueueRunner(
+            tasks=computer_tasks, redis=computer_redis, clock=op_clock,
+            metrics=metrics, on_terminal=_deliver_computer_task,
+            reconcile=_reconcile_scope, executors=computer_segments,
+            audit=_queue_audit)
+
+        # The canonical scope resolver the WHOLE feature shares — native
+        # tools, the context block and worker jobs must land on the same VM:
+        # a group room to its policy unit's scope, a private-DM room to its
+        # `(person, anchor unit)` scope — the DM's own unit anchors it, the
+        # room's single admitted person names it, anything else has no scope.
+        def computer_dm_scope_for(platform: str, conversation_id: str) -> str | None:
+            convo = allowlist.conversation(platform, conversation_id)
+            if convo is None or convo.persons is None or len(convo.persons) != 1:
+                return None
+            return dm_scope_id(next(iter(convo.persons)), convo.unit)
+
+        def computer_scope_for(
+            platform: str, conversation_id: str, conversation_type: str,
+        ) -> str:
+            if conversation_type == "group":
+                unit = _note_unit_of(allowlist)(platform, conversation_id)
+                return computer_unit_scope(unit) if unit else ""
+            scope_id = computer_dm_scope_for(platform, conversation_id)
+            return computer_dm_scope(scope_id) if scope_id else ""
     # `<computer>`: the one reader the tag
     # path and the fire path share. `None` while `[computer]` is off, so no
     # room renders the block.
@@ -1763,6 +1956,16 @@ async def build_dependencies(
             ),
             clock=lambda: datetime.now(UTC), metrics=metrics,
             unit_for=_note_unit_of(allowlist),
+            # The scoped runtime's canonical resolver wins over `unit_for`
+            # when wired: a DM room's block reads ITS scope, a group's its
+            # unit — the same resolution the tools and the queue share.
+            scope_for=computer_scope_for,
+            # The scoped runtime's queue/tab state in the same block: wired
+            # only in scoped mode, so the shared-VM block is unchanged.
+            tasks=computer_tasks, tabs=browser_tabs,
+            browser_idle_after=(timedelta(
+                seconds=cfg.computer.scoped.browser_idle_seconds)
+                if cfg.computer.scoped.enabled else None),
         )
     # The durable half of the reasoning-strip counter (`reasoning_strip_log`,
     # ADR 0013), REUSING `engine` for the same reason the three stores above do.
@@ -2616,6 +2819,10 @@ async def build_dependencies(
             )),
             retry=factory.build_retry_policy(timeout_seconds=browse_cfg.timeout_seconds),
             base_url=cfg.computer.base_url, token=_computer_token(cfg),
+            # Task-owned tabs ([computer.scoped]): `acquire` binds the task's
+            # own target on the scope's VM; `base_url` is only the shared-VM
+            # fallback used when no manager is wired.
+            manager=browser_manager,
             settings=BrowseSettings(
                 max_steps=browse_cfg.max_steps, timeout_seconds=browse_cfg.timeout_seconds,
                 read_chars=browse_cfg.read_chars, turns=browse_cfg.turns,
@@ -3421,6 +3628,17 @@ async def build_dependencies(
         computer_exports=computer_exports,
         artifact_link_base=cfg.documents.public_url,
         browser=browser,
+        # The scoped computer ([computer.scoped]): the per-scope FIFO the
+        # write-path tools queue through, and the task-owned tab manager
+        # `computer_capture` calls. Both `None` in the shared-VM shape.
+        computer_admission=computer_admission,
+        browser_manager=browser_manager,
+        # The canonical-DM resolver and the context cache's invalidation —
+        # the SAME scope resolution the queue and the context block use, so
+        # tools, block and worker jobs land on one VM.
+        computer_dm_scope_for=computer_dm_scope_for,
+        computer_context_invalidate=(
+            computer_context.invalidate if computer_context is not None else None),
         # The reminder caps as the DOMAIN value, the SAME `reminder_caps` instance the
         # Cognition session is built with — see that variable's own comment for
         # why they must not be two separately constructed copies.
@@ -3492,12 +3710,38 @@ async def build_dependencies(
                 cfg.subagent.reasoning_effort, source="[subagent] reasoning_effort",
             )),
             jobs=compute_jobs,
+            # The scoped computer's FIFO: when it is wired AND the job's room
+            # resolves a scope, the job runs AS a `worker` segment — its own
+            # durable row the queue can grant, cancel and drain, never a
+            # computer caller outside the FIFO it calls into.
+            admission=computer_admission,
+            scope_for=computer_scope_for,
         )
         compute_backends[SUBAGENT_KIND] = subagent_backend
         if subagent_desk is not None:
             subagent_desk.attach(subagent_backend)
         if subagents_context is not None:
             subagents_context.attach(subagent_backend)
+    if computer_queue_runner is not None:
+        # The queue's executor for durable `native`/`browse`/`capture`
+        # rows: each is re-entered through the registry surface built for
+        # its ORIGIN room (`nora.app.computer_dispatch`) — fresh policy
+        # admission, never a replayed closure.
+        from nora.app.computer_dispatch import ComputerToolDispatch
+        _computer_dispatch = ComputerToolDispatch(
+            registry=tool_registry, store=audit, persons=persons,
+            honcho=memory, metrics=metrics, rosters=rosters,
+            self_ids=registry.self_aliases(),
+            # Re-admission is decided at EXECUTION time: current policy and
+            # the live scope resolver, never the queue-time row's word.
+            policy=allowlist, scope_for=computer_scope_for)
+        for _kind in ("native", "browse", "capture"):
+            computer_queue_runner.set_dispatch(_kind, _computer_dispatch)
+    if computer_task_backend is not None:
+        # The scoped computer's deferred-delivery half ([computer.scoped]):
+        # a `computer_tasks` row that closed while its room was not waiting
+        # is delivered through the same outbox every other kind uses.
+        compute_backends["computer"] = computer_task_backend
     if cfg.compute.enabled and not compute_backends:
         log.warning(
             "[compute] enabled = true but no ComputeBackend is registered (the "
@@ -5142,6 +5386,19 @@ async def build_dependencies(
             max_per_day=cfg.otp.max_per_day,
             clock=lambda: datetime.now(UTC),
         )
+    computer_sweeper = (
+            ComputerSessionSweeper(
+                sessions=computer_sessions, events=computer_events,
+                runtime=computer, leases=computer_leases,
+                rules=SweepRules(
+                    idle_expiry=timedelta(hours=cfg.computer.sessions.idle_expiry_hours),
+                    max_running=timedelta(days=cfg.computer.sessions.max_running_days),
+                    idle_after=timedelta(minutes=cfg.computer.sessions.idle_after_minutes),
+                ),
+                clock=lambda: datetime.now(UTC), metrics=metrics,
+            ) if computer is not None else None
+            )
+
     return Dependencies(
         config_reload=reload_files,
         audit=audit, memory=memory, persons=persons, metrics=metrics,
@@ -5199,19 +5456,20 @@ async def build_dependencies(
         cognition_shutdown=cognition_shutdown,
         subagent_backend=subagent_backend,
         wake_tick_seconds=cfg.cognition.tick_seconds,
-        computer_sweeper=(
-            ComputerSessionSweeper(
-                sessions=computer_sessions, events=computer_events,
-                runtime=computer, leases=computer_leases,
-                rules=SweepRules(
-                    idle_expiry=timedelta(hours=cfg.computer.sessions.idle_expiry_hours),
-                    max_running=timedelta(days=cfg.computer.sessions.max_running_days),
-                    idle_after=timedelta(minutes=cfg.computer.sessions.idle_after_minutes),
-                ),
-                clock=lambda: datetime.now(UTC), metrics=metrics,
-            ) if computer is not None else None
-        ),
+        computer_sweeper=computer_sweeper,
         computer_sweep_seconds=cfg.computer.sessions.sweep_interval_seconds,
+        computer_queue_runner=computer_queue_runner,
+        browser_manager=browser_manager,
+        browser_sweep_seconds=cfg.computer.scoped.browser_sweep_seconds,
+        computer_lifecycle=(
+            ComputerLifecycle(
+                runner=computer_queue_runner, manager=browser_manager,
+                sessions=computer_sweeper,
+                session_seconds=cfg.computer.sessions.sweep_interval_seconds,
+                metrics=metrics,
+                sweep_seconds=cfg.computer.scoped.browser_sweep_seconds,
+            ) if computer_queue_runner is not None else None
+        ),
         computer_probe=computer_probe,
         health_recorder=AdapterHealthRecorder(
             log=SqlSourceHealthLog(engine), metrics=metrics,

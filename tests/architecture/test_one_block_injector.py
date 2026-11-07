@@ -197,6 +197,7 @@ CONVERTED = (
     "nora/language/cognition_render.py",
     "nora/language/confirmation_render.py",
     "nora/language/subagent_render.py",
+    "nora/language/browse_render.py",
     "nora/language/culture.py",
     "nora/language/character.py",
     "nora/language/profile.py",

@@ -116,12 +116,13 @@ class Judge:
 
     def _client(self) -> AsyncOpenAI:
         url, key, _ = self._endpoint()
-        return AsyncOpenAI(
+        from nora.subject.run_budget_transport import gate_client
+        return gate_client(AsyncOpenAI(
             base_url=url,
             api_key=key,
             timeout=self.timeout_seconds,
             max_retries=0,
-        )
+        ))
 
     async def coverage_batch(
         self, prompt: str, *, trace_name: str = "eval.profile_coverage.batch",

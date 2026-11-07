@@ -8,6 +8,39 @@ import pytest
 from scripts.secret_delivery import prepare
 
 
+@pytest.mark.parametrize("enabled", [None, False])
+def test_disabled_scoped_mode_does_not_admit_an_implicit_overlay(tmp_path, enabled):
+    config = "" if enabled is None else "[computer.scoped]\nenabled=false\n"
+    (tmp_path / "config.toml").write_text(config)
+    assert prepare(tmp_path, {"NORA_COMPUTER_REDIS_URL": "synthetic-unused"}) == []
+    assert not (tmp_path / ".secret-delivery").exists()
+
+
+@pytest.mark.parametrize("alias", [None, "NORA_COMPUTER_REDIS_URL", "CUSTOM_COMPUTER_REDIS"])
+@pytest.mark.parametrize("credential_source", ["environment", "dotenv", "secret"])
+def test_prepare_delivers_scoped_redis_reference(tmp_path, alias, credential_source):
+    key = alias or "NORA_COMPUTER_REDIS_URL"
+    config = "[computer.scoped]\nenabled=true\n"
+    if alias is not None:
+        config += f'redis_url_env="{alias}"\n'
+    (tmp_path / "config.toml").write_text(config)
+    value = "synthetic-redis-credential"
+    environ = {"UNRELATED_PRIVATE_KEY": "synthetic-unrelated"}
+    if credential_source == "environment":
+        environ[key] = value
+    elif credential_source == "dotenv":
+        (tmp_path / ".env").write_text(f"{key}={value}\n")
+    else:
+        (tmp_path / "secret.toml").write_text(f'[credentials]\n{key}="{value}"\n')
+    arguments = prepare(tmp_path, environ)
+    assert arguments
+    overlay = json.loads(Path(arguments[-1]).read_text())
+    assert overlay["services"]["nora"]["environment"] == {key: value}
+    assert all(not service["environment"] for name, service in overlay["services"].items()
+               if name != "nora")
+    assert "UNRELATED_PRIVATE_KEY" not in Path(arguments[1]).read_text()
+
+
 @pytest.mark.parametrize("external_output", [False, True])
 @pytest.mark.parametrize("signoz", [False, True])
 def test_native_compose_consumes_projection_without_shared_secret_mount(

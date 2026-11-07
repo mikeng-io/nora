@@ -51,6 +51,8 @@ NORA = ROOT / "nora"
 SENDER = "nora/agent/guards.py"
 # The one module that may construct a `Deliverer`.
 BUILDER = "nora/engagement/stages/deliver.py"
+# The eval subject (`nora.subject.circle`) calls `deliver.build` through the
+# same audited path; it does NOT construct a `Deliverer` itself.
 # The paths that may cause a send. THIS IS THE RULE.
 CALLERS = {
     "nora/engagement/pipeline.py",

@@ -7,6 +7,8 @@ before any number from it is trusted.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from strands_evals.types.evaluation import EnvironmentState, EvaluationData
 
@@ -27,6 +29,74 @@ def _data(called, *, tools=("where_is",), not_tools=("where_been",), error=None)
 
 def _label(data) -> str:
     return ToolRouteGrader().evaluate(data)[0].label
+
+
+def _journey_data(calls):
+    from evals.backbone import NORA_TOOL_INPUTS, NORA_TOOL_RESULTS
+
+    tools = ["computer_browse", "computer_capture", "computer_export"]
+    return EvaluationData(
+        input="x",
+        metadata={
+            "tools": tools[:1], "required_tools": tools,
+            "before": {tools[0]: tools[1:2], tools[1]: tools[2:]}, "journey": True,
+        },
+        actual_environment_state=[
+            EnvironmentState(name=NORA_TOOLS, state=[name for name, _, _ in calls]),
+            EnvironmentState(name=NORA_TOOL_INPUTS, state=[
+                (name, json.dumps(args)) for name, args, _ in calls
+            ]),
+            EnvironmentState(name=NORA_TOOL_RESULTS, state=[
+                (name, json.dumps([{"text": json.dumps(result)}]) if result is not None else "")
+                for name, _, result in calls
+            ]),
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    ("order", "expected"),
+    [("bfce", PASS), ("bfec", FAIL), ("bfecce", PASS), ("bfe", FAIL),
+     ("ucbe", FAIL), ("ucbce", PASS)],
+)
+def test_journey_requires_successful_browse_capture_export_order(order, expected):
+    calls = {
+        "b": ("computer_browse", {}, {"status": "ok", "task": "owned", "tab": "target"}),
+        "u": ("computer_browse", {}, {"status": "unavailable"}),
+        "f": ("computer_capture", {"task": "owned"}, {"status": "unavailable"}),
+        "c": ("computer_capture", {"task": "owned"}, {
+            "status": "ok", "tab": "target", "path": "captures/a.png", "sha256": "a" * 64,
+        }),
+        "e": ("computer_export", {"path": "captures/a.png", "to": "keep"}, {
+            "status": "ok", "kept": True, "sha256": "a" * 64,
+        }),
+    }
+    assert _label(_journey_data([calls[key] for key in order])) == expected
+
+
+@pytest.mark.parametrize("tool", ["computer_browse", "computer_capture", "computer_export"])
+@pytest.mark.parametrize("missing", [None, "malformed", "absent_row", "input"])
+def test_journey_missing_evidence_is_error(tool, missing):
+    from evals.backbone import NORA_TOOL_INPUTS, NORA_TOOL_RESULTS
+
+    calls = [
+        ("computer_browse", {}, {"status": "ok", "task": "owned", "tab": "target"}),
+        ("computer_capture", {"task": "owned"}, {
+            "status": "ok", "tab": "target", "path": "captures/a.png", "sha256": "a" * 64,
+        }),
+        ("computer_export", {"path": "captures/a.png", "to": "keep"}, {
+            "status": "ok", "kept": True, "sha256": "a" * 64,
+        }),
+    ]
+    data = _journey_data(calls)
+    state = next(s for s in data.actual_environment_state if s.name == (
+        NORA_TOOL_INPUTS if missing == "input" else NORA_TOOL_RESULTS))
+    if missing == "absent_row":
+        state.state = [(name, value) for name, value in state.state if name != tool]
+    else:
+        state.state = [(name, "not json" if missing == "malformed" else "")
+                       if name == tool else (name, value) for name, value in state.state]
+    assert _label(data) == ERROR
 
 
 def test_the_expected_tool_is_a_pass():

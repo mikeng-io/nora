@@ -15,6 +15,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
+from nora.domain.browser_tasks import BrowserTab
 from nora.domain.compute import (
     ComputeJob,
     ComputeJobState,
@@ -49,6 +50,8 @@ from nora.domain.computer_sessions import (
     ensure_utc_event,
     normalise_session,
 )
+from nora.domain.computer_tasks import TERMINAL, ComputerTask
+from nora.domain.computer_vms import ScopedEndpoint
 from nora.domain.documents import (
     DocumentExistsError,
     DocumentState,
@@ -1739,6 +1742,8 @@ class FakeComputeJobStore:
         self._jobs: dict[UUID, ComputeJob] = {}
 
     async def create(self, job: ComputeJob) -> None:
+        if job.id in self._jobs:
+            raise ValueError("compute job already exists")
         self._jobs[job.id] = normalise_compute_job(job)
 
     async def get(self, job_id: UUID) -> ComputeJob | None:
@@ -2277,11 +2282,13 @@ class FakeBrowserRunner:
 
     def __init__(self, outcome: BrowseOutcome | None = None) -> None:
         self.outcome = outcome or BrowseOutcome(status="ok", answer="done", steps=1)
-        self.calls: list[tuple[str, str, str | None]] = []
+        self.calls: list[tuple[str, str, str | None, UUID | None]] = []
 
     async def browse(self, *, scope: str, objective: str,
-                     start_url: str | None = None) -> BrowseOutcome:
-        self.calls.append((scope, objective, start_url))
+                     start_url: str | None = None,
+                     task_id: UUID | None = None,
+                     record: object = None) -> BrowseOutcome:
+        self.calls.append((scope, objective, start_url, task_id))
         return self.outcome
 
 
@@ -2733,3 +2740,302 @@ class FakeDocumentStore:
 
     async def aclose(self) -> None:
         return None
+
+
+class FakeScopeEndpoints:
+    """`ScopeEndpoints` over an in-memory map a test sets:
+    `by_scope[scope] = ScopedEndpoint(...)`; a scope with no entry is
+    unresolvable (unavailable), never routed elsewhere."""
+
+    def __init__(self) -> None:
+        self.by_scope: dict[str, ScopedEndpoint] = {}
+
+    async def resolve(self, scope: str):
+        return self.by_scope.get(scope)
+
+    async def registered(self) -> tuple[str, ...]:
+        return tuple(sorted(self.by_scope))
+
+
+class FakeComputerTaskStore:
+    """In-memory `ComputerTaskStore` with the same compare-and-set semantics:
+    `claim` only moves a row still `queued`; `request_cancel` takes queued to
+    cancelled and flags running; `finish` only writes a running row.
+
+    `outbox` is the `FakeComputeJobStore` `elect_delivery` files a deferred
+    job into — the fake's image of "same database, one transaction": the
+    stamp and the filing land together or not at all."""
+
+    def __init__(self, *, clock: Callable[[], datetime] | None = None,
+                 outbox: Any = None) -> None:
+        self.rows: dict[UUID, ComputerTask] = {}
+        self._clock = clock or (lambda: datetime.now(UTC))
+        self._scope_locks: dict[str, asyncio.Lock] = {}
+        self._outbox = outbox
+        self.filed_jobs: list[Any] = []
+        self._delivery_lock = asyncio.Lock()
+
+    def _save(self, task: ComputerTask) -> ComputerTask:
+        self.rows[task.id] = task
+        return task
+
+    async def enqueue(self, task: ComputerTask) -> ComputerTask:
+        return self._save(task)
+
+    async def get(self, task_id: UUID) -> ComputerTask | None:
+        return self.rows.get(task_id)
+
+    async def claim(self, task_id: UUID, *, now: datetime) -> ComputerTask | None:
+        task = self.rows.get(task_id)
+        if task is None or task.status != "queued":
+            return None
+        return self._save(replace(task, status="running", started_at=now,
+                                  updated_at=now))
+
+    async def try_claim_head(self, task_id: UUID, *, now: datetime) -> ComputerTask | None:
+        task = self.rows.get(task_id)
+        if task is None:
+            return None
+        # The same serialization the SQL store takes on the scope's
+        # advisory lock: two claims of one scope never interleave their
+        # check and write.
+        async with self._scope_locks.setdefault(task.scope, asyncio.Lock()):
+            task = self.rows.get(task_id)
+            if task is None or task.status != "queued":
+                return None
+            blocked = any(
+                t.scope == task.scope and (
+                    t.status == "running"
+                    or (t.status == "queued"
+                        and (t.created_at, str(t.id)) < (task.created_at, str(task.id))))
+                for t in self.rows.values())
+            if blocked:
+                return None
+            return await self.claim(task_id, now=now)
+
+    async def finish(self, task_id: UUID, *, status: str,
+                     result: Mapping[str, Any], now: datetime) -> None:
+        task = self.rows.get(task_id)
+        if task is None or task.status != "running":
+            return
+        self._save(replace(task, status=status, result=dict(result),
+                           finished_at=now, updated_at=now))
+
+    async def request_cancel(self, task_id: UUID, *, now: datetime) -> ComputerTask | None:
+        task = self.rows.get(task_id)
+        if task is None or task.status not in ("queued", "running"):
+            return task
+        if task.status == "queued":
+            return self._save(replace(
+                task, status="cancelled", cancel_requested_at=now,
+                finished_at=now, updated_at=now))
+        return self._save(replace(
+            task, cancel_requested_at=task.cancel_requested_at or now,
+            updated_at=now))
+
+    async def unannounced(self, *, limit: int) -> list[ComputerTask]:
+        return [t for t in sorted(self.rows.values(), key=lambda t: t.created_at)
+                if t.status == "queued"][:limit]
+
+    async def interrupted(self, *, older_than: datetime, limit: int) -> list[ComputerTask]:
+        return [t for t in sorted(self.rows.values(), key=lambda t: t.created_at)
+                if t.status == "running"
+                and t.started_at is not None and t.started_at < older_than][:limit]
+
+    async def mark_interrupted(self, task_id: UUID, *, now: datetime,
+                             reason: str) -> None:
+        task = self.rows.get(task_id)
+        if task is None or task.status != "running":
+            return
+        self._save(replace(task, status="interrupted", result={"reason": reason},
+                           finished_at=now, updated_at=now))
+
+    async def open_for_scope(self, scope: str, *, limit: int) -> list[ComputerTask]:
+        return [t for t in sorted(self.rows.values(), key=lambda t: t.created_at)
+                if t.scope == scope and t.status in ("queued", "running")][:limit]
+
+    async def open_scopes(self, *, limit: int) -> list[str]:
+        return sorted({t.scope for t in self.rows.values()
+                       if t.status in ("queued", "running")})[:limit]
+
+    async def mark_delivered(self, task_id: UUID, *, now: datetime) -> None:
+        task = self.rows.get(task_id)
+        if task is not None:
+            self._save(replace(task, delivered_at=now, updated_at=now))
+
+    async def elect_delivery(self, task_id: UUID, *, now: datetime,
+                             job: Any = None) -> ComputerTask | None:
+        async with self._delivery_lock:
+            task = self.rows.get(task_id)
+            if task is None or task.delivered_at is not None \
+                    or task.status not in TERMINAL:
+                return None
+            if job is not None and self._outbox is not None:
+                previous = self._outbox._jobs.get(job.id)
+                try:
+                    await self._outbox.create(job)
+                except BaseException:
+                    if previous is None:
+                        self._outbox._jobs.pop(job.id, None)
+                    else:
+                        self._outbox._jobs[job.id] = previous
+                    raise
+            task = self._save(replace(task, delivered_at=now, updated_at=now))
+            if job is not None:
+                self.filed_jobs.append(job)
+            return task
+
+    async def undelivered(self, *, limit: int) -> list[ComputerTask]:
+        return [t for t in sorted(
+            self.rows.values(), key=lambda t: t.finished_at or t.updated_at)
+            if t.status in TERMINAL and t.delivered_at is None][:limit]
+
+
+class FakeBrowserTabStore:
+    """In-memory `BrowserTabStore`; `expire_instance` does the same
+    compare-and-set move the SQL store does."""
+
+    def __init__(self) -> None:
+        self.rows: dict[UUID, BrowserTab] = {}
+
+    def _save(self, tab: BrowserTab) -> BrowserTab:
+        self.rows[tab.id] = tab
+        return tab
+
+    async def bind(self, tab: BrowserTab) -> BrowserTab:
+        return self._save(tab)
+
+    async def get(self, tab_id: UUID) -> BrowserTab | None:
+        return self.rows.get(tab_id)
+
+    async def for_scope(self, scope: str, *, limit: int) -> list[BrowserTab]:
+        rows = [t for t in self.rows.values() if t.scope == scope]
+        rows.sort(key=lambda t: t.last_activity_at, reverse=True)
+        return rows[:limit]
+
+    async def open_for_scope(self, scope: str, *, instance: str) -> list[BrowserTab]:
+        return [t for t in self.rows.values()
+                if t.scope == scope and t.instance == instance and t.status == "open"]
+
+    async def touch(self, tab_id: UUID, *, now: datetime,
+                    url: str = "", title: str = "", segment_id: UUID | None = None) -> None:
+        tab = self.rows.get(tab_id)
+        if tab is None or tab.status != "open":
+            return
+        self._save(replace(
+            tab, last_activity_at=now,
+            last_url=url or tab.last_url, last_title=title or tab.last_title,
+            detail={**dict(tab.detail), **({"segment_id": str(segment_id)}
+                                         if segment_id is not None else {})}))
+
+    async def set_status(self, tab_id: UUID, *, status: str, now: datetime,
+                         reason: str = "") -> None:
+        tab = self.rows.get(tab_id)
+        if tab is not None:
+            detail = {**dict(tab.detail), "close_reason": reason,
+                      "closed_at": now.isoformat()}
+            self._save(replace(tab, status=status, detail=detail))
+
+    async def open_scopes(self, *, limit: int) -> list[str]:
+        return sorted({t.scope for t in self.rows.values()
+                       if t.status == "open"})[:limit]
+
+    async def expire_instance(self, *, scope: str, instance: str,
+                              now: datetime) -> int:
+        stale = [t for t in self.rows.values()
+                 if t.scope == scope and t.status == "open"
+                 and t.instance != instance]
+        for tab in stale:
+            self._save(replace(tab, status="expired", detail={
+                **dict(tab.detail), "closed_at": now.isoformat(),
+                "close_reason": "the VM instance changed"}))
+        return len(stale)
+
+
+class FakeStreamRedis:
+    """The slice of Redis Streams the computer queue uses, in memory:
+    `xadd`, `xgroup_create`, `xreadgroup`, `xautoclaim`, `xack`, `scan_iter`.
+    Entries are `(stream, id, fields)`; consumer-group pending is tracked so
+    an entry is delivered once per group until acked — the at-least-once the
+    queue relies on. Never blocks: `xreadgroup` answers immediately."""
+
+    def __init__(self) -> None:
+        self.streams: dict[str, list[tuple[str, dict[str, str]]]] = {}
+        self.groups: dict[str, set[str]] = {}
+        self.pending: dict[tuple[str, str], list[str]] = {}
+        self._counter = 0
+        self._delivered: set[tuple[str, str]] = set()
+
+    async def xadd(self, stream: str, fields: Mapping[str, Any]) -> str:
+        self._counter += 1
+        mid = f"{self._counter}-0"
+        self.streams.setdefault(stream, []).append(
+            (mid, {str(k): str(v) for k, v in fields.items()}))
+        return mid
+
+    async def xgroup_create(self, stream: str, group: str, id: str = "0",
+                            mkstream: bool = False) -> None:
+        if group in self.groups.get(stream, set()):
+            raise RuntimeError(
+                f"BUSYGROUP Consumer Group name already exists: {group}")
+        self.groups.setdefault(stream, set()).add(group)
+        self.streams.setdefault(stream, [])
+
+    async def xreadgroup(self, group: str, consumer: str,
+                       streams: Mapping[str, str], count: int = 1,
+                       block: int | None = None) -> list:
+        out = []
+        for stream, after in streams.items():
+            if group not in self.groups.get(stream, set()):
+                raise RuntimeError(
+                    f"NOGROUP No such key '{stream}' or consumer group "
+                    f"'{group}' in XREADGROUP with GROUP option")
+            if after == "0":
+                # Pending entries already delivered to this group, unacked —
+                # real XREADGROUP "0" answers these without re-delivering.
+                fields = dict(self.streams.get(stream, []))
+                ids = [m for m in self.pending.get((stream, group), [])
+                       if m in fields]
+                if ids:
+                    out.append((stream, [(m, fields[m]) for m in ids[:count]]))
+                continue
+            entries = [(mid, f) for mid, f in self.streams.get(stream, [])
+                       if (stream, mid) not in self._delivered]
+            for mid, _fields in entries[:count]:
+                self._delivered.add((stream, mid))
+                self.pending.setdefault((stream, group), []).append(mid)
+            if entries:
+                out.append((stream, [(mid, f) for mid, f in entries[:count]]))
+        return out
+
+    async def xautoclaim(self, stream: str, group: str, consumer: str,
+                         min_idle_time: int, start_id: str,
+                         count: int = 1) -> tuple:
+        ids = self.pending.get((stream, group), [])
+        fields = dict(self.streams.get(stream, []))
+        claimed = [(mid, fields[mid]) for mid in ids if mid in fields][:count]
+        return ("0-0", claimed, [])
+
+    async def xack(self, stream: str, group: str, mid: str) -> int:
+        ids = self.pending.get((stream, group), [])
+        if mid in ids:
+            ids.remove(mid)
+            return 1
+        return 0
+
+    async def xtrim(self, stream: str, maxlen: int,
+                    approximate: bool = True) -> int:
+        """Keep at most the newest `maxlen` entries — the real `XTRIM
+        MAXLEN ~` the runner calls after acking, bounding a pointer that
+        the `computer_tasks` row is always the authority over."""
+        entries = self.streams.get(stream, [])
+        drop = max(0, len(entries) - maxlen)
+        if drop:
+            del entries[:drop]
+        return drop
+
+    async def scan_iter(self, match: str = "*", count: int = 100):
+        import fnmatch as _fn
+        for key in list(self.streams):
+            if _fn.fnmatch(key, match):
+                yield key

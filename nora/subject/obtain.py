@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import tomlkit
-from pydantic import TypeAdapter
+from pydantic import BaseModel, TypeAdapter
 
 from nora.app.composition import Dependencies, build_dependencies, wall_clock
 from nora.app.memory_routing import build_workspace_router
@@ -365,6 +365,9 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # `store.data_dir` — media custody lands in the caller's directory, never a
     # shared one.
     cfg = _with(cfg, "store.data_dir", workdir)
+    # Each composed subject owns its journal lock, just like its database
+    # and media. The deployment's computer state cannot be shared by draws.
+    cfg = _with(cfg, "computer.state_dir", str(workdir / "state"))
     # `platforms.signal.account` — the template's default is empty, meaning
     # "derive from the daemon", and `build_dependencies` then makes a REAL HTTP
     # call to signal-cli at startup and raises `StartupError` when nothing
@@ -484,6 +487,17 @@ def build_config(spec: SubjectSpec) -> Config:
     cfg = _baseline(loaded, spec.workdir)
     for path, value in (spec.overrides or {}).items():
         cfg = _with(cfg, path, value)
+    if spec.overrides:
+        # Every section an override touched re-validates through the real
+        # schema — field constraints and model_validators run before
+        # composition; `model_copy` alone skips all of them.
+        for name in {p.split(".", 1)[0] for p in spec.overrides}:
+            section_type = Config.model_fields[name].annotation
+            if (isinstance(section_type, type)
+                    and issubclass(section_type, BaseModel)):
+                section_type.model_validate(
+                    getattr(cfg, name).model_dump(mode="python"),
+                    context={"base": spec.workdir})
     # Rewrite after overrides, including deployment routes, so host-only callers
     # cannot restore container addresses over the sandbox configuration.
     if not _resolves(_DOCKER_HOST):
@@ -531,7 +545,7 @@ def _pin_memory_to_the_eval_workspace(workdir: Path, workspace: str, deployment:
     identity_doc = tomlkit.parse(identity_path.read_text(encoding="utf-8"))
     strict = "units" in policy_doc
     if strict:
-        for unit in policy_doc["units"].values():  # type: ignore[union-attr]
+        for unit in policy_doc["units"].values():
             unit["workspace"] = _EVAL_WORKSPACE
         policy_path.write_text(tomlkit.dumps(policy_doc), encoding="utf-8")
     if "workspaces" in identity_doc:
@@ -597,9 +611,13 @@ def _conversation_for(spec: SubjectSpec) -> Conversation:
 async def obtain(spec: SubjectSpec) -> Subject:
     """Compose an isolated subject with scoped credentials and database mapping."""
     cfg = build_config(spec)
-    clock: Callable[[], datetime] = (
-        wall_clock if spec.now is None else (lambda at=spec.now: at)
-    )
+    if spec.now is None:
+        clock: Callable[[], datetime] = wall_clock
+    else:
+        _at = spec.now
+
+        def clock() -> datetime:
+            return _at
     var = f"NORA_SUBJECT_DATABASE_URL_{uuid.uuid4().hex}"
     cfg = _with(cfg, "store.database_url_env", var)
     cfg._credentials = {**cfg.credentials, var: spec.database_url}
@@ -610,7 +628,14 @@ async def obtain(spec: SubjectSpec) -> Subject:
         landed_signal_sends(),
         external_boundaries(spec.circle, signal_url=spec.signal_rpc_url, memory=circle_memory),
     ):
-        deps = await build_dependencies(cfg, clock=clock)
+        deps = await build_dependencies(
+            cfg, clock=clock,
+            # The frozen `spec.now` is the SEMANTIC clock only — what the
+            # block renders and the turn sees. Queue deadlines, lease and
+            # idle arithmetic are operational: they run on the wall clock
+            # or the scoped computer's tasks would never time out and its
+            # tabs never idle inside a draw.
+            operational_clock=wall_clock)
     # NO EMBEDDING WORKER, whatever `[memory.index] embed` says. The flag also
     # switches the graph surface's query embedding on (`composition.py`), so
     # it stays as deployed; the worker is the write half, which only
@@ -621,6 +646,13 @@ async def obtain(spec: SubjectSpec) -> Subject:
     # for it. A sandbox's vectors are adopted from the source instead
     # (`nora.subject.sandbox_index`).
     deps = dataclasses.replace(deps, memory_embed=None)
+    # The scoped computer's maintenance IS part of the composed graph:
+    # the same `ComputerLifecycle` `__main__` starts — a subject with
+    # `[computer.scoped]` enabled ticks its queue and sweeps its tabs,
+    # and `backbone._close` closes it in the same order the app's
+    # shutdown does.
+    if deps.computer_lifecycle is not None:
+        deps.computer_lifecycle.start(deps.background)
     # The variable is GONE, so the config must not go on naming it: anything
     # that re-read `os.environ[cfg.store.database_url_env]` would get a
     # KeyError. `Subject.database_url` is the field to read, and this makes the
@@ -632,3 +664,56 @@ async def obtain(spec: SubjectSpec) -> Subject:
         unit=convo.unit, culture_key=convo.primary_id,
         listed_persons=convo.persons, circle_memory=circle_memory,
     )
+
+
+def validate_subject_overrides(overrides: dict[str, Any],
+                               base: Config | None = None,
+                               context_dir: Path | None = None,
+                               ) -> Config | None:
+    """Every override's dotted path must resolve to a real `Config` field
+    and its value must satisfy the leaf's REAL constraints — `gt`/`le`
+    ride the field's metadata, which `rebuild_annotation()` restores for
+    `TypeAdapter` (NaN and -1 fail `gt=0`, a truthy string fails a bool).
+    Given `base` (the config the overrides land on) the values are
+    applied the same `_with` way composition applies them and every
+    touched section re-validates — model_validators like
+    `run_timeout <= max_run_timeout` run on the merged values. Without a
+    base only the per-path checks run; `build_config` re-validates the
+    merged config before composition either way. Credentials stay
+    named env references, never raw values."""
+    for path, value in overrides.items():
+        if isinstance(value, str) and ("_key" in path or "secret" in path
+                                       or "token" in path) \
+                and not path.endswith("_env"):
+            raise ValueError(
+                f"--subject-overrides: {path!r} looks like a raw credential; "
+                "name the env var instead")
+        node: Any = Config
+        leaf: Any = None
+        for part in path.split("."):
+            leaf = (node.model_fields.get(part)
+                    if hasattr(node, "model_fields") else None)
+            if leaf is None:
+                raise ValueError(
+                    f"--subject-overrides: {path!r} names no config field")
+            node = leaf.annotation
+        if isinstance(node, type) and hasattr(node, "model_fields"):
+            raise ValueError(
+                f"--subject-overrides: {path!r} is a section, not a leaf")
+        if node is bool and type(value) is not bool:
+            raise ValueError(
+                f"--subject-overrides: {path!r} wants a real bool, "
+                f"not {type(value).__name__} {value!r}")
+        TypeAdapter(leaf.rebuild_annotation()).validate_python(value)
+        if base is not None:
+            base = _with(base, path, value)
+    if base is None:
+        return None
+    for name in {p.split(".", 1)[0] for p in overrides}:
+        section_type = Config.model_fields[name].annotation
+        if (isinstance(section_type, type)
+                and issubclass(section_type, BaseModel)):
+            section_type.model_validate(
+                getattr(base, name).model_dump(mode="python"),
+                context={"base": context_dir or Path.cwd()})
+    return base

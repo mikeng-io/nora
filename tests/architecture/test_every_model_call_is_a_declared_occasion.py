@@ -76,8 +76,8 @@ _EXTRA_DOORS = (
 #: Calls that send a prompt to a model, matched on the callee's trailing name
 #: and on the name it was imported under.
 _MODEL_CALLS = {
-    "create_agent", "create_dream_agent", "ask_text", "ask_structured",
-    "invoke_async",
+    "create_agent", "create_dream_agent", "create_browse_agent",
+    "ask_text", "ask_structured", "invoke_async",
 }
 #: Agent methods that send a prompt, matched on the trailing name alone.
 _MODEL_METHODS = {"stream_async", "structured_output", "structured_output_async"}
@@ -151,6 +151,11 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
     # formatter that walks the declared `subagent_*` blocks through
     # `ContextBlock`.
     "nora/app/subagent_runner.py": (("nora/language/subagent_render.py",), "imports"),
+    # The browse occasion ([computer.scoped], B2): its brief is built by
+    # ONE formatter that walks the declared `browse_task` block through
+    # `ContextBlock`; the authored SYSTEM_PROMPT is the occasion's
+    # instruction, like the worker's doctrine-loaded system text.
+    "nora/agent/browse.py": (("nora/language/browse_render.py",), "imports"),
     # The eval arm's context selector: the system text, the clock/window line
     # and the candidate blocks it posts are all built by ONE declared
     # occasion it imports; it only dispatches the POST and records receipts.

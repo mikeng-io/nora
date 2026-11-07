@@ -154,10 +154,10 @@ ever printed, and neither belongs in the repository:
   name outside the phrase, or the phrase with its name reordered, recased or
   its wording changed, FAILS. A phrase that is one word, or nothing but the
   denylisted value, is an ERROR: it would switch the value off. The owner's
-  own name is no exception -- project identity in code is only the public
-  org and domain (`mikeng-io`, `mikeng`, `mikeng.io`, `iam@mikeng.io`); if
-  the denylist holds a name that appears in the author line, that line
-  (`Name <email>`) belongs here.
+  own name is no exception -- project identity in code is only the
+  public org and domain names the deployment itself publishes (its
+  own org handle, domain and mailbox); if the denylist holds a
+  name that appears in the author line, that line belongs here.
 - **Pseudonyms**, `~/.config/nora/pii-pseudonyms.txt` (or
   `$NORA_PII_PSEUDONYMS`): one value per line that the scrub map itself
   produced -- known fake. A SHAPE finding whose value is listed is cleared.

@@ -522,6 +522,26 @@ def test_every_secret_name_the_config_defaults_reaches_the_container_that_reads_
 
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
 
+    # Delivery paths. The base Compose env list carries the native image
+    # mappings; `scripts.secret_delivery.projection` generates the overlay
+    # that delivers configured aliases — the path `computer.scoped.
+    # redis_url_env` is documented to take (nora/config.py: "projected
+    # through the existing secret_delivery mechanism"). A name declared for
+    # the overlay must land in its reader's overlay environment; every other
+    # name is still held to the base list.
+    projection_delivered = {"computer.scoped.redis_url_env"}
+    from scripts.secret_delivery import projection
+    delivery_config = tomllib.loads((ROOT / "config.example.toml").read_text())
+    delivery_config.setdefault("computer", {}).setdefault("scoped", {})["enabled"] = True
+    delivered = projection(
+        delivery_config,
+        dict.fromkeys(found.values(), "x"),
+    )
+    overlay_env = {
+        service: set(svc.get("environment", {}))
+        for service, svc in delivered.get("services", {}).items()
+    }
+
     def passed(service):
         return {e.split("=", 1)[0] for e in compose["services"][service]["environment"]}
 
@@ -540,6 +560,9 @@ def test_every_secret_name_the_config_defaults_reaches_the_container_that_reads_
         for key, name in sorted(found.items())
         for service in readers(key)
         if name not in passed(service)
+        and not (
+            key in projection_delivered and name in overlay_env.get(service, set())
+        )
     ]
     assert not missing, (
         "secret names not passed to the container that reads them: " + "; ".join(missing)

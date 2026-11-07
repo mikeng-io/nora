@@ -362,11 +362,16 @@ class App:
             log.info("story media expiry off ([social] story_expiry_enabled = false)")
         # The computer session sweeper: composition builds it only while
         # `[computer] enabled`.
-        if deps.computer_sweeper is not None:
+        if deps.computer_sweeper is not None and deps.computer_lifecycle is None:
             deps.background.spawn(runtime.computer_sweep_loop(
                 deps.computer_sweeper, deps.metrics,
                 interval_seconds=deps.computer_sweep_seconds,
             ))
+        # The scoped computer's queue and tab sweep ([computer.scoped]):
+        # composition builds the one lifecycle owner while the scoped
+        # runtime is on; `__main__` and the eval subject share it.
+        if deps.computer_lifecycle is not None:
+            deps.computer_lifecycle.start(deps.background)
         # The timed probe of computerd (DEC-261), the same flag.
         if deps.computer_probe is not None:
             deps.background.spawn(runtime.computer_probe_loop(
@@ -419,6 +424,8 @@ class App:
         try:
             await asyncio.gather(*adapter_tasks)
         finally:
+            if deps.computer_lifecycle is not None:
+                await deps.computer_lifecycle.close()
             await deps.background.cancel_all()
 
     async def _adopt_pending(self) -> None:
@@ -501,6 +508,11 @@ class App:
             close = getattr(adapter, "close", None)
             if close is not None:
                 await close()
+        # The scoped computer's own close: admission stops, shielded
+        # executors unwind, and the dedicated Redis client and journal
+        # lock release — BEFORE the SQL client and audit store close.
+        if self.deps.computer_lifecycle is not None:
+            await self.deps.computer_lifecycle.close()
         await self.deps.client.close()
         for client in self.deps.model_clients:
             await client.close()

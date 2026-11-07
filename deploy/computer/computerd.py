@@ -62,6 +62,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import ctypes
 import errno
 import fcntl
 import fnmatch
@@ -73,9 +74,11 @@ import os
 import pwd
 import re
 import secrets
+import shutil
 import signal
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -129,6 +132,9 @@ TMUX_NO_SERVER = ("no server running", "error connecting", "no such file or dire
 
 # The token this process was started with never reaches a child process.
 TOKEN_ENV = "COMPUTERD_TOKEN"  # noqa: S105 - the variable NAME, not a secret
+#: `COMPUTERD_SCOPE` binds a per-scope VM's computerd to its one scope;
+#: empty/unset means the multi-scope service the shared VM runs today.
+SCOPE_ENV = "COMPUTERD_SCOPE"
 
 _DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 _READ_FLAGS = os.O_RDONLY | os.O_NOFOLLOW
@@ -208,12 +214,17 @@ class Computer:
     def __init__(
         self, *, root: Path, token: str, isolate_scopes: bool = True,
         tmux_root: Path | None = None, tmux_bin: str = "tmux",
-        proc_root: Path = Path("/proc"),
+        proc_root: Path = Path("/proc"), bound_scope: str | None = None,
     ) -> None:
         if not token:
             raise ValueError("computerd needs a non-empty token")
         self.root = root
         self._token = token
+        #: When set (`COMPUTERD_SCOPE`, a per-scope VM), the one scope this
+        #: computerd serves: every verb and the browser socket refuse a
+        #: different one. A cross-scope request landing here means the
+        #: routing above misrouted, so it is denied, never served.
+        self.bound_scope = bound_scope
         self.owner = Owner(isolate=isolate_scopes)
         # The directory the API serves; the CLI's default exists in the image,
         # and a test root may not until its first write.
@@ -255,6 +266,15 @@ class Computer:
                 )
         finally:
             os.close(fd)
+        # `run` calls currently executing, per scope: the guest-side busy
+        # signal the idle reaper and `state` report — a transport may die
+        # mid-command while the command itself still runs.
+        self._runs: dict[str, int] = {}
+
+    def busy(self, scope: str) -> bool:
+        """A `run` call is executing for this scope right now: the owner a
+        guest-side idle reaper must never cut out from under."""
+        return self._runs.get(scope, 0) > 0
 
     @contextlib.asynccontextmanager
     async def room_lease(self) -> AsyncIterator[None]:
@@ -459,7 +479,8 @@ class Computer:
 
     # -- commands ---------------------------------------------------------
 
-    async def run(self, scope: str, body: dict[str, Any]) -> dict[str, Any]:
+    async def run(self, scope: str, body: dict[str, Any], *,
+                  disconnected: Callable[[], bool] | None = None) -> dict[str, Any]:
         command = body.get("command")
         if not isinstance(command, str) or not command.strip():
             raise RefusedError("command must be a non-empty string")
@@ -476,35 +497,63 @@ class Computer:
         env = self._env(scope)
         user = self._user(scope)
         started = time.monotonic()
-        with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    "bash", "-c", command, cwd=workdir, env=env,
-                    stdin=asyncio.subprocess.DEVNULL, stdout=out, stderr=err,
-                    start_new_session=True, **user,
-                )
-            except OSError as exc:
-                return {"status": "unavailable", "reason": f"could not start bash: {exc}"}
-            timed_out = False
-            try:
+        # Registered while the command runs: a dropped transport is not a
+        # stopped command — `busy()` and `state` report it until `wait`
+        # returns, whatever happens to the caller's connection.
+        self._runs[scope] = self._runs.get(scope, 0) + 1
+        try:
+            with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "bash", "-c", command, cwd=workdir, env=env,
+                        stdin=asyncio.subprocess.DEVNULL, stdout=out, stderr=err,
+                        start_new_session=True, **user,
+                    )
+                except OSError as exc:
+                    return {"status": "unavailable", "reason": f"could not start bash: {exc}"}
+                timed_out = False
+                dropped = False
                 # Files, not pipes: this waits for the process alone, never for
-                # a backgrounded child that inherited the output.
-                await asyncio.wait_for(proc.wait(), timeout)
-            except TimeoutError:
-                timed_out = True
-                with contextlib.suppress(ProcessLookupError):
-                    os.killpg(proc.pid, signal.SIGKILL)
-                await proc.wait()
-            stdout, out_cut = _bounded(out, limit)
-            stderr, err_cut = _bounded(err, max(limit // 4, 200))
-        fields = {
-            "exit_code": proc.returncode, "stdout": stdout, "stderr": stderr,
-            "truncated": out_cut or err_cut,
-            "duration_ms": int((time.monotonic() - started) * 1000),
-        }
-        if timed_out:
-            return {"status": "unavailable", "reason": f"timed out after {timeout:g}s", **fields}
-        return {"status": "ok", **fields}
+                # a backgrounded child that inherited the output. The caller's
+                # transport is watched alongside: a client that went away cannot
+                # collect the result, so its command's process GROUP is killed —
+                # never left running the workspace while the row already reads
+                # cancelled.
+                wait = asyncio.ensure_future(proc.wait())
+                deadline = started + timeout
+                while not wait.done():
+                    if disconnected is not None and disconnected():
+                        dropped = True
+                        break
+                    if time.monotonic() >= deadline:
+                        timed_out = True
+                        break
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(asyncio.shield(wait), 0.5)
+                if timed_out or dropped:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    await wait
+                stdout, out_cut = _bounded(out, limit)
+                stderr, err_cut = _bounded(err, max(limit // 4, 200))
+            fields = {
+                "exit_code": proc.returncode, "stdout": stdout, "stderr": stderr,
+                "truncated": out_cut or err_cut,
+                "duration_ms": int((time.monotonic() - started) * 1000),
+            }
+            if dropped:
+                return {"status": "unavailable",
+                        "reason": "the caller went away; the command was stopped",
+                        **fields}
+            if timed_out:
+                return {"status": "unavailable", "reason": f"timed out after {timeout:g}s", **fields}
+            return {"status": "ok", **fields}
+        finally:
+            left = self._runs.get(scope, 0) - 1
+            if left > 0:
+                self._runs[scope] = left
+            else:
+                self._runs.pop(scope, None)
 
     def _env(self, scope: str) -> dict[str, str]:
         """A command's environment: computerd's own minus its token. HOME is
@@ -689,12 +738,18 @@ class Computer:
         return {"processes": found[:MAX_STATE_PROCESSES],
                 "processes_truncated": len(found) > MAX_STATE_PROCESSES}
 
-    async def state(self, scope: str, body: dict[str, Any]) -> dict[str, Any]:
+    async def state(self, scope: str, body: dict[str, Any], *,
+                    exclude_pids: frozenset[int] = frozenset()) -> dict[str, Any]:
         files = await asyncio.to_thread(self.recent_files, scope)
         tmux = await self.tmux_sessions(scope)
         panes = tmux.pop("_pane_pids", frozenset())
-        procs = await asyncio.to_thread(self.processes, scope, panes=panes)
-        return {"status": "ok", **files, **tmux, **procs}
+        # `runs` is the in-flight `run` count: a dropped transport is not a
+        # stopped command. The managed browser's own pids are excluded —
+        # Chrome is the lifecycle-owned resource, not a job a caller ran.
+        procs = await asyncio.to_thread(
+            self.processes, scope, panes=panes | exclude_pids)
+        return {"status": "ok", "runs": self._runs.get(scope, 0),
+                **files, **tmux, **procs}
 
 
 def xauthority_entry(cookie: bytes) -> bytes:
@@ -739,15 +794,39 @@ class Browser:
         self._startup_id = 0
         self._startup_session: str | None = None
         self._startup_reply: asyncio.Future[dict[str, Any]] | None = None
+        # The page targets that existed when target discovery was armed
+        # (`Target.getTargets` at start), plus every target born since:
+        # `Target.targetCreated` replays existing targets, so a targetId
+        # here is never re-closed, and a born-while-attached one is the
+        # admitted client's to own.
+        self._page_targets: set[str] = set()
+        # CDP calls computerd makes for itself after publication: negative
+        # ids cannot collide with a client's, and their replies are
+        # consumed here, never forwarded to the websocket.
+        self._own_next = 0
+        self._own_pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
+        self._client_pending: set[tuple[int, str | None]] = set()
 
     @property
     def alive(self) -> bool:
         return self.chrome is not None and self.chrome.returncode is None
 
-    async def send(self, message: str) -> None:
+    async def send(self, message: str, *, client_command: bool = False) -> None:
         self.last_used = time.monotonic()
         if self._to_chrome is None:
             raise OSError("the browser's pipe is closed")
+        if client_command:
+            try:
+                frame = json.loads(message)
+            except ValueError as exc:
+                raise OSError("invalid CDP command") from exc
+            if not isinstance(frame, dict):
+                raise OSError("invalid CDP command")
+            mid = frame.get("id")
+            if not isinstance(mid, int) or mid <= 0:
+                raise OSError("CDP client commands require positive ids")
+            # Retain until Chrome replies, including after websocket loss.
+            self._client_pending.add((mid, frame.get("sessionId")))
         data = message.encode("utf-8") + b"\0"
         async with self._write_lock:
             await asyncio.to_thread(_write_all, self._to_chrome, data)
@@ -770,7 +849,14 @@ class Browser:
                     # frees its slot.
                     if self.chrome is not None and self.chrome.returncode is None:
                         with contextlib.suppress(ProcessLookupError):
-                            os.killpg(self.chrome.pid, signal.SIGKILL)
+                            if sys.platform == "linux":
+                                # `chrome.pid` is the lifetime wrapper:
+                                # SIGTERM lets it SIGKILL + reap the whole
+                                # tree — killpg cannot reach setsid'd
+                                # helpers in a different process group.
+                                os.kill(self.chrome.pid, signal.SIGTERM)
+                            else:
+                                os.killpg(self.chrome.pid, signal.SIGKILL)
                     return
                 while (end := buffer.find(b"\0", scan)) != -1:
                     message = bytes(buffer[:end])
@@ -789,6 +875,23 @@ class Browser:
                             if not self._startup_reply.done():
                                 self._startup_reply.set_result(reply)
                             continue
+                    # computerd's own calls and the target events discovery
+                    # armed are parsed here — events are small; command
+                    # replies also retire admitted client commands. Unsolicited
+                    # frames without a method or pending command need no parse.
+                    if (self._client_pending or b'"id":-' in message or b'"id": -' in message
+                            or b'"method"' in message):
+                        try:
+                            frame = json.loads(message)
+                        except (ValueError, UnicodeDecodeError):
+                            frame = None
+                        if isinstance(frame, dict):
+                            if self._route_own_reply(frame):
+                                continue
+                            if "id" in frame:
+                                self._client_pending.discard(
+                                    (frame["id"], frame.get("sessionId")))
+                            self._route_target_event(frame)
                     client = self.client
                     if client is not None and not client.closed:
                         with contextlib.suppress(ConnectionResetError, RuntimeError):
@@ -797,6 +900,10 @@ class Browser:
             os.close(fd)
             if self._startup_reply is not None and not self._startup_reply.done():
                 self._startup_reply.set_exception(OSError("Chrome closed its startup pipe"))
+            for pending in self._own_pending.values():
+                if not pending.done():
+                    pending.set_exception(OSError("Chrome closed its pipe"))
+            self._own_pending.clear()
 
     async def _startup_command(
         self, method: str, params: dict[str, Any] | None = None, session: str | None = None,
@@ -818,6 +925,74 @@ class Browser:
             return reply["result"]
         finally:
             self._startup_reply = None
+
+    def _route_own_reply(self, frame: dict[str, Any]) -> bool:
+        """Match a reply to a call computerd made for itself: its negative
+        id resolves the waiting future and the frame is consumed — never
+        forwarded to the websocket client, which never asked for it."""
+        mid = frame.get("id")
+        if not isinstance(mid, int) or mid not in self._own_pending:
+            return False
+        pending = self._own_pending.pop(mid)
+        if not pending.done():
+            pending.set_result(frame)
+        return True
+
+    def _route_target_event(self, frame: dict[str, Any]) -> None:
+        """Page-target supervision for the browser's WHOLE retained
+        lifetime: `Target.setDiscoverTargets` armed at start keeps events
+        flowing on the pipe with or without a websocket client, so a page
+        target born while none is attached — a timer's popup between
+        objectives — is seen here, not on a later sweep.
+
+        A page with no client is an orphan: nothing can own it on the one
+        admitted connection, so it is closed at birth — the orphan rule
+        and the four-target cap hold between objectives. While a client
+        IS attached its own reconcile/adopt watch owns the decision, and
+        computerd only records the birth."""
+        method = frame.get("method")
+        params = frame.get("params")
+        if not isinstance(params, dict):
+            return
+        if method == "Target.targetDestroyed":
+            self._page_targets.discard(str(params.get("targetId") or ""))
+            return
+        if method != "Target.targetCreated":
+            return
+        info = params.get("targetInfo")
+        if not isinstance(info, dict) or info.get("type") != "page":
+            return
+        target_id = str(info.get("targetId") or "")
+        if not target_id or target_id in self._page_targets:
+            return  # replay of a target discovery already listed
+        self._page_targets.add(target_id)
+        if self.client is not None and not self.client.closed:
+            return  # the admitted client's own watch owns popups and the cap
+        asyncio.ensure_future(self._close_orphan(target_id))
+
+    async def _close_orphan(self, target_id: str) -> None:
+        try:
+            await self._own_command("Target.closeTarget", {"targetId": target_id})
+        except Exception as exc:  # noqa: BLE001 - a failed close retries at the next sweep
+            print(f"computerd: orphan page target {target_id} close failed: {exc}",
+                  flush=True)
+
+    async def _own_command(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """One CDP call on the pipe that is not a client's: a negative id
+        cannot collide with the client's stream, the reply routes back to
+        this future, and the write shares the one pipe lock."""
+        self._own_next -= 1
+        mid = self._own_next
+        reply: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+        self._own_pending[mid] = reply
+        try:
+            await self.send(json.dumps({"id": mid, "method": method, "params": params}))
+            answered = await asyncio.wait_for(reply, CHROME_START_SECONDS)
+            if "error" in answered:
+                raise OSError(f"Chrome: {method} failed")
+            return answered.get("result") or {}
+        finally:
+            self._own_pending.pop(mid, None)
 
     async def activate_tls(self) -> None:
         """Require this Chrome's live CRLSet enforcement before exposing CDP.
@@ -894,8 +1069,12 @@ class Browser:
         for proc in (self.chrome, self.xvfb):
             if proc is not None and proc.returncode is None:
                 with contextlib.suppress(ProcessLookupError):
-                    os.killpg(proc.pid, signal.SIGKILL)
+                    if proc is self.chrome and sys.platform == "linux":
+                        os.kill(proc.pid, signal.SIGTERM)
+                    else:
+                        os.killpg(proc.pid, signal.SIGKILL)
                 await proc.wait()
+        self._client_pending.clear()
         if self._to_chrome is not None:
             with contextlib.suppress(OSError):
                 os.close(self._to_chrome)
@@ -943,7 +1122,7 @@ class Browsers:
     def __init__(
         self, computer: Computer, *, chrome_bin: str = "google-chrome", xvfb_bin: str = "Xvfb",
         max_browsers: int = MAX_BROWSERS, idle_seconds: float = BROWSER_IDLE_SECONDS,
-        x11_dir: Path = X11_DIR,
+        x11_dir: Path = X11_DIR, idle_reap: bool = True,
     ) -> None:
         self.computer = computer
         self.x11_dir = x11_dir
@@ -951,19 +1130,61 @@ class Browsers:
         self.xvfb_bin = xvfb_bin
         self.max_browsers = max_browsers
         self.idle_seconds = idle_seconds
+        #: False on a scoped VM (`COMPUTERD_SCOPE`): idle retirement there is
+        #: owned by the app's maintenance segment through `browser_stop`,
+        #: the ONE lifecycle owner — the guest loop only recovers dead
+        #: processes, never an idle policy beside it.
+        self.idle_reap = idle_reap
         self.running: dict[str, Browser] = {}
         self._lock = asyncio.Lock()
 
+    def pids(self, scope: str) -> frozenset[int]:
+        """The scope's managed browser processes (chrome + xvfb): resource
+        pids, never jobs — `state` excludes them from `processes` so a
+        retained idle browser is not read as surviving work."""
+        browser = self.running.get(scope)
+        if browser is None or not browser.alive:
+            return frozenset()
+        managed = {p.pid for p in (browser.chrome, browser.xvfb) if p is not None}
+        parents: dict[int, int] = {}
+        try:
+            entries = list(self.computer.proc_root.iterdir())
+        except OSError:
+            return frozenset(managed)  # processes() separately reports unreadable /proc
+        for entry in entries:
+            if not entry.name.isdigit():
+                continue
+            try:
+                fd = os.open(entry, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                try:
+                    raw = _read_proc_file(fd, "stat").decode("utf-8", errors="replace")
+                finally:
+                    os.close(fd)
+                fields = raw[raw.rfind(")") + 1:].split()
+                parents[int(entry.name)] = int(fields[1])
+            except (OSError, ValueError, IndexError):
+                continue
+        while descendants := {pid for pid, parent in parents.items()
+                              if parent in managed and pid not in managed}:
+            managed.update(descendants)
+        return frozenset(managed)
+
     async def reap(self) -> None:
-        """Stop every browser that died, or sat idle past the limit with no
-        client attached."""
+        """Stop every browser that died; on a shared VM, also one that sat
+        idle past the limit with no client attached and no owner running
+        work."""
         async with self._lock:
             await self._reap()
 
     async def _reap(self) -> None:
         now = time.monotonic()
         for scope, browser in list(self.running.items()):
-            idle = browser.client is None and now - browser.last_used > self.idle_seconds
+            # An idle close is never taken while an owner is mid-work: a
+            # `run` call in flight IS the scope's owner, whatever the SQL
+            # maintenance row says.
+            idle = (self.idle_reap and browser.client is None
+                    and now - browser.last_used > self.idle_seconds
+                    and not self.computer.busy(scope))
             if not browser.alive or idle:
                 await browser.stop()
                 self.running.pop(scope, None)
@@ -1048,7 +1269,13 @@ class Browsers:
         await asyncio.to_thread(self.ensure_x11_dir)
         cookie = secrets.token_bytes(16)
         auth = await asyncio.to_thread(self._write_xauthority, scope, cookie)
-        profile = self.computer.root / scope / "browser" / "default"
+        # A FRESH anonymous profile per browser lifetime: no history, cookies
+        # or tabs restore across a restart (`no tab resurrection`). Stale
+        # profiles of earlier lifetimes are wiped before this one is made —
+        # the wipe runs through the same no-follow walk and refuses anything
+        # that is not a plain profile-* directory a previous Chrome left.
+        profile_name = await asyncio.to_thread(self._fresh_profile, scope)
+        profile = self.computer.root / scope / "browser" / profile_name
         env = self.computer._env(scope)
         env.update(XAUTHORITY=str(auth))
         user = self.computer._user(scope)
@@ -1085,9 +1312,13 @@ class Browsers:
             # bash, not sh: the pipe's descriptors are usually above 9, and
             # dash (the VM's /bin/sh) only redirects single-digit ones, so it
             # exits 2 before Chrome starts.
+            command = [self.chrome_bin]
+            if sys.platform == "linux":
+                command = [sys.executable, os.path.abspath(__file__),
+                           "--browser-child", self.chrome_bin]
             browser.chrome = await asyncio.create_subprocess_exec(
                 "/bin/bash", "-c", f'exec "$0" "$@" 3<&{cmd_r} 4>&{out_w}',
-                self.chrome_bin, *flags, "about:blank",
+                *command, *flags, "about:blank",
                 env=env, cwd=str(self.computer.root / scope), pass_fds=(cmd_r, out_w),
                 stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL,
                 stderr=log_fd, start_new_session=True, **user,
@@ -1106,6 +1337,18 @@ class Browsers:
         try:
             async with asyncio.timeout(CHROME_TLS_SECONDS):
                 await browser.activate_tls()
+                # Arm page-target supervision for the browser's whole
+                # retained lifetime: discovery replays every EXISTING
+                # target, so the set is seeded first — otherwise the
+                # replay of the tabs activation legitimately opened would
+                # read as orphans born while no client is attached and be
+                # closed at birth.
+                targets = await browser._startup_command("Target.getTargets")
+                browser._page_targets.update(
+                    str(t.get("targetId")) for t in targets.get("targetInfos", [])
+                    if isinstance(t, dict) and t.get("type") == "page")
+                await browser._startup_command(
+                    "Target.setDiscoverTargets", {"discover": True})
         except BaseException as exc:
             await browser.stop()
             if isinstance(exc, (TimeoutError, ValueError, KeyError, TypeError)):
@@ -1134,11 +1377,30 @@ class Browsers:
                 raise
         return fd
 
+    def _fresh_profile(self, scope: str) -> str:
+        """Wipe stale `browser/profile-*` directories of earlier browser
+        lifetimes and return a fresh profile name. The wipe runs inside the
+        no-follow walk: anything under `browser/` that is not a plain
+        `profile-*` directory (a room's own file, a link) is left alone, and
+        a profile that will not delete raises so the start is refused —
+        never a half-wiped profile silently kept."""
+        name = f"profile-{secrets.token_hex(8)}"
+        browser_dir = self.computer.root / scope / "browser"
+        if not browser_dir.is_dir():
+            return name
+        with self.computer._dir(scope, ["browser"], create=True) as dfd:
+            for entry in os.listdir(dfd):
+                if not entry.startswith("profile-"):
+                    continue
+                info = os.stat(entry, dir_fd=dfd, follow_symlinks=False)
+                if not stat.S_ISDIR(info.st_mode):
+                    continue
+                shutil.rmtree(entry, dir_fd=dfd)  # noqa: args/kwargs for dir_fd
+        return name
+
     def _write_xauthority(self, scope: str, cookie: bytes) -> Path:
         """The room's display cookie, in `<scope>/browser/.Xauthority`, `0o600`
         and the room user's, written through the no-follow walk."""
-        with self.computer._dir(scope, ["browser", "default"], create=True):
-            pass
         with self.computer._dir(scope, ["browser"], create=True) as dfd:
             tmp = f".Xauthority.{secrets.token_hex(6)}"
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600,
@@ -1168,7 +1430,8 @@ class Browsers:
         if browser is None or not browser.alive:
             return {"browser": {"running": False}}
         return {"browser": {"running": True, "started": int(browser.started),
-                            "attached": browser.client is not None}}
+                            "attached": browser.client is not None,
+                            "pending_actions": len(browser._client_pending)}}
 
 
 def _read_proc_file(pid_fd: int, name: str, limit: int = 65536) -> bytes:
@@ -1351,11 +1614,20 @@ def create_app(
     chrome_bin: str = "google-chrome", xvfb_bin: str = "Xvfb",
     x11_dir: Path = X11_DIR, max_browsers: int = MAX_BROWSERS,
     browser_idle_seconds: float = BROWSER_IDLE_SECONDS,
+    bound_scope: str | None = None,
+    boot_id: str | None = None,
 ) -> web.Application:
     computer = Computer(root=root, token=token, isolate_scopes=isolate_scopes,
-                        tmux_root=tmux_root, tmux_bin=tmux_bin, proc_root=proc_root)
+                        tmux_root=tmux_root, tmux_bin=tmux_bin, proc_root=proc_root,
+                        bound_scope=bound_scope)
     browsers = Browsers(computer, chrome_bin=chrome_bin, xvfb_bin=xvfb_bin, x11_dir=x11_dir,
-                        max_browsers=max_browsers, idle_seconds=browser_idle_seconds)
+                        max_browsers=max_browsers, idle_seconds=browser_idle_seconds,
+                        # A scoped VM's idle lifecycle is owned by the app's
+                        # maintenance segment (the SQL-elected owner through
+                        # `browser_stop`): this guest loop keeps only dead-
+                        # process recovery, so no second idle policy can cut
+                        # under a live owner. The shared VM keeps its reaper.
+                        idle_reap=bound_scope is None)
     file_ops: dict[str, Callable[[str, dict[str, Any]], Any]] = {
         "read": computer.read, "write": computer.write, "edit": computer.edit,
         "files": computer.files, "fetch": computer.fetch,
@@ -1366,6 +1638,30 @@ def create_app(
         # computerd itself answers (under sbx a TCP connect proves nothing).
         return web.json_response({"service": "computerd", "status": "ok"})
 
+    def _boot_id() -> str:
+        """This VM's boot identity: a recreated VM is a NEW instance, so every
+        handle bound to the old one is stale. Read once; a VM that cannot
+        name its instance reports "" (still verified by scope)."""
+        try:
+            return Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        except OSError:
+            return ""
+    # `boot_id` may be injected (tests, a host that publishes the instance a
+    # different way); the default is this VM's own kernel boot identity.
+    if boot_id is None:
+        boot_id = _boot_id()
+
+    async def identity(request: web.Request) -> web.Response:
+        """Who this computerd is: its bound scope (None when unbound, the
+        shared-VM shape) and its VM instance. Authenticated, because it is
+        what an endpoint's claim is checked against."""
+        if not computer.authorised(request):
+            return web.json_response({"status": "unauthorised"}, status=401)
+        return web.json_response({
+            "service": "computerd", "scope": computer.bound_scope,
+            "instance": boot_id,
+        })
+
     def answer(result: Any) -> web.Response:
         if isinstance(result, bytes):
             return web.Response(
@@ -1374,9 +1670,40 @@ def create_app(
             )
         return web.json_response(result)
 
+    def _instance_ok(request: web.Request) -> bool:
+        """A scoped computerd serves only calls that pin ITS boot: every
+        request must carry `X-Computerd-Instance` equal to this boot's id —
+        reconnecting to the same URL after the VM was replaced is not
+        authorization, and the registry's record is not proof the process
+        answering now is the one it named. A scoped computerd that cannot
+        name its own boot serves NOTHING effectful: an empty identity is
+        never authorization, and a client can only refuse the unstamped
+        answer after the effect already ran. An unbound computerd (the
+        shared-VM shape) is untouched."""
+        if computer.bound_scope is None:
+            return True
+        if not boot_id:
+            return False
+        return request.headers.get("X-Computerd-Instance") == boot_id
+
+    _instance_deny = {"status": "denied", "reason": "the VM instance changed"}
+
+    @web.middleware
+    async def _stamp_instance(request: web.Request, handler: Any) -> web.StreamResponse:
+        """Every answer is stamped with this boot's instance: a client that
+        pinned one boot can tell when a different one answered — even on a
+        refused call. Already-prepared responses (the CDP upgrade) are not
+        touched."""
+        response = await handler(request)
+        if boot_id and not response.prepared:
+            response.headers["X-Computerd-Instance"] = boot_id
+        return response
+
     async def dispatch(request: web.Request) -> web.Response:
         if not computer.authorised(request):
             return web.json_response({"status": "unauthorised"}, status=401)
+        if not _instance_ok(request):
+            return web.json_response(dict(_instance_deny), status=409)
         op = request.match_info["op"]
         async with computer.room_lease():
             try:
@@ -1388,6 +1715,9 @@ def create_app(
                         raise RefusedError("body is too large") from None
                     if not computer.valid_scope(scope):
                         raise RefusedError("scope must be a lowercase hex key")
+                    if (computer.bound_scope is not None
+                            and scope != computer.bound_scope):
+                        raise RefusedError("this computer serves another scope")
                     return answer(await asyncio.to_thread(computer._store, scope, raw, data))
                 try:
                     body = await request.json()
@@ -1398,10 +1728,20 @@ def create_app(
                 scope = body.get("scope")
                 if not computer.valid_scope(scope):
                     raise RefusedError("scope must be a lowercase hex key")
+                if (computer.bound_scope is not None
+                        and scope != computer.bound_scope):
+                    raise RefusedError("this computer serves another scope")
                 if op == "run":
-                    return answer(await computer.run(scope, body))
+                    transport = request.transport
+                    return answer(await computer.run(
+                        scope, body,
+                        disconnected=(
+                            None if transport is None
+                            else transport.is_closing)))
                 if op == "state":
-                    return answer({**await computer.state(scope, body), **browsers.status(scope)})
+                    return answer({**await computer.state(
+                        scope, body, exclude_pids=browsers.pids(scope)),
+                        **browsers.status(scope)})
                 if op == "browser_stop":
                     stopped = await browsers.stop(scope)
                     return answer({"status": "ok" if stopped else "nothing_found"})
@@ -1429,6 +1769,11 @@ def create_app(
         if not computer.valid_scope(scope):
             return web.json_response({"status": "denied",
                                       "reason": "scope must be a lowercase hex key"})
+        if computer.bound_scope is not None and scope != computer.bound_scope:
+            return web.json_response({"status": "denied",
+                                      "reason": "this computer serves another scope"})
+        if not _instance_ok(request):
+            return web.json_response(dict(_instance_deny), status=409)
         try:
             # Starting Chrome writes the room; it must not land under a
             # directory the installer is about to rename away.
@@ -1442,6 +1787,9 @@ def create_app(
         if browser.client is not None and not browser.client.closed:
             return web.json_response({"status": "denied",
                                       "reason": "this room's browser already has a client"})
+        if browser._client_pending:
+            return web.json_response({"status": "unavailable",
+                                      "reason": "previous browser commands are still pending"})
         ws = web.WebSocketResponse(max_msg_size=MAX_TRANSFER_BYTES)
         # Claimed before the first await, so two connects at once cannot
         # both pass the check above.
@@ -1453,13 +1801,17 @@ def create_app(
                     await ws.close(code=1003, message=b"CDP messages are text frames")
                     break
                 try:
-                    await browser.send(msg.data)
+                    await browser.send(msg.data, client_command=True)
                 except OSError:
                     break
         finally:
             if browser.client is ws:
                 browser.client = None
             browser.last_used = time.monotonic()
+            if browser._client_pending:
+                # Drain a lost command transport while its app segment still
+                # owns the scope. Idle maintenance cannot retire live work.
+                await browser.stop()
         return ws
 
     async def reap_idle(app: web.Application) -> AsyncIterator[None]:
@@ -1480,10 +1832,12 @@ def create_app(
         task.cancel()
         await browsers.stop_all()
 
-    app = web.Application(client_max_size=MAX_TRANSFER_BYTES + 1024)
+    app = web.Application(
+        middlewares=[_stamp_instance], client_max_size=MAX_TRANSFER_BYTES + 1024)
     app["browsers"] = browsers
     app.cleanup_ctx.append(reap_idle)
     app.router.add_get("/v1/health", health)
+    app.router.add_get("/v1/identity", identity)
     app.router.add_get("/v1/browser", browser_cdp)
     app.router.add_post("/v1/{op}", dispatch)
     return app
@@ -1501,12 +1855,70 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+class _BrowserStopped(BaseException):
+    pass
+
+
+def run_browser_child(argv: list[str]) -> int:
+    """Own and reap Chrome's double-forked helpers in the scope user's process.
+
+    Linux reparents orphan descendants to this subreaper instead of PID 1.
+    Its lifetime ends only after every child has exited; native jobs are
+    outside this tree and still count as work in `state`.
+    """
+    parent = os.getppid()
+    children = Path(f"/proc/self/task/{os.getpid()}/children")
+    children.read_text()  # refuse before starting Chrome if ownership is unreadable
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
+        raise OSError(ctypes.get_errno(), "cannot own Chrome descendants")
+
+    def stopped(_signum: int, _frame: Any) -> None:
+        raise _BrowserStopped
+
+    signal.signal(signal.SIGTERM, stopped)
+    signal.signal(signal.SIGINT, stopped)
+    try:
+        if libc.prctl(1, signal.SIGTERM, 0, 0, 0) != 0:  # PR_SET_PDEATHSIG
+            raise OSError(ctypes.get_errno(), "cannot observe computerd exit")
+        if os.getppid() != parent or parent == 1:
+            return 143
+        child = os.fork()
+        if child == 0:
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            try:
+                os.execvp(argv[0], argv)  # noqa: S606 - the configured browser executable
+            except OSError:
+                os._exit(127)
+        os.close(3)
+        os.close(4)
+        _, status = os.waitpid(child, 0)
+        return os.waitstatus_to_exitcode(status)
+    except _BrowserStopped:
+        return 143
+    finally:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        while True:
+            for pid in children.read_text().split():
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(int(pid), signal.SIGKILL)
+            try:
+                os.waitpid(-1, 0)
+            except ChildProcessError:
+                break
+
+
 def main() -> None:
     args = build_parser().parse_args()
     token = os.environ.get(TOKEN_ENV, "")
-    app = create_app(root=Path(args.root), token=token)
+    app = create_app(root=Path(args.root), token=token,
+                     bound_scope=os.environ.get(SCOPE_ENV) or None)
     web.run_app(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--browser-child"]:
+        raise SystemExit(run_browser_child(sys.argv[2:]))
     main()

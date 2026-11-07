@@ -282,6 +282,17 @@ NOT_RESTORED: dict[str, str] = {
     "bridge_event_alias": "dedupe legs of the live queue journal",
     "bridge_work": "live queue obligations; leasing rows no restore replays",
     "bridge_action": "live action ledger; reservations belong to the running deployment",
+    # 0147_computer_tasks: the scoped-computer durable queue and its browser
+    # tab bindings. A `computer_tasks` row is one obligation against the
+    # RUNNING deployment's `nq:computer:*` Redis entries and live scope VMs;
+    # a `browser_tasks` row names a CDP target on one of them. A restore as
+    # of T replays no in-flight execution and fabricates no claims over VMs
+    # or tabs it does not have — the audit a restored turn reads is
+    # `computer_events` (APPEND_ONLY).
+    "computer_tasks": (
+        "live scope-FIFO ledger; obligations of the running deployment, not replayed as of T"
+    ),
+    "browser_tasks": "live CDP target bindings; no restore holds tabs on absent VMs",
 }
 
 

@@ -1,0 +1,58 @@
+[
+  {
+    "name": "managed browser descendants remain resources",
+    "file": "deploy/computer/computerd.py",
+    "old": "            managed.update(descendants)",
+    "new": "            break",
+    "target": "tests/integration/test_scoped_browser_recovery.py::test_managed_browser_tree_does_not_hide_native_work"
+  },
+  {
+    "name": "consumed result survives a failed delivery stamp",
+    "file": "nora/app/computer_queue.py",
+    "old": "                log.exception(\"computer task consumed disposition failed (retained)\")\n                return False",
+    "new": "                log.exception(\"computer task consumed disposition failed (retained)\")\n                executors.clear_pending(task_id)\n                return False",
+    "target": "tests/integration/test_scoped_browser_recovery.py::test_retry_retains_consumed_marker_until_delivery_stamp_persists"
+  },
+  {
+    "name": "terminal discovery cannot hand consumed results to outbox",
+    "file": "nora/app/computer_queue.py",
+    "old": "            pending = self._executors.pending_result(row.id)\n            if pending is not None and pending.consumed:\n                await _persist_pending(\n                    executors=self._executors, tasks=self._tasks,\n                    clock=self._clock, task_id=row.id)\n                continue\n            try:\n                await self._on_terminal(row)",
+    "new": "            try:\n                await self._on_terminal(row)",
+    "target": "tests/integration/test_scoped_browser_recovery.py::test_retry_retains_consumed_marker_until_delivery_stamp_persists"
+  },
+  {
+    "name": "browser actions have separate audit operations",
+    "file": "nora/agent/tools.py",
+    "old": "\"computer_browse.action\", uuid.uuid4(), \"finished\"",
+    "new": "\"computer_browse.action\", operation_id, \"finished\"",
+    "target": "tests/integration/test_scoped_browser_recovery.py::test_action_rows_have_distinct_keys_and_preserve_tool_finish"
+  },
+  {
+    "name": "manifest reads source guest ownership before host extraction",
+    "file": "deploy/computer/nora-computer",
+    "old": "    scope_manifest_tar \"$file\" \"$inv/inventory.json\" >/dev/null || { rm -rf \"$inv\"; exit 3; }",
+    "new": "    mkdir -p \"$inv/extract\"\n    tar xzf \"$file\" -C \"$inv/extract\" || { rm -rf \"$inv\"; exit 3; }\n    scope_manifest_dir \"$inv/extract\" \"$inv/inventory.json\" >/dev/null || { rm -rf \"$inv\"; exit 3; }",
+    "target": "tests/integration/test_scoped_browser_recovery.py::test_manifest_preserves_guest_owners_and_verifies_restore"
+  },
+  {
+    "name": "context resolves execution segment rather than reusable task",
+    "file": "nora/engagement/computer_context.py",
+    "old": "owners[key] = await self._tasks.get(UUID(key)) if key else None",
+    "new": "owners[key] = await self._tasks.get(t.task_id)",
+    "target": "tests/integration/test_scoped_browser_recovery.py::test_context_joins_browser_handle_to_execution_segment"
+  },
+  {
+    "name": "lost browser transport drains unanswered commands",
+    "file": "deploy/computer/computerd.py",
+    "old": "            if browser._client_pending:\n                # Drain a lost command transport while its app segment still\n                # owns the scope. Idle maintenance cannot retire live work.\n                await browser.stop()",
+    "new": "            if False:\n                await browser.stop()",
+    "target": "tests/infra/computer/test_computerd_browser.py::test_lost_browser_command_transport_drains_before_quiet"
+  },
+  {
+    "name": "pending CDP command prevents a quiet verdict",
+    "file": "nora/domain/computer.py",
+    "old": "or (isinstance(pending_actions, int) and pending_actions > 0)",
+    "new": "or False",
+    "target": "tests/infra/computer/test_computerd_browser.py::test_lost_browser_command_transport_drains_before_quiet"
+  }
+]

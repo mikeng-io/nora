@@ -6,11 +6,18 @@ tests/unit/test_browser_client.py."""
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
+
+import httpx
+from openai import AsyncOpenAI
 
 from nora.agent import browse
 from nora.agent.browse import BrowseAgentRunner, BrowseSettings, _Task, _tools
+from nora.agent.factory import ModelSource, ModelSpec, build_retry_policy
 from nora.infra.computer.browser import BrowserError, RefError, Snapshot
+
+GENERATED_TOKEN = "generated-token"  # noqa: S105 - synthetic, in-process transport only
 
 
 class FakePage:
@@ -139,8 +146,69 @@ def _runner(**settings: Any) -> BrowseAgentRunner:
                              token="t", settings=BrowseSettings(**settings))  # noqa: S106 - a test token
 
 
+async def test_real_browse_drive_assembles_the_brief_and_executes_page_tools():
+    requests = []
+    script = [
+        ("page_open", {"url": "https://example.com"}),
+        ("page_snapshot", {}),
+        ("browse_done", {"answer": "The page title is Example."}),
+    ]
+
+    async def respond(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        first_user = next(m for m in body["messages"] if m["role"] == "user")
+        content = first_user["content"]
+        text = content if isinstance(content, str) else "\n".join(
+            part["text"] for part in content if part["type"] == "text")
+        assert text.strip().splitlines()[1:-1] == [
+            '<part is="objective">generated browser objective</part>',
+            '<part is="start">https://example.com</part>',
+        ]
+        index = len(requests) - 1
+        if index < len(script):
+            name, args = script[index]
+            delta = {"role": "assistant", "tool_calls": [{
+                "index": 0, "id": f"generated-{index}", "type": "function",
+                "function": {"name": name, "arguments": json.dumps(args)},
+            }]}
+            finish = "tool_calls"
+        else:
+            delta, finish = {"role": "assistant", "content": "Task complete."}, "stop"
+        chunks = [
+            {"id": "generated", "object": "chat.completion.chunk", "model": "generated",
+             "choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+            {"id": "generated", "object": "chat.completion.chunk", "model": "generated",
+             "choices": [{"index": 0, "delta": {}, "finish_reason": finish}],
+             "usage": {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12}},
+        ]
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=(
+            "".join("data: " + json.dumps(chunk) + "\n\n" for chunk in chunks)
+            + "data: [DONE]\n\n"))
+
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(respond)) as transport,
+        AsyncOpenAI(api_key=GENERATED_TOKEN, http_client=transport) as client,
+    ):
+        runner = BrowseAgentRunner(
+            model_source=ModelSource(client=client, spec=ModelSpec(
+                model="generated", max_tokens=100, temperature=0,
+                tool_choice="auto")),
+            retry=build_retry_policy(timeout_seconds=10), base_url="http://unused.invalid",
+            token=GENERATED_TOKEN, settings=BrowseSettings(),
+        )
+        page = FakePage()
+        outcome = await runner._drive(
+            page, "generated browser objective", "https://example.com",
+            task_id="generated-owner", tab="generated-target")
+    assert outcome.status == "ok" and outcome.answer == "The page title is Example."
+    assert outcome.task_id == "generated-owner" and outcome.tab == "generated-target"
+    assert page.actions == [("navigate", "https://example.com"), ("snapshot", None)]
+    assert len(requests) >= 3
+
+
 async def test_a_browser_that_cannot_be_opened_is_unavailable_never_raised(monkeypatch):
-    async def refuse(self, scope, objective, start_url):
+    async def refuse(self, scope, objective, start_url, task_id):
         raise BrowserError("this room's browser already has a client")
     monkeypatch.setattr(BrowseAgentRunner, "_run", refuse)
     got = await _runner().browse(scope="ab" * 8, objective="x")
@@ -148,7 +216,7 @@ async def test_a_browser_that_cannot_be_opened_is_unavailable_never_raised(monke
 
 
 async def test_a_task_past_its_time_is_unavailable(monkeypatch):
-    async def slow(self, scope, objective, start_url):
+    async def slow(self, scope, objective, start_url, task_id):
         await asyncio.sleep(5)
     monkeypatch.setattr(BrowseAgentRunner, "_run", slow)
     got = await _runner(timeout_seconds=0.05).browse(scope="ab" * 8, objective="x")
@@ -156,7 +224,7 @@ async def test_a_task_past_its_time_is_unavailable(monkeypatch):
 
 
 async def test_an_unexpected_error_is_unavailable_never_raised(monkeypatch):
-    async def boom(self, scope, objective, start_url):
+    async def boom(self, scope, objective, start_url, task_id):
         raise ValueError("bad")
     monkeypatch.setattr(BrowseAgentRunner, "_run", boom)
     got = await _runner().browse(scope="ab" * 8, objective="x")

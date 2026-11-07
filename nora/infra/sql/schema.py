@@ -49,6 +49,7 @@ import sqlalchemy as sa
 from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy.dialects import postgresql as pg
 
+from nora.domain.browser_tasks import TAB_STATUSES as BROWSER_TAB_STATUSES
 from nora.domain.computer_events import ACTORS as COMPUTER_ACTORS
 from nora.domain.computer_events import CALL_PATHS as COMPUTER_CALL_PATHS
 from nora.domain.computer_events import DREAMER_ACTOR_PREFIX
@@ -56,6 +57,12 @@ from nora.domain.computer_events import PHASES as COMPUTER_PHASES
 from nora.domain.computer_exports import DESTINATIONS as COMPUTER_EXPORT_DESTINATIONS
 from nora.domain.computer_sessions import EXPIRY_REASONS as COMPUTER_EXPIRY_REASONS
 from nora.domain.computer_sessions import STORED_STATUSES as COMPUTER_SESSION_STATUSES
+from nora.domain.computer_tasks import (
+    TASK_KINDS as COMPUTER_TASK_KINDS,
+)
+from nora.domain.computer_tasks import (
+    TASK_STATUSES as COMPUTER_TASK_STATUSES,
+)
 from nora.domain.decision_log import REASON_MAX_CHARS, VERDICTS, WRITERS
 from nora.domain.facts import (
     FACT_PREDICATE_CEILING_CHARS,
@@ -4241,6 +4248,78 @@ COMPUTER_EXPORTS = sa.Table(
 IDX_COMPUTER_EXPORTS_ARTIFACT = sa.Index(
     "idx_computer_exports_artifact",
     COMPUTER_EXPORTS.c.artifact_id, COMPUTER_EXPORTS.c.created_at,
+)
+
+
+# `computer_tasks` — the durable execution intent behind the per-scope FIFO
+# (`nora.domain.computer_tasks`, migration `0147`): one row per segment on a
+# scope's VM, written before its Redis stream entry; the terminal result is
+# persisted before the stream ack. `origin` is the delivery provenance (the
+# room, person, turn, session and audit operation it was admitted under).
+COMPUTER_TASKS = sa.Table(
+    "computer_tasks",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
+    sa.Column("scope", sa.Text, nullable=False),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("status", sa.Text, nullable=False),
+    sa.Column("payload", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    sa.Column("origin", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    sa.Column("result", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    sa.Column("parent", pg.UUID(as_uuid=True), nullable=True),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("deadline_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("cancel_requested_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("delivered_at", sa.DateTime(timezone=True), nullable=True),
+    sa.CheckConstraint(
+        f"status IN ({', '.join(repr(x) for x in sorted(COMPUTER_TASK_STATUSES))})",
+        name="ck_computer_tasks_status",
+    ),
+    sa.CheckConstraint(
+        f"kind IN ({', '.join(repr(x) for x in sorted(COMPUTER_TASK_KINDS))})",
+        name="ck_computer_tasks_kind",
+    ),
+)
+
+IDX_COMPUTER_TASKS_OPEN = sa.Index(
+    "idx_computer_tasks_scope_open",
+    COMPUTER_TASKS.c.scope, COMPUTER_TASKS.c.created_at,
+    postgresql_where=sa.text("status IN ('queued','running')"),
+)
+
+
+# `browser_tasks` — which task owns which CDP target on which VM instance
+# (`nora.domain.browser_tasks`, migration `0147`): continuation binding, the
+# population the four-target cap counts, and stale-instance expiry.
+BROWSER_TASKS = sa.Table(
+    "browser_tasks",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
+    sa.Column("scope", sa.Text, nullable=False),
+    sa.Column("task_id", pg.UUID(as_uuid=True), nullable=False),
+    sa.Column("instance", sa.Text, nullable=False),
+    sa.Column("target_id", sa.Text, nullable=False),
+    sa.Column("status", sa.Text, nullable=False),
+    sa.Column("via", sa.Text, nullable=False, server_default="task"),
+    sa.Column("last_url", sa.Text, nullable=False, server_default=""),
+    sa.Column("last_title", sa.Text, nullable=False, server_default=""),
+    sa.Column("detail", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("last_activity_at", sa.DateTime(timezone=True), nullable=False),
+    sa.CheckConstraint(
+        f"status IN ({', '.join(repr(x) for x in sorted(BROWSER_TAB_STATUSES))})",
+        name="ck_browser_tasks_status",
+    ),
+    sa.UniqueConstraint("scope", "instance", "target_id", name="uq_browser_tasks_target"),
+)
+
+IDX_BROWSER_TASKS_OPEN = sa.Index(
+    "idx_browser_tasks_scope_open",
+    BROWSER_TASKS.c.scope, BROWSER_TASKS.c.instance,
+    postgresql_where=sa.text("status = 'open'"),
 )
 
 IDX_COMPUTER_EXPORTS_ROOM = sa.Index(
