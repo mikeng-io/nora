@@ -47,6 +47,7 @@ import logging
 import time
 from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
+from os.path import basename
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 from urllib.parse import urlsplit
@@ -1832,7 +1833,7 @@ class DiscordBridge:
         data = await req.clone(client_max_size=MAX_ATTACHMENT_BYTES + 1).read()
         if len(data) > MAX_ATTACHMENT_BYTES:
             return web.json_response({"error": "too large"}, status=413)
-        path = self._custody_dir / key
+        path = self._custody_dir / basename(key)
         if path.is_file() and path.read_bytes() != data:
             return web.json_response({"error": "key conflict"}, status=409)
         path.write_bytes(data)
@@ -1844,7 +1845,7 @@ class DiscordBridge:
         key = req.match_info["key"]
         if not attachment_key_ok(key):
             return web.json_response({"error": "bad key"}, status=400)
-        p = self._custody_dir / key
+        p = self._custody_dir / basename(key)
         if not p.is_file():
             return web.json_response({"error": "unknown"}, status=404)
         return web.Response(body=p.read_bytes())
