@@ -940,6 +940,27 @@ async def test_music_channel_routing_follows_the_current_projection(bridge):
     await control.close()
 
 
+async def test_attachment_body_limit_applies_only_to_uploads(bridge, monkeypatch):
+    client = bridge["http"]
+    auth = {"Authorization": f"Bearer {TOKEN}"}
+    limit = 2 * 1024 * 1024
+    monkeypatch.setattr("nora.platform.discord.bridge_app.MAX_ATTACHMENT_BYTES", limit)
+    for index, size in enumerate((1300 * 1024, limit)):
+        payload = b"x" * size
+        path = f"/v1/attachments/large-{index}"
+        put = await client.put(path, data=payload, headers=auth)
+        assert put.status == 200
+        got = await client.get(path, headers=auth)
+        assert got.status == 200 and await got.read() == payload
+    refused = await client.put("/v1/attachments/too-large", data=b"x" * (limit + 1),
+                               headers=auth)
+    assert refused.status == 413
+    missing = await client.get("/v1/attachments/too-large", headers=auth)
+    assert missing.status == 404
+    ordinary = await client.post("/v1/actions", data=b"x" * (1300 * 1024), headers=auth)
+    assert ordinary.status == 413
+
+
 async def test_actions_and_capture_fail_closed_without_collaborators(bridge):
     """The collaborator fence: no `ActionService` → `/v1/actions` is
     `unavailable` (503), and NO SDK side-effect is attempted; no

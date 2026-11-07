@@ -455,6 +455,26 @@ async def test_attachment_custody(bridge_app):
     assert got.status == 200 and (await got.read()) == b"one"
 
 
+async def test_attachment_body_limit_applies_only_to_uploads(bridge_app, monkeypatch):
+    _, client, _ = bridge_app
+    limit = 2 * 1024 * 1024
+    monkeypatch.setattr(wrapper, "MAX_ATTACHMENT_BYTES", limit)
+    for index, size in enumerate((1300 * 1024, limit)):
+        payload = b"x" * size
+        path = f"/v1/attachments/large-{index}"
+        put = await client.put(path, data=payload, headers=AUTH)
+        assert put.status == 201
+        got = await client.get(path, headers=AUTH)
+        assert got.status == 200 and await got.read() == payload
+    refused = await client.put("/v1/attachments/too-large", data=b"x" * (limit + 1),
+                               headers=AUTH)
+    assert refused.status == 413
+    missing = await client.get("/v1/attachments/too-large", headers=AUTH)
+    assert missing.status == 404
+    ordinary = await client.post("/v1/reads", data=b"x" * (1300 * 1024), headers=AUTH)
+    assert ordinary.status == 413
+
+
 async def test_attachment_custody_accepts_the_client_key_shape(bridge_app):
     """App-minted outbound keys embed the action binding —
     `out-<action_id>-<i>`, colons and hyphens included — so the custody

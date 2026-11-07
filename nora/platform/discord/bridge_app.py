@@ -1829,7 +1829,7 @@ class DiscordBridge:
         key = req.match_info["key"]
         if not attachment_key_ok(key):
             return web.json_response({"error": "bad key"}, status=400)
-        data = await req.read()
+        data = await req.clone(client_max_size=MAX_ATTACHMENT_BYTES + 1).read()
         if len(data) > MAX_ATTACHMENT_BYTES:
             return web.json_response({"error": "too large"}, status=413)
         (self._custody_dir / key).write_bytes(data)

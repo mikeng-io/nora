@@ -1,0 +1,16 @@
+[
+  {
+    "name": "signal_attachment_default_http_limit",
+    "file": "deploy/signal-bridge/wrapper.py",
+    "old": "body = await req.clone(client_max_size=MAX_ATTACHMENT_BYTES + 1).read()",
+    "new": "body = await req.read()",
+    "target": "tests/integration/test_signal_bridge_routes.py::test_attachment_body_limit_applies_only_to_uploads"
+  },
+  {
+    "name": "discord_attachment_default_http_limit",
+    "file": "nora/platform/discord/bridge_app.py",
+    "old": "data = await req.clone(client_max_size=MAX_ATTACHMENT_BYTES + 1).read()",
+    "new": "data = await req.read()",
+    "target": "tests/integration/test_discord_bridge_control.py::test_attachment_body_limit_applies_only_to_uploads"
+  }
+]

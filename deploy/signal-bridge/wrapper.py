@@ -692,7 +692,7 @@ class Bridge:
         key = req.match_info["key"]
         if not attachment_key_ok(key):
             return web.json_response({"error": "bad key"}, status=400)
-        body = await req.read()
+        body = await req.clone(client_max_size=MAX_ATTACHMENT_BYTES + 1).read()
         if len(body) > MAX_ATTACHMENT_BYTES:
             return web.json_response({"error": "too large"}, status=413)
         path = self.cfg.attach_dir / key
