@@ -25,6 +25,8 @@ import sqlalchemy as sa
 from aiohttp.test_utils import TestClient, TestServer
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from nora.domain.media import MediaRef
+from nora.domain.models import NormalizedMessage
 from nora.infra.sql.bridge_store import SqlBridgeStore
 from nora.infra.sql.schema import BRIDGE_ACTION, BRIDGE_WORK, MESSAGES, OTP_CHALLENGE
 from nora.testing.signal_daemon import FakeSignalDaemon
@@ -147,8 +149,8 @@ def _projection(tmp_path, **over) -> None:
 
 
 @pytest.fixture
-async def daemon():
-    d = FakeSignalDaemon()
+async def daemon(request):
+    d = FakeSignalDaemon(attachments=getattr(request, "param", None))
     client = TestClient(TestServer(d.app()))
     await client.start_server()
     d.url = str(client.make_url("")).rstrip("/")
@@ -1405,3 +1407,79 @@ async def test_teardown_finishes_an_inflight_receipt_before_disposing_its_databa
         else:
             await shutdown
         await upstream.close()
+
+
+@pytest.mark.parametrize("daemon", [{
+    "up-one": b"blob-one", "up-two": b"blob-two",
+    "up-good": b"ok-bytes", "up-evt": b"evt-bytes",
+}], indirect=True)
+class TestSignalCustodyBinding:
+    async def test_custody_rebinds_the_serialized_platform_id(self, bridge_app):
+        """Finding 3: after `_custody`, `msg.media[i].platform_id` IS the
+        hash key bytes answer to — the app fetches the reference it was
+        handed, not the upstream handle that no byte answers to."""
+        bridge, _, daemon = bridge_app
+        cfg = bridge.cfg
+        cfg.attach_dir.mkdir()
+        msg = NormalizedMessage(
+            platform="signal", conversation_id="g",
+            conversation_type="group", sender_id="+1", sender_name=None,
+            timestamp=1, body="", raw={},
+            media=(MediaRef(platform_id="up-one",
+                            media_type="image/png", filename="a.png"),
+                   MediaRef(platform_id="up-two",
+                            media_type="image/png", filename="b.png")))
+        bound, attachments = await bridge._custody(msg)
+        assert daemon.attachment_reads == ["up-one", "up-two"]
+        key_one = hashlib.sha256(b"blob-one").hexdigest()[:32]
+        key_two = hashlib.sha256(b"blob-two").hexdigest()[:32]
+        # Index-stable rebind — every ref points at ITS custody key.
+        assert [r.platform_id for r in bound.media] == [key_one, key_two]
+        assert [a["key"] for a in attachments] == [key_one, key_two]
+        assert (cfg.attach_dir / key_one).read_bytes() == b"blob-one"
+        assert (cfg.attach_dir / key_two).read_bytes() == b"blob-two"
+
+    async def test_a_failed_download_keeps_the_upstream_handle(
+            self, bridge_app):
+        """A custody failure does not fabricate a key: the ref keeps its
+        upstream id and no attachment record claims custody — the app's
+        fetch is honest `unavailable`, not a 404 under a wrong key."""
+        bridge, _, daemon = bridge_app
+        cfg = bridge.cfg
+        cfg.attach_dir.mkdir()
+        msg = NormalizedMessage(
+            platform="signal", conversation_id="g",
+            conversation_type="group", sender_id="+1", sender_name=None,
+            timestamp=1, body="", raw={},
+            media=(MediaRef(platform_id="up-missing"),
+                   MediaRef(platform_id="up-good")))
+        bound, attachments = await bridge._custody(msg)
+        assert next(
+            r.platform_id for r in bound.media) == "up-missing"
+        assert len(attachments) == 1
+        assert daemon.attachment_reads == ["up-missing", "up-good"]
+
+    async def test_custody_binds_before_the_journal_append(
+            self, bridge_app):
+        """The journal holds the BOUND reference — read the journaled
+        envelope's `message.media` back and it names custody keys, not
+        upstream handles (the actual handoff the app replays)."""
+        bridge, _, daemon = bridge_app
+        cfg = bridge.cfg
+        cfg.attach_dir.mkdir()
+        event = {"envelope": {
+            "source": SENDER, "sourceNumber": SENDER, "timestamp": 9,
+            "dataMessage": {"message": "pic", "timestamp": 9,
+                            "groupInfo": {"groupId": ROOM},
+                            "attachments": [{"id": "up-evt",
+                                             "contentType": "image/png",
+                                             "filename": "p.png"}]}}}
+        await bridge._handle(event)
+        assert daemon.attachment_reads == ["up-evt"]
+        rec = next(r for r in bridge.journal.recover()
+                   if "envelope" in r)
+        env = wrapper.Envelope.from_fields(rec["envelope"])
+        media = env.message["media"]
+        key = hashlib.sha256(b"evt-bytes").hexdigest()[:32]
+        assert media[0]["platform_id"] == key
+        assert (cfg.attach_dir / key).read_bytes() == b"evt-bytes"
