@@ -156,14 +156,15 @@ async def test_empty_output_or_missing_reason_is_fatal(tmp_path, raw):
     assert validate_events(read_events(evidence.path))["status"] == "ERROR"
 
 
-async def test_rescore_generated_run_directory(tmp_path):
+async def test_rescore_generated_run_directory(tmp_path, monkeypatch):
     from tempfile import TemporaryFile
 
     from opentelemetry import trace
 
     from evals.backbone import _prefill_capture
     from nora.subject.eval_evidence import RunEvidence, read_events, validate_events
-    from scripts.memory_graph_spike import freeze, rescore_facts
+    from scripts import memory_graph_spike as spike
+    from scripts.memory_graph_spike import freeze
     _prefill_capture()
     source = tmp_path / "source"
     source.mkdir(mode=0o700)
@@ -181,16 +182,20 @@ async def test_rescore_generated_run_directory(tmp_path):
                                           "location": "1", "reason": "absent from saved"}],
                                "context_only": []})
 
-        rescored = RunEvidence(run_id="rescore", metadata={}, lock_fd=lock.fileno(),
-                               private_root=tmp_path)
-        with rescored.capture(trace.get_tracer_provider()):
-            result = await rescore_facts(source, SimpleNamespace(models=["generated"],
-                                                               call=call, served={}))
+        monkeypatch.setattr(spike, "Judges", lambda *args: SimpleNamespace(
+            models=["generated"], call=call, served={}))
+        monkeypatch.setattr(spike, "load", lambda *args: None)
+        output = tmp_path / "rescored"
+        result = await spike.run_rescore(SimpleNamespace(rescore=source, output=output,
+            config=tmp_path / "generated.toml", judge_a="generated-a", judge_b="generated-b"))
+        receipt = json.loads((output / "report.json").read_text())
+        assert receipt == result
+        events = read_events(next(output.glob("rescore-*")))
     assert result["sessions"] == 1
     assert result["results"][0]["facts_missed"] == 1
     assert (original.path / "events.jsonl").read_bytes() == before
-    assert validate_events(read_events(rescored.path))["status"] == "PASS"
-    assert any(e["kind"] == "rescore_source" for e in read_events(rescored.path))
+    assert validate_events(events)["status"] == "PASS"
+    assert any(e["kind"] == "rescore_source" for e in events)
 
 
 @pytest.mark.parametrize("present", [True, False])
