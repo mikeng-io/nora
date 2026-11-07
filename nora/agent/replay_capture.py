@@ -144,6 +144,7 @@ class _Completions:
                     "transport_response",
                     response=response,
                     headers=headers,
+                    identity_availability="observed" if all(headers.values()) else "unavailable",
                     latency_ns=time.time_ns() - started,
                 )
                 data = response.model_dump()
@@ -197,6 +198,7 @@ class _Stream:
             "transport_response",
             response=chunk,
             headers=self.headers,
+            identity_availability="observed" if all(self.headers.values()) else "unavailable",
             latency_ns=time.time_ns() - self.started,
         )
         return chunk

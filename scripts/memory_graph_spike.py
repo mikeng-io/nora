@@ -246,6 +246,7 @@ class Judges:
             max_tokens=4096,
             temperature=0,
         )
+        model.update_config(stream=False)
         from nora.agent.replay_capture import served_identities
         with served_identities() as identities:
             result = await ask_text(
@@ -682,7 +683,8 @@ def freeze_fact_session(output: Path, index: int, wake: Any, inspection: Any,
 
 
 async def smoke_fact_support(
-    judges: Judges, inspection: Any, exchanges: list[dict[str, Any]]
+    judges: Judges, inspection: Any, exchanges: list[dict[str, Any]], *,
+    session_event_ids: list[str] | None = None, source_sha256: str | None = None,
 ) -> dict[str, Any]:
     """The smoke report's fact scoring: each saved statement judged supported /
     unsupported / unsure against its cited quote and the shown rows, and the
@@ -714,8 +716,8 @@ async def smoke_fact_support(
     }
     from nora.agent.replay_capture import record
     from nora.subject.eval_evidence import current
-    session_ids = []
-    if evidence_run := current():
+    session_ids = list(session_event_ids or [])
+    if session_event_ids is None and (evidence_run := current()):
         captured = read_events(evidence_run.path)
         starts = [i for i, e in enumerate(captured) if e.get("name") == "nora.session.started"]
         if starts:
@@ -737,7 +739,7 @@ async def smoke_fact_support(
                         or not parsed["reason"].strip()):
                     raise ValueError("judge_reason_or_verdict_missing")
                 record("judge_verdict", alias=model, statement=statement,
-                       session_event_ids=session_ids,
+                       session_event_ids=session_ids, source_sha256=source_sha256,
                        verdict=verdict,
                        reason=parsed.get("reason") if isinstance(parsed, dict) else None,
                        output=parsed)
@@ -784,7 +786,7 @@ async def smoke_fact_support(
                     accepted.append(entry)
             parsed["missed"] = accepted
             record("judge_verdict", alias=model, verdict="missed", reason="scoped",
-                   session_event_ids=session_ids,
+                   session_event_ids=session_ids, source_sha256=source_sha256,
                    output=parsed)
             out["facts_missed"] += len(parsed["missed"])
             out["facts_context_only"] += len(parsed["context_only"])
@@ -1286,23 +1288,81 @@ async def run(args: Any) -> dict[str, Any]:
         return report
 
 
+def evidence_file(directory: Path) -> Path:
+    if (directory / "events.jsonl").is_file():
+        return directory / "events.jsonl"
+    paths = [p for pattern in ("spike-*/events.jsonl", "rescore-*/events.jsonl")
+             for p in directory.glob(pattern)]
+    if len(paths) != 1:
+        raise ValueError("source_record_missing_or_ambiguous")
+    return paths[0]
+
+
+def decision_sources(path: Path, events: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    sources: dict[str, list[dict[str, Any]]] = {}
+    for reference in events:
+        if reference["kind"] != "rescore_source":
+            continue
+        expected = reference["sha256"]
+        candidate: Path | None
+        if reference.get("path"):
+            candidate = Path(reference["path"])
+        else:
+            # Older re-scores recorded only the digest. Resolve adjacent private runs by content.
+            candidates = sorted(path.parent.parent.parent.glob("*/spike-*/events.jsonl"))
+            candidate = next((p for p in candidates if fingerprint(p) == expected), None)
+        if candidate is None or fingerprint(candidate) != expected:
+            raise ValueError("source_fingerprint_mismatch")
+        source = read_events(candidate.parent)
+        writer = [e for e in source if e["kind"] not in {
+            "judge_error", "judge_verdict", "run_failed"}]
+        if validate_events(writer)["status"] != "PASS":
+            raise ValueError("source_capture_incomplete")
+        sources[expected] = source
+    return sources
+
+
 async def decision_judge(directory: Path, judges: Judges) -> dict[str, Any]:
     from nora.agent.replay_capture import record
     from nora.subject.replay_diagnosis import diagnose
-    events = read_events(directory)
+    path = evidence_file(directory)
+    events = read_events(path.parent)
+    sources = decision_sources(path, events)
     receipt = validate_events(events)
     if receipt["status"] != "PASS":
         return receipt
     statements = []
+    legacy_sessions = [e for e in events if e["kind"] == "rescore_session"]
+    session_index = -1
     for event in events:
-        if event["kind"] != "judge_verdict":
+        if event["kind"] == "fact_scoring_input":
+            session_index += 1
+        if (event["kind"] != "judge_verdict"
+                or event.get("verdict") not in {"unsupported", "missed"}):
             continue
+        if event["verdict"] == "missed" and not event["output"]["missed"]:
+            continue
+        source_key = event.get("source_sha256")
+        if sources and source_key is None:
+            if len(sources) != 1:
+                raise ValueError("source_reference_ambiguous")
+            source_key = next(iter(sources))
+        source_events = sources[source_key] if source_key else events
+        ids = event.get("session_event_ids") or []
+        if not ids and sources and 0 <= session_index < len(legacy_sessions):
+            ids = legacy_sessions[session_index]["session_event_ids"]
+        by_id = {e["event_id"]: e for e in source_events}
+        if not ids or any(i not in by_id for i in ids):
+            raise ValueError("source_session_events_missing")
+        scoped = [e for e in source_events if e["event_id"] in ids]
         if event.get("verdict") == "unsupported":
             statements.append({"kind": "unsupported", "statement": event["statement"],
-                               "session_event_ids": event.get("session_event_ids", [])})
+                               "session_event_ids": ids, "source_sha256": source_key,
+                               "events": scoped})
         if event.get("verdict") == "missed":
             statements.extend({"kind": "missed", **s,
-                               "session_event_ids": event.get("session_event_ids", [])}
+                               "session_event_ids": ids, "source_sha256": source_key,
+                               "events": scoped}
                               for s in event["output"]["missed"])
     results = []
     instruction = (
@@ -1314,7 +1374,7 @@ async def decision_judge(directory: Path, judges: Judges) -> dict[str, Any]:
         "Absent, redacted or unavailable reasoning means insufficient_evidence. Cite event ids."
     )
     for statement in statements:
-        scoped = [e for e in events if e["event_id"] in statement["session_event_ids"]]
+        scoped = statement.pop("events")
         try:
             raw = await judges.call(judges.models[0], instruction,
                                     {"statement": statement, "events": scoped})
@@ -1410,7 +1470,7 @@ async def rescore_facts(directory: Path, judges: Judges) -> dict[str, Any]:
         paths = [directory / "events.jsonl"]
     if not paths:
         raise ValueError("source_record_missing")
-    sessions: list[tuple[Any, list[dict[str, Any]]]] = []
+    sessions: list[tuple[Any, list[dict[str, Any]], list[str], str | None]] = []
     for path in paths:
         events = read_events(path.parent)
         # Old scorer failures are replaceable; capture/terminal failures are not.
@@ -1419,7 +1479,8 @@ async def rescore_facts(directory: Path, judges: Judges) -> dict[str, Any]:
         receipt = validate_events(writer_events)
         if receipt["status"] == "ERROR":
             raise ValueError("source_capture_incomplete")
-        record("rescore_source", sha256=fingerprint(path), receipt=receipt)
+        record("rescore_source", path=str(path.resolve()),
+               sha256=fingerprint(path), receipt=receipt)
         recorded = recorded_fact_sessions(events)
         inputs = [e for e in events if e["kind"] == "fact_scoring_input"]
         if inputs and len(inputs) != len(recorded):
@@ -1438,15 +1499,17 @@ async def rescore_facts(directory: Path, judges: Judges) -> dict[str, Any]:
                                       inputs[index]["exchanges"])
             record("rescore_session", session_event_ids=[e["event_id"] for e in session["events"]],
                    instructions=session["instructions"])
-            sessions.append((session["inspection"], session["exchanges"]))
+            sessions.append((session["inspection"], session["exchanges"],
+                             [e["event_id"] for e in session["events"]], fingerprint(path)))
             judges.served.setdefault("writer", []).extend(
                 e["headers"] for e in session["events"] if e["kind"] == "transport_response")
     if not sessions:
         raise ValueError("source_sessions_missing")
     results = []
-    for inspection, exchanges in sessions:
+    for inspection, exchanges, ids, source_sha in sessions:
         record("fact_scoring_input", inspection=inspection, exchanges=exchanges)
-        results.append(await smoke_fact_support(judges, inspection, exchanges))
+        results.append(await smoke_fact_support(judges, inspection, exchanges,
+                       session_event_ids=ids, source_sha256=source_sha))
     return {"status": "REPORTED", "sessions": len(results), "results": results,
             "independence": served_independence(judges.served)}
 
@@ -1485,9 +1548,14 @@ async def run_diagnostic(args: Any) -> dict[str, Any]:
     with TemporaryFile() as lock:
         evidence = RunEvidence(run_id="diagnostic", metadata=revision(Path.cwd()),
                                lock_fd=lock.fileno(), private_root=output)
-        with evidence.capture(trace.get_tracer_provider()):
-            report = await decision_judge(args.decision_judge,
-                Judges(load(args.config), [args.judge_a, args.judge_b], args.config))
+        report: dict[str, Any] = {"status": "ERROR"}
+        try:
+            with evidence.capture(trace.get_tracer_provider()):
+                report = await decision_judge(args.decision_judge,
+                    Judges(load(args.config), [args.judge_a, args.judge_b], args.config))
+        except Exception:  # noqa: BLE001 - only the private evidence records failure details
+            report["status"] = "ERROR"
+        report["evidence"] = validate_events(read_events(evidence.path))
         freeze(output / "report.json", report)
     return report
 

@@ -277,26 +277,25 @@ async def test_judge_transport_identity_without_eval_capture(monkeypatch, presen
     headers = {"x-omniroute-model": "generated-served",
                "x-omniroute-provider": "generated-vendor"} if present else {}
 
+    requests = []
+
     def respond(request):
-        assert json.loads(request.content)["model"] == "generated-judge"
-        return httpx.Response(200, headers=headers, json={
-            "id": "generated", "object": "chat.completion", "created": 1,
-            "model": "generated-served", "choices": [{"index": 0, "finish_reason": "stop",
-            "message": {"role": "assistant", "content": '{"missed":[],"context_only":[]}'}}],
-            "usage": {"prompt_tokens": 2, "completion_tokens": 2, "total_tokens": 4}})
+        body = json.loads(request.content)
+        requests.append(body)
+        assert body["model"] == "generated-judge"
+        return generated_completion(body, headers if not body["stream"] else {})
 
     original = build_structured_model
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as transport:
         def build(**kwargs):
-            model = original(**kwargs, http_client=transport)
-            model.update_config(stream=False)
-            return model
+            return original(**kwargs, http_client=transport)
         monkeypatch.setattr(spike, "build_structured_model", build)
         monkeypatch.setattr(spike.Judges, "_endpoint", lambda *args: (
             "https://generated.invalid/v1", "generated-key", "generated-judge"))
         judges = spike.Judges(SimpleNamespace(llm=SimpleNamespace(timeout_seconds=5)),
                               ["generated-judge"], None)
         assert await judges.call("generated-judge", "generated instruction", {})
+    assert len(requests) == 1 and requests[0]["stream"] is False
     assert judges.served["generated-judge"] == [{
         key: headers.get(key) for key in ("x-omniroute-model", "x-omniroute-provider")}]
     judges.served["writer"] = [{"x-omniroute-model": "generated-writer",
@@ -361,3 +360,65 @@ async def test_negative_social_source_numbers_are_scored():
     assert result["facts_supported"] == 1
     assert result["facts_missed"] == 1
     assert result["facts_judge_errors"] == 0
+
+
+def generated_completion(body, headers):
+    import httpx
+
+    content = '{"missed":[],"context_only":[]}'
+    usage = {"prompt_tokens": 2, "completion_tokens": 2, "total_tokens": 4}
+    if not body["stream"]:
+        return httpx.Response(200, headers=headers, json={
+            "id": "generated", "object": "chat.completion", "created": 1,
+            "model": "generated-body-model", "choices": [{"index": 0, "finish_reason": "stop",
+            "message": {"role": "assistant", "content": content}}], "usage": usage})
+    chunks = [
+        {"id": "generated", "object": "chat.completion.chunk", "created": 1,
+         "model": "generated-body-model", "choices": [{"index": 0, "finish_reason": None,
+         "delta": {"role": "assistant", "content": content}}]},
+        {"id": "generated", "object": "chat.completion.chunk", "created": 1,
+         "model": "generated-body-model", "choices": [{"index": 0, "finish_reason": "stop",
+         "delta": {}}], "usage": usage},
+    ]
+    data = "".join("data: " + json.dumps(c) + "\n\n" for c in chunks) + "data: [DONE]\n\n"
+    return httpx.Response(200, headers={"content-type": "text/event-stream", **headers},
+                          content=data)
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("present", [False, True])
+async def test_raw_identity_capture_for_each_response_shape(tmp_path, stream, present):
+    from tempfile import TemporaryFile
+
+    import httpx
+    from opentelemetry import trace
+
+    from evals.backbone import _prefill_capture
+    from nora.agent.replay_capture import served_identities
+    from nora.agent.structured import ask_text, build_structured_model
+    from nora.subject.eval_evidence import RunEvidence, read_events
+    _prefill_capture()
+    headers = {"x-omniroute-model": "generated-served",
+               "x-omniroute-provider": "generated-provider"} if present else {}
+
+    def respond(request):
+        body = json.loads(request.content)
+        assert body["stream"] == stream
+        return generated_completion(body, headers)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as transport:
+        model = build_structured_model(base_url="https://generated.invalid/v1", api_key="generated",
+            model_id="generated-alias", max_tokens=100, temperature=0, http_client=transport)
+        model.update_config(stream=stream)
+        with TemporaryFile() as lock:
+            evidence = RunEvidence(run_id="generated", metadata={}, lock_fd=lock.fileno(),
+                                   private_root=tmp_path)
+            with evidence.capture(trace.get_tracer_provider()), served_identities() as identities:
+                result = await ask_text(model=model, prompt="generated", timeout_seconds=5)
+    assert result.content == '{"missed":[],"context_only":[]}'
+    assert identities == [{k: headers.get(k) for k in (
+        "x-omniroute-model", "x-omniroute-provider")}]
+    responses = [e for e in read_events(evidence.path) if e["kind"] == "transport_response"]
+    assert responses
+    assert all(e["identity_availability"] == ("observed" if present else "unavailable")
+               for e in responses)

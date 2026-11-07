@@ -37,7 +37,7 @@
   {
     "name": "rescore executes fact scoring",
     "file": "scripts/memory_graph_spike.py",
-    "old": "        results.append(await smoke_fact_support(judges, inspection, exchanges))",
+    "old": "        results.append(await smoke_fact_support(judges, inspection, exchanges,\n                       session_event_ids=ids, source_sha256=source_sha))",
     "new": "        pass",
     "target": "tests/unit/test_replay_scoring.py::test_rescore_generated_run_directory"
   },
@@ -82,5 +82,26 @@
     "old": "locations = re.findall(r\"-?\\d+\", str(entry[\"location\"]))",
     "new": "locations = re.findall(r\"\\d+\", str(entry[\"location\"]))",
     "target": "tests/unit/test_replay_scoring.py::test_negative_social_source_numbers_are_scored"
+  },
+  {
+    "name": "decision verdict IDs resolve in the fingerprinted source",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "        source_events = sources[source_key] if source_key else events",
+    "new": "        source_events = events",
+    "target": "tests/unit/test_replay_diagnosis.py::test_decision_resolves_fingerprinted_writer_events[rescore]"
+  },
+  {
+    "name": "source digest mismatch stays fatal",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "        if candidate is None or fingerprint(candidate) != expected:",
+    "new": "        if candidate is None:",
+    "target": "tests/unit/test_replay_diagnosis.py::test_decision_resolves_fingerprinted_writer_events[tampered]"
+  },
+  {
+    "name": "judges use the header-bearing non-stream response",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "        model.update_config(stream=False)",
+    "new": "        model.update_config(stream=True)",
+    "target": "tests/unit/test_replay_scoring.py::test_judge_transport_identity_without_eval_capture[True]"
   }
 ]

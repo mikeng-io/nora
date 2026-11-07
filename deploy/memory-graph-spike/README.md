@@ -99,6 +99,28 @@ miss counts. Fact outputs require `fact`, `quote`, `location` and `reason`;
 locations spanning rows can name them as `1 / 2`. Complete JSON and JSON fences
 may have trailing prose.
 
+The decision diagnostic accepts either a live run or a re-score output directory:
+
+```sh
+uv run python -m scripts.memory_graph_spike \
+  --config "$HOME/workspace/nora/config.toml" \
+  --decision-judge "$SPIKE_RESCORE_OUTPUT" \
+  --output "$SPIKE_DIAGNOSTIC_OUTPUT"
+```
+
+Use a new diagnostic output directory. Re-score source paths and SHA256 digests
+bind verdict IDs to the original writer events. Older re-scores containing only
+a digest resolve the source among sibling run directories; keep those outputs
+beside the original source run. A missing or changed source is ERROR before a
+judge call. Legacy re-scores with empty verdict IDs use their recorded session
+links and scoring-input order. New verdicts retain explicit source IDs/digests.
+
+Judge requests use non-streamed JSON responses so the gateway's served-model and
+provider headers are present. Streamed responses without those headers record
+identity as `unavailable`, even if their body contains a model name; aliases are
+never served identity. A missing identity in the original writer record remains
+unavailable and cannot be recovered by re-scoring.
+
 ## Measurement limits
 
 - The checked-in October 27 precision-spike implementation could not be found in

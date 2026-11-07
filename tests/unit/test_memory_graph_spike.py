@@ -540,7 +540,7 @@ async def test_judges_dial_the_eval_route_where_the_measurer_runs(
 
     def record(**kwargs):
         dialed.append(kwargs)
-        return SimpleNamespace()
+        return SimpleNamespace(update_config=lambda **config: kwargs.update(config))
 
     monkeypatch.setattr(spike, "build_structured_model", record)
     monkeypatch.setattr(
@@ -572,6 +572,7 @@ async def test_judges_dial_the_eval_route_where_the_measurer_runs(
         "generated-session",
     ]
     assert all(d["api_key"] == "generated-key" for d in dialed)
+    assert all(d["stream"] is False for d in dialed)
 
 
 async def test_age_comparison_measures_the_source_once_outside_replay(
