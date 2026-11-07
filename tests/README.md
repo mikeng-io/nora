@@ -47,10 +47,21 @@ Shared modules at this level:
 `make test` is incremental; `make test-fast` and `make test-affected` are aliases.
 They compare staged, unstaged and untracked changes against HEAD, or the last
 commit (HEAD~1) when clean. Only exact generated untracked LFS post-hooks are
-ignored. `BASE=<ref>` overrides auto selection. Unmapped/shared-helper changes
-and selector errors run the full suite; the command reports its base and scope.
+ignored. `BASE=<ref>` overrides auto selection. Environment/shared-helper changes,
+a missing or unusable dependency record, and selector errors run the full suite;
+the command reports its base and scope.
 `make test-all` explicitly runs the full serial suite. For a named file/function,
 use `uv run python -m scripts.pytest_gate <file-or-node>`.
+
+Selection comes from `scripts/affected_tests.py`, two sources combined: the
+recorded dependency map (pytest-testmon, `.testmondata`) answers for `.py`
+outside `tests/`; the reader scan answers for everything else, including a
+`.py` a test runs only as a subprocess. `nora/` non-`.py`, build and
+environment files stay ALL. A missing, corrupt or environment-mismatched
+record is ALL, never NONE. `make test` and CI fetch the newest matching
+`testmon-data` artifact (named for the commit and a hash of `uv.lock`,
+`pyproject.toml` and the Python version) via `scripts/testmon_record.py`;
+none means ALL.
 
 Run `make test-affected` (or the tests you touched) while iterating. Select
 validation by impact on the final candidate; the full suite runs hosted rather
@@ -58,8 +69,15 @@ than as a local pre-PR gate. `make full-gate` remains an explicit serial full-su
 command (`AGENTS.md`, *Gate commands*).
 
 Hosted CI passes the full changed-path list through the same selector and runs
-the selected backend workload in the required contracts job. Runtime/shared/unknown
-changes select the full suite; ordinary docs keep their reader checks. The canonical
+the selected backend workload in the required contracts job. Every `master`
+push and the weekly schedule run the whole suite with recording
+(`pytest_gate --testmon`) and upload the record; a pull request downloads the
+matching record and runs what the union selects. A release pull request does
+not run the suite: it waits for the full run on its base commit and passes
+only on success. After each post-merge full run an escape report in the step
+summary lists failed tests and whether the merged diff's selection included
+them. Runtime/shared/unknown changes select the full suite; ordinary docs keep
+their reader checks. The canonical
 runner separates timing tests from parallel work and accepts `--junit-dir` to keep
 one report per phase. CI publishes those reports and per-file durations from the
 acceptance run. Full-suite acceptance belongs on the hosted runner; local iteration
@@ -167,3 +185,8 @@ Local gate receipts:
   Host admission applies before cache lookup and remains held through publication.
 - A `REUSED` line means the earlier matched receipt was used, not new passing tests
   or new performance measurements. PR/issue/report updates do not rerun validation.
+
+Selection combines three signals: the reader scan, the static import closure
+(what a test file imports — including collection-time imports the record
+never sees), and the testmon record (what the test executed — including
+dynamic imports the graph cannot see). Neither layer is sufficient alone.
