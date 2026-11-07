@@ -1,5 +1,18 @@
 # Changelog
 
+## [7.16.1](https://github.com/mikeng-io/nora/compare/v7.16.0...v7.16.1) (2026-11-07)
+
+
+### Features
+
+* **evals:** record private replay trajectories and fact diagnostics ([72042ad](https://github.com/mikeng-io/nora/commit/72042ad6a31bf29ddd693c32fe54cafa573320e9))
+
+
+### Bug Fixes
+
+* **evals:** pair pre-dispatch model cancellation lifecycle events ([cd0b14c](https://github.com/mikeng-io/nora/commit/cd0b14cff5acd9ea2ee9701e4a396f4905ec9dfb))
+* **evals:** preserve captured structured calls and complete review verdicts ([6357164](https://github.com/mikeng-io/nora/commit/6357164538565d8298b5d5532564a4d64a00ad51))
+
 ## [7.16.0](https://github.com/mikeng-io/nora/compare/v7.15.25...v7.16.0) (2026-11-07)
 
 
