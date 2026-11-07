@@ -57,6 +57,7 @@ its lines) stay in `nora.domain`.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, tzinfo
@@ -643,6 +644,27 @@ def _item_rows(
         if rec.room == item.room:
             out.append(_own_row(rec, now_ms=now_ms, tz=tz, message_chars=message_chars))
     return out, unreadable
+
+
+def rendered_new_sources(agenda: str) -> dict[str, Any]:
+    """Fresh citable rows from the emitted agenda, after source expansion and clipping."""
+    new_sources = {}
+    for item in re.finditer(r"<item\b[^>]*>.*?</item>", agenda, re.S):
+        element = ElementTree.fromstring(item.group())  # noqa: S314 - escaped renderer output
+        for row in element:
+            n = row.get("n")
+            if n is None or row.get("own") or row.get("target"):
+                continue
+            source = row.get("source")
+            # Context message rows carry source=; fresh messages do not.
+            # Other fresh record families carry their typed source key.
+            if source and source.split(":", 1)[0] != element.get("kind"):
+                continue
+            if source and source.startswith("message:"):
+                continue
+            key = source.split(":", 1) if source else ["message", n]
+            new_sources[n] = {"key": key, "text": row.text or ""}
+    return new_sources
 
 
 def _attrs(pairs: Sequence[tuple[str, str | None]]) -> tuple[tuple[str, str], ...]:

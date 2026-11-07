@@ -47,5 +47,26 @@
     "old": "        recorded = recorded_fact_sessions(events)",
     "new": "        recorded = [s for i, s in enumerate(recorded_fact_sessions(events))\n                    if (path.parent.parent / f\"session-{i}.json\").exists()]",
     "target": "tests/unit/test_replay_scoring.py::test_rescore_generated_run_directory[False]"
+  },
+  {
+    "name": "inspection resolves expanded social-read scope",
+    "file": "nora/app/cognition_session.py",
+    "old": "                    **({\"new_sources\": rendered_new_sources(agenda)}\n                       if eval_capture_enabled() else {}),\n",
+    "new": "                    **({\"new_sources\": {\n                        str(n): {\"key\": list(key),\n                                 \"text\": state.graph_fetched.sources[tuple(key)].text}\n                        for item in state.memory_items.values()\n                        for n, key in item.snapshot.get(\"source_keys\", {}).items()\n                        if tuple(key) in state.graph_fetched.sources\n                        and tuple(key) in {\n                            (\"message\", str(grounding.records[s.ref].message_id))\n                            if s.ref in grounding.records else tuple(s.ref.split(\":\", 1))\n                            for s in view.pending\n                        }\n                    }\n                    } if eval_capture_enabled() else {}),\n",
+    "target": "tests/unit/test_cognition_session_runner.py::test_inspection_social_read_scope_uses_expanded_rendered_sources"
+  },
+  {
+    "name": "scope disagreement is reported and continues",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "    if derived_scope != recorded_scope:\n        record(\"scope_mismatch\", scope=\"new_sources\",",
+    "new": "    if derived_scope != recorded_scope:\n        raise ValueError(\"source_scoring_input_mismatch\")\n        record(\"scope_mismatch\", scope=\"new_sources\",",
+    "target": "tests/unit/test_replay_scoring.py::test_rescore_generated_run_directory[scope]"
+  },
+  {
+    "name": "private session manifest retains stimulus refs",
+    "file": "nora/app/cognition_session.py",
+    "old": "                \"stimuli\": [{\"id\": s.id, \"kind\": s.kind, \"ref\": s.ref} for s in view.pending],\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_session_runner.py::test_session_manifest_keeps_pending_stimulus_refs"
   }
 ]

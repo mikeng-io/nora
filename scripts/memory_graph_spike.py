@@ -1336,9 +1336,8 @@ async def decision_judge(directory: Path, judges: Judges) -> dict[str, Any]:
 
 def recorded_fact_sessions(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Recover scoring inputs from complete writer spans, never from derived files."""
-    from xml.etree import ElementTree
-
     from nora.agent.punctuation import undash
+    from nora.language.cognition_render import rendered_new_sources
 
     parents = {e["span_id"]: e.get("parent_span_id") for e in events
                if e["kind"] == "span_started"}
@@ -1373,22 +1372,7 @@ def recorded_fact_sessions(events: list[dict[str, Any]]) -> list[dict[str, Any]]
                     for e in scoped if e.get("name") == "nora.model.request"]
         if not requests or not compare_inspection(manifest, requests[0]):
             raise ValueError("inspection_projection_mismatch")
-        new_sources = {}
-        for item in re.finditer(r"<item\b[^>]*>.*?</item>", undash(manifest["agenda"]), re.S):
-            element = ElementTree.fromstring(item.group())  # noqa: S314 - escaped renderer output
-            for row in element:
-                n = row.get("n")
-                if n is None or row.get("own") or row.get("target"):
-                    continue
-                source = row.get("source")
-                # Context message rows carry source=; fresh messages do not.
-                # Other fresh record families carry their typed source key.
-                if source and source.split(":", 1)[0] != element.get("kind"):
-                    continue
-                if source and source.startswith("message:"):
-                    continue
-                key = source.split(":", 1) if source else ["message", n]
-                new_sources[n] = {"key": key, "text": row.text or ""}
+        new_sources = rendered_new_sources(undash(manifest["agenda"]))
         inspection = {"system": undash(manifest["system"]),
                       "agenda": undash(manifest["agenda"]), "new_sources": new_sources}
         # Instructions precede session.started but belong to the same writer span.
@@ -1403,10 +1387,19 @@ def recorded_fact_sessions(events: list[dict[str, Any]]) -> list[dict[str, Any]]
 def crosscheck_fact_input(recorded: dict[str, Any], inspection: dict[str, Any],
                           exchanges: list[dict[str, Any]]) -> None:
     from nora.agent.punctuation import _clean
+    from nora.agent.replay_capture import record
 
-    projection = {k: inspection.get(k) for k in ("system", "agenda", "new_sources")}
-    if _clean(projection) != recorded["inspection"] or exchanges != recorded["exchanges"]:
+    projection = {k: inspection.get(k) for k in ("system", "agenda")}
+    authoritative = {k: recorded["inspection"][k] for k in projection}
+    if _clean(projection) != authoritative or exchanges != recorded["exchanges"]:
         raise ValueError("source_scoring_input_mismatch")
+    derived_scope = _clean(inspection.get("new_sources", {}))
+    recorded_scope = recorded["inspection"]["new_sources"]
+    if derived_scope != recorded_scope:
+        record("scope_mismatch", scope="new_sources",
+               inspection_rows=len(derived_scope), recorded_rows=len(recorded_scope),
+               inspection_chars=len(json.dumps(derived_scope, ensure_ascii=False, sort_keys=True)),
+               recorded_chars=len(json.dumps(recorded_scope, ensure_ascii=False, sort_keys=True)))
 
 
 async def rescore_facts(directory: Path, judges: Judges) -> dict[str, Any]:

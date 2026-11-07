@@ -156,7 +156,7 @@ async def test_empty_output_or_missing_reason_is_fatal(tmp_path, raw):
     assert validate_events(read_events(evidence.path))["status"] == "ERROR"
 
 
-@pytest.mark.parametrize("disagree", [False, "inspection", "events"])
+@pytest.mark.parametrize("disagree", [False, "inspection", "system", "events", "scope"])
 async def test_rescore_generated_run_directory(tmp_path, monkeypatch, disagree):
     from tempfile import TemporaryFile
 
@@ -210,6 +210,10 @@ async def test_rescore_generated_run_directory(tmp_path, monkeypatch, disagree):
         frozen_inspection = json.loads(json.dumps(first["inspection"]))
         if disagree == "inspection":
             frozen_inspection["agenda"] = "disagrees with recorded request"
+        if disagree == "system":
+            frozen_inspection["system"] = "disagrees with recorded request"
+        if disagree == "scope":
+            frozen_inspection["new_sources"] = {}
         frozen_events = json.loads(json.dumps(first["events"]))
         if disagree == "events":
             frozen_events[0]["attributes"]["body"] = json.dumps({
@@ -241,7 +245,7 @@ async def test_rescore_generated_run_directory(tmp_path, monkeypatch, disagree):
         assert receipt == result
         events = read_events(next(output.glob("rescore-*")))
     assert (original.path / "events.jsonl").read_bytes() == before
-    if disagree:
+    if disagree in {"inspection", "system", "events"}:
         assert result["status"] == "ERROR"
         assert validate_events(events)["status"] == "ERROR"
         assert calls == []
@@ -254,6 +258,14 @@ async def test_rescore_generated_run_directory(tmp_path, monkeypatch, disagree):
         assert validate_events(events)["status"] == "PASS"
         assert len(calls) == 4
         assert any(e["kind"] == "rescore_source" for e in events)
+        mismatches = [e for e in events if e["kind"] == "scope_mismatch"]
+        if disagree == "scope":
+            assert len(mismatches) == 1
+            assert mismatches[0]["inspection_rows"] == 0
+            assert mismatches[0]["recorded_rows"] == 1
+            assert mismatches[0]["recorded_chars"] > mismatches[0]["inspection_chars"]
+        else:
+            assert mismatches == []
 
 
 @pytest.mark.parametrize("present", [True, False])

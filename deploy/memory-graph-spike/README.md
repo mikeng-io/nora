@@ -85,7 +85,12 @@ This makes judge calls only: no writer replay, snapshot database or graph writes
 The output must be new. Its private `rescore-*/events.jsonl` and `report.json`
 record the new scoring and receipt; original files remain unchanged. Writer events are authoritative, including for older captures without
 `fact_scoring_input` events. Existing `session-*.json` files and scoring-input
-events are cross-checked against the recovered input; disagreement is ERROR.
+events are cross-checked against the recovered input. System, agenda, trajectory
+or exchange disagreement is ERROR. A derived `new_sources` disagreement records
+`scope_mismatch` with row counts and serialized character sizes and continues
+using the recorded rendered-row scope. Inspection uses the same rendered-row
+derivation, including expanded `social_read` item sources. New private session
+manifests also retain pending stimulus IDs, kinds and refs.
 Missing frozen files do not prevent re-scoring complete writer sessions. Missing or incomplete writer evidence still fails.
 Old scorer errors may be replaced by the new scoring, while absent served
 identity remains `unavailable`. A missing judge output or reason remains fatal;
