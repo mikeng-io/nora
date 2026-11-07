@@ -157,8 +157,14 @@ async def test_real_browse_drive_assembles_the_brief_and_executes_page_tools():
     async def respond(request):
         body = json.loads(request.content)
         requests.append(body)
-        assert "generated browser objective" in json.dumps(body["messages"])
-        assert "https://example.com" in json.dumps(body["messages"])
+        first_user = next(m for m in body["messages"] if m["role"] == "user")
+        content = first_user["content"]
+        text = content if isinstance(content, str) else "\n".join(
+            part["text"] for part in content if part["type"] == "text")
+        assert text.strip().splitlines()[1:-1] == [
+            '<part is="objective">generated browser objective</part>',
+            '<part is="start">https://example.com</part>',
+        ]
         index = len(requests) - 1
         if index < len(script):
             name, args = script[index]
