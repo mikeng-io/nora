@@ -61,6 +61,10 @@ _OWN_INJECTOR = {
 _NOT_BUILT_HERE = {
     ("nora/ingest/relevance_gate.py", "nora_doctrine"):
         "strips the wrapper doctrine/loader.py builds",
+    ("nora/language/comprehend_render.py", "clock"):
+        "quotes the agenda's clock block verbatim inside a worked example",
+    ("nora/language/comprehend_render.py", "m"):
+        "quotes the agenda's rendered <m> rows verbatim inside worked examples",
 }
 
 def _docstring_nodes(tree: ast.AST) -> set[int]:

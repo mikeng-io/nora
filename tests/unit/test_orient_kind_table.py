@@ -270,8 +270,8 @@ async def test_assembled_session_puts_orient_before_act():
                                      last_activity_ms=None, last_wake=None), now_ms=NOW)
     text = agent.system_prompt
     assert text.index("<what_you_are_reading>") < text.index("<cognition_orient")
-    assert text.index("<steps>") < text.index("<memory>") < text.index("<rules>")
-    assert text.index("<rules>") < text.index("<examples>")
+    assert text.index("# Steps") < text.index("# Memory") < text.index("# Rules")
+    assert text.index("# Rules") < text.index("# Examples")
     assert text.index("</cognition_orient>") < text.index("# Act")
     assert text.index("# Act") < text.index("## What belongs in a note")
     assert text.index("## What belongs in a note") < text.index("# Two ways to be wrong")
