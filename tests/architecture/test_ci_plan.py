@@ -161,7 +161,7 @@ def test_document_readers_come_from_the_existing_selector(tmp_path, monkeypatch,
     monkeypatch.setattr(ci_plan, "changed_paths", lambda event, repo: ["docs/runbook.md"])
     calls = []
 
-    def readers(paths, repo):
+    def readers(paths, repo, **_kwargs):
         calls.append(paths)
         return ["tests/test_docs.py"]
 
@@ -171,6 +171,7 @@ def test_document_readers_come_from_the_existing_selector(tmp_path, monkeypatch,
     assert calls == [["docs/runbook.md"]]
     assert json.loads(values["readers"]) == ["tests/test_docs.py"]
     assert values["docs_only"] == "true"
+    assert values["testmon"] == "false"
     assert not json.loads(values["plan"])["python"]
 
 
@@ -217,7 +218,7 @@ def test_shared_document_reader_keeps_full_suite_fallback(tmp_path, monkeypatch)
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     monkeypatch.setattr("sys.argv", ["ci_plan"])
     monkeypatch.setattr(ci_plan, "changed_paths", lambda event, repo: ["deploy/computer/README.md"])
-    monkeypatch.setattr(ci_plan.affected_tests, "select", lambda paths, repo: "ALL")
+    monkeypatch.setattr(ci_plan.affected_tests, "select", lambda paths, repo, **_k: "ALL")
     assert ci_plan.main() == 0
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert json.loads(values["readers"]) == "ALL"
@@ -352,13 +353,19 @@ def test_hosted_go_jobs_cover_each_deployed_module():
         assert all(step["working-directory"] == "${{ matrix.module }}" for step in builds)
 
 
-@pytest.mark.parametrize("paths", [
-    ["nora/app.py"], ["nora/doctrine/core.md"], ["evals/rebuilt/entry.py"],
-    ["tests/conftest.py"], ["uv.lock"], ["unknown.xyz"],
-    ["docs/runbook.md", "nora/app.py"],
-    ["nora/renamed_away.py", "docs/new.md"],
+@pytest.mark.parametrize(("paths", "readers", "testmon"), [
+    (["nora/app.py"], "DEFERRED", True),
+    (["nora/doctrine/core.md"], "ALL", False),
+    (["evals/rebuilt/entry.py"], "NARROWED", True),  # a mutation table names it
+    (["tests/conftest.py"], "ALL", False),
+    (["uv.lock"], "ALL", False),
+    (["unknown.xyz"], "NARROWED", False),
+    (["docs/runbook.md", "nora/app.py"], "NARROWED", True),
+    (["nora/renamed_away.py", "docs/new.md"], "NARROWED", True),
 ])
-def test_backend_acceptance_uses_the_complete_diff(tmp_path, monkeypatch, paths):
+def test_backend_acceptance_uses_the_complete_diff(
+    tmp_path, monkeypatch, paths, readers, testmon,
+):
     event = tmp_path / "event.json"
     event.write_text(json.dumps({"pull_request": {}}))
     output = tmp_path / "output"
@@ -368,7 +375,14 @@ def test_backend_acceptance_uses_the_complete_diff(tmp_path, monkeypatch, paths)
     monkeypatch.setattr(ci_plan, "changed_paths", lambda event, repo: paths)
     assert ci_plan.main() == 0
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
-    assert json.loads(values["readers"]) == "ALL"
+    got = json.loads(values["readers"])
+    if readers == "ALL":
+        assert got == "ALL"
+    elif readers == "DEFERRED":
+        assert got == []  # the contracts job resolves the record side
+    else:
+        assert got != "ALL" and got
+    assert values["testmon"] == str(testmon).lower()
     assert values["docs_only"] == "false"
     plan = json.loads(values["plan"])
     needs = {job: {"result": "success" if chosen else "skipped"}
@@ -396,6 +410,37 @@ def test_baseline_events_select_the_full_backend(tmp_path, monkeypatch, event_da
     assert all(json.loads(values["plan"]).values())
 
 
+@pytest.mark.parametrize(("runs", "verdict"), [
+    ([], "missing"),
+    ([{"status": "completed", "conclusion": "success"}], "success"),
+    ([{"status": "completed", "conclusion": "failure"}], "failure"),
+    ([{"status": "completed", "conclusion": "cancelled"}], "failure"),
+    ([{"status": "completed", "conclusion": "timed_out"}], "failure"),
+    ([{"status": "in_progress", "conclusion": None}], "pending"),
+    ([{"status": "queued", "conclusion": None}], "pending"),
+])
+def test_release_pr_waits_for_the_base_commit_full_run(runs, verdict):
+    assert ci_plan.base_run_verdict(runs) == verdict
+
+
+def test_escape_report_marks_only_failures_the_selection_skipped():
+    failed = [
+        "tests/unit/test_a.py::test_one",
+        "tests/unit/test_b.py::test_two",
+        "tests/architecture/test_meta.py::test_three",
+    ]
+    selected = ["tests/unit/test_b.py", "tests/architecture"]
+    lines = ci_plan.escape_lines(failed, selected)
+    report = "\n".join(lines)
+    assert "escapes (red, not selected): 1" in report
+    assert "`tests/unit/test_a.py::test_one` — ESCAPED" in report
+    assert "`tests/unit/test_b.py::test_two` — selected" in report
+    assert "`tests/architecture/test_meta.py::test_three` — selected" in report
+    # positive control: a selected-all run escapes nothing
+    all_lines = ci_plan.escape_lines(failed, "ALL")
+    assert "escapes (red, not selected): 0" in "\n".join(all_lines)
+
+
 def test_full_backend_replaces_the_nonblocking_measurement():
     root = Path(__file__).resolve().parents[2]
     jobs = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())["jobs"]
@@ -406,7 +451,17 @@ def test_full_backend_replaces_the_nonblocking_measurement():
     fixed = next(step for step in steps
                  if step.get("name") == "Architecture and documentation contracts")
     assert "needs.classify.outputs.readers != '\"ALL\"'" in fixed["if"]
-    upload = next(step for step in steps
-                  if step.get("uses", "").startswith("actions/upload-artifact@"))
+    upload = next(
+        step for step in steps
+        if step.get("uses", "").startswith("actions/upload-artifact@")
+        and "backend-results/*" in step["with"]["path"]
+    )
     assert upload["if"] == "${{ !cancelled() }}"
-    assert "backend-results/*" in upload["with"]["path"]
+    record = next(
+        step for step in steps
+        if step.get("uses", "").startswith("actions/upload-artifact@")
+        and step["with"]["path"] == ".testmondata"
+    )
+    assert record["if"] == "${{ github.event_name != 'pull_request' && !cancelled() }}"
+    assert record["with"]["name"].startswith("testmon-data-")
+    assert record["with"]["if-no-files-found"] == "error"
