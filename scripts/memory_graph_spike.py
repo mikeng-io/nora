@@ -672,6 +672,15 @@ def miss_in_new_sources(entry: dict[str, Any], sources: dict[str, Any]) -> bool:
     return bool(quote) and any(quote in join.join(rows) for join in (" ", " / ", "/", ""))
 
 
+def freeze_fact_session(output: Path, index: int, wake: Any, inspection: Any,
+                        events: list[dict[str, Any]]) -> None:
+    from nora.agent.replay_capture import record
+
+    record("fact_scoring_input", inspection=inspection, exchanges=evidence_exchanges(events))
+    freeze(output / f"session-{index}.json",
+           {"wake": wake, "inspection": inspection, "events": events})
+
+
 async def smoke_fact_support(
     judges: Judges, inspection: Any, exchanges: list[dict[str, Any]]
 ) -> dict[str, Any]:
@@ -704,7 +713,6 @@ async def smoke_fact_support(
         "facts_context_only": 0,
     }
     from nora.agent.replay_capture import record
-    record("fact_scoring_input", inspection=inspection, exchanges=exchanges)
     from nora.subject.eval_evidence import current
     session_ids = []
     if evidence_run := current():
@@ -1075,6 +1083,7 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                         if (inspection is None or not requests
                                 or not compare_inspection(inspection, requests[0])):
                             raise ValueError("inspection_projection_mismatch")
+                        freeze_fact_session(output, len(results), wake, inspection, session_events)
                         proposals = [e for e in exchanges if e["name"] == "memory_propose"]
                         if any(not isinstance(e["result"], dict) for e in proposals):
                             raise ValueError("unreadable admission result")
@@ -1112,10 +1121,6 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                             admitted=sum(bool(e["result"].get("admitted")) for e in proposals),
                             refused=sum(bool(e["result"].get("refused")) for e in proposals),
                             refused_consumed=len(consumed - admitted),
-                        )
-                        freeze(
-                            output / f"session-{len(results)}.json",
-                            {"wake": wake, "inspection": inspection, "events": session_events},
                         )
                         measured.update(await smoke_fact_support(judges, inspection, exchanges))
                         if not args.smoke:
@@ -1329,8 +1334,83 @@ async def decision_judge(directory: Path, judges: Judges) -> dict[str, Any]:
                 r["observation"] == "insufficient_evidence" for r in results)}
 
 
+def recorded_fact_sessions(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Recover scoring inputs from complete writer spans, never from derived files."""
+    from xml.etree import ElementTree
+
+    from nora.agent.punctuation import undash
+
+    parents = {e["span_id"]: e.get("parent_span_id") for e in events
+               if e["kind"] == "span_started"}
+    sessions = []
+    for start_index, start in enumerate(events):
+        if start.get("name") != "nora.session.started":
+            continue
+        root = start.get("span_id")
+        manifest = json.loads(start["attributes"]["body"])
+        def belongs(event: dict[str, Any], root: Any = root) -> bool:
+            span = event.get("span_id")
+            seen = set()
+            while span and span not in seen:
+                if span == root:
+                    return True
+                seen.add(span)
+                span = parents.get(span)
+            return False
+        scoped = []
+        for event in events[start_index:]:
+            if not belongs(event):
+                continue
+            scoped.append(event)
+            if event.get("name") == "nora.session.terminal":
+                terminal = json.loads(event["attributes"]["body"])
+                if terminal["session_id"] != manifest["session_id"]:
+                    raise ValueError("source_session_mismatch")
+                break
+        else:
+            raise ValueError("source_session_terminal_missing")
+        requests = [json.loads(e["attributes"]["nora.model.request.body"])
+                    for e in scoped if e.get("name") == "nora.model.request"]
+        if not requests or not compare_inspection(manifest, requests[0]):
+            raise ValueError("inspection_projection_mismatch")
+        new_sources = {}
+        for item in re.finditer(r"<item\b[^>]*>.*?</item>", undash(manifest["agenda"]), re.S):
+            element = ElementTree.fromstring(item.group())  # noqa: S314 - escaped renderer output
+            for row in element:
+                n = row.get("n")
+                if n is None or row.get("own") or row.get("target"):
+                    continue
+                source = row.get("source")
+                # Context message rows carry source=; fresh messages do not.
+                # Other fresh record families carry their typed source key.
+                if source and source.split(":", 1)[0] != element.get("kind"):
+                    continue
+                if source and source.startswith("message:"):
+                    continue
+                key = source.split(":", 1) if source else ["message", n]
+                new_sources[n] = {"key": key, "text": row.text or ""}
+        inspection = {"system": undash(manifest["system"]),
+                      "agenda": undash(manifest["agenda"]), "new_sources": new_sources}
+        # Instructions precede session.started but belong to the same writer span.
+        instructions = [e for e in events[:start_index]
+                        if e.get("name") == "nora.session.instructions"
+                        and e.get("span_id") == root]
+        sessions.append({"inspection": inspection, "exchanges": evidence_exchanges(scoped),
+                         "events": scoped, "instructions": instructions[-1:]})
+    return sessions
+
+
+def crosscheck_fact_input(recorded: dict[str, Any], inspection: dict[str, Any],
+                          exchanges: list[dict[str, Any]]) -> None:
+    from nora.agent.punctuation import _clean
+
+    projection = {k: inspection.get(k) for k in ("system", "agenda", "new_sources")}
+    if _clean(projection) != recorded["inspection"] or exchanges != recorded["exchanges"]:
+        raise ValueError("source_scoring_input_mismatch")
+
+
 async def rescore_facts(directory: Path, judges: Judges) -> dict[str, Any]:
-    """Re-read frozen session evidence without constructing a writer or opening a database."""
+    """Re-score authoritative writer events; frozen files are cross-checks only."""
     from nora.agent.replay_capture import record
     paths = sorted(directory.glob("spike-*/events.jsonl"))  # noqa: ASYNC240 - private offline input
     if (directory / "events.jsonl").exists():
@@ -1347,29 +1427,30 @@ async def rescore_facts(directory: Path, judges: Judges) -> dict[str, Any]:
         if receipt["status"] == "ERROR":
             raise ValueError("source_capture_incomplete")
         record("rescore_source", sha256=fingerprint(path), receipt=receipt)
+        recorded = recorded_fact_sessions(events)
         inputs = [e for e in events if e["kind"] == "fact_scoring_input"]
-        expected = sum(e.get("name") == "nora.session.started" for e in writer_events)
-        before = len(sessions)
-        if inputs and (not expected or len(inputs) == expected):
-            sessions.extend((e["inspection"], e["exchanges"]) for e in inputs)
-        else:
-            for frozen in sorted(path.parent.parent.glob("session-*.json")):
+        if inputs and len(inputs) != len(recorded):
+            raise ValueError("source_scoring_input_mismatch")
+        for index, session in enumerate(recorded):
+            frozen = path.parent.parent / f"session-{index}.json"
+            if frozen.exists():
                 data = json.loads(frozen.read_text())
-                sessions.append((data["inspection"], evidence_exchanges(data["events"])))
-        if expected and len(sessions) - before != expected:
-            raise ValueError("source_sessions_missing")
-        in_session = False
-        for event in writer_events:
-            if event.get("name") == "nora.session.started":
-                in_session = True
-            if event.get("name") == "nora.session.terminal":
-                in_session = False
-            if in_session and event["kind"] == "transport_response":
-                judges.served.setdefault("writer", []).append(event["headers"])
+                crosscheck_fact_input(session, data["inspection"],
+                                      evidence_exchanges(data["events"]))
+            if inputs:
+                crosscheck_fact_input(session, inputs[index]["inspection"],
+                                      inputs[index]["exchanges"])
+            record("rescore_session", session_event_ids=[e["event_id"] for e in session["events"]],
+                   instructions=session["instructions"])
+            sessions.append((session["inspection"], session["exchanges"]))
+            judges.served.setdefault("writer", []).extend(
+                e["headers"] for e in session["events"] if e["kind"] == "transport_response")
     if not sessions:
         raise ValueError("source_sessions_missing")
-    results = [await smoke_fact_support(judges, inspection, exchanges)
-               for inspection, exchanges in sessions]
+    results = []
+    for inspection, exchanges in sessions:
+        record("fact_scoring_input", inspection=inspection, exchanges=exchanges)
+        results.append(await smoke_fact_support(judges, inspection, exchanges))
     return {"status": "REPORTED", "sessions": len(results), "results": results,
             "independence": served_independence(judges.served)}
 

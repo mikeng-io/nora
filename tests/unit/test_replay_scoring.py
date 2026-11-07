@@ -156,30 +156,75 @@ async def test_empty_output_or_missing_reason_is_fatal(tmp_path, raw):
     assert validate_events(read_events(evidence.path))["status"] == "ERROR"
 
 
-async def test_rescore_generated_run_directory(tmp_path, monkeypatch):
+@pytest.mark.parametrize("disagree", [False, True])
+async def test_rescore_generated_run_directory(tmp_path, monkeypatch, disagree):
     from tempfile import TemporaryFile
 
     from opentelemetry import trace
 
     from evals.backbone import _prefill_capture
-    from nora.subject.eval_evidence import RunEvidence, read_events, validate_events
+    from nora.subject.eval_evidence import EvidenceError, RunEvidence, read_events, validate_events
     from scripts import memory_graph_spike as spike
-    from scripts.memory_graph_spike import freeze
     _prefill_capture()
     source = tmp_path / "source"
     source.mkdir(mode=0o700)
+    calls = []
     with TemporaryFile() as lock:
         original = RunEvidence(run_id="spike", metadata={}, lock_fd=lock.fileno(),
                                private_root=source)
-        with original.capture(trace.get_tracer_provider()):
-            pass
-        freeze(source / "session-0.json", {"inspection": {"new_sources": {
-            "1": {"text": "generated fact"}}}, "events": []})
+        with pytest.raises(EvidenceError), original.capture(trace.get_tracer_provider()):
+            for number in range(2):
+                root, child = f"session-{number}", f"tool-{number}"
+                def event(name, body, root=root):
+                    original.record("event", name=name, span_id=root,
+                                    attributes={"body": json.dumps(body)})
+                agenda = (f'<item index="0" kind="message" room="Generated room">'
+                          f'<m n="{number + 1}" from="Aster" person="aster" at="now">'
+                          f'generated fact {number}</m>'
+                          '<m n="99" source="message:99">old context</m></item>')
+                original.record("span_started", span_id=root, parent_span_id=None)
+                event("nora.session.instructions", {"doctrine_sha256": "generated"})
+                event("nora.session.started", {"session_id": number, "system": "generated",
+                                              "agenda": agenda, "items": []})
+                original.record("event", name="nora.model.request", span_id=root, attributes={
+                    "nora.model.request.body": json.dumps({"messages": [
+                        {"role": "system", "content": "generated"},
+                        {"role": "user", "content": agenda}]})})
+                original.record("span_started", span_id=child, parent_span_id=root)
+                use = {"toolUseId": str(number), "name": "memory_propose", "input": {
+                    "statements": [{"what": "generated", "cite": [{"source": number + 1}]}]}}
+                original.record("tool_started", span_id=child, tool=use)
+                original.record("event", name="nora.proposal.sources", span_id=child,
+                    attributes={"body": json.dumps({str(number + 1): {
+                        "key": ["message", str(number + 1)], "text": f"generated fact {number}"}})})
+                original.record("tool_finished", span_id=child, tool=use, result={
+                    "content": [{"json": {"statements": [{"index": 0, "status": "saved"}]}}]})
+                original.record("span_finished", span_id=child)
+                event("nora.session.terminal", {"session_id": number})
+                original.record("span_finished", span_id=root)
+                if number == 1:
+                    original.record("judge_error", cause="judge_incomplete")
+        original_events = read_events(original.path)
+        # Historical failed scoring left the second frozen session absent.
+        first = spike.recorded_fact_sessions(original_events)[0]
+        frozen_inspection = json.loads(json.dumps(first["inspection"]))
+        if disagree:
+            frozen_inspection["agenda"] = "disagrees with recorded request"
+        spike.freeze(source / "session-0.json", {"inspection": frozen_inspection,
+                                               "events": first["events"]})
+        assert not (source / "session-1.json").exists()
+        assert not any(e["kind"] == "fact_scoring_input" for e in original_events)
         before = (original.path / "events.jsonl").read_bytes()
 
-        async def call(*args):
+        async def call(model, instruction, payload):
+            calls.append(payload)
+            if "statement" in payload:
+                return '{"verdict":"supported","reason":"generated evidence"}'
+            new_sources = payload["session_input"]["input"]["new_sources"]
+            assert len(new_sources) == 1 and "99" not in new_sources
+            n = next(iter(new_sources))
             return json.dumps({"missed": [{"fact": "generated", "quote": "generated fact",
-                                          "location": "1", "reason": "absent from saved"}],
+                                          "location": n, "reason": "absent from saved"}],
                                "context_only": []})
 
         monkeypatch.setattr(spike, "Judges", lambda *args: SimpleNamespace(
@@ -191,11 +236,20 @@ async def test_rescore_generated_run_directory(tmp_path, monkeypatch):
         receipt = json.loads((output / "report.json").read_text())
         assert receipt == result
         events = read_events(next(output.glob("rescore-*")))
-    assert result["sessions"] == 1
-    assert result["results"][0]["facts_missed"] == 1
     assert (original.path / "events.jsonl").read_bytes() == before
-    assert validate_events(events)["status"] == "PASS"
-    assert any(e["kind"] == "rescore_source" for e in events)
+    if disagree:
+        assert result["status"] == "ERROR"
+        assert validate_events(events)["status"] == "ERROR"
+        assert calls == []
+    else:
+        assert result["status"] == "REPORTED"
+        assert result["sessions"] == 2
+        assert len(result["results"]) == 2
+        assert [r["facts_supported"] for r in result["results"]] == [1, 1]
+        assert [r["facts_missed"] for r in result["results"]] == [1, 1]
+        assert validate_events(events)["status"] == "PASS"
+        assert len(calls) == 4
+        assert any(e["kind"] == "rescore_source" for e in events)
 
 
 @pytest.mark.parametrize("present", [True, False])
@@ -232,3 +286,28 @@ async def test_judge_transport_identity_without_eval_capture(monkeypatch, presen
     judges.served["writer"] = [{"x-omniroute-model": "generated-writer",
                                 "x-omniroute-provider": "generated-other-vendor"}]
     assert spike.served_independence(judges.served) == ("independent" if present else "unavailable")
+
+
+async def test_session_inputs_are_frozen_before_failed_scoring(tmp_path):
+    from tempfile import TemporaryFile
+
+    from opentelemetry import trace
+
+    from evals.backbone import _prefill_capture
+    from nora.subject.eval_evidence import EvidenceError, RunEvidence, read_events
+    from scripts.memory_graph_spike import freeze_fact_session
+    _prefill_capture()
+
+    async def call(*args):
+        return ""
+
+    with TemporaryFile() as lock:
+        evidence = RunEvidence(run_id="generated", metadata={}, lock_fd=lock.fileno(),
+                               private_root=tmp_path)
+        with pytest.raises(EvidenceError), evidence.capture(trace.get_tracer_provider()):
+            freeze_fact_session(tmp_path, 0, {}, {"new_sources": {}}, [])
+            await smoke_fact_support(SimpleNamespace(models=["generated"], call=call), {}, [])
+    frozen = json.loads((tmp_path / "session-0.json").read_text())
+    assert frozen["inspection"] == {"new_sources": {}}
+    kinds = [e["kind"] for e in read_events(evidence.path)]
+    assert kinds.index("fact_scoring_input") < kinds.index("judge_error")

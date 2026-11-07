@@ -37,8 +37,15 @@
   {
     "name": "rescore executes fact scoring",
     "file": "scripts/memory_graph_spike.py",
-    "old": "    results = [await smoke_fact_support(judges, inspection, exchanges)\n               for inspection, exchanges in sessions]",
-    "new": "    results = []",
+    "old": "        results.append(await smoke_fact_support(judges, inspection, exchanges))",
+    "new": "        pass",
     "target": "tests/unit/test_replay_scoring.py::test_rescore_generated_run_directory"
+  },
+  {
+    "name": "authoritative session events rather than frozen files",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "        recorded = recorded_fact_sessions(events)",
+    "new": "        recorded = [s for i, s in enumerate(recorded_fact_sessions(events))\n                    if (path.parent.parent / f\"session-{i}.json\").exists()]",
+    "target": "tests/unit/test_replay_scoring.py::test_rescore_generated_run_directory[False]"
   }
 ]

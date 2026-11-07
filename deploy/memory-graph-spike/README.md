@@ -83,9 +83,10 @@ uv run python -m scripts.memory_graph_spike \
 
 This makes judge calls only: no writer replay, snapshot database or graph writes.
 The output must be new. Its private `rescore-*/events.jsonl` and `report.json`
-record the new scoring and receipt; original files remain unchanged. Frozen
-`session-*.json` inputs support older captures; newer captures also carry
-`fact_scoring_input` events. Missing or incomplete writer evidence still fails.
+record the new scoring and receipt; original files remain unchanged. Writer events are authoritative, including for older captures without
+`fact_scoring_input` events. Existing `session-*.json` files and scoring-input
+events are cross-checked against the recovered input; disagreement is ERROR.
+Missing frozen files do not prevent re-scoring complete writer sessions. Missing or incomplete writer evidence still fails.
 Old scorer errors may be replaced by the new scoring, while absent served
 identity remains `unavailable`. A missing judge output or reason remains fatal;
 a quoted miss outside the new sources is recorded per fact and excluded from
