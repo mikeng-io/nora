@@ -1,7 +1,7 @@
 ---
 type: design
 title: "The replay records why: every replayed session keeps what it saw, thought and did, and the judges read all of it"
-description: "A recorded-wake replay measured how many facts a session saved, how many were supported and how many it missed, but never why: the recorder kept only tool calls and results, and dropped the model's reasoning, its own text, every later call's input, per-call usage and the judges' reasons. This node makes the replay record the whole trajectory, scopes what a judge may count as missed, adds a per-item decision judge that names the cause of every miss and slip, and makes a record that lost any of this an ERROR. Amends 31 §3 step 6 (the spike)."
+description: "Recorded-wake replays measured how many facts a session saved, how many were supported and how many it missed, but never why. The spike reduced the session's stored trace to tool calls and results and threw the rest away, including reasoning that production already stores. This node extends the existing private run evidence so a replay keeps the whole trajectory, scopes what a judge may count as missed by the writer's own kind criteria, adds a per-statement decision judge that reports evidenced observations, and makes incomplete evidence an ERROR. Amends 31 §3 step 6 (the spike)."
 tags: [nora, cognition, memory-graph, evals, replay, measurement]
 edges:
   - {dst: 31-build-one-session, rel: amends, provenance: operator-requested}
@@ -15,155 +15,243 @@ Status: **design, for review.** Nothing below is built.
 
 ## 1. What was measured, and what could not be
 
-The format experiment (four agenda formats) and the prompt experiment (four
-instruction variants) ran about 25 replays of the same five recorded wakes.
-They found that the merged rewrite saves about twice as many supported facts as
-the instruction it replaces. They could not say why any one fact was written or
-left out, because the replay kept no record of why:
+**The runs.** A format experiment and an instruction experiment replayed the
+same frozen sample of five recorded wakes (sample hash `a19a66d3…`) many times
+over. They found that the merged instruction rewrite saved about twice as many
+facts its citations support as the instruction it replaces. These outcomes are
+operator-reported until each is read against its private receipts: the run
+directories `fmt-*`, `prm-*` and `prod-637-*` under the spike's private output
+on the deploy host, and their re-scoring files. Those hold each run's source
+revision, sample and counts. They could not say why any one fact was written or
+left out.
 
-- **The recorder dropped the model's side.** `scripts/memory_graph_spike.py`
-  walks the session's full message list, the same one sent to the model, and
-  keeps only paired tool calls and results. The reasoning blocks Nora carries
-  between turns (`nora.agent.reasoning_carry`) and the model's own text are in
-  that list and are discarded.
-- **The input is a re-render, not the record of a call.** `inspect()` assembles
-  the first call's input again and stops before the model. Later calls'
-  inputs are not kept, and nothing proves the re-render equals what was sent.
-- **Cost and routing are per session only.** No per-call usage, reasoning
-  tokens, finish reason, latency or gateway model header. When a judge alias
-  fell back to another model, the record could not show it; a probe did.
-- **The judges' reasons were thrown away.** The support judge returns only a
-  verdict. The scorer keeps the count of missed facts and drops the list.
-- **The missed-fact judge scored outside the session's job.** First it counted
-  chat mechanics and presence summaries, which code records. Then it counted
-  facts found only in older messages the session read through tools. Most of
-  the "missed memory" was these two.
+**Why not:**
 
-The reasoning text is not stored in production either: the reasoning-strip
-record (ADR 0013) counts dropped blocks, never their text.
+- **The spike throws away what it already had.**
+  - The session stores its messages in `tag_trace.messages`, after
+    `extract_tag_trace` and the sanitizer.
+  - The sanitizer caps an assistant `text` block's length and keeps its
+    `reasoningContent` blocks (`nora/agent/tag_trace_sanitize.py`).
+  - The spike reads that stored trace and reduces it to tool calls and results
+    (`tool_exchanges` in `scripts/memory_graph_spike.py`), discarding the
+    reasoning and text it held.
+  - The stored trace is not a complete record of model calls in any case: it is
+    sanitized, capped, and has no per-call request, settings, usage or routing.
+- **Production already stores the reasoning.** On the frozen snapshot, all 38
+  stored Cognition traces carry reasoning blocks (247 of 760 tag-path traces
+  do). ADR 0013's reasoning-strip log is a different thing: it stores counts of
+  blocks the transport dropped, never text.
+- **The input is a separate rendering, not the request.**
+  - `inspect()` returns the system text, the agenda and the work list from a
+    second assembly that stops before the model. It has no tool definitions or
+    settings, and the transport still rewrites punctuation afterwards.
+  - The spike inspects with `historical=False` and replays with
+    `historical=True`.
+  - Later calls' inputs are not kept anywhere.
+- **Cost and routing are per session only.** Nothing records per-call usage,
+  reasoning tokens, finish reason, latency or the model the gateway actually
+  served.
+- **The judges' reasons are discarded.** The support judge returns a verdict
+  only, and the scorer keeps a count of missed facts but not the list.
+- **The missed-fact judge counted things outside the session's job.** It
+  counted chat mechanics and presence summaries, which code records, and facts
+  found only in older messages the session read through tools.
 
 A count says whether a session worked. Without the trajectory, nobody can say
-why it worked or why it failed. Everything after this section closes that.
+why it worked or why it failed.
 
-## 2. The record
-
-Each replayed session writes one private record holding, in order:
-
-1. **Every model call**, with:
-   - **the request exactly as sent:** system text, messages, tool definitions,
-     and the settings (model alias, reasoning effort, max tokens, temperature);
-   - **the response:** reasoning, text, tool calls, finish reason, usage
-     including reasoning tokens, latency, and the gateway's model and provider
-     headers;
-   - **whether the transport dropped reasoning** on this call, from the
-     existing strip detector.
-2. **Every tool result**, including each refusal reason code gives.
-3. **The agenda's items** with their indices, and for each item what closed it:
-   the saved statement that cites it, its `nothing_here`, its close reason, or
-   that it stayed open.
-4. **The judges' full outputs:** each verdict with its reason, and each missed
-   fact with its quote and where the quote was found.
-5. **Provenance:** source commit, snapshot migration revision, sample hash, a
-   digest of the config the run read, and the judge models the gateway actually
-   answered with.
-
-The first call's recorded request replaces the `inspect()` re-render as the
-evidence of what the session saw. Where both exist they must be byte-equal, or
-the run is ERROR.
-
-**Privacy.** The record holds production chat. It lives only in the private
-output directory (mode 0600, the existing `private_directory`), never in the
-repository, a PR, an issue or a report. Reports carry counts, causes and
-record paths, never content.
-
-## 3. What a judge may count
-
-- **Support:** a saved statement is supported only by the rows it cites. A
-  detail that appears only in an uncited row, even one the session read, makes
-  it unsupported. This is what already caught the slip in the confirm replay.
-- **Missed:** only facts stated in the agenda's new messages count. Older
-  messages read through tools, the notebook, Standing and the graph are context
-  for interpreting them, and a fact found only there is not a miss. Honcho's
-  deriver uses other messages "only as context to interpret"; mem0 extracts
-  "exclusively from New Messages". The judge gets the same definition of memory
-  and the same skip list the writer works to: chat mechanics, presence
-  summaries, transient screen states, greetings.
-
-**Reversal condition.** If replies measurably need facts that only ever appear
-in older messages a session read, and no session over their own wake wrote
-them, then reads become a source and this scope widens.
-
-## 4. The decision judge: why
-
-For each agenda item, a judge reads that item's whole trajectory: the rows,
-the reasoning, the text, the proposals, the refusals and the close. It assigns
-exactly one cause:
-
-| outcome | cause |
-|---|---|
-| written, supported | — |
-| written, unsupported | took a detail from an uncited row · inferred and wrote it as said · wrong subject · other (named) |
-| not written | never noticed (the reasoning never mentions it) · noticed and judged it not memory (quotes the reasoning) · planned and never proposed · proposed, refused and not retried · stopped by budget or turn limit |
-| closed correctly with nothing to write | — |
-
-Each cause carries the reasoning or tool step it rests on, by position in the
-record. A cause the record cannot ground is `insufficient_evidence`, never a
-guess.
-
-This is a diagnostic over recorded runs. It never feeds the support or missed
-counts, and it costs judge calls only: it can re-read any recorded replay
-without running it again.
-
-## 5. Fail-closed rules
-
-- **A run is ERROR when the record is incomplete:**
-  - a model call or tool result is missing;
-  - the response carried reasoning and the record has none;
-  - a judge's reason is missing.
-- **ERROR is never PASS.**
-- **Missing reasoning is `insufficient_evidence`.** The decision judge never
-  reads a call without reasoning as "never noticed".
-- **The decision judge has a positive control:** a generated trajectory with a
-  known cause for each item, and the judge must name those causes. If it
-  cannot, its output on real runs is not evidence.
-- **The recorder has its test:** a generated session with reasoning, text and
-  two tool rounds, recorded and read back. If any of §2's parts is missing,
-  the test fails.
-
-## 6. One recorder, not a spike-only part
+## 2. One evidence path, extended
 
 The recorded-wake eval cases (`evals/corpora/cognition_session.yaml`) and the
-spike replay the same subject. They read one record shape, produced by one
-recorder at the session's model-call seam. The spike gets no record format of
-its own. Whether production should persist reasoning for live debugging is a
-separate decision (§8).
+spike replay the same subject. Both write through what already exists:
 
-## 7. Corrections to 31 §3 step 6
+- **The private run evidence.** `nora.subject.eval_evidence.RunEvidence`
+  already persists events, spans, logs, trace ids and incomplete-run evidence.
+- **The formatted-request capture.** `record_eval_model_request` already
+  records each formatted request.
+- **The evaluator trajectory.** `evals.backbone.traced_nora_task` and its
+  `TracedHandler` give the SDK-mapped `Session` the evaluators read.
+  Evaluation 08 §7 forbids replacing that mapper with a hand-built trajectory.
+  The `Session` stays the evaluators' trajectory, and nothing overwrites its
+  `trajectory` key.
 
-- **The judges are the gateway aliases** `nora-judge` and `nora-judge-2`, two
-  vendors, neither the writer's. Each run records which model actually
-  answered. The raw ids named in step 6 are retired; one of them was banned
-  upstream and every run that used it scored zero supported.
-- **Fact support and missed facts are scored with §3's scope,** and every run
-  is read by §4's decision judge.
+This node adds linked private events to that path. It adds no second record
+shape and no second runner. The spike stops reducing the stored trace and
+reads the run evidence instead.
 
-## 8. Open, for the operator
+**Seams:**
+- The formatted request is captured at the existing
+  `ReasoningCarryingOpenAIModel` → `DashFreeOpenAIModel.format_request`
+  boundary, after the transport's own normalisation.
+- Response fields and gateway headers are captured by extending the
+  model/transport boundary.
+- Strands hooks give call lifecycle and tool order.
+- The final `agent.messages` alone is not enough: it is what survived, not what
+  was sent.
 
-- **Production reasoning.** Storing the reasoning text of live sessions would
-  make a live miss explainable the same way. It is chat-derived content, and
-  this node does not decide where it would live or for how long. Langfuse's
-  generation spans may already hold it; that is unverified.
+## 3. The record
+
+Each replayed session's evidence holds:
+
+1. **Every model call**, with:
+   - **correlation:** invocation, call and attempt ids, and global order;
+   - **the formatted request as sent:** system, messages, tool definitions and
+     descriptions, and the settings (alias, reasoning effort, max tokens,
+     temperature);
+   - **the response:** reasoning, text, tool calls with their ids, finish
+     reason, usage including reasoning tokens, wall-clock latency, and the
+     gateway's served model and provider headers;
+   - **incoming reasoning availability:** `observed`, `absent`, `redacted` or
+     `capture_unavailable`;
+   - **outgoing carry loss,** separately: whether this call's continuation
+     omitted earlier reasoning (the existing strip detector);
+   - **retries, exceptions and cancellation.**
+2. **Every tool call and result**, by tool-call id, including each refusal and
+   its reason. Exact requests and results already contain the rendered graph
+   preview, the resolution candidates and the returned connected subgraph.
+3. **The agenda's items** with their indices, and how each closed: the saved
+   statements that cite it, its `nothing_here`, its close reason, or that it
+   stayed open.
+4. **A terminal session manifest:**
+   - the outcome or error;
+   - the effective budgets and which bound stopped the session;
+   - the replay clock and timezone, distinct from wall-clock timings;
+   - the resolved doctrine sha256 and skill versions the session already
+     records;
+   - the wake and session identities and the trace ids;
+   - source commit, snapshot migration revision, sample hash, and a digest of
+     the config read.
+5. **The judges, through the same capture path:** exact requests, settings,
+   evidence inputs, outputs with reasons, every missed fact with its quote and
+   where the quote was found, and each judge's served model.
+
+**Inspection.** The recorded formatted request is authoritative. `inspect()`
+may be compared only through a defined projection of system and agenda, with
+the same snapshot, clock, historical mode and resolved instruction versions,
+and after the same transport normalisation. It is never compared byte for byte
+with the complete request.
+
+## 4. Privacy
+
+Full requests, responses, reasoning and judge evidence are production content.
+
+- **Where they live.** They are persisted only in the private artifact: a
+  `private_directory` (0700) holding `freeze`d files (0600).
+- **Where they must not go.** Replay capture keeps that content out of
+  non-private trace and log exporters, stdout, public receipts and CI uploads.
+  `record_eval_event` today also adds its body to the current OTel span
+  (`nora/obs/tracing.py`), and replay capture must not export it.
+- **Public reports** carry fixed cause codes, counts and opaque references,
+  never judge-authored explanations or paths derived from source content.
+- **Each sink is tested with generated sentinel content.** The Git PII hook is a
+  backstop, not the check.
+
+## 5. What a judge may count
+
+- **Support.** A saved statement is supported only by the rows it cites. A
+  detail found only in an uncited row, even one the session read, makes it
+  unsupported.
+- **Missed.** These count:
+  - only statements that originate in the agenda's new source rows,
+    interpreted using the context the session was shown;
+  - eligibility derived from the writer's rendered kind criteria. A reading
+    about a passing moment is eligible, because the writer is told to record it.
+  
+  These do not count:
+  - **what code records:** who said, shared, reacted or replied, and presence
+    summaries;
+  - **a message that states nothing.**
+  
+  No durability or future-usefulness threshold is added.
+- **Context-only statements are reported separately.** These are found only in
+  older messages, the notebook, Standing or the graph. They are never counted
+  as misses.
+
+**Reversal condition.** Reopen this denominator when both of these exist:
+- a later answer fails for want of a fact;
+- an audited record shows the source wake of that fact left it unrecorded.
+
+## 6. The decision judge: why
+
+The decision judge diagnoses each missed or unsupported statement on its own,
+linked to its agenda item and source span. One item can have several outcomes:
+one statement saved, one refused and one missed. Item summaries are derived
+from the per-statement results.
+
+For each statement the judge returns **an evidenced observation** or
+`insufficient_evidence`:
+
+| for | observations |
+|---|---|
+| unsupported | took a detail from an uncited row · wrote an inference as said · wrong subject · other (named) |
+| missed | recorded reasoning mentions it and treats it as not memory (quoted) · recorded reasoning mentions it and no statement followed · proposed and refused, not retried · the session stopped on a named bound before it · not mentioned in recorded reasoning |
+
+Each observation cites the reasoning span, call or tool step it rests on, by id.
+
+**"Not mentioned in recorded reasoning" is an observation, not proof that the
+model never noticed.** Reasoning is only what the model emitted. When incoming
+reasoning is `absent`, `redacted` or `capture_unavailable`, the judge returns
+`insufficient_evidence`.
+
+The judge never feeds the support or missed counts, and it re-reads recorded
+evidence without a new replay.
+
+## 7. Fail-closed rules
+
+- **A record is ERROR when:**
+  - an event is unmatched (a call start with no end, a tool call with no
+    result);
+  - terminal evidence is missing;
+  - capture or a write failed;
+  - anything was truncated;
+  - a judge's output or reason is missing.
+- **ERROR is never PASS.**
+- **The recorder's tests:**
+  - a generated session with reasoning, text and two tool rounds, read back
+    complete;
+  - an interrupted session;
+  - a deliberately dropped event, which must turn the record ERROR.
+- **The decision judge's controls** are generated trajectories covering:
+  - missing reasoning, which must give `insufficient_evidence`;
+  - an explicit rejection in the reasoning;
+  - a refused proposal;
+  - a retry;
+  - a budget stop;
+  - a detail taken from an uncited row.
+  
+  If the judge cannot report what each control's record shows, its output on
+  real runs is not evidence.
+
+## 8. Corrections to 31 §3 step 6
+
+- **Judges.** They are requested through the gateway aliases `nora-judge` and
+  `nora-judge-2`. Their independence from each other and from the writer is
+  established from the served identities each run records, never from alias
+  names or caller-supplied vendor labels. Unavailable identity evidence is
+  reported as unavailable. This follows 31 §6's requirement of resolved
+  identities.
+- **Scoring.** Fact support and missed facts are scored with §5's scope, and
+  each run's misses and slips are read by §6's decision judge.
+
+## 9. Open, for the operator
+
+- **How long production keeps reasoning.** Production already keeps Cognition
+  reasoning in `tag_trace` (§1). Whether that retention and its readers are
+  what the operator wants is not decided here.
 - **Thinking level.** The session runs at `reasoning_effort = "low"`. Whether
-  `high` writes better is a replay question. It is worth one replay pair only
-  after §4 shows misses that the reasoning never reached.
+  `high` writes better is a replay question, worth one replay pair only after
+  §6 shows misses whose recorded reasoning never reached them.
 
-## 9. Acceptance
+## 10. Acceptance
 
-- A replay with the recorder on produces §2's record for every session. The
-  recorder test and the positive control pass.
-- The decision judge, over one replay of the current head, names a cause for
-  every miss and slip, or `insufficient_evidence` with the reason.
-- The judges' prompts and scope are §3's, pinned by a test that fails if the
-  missed judge counts a fact found only in a read.
-- No record content appears outside the private output directory. The PII
-  push hook and a test over the report confirm it.
+- A replay produces §3's evidence for every session, and §7's recorder tests
+  and judge controls pass.
+- The evaluators' SDK `Session` is unchanged. A test fails if the `trajectory`
+  key is replaced.
+- The decision judge, over one replay of the current head, returns an
+  observation or `insufficient_evidence` for every missed and unsupported
+  statement.
+- The judges' prompts and scope are §5's. A test fails if a context-only
+  statement is counted as missed.
+- Generated sentinel content placed in the record appears in no exporter,
+  stdout, public receipt or CI upload.
