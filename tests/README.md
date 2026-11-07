@@ -185,3 +185,8 @@ Local gate receipts:
   Host admission applies before cache lookup and remains held through publication.
 - A `REUSED` line means the earlier matched receipt was used, not new passing tests
   or new performance measurements. PR/issue/report updates do not rerun validation.
+
+Selection combines three signals: the reader scan, the static import closure
+(what a test file imports — including collection-time imports the record
+never sees), and the testmon record (what the test executed — including
+dynamic imports the graph cannot see). Neither layer is sufficient alone.

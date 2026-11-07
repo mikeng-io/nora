@@ -171,3 +171,13 @@ now: nothing has failed yet.
 ## Delivery coverage
 
 Obligations 1 to 9 above; non-goals are tracked in the audit, not here.
+
+
+The two layers answer different questions: the static import closure
+(grimp) covers what a test's file *imports* — including imports and code
+run at collection time — while the testmon record covers what the test
+*executed* at run time, which includes dynamic/computed imports the
+static layer cannot see. Neither alone is sufficient: testmon does not
+record collection-time imports (a `LIMIT = make()` at module level
+changed inside `make` deselects the test), and the graph cannot see
+`importlib`/string imports. A path selects readers | importers | record.
