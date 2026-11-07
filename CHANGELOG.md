@@ -1,5 +1,57 @@
 # Changelog
 
+## [7.16.0](https://github.com/mikeng-io/nora/compare/v7.15.25...v7.16.0) (2026-11-07)
+
+
+### Features
+
+* **computer:** scoped per-scope microVM runtime, FIFO admission, task-owned tabs ([1e11ebe](https://github.com/mikeng-io/nora/commit/1e11ebe0737a2f69730470d5fbfd1f8bae0a0f8f))
+* **evals:** --subject-overrides and a hard run budget on model dispatch ([17c6238](https://github.com/mikeng-io/nora/commit/17c6238aa0e607fa76a02f8c105ccbc698cd287e))
+
+
+### Bug Fixes
+
+* **browser:** register the browser task context composer ([e69f105](https://github.com/mikeng-io/nora/commit/e69f105e8986e69fed3b39ea474c088c377bab48))
+* **ci:** join computer and profile migrations and handle exited proc reads ([9a23e22](https://github.com/mikeng-io/nora/commit/9a23e2213f129bd557bc84184dc8feeb539cd29d))
+* **computer:** cleanup joins the elected owner, clientless popup supervision, fail-closed boot identity ([7f26aa4](https://github.com/mikeng-io/nora/commit/7f26aa40a8be7465f4c9dfa5790165c98280b39a))
+* **computer:** close reviewed admission, lifecycle and artifact custody gaps ([9310de1](https://github.com/mikeng-io/nora/commit/9310de1011eee2bfc76d6c7bb7cfbb101d2e4fb0))
+* **computer:** close scoped readiness gaps in authority, ownership, delivery, lifecycle, browser and eval ([4a7e412](https://github.com/mikeng-io/nora/commit/4a7e412d64cf4a39de4c23bec8811bf565fa9f3a))
+* **computer:** close the remaining R2 B2 caller boundaries ([15b6da2](https://github.com/mikeng-io/nora/commit/15b6da2b726a9a6cb318c379f9ce3108fa1306e4))
+* **computer:** contracts-CI — settle converges any pending on a terminal row ([8bc5c37](https://github.com/mikeng-io/nora/commit/8bc5c3759956fd5c73f4e106b8a1f3b9f87202c9))
+* **computer:** delivery intent never enters the serialized pending map ([ed3b40e](https://github.com/mikeng-io/nora/commit/ed3b40e5da3d1de459189ea459c0139e2878fc0e))
+* **computer:** disambiguate retained-result registry lookup ([e513826](https://github.com/mikeng-io/nora/commit/e513826de6646b9b0c24d3996098ae9d29e69cd4))
+* **computer:** distinguish browser work from page text in the runtime skill ([e1ccf71](https://github.com/mikeng-io/nora/commit/e1ccf7136280e8c38c3d1c663f155d203857e7f7))
+* **computer:** durable one-slot FIFO, exact bindings and fail-closed scopes ([fd812b7](https://github.com/mikeng-io/nora/commit/fd812b7405d86643df82e41ab939180a8785e8d4))
+* **computer:** durable single-owner pending-result journal under /app/state ([51b70b5](https://github.com/mikeng-io/nora/commit/51b70b52f72cb44fa78a07b725414838f53f8482))
+* **computer:** durable-handoff boundary and restart-refusing corruption ([f1c2132](https://github.com/mikeng-io/nora/commit/f1c213274ceb0f687357d99ae373e74204107779))
+* **computer:** failed delivery checkpoints return task identity, not the result ([3d75000](https://github.com/mikeng-io/nora/commit/3d75000df6aa8980e337376f01a786520aa4f970))
+* **computer:** hold uncertain exits until guest quiet, retain lost results, one scoped idle owner ([e00164c](https://github.com/mikeng-io/nora/commit/e00164c84d48525a701737c551a3f60ff4ed12af))
+* **computer:** one authoritative durable disposition, not two ([3fbdc40](https://github.com/mikeng-io/nora/commit/3fbdc408905b57203bddff62598fea7be8c67e7f))
+* **computer:** persist retained pending results across restart ([9e8087b](https://github.com/mikeng-io/nora/commit/9e8087b3a76c7be9755a32d67704e48e866950e1))
+* **computer:** preserve browser recovery and result ownership ([fd655a7](https://github.com/mikeng-io/nora/commit/fd655a7b12686425523be66cb8a8482a9873de46))
+* **computer:** preserve disabled scoped credential delivery behavior ([43d08c9](https://github.com/mikeng-io/nora/commit/43d08c904f14b92ef7d6f1202447eee1fae1ffbc))
+* **computer:** reap detached browser helpers under their lifetime owner ([0a9486d](https://github.com/mikeng-io/nora/commit/0a9486dfc026d35eeaa55bcdff7048497534bec8))
+* **computer:** reconcile scoped runtime with contract gates ([a7a4e1b](https://github.com/mikeng-io/nora/commit/a7a4e1b33591611d4564a73179379e000e292bae))
+* **computer:** resolve scoped Redis credentials before delivery admission ([d6d572a](https://github.com/mikeng-io/nora/commit/d6d572a17e34b9f933b4f07150d98902c35185f4))
+* **computer:** retain scope ownership across failed result retries ([9e35bb3](https://github.com/mikeng-io/nora/commit/9e35bb3946e25eab72f8b9520d658842b6c8cc76))
+* **computer:** retire tab bindings after confirmed browser shutdown ([574843c](https://github.com/mikeng-io/nora/commit/574843c4edf8ac605cf639fbdcb2225f72489aa1))
+* **computer:** round-2 scoped runtime repair — claim serialization, real cancel, owned targets, per-request instance ([9745d16](https://github.com/mikeng-io/nora/commit/9745d16a1d26e7fcb82c5a9aa77e4b165a096e21))
+* **computer:** validate composed browser exposure and isolate eval journals ([4a31a4a](https://github.com/mikeng-io/nora/commit/4a31a4a9537c3d42ed33d3e2f11a9ff95f3b07cc))
+* **computerd:** flood guard kills the browser through its owner on Linux ([7d40468](https://github.com/mikeng-io/nora/commit/7d40468fc0d27a2769abbd1895d38268ce19546b))
+* **evals:** CI repairs — domain-stdlib budget split, FakeHoncho official entry, truth-bound wording ([c2cf3e9](https://github.com/mikeng-io/nora/commit/c2cf3e9cec2bf92cba17dd9915563aa21c9fd67c))
+* **evals:** a strict input-token bound is unsupported — refuse, don't approximate ([a9b404c](https://github.com/mikeng-io/nora/commit/a9b404c3e174e36d67fc28567152fe19f42c4e19))
+* **evals:** bind browser journey receipts to successful call order ([7ac774e](https://github.com/mikeng-io/nora/commit/7ac774ec5243beb7dabede58d46518a4929d7cbd))
+* **evals:** bounded transport — refuse no-ceiling requests, min-of-both ceiling, framed SSE, deadline-bound aread ([d96cc31](https://github.com/mikeng-io/nora/commit/d96cc3195358596736a7772b082b497154c198d7))
+* **evals:** mechanical cleanups — dedup imports, mypy guards, single section-validate ([c734a63](https://github.com/mikeng-io/nora/commit/c734a63369f9f96c07a623ce350d9e80b28e554f))
+* **evals:** non-2xx/error responses surface their real status in the latched reason ([87672bb](https://github.com/mikeng-io/nora/commit/87672bbfed9d7fc169cf43acb13d2a9110892cd4))
+* **evals:** refuse a dual output-ceiling declaration before dispatch ([7a5bc4b](https://github.com/mikeng-io/nora/commit/7a5bc4b903523e2d8624c0421740f12c89395056))
+* **evals:** run budget bounds every dispatch, not just factory clients ([00918e8](https://github.com/mikeng-io/nora/commit/00918e82d75f880c250dc5fe9a201a477d1423b9))
+* **evals:** run budget bounds the stream, the spent, and the shape ([51b482b](https://github.com/mikeng-io/nora/commit/51b482ba735cd906245dff147cb68b68af50d7fb))
+* **evals:** run budget bounds the wire, not the arguments — transport-level admission ([d17aae1](https://github.com/mikeng-io/nora/commit/d17aae153280bcc44c30bbe27dac432a8686f9b4))
+* **evals:** run_budget lives in nora.domain, the layer evals may reach ([364ae27](https://github.com/mikeng-io/nora/commit/364ae275b3e6d48b49565a20a52d0b2f2ef9ec56))
+* **evals:** run_budget type annotations pass mypy ([e515262](https://github.com/mikeng-io/nora/commit/e5152623d839d6a75bc0b153cc6cfc4010629d22))
+* **evals:** validator in nora.subject.obtain + computer.state_dir seam ([6b187cc](https://github.com/mikeng-io/nora/commit/6b187cc6ab28a121472a3f8a22e72387aa5f4920))
+
 ## [7.15.25](https://github.com/mikeng-io/nora/compare/v7.15.24...v7.15.25) (2026-11-06)
 
 
