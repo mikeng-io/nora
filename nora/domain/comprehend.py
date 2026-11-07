@@ -216,3 +216,215 @@ PARTS = get_args(Part)
 LOOKUPS = get_args(Lookup)
 EGRESS_REASONS = get_args(EgressReason)
 REFUSAL_REASONS = (*get_args(RefusalReason), *CLAIM_DROP_REASONS, *get_args(ExtraRefusal))
+
+# Each primary refusal reason's rejected field and the one repair that answers
+# it — what the proposal tool returns so a refused statement can be fixed
+# rather than re-guessed. Keyed on the same vocabulary the checks refuse
+# with: a reason outside this map must not reach the model without its repair.
+REFUSAL_REPAIR: dict[str, dict[str, str]] = {
+    # A reading dropped by the provenance checks.
+    "citation_outside_batch": {
+        "field": "cite",
+        "repair": "Cite rendered `n` rows of the items named in this call's "
+                  "`items`; never a hidden or context-only row.",
+    },
+    "duplicate_citation": {
+        "field": "cite",
+        "repair": "Keep each cite.source once.",
+    },
+    "evidence_not_covering_citations": {
+        "field": "cite",
+        "repair": "Every cited row needs a quote from its body; remove "
+                  "unsupported citations or supply their quotes.",
+    },
+    "evidence_absent": {
+        "field": "cite.quote",
+        "repair": "Copy cite.quote exactly from that row's shown body — "
+                  "never a paraphrase, a header or a clipped tail.",
+    },
+    "unknown_subject": {
+        "field": "about.person_id",
+        "repair": "Use a person_id shown as an author or mention in these "
+                  "rows; otherwise set person_id to null and keep reference.",
+    },
+    "event_reference_outside_citations": {
+        "field": "happened_at.source",
+        "repair": "Set happened_at.source to one of this statement's "
+                  "cite.source rows — the row carrying its time words.",
+    },
+    "event_expression_absent": {
+        "field": "happened_at.expression",
+        "repair": "Set happened_at.expression to exact time words from the "
+                  "body of happened_at.source, or null when it has none; "
+                  "never copy `at` or compute a date.",
+    },
+    "place_absent": {
+        "field": "where",
+        "repair": "Copy where exactly from a cited row's body, or null when "
+                  "no place was stated; do not expand it to a canonical "
+                  "place name.",
+    },
+    # A proposal refused before or at admission.
+    "vocabulary": {
+        "field": "rel",
+        "repair": "Use an admitted relation name or entity kind exactly as "
+                  "listed; a name outside them is refused.",
+    },
+    "wrong_ends": {
+        "field": "subject/object",
+        "repair": "That verb does not join these endpoint kinds; check the "
+                  "kinds its rule admits for subject and object.",
+    },
+    "wrong_layer": {
+        "field": "rel",
+        "repair": "That relation name belongs to another layer; only "
+                  "notebook relations may be proposed here.",
+    },
+    "missing_evidence": {
+        "field": "cite",
+        "repair": "A relation needs at least one citation; cite the rows "
+                  "that establish it.",
+    },
+    "unseen_source": {
+        "field": "cite.source",
+        "repair": "Cite only rows the agenda rendered for the named items, "
+                  "or rows a read tool handed this session.",
+    },
+    "notebook_evidence": {
+        "field": "cite.source",
+        "repair": "Cite a record or rollup row; a notebook row cannot be "
+                  "evidence.",
+    },
+    "span_not_in_source": {
+        "field": "cite.quote",
+        "repair": "Copy the quote exactly from the cited row's shown body.",
+    },
+    "scope_wider_than_evidence": {
+        "field": "cite",
+        "repair": "Every person the statement names must appear in its cited "
+                  "rows; cite rows that carry them or drop the person.",
+    },
+    "orphan_entity": {
+        "field": "object",
+        "repair": "A new entity must be the end of an admitted relation; "
+                  "relate it or drop it.",
+    },
+    "duplicate_entity": {
+        "field": "object",
+        "repair": "That entity already exists; name the shown candidate's "
+                  "handle instead of creating it.",
+    },
+    "duplicate_relation": {
+        "field": "rel",
+        "repair": "That relation is already held; propose a correction on "
+                  "the existing one instead of restating it.",
+    },
+    "unknown_relation": {
+        "field": "relation",
+        "repair": "Name a held relation by the id this session showed.",
+    },
+    "not_current": {
+        "field": "relation",
+        "repair": "Only a current relation can be corrected; that one is "
+                  "already closed.",
+    },
+    "orphan_evidence": {
+        "field": "cite",
+        "repair": "Evidence must attach to an admitted statement; cite it on "
+                  "the statement it supports.",
+    },
+    "missing_replacement": {
+        "field": "replacement",
+        "repair": "A supersede carries its replacement relation statement; "
+                  "supply it.",
+    },
+    "schema": {
+        "field": "statement",
+        "repair": "Fix the named field's shape and resend the statement; "
+                  "the errors list names the path.",
+    },
+    "identity_pointer": {
+        "field": "new.kind",
+        "repair": "A person, room, unit or Nora is an identity pointer; "
+                  "name its @kind:id handle, never a new entity.",
+    },
+    "private_web_evidence": {
+        "field": "cite",
+        "repair": "A web page never establishes anything about a private "
+                  "person; drop the person end or cite what a person said.",
+    },
+    "ungrounded": {
+        "field": "statement",
+        "repair": "The statement established nothing code could admit; "
+                  "ground every field in the cited rows or withdraw it.",
+    },
+    "already_staged": {
+        "field": "statement",
+        "repair": "That statement is already staged in this session; do not "
+                  "resend it.",
+    },
+    "unshown": {
+        "field": "subject/object",
+        "repair": "Name only handles and relation ids this session showed: "
+                  "a preview row, a read result or an admitted write.",
+    },
+    "endpoint_not_a_handle": {
+        "field": "subject/object",
+        "repair": "Use a shown @kind:id handle, e.g. @person:<a shown person "
+                  "id>, or {new:{kind,name,...}} for a new non-person entity.",
+    },
+    "unparseable_time": {
+        "field": "valid_from/valid_to/at",
+        "repair": "Write an ISO date or datetime, or null.",
+    },
+    "invalid_relation": {
+        "field": "subject/object",
+        "repair": "The endpoints do not fit the relation's admitted shape; "
+                  "check each end's kind.",
+    },
+    "unexpected_replacement": {
+        "field": "replacement",
+        "repair": "Only a supersede carries a replacement; remove it or "
+                  "change the correction to supersede.",
+    },
+}
+
+#: The same reason answers differently by the PART the validator refused: an
+#: entity attribute's evidence has its own contract (a record or rollup row
+#: that scopes no persons, an exact span, an attribute this statement
+#: proposed), and an attribute the shown rows cannot support should be
+#: withdrawn while the relation is kept, not retried.
+PART_REPAIR: dict[tuple[str, str], dict[str, str]] = {
+    ("evidence", "scope_wider_than_evidence"): {
+        "field": "attributes",
+        "repair": "An attribute's evidence must come from a cited row that "
+                  "scopes no persons; cite such a row or drop the attribute.",
+    },
+    ("evidence", "span_not_in_source"): {
+        "field": "attributes",
+        "repair": "Copy the attribute's quote exactly from the cited row's "
+                  "shown body.",
+    },
+    ("evidence", "unseen_source"): {
+        "field": "attributes",
+        "repair": "The attribute's cite must name a row the agenda rendered "
+                  "for the named items, or one a read tool handed this "
+                  "session.",
+    },
+    ("evidence", "notebook_evidence"): {
+        "field": "attributes",
+        "repair": "The attribute's cite must name a record or rollup row; a "
+                  "notebook row cannot be evidence.",
+    },
+    ("evidence", "wrong_ends"): {
+        "field": "attributes",
+        "repair": "The attribute's evidence names an entity or attribute "
+                  "this statement did not propose; cite it on the entity it "
+                  "describes.",
+    },
+    ("entity", "missing_evidence"): {
+        "field": "attributes",
+        "repair": "The shown rows cannot support this attribute; withdraw "
+                  "the attribute and keep the relation.",
+    },
+}

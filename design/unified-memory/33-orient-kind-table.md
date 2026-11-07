@@ -1,8 +1,7 @@
 ---
 type: design
 title: "Orient: one kind table drives what the Cognition session writes"
-description: "Operator ruling 2026-11-03. The one Cognition session (29) is an OODA loop with CMS inside each phase. Orient writes memory from one kind table — per kind its meaning, when it is created, its evidence, its relations, its writer and its correction — that the instruction renders and admission enforces. Restores the resolution candidates 29 dropped. Measured by recorded-wake replay, profile lines included."
-timestamp: '2026-11-03'
+description: "The one Cognition session (29) is an OODA loop with CMS inside each phase. Orient writes memory from one kind table — per kind its meaning, when it is created, its evidence, its relations, its writer and its correction — that admission enforces; the instruction's memory part states each kind with its create-when and an example, and renders the kind and relation names from the same constants. Resolution candidates are part of Observe. Measured by recorded-wake replay, profile lines included."
 edges:
   - {dst: 29-one-cognition-session, rel: amends, provenance: operator-requested}
   - {dst: 27-the-memory-is-a-graph, rel: depends_on, provenance: asserted}
@@ -12,11 +11,11 @@ edges:
 
 # 33 · Orient: one kind table
 
-Status: **shape ruled** by the operator, 2026-11-03 (the kind table; profile
-lines measured in the replay). The cell values below are proposed from 27 §5,
-27 §7 and [notebook-memory-types/00](../notebook-memory-types/00-design.md)
-§2–§3, and are ruled with this node's review. Docs only: nothing is built until
-the build is briefed.
+Status: **built**. The kind table is one constant that admission checks
+against; the session's instruction states each writable kind with its
+create-when and an example, and renders the kind and relation names from the
+same constants. The cell values below derive from 27 §5, 27 §7 and
+[notebook-memory-types/00](../notebook-memory-types/00-design.md) §2–§3.
 
 ## 1. What was measured
 
@@ -70,10 +69,12 @@ is matched against its candidates first, or every mention mints a new entity.
 
 ## 3. The kind table
 
-One named constant in code, one row per kind. The instruction's memory
-section is **rendered from it**, and admission **checks against it**, as the
-relation vocabulary already is (`comprehend_render.py` `_VOCABULARY`, «the
-model is shown exactly the list code admits against»). A new kind is a row
+One named constant in code, one row per kind. Admission **checks against
+it**. The instruction's memory part states each writable kind with its
+create-when and an example, and renders the entity kinds and admitted
+relation names from the same constants (`comprehend_render.py`
+`_VOCABULARY`, «the model is shown exactly the list code admits against»),
+so the two cannot drift. A new kind is a row
 and a review (27 §5's rule, extended from relations to kinds). The Notebook
 rows extend notebook-memory-types/00 §3, where each kind is already «a spec
 on the one entry».
@@ -104,8 +105,10 @@ cannot; add a relation when retrieval needs to query it as structure`.
 
 ## 4. What the build changes
 
-1. **The kind table** as one constant; the instruction's memory section
-   rendered from it; admission reads the same rows. The notebook skill's
+1. **The kind table** as one constant; the instruction's memory part states
+   each kind with its create-when and an example; admission reads the same
+   rows and the instruction renders the kind and relation names from the
+   same constants. The notebook skill's
    open-corner rule becomes the `note` row, scoped to notes only
    (`cognition-register.md` is operator-only; the edit is ruled with this node).
 2. **Resolution candidates restored** in Observe: the session runs the existing
@@ -139,14 +142,14 @@ read rates over the whole replay set.
 
 ## The reading that would reopen it
 
-- The model still applies one kind's rule to another with the table rendered:
+- The model still applies one kind's rule to another with the kinds stated:
   then Orient's writes move to a session of their own.
 - A kind cannot state its «create when» as evidence: it needs its own stage,
   not a row.
 - Readings written only where no relation fits make retrieval measurably
   worse in replies: then the `reading` row narrows.
 
-## Amendment 2026-11-06
+## Amendment: the statement contract
 
 §4.3's part-wise keep is extended to the statement contract: `memory_propose`
 carries self-contained statements (relation, correction, reading) with

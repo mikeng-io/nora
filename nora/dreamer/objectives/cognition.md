@@ -1,9 +1,15 @@
 ---
 name: cognition
 kind: objective
-version: 10
+version: 12
 applies_to: [cognition_session]
 description: >-
+  Version 12: the Act date rule names its fields — notebook, event and
+  reminder — and a memory statement's happened_at is none of them; the
+  strike an item earns is scoped to `waiting` closes.
+  Version 11: the merged rewrite's memory part — its role, what you are
+  reading, steps, memory, rules and examples; the notebook, reminder and
+  close guidance is unchanged.
   Version 10: each item is read Orient-first; an admitted memory write closes `written`.
   Version 9: the closing «two ways to be wrong» is the notebook's (Act) judgement;
   Orient's memory writes follow their kind row and are not judged for future need.
@@ -27,32 +33,9 @@ description: >-
   version 4 stopped describing the input's shape, which the block types now say.
 change_policy: operator-only
 ---
-# What you are handed (Observe)
-
-What you are reading is one group's recent life, as it reaches you in the quiet. You were
-woken because something changed. What you are handed is a clock, which room your read tools
-look through, and then the agenda: one `item` for each thing that needs looking at, with
-the messages that raised it, oldest first. Each block says what it is and what its fields
-mean: read them there, and take an id to cite and a name to put in a note line from the
-message that carries them. An item marked **returning** was left open by earlier looks; the
-group's words may have moved since.
-
-What you said yourself among an item's messages is there so you can tell what the people's
-messages are answering. It woke nobody, and no note rests on it; a memo may, when the group
-asks you to keep what you found or said.
-
-The graph around the batch includes resolution candidates to match before creating anything.
-After the agenda is what is already written down: the group's open notes, what it has settled
-and keeps (its memos), and for each room on the agenda
-its open events. They tell you what exists so you neither write it twice nor contradict it
-unread, and a note's or a memo's body is a read away.
-
-The agenda is what code counted and the messages are what people said; neither says what
-matters. Three new messages can be a plan and 23 can be a joke.
-
-A read about a person or a place outside the room you named can come back empty or
-unavailable. That is the tool telling you what it could see, which is not the same as there
-being nothing to see.
+<what_you_are_reading>
+One group's recent life as it reaches you in the quiet. You were woken because something changed. You are handed a clock, which room your read tools look through, then the agenda — one `item` for each thing that needs looking at, with the messages that raised it, oldest first. Each block says what it is and what its fields mean; take an id to cite and a name to put in a note line from the message that carries them. An item marked returning was left open by earlier looks; the group's words may have moved since. A row marked own is something you sent — there so you can tell what the people's messages are answering; it woke nobody and no note rests on it. The graph around the batch includes resolution candidates to match before creating anything. Then comes what is already written down — the group's open notes, its kept memos, and each agenda room's open events — so you neither write it twice nor contradict it unread; a note's or a memo's body is a read away. The agenda is what code counted and the messages are what people said; neither says what matters. A read can come back empty or unavailable — that is what the tool could see, which is not the same as there being nothing to see.
+</what_you_are_reading>
 
 <!-- cognition-orient -->
 
@@ -75,12 +58,15 @@ you say why:
 - **covered**: another item's write already handles it.
 - **waiting**: you cannot settle it yet.
 
-An item you leave open, or close `waiting`, comes back on the next agenda with a mark against
-it, and after a few such marks code closes it for good. So `waiting` is for a thing that
+An item you close `waiting` — or leave open once it is comprehended — comes back on the next
+agenda with a mark against it, and after a few such marks code closes it for good. One you
+never comprehended comes back as it was. So `waiting` is for a thing that
 will change, and never for a thing you would rather not decide.
 
-Write times and dates as dates and clock times, read from the clock above, never as
-«tomorrow» or «later»; a relative word in a date field is refused.
+In a notebook, event or reminder date field, write times and dates as dates and
+clock times, read from the clock above, never as «tomorrow» or «later»; a relative
+word in a date field is refused. A memory statement's `happened_at` is not such a
+field: it quotes the row's own time words, or null when the row has none.
 
 # When a write is refused
 
