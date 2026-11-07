@@ -31,7 +31,8 @@ from aiohttp import web
 class FakeSignalDaemon:
     """signal-cli daemon-mode double: `/api/v1/events` SSE + `/api/v1/rpc`."""
 
-    def __init__(self, *, attachments: dict[str, bytes] | None = None) -> None:
+    def __init__(self, *, attachments: dict[str, bytes] | None = None,
+                 attachment_result_shape: str = "object") -> None:
         self.sent: list[dict[str, Any]] = []
         self.reactions: list[dict[str, Any]] = []
         self.attachment_reads: list[str] = []
@@ -42,6 +43,7 @@ class FakeSignalDaemon:
         self.drop_next_rpc = 0
         self.rpc_errors: set[str] = set()
         self._attachments = dict(attachments or {})
+        self._attachment_result_shape = attachment_result_shape
         self._events: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
 
     # ---- test surface ------------------------------------------------------
@@ -106,9 +108,10 @@ class FakeSignalDaemon:
             aid = str(params.get("id"))
             self.attachment_reads.append(aid)
             raw = self._attachments.get(aid, b"")
+            encoded = base64.b64encode(raw).decode()
+            result = encoded if self._attachment_result_shape == "string" else {"data": encoded}
             return web.json_response(
-                {"jsonrpc": "2.0", "id": request_id,
-                 "result": {"data": base64.b64encode(raw).decode()}})
+                {"jsonrpc": "2.0", "id": request_id, "result": result})
         if method == "listGroups":
             return web.json_response(
                 {"jsonrpc": "2.0", "id": request_id, "result": []})

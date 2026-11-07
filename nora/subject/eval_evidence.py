@@ -282,6 +282,8 @@ def validate_events(events: list[dict[str, Any]]) -> dict[str, Any]:
                 pending[marker] -= 1
         if kind in {"transport_failed", "run_failed", "case_failed", "judge_error"}:
             causes.add("capture_interrupted")
+        if kind == "decision_input" and event.get("truncated"):
+            causes.add("truncated")
         if kind == "transport_response" and any(
             c.get("finish_reason") == "length"
             for c in event.get("response", {}).get("choices", [])

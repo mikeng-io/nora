@@ -16,7 +16,6 @@ directly — no module-level singletons).
 from __future__ import annotations
 
 import asyncio
-import base64
 import hashlib
 import json
 import logging
@@ -71,6 +70,7 @@ from nora.platform.bridge.service import (
     receipt_via,
 )
 from nora.platform.bridge.wire import attachment_key_ok
+from nora.platform.signal.media import SignalMediaSource
 from nora.platform.signal.parser import parse_event, parse_observations
 from nora.platform.signal.react import SignalReactor
 from nora.platform.signal.send import SignalSender
@@ -302,6 +302,8 @@ class Bridge:
             cfg.signal_http, dm_recipients=None)
         self.reactor = reactor or SignalReactor(cfg.signal_http)
         self._rpc = rpc_client or self._rpc_http
+        self._media_source = SignalMediaSource(
+            base_url=cfg.signal_http, max_bytes=MAX_ATTACHMENT_BYTES)
         self._received: asyncio.Event = asyncio.Event()
         # canonical_id → env whose receipt reserve failed while enqueued;
         # retried by the publisher loop without a restart.
@@ -514,12 +516,13 @@ class Bridge:
         out: list[dict[str, Any]] = []
         refs = []
         for ref in msg.media:
-            if not ref.platform_id:
-                refs.append(ref)
-                continue
             try:
-                data = await self._rpc("getAttachment", {"id": ref.platform_id})
-                raw = base64.b64decode(data["data"]) if isinstance(data, dict) else b""
+                fetched = await self._media_source.fetch(ref=ref)
+                if not fetched.available:
+                    log.warning("attachment custody unavailable: %s", fetched.reason)
+                    refs.append(ref)
+                    continue
+                raw = fetched.data
                 key = hashlib.sha256(raw).hexdigest()[:32]
                 (self.cfg.attach_dir / key).write_bytes(raw)
             except Exception as exc:  # noqa: BLE001 — custody boundary; logged by type
@@ -692,7 +695,7 @@ class Bridge:
         key = req.match_info["key"]
         if not attachment_key_ok(key):
             return web.json_response({"error": "bad key"}, status=400)
-        body = await req.read()
+        body = await req.clone(client_max_size=MAX_ATTACHMENT_BYTES + 1).read()
         if len(body) > MAX_ATTACHMENT_BYTES:
             return web.json_response({"error": "too large"}, status=413)
         path = self.cfg.attach_dir / key

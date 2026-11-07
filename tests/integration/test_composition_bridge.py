@@ -12,6 +12,7 @@ readout mounted on the health app.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import tomllib
 from pathlib import Path
@@ -22,6 +23,9 @@ from aiohttp import ClientSession, web
 
 from nora.__main__ import build_app
 from nora.app.bridge_queue import BridgeRuntime, stream_name
+from nora.app.composition import _build_media_custody
+from nora.config import load as load_config
+from nora.domain.media import MediaRef
 from nora.platform.bridge.client import BridgeAdapter
 from nora.platform.bridge.inspection import QueueInspector
 from nora.platform.discord.adapter import DiscordAdapter
@@ -31,6 +35,54 @@ from nora.platform.signal.adapter import SignalAdapter
 ROOT = Path(__file__).resolve().parents[2]
 
 TOKEN = "it-bridge-token"  # noqa: S105 — a synthetic fixture token, not a secret
+
+
+@pytest.mark.parametrize("platform", ["signal", "discord", "whatsapp", "instagram"])
+async def test_all_bridge_media_sources_fetch_every_attachment_type(
+        platform, tmp_path, monkeypatch, example_config_path, aiohttp_server):
+    payload = b"generated-media" * 100_000
+    received = []
+
+    async def attachment(request):
+        assert request.headers.get("Authorization") == f"Bearer {TOKEN}"
+        received.append((request.match_info["platform"], request.match_info["key"]))
+        if request.match_info["key"] == "missing":
+            raise web.HTTPNotFound()
+        return web.Response(body=payload)
+
+    app = web.Application()
+    app.router.add_get("/{platform}/v1/attachments/{key}", attachment)
+    server = await aiohttp_server(app)
+    data = tomllib.loads(example_config_path.read_text())
+    data["media"].update(enabled=True, encryption_key_env="NORA_TEST_MEDIA_KEY")
+    data["store"]["data_dir"] = str(tmp_path / "data")
+    data.setdefault("bridges", {})["token_env"] = "NORA_TEST_BRIDGE_TOKEN"  # noqa: S105 — env name
+    for name in ("signal", "discord", "whatsapp", "instagram"):
+        data["platforms"][name].update(
+            mode="bridge", base_url=str(server.make_url(f"/{name}")))
+    path = tmp_path / "config.toml"
+    path.write_text(tomli_w.dumps(data))
+    monkeypatch.setenv("NORA_TEST_MEDIA_KEY", base64.b64encode(bytes(range(32))).decode())
+    monkeypatch.setenv("NORA_TEST_BRIDGE_TOKEN", TOKEN)
+    sources, blobs = await _build_media_custody(load_config(path, require_secrets=False))
+    assert sources is not None and blobs is not None
+    source = sources.for_platform(platform)
+    assert source is not None
+    for index, (mime, filename, voice) in enumerate([
+        ("image/png", "generated.png", False),
+        ("video/mp4", "generated.mp4", False),
+        ("audio/mpeg", "generated.mp3", False),
+        ("audio/ogg", "generated.ogg", True),
+        ("application/pdf", "generated.pdf", False),
+        ("application/octet-stream", "generated.bin", False),
+    ]):
+        ref = MediaRef(platform_id=f"held-{index}", media_type=mime,
+                       filename=filename, size=len(payload), voice_note=voice)
+        got = await source.fetch(ref=ref)
+        assert got.available and got.data == payload
+        assert received[-1] == (platform, ref.platform_id)
+    absent = await source.fetch(ref=MediaRef(platform_id="missing"))
+    assert not absent.available and absent.reason == "absent"
 
 
 def _fake_bridge(routes: dict[str, dict]) -> web.Application:

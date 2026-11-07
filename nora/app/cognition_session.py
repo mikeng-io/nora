@@ -178,6 +178,7 @@ from nora.infra.sql.standing_revise import standing_revise as live_standing_revi
 from nora.language.cognition_render import (
     RenderBudget,
     render_agenda,
+    rendered_new_sources,
     room_key,
     room_label,
     speaker_of,
@@ -1014,19 +1015,8 @@ class CognitionSessionRunner:
                 )
                 return {
                     "system": system, "agenda": agenda,
-                    **({"new_sources": {
-                        str(n): {"key": list(key),
-                                 "text": state.graph_fetched.sources[tuple(key)].text}
-                        for item in state.memory_items.values()
-                        for n, key in item.snapshot.get("source_keys", {}).items()
-                        if tuple(key) in state.graph_fetched.sources
-                        and tuple(key) in {
-                            ("message", str(grounding.records[s.ref].message_id))
-                            if s.ref in grounding.records else tuple(s.ref.split(":", 1))
-                            for s in view.pending
-                        }
-                    }
-                    } if eval_capture_enabled() else {}),
+                    **({"new_sources": rendered_new_sources(agenda)}
+                       if eval_capture_enabled() else {}),
                     "work": [
                         {
                             "index": index,
@@ -1399,6 +1389,7 @@ class CognitionSessionRunner:
                 "budgets": asdict(replace(self._budget, reserve_tokens=historical)),
                 "system": system_prompt, "agenda": prompt,
                 "items": [i.as_dict() for i in items],
+                "stimuli": [{"id": s.id, "kind": s.kind, "ref": s.ref} for s in view.pending],
             }, default=str)})
         token = SESSION_TOKENS.set(spend)
         result: CognitionRunResult | None = None

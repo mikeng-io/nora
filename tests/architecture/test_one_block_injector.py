@@ -65,6 +65,8 @@ _NOT_BUILT_HERE = {
         "quotes the agenda's clock block verbatim inside a worked example",
     ("nora/language/comprehend_render.py", "m"):
         "quotes the agenda's rendered <m> rows verbatim inside worked examples",
+    ("nora/language/cognition_render.py", "root"):
+        "parse wrapper for reading a rendered agenda; it never reaches a prompt",
 }
 
 def _docstring_nodes(tree: ast.AST) -> set[int]:
