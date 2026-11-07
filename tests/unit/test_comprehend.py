@@ -226,22 +226,30 @@ def test_web_page_preview_uses_found_layer_word():
 
 def test_the_instruction_lists_the_vocabulary_admission_checks():
     from nora.domain.memory_graph import (
-        ENTITY_KINDS,
+        ENTRY,
         PROPOSED_KINDS,
         RELATION_RULES,
         validate_relation,
     )
-    from nora.language.comprehend_render import COMPREHEND
+    from nora.language.comprehend_render import SESSION_INSTRUCTION
 
-    kinds = next(line for line in COMPREHEND.splitlines() if line.startswith("Entity kinds"))
+    kinds = next(
+        line for line in SESSION_INSTRUCTION.splitlines()
+        if line.startswith("Entity kinds")
+    )
     assert all(kind in kinds for kind in PROPOSED_KINDS) and "person" not in kinds
-    for rel, rule in RELATION_RULES.items():
-        if rule.layer == "notebook" and set(rule.sources) <= set(ENTITY_KINDS):
-            assert f"\n- {rel}: " in COMPREHEND
-    # A fetched page step one read may say what it is about; an entry's links are
-    # written by the entry's own writer and are never offered here.
-    assert "\n- about: reading|web_page|session|play -> any kind" in COMPREHEND
-    assert all(f"\n- {rel}: " not in COMPREHEND for rel in ("records", "concerns", "settles"))
+    admitted = {
+        rel for rel, rule in RELATION_RULES.items()
+        if rule.layer == "notebook" and set(rule.sources) - set(ENTRY)
+    }
+    rels = next(
+        line for line in SESSION_INSTRUCTION.splitlines()
+        if "the only names admitted:" in line
+    )
+    listed = set(rels.split("the only names admitted:")[1].split("—")[0].replace(",", " ").split())
+    assert listed == admitted
+    # An entry's links are written by the entry's own writer and are never offered.
+    assert {"records", "concerns", "settles"} & admitted == set()
     topic = Entity("generated-topic", "topic", UNIT, "Generated Sport")
     evidence = (Evidence(SOURCE.key, relation_id="generated-interest", span="like Hall"),)
     interest = Relation(

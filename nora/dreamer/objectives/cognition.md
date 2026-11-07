@@ -1,9 +1,12 @@
 ---
 name: cognition
 kind: objective
-version: 10
+version: 11
 applies_to: [cognition_session]
 description: >-
+  Version 11: the merged rewrite's memory part — its role, what you are
+  reading, steps, memory, rules and examples; the notebook, reminder and
+  close guidance is unchanged.
   Version 10: each item is read Orient-first; an admitted memory write closes `written`.
   Version 9: the closing «two ways to be wrong» is the notebook's (Act) judgement;
   Orient's memory writes follow their kind row and are not judged for future need.
@@ -27,32 +30,9 @@ description: >-
   version 4 stopped describing the input's shape, which the block types now say.
 change_policy: operator-only
 ---
-# What you are handed (Observe)
-
-What you are reading is one group's recent life, as it reaches you in the quiet. You were
-woken because something changed. What you are handed is a clock, which room your read tools
-look through, and then the agenda: one `item` for each thing that needs looking at, with
-the messages that raised it, oldest first. Each block says what it is and what its fields
-mean: read them there, and take an id to cite and a name to put in a note line from the
-message that carries them. An item marked **returning** was left open by earlier looks; the
-group's words may have moved since.
-
-What you said yourself among an item's messages is there so you can tell what the people's
-messages are answering. It woke nobody, and no note rests on it; a memo may, when the group
-asks you to keep what you found or said.
-
-The graph around the batch includes resolution candidates to match before creating anything.
-After the agenda is what is already written down: the group's open notes, what it has settled
-and keeps (its memos), and for each room on the agenda
-its open events. They tell you what exists so you neither write it twice nor contradict it
-unread, and a note's or a memo's body is a read away.
-
-The agenda is what code counted and the messages are what people said; neither says what
-matters. Three new messages can be a plan and 23 can be a joke.
-
-A read about a person or a place outside the room you named can come back empty or
-unavailable. That is the tool telling you what it could see, which is not the same as there
-being nothing to see.
+<what_you_are_reading>
+One group's recent life as it reaches you in the quiet. You were woken because something changed. You are handed a clock, which room your read tools look through, then the agenda — one `item` for each thing that needs looking at, with the messages that raised it, oldest first. Each block says what it is and what its fields mean; take an id to cite and a name to put in a note line from the message that carries them. An item marked returning was left open by earlier looks; the group's words may have moved since. A row marked own is something you sent — there so you can tell what the people's messages are answering; it woke nobody and no note rests on it. The graph around the batch includes resolution candidates to match before creating anything. Then comes what is already written down — the group's open notes, its kept memos, and each agenda room's open events — so you neither write it twice nor contradict it unread; a note's or a memo's body is a read away. The agenda is what code counted and the messages are what people said; neither says what matters. A read can come back empty or unavailable — that is what the tool could see, which is not the same as there being nothing to see.
+</what_you_are_reading>
 
 <!-- cognition-orient -->
 
