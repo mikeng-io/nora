@@ -37,8 +37,8 @@
   {
     "name": "imports follow transitively through production modules",
     "file": "scripts/affected_tests.py",
-    "old": "    if graph is not None:\n        frontier |= _module_closure(_dotted(path), graph)",
-    "new": "    if graph is not None:\n        frontier |= set()",
+    "old": "        frontier |= _module_closure(_canonical(_dotted(path)), graph)",
+    "new": "        frontier |= set()",
     "target": "tests/unit/test_testmon_selection.py::test_a_constant_edit_follows_imports_through_production_modules"
   },
   {
@@ -47,20 +47,6 @@
     "old": "    if (head.get(\"repo\") or {}).get(\"full_name\") != os.environ.get(\n        \"GITHUB_REPOSITORY\"\n    ):",
     "new": "    if False:",
     "target": "tests/architecture/test_ci_plan.py::test_a_fork_head_is_not_eligible"
-  },
-  {
-    "name": "a diff outside the release files is never eligible",
-    "file": "scripts/ci_plan.py",
-    "old": "        if not files or any(f not in _RELEASE_FILES for f in files):\n            return False",
-    "new": "        if not files:\n            return False",
-    "target": "tests/architecture/test_ci_plan.py::test_a_runtime_or_content_change_is_not_eligible[extra0]"
-  },
-  {
-    "name": "non-version lines inside a strict release file are not eligible",
-    "file": "scripts/ci_plan.py",
-    "old": "            if not changed or not all(pattern.match(line) for line in changed):\n                return False",
-    "new": "            if not changed:\n                return False",
-    "target": "tests/architecture/test_ci_plan.py::test_a_runtime_or_content_change_is_not_eligible[extra1]"
   },
   {
     "name": "non-pull-request events run the whole suite",
@@ -82,5 +68,40 @@
     "old": "        except Exception as exc:  # noqa: BLE001 - never report a made-up selection\n            return [\n                \"### Escape report\",\n                f\"unavailable: could not reconstruct the merged diff's selection ({exc})\",\n            ]",
     "new": "        except Exception:  # noqa: BLE001\n            selected = affected_tests.ALL",
     "target": "tests/architecture/test_ci_plan.py::test_the_escape_report_is_unavailable_when_the_diff_cannot_be_read"
+  },
+  {
+    "name": "an __init__.py is the package module, not pkg.__init__",
+    "file": "scripts/affected_tests.py",
+    "old": "        graph.setdefault(_canonical(_dotted(rel)), set()).update(deps)",
+    "new": "        graph.setdefault(_dotted(rel), set()).update(deps)",
+    "target": "tests/unit/test_testmon_selection.py::test_import_shapes_select_the_reader[reviewer_reexport]"
+  },
+  {
+    "name": "importing a submodule depends on its parent packages' __init__",
+    "file": "scripts/affected_tests.py",
+    "old": "            for i in range(1, len(parts) + 1):\n                cand = \".\".join(parts[:i])\n                if cand in modules:\n                    deps.add(cand)",
+    "new": "            cand = name\n            if cand in modules:\n                deps.add(cand)",
+    "target": "tests/unit/test_testmon_selection.py::test_a_submodule_import_reaches_the_parent_init"
+  },
+  {
+    "name": "only modifications with unchanged modes are release diffs",
+    "file": "scripts/ci_plan.py",
+    "old": "        if not entries or any(\n            status != \"M\" or src_mode != dst_mode\n            for _, src_mode, dst_mode, status in entries\n        ):",
+    "new": "        if not entries or any(\n            status != \"M\"\n            for _, src_mode, dst_mode, status in entries\n        ):",
+    "target": "tests/architecture/test_ci_plan.py::test_a_mode_change_is_not_eligible"
+  },
+  {
+    "name": "nora/__init__.py compares ASTs, not line spelling",
+    "file": "scripts/ci_plan.py",
+    "old": "    return scrub(ot) == 1 and scrub(nt) == 1 and ast.dump(ot) == ast.dump(nt)",
+    "new": "    return scrub(ot) == 1 and scrub(nt) == 1",
+    "target": "tests/architecture/test_ci_plan.py::test_a_function_local_version_edit_is_not_eligible"
+  },
+  {
+    "name": "pyproject.toml compares structure, not version lines",
+    "file": "scripts/ci_plan.py",
+    "old": "def _pyproject_version_only(old: str, new: str) -> bool:\n    \"\"\"Identical TOML except `project.version`, which must differ.\"\"\"\n    try:\n        o, n = tomllib.loads(old), tomllib.loads(new)\n    except tomllib.TOMLDecodeError:\n        return False\n    op, np = o.get(\"project\"), n.get(\"project\")\n    if not isinstance(op, dict) or not isinstance(np, dict):\n        return False\n    ov, nv = op.get(\"version\"), np.get(\"version\")\n    if not isinstance(ov, str) or not isinstance(nv, str) or ov == nv:\n        return False\n    op[\"version\"] = np[\"version\"] = ov\n    return o == n",
+    "new": "def _pyproject_version_only(old: str, new: str) -> bool:\n    \"\"\"Identical TOML except `project.version`, which must differ.\"\"\"\n    try:\n        o, n = tomllib.loads(old), tomllib.loads(new)\n    except tomllib.TOMLDecodeError:\n        return False\n    op, np = o.get(\"project\"), n.get(\"project\")\n    if not isinstance(op, dict) or not isinstance(np, dict):\n        return False\n    ov, nv = op.get(\"version\"), np.get(\"version\")\n    if not isinstance(ov, str) or not isinstance(nv, str) or ov == nv:\n        return False\n    op[\"version\"] = np[\"version\"] = ov\n    return True",
+    "target": "tests/architecture/test_ci_plan.py::test_a_version_edit_in_an_unrelated_toml_section_is_not_eligible"
   }
 ]

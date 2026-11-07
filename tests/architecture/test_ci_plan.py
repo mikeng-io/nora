@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -498,7 +499,10 @@ def test_baseline_events_select_the_full_backend(tmp_path, monkeypatch, event_da
     assert all(json.loads(values["plan"]).values())
 
 
-def _release_repo(root: Path, edits: dict[str, str]) -> dict:
+def _release_repo(
+    root: Path, edits: dict[str, str], *, base_over: dict[str, str] | None = None,
+    delete: list[str] | None = None, chmod: dict[str, int] | None = None,
+) -> dict:
     """A real git repo + release-shaped event for release_eligible."""
     def run(*args):
         return subprocess.run(["git", *args], cwd=root, check=True,  # noqa: S603 - fixed git argv, tmp repo
@@ -506,19 +510,29 @@ def _release_repo(root: Path, edits: dict[str, str]) -> dict:
     run("init", "-q")
     run("config", "user.email", "t@t")
     run("config", "user.name", "t")
-    (root / "nora").mkdir()
-    (root / "nora/__init__.py").write_text('__version__ = "1.0.0"\n')
-    (root / "pyproject.toml").write_text('[project]\nversion = "1.0.0"\n')
-    (root / "uv.lock").write_text('name = "nora"\nversion = "1.0.0"\n')
-    (root / ".release-please-manifest.json").write_text('{".": "1.0.0"}\n')
-    (root / "CHANGELOG.md").write_text("# changelog\n")
+    base_files = {
+        "nora/__init__.py": '__version__ = "1.0.0"\n',
+        "pyproject.toml": '[project]\nversion = "1.0.0"\n',
+        "uv.lock": '[[package]]\nname = "nora"\nversion = "1.0.0"\n'
+                   '[[package]]\nname = "dep"\nversion = "3"\n',
+        ".release-please-manifest.json": '{".": "1.0.0"}\n',
+        "CHANGELOG.md": "# changelog\n",
+        **(base_over or {}),
+    }
+    for rel, content in base_files.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(content)
     run("add", ".")
     run("commit", "-qm", "base")
     base = run("rev-parse", "HEAD").stdout.strip()
     for rel, content in edits.items():
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text(content)
-    run("add", ".")
+    for rel in delete or []:
+        run("rm", "-q", rel)
+    for rel, mode in (chmod or {}).items():
+        os.chmod(root / rel, mode)
+    run("add", "-A")
     run("commit", "-qm", "release bump")
     head = run("rev-parse", "HEAD").stdout.strip()
     return {"pull_request": {
@@ -531,7 +545,8 @@ def _release_repo(root: Path, edits: dict[str, str]) -> dict:
 _RELEASE_BUMP = {
     "nora/__init__.py": '__version__ = "1.0.1"\n',
     "pyproject.toml": '[project]\nversion = "1.0.1"\n',
-    "uv.lock": 'name = "nora"\nversion = "1.0.1"\n',
+    "uv.lock": '[[package]]\nname = "nora"\nversion = "1.0.1"\n'
+               '[[package]]\nname = "dep"\nversion = "3"\n',
     ".release-please-manifest.json": '{".": "1.0.1"}\n',
     "CHANGELOG.md": "# changelog\n\n## 1.0.1\n",
 }
@@ -558,6 +573,46 @@ def test_a_fork_head_is_not_eligible(tmp_path, monkeypatch):
     monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
     event = _release_repo(tmp_path, _RELEASE_BUMP)
     event["pull_request"]["head"]["repo"]["full_name"] = "someone-else/nora"
+    assert not ci_plan.release_eligible(tmp_path, event)
+
+
+def test_a_function_local_version_edit_is_not_eligible(tmp_path, monkeypatch):
+    """`__version__ = "safe"` inside a function is not the release field —
+    the AST compare, not line spelling, must reject it."""
+    monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
+    base_init = ('__version__ = "1.0.0"\n\n'
+                 'def f():\n    __version__ = "safe"\n    return __version__\n')
+    head_init = base_init.replace('"safe"', '"broken"')
+    event = _release_repo(
+        tmp_path, {**_RELEASE_BUMP, "nora/__init__.py": head_init},
+        base_over={"nora/__init__.py": base_init})
+    assert not ci_plan.release_eligible(tmp_path, event)
+
+
+def test_a_version_edit_in_an_unrelated_toml_section_is_not_eligible(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
+    base = '[project]\nversion = "1.0.0"\n[tool.x]\nversion = "9"\n'
+    # the release bump lands AND an unrelated section changes
+    head = '[project]\nversion = "1.0.1"\n[tool.x]\nversion = "10"\n'
+    event = _release_repo(
+        tmp_path, {**_RELEASE_BUMP, "pyproject.toml": head},
+        base_over={"pyproject.toml": base})
+    assert not ci_plan.release_eligible(tmp_path, event)
+
+
+def test_a_deleted_release_file_is_not_eligible(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
+    edits = {k: v for k, v in _RELEASE_BUMP.items() if k != "uv.lock"}
+    event = _release_repo(tmp_path, edits, delete=["uv.lock"])
+    assert not ci_plan.release_eligible(tmp_path, event)
+
+
+def test_a_mode_change_is_not_eligible(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
+    event = _release_repo(
+        tmp_path, _RELEASE_BUMP, chmod={"CHANGELOG.md": 0o755})
     assert not ci_plan.release_eligible(tmp_path, event)
 
 

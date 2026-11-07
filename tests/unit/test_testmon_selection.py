@@ -111,6 +111,105 @@ def test_unresolvable_importers_fail_closed_to_all(recorded, monkeypatch):
     assert select(["pkg/settings.py"], recorded) == ALL
 
 
+def test_an_invalid_python_file_is_all_not_a_subset(recorded):
+    (recorded / "pkg/broken.py").write_text("def broken(:\n")
+    assert select(["pkg/settings.py"], recorded) == ALL
+
+
+def _shape_repo(
+    root: Path, init: str, test_src: str, api: str = "from pkg import LIMIT\n",
+) -> Path:
+    (root / "pkg").mkdir(parents=True)
+    (root / "pytest.ini").write_text("[pytest]\ntestpaths = tests\n")
+    (root / "conftest.py").write_text("")
+    (root / "pkg/__init__.py").write_text(init)
+    (root / "pkg/settings.py").write_text("LIMIT = 10\n")
+    (root / "pkg/api.py").write_text(api)
+    (root / "pkg/unused.py").write_text("X = 1\n")
+    (root / "tests").mkdir()
+    (root / "tests/test_target.py").write_text(test_src)
+    (root / "tests/test_unrelated.py").write_text("def test_u():\n    assert 1\n")
+    done = _pytest(root, "--testmon")
+    assert done.returncode == 0, done.stdout + done.stderr
+    return root
+
+
+_INIT_REEXPORT = "from .settings import LIMIT\n"
+_INIT_ABSOLUTE = "from pkg.settings import LIMIT\n"
+_TARGET_DIRECT = "from pkg.api import LIMIT\n\ndef test_target():\n    assert LIMIT == 10\n"
+_TARGET_IMPORT_MOD = "import pkg.api\n\ndef test_target():\n    assert pkg.api.LIMIT == 10\n"
+_TARGET_FROM_PKG_MOD = "from pkg import api\n\ndef test_target():\n    assert api.LIMIT == 10\n"
+_TARGET_FROM_PKG = "from pkg import LIMIT\n\ndef test_target():\n    assert LIMIT == 10\n"
+_TARGET_BODY = "def test_target():\n    from pkg.api import LIMIT\n    assert LIMIT == 10\n"
+_TARGET_TYPE_CHECKING = (
+    "from typing import TYPE_CHECKING\n"
+    "if TYPE_CHECKING:\n    from pkg.api import LIMIT\n"
+    "else:\n    LIMIT = 10\n"
+    "def test_target():\n    assert LIMIT == 10\n"
+)
+_TARGET_TRY = (
+    "try:\n    from pkg.api import LIMIT\n"
+    "except ImportError:\n    LIMIT = 10\n"
+    "def test_target():\n    assert LIMIT == 10\n"
+)
+_TARGET_RELATIVE_API = "from pkg.api import LIMIT\n\ndef test_target():\n    assert LIMIT == 10\n"
+
+
+@pytest.mark.parametrize(("init", "test_src", "edit_path"), [
+    (_INIT_REEXPORT, _TARGET_DIRECT, "pkg/settings.py"),
+    (_INIT_ABSOLUTE, _TARGET_DIRECT, "pkg/settings.py"),
+    (_INIT_REEXPORT, _TARGET_IMPORT_MOD, "pkg/settings.py"),
+    (_INIT_REEXPORT, _TARGET_FROM_PKG_MOD, "pkg/settings.py"),
+    (_INIT_REEXPORT, _TARGET_FROM_PKG, "pkg/settings.py"),
+    (_INIT_REEXPORT, _TARGET_BODY, "pkg/settings.py"),
+    (_INIT_REEXPORT, _TARGET_TYPE_CHECKING, "pkg/settings.py"),
+    (_INIT_REEXPORT, _TARGET_TRY, "pkg/settings.py"),
+    # the reviewer case: __init__ re-exports, api binds from the package
+    ("from .settings import LIMIT\n", _TARGET_FROM_PKG, "pkg/settings.py"),
+    # a constant rebound in __init__ itself
+    ("LIMIT = 10\n", _TARGET_FROM_PKG, "pkg/__init__.py"),
+], ids=[
+    "direct", "absolute_init", "import_mod", "from_pkg_mod",
+    "from_pkg_reexport", "body_import", "type_checking", "try_except",
+    "reviewer_reexport", "init_constant",
+])
+def test_import_shapes_select_the_reader(tmp_path, init, test_src, edit_path):
+    repo = _shape_repo(tmp_path / "repo", init, test_src)
+    target = repo / edit_path
+    target.write_text(target.read_text().replace("LIMIT = 10", "LIMIT = 111"))
+    selected = select([edit_path], repo)
+    assert selected != ALL
+    assert "tests/test_target.py" in selected
+    assert "tests/test_unrelated.py" not in selected
+
+
+def test_a_submodule_import_reaches_the_parent_init(tmp_path):
+    """`import pkg.settings` binds `pkg` too — editing `pkg/__init__.py`
+    selects a test whose chain reaches it only through the parent edge."""
+    repo = _shape_repo(
+        tmp_path / "repo", "LIMIT = 10\n", _TARGET_IMPORT_MOD,
+        api="import pkg.settings\nLIMIT = pkg.settings.LIMIT\n",
+    )
+    (repo / "pkg/__init__.py").write_text("LIMIT = 111\n")
+    selected = select(["pkg/__init__.py"], repo)
+    assert selected != ALL
+    assert "tests/test_target.py" in selected
+
+
+def test_a_computed_dynamic_import_is_a_documented_blind_spot(tmp_path):
+    """importlib.import_module() with a COMPUTED name carries no literal the
+    scan can match and no static edge the graph can follow — selection does
+    NOT cover it. This test pins the limitation; it does not pretend."""
+    repo = _shape_repo(
+        tmp_path / "repo", _INIT_REEXPORT,
+        "import importlib\n"
+        "LIMIT = importlib.import_module('pkg.' + 'settings').LIMIT\n"
+        "def test_target():\n    assert LIMIT == 10\n",
+    )
+    (repo / "pkg/settings.py").write_text("LIMIT = 111\n")
+    assert "tests/test_target.py" not in select(["pkg/settings.py"], repo)
+
+
 def test_a_data_file_a_test_reads_selects_that_reader(recorded):
     selected = select(["docs/notes.md"], recorded)
     assert selected != ALL
