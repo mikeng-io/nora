@@ -15,7 +15,7 @@ rule and its history are `docs/maintainers/conventions.md` "Proving a fix: mutat
 
 1. **Commit the fix and its test first.** A real Conventional-Commit subject: the
    commit-msg hook rejects `wip:`. `git checkout` restores whatever is committed,
-   so a probe on an uncommitted fix destroys the fix and misreads the result (#168).
+   so a probe on an uncommitted fix destroys the fix and misreads the result.
    ```bash
    git add <files>
    git commit -m "fix(<scope>): <what>"; echo "COMMIT_RC=$?"
@@ -33,7 +33,7 @@ rule and its history are `docs/maintainers/conventions.md` "Proving a fix: mutat
 
 3. **Revert the fix, as its own command.** Never chain it behind anything that can
    fail: `&&` after a rejected commit once skipped the revert, and the green that
-   followed meant "never ran" (2026-09-17).
+   followed meant "never ran".
    ```bash
    git checkout HEAD~1 -- <production file>
    git diff --stat HEAD -- <production file>
@@ -73,8 +73,7 @@ rule and its history are `docs/maintainers/conventions.md` "Proving a fix: mutat
    not part of `make gate`: run it yourself.
 
 8. **Inspect tables that name a file you touched**, not just yours. Anchors are
-   literal source, so a later edit silently breaks an older table's entries
-   (#443 broke two of another table's; #457 re-pointed nine).
+   literal source, so a later edit silently breaks an older table's entries.
    ```bash
    for f in $(git diff --name-only origin/master...HEAD); do
      grep -l "\"file\": \"$f\"" scripts/mutations/*.json
@@ -93,10 +92,9 @@ rule and its history are `docs/maintainers/conventions.md` "Proving a fix: mutat
 - **Ask what the test's expected value is derived from.** If it comes from the
   constant, function or table the mutant edits, the test agrees with any answer:
   point it at an independent observation (the call site, the rendered output, the
-  stored row) instead of adding a second test beside it (three survivors, #318
-  and #331).
+  stored row) instead of adding a second test beside it.
 - **A test can be green on the defect.** A band pinned against the prompt's own
-  worked example was green on the value that wedged production (2026-09-18).
+  worked example was green on the value that wedged production.
   Pin the property production violated, and replace the test rather than
   re-pointing its numbers.
 - **Pair every zero-assertion with a positive control.** `== 0` is also true of a
@@ -120,7 +118,7 @@ rule and its history are `docs/maintainers/conventions.md` "Proving a fix: mutat
   records what ran.
 - **Prompt tags and attributes:** grep the OLD name across `tests/`. A forgery
   probe whose payload names a tag the code no longer emits passes while testing
-  nothing (#314). Then falsify each probe: delete the escape and watch it redden.
+  nothing. Then falsify each probe: delete the escape and watch it redden.
   ```bash
   git grep -n '<old-tag-name>' -- tests/
   ```
@@ -129,7 +127,7 @@ rule and its history are `docs/maintainers/conventions.md` "Proving a fix: mutat
 ## Writing it in the PR
 
 Write "reverting X reddens Y" only for a revert you watched turn that named test
-red in that run; four such claims in one session were false (2026-09-11). If you
+red in that run; four such claims in one session were false. If you
 reasoned it from the mechanism, write "expected", not "verified". Formats seen on
 merged PRs:
 

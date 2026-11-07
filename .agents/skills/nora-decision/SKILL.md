@@ -34,8 +34,8 @@ branch's worktree.
    git grep -n -i "<the same words>" origin/master -- design docs/adr
    ```
    Check: any hit in a bundle's sequence, an ADR or an open issue means you edit
-   that and file nothing. (2026-09-16: #272 duplicated a sequence
-   `design/culture-tier/` already held; closed the same day.)
+   that and file nothing; an issue that repeats an existing design sequence is
+   closed as a duplicate.
 3. **Select and read the existing form** in `.github/ISSUE_TEMPLATE/`, following
    `docs/maintainers/conventions.md` «Issues». Bug report: its five fields;
    Feature request: Problem and Proposed solution. Both use descriptive titles.
@@ -46,7 +46,7 @@ branch's worktree.
    scrub, which rewrites git objects only. Describe what a room did; never quote
    a message or name a member; cite `file:line`, row ids, tag ids, metric names.
    Check: read the file once for quoted chat, a member's name, a phone number or
-   a platform id before sending. (2026-09-13: three issues rewritten for this.)
+   a platform id before sending. (three issues rewritten for this.)
 5. **File and read back.**
    ```bash
    gh issue create --title "<selected form title>" --body-file <draft file>
@@ -74,7 +74,7 @@ require a roadmap card. `nora-land` reconciles progress at completion.
 1. **Search before you design.** Look for the published convention (vendor docs,
    the spec, papers) and cite it, including sources that argue against you:
    0015's Context is the pattern. A good measurement says where the cost is, not
-   whether the problem is already solved (2026-09-22).
+   whether the problem is already solved.
 2. **Next number, from all three places:**
    ```bash
    git fetch origin master
@@ -84,8 +84,8 @@ require a roadmap card. `nora-land` reconciles progress at completion.
      --jq '.[] | select(any(.files[]; .path | startswith("docs/adr/"))) | .number'
    ```
    Take one above the highest number any of them shows. Check: a count above 1
-   on any line is a collision, not a pattern to follow (two `0013` files landed
-   2026-09-17, #330 and #331). Re-run at merge time; step 4 applies to ADRs too.
+   on any line is a collision, not a pattern to follow (two ADRs once landed with
+   the same number). Re-run at merge time; step 4 applies to ADRs too.
 3. **Shape.** `NNNN-kebab-title.md` in `docs/adr/`. Copy the header of 0015 or 0016:
    title line `# NNNN` plus the title; bullets **Status** (`proposed`), **Date**,
    optional **Supersedes / Extends / Reverses, in part**, and **Index** (the DEC
@@ -104,7 +104,7 @@ require a roadmap card. `nora-land` reconciles progress at completion.
    DEC rows share it in landing order (R-95 to R-98 sit among DEC rows). Columns
    `| ID | Statement | Enforcing test |`. A row is for a LANDED decision; a
    proposed ADR that ships no behaviour keeps its Index placeholder (0016 merged
-   that way, #476).
+   that way).
 2. **Statement.** The decision in bold first, then provenance (operator and
    date, the design section), what it supersedes or reverses, what is not in
    scope, and the reading that would reopen it («This holds unless ...», as
@@ -170,8 +170,8 @@ two branches can take the same number and git merges both rows without a conflic
 5. **If your number is taken,** renumber YOUR row and every reference to it, never
    the other one: `git grep -nE 'DEC-<n>([^0-9]|$)'` on the branch, the ADR's
    Index line, the commit bodies, and the PR title (`gh pr edit <N> --title`).
-   Check: the same grep afterwards finds only your decision. (#444's title says
-   DEC-199; its row landed as DEC-200. DEC-155 was allocated twice, #251 and #259.)
+   Check: the same grep afterwards finds only your decision, including in PR
+   titles, which drift from the row's final number.
 
 ## 5. Citing, or reversing, a decision
 
@@ -186,7 +186,7 @@ two branches can take the same number and git merges both rows without a conflic
    git log -1 --format='%h %cs %s' <sha from the blame>
    ```
    A section older than the decision it contradicts is dead text, not a finding
-   (2026-09-17: stale overview prose nearly got a correctly built tier deleted).
+   (stale overview prose nearly got a correctly built tier deleted).
 3. **Reverse only on new evidence** (a measurement, a read-back, a probe). State
    it in one line and write the new reopen condition. A better-argued restatement
    is not evidence.

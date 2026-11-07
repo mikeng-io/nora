@@ -1010,3 +1010,145 @@ async def test_profile_count_discovers_without_constructing_message_evidence(env
     assert constructed == []
     assert len(await source.messages(key=KEY, rooms=ROOMS, person=PERSON, limit=20)) == 1
     assert constructed == [10]
+
+
+@pytest.mark.parametrize('discover', [False, True])
+async def test_rollup_total_work_scales_with_history_and_fixed_page(env, tmp_path, discover):
+    """Execute every statement, including full selected transcript hydration."""
+    from sqlalchemy.ext.compiler import compiles
+    from sqlalchemy.sql.expression import ClauseElement, Executable
+
+    class Explain(Executable, ClauseElement):
+        inherit_cache = False
+
+        def __init__(self, query):
+            self.query = query
+
+    @compiles(Explain)
+    def explain(element, compiler, **kwargs):
+        return 'EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON) ' + compiler.process(
+            element.query, **kwargs)
+
+    def nodes(plan):
+        yield plan
+        for child in plan.get('Plans', ()):
+            yield from nodes(child)
+
+    await message(env, ident=1, person='person-b', ts=T0 - 1)
+    await message(env, ident=2, quoted_ts=T0 - 1)
+    async with env.begin() as conn:
+        await conn.execute(sa.insert(ROLLUP_BUILD).values(id=1, status='current',
+            code_version='synthetic', params_sha256='a' * 64, through_ms=T0 + 10))
+        await conn.execute(sa.insert(ROLLUP_TIE).values(build_id=1, unit='unit',
+            valid_from_ms=T0, valid_to_ms=T0 + 10, as_of_ms=T0,
+            lineage=[['message', None, 'signal:room-a']], person_a=PERSON,
+            person_b='person-b', iso_week='2026-W38', replies_ab=1, replies_ba=0,
+            mentions_ab=0, mentions_ba=0, reactions_ab=0, reactions_ba=0, colocation_ms=0))
+    measured = []
+    for first, last in [(100, 3099), (3100, 6099)]:
+        async with env.begin() as conn:
+            await conn.execute(sa.insert(MESSAGES), [{
+                'id': i, 'platform': 'signal', 'conversation_id': 'room-a',
+                'conversation_type': 'group', 'sender_id': 'generated',
+                'person_id': 'unrelated', 'ts': T0 + i % 5, 'body': 'generated history',
+                'is_nora': 0, 'delivery_status': 'sent',
+            } for i in range(first, last + 1)])
+            await conn.execute(sa.insert(MESSAGE_EDIT), [{
+                'message_id': i, 'ts': T0 + 20000 + i, 'body': 'generated edit',
+            } for i in range(first, last + 1)])
+            await conn.execute(sa.text('ANALYZE messages'))
+            await conn.execute(sa.text('ANALYZE message_edit'))
+        queries = []
+
+        def capture(conn, clause, multiparams, params, options, queries=queries):
+            queries.append(clause)
+
+        sa.event.listen(env.sync_engine, 'before_execute', capture)
+        try:
+            [row] = await source_inputs(env).rollup(
+                key=KEY, unit='unit', rooms=ROOMS, person=PERSON, limit=1, discover=discover)
+        finally:
+            sa.event.remove(env.sync_engine, 'before_execute', capture)
+        assert row.source == 'tie:2026-W38:person-a,person-b'
+        assert [root.row.id for root in row.roots] == ([] if discover else [2])
+        plans = []
+        async with env.connect() as conn:
+            for query in queries:
+                [plan] = (await conn.execute(Explain(query))).scalar_one()
+                plans.append(plan)
+        (tmp_path / f'rollup-{last}.json').write_text(json.dumps(plans, indent=2))
+        print('plan artifact', tmp_path / f'rollup-{last}.json')
+        work = sum((n['Actual Rows'] + n.get('Rows Removed by Filter', 0)
+                    + n.get('Rows Removed by Index Recheck', 0)) * n['Actual Loops']
+                   for p in plans for n in nodes(p['Plan']) if 'Relation Name' in n)
+        cost = sum(p['Plan']['Total Cost'] for p in plans)
+        jit = sum(p.get('JIT', {}).get('Functions', 0) for p in plans)
+        print('rollup history', last - 99, 'queries', len(queries), 'visited', work,
+              'cost', cost, 'JIT', jit, flush=True)
+        measured.append(work)
+        assert 0 < work < (last - 99) * 2 + 100, (work, cost, jit)
+        assert cost < 100000, cost
+    assert measured[1] <= measured[0] * 2.5
+
+
+async def test_rollup_discovery_and_render_share_exact_pending_with_competing_ties(
+    env, monkeypatch,
+):
+    import nora.infra.sql.profile_inputs as module
+
+    await message(env, ident=1, person='person-b', ts=T0 - 1)
+    await message(env, ident=2, quoted_ts=T0 - 1)
+    async with env.begin() as conn:
+        await conn.execute(sa.insert(ROLLUP_BUILD).values(id=1, status='current',
+            code_version='synthetic', params_sha256='a' * 64, through_ms=T0 + 10))
+        for other, week in (('person-b', '2026-W38'), ('person-b', '2026-W39'),
+                            ('person-c', '2026-W38')):
+            await conn.execute(sa.insert(ROLLUP_TIE).values(build_id=1, unit='unit',
+                valid_from_ms=T0, valid_to_ms=T0 + 10, as_of_ms=T0,
+                lineage=[['message', None, 'signal:room-a']], person_a=PERSON,
+                person_b=other, iso_week=week, replies_ab=1, replies_ba=0,
+                mentions_ab=0, mentions_ba=0, reactions_ab=0, reactions_ba=0, colocation_ms=0))
+    source = source_inputs(env)
+    queries = []
+
+    def capture(conn, clause, multiparams, params, options):
+        if 'latest_edit' in str(clause):
+            queries.append(clause)
+
+    sa.event.listen(env.sync_engine, 'before_execute', capture)
+    try:
+        rendered = await source.rollup(
+            key=KEY, unit='unit', rooms=ROOMS, person=PERSON, limit=12)
+    finally:
+        sa.event.remove(env.sync_engine, 'before_execute', capture)
+    assert [r.source for r in rendered] == [
+        'tie:2026-W38:person-a,person-b', 'tie:2026-W39:person-a,person-b']
+    assert len(queries) == 1  # shared support is hydrated once for the selected page
+    assert [x.row.id for x in rendered[0].roots] == [2]
+    expected = [T0, T0 + 10, 1, 0, 0, 0,
+                [[2, 'a qualified intention', None, None]], None]
+    assert rendered[0].revision == hashlib.sha256(json.dumps(expected).encode()).hexdigest()
+
+    constructed = []
+
+    def forbidden(row):
+        constructed.append(row.id)
+        raise AssertionError('discovery hydrated a transcript')
+
+    monkeypatch.setattr(module, 'transcript_row', forbidden)
+    reads, _, _, evidence, _ = wired(env)
+    boundary, _ = await reads.history_state(key=KEY)
+    await reads.advance_history(key=KEY, cursor=boundary)
+    assert await evidence.count(key=KEY, after=boundary) > 0
+    assert constructed == []
+    discovered = await source.rollup(key=KEY, unit='unit', rooms=ROOMS,
+                                     person=PERSON, limit=12, discover=True)
+    assert [(r.source, r.revision) for r in discovered] == [
+        (r.source, r.revision) for r in rendered]
+    assert all(not r.roots for r in discovered)
+    # Discovery and a failed/abandoned read cannot acknowledge any work.
+    assert await source.rollup(key=KEY, unit='unit', rooms=ROOMS,
+                               person=PERSON, limit=12, discover=True) == discovered
+    await source.settle(key=KEY, revisions=rendered)
+    assert await source.rollup(key=KEY, unit='unit', rooms=ROOMS,
+                               person=PERSON, limit=12, discover=True) == []

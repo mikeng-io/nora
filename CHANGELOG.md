@@ -1,5 +1,26 @@
 # Changelog
 
+## [7.15.25](https://github.com/mikeng-io/nora/compare/v7.15.24...v7.15.25) (2026-11-06)
+
+
+### Maintenance
+
+* bring origin/master into docs/root-guides-instructions ([421e5ad](https://github.com/mikeng-io/nora/commit/421e5ad48a84eac9e829ead67d4c8e2100a30fa6))
+
+## [7.15.24](https://github.com/mikeng-io/nora/compare/v7.15.23...v7.15.24) (2026-11-06)
+
+
+### Maintenance
+
+* bring origin/master into docs/orchestrator-role-and-special-cases ([3a8f920](https://github.com/mikeng-io/nora/commit/3a8f9208f700f23677f1292d4ec1f6049d4e39bf))
+
+## [7.15.23](https://github.com/mikeng-io/nora/compare/v7.15.22...v7.15.23) (2026-11-06)
+
+
+### Bug Fixes
+
+* **profile:** compute rollup support in one lossless window read ([396a8e6](https://github.com/mikeng-io/nora/commit/396a8e60de9aad9fc7413c4c09f3dcfdfef294da))
+
 ## [7.15.22](https://github.com/mikeng-io/nora/compare/v7.15.21...v7.15.22) (2026-11-06)
 
 
