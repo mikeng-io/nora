@@ -10,6 +10,7 @@ loop, with none of the SDK machinery.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, ClassVar
@@ -52,7 +53,7 @@ class FakeCognitionAgentRunner:
 
     async def run(
         self, *, system_prompt: str, prompt: str, tools: list[Any],
-        budget: AdaptorBudget, trace_attributes: dict[str, str],
+        budget: AdaptorBudget, trace_attributes: Mapping[str, str],
     ) -> CognitionRunResult:
         self.calls += 1
         by_name = {getattr(t, "__name__", None): t for t in tools}
@@ -382,6 +383,7 @@ async def test_rows_a_read_shows_become_the_evidence_a_proposal_may_cite():
 
     def reads(unit: str, rooms: Any, **kw: Any) -> list[Any]:
         on_rows = kw.get("on_rows")
+        assert callable(on_rows)
 
         async def load_transcript(**_args: Any) -> dict[str, Any]:
             on_rows([shown, withheld])
