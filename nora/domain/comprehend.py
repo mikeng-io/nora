@@ -389,63 +389,11 @@ REFUSAL_REPAIR: dict[str, dict[str, str]] = {
     },
 }
 
-#: The same reason answers differently by the PART the validator refused: an
-#: entity attribute's evidence has its own contract (a record or rollup row
-#: that scopes no persons, an exact span, an attribute this statement
-#: proposed), and an attribute the shown rows cannot support should be
-#: withdrawn while the relation is kept, not retried.
-PART_REPAIR: dict[tuple[str, str], dict[str, str]] = {
-    ("evidence", "scope_wider_than_evidence"): {
-        "field": "attributes",
-        "repair": "An attribute's evidence must come from a cited row that "
-                  "scopes no persons; cite such a row or drop the attribute.",
-    },
-    ("evidence", "span_not_in_source"): {
-        "field": "attributes",
-        "repair": "Copy the attribute's quote exactly from the cited row's "
-                  "shown body.",
-    },
-    ("evidence", "unseen_source"): {
-        "field": "attributes",
-        "repair": "The attribute's cite must name a row the agenda rendered "
-                  "for the named items, or one a read tool handed this "
-                  "session.",
-    },
-    ("evidence", "notebook_evidence"): {
-        "field": "attributes",
-        "repair": "The attribute's cite must name a record or rollup row; a "
-                  "notebook row cannot be evidence.",
-    },
-    ("evidence", "wrong_ends"): {
-        "field": "attributes",
-        "repair": "The attribute's evidence names an entity or attribute "
-                  "this statement did not propose; cite it on the entity it "
-                  "describes.",
-    },
-    ("entity", "missing_evidence"): {
-        "field": "attributes",
-        "repair": "The shown rows cannot support this attribute; withdraw "
-                  "the attribute and keep the relation.",
-    },
-}
-
-#: Part kinds whose refusals describe an entity attribute rather than the
-#: statement itself.
-ATTRIBUTE_PART_KINDS = ("entity", "evidence")
-
-#: The attribute itself committed from other evidence; only this citation's
-#: evidence was refused — report the rejected citation, not a lost attribute.
-ATTRIBUTE_EVIDENCE_ONLY: dict[str, str] = {
-    "field": "attributes",
-    "repair": "This citation did not support the attribute; the attribute "
-              "was saved from its other evidence.",
-}
-
-#: On a statement that SAVED, a refused attribute part is final for this
-#: session: the committed entity's identity is already fixed, so no retry can
-#: add or correct the attribute — the only honest repair is "do not retry".
-ATTRIBUTE_NOT_RETRYABLE: dict[str, str] = {
-    "field": "attributes",
-    "repair": "The attribute was not saved and cannot be added or corrected "
-              "by retrying in this session; do not retry it.",
-}
+#: An attribute part carries its own attribute name and cite and ONE generic
+#: message: whether the attribute saved cannot be read back reliably from the
+#: admission result, so the message claims nothing about saved state.
+ATTRIBUTE_PART_REPAIR = (
+    "An attribute of this statement was refused for {reason}. Read the "
+    "connected state before acting on it; re-sending a statement whose "
+    "relation was saved is refused."
+)

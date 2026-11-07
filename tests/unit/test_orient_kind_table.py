@@ -369,12 +369,35 @@ async def test_a_malformed_cite_container_returns_a_schema_refusal(cite):
     assert primary["reason"] == "schema" and primary["cite"] == []
 
 
-async def test_a_refused_attribute_on_a_saved_statement_is_not_retryable():
-    """Codex's probe: the relation and its entity save while the attribute's
-    evidence is refused. The retry a copy/withdraw pair would ask for always
-    fails — changing inline attributes changes the entity's generated
-    identity — so each refused part gets ONE message: not saved, do not
-    retry, and the attribute's OWN cite (row 2), not the relation's."""
+GENERIC_ATTRIBUTE_REPAIR = (
+    "An attribute of this statement was refused for {reason}. Read the "
+    "connected state before acting on it; re-sending a statement whose "
+    "relation was saved is refused."
+)
+
+
+def _assert_generic_attribute_parts(entry):
+    """Every refused attribute part carries the generic message, its own
+    attribute name and cite — and claims NOTHING about saved state."""
+    for part in entry.get("refused_parts", ()):
+        if "attribute" not in part:
+            continue
+        assert part["field"] == f"attributes.{part['attribute']}"
+        assert part["repair"] == GENERIC_ATTRIBUTE_REPAIR.format(
+            reason=part["reason"])
+        # The message makes NO saved-state claim: the only truth it states
+        # is the refusal reason and that a re-send of a saved statement is
+        # refused — verified below by the resubmission probe.
+        assert "not saved" not in part["repair"]
+        assert "saved from" not in part["repair"]
+        assert "do not retry" not in part["repair"]
+
+
+async def test_a_refused_attribute_part_carries_the_generic_message():
+    """The relation and its entity save while the attribute's evidence is
+    refused: each attribute part gets the generic message — which claims
+    nothing about whether the attribute saved — with its own attribute and
+    cite, never the relation's."""
     memory = wake_memory()
     state = _state(memory)
     state.graph_fetched.show(
@@ -394,20 +417,19 @@ async def test_a_refused_attribute_on_a_saved_statement_is_not_retryable():
     assert {p["reason"] for p in parts} == {
         "span_not_in_source", "missing_evidence"}
     assert all(p["attribute"] == "score" for p in parts)
-    assert all(p["field"] == "attributes.score" for p in parts)
-    assert all("do not retry" in p["repair"] for p in parts)
-    assert not any("Copy" in p["repair"] or "withdraw" in p["repair"]
-                   for p in parts)
     assert all(p["cite"] == [2] for p in parts)
+    _assert_generic_attribute_parts(entry)
     primaries = [p for p in result["primary_refusals"] if p["statement"] == 0]
-    assert all("do not retry" in p["repair"] and p["cite"] == [2]
+    assert all(p["attribute"] == "score" and p["cite"] == [2]
                for p in primaries)
+    assert all(p["repair"] == GENERIC_ATTRIBUTE_REPAIR.format(
+        reason=p["reason"]) for p in primaries)
 
 
 async def test_a_first_refusal_with_a_mismatched_quote_gets_the_copy_repair():
     """While nothing was saved, a span refusal repairs to 'copy the quote
     exactly' — a retry CAN still succeed — never the attribute's withdraw
-    line or the not-retryable message."""
+    line or a saved-state claim."""
     memory = wake_memory()
     state = _state(memory)
     statement = dict(_payload()["statements"][0],
@@ -418,17 +440,16 @@ async def test_a_first_refusal_with_a_mismatched_quote_gets_the_copy_repair():
     assert entry["reason"] == "span_not_in_source"
     assert entry["field"] == "cite.quote" and "exactly" in entry["repair"]
     assert "withdraw" not in entry["repair"]
-    assert "do not retry" not in entry["repair"]
+    assert "not saved" not in entry["repair"]
     primary = next(p for p in result["primary_refusals"]
                    if p["statement"] == 0)
     assert primary["field"] == entry["field"] and primary["cite"] == [1]
 
 
-async def test_a_saved_attribute_reports_only_the_rejected_evidence():
-    """Codex's probe: the attribute cites two rows — one quote matches, one
-    does not. The attribute IS saved from the good citation, so the refused
-    part reports the rejected citation only, never that the attribute was
-    lost."""
+async def test_a_saved_attribute_reports_no_saved_state_claim():
+    """Codex's two-citation probe: the attribute saves from its good cite
+    while the fabricated one refuses — the refused part still gets ONLY the
+    generic message, never a claim that the attribute was or was not saved."""
     memory = wake_memory()
     state = _state(memory)
     state.graph_fetched.show(
@@ -450,15 +471,42 @@ async def test_a_saved_attribute_reports_only_the_rejected_evidence():
     assert entity.attributes.get("score") == "9"
     parts = entry["refused_parts"]
     assert len(parts) == 1 and parts[0]["reason"] == "span_not_in_source"
-    part = parts[0]
-    assert part["attribute"] == "score" and part["field"] == "attributes.score"
-    assert "saved from its other evidence" in part["repair"]
-    assert "do not retry" not in part["repair"]
-    assert "not saved" not in part["repair"]
-    assert set(part["cite"]) == {2} and part["cite"] != [1]
-    primaries = [p for p in result["primary_refusals"] if p["statement"] == 0]
-    assert all("saved from its other evidence" in p["repair"]
-               for p in primaries)
+    _assert_generic_attribute_parts(entry)
+    assert set(parts[0]["cite"]) == {2}
+
+
+async def test_a_resubmission_makes_no_saved_state_claim():
+    """Codex's duplicate-submission and retained-value probes: re-sending a
+    saved statement recovers the relation without its entity, and an old
+    attribute value outlives a refused new one — in both, an attribute part
+    gets only the generic message and no saved-state claim."""
+    memory = wake_memory()
+    state = _state(memory)
+    state.graph_fetched.show(
+        Source(("message", "2"), "record", "unit-1", (), "another body"))
+    first = dict(
+        _payload()["statements"][0],
+        object={"new": {"kind": "work", "name": "Lantern Game",
+                        "attributes": {"score": {
+                            "value": "9",
+                            "cite": [{"source": 2,
+                                      "quote": "another body"}]}}}})
+    saved = await memory.propose(state, items=[0], statements=[first])
+    assert saved["statements"][0]["status"] == "saved"
+    # Duplicate submission: the same statement recovers the relation.
+    again = await memory.propose(state, items=[0], statements=[first])
+    _assert_generic_attribute_parts(again["statements"][0])
+    # Retained old value: the same attribute re-proposed with evidence that
+    # cannot support it; the entity keeps what it had.
+    changed = dict(
+        _payload()["statements"][0],
+        object={"new": {"kind": "work", "name": "Lantern Game",
+                        "attributes": {"score": {
+                            "value": "9",
+                            "cite": [{"source": 2,
+                                      "quote": "a fabricated quote"}]}}}})
+    third = await memory.propose(state, items=[0], statements=[changed])
+    _assert_generic_attribute_parts(third["statements"][0])
 
 
 async def test_a_retry_of_a_saved_attribute_never_gets_instructed():

@@ -140,23 +140,42 @@ def _tags_in(tree: ast.Module) -> tuple[str, ...]:
 
 def _sample_sites(tree: ast.Module, rel: str, tag: str) -> set[int]:
     """The string nodes inside the module's declared quoted-sample constants
-    — the only places `tag` may appear without being built by the module."""
+    — the only places `tag` may appear without being built by the module.
+
+    A name counts only when its module-level value IS one plain string
+    literal — implicit concatenation of literals folds to one Constant —
+    and it is assigned exactly once. An f-string, a `+`, a call, a second
+    assignment or an augmented one is not a quoting constant."""
     names = {name for name, tags in _QUOTED_SAMPLES.get(rel, {}).items()
              if tag in tags}
     sites: set[int] = set()
     if not names:
         return sites
+    assigns: dict[str, list[ast.expr]] = {}
     for node in tree.body:
         if isinstance(node, ast.Assign):
-            targets, value = node.targets, node.value
-        elif isinstance(node, ast.AnnAssign) and node.value is not None:
-            targets, value = (node.target,), node.value
-        else:
+            for t in node.targets:
+                if isinstance(t, ast.Name) and t.id in names:
+                    assigns.setdefault(t.id, []).append(node.value)
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name) and node.target.id in names
+            and node.value is not None
+        ):
+            assigns.setdefault(node.target.id, []).append(node.value)
+        elif (
+            isinstance(node, ast.AugAssign)
+            and isinstance(node.target, ast.Name) and node.target.id in names
+        ):
+            # Counted so `X = "…"; X += more` is not a single assignment;
+            # appended as the statement so its operand is never exempt.
+            assigns.setdefault(node.target.id, []).append(node)
+    for values in assigns.values():
+        if len(values) != 1:
             continue
-        if any(isinstance(t, ast.Name) and t.id in names for t in targets):
-            sites.update(
-                id(n) for n in ast.walk(value)
-                if isinstance(n, (ast.Constant, ast.JoinedStr)))
+        value = values[0]
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            sites.add(id(value))
     return sites
 
 
@@ -225,6 +244,12 @@ def test_a_quoted_sample_constant_exempts_only_itself():
     assert "m" in _built(ast.parse(offender), rel)
     other = quoted + 'def build(v):\n    return f"<facts>{v}</facts>"\n'
     assert "facts" in _built(ast.parse(other), rel)
+    # The name no longer exempts once its value is anything but one plain
+    # literal: a `+` with an f-string, a call, or a second assignment.
+    sneaky = '_WORKED_EXAMPLES = "<m>a row</m>" + f"<m>{v}</m>"\n'
+    assert "m" in _built(ast.parse(sneaky), rel)
+    reassigned = quoted + '_WORKED_EXAMPLES = _WORKED_EXAMPLES + "<m>x</m>"\n'
+    assert "m" in _built(ast.parse(reassigned), rel)
 
 
 def test_a_module_that_writes_a_tag_by_hand_is_caught():

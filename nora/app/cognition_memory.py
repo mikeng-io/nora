@@ -20,10 +20,7 @@ from nora.app.comprehend import (
     proposal_scope,
 )
 from nora.domain.comprehend import (
-    ATTRIBUTE_EVIDENCE_ONLY,
-    ATTRIBUTE_NOT_RETRYABLE,
-    ATTRIBUTE_PART_KINDS,
-    PART_REPAIR,
+    ATTRIBUTE_PART_REPAIR,
     REFUSAL_REPAIR,
     ComprehendItem,
     Preview,
@@ -461,27 +458,21 @@ class WakeMemory:
             return [c["source"] for c in cites
                     if isinstance(c, dict) and "source" in c]
 
-        def repair_of(entry: dict[str, Any], *, saved: bool = False) -> dict[str, str]:
-            kind = entry.get("part") or entry.get("kind", "")
-            spec: dict[str, str] | None
-            if saved and kind in ATTRIBUTE_PART_KINDS:
-                # The entity's committed identity is fixed: no retry in this
-                # session can add or correct an attribute, so the only honest
-                # repairs are "do not retry" when it was lost, or "this
-                # citation did not support it" when it was saved from other
-                # evidence — never a copy/withdraw pair.
-                spec = (ATTRIBUTE_EVIDENCE_ONLY if entry.get("committed")
-                        else ATTRIBUTE_NOT_RETRYABLE)
-            else:
-                spec = PART_REPAIR.get(
-                    (kind, entry.get("reason", ""))
-                ) or REFUSAL_REPAIR.get(entry.get("reason", ""))
+        def repair_of(entry: dict[str, Any]) -> dict[str, str]:
+            # An attribute part gets ONE generic, true message — the admission
+            # result cannot say reliably whether the attribute saved, so the
+            # message claims nothing about it. It keeps its own attribute
+            # name and cite ids.
+            if entry.get("attribute"):
+                return {
+                    "field": f"attributes.{entry['attribute']}",
+                    "repair": ATTRIBUTE_PART_REPAIR.format(
+                        reason=entry.get("reason", "")),
+                }
+            spec = REFUSAL_REPAIR.get(entry.get("reason", ""))
             if spec is None:
                 return {}
-            field = spec["field"]
-            if entry.get("attribute") and field == "attributes":
-                field = f"attributes.{entry['attribute']}"
-            return {"field": entry.get("detail") or field,
+            return {"field": entry.get("detail") or spec["field"],
                     "repair": spec["repair"]}
 
         statements_report = []
@@ -494,7 +485,7 @@ class WakeMemory:
                 out["cite"] = entry.get("cite", cite_ids(i))
             if entry.get("refused_parts"):
                 out["refused_parts"] = [
-                    {**part, **repair_of(part, saved=True),
+                    {**part, **repair_of(part),
                      "cite": part.get("cite", cite_ids(i))}
                     for part in entry["refused_parts"]
                 ]
@@ -512,7 +503,7 @@ class WakeMemory:
              **repair_of({"reason": "schema"}), "cite": cite_ids(i)}
             for i in pre_refused
         ] + [
-            {"statement": index, **part, **repair_of(part, saved=True),
+            {"statement": index, **part, **repair_of(part),
              "cite": part.get("cite", cite_ids(index))}
             for index, entry in report.items() if entry["status"] == "saved"
             for part in entry.get("refused_parts", [])
