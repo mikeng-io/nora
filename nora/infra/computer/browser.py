@@ -28,6 +28,7 @@ import json
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import unquote
 
 import aiohttp
 
@@ -60,6 +61,13 @@ KEYS = frozenset(_KEYS)
 
 class BrowserError(Exception):
     """The browser could not be used: refused, unreachable, or a CDP error."""
+
+
+def _handshake_refusal(exc: aiohttp.WSServerHandshakeError) -> str:
+    raw = exc.headers.get("X-Computerd-Reason", "") if exc.headers is not None else ""
+    reason = unquote(raw)[:512]
+    return f"the computer refused the browser (HTTP {exc.status}): " + (
+        reason or "no refusal reason was supplied")
 
 
 class RefError(BrowserError):
@@ -419,7 +427,7 @@ class BrowserPage:
             vp = got.get("cssVisualViewport") or got.get("visualViewport") or {}
             return float(vp["clientWidth"]), float(vp["clientHeight"])
         except (BrowserError, KeyError, TypeError, ValueError):
-            return 1280.0, 800.0
+            return 1920.0, 1080.0
 
     async def _submits(self, ref: str) -> bool:
         """Whether the element is a control that submits its form: a submit button or
@@ -667,8 +675,7 @@ async def open_browser(*, base_url: str, token: str, scope: str,
             ws = await session.ws_connect(ws_url, headers=headers, max_msg_size=64 * 1024 * 1024,
                                           heartbeat=30)
         except aiohttp.WSServerHandshakeError as exc:
-            raise BrowserError("the computer refused the browser: it is busy, every "
-                               f"browser slot is in use, or it is off ({exc.status})") from None
+            raise BrowserError(_handshake_refusal(exc)) from None
         except (aiohttp.ClientError, OSError, TimeoutError) as exc:
             raise BrowserError(f"the computer could not be reached: {type(exc).__name__}") from None
         cdp = CdpConnection(ws)
@@ -701,8 +708,7 @@ async def connect_browser_cdp(*, base_url: str, token: str, scope: str,
             ws = await session.ws_connect(ws_url, headers=headers, max_msg_size=64 * 1024 * 1024,
                                           heartbeat=30)
         except aiohttp.WSServerHandshakeError as exc:
-            raise BrowserError("the computer refused the browser: it is busy, every "
-                               f"browser slot is in use, or it is off ({exc.status})") from None
+            raise BrowserError(_handshake_refusal(exc)) from None
         except (aiohttp.ClientError, OSError, TimeoutError) as exc:
             raise BrowserError(f"the computer could not be reached: {type(exc).__name__}") from None
         cdp = CdpConnection(ws)
@@ -733,6 +739,15 @@ async def open_browser_tab(*, base_url: str, token: str, scope: str,
         yield await _attach_owned(cdp, target_id)
 
 
+async def _prepare_page(cdp: CdpConnection, session_id: str) -> None:
+    # Runtime.enable is deliberately absent: evaluation uses an isolated world.
+    for domain in ("Page", "DOM", "Accessibility"):
+        await cdp.call(f"{domain}.enable", session_id=session_id)
+    await cdp.call("Emulation.setDeviceMetricsOverride", {
+        "width": 1920, "height": 1080, "deviceScaleFactor": 1, "mobile": False,
+    }, session_id=session_id)
+
+
 async def _attach_owned(cdp: CdpConnection, target_id: str | None) -> BrowserPage:
     """Attach to the target `target_id` names (verifying it is a page target
     that exists), or create one. The target id Chrome reports back is the
@@ -751,8 +766,7 @@ async def _attach_owned(cdp: CdpConnection, target_id: str | None) -> BrowserPag
         session_id = str(attached["sessionId"])
     except (KeyError, TypeError) as exc:
         raise BrowserError(f"the tab could not be attached: {type(exc).__name__}") from None
-    for domain in ("Page", "DOM", "Accessibility"):
-        await cdp.call(f"{domain}.enable", session_id=session_id)
+    await _prepare_page(cdp, session_id)
     return BrowserPage(cdp=cdp, session_id=session_id, target_id=target_id)
 
 
@@ -778,6 +792,5 @@ async def _attach(cdp: CdpConnection) -> BrowserPage:
     # Never `Runtime.enable`: pages can detect it, and it is the best-known CDP
     # automation tell; evaluation runs in an isolated world
     # (`BrowserPage._context`), which needs only `Page`.
-    for domain in ("Page", "DOM", "Accessibility"):
-        await cdp.call(f"{domain}.enable", session_id=session_id)
+    await _prepare_page(cdp, session_id)
     return BrowserPage(cdp=cdp, session_id=session_id, target_id=target_id)
