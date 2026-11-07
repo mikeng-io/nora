@@ -70,6 +70,29 @@ produce nonzero exits. A crash emits only a generic ERROR, never private SQL or
 provider error details. Dispose of the experiment containers/volumes according
 to the host's private-data retention policy.
 
+## Re-score recorded facts
+
+Re-score support, misses and context-only facts from an existing private run:
+
+```sh
+uv run python -m scripts.memory_graph_spike \
+  --config "$HOME/workspace/nora/config.toml" \
+  --rescore "$HOME/nora-spikes/graph-20261029/out/prod-637-rec-20261107" \
+  --output "$HOME/nora-spikes/graph-20261029/out/prod-637-rescored-20261107"
+```
+
+This makes judge calls only: no writer replay, snapshot database or graph writes.
+The output must be new. Its private `rescore-*/events.jsonl` and `report.json`
+record the new scoring and receipt; original files remain unchanged. Frozen
+`session-*.json` inputs support older captures; newer captures also carry
+`fact_scoring_input` events. Missing or incomplete writer evidence still fails.
+Old scorer errors may be replaced by the new scoring, while absent served
+identity remains `unavailable`. A missing judge output or reason remains fatal;
+a quoted miss outside the new sources is recorded per fact and excluded from
+miss counts. Fact outputs require `fact`, `quote`, `location` and `reason`;
+locations spanning rows can name them as `1 / 2`. Complete JSON and JSON fences
+may have trailing prose.
+
 ## Measurement limits
 
 - The checked-in October 27 precision-spike implementation could not be found in
