@@ -46,6 +46,7 @@ from strands.vended_plugins.skills import AgentSkills
 from ..domain.errors import PartialReplyError
 from .guards import ReplyGuard, ToolCallLog
 from .reasoning_carry import ReasoningCarryingOpenAIModel
+from .replay_capture import hooks as replay_hooks
 from .tool_choice import FIRST_CALL
 
 log = logging.getLogger("nora.factory")
@@ -513,7 +514,7 @@ def create_agent(
         # `Agent` wants `list[Message]` (a TypedDict); the dicts have the right
         # shape at runtime and only the static type is asserted here.
         messages=list(pre_fill),  # type: ignore[arg-type]
-        hooks=hooks,
+        hooks=[*hooks, *replay_hooks()],
         tool_executor=_executor_or_shared(tool_executor),
         conversation_manager=NullConversationManager(),
         session_manager=None,
@@ -590,7 +591,7 @@ def create_dream_agent(
         tools=tools,
         # After the guard, for `create_agent`'s reason (see the comment on its
         # `hooks` list). `None` is the inert default.
-        hooks=hooks,
+        hooks=[*hooks, *replay_hooks()],
         tool_executor=_background_executor_or_shared(tool_executor),
         conversation_manager=NullConversationManager(),
         session_manager=None,
@@ -668,7 +669,8 @@ def create_subagent(
         tools=tools,
         # `reasoning_watch` last, for `create_agent`'s reason: it must read the
         # guard's verdicts.
-        hooks=[guard, progress] if reasoning_watch is None else [guard, progress, reasoning_watch],
+        hooks=([guard, progress, *replay_hooks()] if reasoning_watch is None
+               else [guard, progress, reasoning_watch, *replay_hooks()]),
         tool_executor=_background_executor_or_shared(tool_executor),
         # A sliding window, trimmed before every model call (`per_turn=True`; the
         # default trims once per invocation, and a job is one invocation of
@@ -708,6 +710,7 @@ def create_browse_agent(
     """
     return Agent(
         model=model,
+        hooks=replay_hooks(),
         name=agent_name,
         agent_id=agent_name,
         retry_strategy=ModelRetryStrategy(

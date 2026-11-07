@@ -331,39 +331,6 @@ def test_compare_reports_prints_each_row_and_delta():
     assert "precision.rate: 0.5 -> 0.75 (delta +0.25)" in out
 
 
-def test_tool_exchanges_pairs_admission_and_refusal():
-    messages = []
-    for number, result in enumerate(
-        (
-            {"status": "refused", "admitted": [], "refused": [{"reason": "schema"}]},
-            {"status": "ok", "admitted": [0], "refused": []},
-        )
-    ):
-        messages.extend(
-            [
-                {
-                    "content": [
-                        {
-                            "toolUse": {
-                                "toolUseId": str(number),
-                                "name": "memory_propose",
-                                "input": {"items": [0]},
-                            }
-                        }
-                    ]
-                },
-                {
-                    "content": [
-                        {"toolResult": {"toolUseId": str(number), "content": [{"json": result}]}}
-                    ]
-                },
-            ]
-        )
-    parsed = spike.tool_exchanges(messages)
-    assert [e["result"]["status"] for e in parsed] == ["refused", "ok"]
-    with pytest.raises(ValueError, match="missing tool results"):
-        spike.tool_exchanges(messages[:-1])
-
 
 async def test_session_quality_uses_shown_input_and_only_committed_relations():
     """Score the serialized Relation nested in each committed GraphEdge."""
@@ -635,6 +602,8 @@ async def test_age_comparison_measures_the_source_once_outside_replay(
         return FakeEngine(url)
 
     async def generated_rows(engine, sql, params=None):
+        if "FROM alembic_version" in sql:
+            return [{"version_num": "generated-revision"}]
         calls.append((engine.url, sql))
         if "FROM cognition_wake" in sql:
             return [{"id": 1, "at_ms": 1}, {"id": 2, "at_ms": 2}]
@@ -685,11 +654,20 @@ async def test_age_comparison_measures_the_source_once_outside_replay(
         def get(self, name):
             return next(self.values, 0)
 
+    async def replay(**kwargs):
+        from nora.subject.eval_evidence import current
+        evidence = current()
+        evidence.record("event", name="nora.session.started", attributes={"body": "{}"})
+        evidence.record("event", name="nora.model.request", attributes={
+            "nora.model.request.body": json.dumps({"messages": [
+                {"role": "system", "content": "generated"},
+                {"role": "user", "content": "generated"}]})})
+        evidence.record("event", name="nora.session.terminal", attributes={"body": "{}"})
+        return SimpleNamespace(session_id="generated-session", closed=[])
+
     runner = SimpleNamespace(
-        inspect=AsyncMock(return_value={"prompt": "generated"}),
-        replay=AsyncMock(
-            return_value=SimpleNamespace(session_id="generated-session", closed=[])
-        ),
+        inspect=AsyncMock(return_value={"system": "generated", "agenda": "generated"}),
+        replay=AsyncMock(side_effect=replay),
     )
 
     async def fake_obtain(spec):
@@ -724,6 +702,7 @@ async def test_age_comparison_measures_the_source_once_outside_replay(
     )
     monkeypatch.setattr(spike, "age_comparison", spy)
     monkeypatch.setattr(spike, "session_quality", quality)
+    monkeypatch.setattr(spike, "smoke_fact_support", AsyncMock(return_value={}))
     monkeypatch.setattr(spike, "index_replay_sandbox", AsyncMock(
         return_value=SimpleNamespace(line=lambda: "generated-index")))
     monkeypatch.setattr(spike, "sql_answer", AsyncMock(return_value=["event:generated-edge"]))
@@ -753,8 +732,6 @@ async def test_age_comparison_measures_the_source_once_outside_replay(
         age_url=None,
         judge_a="generated-judge-a",
         judge_b="generated-judge-b",
-        judge_vendor_a="generated-vendor-a",
-        judge_vendor_b="generated-vendor-b",
         output=tmp_path / "out",
         per_stratum=1,
         minimum=1,
@@ -770,7 +747,7 @@ async def test_age_comparison_measures_the_source_once_outside_replay(
     # empty-at-the-instant sandbox the session runner replayed in.
     assert bound == [source_url]
     assert [u for u, sql in calls if "FROM relation" in sql] == [source_url]
-    assert [u for u, sql in calls if "FROM tag_trace" in sql] == [sandbox_url] * 2
+    assert [u for u, sql in calls if "FROM tag_trace" in sql] == []
     assert runner.inspect.await_count == 2
     assert all(c.kwargs["historical"] for c in runner.replay.await_args_list)
     assert quality.await_count == 2
@@ -795,8 +772,6 @@ def _run_args(tmp_path, **overrides):
         age_url=None,
         judge_a="generated-a",
         judge_b="generated-b",
-        judge_vendor_a="generated-va",
-        judge_vendor_b="generated-vb",
         output=tmp_path / "out",
         per_stratum=1,
         minimum=1,
