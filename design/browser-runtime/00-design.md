@@ -227,7 +227,7 @@ Headed Chrome is the accepted baseline; modern headless shares Chrome code and
 can capture screenshots without Xvfb. Neither headed mode nor Chrome branding
 establishes better challenge rates. Historical fingerprint assertions below
 must not be treated as measurements. Verify browser sandboxing, guest resources,
-TLS activation, proxy and per-task cookie/context ownership before cutover.
+native TLS verification, proxy and per-task cookie/context ownership before cutover.
 
 ### Adapter boundary and ownership (2026-11-04)
 

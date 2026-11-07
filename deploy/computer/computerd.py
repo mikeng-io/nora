@@ -85,6 +85,7 @@ import time
 from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
 from typing import IO, Any, TypeGuard
+from urllib.parse import quote
 
 from aiohttp import WSMsgType, web
 
@@ -792,7 +793,6 @@ class Browser:
         self._write_lock = asyncio.Lock()
         # Only used before the browser is published to a websocket client.
         self._startup_id = 0
-        self._startup_session: str | None = None
         self._startup_reply: asyncio.Future[dict[str, Any]] | None = None
         # The page targets that existed when target discovery was armed
         # (`Target.getTargets` at start), plus every target born since:
@@ -871,7 +871,7 @@ class Browser:
                         if not isinstance(reply, dict):
                             return
                         if (reply.get("id") == self._startup_id
-                                and reply.get("sessionId") == self._startup_session):
+                                and reply.get("sessionId") is None):
                             if not self._startup_reply.done():
                                 self._startup_reply.set_result(reply)
                             continue
@@ -906,22 +906,19 @@ class Browser:
             self._own_pending.clear()
 
     async def _startup_command(
-        self, method: str, params: dict[str, Any] | None = None, session: str | None = None,
+        self, method: str, params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """One private CDP request at a time, under the activation deadline."""
+        """One browser-level CDP request at a time, under the startup deadline."""
         if self._reader is None or self._reader.done():
             raise OSError("Chrome's startup pipe is not running")
         self._startup_id += 1
-        self._startup_session = session
         self._startup_reply = asyncio.get_running_loop().create_future()
         request = {"id": self._startup_id, "method": method, "params": params or {}}
-        if session is not None:
-            request["sessionId"] = session
         try:
             await self.send(json.dumps(request))
             reply = await self._startup_reply
             if "error" in reply:
-                raise OSError(f"Chrome TLS activation: {method} failed")
+                raise OSError(f"Chrome startup: {method} failed")
             return reply["result"]
         finally:
             self._startup_reply = None
@@ -994,77 +991,6 @@ class Browser:
         finally:
             self._own_pending.pop(mid, None)
 
-    async def activate_tls(self) -> None:
-        """Require this Chrome's live CRLSet enforcement before exposing CDP.
-
-        A downloaded component (even the UI's current version) precedes its
-        asynchronous verifier load. Only the affected TLS rejection counts.
-        Probe bodies are never executed and no profile credentials are sent.
-        """
-        command = self._startup_command
-
-        async def fetch(url: str) -> dict[str, Any]:
-            # A fresh network context also discards pre-update TLS connections
-            # and session resumption: disabling the HTTP cache alone cannot.
-            context = (await command("Target.createBrowserContext"))["browserContextId"]
-            target = (await command("Target.createTarget", {
-                "url": "about:blank", "browserContextId": context,
-            }))["targetId"]
-            session = (await command("Target.attachToTarget", {
-                "targetId": target, "flatten": True,
-            }))["sessionId"]
-            frame_tree = await command("Page.getFrameTree", session=session)
-            frame = frame_tree["frameTree"]["frame"]["id"]
-            resource = (await command("Network.loadNetworkResource", {
-                "frameId": frame, "url": url,
-                "options": {"disableCache": True, "includeCredentials": False},
-            }, session))["resource"]
-            if "stream" in resource:
-                await command("IO.close", {"handle": resource["stream"]}, session)
-            await command("Target.disposeBrowserContext", {"browserContextId": context})
-            return resource
-
-        component_target = None
-        while True:
-            negative = await fetch(CHROME_REVOKED_URL)
-            if (negative.get("success") is False
-                    and negative.get("netError") == -206
-                    and negative.get("netErrorName") == "net::ERR_CERT_REVOKED"):
-                break
-            if negative.get("success") is not True or negative.get("httpStatusCode") != 200:
-                raise OSError("Chrome TLS activation: revocation probe unavailable")
-            if component_target is None:
-                component_target = (await command("Target.createTarget", {
-                    "url": "chrome://components/",
-                }))["targetId"]
-                component_session = (await command("Target.attachToTarget", {
-                    "targetId": component_target, "flatten": True,
-                }))["sessionId"]
-                # Chrome authenticates and installs its own signed CRX. No
-                # custom trust material, version threshold or fixed warmup.
-                while True:
-                    clicked = await command("Runtime.evaluate", {
-                        "expression": "(() => { const b = document.querySelector("
-                                      "'button.button-check-update#hfnkpimlhhgieaddgfemjhofmfblmnib');"
-                                      " if (!b) return false; b.click(); return true; })()",
-                        "returnByValue": True,
-                    }, component_session)
-                    if "exceptionDetails" in clicked:
-                        raise OSError("Chrome TLS activation: component update failed")
-                    if clicked["result"].get("value") is True:
-                        break
-                    await asyncio.sleep(0.1)
-            await asyncio.sleep(1)
-
-        positive = await fetch("https://pypi.org/")
-        if (positive.get("success") is not True or positive.get("httpStatusCode") != 200
-                or positive.get("netError", 0) != 0):
-            raise OSError("Chrome TLS activation: positive TLS probe unavailable")
-        if component_target is not None:
-            closed = await command("Target.closeTarget", {"targetId": component_target})
-            if closed.get("success") is not True:
-                raise OSError("Chrome TLS activation: component tab did not close")
-
     async def stop(self) -> None:
         for proc in (self.chrome, self.xvfb):
             if proc is not None and proc.returncode is None:
@@ -1097,10 +1023,7 @@ def _write_all(fd: int, data: bytes) -> None:
 MAX_BROWSERS = 2
 BROWSER_IDLE_SECONDS = 600.0
 CHROME_START_SECONDS = 10.0
-CHROME_TLS_SECONDS = 60.0
-# ponytail: this incident's public canary is an availability dependency. Replace
-# after a measured Chrome root-store fix; authority errors alone are not proof.
-CHROME_REVOKED_URL = "https://dv-g3b-emudhra.we-have-a-problem.com/"
+CHROME_READY_SECONDS = 60.0
 # X's own socket directory: a fixed path every X client looks in, so not a
 # temp file; the image makes it, root's and sticky (Browsers.ensure_x11_dir).
 X11_DIR = Path("/tmp/.X11-unix")  # noqa: S108
@@ -1111,7 +1034,7 @@ X11_DIR = Path("/tmp/.X11-unix")  # noqa: S108
 # there is; AutomationControlled off clears it.
 CHROME_FLAGS = (
     "--remote-debugging-pipe", "--no-first-run", "--no-default-browser-check",
-    "--password-store=basic", "--window-size=1280,800",
+    "--password-store=basic", "--window-size=1920,1080",
     "--disable-blink-features=AutomationControlled",
 )
 
@@ -1283,7 +1206,7 @@ class Browsers:
         display_r, display_w = os.pipe()
         try:
             browser.xvfb = await asyncio.create_subprocess_exec(
-                self.xvfb_bin, "-displayfd", str(display_w), "-screen", "0", "1280x800x24",
+                self.xvfb_bin, "-displayfd", str(display_w), "-screen", "0", "1920x1080x24",
                 "-nolisten", "tcp", "-auth", str(auth), env=env, cwd="/",
                 pass_fds=(display_w,), stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
@@ -1335,12 +1258,12 @@ class Browsers:
         browser._to_chrome = cmd_w
         browser._reader = asyncio.create_task(browser._read(out_r))
         try:
-            async with asyncio.timeout(CHROME_TLS_SECONDS):
-                await browser.activate_tls()
+            async with asyncio.timeout(CHROME_READY_SECONDS):
+                await browser._startup_command("Browser.getVersion")
                 # Arm page-target supervision for the browser's whole
                 # retained lifetime: discovery replays every EXISTING
                 # target, so the set is seeded first — otherwise the
-                # replay of the tabs activation legitimately opened would
+                # replay of any existing startup targets would
                 # read as orphans born while no client is attached and be
                 # closed at birth.
                 targets = await browser._startup_command("Target.getTargets")
@@ -1352,7 +1275,7 @@ class Browsers:
         except BaseException as exc:
             await browser.stop()
             if isinstance(exc, (TimeoutError, ValueError, KeyError, TypeError)):
-                raise OSError("Chrome TLS activation did not complete") from exc
+                raise OSError("Chrome startup did not complete") from exc
             raise
         return browser
 
@@ -1758,37 +1681,44 @@ def create_app(
                 return web.json_response({"status": "unavailable",
                                           "reason": f"{type(exc).__name__}: {exc}"})
 
+    def browser_refusal(body: dict[str, Any], *, status: int = 200) -> web.Response:
+        reason = str(body.get("reason") or body.get("status") or "unavailable")
+        reason = reason.replace("\r", " ").replace("\n", " ")[:512]
+        return web.json_response(body, status=status, headers={
+            "X-Computerd-Reason": quote(reason, safe=""),
+        })
+
     async def browser_cdp(request: web.Request) -> web.StreamResponse:
         """The room's browser, as a CDP websocket: each text frame is one CDP
         message, relayed to and from Chrome's pipe. The room's Chrome starts on
         the first connection. Refusals happen before the upgrade, as JSON with
         the usual statuses; a bad token is 401."""
         if not computer.authorised(request):
-            return web.json_response({"status": "unauthorised"}, status=401)
+            return browser_refusal({"status": "unauthorised"}, status=401)
         scope = request.query.get("scope")
         if not computer.valid_scope(scope):
-            return web.json_response({"status": "denied",
+            return browser_refusal({"status": "denied",
                                       "reason": "scope must be a lowercase hex key"})
         if computer.bound_scope is not None and scope != computer.bound_scope:
-            return web.json_response({"status": "denied",
+            return browser_refusal({"status": "denied",
                                       "reason": "this computer serves another scope"})
         if not _instance_ok(request):
-            return web.json_response(dict(_instance_deny), status=409)
+            return browser_refusal(dict(_instance_deny), status=409)
         try:
             # Starting Chrome writes the room; it must not land under a
             # directory the installer is about to rename away.
             async with computer.room_lease():
                 browser = await browsers.get(scope)
         except RefusedError as exc:
-            return web.json_response({"status": "denied", "reason": str(exc)})
+            return browser_refusal({"status": "denied", "reason": str(exc)})
         except OSError as exc:
-            return web.json_response({"status": "unavailable",
+            return browser_refusal({"status": "unavailable",
                                       "reason": f"the browser did not start: {exc}"})
         if browser.client is not None and not browser.client.closed:
-            return web.json_response({"status": "denied",
+            return browser_refusal({"status": "denied",
                                       "reason": "this room's browser already has a client"})
         if browser._client_pending:
-            return web.json_response({"status": "unavailable",
+            return browser_refusal({"status": "unavailable",
                                       "reason": "previous browser commands are still pending"})
         ws = web.WebSocketResponse(max_msg_size=MAX_TRANSFER_BYTES)
         # Claimed before the first await, so two connects at once cannot

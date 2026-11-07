@@ -81,7 +81,9 @@ Every `curl localhost:9222` below takes `--noproxy '*'`: the VM's
 Chrome is launched headed on Xvfb, as the design runs it, with a fresh
 profile and the proxy given explicitly. S1 uses a TCP debugging port for convenience in a
 throwaway sandbox; production uses `--remote-debugging-pipe` (`00-design.md`
-§4), and B1 measures that RSS is unchanged by it.
+§4), and B1 measures that RSS is unchanged by it. This historical S1 recipe
+uses the original 1280×800 display. Current managed browsers use a fixed
+1920×1080 display and CSS viewport; use those dimensions for a new measurement.
 
 ```bash
 sbx policy allow network --sandbox browser-s1 \

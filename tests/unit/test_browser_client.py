@@ -29,6 +29,9 @@ from nora.infra.computer.browser import (
     BrowserPage,
     CdpConnection,
     RefError,
+    _attach,
+    _attach_owned,
+    connect_browser_cdp,
     draw_marks,
     open_browser,
 )
@@ -96,6 +99,9 @@ class FakeCdp:
             if self.loaders_after_input:
                 self.loader = self.loaders_after_input.pop(0)
             return {}
+        if method == "Target.attachToTarget":
+            assert params == {"targetId": "T0", "flatten": True}
+            return {"sessionId": "S0"}
         if method == "Target.getTargets":
             lists = self.target_lists
             current = lists[0] if len(lists) == 1 else lists.pop(0)
@@ -413,7 +419,8 @@ def test_draw_marks_skips_a_box_off_the_image():
 # -- the connection -------------------------------------------------------------
 
 
-async def test_a_refusal_is_not_asked_again():
+@pytest.mark.parametrize("connect", [open_browser, connect_browser_cdp])
+async def test_a_refusal_is_not_asked_again(connect):
     """computerd answers a refusal as JSON instead of upgrading. The client
     must not GET the address again to learn why: that request runs computerd's
     start path a second time (it can start Chrome, or evict a room's browser)."""
@@ -422,15 +429,16 @@ async def test_a_refusal_is_not_asked_again():
     async def refuse(request: web.Request) -> web.Response:
         nonlocal hits
         hits += 1
-        return web.json_response({"status": "denied", "reason": "slots full"})
+        return web.json_response({"status": "denied", "reason": "slots full"},
+                                 headers={"X-Computerd-Reason": "slots%20full"})
 
     app = web.Application()
     app.router.add_get("/v1/browser", refuse)
     server = TestServer(app)
     await server.start_server()
     try:
-        with pytest.raises(BrowserError):
-            async with open_browser(base_url=str(server.make_url("")), token="t",  # noqa: S106
+        with pytest.raises(BrowserError, match="slots full"):
+            async with connect(base_url=str(server.make_url("")), token="t",  # noqa: S106
                                     scope="ab" * 8):
                 pass
     finally:
@@ -474,3 +482,13 @@ def test_the_sub_agent_runs_one_tool_at_a_time():
     agent = create_browse_agent(model=model, system_prompt="p", tools=[], trace_attributes={},
                                 retry=RetryPolicy(max_attempts=1, initial_delay=1, max_delay=1))
     assert isinstance(agent.tool_executor, SequentialToolExecutor)
+
+
+@pytest.mark.parametrize("owned", [False, True])
+async def test_both_attach_paths_set_a_fixed_1080p_viewport(owned):
+    cdp = FakeCdp()
+    page = await _attach_owned(cdp, "T0") if owned else await _attach(cdp)
+    assert page.target_id == "T0"
+    assert ("Emulation.setDeviceMetricsOverride", {
+        "width": 1920, "height": 1080, "deviceScaleFactor": 1, "mobile": False,
+    }) in cdp.calls

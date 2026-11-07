@@ -3,7 +3,7 @@ reached only through computerd's authenticated CDP websocket, relayed over
 Chrome's `--remote-debugging-pipe`; there is never a debugging port.
 
 A fake Chrome stands in for the real one: it speaks the pipe protocol (NUL-
-terminated JSON in on fd 3, out on fd 4), models the startup TLS protocol and
+terminated JSON in on fd 3, out on fd 4), models the startup CDP readiness protocol and
 reports its argv/profile/display for Browser.getVersion. Unknown calls fail.
 A fake Xvfb creates its display's socket file, which is
 what computerd waits for."""
@@ -35,8 +35,7 @@ AUTH = {"Authorization": f"Bearer {TOKEN}"}
 FAKE_CHROME = """#!{python}
 import json, os, sys, threading, time
 argv = sys.argv[1:]
-mode = os.environ.get("FAKE_TLS_MODE", "ready")
-updated, probes = False, 0
+mode = os.environ.get("FAKE_BROWSER_MODE", "ready")
 history = []
 log = os.path.join(os.environ["FAKE_X11_DIR"], "chrome-%d.jsonl" % os.getpid())
 inbox, outbox = os.fdopen(3, "rb", buffering=0), os.fdopen(4, "wb", buffering=0)
@@ -97,47 +96,7 @@ while True:
         method, p = message["method"], message.get("params", {{}})
         history.append(method)
         result = None
-        if method == "Target.createBrowserContext":
-            result = {{"browserContextId": "probe-context"}}
-        elif method == "Target.createTarget":
-            if p["url"] == "about:blank":
-                assert p["browserContextId"] == "probe-context"
-            else:
-                assert p["url"] == "chrome://components/" and "browserContextId" not in p
-            result = {{"targetId": "components" if p["url"] == "chrome://components/" else "probe"}}
-        elif method == "Target.attachToTarget":
-            result = {{"sessionId": p["targetId"]}}
-        elif method == "Page.getFrameTree":
-            result = {{"frameTree": {{"frame": {{"id": "probe-frame"}}}}}}
-        elif method == "Network.loadNetworkResource":
-            assert message["sessionId"] == "probe" and p["frameId"] == "probe-frame"
-            assert p["options"] == {{"disableCache": True, "includeCredentials": False}}
-            if mode == "timeout":
-                time.sleep(3600)
-            if p["url"] == "https://dv-g3b-emudhra.we-have-a-problem.com/":
-                probes += 1
-                if mode in ("dns", "authority"):
-                    resource = {{"success": False, "netError": -105 if mode == "dns" else -202,
-                                "netErrorName": "net::ERR_NAME_NOT_RESOLVED" if mode == "dns"
-                                                else "net::ERR_CERT_AUTHORITY_INVALID"}}
-                elif mode in ("warming", "never", "update_error") and (not updated or probes < 3):
-                    resource = {{"success": True, "httpStatusCode": 200, "stream": "negative-body"}}
-                else:
-                    resource = {{"success": False, "netError": -206,
-                                "netErrorName": "net::ERR_CERT_REVOKED"}}
-            elif p["url"] == "https://pypi.org/":
-                resource = {{"success": mode != "positive_error", "httpStatusCode": 200,
-                            "stream": "positive-body"}}
-            else:
-                raise AssertionError(p)
-            result = {{"resource": resource}} if mode != "malformed" else {{}}
-        elif method == "Runtime.evaluate":
-            assert message["sessionId"] == "components"
-            assert "button.button-check-update#hfnkpimlhhgieaddgfemjhofmfblmnib" in p["expression"]
-            updated = mode != "never"
-            result = ({{"exceptionDetails": {{"text": "update error"}}}} if mode == "update_error"
-                      else {{"result": {{"value": True}}}})
-        elif method in ("IO.close", "Target.disposeBrowserContext", "x"):
+        if method == "x":
             result = {{}}
         elif method == "Target.getTargets":
             result = {{"targetInfos": [{{"targetId": tid, "type": "page"}}
@@ -150,6 +109,11 @@ while True:
         elif method == "Generated.block":
             time.sleep(3600)
         elif method == "Browser.getVersion":
+            if mode == "timeout":
+                time.sleep(3600)
+            if mode == "error":
+                emit({{"id": message["id"], "error": {{"code": -32000}}}})
+                continue
             result = {{"argv": argv, "display": os.environ.get("DISPLAY"),
                       "xauthority": os.environ.get("XAUTHORITY"), "history": history,
                       "has_token": "COMPUTERD_TOKEN" in os.environ, "pid": os.getpid()}}
@@ -240,51 +204,37 @@ async def test_a_cdp_command_round_trips_through_the_pipe(server, fakes):
     assert result["display"] is not None and result["display"].startswith(":")
 
 
-async def test_tls_activation_precedes_cdp_on_fresh_and_restarted_profile(
-    server, fakes, monkeypatch,
-):
-    """An updated component can still precede verifier activation on restart."""
-    monkeypatch.setenv("FAKE_TLS_MODE", "warming")
+async def test_startup_uses_native_readiness_without_an_external_canary(server, fakes):
     async with ClientSession() as session:
         for _ in range(2):
             result = (await _ask(session, server, SCOPE))["result"]
             history = result["history"]
-            assert history.count("Network.loadNetworkResource") == 4
-            assert history.count("Target.createBrowserContext") == 4
-            assert history.count("Target.disposeBrowserContext") == 4
-            assert history.count("Runtime.evaluate") == 1
-            client_index = history.index("Browser.getVersion")
-            assert history.index("Target.disposeBrowserContext") < client_index
-            assert history.index("Target.closeTarget") < client_index
-            commands = [json.loads(s) for s in
-                        (fakes["x11"] / f"chrome-{result['pid']}.jsonl").read_text().splitlines()]
-            urls = [c["params"]["url"] for c in commands
-                    if c["method"] == "Network.loadNetworkResource"]
-            assert urls == ["https://dv-g3b-emudhra.we-have-a-problem.com/"] * 3 + ["https://pypi.org/"]
-            assert [c["params"]["handle"] for c in commands if c["method"] == "IO.close"] == [
-                "negative-body", "negative-body", "positive-body",
-            ]
+            assert history[0] == "Browser.getVersion"
+            assert "Target.getTargets" in history
+            assert "Target.setDiscoverTargets" in history
+            assert "Network.loadNetworkResource" not in history
+            assert "Runtime.evaluate" not in history
+            assert not any("ignore-certificate-errors" in a for a in result["argv"])
             stopped = await session.post(server.make_url("/v1/browser_stop"),
                                          headers=AUTH, json={"scope": SCOPE})
             assert (await stopped.json())["status"] == "ok"
 
 
-@pytest.mark.parametrize("mode", [
-    "dns", "authority", "positive_error", "update_error", "malformed", "timeout", "never",
-])
-async def test_tls_activation_failure_exposes_no_cdp_and_reaps_processes(
+@pytest.mark.parametrize("mode", ["error", "timeout"])
+async def test_failed_startup_exposes_no_cdp_and_reaps_processes(
     server, fakes, monkeypatch, mode,
 ):
-    monkeypatch.setenv("FAKE_TLS_MODE", mode)
-    if mode in ("timeout", "never"):
-        monkeypatch.setattr(sys.modules["computerd_under_test"], "CHROME_TLS_SECONDS", 0.4)
+    monkeypatch.setenv("FAKE_BROWSER_MODE", mode)
+    if mode == "timeout":
+        monkeypatch.setattr(sys.modules["computerd_under_test"], "CHROME_READY_SECONDS", 0.4)
     async with ClientSession() as session:
         response = await session.get(server.make_url(f"/v1/browser?scope={SCOPE}"), headers=AUTH)
-        assert response.status == 200  # A successful start would attempt a websocket upgrade.
+        assert response.status == 200
         assert (await response.json())["status"] == "unavailable"
+        assert response.headers["X-Computerd-Reason"]
     assert server.app["browsers"].running == {}
     (chrome_log,) = fakes["x11"].glob("chrome-*.jsonl")
-    assert "Target.createBrowserContext" in chrome_log.read_text()  # the startup actually ran
+    assert "Browser.getVersion" in chrome_log.read_text()
     (xvfb_pid,) = fakes["x11"].glob("pid-*")
     for pid in (int(chrome_log.stem.split("-")[1]), int(xvfb_pid.read_text())):
         with pytest.raises(ProcessLookupError):
@@ -299,6 +249,15 @@ async def test_chrome_never_gets_a_debugging_port(server, fakes):
     assert not [a for a in argv if a.startswith("--remote-debugging-port")]
     assert not [a for a in argv if a.startswith("--remote-debugging-address")]
     assert "--headless" not in " ".join(argv)
+
+
+async def test_browser_and_display_default_to_1080p(server, fakes):
+    async with ClientSession() as session:
+        result = (await _ask(session, server, SCOPE))["result"]
+    assert "--window-size=1920,1080" in result["argv"]
+    display = result["display"].lstrip(":")
+    args = (fakes["x11"] / f"argv-{display}").read_text().split()
+    assert args[args.index("-screen") + 2] == "1920x1080x24"
 
 
 async def test_each_room_gets_its_own_chrome_profile_and_display(server, fakes):
