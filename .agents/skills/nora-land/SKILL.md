@@ -7,11 +7,10 @@ description: Lands a Nora change from first edit to merged master, covering a ne
 
 Worktree → impact-based validation → PR → applicable review → merge → read-back. Rules: `CONTRIBUTING.md`, `AGENTS.md`.
 Read logs/state after each step, not just its exit code; proceed unless blocked or missing an operator-only fact.
-Apply the Claude orchestration-only restriction in `ORCHESTRATION.md` before
-selecting any builder or reviewer. Other models implement small changes directly;
-delegate substantial work only when the benefit
-outweighs context loss, or the operator asks (`ORCHESTRATION.md`). Review follows
-risk separately. Delegated builders run named checks, commit/push/open PR and
+The orchestrator, of any vendor, makes small changes itself and delegates
+substantial work only when the benefit outweighs context loss, or the operator
+asks; Claude is never a delegated builder or independent reviewer
+(`ORCHESTRATION.md`). Review depth follows what the change can break. Delegated builders run named checks, commit/push/open PR and
 stop; the parent owns final validation, review, merge and read-back.
 
 ```bash
@@ -84,7 +83,7 @@ PASS: `GATE_RC=0`, then either fresh checks/reader results (three static steps f
 code), or the runner's validated matching success receipt. A changed candidate,
 base or execution context requires impact reassessment. Receipt refreshes rerun nothing.
 
-- Never `make gate | tail`: the rc is tail's (2026-09-22, merged a red master).
+- Never `make gate | tail`: the rc is tail's (merged a red master).
 - In the background read `$LOG/gate.rc`, not the notice (last command's rc).
   Kill only a PID you recorded, never `pkill -f`: it kills other sessions' gates.
 
@@ -176,7 +175,7 @@ gh pr merge <N> --merge --match-head-commit "$(git rev-parse HEAD)" \
   subject does not follow this repository's convention.
 - `--merge` only, never `--squash` or `--rebase`.
 - Stacked PR: `gh pr edit <child> --base master` BEFORE merging its base with
-  `--delete-branch`, or the child is closed (2026-09-23, #411 closed #413).
+  `--delete-branch`, or the child is closed.
 ## 9. Read back
 
 ```bash

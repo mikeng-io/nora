@@ -24,10 +24,10 @@ The long form of step 8.
      later failed 1 of 4 draws (2026-09-22): report n with every number.
    - `spend:` per corpus: calls, input (cached, fresh), output. `TRUNCATED` means a
      call hit its ceiling and that draw measured a cut-off output.
-   - While #462 is open, draws on a memory-reading entry point (tag,
+   - Draws on a memory-reading entry point (tag,
      participation, proactive_act, dreamer with memory tools) are correlated:
      call the result a direction, not a rate, and treat a "you already asked"
-     FAIL as #462 before calling it a model defect.
+     FAIL as cross-run memory before calling it a model defect.
    - Judged corpora: the judge's source is bound to the window her turn
      rendered since #459 (fixed 2026-09-25): a judged number from an older
      build is not a baseline; compare only against a before arm run now.

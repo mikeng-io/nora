@@ -613,6 +613,7 @@ class SqlProfileInputs:
     async def rollup(
         self, *, key: str, unit: str, rooms: Sequence[tuple[str, str]], person: str, limit: int,
         citations: Sequence[str] = (), row_ids: dict[str, Sequence[int]] | None = None,
+        discover: bool = False,
     ) -> list[PersonSourceRevision]:
         """Named presence occasions and message aggregates with their actual roots.
 
@@ -659,13 +660,13 @@ class SqlProfileInputs:
                 scope.append(m.person_id == person)
                 flags = [sa.true()]
             elif kind == 'tie':
-                def quotes(who: Any) -> Any:
+                def quotes(who: Any, table: Any = table) -> Any:
                     return sa.exists().where(
                         parent.c.platform == m.platform,
                         parent.c.conversation_id == m.conversation_id,
                         parent.c.ts == m.quoted_ts, parent.c.person_id == who,
                         parent.c.is_nora == 0, parent.c.hidden_at.is_(None),
-                    )
+                    ).correlate(MESSAGES, table)
                 flags = [
                     sa.and_(m.person_id == t.person_a, quotes(t.person_b)),
                     sa.and_(m.person_id == t.person_b, quotes(t.person_a)),
@@ -674,20 +675,33 @@ class SqlProfileInputs:
                     sa.and_(m.person_id == t.person_b,
                             mentions.contains(sa.func.jsonb_build_array(t.person_a))),
                 ]
-                scope.append(sa.or_(*flags))
+                scope.extend((m.person_id.in_((t.person_a, t.person_b)), sa.or_(*flags)))
             else:
                 scope.extend((m.platform == t.platform, m.conversation_id == t.conversation_id,
                               m.quoted_ts == t.sent_ts))
                 flags = [sa.true()]
-            root_ids = sa.select(sa.func.array_agg(m.id)).where(*scope).scalar_subquery()
             root_edits = sa.select(sa.func.max(MESSAGE_EDIT.c.id)).where(
                 MESSAGE_EDIT.c.message_id == m.id).scalar_subquery()
-            roots_revision = sa.select(sa.func.jsonb_agg(aggregate_order_by(
-                sa.func.jsonb_build_array(m.id, m.body, root_edits, m.media_json), m.id)
-            )).where(*scope).scalar_subquery()
-            counts = [sa.select(sa.func.count()).select_from(MESSAGES).where(
-                *scope, f).scalar_subquery().label('root_count_' + str(i))
-                for i, f in enumerate(flags)]
+            # One root-window read computes identity, revision and all counts.
+            # OFFSET keeps flags (including quote/edit seeks) from being expanded
+            # again for each aggregate. No LIMIT: completeness precedes paging.
+            candidates = sa.select(m.id, m.body, m.media_json,
+                root_edits.label('edit_head'),
+                *(flag.label('flag_' + str(i)) for i, flag in enumerate(flags)),
+                (m.person_id == person).label('subject_root'),
+            ).where(*scope).correlate(table).offset(0).subquery()
+            c = candidates.c
+            roots = sa.select(
+                sa.func.array_agg(c.id).label('root_ids'),
+                sa.func.bool_or(c.subject_root).label('subject_root'),
+                sa.func.jsonb_agg(aggregate_order_by(sa.func.jsonb_build_array(
+                    c.id, c.body, c.edit_head, c.media_json), c.id)).label('revision'),
+                *(sa.func.count().filter(c['flag_' + str(i)]).label('root_count_' + str(i))
+                  for i in range(len(flags))),
+            ).lateral('supporting_roots')
+            root_ids = roots.c.root_ids
+            roots_revision = roots.c.revision
+            counts = [roots.c['root_count_' + str(i)] for i in range(len(flags))]
             context_revision: Any = sa.null()
             if kind == 'response':
                 send = MESSAGES.alias('send_context')
@@ -705,8 +719,10 @@ class SqlProfileInputs:
                 (t.outcome if kind == 'response' else sa.null()).label('outcome'),
                 (t.reactions if kind == 'response' else sa.literal(0)).label('reactions'),
                 (t.edits if kind == 'response' else sa.literal(0)).label('edits'),
-                root_ids.label('root_ids'), *counts, *(t[f] for f in fields),
-            ).where(t.unit == unit, t.build_id == current_build_id(), predicate)
+                root_ids.label('root_ids'), roots.c.subject_root,
+                *counts, *(t[f] for f in fields),
+            ).select_from(table.join(roots, sa.true())).where(
+                t.unit == unit, t.build_id == current_build_id(), predicate)
             # Reject incomplete/oversized roots BEFORE the bounded page. They
             # remain unacknowledged and a later readable revision is rediscovered.
             # Flattening repeats the correlated roots in filters, pending-revision
@@ -718,7 +734,7 @@ class SqlProfileInputs:
                 *(q.c[f] == q.c['root_count_' + str(i)] for i, f in enumerate(fields)),
             )
             if kind == 'response':
-                stmt = stmt.where(sa.exists().where(
+                stmt = stmt.where(q.c.subject_root, sa.exists().where(
                     MESSAGES.c.id == sa.cast(sa.func.split_part(q.c.source, ':', 2),
                                              sa.BigInteger),
                     _in_rooms(rooms), MESSAGES.c.is_nora == 1,
@@ -727,14 +743,24 @@ class SqlProfileInputs:
                 ))
             rows = await self._pending(key=key, domain='rollup', stmt=stmt, limit=limit,
                                        citations=citations, include_settled=row_ids is not None)
+            loaded = () if discover else await self._roots(
+                refs=[str(i) for i in sorted({i for r in rows for i in (r.root_ids or ())})],
+                rooms=rooms)
+            by_id = {x.row.id: x for x in loaded}
             for r in rows:
+                if discover:
+                    out.append(PersonSourceRevision(domain='rollup', source=r.source,
+                        revision=r.revision, state='computed', recorded_at=f'build:{r.build_id}'))
+                    if len(out) >= limit:
+                        return [*presence, *out]
+                    continue
                 ids = r.root_ids or []
                 if not ids or len(ids) > 100 or not any(int(getattr(r, f)) for f in fields) or any(
                     int(getattr(r, f)) != int(getattr(r, 'root_count_' + str(i)))
                     for i, f in enumerate(fields)
                 ):
                     continue  # unavailable/incomplete roots never settle
-                origin = await self._roots(refs=[str(i) for i in ids], rooms=rooms)
+                origin = tuple(by_id[i] for i in sorted(ids) if i in by_id)
                 if {x.row.id for x in origin} != set(ids):
                     continue  # a withdrawal between reads cannot become support
                 episode = None

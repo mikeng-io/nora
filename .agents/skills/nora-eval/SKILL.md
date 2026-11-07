@@ -23,10 +23,9 @@ input carries the time, the index, or the fact that would close it.
 
 An eval says THAT a case fails, never WHY. It costs hours (a judged draw is
 ~211s) and millions of tokens, and a failure is fixed by reading, not by
-drawing again. On 2026-09-25 one session queued a five-question batch plus an
-8-corpus re-baseline; it ran for hours (one agent ~5h), and every answer was a
-failure (0/5, 2/10, 0/15, 0/15) that reading the input would have explained
-with no model call. The operator stopped it: nothing was fixed, only measured.
+drawing again. A batch of evals queued to find a cause runs for hours and
+returns failures that reading the input would have explained with no model
+call: nothing gets fixed, only measured.
 
 No run answers WHY a case fails. Before any run, one of these holds:
 - **(a) A fix for a failing case.** The cause is named offline first:
@@ -74,10 +73,9 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
    Check: you can say, per open issue, whether it biases the corpus you will run.
 
 2. **Take the host's eval lock, then check nothing is in flight.** One run per
-   host: a second competes for the gateway and, while #462 is open, reads the
-   first run's memory writes. A `pgrep` alone is a race: on 2026-10-01 two
-   sessions both ran `tool_selection --sample 5` (434 calls an arm) and both
-   slowed. Hold `/tmp/nora-eval.lock` for the run, as `nora-deploy` does its own:
+   host: a second competes for the gateway and can read the first run's memory
+   writes. A `pgrep` alone is a race: two sessions that both ran
+   `tool_selection --sample 5` (434 calls an arm) both slowed. Hold `/tmp/nora-eval.lock` for the run, as `nora-deploy` does its own:
    ```bash
    ssh nora-host 'pgrep -af "[p]ython.*-m evals"; pgrep -af "[r]efresh_eval_clone"'
    ```
@@ -86,8 +84,7 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
    file, never start beside it and never kill its pid.
 
 3. **Put each arm's checkout at its exact ref.** The eval worktree is a separate
-   checkout; an unpulled run measures old code and reads exactly like success
-   (2026-09-22). One worktree per arm keeps the arms from sharing a tree.
+   checkout; an unpulled run measures old code and reads exactly like success. One worktree per arm keeps the arms from sharing a tree.
    ```bash
    ssh nora-host bash -s > arm.log 2>&1 <<'EOF'
    cd ~/workspace/nora-wt-eval-rebuild || exit 1   # or a fresh worktree per arm
@@ -107,7 +104,7 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
    Check: its last line prints `messages=… newest_ts=… alembic=…`; record it.
 
 5. **Prove the arms differ before paying for a run.** A harness that cannot see
-   the variable reports PASS, not ERROR (2026-09-17).
+   the variable reports PASS, not ERROR.
    - `standing` corpus: `--print-input CASE` on each arm, then `diff` the two
      outputs. It calls no model.
    - Other corpora: `git diff --stat <before> <after>` names only the files under
@@ -115,7 +112,7 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
      (`--list` prints each corpus's entry point).
    - Tool returns: every tool result on the path must have production's
      success/failure shape. A case input naming a handle the sandbox cannot serve
-     changed the tool result and with it the decision: eval 8/10, live 0/2 (#454).
+     changed the tool result and with it the decision: eval 8/10, live 0/2.
      If the shapes cannot match, the eval cannot gate the change; say so.
    Check: a concrete difference you can point at in each arm's input.
 
@@ -131,9 +128,8 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
    reason, PASS included; on `tool_selection` (routing, graded on the tools that
    executed) that is the tool list per draw. The `eval-*` targets in `Makefile`
    wrap common selections, at one draw. If you name another judge id, probe it
-   with a real call: the gateway's `/v1/models` listing is not the catalogue
-   (2026-09-10).
-   Check: state n for the claim (a rate over four positive cases needed n>=15, #158).
+   with a real call: the gateway's `/v1/models` listing is not the catalogue.
+   Check: state n for the claim (a rate over four positive cases needed n>=15).
 
 7. **Run each arm, one after the other, capturing the code.** From the worktree
    root (the deployment's doctrine path is relative, so the checkout's doctrine is
@@ -148,7 +144,7 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
    EOF
    ssh nora-host 'cat /tmp/eval-<arm>.rc; grep -E "spend:|PASS|FAIL|ERROR|UNSTABLE" /tmp/eval-<arm>.log'
    ```
-   Check: the header's `pseudonym map: N rule(s)` (#776), the rc file, then the log.
+   Check: the header's `pseudonym map: N rule(s)`, the rc file, then the log.
    `RC=0` means no FAIL, ERROR or UNSTABLE; `RC=1` means at least one, or a crash
    (the log says which); `RC=2` means refusal or invalid evidence, possibly after spending.
    Check private `events.jsonl` ends with `run_finished` and the same rc;
@@ -156,7 +152,7 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
 
 8. **Read the log honestly.** Per case PASS/FAIL only when every draw agreed;
    UNSTABLE prints `[p pass / f fail / e error]`; ERROR is never PASS; report n with
-   every number (`reference.md` "Reading the log": census, spend, TRUNCATED, #462,
+   every number (`reference.md` "Reading the log": census, spend, TRUNCATED, memory-reading draws,
    judged baselines, Discord anchors). A FAIL is the end of the run, not a reason
    for more samples: go back to "An eval confirms a fix" and read the case's input,
    anchor and expectation. A wrong expectation fails every draw.
@@ -169,14 +165,14 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
    | case | n | before <sha> P/F/E | after <sha> P/F/E |
    Spend: before <calls> calls, in=<…> (cached <…>), out=<…>; after <…>.
    Arms shown to differ by: <print-input diff | the grep in step 3>.
-   Biases: #462 open (draws correlated), <others from step 1>.
+   Biases: <from step 1>.
    ```
    Check: a reader can re-run the exact command on the same shas.
 
 ## Delegating a run
 
-A delegated agent told "run the eval if you can" burns tokens waiting (2026-10-01:
-hours of poll loops, a second arm queued before the first was read). The brief
+A delegated agent told "run the eval if you can" burns tokens waiting: hours
+of poll loops, a second arm queued before the first was read. The brief
 carries the budget and the ending:
 
 - State each arm's `estimate:` line; never `--allow-long` unless the operator asked.
@@ -200,5 +196,5 @@ unanchored case before a run.
 
 - **Claude Code:** launch the long run as the Bash command itself with
   `run_in_background`, never `nohup … &` inside it: the completion notice then
-  reports the wrapper, and a live run looks dead (2026-09-17). The notice's exit
+  reports the wrapper, and a live run looks dead. The notice's exit
   code is the last command's, so read the rc file, not the notice.
