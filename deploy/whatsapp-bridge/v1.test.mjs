@@ -934,6 +934,55 @@ test('PUT/GET /v1/attachments round-trips bytes; conflict answers 409', async ()
 
 // -- capture pipeline end-to-end -------------------------------------------------
 
+test('large attachment uploads reach the same send executor unchanged', async (t) => {
+  const dir = tmpDir();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const attachments = new AttachmentStore(dir);
+  const pg = fakePg();
+  pg.works.set('1', workRow(1));
+  const ctx = fakeCtx();
+  ctx.attachments = attachments;
+  const handle = createV1({
+    store: new ActionStore(pg, { platform: 'whatsapp', accountKey: 'a' }),
+    ctx, attachments, self: () => null, health: () => ({}), metrics: null,
+  });
+  const server = createServer(async (req, res) => {
+    if (!await handle(req, res, new URL(req.url, 'http://bridge'))) {
+      sendJson(res, 404, { error: 'not_found' });
+    }
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const bytes = Buffer.alloc(1319325, 0x5a);
+  const put = await fetch(base + '/v1/attachments/generated-large', {
+    method: 'PUT', body: bytes,
+  });
+  assert.equal(put.status, 201);
+  await put.arrayBuffer();
+  const get = await fetch(base + '/v1/attachments/generated-large');
+  assert.equal(get.status, 200);
+  assert.deepEqual(Buffer.from(await get.arrayBuffer()), bytes);
+  const action = {
+    action_id: 'large-send', owner: { kind: 'work', id: 'w-1', generation: 1 },
+    op: 'send', request: { ...REQ, text: '', attachments: [
+      { key: 'generated-large', media_type: 'image/png', file_name: 'generated.png' },
+    ] },
+  };
+  for (let i = 0; i < 2; i++) {
+    const response = await fetch(base + '/v1/actions', {
+      method: 'POST', body: JSON.stringify(action),
+      headers: { 'content-type': 'application/json' },
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).state, 'confirmed');
+  }
+  assert.equal(ctx.calls.length, 1);
+  assert.equal(ctx.calls[0][0], 'send');
+  assert.deepEqual(ctx.calls[0][2].image, bytes);
+  assert.equal(ctx.calls[0][2].mimetype, 'image/png');
+});
+
 function fakeProjection() {
   return {
     revision: 9,

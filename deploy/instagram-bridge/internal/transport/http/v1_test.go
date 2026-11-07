@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,6 +32,7 @@ import (
 
 type fakeMessaging struct {
 	sent      []domain.Sent
+	uploads   []domain.Upload
 	sendErr   error
 	reactOK   bool
 	reactErr  error
@@ -51,7 +53,8 @@ func (f *fakeMessaging) SendText(_ context.Context, _ domain.ThreadRef, _ string
 	f.sent = f.sent[1:]
 	return s, nil
 }
-func (f *fakeMessaging) SendMedia(_ context.Context, _ domain.ThreadRef, _ domain.Upload, _ string) (domain.Sent, error) {
+func (f *fakeMessaging) SendMedia(_ context.Context, _ domain.ThreadRef, upload domain.Upload, _ string) (domain.Sent, error) {
+	f.uploads = append(f.uploads, upload)
 	return domain.Sent{ID: "mid-2", TimestampMS: 101}, nil
 }
 func (f *fakeMessaging) React(_ context.Context, _ domain.ThreadRef, _, _ string, _ bool) (bool, error) {
@@ -486,6 +489,57 @@ func TestV1AttachmentPutGet(t *testing.T) {
 	resp3.Body.Close()
 	if resp3.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown attachment = %d, want 404", resp3.StatusCode)
+	}
+}
+
+func TestV1LargeAttachmentReachesSendUnchanged(t *testing.T) {
+	custody, err := bridge.NewCustody(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newFakeActionStore()
+	store.gens["w-1"] = 7
+	msg := &fakeMessaging{}
+	ts := v1Server(t, store, msg, custody)
+	data := bytes.Repeat([]byte{0x5a}, 1319325)
+	for _, method := range []string{http.MethodPut, http.MethodGet} {
+		req, err := http.NewRequest(method, ts.URL+"/v1/attachments/generated-large", bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer tok")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if method == http.MethodPut && resp.StatusCode != http.StatusCreated {
+			t.Fatalf("PUT attachment = %d, want 201", resp.StatusCode)
+		}
+		if method == http.MethodGet && (resp.StatusCode != http.StatusOK || !bytes.Equal(body, data)) {
+			t.Fatalf("GET attachment = %d, bytes unchanged = %v", resp.StatusCode, bytes.Equal(body, data))
+		}
+	}
+	gen := 7
+	body := sendAction("w-1:send:large", &gen)
+	request := body["request"].(map[string]any)
+	request["text"] = ""
+	request["attachments"] = []any{
+		map[string]any{"key": "generated-large", "media_type": "image/png", "file_name": "generated.png"},
+	}
+	for range 2 {
+		code, out := postAction(t, ts, body)
+		if code != http.StatusOK || out["state"] != "confirmed" {
+			t.Fatalf("send = %d %v", code, out)
+		}
+	}
+	if len(msg.uploads) != 1 || !bytes.Equal(msg.uploads[0].Data, data) ||
+		msg.uploads[0].MimeType != "image/png" || msg.uploads[0].Filename != "generated.png" {
+		t.Fatal("send must hand the original bytes and metadata to the media gateway exactly once")
 	}
 }
 
