@@ -39,7 +39,7 @@ def capture(lock_fd):
     return RunEvidence(run_id="generated-run", metadata={"corpus": "generated"}, lock_fd=lock_fd)
 
 
-async def model_round_trip(requests, *, sentinel="", rounds=2):
+async def model_round_trip(requests, *, sentinel="", rounds=2, reasoning_prefill=False):
     @tool
     def next_number(value: int) -> str:
         """Return the next integer.
@@ -99,6 +99,14 @@ async def model_round_trip(requests, *, sentinel="", rounds=2):
             model=model, system_prompt="Increment the supplied integer.",
             tools=[next_number], trace_attributes={"gen_ai.conversation.id": "generated"},
             retry=factory.build_retry_policy(timeout_seconds=5))
+        if reasoning_prefill:
+            from nora.agent.reasoning_strip import ReasoningStripWatch
+            from nora.obs.metrics import Metrics
+            agent.messages.append({"role": "assistant", "content": [
+                {"reasoningContent": {"reasoningText": {"text": "Generated carried reasoning"}}},
+                {"text": "Generated previous answer"},
+            ]})
+            agent.hooks.add_hook(ReasoningStripWatch(path="tag", metrics=Metrics()))
         result = await factory.invoke(
             agent, "5 " + sentinel, invocation_state={}, limits=factory.build_limits(
             turns=4, output_tokens=200, total_tokens=1000))
@@ -390,3 +398,130 @@ def test_tag_and_cognition_factories_leave_capture_disabled(monkeypatch):
     assert len(seen) == 2
     assert all(row["hooks"] == [guard] for row in seen)
     assert not any(isinstance(h, ReplayHooks) for row in seen for h in row["hooks"])
+
+
+async def test_structured_call_captures_beta_parse(evidence_root):
+    from pydantic import BaseModel
+
+    from nora.agent.structured import ask_structured
+    from nora.subject.eval_evidence import read_events, validate_events
+
+    class GeneratedResult(BaseModel):
+        value: int
+
+    requests = []
+
+    async def respond(request):
+        body = json.loads(request.content)
+        assert body["model"] == "generated-model"
+        requests.append(body)
+        if "response_format" in body:
+            assert len(requests) == 2
+            assert body["response_format"]["type"] == "json_schema"
+            assert body["stream"] is False
+            message = {"role": "assistant", "content": '{"value":6}'}
+            finish = "stop"
+        else:
+            assert len(requests) == 1
+            assert body["stream"] is False
+            assert len(body["tools"]) == 1
+            message = {"role": "assistant", "content": None, "tool_calls": [{
+                "id": "generated-schema", "type": "function", "function": {
+                    "name": body["tools"][0]["function"]["name"], "arguments": '{"value":6}'}}]}
+            finish = "tool_calls"
+        return httpx.Response(200, headers={"x-omniroute-model": "generated-structured",
+                                           "x-omniroute-provider": "generated-provider"}, json={
+            "id": "generated", "object": "chat.completion", "created": 0,
+            "model": "generated-model", "choices": [{"index": 0, "finish_reason": finish,
+                "message": {**message, "reasoning": "Generated structured reasoning"}}],
+            "usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15},
+        })
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as transport:
+        client = factory.create_client(base_url="https://generated.invalid/v1",
+                                       api_key="generated", http_client=transport)
+        model = factory.create_model_provider(model="generated-model", max_tokens=100,
+                                              temperature=0, client=client, tool_choice="auto")
+        model.update_config(stream=False)
+        with eval_host_lock() as fd:
+            evidence = capture(fd)
+            with evidence.capture(trace.get_tracer_provider()):
+                result = await ask_structured(
+                    model=model, prompt="Generated question", schema=GeneratedResult,
+                    system_prompt="Generated instruction", timeout_seconds=5)
+                parsed = [e async for e in model.structured_output(
+                    GeneratedResult, [{"role": "user", "content": [{"text": "Generated parse"}]}])]
+                assert parsed[-1]["output"].value == 6
+        await client.close()
+    assert json.loads(result.content) == {"value": 6}
+    events = read_events(evidence.path)
+    responses = [e for e in events if e["kind"] == "transport_response"]
+    assert len(responses) == len(requests) == 2
+    assert responses[-1]["response"]["choices"][0]["message"]["parsed"] == {"value": 6}
+    assert all(e["headers"]["x-omniroute-model"] == "generated-structured" for e in responses)
+    assert validate_events(events)["status"] == "PASS"
+
+
+async def test_review_judge_verdict_keeps_run_complete(evidence_root, monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from nora.subject.eval_evidence import read_events, validate_events
+    from scripts.memory_graph_spike import Judges
+
+    monkeypatch.setattr("scripts.memory_graph_spike.model_endpoint",
+                        lambda path, purpose, model: ("", "", model))
+    judges = Judges(SimpleNamespace(), ["generated-judge"], tmp_path / "generated.toml")
+
+    async def borderline(model, instruction, payload):
+        assert model == "generated-judge" and payload == {"generated": "borderline"}
+        return json.dumps([{"criterion": "no_overreach_or_fabrication", "score": 0.5,
+                            "confidence": 0.5, "rationale": "Generated ambiguity"}])
+
+    monkeypatch.setattr(judges, "call", borderline)
+    with eval_host_lock() as fd:
+        evidence = capture(fd)
+        with evidence.capture(trace.get_tracer_provider()):
+            assert await judges.score({"generated": "borderline"}) == ["ERROR"]
+    events = read_events(evidence.path)
+    verdicts = [e for e in events if e["kind"] == "judge_verdict"]
+    assert len(verdicts) == 1 and verdicts[0]["verdict"] == "REVIEW"
+    assert verdicts[0]["reason"] == "Generated ambiguity"
+    assert validate_events(events)["status"] == "PASS"
+
+
+async def test_strip_detector_probes_are_not_dispatched_requests(evidence_root):
+    from nora.subject.eval_evidence import read_events
+    requests = []
+    with eval_host_lock() as fd:
+        evidence = capture(fd)
+        with evidence.capture(trace.get_tracer_provider()):
+            await model_round_trip(requests, sentinel="Generated reasoning", reasoning_prefill=True)
+    events = read_events(evidence.path)
+    recorded = [e for e in events if e.get("name") == "nora.model.request"]
+    assert len(recorded) == len(requests) == 2
+    assert any(m.get("reasoning") == "Generated carried reasoning" for m in requests[0]["messages"])
+    assert any(e["kind"] == "reasoning_carry" for e in events)
+
+
+@pytest.mark.parametrize("name", ["nora.proposal.sources", "nora.tools.surface",
+    "nora.session.instructions", "nora.session.started", "nora.session.terminal"])
+def test_private_eval_events_never_attach_bodies_to_spans(evidence_root, name):
+    from nora.obs.tracing import record_eval_event
+    from nora.subject.eval_evidence import read_events
+    sentinel = "GENERATED_SPAN_ABSENCE_SENTINEL"
+    with eval_host_lock() as fd:
+        evidence = capture(fd)
+        with (evidence.capture(trace.get_tracer_provider()),
+              trace.get_tracer(__name__).start_as_current_span("generated-event-sink")):
+            record_eval_event(name, {"body": sentinel})
+            # Session pairing matters only to the validator; keep both ends present.
+            if name in {"nora.session.started", "nora.session.terminal"}:
+                other = ("nora.session.terminal" if name.endswith("started")
+                         else "nora.session.started")
+                record_eval_event(other, {"body": "generated partner"})
+    events = read_events(evidence.path)
+    assert any(e.get("name") == name and e["attributes"]["body"] == sentinel for e in events)
+    spans = [e for e in events if e["kind"] == "span_finished"]
+    assert any(e["name"] == "generated-event-sink" for e in spans)
+    assert not any(event["name"] == name for span in spans for event in span["events"])
+    assert sentinel not in json.dumps(spans)

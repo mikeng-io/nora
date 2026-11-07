@@ -23,7 +23,7 @@ from strands.hooks import (
     HookRegistry,
 )
 
-from nora.obs.tracing import EVAL_EVIDENCE_KEY
+from nora.obs.tracing import EVAL_EVIDENCE_KEY, eval_capture_enabled
 
 _INVOCATION: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "replay_invocation", default=None
@@ -46,10 +46,6 @@ def served_identities() -> Iterator[list[dict[str, Any]]]:
         yield identities
     finally:
         _IDENTITIES.reset(token)
-
-
-def enabled() -> bool:
-    return callable(context.get_value(EVAL_EVIDENCE_KEY))
 
 
 def record(kind: str, **payload: Any) -> None:
@@ -118,7 +114,7 @@ class ReplayHooks(HookProvider):
 
 
 def hooks() -> list[HookProvider | HookCallback[Any]]:
-    return [ReplayHooks()] if enabled() else []
+    return [ReplayHooks()] if eval_capture_enabled() else []
 
 
 class _Completions:
@@ -126,10 +122,16 @@ class _Completions:
         self.completions = completions
 
     async def create(self, **request: Any) -> Any:
+        return await self._request("create", request)
+
+    async def parse(self, **request: Any) -> Any:
+        return await self._request("parse", request)
+
+    async def _request(self, method: str, request: dict[str, Any]) -> Any:
         started = time.time_ns()
         record("transport_started")
         try:
-            raw = await self.completions.with_raw_response.create(**request)
+            raw = await getattr(self.completions.with_raw_response, method)(**request)
             response = raw.parse()
             headers = {
                 key: raw.headers.get(key) for key in ("x-omniroute-model", "x-omniroute-provider")
@@ -202,9 +204,11 @@ class _Stream:
 
 @asynccontextmanager
 async def client_capture(client: Any) -> AsyncIterator[Any]:
-    if not enabled():
+    if not eval_capture_enabled():
         yield client
     else:
         yield SimpleNamespace(
-            chat=SimpleNamespace(completions=_Completions(client.chat.completions))
+            chat=SimpleNamespace(completions=_Completions(client.chat.completions)),
+            beta=SimpleNamespace(chat=SimpleNamespace(
+                completions=_Completions(client.beta.chat.completions))),
         )

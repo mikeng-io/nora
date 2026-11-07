@@ -1277,3 +1277,47 @@ async def test_native_transcript_rendered_file_text_is_the_proposals_evidence():
     assert responses[1]["admitted"] == [0], responses[1]
     assert responses[1]["statements"][0]["status"] == "saved"
     assert any(r["reason"] == "span_not_in_source" for r in responses[2]["refused"])
+
+
+async def test_wall_clock_timeout_names_the_terminal_bound(monkeypatch):
+    import asyncio
+    import json
+    from dataclasses import replace
+
+    from opentelemetry import context
+
+    from nora.app.cognition_session import SessionTimeoutError
+    from nora.obs.tracing import EVAL_EVIDENCE_KEY
+
+    runner, _, fake = _runner()
+    runner._budget = replace(BUDGET, timeout_seconds=0.01)
+    cancelled = []
+
+    async def blocked(**kwargs):
+        fake.calls += 1
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.append(True)
+
+    monkeypatch.setattr(fake, "run", blocked)
+    events = []
+
+    def record(kind, **payload):
+        events.append({"kind": kind, **payload})
+
+    token = context.attach(context.set_value(EVAL_EVIDENCE_KEY, record))
+    try:
+        with pytest.raises(SessionTimeoutError):
+            await runner.on_wake(unit="unit-1", view=UnitView(
+                unit="unit-1", pending=_pending("unit-1"), last_activity_ms=NOW, last_wake=None),
+                now_ms=NOW, wake_id=1)
+    finally:
+        context.detach(token)
+    assert fake.calls == 1 and cancelled == [True]
+    started = next(e for e in events if e.get("name") == "nora.session.started")
+    assert json.loads(started["attributes"]["body"])["budgets"]["timeout_seconds"] == 0.01
+    terminal = next(e for e in events if e.get("name") == "nora.session.terminal")
+    body = json.loads(terminal["attributes"]["body"])
+    assert body["error_type"] == "SessionTimeoutError"
+    assert body["bound"] == "timeout_seconds"

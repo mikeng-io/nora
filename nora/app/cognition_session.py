@@ -1429,7 +1429,8 @@ class CognitionSessionRunner:
                     "session_id": session_id, "wake_id": wake_id,
                     "outcome": result.stop_reason if result is not None else "ERROR",
                     "error_type": type(sys.exception()).__name__ if sys.exception() else None,
-                    "bound": (result.stop_reason if result is not None
+                    "bound": ("timeout_seconds" if isinstance(sys.exception(), SessionTimeoutError)
+                              else result.stop_reason if result is not None
                               and result.stop_reason in LIMIT_STOP_REASONS else None),
                     "closed": [asdict(c) for c in state.closes],
                     "left_open": sorted(set(state.items_by_index) - state.closed_indices),

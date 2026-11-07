@@ -331,39 +331,6 @@ def test_compare_reports_prints_each_row_and_delta():
     assert "precision.rate: 0.5 -> 0.75 (delta +0.25)" in out
 
 
-def test_tool_exchanges_pairs_admission_and_refusal():
-    messages = []
-    for number, result in enumerate(
-        (
-            {"status": "refused", "admitted": [], "refused": [{"reason": "schema"}]},
-            {"status": "ok", "admitted": [0], "refused": []},
-        )
-    ):
-        messages.extend(
-            [
-                {
-                    "content": [
-                        {
-                            "toolUse": {
-                                "toolUseId": str(number),
-                                "name": "memory_propose",
-                                "input": {"items": [0]},
-                            }
-                        }
-                    ]
-                },
-                {
-                    "content": [
-                        {"toolResult": {"toolUseId": str(number), "content": [{"json": result}]}}
-                    ]
-                },
-            ]
-        )
-    parsed = spike.tool_exchanges(messages)
-    assert [e["result"]["status"] for e in parsed] == ["refused", "ok"]
-    with pytest.raises(ValueError, match="missing tool results"):
-        spike.tool_exchanges(messages[:-1])
-
 
 async def test_session_quality_uses_shown_input_and_only_committed_relations():
     """Score the serialized Relation nested in each committed GraphEdge."""

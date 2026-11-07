@@ -58,3 +58,13 @@ def test_nested_entity_attributes_keep_their_own_cited_rows():
     from scripts.memory_graph_spike import cited_source_numbers
     assert cited_source_numbers({"cite": [{"source": 1}], "subject": {"new": {
         "attributes": {"name": {"value": "generated", "cite": [{"source": 2}]}}}}}) == {"1", "2"}
+
+
+@pytest.mark.parametrize("kind", ["call_started", "call_finished"])
+def test_unmatched_call_is_the_only_error(kind):
+    from nora.subject.eval_evidence import validate_events
+    record = [{"kind": kind, "invocation_id": "generated", "attempt_id": "generated:0:1"},
+              {"kind": "run_finished"}]
+    receipt = validate_events(record)
+    assert receipt["status"] == "ERROR"
+    assert receipt["causes"] == ["unmatched_event"]

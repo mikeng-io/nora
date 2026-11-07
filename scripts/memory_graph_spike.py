@@ -282,8 +282,6 @@ class Judges:
                 from nora.agent.replay_capture import record
                 record("judge_verdict", alias=model, verdict=verdict,
                        reason=parsed[0]["rationale"], output=parsed)
-                if verdict == "REVIEW":
-                    record("judge_error", cause="judge_incomplete")
                 out.append({"PASS": "supported", "FAIL": "unsupported", "REVIEW": "ERROR"}[verdict])
             except Exception:  # noqa: BLE001 - fail closed without private exception text
                 from nora.agent.replay_capture import record
@@ -606,40 +604,6 @@ def evidence_exchanges(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         exchanges.append({"name": use["name"], "input": use["input"],
                           "result": values[0] if len(values) == 1 else values,
                           "source_rows": source_rows})
-    return exchanges
-
-
-def tool_exchanges(messages: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-    calls: dict[str, Any] = {}
-    exchanges = []
-    for message in messages:
-        for block in message.get("content", []):
-            if "toolUse" in block:
-                use = block["toolUse"]
-                calls[use["toolUseId"]] = use
-            if "toolResult" in block:
-                result = block["toolResult"]
-                use = calls.pop(result["toolUseId"], None)
-                if use is None:
-                    raise ValueError("unpaired tool result")
-                values = []
-                for part in result.get("content", []):
-                    if "json" in part:
-                        values.append(part["json"])
-                    elif "text" in part:
-                        try:
-                            values.append(json.loads(part["text"]))
-                        except (ValueError, TypeError):
-                            values.append(part["text"])
-                exchanges.append(
-                    {
-                        "name": use["name"],
-                        "input": use["input"],
-                        "result": values[0] if len(values) == 1 else values,
-                    }
-                )
-    if calls:
-        raise ValueError("missing tool results")
     return exchanges
 
 
@@ -1352,8 +1316,6 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=20261029)
     parser.add_argument("--judge-a", default="nora-judge")
     parser.add_argument("--judge-b", default="nora-judge-2")
-    parser.add_argument("--judge-vendor-a", default="openai")
-    parser.add_argument("--judge-vendor-b", default="moonshot")
     parser.add_argument("--age-url")
     parser.add_argument("--projection-rate", type=float, default=100)
     parser.add_argument("--project-only", action="store_true")
