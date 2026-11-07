@@ -51,8 +51,12 @@ class Shape(BaseModel):
 class Citation(Shape):
     """One shown source row: its `n` and an exact quote from its body."""
 
-    source: int
-    quote: str | None = None
+    source: int = Field(description="The `n` of a shown source row.")
+    quote: str | None = Field(default=None, description=(
+        "Words copied exactly from that row's shown body, or null only where "
+        "the statement kind allows an unquoted citation: a reading requires "
+        "a quote covering every cited row; a relation or correction may cite "
+        "a row without one."))
 
 
 class CitedValue(Shape):
@@ -83,10 +87,18 @@ Endpoint = str | NewEndpoint
 class RelationStatement(Shape):
     type: Literal["relation"]
     rel: str
-    subject: Endpoint
-    object: Endpoint
-    valid_from: str | None = None
-    valid_to: str | None = None
+    subject: Endpoint = Field(description=(
+        "A shown `@kind:id` handle — a preview row, an admitted relation's "
+        "end, or `@person:<id>` for a person a shown row authored — or "
+        "{new:{kind,name,...}} for a new non-person entity."))
+    object: Endpoint = Field(description="An endpoint in the same grammar as `subject`.")
+    valid_from: str | None = Field(default=None, description=(
+        "An ISO date or datetime the relation begins to hold, or null; unlike "
+        "a reading's happened_at.expression this is a resolved calendar value "
+        "you write yourself, never quoted words."))
+    valid_to: str | None = Field(default=None, description=(
+        "An ISO date or datetime the relation stops holding, or null; the "
+        "same resolved-value contract as valid_from."))
     cite: list[Citation] = Field(min_length=1)
 
 
@@ -94,27 +106,46 @@ class CorrectionStatement(Shape):
     type: Literal["correction"]
     relation: str
     change: Literal["close", "supersede", "dispute", "retire"]
-    at: str | None = None
+    at: str | None = Field(default=None, description=(
+        "An ISO datetime the change takes effect, or null to mean now; a "
+        "resolved value like valid_from, not quoted time words."))
     replacement: RelationStatement | None = None
     cite: list[Citation] = Field(min_length=1)
 
 
 class HappenedAt(Shape):
-    source: int
-    expression: str | None = None
+    """When what a reading describes happened; the object is required even
+    when the event time is unknown — only `expression` may be null."""
+
+    source: int = Field(description=(
+        "The `n` of one of this statement's cited rows — the row its time "
+        "words come from."))
+    expression: str | None = Field(default=None, description=(
+        "The exact time words copied from that row's body — «tomorrow», «on "
+        "Saturday» — or null when the row states none. Never the row's `at` "
+        "metadata and never a date you computed: code resolves the quoted "
+        "words against that row's send time. The only nullable field here."))
 
 
 class ReadingSubject(Shape):
-    person_id: str | None = None
-    reference: str
+    person_id: str | None = Field(default=None, description=(
+        "A shown canonical person id — a `person=` a rendered row carried — "
+        "or null when the subject's identity is unresolved."))
+    reference: str = Field(description=(
+        "The subject as the source wrote them — «she», «Ben's sister»; "
+        "required whether or not person_id resolves."))
 
 
 class ReadingStatement(Shape):
     type: Literal["reading"]
     about: list[ReadingSubject] = Field(default_factory=list)
     what: str
-    happened_at: HappenedAt
-    where: str | None = None
+    happened_at: HappenedAt = Field(description=(
+        "When what the reading describes happened; required as an object "
+        "even when the event time is unknown."))
+    where: str | None = Field(default=None, description=(
+        "A place copied exactly from a cited row's body, or null when no "
+        "place was stated; never expanded into a canonical place name."))
     how: Literal["stated", "said_by_another", "planned", "asked", "reported"]
     cite: list[Citation] = Field(min_length=1)
 
@@ -310,6 +341,7 @@ class MemoryProposalAdmission:
         relations: list[Relation] = []
         relation_stmt: dict[str, int] = {}
         evidence: list[Evidence] = []
+        attr_cites: dict[tuple[str, str], list[int]] = {}
         corrections: list[Correction] = []
         correction_stmt: dict[Correction, int] = {}
         claims: dict[int, dict[str, Any]] = {}
@@ -354,6 +386,8 @@ class MemoryProposalAdmission:
                     entities.append(entity)
                     entity_stmt[entity.id] = index
                     for name, cited in endpoint.new.attributes.items():
+                        attr_cites[(entity.id, name)] = [
+                            c.source for c in cited.cite]
                         attr_sources, _ = self._cited(cited.cite, scope, fetched)
                         for cite in cited.cite:
                             ekey = scope.catalogue.get(cite.source) or (
@@ -567,7 +601,14 @@ class MemoryProposalAdmission:
             refused_here = refused_by_stmt.get(index, [])
             if saved:
                 entry: dict[str, Any] = {"status": "saved", "kind": st.type}
-                parts = [{"kind": r.kind, "reason": r.reason} for r in refused_here]
+                parts = [
+                    {"kind": r.kind, "reason": r.reason,
+                     **({"attribute": r.attribute} if r.attribute else {}),
+                     **({"cite": attr_cites[(r.id, r.attribute)]}
+                        if r.attribute and (r.id, r.attribute) in attr_cites
+                        else {})}
+                    for r in refused_here
+                ]
                 if parts:
                     entry["refused_parts"] = parts
                 report[index] = entry
@@ -590,6 +631,13 @@ class MemoryProposalAdmission:
                     "status": "refused",
                     "kind": st.type,
                     "reason": principal.reason if principal else "ungrounded",
+                    "part": principal.kind if principal else "ungrounded",
+                    **({"attribute": principal.attribute}
+                       if principal and principal.attribute else {}),
+                    **({"cite": attr_cites[(principal.id, principal.attribute)]}
+                       if principal and principal.attribute
+                       and (principal.id, principal.attribute) in attr_cites
+                       else {}),
                 }
         return admission, local_refusals, {
             "report": report, "claims": claims, "cited_items": cited_items,

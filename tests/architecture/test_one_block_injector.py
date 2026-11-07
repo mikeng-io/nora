@@ -65,6 +65,16 @@ _NOT_BUILT_HERE = {
         "parse wrapper for reading a rendered agenda; it never reaches a prompt",
 }
 
+#: Constants that QUOTE the agenda's real elements in worked examples —
+#: module -> constant name -> the tags it legitimately quotes. The match is
+#: the constant's own string nodes, so the same tag built anywhere else in
+#: the module — or a different tag inside the constant — still fails the gate.
+_QUOTED_SAMPLES: dict[str, dict[str, frozenset[str]]] = {
+    "nora/language/comprehend_render.py": {
+        "_WORKED_EXAMPLES": frozenset({"clock", "m"}),
+    },
+}
+
 def _docstring_nodes(tree: ast.AST) -> set[int]:
     """Every Constant that is a DOCSTRING — prose about a tag, not a tag.
 
@@ -95,22 +105,87 @@ def _built_tags(rel: str) -> tuple[str, ...]:
     `"<memory reads this pass>"` and self-closing markers out, because neither
     has a closing tag anywhere.
     """
-    return _tags_in(ast.parse((ROOT / rel).read_text(encoding="utf-8")))
+    return _built(ast.parse((ROOT / rel).read_text(encoding="utf-8")), rel)
+
+
+def _tag_sites(tree: ast.Module) -> tuple[dict[str, set[int]], dict[str, set[int]]]:
+    """`tag -> the string nodes that open/close it` — sites, not a blob, so an
+    exemption can be scoped to a named constant rather than a whole module."""
+    skip = _docstring_nodes(tree)
+    opens: dict[str, set[int]] = {}
+    closes: dict[str, set[int]] = {}
+    for node in ast.walk(tree):
+        texts: list[str] = []
+        if (
+            isinstance(node, ast.Constant) and isinstance(node.value, str)
+            and id(node) not in skip
+        ):
+            texts.append(node.value)
+        elif isinstance(node, ast.JoinedStr):
+            texts.append("".join(
+                v.value for v in node.values
+                if isinstance(v, ast.Constant) and isinstance(v.value, str)))
+        for text in texts:
+            for tag in _OPEN.findall(text):
+                opens.setdefault(tag, set()).add(id(node))
+            for tag in _CLOSE.findall(text):
+                closes.setdefault(tag, set()).add(id(node))
+    return opens, closes
 
 
 def _tags_in(tree: ast.Module) -> tuple[str, ...]:
-    skip = _docstring_nodes(tree)
-    parts: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in skip:
-            parts.append(node.value)
-        elif isinstance(node, ast.JoinedStr):
-            parts += [
-                v.value for v in node.values
-                if isinstance(v, ast.Constant) and isinstance(v.value, str)
-            ]
-    blob = "\n".join(parts)
-    return tuple(sorted(set(_OPEN.findall(blob)) & set(_CLOSE.findall(blob))))
+    opens, closes = _tag_sites(tree)
+    return tuple(sorted(set(opens) & set(closes)))
+
+
+def _sample_sites(tree: ast.Module, rel: str, tag: str) -> set[int]:
+    """The string nodes inside the module's declared quoted-sample constants
+    — the only places `tag` may appear without being built by the module.
+
+    A name counts only when its module-level value IS one plain string
+    literal — implicit concatenation of literals folds to one Constant —
+    and it is assigned exactly once. An f-string, a `+`, a call, a second
+    assignment or an augmented one is not a quoting constant."""
+    names = {name for name, tags in _QUOTED_SAMPLES.get(rel, {}).items()
+             if tag in tags}
+    sites: set[int] = set()
+    if not names:
+        return sites
+    assigns: dict[str, list[ast.expr]] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name) and t.id in names:
+                    assigns.setdefault(t.id, []).append(node.value)
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name) and node.target.id in names
+            and node.value is not None
+        ):
+            assigns.setdefault(node.target.id, []).append(node.value)
+        elif (
+            isinstance(node, ast.AugAssign)
+            and isinstance(node.target, ast.Name) and node.target.id in names
+        ):
+            # Counted so `X = "…"; X += more` is not a single assignment;
+            # appended as the statement so its operand is never exempt.
+            assigns.setdefault(node.target.id, []).append(node)
+    for values in assigns.values():
+        if len(values) != 1:
+            continue
+        value = values[0]
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            sites.add(id(value))
+    return sites
+
+
+def _built(tree: ast.Module, rel: str) -> tuple[str, ...]:
+    """The tags a module OPENS AND CLOSES outside its quoted samples."""
+    opens, closes = _tag_sites(tree)
+    return tuple(sorted(
+        tag for tag in set(opens) & set(closes)
+        if (opens[tag] - (allowed := _sample_sites(tree, rel, tag)))
+        and (closes[tag] - allowed)))
 
 
 def _discovered() -> dict[str, tuple[str, ...]]:
@@ -156,6 +231,25 @@ def test_every_module_that_writes_a_tag_is_classified():
         "Delete their lines: a classification for code that is gone widens "
         "the gate silently."
     )
+
+
+def test_a_quoted_sample_constant_exempts_only_itself():
+    """The exemption is scoped to the named constant's own strings: the same
+    tag hand-built ANYWHERE else in the module — and a tag the constant does
+    not quote — is still caught."""
+    rel = "nora/language/comprehend_render.py"
+    quoted = '_WORKED_EXAMPLES = """<m n="1">a row</m> <clock>the time</clock>"""\n'
+    assert _built(ast.parse(quoted), rel) == ()
+    offender = quoted + 'def build(v):\n    return f"<m>{v}</m>"\n'
+    assert "m" in _built(ast.parse(offender), rel)
+    other = quoted + 'def build(v):\n    return f"<facts>{v}</facts>"\n'
+    assert "facts" in _built(ast.parse(other), rel)
+    # The name no longer exempts once its value is anything but one plain
+    # literal: a `+` with an f-string, a call, or a second assignment.
+    sneaky = '_WORKED_EXAMPLES = "<m>a row</m>" + f"<m>{v}</m>"\n'
+    assert "m" in _built(ast.parse(sneaky), rel)
+    reassigned = quoted + '_WORKED_EXAMPLES = _WORKED_EXAMPLES + "<m>x</m>"\n'
+    assert "m" in _built(ast.parse(reassigned), rel)
 
 
 def test_a_module_that_writes_a_tag_by_hand_is_caught():

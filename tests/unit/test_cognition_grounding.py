@@ -700,7 +700,7 @@ def test_the_instruction_does_not_promise_a_standing_index_line():
     import pathlib
 
     text = (pathlib.Path(__file__).parents[2] / "nora/dreamer/objectives/cognition.md").read_text()
-    below = text.split("After the agenda is what is already written down")[1].split("\n\n")[0]
+    below = text.split("Then comes what is already written down")[1].split("\n\n")[0]
     assert "Standing" not in below and "open events" in below
 
 

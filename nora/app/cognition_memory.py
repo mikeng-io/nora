@@ -20,6 +20,8 @@ from nora.app.comprehend import (
     proposal_scope,
 )
 from nora.domain.comprehend import (
+    ATTRIBUTE_PART_REPAIR,
+    REFUSAL_REPAIR,
     ComprehendItem,
     Preview,
     WithheldSourceError,
@@ -383,6 +385,7 @@ class WakeMemory:
                 {"claims": [claim]}, combined.snapshot)
             if drops:
                 await self.admission._refuse(state.session_id, "reading", drops[0])
+                local_refusals.append({"kind": "reading", "reason": drops[0]})
                 report[index] = {"status": "refused", "kind": "reading",
                                  "reason": drops[0]}
             else:
@@ -439,21 +442,69 @@ class WakeMemory:
         state.shown_relations.update(e.relation.id for e in graph.relations)
         state.admitted_relations.update({r.id: r for r in result.relations})
         state.admitted_evidence.extend(result.evidence)
-        # Per-statement results: saved, or refused with ONE primary reason;
-        # dependent cascade diagnostics are recorded, never returned.
-        statements_report = [
-            {"index": i, **(pre_refused.get(i) or report.get(
-                i, {"status": "refused", "reason": "ungrounded"}))}
-            for i in range(len(statements))
-        ]
+        # Per-statement results: saved, or refused with ONE primary reason,
+        # the field it rejected, its repair and the cited rows; dependent
+        # cascade diagnostics are recorded, never returned.
+        def cite_ids(index: int) -> list[Any]:
+            """The cited row ids of one raw statement — only when its `cite`
+            is a list of citation objects; a malformed container contributes
+            no ids and never breaks the report the saved siblings earned."""
+            raw = statements[index] if 0 <= index < len(statements) else None
+            if not isinstance(raw, dict):
+                return []
+            cites = raw.get("cite")
+            if not isinstance(cites, (list, tuple)):
+                return []
+            return [c["source"] for c in cites
+                    if isinstance(c, dict) and "source" in c]
+
+        def repair_of(entry: dict[str, Any]) -> dict[str, str]:
+            # An attribute part gets ONE generic, true message — the admission
+            # result cannot say reliably whether the attribute saved, so the
+            # message claims nothing about it. It keeps its own attribute
+            # name and cite ids.
+            if entry.get("attribute"):
+                return {
+                    "field": f"attributes.{entry['attribute']}",
+                    "repair": ATTRIBUTE_PART_REPAIR.format(
+                        reason=entry.get("reason", "")),
+                }
+            spec = REFUSAL_REPAIR.get(entry.get("reason", ""))
+            if spec is None:
+                return {}
+            return {"field": entry.get("detail") or spec["field"],
+                    "repair": spec["repair"]}
+
+        statements_report = []
+        for i in range(len(statements)):
+            entry = dict(pre_refused.get(i) or report.get(
+                i, {"status": "refused", "reason": "ungrounded"}))
+            out = {"index": i, **entry}
+            if entry.get("status") == "refused":
+                out.update(repair_of(entry))
+                out["cite"] = entry.get("cite", cite_ids(i))
+            if entry.get("refused_parts"):
+                out["refused_parts"] = [
+                    {**part, **repair_of(part),
+                     "cite": part.get("cite", cite_ids(i))}
+                    for part in entry["refused_parts"]
+                ]
+            statements_report.append(out)
         primary = [
-            {"statement": index, "kind": entry["kind"], "reason": entry["reason"]}
+            {"statement": index, "kind": entry["kind"], "reason": entry["reason"],
+             **({"part": entry["part"]} if entry.get("part") else {}),
+             **({"attribute": entry["attribute"]}
+                if entry.get("attribute") else {}),
+             **repair_of(entry),
+             "cite": entry.get("cite", cite_ids(index))}
             for index, entry in report.items() if entry["status"] == "refused"
         ] + [
-            {"statement": i, "kind": "schema", "reason": "schema"}
+            {"statement": i, "kind": "schema", "reason": "schema",
+             **repair_of({"reason": "schema"}), "cite": cite_ids(i)}
             for i in pre_refused
         ] + [
-            {"statement": index, **part}
+            {"statement": index, **part, **repair_of(part),
+             "cite": part.get("cite", cite_ids(index))}
             for index, entry in report.items() if entry["status"] == "saved"
             for part in entry.get("refused_parts", [])
         ]

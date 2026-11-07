@@ -1,10 +1,10 @@
 [
  {
-  "name": "Orient renders the kind table",
+  "name": "Orient renders the admitted relations from the vocabulary",
   "file": "nora/language/comprehend_render.py",
-  "old": "+ render_kind_table() + \"\\n\\n\" + COMPREHEND",
-  "new": "+ \"\" + \"\\n\\n\" + COMPREHEND",
-  "target": "tests/unit/test_orient_kind_table.py::test_orient_renders_the_kind_constant"
+  "old": "\", \".join(_ADMITTED_RELATIONS)",
+  "new": "\", \".join(RELATION_RULES)",
+  "target": "tests/unit/test_orient_kind_table.py::test_orient_renders_the_vocabulary_from_the_admission_constants"
  },
  {
   "name": "Entity admission uses kind rows",

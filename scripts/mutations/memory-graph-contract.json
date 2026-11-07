@@ -107,7 +107,7 @@
   {
     "name": "unevidenced attributes keep old value",
     "file": "nora/domain/memory_admission.py",
-    "old": "                    refused.append(Refusal(\"entity\", entity.id, \"missing_evidence\"))",
+    "old": "                    refused.append(Refusal(\n                        \"entity\", entity.id, \"missing_evidence\",\n                        attribute=attribute))",
     "new": "                    attrs[attribute] = value",
     "target": "tests/contract/test_memory_graph_contract.py::test_attributes_accumulate_across_batches"
   },
