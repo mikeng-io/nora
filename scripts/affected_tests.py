@@ -111,7 +111,10 @@ What the scan CANNOT see, stated because the omission is the whole risk:
 - a read made by code a test calls (a `nora/` function that opens a file): a
   non-`.py` file so read sits under `nora/`, which is `ALL`, or is named by
   the test;
-- an import of a test module through `importlib` or a string;
+- an import through `importlib` or any computed string (`import_module(
+  "pkg." + name)`): no literal matches and no static edge exists — a module
+  so imported is NOT covered by selection, pinned by
+  `test_a_computed_dynamic_import_is_a_documented_blind_spot`;
 - a file that changes what pytest runs without being read by a test —
   build, workflow and environment files, which is why they are `ALL` by name.
 """
@@ -387,6 +390,12 @@ def _dotted(path: str) -> str:
     return path.removesuffix(".py").replace("/", ".")
 
 
+def _canonical(dotted: str) -> str:
+    """The name an import binds to — `pkg/__init__.py` IS the module `pkg`,
+    not a module named `pkg.__init__`."""
+    return dotted.removesuffix(".__init__")
+
+
 def _import_graph(repo: Path) -> dict[str, set[str]]:
     """Every `.py` outside `tests/` → the repo modules it imports.
 
@@ -403,7 +412,7 @@ def _import_graph(repo: Path) -> dict[str, set[str]]:
     modules = set()
     for file in files:
         dotted = _dotted(file.relative_to(repo).as_posix())
-        modules.add(dotted.removesuffix(".__init__"))
+        modules.add(_canonical(dotted))
     graph: dict[str, set[str]] = {}
     for file in files:
         rel = file.relative_to(repo).as_posix()
@@ -412,7 +421,17 @@ def _import_graph(repo: Path) -> dict[str, set[str]]:
         for node in ast.walk(tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 names |= _imported_names(node, rel.split("/")[:-1])
-        graph[_dotted(rel)] = {n for n in names if n in modules}
+        # an imported name also binds every package above it: importing
+        # `pkg.sub` executes `pkg`'s `__init__` first, so each ancestor that
+        # is a module is a dependency too.
+        deps = set()
+        for name in names:
+            parts = name.split(".")
+            for i in range(1, len(parts) + 1):
+                cand = ".".join(parts[:i])
+                if cand in modules:
+                    deps.add(cand)
+        graph.setdefault(_canonical(_dotted(rel)), set()).update(deps)
     return graph
 
 
@@ -445,7 +464,8 @@ def _importers(
     helper = False
     frontier = {_dotted(path)}
     if graph is not None:
-        frontier |= _module_closure(_dotted(path), graph)
+        frontier = {_canonical(_dotted(path))}
+        frontier |= _module_closure(_canonical(_dotted(path)), graph)
     while frontier:
         nxt: set[str] = set()
         for rel, facts in scan.items():

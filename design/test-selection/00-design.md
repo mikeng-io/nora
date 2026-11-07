@@ -62,6 +62,13 @@ subprocesses (their dotted module name, `scripts.release_plan`, counts as a
 literal). A path no test names selects nothing: a portal word change selects
 the portal job plus the two Python tests that read `app/src`.
 
+What the combined selection cannot see, stated so the omission is honest: a
+module imported through `importlib` or any computed string
+(`import_module("pkg." + name)`) leaves no literal to match and no static
+edge to follow — it is NOT covered. Test-module `importlib` imports were
+already a blind spot; this extends it honestly to production imports, pinned
+by a named limitation test, not pretended away.
+
 **Stays `ALL`, deliberately:**
 
 - any non-`.py` file under `nora/`: doctrine, skills and prompts are opened by

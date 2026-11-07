@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
 import subprocess
 import sys
 import time
+import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import unquote
@@ -95,19 +97,14 @@ def classify(paths: list[str], repo: Path = affected_tests.ROOT) -> dict[str, bo
 RELEASE_HEAD_REF = "release-please--branches--master--components--nora"
 _RELEASE_WAIT_SECONDS = 75 * 60
 
-# The release bypass applies only to a diff that looks exactly like what
-# release-please writes (checked against the 7.16.0 merge, commit 2cb15623a):
-# these paths only, and inside the three strict files only version lines.
-# A branch name alone never earns the bypass — any PR could take it.
+# The release bypass applies only to a diff release-please could have written
+# (checked against the 7.16.0 merge, commit 2cb15623a): these paths only,
+# modifications only, and inside each strict file only its release FIELD,
+# compared semantically — a branch name alone never earns the bypass.
 _RELEASE_FILES = frozenset({
     ".release-please-manifest.json", "CHANGELOG.md",
     "nora/__init__.py", "pyproject.toml", "uv.lock",
 })
-_RELEASE_VERSION_LINE = {
-    "nora/__init__.py": re.compile(r'^[+-]\s*__version__\s*=\s*"[^"]+"\s*$'),
-    "pyproject.toml": re.compile(r'^[+-]\s*version\s*=\s*"[^"]+"\s*$'),
-    "uv.lock": re.compile(r'^[+-]\s*version\s*=\s*"[^"]+"\s*$'),
-}
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -117,11 +114,108 @@ def _git(repo: Path, *args: str) -> str:
     ).stdout
 
 
+def _init_version_only(old: str, new: str) -> bool:
+    """Identical ASTs except the module-level `__version__` constant — a
+    function-local `__version__` edit changes the tree and is not a release."""
+    try:
+        ot, nt = ast.parse(old), ast.parse(new)
+    except SyntaxError:
+        return False
+    def scrub(tree):
+        hits = 0
+        for node in tree.body:
+            targets = (
+                node.targets if isinstance(node, ast.Assign)
+                else [node.target] if isinstance(node, ast.AnnAssign) else []
+            )
+            if any(isinstance(t, ast.Name) and t.id == "__version__" for t in targets):
+                node.value = ast.Constant("__release__")
+                hits += 1
+        return hits
+    return scrub(ot) == 1 and scrub(nt) == 1 and ast.dump(ot) == ast.dump(nt)
+
+
+def _pyproject_version_only(old: str, new: str) -> bool:
+    """Identical TOML except `project.version`, which must differ."""
+    try:
+        o, n = tomllib.loads(old), tomllib.loads(new)
+    except tomllib.TOMLDecodeError:
+        return False
+    op, np = o.get("project"), n.get("project")
+    if not isinstance(op, dict) or not isinstance(np, dict):
+        return False
+    ov, nv = op.get("version"), np.get("version")
+    if not isinstance(ov, str) or not isinstance(nv, str) or ov == nv:
+        return False
+    op["version"] = np["version"] = ov
+    return o == n
+
+
+def _uvlock_version_only(old: str, new: str) -> bool:
+    """Identical TOML except the `version` of the `[[package]]` named nora."""
+    try:
+        o, n = tomllib.loads(old), tomllib.loads(new)
+    except tomllib.TOMLDecodeError:
+        return False
+    def nora(doc):
+        for pkg in doc.get("package", []):
+            if isinstance(pkg, dict) and pkg.get("name") == "nora":
+                return pkg
+        return None
+    op, np = nora(o), nora(n)
+    if op is None or np is None:
+        return False
+    ov, nv = op.get("version"), np.get("version")
+    if not isinstance(ov, str) or not isinstance(nv, str) or ov == nv:
+        return False
+    op["version"] = np["version"] = ov
+    return o == n
+
+
+def _manifest_version_only(old: str, new: str) -> bool:
+    """Identical JSON object except the nora component version (`.`)."""
+    try:
+        o, n = json.loads(old), json.loads(new)
+    except ValueError:
+        return False
+    if not isinstance(o, dict) or not isinstance(n, dict) or set(o) != set(n):
+        return False
+    if not isinstance(o.get("."), str) or not isinstance(n.get("."), str):
+        return False
+    if o["."] == n["."]:
+        return False
+    return all(k == "." or o[k] == n[k] for k in o)
+
+
+def _release_semantic(path: str, old: str, new: str) -> bool:
+    if path == "CHANGELOG.md":
+        return True
+    if path == "nora/__init__.py":
+        return _init_version_only(old, new)
+    if path == "pyproject.toml":
+        return _pyproject_version_only(old, new)
+    if path == "uv.lock":
+        return _uvlock_version_only(old, new)
+    return _manifest_version_only(old, new)
+
+
+def _diff_entries(repo: Path, range_: str) -> list[tuple[str, str, str, str]]:
+    """(path, src_mode, dst_mode, status) per `git diff --raw` line."""
+    entries = []
+    for line in _git(repo, "diff", "--raw", range_).splitlines():
+        meta, _, path = line.partition("\t")
+        fields = meta.lstrip(":").split()
+        entries.append((path, fields[0], fields[1], fields[4]))
+    return entries
+
+
 def release_eligible(repo: Path, event: dict) -> bool:
     """The release bypass: same-repository release branch AND a diff that
-    touches only the release files, with only version lines inside the strict
-    ones. Anything else — a fork, a borrowed branch name, a runtime change —
-    runs the normal selected acceptance, never a silent pass."""
+    release-please could have written — release files only, modifications
+    only (a delete, rename or mode change is not), and inside each strict
+    file only its release field, checked semantically (AST/TOML/JSON), not
+    by line spelling. Anything else — a fork, a borrowed branch name, a
+    runtime or content change — runs the normal selected acceptance."""
     pr = event.get("pull_request") or {}
     head, base = pr.get("head") or {}, pr.get("base") or {}
     if head.get("ref") != RELEASE_HEAD_REF:
@@ -132,19 +226,18 @@ def release_eligible(repo: Path, event: dict) -> bool:
         return False
     try:
         range_ = f"{base['sha']}...{head['sha']}"
-        files = _git(repo, "diff", "--name-only", range_).split()
-        if not files or any(f not in _RELEASE_FILES for f in files):
+        entries = _diff_entries(repo, range_)
+        if not entries or any(
+            status != "M" or src_mode != dst_mode
+            for _, src_mode, dst_mode, status in entries
+        ):
             return False
-        for file in files:
-            pattern = _RELEASE_VERSION_LINE.get(file)
-            if pattern is None:
-                continue
-            patch = _git(repo, "diff", range_, "--", file)
-            changed = [
-                line for line in patch.splitlines()
-                if line[:1] in "+-" and not line.startswith(("+++", "---"))
-            ]
-            if not changed or not all(pattern.match(line) for line in changed):
+        if any(path not in _RELEASE_FILES for path, *_ in entries):
+            return False
+        for path, *_ in entries:
+            old = _git(repo, "show", f"{base['sha']}:{path}")
+            new = _git(repo, "show", f"{head['sha']}:{path}")
+            if not _release_semantic(path, old, new):
                 return False
     except Exception:  # noqa: BLE001 - an unreadable diff is never eligible
         return False
