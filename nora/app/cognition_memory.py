@@ -20,6 +20,7 @@ from nora.app.comprehend import (
     proposal_scope,
 )
 from nora.domain.comprehend import (
+    ATTRIBUTE_EVIDENCE_ONLY,
     ATTRIBUTE_NOT_RETRYABLE,
     ATTRIBUTE_PART_KINDS,
     PART_REPAIR,
@@ -465,9 +466,12 @@ class WakeMemory:
             spec: dict[str, str] | None
             if saved and kind in ATTRIBUTE_PART_KINDS:
                 # The entity's committed identity is fixed: no retry in this
-                # session can add or correct the attribute, so the only honest
-                # repair is "do not retry" — never a copy/withdraw pair.
-                spec = ATTRIBUTE_NOT_RETRYABLE
+                # session can add or correct an attribute, so the only honest
+                # repairs are "do not retry" when it was lost, or "this
+                # citation did not support it" when it was saved from other
+                # evidence — never a copy/withdraw pair.
+                spec = (ATTRIBUTE_EVIDENCE_ONLY if entry.get("committed")
+                        else ATTRIBUTE_NOT_RETRYABLE)
             else:
                 spec = PART_REPAIR.get(
                     (kind, entry.get("reason", ""))

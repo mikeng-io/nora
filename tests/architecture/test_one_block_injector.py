@@ -61,12 +61,18 @@ _OWN_INJECTOR = {
 _NOT_BUILT_HERE = {
     ("nora/ingest/relevance_gate.py", "nora_doctrine"):
         "strips the wrapper doctrine/loader.py builds",
-    ("nora/language/comprehend_render.py", "clock"):
-        "quotes the agenda's clock block verbatim inside a worked example",
-    ("nora/language/comprehend_render.py", "m"):
-        "quotes the agenda's rendered <m> rows verbatim inside worked examples",
     ("nora/language/cognition_render.py", "root"):
         "parse wrapper for reading a rendered agenda; it never reaches a prompt",
+}
+
+#: Constants that QUOTE the agenda's real elements in worked examples —
+#: module -> constant name -> the tags it legitimately quotes. The match is
+#: the constant's own string nodes, so the same tag built anywhere else in
+#: the module — or a different tag inside the constant — still fails the gate.
+_QUOTED_SAMPLES: dict[str, dict[str, frozenset[str]]] = {
+    "nora/language/comprehend_render.py": {
+        "_WORKED_EXAMPLES": frozenset({"clock", "m"}),
+    },
 }
 
 def _docstring_nodes(tree: ast.AST) -> set[int]:
@@ -99,22 +105,68 @@ def _built_tags(rel: str) -> tuple[str, ...]:
     `"<memory reads this pass>"` and self-closing markers out, because neither
     has a closing tag anywhere.
     """
-    return _tags_in(ast.parse((ROOT / rel).read_text(encoding="utf-8")))
+    return _built(ast.parse((ROOT / rel).read_text(encoding="utf-8")), rel)
+
+
+def _tag_sites(tree: ast.Module) -> tuple[dict[str, set[int]], dict[str, set[int]]]:
+    """`tag -> the string nodes that open/close it` — sites, not a blob, so an
+    exemption can be scoped to a named constant rather than a whole module."""
+    skip = _docstring_nodes(tree)
+    opens: dict[str, set[int]] = {}
+    closes: dict[str, set[int]] = {}
+    for node in ast.walk(tree):
+        texts: list[str] = []
+        if (
+            isinstance(node, ast.Constant) and isinstance(node.value, str)
+            and id(node) not in skip
+        ):
+            texts.append(node.value)
+        elif isinstance(node, ast.JoinedStr):
+            texts.append("".join(
+                v.value for v in node.values
+                if isinstance(v, ast.Constant) and isinstance(v.value, str)))
+        for text in texts:
+            for tag in _OPEN.findall(text):
+                opens.setdefault(tag, set()).add(id(node))
+            for tag in _CLOSE.findall(text):
+                closes.setdefault(tag, set()).add(id(node))
+    return opens, closes
 
 
 def _tags_in(tree: ast.Module) -> tuple[str, ...]:
-    skip = _docstring_nodes(tree)
-    parts: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in skip:
-            parts.append(node.value)
-        elif isinstance(node, ast.JoinedStr):
-            parts += [
-                v.value for v in node.values
-                if isinstance(v, ast.Constant) and isinstance(v.value, str)
-            ]
-    blob = "\n".join(parts)
-    return tuple(sorted(set(_OPEN.findall(blob)) & set(_CLOSE.findall(blob))))
+    opens, closes = _tag_sites(tree)
+    return tuple(sorted(set(opens) & set(closes)))
+
+
+def _sample_sites(tree: ast.Module, rel: str, tag: str) -> set[int]:
+    """The string nodes inside the module's declared quoted-sample constants
+    — the only places `tag` may appear without being built by the module."""
+    names = {name for name, tags in _QUOTED_SAMPLES.get(rel, {}).items()
+             if tag in tags}
+    sites: set[int] = set()
+    if not names:
+        return sites
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets, value = (node.target,), node.value
+        else:
+            continue
+        if any(isinstance(t, ast.Name) and t.id in names for t in targets):
+            sites.update(
+                id(n) for n in ast.walk(value)
+                if isinstance(n, (ast.Constant, ast.JoinedStr)))
+    return sites
+
+
+def _built(tree: ast.Module, rel: str) -> tuple[str, ...]:
+    """The tags a module OPENS AND CLOSES outside its quoted samples."""
+    opens, closes = _tag_sites(tree)
+    return tuple(sorted(
+        tag for tag in set(opens) & set(closes)
+        if (opens[tag] - (allowed := _sample_sites(tree, rel, tag)))
+        and (closes[tag] - allowed)))
 
 
 def _discovered() -> dict[str, tuple[str, ...]]:
@@ -160,6 +212,19 @@ def test_every_module_that_writes_a_tag_is_classified():
         "Delete their lines: a classification for code that is gone widens "
         "the gate silently."
     )
+
+
+def test_a_quoted_sample_constant_exempts_only_itself():
+    """The exemption is scoped to the named constant's own strings: the same
+    tag hand-built ANYWHERE else in the module — and a tag the constant does
+    not quote — is still caught."""
+    rel = "nora/language/comprehend_render.py"
+    quoted = '_WORKED_EXAMPLES = """<m n="1">a row</m> <clock>the time</clock>"""\n'
+    assert _built(ast.parse(quoted), rel) == ()
+    offender = quoted + 'def build(v):\n    return f"<m>{v}</m>"\n'
+    assert "m" in _built(ast.parse(offender), rel)
+    other = quoted + 'def build(v):\n    return f"<facts>{v}</facts>"\n'
+    assert "facts" in _built(ast.parse(other), rel)
 
 
 def test_a_module_that_writes_a_tag_by_hand_is_caught():

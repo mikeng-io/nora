@@ -279,7 +279,9 @@ async def test_attributes_accumulate_across_batches(graph: MemoryGraph) -> None:
     )
     event = next(e for e in result.entities if e.id == EVENT.id)
     assert event.attributes == {"category": "generated", "venue": "generated venue"}
-    assert Refusal("entity", EVENT.id, "missing_evidence") in result.refused
+    assert Refusal(
+        "entity", EVENT.id, "missing_evidence",
+        attribute="category") in result.refused
 
 
 def test_a_relation_without_asserted_at_is_refused() -> None:

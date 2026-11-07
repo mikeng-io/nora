@@ -424,6 +424,43 @@ async def test_a_first_refusal_with_a_mismatched_quote_gets_the_copy_repair():
     assert primary["field"] == entry["field"] and primary["cite"] == [1]
 
 
+async def test_a_saved_attribute_reports_only_the_rejected_evidence():
+    """Codex's probe: the attribute cites two rows — one quote matches, one
+    does not. The attribute IS saved from the good citation, so the refused
+    part reports the rejected citation only, never that the attribute was
+    lost."""
+    memory = wake_memory()
+    state = _state(memory)
+    state.graph_fetched.show(
+        Source(("message", "2"), "record", "unit-1", (), "another body"))
+    statement = dict(
+        _payload()["statements"][0],
+        object={"new": {"kind": "work", "name": "Lantern Game",
+                        "attributes": {"score": {
+                            "value": "9",
+                            "cite": [
+                                {"source": 2, "quote": "another body"},
+                                {"source": 2, "quote": "fabricated"}]}}}})
+    result = await memory.propose(state, items=[0], statements=[statement])
+    assert result["status"] == "ok", result
+    entry = result["statements"][0]
+    assert entry["status"] == "saved"
+    entity = next(e for e in memory.graph.entities.values()
+                  if e.name == "Lantern Game")
+    assert entity.attributes.get("score") == "9"
+    parts = entry["refused_parts"]
+    assert len(parts) == 1 and parts[0]["reason"] == "span_not_in_source"
+    part = parts[0]
+    assert part["attribute"] == "score" and part["field"] == "attributes.score"
+    assert "saved from its other evidence" in part["repair"]
+    assert "do not retry" not in part["repair"]
+    assert "not saved" not in part["repair"]
+    assert set(part["cite"]) == {2} and part["cite"] != [1]
+    primaries = [p for p in result["primary_refusals"] if p["statement"] == 0]
+    assert all("saved from its other evidence" in p["repair"]
+               for p in primaries)
+
+
 async def test_a_retry_of_a_saved_attribute_never_gets_instructed():
     """The retry the old copy/withdraw repairs demanded cannot succeed:
     re-proposing the same statement with the attribute corrected — or

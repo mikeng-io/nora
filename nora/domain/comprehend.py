@@ -433,6 +433,14 @@ PART_REPAIR: dict[tuple[str, str], dict[str, str]] = {
 #: statement itself.
 ATTRIBUTE_PART_KINDS = ("entity", "evidence")
 
+#: The attribute itself committed from other evidence; only this citation's
+#: evidence was refused — report the rejected citation, not a lost attribute.
+ATTRIBUTE_EVIDENCE_ONLY: dict[str, str] = {
+    "field": "attributes",
+    "repair": "This citation did not support the attribute; the attribute "
+              "was saved from its other evidence.",
+}
+
 #: On a statement that SAVED, a refused attribute part is final for this
 #: session: the committed entity's identity is already fixed, so no retry can
 #: add or correct the attribute — the only honest repair is "do not retry".

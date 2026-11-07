@@ -601,11 +601,16 @@ class MemoryProposalAdmission:
             refused_here = refused_by_stmt.get(index, [])
             if saved:
                 entry: dict[str, Any] = {"status": "saved", "kind": st.type}
+                committed = {e.id: e for e in admission.entities}
                 parts = [
                     {"kind": r.kind, "reason": r.reason,
                      **({"attribute": r.attribute} if r.attribute else {}),
                      **({"cite": attr_cites[(r.id, r.attribute)]}
                         if r.attribute and (r.id, r.attribute) in attr_cites
+                        else {}),
+                     **({"committed": True}
+                        if r.attribute and r.id in committed
+                        and r.attribute in committed[r.id].attributes
                         else {})}
                     for r in refused_here
                 ]

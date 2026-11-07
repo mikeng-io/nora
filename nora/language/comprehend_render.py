@@ -237,6 +237,50 @@ def render_reshape(
     )
 
 
+#: The worked examples quote real agenda elements — the clock block and the
+#: <m> rows — verbatim inside their `input:` lines. Kept as its own constant
+#: so the one-injector gate can argue those tags on this constant alone.
+_WORKED_EXAMPLES = """# Examples
+
+Example:
+input: «I love Dragon's Back, hiked it three times» — Ada [5201]
+yield: person relation (Ada likes the Dragon's Back trail); reading (she has
+hiked it three times). Each cites 5201.
+
+Example:
+input: «Cat's birthday is 14 March — don't tell her about the cake» — Ben [5210]
+yield: reading (Cat's birthday is 14 March, cites 5210). The cake is not
+written anywhere: a member asked to keep it from someone.
+
+Example:
+clock: <clock>It is Wednesday 4 November 2026, 14:05 (Asia/Hong_Kong). This is
+your first look at this group.</clock>
+input: <m n="5220" at="09:05 (5 h ago)" from="Ada" person="ada">Dragon's Back
+this Saturday, minibus from the station $40 a seat — I can book Friday</m>
+<m n="5221" at="10:05 (4 h ago)" from="Ben" person="ben">yes please book, I'm
+in</m>
+yield: event (the hike, `at` Dragon's Back, Ada and Ben each `plans` — a plan
+said, never `attended`); the note's Owed line «Ada -> book the minibus ->
+2026-11-06 Fri [5220, 5221]».
+
+Example:
+input: <m n="5240" at="09:12 (5 h ago)" from="Ada" person="ada">reservoir walk
+tomorrow — who's in?</m>
+<m n="5241" at="09:40 (4 h ago)" from="Ben" person="ben">me</m>
+yield: a reading that Ada plans a reservoir walk cites 5240 and carries
+happened_at {source: 5240, expression: "tomorrow"} — the row's own time word,
+which code resolves against that row's send day. A reading that Ben is in
+cites 5241 and carries happened_at {source: 5241, expression: null} — its
+body has no time words, and its `at` is when Ben sent it, not when the walk
+happens.
+
+Example:
+input: «lol nice» — Cat [5230]
+yield: nothing_here — the item states nothing worth keeping; close it
+`no_change`.
+"""
+
+
 SESSION_INSTRUCTION = """# Steps
 
 1. For each item, record what it states about people and things: call
@@ -319,45 +363,7 @@ takes your own words — `i_owe` and `hold_open` on a room's Standing
 (standing_revise), the `why` of a wake or a reminder move, a reminder's
 `text` — and there you say them plainly.
 
-# Examples
-
-Example:
-input: «I love Dragon's Back, hiked it three times» — Ada [5201]
-yield: person relation (Ada likes the Dragon's Back trail); reading (she has
-hiked it three times). Each cites 5201.
-
-Example:
-input: «Cat's birthday is 14 March — don't tell her about the cake» — Ben [5210]
-yield: reading (Cat's birthday is 14 March, cites 5210). The cake is not
-written anywhere: a member asked to keep it from someone.
-
-Example:
-clock: <clock>It is Wednesday 4 November 2026, 14:05 (Asia/Hong_Kong). This is
-your first look at this group.</clock>
-input: <m n="5220" at="09:05 (5 h ago)" from="Ada" person="ada">Dragon's Back
-this Saturday, minibus from the station $40 a seat — I can book Friday</m>
-<m n="5221" at="10:05 (4 h ago)" from="Ben" person="ben">yes please book, I'm
-in</m>
-yield: event (the hike, `at` Dragon's Back, Ada and Ben each `plans` — a plan
-said, never `attended`); the note's Owed line «Ada -> book the minibus ->
-2026-11-06 Fri [5220, 5221]».
-
-Example:
-input: <m n="5240" at="09:12 (5 h ago)" from="Ada" person="ada">reservoir walk
-tomorrow — who's in?</m>
-<m n="5241" at="09:40 (4 h ago)" from="Ben" person="ben">me</m>
-yield: a reading that Ada plans a reservoir walk cites 5240 and carries
-happened_at {source: 5240, expression: "tomorrow"} — the row's own time word,
-which code resolves against that row's send day. A reading that Ben is in
-cites 5241 and carries happened_at {source: 5241, expression: null} — its
-body has no time words, and its `at` is when Ben sent it, not when the walk
-happens.
-
-Example:
-input: «lol nice» — Cat [5230]
-yield: nothing_here — the item states nothing worth keeping; close it
-`no_change`.
-"""
+""" + _WORKED_EXAMPLES
 
 
 def render_session_system(doctrine: str, skills: str, *, memory: bool) -> str:
