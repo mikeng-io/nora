@@ -156,7 +156,9 @@ class AdmissionState:
                 elif source.unit != target_entity.unit or source.persons:
                     reason = "scope_wider_than_evidence"
                 if reason:
-                    refused.append(Refusal("evidence", e.entity_id, reason))
+                    refused.append(Refusal(
+                        "evidence", e.entity_id, reason,
+                        attribute=e.attribute or ""))
                 else:
                     admitted_evidence.append(e)
         # Attributes commit only with their own admitted evidence. The entity
@@ -173,7 +175,9 @@ class AdmissionState:
                 ):
                     attrs[attribute] = value
                 else:
-                    refused.append(Refusal("entity", entity.id, "missing_evidence"))
+                    refused.append(Refusal(
+                        "entity", entity.id, "missing_evidence",
+                        attribute=attribute))
             cleaned = replace(entity, attributes=attrs)
             self.entities[entity.id] = cleaned
             clean_entities.append(cleaned)

@@ -364,6 +364,8 @@ class Refusal:
     kind: Literal["entity", "relation", "evidence", "correction"]
     id: str
     reason: RefusalReason
+    #: The entity attribute this refusal is about, when it is one; "" otherwise.
+    attribute: str = ""
 
 
 @dataclass(frozen=True)

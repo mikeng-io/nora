@@ -428,3 +428,16 @@ PART_REPAIR: dict[tuple[str, str], dict[str, str]] = {
                   "the attribute and keep the relation.",
     },
 }
+
+#: Part kinds whose refusals describe an entity attribute rather than the
+#: statement itself.
+ATTRIBUTE_PART_KINDS = ("entity", "evidence")
+
+#: On a statement that SAVED, a refused attribute part is final for this
+#: session: the committed entity's identity is already fixed, so no retry can
+#: add or correct the attribute — the only honest repair is "do not retry".
+ATTRIBUTE_NOT_RETRYABLE: dict[str, str] = {
+    "field": "attributes",
+    "repair": "The attribute was not saved and cannot be added or corrected "
+              "by retrying in this session; do not retry it.",
+}

@@ -369,34 +369,87 @@ async def test_a_malformed_cite_container_returns_a_schema_refusal(cite):
     assert primary["reason"] == "schema" and primary["cite"] == []
 
 
-async def test_an_attribute_refusal_names_the_attribute_repair():
-    """An attribute's evidence may not carry persons: the refused parts of the
-    saved statement name the attribute field and its own repair — empty
-    persons for its evidence, withdraw the attribute for a missing one —
-    never the relation's citation wording."""
+async def test_a_refused_attribute_on_a_saved_statement_is_not_retryable():
+    """Codex's probe: the relation and its entity save while the attribute's
+    evidence is refused. The retry a copy/withdraw pair would ask for always
+    fails — changing inline attributes changes the entity's generated
+    identity — so each refused part gets ONE message: not saved, do not
+    retry, and the attribute's OWN cite (row 2), not the relation's."""
     memory = wake_memory()
     state = _state(memory)
+    state.graph_fetched.show(
+        Source(("message", "2"), "record", "unit-1", (), "another body"))
     statement = dict(
         _payload()["statements"][0],
         object={"new": {"kind": "work", "name": "Lantern Game",
                         "attributes": {"score": {
                             "value": "9",
-                            "cite": [{"source": 1,
-                                      "quote": "I like Lantern Game"}]}}}})
+                            "cite": [{"source": 2,
+                                      "quote": "a fabricated quote"}]}}}})
     result = await memory.propose(state, items=[0], statements=[statement])
     assert result["status"] == "ok", result
     entry = result["statements"][0]
     assert entry["status"] == "saved"
-    parts = {p["reason"]: p for p in entry["refused_parts"]}
-    assert set(parts) == {"scope_wider_than_evidence", "missing_evidence"}
-    assert parts["scope_wider_than_evidence"]["kind"] == "evidence"
-    assert "scopes no persons" in parts["scope_wider_than_evidence"]["repair"]
-    assert "withdraw" in parts["missing_evidence"]["repair"]
-    assert all(p["field"] == "attributes" and p["cite"] == [1]
-               for p in parts.values())
-    primary = {p["reason"]: p for p in result["primary_refusals"]}
-    assert "scopes no persons" in primary["scope_wider_than_evidence"]["repair"]
-    assert "withdraw" in primary["missing_evidence"]["repair"]
+    parts = entry["refused_parts"]
+    assert {p["reason"] for p in parts} == {
+        "span_not_in_source", "missing_evidence"}
+    assert all(p["attribute"] == "score" for p in parts)
+    assert all(p["field"] == "attributes.score" for p in parts)
+    assert all("do not retry" in p["repair"] for p in parts)
+    assert not any("Copy" in p["repair"] or "withdraw" in p["repair"]
+                   for p in parts)
+    assert all(p["cite"] == [2] for p in parts)
+    primaries = [p for p in result["primary_refusals"] if p["statement"] == 0]
+    assert all("do not retry" in p["repair"] and p["cite"] == [2]
+               for p in primaries)
+
+
+async def test_a_first_refusal_with_a_mismatched_quote_gets_the_copy_repair():
+    """While nothing was saved, a span refusal repairs to 'copy the quote
+    exactly' — a retry CAN still succeed — never the attribute's withdraw
+    line or the not-retryable message."""
+    memory = wake_memory()
+    state = _state(memory)
+    statement = dict(_payload()["statements"][0],
+                     cite=[{"source": 1, "quote": "a fabricated quote"}])
+    result = await memory.propose(state, items=[0], statements=[statement])
+    entry = result["statements"][0]
+    assert entry["status"] == "refused"
+    assert entry["reason"] == "span_not_in_source"
+    assert entry["field"] == "cite.quote" and "exactly" in entry["repair"]
+    assert "withdraw" not in entry["repair"]
+    assert "do not retry" not in entry["repair"]
+    primary = next(p for p in result["primary_refusals"]
+                   if p["statement"] == 0)
+    assert primary["field"] == entry["field"] and primary["cite"] == [1]
+
+
+async def test_a_retry_of_a_saved_attribute_never_gets_instructed():
+    """The retry the old copy/withdraw repairs demanded cannot succeed:
+    re-proposing the same statement with the attribute corrected — or
+    dropped — changes the entity's generated identity, so the re-proposal
+    refuses. The saved result above is why it is never instructed."""
+    memory = wake_memory()
+    state = _state(memory)
+    state.graph_fetched.show(
+        Source(("message", "2"), "record", "unit-1", (), "another body"))
+    def new_object(attrs):
+        return {"new": {"kind": "work", "name": "Lantern Game",
+                        **({"attributes": attrs} if attrs else {})}}
+    first = dict(_payload()["statements"][0], object=new_object(
+        {"score": {"value": "9", "cite": [{"source": 2,
+                                           "quote": "a fabricated quote"}]}}))
+    result = await memory.propose(state, items=[0], statements=[first])
+    assert result["statements"][0]["status"] == "saved"
+    for attrs in (
+        {"score": {"value": "9", "cite": [{"source": 2,
+                                           "quote": "another body"}]}},
+        {},
+    ):
+        retry = dict(_payload()["statements"][0], object=new_object(attrs))
+        again = await memory.propose(state, items=[0], statements=[retry])
+        stmt = again["statements"][0]
+        assert stmt["status"] == "refused" and stmt["reason"] == "wrong_ends"
 
 
 def test_the_composed_text_carries_the_reading_time_contract():

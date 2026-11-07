@@ -20,6 +20,8 @@ from nora.app.comprehend import (
     proposal_scope,
 )
 from nora.domain.comprehend import (
+    ATTRIBUTE_NOT_RETRYABLE,
+    ATTRIBUTE_PART_KINDS,
     PART_REPAIR,
     REFUSAL_REPAIR,
     ComprehendItem,
@@ -458,13 +460,24 @@ class WakeMemory:
             return [c["source"] for c in cites
                     if isinstance(c, dict) and "source" in c]
 
-        def repair_of(entry: dict[str, Any]) -> dict[str, str]:
-            spec = PART_REPAIR.get(
-                (entry.get("kind", ""), entry.get("reason", ""))
-            ) or REFUSAL_REPAIR.get(entry.get("reason", ""))
+        def repair_of(entry: dict[str, Any], *, saved: bool = False) -> dict[str, str]:
+            kind = entry.get("part") or entry.get("kind", "")
+            spec: dict[str, str] | None
+            if saved and kind in ATTRIBUTE_PART_KINDS:
+                # The entity's committed identity is fixed: no retry in this
+                # session can add or correct the attribute, so the only honest
+                # repair is "do not retry" — never a copy/withdraw pair.
+                spec = ATTRIBUTE_NOT_RETRYABLE
+            else:
+                spec = PART_REPAIR.get(
+                    (kind, entry.get("reason", ""))
+                ) or REFUSAL_REPAIR.get(entry.get("reason", ""))
             if spec is None:
                 return {}
-            return {"field": entry.get("detail") or spec["field"],
+            field = spec["field"]
+            if entry.get("attribute") and field == "attributes":
+                field = f"attributes.{entry['attribute']}"
+            return {"field": entry.get("detail") or field,
                     "repair": spec["repair"]}
 
         statements_report = []
@@ -474,24 +487,29 @@ class WakeMemory:
             out = {"index": i, **entry}
             if entry.get("status") == "refused":
                 out.update(repair_of(entry))
-                out["cite"] = cite_ids(i)
+                out["cite"] = entry.get("cite", cite_ids(i))
             if entry.get("refused_parts"):
                 out["refused_parts"] = [
-                    {**part, **repair_of(part), "cite": cite_ids(i)}
+                    {**part, **repair_of(part, saved=True),
+                     "cite": part.get("cite", cite_ids(i))}
                     for part in entry["refused_parts"]
                 ]
             statements_report.append(out)
         primary = [
             {"statement": index, "kind": entry["kind"], "reason": entry["reason"],
-             **repair_of(entry), "cite": cite_ids(index)}
+             **({"part": entry["part"]} if entry.get("part") else {}),
+             **({"attribute": entry["attribute"]}
+                if entry.get("attribute") else {}),
+             **repair_of(entry),
+             "cite": entry.get("cite", cite_ids(index))}
             for index, entry in report.items() if entry["status"] == "refused"
         ] + [
             {"statement": i, "kind": "schema", "reason": "schema",
              **repair_of({"reason": "schema"}), "cite": cite_ids(i)}
             for i in pre_refused
         ] + [
-            {"statement": index, **part, **repair_of(part),
-             "cite": cite_ids(index)}
+            {"statement": index, **part, **repair_of(part, saved=True),
+             "cite": part.get("cite", cite_ids(index))}
             for index, entry in report.items() if entry["status"] == "saved"
             for part in entry.get("refused_parts", [])
         ]

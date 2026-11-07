@@ -341,6 +341,7 @@ class MemoryProposalAdmission:
         relations: list[Relation] = []
         relation_stmt: dict[str, int] = {}
         evidence: list[Evidence] = []
+        attr_cites: dict[tuple[str, str], list[int]] = {}
         corrections: list[Correction] = []
         correction_stmt: dict[Correction, int] = {}
         claims: dict[int, dict[str, Any]] = {}
@@ -385,6 +386,8 @@ class MemoryProposalAdmission:
                     entities.append(entity)
                     entity_stmt[entity.id] = index
                     for name, cited in endpoint.new.attributes.items():
+                        attr_cites[(entity.id, name)] = [
+                            c.source for c in cited.cite]
                         attr_sources, _ = self._cited(cited.cite, scope, fetched)
                         for cite in cited.cite:
                             ekey = scope.catalogue.get(cite.source) or (
@@ -598,7 +601,14 @@ class MemoryProposalAdmission:
             refused_here = refused_by_stmt.get(index, [])
             if saved:
                 entry: dict[str, Any] = {"status": "saved", "kind": st.type}
-                parts = [{"kind": r.kind, "reason": r.reason} for r in refused_here]
+                parts = [
+                    {"kind": r.kind, "reason": r.reason,
+                     **({"attribute": r.attribute} if r.attribute else {}),
+                     **({"cite": attr_cites[(r.id, r.attribute)]}
+                        if r.attribute and (r.id, r.attribute) in attr_cites
+                        else {})}
+                    for r in refused_here
+                ]
                 if parts:
                     entry["refused_parts"] = parts
                 report[index] = entry
@@ -621,6 +631,13 @@ class MemoryProposalAdmission:
                     "status": "refused",
                     "kind": st.type,
                     "reason": principal.reason if principal else "ungrounded",
+                    "part": principal.kind if principal else "ungrounded",
+                    **({"attribute": principal.attribute}
+                       if principal and principal.attribute else {}),
+                    **({"cite": attr_cites[(principal.id, principal.attribute)]}
+                       if principal and principal.attribute
+                       and (principal.id, principal.attribute) in attr_cites
+                       else {}),
                 }
         return admission, local_refusals, {
             "report": report, "claims": claims, "cited_items": cited_items,
