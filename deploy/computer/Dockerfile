@@ -66,8 +66,8 @@ RUN ln -s /opt/nora-render/nora-render /usr/local/bin/nora-render \
 # headed on Xvfb, one per room, started by computerd over
 # --remote-debugging-pipe. Pinned by version and sha256; bump both together,
 # deliberately, since a stale Chrome is itself a bot signal (design 00 §3).
-ARG CHROME_VERSION=155.0.8059.39-1
-ARG CHROME_SHA256=c58aa0f2cd66179c9f050e062c882d27aa9b9f8c2b7c73fee3498560b5ed0b38
+ARG CHROME_VERSION=157.0.8103.38-1
+ARG CHROME_SHA256=a62b277dc03da2cff50cc04589deb66f6875be339c066d46adb49b49eedb629d
 RUN curl -fsSLo /tmp/chrome.deb \
         "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}_amd64.deb" \
     && echo "${CHROME_SHA256}  /tmp/chrome.deb" | sha256sum -c - \

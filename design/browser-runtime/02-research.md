@@ -132,8 +132,8 @@ launches `google-chrome` non-root on Xvfb with a private profile and debugging
 pipe; no `--no-sandbox` flag is in its managed launch. Its launch includes
 `--disable-blink-features=AutomationControlled`; that is not challenge-rate proof.
 `nora/infra/computer/browser.py` uses `aiohttp` CDP and accessibility refs.
-`deploy/computer/README.md` records the incident-specific TLS activation checks
-which any replacement must preserve. None of this is current host readback.
+`deploy/computer/README.md` owns the current native TLS baseline and the
+verification required before replacing it. None of this is current host readback.
 
 Before building, close executable/package selection and map the actual new
 work: scoped lifecycle/endpoint routing, task tabs/contexts and cookie policy,

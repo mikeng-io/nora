@@ -345,34 +345,19 @@ first connection to `GET /v1/browser?scope=<scope>`, a websocket behind the
 same bearer token: each text frame is one CDP message, relayed to Chrome's
 `--remote-debugging-pipe`.
 
-- **TLS activation precedes CDP on every start, including a reused profile.**
-  Chrome loads CRLSet asynchronously: on 2026-10-23 a fresh profile accepted
-  the compromised `EM DV TLS CA - G3B` chain, and a restarted profile still
-  accepted it while `chrome://components/` already displayed the updated
-  version. computerd now requires Chrome's own uncached resource fetch of
-  `https://dv-g3b-emudhra.we-have-a-problem.com/` to return exactly
-  `net::ERR_CERT_REVOKED` (-206), and `https://pypi.org/` to return HTTP 200.
-  If the affected certificate is still accepted, it clicks Chrome's native
-  CRLSet update button and waits for actual rejection, never a version or sleep.
-  Chrome authenticates its signed component; computerd adds no trust material.
-  Each probe uses a fresh incognito context (including fresh TLS connections)
-  with credentials disabled; bodies
-  are closed without reading or executing them. The context and update tab
-  are removed before the websocket is exposed. Failure or a 60-second deadline
-  kills Chrome and Xvfb, returns `unavailable`, and leaves no browser slot.
-- **Activation bounds (issue #210).** These two public endpoints and Google's
-  component service are availability dependencies for a profile that needs an
-  update. A cached, already active CRLSet needs only the probes. DNS/proxy errors,
-  other certificate errors, and endpoint changes fail closed. This verifies the
-  measured affected chain through this managed Chrome launch, not every CA or
-  arbitrary browsers launched by `computer_run`. No offline verification API
-  for this Linux Chrome was established. Google's
-  [advisory](https://blog.google/security/protecting-chrome-and-android-users-from-compromised-emudhra-intermediate-ca-certificates/)
-  schedules root removal for October 27: `ERR_CERT_AUTHORITY_INVALID` remains
-  unavailable until that mechanism is measured. Replace this incident-specific
-  guard only after fresh-profile and reused-profile startup measurements prove
-  the pinned replacement rejects the affected chains and accepts ordinary TLS
-  before user CDP, including when component updates are unavailable.
+- **Native TLS verification.** Chrome owns certificate verification, its root
+  store and signed component updates. There are no certificate-ignore flags,
+  injected trust roots or incident-specific public websites on the startup path.
+  The pinned Chrome baseline must reject the affected incident chain and accept
+  ordinary HTTPS on fresh and reused profiles, including with component updates
+  disabled, before replacing that baseline (issue #210). Website certificate
+  failures remain navigation errors; an unavailable canary cannot block unrelated
+  browsing. Startup checks local CDP responsiveness within a bounded deadline;
+  failure stops Chrome/Xvfb before exposing the websocket.
+- **Fixed 1080p.** Chrome and Xvfb start at 1920×1080. Attached pages use a
+  1920×1080 CSS viewport at device scale 1 in both shared and scoped mode.
+  Full-page capture can extend beyond that height and reports `partial` when its
+  explicit height bound truncates the page.
 - **No debugging port.** Chrome runs headed on its own Xvfb display
   (`-nolisten tcp`), both as the room's user, and computerd holds the pipe.
   Read on a VM built from this image (2026-10-07): only port 80 listened,
@@ -448,7 +433,7 @@ separate eval subjects must use separate state directories.
 | Policy and identity | Resolve the actual conversation and requester through the loaded files. Resolve the policy unit with `computer_unit_scope(unit)`; a private DM uses the canonical person/anchor resolver. Do not hash a room tuple as a unit. |
 | Guest | Provision, serve, then observe the computed scope. Registry and authenticated `/v1/identity` must agree on both scope and nonempty instance. A healthy shared VM is insufficient. |
 | Guest image | Tools, computerd and native Chrome run in that same VM. Keep the pinned Chrome/Xvfb/libs/CA/fonts baseline, non-root renderer sandbox, private profile/Xauthority and debugging pipe. No additional browser service or Playwright install is needed. |
-| Network | TLS activation/probes complete before CDP; per-sandbox denies precede wildcard allow and are read back. Browser and native tools use the same VM policy. |
+| Network | Chrome verifies TLS natively; local CDP readiness completes before exposure. Per-sandbox denies precede wildcard allow and are read back. Browser and native tools use the same VM policy. |
 | Credentials | Resolve the computer bearer, dedicated computer Redis URL and every selected model provider key through the existing secret-delivery path into the actual process. A key present in a different config directory, or a manually credentialed probe, does not prove the launched subject has it. |
 | Models | Resolve the main turn and browse model routes, provider URL and credential alias from the composed config. The URL must resolve in the caller's network namespace: a Docker-only hostname does not work for a host eval. |
 | SQL and Redis | Migrate the subject database to the candidate's single Alembic head. Verify the dedicated Redis connection and stream permissions below. Existing bridge credentials are not the computer role. |
