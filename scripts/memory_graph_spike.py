@@ -595,10 +595,11 @@ def evidence_exchanges(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 if not isinstance(content, str):
                     content = "\n".join(p.get("text", "") for p in content or [])
                 for item in re.finditer(r"<item\b[^>]*>.*?</item>", content, re.S):
-                    opening = item.group().split(">", 1)[0] + ">"
+                    room = re.search(r'\broom="[^"\n]*"', item.group().split(">", 1)[0])
                     for row in re.finditer(r'<(\w+)\b[^>]*\bn="(\d+)"[^>]*>.*?</\1>',
                                            item.group(), re.S):
-                        rendered[row[2]] = {"rendered": opening + row.group() + "</item>"}
+                        rendered[row[2]] = {"rendered": row.group(),
+                                            "room": room.group() if room else "unavailable"}
 
         if event["kind"] != "tool_finished":
             continue
@@ -606,7 +607,7 @@ def evidence_exchanges(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         source_events = [e for e in events if e.get("name") == "nora.proposal.sources"
                          and e.get("span_id") == event.get("span_id")]
         source_rows = json.loads(source_events[-1]["attributes"]["body"]) if source_events else {}
-        source_rows = {n: {**row, **rendered.get(n, {})} for n, row in source_rows.items()}
+        source_rows = {n: rendered.get(n, row) for n, row in source_rows.items()}
         values = []
         for part in result.get("content", []):
             if "json" in part:

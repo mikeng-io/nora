@@ -89,7 +89,8 @@ async def test_support_uses_recorded_author_and_room():
     async def call(model, instruction, payload):
         if "statement" not in payload:
             return '{"missed": [], "context_only": []}'
-        assert payload["cited_rows"]["1"]["rendered"] == rendered
+        assert payload["cited_rows"]["1"]["rendered"] == rendered.split(">", 1)[1][:-7]
+        assert payload["cited_rows"]["1"]["room"] == 'room="Generated room"'
         verdict = "supported" if payload["statement"]["what"] == "aster" else "unsupported"
         return json.dumps({"verdict": verdict, "reason": "compare recorded person attribute"})
 

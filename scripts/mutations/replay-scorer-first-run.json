@@ -2,7 +2,7 @@
   {
     "name": "recorded row attributes",
     "file": "scripts/memory_graph_spike.py",
-    "old": "        source_rows = {n: {**row, **rendered.get(n, {})} for n, row in source_rows.items()}",
+    "old": "        source_rows = {n: rendered.get(n, row) for n, row in source_rows.items()}",
     "new": "        source_rows = source_rows",
     "target": "tests/unit/test_replay_scoring.py::test_support_uses_recorded_author_and_room"
   },
