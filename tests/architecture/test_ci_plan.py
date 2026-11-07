@@ -462,6 +462,7 @@ def test_full_backend_replaces_the_nonblocking_measurement():
         if step.get("uses", "").startswith("actions/upload-artifact@")
         and step["with"]["path"] == ".testmondata"
     )
-    assert record["if"] == "${{ github.event_name != 'pull_request' && !cancelled() }}"
+    # a partial record (failed run) must never reach pull requests
+    assert record["if"] == "${{ github.event_name != 'pull_request' && success() }}"
     assert record["with"]["name"].startswith("testmon-data-")
     assert record["with"]["if-no-files-found"] == "error"

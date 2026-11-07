@@ -154,11 +154,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: uv run python -m scripts.ci_plan escape >> "$GITHUB_STEP_SUMMARY"
       - id: dephash
-        if: ${{ github.event_name != 'pull_request' && !cancelled() }}
+        # a partial record (failed run) would lie about coverage: upload only
+        # when every previous step succeeded
+        if: ${{ github.event_name != 'pull_request' && success() }}
         run: echo "hash=$(uv run python -m scripts.testmon_record hash)" >> "$GITHUB_OUTPUT"
       - name: Upload dependency record
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: ${{ github.event_name != 'pull_request' && !cancelled() }}
+        if: ${{ github.event_name != 'pull_request' && success() }}
         with:
           name: testmon-data-${{ steps.dephash.outputs.hash }}-${{ github.sha }}
           path: .testmondata
