@@ -1,0 +1,30 @@
+[
+  {
+    "name": "cancelled model passes retain a distinct start",
+    "file": "nora/agent/replay_capture.py",
+    "old": "            self.attempt += 1\n            _ATTEMPT.set(f\"{self.invocation}:{self.call}:{self.attempt}\")\n            record(\"call_started\", call_id=f\"{self.invocation}:{self.call}\", cancelled=event.cancel)\n            if event.cancel:\n                record(\"call_cancelled\", reason=event.cancel)\n                return",
+    "new": "            if event.cancel:\n                record(\"call_cancelled\", reason=event.cancel)\n                return\n            self.attempt += 1\n            _ATTEMPT.set(f\"{self.invocation}:{self.call}:{self.attempt}\")\n            record(\"call_started\", call_id=f\"{self.invocation}:{self.call}\", cancelled=event.cancel)",
+    "target": "tests/integration/test_eval_observability.py::test_cancelled_model_pass_has_its_own_complete_lifecycle"
+  },
+  {
+    "name": "dropped event remains an error",
+    "file": "nora/subject/eval_evidence.py",
+    "old": "    if [e.get(\"order\") for e in events] != list(range(1, len(events) + 1)):\n        raise EvidenceError(\"dropped_event\")",
+    "new": "",
+    "target": "tests/integration/test_eval_observability.py::test_two_round_private_record_sdk_and_each_public_sink"
+  },
+  {
+    "name": "orphan finish remains an error",
+    "file": "nora/subject/eval_evidence.py",
+    "old": "            if not pending.get(marker):\n                causes.add(\"unmatched_event\")",
+    "new": "            if not pending.get(marker):\n                pass",
+    "target": "tests/unit/test_replay_scoring.py::test_unmatched_call_is_the_only_error[call_finished]"
+  },
+  {
+    "name": "dangling start remains an error",
+    "file": "nora/subject/eval_evidence.py",
+    "old": "    if any(pending.values()):\n        causes.add(\"unmatched_event\")",
+    "new": "    if any(pending.values()):\n        pass",
+    "target": "tests/unit/test_replay_scoring.py::test_unmatched_call_is_the_only_error[call_started]"
+  }
+]

@@ -60,6 +60,7 @@ from strands.types.traces import AttributeValue as StrandsAttributeValue
 
 from .factory import MAX_TOKENS_NOTICE_INFIX, MAX_TOKENS_NOTICE_PREFIX
 from .punctuation import DashFreeOpenAIModel
+from .replay_capture import hooks as replay_hooks
 from .tool_choice import FIRST_CALL
 
 T = TypeVar("T", bound=BaseModel)
@@ -171,7 +172,7 @@ async def ask_structured(
     caller is `tests/offline_eval_support.py`, not a production path; a caller
     that gains one needs the catch `ask_text` has.
     """
-    agent = Agent(model=model, tools=[], callback_handler=None,
+    agent = Agent(model=model, tools=[], callback_handler=None, hooks=replay_hooks(),
                   system_prompt=system_prompt, name=agent_name)
     result = await asyncio.wait_for(
         agent.invoke_async(prompt, structured_output_model=schema),
@@ -239,7 +240,7 @@ async def ask_text(
     records `gen_ai.usage.*` independently.
     """
     # OTel 1.45 widened AttributeValue; Strands still filters to its own type.
-    agent = Agent(model=model, tools=[], callback_handler=None,
+    agent = Agent(model=model, tools=[], callback_handler=None, hooks=replay_hooks(),
                   system_prompt=system_prompt, name=agent_name,
                   trace_attributes=cast(Mapping[str, StrandsAttributeValue] | None,
                                         trace_attributes))

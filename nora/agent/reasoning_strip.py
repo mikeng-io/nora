@@ -130,7 +130,12 @@ def _carried_field(format_request: Callable[..., Any], message: Any) -> str:
     matching text across entries. An assistant message the formatter drops
     whole (nothing but reasoning) produces no assistant entry and so no field.
     """
-    request = format_request([message])
+    from .telemetry import _REQUEST_PROBE
+    token = _REQUEST_PROBE.set(True)
+    try:
+        request = format_request([message])
+    finally:
+        _REQUEST_PROBE.reset(token)
     fields = [
         entry.get(CARRIED_REASONING_FIELD) for entry in request.get("messages") or ()
         if isinstance(entry, dict) and entry.get("role") == "assistant"

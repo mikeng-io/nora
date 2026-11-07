@@ -19,7 +19,8 @@ from pathlib import Path
 from typing import Any
 
 from opentelemetry import baggage, context, trace
-from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor
+from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, SynchronousMultiSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from nora.obs.logging import SEVERITY_NUMBERS
 from nora.obs.tracing import EVAL_EVIDENCE_KEY
@@ -59,11 +60,12 @@ class RunEvidence(SpanProcessor, logging.Handler):
     evaluator. Context propagation confines records to this run and its cases.
     """
 
-    def __init__(self, *, run_id: str, metadata: Mapping[str, Any], lock_fd: int) -> None:
+    def __init__(self, *, run_id: str, metadata: Mapping[str, Any], lock_fd: int,
+                 private_root: Path | None = None) -> None:
         logging.Handler.__init__(self)
         self.metadata = dict(metadata)
         self.metadata.update(lock_inode=os.fstat(lock_fd).st_ino, pid=os.getpid())
-        root = Path(os.environ.get("NORA_EVAL_EXCHANGES") or (
+        root = private_root or Path(os.environ.get("NORA_EVAL_EXCHANGES") or (
             Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "nora/evals"))
         root = root.expanduser()
         root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -80,6 +82,7 @@ class RunEvidence(SpanProcessor, logging.Handler):
         self._active: set[str] = set()
         self.run_id = run_id
         self.exit_code: int | None = None
+        self._order = 0
 
     def check(self) -> None:
         if self.failure:
@@ -98,6 +101,9 @@ class RunEvidence(SpanProcessor, logging.Handler):
             with self._write_lock:
                 if not self._open:
                     raise OSError("eval evidence is already closed")
+                self._order += 1
+                row.update(order=self._order, event_id=f"e{self._order}")
+                data = (json.dumps(row, ensure_ascii=False, default=_json_value) + "\n").encode()
                 view = memoryview(data)
                 while view:
                     written = os.write(self._fd, view)
@@ -148,7 +154,10 @@ class RunEvidence(SpanProcessor, logging.Handler):
         token = _CASE.set(case_id)
         self._active.add(case_id)
         try:
-            self.record("case_started", name=name, input=input, metadata=metadata)
+            self.record("case_started", name=name, input=input, metadata=metadata,
+                        sample_sha256=hashlib.sha256(json.dumps(
+                            [input, metadata], default=_json_value, sort_keys=True
+                        ).encode()).hexdigest())
             with trace.get_tracer(__name__).start_as_current_span("eval.case"):
                 yield
             self.record("case_finished")
@@ -169,7 +178,30 @@ class RunEvidence(SpanProcessor, logging.Handler):
         capture_token = context.attach(context.set_value(
             EVAL_EVIDENCE_KEY, self.record, baggage.set_baggage("nora.eval.capture", "true")))
         root_logger = logging.getLogger()
+        original_processors = provider._active_span_processor
+        original_entries = original_processors._span_processors
+        private_processors = SynchronousMultiSpanProcessor()
+        for processor in original_processors._span_processors:
+            if (isinstance(getattr(processor, "span_exporter", None), InMemorySpanExporter)
+                    or (type(processor).__module__ == "strands_evals.telemetry.config"
+                        and type(processor).__name__ == "_BaggageSpanProcessor")):
+                private_processors.add_span_processor(processor)
+        original_processors._span_processors = private_processors._span_processors
         provider.add_span_processor(self)
+        # Content-bearing SDK logs go only to this run's private handler.
+        class PrivateOnly(logging.Filter):
+            def filter(self, record: logging.LogRecord) -> bool:
+                return current() is not self_evidence
+        self_evidence = self
+        privacy_filter = PrivateOnly()
+        handlers = set(root_logger.handlers)
+        if logging.lastResort:
+            handlers.add(logging.lastResort)
+        for logger in logging.Logger.manager.loggerDict.values():
+            if isinstance(logger, logging.Logger):
+                handlers.update(logger.handlers)
+        for handler in handlers:
+            handler.addFilter(privacy_filter)
         root_logger.addHandler(self)
         try:
             self.record("run_started", metadata=self.metadata)
@@ -177,12 +209,18 @@ class RunEvidence(SpanProcessor, logging.Handler):
                 yield self
             self.check()
             self.record("run_finished", exit_code=self.exit_code, active_cases=sorted(self._active))
+            receipt = validate_events(read_events(self.path))
+            if receipt["status"] == "ERROR":
+                raise EvidenceError("incomplete_record")
         except BaseException as exc:
             if self.failure is None:
                 self.record("run_failed", error_type=type(exc).__name__,
                             exit_code=getattr(exc, "code", None), active_cases=sorted(self._active))
             raise
         finally:
+            for handler in handlers:
+                handler.removeFilter(privacy_filter)
+            original_processors._span_processors = original_entries
             root_logger.removeHandler(self)
             context.detach(capture_token)
             _CURRENT.reset(token)
@@ -202,3 +240,62 @@ def revision(root: Path) -> dict[str, Any]:
                 "lockfile_sha256": fingerprint(root / "uv.lock")}
     except (OSError, subprocess.CalledProcessError):
         return {"head": None, "lockfile_sha256": fingerprint(root / "uv.lock")}
+
+
+def read_events(path: Path) -> list[dict[str, Any]]:
+    """Read the private append-only record; broken tails are evidence errors."""
+    try:
+        info = path.lstat()
+        file_info = (path / "events.jsonl").lstat()
+        if (not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077
+                or not stat.S_ISREG(file_info.st_mode) or file_info.st_mode & 0o077):
+            raise EvidenceError("non_private_record")
+        events = [json.loads(line) for line in (path / "events.jsonl").read_text().splitlines()]
+    except (OSError, ValueError) as exc:
+        raise EvidenceError("unreadable_record") from exc
+    if [e.get("order") for e in events] != list(range(1, len(events) + 1)):
+        raise EvidenceError("dropped_event")
+    return events
+
+
+def validate_events(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Public receipt: fixed codes and counts only, never captured content."""
+    causes: set[str] = set()
+    pending: dict[tuple[Any, ...], int] = {}
+    pairs = {"call_started": "call_finished", "tool_started": "tool_finished",
+             "transport_started": "transport_finished", "invocation_started": "invocation_finished"}
+    for event in events:
+        kind = event["kind"]
+        key: tuple[Any, ...] = (event.get("invocation_id"), event.get("attempt_id"))
+        if kind.startswith("invocation_"):
+            key = (event.get("invocation_id"),)
+        if kind.startswith("tool_"):
+            key += (event.get("tool", {}).get("toolUseId"),)
+        if kind in pairs:
+            marker = (pairs[kind], *key)
+            pending[marker] = pending.get(marker, 0) + 1
+        elif kind in pairs.values():
+            marker = (kind, *key)
+            if not pending.get(marker):
+                causes.add("unmatched_event")
+            else:
+                pending[marker] -= 1
+        if kind in {"transport_failed", "run_failed", "case_failed", "judge_error"}:
+            causes.add("capture_interrupted")
+        if kind == "transport_response" and any(
+            c.get("finish_reason") == "length"
+            for c in event.get("response", {}).get("choices", [])
+        ):
+            causes.add("truncated")
+        if kind == "judge_verdict" and (not event.get("verdict") or not event.get("reason")):
+            causes.add("judge_incomplete")
+    if any(pending.values()):
+        causes.add("unmatched_event")
+    if not any(e["kind"] in {"run_finished", "run_failed"} for e in events):
+        causes.add("terminal_missing")
+    starts = sum(e.get("name") == "nora.session.started" for e in events)
+    ends = sum(e.get("name") == "nora.session.terminal" for e in events)
+    if starts != ends:
+        causes.add("terminal_missing")
+    return {"status": "ERROR" if causes else "PASS", "causes": sorted(causes),
+            "events": len(events)}

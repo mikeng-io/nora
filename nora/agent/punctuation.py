@@ -29,6 +29,7 @@ from typing import Any
 
 from strands.models.openai import OpenAIModel
 
+from .replay_capture import client_capture
 from .telemetry import record_eval_model_request
 
 # U+2014 EM DASH and U+2015 HORIZONTAL BAR (the 「――」 some IMEs produce),
@@ -83,3 +84,15 @@ class DashFreeOpenAIModel(OpenAIModel):
                 request[key] = _clean(request[key])
         record_eval_model_request(request)
         return request
+
+    def _get_client(self):
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def captured():
+            async with (
+                super(DashFreeOpenAIModel, self)._get_client() as client,
+                client_capture(client) as selected,
+            ):
+                yield selected
+        return captured()
