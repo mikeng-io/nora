@@ -115,6 +115,20 @@ beside the original source run. A missing or changed source is ERROR before a
 judge call. Legacy re-scores with empty verdict IDs use their recorded session
 links and scoring-input order. New verdicts retain explicit source IDs/digests.
 
+Decision inputs project the statement's agenda item(s), cited rows, assembled
+model-call responses and tool results. Stream chunks and repeated request
+histories are not sent. Unsupported statements stop at their saved proposal;
+misses run from the item's first showing through the session's end. Observations
+use reasoning marked `observed`; `not_mentioned` never covers absent/redacted
+reasoning. Call anchors and response/end ranges retain original event IDs.
+
+The final formatted user prompt is capped at 64,000 UTF-8 bytes. An input over
+that ceiling is recorded as truncated and is not sent; its statement and receipt
+are ERROR. HTTP failures, context overflow and invalid judge JSON record
+`judge_error` and per-statement `judge_unavailable`, counted separately from
+`insufficient_evidence`. A lack of relevant emitted reasoning remains
+`insufficient_evidence`. No automatic paid retry is added.
+
 Judge requests use non-streamed JSON responses so the gateway's served-model and
 provider headers are present. Streamed responses without those headers record
 identity as `unavailable`, even if their body contains a model name; aliases are

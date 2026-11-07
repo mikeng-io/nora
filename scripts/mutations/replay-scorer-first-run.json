@@ -103,5 +103,54 @@
     "old": "        model.update_config(stream=False)",
     "new": "        model.update_config(stream=True)",
     "target": "tests/unit/test_replay_scoring.py::test_judge_transport_identity_without_eval_capture[True]"
+  },
+  {
+    "name": "compact calls replace transport chunks",
+    "file": "nora/subject/replay_diagnosis.py",
+    "old": "\"events\": compact,",
+    "new": "\"events\": events[shown:end + 1],",
+    "target": "tests/unit/test_replay_diagnosis.py::test_many_chunks_are_assembled_without_raw_chunk_overhead"
+  },
+  {
+    "name": "unsupported scope ends at the saved proposal",
+    "file": "nora/subject/replay_diagnosis.py",
+    "old": "    end, item_indices = _proposal_end(statement, events)",
+    "new": "    end, item_indices = len(events) - 1, set()",
+    "target": "tests/unit/test_replay_diagnosis.py::test_compact_statement_scope_excludes_later_absent_call"
+  },
+  {
+    "name": "observed call evidence survives mixed availability",
+    "file": "nora/subject/replay_diagnosis.py",
+    "old": "    if not any(a == \"observed\" for a in availability):",
+    "new": "    if not availability or any(a != \"observed\" for a in availability):",
+    "target": "tests/unit/test_replay_diagnosis.py::test_reasoning_observations_use_only_observed_calls"
+  },
+  {
+    "name": "oversized diagnostic input is never sent",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "            if truncated:\n                raise ValueError(\"diagnostic_input_truncated\")",
+    "new": "            if False and truncated:\n                raise ValueError(\"diagnostic_input_truncated\")",
+    "target": "tests/unit/test_replay_diagnosis.py::test_decision_resolves_fingerprinted_writer_events[oversized]"
+  },
+  {
+    "name": "failed judge is unavailable rather than insufficient",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "            result = {\"observation\": \"judge_unavailable\", \"outcome\": \"unavailable\",",
+    "new": "            result = {\"observation\": \"insufficient_evidence\", \"outcome\": \"unavailable\",",
+    "target": "tests/unit/test_replay_diagnosis.py::test_decision_resolves_fingerprinted_writer_events[http400]"
+  },
+  {
+    "name": "judge failure invalidates the private receipt",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "            record(\"judge_error\", cause=cause, error_type=type(exc).__name__)",
+    "new": "            pass",
+    "target": "tests/unit/test_replay_diagnosis.py::test_decision_resolves_fingerprinted_writer_events[http400]"
+  },
+  {
+    "name": "input truncation is an explicit receipt cause",
+    "file": "nora/subject/eval_evidence.py",
+    "old": "        if kind == \"decision_input\" and event.get(\"truncated\"):\n            causes.add(\"truncated\")",
+    "new": "",
+    "target": "tests/unit/test_replay_diagnosis.py::test_decision_resolves_fingerprinted_writer_events[oversized]"
   }
 ]

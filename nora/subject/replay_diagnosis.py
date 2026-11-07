@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
+from xml.etree import ElementTree
 
 OBSERVATIONS = frozenset(
     {
@@ -21,6 +23,157 @@ OBSERVATIONS = frozenset(
 )
 
 
+# ponytail: fixed final-prompt byte ceiling; revise only from audited judge-input receipts.
+MAX_DIAGNOSTIC_INPUT_BYTES = 64_000
+
+
+def cited_source_numbers(value: Any) -> set[str]:
+    if isinstance(value, list):
+        return set().union(*(cited_source_numbers(v) for v in value))
+    if isinstance(value, dict):
+        own = {str(c["source"]) for c in value.get("cite", [])
+               if isinstance(c, dict) and "source" in c}
+        return own | set().union(*(cited_source_numbers(v) for v in value.values()))
+    return set()
+
+
+
+def _items(request: dict[str, Any]) -> list[dict[str, Any]]:
+    items = []
+    for message in request.get("messages", []):
+        if message.get("role") != "user":
+            continue
+        content = message.get("content", "")
+        if isinstance(content, list):
+            content = "\n".join(p.get("text", "") for p in content)
+        for index, match in enumerate(re.finditer(r"<item\b[^>]*>.*?</item>", content, re.S)):
+            element = ElementTree.fromstring(match.group())  # noqa: S314 - recorded escaped renderer
+            items.append({"index": int(element.get("index", str(index))),
+                          "rendered": match.group(),
+                          "numbers": {row.get("n") for row in element if row.get("n")}})
+    return items
+
+
+def _proposal_end(statement: dict[str, Any], events: list[dict[str, Any]]) -> tuple[int, set[int]]:
+    if statement["kind"] != "unsupported":
+        terminal = next((i for i, e in enumerate(events)
+                         if e.get("name") == "nora.session.terminal"), len(events) - 1)
+        return terminal, set()
+    found = []
+    for index, event in enumerate(events):
+        if (event["kind"] != "tool_finished"
+                or event.get("tool", {}).get("name") != "memory_propose"):
+            continue
+        tool = event["tool"]
+        inputs = tool["input"].get("statements", [])
+        result = event.get("result", {})
+        if "content" in result:
+            parts = result["content"]
+            result = next((p["json"] if "json" in p else json.loads(p["text"])
+                           for p in parts if "json" in p or "text" in p), {})
+        for saved in result.get("statements", []):
+            slot = saved.get("index")
+            if (saved.get("status") == "saved" and isinstance(slot, int)
+                    and 0 <= slot < len(inputs) and inputs[slot] == statement["statement"]):
+                found.append((index, set(tool["input"].get("items", []))))
+    if len(found) != 1:
+        raise ValueError("diagnostic_proposal_missing_or_ambiguous")
+    return found[0]
+
+
+def _append_response(call: dict[str, Any], event: dict[str, Any]) -> None:
+    call["last_response_event_id"] = event["event_id"]
+    for choice in event.get("response", {}).get("choices", []):
+        part = choice.get("delta") or choice.get("message") or {}
+        call["reasoning"].append(part.get("reasoning_content") or part.get("reasoning") or "")
+        call["assistant_text"].append(part.get("content") or "")
+        for index, tool in enumerate(part.get("tool_calls") or []):
+            target = call["tool_calls"].setdefault(tool.get("index", index),
+                {"id": "", "name": [], "arguments": []})
+            if tool.get("id"):
+                target["id"] = tool["id"]
+            fn = tool.get("function") or {}
+            target["name"].append(fn.get("name") or "")
+            target["arguments"].append(fn.get("arguments") or "")
+        if choice.get("finish_reason"):
+            call["finish_reason"] = choice["finish_reason"]
+
+
+def compact_trajectory(statement: dict[str, Any], events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Project one item's call interval; assemble chunks once, retaining real source anchors."""
+    end, item_indices = _proposal_end(statement, events)
+    numbers = (cited_source_numbers(statement["statement"]) if statement["kind"] == "unsupported"
+               else set(re.findall(r"-?\d+", str(statement.get("location", "")))))
+    shown = None
+    selected = []
+    for index, event in enumerate(events[:end + 1]):
+        if event.get("name") != "nora.model.request":
+            continue
+        request = json.loads(event["attributes"]["nora.model.request.body"])
+        items = _items(request)
+        selected = [item for item in items if (item["index"] in item_indices if item_indices
+                                               else bool(item["numbers"] & numbers))]
+        if selected:
+            shown = index
+            break
+    if shown is None:
+        raise ValueError("diagnostic_item_not_shown")
+    indices = {item["index"] for item in selected}
+    agenda = [{"index": item["index"], "rendered": item["rendered"],
+               "event_id": events[shown]["event_id"]} for item in selected]
+    cited = {}
+    for event in events[:end + 1]:
+        if event.get("name") == "nora.proposal.sources":
+            rows = json.loads(event["attributes"]["body"])
+            cited.update({n: {**row, "event_id": event["event_id"]}
+                          for n, row in rows.items() if n in numbers})
+    for item in agenda:
+        for row in re.finditer(r'<(\w+)\b[^>]*\bn="(-?\d+)"[^>]*>.*?</\1>',
+                               item["rendered"], re.S):
+            if row[2] in numbers:
+                cited[row[2]] = {"rendered": row.group(), "event_id": item["event_id"]}
+    calls = []
+    active: dict[tuple[Any, Any], dict[str, Any]] = {}
+    tools = []
+    terminal = []
+    for event in events[shown:end + 1]:
+        key = (event.get("invocation_id"), event.get("attempt_id"))
+        kind = event["kind"]
+        if kind == "transport_started":
+            call = {"kind": "model_call", "event_id": event["event_id"],
+                    "attempt_id": event.get("attempt_id"), "reasoning": [], "assistant_text": [],
+                    "tool_calls": {}, "reasoning_availability": "capture_unavailable"}
+            active[key] = call
+            calls.append(call)
+        elif kind == "transport_response" and key in active:
+            _append_response(active[key], event)
+        elif kind == "transport_finished" and key in active:
+            call = active.pop(key)
+            call["last_event_id"] = event["event_id"]
+            call["reasoning_availability"] = event.get(
+                "reasoning_availability", "capture_unavailable")
+            call["reasoning"] = "".join(call["reasoning"])
+            call["assistant_text"] = "".join(call["assistant_text"])
+            call["tool_calls"] = [{"id": tool["id"], "name": "".join(tool["name"]),
+                                   "arguments": "".join(tool["arguments"])}
+                                  for tool in call["tool_calls"].values()]
+        elif kind == "tool_finished":
+            item_ids = set(event.get("tool", {}).get("input", {}).get("items", []))
+            if not item_ids or item_ids & indices:
+                tools.append({k: event[k] for k in ("kind", "event_id", "tool", "result")})
+        elif event.get("name") == "nora.session.terminal":
+            body = json.loads(event.get("attributes", {}).get("body", "{}"))
+            terminal.append({"kind": "event", "event_id": event["event_id"],
+                             "name": event["name"], "attributes": {"body": json.dumps({
+                                 k: body.get(k) for k in ("bound", "outcome", "error_type")})}})
+    if active:
+        raise ValueError("diagnostic_call_incomplete")
+    order = {e["event_id"]: index for index, e in enumerate(events)}
+    compact = sorted([*calls, *tools, *terminal], key=lambda e: order[e["event_id"]])
+    return {"agenda_items": agenda, "cited_rows": cited, "events": compact,
+            "first_event_id": events[shown]["event_id"], "last_event_id": events[end]["event_id"]}
+
+
 def diagnose(
     statement: dict[str, Any], events: list[dict[str, Any]], verdict: Any
 ) -> dict[str, Any]:
@@ -31,9 +184,10 @@ def diagnose(
     """
     insufficient = {"observation": "insufficient_evidence", "event_ids": []}
     availability = [
-        e.get("reasoning_availability") for e in events if e["kind"] == "transport_finished"
+        e.get("reasoning_availability") for e in events
+        if e["kind"] == "model_call"
     ]
-    if not availability or any(a != "observed" for a in availability):
+    if not any(a == "observed" for a in availability):
         return insufficient
     if not isinstance(verdict, dict) or verdict.get("observation") not in OBSERVATIONS:
         return insufficient
@@ -45,6 +199,13 @@ def diagnose(
         return insufficient
     selected = [by_id[i] for i in ids]
     observation = verdict["observation"]
+    if any(e["kind"] == "model_call" and e["reasoning_availability"] != "observed"
+           for e in selected):
+        return insufficient
+    if observation == "not_mentioned" and any(
+        e["kind"] != "model_call" for e in selected
+    ):
+        return insufficient
     if observation == "named_bound":
         terminals = [e for e in selected if e.get("name") == "nora.session.terminal"]
         if not any(json.loads(e.get("attributes", {}).get("body", "{}")).get("bound")
@@ -53,8 +214,8 @@ def diagnose(
     if observation == "rejected_as_not_memory":
         quote = verdict.get("quote")
         if not isinstance(quote, str) or not quote or not any(
-            quote in json.dumps(e, ensure_ascii=False) for e in selected
-            if e["kind"] == "transport_response"
+            quote in e.get("reasoning", "") for e in selected
+            if e["kind"] == "model_call"
         ):
             return insufficient
     if observation == "refused_not_retried":

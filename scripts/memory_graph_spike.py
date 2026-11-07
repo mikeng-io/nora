@@ -46,6 +46,7 @@ from nora.subject.eval_evidence import (
     validate_events,
 )
 from nora.subject.obtain import model_endpoint
+from nora.subject.replay_diagnosis import cited_source_numbers
 from nora.subject.sandbox_index import (
     EMBEDDER_FROM_HOST,
     SandboxIndex,
@@ -639,16 +640,6 @@ _MISSED_FACT_INSTRUCTION = (
     "in evidence. Return JSON with missed and context_only arrays. Each item must have fact, "
     "quote, location and reason; location must identify a new source row for a miss."
 )
-
-
-def cited_source_numbers(value: Any) -> set[str]:
-    if isinstance(value, list):
-        return set().union(*(cited_source_numbers(v) for v in value))
-    if isinstance(value, dict):
-        own = {str(c["source"]) for c in value.get("cite", [])
-               if isinstance(c, dict) and "source" in c}
-        return own | set().union(*(cited_source_numbers(v) for v in value.values()))
-    return set()
 
 
 def parse_fact_output(raw: str) -> Any:
@@ -1324,7 +1315,12 @@ def decision_sources(path: Path, events: list[dict[str, Any]]) -> dict[str, list
 
 async def decision_judge(directory: Path, judges: Judges) -> dict[str, Any]:
     from nora.agent.replay_capture import record
-    from nora.subject.replay_diagnosis import diagnose
+    from nora.subject.replay_diagnosis import (
+        MAX_DIAGNOSTIC_INPUT_BYTES,
+        OBSERVATIONS,
+        compact_trajectory,
+        diagnose,
+    )
     path = evidence_file(directory)
     events = read_events(path.parent)
     sources = decision_sources(path, events)
@@ -1371,25 +1367,56 @@ async def decision_judge(directory: Path, judges: Judges) -> dict[str, Any]:
         "other (name it in reason), rejected_as_not_memory (quote reasoning), "
         "mentioned_without_statement, refused_not_retried, named_bound, not_mentioned, "
         "insufficient_evidence. Not mentioned is only an observation about emitted reasoning. "
-        "Absent, redacted or unavailable reasoning means insufficient_evidence. Cite event ids."
+        "Input is a compact trajectory: model_call rows assemble streamed reasoning, text and "
+        "tool calls; event_id is a real source anchor and last_event_id closes its source range. "
+        "Use only reasoning marked observed. not_mentioned describes only observed reasoning, "
+        "never absent/redacted calls or what the model privately noticed. Cite event ids."
     )
     for statement in statements:
         scoped = statement.pop("events")
+        judge_statement = {k: v for k, v in statement.items() if k != "session_event_ids"}
+        cause = "trajectory_unavailable"
+        result: dict[str, Any]
         try:
-            raw = await judges.call(judges.models[0], instruction,
-                                    {"statement": statement, "events": scoped})
-            parsed = parse_json_response(raw)
-            if not isinstance(parsed, dict) or not parsed.get("reason"):
-                record("judge_error", cause="judge_incomplete")
-                raise ValueError("judge_reason_missing")
-            record("judge_verdict", verdict="diagnostic", reason=parsed["reason"], output=parsed)
-            result = diagnose(statement, scoped, parsed)
-        except Exception:  # noqa: BLE001 - no private exception to public output
-            result = {"observation": "insufficient_evidence", "event_ids": []}
+            trajectory = compact_trajectory(statement, scoped)
+            payload = {"statement": judge_statement, "trajectory": trajectory}
+            input_bytes = len(prompt(payload).encode("utf-8"))
+            truncated = input_bytes > MAX_DIAGNOSTIC_INPUT_BYTES
+            record("decision_input", input_bytes=input_bytes,
+                   max_input_bytes=MAX_DIAGNOSTIC_INPUT_BYTES, truncated=truncated,
+                   source_sha256=statement.get("source_sha256"),
+                   first_event_id=trajectory["first_event_id"],
+                   last_event_id=trajectory["last_event_id"])
+            cause = "input_truncated"
+            if truncated:
+                raise ValueError("diagnostic_input_truncated")
+            relevant = trajectory["events"]
+            if not any(e.get("reasoning_availability") == "observed" for e in relevant):
+                result = {"observation": "insufficient_evidence", "event_ids": []}
+            else:
+                cause = "judge_call_failed"
+                raw = await judges.call(judges.models[0], instruction, payload)
+                cause = "judge_parse_failed"
+                parsed = parse_fact_output(raw)
+                if (not isinstance(parsed, dict) or parsed.get("observation") not in OBSERVATIONS
+                        or not isinstance(parsed.get("event_ids"), list)
+                        or not isinstance(parsed.get("reason"), str)
+                        or not parsed["reason"].strip()):
+                    raise ValueError("judge_protocol_missing")
+                record("judge_verdict", verdict="diagnostic",
+                       reason=parsed["reason"], output=parsed)
+                result = diagnose(statement, relevant, parsed)
+        except Exception as exc:  # noqa: BLE001 - failures are not evidenced diagnoses
+            record("judge_error", cause=cause, error_type=type(exc).__name__)
+            result = {"observation": "judge_unavailable", "outcome": "unavailable",
+                      "status": "ERROR", "cause": cause, "event_ids": []}
         result["statement"] = statement
         record("decision_diagnostic", result=result)
         results.append(result)
-    return {"status": "REPORTED", "statements": len(results),
+    unavailable = sum(r["observation"] == "judge_unavailable" for r in results)
+    return {"status": "ERROR" if unavailable else "REPORTED", "statements": len(results),
+            "judge_unavailable": unavailable,
+            "input_truncated": sum(r.get("cause") == "input_truncated" for r in results),
             "insufficient_evidence": sum(
                 r["observation"] == "insufficient_evidence" for r in results)}
 
