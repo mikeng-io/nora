@@ -298,6 +298,16 @@ def _discord_rest_app(state: dict) -> web.Application:
         ])
 
     async def post_message(req: web.Request) -> web.Response:
+        if req.content_type == "multipart/form-data":
+            reader = await req.multipart()
+            async for part in reader:
+                content = await part.read()
+                if part.filename:
+                    state.setdefault("uploads", []).append({
+                        "name": part.name, "filename": part.filename,
+                        "media_type": part.headers.get("Content-Type"),
+                        "content": content,
+                    })
         state["posts"].append((req.match_info["channel_id"], req))
         return web.json_response({"id": "777000111"}, status=201)
 
@@ -305,7 +315,7 @@ def _discord_rest_app(state: dict) -> web.Application:
         state["reacts"].append((req.method, req.path))
         return web.Response(status=204)
 
-    app = web.Application()
+    app = web.Application(client_max_size=32 * 1024 * 1024)
     app.router.add_get("/guilds/{guild_id}/members", members)
     app.router.add_post("/channels/{channel_id}/messages", post_message)
     app.router.add_put(
@@ -697,7 +707,15 @@ async def test_voice_death_reconciles_then_a_new_generation_serves(bridge):
         controller["stream_calls"][-1]["audio_b64"]) == b"pcm-2"
 
 
-async def test_speech_is_bounded_and_actions_use_the_real_sender(bridge):
+@pytest.mark.parametrize("mime,filename", [
+    ("image/png", "generated.png"),
+    ("video/mp4", "generated.mp4"),
+    ("audio/mpeg", "generated.mp3"),
+    ("audio/ogg", "generated.ogg"),
+    ("application/pdf", "generated.pdf"),
+    ("application/octet-stream", "generated.bin"),
+])
+async def test_speech_is_bounded_and_actions_use_the_real_sender(bridge, mime, filename):
     world = bridge
     controller = world["controller_state"]
     http = world["http"]
@@ -721,7 +739,9 @@ async def test_speech_is_bounded_and_actions_use_the_real_sender(bridge):
     # must name a committed pending outbound audit row for this
     # platform/account/target.
     key = "out-test-1"
-    (world["tmp"] / "custody" / key).write_bytes(b"file-bytes")
+    payload = b"generated-media" * 100_000
+    put = await http.put(f"/v1/attachments/{key}", data=payload, headers=auth)
+    assert put.status == 200
     async with world["engine"].begin() as conn:
         rid = int((await conn.execute(sa.insert(MESSAGES).values(
             platform="discord", conversation_id=CONV,
@@ -739,8 +759,8 @@ async def test_speech_is_bounded_and_actions_use_the_real_sender(bridge):
             "mentions": [{"start": 0, "length": 5, "recipient": MEMBER,
                           "handle": None}],
             "styles": [], "preview": None,
-            "attachments": [{"key": key, "file_name": "a.bin",
-                             "media_type": "application/octet-stream"}],
+            "attachments": [{"key": key, "file_name": filename,
+                             "media_type": mime}],
             "quote": None,
         }}, headers=auth)
     body = await resp.json()
@@ -749,6 +769,10 @@ async def test_speech_is_bounded_and_actions_use_the_real_sender(bridge):
     # The post went to the THREAD's channel id, as DiscordSender routes it.
     channel_id, _req = world["rest_state"]["posts"][-1]
     assert channel_id == "999888"
+    assert world["rest_state"]["uploads"][-1] == {
+        "name": "files[0]", "filename": filename,
+        "media_type": mime, "content": payload,
+    }
 
     # Unauthenticated calls answer 401 before reaching any handler.
     resp = await http.post("/v1/actions", json={
@@ -938,6 +962,50 @@ async def test_music_channel_routing_follows_the_current_projection(bridge):
     assert "Track B" in world["text"].send.call_args.args[0]
     world["announce_2"].send.assert_not_called()
     await control.close()
+
+
+async def test_attachment_body_limit_applies_only_to_uploads(bridge, monkeypatch):
+    client = bridge["http"]
+    auth = {"Authorization": f"Bearer {TOKEN}"}
+    limit = 2 * 1024 * 1024
+    monkeypatch.setattr("nora.platform.discord.bridge_app.MAX_ATTACHMENT_BYTES", limit)
+    for index, size in enumerate((1300 * 1024, limit)):
+        payload = b"x" * size
+        path = f"/v1/attachments/large-{index}"
+        put = await client.put(path, data=payload, headers=auth)
+        assert put.status == 200
+        got = await client.get(path, headers=auth)
+        assert got.status == 200 and await got.read() == payload
+        repeated = await client.put(path, data=payload, headers=auth)
+        assert repeated.status == 200
+        conflict = await client.put(path, data=b"different bytes", headers=auth)
+        assert conflict.status == 409
+        unchanged = await client.get(path, headers=auth)
+        assert unchanged.status == 200 and await unchanged.read() == payload
+    refused = await client.put("/v1/attachments/too-large", data=b"x" * (limit + 1),
+                               headers=auth)
+    assert refused.status == 413
+    missing = await client.get("/v1/attachments/too-large", headers=auth)
+    assert missing.status == 404
+    ordinary = await client.post("/v1/actions", data=b"x" * (1300 * 1024), headers=auth)
+    assert ordinary.status == 413
+
+
+@pytest.mark.parametrize("method", ["PUT", "GET"])
+async def test_attachment_paths_stay_in_custody(bridge, method):
+    client = bridge["http"]
+    auth = {"Authorization": f"Bearer {TOKEN}"}
+    outside = bridge["tmp"] / "outside"
+    outside.write_bytes(b"outside custody")
+    (bridge["tmp"] / "custody" / "escape").symlink_to(outside)
+    refused = await client.request(method, "/v1/attachments/escape",
+                                   data=b"outside custody", headers=auth)
+    assert refused.status == 400
+    assert outside.read_bytes() == b"outside custody"
+    accepted = await client.put("/v1/attachments/safe", data=b"safe", headers=auth)
+    assert accepted.status == 200
+    got = await client.get("/v1/attachments/safe", headers=auth)
+    assert got.status == 200 and await got.read() == b"safe"
 
 
 async def test_actions_and_capture_fail_closed_without_collaborators(bridge):

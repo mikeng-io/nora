@@ -934,6 +934,72 @@ test('PUT/GET /v1/attachments round-trips bytes; conflict answers 409', async ()
 
 // -- capture pipeline end-to-end -------------------------------------------------
 
+test('large attachment uploads reach the same send executor unchanged', async (t) => {
+  for (const [mime, filename, field] of [
+    ['image/png', 'generated.png', 'image'],
+    ['video/mp4', 'generated.mp4', 'video'],
+    ['audio/mpeg', 'generated.mp3', 'audio'],
+    ['audio/ogg', 'generated.ogg', 'audio'],
+    ['application/pdf', 'generated.pdf', 'document'],
+    ['application/octet-stream', 'generated.bin', 'document'],
+  ]) {
+    await t.test(mime, async (t) => {
+      const dir = tmpDir();
+      t.after(() => rmSync(dir, { recursive: true, force: true }));
+      const attachments = new AttachmentStore(dir);
+      const pg = fakePg();
+      pg.works.set('1', workRow(1));
+      const ctx = fakeCtx();
+      ctx.attachments = attachments;
+      const handle = createV1({
+        store: new ActionStore(pg, { platform: 'whatsapp', accountKey: 'a' }),
+        ctx, attachments, self: () => null, health: () => ({}), metrics: null,
+      });
+      const server = createServer(async (req, res) => {
+        if (!await handle(req, res, new URL(req.url, 'http://bridge'))) {
+          sendJson(res, 404, { error: 'not_found' });
+        }
+      });
+      await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+      t.after(() => new Promise((resolve) => server.close(resolve)));
+      const base = `http://127.0.0.1:${server.address().port}`;
+      const bytes = Buffer.alloc(1319325, 0x5a);
+      const put = await fetch(base + '/v1/attachments/generated-large', {
+        method: 'PUT', body: bytes,
+      });
+      assert.equal(put.status, 201);
+      await put.arrayBuffer();
+      for (const [body, expected] of [[bytes, 201], [Buffer.from('different bytes'), 409]]) {
+        const repeat = await fetch(base + '/v1/attachments/generated-large', { method: 'PUT', body });
+        assert.equal(repeat.status, expected);
+        await repeat.arrayBuffer();
+      }
+      const get = await fetch(base + '/v1/attachments/generated-large');
+      assert.equal(get.status, 200);
+      assert.deepEqual(Buffer.from(await get.arrayBuffer()), bytes);
+      const action = {
+        action_id: 'large-send', owner: { kind: 'work', id: 'w-1', generation: 1 },
+        op: 'send', request: { ...REQ, text: '', attachments: [
+          { key: 'generated-large', media_type: mime, file_name: filename },
+        ] },
+      };
+      for (let i = 0; i < 2; i++) {
+        const response = await fetch(base + '/v1/actions', {
+          method: 'POST', body: JSON.stringify(action),
+          headers: { 'content-type': 'application/json' },
+        });
+        assert.equal(response.status, 200);
+        assert.equal((await response.json()).state, 'confirmed');
+      }
+      assert.equal(ctx.calls.length, 1);
+      assert.equal(ctx.calls[0][0], 'send');
+      assert.deepEqual(ctx.calls[0][2][field], bytes);
+      assert.equal(ctx.calls[0][2].mimetype, mime);
+      if (field === 'document') assert.equal(ctx.calls[0][2].fileName, filename);
+    });
+  }
+});
+
 function fakeProjection() {
   return {
     revision: 9,
@@ -996,6 +1062,39 @@ const EVENT = {
     size: 4, caption: null, filename: null }],
   edit_of: null,
 };
+
+test('capture keeps complete bytes and media facts for every attachment type', async (t) => {
+  for (const [kind, mime, voice] of [
+    ['image', 'image/png', false], ['video', 'video/mp4', false],
+    ['audio', 'audio/mpeg', false], ['audio', 'audio/ogg', true],
+    ['document', 'application/pdf', false], ['document', 'application/octet-stream', false],
+  ]) {
+    await t.test(mime, async () => {
+      const dir = tmpDir();
+      try {
+        const { stream, deps } = captureDeps(dir);
+        const payload = Buffer.alloc(1319325, 0x5a);
+        const raw = { generated: mime };
+        deps.downloadMedia = async (message, desc) => {
+          assert.equal(message, raw);
+          assert.equal(desc.mimetype, mime);
+          return payload;
+        };
+        const pipeline = createPipeline(deps);
+        await pipeline.capture({ ...EVENT, media: [
+          { kind, mimetype: mime, voice_note: voice, size: payload.length },
+        ] }, raw);
+        await pipeline.replay();
+        assert.equal(stream.length, 1);
+        const ref = stream[0].message.media[0];
+        assert.equal(ref.media_type, mime);
+        assert.equal(ref.voice_note, voice);
+        assert.deepEqual(deps.attachments.read(ref.platform_id), payload);
+        assert.equal(stream[0].attachments[0].key, ref.platform_id);
+      } finally { rmSync(dir, { recursive: true, force: true }); }
+    });
+  }
+});
 
 test('capture: denied rooms produce no journal row, no bytes, no enqueue', async () => {
   const dir = tmpDir();
