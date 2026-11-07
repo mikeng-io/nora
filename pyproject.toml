@@ -386,6 +386,7 @@ dev = [
     "pytest-aiohttp>=1.0",
     "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
+    "pytest-testmon==2.3.0",
     "pytest-xdist>=3.8.0",
     "ruff>=0.6",
     "sentry-sdk==2.44.0",
