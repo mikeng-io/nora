@@ -40,5 +40,12 @@
     "old": "fetched = await self._media_source.fetch(ref=ref)\n                if not fetched.available:\n                    log.warning(\"attachment custody unavailable: %s\", fetched.reason)\n                    refs.append(ref)\n                    continue\n                raw = fetched.data",
     "new": "import base64\n                data = await self._rpc(\"getAttachment\", {\"id\": ref.platform_id})\n                raw = base64.b64decode(data[\"data\"]) if isinstance(data, dict) else b\"\"",
     "target": "tests/integration/test_signal_bridge_routes.py::test_capture_binds_custody_handles_before_the_journal_handoff[application/pdf-generated.pdf-False-string]"
+  },
+  {
+    "name": "discord_attachment_resolved_custody_boundary",
+    "file": "nora/platform/discord/bridge_app.py",
+    "old": "if not filename.startswith(root):\n            return None",
+    "new": "if False:\n            return None",
+    "target": "tests/integration/test_discord_bridge_control.py::test_attachment_paths_stay_in_custody"
   }
 ]

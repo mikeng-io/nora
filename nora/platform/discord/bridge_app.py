@@ -47,7 +47,7 @@ import logging
 import time
 from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
-from os.path import basename
+from os.path import realpath
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 from urllib.parse import urlsplit
@@ -1824,16 +1824,25 @@ class DiscordBridge:
 
     # ---- attachment custody -----------------------------------------------------
 
+    def _custody_path(self, key: str) -> Path | None:
+        if self._custody_dir is None or not attachment_key_ok(key):
+            return None
+        root = realpath(self._custody_dir) + "/"
+        filename = realpath(root + key)
+        if not filename.startswith(root):
+            return None
+        return Path(filename)
+
     async def put_attachment(self, req: web.Request) -> web.Response:
         if self._custody_dir is None:
             return web.json_response({"error": "custody disabled"}, status=404)
         key = req.match_info["key"]
-        if not attachment_key_ok(key):
+        path = self._custody_path(key)
+        if path is None:
             return web.json_response({"error": "bad key"}, status=400)
         data = await req.clone(client_max_size=MAX_ATTACHMENT_BYTES + 1).read()
         if len(data) > MAX_ATTACHMENT_BYTES:
             return web.json_response({"error": "too large"}, status=413)
-        path = self._custody_dir / basename(key)
         if path.is_file() and path.read_bytes() != data:
             return web.json_response({"error": "key conflict"}, status=409)
         path.write_bytes(data)
@@ -1843,9 +1852,9 @@ class DiscordBridge:
         if self._custody_dir is None:
             return web.json_response({"error": "custody disabled"}, status=404)
         key = req.match_info["key"]
-        if not attachment_key_ok(key):
+        p = self._custody_path(key)
+        if p is None:
             return web.json_response({"error": "bad key"}, status=400)
-        p = self._custody_dir / basename(key)
         if not p.is_file():
             return web.json_response({"error": "unknown"}, status=404)
         return web.Response(body=p.read_bytes())

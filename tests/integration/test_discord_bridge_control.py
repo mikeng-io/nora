@@ -991,6 +991,23 @@ async def test_attachment_body_limit_applies_only_to_uploads(bridge, monkeypatch
     assert ordinary.status == 413
 
 
+@pytest.mark.parametrize("method", ["PUT", "GET"])
+async def test_attachment_paths_stay_in_custody(bridge, method):
+    client = bridge["http"]
+    auth = {"Authorization": f"Bearer {TOKEN}"}
+    outside = bridge["tmp"] / "outside"
+    outside.write_bytes(b"outside custody")
+    (bridge["tmp"] / "custody" / "escape").symlink_to(outside)
+    refused = await client.request(method, "/v1/attachments/escape",
+                                   data=b"outside custody", headers=auth)
+    assert refused.status == 400
+    assert outside.read_bytes() == b"outside custody"
+    accepted = await client.put("/v1/attachments/safe", data=b"safe", headers=auth)
+    assert accepted.status == 200
+    got = await client.get("/v1/attachments/safe", headers=auth)
+    assert got.status == 200 and await got.read() == b"safe"
+
+
 async def test_actions_and_capture_fail_closed_without_collaborators(bridge):
     """The collaborator fence: no `ActionService` → `/v1/actions` is
     `unavailable` (503), and NO SDK side-effect is attempted; no
