@@ -779,3 +779,61 @@ def test_full_backend_replaces_the_nonblocking_measurement():
     assert record["if"] == "${{ github.event_name != 'pull_request' && success() }}"
     assert record["with"]["name"].startswith("testmon-data-")
     assert record["with"]["if-no-files-found"] == "error"
+
+
+def _release_repo_with_symlink(root: Path, mode: int = 0o120000) -> dict:
+    """Base/head where nora/__init__.py is a symlink (or a mode-100755 file):
+    the raw diff is modification-only but the object is not a regular file."""
+    def run(*args):
+        return subprocess.run(["git", *args], cwd=root, check=True,  # noqa: S603
+                              capture_output=True, text=True)
+    root.mkdir(parents=True, exist_ok=True)
+    run("init", "-q")
+    run("config", "user.email", "t@t")
+    run("config", "user.name", "t")
+    for rel, content in {
+        "pyproject.toml": '[project]\nversion = "1.0.0"\n',
+        "uv.lock": '[[package]]\nname = "nora"\nversion = "1.0.0"\n',
+        ".release-please-manifest.json": '{\n  ".": "1.0.0"\n}\n',
+        "CHANGELOG.md": "# changelog\n",
+        "real_v1.py": "X = 10\n", "real_v2.py": "X = 11\n",
+    }.items():
+        (root / rel).write_text(content)
+    link = root / "nora/__init__.py"
+    link.parent.mkdir(parents=True)
+    if mode == 0o120000:
+        link.symlink_to('__version__ = "1.0.0"')
+        run("add", ".")
+        run("commit", "-qm", "base")
+        base = run("rev-parse", "HEAD").stdout.strip()
+        link.unlink()
+        link.symlink_to('__version__ = "1.0.1"')
+    else:
+        (root / "nora").mkdir(exist_ok=True)
+        link.write_text('__version__ = "1.0.0"\n')
+        os.chmod(link, mode)
+        run("add", ".")
+        run("commit", "-qm", "base")
+        base = run("rev-parse", "HEAD").stdout.strip()
+        link.write_text('__version__ = "1.0.1"\n')
+        os.chmod(link, mode)
+    run("add", "-A")
+    run("commit", "-qm", "retarget")
+    head = run("rev-parse", "HEAD").stdout.strip()
+    return {"pull_request": {
+        "base": {"sha": base},
+        "head": {"sha": head, "ref": ci_plan.RELEASE_HEAD_REF,
+                 "repo": {"full_name": "mikeng-io/nora"}},
+    }}
+
+
+def test_a_symlink_retarget_is_not_a_release_diff(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
+    event = _release_repo_with_symlink(tmp_path / "ln")
+    assert not ci_plan.release_eligible(tmp_path / "ln", event)
+
+
+def test_an_executable_release_file_is_not_eligible(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
+    event = _release_repo_with_symlink(tmp_path / "x", mode=0o100755)
+    assert not ci_plan.release_eligible(tmp_path / "x", event)

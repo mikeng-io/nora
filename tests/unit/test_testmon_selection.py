@@ -326,3 +326,40 @@ def test_a_nora_data_file_stays_all_even_with_a_valid_record(recorded):
     (recorded / "nora").mkdir()
     (recorded / "nora/doctrine.md").write_text("# doctrine\n")
     assert select(["nora/doctrine.md"], recorded) == ALL
+
+
+def test_a_test_in_a_namespace_subdir_is_all_not_silently_dropped(tmp_path):
+    """Under a REGULAR tests package grimp drops a dir without __init__.py —
+    the completeness guard turns a scanned module the resolver missed into
+    ALL, never a silent []."""
+    repo = _shape_repo(tmp_path / "repo", _INIT_REEXPORT, _TARGET_DIRECT)
+    (repo / "tests/__init__.py").write_text("")  # tests is a real package
+    (repo / "tests/sub").mkdir()
+    (repo / "tests/sub/test_target.py").write_text(
+        "from pkg.settings import LIMIT\n\ndef test_sub():\n    assert LIMIT == 10\n"
+    )
+    done = _pytest(repo, "--testmon")
+    assert done.returncode == 0
+    (repo / "pkg/settings.py").write_text("LIMIT = 111\n")
+    assert select(["pkg/settings.py"], repo) == ALL
+    # positive control: the SAME layout with __init__.py narrows correctly
+    (repo / "tests/sub/__init__.py").write_text("")
+    done = _pytest(repo, "--testmon")
+    assert done.returncode == 0
+    selected = select(["pkg/settings.py"], repo)
+    assert selected != ALL
+    assert "tests/sub/test_target.py" in selected
+
+
+def test_every_collectible_test_dir_is_a_package():
+    """The real repo can never slide into namespace test dirs: every tests/
+    dir holding a collectible test file has __init__.py, so the completeness
+    guard does not turn every production edit into ALL."""
+    root = Path(__file__).resolve().parents[2]
+    offenders = [
+        d for d in (root / "tests").rglob("*") if d.is_dir()
+        and any(f.name.startswith("test_") and f.suffix == ".py"
+                for f in d.glob("*.py"))
+        and not (d / "__init__.py").is_file()
+    ]
+    assert offenders == []

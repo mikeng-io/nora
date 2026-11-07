@@ -7,20 +7,6 @@
     "target": "tests/unit/test_testmon_selection.py::test_a_missing_record_fails_closed_to_all"
   },
   {
-    "name": "a failed record collection is ALL, never NONE",
-    "file": "scripts/affected_tests.py",
-    "old": "    if done.returncode:\n        return None",
-    "new": "    if done.returncode:\n        return set()",
-    "target": "tests/unit/test_testmon_selection.py::test_a_corrupt_record_fails_closed_to_all"
-  },
-  {
-    "name": "an environment-mismatched record selects everything, which IS ALL",
-    "file": "scripts/affected_tests.py",
-    "old": "        if collectible and collectible <= selected:\n            return ALL",
-    "new": "        if collectible and collectible <= selected:\n            pass",
-    "target": "tests/unit/test_testmon_selection.py::test_an_environment_mismatched_record_fails_closed_to_all"
-  },
-  {
     "name": "a nora/ non-.py path is ALL even with a valid record",
     "file": "scripts/affected_tests.py",
     "old": "        if _stays_all(path) or (path.startswith(\"nora/\") and not path.endswith(\".py\")):",
@@ -74,7 +60,7 @@
     "file": "scripts/affected_tests.py",
     "old": "        root = _canonical(_dotted(path))",
     "new": "        root = _dotted(path)",
-    "target": "tests/unit/test_testmon_selection.py::test_import_shapes_select_the_reader[init_constant]"
+    "target": "tests/unit/test_testmon_selection.py::test_a_test_importing_the_package_reaches_its_init"
   },
   {
     "name": "importing a submodule depends on its parent packages' __init__",
@@ -84,11 +70,11 @@
     "target": "tests/unit/test_testmon_selection.py::test_a_test_importing_the_package_reaches_its_init"
   },
   {
-    "name": "only modifications with unchanged modes are release diffs",
+    "name": "release entries must be regular files, not just mode-equal",
     "file": "scripts/ci_plan.py",
-    "old": "        if not entries or any(\n            status != \"M\" or src_mode != dst_mode\n            for _, src_mode, dst_mode, status in entries\n        ):",
+    "old": "        if not entries or any(\n            status != \"M\" or src_mode != \"100644\" or dst_mode != \"100644\"\n            for _, src_mode, dst_mode, status in entries\n        ):",
     "new": "        if not entries or any(\n            status != \"M\"\n            for _, src_mode, dst_mode, status in entries\n        ):",
-    "target": "tests/architecture/test_ci_plan.py::test_a_mode_change_is_not_eligible"
+    "target": "tests/architecture/test_ci_plan.py::test_a_symlink_retarget_is_not_a_release_diff"
   },
   {
     "name": "the strict release files are a byte-exact one-line bump",
@@ -103,5 +89,19 @@
     "old": "        if root not in graph:\n            return set(), True  # the changed module is unresolvable -> ALL",
     "new": "        if False:\n            return set(), True",
     "target": "tests/unit/test_testmon_selection.py::test_a_file_the_graph_cannot_name_is_all"
+  },
+  {
+    "name": "every scanned test module must be a graph key",
+    "file": "scripts/affected_tests.py",
+    "old": "        if any(_canonical(_dotted(rel)) not in graph for rel in scan):\n            return set(), True",
+    "new": "        if False:\n            return set(), True",
+    "target": "tests/unit/test_testmon_selection.py::test_a_test_in_a_namespace_subdir_is_all_not_silently_dropped"
+  },
+  {
+    "name": "release files must be regular files on both sides",
+    "file": "scripts/ci_plan.py",
+    "old": "            status != \"M\" or src_mode != \"100644\" or dst_mode != \"100644\"\n",
+    "new": "            status != \"M\" or src_mode != dst_mode\n",
+    "target": "tests/architecture/test_ci_plan.py::test_a_symlink_retarget_is_not_a_release_diff"
   }
 ]

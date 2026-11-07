@@ -281,7 +281,7 @@ def release_eligible(repo: Path, event: dict) -> bool:
         range_ = f"{base['sha']}...{head['sha']}"
         entries = _diff_entries(repo, range_)
         if not entries or any(
-            status != "M" or src_mode != dst_mode
+            status != "M" or src_mode != "100644" or dst_mode != "100644"
             for _, src_mode, dst_mode, status in entries
         ):
             return False

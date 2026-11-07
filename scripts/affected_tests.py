@@ -514,6 +514,11 @@ def _importers(
     helper = False
     frontier = {_dotted(path)}
     if graph is not None:
+        # completeness: every scanned module must be a graph key — a test or
+        # helper the resolver could not see (a namespace test dir without
+        # __init__.py) would otherwise be silently dropped from selection.
+        if any(_canonical(_dotted(rel)) not in graph for rel in scan):
+            return set(), True
         root = _canonical(_dotted(path))
         if root not in graph:
             return set(), True  # the changed module is unresolvable -> ALL
