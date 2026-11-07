@@ -22,6 +22,7 @@ jobs:
       plan: ${{ steps.plan.outputs.plan }}
       readers: ${{ steps.plan.outputs.readers }}
       docs_only: ${{ steps.plan.outputs.docs_only }}
+      testmon: ${{ steps.plan.outputs.testmon }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,6 +53,9 @@ jobs:
     if: ${{ always() && (needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan)['contracts']) }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
     env:
       NORA_TEST_MAX_WORKERS: '4'
     steps:
@@ -94,19 +98,72 @@ jobs:
           tests/test_architecture_doc.py tests/test_docs.py
           tests/test_boundaries.py tests/test_deploy_assets.py
           tests/unit/test_release_deployment.py tests/unit/test_verify_deploy.py
+      - name: Dependency record for selection
+        if: ${{ github.event_name == 'pull_request' && needs.classify.outputs.testmon == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run python -m scripts.testmon_record fetch || true
+      - name: Release pull request waits on the base commit's full run
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'release-please--branches--master--components--nora' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run python -m scripts.ci_plan release
       - name: Selected backend acceptance
+        if: ${{ github.event.pull_request.head.ref != 'release-please--branches--master--components--nora' }}
         env:
           READERS: ${{ needs.classify.outputs.readers }}
+          TESTMON: ${{ needs.classify.outputs.testmon }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           uv run python - <<'PYTEST'
           import json, os, subprocess, sys
           targets = json.loads(os.environ['READERS'])
-          if targets == 'ALL':
-              subprocess.run([sys.executable, '-m', 'scripts.pytest_gate', '--junit-dir', 'backend-results'], check=True)
-          elif targets:
-              subprocess.run([sys.executable, '-m', 'scripts.pytest_gate', '--junit-dir', 'backend-results', *targets], check=True)
+          if targets != 'ALL' and os.environ.get('TESTMON') == 'true':
+              from pathlib import Path
+              if Path('.testmondata').is_file():
+                  done = subprocess.run(
+                      [sys.executable, 'scripts/affected_tests.py', '--base', os.environ['BASE_SHA']],
+                      capture_output=True, text=True,
+                  )
+                  line = done.stdout.strip()
+                  if done.returncode or not line or line == 'ALL':
+                      targets = 'ALL'
+                  elif line != 'NONE':
+                      targets = line.split()
+                  else:
+                      targets = []
+              else:
+                  targets = 'ALL'
+          command = (
+              [sys.executable, '-m', 'scripts.pytest_gate', '--junit-dir', 'backend-results']
+              if targets == 'ALL'
+              else [sys.executable, '-m', 'scripts.pytest_gate', '--junit-dir', 'backend-results', *targets]
+              if targets
+              else None
+          )
+          if command is not None:
+              if os.environ.get('EVENT_NAME') in ('push', 'schedule', 'workflow_dispatch'):
+                  command.append('--testmon')
+              subprocess.run(command, check=True)
           PYTEST
 
+      - name: Escape report
+        if: ${{ github.event_name == 'push' && !cancelled() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run python -m scripts.ci_plan escape >> "$GITHUB_STEP_SUMMARY"
+      - id: dephash
+        if: ${{ github.event_name != 'pull_request' && !cancelled() }}
+        run: echo "hash=$(uv run python -m scripts.testmon_record hash)" >> "$GITHUB_OUTPUT"
+      - name: Upload dependency record
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ github.event_name != 'pull_request' && !cancelled() }}
+        with:
+          name: testmon-data-${{ steps.dephash.outputs.hash }}-${{ github.sha }}
+          path: .testmondata
+          retention-days: 30
+          if-no-files-found: error
       - name: Per-file durations
         if: ${{ !cancelled() }}
         run: |

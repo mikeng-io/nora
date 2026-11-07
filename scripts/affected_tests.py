@@ -18,18 +18,53 @@ empty as "docs-only, run nothing" would let a crash (git missing, an import
 error, a bug in a rule) pass `make gate` with zero tests run. `main` turns ANY
 exception into `ALL` on stdout and the reason on stderr.
 
-Fails closed by construction: `select` classifies EACH changed path, the
-default for a path no rule names is `ALL`, and one `ALL` anywhere in the diff
-makes the whole answer `ALL`. A confident wrong subset is the one failure mode
-this script must never have — a slow correct answer beats a fast
-wrong one. The classes, in order:
+Fails closed by construction: `select` classifies EACH changed path, and one
+`ALL` anywhere in the diff makes the whole answer `ALL`. A confident wrong
+subset is the one failure mode this script must never have — a slow correct
+answer beats a fast wrong one.
 
-* `nora/**`, any extension: `ALL`. The application loads `nora/doctrine`,
-  `nora/dreamer`, `nora/skills` and `nora/documents/catalog-prompt.md` at
-  runtime, and every `.py` is imported by dozens of tests. A hand-kept reader
-  list for these goes stale.
-* README guides under `tests/` (excluding fixtures) use doc readers below.
-* Other `tests/**`: a collectible `test_*.py` that still exists selects itself, the
+TWO SOURCES OF DEPENDENCY, each used for what it can see, combined in `select`.
+
+Python code: the recorded dependency map (`pytest-testmon`, `.testmondata`,
+fetched by `scripts.testmon_record`). A full run records, per test, the code
+blocks it executed as content checksums; `_testmon_targets` replays the
+selection read-only and returns the files whose recorded blocks changed. A
+missing, unreadable, corrupt or environment-mismatched record yields `ALL`,
+never `NONE` — testmon's own environment check (installed packages + Python
+version) also selects everything on mismatch, and a selection covering every
+collectible test file IS `ALL`. The map compares content, so a record made at
+any `master` commit selects correctly for a branch cut from another. Its known
+floor: code-block granularity (a comment outside every tracked block may not
+register) and it cannot see a file a test reads as data — the reader scan
+owns those.
+
+Everything else: the reader scan below. Its coverage is every non-`.py` path
+outside `nora/` — documents, `app/`, `deploy/`, `scripts/` non-Python,
+configs — plus `.py` files a test only runs as a subprocess (their dotted
+module name, `scripts.release_plan`, counts as a literal, which testmon cannot
+see). A path no test names selects nothing.
+
+`stays ALL`, deliberately:
+
+* any non-`.py` file under `nora/`: doctrine, skills and prompts are opened by
+  loader code at a path computed at runtime, which neither source can see;
+* `pyproject.toml`, `uv.lock`, `Makefile`, `Dockerfile`, `docker-compose.yml`,
+  `.github/workflows/**`, any `conftest.py`, `tests/builders.py`: they change
+  the environment or every test;
+* a missing, unreadable, corrupt or environment-mismatched record;
+* a selector crash (any exception in `main`).
+
+The classes, in order:
+
+* `.claude/skills/<name>` canonical links to in-repo `.agents/skills/<name>`
+  select the agent-skill contract and the linked SKILL.md's document readers.
+  Missing, redirected or escaping links remain unclassified (`ALL`).
+* ANY path named in the `file` field of a `scripts/mutations/*.json` entry also
+  selects `tests/architecture/test_mutation_tables_anchor_to_their_source.py`
+  (read from the tables at select time, so a new table is covered with no edit
+  here): the anchor test reads those files by a name held in data, which no
+  literal in a test module shows the scan.
+* `tests/**`: a collectible `test_*.py` that still exists selects itself, the
   whole of `tests/architecture/` (the meta tests: they read `tests/` itself, so
   an added, edited or deleted test can redden them — a new `tests/test_zz.py`
   reddens `test_tests_root_takes_no_new_files`, a new test that reads
@@ -39,25 +74,15 @@ wrong one. The classes, in order:
   below finds reading it. Any other path (`conftest.py`, `builders.py`,
   fixtures, a deleted or renamed-away test) is `ALL`: a helper is imported by
   many modules and collects nothing itself, and a deleted test can break the
-  tests that enumerate tests.
-* documentation and data files outside the code trees (`.md` anywhere but
-  `nora/`, `evals/`, `scripts/`; any `.md/.txt/.json/.toml/.yaml/.yml` under
-  `docs/`, `design/`): the tests that READ them, found by scanning `tests/` at
-  select time (`_readers`), plus the universal doc-reference scan for a `.md`.
-  A file read by a shared test helper is `ALL`. Byte-exact untracked Git LFS post-hooks
-  are ignored as generated installation noise; modified/symlink/tracked hooks are not.
-* Canonical `.claude/skills/<name>` links to in-repo `.agents/skills/<name>`
-  select the agent-skill contract and the linked SKILL.md's document readers.
-  Missing, redirected or escaping links remain unclassified (`ALL`).
-* ANY path named in the `file` field of a `scripts/mutations/*.json` entry also
-  selects `tests/architecture/test_mutation_tables_anchor_to_their_source.py`
-  (read from the tables at select time, so a new table is covered with no edit
-  here): the anchor test reads those files by a name held in data, which no
-  literal in a test module shows the scan.
-* everything else (`scripts/`, `evals/`, `app/` code, `deploy/` non-markdown,
-  `pyproject.toml`, `uv.lock`, `Makefile`, `Dockerfile`, `docker-compose.yml`,
-  `config.example.toml`, `policy.example.toml`, `identity.example.toml`,
-  `.github/workflows/**`, `scripts/mutations/*.json`): `ALL`.
+  tests that enumerate tests. README guides under `tests/` (excluding
+  fixtures) are documents and fall through to the reader scan.
+* `.py` outside `tests/` (`nora/`, `evals/`, `scripts/`, anywhere else): the
+  recorded dependency map, plus the reader scan for the subprocess case.
+* every other non-`.py` path: the reader scan — the tests that READ it, found
+  by scanning `tests/` at select time (`_readers`), plus the universal
+  doc-reference scan for a `.md`. A file read by a shared test helper is
+  `ALL`. Byte-exact untracked Git LFS post-hooks are ignored as generated
+  installation noise; modified/symlink/tracked hooks are not.
 
 WHY A SCAN, NOT A TABLE. A table of which tests read which `.md` is updated
 by whoever remembers, and a test added later that reads a doc leaves it
@@ -72,21 +97,23 @@ and whether the module traverses a directory (`glob`/`rglob`/`iglob`/`iterdir`/
 `walk`/`listdir`/`scandir` or `git ls-files`). A module reads path P if a
 literal is P, ends P (`computer/README.md`), equals P's basename, is a glob P
 matches (`*.md`), is P's extension (`.md`, always: it catches
-`f"{name}.md"`), or, only when the module traverses, is a directory containing
-P. A shared helper or conftest (collects nothing, imported by an unknown set of
-modules) that matches by ANY of those makes the answer `ALL`; so a deploy
-README is `ALL` while `tests/unit/nora_computer_harness.py` walks
+`f"{name}.md"`), is, for a `.py` P, P's dotted module name
+(`scripts.release_plan`), or, only when the module traverses, is a directory
+containing P. A shared helper or conftest (collects nothing, imported by an
+unknown set of modules) that matches by ANY of those makes the answer `ALL`;
+so a deploy README is `ALL` while `tests/unit/nora_computer_harness.py` walks
 `deploy/computer`. It over-selects on purpose.
 
 What the scan CANNOT see, stated because the omission is the whole risk:
 - a path built with no literal naming the file, directory, glob or extension
   (`ROOT / name` with `name` read from a data file or computed). The mutation
   tables are the one such case found and have their own rule above;
-- a read made by code a test calls (a `nora/` function that opens a file): the
-  file must then sit under `nora/`, which is `ALL`, or be named by the test;
-- an import of a test module through `importlib` or a string.
-That residual is why the doc classes only ever NARROW within docs trees and the
-code trees are `ALL`.
+- a read made by code a test calls (a `nora/` function that opens a file): a
+  non-`.py` file so read sits under `nora/`, which is `ALL`, or is named by
+  the test;
+- an import of a test module through `importlib` or a string;
+- a file that changes what pytest runs without being read by a test —
+  build, workflow and environment files, which is why they are `ALL` by name.
 """
 
 from __future__ import annotations
@@ -111,11 +138,20 @@ ALL = "ALL"
 NONE = "NONE"
 
 # Code trees whose `.md` is not documentation for selection purposes. `nora/`
-# is loaded or imported by the application, so every file in it, any extension,
-# falls through every class below to the ALL default; naming it here is what
-# keeps its `.md` (doctrine, dreamer, skills, documents/catalog-prompt.md) out
-# of the doc classes.
+# non-`.py` files are runtime-loaded at computed paths, so `nora/**` non-`.py`
+# is ALL outright; the other trees' `.md` narrows to its readers.
 _CODE_TREE_PREFIXES = ("nora/", "evals/", "scripts/")
+
+# The recorded dependency map (module docstring), one SQLite file per checkout.
+_TESTMON_DB = ".testmondata"
+
+# Files that change the environment or every test, so they never narrow — no
+# test needs to read them for the rule to hold.
+_ALWAYS_ALL_PATHS = frozenset({
+    "pyproject.toml", "uv.lock", "Makefile", "Dockerfile",
+    "docker-compose.yml", "alembic.ini", "tests/builders.py",
+})
+_ALWAYS_ALL_PREFIXES = (".github/workflows/", ".githooks/")
 
 # Whole-directory docs trees: a data file under them is looked up in the scan.
 _DOCS_TREE_PREFIXES = ("docs/", "design/")
@@ -312,6 +348,9 @@ def _reads(facts: _TestFacts, path: str, *, loose: bool = True) -> bool:
             continue
         if lit in (path, name) or path.endswith("/" + lit):
             return True
+        # a subprocess run names the module, not the file: 'scripts.release_plan'
+        if path.endswith(".py") and lit == path[:-3].replace("/", "."):
+            return True
         if not loose:
             continue
         if any(c in lit for c in "*?["):
@@ -385,6 +424,72 @@ def _mutation_files(repo: Path) -> set[str]:
 # --- classification ---------------------------------------------------------
 
 
+def _stays_all(path: str) -> bool:
+    """Environment/build files that can change every test's result (module
+    docstring's "stays ALL" list); any `conftest.py` anywhere qualifies."""
+    return (
+        path in _ALWAYS_ALL_PATHS
+        or path.startswith(_ALWAYS_ALL_PREFIXES)
+        or path.rsplit("/", 1)[-1] == "conftest.py"
+    )
+
+
+def needs_record(path: str) -> bool:
+    """A path the recorded dependency map answers for: a `.py` outside
+    `tests/` that is not an environment file."""
+    return (
+        path.endswith(".py")
+        and not path.startswith("tests/")
+        and not _stays_all(path)
+    )
+
+
+def _testmon_targets(repo: Path) -> set[str] | None:
+    """Test files the recorded dependency map selects for the tree as it stands.
+
+    None when the record is absent or unusable — the caller fails closed to
+    ALL. Selection replays read-only (`--testmon-nocollect`); a corrupt record
+    or a crashed collection is a nonzero exit here, also ALL upstream. An
+    environment-mismatched record selects everything (the map's own packages +
+    Python check), which `select` normalises to ALL.
+    """
+    if not (repo / _TESTMON_DB).is_file():
+        return None
+    try:
+        done = subprocess.run(  # noqa: S603 - this interpreter, fixed pytest argv
+            [
+                sys.executable, "-m", "pytest", "-q", "--collect-only", "tests",
+                "--testmon", "--testmon-nocollect", "--testmon-forceselect",
+            ],
+            cwd=repo, capture_output=True, text=True, check=False, timeout=300,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode:
+        return None
+    files = set()
+    for line in done.stdout.splitlines():
+        file = line.split("::", 1)[0].strip()
+        if file.endswith(".py"):
+            files.add(file)
+    return files
+
+
+def _fetch_record(repo: Path) -> str:
+    """Try the shared artifact store for a matching record; fail closed."""
+    script = Path(__file__).resolve().parent / "testmon_record.py"
+    try:
+        done = subprocess.run(  # noqa: S603 - this interpreter, repo script
+            [sys.executable, str(script), "fetch", "--repo", str(repo)],
+            capture_output=True, text=True, check=False, timeout=180,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unavailable (fetch failed)"
+    if done.returncode or not (repo / _TESTMON_DB).is_file():
+        return "unavailable (no matching artifact)"
+    return "fetched"
+
+
 def _is_collectible_test_file(path: str) -> bool:
     """Would pytest actually collect tests out of this file?
 
@@ -435,13 +540,20 @@ def _is_doc_or_data(path: str, repo: Path = ROOT) -> bool:
     return path.startswith(_DOCS_TREE_PREFIXES) and ext in _DATA_EXTENSIONS
 
 
-def select(changed: list[str], repo: Path = ROOT) -> list[str] | str:
+def select(
+    changed: list[str], repo: Path = ROOT, *, testmon: bool = True,
+) -> list[str] | str:
     """Decide the pytest targets for a changed-path list.
 
     Returns either a list of pytest targets (possibly empty — meaning a rule
     found that nothing reads this diff) or the literal string `ALL`. Each path
     is classified on its own (module docstring); the answer is the union, and
-    one `ALL` anywhere makes it `ALL`. A path no class names is `ALL`.
+    one `ALL` anywhere makes it `ALL`.
+
+    `testmon=False` defers the recorded-map class entirely — `ci_plan` uses it
+    because the record only exists inside the contracts job; it reports
+    `needs_record` paths separately and the job re-runs this same function
+    with the record fetched.
     """
     if not changed:
         return []
@@ -449,12 +561,15 @@ def select(changed: list[str], repo: Path = ROOT) -> list[str] | str:
     targets: set[str] = set()
     scan: dict[str, _TestFacts] | None = None
     mutated = _mutation_files(repo)
+    python_paths: list[str] = []
 
     for path in changed:
         skill_document = _agent_skill_document(path, repo)
         if skill_document is not None:
             targets.add("tests/architecture/test_agent_skills.py")
             path = skill_document
+        elif path.startswith(".claude/skills/"):
+            return ALL  # a link that is not the canonical copy is unclassified
         if path in mutated:
             targets.add(_MUTATION_ANCHOR_TEST)
         if path.startswith("tests/") and not _is_doc_or_data(path, repo):
@@ -473,17 +588,41 @@ def select(changed: list[str], repo: Path = ROOT) -> list[str] | str:
                 return ALL
             targets.update({path, _META_TESTS, *readers, *importers})
             continue
-        if _is_doc_or_data(path, repo):
-            if scan is None:
-                scan = _scan_tests(repo)
-            readers, helper_reads = _readers(path, scan)
-            if helper_reads:
-                return ALL
-            targets.update(readers)
-            if path.endswith(".md"):
-                targets.add(_ANY_MD_READER)
+        if _stays_all(path) or (path.startswith("nora/") and not path.endswith(".py")):
+            return ALL
+        if path.endswith(".py"):
+            python_paths.append(path)
             continue
-        return ALL
+        # Every other non-.py path: the tests that read it, found by the scan.
+        if scan is None:
+            scan = _scan_tests(repo)
+        readers, helper_reads = _readers(path, scan)
+        if helper_reads:
+            return ALL
+        targets.update(readers)
+        if path.endswith(".md"):
+            targets.add(_ANY_MD_READER)
+
+    if python_paths and testmon:
+        selected = _testmon_targets(repo)
+        if selected is None:
+            return ALL
+        if scan is None:
+            scan = _scan_tests(repo)
+        # An environment-mismatched record selects everything; that IS ALL.
+        collectible = {rel for rel in scan if _is_collectible_test_file(rel)}
+        if collectible and collectible <= selected:
+            return ALL
+        for path in python_paths:
+            readers, helper_reads = _readers(path, scan, loose=False)
+            importers, helper_imports = _importers(path, scan)
+            if helper_reads or helper_imports:
+                return ALL
+            # imports fill the record's collection-time blind spot: a module
+            # imported only at collection (constants, types) is not in the
+            # per-test execution coverage the record is built from.
+            targets.update(readers | importers)
+        targets.update(selected)
 
     if _META_TESTS in targets:
         # the directory target already runs every file in it
@@ -519,6 +658,13 @@ def main(argv: list[str] | None = None) -> int:
             )
         print(f"affected_tests: base={base}; worktree="
               f"{args.include_worktree or args.base is None}", file=sys.stderr)
+        if any(needs_record(p) for p in changed) and not (
+            args.repo / _TESTMON_DB
+        ).is_file():
+            print(
+                f"affected_tests: dependency record {_fetch_record(args.repo)}",
+                file=sys.stderr,
+            )
         result = select(changed, args.repo)
     except Exception as exc:  # noqa: BLE001 - fail closed on ANY failure
         # Whatever went wrong (no git, no diff base, a bug in a rule), the

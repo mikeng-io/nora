@@ -7,10 +7,12 @@ import os
 import re
 import subprocess
 import sys
+import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import unquote
 
-from scripts import affected_tests
+from scripts import affected_tests, testmon_record
 
 JOBS = (
     "python",
@@ -88,6 +90,106 @@ def classify(paths: list[str], repo: Path = affected_tests.ROOT) -> dict[str, bo
         else:
             return dict.fromkeys(JOBS, True)
     return plan
+
+
+RELEASE_HEAD_REF = "release-please--branches--master--components--nora"
+_RELEASE_WAIT_SECONDS = 75 * 60
+
+
+def base_run_verdict(runs: list[dict]) -> str:
+    """The newest CI run on the release PR's base commit.
+
+    `success` only when that run completed `success`; `pending` while it is
+    still running; `missing` when no run exists; `failure` for every other
+    conclusion — a release never publishes a commit the full suite has not
+    passed.
+    """
+    if not runs:
+        return "missing"
+    latest = runs[0]
+    if latest.get("status") != "completed":
+        return "pending"
+    return "success" if latest.get("conclusion") == "success" else "failure"
+
+
+def _base_run(repo: Path, sha: str) -> list[dict]:
+    listing = json.loads(testmon_record._gh(
+        repo, "api",
+        f"repos/{testmon_record._repo_name(repo)}/actions/runs"
+        f"?head_sha={sha}&event=push&branch=master&per_page=10",
+    ))
+    return [
+        run for run in listing.get("workflow_runs", [])
+        if run.get("path") == ".github/workflows/ci.yml"
+    ]
+
+
+def _covered(selected, node_file: str) -> bool:
+    return selected == affected_tests.ALL or any(
+        node_file == target or node_file.startswith(target.rstrip("/") + "/")
+        for target in selected
+    )
+
+
+def escape_lines(failed: list[str], selected) -> list[str]:
+    """Each post-merge failure and whether the merged diff's selection ran it.
+
+    A test red on master that the diff's selection skipped is an escape — the
+    counter the design's reversal condition counts.
+    """
+    escapes = [node for node in failed if not _covered(selected, node.split("::", 1)[0])]
+    lines = [
+        "### Escape report",
+        f"failed tests: {len(failed)}, escapes (red, not selected): {len(escapes)}",
+    ]
+    for node in failed:
+        mark = "ESCAPED" if node in escapes else "selected"
+        lines.append(f"- `{node}` — {mark}")
+    return lines
+
+
+def _node_path(classname: str) -> str:
+    parts = classname.split(".")
+    for i, part in enumerate(parts):
+        if part.startswith("test_"):
+            return "/".join(parts[: i + 1]) + ".py"
+    return "/".join(parts) + ".py"
+
+
+def _junit_failures(directory: Path) -> list[str]:
+    failed = []
+    for report in sorted(directory.glob("*.xml")):
+        for case in ET.parse(report).iter("testcase"):
+            if any(child.tag in ("failure", "error") for child in case):
+                file = case.get("file") or _node_path(case.get("classname", ""))
+                failed.append(f"{file}::{case.get('name', '')}")
+    return failed
+
+
+def _escape(repo: Path, event: dict) -> list[str]:
+    """Selection the merged diff would have had, versus what actually failed.
+
+    The record just written by this run's full suite reflects the MERGED tree;
+    the pull request would have used the previous one, so the escape check
+    fetches the newest matching artifact (this run's upload happens later) and
+    puts the fresh record back afterwards.
+    """
+    fresh = repo / testmon_record.DB_NAME
+    stash = repo / (testmon_record.DB_NAME + ".recorded")
+    try:
+        if fresh.is_file():
+            fresh.rename(stash)
+        testmon_record.fetch(repo)
+        try:
+            paths = changed_paths(event, repo)
+            selected = affected_tests.select(paths, repo) if paths else affected_tests.ALL
+        except Exception:  # noqa: BLE001 - an escape report is honest, not guessed
+            selected = affected_tests.ALL
+        return escape_lines(_junit_failures(repo / "backend-results"), selected)
+    finally:
+        (repo / testmon_record.DB_NAME).unlink(missing_ok=True)
+        if stash.is_file():
+            stash.rename(fresh)
 
 
 def verify(plan: dict[str, bool], needs: dict) -> bool:
@@ -192,6 +294,21 @@ def main() -> int:
         blocked = codeql_findings(event, repo, repo / ".codeql-results")
         print(f"CodeQL findings above threshold on added PR lines: {blocked}")
         return 1 if blocked else 0
+    if sys.argv[1:] == ["release"]:
+        # A release PR does not run the suite: it waits for the full run on its
+        # base commit and passes only on `success` — never a skip.
+        sha = event["pull_request"]["base"]["sha"]
+        deadline = time.monotonic() + _RELEASE_WAIT_SECONDS
+        while True:
+            verdict = base_run_verdict(_base_run(repo, sha))
+            print(f"full run on base {sha[:12]}: {verdict}", flush=True)
+            if verdict != "pending" or time.monotonic() >= deadline:
+                break
+            time.sleep(60)
+        return 0 if verdict == "success" else 1
+    if sys.argv[1:] == ["escape"]:
+        print("\n".join(_escape(repo, event)))
+        return 0
     paths: list[str] = []
     docs: list[str] = []
     try:
@@ -199,15 +316,18 @@ def main() -> int:
         paths = changed_paths(event, repo) if has_delta else []
         plan = classify(paths, repo) if has_delta else dict.fromkeys(JOBS, True)
         docs = [p for p in paths if affected_tests._is_doc_or_data(p, repo)]
-        targets = affected_tests.select(paths, repo) if has_delta else "ALL"
-        # Use the same conservative selection as local iteration, including code.
+        # The record only exists inside the contracts job; classify defers the
+        # recorded-map class (testmon=False) and flags it for the job instead.
+        testmon = bool(paths) and any(affected_tests.needs_record(p) for p in paths)
+        targets = affected_tests.select(paths, repo, testmon=False) if has_delta else "ALL"
         error = ""
     except Exception as exc:  # noqa: BLE001 -- every selector failure broadens and fails CI
-        plan, targets, error = dict.fromkeys(JOBS, True), "ALL", str(exc)
+        plan, targets, testmon, error = dict.fromkeys(JOBS, True), "ALL", True, str(exc)
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
         print("plan=" + json.dumps(plan), file=output)
         print("readers=" + json.dumps(targets), file=output)
         print("docs_only=" + str(bool(paths) and len(docs) == len(paths)).lower(), file=output)
+        print("testmon=" + str(testmon).lower(), file=output)
         print("selection_error=" + json.dumps(error), file=output)
     # Broad work still runs; the final join must reject this error.
     return 1 if error else 0

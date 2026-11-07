@@ -1,0 +1,37 @@
+[
+  {
+    "name": "a missing dependency record is ALL, never NONE",
+    "file": "scripts/affected_tests.py",
+    "old": "    if not (repo / _TESTMON_DB).is_file():\n        return None",
+    "new": "    if not (repo / _TESTMON_DB).is_file():\n        return set()",
+    "target": "tests/unit/test_testmon_selection.py::test_a_missing_record_fails_closed_to_all"
+  },
+  {
+    "name": "a failed record collection is ALL, never NONE",
+    "file": "scripts/affected_tests.py",
+    "old": "    if done.returncode:\n        return None",
+    "new": "    if done.returncode:\n        return set()",
+    "target": "tests/unit/test_testmon_selection.py::test_a_corrupt_record_fails_closed_to_all"
+  },
+  {
+    "name": "an environment-mismatched record selects everything, which IS ALL",
+    "file": "scripts/affected_tests.py",
+    "old": "        if collectible and collectible <= selected:\n            return ALL",
+    "new": "        if collectible and collectible <= selected:\n            pass",
+    "target": "tests/unit/test_testmon_selection.py::test_an_environment_mismatched_record_fails_closed_to_all"
+  },
+  {
+    "name": "a nora/ non-.py path is ALL even with a valid record",
+    "file": "scripts/affected_tests.py",
+    "old": "        if _stays_all(path) or (path.startswith(\"nora/\") and not path.endswith(\".py\")):",
+    "new": "        if _stays_all(path):",
+    "target": "tests/unit/test_testmon_selection.py::test_a_nora_data_file_stays_all_even_with_a_valid_record"
+  },
+  {
+    "name": "test-module imports close the record's collection-time blind spot",
+    "file": "scripts/affected_tests.py",
+    "old": "            targets.update(readers | importers)",
+    "new": "            targets.update(readers)",
+    "target": "tests/unit/test_testmon_selection.py::test_a_module_level_constant_edit_selects_the_importing_test"
+  }
+]
