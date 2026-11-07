@@ -1,8 +1,7 @@
 ---
 type: design
 title: "Orient: one kind table drives what the Cognition session writes"
-description: "Operator ruling 2026-11-03. The one Cognition session (29) is an OODA loop with CMS inside each phase. Orient writes memory from one kind table — per kind its meaning, when it is created, its evidence, its relations, its writer and its correction — that admission enforces; the instruction's memory part states each kind with its create-when and an example, and renders the kind and relation names from the same constants. Restores the resolution candidates 29 dropped. Measured by recorded-wake replay, profile lines included."
-timestamp: '2026-11-03'
+description: "The one Cognition session (29) is an OODA loop with CMS inside each phase. Orient writes memory from one kind table — per kind its meaning, when it is created, its evidence, its relations, its writer and its correction — that admission enforces; the instruction's memory part states each kind with its create-when and an example, and renders the kind and relation names from the same constants. Resolution candidates are part of Observe. Measured by recorded-wake replay, profile lines included."
 edges:
   - {dst: 29-one-cognition-session, rel: amends, provenance: operator-requested}
   - {dst: 27-the-memory-is-a-graph, rel: depends_on, provenance: asserted}

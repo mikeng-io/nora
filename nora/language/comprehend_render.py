@@ -244,8 +244,14 @@ memory_propose with the item's index in `items`, a `statements` list, and
 cites its rows in `cite`. The tool checks citations and handles and tells you
 what it refused — rewrite the refused statements and propose again until every
 item is covered by a saved statement or named nothing_here.
-2. What the item needs of the notebook, whether anything should reach a room
-as a reminder, and how it closes follow the guidance below.
+2. Then ask what the item needs of the notebook: a note for what is still
+open (note_create, note_revise, note_set_status, note_merge), an event for a
+dated thing people will attend (event_propose, event_revise, event_set_status),
+a memo for what is settled and kept (memo_create, memo_revise, memo_set_status).
+Check what is already written down before you write.
+3. Decide whether anything should reach a room as a reminder (remind,
+remind_move, remind_cancel), or deserves another look later as a wake
+(wake_at, wake_move, wake_cancel).
 </steps>
 
 <memory>

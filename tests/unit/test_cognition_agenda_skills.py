@@ -332,6 +332,12 @@ async def test_every_name_the_instruction_and_the_skill_use_is_one_the_session_h
     assert unreal_names(prelude + orient + skill, real) == set()
     named = set(re.findall(r"`([^`\n]+)`", prelude + orient + skill))
     assert {"no_change", "anchor_date", "i_owe"} <= named, "the positive control: names are used"
+    # every verb the steps name is one the session actually exposes
+    assert {"note_create", "note_revise", "note_set_status", "note_merge",
+            "event_propose", "event_revise", "event_set_status",
+            "memo_create", "memo_revise", "memo_set_status",
+            "remind", "remind_move", "remind_cancel",
+            "wake_at", "wake_move", "wake_cancel"} <= real
 
 
 async def test_the_name_scan_flags_an_invented_verb_backticked_or_not():
