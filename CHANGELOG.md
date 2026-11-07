@@ -1,5 +1,28 @@
 # Changelog
 
+## [7.16.4](https://github.com/mikeng-io/nora/compare/v7.16.3...v7.16.4) (2026-11-07)
+
+
+### Bug Fixes
+
+* **ci:** close six selection and record-safety defects from review ([6adca1b](https://github.com/mikeng-io/nora/commit/6adca1b0448f66a13c9de9fcb2edfa82e40df2ef))
+* **ci:** close two soundness defects in selection and release eligibility ([df774e8](https://github.com/mikeng-io/nora/commit/df774e8dc6e50370b7aff436a8d829451e380b9d))
+* **ci:** completeness-check the import graph; require regular files in release diffs ([15f0022](https://github.com/mikeng-io/nora/commit/15f0022db88cc766b0222129da0180a2f91a7e41))
+* **ci:** replace the hand-written import resolver with grimp; bound release eligibility to byte shape ([c2126af](https://github.com/mikeng-io/nora/commit/c2126af3bb4b1bcea4a003bfc1bf8b535a6162f6))
+* **cognition:** drop the attribute-outcome claims, narrow the tag exemption ([8c7383f](https://github.com/mikeng-io/nora/commit/8c7383f1faec5e1479b3ff221d3d5c06de93ce2c))
+* **cognition:** make attribute refusals honest about retry and own their cite ([e063553](https://github.com/mikeng-io/nora/commit/e063553257ba37ff8a30850c535a11b37e27ed90))
+* **cognition:** make refusal feedback part-aware and crash-free ([f519327](https://github.com/mikeng-io/nora/commit/f5193270aefe752d0baf9a9082d31e1b89022d4f))
+* **cognition:** report an attribute's real admission outcome, scope the tag exemption ([53afa0a](https://github.com/mikeng-io/nora/commit/53afa0a96a9f3a7b2b8a05028676d34feeb389e9))
+* **cognition:** restore the reading time contract and make refusals repairable ([e9a5666](https://github.com/mikeng-io/nora/commit/e9a5666b2dd28fbcb30dfe02e32b39b9119bb4b6))
+* **cognition:** steps 2 and 3 are the merged rewrite's own text ([200b9c8](https://github.com/mikeng-io/nora/commit/200b9c870e0a2926339fe04b27df9697db288843))
+* **cognition:** write the session instruction's sections as headings ([5da94c3](https://github.com/mikeng-io/nora/commit/5da94c315e512b6d984d1e4b3d75be547ce501a8))
+* **computer:** use native Chrome TLS and a fixed 1080p viewport ([70382e7](https://github.com/mikeng-io/nora/commit/70382e726258ea4c618ff838cb2e395941a3591e))
+
+
+### Changes
+
+* **cognition:** rewrite the session's memory instruction as the measured variant ([1d8b2dd](https://github.com/mikeng-io/nora/commit/1d8b2dd4e078095e58edb7e3c57081b7407fba50))
+
 ## [7.16.3](https://github.com/mikeng-io/nora/compare/v7.16.2...v7.16.3) (2026-11-07)
 
 
