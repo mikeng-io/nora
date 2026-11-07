@@ -11,11 +11,11 @@ edges:
 
 # 33 · Orient: one kind table
 
-Status: **shape ruled** by the operator, 2026-11-03 (the kind table; profile
-lines measured in the replay). The cell values below are proposed from 27 §5,
-27 §7 and [notebook-memory-types/00](../notebook-memory-types/00-design.md)
-§2–§3, and are ruled with this node's review. Docs only: nothing is built until
-the build is briefed.
+Status: **built**. The kind table is one constant that admission checks
+against; the session's instruction states each writable kind with its
+create-when and an example, and renders the kind and relation names from the
+same constants. The cell values below derive from 27 §5, 27 §7 and
+[notebook-memory-types/00](../notebook-memory-types/00-design.md) §2–§3.
 
 ## 1. What was measured
 
@@ -149,7 +149,7 @@ read rates over the whole replay set.
 - Readings written only where no relation fits make retrieval measurably
   worse in replies: then the `reading` row narrows.
 
-## Amendment 2026-11-06
+## Amendment: the statement contract
 
 §4.3's part-wise keep is extended to the statement contract: `memory_propose`
 carries self-contained statements (relation, correction, reading) with
