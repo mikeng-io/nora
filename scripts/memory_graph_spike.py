@@ -1435,6 +1435,9 @@ async def rescore_facts(directory: Path, judges: Judges) -> dict[str, Any]:
             frozen = path.parent.parent / f"session-{index}.json"
             if frozen.exists():
                 data = json.loads(frozen.read_text())
+                frozen_sessions = recorded_fact_sessions(data["events"])
+                if len(frozen_sessions) != 1 or frozen_sessions[0]["events"] != session["events"]:
+                    raise ValueError("source_session_events_mismatch")
                 crosscheck_fact_input(session, data["inspection"],
                                       evidence_exchanges(data["events"]))
             if inputs:

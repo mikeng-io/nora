@@ -156,7 +156,7 @@ async def test_empty_output_or_missing_reason_is_fatal(tmp_path, raw):
     assert validate_events(read_events(evidence.path))["status"] == "ERROR"
 
 
-@pytest.mark.parametrize("disagree", [False, True])
+@pytest.mark.parametrize("disagree", [False, "inspection", "events"])
 async def test_rescore_generated_run_directory(tmp_path, monkeypatch, disagree):
     from tempfile import TemporaryFile
 
@@ -208,10 +208,14 @@ async def test_rescore_generated_run_directory(tmp_path, monkeypatch, disagree):
         # Historical failed scoring left the second frozen session absent.
         first = spike.recorded_fact_sessions(original_events)[0]
         frozen_inspection = json.loads(json.dumps(first["inspection"]))
-        if disagree:
+        if disagree == "inspection":
             frozen_inspection["agenda"] = "disagrees with recorded request"
+        frozen_events = json.loads(json.dumps(first["events"]))
+        if disagree == "events":
+            frozen_events[0]["attributes"]["body"] = json.dumps({
+                "session_id": 0, "system": "altered", "agenda": agenda, "items": []})
         spike.freeze(source / "session-0.json", {"inspection": frozen_inspection,
-                                               "events": first["events"]})
+                                               "events": frozen_events})
         assert not (source / "session-1.json").exists()
         assert not any(e["kind"] == "fact_scoring_input" for e in original_events)
         before = (original.path / "events.jsonl").read_bytes()
