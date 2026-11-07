@@ -34,7 +34,7 @@ left out.
   - The sanitizer caps an assistant `text` block's length and keeps its
     `reasoningContent` blocks (`nora/agent/tag_trace_sanitize.py`).
   - The spike reads that stored trace and reduces it to tool calls and results
-    (`tool_exchanges` in `scripts/memory_graph_spike.py`), discarding the
+    (the spike's former `tool_exchanges`), discarding the
     reasoning and text it held.
   - The stored trace is not a complete record of model calls in any case: it is
     sanitized, capped, and has no per-call request, settings, usage or routing.

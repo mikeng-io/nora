@@ -43,9 +43,9 @@ Its image and compatibility with future Postgres upgrades are adoption costs.
 In the operator shell, retain the configured production database environment
 variable: it is the refusal reference, never the destination. Load model/search
 credentials by the host's normal mechanism; do not put them in command arguments
-or copy local config files into this branch. Set the following model route and
-vendor variables to the two independently selected judges (different vendors).
-No vendor or model is selected by the harness.
+or copy local config files into this branch. The judges default to the gateway
+aliases `nora-judge` and `nora-judge-2`; each run records the model the gateway
+actually served, and judge independence is reported from those identities.
 
 ```sh
 export SPIKE_OUTPUT="$HOME/nora-spikes/memory-graph-$(date +%Y%m%d%H%M%S)"
@@ -55,8 +55,6 @@ uv run python -m scripts.memory_graph_spike \
   --policy "$HOME/workspace/nora/policy.toml" \
   --database-url postgresql+asyncpg://postgres@127.0.0.1:55432/nora_snapshot \
   --snapshot --per-stratum 20 --minimum 20 --seed 20261029 \
-  --judge-a "$SPIKE_JUDGE_A" --judge-vendor-a "$SPIKE_JUDGE_VENDOR_A" \
-  --judge-b "$SPIKE_JUDGE_B" --judge-vendor-b "$SPIKE_JUDGE_VENDOR_B" \
   --age-url postgresql+asyncpg://postgres@127.0.0.1:55433/nora_age_spike \
   --output "$SPIKE_OUTPUT"
 ```
