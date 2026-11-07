@@ -793,7 +793,6 @@ class Browser:
         self._write_lock = asyncio.Lock()
         # Only used before the browser is published to a websocket client.
         self._startup_id = 0
-        self._startup_session: str | None = None
         self._startup_reply: asyncio.Future[dict[str, Any]] | None = None
         # The page targets that existed when target discovery was armed
         # (`Target.getTargets` at start), plus every target born since:
@@ -872,7 +871,7 @@ class Browser:
                         if not isinstance(reply, dict):
                             return
                         if (reply.get("id") == self._startup_id
-                                and reply.get("sessionId") == self._startup_session):
+                                and reply.get("sessionId") is None):
                             if not self._startup_reply.done():
                                 self._startup_reply.set_result(reply)
                             continue
@@ -907,17 +906,14 @@ class Browser:
             self._own_pending.clear()
 
     async def _startup_command(
-        self, method: str, params: dict[str, Any] | None = None, session: str | None = None,
+        self, method: str, params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """One private CDP request at a time, under the activation deadline."""
+        """One browser-level CDP request at a time, under the startup deadline."""
         if self._reader is None or self._reader.done():
             raise OSError("Chrome's startup pipe is not running")
         self._startup_id += 1
-        self._startup_session = session
         self._startup_reply = asyncio.get_running_loop().create_future()
         request = {"id": self._startup_id, "method": method, "params": params or {}}
-        if session is not None:
-            request["sessionId"] = session
         try:
             await self.send(json.dumps(request))
             reply = await self._startup_reply

@@ -351,9 +351,9 @@ same bearer token: each text frame is one CDP message, relayed to Chrome's
   The pinned Chrome baseline must reject the affected incident chain and accept
   ordinary HTTPS on fresh and reused profiles, including with component updates
   disabled, before replacing that baseline (issue #210). Website certificate
-  failures remain navigation errors; an unavailable canary cannot block unrelated
-  browsing. Startup checks local CDP responsiveness within a bounded deadline;
-  failure stops Chrome/Xvfb before exposing the websocket.
+  failures remain navigation errors. Startup checks local CDP responsiveness
+  within a bounded deadline; failure stops Chrome/Xvfb before exposing the
+  websocket.
 - **Fixed 1080p.** Chrome and Xvfb start at 1920×1080. Attached pages use a
   1920×1080 CSS viewport at device scale 1 in both shared and scoped mode.
   Full-page capture can extend beyond that height and reports `partial` when its
@@ -362,8 +362,8 @@ same bearer token: each text frame is one CDP message, relayed to Chrome's
   (`-nolisten tcp`), both as the room's user, and computerd holds the pipe.
   Read on a VM built from this image (2026-10-07): only port 80 listened,
   and another room's command could read neither the room's display cookie
-  (`browser/.Xauthority`, `0600`), its profile (`browser/default`) nor
-  Chrome's file descriptors.
+  (`browser/.Xauthority`, `0600`), its private profile nor
+  Chrome's file descriptors. Current profiles live under `browser/profile-*`.
 - **One client per room's browser;** a second is `denied`. At most two rooms
   have a browser at once (`MAX_BROWSERS`); a third stops the least recently
   used idle one, or is `denied` when both have a client. A browser idle for
