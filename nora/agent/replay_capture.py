@@ -77,12 +77,12 @@ class ReplayHooks(HookProvider):
             _ATTEMPT.set(None)
             record("invocation_started")
         elif isinstance(event, BeforeModelCallEvent):
-            if event.cancel:
-                record("call_cancelled", reason=event.cancel)
-                return
             self.attempt += 1
             _ATTEMPT.set(f"{self.invocation}:{self.call}:{self.attempt}")
             record("call_started", call_id=f"{self.invocation}:{self.call}", cancelled=event.cancel)
+            if event.cancel:
+                record("call_cancelled", reason=event.cancel)
+                return
             from .reasoning_strip import dropped_reasoning_blocks
             record("reasoning_carry", dropped_blocks=dropped_reasoning_blocks(
                 event.agent.model, event.agent.messages))

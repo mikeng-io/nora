@@ -525,3 +525,83 @@ def test_private_eval_events_never_attach_bodies_to_spans(evidence_root, name):
     assert any(e["name"] == "generated-event-sink" for e in spans)
     assert not any(event["name"] == name for span in spans for event in span["events"])
     assert sentinel not in json.dumps(spans)
+
+
+@pytest.mark.parametrize("cancel_before_first", [False, True])
+async def test_cancelled_model_pass_has_its_own_complete_lifecycle(
+        evidence_root, cancel_before_first):
+    from strands.hooks import BeforeModelCallEvent, HookProvider
+
+    from nora.agent.guards import ReplyGuard
+    from nora.obs.metrics import Metrics
+    from nora.subject.eval_evidence import read_events, validate_events
+
+    class DenyModel(HookProvider):
+        def register_hooks(self, registry, **kwargs):
+            registry.add_callback(BeforeModelCallEvent, self.deny)
+
+        def deny(self, event):
+            event.cancel = "generated_policy_denial"
+
+    executions = []
+    requests = []
+
+    @tool
+    def generated_finish() -> str:
+        """Finish the generated task."""
+        executions.append("finished")
+        return "generated_complete"
+
+    async def respond(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        assert not cancel_before_first, "a denied pass must never reach the transport"
+        assert len(requests) == 1, "the terminal tool must suppress the continuation request"
+        assert body["tools"][0]["function"]["name"] == "generated_finish"
+        return httpx.Response(200, json={
+            "id": "generated", "created": 0, "object": "chat.completion",
+            "model": "generated-model", "choices": [{"index": 0, "finish_reason": "tool_calls",
+                "message": {"role": "assistant", "content": None, "tool_calls": [{
+                    "id": "generated-terminal", "type": "function", "function": {
+                        "name": "generated_finish", "arguments": "{}"}}]}}],
+            "usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as transport:
+        client = factory.create_client(base_url="https://generated.invalid/v1",
+                                       api_key="generated", http_client=transport)
+        model = factory.create_model_provider(model="generated-model", max_tokens=100,
+                                              temperature=0, client=client, tool_choice="auto")
+        model.update_config(stream=False)
+        guard = ReplyGuard(conversation_id="generated", budgets={"generated_finish": 1},
+                           terminal={"generated_finish"}, metrics=Metrics())
+        with eval_host_lock() as fd:
+            evidence = capture(fd)
+            with evidence.capture(trace.get_tracer_provider()):
+                agent = factory.create_agent(
+                    model=model, system_prompt="Generated task", tools=[generated_finish],
+                    pre_fill=[], guard=guard,
+                    tool_hooks=(DenyModel(),) if cancel_before_first else (),
+                    trace_attributes={}, retry=factory.build_retry_policy(timeout_seconds=5))
+                result = await factory.invoke(agent, "Generated input", invocation_state={},
+                                              limits=factory.build_limits(
+                                                  turns=4, output_tokens=200, total_tokens=1000))
+                assert result.stop_reason == "end_turn"
+        await client.close()
+    assert len(requests) == (0 if cancel_before_first else 1)
+    assert executions == ([] if cancel_before_first else ["finished"])
+    events = read_events(evidence.path)
+    assert validate_events(events)["status"] == "PASS"
+    cancelled = next(e for e in events if e["kind"] == "call_cancelled")
+    attempt = cancelled["attempt_id"]
+    starts = [e for e in events if e["kind"] == "call_started" and e["attempt_id"] == attempt]
+    ends = [e for e in events if e["kind"] == "call_finished" and e["attempt_id"] == attempt]
+    assert len(starts) == len(ends) == 1
+    assert starts[0]["cancelled"]
+    assert starts[0]["event_id"] != ends[0]["event_id"]
+    assert starts[0]["call_id"] == ends[0]["call_id"]
+    assert not any(e["kind"].startswith("transport_") and e["attempt_id"] == attempt
+                   for e in events)
+    assert sum(e["kind"] == "transport_started" for e in events) == len(requests)
+    # The preceding completed call, when present, cannot vouch for this pass.
+    attempts = {e["attempt_id"] for e in events if e["kind"] == "call_started"}
+    assert len(attempts) == len(requests) + 1
