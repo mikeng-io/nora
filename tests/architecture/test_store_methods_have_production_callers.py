@@ -277,6 +277,12 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         # Computer session selection and audit reads both use the bound unit scope.
         # Their independent contract suites drive the two production stores.
         "for_scope",
+        # `SqlComputerTaskStore` and `SqlBrowserTabStore` each read a scope's
+        # open rows; their contract suites drive the two stores.
+        "open_for_scope",
+        # The same pair each answer "which scopes hold open rows" — the
+        # queue's and the tab sweep's breadth reads — checked by contract.
+        "open_scopes",
         # Profile source reads share register/settle names with other owners.
         "register", "settle",
         # `SqlDocumentStore.set_state` (DEC-255) shares the name with another store's.
@@ -319,7 +325,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "assess.py", "audit.py", "bridge_store.py", "cognition_store.py",
         "comprehend.py", "lessons.py", "tension.py", "entries.py",
         "compute_jobs.py", "computer_events.py", "computer_exports.py",
-        "computer_sessions.py",
+        "computer_sessions.py", "computer_tasks.py", "browser_tabs.py",
         "character.py", "culture.py", "decision_log.py", "documents.py", "dream_schedule.py",
         "gatherings.py", "geocode_cache.py", "language.py",
         "media_descriptions.py", "media_objects.py", "memo.py", "memory_embed.py",

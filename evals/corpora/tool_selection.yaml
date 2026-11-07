@@ -305,6 +305,53 @@ cases:
     input: 你部電腦入面個notes.md寫咗啲咩？讀俾我聽
     metadata: {tools: [computer_read], not_tools: [note_read, web_fetch]}
 
+  # --- the scoped computer's own browser verbs ---------------------------------
+  # `computer_browse`/`computer_capture`/`computer_export` are the scoped
+  # computer's surface: the same anchored room, the case asks for a page the
+  # model must reach for, a picture of the tab it owns, and a file kept out.
+  # With [computer.scoped] off every draw answers unavailable — valid on both
+  # arms; on, they are the model-facing journey the tools exist for.
+  - name: route_computer_browse_a_page
+    entry: tag
+    expect: reply
+    mention: true
+    input: 去 https://example.com 睇下個標題係乜，話俾我知
+    metadata: {tools: [computer_browse], not_tools: [web_fetch, computer_run]}
+    snapshot: *room_a
+  - name: route_computer_capture_the_page
+    entry: tag
+    expect: reply
+    mention: true
+    input: screenshot 一下我頭先開嗰頁，影低俾我睇
+    metadata: {tools: [computer_capture], not_tools: [computer_browse, computer_run]}
+    snapshot: *room_a
+  - name: route_computer_export_keep_file
+    entry: tag
+    expect: reply
+    mention: true
+    input: 把workspace入面report.csv export俾我，keep住
+    metadata: {tools: [computer_export], not_tools: [computer_write, file_fetch]}
+    snapshot: *room_a
+
+  # THE SEQUENTIAL JOURNEY, one case: `required_tools` makes all three verbs
+  # execute and `before` binds their order — open the tab, capture the tab's
+  # own image, export what the capture wrote. The agent loop itself hands
+  # the owner handle from browse's reply into capture's `task` input; the
+  # grader verifies the sequence ran, the digest/audit chain stays the
+  # deterministic guest test's proof, not a routing corpus's.
+  - name: route_computer_browse_capture_export_journey
+    entry: tag
+    expect: reply
+    mention: true
+    input: 去 https://example.com，開完個頁影低佢，跟住 export 俾我 keep 住
+    metadata:
+      tools: [computer_browse]
+      required_tools: [computer_browse, computer_capture, computer_export]
+      before: {computer_browse: [computer_capture], computer_capture: [computer_export]}
+      journey: true
+      not_tools: [web_fetch, computer_run]
+    snapshot: *room_a
+
   - name: route_calculate_not_the_computer
     entry: tag
     expect: reply

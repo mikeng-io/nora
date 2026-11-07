@@ -40,6 +40,12 @@ BACKUP_DIR=${NORA_COMPUTER_BACKUP_DIR:-$HOME/nora-backups/computer-workspace}
 BACKUP_KEEP=${NORA_COMPUTER_BACKUP_KEEP:-14}
 STATE_DIR=${NORA_COMPUTER_STATE_DIR:-$HOME/.local/state/nora-computer}
 UNUSED_WORKSPACE=${NORA_COMPUTER_UNUSED_WORKSPACE:-$STATE_DIR/unused-workspace-$NAME}
+# The scope→endpoint registry `FileScopeEndpoints` reads
+# (`nora/domain/computer_vms.py`): one `<scope>.json` per provisioned scope
+# written by `nora-computer scope provision`, naming its sandbox and the
+# endpoint computerd answers on. Deleting a record is `scope revoke`; it
+# never destroys the sandbox.
+SCOPE_REGISTRY=${NORA_COMPUTER_SCOPE_REGISTRY:-$STATE_DIR/scope-endpoints}
 # The lifecycle audit (design/sandbox-runtime sec 12). A host-side spool is the
 # first record of every operator-side event, and Postgres' computer_events is the
 # record of truth it is replayed into; COMPOSE_DIR is where `docker compose exec
@@ -161,16 +167,26 @@ sys.exit(0 if any((p.get("host_ip"), p.get("host_port")) == want for p in ports)
         "$HOST_IP" "$HOST_PORT"
 }
 
-sandbox_state() {
-    sbx ls --json </dev/null | python3 -c '
+sandbox_state_for() {
+    # `sbx ls --json` is the installed contract (measured on the deploy host).
+    # Prints the sandbox's status, `absent` when sbx lists it as not there,
+    # and `unknown` when the read itself cannot be trusted — an unreadable
+    # answer is NEVER reported as absent, because callers act on `absent`.
+    sbx ls --json </dev/null 2>/dev/null | python3 -c '
 import json, sys
 name = sys.argv[1]
-for s in json.load(sys.stdin)["sandboxes"]:
-    if s["name"] == name:
-        print(s["status"]); break
+try:
+    sandboxes = json.load(sys.stdin)["sandboxes"]
+except (ValueError, KeyError, TypeError):
+    print("unknown"); sys.exit(0)
+for s in sandboxes:
+    if s.get("name") == name:
+        print(s.get("status") or "unknown"); break
 else:
-    print("absent")' "$NAME"
+    print("absent")' "$1"
 }
+
+sandbox_state() { sandbox_state_for "$NAME"; }
 
 load_token() {
     COMPUTERD_TOKEN=$(python3 - "$ENV_FILE" <<'TOKEN_PY'
@@ -796,6 +812,551 @@ cmd_destroy() {
     exit "$rc"
 }
 
+# --- scope commands: one sbx microVM per computer scope ---------------------
+#
+# `nora-computer scope provision <scope>` creates (or verifies) the scope's
+# own sandbox `nora-computer-<first 12 of scope>`, publishes computerd's port
+# on the same docker0 address the shared VM uses, applies the SAME egress
+# policy — denies BEFORE the wildcard allow, read back — and writes
+# `<SCOPE_REGISTRY>/<scope>.json` ONLY once that read-back passes: a failed
+# or unknown policy publishes nothing. `scope serve <scope>` verifies the
+# policy again and runs that scope's computerd bound to the scope
+# (`COMPUTERD_SCOPE`), so a packet for another scope is refused inside the
+# VM as well as unrouted on the host. `scope observe <scope>` is the
+# readiness phase: it asks the running VM its own /v1/identity and writes
+# the OBSERVED instance (boot_id) into the record — the two-phase contract
+# keeps an unobserved record's `instance` empty, and an empty instance
+# authorizes nothing. Re-observe after every serve/restart so the record
+# names the current boot.
+#
+# Ownership is the registry record: a live sandbox with no record, or a
+# record whose sandbox is gone or whose scope mismatches, is a CONFLICT —
+# provision refuses rather than adopt or replace it, and never deletes or
+# recreates a sandbox to escape a refusal. `scope revoke` removes only a
+# record whose sandbox is verifiably gone; it never destroys a live VM and
+# never touches /workspace. `scope backup`/`scope restore` are the
+# one-sandbox-one-disk data flow for a scope's own /workspace — restore
+# extracts over, never wipes — which the shared VM's backup does not read.
+
+scope_valid() {
+    case "${1:-}" in
+        *[!0-9a-f]*|"") return 1 ;;
+        *) [ "${#1}" -ge 16 ] && [ "${#1}" -le 64 ] ;;
+    esac
+}
+
+scope_sandbox() { printf 'nora-computer-%.12s' "$1"; }
+
+# A scope's host port is derived from the scope itself: the same scope always
+# gets the same port, and a collision shows as an already-published or a
+# refused port, never a silent share. 24000-44000 stays clear of the shared
+# VM's 18765 and of ephemeral source ports.
+scope_port() { printf '%d' $((24000 + (16#${1:0:8} % 20000))); }
+
+scope_record() { printf '%s/%s.json' "$SCOPE_REGISTRY" "$1"; }
+
+scope_state() {
+    # The scope's sandbox status through the same installed `sbx ls --json`
+    # contract as `sandbox_state` — `absent` only when the list is readable
+    # AND the sandbox is not in it; anything unreadable is `unknown`, and
+    # every caller below treats `unknown` as fail-closed, never as absent.
+    sandbox_state_for "$(scope_sandbox "$1")"
+}
+
+scope_egress() {
+    # Apply and read back the DEC-289 policy against the scope's sandbox, the
+    # same fail-closed pair `serve` runs for the shared VM: denies BEFORE the
+    # wildcard allow, and both halves read back. Exit is `egress_apply`'s /
+    # `egress_check`'s: 0 in place, 1 a violation, 2 an unreadable verdict —
+    # and an unreadable verdict is NOT a pass.
+    local NAME_saved=$NAME
+    NAME=$1
+    egress_apply && egress_check >/dev/null
+    local rc=$?
+    NAME=$NAME_saved
+    return "$rc"
+}
+
+scope_observe() {
+    # The two-phase readiness contract's second half. `provision` publishes
+    # the record with an EMPTY instance — not yet authorized; `observe` asks
+    # the running VM its own /v1/identity and writes the observed instance
+    # (its boot_id) and ready_at into the record. `FileScopeEndpoints` hands
+    # the record to `ScopedComputerdRuntime`, which refuses an empty or
+    # mismatched instance, so ONLY an observed VM ever serves the scope.
+    # Re-running observe on a changed boot_id REWRITES the instance — the
+    # record then names the new boot, and every stale tab row is expired by
+    # `expire_instance` on the Nora side. Exit: 0 published, 1 the VM's
+    # identity does not match the scope (a foreign VM answers), 2 the VM
+    # does not answer (not serving, or the port is dead).
+    local scope=${1:-} box record endpoint body instance now
+    scope_valid "$scope" || { echo "usage: nora-computer scope observe SCOPE" >&2; exit 2; }
+    record=$(scope_record "$scope")
+    [ -f "$record" ] || { echo "scope: no record for $scope — provision first" >&2; exit 6; }
+    box=$(scope_sandbox "$scope")
+    load_token
+    endpoint=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("endpoint",""))' "$record" 2>/dev/null)
+    [ -n "$endpoint" ] || { echo "scope: $record has no endpoint" >&2; exit 4; }
+    body=$(curl -s -m 5 -H "Authorization: Bearer $COMPUTERD_TOKEN" "$endpoint/v1/identity") \
+        || { echo "scope: $endpoint does not answer /v1/identity" >&2; exit 2; }
+    instance=$(SCOPE="$scope" BODY="$body" python3 - <<'EOF'
+import json, os, sys
+try:
+    ident = json.loads(os.environ["BODY"])
+except ValueError:
+    sys.exit(9)
+if ident.get("scope") != os.environ["SCOPE"]:
+    sys.exit(1)
+instance = (ident.get("instance") or ident.get("boot_id") or "").strip()
+if not instance:
+    sys.exit(9)
+print(instance)
+EOF
+    ) || { rc=$?
+        [ "$rc" = 1 ] && echo "scope: the VM answers for a DIFFERENT scope — refusing" >&2
+        [ "$rc" = 9 ] && echo "scope: /v1/identity is unreadable or has no instance" >&2
+        exit "$rc"; }
+    now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    python3 - "$record" "$instance" "$now" <<'EOF'
+import json, sys
+record, instance, now = sys.argv[1:4]
+with open(record) as f:
+    r = json.load(f)
+r["instance"] = instance
+r["ready_at"] = now
+with open(record, "w") as f:
+    json.dump(r, f)
+    f.write("\n")
+EOF
+    record_event scope_observe ok scope="$scope" instance="$instance"
+    printf '%s\n' "$record"
+}
+
+scope_provision() {
+    local scope=${1:-} box port record out rc
+    scope_valid "$scope" || { echo "usage: nora-computer scope provision SCOPE (lowercase hex, 16-64)" >&2; exit 2; }
+    box=$(scope_sandbox "$scope"); port=$(scope_port "$scope")
+    record=$(scope_record "$scope")
+    mkdir -p "$SCOPE_REGISTRY" || exit 5
+    if [ -f "$record" ]; then
+        local known known_name
+        known=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(r.get("scope",""), r.get("name",""))' "$record" 2>/dev/null)
+        known_name=${known#* }
+        if [ "${known%% *}" != "$scope" ]; then
+            echo "scope: $record does not bind to $scope — refusing to adopt it" >&2; exit 4
+        fi
+        if [ "$known_name" != "$box" ]; then
+            echo "scope: $record names $known_name, not $box — conflicting ownership" >&2; exit 4
+        fi
+        # Idempotent: record and sandbox agree. The sandbox must READ as
+        # alive (`unknown` fails closed: the state could not be measured),
+        # and the egress policy must read back BEFORE the record is handed
+        # out as ready — an existing record is no proof either holds.
+        local state
+        state=$(scope_state "$scope")
+        if [ "$state" = absent ]; then
+            echo "scope: record exists but sandbox $box is absent — stale record; revoke it first" >&2; exit 4
+        elif [ "$state" != running ]; then
+            echo "scope: sandbox $box is $state (not verifiably running)" >&2; exit 4
+        fi
+        scope_egress "$box" || {
+            echo "scope: the egress policy is NOT in place or does not read back on $box" >&2; exit 4; }
+        printf '%s\n' "$record"; exit 0
+    fi
+    local state
+    state=$(scope_state "$scope")
+    if [ "$state" != absent ]; then
+        # `running`, stopped, or `unknown` alike: a readable non-absent state
+        # is unknown ownership to refuse; `unknown` is a read that cannot
+        # prove the name is free — refusing is never a deletion to escape it.
+        echo "scope: sandbox $box is $state with no record — refusing to adopt unknown ownership" >&2; exit 4
+    fi
+    mkdir -p "$UNUSED_WORKSPACE-$box" && chmod 700 "$UNUSED_WORKSPACE-$box" || exit 5
+    log "creating scope sandbox $box for $scope (detached)"
+    if ! sbx run -d --name "$box" -m "$MEMORY" --cpus "$CPUS" --pull never -t "$IMAGE" \
+        -p "$HOST_IP:$port:80" shell "$UNUSED_WORKSPACE-$box" \
+        </dev/null >/dev/null; then
+        record_event scope_create failed scope="$scope"
+        log "scope create failed"
+        exit 6
+    fi
+    record_event scope_create ok scope="$scope" name="$box" port="$port"
+    # The egress contract is a PRECONDITION to publication: the record Nora
+    # resolves is only written after every deny reads back before the
+    # wildcard allow. On failure the sandbox stays (nothing is deleted or
+    # recreated to escape the refusal) and NO record exists to resolve.
+    if ! scope_egress "$box"; then
+        rc=$?
+        record_event scope_provision refused scope="$scope" rc="$rc"
+        echo "scope: the egress policy is NOT in place or does not read back on $box — no record published" >&2
+        exit 4
+    fi
+    python3 - "$record" "$scope" "http://$HOST_IP:$port" "$box" <<'EOF'
+import json, sys
+record, scope, endpoint, name = sys.argv[1:5]
+with open(record, "w") as f:
+    # `instance` stays EMPTY until `scope observe` publishes the VM's own
+    # /v1/identity — an empty instance authorizes nothing (fail-closed).
+    json.dump({"scope": scope, "endpoint": endpoint, "name": name, "instance": ""}, f)
+    f.write("\n")
+EOF
+    record_event scope_provision ok scope="$scope" name="$box" port="$port"
+    printf '%s\n' "$record"
+}
+
+scope_serve() {
+    local scope=${1:-} box record state
+    scope_valid "$scope" || { echo "usage: nora-computer scope serve SCOPE" >&2; exit 2; }
+    record=$(scope_record "$scope")
+    [ -f "$record" ] || { log "no record for $scope: run nora-computer scope provision $scope"; exit 6; }
+    box=$(scope_sandbox "$scope")
+    state=$(scope_state "$scope")
+    [ "$state" != unknown ] || { log "sandbox $box's state could not be read; refusing to serve"; exit 4; }
+    [ "$state" != absent ] || { log "sandbox $box is absent; provision first"; exit 6; }
+    # computerd only serves behind the policy it publishes under: verify the
+    # denies read back BEFORE starting — `unknown` is not a pass.
+    scope_egress "$box" || { log "sandbox $box is $state and its egress policy does not read back; refusing to serve"; exit 4; }
+    load_token
+    sbx exec -u root "$box" pkill -f /opt/computerd/computerd.py </dev/null >/dev/null 2>&1 || true
+    record_event scope_computerd_start ok scope="$scope" name="$box"
+    log "serving computerd for scope $scope in the foreground"
+    exec sbx exec -u root -e COMPUTERD_TOKEN -e COMPUTERD_SCOPE="$scope" "$box" \
+        /opt/computerd/venv/bin/python /opt/computerd/computerd.py --root /workspace --port 80 \
+        </dev/null
+}
+
+scope_resolve() {
+    local scope=${1:-}
+    scope_valid "$scope" || { echo "usage: nora-computer scope resolve SCOPE" >&2; exit 2; }
+    [ -f "$(scope_record "$scope")" ] || exit 1
+    cat "$(scope_record "$scope")"
+}
+
+scope_list() {
+    local f
+    for f in "$SCOPE_REGISTRY"/*.json; do
+        [ -e "$f" ] || continue
+        python3 - "$f" <<'EOF'
+import json, sys
+try:
+    r = json.load(open(sys.argv[1]))
+    print(r.get("scope", "?"), r.get("endpoint", "?"), r.get("name", "?"))
+except Exception as exc:
+    print(sys.argv[1], "unreadable:", exc)
+EOF
+    done
+}
+
+# One scope, one sandbox, one disk: the scope's own archive is a tar of the
+# sandbox's whole /workspace, written to `$BACKUP_DIR/<scope>-<ts>.tar.gz`
+# next to the shared VM's archives. Restore EXTRACTS OVER the existing
+# workspace — data-preserving by construction: files the archive does not
+# name are untouched, so a restore never widens into a wipe.
+scope_backup() {
+    local scope=${1:-} box state file
+    scope_valid "$scope" || { echo "usage: nora-computer scope backup SCOPE" >&2; exit 2; }
+    [ -f "$(scope_record "$scope")" ] || { echo "scope: no record for $scope — nothing owns this backup" >&2; exit 6; }
+    box=$(scope_sandbox "$scope")
+    state=$(scope_state "$scope")
+    [ "$state" = running ] || { log "scope backup: $box is $state, not running; skipped (a stopped disk is unchanged, and sbx exec would start it)"; exit 0; }
+    mkdir -p "$BACKUP_DIR" || exit 5
+    file="$BACKUP_DIR/$scope-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+    if ! sbx exec -u root "$box" sh -c 'tar czf - -C /workspace .' </dev/null >"$file"; then
+        rm -f "$file"
+        log "scope backup: archiving $box failed"
+        exit 6
+    fi
+    record_event scope_backup ok scope="$scope" file="$file"
+    printf '%s\n' "$file"
+}
+
+scope_restore() {
+    local scope=${1:-} file=${2:-} box state
+    scope_valid "$scope" || { echo "usage: nora-computer scope restore SCOPE FILE" >&2; exit 2; }
+    [ -f "$file" ] || { echo "scope restore: no archive $file" >&2; exit 2; }
+    [ -f "$(scope_record "$scope")" ] || { echo "scope: no record for $scope" >&2; exit 6; }
+    box=$(scope_sandbox "$scope")
+    state=$(scope_state "$scope")
+    [ "$state" = running ] || { echo "scope restore: $box is $state, not running — start the scope's sandbox first" >&2; exit 6; }
+    if ! sbx cp "$file" "$box:/tmp/nora-scope-restore.tar.gz" </dev/null; then
+        echo "scope restore: could not copy the archive into $box" >&2; exit 6
+    fi
+    # The manifest's rollback claim, made true: the archive extracts into a
+    # sibling staging tree, /workspace moves aside to /workspace.restore-old
+    # BEFORE the staged tree takes its place — an operator can put the old
+    # tree back until the destination is verified and the dir removed.
+    # computerd's restore-lease file is carried forward (or rebuilt when the
+    # archive predates it) so the lease contract survives the swap.
+    if ! sbx exec -u root "$box" sh -c '
+            set -e
+            rm -rf /workspace.restore-new
+            mkdir /workspace.restore-new
+            tar xzf /tmp/nora-scope-restore.tar.gz -C /workspace.restore-new
+            rm -f /tmp/nora-scope-restore.tar.gz
+            rm -rf /workspace.restore-old
+            mv /workspace /workspace.restore-old
+            mv /workspace.restore-new /workspace
+            [ -f /workspace/.restore.lock ] || \
+                install -m 600 /workspace.restore-old/.restore.lock /workspace/.restore.lock 2>/dev/null || \
+                : > /workspace/.restore.lock
+            chmod 600 /workspace/.restore.lock
+            ' </dev/null; then
+        echo "scope restore: swap failed; the pre-restore workspace may sit at /workspace.restore-old in $box" >&2
+        exit 6
+    fi
+    record_event scope_restore ok scope="$scope" file="$file"
+}
+
+# Migration preparation (design «Migration»): a scope move is not proven by
+# backup/extract alone. `scope manifest` freezes the DRAINED source's
+# inventory — every file's path, size, sha256 and owner — plus the owner and
+# session mapping the restore must honour (scope → sandbox → record →
+# instance). `scope verify` reads back the guest archive and checks every
+# manifest entry: the restore is verified only when its file contents,
+# owners and recorded modes match the source archive. Both emit the same JSON contract a
+# rollback reads: what was moved aside and where it sits.
+scope_manifest_tar() {
+    # Source ownership belongs to the guest archive, never its host extractor.
+    python3 - "$1" "$2" <<'EOF'
+import hashlib, json, pathlib, sys, tarfile
+files = []
+with tarfile.open(sys.argv[1]) as tf:
+    for member in tf.getmembers():
+        if not member.isfile():
+            continue
+        path = pathlib.PurePosixPath(member.name)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError("archive member is outside the workspace")
+        h = hashlib.sha256()
+        with tf.extractfile(member) as src:
+            for chunk in iter(lambda: src.read(1 << 20), b""):
+                h.update(chunk)
+        files.append({"path": str(path), "size": member.size, "sha256": h.hexdigest(),
+                      "uid": member.uid, "gid": member.gid, "mode": member.mode,
+                      "mtime": int(member.mtime)})
+files.sort(key=lambda f: f["path"])
+if len({f["path"] for f in files}) != len(files):
+    raise ValueError("duplicate archive file")
+with open(sys.argv[2], "w") as out:
+    json.dump({"files": files, "count": len(files)}, out, indent=1)
+    out.write("\n")
+EOF
+}
+
+scope_manifest_dir() {
+    # Build the drained inventory of DIRECTORY as JSON on $2's path.
+    # Testable half: no sbx, no host facts — files, sizes, digests, owners.
+    python3 - "$1" "$2" <<'EOF'
+import hashlib, json, os, sys
+root, out = sys.argv[1], sys.argv[2]
+files = []
+for base, _dirs, names in os.walk(root):
+    for name in sorted(names):
+        path = os.path.join(base, name)
+        rel = os.path.relpath(path, root)
+        try:
+            st = os.lstat(path)
+        except OSError:
+            continue
+        if not os.path.isfile(path) or os.path.islink(path):
+            continue
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        files.append({"path": rel, "size": st.st_size, "sha256": h.hexdigest(),
+                      "uid": st.st_uid, "gid": st.st_gid, "mtime": int(st.st_mtime)})
+files.sort(key=lambda f: f["path"])
+with open(out, "w") as fh:
+    json.dump({"files": files, "count": len(files)}, fh, indent=1)
+    fh.write("\n")
+print(out)
+EOF
+}
+
+scope_verify_dir() {
+    # Re-read $2 (a restored tree) against manifest $1: every file named
+    # must exist with the same size+sha256; print the verdict JSON. rc=3 on
+    # any miss or mismatch — a verified restore or nothing.
+    python3 - "$1" "$2" <<'EOF'
+import hashlib, json, os, sys
+manifest, root = sys.argv[1], sys.argv[2]
+want = {f["path"]: f for f in json.load(open(manifest))["files"]}
+missing, mismatched = [], []
+for rel, spec in want.items():
+    path = os.path.join(root, rel)
+    if not os.path.isfile(path) or os.path.islink(path):
+        missing.append(rel); continue
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    if os.lstat(path).st_size != spec["size"] or h.hexdigest() != spec["sha256"]:
+        mismatched.append(rel)
+ok = not missing and not mismatched
+print(json.dumps({"verified": ok, "checked": len(want),
+                  "missing": missing, "mismatched": mismatched}, indent=1))
+sys.exit(0 if ok else 3)
+EOF
+}
+
+scope_verify_tar() {
+    # Re-read $2 (the restored tree, read back as a tar) against manifest
+    # $1: every file named must exist with the same size+sha256 AND the
+    # same uid/gid the drained source recorded — the restored owner
+    # mapping, read from the archive's own member metadata (a host extract
+    # cannot say what uid the guest file has). rc=3 on any miss or
+    # mismatch — a verified restore or nothing.
+    python3 - "$1" "$2" <<'EOF'
+import hashlib, json, pathlib, sys, tarfile
+manifest, tar_path = sys.argv[1], sys.argv[2]
+want = {f["path"]: f for f in json.load(open(manifest))["files"]}
+missing, mismatched, wrong_owner, wrong_mode = [], [], [], []
+with tarfile.open(tar_path) as tf:
+    members = {}
+    for m in tf.getmembers():
+        if m.isfile():
+            members[str(pathlib.PurePosixPath(m.name))] = m
+    for rel, spec in want.items():
+        m = members.get(rel)
+        if m is None:
+            missing.append(rel); continue
+        if m.size != spec["size"]:
+            mismatched.append(rel)
+        else:
+            h = hashlib.sha256()
+            src = tf.extractfile(m)
+            while True:
+                chunk = src.read(1 << 20)
+                if not chunk:
+                    break
+                h.update(chunk)
+            if h.hexdigest() != spec["sha256"]:
+                mismatched.append(rel)
+        if "uid" in spec and (m.uid != spec["uid"]
+                              or m.gid != spec.get("gid", spec["uid"])):
+            wrong_owner.append(rel)
+        if "mode" in spec and m.mode != spec["mode"]:
+            wrong_mode.append(rel)
+ok = not missing and not mismatched and not wrong_owner and not wrong_mode
+print(json.dumps({"verified": ok, "checked": len(want),
+                  "missing": missing, "mismatched": mismatched,
+                  "wrong_owner": wrong_owner, "wrong_mode": wrong_mode}, indent=1))
+sys.exit(0 if ok else 3)
+EOF
+}
+
+scope_manifest() {
+    # The drained-source inventory of a scope's sandbox + the session/owner
+    # mapping, written beside the archive as `<file>.manifest.json`.
+    # --drained is the operator's confirmation the scope's queue held no
+    # open work when the archive was made; a running sandbox WITHOUT it is
+    # refused — a live workspace is not a drained source.
+    local scope=${1:-} file=${2:-} box state record instance drained=0
+    scope_valid "$scope" || { echo "usage: nora-computer scope manifest SCOPE FILE [--drained]" >&2; exit 2; }
+    [ "${3:-}" = "--drained" ] && drained=1
+    record=$(scope_record "$scope")
+    [ -f "$record" ] || { echo "scope manifest: no record for $scope" >&2; exit 6; }
+    [ -f "$file" ] || { echo "scope manifest: no archive $file" >&2; exit 2; }
+    box=$(scope_sandbox "$scope")
+    state=$(scope_state "$scope")
+    if [ "$state" = running ] && [ "$drained" != 1 ]; then
+        echo "scope manifest: $box is running — confirm the scope's queue held no open work with --drained" >&2
+        exit 4
+    fi
+    [ "$state" != unknown ] || { echo "scope manifest: $box's state could not be read" >&2; exit 4; }
+    instance=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("instance") or "")' "$record" 2>/dev/null || true)
+    local inv; inv=$(mktemp -d)
+    scope_manifest_tar "$file" "$inv/inventory.json" >/dev/null || { rm -rf "$inv"; exit 3; }
+    python3 - "$file" "$scope" "$box" "$state" "$instance" "$drained" "$inv/inventory.json" "$file.manifest.json" <<'EOF'
+import hashlib, json, sys
+archive, scope, box, state, instance, drained, inv_path, out = sys.argv[1:9]
+h = hashlib.sha256()
+with open(archive, "rb") as fh:
+    for chunk in iter(lambda: fh.read(1 << 20), b""):
+        h.update(chunk)
+inventory = json.load(open(inv_path))
+json.dump({
+    "scope": scope, "archive": archive, "archive_sha256": h.hexdigest(),
+    "source": {"sandbox": box, "state": state, "instance": instance},
+    "drained_confirmed": drained == "1" or state != "running",
+    "mapping": {"scope": scope, "workspace_root": "/workspace",
+                "record": f"{scope}.json",
+                "owners": sorted({f["uid"] for f in inventory["files"]})},
+    "files": inventory["files"], "count": inventory["count"],
+    "rollback": "on restore, the live workspace is moved aside to a "
+                ".restore-old directory and put back when the destination "
+                "is free — the restore never widens into a wipe",
+}, open(out, "w"), indent=1)
+print(out)
+EOF
+    local rc=$?
+    rm -rf "$inv"
+    [ "$rc" = 0 ] || exit 3
+    record_event scope_manifest ok scope="$scope" file="$file"
+}
+
+scope_verify() {
+    # Verified restore: re-read the RESTORED guest tree — pulled back out
+    # of the scope's sandbox — against every manifest entry: restored
+    # bytes digest-match the drained source AND the restored ownership
+    # matches the recorded mapping. A host re-extract of the archive
+    # proves nothing about what the restore actually left behind.
+    local scope=${1:-} file=${2:-} box state
+    scope_valid "$scope" || { echo "usage: nora-computer scope verify SCOPE FILE" >&2; exit 2; }
+    [ -f "$file" ] || { echo "scope verify: no archive $file" >&2; exit 2; }
+    [ -f "$file.manifest.json" ] || { echo "scope verify: $file.manifest.json is missing — run scope manifest first" >&2; exit 3; }
+    record=$(scope_record "$scope")
+    [ -f "$record" ] || { echo "scope verify: no record for $scope" >&2; exit 6; }
+    box=$(scope_sandbox "$scope")
+    state=$(scope_state "$scope")
+    [ "$state" = running ] || { echo "scope verify: $box is $state, not running" >&2; exit 6; }
+    local inv; inv=$(mktemp -d)
+    # The guest is read back as one stream: `tar czf` inside the box
+    # carries every restored file's bytes AND its uid/gid in the member
+    # metadata — `scope_verify_tar` reads both against the manifest, so
+    # the check is the restored tree, never a host re-extract of the
+    # archive or the host's own ids.
+    if ! sbx exec -u root "$box" sh -c \
+            'tar czf - -C /workspace .' </dev/null >"$inv/restored.tar.gz"; then
+        rm -rf "$inv"; echo "scope verify: the restored workspace could not be read back" >&2; exit 3
+    fi
+    scope_verify_tar "$file.manifest.json" "$inv/restored.tar.gz"
+    local rc=$?
+    rm -rf "$inv"
+    [ "$rc" = 0 ] || { echo "scope verify: restore is NOT verified — do not migrate" >&2; exit 3; }
+    record_event scope_verify ok scope="$scope" file="$file"
+}
+
+scope_revoke() {
+    local scope=${1:-} box state
+    scope_valid "$scope" || { echo "usage: nora-computer scope revoke SCOPE" >&2; exit 2; }
+    box=$(scope_sandbox "$scope")
+    state=$(scope_state "$scope")
+    if [ "$state" != absent ]; then
+        echo "scope: sandbox $box reads as $state, not gone; destroy it explicitly (sbx rm --force $box) before revoking — its /workspace may hold data" >&2
+        exit 4
+    fi
+    rm -f "$(scope_record "$scope")"
+    record_event scope_revoke ok scope="$scope"
+}
+
+cmd_scope() {
+    case "${1:-}" in
+        provision) shift; scope_provision "$@" ;;
+        observe) shift; scope_observe "$@" ;;
+        serve) shift; scope_serve "$@" ;;
+        resolve) shift; scope_resolve "$@" ;;
+        list) scope_list ;;
+        backup) shift; scope_backup "$@" ;;
+        restore) shift; scope_restore "$@" ;;
+        manifest) shift; scope_manifest "$@" ;;
+        verify) shift; scope_verify "$@" ;;
+        revoke) shift; scope_revoke "$@" ;;
+        *) echo "usage: nora-computer scope provision|observe|serve|resolve|list|backup|restore|manifest|verify|revoke" >&2; exit 2 ;;
+    esac
+}
+
 case "${1:-}" in
     build) cmd_build ;;
     serve) cmd_serve ;;
@@ -805,7 +1366,8 @@ case "${1:-}" in
     sync-events) shift; sync_events "$@"; exit $? ;;
     backup) cmd_backup ;;
     restore) shift; cmd_restore "$@" ;;
+    scope) shift; cmd_scope "$@" ;;
     stop) sbx stop "$NAME" </dev/null ;;
     destroy) shift; cmd_destroy "$@" ;;
-    *) echo "usage: nora-computer build|serve|status|egress|policy-log|sync-events|backup|restore|stop|destroy" >&2; exit 2 ;;
+    *) echo "usage: nora-computer build|serve|status|egress|policy-log|sync-events|backup|restore|scope|stop|destroy" >&2; exit 2 ;;
 esac

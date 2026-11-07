@@ -283,10 +283,18 @@ def scrub(text: str, secret: str) -> str:
 async def _close(subject: Any) -> None:
     """Best-effort teardown. Never raises: a case's RESULT must not depend on
     whether its cleanup worked, and a teardown error is not a reading."""
+    lifecycle = getattr(subject.deps, "computer_lifecycle", None)
+    if lifecycle is not None:
+        # Failure leaves the journal and stores alive for retry/recovery.
+        await lifecycle.close()
     for shut in (
         subject.deps.background.cancel_all(),
+        # The scoped computer's own close before the stores it writes
+        # through: admission stops, executors unwind, its Redis client
+        # and journal lock release — the same order `App.shutdown` uses.
         subject.deps.audit.aclose(),
         subject.deps.client.close(),
+        *(client.close() for client in getattr(subject.deps, "model_clients", ())),
     ):
         with contextlib.suppress(Exception):
             await shut
@@ -2731,6 +2739,10 @@ class ToolRouteGrader(Evaluator):
             carried = self._args(data, md)
             if carried is not None and carried.label != PASS:
                 return [carried]
+            if md.get("journey"):
+                verified = self._journey(data, ran)
+                if verified is not None:
+                    return [verified]
             routed = f"called {sorted(want & set(ran))}; ran {ran}"
             if carried is not None:
                 routed = f"{routed}; {carried.reason}"
@@ -2739,6 +2751,76 @@ class ToolRouteGrader(Evaluator):
 
     async def evaluate_async(self, data: EvaluationData) -> list[EvaluationOutput]:
         return self.evaluate(data)
+
+    def _journey(self, data: EvaluationData, ran: list[str]) -> EvaluationOutput | None:
+        """Correlate successful calls to one owned capture and its exported bytes."""
+        results = state_of(data, NORA_TOOL_RESULTS)
+        inputs = state_of(data, NORA_TOOL_INPUTS)
+        if results is None or inputs is None:
+            return self._out(ERROR, 0.0, "journey inputs/results unavailable")
+
+        tools = ("computer_browse", "computer_capture", "computer_export")
+        ordered_inputs = [(name, text) for name, text in inputs if name in tools]
+        ordered_results = [(name, text) for name, text in results if name in tools]
+        expected = [name for name in ran if name in tools]
+        if ([name for name, _ in ordered_inputs] != expected
+                or [name for name, _ in ordered_results] != expected):
+            return self._out(ERROR, 0.0, "journey call inputs/results do not align")
+        successful: dict[str, list[tuple[int, dict[str, Any], dict[str, Any]]]] = {
+            tool: [] for tool in tools
+        }
+        # Both extractors retain every tool span in start order, including missing evidence.
+        for index, ((name, raw_input), (_, raw_result)) in enumerate(
+            zip(ordered_inputs, ordered_results, strict=True)
+        ):
+            try:
+                args = json.loads(raw_input)
+            except (ValueError, TypeError):
+                args = None
+            if not isinstance(args, dict):
+                return self._out(ERROR, 0.0, f"{name} input unavailable")
+            result = None
+            for fragment in _texts_in(raw_result):
+                try:
+                    value = json.loads(fragment)
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(value, dict) and isinstance(value.get("status"), str):
+                    result = value
+                    break
+            if result is None or not result["status"]:
+                return self._out(ERROR, 0.0, f"{name} result unavailable")
+            if result["status"] == "ok":
+                successful[name].append((index, args, result))
+
+        for browse_index, _, browse in successful["computer_browse"]:
+            handle, target = browse.get("task"), browse.get("tab")
+            if not handle or not target:
+                continue
+            for capture_index, args, capture in successful["computer_capture"]:
+                if capture_index <= browse_index:
+                    continue
+                digest = capture.get("sha256")
+                if (args.get("task") != handle or capture.get("tab") != target
+                        or not capture.get("path") or not isinstance(digest, str)
+                        or len(digest) != 64
+                        or any(c not in "0123456789abcdef" for c in digest)):
+                    continue
+                for export_index, args, exported in successful["computer_export"]:
+                    if export_index <= capture_index:
+                        continue
+                    if (args.get("path") != capture["path"]
+                            or exported.get("sha256") != digest):
+                        continue
+                    destination = args.get("to", "chat")
+                    receipt = ((destination == "keep" and exported.get("kept") is True)
+                               or (destination == "chat" and exported.get("sent") is True)
+                               or (destination == "link" and exported.get("artifact_id")
+                                   and exported.get("url")))
+                    if receipt:
+                        return None
+        return self._out(FAIL, 0.0,
+                         "no successful same-task/target capture and matching export receipt")
 
     @staticmethod
     def _out(verdict: str, score: float, reason: str) -> EvaluationOutput:

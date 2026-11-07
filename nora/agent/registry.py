@@ -297,6 +297,20 @@ class ToolRegistry:
         computer_exports: ComputerExportStore | None = None,
         # `computer_browse` (B2): None while `[computer.browse]` is off.
         browser: BrowserRunner | None = None,
+        # The scoped-computer runtime ([computer.scoped]): `ComputerAdmission`
+        # is the per-scope FIFO the write-path tools queue through (None: they
+        # run synchronously as before); `browser_manager` owns task-bound tabs
+        # and answers `computer_capture`. Both `None` keep the shared-VM shape.
+        computer_admission: Any = None,
+        browser_manager: Any = None,
+        # The canonical-DM scope resolver (`design/private-dm/05`): a DM
+        # room's `(person, anchor unit)` scope id — process-lifetime because
+        # it is the policy, not the turn. `None` leaves DM computer calls
+        # `unavailable` (fail-closed, never a group VM for a DM).
+        computer_dm_scope_for: Callable[[str, str], str | None] | None = None,
+        # The context block's cache invalidation: a mutating segment calls
+        # it with the scope so the next turn re-reads the machine.
+        computer_context_invalidate: Callable[[str], None] | None = None,
         # `computer_export(to="link")`'s portal origin (ADR 0023), `[documents]
         # public_url`; `""` answers a link export `unavailable`.
         artifact_link_base: str = "",
@@ -403,6 +417,8 @@ class ToolRegistry:
                else frozenset({"poll_list", "poll_read", "room_state_read"}))
             | (frozenset() if computer is not None else COMPUTER_TOOLS)
             | (frozenset() if browser is not None else frozenset({"computer_browse"}))
+            | (frozenset() if browser_manager is not None else frozenset({"computer_capture"}))
+            | (frozenset() if computer_admission is not None else frozenset({"computer_cancel"}))
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)
             | (frozenset() if subagent is not None else SUBAGENT_TOOLS)
             | (frozenset() if video is not None else VIDEO_TOOLS)
@@ -578,6 +594,10 @@ class ToolRegistry:
         # makes `recall_lookups` answer `unavailable` (R-5) rather than crash.
         self._tool_call_log_store = tool_call_log_store
         self._computer = computer
+        self._computer_admission = computer_admission
+        self._browser_manager = browser_manager
+        self._computer_dm_scope_for = computer_dm_scope_for
+        self._computer_context_invalidate = computer_context_invalidate
         self._computer_events = computer_events
         self._computer_settings = computer_settings
         self._computer_sessions = computer_sessions
@@ -1093,6 +1113,7 @@ class ToolRegistry:
         dream_adaptor: str = "",
         subagent_job: str = "",
         checkpoint_sink: Any = None,
+        grant: frozenset[str] | None = None,
         shelf: ToolShelf | None = None,
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
     ) -> tuple[ToolSpec, ...]:
@@ -1168,6 +1189,7 @@ class ToolRegistry:
             ai_peer=self._ai_peer, fire_turn=fire_turn, relay_turn=relay_turn,
             dream_adaptor=dream_adaptor,
             subagent_job=subagent_job, checkpoint_sink=checkpoint_sink,
+            grant=grant,
             reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
             events=self._events,
             notes=self._notes, note_unit=self._note_unit, memos=self._memos,
@@ -1196,6 +1218,10 @@ class ToolRegistry:
             computer_leases=self._computer_leases,
             computer_exports=self._computer_exports,
             browser=self._browser,
+            computer_admission=self._computer_admission,
+            browser_manager=self._browser_manager,
+            computer_dm_scope_for=self._computer_dm_scope_for,
+            computer_context_invalidate=self._computer_context_invalidate,
             artifact_link_base=self._artifact_link_base,
             music=self._music,
             online_source=self._online, voice_source=self._voice,
@@ -1327,7 +1353,7 @@ class ToolRegistry:
             location_trusted=location_trusted, links=links,
             supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
             subagent_job=subagent_job, checkpoint_sink=checkpoint_sink,
-            shelf=shelf, on_rows=on_rows,
+            grant=grant, shelf=shelf, on_rows=on_rows,
         )
         loader = next(spec for spec in specs if spec.name == LOADER_TOOL)
         admitted = [

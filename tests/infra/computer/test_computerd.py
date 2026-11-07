@@ -138,6 +138,10 @@ async def test_health_answers_a_body_without_a_token(served):
 
 async def test_an_unreachable_computer_is_unavailable_never_a_raise():
     down = ComputerdRuntime(base_url="http://127.0.0.1:9", token=TOKEN, timeout_seconds=2)
+    ran = await down.run(scope=SCOPE, command="true", timeout_s=1)
+    # No answer came back: the command may still exist — `answered` is the
+    # flag the queue reads before it may terminalize the row.
+    assert ran.status is SandboxStatus.UNAVAILABLE and ran.answered is False
     for result in (
         await down.run(scope=SCOPE, command="true", timeout_s=1),
         await down.read(scope=SCOPE, path="a"),

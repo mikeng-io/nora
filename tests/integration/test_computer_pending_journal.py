@@ -1,0 +1,406 @@
+"""Fault-injection proofs for the durable pending-result journal — through
+the live `run_segment`/`delivered`/`_persist_pending` callers, never by
+staging the journal by hand.
+
+Boundary being pinned: the original terminal outcome is delivered to the
+room/caller EXACTLY once. A live handoff requires a durable disposition
+(journal `consumed` + SQL `delivered_at`); when either checkpoint fails the
+caller is told `unavailable` WITH the task's identity — never the result
+body — and the deferred path delivers the original outcome once instead.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import uuid
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+
+from nora.app.computer_queue import (
+    ComputerAdmission,
+    SegmentRegistry,
+    _persist_pending,
+)
+from nora.domain.computer_tasks import ComputerTask
+from nora.testing import FakeComputerTaskStore, FakeStreamRedis
+
+NOW = datetime(2026, 2, 1, 12, 0, tzinfo=UTC)
+SCOPE = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+
+
+def _task(task_id=None, scope=SCOPE):
+    return ComputerTask(
+        id=task_id or uuid.uuid4(), scope=scope, kind="native",
+        status="queued", payload={}, origin={},
+        created_at=NOW, updated_at=NOW)
+
+
+class _FailingTasks(FakeComputerTaskStore):
+    """Contract fake plus switchable finish/mark_delivered faults."""
+
+    def __init__(self):
+        super().__init__()
+        self.fail_finish = False
+        self.fail_delivered = False
+
+    async def finish(self, task_id, *, status, result, now):
+        if self.fail_finish:
+            raise RuntimeError("injected SQL finish failure")
+        return await super().finish(task_id, status=status, result=result, now=now)
+
+    async def elect_delivery(self, task_id, *, now, job=None):
+        if self.fail_delivered:
+            raise RuntimeError("injected SQL delivery-election failure")
+        return await super().elect_delivery(task_id, now=now, job=job)
+
+
+async def _work(result):
+    return result
+
+
+def _rig(pending_dir, *, reconcile=None):
+    executors = SegmentRegistry(pending_dir=pending_dir)
+    tasks = _FailingTasks()
+    admission = ComputerAdmission(
+        tasks=tasks, redis=FakeStreamRedis(),
+        clock=lambda: NOW, executors=executors,
+        reconcile=reconcile or (lambda scope: asyncio.sleep(0, "quiet")))
+    return executors, tasks, admission
+
+
+def _crash(registry):
+    """Release the dead process's fd without checkpointing or later GC cleanup."""
+    registry._closed = True
+    fd, registry._lock_fd = registry._lock_fd, None
+    os.close(fd)
+
+
+async def test_a_crashed_registry_cannot_close_or_rewrite_its_successor(tmp_path):
+    directory = tmp_path / "pending"
+    first = SegmentRegistry(pending_dir=directory)
+    task_id = uuid.uuid4()
+    assert first.retain(task_id, "done", {"value": "old"})
+    _crash(first)
+    second = SegmentRegistry(pending_dir=directory)
+    try:
+        assert second.retain(task_id, "done", {"value": "new"})
+        first.close()  # the abandoned object's eventual destructor
+        os.fstat(second._lock_fd)  # its live descriptor must remain open
+        assert json.loads((directory / "pending-results.json").read_text())[
+            str(task_id)]["result"] == {"value": "new"}
+        with pytest.raises(RuntimeError, match="second owner"):
+            SegmentRegistry(pending_dir=directory)
+    finally:
+        second.close()
+
+
+def _seal(directory: Path):
+    directory.chmod(0o500)
+
+
+def _open(directory: Path):
+    directory.chmod(0o700)
+
+
+async def test_a_healthy_segment_returns_the_reply_and_stamps_delivered(tmp_path):
+    """Positive control: journal + SQL healthy — live reply goes out once,
+    `delivered_at` lands, journal cleared, nothing deferred-eligible."""
+    executors, tasks, admission = _rig(tmp_path / "pending")
+    task = _task()
+    await tasks.enqueue(task)
+    await tasks.try_claim_head(task.id, now=NOW)
+
+    reply = await admission.run_segment(task, _work({"status": "ok", "v": 7}))
+    assert reply["v"] == 7
+    row = await tasks.get(task.id)
+    assert row.status == "done" and row.delivered_at is not None
+    assert executors.pending_result(task.id) is None
+
+
+async def test_a_sealed_journal_with_healthy_sql_still_delivers(tmp_path):
+    """Positive control, single-authority: the journal cannot take a
+    checkpoint but SQL takes the terminal row and `delivered_at` — one
+    authoritative durable disposition suffices, so the live reply goes out
+    and nothing stays deferred-eligible."""
+    directory = tmp_path / "pending"
+    _executors, tasks, admission = _rig(directory)
+    task = _task()
+    await tasks.enqueue(task)
+    await tasks.try_claim_head(task.id, now=NOW)
+    _seal(directory)
+
+    reply = await admission.run_segment(task, _work({"status": "ok", "v": 7}))
+    assert reply["v"] == 7
+    row = await tasks.get(task.id)
+    assert row.status == "done" and row.delivered_at is not None
+    assert await tasks.undelivered(limit=10) == []
+
+
+async def test_failed_consumed_checkpoint_returns_identity_not_the_result(tmp_path):
+    """The B2 closure case: BOTH stores refuse — journal sealed AND SQL
+    `mark_delivered` down — so no durable disposition exists. The caller
+    gets `unavailable` + task id, NOT the result body; the consumed marker
+    is reverted so the original outcome stays deferred-eligible for exactly
+    one deferred delivery."""
+    directory = tmp_path / "pending"
+    executors, tasks, admission = _rig(directory)
+    task = _task()
+    await tasks.enqueue(task)
+    await tasks.try_claim_head(task.id, now=NOW)
+    _seal(directory)
+    tasks.fail_delivered = True
+
+    reply = await admission.run_segment(task, _work({"status": "ok", "v": 7}))
+    assert reply["status"] == "unavailable" and reply["task"] == str(task.id)
+    assert "v" not in reply  # the result body did NOT go out
+    row = await tasks.get(task.id)
+    assert row.status == "done" and row.delivered_at is None
+    assert row.result == {"status": "ok", "v": 7}
+    pending = executors.pending_result(task.id)
+    assert pending is None or not pending.consumed  # unmarked for deferred
+
+    # Recovery: SQL alone takes the terminal result and the deferred stamp.
+    tasks.fail_delivered = False
+    _open(directory)
+    _crash(executors)  # simulate process death
+    second = SegmentRegistry(pending_dir=directory)
+    assert [r.id for r in await tasks.undelivered(limit=10)] == [task.id]
+    second.close()
+
+
+async def test_sql_mark_delivered_failure_keeps_the_result_deliverable(tmp_path):
+    """Journal lands `consumed`, SQL `mark_delivered` fails: caller told
+    `unavailable`+task id, consumed marker is reverted so the deferred path
+    can still deliver the original result once."""
+    executors, tasks, admission = _rig(tmp_path / "pending")
+    task = _task()
+    await tasks.enqueue(task)
+    await tasks.try_claim_head(task.id, now=NOW)
+    tasks.fail_delivered = True
+
+    reply = await admission.run_segment(task, _work({"status": "ok", "v": 7}))
+    assert reply["status"] == "unavailable" and reply["task"] == str(task.id)
+    pending = executors.pending_result(task.id)
+    assert pending is None or not pending.consumed
+    # Once SQL recovers the pending converges; the row stays
+    # deferred-eligible (delivered_at never stamped) for ONE delivery.
+    tasks.fail_delivered = False
+    await _persist_pending(executors=executors, tasks=tasks,
+                           clock=lambda: NOW, task_id=task.id)
+    row = await tasks.get(task.id)
+    assert row.status == "done" and row.delivered_at is None
+    assert [r.id for r in await tasks.undelivered(limit=10)] == [task.id]
+
+
+async def test_a_corrupt_journal_refuses_every_construction(tmp_path):
+    """Not one-start refusal: the corrupt file stays in place and EVERY
+    construction raises until an operator removes it; evidence is copied
+    aside, never renamed away into a silent first-use."""
+    directory = tmp_path / "pending"
+    reg = SegmentRegistry(pending_dir=directory)
+    assert reg.retain(uuid.uuid4(), "done", {"v": 1})
+    _crash(reg)
+    active = directory / "pending-results.json"
+    active.write_text("{not json")
+    for _ in range(2):
+        with pytest.raises(RuntimeError):
+            SegmentRegistry(pending_dir=directory)
+        assert active.exists()  # still refusing, still in place
+    assert list(directory.glob("pending-results.json.corrupt-*"))
+
+
+async def test_a_second_owner_is_refused_for_the_store_lifetime(tmp_path):
+    first = SegmentRegistry(pending_dir=tmp_path / "pending")
+    with pytest.raises(RuntimeError, match="second owner"):
+        SegmentRegistry(pending_dir=tmp_path / "pending")
+    assert first.retain(uuid.uuid4(), "done", {"v": 1})
+
+
+async def test_the_result_is_journaled_before_the_sql_finish_wait(tmp_path):
+    """Window proof: kill the SQL finish mid-flight — the ORIGINAL typed
+    result is already in the journal, so a reconstructed owner persists it
+    instead of losing it to an orphaned `running` row."""
+    executors, tasks, admission = _rig(tmp_path / "pending")
+    task = _task()
+    await tasks.enqueue(task)
+    await tasks.try_claim_head(task.id, now=NOW)
+
+    tasks.fail_finish = True
+    reply = await admission.run_segment(task, _work({"status": "ok", "v": 9}))
+    assert reply["v"] == 9
+    assert reply["v"] == 9
+    assert (await tasks.get(task.id)).status == "running"  # SQL never took it
+    _crash(executors)
+
+    second = SegmentRegistry(pending_dir=tmp_path / "pending")
+    pending = second.pending_result(task.id)
+    assert pending is not None and pending.result["v"] == 9
+    tasks.fail_finish = False
+    assert await _persist_pending(executors=second, tasks=tasks,
+                                  clock=lambda: NOW, task_id=task.id)
+    row = await tasks.get(task.id)
+    assert row.status == "done" and row.result == {"status": "ok", "v": 9}
+
+
+async def test_a_stale_consumed_claim_cannot_suppress_the_deferred_handoff(tmp_path):
+    """R2-B: SQL `mark_delivered` fails after the outcome journal lands AND
+    the compensating unmark checkpoint fails too — caller gets
+    `unavailable` + task id, and the journal on disk must hold
+    `consumed=False` (never a pre-confirmation `True`, which a restart
+    would read as "caller got it" and stamp a never-delivered result).
+    Reconstruction then leaves the row deferred-eligible: `undelivered`
+    finds it and the deferred path delivers the ORIGINAL result once."""
+    directory = tmp_path / "pending"
+    executors, tasks, admission = _rig(directory)
+    task = _task()
+    await tasks.enqueue(task)
+    await tasks.try_claim_head(task.id, now=NOW)
+    tasks.fail_delivered = True
+    # The first two checkpoints land for real (outcome + retain); every
+    # checkpoint after fails — including the compensating unmark whose
+    # spill failure is exactly the R2-B stale-True sequence.
+    real_spill = executors._spill
+    calls = [real_spill, real_spill]
+    executors._spill = lambda: calls.pop(0)() if calls else False
+
+    reply = await admission.run_segment(task, _work({"status": "ok", "v": 11}))
+    assert reply["status"] == "unavailable" and reply["task"] == str(task.id)
+    assert "v" not in reply
+    executors._spill = real_spill
+    # The journal must NOT carry a consumed claim the SQL authority never
+    # confirmed — a stale True on restart would stamp a never-delivered
+    # result and suppress its one handoff.
+    snapshot = json.loads(
+        (directory / "pending-results.json").read_text())
+    assert snapshot[str(task.id)]["consumed"] is False
+    pending = executors.pending_result(task.id)
+    assert pending is not None and not pending.consumed
+
+    # Restart: SQL recovers, pending converges — the row stays
+    # deferred-eligible (delivered_at never stamped) and the deferred path
+    # delivers the original result once.
+    tasks.fail_delivered = False
+    _crash(executors)  # simulate process death
+    second = SegmentRegistry(pending_dir=directory)
+    recovered = second.pending_result(task.id)
+    assert recovered is not None and not recovered.consumed
+    assert await _persist_pending(
+        executors=second, tasks=tasks, clock=lambda: NOW, task_id=task.id)
+    row = await tasks.get(task.id)
+    assert row.status == "done" and row.delivered_at is None
+    assert [r.id for r in await tasks.undelivered(limit=10)] == [task.id]
+    second.close()
+
+
+async def test_the_shared_finish_path_journals_before_its_waits(tmp_path):
+    """R2-C: the shared `_finish_guarded` (used by the deferred `_execute`
+    path and every cancel/exception exit) journals the ORIGINAL outcome
+    before the quiet-check wait. A fresh owner constructed INSIDE that wait
+    sees the real payload, not an empty registry that would close the row
+    as a generic interruption."""
+    directory = tmp_path / "pending"
+    quiet = asyncio.Event()
+
+    async def gate(scope: str) -> str:
+        await quiet.wait()
+        return "busy"  # never proves quiet: the row must stay running
+
+    executors, tasks, admission = _rig(directory, reconcile=gate)
+    task = _task()
+    await tasks.enqueue(task)
+    await tasks.try_claim_head(task.id, now=NOW)
+
+    holding = asyncio.ensure_future(admission._finish_guarded(
+        task, "done", {"status": "ok", "v": 13, "stdout": "kept"}))
+    await asyncio.sleep(0.05)  # inside the quiet wait
+
+    _crash(executors)  # simulate process death mid-wait
+    second = SegmentRegistry(pending_dir=directory)
+    pending = second.pending_result(task.id)
+    assert pending is not None, (
+        "restart inside the finish wait must recover the original outcome")
+    assert pending.result == {"status": "ok", "v": 13, "stdout": "kept"}
+    assert not pending.consumed
+    quiet.set()
+    assert await holding is False  # quiet never proved: row stays running
+    assert (await tasks.get(task.id)).status == "running"
+    second.close()
+
+
+async def test_a_siblings_checkpoint_cannot_leak_an_unconfirmed_consumption(tmp_path):
+    """Cross-scope B2: while scope A's `delivered()` is suspended inside
+    `mark_delivered`, an unrelated scope-B checkpoint serializes the WHOLE
+    pending map. A's unconfirmed consumption must NOT be in that payload —
+    otherwise a later SQL + unmark failure leaves a stale `True` that a
+    restart reads as "caller got it" and suppresses the deferred handoff.
+    Reconstruction then proves A's original completion stays
+    deferred-eligible and B's persisted entry is intact."""
+    directory = tmp_path / "pending"
+    executors, tasks, admission = _rig(directory)
+    task_a = _task(scope="a" * 32)
+    task_b = _task(scope="b" * 32)
+    await tasks.enqueue(task_a)
+    await tasks.enqueue(task_b)
+    await tasks.try_claim_head(task_a.id, now=NOW)
+
+    # A's SQL stamp suspends mid-flight so B's unrelated checkpoint lands
+    # while the delivery intent is only tentative.
+    gate = asyncio.Event()
+    inside = asyncio.Event()
+    fail = {"on": False}
+    real_elect = tasks.elect_delivery
+
+    async def pausing(task_id, *, now, job=None):
+        inside.set()
+        await gate.wait()
+        if fail["on"]:
+            raise OSError("delivery election offline")
+        return await real_elect(task_id, now=now, job=job)
+
+    tasks.elect_delivery = pausing  # type: ignore[method-assign]
+    call = asyncio.ensure_future(
+        admission.run_segment(task_a, _work({"status": "ok", "v": 17})))
+    await inside.wait()
+
+    # Scope B takes its own unrelated durable checkpoint mid-suspension.
+    assert executors.retain(task_b.id, "done", {"status": "ok", "v": 2})
+    snapshot = json.loads(
+        (directory / "pending-results.json").read_text())
+    assert snapshot[str(task_b.id)]["result"]["v"] == 2  # B really persisted
+    # A's tentative delivery intent must not be in B's serialized payload.
+    assert snapshot[str(task_a.id)]["consumed"] is False
+
+    # A's stamp now fails; the cleanup checkpoint fails too — exactly the
+    # R2-B sequence, but through the cross-scope write.
+    fail["on"] = True
+    real_spill = executors._spill
+    executors._spill = lambda: False
+    gate.set()
+    reply = await call
+    assert reply["status"] == "unavailable" and reply["task"] == str(task_a.id)
+    assert "v" not in reply
+    executors._spill = real_spill
+    tasks.fail_delivered = False
+    tasks.elect_delivery = real_elect  # type: ignore[method-assign]
+
+    # The disk must never hold a `True` the SQL authority did not confirm.
+    snapshot = json.loads(
+        (directory / "pending-results.json").read_text())
+    assert snapshot[str(task_a.id)]["consumed"] is False
+
+    # Reconstruction: A stays deferred-eligible; B's entry is intact.
+    _crash(executors)  # simulate process death
+    second = SegmentRegistry(pending_dir=directory)
+    recovered = second.pending_result(task_a.id)
+    assert recovered is not None and not recovered.consumed
+    assert second.pending_result(task_b.id).result["v"] == 2
+    tasks.elect_delivery = real_elect  # type: ignore[method-assign]
+    assert await _persist_pending(
+        executors=second, tasks=tasks, clock=lambda: NOW, task_id=task_a.id)
+    row = await tasks.get(task_a.id)
+    assert row.status == "done" and row.delivered_at is None
+    assert task_a.id in [r.id for r in await tasks.undelivered(limit=10)]
+    second.close()

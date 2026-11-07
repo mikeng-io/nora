@@ -47,6 +47,8 @@ def build_subagent_backend(
     honcho: Any, metrics: Any, rosters: Mapping[str, Any], self_ids: frozenset[str],
     clock: Callable[[], datetime], result_caps: Mapping[str, int],
     reasoning_effort: str, jobs: Any = None,
+    admission: Any = None,
+    scope_for: Callable[[str, str, str], str] | None = None,
 ) -> Any:
     """The `SubagentBackend` for `[subagent] enabled = true`."""
     from nora.app.subagent_backend import SubagentBackend
@@ -85,5 +87,6 @@ def build_subagent_backend(
 
     return SubagentBackend(
         runner=runner, metrics=metrics, clock=clock, requester_name=requester_name,
-        jobs=jobs,
+        jobs=jobs, admission=admission, scope_for=scope_for,
+        worker_seconds=960.0,
     )

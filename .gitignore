@@ -120,3 +120,5 @@ docs-site/.astro/
 /secret.toml
 .secret-delivery/
 /secret-migration-*/
+.receipts/
+.receipts-stale-d41/

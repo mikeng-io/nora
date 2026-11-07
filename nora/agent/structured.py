@@ -97,6 +97,7 @@ def build_structured_model(
     *, base_url: str, api_key: str, model_id: str, max_tokens: int,
     temperature: float, reasoning_effort: str = "none",
     tool_choice: str = FIRST_CALL, default_headers: dict[str, str] | None = None,
+    http_client: Any = None,
 ) -> OpenAIModel:
     """The provider for a structured call. Its own client args rather than the
     shared `AsyncOpenAI`, because `OpenAIModel` owns its transport and the
@@ -119,9 +120,18 @@ def build_structured_model(
     (notes, the standing position, a reaction pick) is read back into her
     prompt, so a dash here reappears there (`nora.agent.punctuation`).
     """
+    client_args = {"api_key": api_key, "base_url": base_url,
+                   **({"default_headers": default_headers} if default_headers else {})}
+    # A bounded run gates the SDK-owned client too: `bounded_http_client`
+    # wraps whatever transport is present (a real one when unset) so the
+    # AsyncOpenAI `_get_client` builds inside the provider admits through
+    # the same budget. None with no budget installed — the SDK default.
+    from nora.agent.run_budget_transport import bounded_http_client
+    bounded = bounded_http_client(http_client)
+    if bounded is not None:
+        client_args["http_client"] = bounded
     return DashFreeOpenAIModel(
-        client_args={"api_key": api_key, "base_url": base_url,
-                     **({"default_headers": default_headers} if default_headers else {})},
+        client_args=client_args,
         model_id=model_id,
         params={
             "max_tokens": max_tokens,

@@ -397,8 +397,159 @@ same bearer token: each text frame is one CDP message, relayed to Chrome's
 - Chrome's stderr is in the room's `browser/chrome.log`, emptied at each
   start. `navigator.webdriver` reads `false`
   (`--disable-blink-features=AutomationControlled`).
-- Nothing uses it yet: `computer_browse` is B2. Pages load only from hosts
-  the egress policy allows.
+- `computer_browse` uses this connection. Pages load only from hosts the
+  egress policy allows.
+
+## Scoped microVMs ([computer.scoped])
+
+One scope (a policy unit, or a canonical private-DM `(person, anchor unit)`
+binding) runs its own sbx microVM `nora-computer-<first 12 of scope>`.
+`nora-computer` is the ONLY host writer of the scope→endpoint registry at
+`[computer.scoped] registry`; Nora reads it through `FileScopeEndpoints`,
+which never provisions and never holds an sbx or Docker socket.
+
+### Complete application configuration
+
+Scoped browser use needs the parent computer flag, the scoped runtime flag,
+and the browser runner flag together. Deferred completion additionally needs
+the existing compute poller. Setting only `computer.scoped.enabled` does not
+expose a computer tool. Merge these sections into the deployment's validated
+configuration; this example contains no credentials:
+
+```toml
+[computer]
+enabled = true
+token_env = "NORA_COMPUTER_TOKEN"
+state_dir = "/app/state"
+
+[computer.scoped]
+enabled = true
+registry = "/app/scope-endpoints"
+redis_url_env = "NORA_COMPUTER_REDIS_URL"
+browser_idle_seconds = 600
+browser_sweep_seconds = 30
+
+[computer.browse]
+enabled = true
+model = "" # use the configured model route / main model fallback
+
+[compute]
+enabled = true
+```
+
+The paths above are application-visible paths. Packaging must mount the
+host-controlled endpoint registry read-only there, and persistent application
+state writable at `state_dir`. The registry is not the result journal. A
+single application process owns `state_dir/computer` and its exclusive lock;
+separate eval subjects must use separate state directories.
+
+| Dependency | Required readback before calling the setup ready |
+| --- | --- |
+| Policy and identity | Resolve the actual conversation and requester through the loaded files. Resolve the policy unit with `computer_unit_scope(unit)`; a private DM uses the canonical person/anchor resolver. Do not hash a room tuple as a unit. |
+| Guest | Provision, serve, then observe the computed scope. Registry and authenticated `/v1/identity` must agree on both scope and nonempty instance. A healthy shared VM is insufficient. |
+| Guest image | Tools, computerd and native Chrome run in that same VM. Keep the pinned Chrome/Xvfb/libs/CA/fonts baseline, non-root renderer sandbox, private profile/Xauthority and debugging pipe. No additional browser service or Playwright install is needed. |
+| Network | TLS activation/probes complete before CDP; per-sandbox denies precede wildcard allow and are read back. Browser and native tools use the same VM policy. |
+| Credentials | Resolve the computer bearer, dedicated computer Redis URL and every selected model provider key through the existing secret-delivery path into the actual process. A key present in a different config directory, or a manually credentialed probe, does not prove the launched subject has it. |
+| Models | Resolve the main turn and browse model routes, provider URL and credential alias from the composed config. The URL must resolve in the caller's network namespace: a Docker-only hostname does not work for a host eval. |
+| SQL and Redis | Migrate the subject database to the candidate's single Alembic head. Verify the dedicated Redis connection and stream permissions below. Existing bridge credentials are not the computer role. |
+| Runtime lifecycle | Run `computer_queue_loop`, `computer_browser_sweep_loop`, the session sweeper and compute completion poller. `App.run` starts the computer loops; dependency construction alone does not. A synchronous fast-path test does not prove deferred recovery or idle cleanup. |
+| Tool surface | Inspect the actual formatted request under the conversation's grant. With `llm.defer_tools = false`, admitted computer schemas are resident. With `true`, the catalogue plus `load_tools` must be present, and loading the names must put the schemas in the next request. Never count an unknown-tool attempt as admission. |
+| Skill and context | Load the current `computer-use` skill for browser judgement. The deterministic computer block carries full task handles; continuation/capture must resolve the original scope, instance and target, or explicitly refuse. |
+| Capture and export | Capture a real owned page into the workspace, then export that path. Verify the captured/exported digest and operation audit. `to="keep"` needs no public URL; link delivery additionally needs the configured documents public URL. |
+
+### Eval setup is a composed subject, not a second deployment
+
+Use the official `python -m evals` entry with declared `--subject-overrides`,
+the run lock and durable evidence. For a generated fixture, supply its config,
+policy, identity, pseudonym map and migrated generated source together. Resolve
+the actual policy/person/scope and model credentials before dispatch. The
+template intentionally leaves computer and browser disabled; both must be
+enabled explicitly for this acceptance case, alongside scoped mode.
+
+The subject baseline isolates computer state beneath its own workdir. Do not
+override it with one shared journal directory for a multi-draw run. Use a
+registry containing only the disposable fixture's scopes and its dedicated
+Redis instance. An enabled subject starts the shared computer lifecycle:
+queue, browser and session sweeps use advancing operational time while the
+snapshot's semantic clock stays frozen. Close stops admission and loops,
+drains executors and manager events, then releases Redis and the journal.
+A failed drain retains dependencies for retry rather than closing stores
+under running work. Synchronous tool exposure remains a separate check from
+queue, idle and deferred-delivery acceptance; a routing PASS proves only routing.
+
+Before a paid confirmation, a zero-paid integration must inspect real formatted
+schemas and actual tool results through the official entry. An empty endpoint
+registry must produce an admitted tool's `unavailable`, not an unknown tool;
+that proves wiring only. The live browser journey still requires a bound VM,
+real navigation, same-target continuation, capture and export. Record request,
+output and time limits plus measured input usage; a failed fixture is an ERROR,
+not semantic evidence about the model. No streaming UI is part of this setup.
+
+```bash
+nora-computer scope provision <scope>   # sandbox + egress verified, record published
+nora-computer scope serve <scope>       # egress re-verified; computerd, COMPUTERD_SCOPE bound
+nora-computer scope observe <scope>     # /v1/identity read back → instance + ready_at
+nora-computer scope resolve <scope>     # print the record Nora resolves
+nora-computer scope backup <scope>      # the scope's /workspace → BACKUP_DIR/<scope>-<ts>.tar.gz
+nora-computer scope restore <scope> F   # stages workspace and moves the old tree aside
+nora-computer scope manifest <scope> F [--drained]  # drained-source inventory + owner/session mapping → F.manifest.json
+nora-computer scope verify <scope> F    # read restored guest archive; compare contents, owners and modes
+nora-computer scope revoke <scope>      # drops a record whose sandbox is verifiably gone
+```
+
+**The two-phase readiness contract.** `provision` publishes
+`{scope, endpoint, name, "instance": ""}` — and only after the DEC-289
+egress policy (private-range denies BEFORE the wildcard allow) applies and
+reads back; a failed or unknown verdict publishes nothing, and the sandbox
+is never deleted or recreated to escape the refusal. The record is NOT yet
+ready: `observe` asks the running VM its own `/v1/identity` and writes the
+observed `instance` (its `boot_id`) plus `ready_at`. Re-run `observe` after
+every `serve`/restart so the record names the current boot. Nora binds a
+scope only when registry scope, live `/v1/identity` scope AND instance all
+match — an empty or stale `instance` authorizes nothing, and a recreated VM
+expires every handle bound to the old boot.
+
+- A record's sandbox existing in `sbx ls --json` is what "alive" means; an
+  unreadable list is `unknown`, never `absent` — every state-dependent
+  branch (provision/serve/revoke/backup) fails closed on `unknown`.
+- `provision` is idempotent: a record that already agrees with its sandbox
+  re-verifies state and egress before answering ready. A live sandbox with
+  no record, or a record binding another scope or name, is a CONFLICT —
+  refused, never adopted.
+- Migration preparation: `scope manifest` freezes the DRAINED source —
+  every file's path, size, sha256, mode and guest uid/gid read directly
+  from the source archive, plus the scope→sandbox→instance mapping — into
+  `<file>.manifest.json`; a live sandbox requires
+  `--drained` (the operator's confirmation the queue held no open work).
+  `scope verify` reads the restored workspace back from the guest as an
+  archive, checking contents, owners and recorded modes against that source.
+  Host extraction alone cannot establish guest ownership.
+- The queue for a scope's computer segments lives on `nq:computer:<scope>`
+  in the DEDICATED credential `NORA_COMPUTER_REDIS_URL` (projected through
+  the existing `redis_url_env` mechanism — no parallel loader). The runner
+  needs `XADD`, `XGROUP CREATE`, `XREADGROUP`, `XAUTOCLAIM`, `XACK`, `XTRIM`, `PING`;
+  acknowledged streams are approximately trimmed to 128 entries, with SQL
+  remaining authoritative for pending work and recovery;
+  breadth comes from the `computer_tasks` table, so `SCAN`/`KEYS` are NOT
+  required and the credential must not grant them.
+- A browser command whose websocket is lost while a CDP reply is pending
+  drains Chrome/Xvfb before guest state can report quiet. Completed commands
+  retain their task tabs; managed browser descendants do not count as native
+  jobs. Native/detached work and pending CDP commands still block successors.
+- On Linux, Chrome runs beneath a scope-user child subreaper in computerd's
+  own file. Double-forked crash-reporting helpers stay in that browser tree;
+  retirement signals the supervisor and waits for all descendants to be reaped.
+  Native jobs remain outside it and still block the queue. No new service,
+  package, renderer flag or cgroup mount is required.
+- Retained terminal results retry SQL writes from a private, fsync'd journal
+  under `state_dir/computer`. Its exclusive lifetime lock refuses a second
+  writer, and corrupt recovery refuses instead of silently resetting it.
+  SQL terminal/delivery state remains authoritative; the journal is not proof
+  of exactly-once chat delivery. Guest work is never blindly replayed.
+- The shared VM (`NAME`, port `HOST_IP:HOST_PORT`) stays the
+  `[computer.scoped] enabled = false` deployment until an explicit cutover;
+  the per-scope systemd units are the packaging lane's to wire once this
+  interface is stable.
 
 ## Upgrading from the S2a timer (once)
 

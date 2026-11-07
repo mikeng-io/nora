@@ -29,16 +29,29 @@ from nora.domain.computer_context import (
 )
 from nora.domain.computer_events import ComputerEvent
 from nora.domain.computer_sessions import ComputerSession, SessionProgress
+from nora.domain.computer_tasks import ComputerTask
 from nora.domain.models import NormalizedMessage, TagContext
 from nora.engagement.computer_context import ComputerContextReader
 from nora.language.computer_render import estimate_tokens, render_computer
 from nora.obs.metrics import Metrics
-from nora.testing import FakeComputerEventStore, FakeComputerSessionStore, FakeSandboxRuntime
+from nora.testing import (
+    FakeComputerEventStore,
+    FakeComputerSessionStore,
+    FakeComputerTaskStore,
+    FakeSandboxRuntime,
+)
 
 NOW = datetime(2026, 9, 30, 12, tzinfo=UTC)
 ROOM = "g-block"
 SCOPE = computer_unit_scope(ROOM)
 AGE = re.compile(r"(\d+ (min|h|d)( \d+ min)? ago|just now)")
+
+
+def _body_text(b):
+    """`Composed` carries `.text` under the merged tree; the
+    older runtime returns `str` — either shape reads the same
+    canonical body text."""
+    return b.text if hasattr(b, "text") else b
 
 
 def _session(i: int, *, status="open", minutes_ago=0, objective=None) -> ComputerSession:
@@ -107,10 +120,10 @@ class CountingRuntime(FakeSandboxRuntime):
         return await super().state(scope=scope)
 
 
-def _reader(runtime, sessions, events, caps=None):
+def _reader(runtime, sessions, events, caps=None, tasks=None):
     return ComputerContextReader(
         unit_for=lambda platform, cid: cid,
-        sessions=sessions, events=events, runtime=runtime,
+        sessions=sessions, events=events, runtime=runtime, tasks=tasks,
         caps=caps or ComputerContextCaps(), clock=lambda: NOW, metrics=Metrics(),
     )
 
@@ -470,3 +483,39 @@ def test_a_command_is_escaped_exactly_once():
     body = render_computer(view).body.text
     assert "python a.py &gt; out.txt &amp;&amp; echo ok" in body
     assert "&amp;gt;" not in body and "&amp;amp;" not in body
+
+
+def _task_row(kind: str, *, status="running") -> ComputerTask:
+    return ComputerTask(
+        id=uuid.uuid4(), scope=SCOPE, kind=kind, status=status,
+        payload={}, origin={}, created_at=NOW - timedelta(minutes=2),
+        updated_at=NOW, started_at=NOW - timedelta(minutes=2))
+
+
+async def test_a_maintenance_row_alone_never_keeps_the_block_alive():
+    """The browser sweep's owner row is housekeeping, not the room's work:
+    it is neither rendered nor read as activity, so a scope whose only
+    open row is maintenance still answers no block."""
+    tasks = FakeComputerTaskStore()
+    await tasks.enqueue(_task_row("maintenance"))
+    view = await _reader(
+        FakeSandboxRuntime(clock=lambda: NOW),
+        FakeComputerSessionStore(), FakeComputerEventStore(),
+        tasks=tasks).read(platform="signal", conversation_id=ROOM)
+    assert view is None
+
+
+async def test_a_maintenance_row_never_renders_beside_real_work():
+    """Alongside a real segment the maintenance row still does not appear:
+    the block's task lines carry only the room's work."""
+    tasks = FakeComputerTaskStore()
+    await tasks.enqueue(_task_row("native", status="queued"))
+    await tasks.enqueue(_task_row("maintenance"))
+    view = await _reader(
+        FakeSandboxRuntime(clock=lambda: NOW),
+        FakeComputerSessionStore(), FakeComputerEventStore(),
+        tasks=tasks).read(platform="signal", conversation_id=ROOM)
+    assert view is not None and view.tasks is not None
+    assert [t.kind for t in view.tasks] == ["native"]
+    block = render_computer(view)
+    assert block is not None and "maintenance" not in _body_text(block.body)

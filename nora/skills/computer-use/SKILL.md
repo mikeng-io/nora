@@ -1,11 +1,10 @@
 ---
 name: computer-use
 description: >-
-  How to work on your own computer: when a task needs it, the loop of
-  writing, running, reading the error and fixing, project folders, long
-  jobs, and bringing files in and out. Load before a task on your computer
-  that takes more than one command. Not for a sum, a web page or a picture:
-  calculate, web_fetch and generate_image do those without it.
+  How to work on your computer with code or a browser, continue tasks, and
+  bring files in and out. Load before multi-step computer work, page
+  interaction or screenshots. Not for arithmetic, plain page text or creating
+  images: calculate, web_fetch and generate_image do those without it.
 ---
 
 # Working on your computer
@@ -15,13 +14,26 @@ its files between turns. The `<computer>` block tells you what is on it now:
 open tasks, running jobs, recent files and commands, and the links you made.
 Read it before you start, so you continue work instead of redoing it.
 
-## Use the computer only when the work needs code
+## Use the computer for code or browser work
 
 The computer costs more turns than a direct tool. A sum or a percentage is
-`calculate`; reading a page is `web_fetch`; a picture is `generate_image`;
+`calculate`; reading page text is `web_fetch`; a picture is `generate_image`;
 what a photo shows is `media_fetch`. Reach for the computer when the answer
 needs code: statistics past a few sums, parsing or joining a file,
 transforming data, or making a file people open (never a document: see below).
+
+Page interaction and screenshots need the browser. Use `computer_browse` for
+those requests; `web_fetch` reads page text but cannot capture its appearance.
+Continue a matching browser task from the computer block instead of opening
+the same work again. If its handle has expired, say so rather than claiming
+the old page is still open.
+
+## Export the captured page instead of recreating it
+
+A screenshot is evidence of the page the browser opened. Capture that page
+with `computer_capture`, then send or keep the resulting file with
+`computer_export`. An image you generate or a description of the page is not
+a screenshot. If the browser or capture is unavailable, report that limit.
 
 ## Keep each task in its own project folder
 

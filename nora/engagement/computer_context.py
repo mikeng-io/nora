@@ -29,6 +29,8 @@ import logging
 import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from typing import Any
+from uuid import UUID
 
 from nora.domain.computer import SandboxStatus, StateResult, anything_running, computer_unit_scope
 from nora.domain.computer_context import (
@@ -37,6 +39,8 @@ from nora.domain.computer_context import (
     LinkLine,
     RunLine,
     SessionLine,
+    TabLine,
+    TaskLine,
 )
 from nora.domain.computer_events import ComputerEvent, ComputerEventStore
 from nora.domain.computer_sessions import (
@@ -48,6 +52,7 @@ from nora.domain.computer_sessions import (
     derive_progress,
     shown_status,
 )
+from nora.domain.computer_tasks import ComputerTask
 from nora.domain.ports import SandboxRuntime
 
 log = logging.getLogger("nora.computer.context")
@@ -66,9 +71,21 @@ class ComputerContextReader:
         runtime: SandboxRuntime, caps: ComputerContextCaps,
         clock: Callable[[], datetime], metrics: object,
         unit_for: Callable[[str, str], str | None] | None = None,
+        # The canonical scope resolver the whole scoped feature shares
+        # ([computer.scoped]): `(platform, conversation_id, conversation_type)`
+        # → the workspace key — a group to its unit, a DM to its `(person,
+        # anchor unit)` scope. When set it WINS over `unit_for`, so the block
+        # a DM room renders is its own scope's, never a group unit's.
+        scope_for: Callable[[str, str, str], str] | None = None,
         monotonic: Callable[[], float] = time.monotonic,
+        # The scoped runtime's queue and tab stores ([computer.scoped]):
+        # when wired, the block carries queued/running tasks and task-owned
+        # tabs. `None` keeps the shared-VM block exactly as before.
+        tasks: Any = None, tabs: Any = None,
+        browser_idle_after: timedelta | None = None,
     ) -> None:
         self._unit_for = unit_for
+        self._scope_for = scope_for
         self._sessions = sessions
         self._events = events
         self._runtime = runtime
@@ -76,21 +93,30 @@ class ComputerContextReader:
         self._clock = clock
         self._metrics = metrics
         self._monotonic = monotonic
-        # scope -> (read at, a good read). One process, rooms in the tens,
-        # entries overwritten per room: bounded by the rooms that use it.
-        self._cache: dict[str, tuple[float, StateResult]] = {}
+        self._tasks = tasks
+        self._tabs = tabs
+        self._browser_idle_after = browser_idle_after
+        # scope -> (read at monotonic, a good read, the read's own time).
+        # One process, rooms in the tens, entries overwritten per room:
+        # bounded by the rooms that use it.
+        self._cache: dict[str, tuple[float, StateResult, datetime]] = {}
+        #: scope -> observation number: how many blocks this scope's reads
+        #: have built — the block's revision mark.
+        self._revisions: dict[str, int] = {}
 
     def _inc(self, name: str, **labels: object) -> None:
         inc = getattr(self._metrics, "inc", None)
         if inc is not None:
             inc(name, **labels)
 
-    async def _state(self, scope: str) -> StateResult | None:
-        """The room's machine state within the read budget, from the cache
-        when fresh; None when it could not be read in time or at all."""
+    async def _state(self, scope: str) -> tuple[StateResult, datetime] | None:
+        """The room's machine state AND the time it was read, within the
+        read budget, from the cache when fresh; None when it could not be
+        read in time or at all. A cached hit stamps the read it serves,
+        never this turn's clock."""
         hit = self._cache.get(scope)
         if hit is not None and self._monotonic() - hit[0] < self._caps.state_cache_seconds:
-            return hit[1]
+            return hit[1], hit[2]
         try:
             state = await asyncio.wait_for(
                 self._runtime.state(scope=scope), self._caps.read_timeout_seconds,
@@ -101,28 +127,62 @@ class ComputerContextReader:
         if state.status is not SandboxStatus.OK:
             self._inc("nora_computer_context_machine_unread_total", reason="unavailable")
             return None
-        self._cache[scope] = (self._monotonic(), state)
-        return state
+        read_at = self._clock()
+        self._cache[scope] = (self._monotonic(), state, read_at)
+        return state, read_at
 
-    async def read(self, *, platform: str, conversation_id: str) -> ComputerView | None:
+    def invalidate(self, scope: str) -> None:
+        """Drop a cached machine read: a mutating segment landed on `scope`,
+        so the next turn's block re-reads, not serves what it had."""
+        self._cache.pop(scope, None)
+
+    async def read(self, *, platform: str, conversation_id: str,
+                   conversation_type: str = "group") -> ComputerView | None:
         try:
-            return await self._read(platform, conversation_id)
+            return await self._read(platform, conversation_id, conversation_type)
         except Exception:
             log.exception("computer context read failed; rendering no block")
             self._inc("nora_errors_total", stage="computer_context", platform=platform)
             return None
 
-    async def _read(self, platform: str, conversation_id: str) -> ComputerView | None:
+    def _scope(self, platform: str, conversation_id: str,
+               conversation_type: str) -> str:
+        if self._scope_for is not None:
+            try:
+                return self._scope_for(platform, conversation_id, conversation_type) or ""
+            except Exception:
+                log.exception("computer scope resolution failed")
+                return ""
         unit = self._unit_for(platform, conversation_id) if self._unit_for else None
-        if not unit:
+        return computer_unit_scope(unit) if unit else ""
+
+    async def _read(self, platform: str, conversation_id: str,
+                    conversation_type: str) -> ComputerView | None:
+        scope = self._scope(platform, conversation_id, conversation_type)
+        if not scope:
             return None
-        scope = computer_unit_scope(unit)
         now = self._clock()
         caps = self._caps
         rows = await self._events.for_scope(
             scope=scope, since=now - timedelta(days=caps.active_days), limit=EVENTS_READ,
         )
         used = any(r.actor != "sweeper" for r in rows)
+        task_rows: list[ComputerTask] = []
+        tasks_unavailable = False
+        if self._tasks is not None:
+            try:
+                task_rows = await self._tasks.open_for_scope(scope, limit=8)
+            except Exception:
+                log.exception("computer tasks read failed")
+                task_rows = []
+                # A wired store that could not be read renders
+                # `unavailable`, never a guessed empty queue.
+                tasks_unavailable = True
+        # Housekeeping is not the room's work: a `maintenance` segment (the
+        # browser lifecycle sweep claiming the scope's owner) is neither a
+        # task the model can act on nor proof of activity, so it never
+        # renders and never alone keeps the block alive.
+        task_rows = [t for t in task_rows if t.kind != "maintenance"]
         sessions = await self._sessions.for_scope(
             scope=scope, limit=SESSIONS_READ,
         )
@@ -132,10 +192,13 @@ class ComputerContextReader:
             if s.status == EXPIRED and s.expired_at is not None
             and now - s.expired_at <= caps.lapsed_visible
         ]
-        if not used and not open_rows and not lapsed_rows:
+        # A live queue row IS activity: a room with a running segment sees
+        # the block even before its first audit event lands.
+        if not used and not task_rows and not open_rows and not lapsed_rows:
             return None
-        state = await self._state(scope)
-        machine_read = state is not None
+        got = await self._state(scope)
+        state, state_at = got if got is not None else (None, None)
+        machine_read = got is not None
         tmux = state.tmux if state is not None else None
         processes = state.processes if state is not None else None
         # A tmux job or ANY process the room's user owns (a `nohup … &` job
@@ -167,12 +230,91 @@ class ComputerContextReader:
         lapsed_lines = (*lines[len(shown_open):],
                         *(SessionLine(s, "lapsed", None)
                           for s in lapsed_rows[caps.max_lapsed_sessions:]))
+        tasks: tuple[TaskLine, ...] | None = None
+        tabs: tuple[TabLine, ...] | None = None
+        tabs_unavailable = False
+        if self._tasks is not None and not tasks_unavailable:
+            try:
+                tasks = tuple(TaskLine(
+                    # The FULL id: `task=` on computer_browse/capture/cancel
+                    # parses the whole UUID — a cut handle answers not-a-task.
+                    task_id=str(t.id), kind=t.kind, status=t.status,
+                    created=t.created_at,
+                    note=cut(str(t.result.get("note") or t.result.get("reason") or ""),
+                             60)) for t in task_rows)
+            except Exception:
+                log.exception("computer tasks read failed")
+                tasks = None
+                tasks_unavailable = True
+        instance: str | None = None
+        instance_read = getattr(self._runtime, "instance", None)
+        if instance_read is not None:
+            try:
+                instance = await instance_read(scope)
+            except Exception:  # noqa: BLE001 - an unreadable identity is absent, never raised
+                instance = None
+        if self._tabs is not None:
+            try:
+                tab_rows = await self._tabs.for_scope(scope, limit=8)
+                idle = self._browser_idle_after
+                owners: dict[str, ComputerTask | None] = {}
+                if self._tasks is not None:
+                    for t in tab_rows:
+                        key = str(t.detail.get("segment_id") or "")
+                        if key not in owners:
+                            try:
+                                owners[key] = await self._tasks.get(UUID(key)) if key else None
+                            # An unreadable owner is unknown, not absent.
+                            except Exception:  # noqa: BLE001
+                                owners[key] = None
+
+                def _line(t: Any) -> TabLine:
+                    owner = owners.get(str(t.detail.get("segment_id") or ""))
+                    why = str((t.detail or {}).get("close_reason") or "")
+                    if (not why and instance is not None
+                            and t.instance != instance):
+                        why = "the VM instance changed"
+                    return TabLine(
+                        task_id=str(t.task_id), url=cut(t.last_url, 80),
+                        title=cut(t.last_title, 60),
+                        # A row bound to a DEAD instance is expired whatever
+                        # the sweep has had time to write — the block renders
+                        # the live instance's tabs only.
+                        status=("unavailable" if t.status == "open" and instance_read is not None
+                                and instance is None else "expired" if t.status == "open"
+                                and instance is not None
+                                and t.instance != instance else t.status),
+                        via=t.via,
+                        last_activity=t.last_activity_at,
+                        expires_in=((t.last_activity_at + idle - now).total_seconds()
+                                    if idle is not None and t.status == "open"
+                                    and (instance_read is None or t.instance == instance)
+                                    else None),
+                        reason=cut(why, 60),
+                        last_op=(cut(str((owner.payload or {}).get("tool")
+                                         or owner.kind), 40)
+                                 if owner is not None else ""),
+                        last_result=(cut(owner.status, 20)
+                                     if owner is not None else ""),
+                    )
+
+                tabs = tuple(_line(t) for t in tab_rows)
+            except Exception:
+                log.exception("browser tabs read failed")
+                tabs = None
+                tabs_unavailable = True
+        self._revisions[scope] = self._revisions.get(scope, 0) + 1
         return ComputerView(
             now=now, caps=caps, open_sessions=tuple(open_lines),
             lapsed_sessions=tuple(lapsed_lines),
             tmux=tmux, processes=processes,
             processes_truncated=state.processes_truncated if state is not None else False,
             files=files, runs=_runs(rows), links=_links(rows),
+            tasks=tasks, tabs=tabs,
+            tasks_unavailable=tasks_unavailable,
+            tabs_unavailable=tabs_unavailable,
+            instance=instance, state_at=state_at,
+            revision=self._revisions[scope],
             machine_read=machine_read,
         )
 

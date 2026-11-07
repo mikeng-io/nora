@@ -84,6 +84,12 @@ VERBS: tuple[str, ...] = (
     # the subject's own dispute hides the line at once, anyone else's is marked
     # for weighing, and `cancel` would read as taking the memory away.
     "dispute",
+    # `capture` (the scoped browser): a direct image of a task's own tab,
+    # written to the workspace with provenance — no decision loop. `read`
+    # reads a file that exists; `export` moves one OUT to a destination; a
+    # capture is neither: it takes the thing first, which is exactly the
+    # choice the model must make on purpose.
+    "capture",
 )
 
 

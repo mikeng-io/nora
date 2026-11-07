@@ -25,7 +25,7 @@ import asyncio
 import base64
 import contextlib
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -136,13 +136,25 @@ class Snapshot:
 
 class CdpConnection:
     """One CDP websocket: numbered calls answered in any order, events
-    dropped (the actions here poll instead of subscribing)."""
+    fanned to `subscribe`d handlers. computerd admits ONE browser websocket
+    per scope, so everything that needs Chrome's target list — the attach,
+    the reconcile, the popup watch — shares this connection."""
 
     def __init__(self, ws: aiohttp.ClientWebSocketResponse) -> None:
         self._ws = ws
         self._next = 0
         self._pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
+        self._handlers: list[Callable[[str, dict[str, Any]], None]] = []
         self._reader = asyncio.create_task(self._read())
+
+    def subscribe(self, handler: Callable[[str, dict[str, Any]], None]) -> None:
+        """A `(method, params)` sync callback for CDP events. It must not
+        block or await — schedule async work from it."""
+        self._handlers.append(handler)
+
+    def unsubscribe(self, handler: Callable[[str, dict[str, Any]], None]) -> None:
+        with contextlib.suppress(ValueError):
+            self._handlers.remove(handler)
 
     async def _read(self) -> None:
         try:
@@ -153,9 +165,16 @@ class CdpConnection:
                     data = json.loads(msg.data)
                 except ValueError:
                     continue
-                waiter = self._pending.pop(data.get("id"), None) if "id" in data else None
-                if waiter is not None and not waiter.done():
-                    waiter.set_result(data)
+                if "id" in data:
+                    waiter = self._pending.pop(data.get("id"), None)
+                    if waiter is not None and not waiter.done():
+                        waiter.set_result(data)
+                else:
+                    method = str(data.get("method") or "")
+                    params = data.get("params") or {}
+                    for handler in self._handlers:
+                        with contextlib.suppress(Exception):
+                            handler(method, params)
         finally:
             for waiter in self._pending.values():
                 if not waiter.done():
@@ -554,6 +573,51 @@ class BrowserPage:
             boxes.append((ref, min(xs), min(ys), max(xs), max(ys)))
         return draw_marks(jpeg, boxes)
 
+    async def capture_image(self, *, full_page: bool = False,
+                            max_height: int = 16000) -> tuple[bytes, str, bool]:
+        """An UNMARKED image of THIS tab for a person: `(bytes, media_type,
+        partial)`. The viewport is a PNG of what shows; `full_page` captures
+        beyond it from the layout metrics, capped at `max_height` pixels —
+        `partial` is True when the page ran past the cap, never silently
+        presented as complete. A CDP refusal raises `BrowserError`."""
+        params: dict[str, Any] = {"format": "png"}
+        partial = False
+        if full_page:
+            metrics = await self._page("Page.getLayoutMetrics")
+            content = metrics.get("cssContentSize") or metrics.get("contentSize") or {}
+            width = float(content.get("width") or 0)
+            height = float(content.get("height") or 0)
+            if width <= 0 or height <= 0:
+                raise BrowserError("the page size could not be measured")
+            if height > max_height:
+                height, partial = float(max_height), True
+            params["clip"] = {"x": 0.0, "y": 0.0, "width": width,
+                              "height": height, "scale": 1.0}
+            params["captureBeyondViewport"] = True
+        got = await self._page("Page.captureScreenshot", params)
+        data = got.get("data")
+        if not isinstance(data, str) or not data:
+            raise BrowserError("no screenshot came back")
+        try:
+            png = base64.b64decode(data, validate=True)
+        except Exception as exc:
+            raise BrowserError("the screenshot was not decodable") from exc
+        if not png:
+            # A decodable-but-empty frame is a failed capture, not a picture.
+            raise BrowserError("the screenshot was empty")
+        from io import BytesIO
+
+        from PIL import Image
+
+        try:
+            with Image.open(BytesIO(png)) as image:
+                if image.format != "PNG":
+                    raise ValueError("capture is not PNG")
+                image.verify()
+        except (OSError, SyntaxError, ValueError) as exc:
+            raise BrowserError("the screenshot was not a valid PNG") from exc
+        return png, "image/png", partial
+
 
 def draw_marks(jpeg: bytes, boxes: list[tuple[str, float, float, float, float]]) -> bytes:
     """`jpeg` with each `(ref, left, top, right, bottom)` boxed and labelled;
@@ -613,6 +677,83 @@ async def open_browser(*, base_url: str, token: str, scope: str,
             yield page
         finally:
             await cdp.close()
+
+
+@contextlib.asynccontextmanager
+async def connect_browser_cdp(*, base_url: str, token: str, scope: str,
+                              timeout_seconds: float = CALL_SECONDS,
+                              instance: str | None = None,
+                              ) -> AsyncIterator[CdpConnection]:
+    """A raw CDP connection to the scope's browser, no target attached: the
+    manager's channel for target bookkeeping (`getTargets`, `closeTarget`),
+    never for page actions. Starting the browser counts as the same on-demand
+    start `/v1/browser` always does. `instance` pins the connection to the
+    admitted VM boot — a scoped computerd refuses a browser attach that does
+    not name the boot it serves."""
+    ws_url = base_url.rstrip("/").replace("http://", "ws://", 1).replace(
+        "https://", "wss://", 1) + f"/v1/browser?scope={scope}"
+    headers = {"Authorization": f"Bearer {token}"}
+    if instance:
+        headers["X-Computerd-Instance"] = instance
+    timeout = aiohttp.ClientTimeout(total=None, sock_connect=timeout_seconds)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        try:
+            ws = await session.ws_connect(ws_url, headers=headers, max_msg_size=64 * 1024 * 1024,
+                                          heartbeat=30)
+        except aiohttp.WSServerHandshakeError as exc:
+            raise BrowserError("the computer refused the browser: it is busy, every "
+                               f"browser slot is in use, or it is off ({exc.status})") from None
+        except (aiohttp.ClientError, OSError, TimeoutError) as exc:
+            raise BrowserError(f"the computer could not be reached: {type(exc).__name__}") from None
+        cdp = CdpConnection(ws)
+        try:
+            yield cdp
+        finally:
+            await cdp.close()
+
+
+@contextlib.asynccontextmanager
+async def open_browser_tab(*, base_url: str, token: str, scope: str,
+                           target_id: str | None = None,
+                           timeout_seconds: float = CALL_SECONDS,
+                           instance: str | None = None,
+                           ) -> AsyncIterator[BrowserPage]:
+    """Connect to the scope's browser and attach to ONE OWNED target.
+
+    This is the task-owned attach: `target_id` names the tab a task bound
+    earlier (`BrowserTab`); None opens a fresh tab for a task with none. It
+    NEVER adopts the first/active page (that could be another task's) and
+    NEVER closes a page (popups and sibling tabs belong to their tasks).
+    A `target_id` the browser no longer holds is `BrowserError` — the handle
+    is stale, and the caller answers `expired`, never a substitute tab."""
+    async with connect_browser_cdp(
+        base_url=base_url, token=token, scope=scope,
+        timeout_seconds=timeout_seconds, instance=instance,
+    ) as cdp:
+        yield await _attach_owned(cdp, target_id)
+
+
+async def _attach_owned(cdp: CdpConnection, target_id: str | None) -> BrowserPage:
+    """Attach to the target `target_id` names (verifying it is a page target
+    that exists), or create one. The target id Chrome reports back is the
+    handle returned; nothing else is touched."""
+    try:
+        if target_id is not None:
+            targets = {str(t.get("targetId")): t for t in
+                       (await cdp.call("Target.getTargets")).get("targetInfos", [])}
+            if target_id not in targets or targets[target_id].get("type") != "page":
+                raise BrowserError("the bound tab is gone")
+        else:
+            target_id = str((await cdp.call("Target.createTarget",
+                                            {"url": "about:blank"}))["targetId"])
+        attached = await cdp.call("Target.attachToTarget",
+                                  {"targetId": target_id, "flatten": True})
+        session_id = str(attached["sessionId"])
+    except (KeyError, TypeError) as exc:
+        raise BrowserError(f"the tab could not be attached: {type(exc).__name__}") from None
+    for domain in ("Page", "DOM", "Accessibility"):
+        await cdp.call(f"{domain}.enable", session_id=session_id)
+    return BrowserPage(cdp=cdp, session_id=session_id, target_id=target_id)
 
 
 async def _attach(cdp: CdpConnection) -> BrowserPage:

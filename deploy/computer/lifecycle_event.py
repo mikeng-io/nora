@@ -60,8 +60,11 @@ ACTOR = "operator"
 EVENTS: frozenset[str] = frozenset({
     "create", "recreate", "destroy", "computerd_start", "token_rotation",
     "policy_log_read", "egress_apply", "backup", "restore",
+    "scope_create", "scope_provision", "scope_computerd_start", "scope_observe",
+    "scope_manifest", "scope_verify", "scope_backup", "scope_restore",
+    "scope_revoke",
 })
-STATUSES: frozenset[str] = frozenset({"ok", "failed"})
+STATUSES: frozenset[str] = frozenset({"ok", "failed", "refused"})
 
 FINGERPRINT_CHARS = 12
 

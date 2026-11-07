@@ -57,6 +57,9 @@ ROOT = Path(__file__).resolve().parents[2]
 #: than a stub of itself. An address the world answers at, not part of her.
 _SEAMS = frozenset({
     "database_url", "workdir", "overrides", "identity", "policy", "now", "room",
+    # `circle`/`signal_rpc_url` state what the OUTSIDE WORLD does (argued in
+    # design/evaluation/01-boundaries.md §2): which controlled absence a case
+    # presents and where the transport would reach — input, not collaborators.
     "circle", "signal_rpc_url",
 })
 
