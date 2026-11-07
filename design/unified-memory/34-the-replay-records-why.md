@@ -253,5 +253,6 @@ evidence without a new replay.
   statement.
 - The judges' prompts and scope are §5's. A test fails if a context-only
   statement is counted as missed.
-- Generated sentinel content placed in the record appears in no exporter,
-  stdout, public receipt or CI upload.
+- Generated sentinel content remains available in private, process-local
+  capture and the SDK-mapped `Session`, and appears in no non-private trace or
+  log exporter, stdout, public receipt or CI upload.
