@@ -187,9 +187,62 @@ def _manifest_version_only(old: str, new: str) -> bool:
     return all(k == "." or o[k] == n[k] for k in o)
 
 
-def _release_semantic(path: str, old: str, new: str) -> bool:
+# The bounded rule for the strict release files: the whole diff is ONE
+# removed line and ONE added line, ASCII, matching the file's version
+# pattern — then the parsed-structure compare confirms the line is the
+# field it spells (a docstring line or another TOML section cannot qualify).
+_STRICT_LINE = {
+    "nora/__init__.py": rb'^__version__ = "\d+\.\d+\.\d+"$',
+    "pyproject.toml": rb'^version = "\d+\.\d+\.\d+"$',
+    "uv.lock": rb'^version = "\d+\.\d+\.\d+"$',
+    ".release-please-manifest.json": rb'^\s+"\.": "\d+\.\d+\.\d+"$',
+}
+
+
+def _git_bytes(repo: Path, *args: str) -> bytes:
+    return subprocess.run(  # noqa: S603 - fixed git argv, repo-local
+        ["git", *args], cwd=repo, capture_output=True, check=True,  # noqa: S607
+    ).stdout
+
+
+def _one_line_bump(repo: Path, range_: str, path: str) -> bool:
+    """The strict shape, read as BYTES: ASCII only, exactly one removed and
+    one added line, both matching the file's full-line version pattern and
+    differing. A second hunk, CRLF, BOM or any non-ASCII byte is ineligible."""
+    patch = _git_bytes(repo, "diff", "-U0", range_, "--", path)
+    try:
+        text = patch.decode("ascii")
+    except UnicodeDecodeError:
+        return False
+    # split on \n only: splitlines() would eat the \r of a CRLF line and let
+    # it pass the pattern; the trailing \r must fail it instead
+    added = [line[1:] for line in text.split("\n")
+             if line.startswith("+") and not line.startswith("+++")]
+    removed = [line[1:] for line in text.split("\n")
+               if line.startswith("-") and not line.startswith("---")]
+    if len(added) != 1 or len(removed) != 1 or added == removed:
+        return False
+    pattern = re.compile(_STRICT_LINE[path])
+    return bool(
+        pattern.match(added[0].encode()) and pattern.match(removed[0].encode())
+    )
+
+
+def _additions_only(repo: Path, range_: str, path: str) -> bool:
+    """CHANGELOG.md keeps free text but pure additions: no removed lines."""
+    patch = _git(repo, "diff", "-U0", range_, "--", path)
+    added = [line for line in patch.split("\n")
+             if line.startswith("+") and not line.startswith("+++")]
+    removed = [line for line in patch.split("\n")
+               if line.startswith("-") and not line.startswith("---")]
+    return bool(added) and not removed
+
+
+def _release_semantic(repo: Path, range_: str, path: str, old: str, new: str) -> bool:
     if path == "CHANGELOG.md":
-        return True
+        return _additions_only(repo, range_, path)
+    if not _one_line_bump(repo, range_, path):
+        return False
     if path == "nora/__init__.py":
         return _init_version_only(old, new)
     if path == "pyproject.toml":
@@ -237,7 +290,7 @@ def release_eligible(repo: Path, event: dict) -> bool:
         for path, *_ in entries:
             old = _git(repo, "show", f"{base['sha']}:{path}")
             new = _git(repo, "show", f"{head['sha']}:{path}")
-            if not _release_semantic(path, old, new):
+            if not _release_semantic(repo, range_, path, old, new):
                 return False
     except Exception:  # noqa: BLE001 - an unreadable diff is never eligible
         return False

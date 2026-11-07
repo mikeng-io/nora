@@ -124,7 +124,9 @@ from __future__ import annotations
 import argparse
 import ast
 import fnmatch
+import importlib.util
 import json
+import keyword
 import os
 import re
 import subprocess
@@ -397,42 +399,90 @@ def _canonical(dotted: str) -> str:
 
 
 def _import_graph(repo: Path) -> dict[str, set[str]]:
-    """Every `.py` outside `tests/` → the repo modules it imports.
-
-    The record's collection-time blind spot (a module imported at collection
-    is not in per-test coverage) closes only through the real import graph —
-    transitive through production modules, not just test modules. Built once
-    per select() call, only when a `.py` outside `tests/` changed.
+    """The repo's whole import graph in ONE resolution pass (grimp, the same
+    resolver import-linter runs): module -> the modules it imports, for every
+    `.py` — production AND tests. Each module binds its parent packages here,
+    once, at graph level (importing `pkg.sub` runs `pkg`'s `__init__` first);
+    no call site may apply a second rule. Only repo-root packages resolve —
+    a file no import can name, or a layout like `src/` that maps
+    `src/pkg/mod.py` to `src.pkg.mod` while tests import `pkg.mod`, is
+    unresolvable -> the caller fails closed to ALL.
     """
     files = [
-        file for file in repo.rglob("*.py")
-        if ".git" not in file.parts and ".venv" not in file.parts
-        and not file.relative_to(repo).as_posix().startswith("tests/")
+        f for f in repo.rglob("*.py")
+        if ".git" not in f.parts and ".venv" not in f.parts
     ]
-    modules = set()
-    for file in files:
-        dotted = _dotted(file.relative_to(repo).as_posix())
-        modules.add(_canonical(dotted))
-    graph: dict[str, set[str]] = {}
+    roots: set[str] = set()
+    wanted: dict[str, str] = {}
     for file in files:
         rel = file.relative_to(repo).as_posix()
-        tree = ast.parse(file.read_text(encoding="utf-8"))
-        names = set()
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.Import, ast.ImportFrom)):
-                names |= _imported_names(node, rel.split("/")[:-1])
-        # an imported name also binds every package above it: importing
-        # `pkg.sub` executes `pkg`'s `__init__` first, so each ancestor that
-        # is a module is a dependency too.
-        deps = set()
-        for name in names:
-            parts = name.split(".")
-            for i in range(1, len(parts) + 1):
-                cand = ".".join(parts[:i])
-                if cand in modules:
-                    deps.add(cand)
-        graph.setdefault(_canonical(_dotted(rel)), set()).update(deps)
-    return graph
+        parts = rel.split("/")
+        if len(parts) > 1 and parts[0].isidentifier() \
+                and not keyword.iskeyword(parts[0]):
+            roots.add(parts[0])
+        else:
+            continue  # bare-root file or unimportable root: grimp cannot name it
+        dotted = _canonical(_dotted(rel))
+        # every segment must be a legal identifier — `deploy/bridge-projection/`
+        # can never be imported, so its files carry no import edges
+        if not all(seg.isidentifier() and not keyword.iskeyword(seg)
+                   for seg in dotted.split(".")):
+            continue
+        wanted[dotted] = rel
+    try:
+        import grimp
+        # grimp finds packages through sys.path AND merges namespace-package
+        # portions: another checkout's `tests/` on the path would merge into
+        # this repo's, so the build sees only this repo. Its own cache must
+        # not serve another checkout's modules for a shared root name either.
+        old_path = sys.path
+        sys.path = [str(repo)]
+        # sys.modules may already hold these names — pytest itself imports
+        # `tests`, which would resolve to THIS repo's tests, not the scanned
+        # one's. Build against the repo's own files, then restore.
+        evicted = {
+            name: sys.modules.pop(name) for name in list(sys.modules)
+            if name.split(".")[0] in roots
+        }
+        try:
+            # A root no interpreter can import — stdlib-shadowed (`site`),
+            # resolved elsewhere, or not a package — is skipped: no import
+            # statement can name its files either.
+            for root in list(roots):
+                spec = importlib.util.find_spec(root)
+                locations = spec.submodule_search_locations if spec else None
+                if not locations or not any(
+                    (repo / root).resolve() == Path(loc).resolve()
+                    for loc in locations
+                ):
+                    roots.discard(root)
+            wanted = {
+                k: v for k, v in wanted.items() if v.split("/")[0] in roots
+            }
+            graph = grimp.build_graph(*sorted(roots), cache_dir=None)
+        finally:
+            sys.path = old_path
+            sys.modules.update(evicted)
+    except Exception:  # noqa: BLE001 - an unbuildable graph is ALL
+        raise RuntimeError("import graph could not be built") from None
+    modules = set(graph.modules)
+    # ponytail: `wanted` and `modules` can differ — grimp does not descend
+    # into namespace sub-packages like tests/fixtures, and a file consumed by
+    # spec_from_file_location is the dynamic-import blind spot already
+    # documented. A CHANGED file missing from the graph is still ALL; that
+    # check lives in _importers where the unresolvable importers are.
+    # one ancestor rule, graph level: every module imports its parents
+    for mod in list(modules):
+        parts = mod.split(".")
+        for i in range(1, len(parts)):
+            parent = ".".join(parts[:i])
+            if parent in modules:
+                graph.add_import(importer=mod, imported=parent)
+    return {
+        mod: {d for d in graph.find_modules_directly_imported_by(mod)
+              if d in modules}
+        for mod in modules
+    }
 
 
 def _module_closure(root: str, graph: dict[str, set[str]]) -> set[str]:
@@ -464,8 +514,18 @@ def _importers(
     helper = False
     frontier = {_dotted(path)}
     if graph is not None:
-        frontier = {_canonical(_dotted(path))}
-        frontier |= _module_closure(_canonical(_dotted(path)), graph)
+        root = _canonical(_dotted(path))
+        if root not in graph:
+            return set(), True  # the changed module is unresolvable -> ALL
+        upstream = _module_closure(root, graph)
+        for rel in scan:
+            if _canonical(_dotted(rel)) not in upstream or rel == path:
+                continue
+            if _is_collectible_test_file(rel):
+                importers.add(rel)
+            else:
+                helper = True
+        return importers, helper
     while frontier:
         nxt: set[str] = set()
         for rel, facts in scan.items():
@@ -688,6 +748,18 @@ def select(
         try:
             graph = _import_graph(repo)
         except Exception:  # noqa: BLE001 - unresolved importers is ALL, never a subset
+            return ALL
+        # A test-side import naming a repo file the graph cannot see is an
+        # unrecognized layout (a bare-root module, a src/ layout): never a
+        # subset.
+        if any(
+            name not in graph and (
+                (repo / (name.replace(".", "/") + ".py")).exists()
+                or (repo / name.replace(".", "/") / "__init__.py").exists()
+                or any(m.endswith("." + name) for m in graph)
+            )
+            for facts in scan.values() for name in facts.imports
+        ):
             return ALL
         for path in python_paths:
             readers, helper_reads = _readers(path, scan, loose=False)
