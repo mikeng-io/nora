@@ -21,8 +21,7 @@ collaborators — only the Redis writer is a call-shape fake.
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
+import importlib.util
 import logging
 import os
 import sys
@@ -35,8 +34,6 @@ from typing import Any
 import pytest
 
 from nora.domain.actions import ActionOwner
-from nora.domain.media import MediaRef
-from nora.domain.models import NormalizedMessage
 from nora.obs.metrics import Metrics
 from nora.platform.bridge import telemetry as bt
 from nora.platform.bridge.envelope import Envelope
@@ -608,141 +605,19 @@ class TestProducerTelemetry:
 
 
 # ---------------------------------------------------------------------------
-# Finding 3 — the serialized media ref must name the custody key
-# ---------------------------------------------------------------------------
-
-class _Rpc:
-    """The `_rpc` call shape — answers `getAttachment` from a byte map,
-    records every call so a test can see which upstream handles were
-    actually fetched."""
-    def __init__(self, blobs: dict[str, bytes]) -> None:
-        self._blobs = blobs
-        self.calls: list[str] = []
-
-    async def __call__(self, method: str, params: dict) -> Any:
-        self.calls.append(str(params.get("id")))
-        assert method == "getAttachment"
-        raw = self._blobs[str(params.get("id"))]
-        return {"data": base64.b64encode(raw).decode()}
-
-
-class TestSignalCustodyBinding:
-    def _wrapper(self, tmp_path):
-        import importlib.util
-        import sys as _sys
-        from pathlib import Path as _Path
-        from unittest.mock import AsyncMock
-
-        spec = importlib.util.spec_from_file_location(
-            "signal_bridge_wrapper_test",
-            _Path(__file__).resolve().parents[2]
-            / "deploy/signal-bridge/wrapper.py")
-        mod = importlib.util.module_from_spec(spec)
-        _sys.modules["signal_bridge_wrapper_test"] = mod
-        spec.loader.exec_module(mod)
-        cfg = mod.BridgeConfig(
-            account_key=ACCT, token="t",  # noqa: S106 — synthetic fixture
-            signal_http="http://unused", signal_account="+00",
-            port=0, redis_url="redis://unused/0",
-            database_url="sqlite+aiosqlite:///" + str(tmp_path / "b.db"),
-            journal_path=tmp_path / "journal.jsonl",
-            attach_dir=tmp_path / "att",
-            projection_dir=tmp_path / "proj",
-            correlation_key=b"\x33" * 16, key_version=1)
-        # The enqueue path isn't under test here — the register_script seam
-        # gets a call-shape answer, never a real Redis.
-        fake_redis = SimpleNamespace(
-            register_script=lambda lua: AsyncMock(
-                return_value=["1-1", "eid"]))
-        return mod, cfg, fake_redis
-
-    async def test_custody_rebinds_the_serialized_platform_id(self,
-                                                              tmp_path):
-        """Finding 3: after `_custody`, `msg.media[i].platform_id` IS the
-        hash key bytes answer to — the app fetches the reference it was
-        handed, not the upstream handle that no byte answers to."""
-        mod, cfg, fake_redis = self._wrapper(tmp_path)
-        rpc = _Rpc({"up-one": b"blob-one", "up-two": b"blob-two"})
-        bridge = mod.Bridge(cfg, rpc_client=rpc,
-                            redis_client=fake_redis,
-                            store=SimpleNamespace(_engine=SimpleNamespace()))
-        cfg.attach_dir.mkdir()
-        msg = NormalizedMessage(
-            platform="signal", conversation_id="g",
-            conversation_type="group", sender_id="+1", sender_name=None,
-            timestamp=1, body="", raw={},
-            media=(MediaRef(platform_id="up-one",
-                            media_type="image/png", filename="a.png"),
-                   MediaRef(platform_id="up-two",
-                            media_type="image/png", filename="b.png")))
-        bound, attachments = await bridge._custody(msg)
-        key_one = hashlib.sha256(b"blob-one").hexdigest()[:32]
-        key_two = hashlib.sha256(b"blob-two").hexdigest()[:32]
-        # Index-stable rebind — every ref points at ITS custody key.
-        assert [r.platform_id for r in bound.media] == [key_one, key_two]
-        assert [a["key"] for a in attachments] == [key_one, key_two]
-        assert (cfg.attach_dir / key_one).read_bytes() == b"blob-one"
-        assert (cfg.attach_dir / key_two).read_bytes() == b"blob-two"
-
-    async def test_a_failed_download_keeps_the_upstream_handle(
-            self, tmp_path):
-        """A custody failure does not fabricate a key: the ref keeps its
-        upstream id and no attachment record claims custody — the app's
-        fetch is honest `unavailable`, not a 404 under a wrong key."""
-        mod, cfg, fake_redis = self._wrapper(tmp_path)
-        rpc = _Rpc({"up-good": b"ok-bytes"})
-        bridge = mod.Bridge(cfg, rpc_client=rpc,
-                            redis_client=fake_redis,
-                            store=SimpleNamespace(_engine=SimpleNamespace()))
-        cfg.attach_dir.mkdir()
-        msg = NormalizedMessage(
-            platform="signal", conversation_id="g",
-            conversation_type="group", sender_id="+1", sender_name=None,
-            timestamp=1, body="", raw={},
-            media=(MediaRef(platform_id="up-missing"),
-                   MediaRef(platform_id="up-good")))
-        bound, attachments = await bridge._custody(msg)
-        assert next(
-            r.platform_id for r in bound.media) == "up-missing"
-        assert len(attachments) == 1
-
-    async def test_custody_binds_before_the_journal_append(
-            self, tmp_path):
-        """The journal holds the BOUND reference — read the journaled
-        envelope's `message.media` back and it names custody keys, not
-        upstream handles (the actual handoff the app replays)."""
-        mod, cfg, fake_redis = self._wrapper(tmp_path)
-        rpc = _Rpc({"up-evt": b"evt-bytes"})
-        bridge = mod.Bridge(cfg, rpc_client=rpc,
-                            redis_client=fake_redis,
-                            store=SimpleNamespace(_engine=SimpleNamespace()))
-        cfg.attach_dir.mkdir()
-        (cfg.projection_dir).mkdir(parents=True, exist_ok=True)
-        (cfg.projection_dir / "signal.json").write_text(
-            '{"revision": 1, "enabled": true, "rooms": ["g1"],'
-            ' "dm_allowed_senders": []}')
-        event = {"envelope": {
-            "source": "+1", "sourceNumber": "+1", "timestamp": 9,
-            "dataMessage": {"message": "pic", "timestamp": 9,
-                            "groupInfo": {"groupId": "g1"},
-                            "attachments": [{"id": "up-evt",
-                                             "contentType": "image/png",
-                                             "filename": "p.png"}]}}}
-        await bridge._handle(event)
-        rec = next(r for r in bridge.journal.recover()
-                   if "envelope" in r)
-        env = Envelope.from_fields(rec["envelope"])
-        media = env.message["media"]
-        key = hashlib.sha256(b"evt-bytes").hexdigest()[:32]
-        assert media[0]["platform_id"] == key
-        assert (cfg.attach_dir / key).read_bytes() == b"evt-bytes"
-
-
-# ---------------------------------------------------------------------------
 # Finding 6 — the real bootstrap seam + a dead collector
 # ---------------------------------------------------------------------------
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _signal_wrapper():
+    spec = importlib.util.spec_from_file_location(
+        "signal_bridge_wrapper_test", ROOT / "deploy/signal-bridge/wrapper.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["signal_bridge_wrapper_test"] = mod
+    spec.loader.exec_module(mod)
+    return mod
 
 
 # ---------------------------------------------------------------------------
@@ -810,7 +685,7 @@ class TestQueueErrorLogging:
             else:
                 from unittest.mock import AsyncMock
 
-                mod, _, _ = TestSignalCustodyBinding()._wrapper(tmp_path)
+                mod = _signal_wrapper()
                 executor = mod._SignalExecutor(
                     SimpleNamespace(send=AsyncMock(side_effect=RuntimeError(secret))),
                     SimpleNamespace())

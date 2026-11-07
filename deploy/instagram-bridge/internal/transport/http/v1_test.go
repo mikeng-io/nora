@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,6 +32,7 @@ import (
 
 type fakeMessaging struct {
 	sent      []domain.Sent
+	uploads   []domain.Upload
 	sendErr   error
 	reactOK   bool
 	reactErr  error
@@ -51,7 +53,8 @@ func (f *fakeMessaging) SendText(_ context.Context, _ domain.ThreadRef, _ string
 	f.sent = f.sent[1:]
 	return s, nil
 }
-func (f *fakeMessaging) SendMedia(_ context.Context, _ domain.ThreadRef, _ domain.Upload, _ string) (domain.Sent, error) {
+func (f *fakeMessaging) SendMedia(_ context.Context, _ domain.ThreadRef, upload domain.Upload, _ string) (domain.Sent, error) {
+	f.uploads = append(f.uploads, upload)
 	return domain.Sent{ID: "mid-2", TimestampMS: 101}, nil
 }
 func (f *fakeMessaging) React(_ context.Context, _ domain.ThreadRef, _, _ string, _ bool) (bool, error) {
@@ -486,6 +489,77 @@ func TestV1AttachmentPutGet(t *testing.T) {
 	resp3.Body.Close()
 	if resp3.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown attachment = %d, want 404", resp3.StatusCode)
+	}
+}
+
+func TestV1LargeAttachmentReachesSendUnchanged(t *testing.T) {
+	for _, media := range []struct{ mime, filename string }{
+		{"image/png", "generated.png"},
+		{"video/mp4", "generated.mp4"},
+		{"audio/mpeg", "generated.mp3"},
+		{"audio/ogg", "generated.ogg"},
+		{"application/pdf", "generated.pdf"},
+		{"application/octet-stream", "generated.bin"},
+	} {
+		t.Run(media.mime, func(t *testing.T) {
+			custody, err := bridge.NewCustody(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			store := newFakeActionStore()
+			store.gens["w-1"] = 7
+			msg := &fakeMessaging{}
+			ts := v1Server(t, store, msg, custody)
+			data := bytes.Repeat([]byte{0x5a}, 1319325)
+			for _, tc := range []struct {
+				method string
+				data   []byte
+				code   int
+			}{
+				{http.MethodPut, data, http.StatusCreated},
+				{http.MethodPut, data, http.StatusCreated},
+				{http.MethodPut, []byte("different bytes"), http.StatusConflict},
+				{http.MethodGet, nil, http.StatusOK},
+			} {
+				req, err := http.NewRequest(tc.method, ts.URL+"/v1/attachments/generated-large", bytes.NewReader(tc.data))
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Header.Set("Authorization", "Bearer tok")
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, err := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if resp.StatusCode != tc.code {
+					t.Fatalf("%s attachment = %d, want %d", tc.method, resp.StatusCode, tc.code)
+				}
+				if tc.method == http.MethodGet && !bytes.Equal(body, data) {
+					t.Fatal("GET must return the original bytes after a rejected overwrite")
+				}
+			}
+			gen := 7
+			body := sendAction("w-1:send:large", &gen)
+			request := body["request"].(map[string]any)
+			request["text"] = ""
+			request["attachments"] = []any{
+				map[string]any{"key": "generated-large", "media_type": media.mime, "file_name": media.filename},
+			}
+			for range 2 {
+				code, out := postAction(t, ts, body)
+				if code != http.StatusOK || out["state"] != "confirmed" {
+					t.Fatalf("send = %d %v", code, out)
+				}
+			}
+			if len(msg.uploads) != 1 || !bytes.Equal(msg.uploads[0].Data, data) ||
+				msg.uploads[0].MimeType != media.mime || msg.uploads[0].Filename != media.filename {
+				t.Fatal("send must hand the original bytes and metadata to the media gateway exactly once")
+			}
+		})
 	}
 }
 
