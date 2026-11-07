@@ -205,8 +205,8 @@
  {
   "name": "3b item 3: the objective says «the next list» again",
   "file": "nora/dreamer/objectives/cognition.md",
-  "old": "comes back on the next agenda with a mark against",
-  "new": "comes back on the next list with a mark against",
+  "old": "agenda with a mark against it",
+  "new": "list with a mark against it",
   "target": "tests/unit/test_cognition_wiring.py::test_the_objective_names_none_of_the_old_shapes_of_the_input"
  },
  {

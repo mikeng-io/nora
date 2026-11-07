@@ -1945,9 +1945,10 @@ class CognitionSessionRunner:
             tool_context: Any = None,
         ) -> dict[str, object]:
             """Close one agenda item. Call this when you have dealt with an item
-            or decided it needs nothing now. An item you leave open, or close
-            `waiting`, comes back on the next agenda with a strike, and code
-            closes it for good after a few.
+            or decided it needs nothing now. An item you close `waiting`, or
+            leave open once it is comprehended, comes back on the next agenda
+            with a strike, and code closes it for good after a few; one you
+            never comprehended comes back as it was.
 
             Returns `status`: ok, refused or unavailable, with a `reason` and
             `detail` when it is not ok (`written` with no write of yours for that

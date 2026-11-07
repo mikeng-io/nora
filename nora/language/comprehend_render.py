@@ -242,8 +242,11 @@ SESSION_INSTRUCTION = """<steps>
 memory_propose with the item's index in `items`, a `statements` list, and
 `nothing_here` naming items that state nothing worth keeping. Each statement
 cites its rows in `cite`. The tool checks citations and handles and tells you
-what it refused — rewrite the refused statements and propose again until every
-item is covered by a saved statement or named nothing_here.
+what it refused — repair each refused statement that still states a grounded
+fact, even when another statement covered its item: keep its
+what/how/citations and change only the rejected field. A refusal is not
+`nothing_here`; propose again until every item is covered by a saved
+statement or named nothing_here.
 2. Then ask what the item needs of the notebook: a note for what is still
 open (note_create, note_revise, note_set_status, note_merge), an event for a
 dated thing people will attend (event_propose, event_revise, event_set_status),
@@ -289,6 +292,13 @@ The kinds you write, each with its create-when and an example:
   Keep its time and how it was said; it asserts nothing as true. «Ada has a
   spare controller».
 
+For a reading, happened_at.source is a cited row's n, and
+happened_at.expression is that row's own time words copied exactly, or null
+when it has none. A row's `at` is when it was sent, not when what it
+describes happened — never copy it into `expression`, and never compute a
+date: code resolves quoted time words against that row's send time, and a
+reading whose event time is unknown is still a valid reading.
+
 Record what each item states; whether a write will matter later is decided
 when memory is read, not when it is written. Reshape profile lines only for
 entities whose relations changed this session: profile_read then profile_revise.
@@ -330,6 +340,17 @@ in</m>
 yield: event (the hike, `at` Dragon's Back, Ada and Ben each `plans` — a plan
 said, never `attended`); the note's Owed line «Ada -> book the minibus ->
 2026-11-06 Fri [5220, 5221]».
+</example>
+<example>
+input: <m n="5240" at="09:12 (5 h ago)" from="Ada" person="ada">reservoir walk
+tomorrow — who's in?</m>
+<m n="5241" at="09:40 (4 h ago)" from="Ben" person="ben">me</m>
+yield: a reading that Ada plans a reservoir walk cites 5240 and carries
+happened_at {source: 5240, expression: "tomorrow"} — the row's own time word,
+which code resolves against that row's send day. A reading that Ben is in
+cites 5241 and carries happened_at {source: 5241, expression: null} — its
+body has no time words, and its `at` is when Ben sent it, not when the walk
+happens.
 </example>
 <example>
 input: «lol nice» — Cat [5230]

@@ -1,9 +1,12 @@
 ---
 name: cognition
 kind: objective
-version: 11
+version: 12
 applies_to: [cognition_session]
 description: >-
+  Version 12: the Act date rule names its fields — notebook, event and
+  reminder — and a memory statement's happened_at is none of them; the
+  strike an item earns is scoped to `waiting` closes.
   Version 11: the merged rewrite's memory part — its role, what you are
   reading, steps, memory, rules and examples; the notebook, reminder and
   close guidance is unchanged.
@@ -55,12 +58,15 @@ you say why:
 - **covered**: another item's write already handles it.
 - **waiting**: you cannot settle it yet.
 
-An item you leave open, or close `waiting`, comes back on the next agenda with a mark against
-it, and after a few such marks code closes it for good. So `waiting` is for a thing that
+An item you close `waiting` — or leave open once it is comprehended — comes back on the next
+agenda with a mark against it, and after a few such marks code closes it for good. One you
+never comprehended comes back as it was. So `waiting` is for a thing that
 will change, and never for a thing you would rather not decide.
 
-Write times and dates as dates and clock times, read from the clock above, never as
-«tomorrow» or «later»; a relative word in a date field is refused.
+In a notebook, event or reminder date field, write times and dates as dates and
+clock times, read from the clock above, never as «tomorrow» or «later»; a relative
+word in a date field is refused. A memory statement's `happened_at` is not such a
+field: it quotes the row's own time words, or null when the row has none.
 
 # When a write is refused
 

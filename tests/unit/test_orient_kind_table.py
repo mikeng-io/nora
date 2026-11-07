@@ -283,11 +283,140 @@ async def test_only_invalid_reading_leaves_the_item_pending():
     result = await memory.propose(
         state, items=[0], statements=[_reading("not in the source")])
     assert result["status"] == "refused"
-    assert result["statements"] == [
-        {"index": 0, "status": "refused", "kind": "reading",
-         "reason": "evidence_absent"}]
+    assert result["statements"][0]["status"] == "refused"
+    assert result["statements"][0]["reason"] == "evidence_absent"
+    assert result["statements"][0]["kind"] == "reading"
     assert not state.admitted_indices
     assert not memory.records.claims
+
+
+async def test_a_refusal_names_the_field_its_repair_and_the_cited_rows():
+    """A refused statement answers WHAT to change, not only a category: the
+    per-statement entry and the primary list carry the same field and repair,
+    and the reading drop is legible in `refused`."""
+    from nora.domain.comprehend import REFUSAL_REPAIR
+
+    memory = wake_memory()
+    state = _state(memory)
+    result = await memory.propose(
+        state, items=[0], statements=[_reading("not in the source")])
+    spec = REFUSAL_REPAIR["evidence_absent"]
+    entry = result["statements"][0]
+    assert entry["field"] == spec["field"] and entry["repair"] == spec["repair"]
+    assert entry["cite"] == [1]
+    assert result["primary_refusals"] == [
+        {"statement": 0, "kind": "reading", "reason": "evidence_absent",
+         "field": spec["field"], "repair": spec["repair"], "cite": [1]}]
+    assert {"kind": "reading", "reason": "evidence_absent"} in result["refused"]
+
+
+def test_every_primary_refusal_reason_has_a_field_and_a_repair():
+    """The repair map covers the whole refusal vocabulary: a reason with no
+    repair must never reach the model."""
+    from nora.domain.comprehend import REFUSAL_REASONS, REFUSAL_REPAIR
+
+    assert set(REFUSAL_REPAIR) == set(REFUSAL_REASONS)
+    assert all(
+        spec["field"] and spec["repair"] for spec in REFUSAL_REPAIR.values())
+
+
+async def test_a_saved_sibling_does_not_erase_the_refused_statements_repair():
+    """An admitted item still reports its refused statement's repair: coverage
+    of the item never blanks the drop's field, repair or refused row."""
+    memory = wake_memory()
+    state = _state(memory)
+    payload = _payload()
+    payload["statements"] += [_reading("not in the source")]
+    result = await memory.propose(state, items=[0], statements=payload["statements"])
+    assert result["status"] == "ok" and result["admitted"] == [0]
+    entry = result["statements"][1]
+    assert entry["status"] == "refused" and entry["field"] and entry["repair"]
+    assert entry["cite"] == [1]
+    primary = next(p for p in result["primary_refusals"] if p["statement"] == 1)
+    assert primary["field"] == entry["field"]
+    assert primary["repair"] == entry["repair"] and primary["cite"] == [1]
+    assert {"kind": "reading", "reason": "evidence_absent"} in result["refused"]
+
+
+async def test_an_endpoint_refusal_carries_its_repair():
+    """A handle refusal tells the model the endpoint grammar, not just the
+    reason's name."""
+    memory = wake_memory()
+    state = _state(memory)
+    statement = dict(_payload()["statements"][0], subject="generated-person")
+    result = await memory.propose(state, items=[0], statements=[statement])
+    entry = result["statements"][0]
+    assert entry["reason"] == "endpoint_not_a_handle"
+    assert entry["field"] == "subject/object" and "@kind:id" in entry["repair"]
+    assert entry["cite"] == [1]
+
+
+def test_the_composed_text_carries_the_reading_time_contract():
+    """The memory part's own time rule, restored at the point the model reads:
+    source is a cited row's n, expression is that row's time words or null,
+    `at` is send time never event time — and the Act date rule does not reach
+    happened_at."""
+    from nora.language.comprehend_render import render_session_system
+
+    text = " ".join(render_session_system(
+        shipped_objectives().for_objective("cognition").text, "", memory=True,
+    ).split())
+    for fragment in (
+        "happened_at.source is a cited row's n",
+        "happened_at.expression is that row's own time words copied exactly, "
+        "or null",
+        "A row's `at` is when it was sent, not when what it describes happened",
+        "never compute a date",
+        "a reading whose event time is unknown is still a valid reading",
+        'happened_at {source: 5240, expression: "tomorrow"}',
+        "happened_at {source: 5241, expression: null}",
+        "repair each refused statement that still states a grounded fact",
+        "change only the rejected field",
+        "A refusal is not `nothing_here`",
+        "In a notebook, event or reminder date field, write times and dates",
+        "A memory statement's `happened_at` is not such a field",
+        "One you never comprehended comes back as it was",
+    ):
+        assert fragment in text, fragment
+
+
+async def test_the_generated_schema_carries_the_field_descriptions():
+    """The descriptions on the statement types reach the model through the
+    generated tool schema: happened_at's quote-or-null contract sits beside
+    the ISO relation fields it must not be confused with."""
+    from nora.agent.ports import ToolSpec, adapt
+    from nora.app.cognition_agent_runner import DEFAULT_TOOL_BUDGET
+
+    captured = {}
+
+    class Capture(FakeCognitionAgentRunner):
+        async def run(self, **kwargs):
+            captured["tools"] = {t.__name__: t for t in kwargs["tools"]}
+            return await super().run(**kwargs)
+
+    agent = Capture(script=[("memory_propose", proposal())])
+    runner, _, _ = _runner(agent_runner=agent, memory=wake_memory())
+    await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
+        last_activity_ms=None, last_wake=None), now_ms=NOW)
+    tool = adapt(ToolSpec(name="memory_propose", description="", schema={},
+                          call=captured["tools"]["memory_propose"],
+                          budget=DEFAULT_TOOL_BUDGET))
+    defs = tool.tool_spec["inputSchema"]["json"]["$defs"]
+    happened = defs["HappenedAt"]["properties"]
+    assert "cited rows" in happened["source"]["description"]
+    assert "or null" in happened["expression"]["description"]
+    assert "never a date you computed" in happened["expression"]["description"]
+    assert "only nullable" in happened["expression"]["description"]
+    subject = defs["ReadingSubject"]["properties"]
+    assert "unresolved" in subject["person_id"]["description"]
+    assert "required" in subject["reference"]["description"]
+    reading = defs["ReadingStatement"]["properties"]
+    assert "required as an object" in reading["happened_at"]["description"]
+    assert "canonical place name" in reading["where"]["description"]
+    relation = defs["RelationStatement"]["properties"]
+    assert "@kind:id" in relation["subject"]["description"]
+    assert "ISO" in relation["valid_from"]["description"]
+    assert "never quoted words" in relation["valid_from"]["description"]
 
 
 async def test_a_withheld_social_stimulus_is_skipped_not_a_failed_wake():
