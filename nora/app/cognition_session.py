@@ -58,6 +58,7 @@ import asyncio
 import contextvars
 import functools
 import inspect
+import json
 import logging
 import re
 import sys
@@ -177,10 +178,12 @@ from nora.infra.sql.standing_revise import standing_revise as live_standing_revi
 from nora.language.cognition_render import (
     RenderBudget,
     render_agenda,
+    rendered_new_sources,
     room_key,
     room_label,
     speaker_of,
 )
+from nora.obs.tracing import eval_capture_enabled, record_eval_event
 
 log = logging.getLogger("nora.app.cognition_session")
 
@@ -1012,6 +1015,8 @@ class CognitionSessionRunner:
                 )
                 return {
                     "system": system, "agenda": agenda,
+                    **({"new_sources": rendered_new_sources(agenda)}
+                       if eval_capture_enabled() else {}),
                     "work": [
                         {
                             "index": index,
@@ -1041,6 +1046,10 @@ class CognitionSessionRunner:
                 config_revision_id=None, model_id=self._model_id,
                 model_route=self._model_route, wake_id=wake_id,
             )
+            if eval_capture_enabled():
+                record_eval_event("nora.session.instructions", {"body": json.dumps({
+                    "doctrine_sha256": doctrine_sha256, "skill_versions": skill_versions,
+                })})
             session_id = await self._store.record_session(
                 session=session, recorded_at_ms=now_ms,
             )
@@ -1371,6 +1380,17 @@ class CognitionSessionRunner:
             wake_id=wake_id, now_ms=now_ms, doctrine_text=doctrine_text,
             skill_text=skill_text, grounding=grounding, historical=historical,
         )
+        from dataclasses import asdict
+
+        if eval_capture_enabled():
+            record_eval_event("nora.session.started", {"body": json.dumps({
+                "session_id": session_id, "wake_id": wake_id, "clock_ms": now_ms,
+                "timezone": str(self._tz), "historical": historical,
+                "budgets": asdict(replace(self._budget, reserve_tokens=historical)),
+                "system": system_prompt, "agenda": prompt,
+                "items": [i.as_dict() for i in items],
+                "stimuli": [{"id": s.id, "kind": s.kind, "ref": s.ref} for s in view.pending],
+            }, default=str)})
         token = SESSION_TOKENS.set(spend)
         result: CognitionRunResult | None = None
         trace_outcome = "llm_error"
@@ -1395,6 +1415,18 @@ class CognitionSessionRunner:
                 f"the session ran past its {self._budget.timeout_seconds:g}s wall clock",
             ) from exc
         finally:
+            if eval_capture_enabled():
+                record_eval_event("nora.session.terminal", {"body": json.dumps({
+                    "session_id": session_id, "wake_id": wake_id,
+                    "outcome": result.stop_reason if result is not None else "ERROR",
+                    "error_type": type(sys.exception()).__name__ if sys.exception() else None,
+                    "bound": ("timeout_seconds" if isinstance(sys.exception(), SessionTimeoutError)
+                              else result.stop_reason if result is not None
+                              and result.stop_reason in LIMIT_STOP_REASONS else None),
+                    "closed": [asdict(c) for c in state.closes],
+                    "left_open": sorted(set(state.items_by_index) - state.closed_indices),
+                    "saved": state.admitted_evidence,
+                }, default=str)})
             committed.update(sid for i, item in state.items_by_index.items()
                              if i in state.admitted_indices for sid in item.stimulus_ids)
             SESSION_TOKENS.reset(token)

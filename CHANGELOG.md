@@ -1,5 +1,47 @@
 # Changelog
 
+## [7.16.3](https://github.com/mikeng-io/nora/compare/v7.16.2...v7.16.3) (2026-11-07)
+
+
+### Bug Fixes
+
+* **eval:** share structural agenda parsing across replay consumers ([930426d](https://github.com/mikeng-io/nora/commit/930426dafd873bf854d59c5a6963baa10d110f8c))
+* **eval:** validate diagnoses against all shown trajectory anchors ([442650c](https://github.com/mikeng-io/nora/commit/442650ca16feaa811c46d75f4e46e35c518708af))
+* **replay:** bound statement trajectories and separate unavailable judges ([9204d8e](https://github.com/mikeng-io/nora/commit/9204d8e3440a4aba0fd7f73cb7c3421ec2371ebc))
+* **replay:** derive fresh scope from expanded rendered source rows ([cd866c3](https://github.com/mikeng-io/nora/commit/cd866c3659a2ae8dce0365c6ef56eeb7d0c524b1))
+* **replay:** keep support evidence to rendered rows and room attributes ([0c8860c](https://github.com/mikeng-io/nora/commit/0c8860cf45a6820a9cc2fe69fcb052f647ededdf))
+* **replay:** preserve negative social source numbers when scoring ([2b38363](https://github.com/mikeng-io/nora/commit/2b38363560bff74038c742b0d17bcb6cb4ef6ecf))
+* **replay:** reconstruct scoring from authoritative writer events ([59ab567](https://github.com/mikeng-io/nora/commit/59ab56790d9498941b9c81180cf493e83cd80d9e))
+* **replay:** reject frozen trajectories that disagree with writer events ([29bd6a0](https://github.com/mikeng-io/nora/commit/29bd6a00415e7223fd61a4e1b67cec16a1182967))
+* **replay:** require every recorded session in a rescore ([bd7cb40](https://github.com/mikeng-io/nora/commit/bd7cb40cc9f0cf3bb5f5ae610722728dc4a0c336))
+* **replay:** resolve diagnostic source records and request judge identity headers ([7285959](https://github.com/mikeng-io/nora/commit/72859596dea5c6790ca2225c17e75cd7c35e6232))
+* **replay:** retain failed proposals without using them as save boundaries ([7a078a4](https://github.com/mikeng-io/nora/commit/7a078a47611b7031e78a982b7b2d97ee229198e2))
+* **replay:** score recorded rows and rescore private runs without writers ([6a61524](https://github.com/mikeng-io/nora/commit/6a615244d40d04a4ef53708f7d54789b88c1383d))
+
+## [7.16.2](https://github.com/mikeng-io/nora/compare/v7.16.1...v7.16.2) (2026-11-07)
+
+
+### Bug Fixes
+
+* **bridge:** honor attachment upload limits before reading request bodies ([6d33fde](https://github.com/mikeng-io/nora/commit/6d33fdeb719d8114d9c325e179e0cabf13d3bc36))
+* **discord:** constrain custody paths to validated filenames ([01f9811](https://github.com/mikeng-io/nora/commit/01f981111934818f9a2256885235d5fd035e6e59))
+* **discord:** contain attachment access within resolved custody root ([8617a97](https://github.com/mikeng-io/nora/commit/8617a97cceb8499e9e1587d23f4d9372c305d9fc))
+* **discord:** refuse conflicting attachment retries ([b65b2ae](https://github.com/mikeng-io/nora/commit/b65b2aee1c384b46a4f411d2398c730fcea66cc4))
+* **media:** connect every bridge inbox to its custody reader ([2507ee6](https://github.com/mikeng-io/nora/commit/2507ee69331ae13b0cda54be926cccc4a3e0e467))
+
+## [7.16.1](https://github.com/mikeng-io/nora/compare/v7.16.0...v7.16.1) (2026-11-07)
+
+
+### Features
+
+* **evals:** record private replay trajectories and fact diagnostics ([72042ad](https://github.com/mikeng-io/nora/commit/72042ad6a31bf29ddd693c32fe54cafa573320e9))
+
+
+### Bug Fixes
+
+* **evals:** pair pre-dispatch model cancellation lifecycle events ([cd0b14c](https://github.com/mikeng-io/nora/commit/cd0b14cff5acd9ea2ee9701e4a396f4905ec9dfb))
+* **evals:** preserve captured structured calls and complete review verdicts ([6357164](https://github.com/mikeng-io/nora/commit/6357164538565d8298b5d5532564a4d64a00ad51))
+
 ## [7.16.0](https://github.com/mikeng-io/nora/compare/v7.15.25...v7.16.0) (2026-11-07)
 
 

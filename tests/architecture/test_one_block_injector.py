@@ -61,6 +61,8 @@ _OWN_INJECTOR = {
 _NOT_BUILT_HERE = {
     ("nora/ingest/relevance_gate.py", "nora_doctrine"):
         "strips the wrapper doctrine/loader.py builds",
+    ("nora/language/cognition_render.py", "root"):
+        "parse wrapper for reading a rendered agenda; it never reaches a prompt",
 }
 
 def _docstring_nodes(tree: ast.AST) -> set[int]:

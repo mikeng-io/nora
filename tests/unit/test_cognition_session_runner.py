@@ -10,6 +10,7 @@ loop, with none of the SDK machinery.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, ClassVar
@@ -52,7 +53,7 @@ class FakeCognitionAgentRunner:
 
     async def run(
         self, *, system_prompt: str, prompt: str, tools: list[Any],
-        budget: AdaptorBudget, trace_attributes: dict[str, str],
+        budget: AdaptorBudget, trace_attributes: Mapping[str, str],
     ) -> CognitionRunResult:
         self.calls += 1
         by_name = {getattr(t, "__name__", None): t for t in tools}
@@ -382,6 +383,7 @@ async def test_rows_a_read_shows_become_the_evidence_a_proposal_may_cite():
 
     def reads(unit: str, rooms: Any, **kw: Any) -> list[Any]:
         on_rows = kw.get("on_rows")
+        assert callable(on_rows)
 
         async def load_transcript(**_args: Any) -> dict[str, Any]:
             on_rows([shown, withheld])
@@ -1277,3 +1279,128 @@ async def test_native_transcript_rendered_file_text_is_the_proposals_evidence():
     assert responses[1]["admitted"] == [0], responses[1]
     assert responses[1]["statements"][0]["status"] == "saved"
     assert any(r["reason"] == "span_not_in_source" for r in responses[2]["refused"])
+
+
+async def test_wall_clock_timeout_names_the_terminal_bound(monkeypatch):
+    import asyncio
+    import json
+    from dataclasses import replace
+
+    from opentelemetry import context
+
+    from nora.app.cognition_session import SessionTimeoutError
+    from nora.obs.tracing import EVAL_EVIDENCE_KEY
+
+    runner, _, fake = _runner()
+    runner._budget = replace(BUDGET, timeout_seconds=0.01)
+    cancelled = []
+
+    async def blocked(**kwargs):
+        fake.calls += 1
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.append(True)
+
+    monkeypatch.setattr(fake, "run", blocked)
+    events = []
+
+    def record(kind, **payload):
+        events.append({"kind": kind, **payload})
+
+    token = context.attach(context.set_value(EVAL_EVIDENCE_KEY, record))
+    try:
+        with pytest.raises(SessionTimeoutError):
+            await runner.on_wake(unit="unit-1", view=UnitView(
+                unit="unit-1", pending=_pending("unit-1"), last_activity_ms=NOW, last_wake=None),
+                now_ms=NOW, wake_id=1)
+    finally:
+        context.detach(token)
+    assert fake.calls == 1 and cancelled == [True]
+    started = next(e for e in events if e.get("name") == "nora.session.started")
+    assert json.loads(started["attributes"]["body"])["budgets"]["timeout_seconds"] == 0.01
+    terminal = next(e for e in events if e.get("name") == "nora.session.terminal")
+    body = json.loads(terminal["attributes"]["body"])
+    assert body["error_type"] == "SessionTimeoutError"
+    assert body["bound"] == "timeout_seconds"
+
+
+async def test_inspection_social_read_scope_uses_expanded_rendered_sources():
+    import json
+    from dataclasses import replace
+
+    from opentelemetry import context
+
+    from nora.agent.punctuation import undash
+    from nora.domain.cognition_ground import Grounding, SocialLine
+    from nora.domain.comprehend import ComprehendItem
+    from nora.domain.memory_graph import Source, WorkItem
+    from nora.obs.tracing import EVAL_EVIDENCE_KEY
+    from nora.testing.cognition_grounding import StaticGrounder
+    from scripts.memory_graph_spike import recorded_fact_sessions
+
+    memory = wake_memory()
+    stimulus = replace(_pending("unit-1")[0], kind="social", ref="social_read:generated-read")
+    sources = tuple(Source(("social", f"generated-network:{item}"), "record", "unit-1",
+                           (), f"Generated caption {item}") for item in ("one", "two"))
+    work = WorkItem("generated", ("social_read", "generated-read"), "unit-1", "",
+                    datetime.fromtimestamp(NOW / 1000, UTC))
+    memory.records.items[work.source] = ComprehendItem(
+        work, sources, HOME.platform, HOME.conversation_id, author="generated-author",
+        snapshot={"messages": [], "context": [], "metadata": {"taken_at": NOW}})
+    grounding = Grounding(socials={stimulus.ref: SocialLine(
+        stimulus.ref, "Generated author", "generated-author", "story", NOW)})
+    runner, _, agent = _runner(memory=memory, grounder=StaticGrounder(grounding))
+    token = context.attach(context.set_value(EVAL_EVIDENCE_KEY, lambda *a, **kw: None))
+    try:
+        inspection = await runner.inspect(view=UnitView(
+            unit="unit-1", pending=(stimulus,), last_activity_ms=None, last_wake=None),
+            now_ms=NOW, historical=True)
+    finally:
+        context.detach(token)
+    assert agent.calls == 0
+    assert inspection is not None
+    assert all(source.text in inspection["agenda"] for source in sources)
+    events = [{"kind": "event", "name": "nora.session.started", "span_id": "generated",
+               "attributes": {"body": json.dumps({"session_id": 1,
+                   "system": inspection["system"], "agenda": inspection["agenda"]})}},
+              {"kind": "event", "name": "nora.model.request", "span_id": "generated",
+               "attributes": {"nora.model.request.body": json.dumps({"messages": [
+                   {"role": "system", "content": undash(inspection["system"])},
+                   {"role": "user", "content": undash(inspection["agenda"])}]})}},
+              {"kind": "event", "name": "nora.session.terminal", "span_id": "generated",
+               "attributes": {"body": json.dumps({"session_id": 1})}}]
+    recorded = recorded_fact_sessions(events)[0]["inspection"]["new_sources"]
+    assert {tuple(row["key"]) for row in recorded.values()} == {s.key for s in sources}
+    assert inspection["new_sources"] == recorded
+
+
+async def test_session_manifest_keeps_pending_stimulus_refs():
+    import json
+    from dataclasses import replace
+
+    from opentelemetry import context
+
+    from nora.obs.tracing import EVAL_EVIDENCE_KEY
+
+    runner, _, agent = _runner()
+    pending = (_pending("unit-1")[0], replace(_pending("unit-1", 2)[1],
+               kind="social", ref="social_read:generated-read"))
+    events = []
+
+    def record(kind, **payload):
+        events.append({"kind": kind, **payload})
+
+    token = context.attach(context.set_value(EVAL_EVIDENCE_KEY, record))
+    try:
+        await runner.on_wake(unit="unit-1", view=UnitView(
+            unit="unit-1", pending=pending, last_activity_ms=NOW, last_wake=None),
+            now_ms=NOW, wake_id=1)
+    finally:
+        context.detach(token)
+    assert agent.calls == 1
+    started = next(e for e in events if e.get("name") == "nora.session.started")
+    assert json.loads(started["attributes"]["body"]).get("stimuli") == [
+        {"id": 1, "kind": "message", "ref": "messages:1"},
+        {"id": 2, "kind": "social", "ref": "social_read:generated-read"},
+    ]

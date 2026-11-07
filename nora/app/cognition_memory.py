@@ -318,6 +318,14 @@ class WakeMemory:
         if any(i not in state.memory_items for i in nothing_here):
             return {"status": "refused", "admitted": [], "statements": [],
                     "refused": [{"reason": "no_such_item"}]}
+        from nora.obs.tracing import eval_capture_enabled, record_eval_event
+        if eval_capture_enabled():
+            catalogue = proposal_scope(
+                [state.memory_items[i] for i in items], state.graph_fetched).catalogue
+            record_eval_event("nora.proposal.sources", {"body": json.dumps({
+                str(n): {"key": list(key), "text": state.graph_fetched.sources[key].text}
+                for n, key in catalogue.items() if key in state.graph_fetched.sources
+            })})
         # Statements are validated individually at the admission boundary:
         # one malformed entry takes only its own slot, never a sibling's.
         valid: list[Statement] = []

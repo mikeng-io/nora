@@ -90,6 +90,10 @@ _INVOKE_RECEIVER_ENDINGS = ("runner", "factory")
 
 #: The SDK or transport layer. It runs whatever prompt it is handed.
 MECHANISM = {
+    "nora/agent/replay_capture.py": (
+        "private transport recorder; forwards the already formatted request unchanged "
+        "and never decides the prompt, settings or tool definitions"
+    ),
     "nora/agent/factory.py": (
         "builds the Strands agent and runs one turn; the prompt it is given is "
         "assembled by the occasion that called it, never here"
@@ -265,7 +269,7 @@ def declares_blocks(tree: ast.Module) -> bool:
 def _is_blocks_module(node: ast.ImportFrom) -> bool:
     """`from nora.domain.blocks import ...` or the package-relative spelling
     (`from ..domain.blocks import ...`) the agent modules use."""
-    return bool(node.module) and node.module.split(".")[-2:] == ["domain", "blocks"]
+    return node.module is not None and node.module.split(".")[-2:] == ["domain", "blocks"]
 
 
 def calls_assemble(tree: ast.Module) -> bool:
