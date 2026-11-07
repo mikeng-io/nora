@@ -54,5 +54,33 @@
   "old": "                local_refusals.append({\"kind\": \"reading\", \"reason\": drops[0]})",
   "new": "                pass",
   "target": "tests/unit/test_orient_kind_table.py::test_a_refusal_names_the_field_its_repair_and_the_cited_rows"
+ },
+ {
+  "name": "a malformed cite container never raises over saved siblings",
+  "file": "nora/app/cognition_memory.py",
+  "old": "            cites = raw.get(\"cite\")\n            if not isinstance(cites, (list, tuple)):\n                return []\n            return [c[\"source\"] for c in cites\n                    if isinstance(c, dict) and \"source\" in c]",
+  "new": "            return [c[\"source\"] for c in raw.get(\"cite\", ())\n                    if isinstance(c, dict) and \"source\" in c]",
+  "target": "tests/unit/test_orient_kind_table.py::test_a_malformed_cite_container_returns_a_schema_refusal"
+ },
+ {
+  "name": "the refused part picks the attribute's repair",
+  "file": "nora/app/cognition_memory.py",
+  "old": "            spec = PART_REPAIR.get(\n                (entry.get(\"kind\", \"\"), entry.get(\"reason\", \"\"))\n            ) or REFUSAL_REPAIR.get(entry.get(\"reason\", \"\"))",
+  "new": "            spec = REFUSAL_REPAIR.get(entry.get(\"reason\", \"\"))",
+  "target": "tests/unit/test_orient_kind_table.py::test_an_attribute_refusal_names_the_attribute_repair"
+ },
+ {
+  "name": "a saved statement's refused parts carry field and repair",
+  "file": "nora/app/cognition_memory.py",
+  "old": "            if entry.get(\"refused_parts\"):\n                out[\"refused_parts\"] = [\n                    {**part, **repair_of(part), \"cite\": cite_ids(i)}\n                    for part in entry[\"refused_parts\"]\n                ]",
+  "new": "",
+  "target": "tests/unit/test_orient_kind_table.py::test_an_attribute_refusal_names_the_attribute_repair"
+ },
+ {
+  "name": "the citation description states the reading quote contract",
+  "file": "nora/app/comprehend.py",
+  "old": "        \"Words copied exactly from that row's shown body, or null only where \"\n        \"the statement kind allows an unquoted citation: a reading requires \"\n        \"a quote covering every cited row; a relation or correction may cite \"\n        \"a row without one.\"))",
+  "new": "        \"Words copied exactly from that row's shown body, or null when the \"\n        \"row is cited without a quoted span.\"))",
+  "target": "tests/unit/test_orient_kind_table.py::test_the_generated_schema_carries_the_field_descriptions"
  }
 ]

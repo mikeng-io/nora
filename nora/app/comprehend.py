@@ -53,8 +53,10 @@ class Citation(Shape):
 
     source: int = Field(description="The `n` of a shown source row.")
     quote: str | None = Field(default=None, description=(
-        "Words copied exactly from that row's shown body, or null when the "
-        "row is cited without a quoted span."))
+        "Words copied exactly from that row's shown body, or null only where "
+        "the statement kind allows an unquoted citation: a reading requires "
+        "a quote covering every cited row; a relation or correction may cite "
+        "a row without one."))
 
 
 class CitedValue(Shape):

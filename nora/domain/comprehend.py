@@ -388,3 +388,43 @@ REFUSAL_REPAIR: dict[str, dict[str, str]] = {
                   "change the correction to supersede.",
     },
 }
+
+#: The same reason answers differently by the PART the validator refused: an
+#: entity attribute's evidence has its own contract (a record or rollup row
+#: that scopes no persons, an exact span, an attribute this statement
+#: proposed), and an attribute the shown rows cannot support should be
+#: withdrawn while the relation is kept, not retried.
+PART_REPAIR: dict[tuple[str, str], dict[str, str]] = {
+    ("evidence", "scope_wider_than_evidence"): {
+        "field": "attributes",
+        "repair": "An attribute's evidence must come from a cited row that "
+                  "scopes no persons; cite such a row or drop the attribute.",
+    },
+    ("evidence", "span_not_in_source"): {
+        "field": "attributes",
+        "repair": "Copy the attribute's quote exactly from the cited row's "
+                  "shown body.",
+    },
+    ("evidence", "unseen_source"): {
+        "field": "attributes",
+        "repair": "The attribute's cite must name a row the agenda rendered "
+                  "for the named items, or one a read tool handed this "
+                  "session.",
+    },
+    ("evidence", "notebook_evidence"): {
+        "field": "attributes",
+        "repair": "The attribute's cite must name a record or rollup row; a "
+                  "notebook row cannot be evidence.",
+    },
+    ("evidence", "wrong_ends"): {
+        "field": "attributes",
+        "repair": "The attribute's evidence names an entity or attribute "
+                  "this statement did not propose; cite it on the entity it "
+                  "describes.",
+    },
+    ("entity", "missing_evidence"): {
+        "field": "attributes",
+        "repair": "The shown rows cannot support this attribute; withdraw "
+                  "the attribute and keep the relation.",
+    },
+}

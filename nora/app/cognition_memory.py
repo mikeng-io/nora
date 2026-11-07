@@ -20,6 +20,7 @@ from nora.app.comprehend import (
     proposal_scope,
 )
 from nora.domain.comprehend import (
+    PART_REPAIR,
     REFUSAL_REPAIR,
     ComprehendItem,
     Preview,
@@ -445,14 +446,22 @@ class WakeMemory:
         # the field it rejected, its repair and the cited rows; dependent
         # cascade diagnostics are recorded, never returned.
         def cite_ids(index: int) -> list[Any]:
+            """The cited row ids of one raw statement — only when its `cite`
+            is a list of citation objects; a malformed container contributes
+            no ids and never breaks the report the saved siblings earned."""
             raw = statements[index] if 0 <= index < len(statements) else None
             if not isinstance(raw, dict):
                 return []
-            return [c["source"] for c in raw.get("cite", ())
+            cites = raw.get("cite")
+            if not isinstance(cites, (list, tuple)):
+                return []
+            return [c["source"] for c in cites
                     if isinstance(c, dict) and "source" in c]
 
         def repair_of(entry: dict[str, Any]) -> dict[str, str]:
-            spec = REFUSAL_REPAIR.get(entry.get("reason", ""))
+            spec = PART_REPAIR.get(
+                (entry.get("kind", ""), entry.get("reason", ""))
+            ) or REFUSAL_REPAIR.get(entry.get("reason", ""))
             if spec is None:
                 return {}
             return {"field": entry.get("detail") or spec["field"],
@@ -466,6 +475,11 @@ class WakeMemory:
             if entry.get("status") == "refused":
                 out.update(repair_of(entry))
                 out["cite"] = cite_ids(i)
+            if entry.get("refused_parts"):
+                out["refused_parts"] = [
+                    {**part, **repair_of(part), "cite": cite_ids(i)}
+                    for part in entry["refused_parts"]
+                ]
             statements_report.append(out)
         primary = [
             {"statement": index, "kind": entry["kind"], "reason": entry["reason"],

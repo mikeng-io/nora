@@ -351,6 +351,54 @@ async def test_an_endpoint_refusal_carries_its_repair():
     assert entry["cite"] == [1]
 
 
+@pytest.mark.parametrize("cite", [None, 42])
+async def test_a_malformed_cite_container_returns_a_schema_refusal(cite):
+    """A statement whose `cite` is no citation list contributes no cite ids —
+    it must not raise over its saved siblings' result."""
+    memory = wake_memory()
+    state = _state(memory)
+    statements = [*_payload()["statements"], {**_reading("x"), "cite": cite}]
+    result = await memory.propose(state, items=[0], statements=statements)
+    assert result["status"] == "ok", result
+    assert result["admitted"] == [0] and len(result["committed"]) == 1
+    saved, refused = result["statements"]
+    assert saved["status"] == "saved"
+    assert refused["status"] == "refused" and refused["reason"] == "schema"
+    assert refused["field"] and refused["repair"] and refused["cite"] == []
+    primary = next(p for p in result["primary_refusals"] if p["statement"] == 1)
+    assert primary["reason"] == "schema" and primary["cite"] == []
+
+
+async def test_an_attribute_refusal_names_the_attribute_repair():
+    """An attribute's evidence may not carry persons: the refused parts of the
+    saved statement name the attribute field and its own repair — empty
+    persons for its evidence, withdraw the attribute for a missing one —
+    never the relation's citation wording."""
+    memory = wake_memory()
+    state = _state(memory)
+    statement = dict(
+        _payload()["statements"][0],
+        object={"new": {"kind": "work", "name": "Lantern Game",
+                        "attributes": {"score": {
+                            "value": "9",
+                            "cite": [{"source": 1,
+                                      "quote": "I like Lantern Game"}]}}}})
+    result = await memory.propose(state, items=[0], statements=[statement])
+    assert result["status"] == "ok", result
+    entry = result["statements"][0]
+    assert entry["status"] == "saved"
+    parts = {p["reason"]: p for p in entry["refused_parts"]}
+    assert set(parts) == {"scope_wider_than_evidence", "missing_evidence"}
+    assert parts["scope_wider_than_evidence"]["kind"] == "evidence"
+    assert "scopes no persons" in parts["scope_wider_than_evidence"]["repair"]
+    assert "withdraw" in parts["missing_evidence"]["repair"]
+    assert all(p["field"] == "attributes" and p["cite"] == [1]
+               for p in parts.values())
+    primary = {p["reason"]: p for p in result["primary_refusals"]}
+    assert "scopes no persons" in primary["scope_wider_than_evidence"]["repair"]
+    assert "withdraw" in primary["missing_evidence"]["repair"]
+
+
 def test_the_composed_text_carries_the_reading_time_contract():
     """The memory part's own time rule, restored at the point the model reads:
     source is a cited row's n, expression is that row's time words or null,
@@ -417,6 +465,10 @@ async def test_the_generated_schema_carries_the_field_descriptions():
     assert "@kind:id" in relation["subject"]["description"]
     assert "ISO" in relation["valid_from"]["description"]
     assert "never quoted words" in relation["valid_from"]["description"]
+    citation = defs["Citation"]["properties"]
+    assert "reading requires" in citation["quote"]["description"]
+    assert "relation or correction may cite a row without one" in (
+        citation["quote"]["description"])
 
 
 async def test_a_withheld_social_stimulus_is_skipped_not_a_failed_wake():
