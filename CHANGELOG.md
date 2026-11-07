@@ -1,5 +1,16 @@
 # Changelog
 
+## [7.16.2](https://github.com/mikeng-io/nora/compare/v7.16.1...v7.16.2) (2026-11-07)
+
+
+### Bug Fixes
+
+* **bridge:** honor attachment upload limits before reading request bodies ([6d33fde](https://github.com/mikeng-io/nora/commit/6d33fdeb719d8114d9c325e179e0cabf13d3bc36))
+* **discord:** constrain custody paths to validated filenames ([01f9811](https://github.com/mikeng-io/nora/commit/01f981111934818f9a2256885235d5fd035e6e59))
+* **discord:** contain attachment access within resolved custody root ([8617a97](https://github.com/mikeng-io/nora/commit/8617a97cceb8499e9e1587d23f4d9372c305d9fc))
+* **discord:** refuse conflicting attachment retries ([b65b2ae](https://github.com/mikeng-io/nora/commit/b65b2aee1c384b46a4f411d2398c730fcea66cc4))
+* **media:** connect every bridge inbox to its custody reader ([2507ee6](https://github.com/mikeng-io/nora/commit/2507ee69331ae13b0cda54be926cccc4a3e0e467))
+
 ## [7.16.1](https://github.com/mikeng-io/nora/compare/v7.16.0...v7.16.1) (2026-11-07)
 
 
