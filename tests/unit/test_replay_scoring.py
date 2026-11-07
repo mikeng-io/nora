@@ -327,3 +327,37 @@ async def test_session_inputs_are_frozen_before_failed_scoring(tmp_path):
     assert frozen["inspection"] == {"new_sources": {}}
     kinds = [e["kind"] for e in read_events(evidence.path)]
     assert kinds.index("fact_scoring_input") < kinds.index("judge_error")
+
+
+async def test_negative_social_source_numbers_are_scored():
+    from nora.language.cognition_render import rendered_new_sources
+    from scripts.memory_graph_spike import evidence_exchanges
+
+    caption = "Generated author likes tea and runs daily"
+    agenda = ('<item kind="social" room="Generated room"><m n="-1" '
+              'source="social:generated-network:item" person="generated-author" '
+              f'from="Generated author" at="now">{caption}</m></item>')
+    statement = {"what": "Generated author likes tea", "cite": [{"source": -1}]}
+    events = [
+        {"kind": "event", "name": "nora.model.request", "attributes": {
+            "nora.model.request.body": json.dumps({"messages": [{"content": agenda}]})}},
+        {"kind": "event", "name": "nora.proposal.sources", "span_id": "generated",
+         "attributes": {"body": json.dumps({"-1": {"text": caption}})}},
+        {"kind": "tool_finished", "span_id": "generated", "tool": {
+            "name": "memory_propose", "input": {"statements": [statement]}},
+         "result": {"content": [{"json": {"statements": [{"index": 0, "status": "saved"}]}}]}}]
+
+    async def call(model, instruction, payload):
+        if "statement" in payload:
+            row = payload["cited_rows"]["-1"]["rendered"]
+            assert 'person="generated-author"' in row
+            return '{"verdict":"supported","reason":"generated author and caption"}'
+        return json.dumps({"missed": [{"fact": "Generated author runs daily", "quote": "runs daily",
+                                      "location": "-1", "reason": "generated omission"}],
+                           "context_only": []})
+
+    result = await smoke_fact_support(SimpleNamespace(models=["generated"], call=call),
+        {"new_sources": rendered_new_sources(agenda)}, evidence_exchanges(events))
+    assert result["facts_supported"] == 1
+    assert result["facts_missed"] == 1
+    assert result["facts_judge_errors"] == 0

@@ -596,7 +596,7 @@ def evidence_exchanges(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     content = "\n".join(p.get("text", "") for p in content or [])
                 for item in re.finditer(r"<item\b[^>]*>.*?</item>", content, re.S):
                     room = re.search(r'\broom="[^"\n]*"', item.group().split(">", 1)[0])
-                    for row in re.finditer(r'<(\w+)\b[^>]*\bn="(\d+)"[^>]*>.*?</\1>',
+                    for row in re.finditer(r'<(\w+)\b[^>]*\bn="(-?\d+)"[^>]*>.*?</\1>',
                                            item.group(), re.S):
                         rendered[row[2]] = {"rendered": row.group(),
                                             "room": room.group() if room else "unavailable"}
@@ -662,7 +662,7 @@ def parse_fact_output(raw: str) -> Any:
 
 
 def miss_in_new_sources(entry: dict[str, Any], sources: dict[str, Any]) -> bool:
-    locations = re.findall(r"\d+", str(entry["location"]))
+    locations = re.findall(r"-?\d+", str(entry["location"]))
     if not locations or any(n not in sources for n in locations):
         return False
     def normalize(text: str) -> str:

@@ -68,5 +68,19 @@
     "old": "                \"stimuli\": [{\"id\": s.id, \"kind\": s.kind, \"ref\": s.ref} for s in view.pending],\n",
     "new": "",
     "target": "tests/unit/test_cognition_session_runner.py::test_session_manifest_keeps_pending_stimulus_refs"
+  },
+  {
+    "name": "negative citation rows retain attribution",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "n=\"(-?\\d+)\"",
+    "new": "n=\"(\\d+)\"",
+    "target": "tests/unit/test_replay_scoring.py::test_negative_social_source_numbers_are_scored"
+  },
+  {
+    "name": "negative missed-fact locations remain source keys",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "locations = re.findall(r\"-?\\d+\", str(entry[\"location\"]))",
+    "new": "locations = re.findall(r\"\\d+\", str(entry[\"location\"]))",
+    "target": "tests/unit/test_replay_scoring.py::test_negative_social_source_numbers_are_scored"
   }
 ]
