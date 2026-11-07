@@ -1,0 +1,58 @@
+[
+  {
+    "name": "computer_tasks and browser_tasks stay out of the as-of restore",
+    "file": "nora/infra/sql/history.py",
+    "old": "    \"computer_tasks\": (\n        \"live scope-FIFO ledger; obligations of the running deployment, not replayed as of T\"\n    ),\n    \"browser_tasks\": \"live CDP target bindings; no restore holds tabs on absent VMs\",",
+    "new": "",
+    "target": "tests/infra/test_row_history.py::test_every_table_is_classified_exactly_once"
+  },
+  {
+    "name": "the task ledger's JSONB columns are excused from blob custody with reasons",
+    "file": "nora/infra/sql/blob_refs.py",
+    "old": "    (\"computer_tasks\", \"payload\"): \"typed work ops and refs; never byte custody\",\n    (\"computer_tasks\", \"origin\"): (\n        \"delivery provenance (room, person, turn, session, operation ids); \"\n        \"never blob custody\"\n    ),\n    (\"computer_tasks\", \"result\"): (\n        \"typed result prose and provenance (path, url, a file's digest); \"\n        \"byte custody is computer_events.output_ref and computer_exports\"\n    ),\n    (\"browser_tasks\", \"detail\"): \"live tab observation metadata; never blob custody\",",
+    "new": "",
+    "target": "tests/infra/test_blob_refs.py::test_every_column_shaped_like_a_blob_key_is_read_or_excused"
+  },
+  {
+    "name": "the scoped Redis name is projected to nora even unwritten",
+    "file": "scripts/secret_delivery.py",
+    "old": "        | ({scoped_redis} if config.get(\"computer\", {}).get(\"scoped\", {}).get(\n            \"enabled\", False) else set()),",
+    "new": "",
+    "target": "tests/test_env_template.py::test_every_secret_name_the_config_defaults_reaches_the_container_that_reads_it"
+  },
+  {
+    "name": "the scope lifecycle events join the closed vocabulary",
+    "file": "deploy/computer/lifecycle_event.py",
+    "old": "    \"scope_create\", \"scope_provision\", \"scope_computerd_start\", \"scope_observe\",\n    \"scope_manifest\", \"scope_verify\", \"scope_backup\", \"scope_restore\",\n    \"scope_revoke\",\n",
+    "new": "",
+    "target": "tests/unit/test_lifecycle_event.py::test_every_event_the_script_records_is_in_the_vocabulary"
+  },
+  {
+    "name": "`refused` is a recordable lifecycle status (scope_provision emits it)",
+    "file": "deploy/computer/lifecycle_event.py",
+    "old": "STATUSES: frozenset[str] = frozenset({\"ok\", \"failed\", \"refused\"})",
+    "new": "STATUSES: frozenset[str] = frozenset({\"ok\", \"failed\"})",
+    "target": "tests/unit/test_lifecycle_event.py::test_every_status_the_script_records_is_in_the_vocabulary"
+  },
+  {
+    "name": "`queued` joins the declared status extensions",
+    "file": "nora/agent/ports.py",
+    "old": "    \"queued\": \"the call was durably accepted into the scope's FIFO but is \"\n              \"waiting behind the task running now: a `task` id and no result \"\n              \"yet. Not `started` (that work is already running) and not \"\n              \"`unavailable` (nothing failed, and an intent-store failure \"\n              \"answers `unavailable`, never `queued`): the result arrives \"\n              \"later through the delivery path (design/browser-runtime, the \"\n              \"queue lifecycle).\",\n",
+    "new": "",
+    "target": "tests/test_output_contracts.py::test_no_agent_module_returns_a_status_outside_the_vocabulary"
+  },
+  {
+    "name": "the task status CHECK is written in the metadata's sorted order",
+    "file": "nora/infra/sql/migrations/versions/0147_computer_tasks.py",
+    "old": "f\"status IN ({', '.join(repr(x) for x in sorted(TASK_STATUSES))})\"",
+    "new": "f\"status IN ({', '.join(repr(x) for x in ('queued','running','done','failed','cancelled','unavailable','interrupted'))})\"",
+    "target": "tests/infra/test_schema_parity.py::test_the_metadata_check_constraints_match_the_migrated_database"
+  },
+  {
+    "name": "the open-scope index takes the schema's idx_ name",
+    "file": "nora/infra/sql/migrations/versions/0147_computer_tasks.py",
+    "old": "    op.create_index(\"idx_computer_tasks_scope_open\", \"computer_tasks\",",
+    "new": "    op.create_index(\"ix_computer_tasks_scope_open\", \"computer_tasks\",",
+    "target": "tests/infra/test_alembic.py::test_a_migrated_database_passes_alembic_check"
+  }
+]

@@ -102,7 +102,7 @@ assert not any((name + '=').encode() in parent_environment for name in credentia
                 def live():
                     try:
                         return "State:\tZ" not in status.read_text()
-                    except FileNotFoundError:
+                    except (FileNotFoundError, ProcessLookupError):
                         return False
 
                 deadline = time.monotonic() + 5

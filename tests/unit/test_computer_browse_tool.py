@@ -61,7 +61,7 @@ def _browse(persons, *, browser, computer=True, events=None, settings=None):
 def test_the_model_cannot_name_a_scope_or_a_room(persons):
     call = _browse(persons, browser=FakeBrowserRunner())
     params = set(inspect.signature(call).parameters)
-    assert params == {"objective", "start_url"}
+    assert params == {"objective", "start_url", "task"}
 
 
 async def test_the_task_runs_in_this_rooms_browser(persons):
@@ -69,7 +69,7 @@ async def test_the_task_runs_in_this_rooms_browser(persons):
     call = _browse(persons, browser=runner)
     await call(objective="find the opening hours", start_url="https://example.com")
     assert runner.calls == [(computer_unit_scope(GROUP), "find the opening hours",
-                             "https://example.com")]
+                             "https://example.com", None)]
 
 
 @pytest.mark.parametrize("computer, browser", [(False, True), (True, False)])

@@ -2292,6 +2292,39 @@ class ComputerContextConfig(BaseModel):
     state_cache_seconds: float = Field(default=30.0, ge=0)
 
 
+class ComputerScopedConfig(BaseModel):
+    """The scoped computer (design/browser-runtime): one sbx
+    microVM per computer scope instead of one shared VM.
+
+    Ships INERT (`enabled = false`): off, nothing here is built and the
+    deployment keeps the shared-VM shape exactly. On, `registry` names the
+    directory `nora-computer scope provision` writes one `<scope>.json`
+    record into and `FileScopeEndpoints` resolves a scope's endpoint from;
+    a scope with no record is `unavailable`, never the shared VM.
+
+    `redis_url_env` NAMES the env var the dedicated computer streams
+    (`nq:computer:<scope>`) are reached through — the computer's OWN
+    credential (`NORA_COMPUTER_REDIS_URL`), projected through the existing
+    `secret_delivery` mechanism like every other env secret; the queue's
+    privilege is derived for the `nq:computer:*` family alone, so reusing
+    the bridge credential would share more than the work needs. Scoped
+    mode refuses to start without it: a queue with nowhere to publish is a
+    queue that silently never grants.
+
+    `browser_idle_seconds` is a tab's inactivity bound (a task's own
+    authorized activity refreshes it); the sweeper runs every
+    `browser_sweep_seconds`.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    registry: str = ""
+    redis_url_env: str = "NORA_COMPUTER_REDIS_URL"
+    browser_idle_seconds: float = Field(default=600.0, gt=0)
+    browser_sweep_seconds: float = Field(default=30.0, gt=0)
+
+
 class ComputerConfig(BaseModel):
     """Nora's computer (DEC-243, ADR 0019): the
     `computer_run`/`computer_read`/`computer_write`/`computer_edit` tools
@@ -2317,6 +2350,10 @@ class ComputerConfig(BaseModel):
     enabled: bool = False
     base_url: str = "http://172.17.0.1:18765"
     token_env: str = "NORA_COMPUTER_TOKEN"  # noqa: S105 — names an env var, not a secret
+    # `pending_dir`/`state_dir` live under this app-owned private root —
+    # `/app/state` in the deployment; an eval subject points it at its
+    # case workdir through `Spec.overrides`, never a shared path.
+    state_dir: str = "/app/state"
     request_timeout_seconds: float = Field(default=30.0, gt=0)
     run_timeout_seconds: int = Field(default=120, gt=0)
     max_run_timeout_seconds: int = Field(default=900, gt=0)
@@ -2331,6 +2368,7 @@ class ComputerConfig(BaseModel):
     sessions: ComputerSessionsConfig = ComputerSessionsConfig()
     context: ComputerContextConfig = ComputerContextConfig()
     browse: ComputerBrowseConfig = ComputerBrowseConfig()
+    scoped: ComputerScopedConfig = ComputerScopedConfig()
 
     @model_validator(mode="after")
     def _default_run_within_max(self) -> ComputerConfig:

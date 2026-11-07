@@ -1,0 +1,30 @@
+[
+  {
+    "name": "successful browse precedes successful capture",
+    "file": "evals/backbone.py",
+    "old": "if capture_index <= browse_index:",
+    "new": "if False:",
+    "target": "tests/unit/test_tool_route_grader.py::test_journey_requires_successful_browse_capture_export_order"
+  },
+  {
+    "name": "successful capture precedes successful export",
+    "file": "evals/backbone.py",
+    "old": "if export_index <= capture_index:",
+    "new": "if False:",
+    "target": "tests/unit/test_tool_route_grader.py::test_journey_requires_successful_browse_capture_export_order"
+  },
+  {
+    "name": "missing result is ERROR rather than model FAIL",
+    "file": "evals/backbone.py",
+    "old": "return self._out(ERROR, 0.0, f\"{name} result unavailable\")",
+    "new": "return self._out(FAIL, 0.0, f\"{name} result unavailable\")",
+    "target": "tests/unit/test_tool_route_grader.py::test_journey_missing_evidence_is_error"
+  },
+  {
+    "name": "absent call evidence is ERROR rather than model FAIL",
+    "file": "evals/backbone.py",
+    "old": "return self._out(ERROR, 0.0, \"journey call inputs/results do not align\")",
+    "new": "return self._out(FAIL, 0.0, \"journey call inputs/results do not align\")",
+    "target": "tests/unit/test_tool_route_grader.py::test_journey_missing_evidence_is_error"
+  }
+]

@@ -46,12 +46,15 @@ log = logging.getLogger("nora.tracing")
 EVAL_EVIDENCE_KEY = "nora.eval.evidence"
 
 
+def eval_capture_enabled() -> bool:
+    return callable(otel_context.get_value(EVAL_EVIDENCE_KEY))
+
+
 def record_eval_event(name: str, attributes: dict[str, str]) -> None:
-    """Keep eval inputs before dispatch as well as on their existing OTel span."""
+    """Keep eval content only in the private process-local recorder."""
     evidence = otel_context.get_value(EVAL_EVIDENCE_KEY)
     if callable(evidence):
         evidence("event", name=name, attributes=attributes)
-        trace.get_current_span().add_event(name, attributes)
 
 
 #: Langfuse drops a session id longer than this, or with a non-ASCII character,

@@ -93,8 +93,8 @@
   {
     "name": "6: `create_agent` is no longer a model door",
     "file": "tests/architecture/test_every_model_call_is_a_declared_occasion.py",
-    "old": "    \"create_agent\", \"create_dream_agent\", \"ask_text\", \"ask_structured\",",
-    "new": "    \"create_dream_agent\", \"ask_text\", \"ask_structured\",",
+    "old": "    \"create_agent\", \"create_dream_agent\", \"create_browse_agent\",",
+    "new": "    \"create_dream_agent\", \"create_browse_agent\",",
     "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_every_known_model_door_is_seen"
   },
   {

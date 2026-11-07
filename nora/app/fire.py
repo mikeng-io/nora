@@ -1038,6 +1038,7 @@ class FirePath:
             return None
         return await self._computer.read(
             platform=occasion.platform, conversation_id=occasion.conversation_id,
+            conversation_type=occasion.conversation_type,
         )
 
     async def _read_documents(self, occasion: Event) -> DocumentsView | None:

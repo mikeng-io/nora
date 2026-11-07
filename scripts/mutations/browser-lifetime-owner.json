@@ -1,0 +1,58 @@
+[
+ {
+  "name": "a scoped computerd with an unusable boot identity serves nothing effectful",
+  "file": "deploy/computer/computerd.py",
+  "old": "        if computer.bound_scope is None:\n            return True\n        if not boot_id:\n            return False\n        return request.headers.get(\"X-Computerd-Instance\") == boot_id",
+  "new": "        if computer.bound_scope is None or not boot_id:\n            return True\n        return request.headers.get(\"X-Computerd-Instance\") == boot_id",
+  "target": "tests/unit/test_computerd_instance.py::test_a_scoped_computerd_with_no_boot_identity_serves_nothing"
+ },
+ {
+  "name": "a lost HTTP connection kills the guest command's process group",
+  "file": "deploy/computer/computerd.py",
+  "old": "                    return answer(await computer.run(\n                        scope, body,\n                        disconnected=(\n                            None if transport is None\n                            else transport.is_closing)))",
+  "new": "                    return answer(await computer.run(scope, body))",
+  "target": "tests/unit/test_computerd_instance.py::test_a_lost_http_connection_kills_the_guest_command"
+ },
+ {
+  "name": "a page target born while no client is attached is closed at birth",
+  "file": "deploy/computer/computerd.py",
+  "old": "        if self.client is not None and not self.client.closed:\n            return  # the admitted client's own watch owns popups and the cap\n        asyncio.ensure_future(self._close_orphan(target_id))",
+  "new": "        if self.client is not None and not self.client.closed:\n            return  # the admitted client's own watch owns popups and the cap\n        return",
+  "target": "tests/infra/computer/test_computerd_browser.py::test_a_page_target_born_while_no_client_is_attached_is_closed"
+ },
+ {
+  "name": "cleanup claims the scope's elected execution owner before any guest effect",
+  "file": "nora/infra/computer/manager.py",
+  "old": "        if self._segments is None or self._tasks is None:\n            # The un-owned half (no execution owner wired): the in-process\n            # lock is the only boundary the scope has.\n            lock = self._lock(scope)\n            if lock.locked():\n                return 0  # mid-attach: next pass retries\n            async with lock:\n                return await self._sweep_owned(scope, binding, open_rows,\n                                               browser_up, now)\n        claimed = await self._claim_maintenance(scope)",
+  "new": "        if True:\n            # The un-owned half (no execution owner wired): the in-process\n            # lock is the only boundary the scope has.\n            lock = self._lock(scope)\n            if lock.locked():\n                return 0  # mid-attach: next pass retries\n            async with lock:\n                return await self._sweep_owned(scope, binding, open_rows,\n                                               browser_up, now)\n        claimed = await self._claim_maintenance(scope)",
+  "target": "tests/unit/test_scoped_computer.py::test_cleanup_claims_the_scopes_elected_owner"
+ },
+ {
+  "name": "a successor waits for the cleanup owner to release the scope",
+  "file": "nora/infra/computer/manager.py",
+  "old": "        claimed = await self._claim_maintenance(scope)\n        if claimed is None:\n            return 0  # an owner holds the scope, or real work precedes\n        reply = await self._segments.run_segment(\n            claimed, self._sweep_segment(scope, now))",
+  "new": "        claimed = None\n        if claimed is None:\n            return 0  # an owner holds the scope, or real work precedes\n        reply = await self._segments.run_segment(\n            claimed, self._sweep_segment(scope, now))",
+  "target": "tests/unit/test_scoped_computer.py::test_a_submit_waits_for_cleanup_then_takes_the_scope"
+ },
+ {
+  "name": "a leaked queued maintenance row is closed, never started",
+  "file": "nora/app/computer_queue.py",
+  "old": "            if (row.kind == \"maintenance\"\n                    or (row.deadline_at is not None\n                        and row.deadline_at <= self._clock())\n                    or row.cancel_requested_at is not None):",
+  "new": "            if ((row.deadline_at is not None\n                        and row.deadline_at <= self._clock())\n                    or row.cancel_requested_at is not None):",
+  "target": "tests/unit/test_scoped_computer.py::test_a_leaked_queued_maintenance_row_is_closed_never_started"
+ },
+ {
+  "name": "maintenance is a durable task kind the claim and CHECK both know",
+  "file": "nora/domain/computer_tasks.py",
+  "old": "TASK_KINDS: frozenset[str] = frozenset(\n    {\"native\", \"browse\", \"capture\", \"worker\", \"maintenance\"})",
+  "new": "TASK_KINDS: frozenset[str] = frozenset({\"native\", \"browse\", \"capture\", \"worker\"})",
+  "target": "tests/unit/test_computer_block.py::test_a_maintenance_row_alone_never_keeps_the_block_alive"
+ },
+ {
+  "name": "housekeeping rows never keep the computer block alive or render",
+  "file": "nora/engagement/computer_context.py",
+  "old": "        task_rows = [t for t in task_rows if t.kind != \"maintenance\"]",
+  "new": "",
+  "target": "tests/unit/test_computer_block.py::test_a_maintenance_row_alone_never_keeps_the_block_alive"
+ }
+]

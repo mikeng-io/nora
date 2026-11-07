@@ -198,6 +198,119 @@ async def computer_sweep_loop(
             metrics.inc("nora_errors_total", stage="computer_sweep")
 
 
+class _TicksComputerQueue(Protocol):
+    """The one method `computer_queue_loop` needs
+    (`nora.app.computer_queue.ComputerQueueRunner`)."""
+
+    async def tick(self) -> int: ...
+
+
+async def computer_queue_loop(
+    runner: _TicksComputerQueue, metrics: Metrics, *, tick_seconds: float = 1.0,
+) -> None:
+    """Grant the scope FIFOs and sweep dead grants
+    (`nora.app.computer_queue.ComputerQueueRunner`), `prune_loop`'s
+    discipline: tick, and on failure log + count
+    `nora_errors_total{stage=computer_queue}` and keep looping. Started only
+    while `[computer.scoped] enabled`."""
+    while True:
+        try:
+            await runner.tick()
+        except Exception:
+            log.exception("computer queue tick failed")
+            metrics.inc("nora_errors_total", stage="computer_queue")
+        await asyncio.sleep(tick_seconds)
+
+
+class _SweepsBrowserTabs(Protocol):
+    """The one method `computer_browser_sweep_loop` needs
+    (`nora.infra.computer.manager.ScopeBrowserManager.sweep`)."""
+
+    async def sweep(self, *, now: Any = None) -> int: ...
+
+
+async def computer_browser_sweep_loop(
+    manager: _SweepsBrowserTabs, metrics: Metrics, *, interval_seconds: float,
+) -> None:
+    """Expire idle task-owned tabs and stop idle browsers
+    (`ScopeBrowserManager.sweep`), `computer_sweep_loop`'s discipline.
+    Started only while `[computer.scoped] enabled`."""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            expired = await manager.sweep()
+            if expired:
+                log.info("expired %d computer browser tabs", expired)
+        except Exception:
+            log.exception("computer browser sweep failed")
+            metrics.inc("nora_errors_total", stage="computer_browser_sweep")
+
+
+class ComputerLifecycle:
+    """The scoped computer's ONE start/close owner ([computer.scoped]).
+
+    `start` spawns the queue loop and the browser tab sweep — once —
+    through the caller's `BackgroundTasks`. `__main__` and the eval
+    subject share it, so a subject runs the same maintenance the
+    deployment does instead of composing a queue nothing ticks.
+
+    Close stops admission and owned loops, drains executors and manager
+    events, then releases Redis and the journal before dependent stores.
+    Failed cleanup retains resources and can be retried.
+    """
+
+    def __init__(self, *, runner: Any = None, manager: Any = None,
+                 metrics: Metrics, sweep_seconds: float,
+                 tick_seconds: float = 1.0, sessions: Any = None,
+                 session_seconds: float = 300.0) -> None:
+        self._runner = runner
+        self._manager = manager
+        self._metrics = metrics
+        self._sweep_seconds = sweep_seconds
+        self._tick_seconds = tick_seconds
+        self._sessions = sessions
+        self._session_seconds = session_seconds
+        self._spawned = False
+        self._closed = False
+        self._loops: list[asyncio.Task[None]] = []
+        self._close_lock = asyncio.Lock()
+
+    def start(self, background: BackgroundTasks) -> None:
+        """Spawn the two maintenance loops, once. A `start` on a closed
+        lifecycle spawns nothing — a reopened app composes a new one."""
+        if self._spawned or self._closed:
+            return
+        self._spawned = True
+        if self._sessions is not None:
+            self._loops.append(background.spawn(computer_sweep_loop(
+                self._sessions, self._metrics, interval_seconds=self._session_seconds)))
+        if self._runner is not None:
+            self._loops.append(background.spawn(computer_queue_loop(
+                self._runner, self._metrics, tick_seconds=self._tick_seconds)))
+        if self._manager is not None:
+            self._loops.append(background.spawn(computer_browser_sweep_loop(
+                self._manager, self._metrics,
+                interval_seconds=self._sweep_seconds)))
+
+    async def close(self, *, settle_seconds: float = 3.0) -> None:
+        """Close only after executors drain; timeout leaves dependencies owned."""
+        async with self._close_lock:
+            if self._closed:
+                return
+            if self._runner is not None:
+                self._runner.stop_admission()
+            for task in self._loops:
+                task.cancel()
+            await asyncio.gather(*self._loops, return_exceptions=True)
+            if self._runner is not None:
+                await self._runner.stop(drain_seconds=settle_seconds)
+            if self._manager is not None:
+                await self._manager.aclose()
+            if self._runner is not None:
+                await self._runner.close()
+            self._closed = True
+
+
 class _ProbesComputerd(Protocol):
     """The one method `computer_probe_loop` needs
     (`nora.infra.computer.probe.ComputerdProbe`)."""

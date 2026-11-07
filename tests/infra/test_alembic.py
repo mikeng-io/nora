@@ -52,6 +52,24 @@ def test_upgrade_head_reaches_the_head_revision(clean_pg_url):
     assert current_revision(clean_pg_url) == head_revision()
 
 
+@pytest.mark.parametrize("parent", [
+    "0147_profile_media_keys", "0148_computer_task_maintenance",
+])
+def test_computer_profile_merge_upgrades_from_either_branch(empty_pg_url, parent):
+    cfg = alembic_config(empty_pg_url)
+    command.upgrade(cfg, parent)
+    command.upgrade(cfg, "head")
+    assert current_revision(empty_pg_url) == head_revision()
+    engine = sa.create_engine(sync_url_for(empty_pg_url))
+    try:
+        with engine.connect() as conn:
+            assert "computer_tasks" in sa.inspect(conn).get_table_names()
+            assert conn.execute(sa.text(
+                "SELECT nora_media_keys(:ref)"), {"ref": "a" * 64}).scalar_one() == ["a" * 64]
+    finally:
+        engine.dispose()
+
+
 def test_upgrade_is_idempotent(clean_pg_url):
     run_migrations(clean_pg_url)
     run_migrations(clean_pg_url)

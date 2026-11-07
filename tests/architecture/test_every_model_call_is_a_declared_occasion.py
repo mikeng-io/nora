@@ -76,8 +76,8 @@ _EXTRA_DOORS = (
 #: Calls that send a prompt to a model, matched on the callee's trailing name
 #: and on the name it was imported under.
 _MODEL_CALLS = {
-    "create_agent", "create_dream_agent", "ask_text", "ask_structured",
-    "invoke_async",
+    "create_agent", "create_dream_agent", "create_browse_agent",
+    "ask_text", "ask_structured", "invoke_async",
 }
 #: Agent methods that send a prompt, matched on the trailing name alone.
 _MODEL_METHODS = {"stream_async", "structured_output", "structured_output_async"}
@@ -90,6 +90,10 @@ _INVOKE_RECEIVER_ENDINGS = ("runner", "factory")
 
 #: The SDK or transport layer. It runs whatever prompt it is handed.
 MECHANISM = {
+    "nora/agent/replay_capture.py": (
+        "private transport recorder; forwards the already formatted request unchanged "
+        "and never decides the prompt, settings or tool definitions"
+    ),
     "nora/agent/factory.py": (
         "builds the Strands agent and runs one turn; the prompt it is given is "
         "assembled by the occasion that called it, never here"
@@ -147,6 +151,11 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
     # formatter that walks the declared `subagent_*` blocks through
     # `ContextBlock`.
     "nora/app/subagent_runner.py": (("nora/language/subagent_render.py",), "imports"),
+    # The browse occasion ([computer.scoped], B2): its brief is built by
+    # ONE formatter that walks the declared `browse_task` block through
+    # `ContextBlock`; the authored SYSTEM_PROMPT is the occasion's
+    # instruction, like the worker's doctrine-loaded system text.
+    "nora/agent/browse.py": (("nora/language/browse_render.py",), "imports"),
     # The eval arm's context selector: the system text, the clock/window line
     # and the candidate blocks it posts are all built by ONE declared
     # occasion it imports; it only dispatches the POST and records receipts.
@@ -260,7 +269,7 @@ def declares_blocks(tree: ast.Module) -> bool:
 def _is_blocks_module(node: ast.ImportFrom) -> bool:
     """`from nora.domain.blocks import ...` or the package-relative spelling
     (`from ..domain.blocks import ...`) the agent modules use."""
-    return bool(node.module) and node.module.split(".")[-2:] == ["domain", "blocks"]
+    return node.module is not None and node.module.split(".")[-2:] == ["domain", "blocks"]
 
 
 def calls_assemble(tree: ast.Module) -> bool:

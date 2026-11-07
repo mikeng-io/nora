@@ -1,0 +1,9 @@
+[
+  {
+    "name": "double-forked Chrome helpers stay owned until browser retirement",
+    "file": "deploy/computer/computerd.py",
+    "old": "    if libc.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER",
+    "new": "    if libc.prctl(36, 0, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER disabled",
+    "target": "tests/infra/computer/test_computerd_browser.py::test_browser_retirement_leaves_no_detached_crash_reporter"
+  }
+]

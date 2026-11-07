@@ -46,6 +46,7 @@ from strands.vended_plugins.skills import AgentSkills
 from ..domain.errors import PartialReplyError
 from .guards import ReplyGuard, ToolCallLog
 from .reasoning_carry import ReasoningCarryingOpenAIModel
+from .replay_capture import hooks as replay_hooks
 from .tool_choice import FIRST_CALL
 
 log = logging.getLogger("nora.factory")
@@ -74,10 +75,17 @@ def create_client(
 ) -> AsyncOpenAI:
     """`http_client` is the transport seam for an endpoint that wants something
     on EVERY request that the SDK does not send, e.g. OpenCode Go's mandatory
-    `x-opencode-session` (DEC-197). `None` keeps the SDK's own client."""
+    `x-opencode-session` (DEC-197). `None` keeps the SDK's own client.
+
+    When `nora.domain.run_budget.active_run_budget` is installed (an eval run's
+    bound, never production's) every `chat.completions.create`/`parse` on the
+    returned client is reserved BEFORE it leaves and reconciled after — a
+    refused reserve raises `RunBudgetError` without a request being sent."""
     if not api_key:
         raise RuntimeError("api_key is empty — refusing to start")
-    return AsyncOpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
+    client = AsyncOpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
+    from nora.agent.run_budget_transport import gate_client
+    return gate_client(client)
 
 
 def create_model_provider(
@@ -506,7 +514,7 @@ def create_agent(
         # `Agent` wants `list[Message]` (a TypedDict); the dicts have the right
         # shape at runtime and only the static type is asserted here.
         messages=list(pre_fill),  # type: ignore[arg-type]
-        hooks=hooks,
+        hooks=[*hooks, *replay_hooks()],
         tool_executor=_executor_or_shared(tool_executor),
         conversation_manager=NullConversationManager(),
         session_manager=None,
@@ -583,7 +591,7 @@ def create_dream_agent(
         tools=tools,
         # After the guard, for `create_agent`'s reason (see the comment on its
         # `hooks` list). `None` is the inert default.
-        hooks=hooks,
+        hooks=[*hooks, *replay_hooks()],
         tool_executor=_background_executor_or_shared(tool_executor),
         conversation_manager=NullConversationManager(),
         session_manager=None,
@@ -661,7 +669,8 @@ def create_subagent(
         tools=tools,
         # `reasoning_watch` last, for `create_agent`'s reason: it must read the
         # guard's verdicts.
-        hooks=[guard, progress] if reasoning_watch is None else [guard, progress, reasoning_watch],
+        hooks=([guard, progress, *replay_hooks()] if reasoning_watch is None
+               else [guard, progress, reasoning_watch, *replay_hooks()]),
         tool_executor=_background_executor_or_shared(tool_executor),
         # A sliding window, trimmed before every model call (`per_turn=True`; the
         # default trims once per invocation, and a job is one invocation of
@@ -701,6 +710,7 @@ def create_browse_agent(
     """
     return Agent(
         model=model,
+        hooks=replay_hooks(),
         name=agent_name,
         agent_id=agent_name,
         retry_strategy=ModelRetryStrategy(

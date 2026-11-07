@@ -612,6 +612,7 @@ async def test_the_app_stops_the_cognition_sessions_before_it_closes_the_client_
 
     deps = SimpleNamespace(
         cognition_shutdown=_Stop(), subagent_backend=None,
+        computer_lifecycle=_Closable("computer"),
         bridge_runtime=_BridgeRuntime(),
         registry=SimpleNamespace(
             adapters={"signal": _Closable("adapter")}),
@@ -620,9 +621,10 @@ async def test_the_app_stops_the_cognition_sessions_before_it_closes_the_client_
     app = App(cfg=None, deps=deps)              # type: ignore[arg-type]
     await app.shutdown()
     assert order == [
-        "cognition", "bridge_stop", "bridge_redis", "adapter", "client", "audit",
+        "cognition", "bridge_stop", "bridge_redis", "adapter", "computer", "client", "audit",
     ]
     deps.cognition_shutdown = None              # sessions off: nothing to stop, nothing breaks
+    deps.computer_lifecycle = None
     order.clear()
     await app.shutdown()
     assert order == ["bridge_stop", "bridge_redis", "adapter", "client", "audit"]

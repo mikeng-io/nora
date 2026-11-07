@@ -113,18 +113,59 @@ def render_computer(view: ComputerView | None) -> ContextBlock | None:
                            min(s.session.expired_at or s.session.updated_at for s in rest),
                            now))
 
+    # The scoped runtime's queue and tabs ([computer.scoped]): live
+    # `computer_tasks` rows — the model reads `task <id8>` here as the `task`
+    # `computer_browse`/`computer_capture`/`computer_cancel` take — then the
+    # task-owned tabs with their idle state. Both sections only render when
+    # the stores are wired (shared-VM keeps its old block).
+    if view.tasks_unavailable:
+        lines.append(_Line("queued tasks could not be read", None))
+    if view.tasks is not None:
+        for task in view.tasks:
+            note = f" · {task.note}" if task.note else ""
+            lines.append(_Line(
+                f"task {task.task_id} · {task.kind} · {task.status}{note} · "
+                f"queued {age(task.created, now)}", task.created))
+    if view.tabs_unavailable:
+        lines.append(_Line("browser tabs could not be read", None))
+    if view.tabs is not None:
+        for tab in view.tabs:
+            where = tab.url or "about:blank"
+            if tab.status == "open" and tab.expires_in is not None:
+                state = (f"open, expires in {max(0, int(tab.expires_in))}s of "
+                         "no activity")
+            else:
+                state = tab.status + (f" ({tab.reason})" if tab.reason else "")
+            via = ", a popup it opened" if tab.via == "popup" else ""
+            title = f'"{tab.title}" · ' if tab.title else ""
+            did = (f" · last op {tab.last_op} {tab.last_result}".rstrip()
+                   if tab.last_op else "")
+            lines.append(_Line(
+                f"browser tab of task {tab.task_id}{via} · {state} · "
+                f"{title}{where}{did} · active {age(tab.last_activity, now)}",
+                tab.last_activity))
+
+    # The machine's own identity and when this block's read of it was made:
+    # the instance every handle above was minted on, and the observation's
+    # own revision and time — a cached read shows ITS age, never "just now".
+    if view.instance:
+        when = (f"read {age(view.state_at, now)}" if view.state_at is not None
+                else "not read")
+        lines.append(_Line(
+            f"computer instance {view.instance} · observation {view.revision} · "
+            f"{when}", view.state_at))
     if not view.machine_read:
         lines.append(_Line(f"the computer itself could not be read, checked {age(now, now)}",
                            None))
     else:
-        tmux = sorted(view.tmux or (), key=lambda t: t.created, reverse=True)
-        for t in tmux[: caps.max_tmux]:
-            state = "running" if t.running else "idle, nothing running"
-            lines.append(_Line(f'tmux "{t.name}" · {state} · started {age(t.created, now)}',
-                               t.created))
+        tmux = sorted(view.tmux or (), key=lambda tm: tm.created, reverse=True)
+        for tm in tmux[: caps.max_tmux]:
+            state = "running" if tm.running else "idle, nothing running"
+            lines.append(_Line(f'tmux "{tm.name}" · {state} · started {age(tm.created, now)}',
+                               tm.created))
         if len(tmux) > caps.max_tmux:
             lines.append(_more(len(tmux) - caps.max_tmux, "tmux sessions",
-                               min(t.created for t in tmux[caps.max_tmux:]), now))
+                               min(tm.created for tm in tmux[caps.max_tmux:]), now))
         if view.tmux is None:
             lines.append(_Line(f"running jobs could not be listed, checked {age(now, now)}",
                                None))

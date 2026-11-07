@@ -101,6 +101,9 @@ _NOT_A_TRANSCRIPT = {
     # each decision (question, answer, who made it) as elements through `render_elements`.
     # The worker starts with no conversation at all.
     "nora/language/subagent_render.py": "renders a brief, never a transcript",
+    # THE BROWSE TASK'S BRIEF, not a transcript — the objective and the start
+    # page as `part` elements for the browse agent, like the sub-agent's.
+    "nora/language/browse_render.py": "renders the browse task's brief, not a transcript",
 }
 
 #: The operator's surfaces: a Discord review channel, not a prompt. Exempt from

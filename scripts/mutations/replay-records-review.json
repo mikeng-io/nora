@@ -1,0 +1,58 @@
+[
+  {
+    "name": "FIX 1 beta client surface",
+    "file": "nora/agent/replay_capture.py",
+    "old": "            beta=SimpleNamespace(chat=SimpleNamespace(\n                completions=_Completions(client.beta.chat.completions))),",
+    "new": "",
+    "target": "tests/integration/test_eval_observability.py::test_structured_call_captures_beta_parse"
+  },
+  {
+    "name": "FIX 1 beta parse response capture",
+    "file": "nora/agent/replay_capture.py",
+    "old": "            beta=SimpleNamespace(chat=SimpleNamespace(\n                completions=_Completions(client.beta.chat.completions))),",
+    "new": "            beta=client.beta,",
+    "target": "tests/integration/test_eval_observability.py::test_structured_call_captures_beta_parse"
+  },
+  {
+    "name": "FIX 2 complete REVIEW is nonfatal",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "                out.append({\"PASS\": \"supported\", \"FAIL\": \"unsupported\", \"REVIEW\": \"ERROR\"}[verdict])",
+    "new": "                if verdict == \"REVIEW\":\n                    record(\"judge_error\", cause=\"judge_incomplete\")\n                out.append({\"PASS\": \"supported\", \"FAIL\": \"unsupported\", \"REVIEW\": \"ERROR\"}[verdict])",
+    "target": "tests/integration/test_eval_observability.py::test_review_judge_verdict_keeps_run_complete"
+  },
+  {
+    "name": "FIX 3 orphan finish",
+    "file": "nora/subject/eval_evidence.py",
+    "old": "            if not pending.get(marker):\n                causes.add(\"unmatched_event\")",
+    "new": "            if not pending.get(marker):\n                pass",
+    "target": "tests/unit/test_replay_scoring.py::test_unmatched_call_is_the_only_error[call_finished]"
+  },
+  {
+    "name": "FIX 3 dangling start",
+    "file": "nora/subject/eval_evidence.py",
+    "old": "    if any(pending.values()):\n        causes.add(\"unmatched_event\")",
+    "new": "    if any(pending.values()):\n        pass",
+    "target": "tests/unit/test_replay_scoring.py::test_unmatched_call_is_the_only_error[call_started]"
+  },
+  {
+    "name": "FIX 4 suppress local strip probes",
+    "file": "nora/agent/reasoning_strip.py",
+    "old": "    from .telemetry import _REQUEST_PROBE\n    token = _REQUEST_PROBE.set(True)\n    try:\n        request = format_request([message])\n    finally:\n        _REQUEST_PROBE.reset(token)",
+    "new": "    request = format_request([message])",
+    "target": "tests/integration/test_eval_observability.py::test_strip_detector_probes_are_not_dispatched_requests"
+  },
+  {
+    "name": "FIX 5 private event bodies stay off spans",
+    "file": "nora/obs/tracing.py",
+    "old": "        evidence(\"event\", name=name, attributes=attributes)",
+    "new": "        evidence(\"event\", name=name, attributes=attributes)\n        trace.get_current_span().add_event(name, attributes)",
+    "target": "tests/integration/test_eval_observability.py::test_private_eval_events_never_attach_bodies_to_spans"
+  },
+  {
+    "name": "FIX 12 terminal wall clock bound",
+    "file": "nora/app/cognition_session.py",
+    "old": "\"bound\": (\"timeout_seconds\" if isinstance(sys.exception(), SessionTimeoutError)\n                              else result.stop_reason if result is not None",
+    "new": "\"bound\": (result.stop_reason if result is not None",
+    "target": "tests/unit/test_cognition_session_runner.py::test_wall_clock_timeout_names_the_terminal_bound"
+  }
+]

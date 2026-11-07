@@ -19,9 +19,13 @@ budget is an answer the model reads ("finish now"), not an exception.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
+import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal
+from uuid import UUID
 
 from strands import tool
 
@@ -34,8 +38,17 @@ from nora.agent.factory import (
 )
 from nora.domain.computer import BrowseOutcome
 from nora.infra.computer.browser import BrowserError, BrowserPage, open_browser
+from nora.language.browse_render import render_browse_brief
 
 log = logging.getLogger(__name__)
+
+#: The durable action record for the in-flight browse: the caller's append
+#: callback, bound per `browse()` call so a concurrent browse in the same
+#: loop keeps its own record (and a test's replaced `_run` needs no new
+#: signature).
+_action_record: contextvars.ContextVar[
+    Callable[..., Awaitable[None]] | None] = contextvars.ContextVar(
+    "nora_browse_action_record", default=None)
 
 SYSTEM_PROMPT = """\
 You operate a web browser on Nora's own computer to finish one task for her, \
@@ -72,12 +85,31 @@ class BrowseSettings:
 class _Task:
     """One task's state, shared by its page tools."""
 
-    def __init__(self, page: BrowserPage, settings: BrowseSettings) -> None:
+    def __init__(self, page: BrowserPage, settings: BrowseSettings,
+                 record: Callable[..., Awaitable[None]] | None = None) -> None:
         self.page = page
         self.settings = settings
         self.steps = 0
+        #: How many page observations (snapshots) this task took — the index
+        #: an action's `ref` was selected from, so the durable record can
+        #: bind a selection to the observation that minted it.
+        self.observations = 0
         self.finished: BrowseOutcome | None = None
         self.url = ""
+        self._record = record
+
+    async def record(self, *, name: str, ref: str = "", outcome: str,
+                     detail: str = "") -> None:
+        """The durable action record: what was selected (name + ref), on
+        which observation, and what became of it — best-effort: a record
+        failure never breaks a page action."""
+        if self._record is None:
+            return
+        try:
+            await self._record(name=name, ref=ref, observation=self.observations,
+                               outcome=outcome, detail=detail)
+        except Exception:
+            log.exception("browse action record failed")
 
     def over(self) -> str | None:
         """Once the task has finished, no page tool runs again: the text the model reads."""
@@ -106,16 +138,21 @@ class _Task:
 def _tools(task: _Task) -> list[Any]:
     page = task.page
 
-    async def act(run: Any) -> str:
+    async def act(run: Any, *, name: str, ref: str = "") -> str:
         # Checked at the start and again here, with nothing awaited in between, so no
         # operation can begin after the task finished.
         over = task.over() or task.spend()
         if over is not None:
+            await task.record(name=name, ref=ref, outcome="rejected", detail=over)
             return over
         try:
-            return str(await run())
+            got = str(await run())
         except BrowserError as exc:
-            return f"That did not work: {exc}"
+            got = f"That did not work: {exc}"
+            await task.record(name=name, ref=ref, outcome="error", detail=got)
+            return got
+        await task.record(name=name, ref=ref, outcome="executed", detail=got)
+        return got
 
     @tool
     async def page_open(url: str) -> str:
@@ -125,14 +162,17 @@ def _tools(task: _Task) -> list[Any]:
             url: The full address, starting with http:// or https://.
         """
         if (over := task.over()) is not None:
+            await task.record(name="page_open", outcome="rejected", detail=over)
             return over
         if not url.startswith(("http://", "https://")):
+            await task.record(name="page_open", outcome="rejected",
+                              detail="not an http(s) address")
             return "Only http:// and https:// addresses can be opened."
 
         async def run() -> str:
             task.url = await page.navigate(url)
             return f"Opened {task.url}. Take a snapshot to see it."
-        return await act(run)
+        return await act(run, name="page_open")
 
     @tool
     async def page_snapshot() -> str:
@@ -140,8 +180,9 @@ def _tools(task: _Task) -> list[Any]:
         async def run() -> str:
             snap = await page.snapshot()
             task.url = snap.url
+            task.observations += 1
             return snap.render()
-        return await act(run)
+        return await act(run, name="page_snapshot")
 
     @tool
     async def page_click(ref: str) -> str:
@@ -153,7 +194,7 @@ def _tools(task: _Task) -> list[Any]:
         async def run() -> str:
             await page.click(ref)
             return "Clicked. Take a snapshot to see the result."
-        return await act(run)
+        return await act(run, name="page_click", ref=ref)
 
     @tool
     async def page_type(ref: str, text: str, submit: bool = False) -> str:
@@ -167,7 +208,7 @@ def _tools(task: _Task) -> list[Any]:
         async def run() -> str:
             await page.type_text(ref, text, submit=submit)
             return "Typed. Take a snapshot to see the result."
-        return await act(run)
+        return await act(run, name="page_type", ref=ref)
 
     @tool
     async def page_select(ref: str, option: str) -> str:
@@ -180,7 +221,7 @@ def _tools(task: _Task) -> list[Any]:
         async def run() -> str:
             chosen = await page.select(ref, option)
             return f"Selected {chosen}. Take a snapshot to see the result."
-        return await act(run)
+        return await act(run, name="page_select", ref=ref)
 
     @tool
     async def page_press(key: Literal["Enter", "Tab", "Escape", "Backspace", "ArrowDown",
@@ -194,7 +235,7 @@ def _tools(task: _Task) -> list[Any]:
         async def run() -> str:
             await page.press(key)
             return f"Pressed {key}."
-        return await act(run)
+        return await act(run, name="page_press")
 
     @tool
     async def page_scroll(direction: Literal["down", "up"]) -> str:
@@ -206,7 +247,7 @@ def _tools(task: _Task) -> list[Any]:
         async def run() -> str:
             await page.scroll(direction)
             return "Scrolled. Take a snapshot to see what is now in view."
-        return await act(run)
+        return await act(run, name="page_scroll")
 
     @tool
     async def page_read() -> str:
@@ -214,7 +255,7 @@ def _tools(task: _Task) -> list[Any]:
         async def run() -> str:
             text, cut = await page.read_text(task.settings.read_chars)
             return text + ("\n[cut: the page goes on]" if cut else "")
-        return await act(run)
+        return await act(run, name="page_read")
 
     @tool
     async def page_look() -> dict[str, Any]:
@@ -222,11 +263,14 @@ def _tools(task: _Task) -> list[Any]:
         boxed with its ref. Use it when the snapshot leaves the layout unclear."""
         over = task.over() or task.spend()
         if over is not None:
+            await task.record(name="page_look", outcome="rejected", detail=over)
             return {"status": "success", "content": [{"text": over}]}
         try:
             jpeg = await page.screenshot(marks=True)
         except BrowserError as exc:
+            await task.record(name="page_look", outcome="error", detail=str(exc))
             return {"status": "error", "content": [{"text": f"No screenshot: {exc}"}]}
+        await task.record(name="page_look", outcome="executed", detail="screenshot")
         return {"status": "success", "content": [
             {"text": "The screen, with each ref boxed and labelled."},
             {"image": {"format": "jpeg", "source": {"bytes": jpeg}}},
@@ -244,6 +288,9 @@ def _tools(task: _Task) -> list[Any]:
             status="ok" if found else "nothing_found", answer=answer.strip(),
             url=task.url, steps=task.steps,
         ))
+        await task.record(name="browse_done",
+                          outcome="rejected" if refused else "concluded",
+                          detail=refused or answer.strip())
         return refused or "Done. Stop here."
 
     @tool
@@ -258,6 +305,9 @@ def _tools(task: _Task) -> list[Any]:
             status="unavailable", reason=reason.strip() or "a person must step in",
             url=task.url, steps=task.steps, needs_human=True,
         ))
+        await task.record(name="browse_needs_human",
+                          outcome="rejected" if refused else "concluded",
+                          detail=refused or reason.strip())
         return refused or "Handed to a person. Stop here."
 
     return [page_open, page_snapshot, page_click, page_type, page_select, page_press,
@@ -265,44 +315,90 @@ def _tools(task: _Task) -> list[Any]:
 
 
 class BrowseAgentRunner:
-    """`BrowserRunner` over computerd's browser and a Strands sub-agent."""
+    """`BrowserRunner` over computerd's browser and a Strands sub-agent.
+
+    `manager` (a `ScopeBrowserManager`) is the scoped-tab path: each task
+    owns a tab — `task_id` continues a task's earlier tab, `None` opens a
+    new one — and the outcome carries the owning task and target ids.
+    Without it the runner keeps the shared-VM shape: `open_browser` takes
+    the whole browser for one task."""
 
     def __init__(self, *, model_source: ModelSource, retry: RetryPolicy, base_url: str,
-                 token: str, settings: BrowseSettings) -> None:
+                 token: str, settings: BrowseSettings, manager: Any = None) -> None:
         self._models = model_source
         self._retry = retry
         self._base_url = base_url
         self._token = token
         self._settings = settings
+        self._manager = manager
 
     async def browse(self, *, scope: str, objective: str,
-                     start_url: str | None = None) -> BrowseOutcome:
+                     start_url: str | None = None,
+                     task_id: UUID | None = None,
+                     record: Callable[..., Awaitable[None]] | None = None,
+                     ) -> BrowseOutcome:
+        token = _action_record.set(record)
         try:
             return await asyncio.wait_for(
-                self._run(scope, objective, start_url), self._settings.timeout_seconds)
+                self._run(scope, objective, start_url, task_id),
+                self._settings.timeout_seconds)
         except TimeoutError:
             limit = self._settings.timeout_seconds
-            return BrowseOutcome(status="unavailable", reason=f"ran out of time after {limit:g}s")
+            # The inner task was cancelled at its bound; whether the page's
+            # in-flight action actually ended is not confirmed: uncertain.
+            return BrowseOutcome(status="unavailable",
+                                 reason=f"ran out of time after {limit:g}s",
+                                 uncertain=True)
         except BrowserError as exc:
-            return BrowseOutcome(status="unavailable", reason=str(exc))
+            return BrowseOutcome(status="unavailable", reason=str(exc),
+                                 uncertain=True)
         except Exception as exc:
+            if type(exc).__name__ == "TabUnavailable":
+                return BrowseOutcome(
+                    status="unavailable",
+                    reason=getattr(exc, "reason", "unavailable"))
             log.exception("browse task failed")
-            return BrowseOutcome(status="unavailable", reason=type(exc).__name__)
+            return BrowseOutcome(status="unavailable", reason=type(exc).__name__,
+                                 uncertain=True)
+        finally:
+            _action_record.reset(token)
 
-    async def _run(self, scope: str, objective: str, start_url: str | None) -> BrowseOutcome:
+    async def _drive(self, page: BrowserPage, objective: str,
+                     start_url: str | None,
+                     task_id: str = "", tab: str = "",
+                     record: Callable[..., Awaitable[None]] | None = None,
+                     ) -> BrowseOutcome:
+        task = _Task(page, self._settings, record=record)
+        # The brief is assembled (`nora.language.browse_render`), not
+        # f-stringed beside the model call: the occasion's prompt goes
+        # through the same `ContextBlock`/`assemble` path every other
+        # declared occasion does.
+        brief = render_browse_brief(objective, start_url)
+        agent = create_browse_agent(
+            model=self._models.create(), system_prompt=SYSTEM_PROMPT, tools=_tools(task),
+            trace_attributes={"nora.agent": "browse"}, retry=self._retry,
+        )
+        await invoke(agent, brief, invocation_state={}, limits=build_limits(
+            output_tokens=self._settings.output_tokens, turns=self._settings.turns,
+            total_tokens=self._settings.total_tokens))
+        got = task.finished
+        if got is None:
+            got = BrowseOutcome(status="unavailable", url=task.url, steps=task.steps,
+                                reason="the browser task stopped without an answer")
+        return BrowseOutcome(
+            status=got.status, answer=got.answer, reason=got.reason,
+            url=got.url, steps=got.steps, needs_human=got.needs_human,
+            task_id=task_id, tab=tab)
+
+    async def _run(self, scope: str, objective: str, start_url: str | None,
+                   task_id: UUID | None) -> BrowseOutcome:
+        record = _action_record.get()
+        if self._manager is not None:
+            owner = task_id or uuid.uuid4()
+            async with self._manager.acquire(
+                    scope, owner, must_exist=task_id is not None) as bound:
+                return await self._drive(
+                    bound.page, objective, start_url,
+                    task_id=str(owner), tab=bound.tab.target_id, record=record)
         async with open_browser(base_url=self._base_url, token=self._token, scope=scope) as page:
-            task = _Task(page, self._settings)
-            brief = f"Task: {objective.strip()}"
-            if start_url:
-                brief += f"\nStart at: {start_url.strip()}"
-            agent = create_browse_agent(
-                model=self._models.create(), system_prompt=SYSTEM_PROMPT, tools=_tools(task),
-                trace_attributes={"nora.agent": "browse"}, retry=self._retry,
-            )
-            await invoke(agent, brief, invocation_state={}, limits=build_limits(
-                output_tokens=self._settings.output_tokens, turns=self._settings.turns,
-                total_tokens=self._settings.total_tokens))
-            if task.finished is not None:
-                return task.finished
-            return BrowseOutcome(status="unavailable", url=task.url, steps=task.steps,
-                                 reason="the browser task stopped without an answer")
+            return await self._drive(page, objective, start_url, record=record)
