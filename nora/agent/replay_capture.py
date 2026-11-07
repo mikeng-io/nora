@@ -204,7 +204,7 @@ class _Stream:
 
 @asynccontextmanager
 async def client_capture(client: Any) -> AsyncIterator[Any]:
-    if not eval_capture_enabled():
+    if not eval_capture_enabled() and _IDENTITIES.get() is None:
         yield client
     else:
         yield SimpleNamespace(

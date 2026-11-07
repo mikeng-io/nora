@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import html
 import json
 import logging
 import math
@@ -585,13 +586,27 @@ def compare_reports(before: dict[str, Any], after: dict[str, Any]) -> str:
 
 def evidence_exchanges(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     exchanges = []
+    rendered: dict[str, dict[str, str]] = {}
     for event in events:
+        if event.get("name") == "nora.model.request":
+            request = json.loads(event["attributes"]["nora.model.request.body"])
+            for message in request.get("messages", []):
+                content = message.get("content", "")
+                if not isinstance(content, str):
+                    content = "\n".join(p.get("text", "") for p in content or [])
+                for item in re.finditer(r"<item\b[^>]*>.*?</item>", content, re.S):
+                    opening = item.group().split(">", 1)[0] + ">"
+                    for row in re.finditer(r'<(\w+)\b[^>]*\bn="(\d+)"[^>]*>.*?</\1>',
+                                           item.group(), re.S):
+                        rendered[row[2]] = {"rendered": opening + row.group() + "</item>"}
+
         if event["kind"] != "tool_finished":
             continue
         use, result = event["tool"], event["result"]
         source_events = [e for e in events if e.get("name") == "nora.proposal.sources"
                          and e.get("span_id") == event.get("span_id")]
         source_rows = json.loads(source_events[-1]["attributes"]["body"]) if source_events else {}
+        source_rows = {n: {**row, **rendered.get(n, {})} for n, row in source_rows.items()}
         values = []
         for part in result.get("content", []):
             if "json" in part:
@@ -634,6 +649,28 @@ def cited_source_numbers(value: Any) -> set[str]:
     return set()
 
 
+def parse_fact_output(raw: str) -> Any:
+    """Accept a leading JSON document/fence and ignore a judge's trailing explanation."""
+    text = raw.strip()
+    if text.startswith("```"):
+        fence = re.match(r"```(?:json)?\s*\n(.*?)\n```", text, re.S)
+        if fence:
+            return parse_json_response("```json\n" + fence[1] + "\n```")
+    _, end = json.JSONDecoder().raw_decode(text)
+    return parse_json_response(text[:end])
+
+
+def miss_in_new_sources(entry: dict[str, Any], sources: dict[str, Any]) -> bool:
+    locations = re.findall(r"\d+", str(entry["location"]))
+    if not locations or any(n not in sources for n in locations):
+        return False
+    def normalize(text: str) -> str:
+        return " ".join(html.unescape(text).split())
+    quote = normalize(entry["quote"])
+    rows = [normalize(sources[n]["text"]) for n in locations]
+    return bool(quote) and any(quote in join.join(rows) for join in (" ", " / ", "/", ""))
+
+
 async def smoke_fact_support(
     judges: Judges, inspection: Any, exchanges: list[dict[str, Any]]
 ) -> dict[str, Any]:
@@ -666,6 +703,7 @@ async def smoke_fact_support(
         "facts_context_only": 0,
     }
     from nora.agent.replay_capture import record
+    record("fact_scoring_input", inspection=inspection, exchanges=exchanges)
     from nora.subject.eval_evidence import current
     session_ids = []
     if evidence_run := current():
@@ -678,7 +716,7 @@ async def smoke_fact_support(
         verdicts = []
         for model in judges.models:
             try:
-                parsed = parse_json_response(
+                parsed = parse_fact_output(
                     await judges.call(
                         model, _FACT_SUPPORT_INSTRUCTION,
                         {"statement": statement, "cited_rows": cited},
@@ -688,7 +726,7 @@ async def smoke_fact_support(
                 if (not cited or verdict not in {"supported", "unsupported", "unsure"}
                         or not isinstance(parsed.get("reason"), str)
                         or not parsed["reason"].strip()):
-                    raise ValueError("judge_incomplete")
+                    raise ValueError("judge_reason_or_verdict_missing")
                 record("judge_verdict", alias=model, statement=statement,
                        session_event_ids=session_ids,
                        verdict=verdict,
@@ -698,9 +736,10 @@ async def smoke_fact_support(
                     verdict if verdict in ("supported", "unsupported", "unsure")
                     and parsed.get("reason") else "ERROR"
                 )
-            except Exception:  # noqa: BLE001 - fail closed without private exception text
+            except Exception as exc:  # noqa: BLE001 - private details stay in evidence
                 verdicts.append("ERROR")
-                record("judge_error", cause="judge_incomplete")
+                record("judge_error", cause="judge_incomplete", detail=type(exc).__name__,
+                       validation=str(exc) if isinstance(exc, ValueError) else "judge_call_failed")
         out["facts_judge_errors"] += verdicts.count("ERROR")
         if verdicts and all(v == "supported" for v in verdicts):
             out["facts_supported"] += 1
@@ -710,7 +749,7 @@ async def smoke_fact_support(
             out["facts_unsure"] += 1
     for model in judges.models:
         try:
-            parsed = parse_json_response(
+            parsed = parse_fact_output(
                 await judges.call(
                     model, _MISSED_FACT_INSTRUCTION,
                     {"session_input": evidence, "saved_statements": [s for s, _ in saved]},
@@ -726,18 +765,24 @@ async def smoke_fact_support(
                 ):
                     raise ValueError("judge_reason_missing")
             new_sources = inspection.get("new_sources", {})
+            accepted = []
             for entry in parsed["missed"]:
-                source = new_sources.get(str(entry["location"]))
-                if not source or entry["quote"] not in source["text"]:
-                    raise ValueError("miss_outside_new_sources")
+                inside = miss_in_new_sources(entry, new_sources)
+                record("fact_verdict", alias=model, fact=entry,
+                       verdict="missed" if inside else "miss_outside_new_sources",
+                       reason=entry["reason"])
+                if inside:
+                    accepted.append(entry)
+            parsed["missed"] = accepted
             record("judge_verdict", alias=model, verdict="missed", reason="scoped",
                    session_event_ids=session_ids,
                    output=parsed)
             out["facts_missed"] += len(parsed["missed"])
             out["facts_context_only"] += len(parsed["context_only"])
-        except Exception:  # noqa: BLE001 - fail closed without private exception text
+        except Exception as exc:  # noqa: BLE001 - private details stay in evidence
             out["facts_judge_errors"] += 1
-            record("judge_error", cause="judge_incomplete")
+            record("judge_error", cause="judge_incomplete", detail=type(exc).__name__,
+                       validation=str(exc) if isinstance(exc, ValueError) else "judge_call_failed")
     return out
 
 
@@ -1283,6 +1328,70 @@ async def decision_judge(directory: Path, judges: Judges) -> dict[str, Any]:
                 r["observation"] == "insufficient_evidence" for r in results)}
 
 
+async def rescore_facts(directory: Path, judges: Judges) -> dict[str, Any]:
+    """Re-read frozen session evidence without constructing a writer or opening a database."""
+    from nora.agent.replay_capture import record
+    paths = sorted(directory.glob("spike-*/events.jsonl"))  # noqa: ASYNC240 - private offline input
+    if (directory / "events.jsonl").exists():
+        paths = [directory / "events.jsonl"]
+    if not paths:
+        raise ValueError("source_record_missing")
+    sessions: list[tuple[Any, list[dict[str, Any]]]] = []
+    for path in paths:
+        events = read_events(path.parent)
+        # Old scorer failures are replaceable; capture/terminal failures are not.
+        writer_events = [e for e in events if e["kind"] not in {
+            "judge_error", "judge_verdict", "run_failed"}]
+        receipt = validate_events(writer_events)
+        if receipt["status"] == "ERROR":
+            raise ValueError("source_capture_incomplete")
+        record("rescore_source", sha256=fingerprint(path), receipt=receipt)
+        inputs = [e for e in events if e["kind"] == "fact_scoring_input"]
+        if inputs:
+            sessions.extend((e["inspection"], e["exchanges"]) for e in inputs)
+        else:
+            for frozen in sorted(path.parent.parent.glob("session-*.json")):
+                data = json.loads(frozen.read_text())
+                sessions.append((data["inspection"], evidence_exchanges(data["events"])))
+        in_session = False
+        for event in writer_events:
+            if event.get("name") == "nora.session.started":
+                in_session = True
+            if event.get("name") == "nora.session.terminal":
+                in_session = False
+            if in_session and event["kind"] == "transport_response":
+                judges.served.setdefault("writer", []).append(event["headers"])
+    if not sessions:
+        raise ValueError("source_sessions_missing")
+    results = [await smoke_fact_support(judges, inspection, exchanges)
+               for inspection, exchanges in sessions]
+    return {"status": "REPORTED", "sessions": len(results), "results": results,
+            "independence": served_independence(judges.served)}
+
+
+async def run_rescore(args: Any) -> dict[str, Any]:
+    from tempfile import TemporaryFile
+
+    from opentelemetry import trace
+
+    from evals.backbone import _prefill_capture
+    _prefill_capture()
+    output = private_directory(args.output)
+    with TemporaryFile() as lock:
+        evidence = RunEvidence(run_id="rescore", metadata=revision(Path.cwd()),
+                               lock_fd=lock.fileno(), private_root=output)
+        report: dict[str, Any] = {"status": "ERROR"}
+        try:
+            with evidence.capture(trace.get_tracer_provider()):
+                report = await rescore_facts(args.rescore,
+                    Judges(load(args.config), [args.judge_a, args.judge_b], args.config))
+        except Exception:  # noqa: BLE001 - the private record retains failure details
+            report["status"] = "ERROR"
+        report["evidence"] = validate_events(read_events(evidence.path))
+        freeze(output / "report.json", report)
+    return report
+
+
 async def run_diagnostic(args: Any) -> dict[str, Any]:
     from tempfile import TemporaryFile
 
@@ -1305,6 +1414,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compare", type=Path)
     parser.add_argument("--decision-judge", type=Path)
+    parser.add_argument("--rescore", type=Path)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--policy", type=Path)
     parser.add_argument("--identity", type=Path)
@@ -1326,7 +1436,9 @@ def main() -> int:
         parser.error("sample sizes must be positive")
 
     try:
-        if args.decision_judge:
+        if args.rescore:
+            report = asyncio.run(run_rescore(args))
+        elif args.decision_judge:
             report = asyncio.run(run_diagnostic(args))
         else:
             if not all((args.policy, args.identity, args.database_url)):

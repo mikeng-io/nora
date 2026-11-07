@@ -1,0 +1,44 @@
+[
+  {
+    "name": "recorded row attributes",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "        source_rows = {n: {**row, **rendered.get(n, {})} for n, row in source_rows.items()}",
+    "new": "        source_rows = source_rows",
+    "target": "tests/unit/test_replay_scoring.py::test_support_uses_recorded_author_and_room"
+  },
+  {
+    "name": "fenced and trailing JSON",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "    text = raw.strip()\n    if text.startswith(\"```\"):",
+    "new": "    return parse_json_response(raw)\n    text = raw.strip()\n    if text.startswith(\"```\"):",
+    "target": "tests/unit/test_replay_scoring.py::test_miss_is_decided_without_fatal_error"
+  },
+  {
+    "name": "quote normalization and row joining",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "    return bool(quote) and any(quote in join.join(rows) for join in (\" \", \" / \", \"/\", \"\"))",
+    "new": "    return entry[\"quote\"] in sources.get(str(entry[\"location\"]), {}).get(\"text\", \"\")",
+    "target": "tests/unit/test_replay_scoring.py::test_miss_is_decided_without_fatal_error"
+  },
+  {
+    "name": "outside quote is nonfatal",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "                inside = miss_in_new_sources(entry, new_sources)",
+    "new": "                inside = miss_in_new_sources(entry, new_sources)\n                if not inside:\n                    raise ValueError(\"miss_outside_new_sources\")",
+    "target": "tests/unit/test_replay_scoring.py::test_miss_is_decided_without_fatal_error"
+  },
+  {
+    "name": "judge identity context activates raw headers",
+    "file": "nora/agent/replay_capture.py",
+    "old": "    if not eval_capture_enabled() and _IDENTITIES.get() is None:",
+    "new": "    if not eval_capture_enabled():",
+    "target": "tests/unit/test_replay_scoring.py::test_judge_transport_identity_without_eval_capture"
+  },
+  {
+    "name": "rescore executes fact scoring",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "    results = [await smoke_fact_support(judges, inspection, exchanges)\n               for inspection, exchanges in sessions]",
+    "new": "    results = []",
+    "target": "tests/unit/test_replay_scoring.py::test_rescore_generated_run_directory"
+  }
+]
