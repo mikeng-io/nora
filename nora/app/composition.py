@@ -5770,16 +5770,17 @@ async def _build_media_custody(
             else DiscordMediaSource(
                 timeout_seconds=media.timeout_seconds,
                 max_bytes=media.max_bytes)),
-        # Unconditional, like its two siblings and NOT gated on
-        # `[platforms.instagram] enabled`: the registry is keyed by platform,
-        # so a fetcher for a platform producing no messages costs nothing,
-        # while a gate here would make custody depend on two settings instead
-        # of one. Absent one, `stages.media` counts every Instagram
-        # attachment `not_supported`.
-        InstagramMediaSource(
-            timeout_seconds=media.timeout_seconds,
-            max_bytes=media.max_bytes,
+        *(
+            [BridgeMediaSource(
+                "whatsapp", BridgeEndpoint(cfg.platforms.whatsapp.base_url, bridge_token))]
+            if cfg.platforms.whatsapp.mode == "bridge" else []
         ),
+        (BridgeMediaSource(
+            "instagram", BridgeEndpoint(cfg.platforms.instagram.base_url, bridge_token))
+            if cfg.platforms.instagram.mode == "bridge"
+            else InstagramMediaSource(
+                timeout_seconds=media.timeout_seconds,
+                max_bytes=media.max_bytes)),
     ])
     blobs = await _build_blob_store(cfg, cipher=cipher)
     return sources, blobs

@@ -494,7 +494,15 @@ async def test_attachment_custody_accepts_the_client_key_shape(bridge_app):
     assert got.status == 200 and (await got.read()) == b"img"
 
 
-async def test_send_action_rehydrates_custody_and_decoration(bridge_app):
+@pytest.mark.parametrize("mime,filename", [
+    ("image/png", "generated.png"),
+    ("video/mp4", "generated.mp4"),
+    ("audio/mpeg", "generated.mp3"),
+    ("audio/ogg", "generated.ogg"),
+    ("application/pdf", "generated.pdf"),
+    ("application/octet-stream", "generated.bin"),
+])
+async def test_send_action_rehydrates_custody_and_decoration(bridge_app, mime, filename):
     """The outbound half of the custody contract end-to-end: PUT stores the
     bytes, the send action references the key, and the daemon receives the
     attachment data-URI — plus the mention/style/quote the client
@@ -506,8 +514,8 @@ async def test_send_action_rehydrates_custody_and_decoration(bridge_app):
     owner, _ = await _live_owner(bridge)
     body = _send("a-img", owner, text="see this pic now")
     body["request"].update({
-        "attachments": [{"key": "out-a-img-0", "file_name": "m.png",
-                         "media_type": "image/png"}],
+        "attachments": [{"key": "out-a-img-0", "file_name": filename,
+                         "media_type": mime}],
         "mentions": [{"start": 0, "length": 3, "recipient": SENDER,
                       "handle": None}],
         "styles": [{"start": 4, "length": 4, "style": "BOLD"},
@@ -519,7 +527,7 @@ async def test_send_action_rehydrates_custody_and_decoration(bridge_app):
     assert len(daemon.sent) == 1
     params = daemon.sent[0]["params"]
     assert params["attachments"] == [
-        "data:image/png;filename=m.png;base64,"
+        f"data:{mime};filename={filename};base64,"
         "cG5nLWJ5dGVz"]
     assert params["mention"] == [f"0:3:{SENDER}"]
     # The unknown style is dropped, the valid one survives.
@@ -585,8 +593,17 @@ async def test_media_custody_roundtrips_through_the_app_source(bridge_app):
     assert absent.available is False and absent.reason == "absent"
 
 
+@pytest.mark.parametrize("result_shape", ["object", "string"])
+@pytest.mark.parametrize("mime,filename,voice", [
+    ("image/png", "generated.png", False),
+    ("video/mp4", "generated.mp4", False),
+    ("audio/mpeg", "generated.mp3", False),
+    ("audio/ogg", "generated.ogg", True),
+    ("application/pdf", "generated.pdf", False),
+    ("application/octet-stream", "generated.bin", False),
+])
 async def test_capture_binds_custody_handles_before_the_journal_handoff(
-        clean_pg_url, redis_client, tmp_path):
+        clean_pg_url, redis_client, tmp_path, result_shape, mime, filename, voice):
     """Finding 3 at the real boundary: an attachment event captured through
     the REAL SSE daemon path lands in the journal with
     `MediaRef.platform_id` already rebound to the custody hash key — and
@@ -597,7 +614,8 @@ async def test_capture_binds_custody_handles_before_the_journal_handoff(
     from nora.platform.bridge.client import BridgeEndpoint, BridgeMediaSource
 
     payload = b"real-attachment-bytes"
-    daemon = FakeSignalDaemon(attachments={"upstream-att-1": payload})
+    daemon = FakeSignalDaemon(attachments={"upstream-att-1": payload},
+                              attachment_result_shape=result_shape)
     daemon_client = TestClient(TestServer(daemon.app()))
     await daemon_client.start_server()
     daemon.url = str(daemon_client.make_url("")).rstrip("/")
@@ -614,8 +632,8 @@ async def test_capture_binds_custody_handles_before_the_journal_handoff(
                 "message": "with-attachment", "timestamp": 7001,
                 "groupInfo": {"groupId": ROOM},
                 "attachments": [{"id": "upstream-att-1",
-                                 "contentType": "image/png",
-                                 "filename": "p.png"}]}}}
+                                 "contentType": mime, "filename": filename,
+                                 "voiceNote": voice}]}}}
         await _captured(bridge, daemon, [event])
         rec = next(r for r in bridge.journal.recover() if "envelope" in r)
         env = wrapper.Envelope.from_fields(rec["envelope"])
@@ -623,6 +641,9 @@ async def test_capture_binds_custody_handles_before_the_journal_handoff(
         # The serialized reference IS the custody handle — the app never
         # sees the upstream id the daemon answered getAttachment with.
         assert env.message["media"][0]["platform_id"] == key
+        assert env.message["media"][0]["media_type"] == mime
+        assert env.message["media"][0]["filename"] == filename
+        assert env.message["media"][0]["voice_note"] == voice
         assert env.attachments[0]["key"] == key
         source = BridgeMediaSource("signal", BridgeEndpoint(
             base_url=str(client.make_url("")).rstrip("/"),
