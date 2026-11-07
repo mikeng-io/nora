@@ -1,0 +1,9 @@
+[
+  {
+    "name": "browse task brief has its registered context owner",
+    "file": "nora/domain/composed.py",
+    "old": "        \"nora.language.browse_render:render_browse_brief\",\n",
+    "new": "",
+    "target": "tests/unit/test_browse_agent.py::test_real_browse_drive_assembles_the_brief_and_executes_page_tools"
+  }
+]

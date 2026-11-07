@@ -6,11 +6,18 @@ tests/unit/test_browser_client.py."""
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
+
+import httpx
+from openai import AsyncOpenAI
 
 from nora.agent import browse
 from nora.agent.browse import BrowseAgentRunner, BrowseSettings, _Task, _tools
+from nora.agent.factory import ModelSource, ModelSpec, build_retry_policy
 from nora.infra.computer.browser import BrowserError, RefError, Snapshot
+
+GENERATED_TOKEN = "generated-token"  # noqa: S105 - synthetic, in-process transport only
 
 
 class FakePage:
@@ -137,6 +144,61 @@ async def test_page_read_marks_a_cut():
 def _runner(**settings: Any) -> BrowseAgentRunner:
     return BrowseAgentRunner(model_source=None, retry=None, base_url="http://x",  # type: ignore[arg-type]
                              token="t", settings=BrowseSettings(**settings))  # noqa: S106 - a test token
+
+
+async def test_real_browse_drive_assembles_the_brief_and_executes_page_tools():
+    requests = []
+    script = [
+        ("page_open", {"url": "https://example.com"}),
+        ("page_snapshot", {}),
+        ("browse_done", {"answer": "The page title is Example."}),
+    ]
+
+    async def respond(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        assert "generated browser objective" in json.dumps(body["messages"])
+        assert "https://example.com" in json.dumps(body["messages"])
+        index = len(requests) - 1
+        if index < len(script):
+            name, args = script[index]
+            delta = {"role": "assistant", "tool_calls": [{
+                "index": 0, "id": f"generated-{index}", "type": "function",
+                "function": {"name": name, "arguments": json.dumps(args)},
+            }]}
+            finish = "tool_calls"
+        else:
+            delta, finish = {"role": "assistant", "content": "Task complete."}, "stop"
+        chunks = [
+            {"id": "generated", "object": "chat.completion.chunk", "model": "generated",
+             "choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+            {"id": "generated", "object": "chat.completion.chunk", "model": "generated",
+             "choices": [{"index": 0, "delta": {}, "finish_reason": finish}],
+             "usage": {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12}},
+        ]
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=(
+            "".join("data: " + json.dumps(chunk) + "\n\n" for chunk in chunks)
+            + "data: [DONE]\n\n"))
+
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(respond)) as transport,
+        AsyncOpenAI(api_key=GENERATED_TOKEN, http_client=transport) as client,
+    ):
+        runner = BrowseAgentRunner(
+            model_source=ModelSource(client=client, spec=ModelSpec(
+                model="generated", max_tokens=100, temperature=0,
+                tool_choice="auto")),
+            retry=build_retry_policy(timeout_seconds=10), base_url="http://unused.invalid",
+            token=GENERATED_TOKEN, settings=BrowseSettings(),
+        )
+        page = FakePage()
+        outcome = await runner._drive(
+            page, "generated browser objective", "https://example.com",
+            task_id="generated-owner", tab="generated-target")
+    assert outcome.status == "ok" and outcome.answer == "The page title is Example."
+    assert outcome.task_id == "generated-owner" and outcome.tab == "generated-target"
+    assert page.actions == [("navigate", "https://example.com"), ("snapshot", None)]
+    assert len(requests) >= 3
 
 
 async def test_a_browser_that_cannot_be_opened_is_unavailable_never_raised(monkeypatch):
