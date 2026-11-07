@@ -960,6 +960,11 @@ test('large attachment uploads reach the same send executor unchanged', async (t
   });
   assert.equal(put.status, 201);
   await put.arrayBuffer();
+  for (const [body, expected] of [[bytes, 201], [Buffer.from('different bytes'), 409]]) {
+    const repeat = await fetch(base + '/v1/attachments/generated-large', { method: 'PUT', body });
+    assert.equal(repeat.status, expected);
+    await repeat.arrayBuffer();
+  }
   const get = await fetch(base + '/v1/attachments/generated-large');
   assert.equal(get.status, 200);
   assert.deepEqual(Buffer.from(await get.arrayBuffer()), bytes);

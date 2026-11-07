@@ -952,6 +952,12 @@ async def test_attachment_body_limit_applies_only_to_uploads(bridge, monkeypatch
         assert put.status == 200
         got = await client.get(path, headers=auth)
         assert got.status == 200 and await got.read() == payload
+        repeated = await client.put(path, data=payload, headers=auth)
+        assert repeated.status == 200
+        conflict = await client.put(path, data=b"different bytes", headers=auth)
+        assert conflict.status == 409
+        unchanged = await client.get(path, headers=auth)
+        assert unchanged.status == 200 and await unchanged.read() == payload
     refused = await client.put("/v1/attachments/too-large", data=b"x" * (limit + 1),
                                headers=auth)
     assert refused.status == 413

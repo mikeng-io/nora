@@ -1832,7 +1832,10 @@ class DiscordBridge:
         data = await req.clone(client_max_size=MAX_ATTACHMENT_BYTES + 1).read()
         if len(data) > MAX_ATTACHMENT_BYTES:
             return web.json_response({"error": "too large"}, status=413)
-        (self._custody_dir / key).write_bytes(data)
+        path = self._custody_dir / key
+        if path.is_file() and path.read_bytes() != data:
+            return web.json_response({"error": "key conflict"}, status=409)
+        path.write_bytes(data)
         return web.json_response({"ok": True, "key": key})
 
     async def get_attachment(self, req: web.Request) -> web.Response:

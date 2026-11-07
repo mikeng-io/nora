@@ -502,8 +502,17 @@ func TestV1LargeAttachmentReachesSendUnchanged(t *testing.T) {
 	msg := &fakeMessaging{}
 	ts := v1Server(t, store, msg, custody)
 	data := bytes.Repeat([]byte{0x5a}, 1319325)
-	for _, method := range []string{http.MethodPut, http.MethodGet} {
-		req, err := http.NewRequest(method, ts.URL+"/v1/attachments/generated-large", bytes.NewReader(data))
+	for _, tc := range []struct {
+		method string
+		data   []byte
+		code   int
+	}{
+		{http.MethodPut, data, http.StatusCreated},
+		{http.MethodPut, data, http.StatusCreated},
+		{http.MethodPut, []byte("different bytes"), http.StatusConflict},
+		{http.MethodGet, nil, http.StatusOK},
+	} {
+		req, err := http.NewRequest(tc.method, ts.URL+"/v1/attachments/generated-large", bytes.NewReader(tc.data))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -517,11 +526,11 @@ func TestV1LargeAttachmentReachesSendUnchanged(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if method == http.MethodPut && resp.StatusCode != http.StatusCreated {
-			t.Fatalf("PUT attachment = %d, want 201", resp.StatusCode)
+		if resp.StatusCode != tc.code {
+			t.Fatalf("%s attachment = %d, want %d", tc.method, resp.StatusCode, tc.code)
 		}
-		if method == http.MethodGet && (resp.StatusCode != http.StatusOK || !bytes.Equal(body, data)) {
-			t.Fatalf("GET attachment = %d, bytes unchanged = %v", resp.StatusCode, bytes.Equal(body, data))
+		if tc.method == http.MethodGet && !bytes.Equal(body, data) {
+			t.Fatal("GET must return the original bytes after a rejected overwrite")
 		}
 	}
 	gen := 7
