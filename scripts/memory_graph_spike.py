@@ -1369,6 +1369,10 @@ async def decision_judge(directory: Path, judges: Judges) -> dict[str, Any]:
         "insufficient_evidence. Not mentioned is only an observation about emitted reasoning. "
         "Input is a compact trajectory: model_call rows assemble streamed reasoning, text and "
         "tool calls; event_id is a real source anchor and last_event_id closes its source range. "
+        "Cite anchors shown in events, agenda_items or cited_rows, including call range endpoints. "
+        "refused_not_retried must cite a refused memory_propose result; judge relevant retries "
+        "from proposal contents, not the total number of proposals. "
+        "uncited_detail, inference_as_said and wrong_subject describe unsupported statements only. "
         "Use only reasoning marked observed. not_mentioned describes only observed reasoning, "
         "never absent/redacted calls or what the model privately noticed. Cite event ids."
     )
@@ -1405,7 +1409,7 @@ async def decision_judge(directory: Path, judges: Judges) -> dict[str, Any]:
                     raise ValueError("judge_protocol_missing")
                 record("judge_verdict", verdict="diagnostic",
                        reason=parsed["reason"], output=parsed)
-                result = diagnose(statement, relevant, parsed)
+                result = diagnose(statement, trajectory, parsed)
         except Exception as exc:  # noqa: BLE001 - failures are not evidenced diagnoses
             record("judge_error", cause=cause, error_type=type(exc).__name__)
             result = {"observation": "judge_unavailable", "outcome": "unavailable",

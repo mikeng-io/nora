@@ -70,10 +70,7 @@ def _proposal_end(statement: dict[str, Any], events: list[dict[str, Any]]) -> tu
         if (result.get("status") == "error" or not isinstance(inputs, list)
                 or statement["statement"] not in inputs):
             continue
-        if "content" in result:
-            parts = result["content"]
-            result = next((p["json"] if "json" in p else json.loads(p["text"])
-                           for p in parts if "json" in p or "text" in p), {})
+        result = _proposal_result(result)
         for saved in result.get("statements", []):
             slot = saved.get("index")
             if (saved.get("status") == "saved" and isinstance(slot, int)
@@ -178,14 +175,15 @@ def compact_trajectory(statement: dict[str, Any], events: list[dict[str, Any]]) 
 
 
 def diagnose(
-    statement: dict[str, Any], events: list[dict[str, Any]], verdict: Any
+    statement: dict[str, Any], trajectory: dict[str, Any], verdict: Any
 ) -> dict[str, Any]:
     """Fail closed on missing reasoning, invalid shape or ungrounded references.
 
     This does not score support or recall. The supplied judge reads a statement
-    and the complete record; this validator checks the evidence it cites exists.
+    and the compact trajectory; this validator checks the evidence it cites was shown.
     """
     insufficient = {"observation": "insufficient_evidence", "event_ids": []}
+    events = trajectory["events"]
     availability = [
         e.get("reasoning_availability") for e in events
         if e["kind"] == "model_call"
@@ -198,6 +196,13 @@ def diagnose(
     if not isinstance(ids, list) or not ids or not verdict.get("reason"):
         return insufficient
     by_id = {e["event_id"]: e for e in events}
+    for event in events:
+        for anchor in ("last_response_event_id", "last_event_id"):
+            if anchor in event:
+                by_id[event[anchor]] = event
+    for row in [*trajectory.get("agenda_items", []),
+                *trajectory.get("cited_rows", {}).values()]:
+        by_id[row["event_id"]] = {**row, "kind": "source_row"}
     if any(not isinstance(i, str) or i not in by_id for i in ids):
         return insufficient
     selected = [by_id[i] for i in ids]
@@ -224,10 +229,10 @@ def diagnose(
     if observation == "refused_not_retried":
         tools = [
             e
-            for e in events
+            for e in selected
             if e["kind"] == "tool_finished" and e.get("tool", {}).get("name") == "memory_propose"
         ]
-        if len(tools) != 1 or tools[0] not in selected:
+        if not any(_proposal_refused(e) for e in tools):
             return insufficient
     if statement.get("kind") == "missed" and observation in {
         "uncited_detail",
@@ -236,3 +241,19 @@ def diagnose(
     }:
         return insufficient
     return {**verdict, "statement": statement}
+
+
+def _proposal_refused(event: dict[str, Any]) -> bool:
+    result = event["result"]
+    if result.get("status") == "error":
+        return False
+    result = _proposal_result(result)
+    return result.get("status") == "refused" or any(
+        slot.get("status") == "refused" for slot in result.get("statements", []))
+
+
+def _proposal_result(result: dict[str, Any]) -> dict[str, Any]:
+    if "content" in result:
+        return next((p["json"] if "json" in p else json.loads(p["text"])
+                     for p in result["content"] if "json" in p or "text" in p), {})
+    return result

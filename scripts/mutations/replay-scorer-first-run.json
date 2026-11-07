@@ -159,5 +159,33 @@
     "old": "result.get(\"status\") == \"error\" or not isinstance(inputs, list)",
     "new": "not isinstance(inputs, list)",
     "target": "tests/unit/test_replay_diagnosis.py::test_compact_statement_scope_excludes_later_absent_call"
+  },
+  {
+    "name": "diagnostic validates the complete shown trajectory",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "                result = diagnose(statement, trajectory, parsed)",
+    "new": "                result = diagnose(statement, {\"events\": relevant}, parsed)",
+    "target": "tests/unit/test_replay_diagnosis.py::test_decision_resolves_fingerprinted_writer_events[uncited]"
+  },
+  {
+    "name": "shown agenda and cited source anchors are admissible",
+    "file": "nora/subject/replay_diagnosis.py",
+    "old": "    for row in [*trajectory.get(\"agenda_items\", []),\n                *trajectory.get(\"cited_rows\", {}).values()]:",
+    "new": "    for row in []:",
+    "target": "tests/unit/test_replay_diagnosis.py::test_uncited_detail_accepts_shown_source_and_transcript_ids[agenda]"
+  },
+  {
+    "name": "shown assembled call endpoints are admissible",
+    "file": "nora/subject/replay_diagnosis.py",
+    "old": "            if anchor in event:\n                by_id[event[anchor]] = event",
+    "new": "            if False and anchor in event:\n                by_id[event[anchor]] = event",
+    "target": "tests/unit/test_replay_diagnosis.py::test_uncited_detail_accepts_shown_source_and_transcript_ids[last_response_event_id]"
+  },
+  {
+    "name": "refusal evidence is a cited refusal rather than the global proposal count",
+    "file": "nora/subject/replay_diagnosis.py",
+    "old": "        if not any(_proposal_refused(e) for e in tools):",
+    "new": "        all_tools = [e for e in events if e[\"kind\"] == \"tool_finished\"\n                     and e.get(\"tool\", {}).get(\"name\") == \"memory_propose\"]\n        if len(all_tools) != 1 or all_tools[0] not in selected:",
+    "target": "tests/unit/test_replay_diagnosis.py::test_refused_proposal_accepts_other_proposals_in_trajectory"
   }
 ]
