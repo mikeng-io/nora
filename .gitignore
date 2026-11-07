@@ -122,3 +122,6 @@ docs-site/.astro/
 /secret-migration-*/
 .receipts/
 .receipts-stale-d41/
+
+# pytest-testmon dependency record (generated; fetched per-run)
+/.testmondata*

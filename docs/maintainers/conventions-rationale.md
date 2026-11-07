@@ -1067,6 +1067,26 @@ dependency marker skips macOS arm64, so on an Apple Silicon machine every
 SQL-touching test errored with "the greenlet library is required". The
 container is Linux and never saw it. `greenlet` is now declared directly.
 
+**Which tests a change runs.** Selection (`scripts/affected_tests.py`) combines
+two sources, each used for what it can see: the recorded dependency map
+(`pytest-testmon`, `.testmondata`, recorded by the post-merge and weekly full
+runs and fetched as the `testmon-data` artifact) answers for `.py` outside
+`tests/`; the reader scan answers for everything else — documents, config,
+`app/`/`deploy/`/`scripts/` non-Python, and `.py` a test only runs as a
+subprocess (its dotted name counts as a literal). `nora/` non-`.py`, build and
+environment files stay ALL: loaders open them at computed paths neither source
+sees. A static import closure cannot substitute — a composition-root hub is
+imported by ~84% of test files, so imports alone do not narrow. Every failure
+mode (missing, corrupt, environment-mismatched record; an unreadable mutation
+table; a selector crash) is ALL, never NONE — a slow correct answer beats a
+fast wrong one. The record's own environment check (installed packages and
+Python version) selects everything on mismatch, which the selector reads as
+ALL. A release pull request does not run the suite: it waits for the full run
+on its base commit and passes only on success, so a release never publishes a
+commit the full suite has not passed. The escape report after each post-merge
+full run counts failures the merged diff's selection skipped; two in 30 days
+reopens the mechanism.
+
 ## Local comments and configuration sources
 
 Keep comments short and descriptive. Maintained docs own architecture, rationale
