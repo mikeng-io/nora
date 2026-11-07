@@ -507,6 +507,7 @@ def _release_repo(
     def run(*args):
         return subprocess.run(["git", *args], cwd=root, check=True,  # noqa: S603 - fixed git argv, tmp repo
                               capture_output=True, text=True)
+    root.mkdir(parents=True, exist_ok=True)
     run("init", "-q")
     run("config", "user.email", "t@t")
     run("config", "user.name", "t")
@@ -515,7 +516,7 @@ def _release_repo(
         "pyproject.toml": '[project]\nversion = "1.0.0"\n',
         "uv.lock": '[[package]]\nname = "nora"\nversion = "1.0.0"\n'
                    '[[package]]\nname = "dep"\nversion = "3"\n',
-        ".release-please-manifest.json": '{".": "1.0.0"}\n',
+        ".release-please-manifest.json": '{\n  ".": "1.0.0"\n}\n',
         "CHANGELOG.md": "# changelog\n",
         **(base_over or {}),
     }
@@ -547,7 +548,7 @@ _RELEASE_BUMP = {
     "pyproject.toml": '[project]\nversion = "1.0.1"\n',
     "uv.lock": '[[package]]\nname = "nora"\nversion = "1.0.1"\n'
                '[[package]]\nname = "dep"\nversion = "3"\n',
-    ".release-please-manifest.json": '{".": "1.0.1"}\n',
+    ".release-please-manifest.json": '{\n  ".": "1.0.1"\n}\n',
     "CHANGELOG.md": "# changelog\n\n## 1.0.1\n",
 }
 
@@ -614,6 +615,69 @@ def test_a_mode_change_is_not_eligible(tmp_path, monkeypatch):
     event = _release_repo(
         tmp_path, _RELEASE_BUMP, chmod={"CHANGELOG.md": 0o755})
     assert not ci_plan.release_eligible(tmp_path, event)
+
+
+def test_a_side_effect_version_expression_is_not_eligible(
+    tmp_path, monkeypatch,
+):
+    """`__version__ = str(print(...))` parses equal after scrubbing but is
+    not the version line — the strict byte rule rejects it."""
+    monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
+    event = _release_repo(
+        tmp_path,
+        {**_RELEASE_BUMP,
+         "nora/__init__.py": '__version__ = str(print("SIDE EFFECT"))\n'})
+    assert not ci_plan.release_eligible(tmp_path, event)
+
+
+def test_a_docstring_line_spelling_the_version_is_not_eligible(
+    tmp_path, monkeypatch,
+):
+    """A docstring line that spells `__version__ = "x.y.z"` passes the byte
+    pattern — only the AST compare knows it is not the assignment."""
+    monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
+    base_init = '__version__ = "1.0.0"\n"""release notes."""\n'
+    head_init = '__version__ = "1.0.0"\n__version__ = "9.9.9"\n"""rel."""\n'
+    event = _release_repo(
+        tmp_path, {**_RELEASE_BUMP, "nora/__init__.py": head_init},
+        base_over={"nora/__init__.py": base_init})
+    assert not ci_plan.release_eligible(tmp_path, event)
+
+
+def test_a_coding_cookie_change_is_not_eligible(tmp_path, monkeypatch):
+    """A `# coding:` change parses to an identical AST but runs different —
+    two hunks is already ineligible; non-ASCII makes it doubly so."""
+    monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
+    base_init = '# coding: utf-8\n__version__ = "1.0.0"\n"""café."""\n'
+    head_init = ('# coding: latin-1\n__version__ = "1.0.1"\n"""café."""\n')
+    event = _release_repo(
+        tmp_path, {**_RELEASE_BUMP, "nora/__init__.py": head_init},
+        base_over={"nora/__init__.py": base_init})
+    assert not ci_plan.release_eligible(tmp_path, event)
+
+
+def test_a_second_hunk_beside_the_version_bump_is_not_eligible(
+    tmp_path, monkeypatch,
+):
+    """Even a comment/whitespace line next to the bump fails: release PRs
+    change nothing else — that strictness is intended."""
+    monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
+    head_init = '# touched\n__version__ = "1.0.1"\n'
+    event = _release_repo(
+        tmp_path, {**_RELEASE_BUMP, "nora/__init__.py": head_init},
+        base_over={"nora/__init__.py": '__version__ = "1.0.0"\n'})
+    assert not ci_plan.release_eligible(tmp_path, event)
+
+
+def test_a_crlf_or_bom_version_line_is_not_eligible(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY", "mikeng-io/nora")
+    for i, init in enumerate(
+        ('__version__ = "1.0.1"\r\n', '\ufeff__version__ = "1.0.1"\n')
+    ):
+        root = tmp_path / str(i)
+        event = _release_repo(
+            root, {**_RELEASE_BUMP, "nora/__init__.py": init})
+        assert not ci_plan.release_eligible(root, event)
 
 
 def test_an_unrelated_branch_name_is_not_eligible(tmp_path, monkeypatch):

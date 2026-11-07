@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.affected_tests import ALL, select
+from scripts.affected_tests import ALL, _import_graph, select
 
 
 def _mini(root: Path) -> Path:
@@ -125,6 +125,7 @@ def _shape_repo(
     (root / "pkg/__init__.py").write_text(init)
     (root / "pkg/settings.py").write_text("LIMIT = 10\n")
     (root / "pkg/api.py").write_text(api)
+    (root / "pkg/mod.py").write_text("Y = 1\n")
     (root / "pkg/unused.py").write_text("X = 1\n")
     (root / "tests").mkdir()
     (root / "tests/test_target.py").write_text(test_src)
@@ -194,6 +195,74 @@ def test_a_submodule_import_reaches_the_parent_init(tmp_path):
     selected = select(["pkg/__init__.py"], repo)
     assert selected != ALL
     assert "tests/test_target.py" in selected
+
+
+def test_a_test_importing_the_package_reaches_its_init(tmp_path):
+    """Round-3 case: `import pkg.mod` binds `pkg` — editing pkg/__init__.py
+    must select a test that only reads pkg.X through the parent."""
+    repo = _shape_repo(
+        tmp_path / "repo", "X = 10\n",
+        "import pkg.mod\n\ndef test_target():\n    assert pkg.X == 10\n",
+        api="import pkg\n",
+    )
+    (repo / "pkg/__init__.py").write_text("X = 111\n")
+    selected = select(["pkg/__init__.py"], repo)
+    assert selected != ALL
+    assert "tests/test_target.py" in selected
+
+
+_EXTRA_SHAPES = [
+    # (init, api, test_src, edit_path)
+    ("X = 10\n", "import pkg\n",
+     "import pkg.mod\n\ndef t():\n    assert pkg.X == 10\n", "pkg/__init__.py"),
+    ("X = 10\n", "Y = 1\n",
+     "import pkg as p\nimport pkg.mod\n\ndef t():\n    assert p.X == 10\n",
+     "pkg/__init__.py"),
+    ("from .settings import LIMIT\n", "from pkg import LIMIT\n",
+     "from pkg.api import LIMIT\n\ndef t():\n    assert LIMIT == 10\n",
+     "pkg/settings.py"),
+    ("from .settings import LIMIT\n", "from pkg import LIMIT\n",
+     "from pkg import *\n\ndef t():\n    assert LIMIT == 10\n",
+     "pkg/settings.py"),
+    ("LIMIT = 10\n", "import pkg.settings\nLIMIT = pkg.settings.LIMIT\n",
+     "from pkg.api import LIMIT\n\ndef t():\n    assert LIMIT == 10\n",
+     "pkg/__init__.py"),
+]
+
+
+@pytest.mark.parametrize(("init", "api", "test_src", "edit_path"), _EXTRA_SHAPES,
+                         ids=["alias_pkg", "import_as", "direct2", "star", "via_init_chain"])
+def test_more_import_shapes_select_the_reader(
+    tmp_path, init, api, test_src, edit_path,
+):
+    """Each shape the reviewers ran selects the reader — one resolver, one
+    ancestor rule, no per-call-site patching."""
+    repo = _shape_repo(tmp_path / "repo", init, test_src, api=api)
+    target = repo / edit_path
+    target.write_text(target.read_text().replace("= 10", "= 111"))
+    selected = select([edit_path], repo)
+    assert selected != ALL
+    assert "tests/test_target.py" in selected
+
+
+def test_a_file_the_graph_cannot_name_is_all(recorded):
+    """A bare-root module (no package can import it) has unresolvable
+    importers — ALL, never an empty subset."""
+    (recorded / "helper.py").write_text("X = 1\n")
+    assert select(["helper.py"], recorded) == ALL
+
+
+def test_every_repo_package_root_resolves():
+    """Every importable top-level package in THIS repo resolves in the one
+    graph — a src/ or unknown layout would raise (ALL), never a subset."""
+    root = Path(__file__).resolve().parents[2]
+    graph = _import_graph(root)
+    for top in ("nora", "evals", "scripts", "tests", "app", "deploy",
+                "showreel"):
+        assert top in graph
+    # `site/` is stdlib-shadowed — no interpreter can import it, so it is
+    # correctly excluded rather than resolved to the wrong package
+    assert "site" not in graph
 
 
 def test_a_computed_dynamic_import_is_a_documented_blind_spot(tmp_path):
