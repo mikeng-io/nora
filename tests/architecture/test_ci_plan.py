@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -531,9 +530,11 @@ def _release_repo(
         (root / rel).write_text(content)
     for rel in delete or []:
         run("rm", "-q", rel)
-    for rel, mode in (chmod or {}).items():
-        os.chmod(root / rel, mode)
     run("add", "-A")
+    for rel in chmod or {}:
+        # the mode is set in the index, not on the filesystem: the diff under
+        # test is a git mode change (100644 -> 100755), nothing else
+        run("update-index", "--chmod=+x", rel)
     run("commit", "-qm", "release bump")
     head = run("rev-parse", "HEAD").stdout.strip()
     return {"pull_request": {
@@ -811,13 +812,14 @@ def _release_repo_with_symlink(root: Path, mode: int = 0o120000) -> dict:
     else:
         (root / "nora").mkdir(exist_ok=True)
         link.write_text('__version__ = "1.0.0"\n')
-        os.chmod(link, mode)
         run("add", ".")
+        run("update-index", "--chmod=+x", "nora/__init__.py")
         run("commit", "-qm", "base")
         base = run("rev-parse", "HEAD").stdout.strip()
         link.write_text('__version__ = "1.0.1"\n')
-        os.chmod(link, mode)
     run("add", "-A")
+    if mode != 0o120000:
+        run("update-index", "--chmod=+x", "nora/__init__.py")
     run("commit", "-qm", "retarget")
     head = run("rev-parse", "HEAD").stdout.strip()
     return {"pull_request": {
