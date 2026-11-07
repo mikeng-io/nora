@@ -1348,12 +1348,16 @@ async def rescore_facts(directory: Path, judges: Judges) -> dict[str, Any]:
             raise ValueError("source_capture_incomplete")
         record("rescore_source", sha256=fingerprint(path), receipt=receipt)
         inputs = [e for e in events if e["kind"] == "fact_scoring_input"]
-        if inputs:
+        expected = sum(e.get("name") == "nora.session.started" for e in writer_events)
+        before = len(sessions)
+        if inputs and (not expected or len(inputs) == expected):
             sessions.extend((e["inspection"], e["exchanges"]) for e in inputs)
         else:
             for frozen in sorted(path.parent.parent.glob("session-*.json")):
                 data = json.loads(frozen.read_text())
                 sessions.append((data["inspection"], evidence_exchanges(data["events"])))
+        if expected and len(sessions) - before != expected:
+            raise ValueError("source_sessions_missing")
         in_session = False
         for event in writer_events:
             if event.get("name") == "nora.session.started":
