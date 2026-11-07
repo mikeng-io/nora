@@ -66,37 +66,62 @@ def _repo_name(repo: Path) -> str:
                "-q", ".nameWithOwner").strip()
 
 
+def _provenance_ok(run: dict, repo_name: str, artifact_name: str) -> bool:
+    """The producing run must be a completed, successful full CI run on
+    master — a record made by a pull-request job, another workflow, a fork
+    head or a different commit is not trusted: it would lie about coverage."""
+    return (
+        run.get("path") == ".github/workflows/ci.yml"
+        and run.get("event") in ("push", "schedule")
+        and run.get("head_branch") == "master"
+        and run.get("status") == "completed"
+        and run.get("conclusion") == "success"
+        and run.get("head_repository", {}).get("full_name") == repo_name
+        and run.get("head_sha") == artifact_name.rsplit("-", 1)[-1]
+    )
+
+
+def _candidates(repo: Path, repo_name: str, prefix: str) -> list[dict]:
+    """Matching artifacts, newest first."""
+    found = []
+    for page in (1, 2, 3):
+        listing = json.loads(_gh(
+            repo, "api",
+            f"repos/{repo_name}/actions/artifacts?per_page=100&page={page}",
+        ))
+        found.extend(
+            a for a in listing.get("artifacts", [])
+            if a.get("name", "").startswith(prefix) and not a.get("expired", True)
+        )
+        if found or listing.get("total_count", 0) <= page * 100:
+            break
+    return sorted(found, key=lambda a: a.get("created_at", ""), reverse=True)
+
+
 def fetch(repo: Path) -> Path | None:
     """Newest matching artifact's `.testmondata`, or None (fail closed)."""
     try:
         name = _repo_name(repo)
         prefix = f"{_ARTIFACT_PREFIX}-{dep_hash(repo)}-"
-        chosen = None
-        for page in (1, 2, 3):
-            listing = json.loads(_gh(
+        for artifact in _candidates(repo, name, prefix)[:8]:
+            run_id = artifact.get("workflow_run", {}).get("id")
+            if not run_id:
+                continue
+            run = json.loads(
+                _gh(repo, "api", f"repos/{name}/actions/runs/{run_id}"))
+            if not _provenance_ok(run, name, artifact["name"]):
+                continue
+            archive = _gh(
                 repo, "api",
-                f"repos/{name}/actions/artifacts?per_page=100&page={page}",
-            ))
-            artifacts = [
-                a for a in listing.get("artifacts", [])
-                if a.get("name", "").startswith(prefix) and not a.get("expired", True)
-            ]
-            if artifacts:
-                chosen = max(artifacts, key=lambda a: a.get("created_at", ""))
-                break
-            if listing.get("total_count", 0) <= page * 100:
-                break
-        if chosen is None:
-            return None
-        archive = _gh(
-            repo, "api", f"repos/{name}/actions/artifacts/{chosen['id']}/zip",
-            binary=True,
-        )
-        with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
-            data = bundle.read(DB_NAME)
-        target = repo / DB_NAME
-        target.write_bytes(data)
-        return target
+                f"repos/{name}/actions/artifacts/{artifact['id']}/zip",
+                binary=True,
+            )
+            with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+                data = bundle.read(DB_NAME)
+            target = repo / DB_NAME
+            target.write_bytes(data)
+            return target
+        return None
     except (OSError, RuntimeError, KeyError, ValueError, zipfile.BadZipFile,
             subprocess.SubprocessError):
         return None

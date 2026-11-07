@@ -76,16 +76,25 @@ the portal job plus the two Python tests that read `app/src`.
 `tests/architecture/` continues to run whole when any test file changes, as
 today, because those tests read the test tree.
 
-**The record.** The post-merge full run writes the testmon database and uploads
-it as the `testmon-data` artifact, named for the commit and for a hash of
-`uv.lock` + `pyproject.toml`. A pull request, and `make test` locally, downloads
-the newest artifact whose dependency hash matches; none means `ALL`. One
+**The record.** The post-merge full run — every non-pull-request event: push,
+schedule, dispatch — runs the whole suite, writes the testmon database and
+uploads it as the `testmon-data` artifact, named for the commit and for a hash
+of `uv.lock` + `pyproject.toml` (+ Python version). A pull request, and
+`make test` locally, downloads the newest artifact whose dependency hash
+matches **and whose producing run is a completed, successful `ci.yml` push or
+schedule run on `master` in this repository** (not a pull-request run, another
+workflow, a fork head, or a different commit); none means `ALL`. One
 storage mechanism for both, no cache keyed per branch.
 
 **Release.** A release PR changes only the version files, on a tree whose
 content already passed the full run on `master`. Its `contracts` job therefore
-does not run the suite: it waits for the full run on the PR's base commit and
-passes only if that run concluded `success`. Missing, cancelled, failed or
+does not run the suite — but only when the bypass is proven: the head is the
+release branch in this repository (never a fork) AND the base…head diff touches
+only `{.release-please-manifest.json, CHANGELOG.md, nora/__init__.py,
+pyproject.toml, uv.lock}` with only version lines inside the strict three.
+Anything else runs the normal selected acceptance, never a silent pass. When
+eligible, it waits for the full run on the PR's base commit and passes only if
+that run concluded `success`. Missing, cancelled, failed or
 timed-out is a failure, never a skip, so the release cannot publish a commit the
 full suite has not passed.
 

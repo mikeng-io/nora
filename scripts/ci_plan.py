@@ -95,6 +95,61 @@ def classify(paths: list[str], repo: Path = affected_tests.ROOT) -> dict[str, bo
 RELEASE_HEAD_REF = "release-please--branches--master--components--nora"
 _RELEASE_WAIT_SECONDS = 75 * 60
 
+# The release bypass applies only to a diff that looks exactly like what
+# release-please writes (checked against the 7.16.0 merge, commit 2cb15623a):
+# these paths only, and inside the three strict files only version lines.
+# A branch name alone never earns the bypass — any PR could take it.
+_RELEASE_FILES = frozenset({
+    ".release-please-manifest.json", "CHANGELOG.md",
+    "nora/__init__.py", "pyproject.toml", "uv.lock",
+})
+_RELEASE_VERSION_LINE = {
+    "nora/__init__.py": re.compile(r'^[+-]\s*__version__\s*=\s*"[^"]+"\s*$'),
+    "pyproject.toml": re.compile(r'^[+-]\s*version\s*=\s*"[^"]+"\s*$'),
+    "uv.lock": re.compile(r'^[+-]\s*version\s*=\s*"[^"]+"\s*$'),
+}
+
+
+def _git(repo: Path, *args: str) -> str:
+    return subprocess.run(  # noqa: S603 - fixed git argv, repo-local
+        ["git", *args], cwd=repo, capture_output=True, text=True,  # noqa: S607
+        check=True,
+    ).stdout
+
+
+def release_eligible(repo: Path, event: dict) -> bool:
+    """The release bypass: same-repository release branch AND a diff that
+    touches only the release files, with only version lines inside the strict
+    ones. Anything else — a fork, a borrowed branch name, a runtime change —
+    runs the normal selected acceptance, never a silent pass."""
+    pr = event.get("pull_request") or {}
+    head, base = pr.get("head") or {}, pr.get("base") or {}
+    if head.get("ref") != RELEASE_HEAD_REF:
+        return False
+    if (head.get("repo") or {}).get("full_name") != os.environ.get(
+        "GITHUB_REPOSITORY"
+    ):
+        return False
+    try:
+        range_ = f"{base['sha']}...{head['sha']}"
+        files = _git(repo, "diff", "--name-only", range_).split()
+        if not files or any(f not in _RELEASE_FILES for f in files):
+            return False
+        for file in files:
+            pattern = _RELEASE_VERSION_LINE.get(file)
+            if pattern is None:
+                continue
+            patch = _git(repo, "diff", range_, "--", file)
+            changed = [
+                line for line in patch.splitlines()
+                if line[:1] in "+-" and not line.startswith(("+++", "---"))
+            ]
+            if not changed or not all(pattern.match(line) for line in changed):
+                return False
+    except Exception:  # noqa: BLE001 - an unreadable diff is never eligible
+        return False
+    return True
+
 
 def base_run_verdict(runs: list[dict]) -> str:
     """The newest CI run on the release PR's base commit.
@@ -183,8 +238,11 @@ def _escape(repo: Path, event: dict) -> list[str]:
         try:
             paths = changed_paths(event, repo)
             selected = affected_tests.select(paths, repo) if paths else affected_tests.ALL
-        except Exception:  # noqa: BLE001 - an escape report is honest, not guessed
-            selected = affected_tests.ALL
+        except Exception as exc:  # noqa: BLE001 - never report a made-up selection
+            return [
+                "### Escape report",
+                f"unavailable: could not reconstruct the merged diff's selection ({exc})",
+            ]
         return escape_lines(_junit_failures(repo / "backend-results"), selected)
     finally:
         (repo / testmon_record.DB_NAME).unlink(missing_ok=True)
@@ -311,15 +369,21 @@ def main() -> int:
         return 0
     paths: list[str] = []
     docs: list[str] = []
+    eligible = False
     try:
-        has_delta = "pull_request" in event or ("before" in event and "after" in event)
-        paths = changed_paths(event, repo) if has_delta else []
-        plan = classify(paths, repo) if has_delta else dict.fromkeys(JOBS, True)
+        is_pr = "pull_request" in event
+        paths = changed_paths(event, repo) if (
+            is_pr or ("before" in event and "after" in event)) else []
+        plan = classify(paths, repo) if is_pr else dict.fromkeys(JOBS, True)
         docs = [p for p in paths if affected_tests._is_doc_or_data(p, repo)]
         # The record only exists inside the contracts job; classify defers the
         # recorded-map class (testmon=False) and flags it for the job instead.
-        testmon = bool(paths) and any(affected_tests.needs_record(p) for p in paths)
-        targets = affected_tests.select(paths, repo, testmon=False) if has_delta else "ALL"
+        testmon = is_pr and any(affected_tests.needs_record(p) for p in paths)
+        # Non-PR events record: a push or schedule runs the WHOLE suite so the
+        # uploaded record covers every test, and the release check can trust a
+        # green run on the base commit as "the full suite passed".
+        targets = affected_tests.select(paths, repo, testmon=False) if is_pr else "ALL"
+        eligible = is_pr and release_eligible(repo, event)
         error = ""
     except Exception as exc:  # noqa: BLE001 -- every selector failure broadens and fails CI
         plan, targets, testmon, error = dict.fromkeys(JOBS, True), "ALL", True, str(exc)
@@ -328,6 +392,7 @@ def main() -> int:
         print("readers=" + json.dumps(targets), file=output)
         print("docs_only=" + str(bool(paths) and len(docs) == len(paths)).lower(), file=output)
         print("testmon=" + str(testmon).lower(), file=output)
+        print("release_eligible=" + str(eligible).lower(), file=output)
         print("selection_error=" + json.dumps(error), file=output)
     # Broad work still runs; the final join must reject this error.
     return 1 if error else 0

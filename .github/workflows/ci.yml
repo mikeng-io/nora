@@ -23,6 +23,7 @@ jobs:
       readers: ${{ steps.plan.outputs.readers }}
       docs_only: ${{ steps.plan.outputs.docs_only }}
       testmon: ${{ steps.plan.outputs.testmon }}
+      release_eligible: ${{ steps.plan.outputs.release_eligible }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,6 +63,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: '0.13.4'
@@ -104,12 +106,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: uv run python -m scripts.testmon_record fetch || true
       - name: Release pull request waits on the base commit's full run
-        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'release-please--branches--master--components--nora' }}
+        if: ${{ needs.classify.outputs.release_eligible == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: uv run python -m scripts.ci_plan release
       - name: Selected backend acceptance
-        if: ${{ github.event.pull_request.head.ref != 'release-please--branches--master--components--nora' }}
+        if: ${{ needs.classify.outputs.release_eligible != 'true' }}
         env:
           READERS: ${{ needs.classify.outputs.readers }}
           TESTMON: ${{ needs.classify.outputs.testmon }}
@@ -165,6 +167,7 @@ jobs:
           name: testmon-data-${{ steps.dephash.outputs.hash }}-${{ github.sha }}
           path: .testmondata
           retention-days: 30
+          include-hidden-files: true
           if-no-files-found: error
       - name: Per-file durations
         if: ${{ !cancelled() }}

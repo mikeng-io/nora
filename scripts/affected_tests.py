@@ -387,13 +387,65 @@ def _dotted(path: str) -> str:
     return path.removesuffix(".py").replace("/", ".")
 
 
-def _importers(path: str, scan: dict[str, _TestFacts]) -> tuple[set[str], bool]:
-    """(collectible test modules that import `path`, directly or through other
-    test modules; a shared helper imports one of them). A test that imports
-    another test module runs it as part of itself."""
+def _import_graph(repo: Path) -> dict[str, set[str]]:
+    """Every `.py` outside `tests/` → the repo modules it imports.
+
+    The record's collection-time blind spot (a module imported at collection
+    is not in per-test coverage) closes only through the real import graph —
+    transitive through production modules, not just test modules. Built once
+    per select() call, only when a `.py` outside `tests/` changed.
+    """
+    files = [
+        file for file in repo.rglob("*.py")
+        if ".git" not in file.parts and ".venv" not in file.parts
+        and not file.relative_to(repo).as_posix().startswith("tests/")
+    ]
+    modules = set()
+    for file in files:
+        dotted = _dotted(file.relative_to(repo).as_posix())
+        modules.add(dotted.removesuffix(".__init__"))
+    graph: dict[str, set[str]] = {}
+    for file in files:
+        rel = file.relative_to(repo).as_posix()
+        tree = ast.parse(file.read_text(encoding="utf-8"))
+        names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                names |= _imported_names(node, rel.split("/")[:-1])
+        graph[_dotted(rel)] = {n for n in names if n in modules}
+    return graph
+
+
+def _module_closure(root: str, graph: dict[str, set[str]]) -> set[str]:
+    """Every module that imports `root`, transitively."""
+    importers: dict[str, set[str]] = {}
+    for mod, deps in graph.items():
+        for dep in deps:
+            importers.setdefault(dep, set()).add(mod)
+    seen: set[str] = set()
+    frontier = {root}
+    while frontier:
+        nxt = set()
+        for mod in frontier:
+            nxt |= importers.get(mod, set()) - seen
+        seen |= nxt
+        frontier = nxt
+    return seen
+
+
+def _importers(
+    path: str, scan: dict[str, _TestFacts],
+    graph: dict[str, set[str]] | None = None,
+) -> tuple[set[str], bool]:
+    """(collectible test modules that import `path`, directly or through
+    production modules (when `graph` is given) and other test modules; a
+    shared helper imports one of them). A test that imports another test
+    module runs it as part of itself."""
     importers: set[str] = set()
     helper = False
     frontier = {_dotted(path)}
+    if graph is not None:
+        frontier |= _module_closure(_dotted(path), graph)
     while frontier:
         nxt: set[str] = set()
         for rel, facts in scan.items():
@@ -613,9 +665,13 @@ def select(
         collectible = {rel for rel in scan if _is_collectible_test_file(rel)}
         if collectible and collectible <= selected:
             return ALL
+        try:
+            graph = _import_graph(repo)
+        except Exception:  # noqa: BLE001 - unresolved importers is ALL, never a subset
+            return ALL
         for path in python_paths:
             readers, helper_reads = _readers(path, scan, loose=False)
-            importers, helper_imports = _importers(path, scan)
+            importers, helper_imports = _importers(path, scan, graph)
             if helper_reads or helper_imports:
                 return ALL
             # imports fill the record's collection-time blind spot: a module
