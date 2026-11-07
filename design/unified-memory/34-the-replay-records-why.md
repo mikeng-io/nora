@@ -11,7 +11,8 @@ edges:
 
 # 34 · The replay records why
 
-Status: **design, for review.** Nothing below is built.
+Status: **built.** Private replay capture and generated recorder/judge controls are implemented.
+Live replay acceptance is separate; implementation validation makes no model calls.
 
 ## 1. What was measured, and what could not be
 

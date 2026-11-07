@@ -39,7 +39,7 @@ def capture(lock_fd):
     return RunEvidence(run_id="generated-run", metadata={"corpus": "generated"}, lock_fd=lock_fd)
 
 
-async def model_round_trip(requests):
+async def model_round_trip(requests, *, sentinel="", rounds=2):
     @tool
     def next_number(value: int) -> str:
         """Return the next integer.
@@ -47,6 +47,9 @@ async def model_round_trip(requests):
         Args:
             value: Integer to increment.
         """
+        from nora.obs.tracing import record_eval_event
+        record_eval_event("nora.proposal.sources", {"body": json.dumps({
+            "1": {"text": "generated source"}})})
         return str(value + 1)
 
     async def respond(request):
@@ -60,25 +63,31 @@ async def model_round_trip(requests):
         requests.append(body)
         assert body["model"] == "generated-model"
         assert body["tools"][0]["function"]["name"] == "next_number"
-        if len(requests) == 1:
-            delta = {"role": "assistant", "tool_calls": [{"index": 0, "id": "call_generated",
+        if len(requests) < rounds:
+            delta = {"role": "assistant", "reasoning": sentinel, "tool_calls": [
+                     {"index": 0, "id": f"call_generated_{len(requests)}",
                      "type": "function", "function": {"name": "next_number",
                                                         "arguments": '{"value":5}'}}]}
             stop = "tool_calls"
         else:
-            assert len(requests) == 2
+            assert len(requests) == rounds
             assert any(m.get("role") == "tool" and m.get("content") == "6"
                        for m in body["messages"])
-            delta, stop = {"role": "assistant", "content": "6"}, "stop"
+            delta = {"role": "assistant", "content": "6 " + sentinel, "reasoning": sentinel}
+            stop = "stop"
         chunks = [
             {"id": "generated", "object": "chat.completion.chunk", "model": "generated-model",
              "choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
             {"id": "generated", "object": "chat.completion.chunk", "model": "generated-model",
              "choices": [{"index": 0, "delta": {}, "finish_reason": stop}],
-             "usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15}},
+             "usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15,
+                       "completion_tokens_details": {"reasoning_tokens": 2}}},
         ]
         data = "".join("data: " + json.dumps(c) + "\n\n" for c in chunks) + "data: [DONE]\n\n"
-        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=data)
+        return httpx.Response(200, headers={"content-type": "text/event-stream",
+                                            "x-omniroute-model": "generated-served",
+                                            "x-omniroute-provider": "generated-provider"},
+                              content=data)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as transport:
         client = factory.create_client(base_url="https://generated.invalid/v1",
@@ -88,9 +97,10 @@ async def model_round_trip(requests):
                                               temperature=0, client=client, tool_choice="auto")
         agent = factory.create_browse_agent(
             model=model, system_prompt="Increment the supplied integer.",
-            tools=[next_number], trace_attributes={},
+            tools=[next_number], trace_attributes={"gen_ai.conversation.id": "generated"},
             retry=factory.build_retry_policy(timeout_seconds=5))
-        result = await factory.invoke(agent, "5", invocation_state={}, limits=factory.build_limits(
+        result = await factory.invoke(
+            agent, "5 " + sentinel, invocation_state={}, limits=factory.build_limits(
             turns=4, output_tokens=200, total_tokens=1000))
         await client.close()
         assert "6" in str(result)
@@ -127,15 +137,14 @@ def test_real_case_request_tools_results_logs_and_report_are_durable(evidence_ro
     assert [json.loads(r["attributes"]["nora.model.request.body"]) for r in dispatched] == requests
     saved = [e for r in data if r["kind"] == "span_finished" for e in r["events"]
              if e["name"] == "nora.model.request"]
-    assert [json.loads(e["attributes"]["nora.model.request.body"]) for e in saved] == requests
+    assert saved == []  # content belongs only to the private record
     assert any(r["kind"] == "case_result" and
                r["result"]["environment_state"][0]["state"] == 1 for r in data)
     assert any(r["kind"] == "corpus_report" and r["report"]["cases"] for r in data)
     assert any(r["kind"] == "log" and r["message"] == "generated warning"
                and r["severity_number"] == 13 for r in data)
-    surfaces = [json.loads(e["attributes"]["nora.tools.surface"])
-                for r in data if r["kind"] == "span_finished" for e in r["events"]
-                if e["name"] == "nora.tools.surface"]
+    surfaces = [json.loads(r["attributes"]["nora.tools.surface"])
+                for r in data if r["kind"] == "event" and r["name"] == "nora.tools.surface"]
     assert surfaces == [{"admitted": ["later_tool", "next_number"],
                          "resident": ["next_number"], "deferred": ["later_tool"],
                          "platform": "signal", "grant": None}]
@@ -153,11 +162,14 @@ def test_started_case_and_failure_survive_interrupt_and_lock_releases(evidence_r
         evidence = capture(fd)
         with evidence.capture(trace.get_tracer_provider()), evidence.case(
                 "interrupted", input="generated", metadata={}):
+            evidence.record("call_started", invocation_id="generated", attempt_id="generated:0:1")
             raise SystemExit(143)
     data = rows(evidence)
     assert any(r["kind"] == "case_started" for r in data)
     assert data[-1]["kind"] == "run_failed" and data[-1]["exit_code"] == 143
     assert not any(r["kind"] == "run_finished" for r in data)
+    from nora.subject.eval_evidence import validate_events
+    assert validate_events(data)["status"] == "ERROR"
     with eval_host_lock() as fd:
         assert os.fstat(fd).st_ino > 0
 
@@ -273,3 +285,108 @@ async def test_request_write_failure_prevents_model_dispatch(evidence_root, monk
     assert requests == []
     assert any(r["kind"] == "run_started" for r in rows(evidence))
     assert not any(r["kind"] == "run_finished" for r in rows(evidence))
+
+
+def test_two_round_private_record_sdk_and_each_public_sink(evidence_root, monkeypatch, capsys):
+    from io import StringIO
+
+    from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+    from strands_evals.types.trace import Session
+
+    from nora.subject.eval_evidence import read_events, validate_events
+
+    sentinel = "GENERATED_PRIVATE_REPLAY_SENTINEL"
+    requests = []
+    external = StringIO()
+    provider = backbone._prefill_capture()
+    provider = trace.get_tracer_provider()
+    provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter(out=external)))
+    log_output = StringIO()
+    handler = logging.StreamHandler(log_output)
+    logging.getLogger().addHandler(handler)
+
+    async def drive(case, spec):
+        logging.getLogger("generated.eval").warning(sentinel)
+        await model_round_trip(requests, sentinel=sentinel, rounds=3)
+        return {"output": "6", "environment_state": []}
+
+    monkeypatch.setattr(backbone, "_drive_uncaptured", drive)
+    task, traced = backbone.traced_nora_task(backbone.Spec(source_url="", entry="tag"))
+    try:
+        with eval_host_lock() as fd:
+            evidence = capture(fd)
+            with evidence.capture(provider):
+                result = task(Case(name="generated-private", input="5", session_id="generated"))
+        events = read_events(evidence.path)
+        receipt = validate_events(events)
+        assert receipt["status"] == "PASS", receipt
+        assert len(requests) == 3
+        assert sum(e["kind"] == "tool_finished" for e in events) == 2
+        from scripts.memory_graph_spike import evidence_exchanges
+        assert all(e["source_rows"] == {"1": {"text": "generated source"}}
+                   for e in evidence_exchanges(events))
+        assert isinstance(result["trajectory"], Session)
+        assert sentinel in result["trajectory"].model_dump_json()
+        assert sentinel in (evidence.path / "events.jsonl").read_text()
+        assert sentinel not in external.getvalue()  # non-private OTel exporter
+        assert sentinel not in log_output.getvalue()  # non-private log exporter
+        assert sentinel not in capsys.readouterr().out  # stdout
+        assert sentinel not in json.dumps(receipt)  # public receipt
+        # These are the workflow's actual upload roots. Private capture is
+        # outside all of them; only the content-free receipt is uploadable.
+        from pathlib import Path
+
+        import yaml
+        repo = Path(__file__).resolve().parents[2]
+        workflow = yaml.safe_load((repo / ".github/workflows/ci.yml").read_text())
+        uploads = [step["with"]["path"] for job in workflow["jobs"].values()
+                   for step in job.get("steps", [])
+                   if "actions/upload-artifact@" in step.get("uses", "")]
+        assert uploads
+        for patterns in uploads:
+            for pattern in patterns.splitlines():
+                root = repo / pattern.split("*")[0]
+                assert evidence.path != root and root not in evidence.path.parents
+                for artifact in repo.glob(pattern):
+                    if artifact.is_file():
+                        assert sentinel.encode() not in artifact.read_bytes()  # CI upload sink
+        responses = [e for e in events if e["kind"] == "transport_response"]
+        assert responses and all(e["headers"]["x-omniroute-model"] == "generated-served"
+                                 for e in responses)
+        assert any(e["response"].get("usage", {}).get("completion_tokens_details", {}).get(
+            "reasoning_tokens") == 2 for e in responses if e["response"].get("usage"))
+        assert all(e["reasoning_availability"] == "observed" for e in events
+                   if e["kind"] == "transport_finished")
+        # Dropping any persisted event invalidates the record, even if its
+        # matching lifecycle partner was also omitted by the producer.
+        path = evidence.path / "events.jsonl"
+        lines = path.read_text().splitlines()
+        path.write_text("\n".join(lines[:5] + lines[6:]) + "\n")
+        with pytest.raises(EvidenceError, match="dropped_event"):
+            read_events(evidence.path)
+    finally:
+        logging.getLogger().removeHandler(handler)
+        del traced
+
+
+def test_production_composition_has_no_capture_hooks_or_private_events():
+    from nora.agent.replay_capture import hooks, record
+    from nora.obs.tracing import eval_capture_enabled
+    assert not eval_capture_enabled()
+    assert hooks() == []
+    record("generated_noop", content="GENERATED_PRODUCTION_SENTINEL")
+
+
+def test_tag_and_cognition_factories_leave_capture_disabled(monkeypatch):
+    from nora.agent.replay_capture import ReplayHooks
+    seen = []
+    monkeypatch.setattr(factory, "Agent", lambda **kwargs: seen.append(kwargs) or kwargs)
+    guard = object()
+    retry = factory.build_retry_policy(timeout_seconds=5)
+    common = {"model": object(), "system_prompt": "generated", "tools": [], "guard": guard,
+              "trace_attributes": {}, "retry": retry}
+    factory.create_agent(**common, pre_fill=[])
+    factory.create_dream_agent(**common)  # Cognition's production constructor
+    assert len(seen) == 2
+    assert all(row["hooks"] == [guard] for row in seen)
+    assert not any(isinstance(h, ReplayHooks) for row in seen for h in row["hooks"])
