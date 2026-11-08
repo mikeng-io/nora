@@ -374,3 +374,12 @@ def test_grounding_distinguishes_chat_metaphors_from_literal_presence():
     assert "Literal real-world presence, continuous observation or eyewitness knowledge" in text
     assert "requires evidence" in text
     assert "a reported event alone establishes none of those" in text
+
+
+def test_public_provenance_requires_the_project_path_without_requiring_a_scheme():
+    from evals.rebuilt.rubric import PUBLIC_PROVENANCE
+
+    text = PUBLIC_PROVENANCE.description
+    assert "github.com/mikeng-io/nora repository path" in text
+    assert "with or without an https:// prefix" in text
+    assert "organization-only reference is insufficient" in text
