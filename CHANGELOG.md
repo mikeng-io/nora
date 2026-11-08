@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.16.5](https://github.com/mikeng-io/nora/compare/v7.16.4...v7.16.5) (2026-11-08)
+
+
+### Bug Fixes
+
+* **platform:** hold the bridge identity wait to its wall-time bound ([7ac1321](https://github.com/mikeng-io/nora/commit/7ac13218c70d3f3cf4cf3ca93e4e661440abe54a))
+* **platform:** wait for a starting bridge's identity instead of exiting ([9ca28c2](https://github.com/mikeng-io/nora/commit/9ca28c200552132d8d545ba5507d5105be730650))
+
 ## [7.16.4](https://github.com/mikeng-io/nora/compare/v7.16.3...v7.16.4) (2026-11-07)
 
 
