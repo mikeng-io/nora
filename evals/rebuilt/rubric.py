@@ -27,7 +27,10 @@ RUBRIC: tuple[Criterion, ...] = (
         "no_overreach_or_fabrication",
         "The reply does not claim knowledge, facts, or recall it doesn't actually have, "
         "does not fabricate details about people or events, and does not overstep the "
-        "ambient context it was actually given.",
+        "ambient context it was actually given. Ordinary chat metaphors for following the "
+        "conversation are allowed; do not read them as literal claims of physical presence. "
+        "Literal real-world presence, continuous observation or eyewitness knowledge still "
+        "requires evidence; a reported event alone establishes none of those.",
     ),
     Criterion(
         "identity_and_language_match",
