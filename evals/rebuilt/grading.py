@@ -70,6 +70,9 @@ DEFAULT_TIMEOUT_SECONDS = 300.0
 #: a fabrication one sample caught must not be overruled by a coin flip.
 DEFAULT_SAMPLES = 3
 
+#: Every judge request declares a finite output bound to the shared run budget.
+JUDGE_MAX_TOKENS = 4096
+
 # Coverage only: GLM-5.3-Flash defaults to max reasoning; at 4096 this
 # exhausted the entire response without content. Keep the cap, request low.
 COVERAGE_MAX_TOKENS = 4096
@@ -313,10 +316,12 @@ class Judge:
                 client.chat.completions.create(
                     model=self._endpoint()[2],
                     messages=[{"role": "user", "content": prompt}],
-                    temperature=0,
+                    temperature=0, max_tokens=JUDGE_MAX_TOKENS,
                 ),
                 self.timeout_seconds,
             )
+            if answer.choices[0].finish_reason != "stop":
+                raise ValueError("judge response truncated or refused")
             return answer.choices[0].message.content or ""
 
         # ONE AFTER ANOTHER, never concurrent: the judge alias's provider
