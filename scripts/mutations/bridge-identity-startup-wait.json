@@ -1,0 +1,51 @@
+[
+  {
+    "name": "signal bridge identity is waited for, not asked once",
+    "file": "nora/platform/registry.py",
+    "old": "                identity = await _resolve_bridge_identity(\n                    adapter, sleep=sleep, clock=clock)",
+    "new": "                identity = await adapter.resolve_identity()",
+    "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_still_starting_bridge_is_waited_for_until_its_identity_resolves[signal]"
+  },
+  {
+    "name": "discord bridge identity is waited for, not asked once",
+    "file": "nora/platform/registry.py",
+    "old": "                discord_identity = await _resolve_bridge_identity(\n                    discord_adapter, sleep=sleep, clock=clock)",
+    "new": "                discord_identity = await discord_adapter.resolve_identity()",
+    "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_still_starting_bridge_is_waited_for_until_its_identity_resolves[discord]"
+  },
+  {
+    "name": "whatsapp bridge identity is waited for, not asked once",
+    "file": "nora/platform/registry.py",
+    "old": "                whatsapp_identity = await _resolve_bridge_identity(\n                    whatsapp_adapter, sleep=sleep, clock=clock)",
+    "new": "                whatsapp_identity = await whatsapp_adapter.resolve_identity()",
+    "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_still_starting_bridge_is_waited_for_until_its_identity_resolves[whatsapp]"
+  },
+  {
+    "name": "a 503 /v1/self is the waitable answer",
+    "file": "nora/platform/bridge/client.py",
+    "old": "    if exc.status == 503:",
+    "new": "    if False:",
+    "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_still_starting_bridge_is_waited_for_until_its_identity_resolves[discord]"
+  },
+  {
+    "name": "a refused connection is waitable too",
+    "file": "nora/platform/bridge/client.py",
+    "old": "            and isinstance(cause.os_error, ConnectionRefusedError))",
+    "new": "            and False)",
+    "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_refused_connection_is_waited_out_to_the_same_bound"
+  },
+  {
+    "name": "the wait has a bound, not just a loop",
+    "file": "nora/platform/registry.py",
+    "old": "            if clock() >= deadline:",
+    "new": "            if False:",
+    "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_bridge_that_stays_not_ready_fails_startup_at_the_bound"
+  },
+  {
+    "name": "only not-ready answers are waited on",
+    "file": "nora/platform/registry.py",
+    "old": "            if not bridge_not_ready(exc):",
+    "new": "            if False:",
+    "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_bridge_failure_that_is_not_still_starting_fails_immediately"
+  }
+]
