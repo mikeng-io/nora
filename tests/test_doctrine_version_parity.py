@@ -78,7 +78,7 @@ DOCTRINE_DIR = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 # `applies_to` and the authority fields are not rendered, so editing them moves
 # no sha.
 PINNED: dict[str, tuple[int, str]] = {
-    "identity": (19, "35153b15b04f13313f6841cb073835eb53df054a8eefbc99df8c6fcc51976228"),
+    "identity": (20, "74efcb8b98b64802dab7106fa781c7f1983b4da5247c06e63b68b39b15c7a139"),
     # Her place in a group; loaded for room occasions only.
     "belonging": (4, "ce33bf2fedccf4f18b88dc3cf7e7069704febabe2a7bd4995501802b6406f3f4"),
     "voice": (26, "81aeb18b53b16b44e533b34979bb9bc40bb4c061dade88f3d65f8f71c34cc3e2"),
