@@ -992,6 +992,9 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                     break
                 selected.setdefault(wake["id"], wake)
         sample_sha256 = freeze(output / "sample.json", list(selected.values()))
+        expected_sample = getattr(args, "sample_sha256", None)
+        if expected_sample and sample_sha256 != expected_sample:
+            raise ValueError("frozen replay sample differs from the approved baseline")
         from nora.agent.replay_capture import record
         record("snapshot_manifest", sample_sha256=sample_sha256,
                migration_revision=await rows(engine, "SELECT version_num FROM alembic_version"))
@@ -1000,6 +1003,7 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
         population: dict[str, int] = {}
         age_results = []
         judges = Judges(cfg, [args.judge_a, args.judge_b], args.config)
+        inspections = 0
         for wake in selected.values():
             replay_ms, view = await recorded_wake(engine, wake["id"])
             at = datetime.fromtimestamp(replay_ms / 1000, UTC)
@@ -1050,6 +1054,12 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                         ).line()
                         inspection = await runner.inspect(
                             view=view, now_ms=replay_ms, historical=True)
+                        if getattr(args, "inspect_only", False):
+                            if inspection is None:
+                                raise ValueError("inspection unavailable")
+                            freeze(output / f"inspection-{inspections}.json", inspection)
+                            inspections += 1
+                            continue
                         tokens_before = subject.deps.metrics.get("nora_cognition_unit_tokens_total")
                         outcome = await runner.replay(
                             view=view, now_ms=replay_ms, historical=True
@@ -1131,6 +1141,10 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
 
                         await _close(subject)
             results.append(measured)
+        if getattr(args, "inspect_only", False):
+            return {"status": "PASS" if inspections == len(selected) else "ERROR",
+                    "inspection_only": True, "inspections": inspections,
+                    "sample_sha256": sample_sha256}
         # ponytail: one engine comparison per run, on the frozen projected
         # source. An as-of sandbox correctly holds no graph rows at its wake
         # instant, so a per-wake comparison there measures emptiness N times.
@@ -1268,8 +1282,30 @@ async def run(args: Any) -> dict[str, Any]:
             **revision(Path(__file__).resolve().parents[1]),  # noqa: ASYNC240
             "config_sha256": fingerprint(args.config),
         }, lock_fd=lock.fileno(), private_root=output)
-        with evidence.capture(trace.get_tracer_provider()):
-            report = await _run(args)
+        from nora.domain.run_budget import RunBudget, active_run_budget
+        cutoff = getattr(args, "stop_after_tokens", None)
+        inspection_only = getattr(args, "inspect_only", False)
+        budget = (RunBudget(max_requests=0 if inspection_only else 1000,
+                            max_output_tokens=600_000,
+                            stop_after_total_tokens=cutoff)
+                  if cutoff or inspection_only else None)
+        token = active_run_budget.set(budget) if budget else None
+        try:
+            with evidence.capture(trace.get_tracer_provider()):
+                if budget:
+                    evidence.record("run_budget_started", **budget.as_metadata())
+                try:
+                    report = await _run(args)
+                finally:
+                    if budget:
+                        evidence.record("run_budget_final", **budget.as_metadata())
+                if budget:
+                    report["run_budget"] = budget.as_metadata()
+                    if budget.spent is not None:
+                        report["status"] = "ERROR"
+        finally:
+            if token is not None:
+                active_run_budget.reset(token)
         receipt = validate_events(read_events(evidence.path))
         report["evidence"] = {**receipt, "ref": evidence.path.name}
         if receipt["status"] == "ERROR":
@@ -1617,7 +1653,16 @@ def main() -> int:
     parser.add_argument("--project-only", action="store_true")
     parser.add_argument("--skip-projection", action="store_true")
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--inspect-only", action="store_true",
+                        help="Render private snapshot inputs with zero model dispatches")
+    parser.add_argument("--sample-sha256", help="Refuse a different frozen replay sample")
+    parser.add_argument("--stop-after-tokens", type=int,
+                        help="Measured writer+judge total cutoff; last call may overrun")
     args = parser.parse_args()
+    if args.stop_after_tokens is not None and args.stop_after_tokens <= 0:
+        parser.error("measured token cutoff must be positive")
+    if args.stop_after_tokens and (args.rescore or args.decision_judge):
+        parser.error("measured cutoff currently covers the replay and its fact judges only")
     if args.per_stratum <= 0 or args.minimum <= 0:
         parser.error("sample sizes must be positive")
 
