@@ -95,7 +95,7 @@ serve a reply in one room, most of them for no decision this session makes.
 | Engagement block | Why not | Add it if |
 |---|---|---|
 | `presence`, `computer`, `subagents`, `spoken_turn`, `replying_to`, `tag_message` | facts about one reply turn; no Cognition decision reads them | a decision is added that does |
-| `documents` | the session has no document verb and decides nothing about documents | a document verb joins its catalogue |
+| `documents` | the session decides nothing about documents, so no list is injected. Ruled 2026-11-08: it reaches them by tool instead, a list read and `document_read`, deferred like every other tool (§7) | a document verb joins its catalogue |
 | `peer_card`, `peer_history`, `people_in_window`, `character`, `culture`, `unit_culture`, `self` | the same subjects, from four older stores; `profile` replaces all seven (§4) | — |
 | `recalled` | the reply-side pre-fetch; the session's own `graph` serves its seeds | the two are merged into one retrieval block |
 
@@ -147,7 +147,14 @@ join applies):
 - **Unit window**: rows from the unit's *other* rooms in the same time window
   that are written by, or mention, a related person (§3). Not the whole unit:
   the link this window exists for is «the same people, elsewhere, at the same
-  time». Bounded separately, so a busy room cannot starve it.
+  time». Its size is **dynamic and adaptive** (ruled 2026-11-08), with no
+  fixed row count. It is one more need in the allocation the agenda already
+  uses (`cognition_render._shares`): each item and each window asks for what
+  its rows need, the smallest need is met first, a floor keeps a quiet window
+  from being starved, and unused budget flows to whatever needs it, all under
+  one hard total. A window with no related rows asks for nothing; a burst
+  across rooms takes the budget a quiet agenda leaves. What was cut is said
+  (`earlier_not_shown`, `not_listed`), never silent.
 
 The unit is the read boundary (DEC-231), so the unit window crosses rooms only
 inside one unit. R-18/R-28 screening applies as on every transcript.
@@ -197,7 +204,10 @@ One integrated change from this spec, measured once (AGENTS.md):
    `comprehend_render` entries have no production caller; delete them with
    their functions.
 3. Deferred tools on the session, through the same `ToolSurface` engagement
-   uses.
+   uses. The document reads join the catalogue: `document_read`, which exists,
+   and a list read over the same source the `documents` block renders
+   (`nora/language/documents_render.py`), so there is one reader of
+   documents, not two.
 4. Gates, each failing on the defect it guards:
    - one block type per store across occasions;
    - a declared block always renders, in exactly one of content / empty /
@@ -222,10 +232,12 @@ a fact grounded in the transcript or a profile is scored against it.
 the related context present: then the limit is the model's judgement, not its
 input, and the next lever is the instruction (the memory/notebook split).
 
-## 9. Open, for the operator
+## 9. Ruled by the operator (2026-11-08)
 
-- **The unit window's bound** (§5): rows and characters per window. A default
-  is proposed in the build; the replay reads its cost.
-- **`documents`** stays out until the session has a document verb. Confirm.
-- **Engagement's profile switch** (§4) is not flipped here. Confirm it is a
-  separate decision.
+- **The unit window** is dynamic and adaptive, inside the agenda's one
+  allocation (§5). The replay reads its cost; the one total is the only
+  number the build sets.
+- **`documents`** stay out of the injected input; the session gets a list
+  read and `document_read` as deferred tools (§2, §7).
+- **Engagement's profile switch** (§4) is separate work, not part of this
+  build.
