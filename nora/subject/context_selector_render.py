@@ -41,8 +41,7 @@ from nora.domain.prompt import escape
 #: culture, standing and the transcript window) is never a candidate.
 OPTIONAL = frozenset({"peer_history", "documents", "computer", "subagents"})
 
-#: The selector's task, verbatim from the text `context_filter` used to send
-#: inline — unchanged, so the wire bytes do not move.
+#: The selector's scope and decision contract for the context-filter occasion.
 SYSTEM = """You select context for the agent. Answer only: what context
 does the agent need for this turn?
 Do not answer the message, suggest a reply, decide whether the agent should engage, or call tools.

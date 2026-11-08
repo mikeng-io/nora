@@ -190,7 +190,7 @@ export const components = {
       caption: text(200).optional(),
     }),
     description:
-      "A picture that was shared in this room, made by Nora, or kept from a web page by media_fetch, named by its media code. Never a web address.",
+      "A picture that was shared in this room, made by the agent, or kept from a web page by media_fetch, named by its media code. Never a web address.",
   },
   Callout: {
     props: z.strictObject({ tone: tone.default("info"), title: text(120), text: text(1000).optional() }),

@@ -1,0 +1,23 @@
+[
+  {
+    "name": "the assembler forwards the Markdown name to observation targets",
+    "file": "nora/app/assembler.py",
+    "old": "ai_peer=cfg.honcho.ai_peer, display_name=cfg.doctrine.display_name,",
+    "new": "ai_peer=cfg.honcho.ai_peer,",
+    "target": "tests/unit/test_platform_observation_wired.py::test_an_off_window_target_uses_the_markdown_self_name"
+  },
+  {
+    "name": "an own off-window observation target uses the public name",
+    "file": "nora/engagement/context.py",
+    "old": "author=(self._display_name or row.sender_name or \"you\")\n                    if row.is_nora else row_speaker(row))",
+    "new": "author=row_speaker(row))",
+    "target": "tests/unit/test_platform_observation_wired.py::test_an_off_window_target_uses_the_markdown_self_name"
+  },
+  {
+    "name": "the served document catalog has neutral image provenance",
+    "file": "nora/documents/catalog-prompt.md",
+    "old": "made by the agent",
+    "new": "made by Nora",
+    "target": "tests/unit/test_document_schema.py::test_the_served_catalog_keeps_image_provenance_independent_of_the_agent_name"
+  }
+]
