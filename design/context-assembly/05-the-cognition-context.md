@@ -26,10 +26,14 @@ Measured on production and the source at `3568121da` (v7.16.4), 2026-11-08.
   (a block names its subject and author by id). One of its own notes, live in
   `standing`, records that `group_members` could not be read and
   `room_state_read` had no record, «so I didn't count people».
-- **It knows nothing about the people it writes facts about.** No person
-  account reaches it. The profile store holds a fresh profile for 16 people,
-  19 rooms, 3 units and Nora's 3 (updated 2026-11-06 to 11-08); none of it is
-  in the session's input.
+- **It knows nothing about the people it writes facts about.** No person,
+  room or unit account reaches it. The only profile it can receive is her own:
+  `render_agenda` renders `grounding.self_profile` through the shared
+  `render_profile` when the grounder read one, else the prose `self`
+  (`nora/language/cognition_render.py` ~1073–1096). The profile store holds a
+  fresh profile for 16 people, 19 rooms, 3 units and Nora's 3 (updated
+  2026-11-06 to 11-08); the person, room and unit ones are not in the
+  session's input.
 - **It reads the conversation by a tool nobody planned.** In the largest
   session of 2026-11-07, the injected input was 14.6k characters (agenda
   3.4k); its first call was `load_transcript`, returning 42k characters.
@@ -78,6 +82,9 @@ serve a reply in one room, most of them for no decision this session makes.
 | write a memo, or not | the settled memos | `memos` |
 | propose or revise an event | the rooms' events | `events` |
 | what she owes, holds open, already did | her standing | `standing` |
+| move or cancel a reminder she wrote | her pending reminders in the agenda rooms, by id and due time (today: the `reminds` field on each note, `nora/app/cognition_grounding.py` ~769–797, scoped to agenda rooms because `remind_move`/`remind_cancel` refuse others) | `notes` (`reminds` field, kept) |
+| whether something should reach a room as a reminder | the note or rows it rests on, and whether one is already pending | `notes`, `agenda` |
+| set, move or cancel a self-wake | her pending self-wakes, by id, time and why. **No block shows them today**: a wake id is known only from the `wake_at` that returned it, or from the wake item that fires it | `wakes` (new list block) |
 | how she should write, from past corrections | her lessons for the unit | `lessons` |
 | when, and how long ago | now, and her last session | `clock` |
 | which rooms the read tools look through | the read scope | `reads` |
@@ -161,10 +168,15 @@ consumer converted to them.
    `peer_card`. `members room="<label>"`, never a per-room block name.
 3. **Ids, not names, identify** (ADR 0029). A row's author carries the person
    id beside the name; `members` lines carry the id, the name and the aliases.
-4. **Empty is said, never omitted.** A block declared for the occasion always
-   renders; with nothing in it, it self-closes and its type's description says
-   what that means («no open notes»). A block not declared for the occasion is
-   simply not in the declaration. There is no third state.
+4. **Empty is said, never omitted, and unavailable is not empty.** A block
+   declared for the occasion always renders, in one of R-27's three states:
+   with content; empty, self-closed, meaning the store holds none («no open
+   notes»); or `status="unavailable"`, self-closed, meaning the read failed
+   and nothing can be said about the store. The objective already teaches the
+   difference for tool reads (`nora/dreamer/objectives/cognition.md`
+   `what_you_are_reading`); the blocks carry the same three states. A block
+   not declared for the occasion is simply not in the declaration; there is
+   no omitted-by-accident state.
 5. **Every type describes itself**, including `graph` and `reads`, which have
    no field description today.
 
@@ -178,7 +190,7 @@ One integrated change from this spec, measured once (AGENTS.md):
 
 1. One Cognition context assembly over the shared builders: `members`,
    `profile`, `transcript` (both windows), `notes`, `memos`, `events`,
-   `standing`, `lessons`, `clock`, `reads`, `tool_catalogue`; Cognition keeps
+   `standing`, `lessons`, `wakes`, `clock`, `reads`, `tool_catalogue`; Cognition keeps
    only `agenda` and `graph` as its own types.
 2. Delete Cognition's entries from `LEGACY_COMPOSERS` and `_INITIAL_LEGACY`
    (`cognition_render:render_agenda`, `_register`, `_item_blocks`). The
@@ -188,7 +200,8 @@ One integrated change from this spec, measured once (AGENTS.md):
    uses.
 4. Gates, each failing on the defect it guards:
    - one block type per store across occasions;
-   - a declared block always renders (empty self-closes);
+   - a declared block always renders, in exactly one of content / empty /
+     unavailable, and a failed read renders unavailable, never empty;
    - every block an occasion reads has a decision in that occasion's table
      (this node §2 for Cognition), discovered from the declaration, not listed.
 
