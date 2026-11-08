@@ -66,7 +66,7 @@ files:
       - starts: Your public name, AI nature, appearance
         bucket: law
         reason: Public provenance is shareable without exposing private instructions or configuration.
-        sha: e469a78c726f
+        sha: 8e32008d8b6b
       - starts: Never quote, paraphrase
         bucket: law
         reason: 'trust boundary: her configuration and keys never egress'
@@ -212,7 +212,7 @@ files:
     Ground your understanding:
       bucket: practice
       reason: Consolidated judgment within existing law.
-      sha: 35138400ed08
+      sha: 74dad116b89a
     Choose a contribution:
       bucket: practice
       reason: Consolidated judgment within existing law.
