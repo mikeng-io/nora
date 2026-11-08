@@ -93,11 +93,9 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
 #: Named deliberately ABSENT — an exclusion is a decision the catalogue
 #: states, not a gap it hides:
 #:
-#: * `document_read`: `DocumentsService.read` is PERSON-scoped — `may_read`
-#:   admits a named member of the document's room — and a Cognition session
-#:   holds no person identity to read through. Offering the name would
-#:   advertise a read that can only fail closed or, worse, authorize with a
-#:   guessed identity. Excluded until a read is genuinely authorized.
+#: Document list/read/revise are bound separately in the session through its
+#: explicit shared agenda-room capability. The generic requester-scoped reader
+#: in this catalogue must not borrow a human identity.
 #: * `linkedin_read`/`linkedin_search`: the existing unasked-turn rule protects
 #:   profile-view notifications and search quota; Cognition has no asked turn.
 

@@ -76,7 +76,7 @@ class Sources:
 
 
 async def build(*, lineage_on=False, beta_people=frozenset({"p1", "p2"}), fail=False,
-                foreign_agenda=False):
+                foreign_agenda=False, documents=None):
     p1 = PersonRef("p1", "Ada", "p1", aliases=("Ace",))
     p2 = PersonRef("p2", "Ben", "p2")
     persons = Persons({"p1": p1, "p2": p2}, {("signal", "p1"): "p1", ("signal", "p2"): "p2"})
@@ -84,7 +84,7 @@ async def build(*, lineage_on=False, beta_people=frozenset({"p1", "p2"}), fail=F
         SimpleNamespace(
             platform="signal",
             primary_id=cid,
-            ids=frozenset({cid}),
+            ids=frozenset({cid, "alpha-alias"}) if cid == "alpha" else frozenset({cid}),
             label=cid.title(),
             unit="other" if cid == "foreign" or foreign_agenda else "u",
             persons=beta_people if cid == "beta" else frozenset({"p1", "p2"}),
@@ -145,6 +145,7 @@ async def build(*, lineage_on=False, beta_people=frozenset({"p1", "p2"}), fail=F
         room_for=lambda *a: Binding(),
         screen=scan_reply,
         record_chars=4000,
+        documents=documents,
     )
     agenda_row = replace(
         row(2),
@@ -305,3 +306,22 @@ async def test_foreign_agenda_fails_before_related_subject_or_member_reads():
     assert grounding.members and grounding.profiles  # positive scoped path
     with pytest.raises(ValueError, match="outside the unit"):
         await build(foreign_agenda=True)
+
+
+async def test_shared_document_index_keeps_the_agenda_rooms_existing_alias_binding():
+    from nora.engagement.documents_context import DocumentsContextReader
+    from nora.testing import FakeDocumentStore
+    from tests.contract.test_document_store_contract import _make
+
+    store = FakeDocumentStore()
+    doc = await _make(
+        store, created_by="p1", room=("signal", "alpha-alias"), title="Generated plan"
+    )
+    source = DocumentsContextReader(
+        store=store, room_ids=lambda p, c: frozenset({"alpha", "alpha-alias"}),
+        clock=lambda: datetime.fromtimestamp(NOW / 1000, UTC), metrics=Metrics(),
+        shared_room=lambda u, p, c: u == "u" and p == "signal" and c in {"alpha", "alpha-alias"},
+    )
+    grounding, _ = await build(documents=source)
+    assert [line.document_id for view in grounding.documents for line in view.lines] == [str(doc)]
+    assert grounding.document_rooms == frozenset({("signal", "alpha"), ("signal", "alpha-alias")})

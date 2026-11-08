@@ -720,5 +720,10 @@ async def test_the_earlier_duplicate_that_quotes_the_shared_ms_is_now_a_self_poi
     assert "replying_to" not in got["debrief"].splitlines()[1]
     for i in (0, 2, 3):
         assert got["tool"][i] == master["tool"][i], i
-        assert got["debrief"].splitlines()[i] == master["debrief"].splitlines()[i], i
+        from xml.etree import ElementTree
+
+        shown = ElementTree.fromstring(got["debrief"].splitlines()[i])  # noqa: S314
+        prior = ElementTree.fromstring(master["debrief"].splitlines()[i])  # noqa: S314
+        assert shown.text == prior.text and shown.attrib["from"] == prior.attrib["from"]
+        assert shown.attrib["at"][:16].replace("T", " ") == prior.attrib["at"]
     assert got["tool_threaded"] == master["tool_threaded"] - 1

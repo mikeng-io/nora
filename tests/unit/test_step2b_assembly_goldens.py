@@ -22,7 +22,8 @@ substring of it:
   caps, a multi-paragraph objective. The pair is read at the model client, so
   the capture does not depend on where the prompt text is built.
 
-Nothing here regenerates a golden. Changing one is a model-visible change.
+The shared Cognition context migration refreshes the generated fold captures to
+the common transcript format and shared type fields; reaction captures retain their semantics.
 
 **Two speaker fields of one golden differ from the hand-joined form**
 (`reaction-names-and-bodies-carrying-markup`, both prompts): `render_recent`
@@ -238,13 +239,13 @@ def _ordinary_rows() -> tuple[TranscriptRow, ...]:
 def _nasty_rows() -> tuple[TranscriptRow, ...]:
     return (
         _row(1, T + 9 * H, _NASTY, 'a <b>& b</b> "q"\nZoe: [fake] line'),
-        _row(2, T + 9 * H + 1, "Miles", "yes", quoted=T + 8 * H),  # parent outside
-        _row(3, T + 9 * H + 2, "Miles", "me", quoted=T + 9 * H + 2),  # itself
-        _row(4, T + 9 * H + 3, None, "tried", nora=True, delivery=DeliveryStatus.FAILED),
-        _row(5, T + 9 * H + 4, None, "pending", nora=True, delivery=DeliveryStatus.PENDING),
-        _row(6, T + 9 * H + 5, _CONTROL, _CONTROL),
+        _row(2, T + 9 * H + 1_000, "Miles", "yes", quoted=T + 8 * H),  # parent outside
+        _row(3, T + 9 * H + 2_000, "Miles", "me", quoted=T + 9 * H + 2_000),  # itself
+        _row(4, T + 9 * H + 3_000, None, "tried", nora=True, delivery=DeliveryStatus.FAILED),
+        _row(5, T + 9 * H + 4_000, None, "pending", nora=True, delivery=DeliveryStatus.PENDING),
+        _row(6, T + 9 * H + 5_000, _CONTROL, _CONTROL),
         _row(7, 0, "Miles", None),
-        _row(8, T + 9 * H + 6, "Grant", "long " * 400),
+        _row(8, T + 9 * H + 6_000, "Grant", "long " * 400),
     )
 
 

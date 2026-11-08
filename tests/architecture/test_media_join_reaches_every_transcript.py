@@ -250,6 +250,7 @@ PATHS = {
     "nora/app/fire.py": "fire",
     "nora/engagement/stages/debrief.py": "debrief",
     "nora/app/runtime.py": "dreamer",
+    "nora/app/cognition_context.py": "cognition",
     "nora/app/adoption.py": "adoption",
     "nora/agent/tools.py": "load_transcript",
     "nora/ingest/relevance_gate.py": "relevance_gate",

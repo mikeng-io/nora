@@ -16,6 +16,7 @@ from nora.domain.cognition_session import AgendaItem
 from nora.domain.context_data import MembersView, RoomLine, TranscriptLine
 from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.domain.lineage import message
+from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.profile import ProfileView
 from nora.domain.record_query import RecordQuery
@@ -39,7 +40,7 @@ class CognitionContextReader:
         audit: Any,
         profiles: Any,
         lessons: Any,
-        media_join: Any,
+        media_join: MediaJoin | None,
         room_for: Callable[..., Any],
         screen: Callable[[str], str | None],
         record_chars: int,
@@ -249,7 +250,7 @@ class CognitionContextReader:
                         rows.append(row)
                     rows = list(self._persons.name_transcript(rows, platform=room.platform))
                     if self._media_join is not None:
-                        rows = list(await self._media_join.enrich(rows, path="dreamer"))
+                        rows = list(await self._media_join.enrich(rows, path="cognition"))
                     screened = [r for r in rows if not self._screen(r.body or "")]
                     withheld["transcript"] += len(rows) - len(screened)
                     rows = screened
@@ -286,6 +287,12 @@ class CognitionContextReader:
 
         documents: list[Any] = []
         document_rooms = set()
+        agenda_document_rooms = frozenset(
+            (r.platform, cid)
+            for r in agenda
+            for cid in (self._policy.conversation(r.platform, r.conversation_id).ids
+                        | {r.conversation_id})
+        )
         for r in agenda:
             if not visible(r.platform, r.conversation_id):
                 continue
@@ -297,7 +304,7 @@ class CognitionContextReader:
                 conversation_id=r.conversation_id,
                 person_id=DocumentAuthority(
                     unit,
-                    frozenset((x.platform, x.conversation_id) for x in agenda),
+                    agenda_document_rooms,
                     0,
                     as_of_ms=now_ms,
                 ),
@@ -307,7 +314,11 @@ class CognitionContextReader:
                 documents = []
                 break
             documents.append(view)
-            document_rooms.add((r.platform, r.conversation_id))
+            document_rooms.update(
+                (r.platform, cid)
+                for cid in self._policy.conversation(r.platform, r.conversation_id).ids
+                | {r.conversation_id}
+            )
         # A partly failed unit read is unavailable, never an apparently complete slice.
         if "transcript" in failed:
             transcript = []
