@@ -237,7 +237,7 @@ async def test_the_prompt_names_a_room_by_its_label_and_lists_ids_beside_a_tools
     )
 
 
-async def test_a_single_room_agenda_says_only_its_label_in_the_reads_line():
+async def test_a_single_room_agenda_carries_its_binding_and_label_in_the_reads_line():
     rig = _rig(grounder=StaticGrounder(Grounding(room_labels={"signal:room-a": "Weekend Plans"})))
     await rig.say(room="room-a")
     rig.clock.advance(1)
