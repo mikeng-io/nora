@@ -41,7 +41,8 @@ def row(n, pid="p1", body="hello"):
 
 
 class Sources:
-    def __init__(self, *, fail=False):
+    def __init__(self, *, fail=False, alias=False):
+        self.alias = alias
         self.fail = fail
         self.calls = []
 
@@ -61,7 +62,10 @@ class Sources:
             "beta": [row(1, body="[image a3f2c1]"), row(3, "p2")],
             "foreign": [row(4, body="foreign secret")],
         }[cid]
-        return tuple(RecordHit("signal", cid, r) for r in data), False, frozenset()
+        hits = tuple(RecordHit("signal", cid, r) for r in data)
+        if self.alias and ("signal", "alpha-alias") in q.rooms:
+            hits += (RecordHit("signal", "alpha-alias", row(4, body="Alias source row")),)
+        return hits, False, frozenset()
 
     async def account_heads(self, *, key, as_of_ms):
         assert as_of_ms == NOW
@@ -75,8 +79,15 @@ class Sources:
         return SimpleNamespace(last_ts=NOW - 1000)
 
 
-async def build(*, lineage_on=False, beta_people=frozenset({"p1", "p2"}), fail=False,
-                foreign_agenda=False, documents=None):
+async def build(
+    *,
+    lineage_on=False,
+    beta_people=frozenset({"p1", "p2"}),
+    fail=False,
+    foreign_agenda=False,
+    documents=None,
+    alias_transcript=False,
+):
     p1 = PersonRef("p1", "Ada", "p1", aliases=("Ace",))
     p2 = PersonRef("p2", "Ben", "p2")
     persons = Persons({"p1": p1, "p2": p2}, {("signal", "p1"): "p1", ("signal", "p2"): "p2"})
@@ -127,7 +138,7 @@ async def build(*, lineage_on=False, beta_people=frozenset({"p1", "p2"}), fail=F
 
         scope = members
 
-    source = Sources(fail=fail)
+    source = Sources(fail=fail, alias=alias_transcript)
     reader = CognitionContextReader(
         policy=policy,
         persons=persons,
@@ -318,10 +329,90 @@ async def test_shared_document_index_keeps_the_agenda_rooms_existing_alias_bindi
         store, created_by="p1", room=("signal", "alpha-alias"), title="Generated plan"
     )
     source = DocumentsContextReader(
-        store=store, room_ids=lambda p, c: frozenset({"alpha", "alpha-alias"}),
-        clock=lambda: datetime.fromtimestamp(NOW / 1000, UTC), metrics=Metrics(),
+        store=store,
+        room_ids=lambda p, c: frozenset({"alpha", "alpha-alias"}),
+        clock=lambda: datetime.fromtimestamp(NOW / 1000, UTC),
+        metrics=Metrics(),
         shared_room=lambda u, p, c: u == "u" and p == "signal" and c in {"alpha", "alpha-alias"},
     )
     grounding, _ = await build(documents=source)
     assert [line.document_id for view in grounding.documents for line in view.lines] == [str(doc)]
     assert grounding.document_rooms == frozenset({("signal", "alpha"), ("signal", "alpha-alias")})
+
+
+def test_identically_named_rooms_cannot_resolve_each_others_quote_parent():
+    from nora.language.context_render import transcript_rows
+
+    first = replace(row(1), ts=NOW - 1000)
+    second = replace(row(2), ts=NOW - 1000)
+    reply = replace(row(3), ts=NOW, quoted_ts=NOW - 1000)
+    lines = [
+        TranscriptLine(first, "General", platform="signal", conversation_id="alpha"),
+        TranscriptLine(second, "General", platform="signal", conversation_id="beta"),
+        TranscriptLine(reply, "General", platform="signal", conversation_id="beta"),
+    ]
+    text = transcript_rows(
+        lines, display_name="Nora", now=datetime.fromtimestamp(NOW / 1000, UTC), source_ids=True
+    )
+    messages = ET.fromstring("<rows>" + text + "</rows>")  # noqa: S314
+    assert messages[2].attrib["replying_to"] == "2"
+    assert messages[0].attrib["room_id"] == "signal:alpha"
+    assert messages[1].attrib["room_id"] == "signal:beta"
+
+
+async def test_unit_transcript_reads_room_aliases_and_keeps_actual_source_custody():
+    grounding, source = await build(alias_transcript=True)
+    assert ("signal", "alpha-alias") in source.calls[0][0]
+    line = next(line for line in grounding.transcript if line.row.id == 4)
+    assert (line.platform, line.conversation_id) == ("signal", "alpha-alias")
+    assert line.room == "Alpha"
+
+
+async def test_document_evidence_refuses_clipped_qualifiers_but_accepts_complete_rows():
+    from nora.domain.cognition_session import build_situation
+    from nora.domain.stimuli import Stimulus, UnitView
+    from nora.testing.cognition_grounding import StaticGrounder
+    from tests.unit.test_cognition_grounding import _Agent, _runner
+
+    grounding, _ = await build()
+    complete = replace(row(1), body="Maybe 9pm")
+    partial = replace(row(2), body="Settled at 9pm. " + "detail " * 100 + "Only if confirmed.")
+    grounding = replace(
+        grounding,
+        transcript=(
+            TranscriptLine(complete, "Alpha", platform="signal", conversation_id="alpha"),
+            TranscriptLine(partial, "Alpha", platform="signal", conversation_id="alpha"),
+        ),
+        records={"messages:2": replace(grounding.records["messages:2"], text=partial.body)},
+    )
+    runner, _, _ = _runner(_Agent(), StaticGrounder(grounding))
+    stimulus = Stimulus(
+        id=1,
+        unit="u",
+        kind="message",
+        item="message",
+        ref="messages:2",
+        at_ms=NOW - 8000,
+        recorded_at_ms=NOW - 8000,
+        platform="signal",
+        conversation_id="alpha",
+        cues=(),
+    )
+    view = UnitView(unit="u", pending=(stimulus,), last_activity_ms=None, last_wake=None)
+    situation = build_situation(
+        unit="u", pending=(stimulus,), home_room=A, now_ms=NOW, last_session_ms=None
+    )
+    state, _, _, prompt = await runner._session_input(
+        unit="u",
+        view=view,
+        situation=situation,
+        session_id=1,
+        wake_id=1,
+        now_ms=NOW,
+        doctrine_text="D",
+        skill_text="",
+        grounding=grounding,
+    )
+    assert "Settled at 9pm" in prompt  # the partial source really reached the candidate
+    assert any(n == 1 for n, *_ in state.document_evidence)
+    assert all(n != 2 for n, *_ in state.document_evidence)

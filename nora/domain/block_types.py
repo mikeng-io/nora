@@ -187,6 +187,7 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
         store="messages",
         source_id="the stored message id for citations",
         author_id="stable person id, nora, or unknown",
+        room_id="source room binding as platform:conversation_id",
         room="the source room label",
         at="absolute source send time with timezone",
         item="agenda item index when this is an agenda row",
@@ -1056,6 +1057,7 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
         aliases="other names used for this person",
         source="where membership and names came from",
         unnamed="unresolved member accounts",
+        binding="stable room binding as platform:conversation_id",
     ),
     _t(
         "rooms",

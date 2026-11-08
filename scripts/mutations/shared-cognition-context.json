@@ -40,5 +40,19 @@
     "old": "if self._media_join is not None:",
     "new": "if False:",
     "target": "tests/unit/test_cognition_shared_context.py::test_reader_scope_related_profiles_and_real_assembly"
+  },
+  {
+    "name": "identically labelled rooms keep separate quote custody",
+    "file": "nora/language/context_render.py",
+    "old": "return f\"{line.platform}:{line.conversation_id}\" if line.platform else line.room",
+    "new": "return line.room",
+    "target": "tests/unit/test_cognition_shared_context.py::test_identically_named_rooms_cannot_resolve_each_others_quote_parent"
+  },
+  {
+    "name": "clipped qualifiers cannot authorize documentation revisions",
+    "file": "nora/app/cognition_session.py",
+    "old": "if not line.row.is_nora and text == (line.row.body or \"\"):",
+    "new": "if not line.row.is_nora:",
+    "target": "tests/unit/test_cognition_shared_context.py::test_document_evidence_refuses_clipped_qualifiers_but_accepts_complete_rows"
   }
 ]

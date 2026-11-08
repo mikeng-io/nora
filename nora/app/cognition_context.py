@@ -104,12 +104,20 @@ class CognitionContextReader:
                 view = await binding.members()
                 members.append(
                     MembersView(
-                        label, view.people, not view.available or view.degraded, view.unnamed
+                        label,
+                        view.people,
+                        not view.available or view.degraded,
+                        view.unnamed,
+                        binding=f"{r.platform}:{r.conversation_id}",
                     )
                 )
             except Exception:
                 log.exception("cognition context source read failed")
-                members.append(MembersView(label, unavailable=True))
+                members.append(
+                    MembersView(
+                        label, unavailable=True, binding=f"{r.platform}:{r.conversation_id}"
+                    )
+                )
         frequencies: Counter[str] = Counter()
         eligible = {p.person_id: p for v in members for p in v.people}
         # An alias is resolved only among the agenda's identified members.
@@ -214,25 +222,29 @@ class CognitionContextReader:
                     log.exception("cognition context source read failed")
                     room_lines.append(RoomLine(room, activity_unavailable=True))
                 try:
+                    room_keys = tuple(
+                        (room.platform, cid) for cid in sorted(c.ids | {room.conversation_id})
+                    )
+                    is_agenda_room = any(key in agenda_keys for key in room_keys)
                     hits, extra, _ = await self._records.context_rows(
                         RecordQuery(
-                            rooms=((room.platform, room.conversation_id),),
+                            rooms=room_keys,
                             start_ms=start_ms,
                             end_ms=now_ms + 1,
                             # A dynamic read ceiling: even empty rows cost markup. The
                             # final allocation measures escaped rows under the one cap.
                             limit=max(0, self._record_chars),
-                            related_persons=()
-                            if (room.platform, room.conversation_id) in agenda_keys
-                            else tuple(related),
+                            related_persons=() if is_agenda_room else tuple(related),
                         ),
                         as_of_ms=now_ms,
                     )
                     more += int(extra)
                     rows = []
+                    source_rooms = {hit.row.id: (hit.platform, hit.conversation_id) for hit in hits}
                     for hit in hits:
+                        if (hit.platform, hit.conversation_id) not in room_keys:
+                            raise ValueError("record outside the declared room read")
                         row = hit.row
-                        is_agenda_room = (room.platform, room.conversation_id) in agenda_keys
                         mentioned = set(row.mention_persons) | {
                             p.person_id
                             for raw in row_mentions(row)
@@ -259,8 +271,7 @@ class CognitionContextReader:
                             row,
                             room.label,
                             item_of.get(row.id),
-                            room.platform,
-                            room.conversation_id,
+                            *source_rooms[row.id],
                         )
                         for row in rows
                     )
@@ -286,12 +297,13 @@ class CognitionContextReader:
         from nora.domain.documents import DocumentAuthority
 
         documents: list[Any] = []
-        document_rooms = set()
+        document_rooms: set[tuple[str, str]] = set()
         agenda_document_rooms = frozenset(
             (r.platform, cid)
             for r in agenda
-            for cid in (self._policy.conversation(r.platform, r.conversation_id).ids
-                        | {r.conversation_id})
+            for cid in (
+                self._policy.conversation(r.platform, r.conversation_id).ids | {r.conversation_id}
+            )
         )
         for r in agenda:
             if not visible(r.platform, r.conversation_id):

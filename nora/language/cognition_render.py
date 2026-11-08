@@ -881,7 +881,9 @@ def _item_blocks(
     )
     room_rows: dict[str, list[Any]] = {}
     for row in grounding.transcript:
-        room_rows.setdefault(row.room, []).append(row)
+        room_rows.setdefault(
+            f"{row.platform}:{row.conversation_id}" if row.platform else row.room, []
+        ).append(row)
     now = datetime.fromtimestamp(now_ms / 1000, tz=tz)
     room_needs = [
         sum(

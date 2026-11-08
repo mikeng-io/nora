@@ -14,6 +14,7 @@ class MembersView:
     people: tuple[PersonRef, ...] = ()
     unavailable: bool = False
     unnamed: int = 0
+    binding: str = ""
 
 
 @dataclass(frozen=True)

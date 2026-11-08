@@ -241,7 +241,8 @@ One integrated change from this spec, measured once (AGENTS.md):
    injected; full bodies are read on demand. `document_list`, `document_read`
    and `document_revise` are the autonomous surface. Revision changes existing
    string content only, preserves unrelated content, and requires a prior read,
-   its exact base revision and shown source ids. A stale revision is refused,
+   its exact base revision and ids of completely shown sources. Clipped source rows
+   cannot authorize a revision because an omitted qualifier is unknown. A stale revision is refused,
    never retried automatically.
 
    Autonomous authority is an explicit session capability, not a human

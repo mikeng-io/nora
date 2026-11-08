@@ -31,6 +31,7 @@ def render_members(view: MembersView) -> ContextBlock:
         attrs=(
             ("room", view.room),
             ("source", "identity and room roster"),
+            *((("binding", view.binding),) if view.binding else ()),
             *((("status", "unavailable"),) if view.unavailable else ()),
             *((("unnamed", str(view.unnamed)),) if view.unnamed else ()),
         ),
@@ -75,16 +76,21 @@ def transcript_rows(
     source_ids: bool = False,
 ) -> str:
     # A quote timestamp is meaningful within its source room only.
+    def room_scope(line: TranscriptLine) -> str:
+        return f"{line.platform}:{line.conversation_id}" if line.platform else line.room
+
     room_rows: dict[str, list[TranscriptRow]] = {}
     for line in rows:
-        room_rows.setdefault(line.room, []).append(line.row)
+        room_rows.setdefault(room_scope(line), []).append(line.row)
     by_room_ts = {room: first_by_ts(group) for room, group in room_rows.items()}
     indexes = {line.row.id: i for i, line in enumerate(rows, 1)}
 
     def parent(line: TranscriptLine) -> int | None:
         row = line.row
         hit = (
-            by_room_ts.get(line.room, {}).get(row.quoted_ts) if row.quoted_ts is not None else None
+            by_room_ts.get(room_scope(line), {}).get(row.quoted_ts)
+            if row.quoted_ts is not None
+            else None
         )
         n = indexes.get(hit.id) if hit is not None else None
         return n if n is not None and n < indexes[row.id] else None
@@ -111,6 +117,7 @@ def transcript_rows(
             ("source_id", str(x.row.id) if source_ids else None),
             ("author_id", "nora" if x.row.is_nora else x.row.person_id or "unknown"),
             ("room", x.room or None),
+            ("room_id", f"{x.platform}:{x.conversation_id}" if x.platform else None),
             ("at", datetime.fromtimestamp(x.row.ts / 1000, now.tzinfo).isoformat()),
             ("item", str(x.item) if x.item is not None else None),
             (

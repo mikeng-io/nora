@@ -1431,7 +1431,7 @@ class CognitionSessionRunner:
             if source_room is None:
                 continue
             text = element.text or ""
-            if not line.row.is_nora:
+            if not line.row.is_nora and text == (line.row.body or ""):
                 state.document_evidence.append(
                     (mid, source_room.platform, source_room.conversation_id, text))
             state.fetched.take(
@@ -1452,6 +1452,10 @@ class CognitionSessionRunner:
                         text,
                     )
                 )
+        complete_record_text = {
+            r.message_id: r.text for r in grounding.records.values()
+            if r.kind in {"message", "edit"}
+        }
         for item in root.findall("./agenda/item"):
             index = int(item.attrib["index"])
             source_room = state.items_by_index[index].room
@@ -1460,6 +1464,7 @@ class CognitionSessionRunner:
                 if (
                     mid > 0
                     and element.text
+                    and element.text == complete_record_text.get(mid)
                     and not any(
                         element.attrib.get(flag) == "yes"
                         for flag in ("own", "deleted", "withdrawn")

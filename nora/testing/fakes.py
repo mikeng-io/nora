@@ -2604,7 +2604,9 @@ class FakeDocumentStore:
         )
 
     @staticmethod
-    def _sees(summary: DocumentSummary, person_id: str, rooms: frozenset[RoomKey]) -> bool:
+    def _sees(
+        summary: DocumentSummary, person_id: str | DocumentAuthority, rooms: frozenset[RoomKey]
+    ) -> bool:
         from nora.domain.documents import may_read
         return may_read(summary, person_id, rooms)
 
@@ -2670,7 +2672,8 @@ class FakeDocumentStore:
         )
 
     async def list_visible(
-        self, *, person_id: str, rooms: frozenset[RoomKey], limit: int, offset: int,
+        self, *, person_id: str | DocumentAuthority, rooms: frozenset[RoomKey],
+        limit: int, offset: int,
         state: ListedState = "active", query: str = "",
     ) -> VisiblePage:
         listed = "archived" if state == "archived" else "active"
@@ -2716,7 +2719,7 @@ class FakeDocumentStore:
         return tuple(seen[:limit])
 
     async def get_visible(
-        self, *, document_id: UUID, person_id: str, rooms: frozenset[RoomKey]
+        self, *, document_id: UUID, person_id: str | DocumentAuthority, rooms: frozenset[RoomKey]
     ) -> StoredDocument | None:
         stored = self._stored(document_id)
         if (
@@ -2738,7 +2741,7 @@ class FakeDocumentStore:
         return tuple(found[: min(max(limit, 0), 1_000)])
 
     async def get_visible_by_handle(
-        self, *, handle: str, person_id: str, rooms: frozenset[RoomKey]
+        self, *, handle: str, person_id: str | DocumentAuthority, rooms: frozenset[RoomKey]
     ) -> StoredDocument | None:
         if not is_handle(handle):
             return None
