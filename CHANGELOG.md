@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.16.6](https://github.com/mikeng-io/nora/compare/v7.16.5...v7.16.6) (2026-11-08)
+
+
+### Maintenance
+
+* **memory:** remove the retired per-message extraction worker ([107fa51](https://github.com/mikeng-io/nora/commit/107fa51c13640689284808d75cd31db674b29fa1))
+* Merge branch 'master' into refactor/remove-extraction-worker ([d72dd1a](https://github.com/mikeng-io/nora/commit/d72dd1acd37adcb753c900c3ba979983effae06e))
+* Merge branch 'master' into refactor/remove-extraction-worker ([36f5f3f](https://github.com/mikeng-io/nora/commit/36f5f3f6fcf9c1f80b4674df7f37ad3ab42fe33b))
+
 ## [7.16.5](https://github.com/mikeng-io/nora/compare/v7.16.4...v7.16.5) (2026-11-08)
 
 
