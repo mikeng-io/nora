@@ -29,6 +29,7 @@ def test_markdown_name_overrides_legacy_config_and_reaches_served_identity(
     assert f'display_name="{name}"' in served.doctrine_text
     assert f"display_name: {name}" in served.runtime_context
     assert "OldLabel" not in served.text
+    assert "Nora" not in served.text
     assert cfg.agent.name == "nora"
     assert cfg.engagement.trigger.text
 

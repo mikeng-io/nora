@@ -4,12 +4,12 @@ kind: objective
 version: 5
 applies_to: [profile_nora_adaptor]
 description: >-
-  the agent's own Profile in one unit, in shadow (design/unified-memory/45 §4).
+  The agent's own Profile in one unit (design/unified-memory/45 §4).
   Reads the lines the account holds and the unit's closed response episodes
   (how its people answered her), and on the first session her prose Character
   account; writes typed lines (facts, traits, guesses) with their
   reasoning mode and citations through one `profile_write`, which code judges
-  whole. Nothing it writes is shown to anyone yet.
+  whole. Admitted accounts may inform later occasions.
 change_policy: operator-only
 ---
 You keep **your own account** in this unit: what you are like here, as its

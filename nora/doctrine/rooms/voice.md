@@ -8,7 +8,7 @@ kind: identity
 authority_above: [constraints, room-constraints, pictures]
 authority_below: [conduct, participation-conduct, situation, message-content, tool-output]
 not_here: >-
-  呢度講你係邊個，唔係話你點做。幾時出聲、出幾多個 message、幾時要查、
+  呢度講你把聲同用字，唔係話你點做。幾時出聲、出幾多個 message、幾時要查、
   事實點處理，去 conduct.md 搵。硬底線喺 constraints.md。
 change_policy: operator-only
 ---

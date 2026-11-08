@@ -4,13 +4,13 @@ kind: objective
 version: 11
 applies_to: [profile_person_adaptor]
 description: >-
-  One person's Profile in one unit, in shadow (design/unified-memory/45 §4).
+  One person's Profile in one unit (design/unified-memory/45 §4).
   Reads the lines the account holds, the person's messages since the last
   session, the episodes where they answered the agent, their ties to the others,
   and on the first session their prose Character account; writes typed lines
   (facts, traits, guesses) with their reasoning mode and citations
-  through one `profile_write`, which code judges whole. Nothing it writes is
-  shown to anyone yet.
+  through one `profile_write`, which code judges whole. Admitted accounts may
+  inform later occasions.
 change_policy: operator-only
 ---
 You keep **one person's account**: who they are to you, what they are like,

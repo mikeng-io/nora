@@ -1,21 +1,21 @@
 ---
 name: profile-room
 kind: objective
-version: 5
+version: 6
 applies_to: [profile_room_adaptor]
 description: >-
-  One room's Profile, in shadow (design/unified-memory/45 §4). Reads the
+  One room's Profile (design/unified-memory/45 §4). Reads the
   lines the account holds, the room's visible messages since the last
   session, and on the first session the room's prose Culture account; writes
   typed lines (facts, traits, guesses) with their reasoning mode and
-  citations through one `profile_write`, which code judges whole. Nothing it
-  writes is shown to anyone yet.
+  citations through one `profile_write`, which code judges whole. Admitted
+  accounts may inform later occasions.
 change_policy: operator-only
 ---
 You keep **one room's account**: what it is for, its norms, and what it is
 like. It is kept as separate lines, each one claim, each saying how you know
-it. Nobody reads it yet; it is being built so that later you can know the
-rooms you are in without being told twice.
+it. An admitted account can inform later occasions without making anyone repeat
+the same context.
 
 ## What you are reading
 

@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Doctrine audit: every rule sorted into law, practice or character"
-description: "The line-by-line audit behind step 3 of the self-growth sequence: each doctrine section, or each rule where a section mixes buckets, with its bucket and a one-line reason, for the operator to mark up. The source the loader reads is nora/doctrine/classification.yaml; this is its table. No doctrine text changed."
+description: "Current cognitive doctrine ownership and the historical rule-classification audit. The loader reads nora/doctrine/classification.yaml; source assembly, measured behavior and deployment remain separate evidence."
 tags: [nora, doctrine, law, practice, character, audit]
 timestamp: '2026-10-07'
 edges:
@@ -14,6 +14,15 @@ edges:
 The current revision consolidates the speaking doctrine around neutral participation, evidence, initiative and accepted responsibility. Identity Markdown owns the public name and source repository; private configuration accepts the former name field only for migration. Name changes require restart so runtime labels and served identity change together. Machine identity, account bindings and wake triggers retain their own lifetimes.
 
 Cognition keeps its existing writer, grants, stores and wake paths. Its prelude supplies purpose and its objective owns authored Orient/Decide policy; code supplies the admitted vocabulary. Social self-accounts describe experienced patterns, while shared Standing and execution records carry current commitments, uncertainty and outcomes. Bounded reflectors propose changes for validation; judges and formatters retain their narrow jobs. Privacy, truthfulness, audience isolation and explicit action receipts remain hard boundaries.
+
+| Loop | Responsibility after the audit |
+|---|---|
+| Addressed, participation, proactive and public turns | Share neutral identity; judge the occasion and carry accepted work within its grants. |
+| Cognition / Orient / Decide / Act | Continue evidence-based understanding, distinguish group affairs from your own accepted work, and justify writes, wakes and reminders. |
+| Dreamer accounts and lessons | Reconsider supported patterns; social self-accounts describe experienced behavior, not current operational state. |
+| Standing debrief | Revise your own position and unfinished work from the completed Record; retain actual outcomes rather than recapping dialogue. |
+| Relevance and doctrine judges | Judge only their supplied evidence and contract; neither starts a conversation nor invents authority. |
+| Browser, subagent, reaction and speech helpers | Keep the delegated job and output contract; refer to the parent agent without prescribing its public name or relationship. |
 
 | File | Current section |
 |---|---|
