@@ -1,10 +1,10 @@
 
 <p align="center">
-  <img src="assets/nora-social-banner.png" alt="Mini Nora at a warm window ledge overlooking a Hong Kong neighbourhood at dusk." width="100%">
+  <img src="assets/cinematic/mini-nora-social-banner.png" alt="Mini Nora overlooking a misty Lingnan mountain-and-sea landscape." width="100%">
 </p>
 
 <p align="center">
-  <img src="assets/nora-mini-icon.png" alt="Mini Nora portrait" width="128">
+  <img src="assets/cinematic/mini-nora-social-icon.png" alt="Mini Nora portrait" width="128">
 </p>
 
 <h1 align="center">Nora</h1>
