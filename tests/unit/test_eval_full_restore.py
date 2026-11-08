@@ -440,11 +440,10 @@ _BLOCKS = (("notes", _NOTE_BLOCK), ("group_transcript", _WINDOW))
 
 @pytest.mark.parametrize("criteria", [
     (), ("presence",), ("tool_status_reported",), ("lesson_applied",),
-    ("personality", "source_scope", "being_contradicted", "appearance"),
+    ("source_scope", "being_contradicted", "appearance"),
 ])
 def test_the_judge_source_is_unchanged_for_every_other_criterion(criteria) -> None:
-    """Byte for byte the window-and-tools source: only `recall_grounded` reads
-    `blocks`."""
+    """Criteria outside recall/social/identity retain their window-and-tools source."""
     reporting = {"tool_status_reported", "lesson_applied"} & set(criteria)
     expected = "<m>hi</m>" + (
         '\n\nTool results this turn:\n- media_fetch: {"status": "unavailable"}'
@@ -1068,3 +1067,27 @@ def test_judge_export_retains_raw_votes_and_errors_privately(monkeypatch, tmp_pa
     }
     assert path.stat().st_mode & 0o777 == 0o600
     assert folder.stat().st_mode & 0o777 == 0o700
+
+
+@pytest.mark.parametrize("criterion", ["personality", "contextual_identity", "public_provenance"])
+async def test_identity_judgements_receive_the_room_role_the_subject_was_shown(
+    judged, monkeypatch, criterion,
+):
+    role = ('<culture description="the room account">\n'
+            'In this reading circle, Ada asked the agent to keep the shared reading list.\n'
+            '</culture>')
+
+    async def drive(_subject, _case, *, now_ms):
+        _render_her_turn(blocks=role, rendered="culture,group_transcript")
+        return Outcome(admitted=True, said=("I keep this circle's reading list.",))
+
+    monkeypatch.setitem(ENTRY_POINTS, "tag", EntryPoint(drive=drive, delivers_input=True))
+    judge = _Judge()
+    await backbone._drive(
+        _judged_case("generated-contextual-role", [criterion]),
+        _spec(full_restore=True, judge=judge),
+    )
+    [graded] = judge.graded
+    assert role in graded["source"]
+    assert graded["source"].startswith("<m>the window</m>")
+    assert "THE DOCTRINE, NOT A BLOCK" not in graded["source"]

@@ -23,7 +23,7 @@
   {
     "name": "suitability judges see the actual source blocks",
     "file": "evals/backbone.py",
-    "old": "if {\"recall_grounded\", \"social_suitability\"} & set(criteria):",
+    "old": "if contextual:",
     "new": "if \"recall_grounded\" in criteria:",
     "target": "tests/unit/test_eval_full_restore.py::test_a_recall_judge_is_shown_every_block_her_turn_was_shown"
   },

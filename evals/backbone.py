@@ -640,14 +640,16 @@ def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
 
     `blocks` (`_shown_blocks`) are the OTHER context blocks the same model
     call carried — notes, events, standing, culture, character… — and are
-    read for `recall_grounded` and `social_suitability`: a recall grounded in a note she was shown
-    is not a fabrication, and a judge that never saw the note would grade it as
-    one. Every other criterion's source is byte-for-byte what it is without
-    `blocks` (`test_the_judge_source_is_unchanged_for_every_other_criterion`).
+    read for recall, social suitability, personality and identity/provenance:
+    claims about a situated role or remembered affair can be grounded in a
+    rendered account outside the transcript. Other criteria retain their
+    existing window-and-tool source.
     Never the doctrine: that is the system prompt, not a block, and the judge is
     handed it separately."""
     parts = [transcript] if transcript else []
-    if {"recall_grounded", "social_suitability"} & set(criteria):
+    contextual = {"recall_grounded", "social_suitability", "personality",
+                  "contextual_identity", "public_provenance"}.intersection(criteria)
+    if contextual:
         shown = [text for name, text in blocks if name not in _NOT_RECALL_CONTEXT]
         if shown:
             parts.append(
@@ -657,8 +659,7 @@ def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
     # `recall_grounded` too: «I couldn't check» is graded against what her
     # tools actually returned, so the judge has to see an `unavailable`.
     if (
-        "tool_status_reported" in criteria or "lesson_applied" in criteria
-        or "recall_grounded" in criteria or "social_suitability" in criteria
+        contextual or "tool_status_reported" in criteria or "lesson_applied" in criteria
     ) and results:
         lines = [f"- {name}: {text}" for name, text in results
                  if name not in ("send_reply", "load_tools")]

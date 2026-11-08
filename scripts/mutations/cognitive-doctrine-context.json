@@ -1,0 +1,9 @@
+[
+  {
+    "name": "identity judgements receive the rendered room context",
+    "file": "evals/backbone.py",
+    "old": "    contextual = {\"recall_grounded\", \"social_suitability\", \"personality\",\n                  \"contextual_identity\", \"public_provenance\"}.intersection(criteria)",
+    "new": "    contextual = {\"recall_grounded\", \"social_suitability\"}.intersection(criteria)",
+    "target": "tests/unit/test_eval_full_restore.py::test_identity_judgements_receive_the_room_role_the_subject_was_shown"
+  }
+]
