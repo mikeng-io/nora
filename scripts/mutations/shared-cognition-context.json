@@ -75,5 +75,12 @@
     "old": "            for pid in row.mention_persons:\n                frequencies.setdefault(self._persons.subject_id_for(pid), 0)\n",
     "new": "            for pid in row.mention_persons:\n                frequencies.setdefault(self._persons.subject_id_for(pid), 0)\n            from nora.engagement.character_who import _row_mentions\n            for raw_id in _row_mentions(row):\n                if (person := self._persons.resolve(platform, raw_id)) is not None:\n                    frequencies.setdefault(person.person_id, 0)\n",
     "target": "tests/unit/test_cognition_shared_context.py::test_canonical_empty_mentions_do_not_reinterpret_an_older_raw_envelope"
+  },
+  {
+    "name": "profile subject ids remain canonical instead of gaining a kind prefix",
+    "file": "nora/language/profile_render.py",
+    "old": "(\"of\", view.of),",
+    "new": "(\"of\", f\"{view.entity}:{view.of}\"),",
+    "target": "tests/unit/test_profile_render.py::test_profile_tag_names_its_subject_and_author_by_id"
   }
 ]

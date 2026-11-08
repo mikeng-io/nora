@@ -346,7 +346,7 @@ class Grounding:
     documents: tuple[DocumentsView, ...] = ()
     document_rooms: frozenset[tuple[str,str]] = frozenset()
     profiles: tuple[ProfileView, ...] = ()
-    profile_unavailable: tuple[str, ...] = ()
+    profile_unavailable: tuple[tuple[str, str], ...] = ()
     members: tuple[MembersView, ...] = ()
     rooms: tuple[RoomLine, ...] = ()
     transcript: tuple[TranscriptLine, ...] = ()

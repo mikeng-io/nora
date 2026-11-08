@@ -140,7 +140,7 @@ class CognitionContextReader:
                     frequencies.setdefault(next(iter(ids)), 0)
         related = tuple(sorted(frequencies, key=lambda pid: (-frequencies[pid], pid)))
         profiles: list[ProfileView] = []
-        profile_failed: list[str] = []
+        profile_failed: list[tuple[str, str]] = []
         subjects: list[tuple[str, str, str, tuple[str, ...]]] = [
             ("nora", "nora", nora_character_key(unit), ())
         ]
@@ -161,10 +161,9 @@ class CognitionContextReader:
                     )
                 )
         for entity, of, key, authored in subjects:
-            subject = "nora" if entity == "nora" else f"{entity}:{of}"
             try:
                 if entity == "nora" and not self._policy.shows_self_to_unit(unit):
-                    profile_failed.append(subject)
+                    profile_failed.append((entity, of))
                     continue
                 if self._profiles is None:
                     raise RuntimeError("profile source unavailable")
@@ -175,7 +174,7 @@ class CognitionContextReader:
                 profiles.append(ProfileView(entity=entity, of=of, lines=lines, authored=authored))
             except Exception:
                 log.exception("cognition context source read failed")
-                profile_failed.append(subject)
+                profile_failed.append((entity, of))
         room_lines: list[RoomLine] = []
         transcript: list[TranscriptLine] = []
         more = 0

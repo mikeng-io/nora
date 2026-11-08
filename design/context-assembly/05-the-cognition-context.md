@@ -131,7 +131,10 @@ flag governs the reply surface, where Honcho is still the default and the
 switch has its own acceptance (45). The session is the one that writes
 profiles; it already reads them by tool (`profile_read`) before reshaping.
 Injecting the related ones makes that read the default instead of a call it
-can skip.
+can skip. `of` retains the canonical source/tool id; `entity` carries its kind
+separately. Room profiles use the stored primary id in every occasion, while
+readable room names remain in the room and membership context. A kind prefix
+is not prepended to a person id.
 
 Engagement's switch stays a separate decision, on its own acceptance. This
 node does not flip it.

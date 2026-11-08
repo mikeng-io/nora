@@ -199,7 +199,7 @@ async def test_reader_scope_related_profiles_and_real_assembly():
     assert root.find("./members/person").attrib["id"] == "p1"
     assert root.find("./lessons/lesson") is not None
     assert prompt.count("generated picture") == 1
-    assert "foreign secret" not in prompt and "person:p2" not in prompt
+    assert "foreign secret" not in prompt and 'of="p2"' not in prompt
 
 
 async def test_disclosure_negative_has_an_allowed_positive_control():
@@ -310,7 +310,7 @@ async def test_wired_session_hands_the_shared_candidate_input_to_its_runner():
     candidate = ET.fromstring("<root>" + agent.prompts[0] + "</root>")  # noqa: S314
     assert {b.tag for b in candidate} == {d.name for d in _BLOCKS}
     assert candidate.find("./transcript/m").attrib["source_id"] == "1"
-    assert candidate.find('./profile[@of="person:p1"]') is not None
+    assert candidate.find('./profile[@entity="person"][@of="p1"]') is not None
     assert candidate.find("tool_catalogue").text
     assert candidate.find("graph").attrib["status"] == "unavailable"
 

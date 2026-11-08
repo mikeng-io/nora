@@ -29,7 +29,7 @@ def test_profile_tag_names_its_subject_and_author_by_id(entity, subject):
     bare = re.sub(r' description="[^"]*"(?: fields="[^"]*")?', "", block.render())
     assert block.description and block.annotation
     assert bare == (
-        f'<profile of="{"nora" if entity == "nora" else f"{entity}:{subject}"}" written_by="nora" '
+        f'<profile of="{subject}" entity="{entity}" written_by="nora" '
         'source="what people said in chat" written="60m ago">\n'
         'facts:\n- Occupation: librarian [told] (told by Ada)\n'
         'traits:\nguesses (unconfirmed):\n</profile>'
@@ -54,8 +54,8 @@ def test_people_budget_never_emits_an_unidentified_profile():
     blocks = render_profile_people(views, name_of=lambda _: "Ada", now=NOW)
     assert blocks and len(blocks) < len(views)
     for block in blocks:
-        assert {"of", "written_by", "source", "written"} <= set(dict(block.attrs))
-        assert dict(block.attrs)["of"] in {f"person:{view.of}" for view in views}
+        assert {"of", "entity", "written_by", "source", "written"} <= set(dict(block.attrs))
+        assert dict(block.attrs)["of"] in {view.of for view in views}
         assert dict(block.attrs)["written_by"] == "nora"
     assert blocks[-1].body.text.endswith("more characters not shown]")
     assert sum(len(block.render()) + 1 for block in blocks) <= PROFILE_PEOPLE_MAX_CHARS

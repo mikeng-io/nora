@@ -1032,21 +1032,16 @@ def render_agenda(
                         ContextBlock(
                             name="profile",
                             body=compose_body(""),
-                            attrs=(
-                                (
-                                    "of",
-                                    "nora" if view.entity == "nora" else f"{view.entity}:{view.of}",
-                                ),
-                            ),
+                            attrs=(("of", view.of), ("entity", view.entity)),
                             when_empty="self_close",
                         )
                     )
-        for subject in grounding.profile_unavailable:
+        for entity, subject in grounding.profile_unavailable:
             blocks.append(
                 ContextBlock(
                     name="profile",
                     body=compose_body(""),
-                    attrs=(("of", subject), ("status", "unavailable")),
+                    attrs=(("of", subject), ("entity", entity), ("status", "unavailable")),
                     when_empty="self_close",
                 )
             )

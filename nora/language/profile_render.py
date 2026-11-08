@@ -217,7 +217,8 @@ def render_profile(
     if not body:
         return None
     attrs: tuple[tuple[str, str], ...] = (
-        ("of", "nora" if view.entity == "nora" else f"{view.entity}:{view.of}"),
+        ("of", view.of),
+        ("entity", view.entity),
         ("written_by", "nora"), ("source", "what people said in chat"),
     )
     attrs += (("written", _age(written, now) if written is not None else "unknown"),)
