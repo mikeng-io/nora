@@ -76,8 +76,8 @@ serve a reply in one room, most of them for no decision this session makes.
 | match an existing entity or create one; correct a contradiction | what is already known about the related people, rooms, unit and her | `profile` (one per related subject) |
 | | the graph around the item's entities | `graph` |
 | what an item states | the item's rows, by id, author id and send time | `agenda` |
-| what the rows mean in their conversation | the rows around them in the same room | `transcript` (room window) |
-| whether something said in one room links to another | what the unit's other rooms said in the same window, about the same people | `transcript` (unit window), §5 |
+| what the rows mean in their conversation, and whether something said in one room links to another | the unit's conversation around the items, every row tagged with its room | `transcript` (one block, §5) |
+| which rooms exist, and where a read or a reminder can go | every room of the unit: id, label, platform, purpose, recent activity | `rooms` (§5) |
 | write a note, or revise the one that exists | the open notes | `notes` |
 | write a memo, or not | the settled memos | `memos` |
 | propose or revise an event | the rooms' events | `events` |
@@ -135,31 +135,48 @@ can skip.
 Engagement's switch stays a separate decision, on its own acceptance. This
 node does not flip it.
 
-## 5. The transcript
+## 5. The transcript and the rooms
 
-Two windows, one renderer (the one `group_transcript` uses; the shared media
-join applies):
+**One `transcript` block for the unit, not one per room** (ruled 2026-11-08).
+Rows from every room of the unit are interleaved in time order, and every row
+carries its room as an attribute (`room="<label>"`) beside its id, author id
+and send time, so a reply in one room to something said in another reads as
+the conversation it is. The agenda items' rows are marked in place
+(`item="<index>"`); the rows around them are context. One renderer (the one
+`group_transcript` uses; the shared media join applies).
 
-- **Room window**: for each agenda room, the rows before the item's first row,
-  so the item's rows are read in their conversation. Bounded by rows and
-  characters; `earlier_not_shown` says what was cut. This replaces the
-  unplanned `load_transcript` call as the default.
-- **Unit window**: rows from the unit's *other* rooms in the same time window
-  that are written by, or mention, a related person (§3). Not the whole unit:
-  the link this window exists for is «the same people, elsewhere, at the same
-  time». Its size is **dynamic and adaptive** (ruled 2026-11-08), with no
-  fixed row count. It is one more need in the allocation the agenda already
-  uses (`cognition_render._shares`): each item and each window asks for what
-  its rows need, the smallest need is met first, a floor keeps a quiet window
-  from being starved, and unused budget flows to whatever needs it, all under
-  one hard total. A window with no related rows asks for nothing; a burst
-  across rooms takes the budget a quiet agenda leaves. What was cut is said
-  (`earlier_not_shown`, `not_listed`), never silent.
+- **What is in it**: for each agenda room, the rows before and around the
+  item; from the unit's other rooms, the rows in the same time span written
+  by, or mentioning, a related person (§3). Not every row of the unit: the
+  cross-room link this exists for is «the same people, elsewhere, at the same
+  time».
+- **Its size is dynamic and adaptive** (ruled 2026-11-08), with no fixed row
+  count. Each room's share is one more need in the allocation the agenda
+  already uses (`cognition_render._shares`): the smallest need is met first,
+  a floor keeps a quiet room from being starved, and unused budget flows to
+  whatever needs it, under one hard total. A room with no related rows asks
+  for nothing; a burst across rooms takes the budget a quiet agenda leaves.
+  What was cut is said (`earlier_not_shown`, `not_listed`), never silent.
 
-The unit is the read boundary (DEC-231), so the unit window crosses rooms only
-inside one unit. R-18/R-28 screening applies as on every transcript.
+**A `rooms` block lists every room of the unit**, not only the agenda's: id,
+label, platform, purpose and recent activity, the same reader `room_list`
+uses (`nora/agent/tools.py` `room_list`). Today the session is told only the
+agenda rooms (`reads`, built in `nora/app/cognition_session.py` ~1741) and
+has no `room_list` in its catalogue (`nora/app/cognition_wiring.py`
+`COGNITION_READ_CATALOGUE`), so a room with nothing new this wake does not
+exist for it.
 
-`load_transcript` stays as a tool for looking further back.
+**Read scope follows the unit.** Today every read tool takes an
+`agenda_room` and refuses any other room. The unit is the read boundary
+(DEC-231): the session's reads cover every room of the unit, so a cross-room
+link can be checked, not only noticed. What it writes stays bound by the
+existing rule that a line carries nothing from a message it does not cite,
+and what one room said does not surface in another through its words; that
+rule is unchanged.
+
+The unit is the read boundary, so nothing crosses units. R-18/R-28 screening
+applies as on every transcript. `load_transcript` stays as a tool for looking
+further back.
 
 ## 6. Naming and empty: one rule for every block
 
@@ -195,8 +212,8 @@ would change the reply prompt is measured by the same replay (§8).
 
 One integrated change from this spec, measured once (AGENTS.md):
 
-1. One Cognition context assembly over the shared builders: `members`,
-   `profile`, `transcript` (both windows), `notes`, `memos`, `events`,
+1. One Cognition context assembly over the shared builders: `rooms`,
+   `members`, `profile`, `transcript` (one unit block), `notes`, `memos`, `events`,
    `standing`, `lessons`, `clock`, `reads`, `tool_catalogue`; Cognition keeps
    only `agenda` and `graph` as its own types.
 2. Delete Cognition's entries from `LEGACY_COMPOSERS` and `_INITIAL_LEGACY`
@@ -234,8 +251,9 @@ input, and the next lever is the instruction (the memory/notebook split).
 
 ## 9. Ruled by the operator (2026-11-08)
 
-- **The unit window** is dynamic and adaptive, inside the agenda's one
-  allocation (§5). The replay reads its cost; the one total is the only
+- **The transcript** is one unit block, interleaved across rooms with each
+  row tagged by its room, and its size is dynamic and adaptive inside the
+  agenda's one allocation (§5). The replay reads its cost; the one total is the only
   number the build sets.
 - **`documents`** stay out of the injected input; the session gets a list
   read and `document_read` as deferred tools (§2, §7).
