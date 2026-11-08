@@ -68,5 +68,19 @@
     "old": "                    or any(type(n) is not int for n in entry[\"sources\"])\n",
     "new": "",
     "target": "tests/unit/test_replay_scoring.py::test_structured_missed_sources_reach_the_real_scoring_boundary"
+  },
+  {
+    "name": "legacy plural source locators resolve their explicit ids",
+    "file": "nora/subject/replay_diagnosis.py",
+    "old": "(?:sources?(?:\\s+rows?)?|messages?|rows?)",
+    "new": "(?:source(?:\\s+row)?|message|row)",
+    "target": "tests/unit/test_replay_scoring.py::test_missed_sources_are_explicit_not_every_number_in_the_locator"
+  },
+  {
+    "name": "adjacent context-row counts are not evidence ids",
+    "file": "nora/subject/replay_diagnosis.py",
+    "old": "number = r\"-?\\d+(?!\\w|[.-]\\d|\\s+(?:context\\s+)?rows?\\b)\"",
+    "new": "number = r\"-?\\d+\"",
+    "target": "tests/unit/test_replay_scoring.py::test_missed_sources_are_explicit_not_every_number_in_the_locator"
   }
 ]

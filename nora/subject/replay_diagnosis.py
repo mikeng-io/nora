@@ -51,12 +51,13 @@ def missed_source_numbers(entry: dict[str, Any]) -> list[str]:
             return []
         return list(dict.fromkeys(str(n) for n in source_ids))
     location = str(entry.get("location", "")).strip()
-    ids = r"-?\d+(?:\s*(?:/|,|\band\b)\s*-?\d+)*"
+    number = r"-?\d+(?!\w|[.-]\d|\s+(?:context\s+)?rows?\b)"
+    ids = rf"{number}(?:\s*(?:/|,|\band\b)\s*{number})*"
     if re.fullmatch(ids, location):
         references = location
     else:
         references = " / ".join(re.findall(
-            rf"\b(?:new\s+)?(?:source(?:\s+row)?|message|row)\s*(?:[=:]\s*)?"
+            rf"\b(?:new\s+)?(?:sources?(?:\s+rows?)?|messages?|rows?)\s*(?:[=:]\s*)?"
             rf"({ids})(?!\w|[.-]\d)",
             location, re.IGNORECASE))
     return list(dict.fromkeys(re.findall(r"-?\d+", references)))

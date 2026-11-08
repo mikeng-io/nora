@@ -26,6 +26,13 @@ from scripts.memory_graph_spike import smoke_fact_support
     ({"location": "item 101 at 12:34", "quote": "first"}, False),
     ({"location": "row 101.2", "quote": "first"}, False),
     ({"location": "row 101foreign", "quote": "first"}, False),
+    ({"location": "NEW source rows 101 and 102", "quote": "first / second"}, True),
+    ({"location": "sources 101", "quote": "first"}, True),
+    ({"location": "row 101 and 2 context rows", "quote": "first"}, True),
+    ({"location": "row 101 and 2 rows", "quote": "first"}, True),
+    ({"location": "rows 101 and 999", "quote": "first"}, False),
+    ({"location": "row 101 and 2", "quote": "first"}, False),
+    ({"location": "source row 101-103", "quote": "first"}, False),
 ])
 def test_missed_sources_are_explicit_not_every_number_in_the_locator(entry, expected):
     from scripts.memory_graph_spike import miss_in_new_sources
