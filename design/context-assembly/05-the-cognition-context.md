@@ -166,13 +166,28 @@ has no `room_list` in its catalogue (`nora/app/cognition_wiring.py`
 `COGNITION_READ_CATALOGUE`), so a room with nothing new this wake does not
 exist for it.
 
-**Read scope follows the unit.** Today every read tool takes an
-`agenda_room` and refuses any other room. The unit is the read boundary
-(DEC-231): the session's reads cover every room of the unit, so a cross-room
-link can be checked, not only noticed. What it writes stays bound by the
-existing rule that a line carries nothing from a message it does not cite,
-and what one room said does not surface in another through its words; that
-rule is unchanged.
+**Read scope: the unit, resolved through the item's room.** The session
+already reads across the unit: DEC-231 makes the unit its read boundary, and
+`record_query scope="all_rooms"` and `search_memory_workspace` read the
+unit's other rooms (`nora/app/cognition_session.py` ~1721–1736). The
+`agenda_room` argument is not a read limit; it picks the binding (roster,
+lineage) a read resolves through, and DEC-231 keeps that: each item's
+disclosure resolves through its own room, and what reaches a room is decided
+by lineage at assembly. Grounding checks every derived note against every
+agenda room and withholds it when lineage is on
+(`nora/app/cognition_grounding.py` ~747–758, ~782–788). This node keeps all
+of that unchanged:
+
+- the unit `transcript` and `rooms` blocks are read under the unit boundary,
+  and each row and each room line passes the same lineage/derived-view check
+  against the agenda rooms that notes pass today, withheld and counted when
+  lineage is on;
+- reads keep resolving through an agenda room's binding; the `rooms` block
+  makes the unit's other rooms visible as destinations and as `scope`
+  targets, not as new bindings;
+- the write rule (a line rests only on what it cites; what one room said
+  does not surface in another) stays as a second guard, never as the
+  disclosure check itself.
 
 The unit is the read boundary, so nothing crosses units. R-18/R-28 screening
 applies as on every transcript. `load_transcript` stays as a tool for looking
