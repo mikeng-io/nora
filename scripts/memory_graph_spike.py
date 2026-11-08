@@ -718,7 +718,8 @@ async def smoke_fact_support(
                 parsed = parse_fact_output(
                     await judges.call(
                         model, _FACT_SUPPORT_INSTRUCTION,
-                        {"statement": statement, "cited_rows": cited},
+                        {"statement": statement, "cited_rows": cited,
+                         "session_input": evidence},
                     )
                 )
                 verdict = parsed.get("verdict") if isinstance(parsed, dict) else None
@@ -1004,7 +1005,7 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
         age_results = []
         judges = Judges(cfg, [args.judge_a, args.judge_b], args.config)
         inspections = 0
-        for wake in selected.values():
+        for wake_index, wake in enumerate(selected.values()):
             replay_ms, view = await recorded_wake(engine, wake["id"])
             at = datetime.fromtimestamp(replay_ms / 1000, UTC)
             room = next((c for c in policy.rooms() if c.unit == view.unit), None)
@@ -1057,7 +1058,7 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                         if getattr(args, "inspect_only", False):
                             if inspection is None:
                                 raise ValueError("inspection unavailable")
-                            freeze(output / f"inspection-{inspections}.json", inspection)
+                            freeze(output / f"inspection-{wake_index}.json", inspection)
                             inspections += 1
                             continue
                         tokens_before = subject.deps.metrics.get("nora_cognition_unit_tokens_total")
@@ -1132,8 +1133,15 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                                     target[i].extend(values)
                             for key, count in quality["population"].items():
                                 population[key] = population.get(key, 0) + count
-                    except Exception:  # noqa: BLE001 - private exceptions stay on host
+                    except Exception as exc:  # noqa: BLE001 - private exceptions stay on host
+                        import traceback
+
                         measured["status"] = "ERROR"
+                        measured["error_type"] = type(exc).__name__
+                        record("replay_session_error", wake_id=wake["id"],
+                               error_type=type(exc).__name__,
+                               frames=[(Path(f.filename).name, f.lineno, f.name)
+                                       for f in traceback.extract_tb(exc.__traceback__)[-8:]])
                     finally:
                         measured["acts"] = check_acts(before_sandbox, await acts(sandbox_engine))
                         await sandbox_engine.dispose()

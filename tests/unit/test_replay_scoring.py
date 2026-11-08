@@ -17,6 +17,9 @@ async def test_scoring_citation_scope_new_rows_and_reasons(malformed):
     async def call(model, instruction, payload):
         calls.append(payload)
         if "statement" in payload:
+            assert payload["session_input"]["input"] is inspection
+            assert "<profile" in payload["session_input"]["input"]["agenda"]
+            assert "<transcript" in payload["session_input"]["input"]["agenda"]
             assert payload["cited_rows"] == {"1": {"text": "Generated train arrives"}}
             assert "uncited secret detail" not in json.dumps(payload["cited_rows"])
             return json.dumps({"verdict": "unsupported", **(
@@ -29,7 +32,11 @@ async def test_scoring_citation_scope_new_rows_and_reasons(malformed):
                                              "location": "9", "reason": "older row"}]})
 
     judges = SimpleNamespace(models=["generated-judge"], call=call)
-    inspection = {"new_sources": {"1": {"text": "Generated train arrives"}}}
+    inspection = {
+        "agenda": '<profile of="person:generated">Generated profile</profile>'
+                  '<transcript><m n="1" source_id="1">Generated train arrives</m></transcript>',
+        "new_sources": {"1": {"text": "Generated train arrives"}},
+    }
     exchanges = [{"name": "memory_propose", "input": {"statements": [
         {"what": "uncited secret detail", "cite": [{"source": 1}]}]},
         "source_rows": {"1": {"text": "Generated train arrives"},
