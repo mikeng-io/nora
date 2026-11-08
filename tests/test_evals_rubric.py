@@ -343,7 +343,7 @@ def test_the_scope_criterion_reaches_the_judge_prompt_only_when_asked_for():
 
 
 def test_the_source_block_says_an_earlier_sourced_turn_is_part_of_the_data():
-    """The provenance half. The block IS the whole transcript — Nora's own earlier
+    """The provenance half. The block is the rendered window — Nora's own earlier
     replies included — so the two kinds of line are named; unlabelled, the judge
     arbitrates inconsistently whether a fact an earlier turn established still
     counts. Naming them must NOT weaken ATTRIBUTION.
@@ -360,7 +360,9 @@ def test_the_source_block_says_an_earlier_sourced_turn_is_part_of_the_data():
         tag_input="nora.000 x", reply_text="y", doctrine_text="be honest",
         source_data="[search result] four coloured keys",
     )
-    assert "WHOLE conversation" in prompt
+    assert "rendered conversation window" in prompt
+    assert "do not infer complete history" in prompt
+    assert "It is the WHOLE conversation" not in prompt
     assert "named a source for is" in prompt
     assert "does not become a source by being repeated" in prompt
     # the fabrication check is UNTOUCHED — reverting either line reddens this
