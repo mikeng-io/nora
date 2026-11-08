@@ -219,8 +219,8 @@
  {
   "name": "3b item 4: the `from` field no longer says the name goes in parentheses before the ids",
   "file": "nora/domain/block_types.py",
-  "old": "goes in parentheses \"\n            \"before the ids on a Decided, Proposed or Ruled out line that \"\n            \"rests on it\"",
-  "new": "goes in a line \"\n                   \"that rests on it\"",
+  "old": "use this exact name in parentheses before cited ids",
+  "new": "use this name before cited ids",
   "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
  },
  {
@@ -254,8 +254,8 @@
  {
   "name": "3b last round (a): the agenda `n` gloss calls it a position, not the message's real id",
   "file": "nora/domain/block_types.py",
-  "old": "\"n\": \"a message's real id: cite it exactly as [n]",
-  "new": "\"n\": \"a message's position: cite it exactly as [n]",
+  "old": "the row's citation id (negative for non-message records)",
+  "new": "the row's list position",
   "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
  },
  {

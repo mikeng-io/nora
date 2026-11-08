@@ -218,7 +218,7 @@ def new_facts(text: str) -> Facts:
     facts = Facts()
     for block in blocks(text):                   # raises on stray text outside a block
         if block.tag == "clock":
-            facts.clock = (block.text or "").strip()
+            facts.clock = (block.text or "").strip() or None
         elif block.tag == "reads":
             facts.reads = (block.text or "").strip()
         elif block.tag == "agenda":
@@ -252,6 +252,20 @@ def new_facts(text: str) -> Facts:
                     for e in group
                 ]
                 facts.events_not_listed += int(group.attrib.get("not_listed", 0))
+        elif block.tag in {
+            "profile",
+            "rooms",
+            "members",
+            "transcript",
+            "standing",
+            "memos",
+            "graph",
+            "lessons",
+            "documents",
+            "tool_catalogue",
+        }:
+            # This corpus predates the added sources: it supplies none of them.
+            assert not list(block) and not (block.text or "").strip(), block.tag
         else:
             raise AssertionError(f"a block the parity test does not know: {block.tag}")
     return facts
@@ -307,7 +321,14 @@ def test_the_new_render_is_well_formed_and_loses_no_fact_of_the_old(name: str):
     new = new_facts(CASES[name]())          # parses as XML, or this raises
 
     assert new.clock == old.clock
-    assert new.reads == old.reads
+    # Reads are now typed agenda bindings, while tools may read the whole unit.
+    read_blocks = [b for b in blocks(CASES[name]()) if b.tag == "reads"]
+    assert len(read_blocks) == 1
+    bindings = [(b.attrib["agenda_room"], b.attrib["label"]) for b in read_blocks[0]]
+    assert all(key and label for key, label in bindings)
+    assert len(bindings) == len({i.room for i in old.items})
+    if old.reads and len(bindings) == 1:
+        assert f"«{bindings[0][1]}»" in old.reads
     assert [(i.index, i.summary, i.room, i.returning, i.window) for i in new.items] == [
         (i.index, i.summary, i.room, i.returning, i.window) for i in old.items
     ]

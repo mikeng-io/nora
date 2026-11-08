@@ -500,7 +500,7 @@ def test_shown_transcript_is_scoped_to_the_turns_own_agent():
         # with NO parent at all — "never constructs an agent".
         chat(1, None, gate_block),
         # The turn's `invoke_agent` root, named "nora" — never a `chat`
-        # span itself, so it carries no group_transcript text of its own.
+        # span itself, so it carries no transcript text of its own.
         SimpleNamespace(
             start_time=2, parent=None, context=SimpleNamespace(span_id="turn-root"),
             attributes={"gen_ai.operation.name": "invoke_agent", "gen_ai.agent.name": "nora"},

@@ -107,6 +107,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("about_entity", 5, "turn"),
     ("profile_lines", 10, "turn"),
     ("previous_character", 20, "turn"),
+    ("room_cultures", 30, "turn"),
     ("profile_messages", 40, "turn"),
     ("profile_episodes", 50, "turn"),
     ("social_items", 55, "turn"),

@@ -890,6 +890,7 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # workspace, keyed on the room's (platform, conversation_id); a
         # unit-keyed tick's synthetic room has no workspace of its own, and
         # nobody has decided a background loop may read one. Fail-closed.
+        "document_list",  # Explicit agenda-room capability; never unit-safe.
         "computer_read",
         # `computer_session_list` reads the
         # ROOM's own sessions and workspace state; same reason, fail-closed.

@@ -318,7 +318,7 @@ _WINDOW = (
 
 
 def _render_her_turn(
-    blocks: str = _NOTE_BLOCK, rendered: str = "notes,group_transcript",
+    blocks: str = _NOTE_BLOCK, rendered: str = "notes,transcript",
 ) -> None:
     """What `build_prefill` leaves on the spans: its `agent.prefill` span
     naming the blocks it served, and the turn's first `chat` call carrying the
@@ -465,7 +465,7 @@ async def test_a_presence_case_is_judged_on_exactly_the_window(judged) -> None:
 
 @pytest.mark.parametrize(("blocks", "rendered", "fragment"), [
     (None, "", "no context blocks were captured"),
-    (_NOTE_BLOCK, "notes,events,group_transcript", "['events']"),
+    (_NOTE_BLOCK, "notes,events,transcript", "['events']"),
 ])
 @pytest.mark.parametrize("criterion", [CRITERION, "social_suitability"])
 async def test_a_recall_draw_whose_blocks_are_not_read_back_is_an_error(

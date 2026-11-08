@@ -875,7 +875,7 @@ def test_the_goldens_vary_what_this_step_is_about():
         "reads-line-several-rooms-with-first-look": (
             'agenda_room="signal:room-a"', "This is your first look",
         ),
-        "reads-line-and-a-return": ("You last looked at this group 3h ago.",),
+        "reads-line-and-a-return": ("You last looked at this group 3 h ago.",),
         "register-notes-only": ('id_kind="real"', 'n="n-77"'),
         "register-events-only": ('when="no time set"', 'revision="rev-3"'),
         "register-note-and-event-line-caps": ('not_listed="4"',),

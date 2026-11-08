@@ -211,7 +211,8 @@ async def test_the_mixed_journey_reads_back_from_append_to_agenda():
     assert "<observation" in prompt
     assert "source_object" in prompt and "closed" in prompt
     assert "3 poll source events in this room" in prompt
-    assert "room-a" not in prompt and "acct" not in prompt  # R-18
+    assert 'agenda_room="signal:room-a"' in prompt
+    assert "acct" not in prompt  # raw actors remain withheld
 
 
 async def test_an_event_and_its_answers_reach_the_assembled_state_named():

@@ -9,7 +9,7 @@ from nora.domain.blocks import ContextBlock, render_elements, render_messages, s
 from nora.domain.composed import compose_body
 from nora.domain.context_data import MembersView, RoomLine, TranscriptLine
 from nora.domain.models import DeliveryStatus, TranscriptRow
-from nora.domain.prompt import age
+from nora.domain.prompt import age, ago
 from nora.domain.quote_window import first_by_ts
 
 
@@ -165,11 +165,16 @@ def render_clock(*, now: datetime, last_session_ms: int | None) -> ContextBlock:
     since = (
         "This is your first look at this group."
         if last_session_ms is None
-        else f"You last looked at this group {age(last_session_ms, now)}."
+        else f"You last looked at this group {ago(int(now.timestamp() * 1000) - last_session_ms)}."
     )
     return ContextBlock(
         name="clock",
-        body=compose_body(escape(f"It is {now:%A %-d %B %Y, %H:%M} ({now.tzname()}). {since}")),
+        body=compose_body(
+            escape(
+                f"It is {now:%A %-d %B %Y, %H:%M} "
+                f"({getattr(now.tzinfo, 'key', None) or now.tzname()}). {since}"
+            )
+        ),
         attrs=(("as_of", now.isoformat()),),
     )
 

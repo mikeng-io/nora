@@ -1881,11 +1881,23 @@ async def test_the_session_is_grounded_from_the_record_with_record_query_off(
         unit="friends", pending=pending, home_room=Room("signal", "g1"), now_ms=now,
         last_session_ms=None,
     )
-    grounding = await deps.cognition_runner._grounder("friends", situation.agenda.items, pending)
+    with pytest.raises(ValueError, match="outside the unit"):
+        await deps.cognition_runner._grounder("friends", situation.agenda.items, pending)
+    valid = build_situation(unit="friends", pending=pending[:2], home_room=Room("signal", "g1"),
+                            now_ms=now, last_session_ms=None)
+    grounding = await deps.cognition_runner._grounder("friends", valid.agenda.items, pending[:2])
     said = {r.message_id: r for r in grounding.records.values()}
     assert set(said) == {ids[0]}                    # the hidden one and the OTHER UNIT's are absent
     assert said[ids[0]].text == "dinner friday?" and said[ids[0]].room == Room("signal", "g1")
-    assert "+852" not in repr(grounding)            # R-18: no platform id reaches the prompt
+    from datetime import UTC
+
+    from nora.language.cognition_render import render_agenda
+    prompt = render_agenda(valid.agenda.items, stimuli={s.id: s for s in pending[:2]},
+                           grounding=grounding,
+                           now_ms=now, tz=UTC)
+    assert "dinner friday?" in prompt
+    assert "+852" not in prompt
+    assert "other unit words" not in prompt and "a hidden one" not in prompt
 
 
 async def test_shadow_sessions_with_no_unit_that_can_run_them_refuse_to_boot(cfg, tmp_path):

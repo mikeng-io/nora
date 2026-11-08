@@ -517,7 +517,7 @@ async def test_the_instruction_keeps_her_writes_her_own_record_as_the_block_type
     from nora.domain.block_types import BLOCK_TYPES
 
     # the source of truth, read, so a change there is a reason to reread the instruction
-    assert "not what anyone said" in " ".join(BLOCK_TYPES["notes"].description.split())
+    assert "not anything this room said" in " ".join(BLOCK_TYPES["notes"].description.split())
     assert "not anything this room said" in " ".join(BLOCK_TYPES["notes"].description.split())
     _real, _prelude, orient, _skill_text = await real_names()
     text = " ".join(orient.split())

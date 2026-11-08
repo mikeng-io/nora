@@ -739,9 +739,9 @@ def test_the_objective_teaches_nothing_the_block_types_already_say():
     agenda = BLOCK_TYPES["agenda"]
     fields = dict(agenda.annotations)
     # the grammar: what each field is for, in the words the model reads
-    assert "cite it exactly as [n] at the end of the note line it supports" in fields["n"]
-    assert "or as digits in an event's cited ids" in fields["n"]
-    assert "this exact name, as written, goes in parentheses before the ids" in fields["from"]
+    assert "cite [n] on supporting note lines" in fields["n"]
+    assert "or in an event's cited ids" in fields["n"]
+    assert "use this exact name in parentheses before cited ids" in fields["from"]
     assert "Decided, Proposed or Ruled out" in fields["from"]
     assert "its sections run Decided, Open, Owed, Proposed, Ruled out" in agenda.description
     # the citation grammar is said ONCE, in the fields; the description points at them
@@ -755,7 +755,7 @@ def test_the_objective_teaches_nothing_the_block_types_already_say():
     assert "takes no `(names)`" in agenda.description
     assert "A Ruled out line is `<option>: <reason> (<names>) [<ids>]`" in agenda.description
     # which field is the message's REAL id, and the note's, and where the room key is
-    assert fields["n"].startswith("a message's real id: ")
+    assert fields["n"].startswith("the row's citation id ")
     assert "real note id" in dict(BLOCK_TYPES["notes"].annotations)["n"]
     assert "`platform:conversation_id`" in BLOCK_TYPES["reads"].description
     # and the rest of what the input carries, said on the fields

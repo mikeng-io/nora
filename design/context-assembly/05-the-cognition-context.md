@@ -326,11 +326,19 @@ closed before metadata or accessible counts reach the model. A new decision/rule
 number and its acceptance-rule registration are allocated at merge under
 `nora-decision`; this build does not reserve a number.
 
-**Semantic acceptance is pending execution**, not pending spending approval. The
-parent owns the single authorized candidate replay against the existing five-session
-baseline, the aggregate subject-plus-judge cap, identical candidate evidence for
-judges and independent review. Source checks do not establish a supported-fact gain.
+**Semantic acceptance is unmet.** The authorized recorded candidate replay ended
+in ERROR and did not establish a supported-fact gain. The parent owns recorded
+evidence diagnosis and independent review; no further paid run is authorized.
+Source checks do not establish semantic improvement.
 That sample may contain no document revision, so it cannot establish document-revision
 semantic acceptance; no additional paid sample is implied. Graph read activation,
 engagement's profile flag, prompt splitting, Honcho retirement and host configuration
 remain outside this change.
+
+Hosted contract failures exposed incomplete callers: active eval transcript readers,
+profile-source canonical mentions and trace tuple restoration now share the canonical
+format. Generated parity readers retain identity, citation, chronology and delivery
+checks while reading declared states and typed bindings. The exhaustive declaration
+scan follows shared builders instead of copying their names into a registry, including
+existing room-culture blocks in Profile occasions. The shared clock preserves detailed
+elapsed time since the last session ended.

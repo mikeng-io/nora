@@ -155,7 +155,9 @@ def test_no_account_renders_no_block_not_an_empty_one():
 
 
 def test_the_self_block_is_the_first_row_of_the_tag_and_cognition_tables():
-    for table in (PREFILL_BLOCKS, COGNITION_BLOCKS):
+    assert COGNITION_BLOCKS[0].name == "profile"
+    assert COGNITION_BLOCKS[0].order == min(d.order for d in COGNITION_BLOCKS)
+    for table in (PREFILL_BLOCKS,):
         order = {name: o for name, o, _key in table}
         assert order["self"] == min(order.values()), table
         # The switch (45 §5): `<profile of="nora">` replaces `<self>` at the SAME
@@ -231,10 +233,20 @@ def _cognition_prompt(grounding: Grounding | None) -> str:
 
 
 def test_a_cognition_prompt_opens_with_her_account_before_the_clock():
-    prompt = _cognition_prompt(Grounding(self_account=_rev("she keeps it short here")))
-    assert prompt.startswith("<self ")
-    assert prompt.index("<self ") < prompt.index("<clock")
+    from nora.domain.profile import ProfileView
+
+    prompt = _cognition_prompt(
+        Grounding(
+            self_profile=ProfileView(
+                entity="nora", of="nora", authored=("she keeps it short here",)
+            )
+        )
+    )
+    assert prompt.startswith("<profile ")
+    assert prompt.index("<profile ") < prompt.index("<clock")
     assert "she keeps it short here" in prompt
+    assert 'of="nora"' in prompt
+    assert COGNITION_BLOCKS[0].name == "profile"
 
 
 def test_a_cognition_prompt_has_no_self_block_without_an_account():

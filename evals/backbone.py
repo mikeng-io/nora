@@ -623,10 +623,10 @@ def _reaction_receipts(
 
 
 #: Blocks `_shown_blocks` captures that `_judge_source` does NOT add as
-#: recall context: `group_transcript` is already the source's first part
+#: recall context: `transcript` is already the source's first part
 #: (`_shown_transcript`), and `tool_catalogue` describes her tools rather than
 #: holding any record of the group, so neither can support a recalled claim.
-_NOT_RECALL_CONTEXT = frozenset({"group_transcript", "tool_catalogue"})
+_NOT_RECALL_CONTEXT = frozenset({"transcript", "tool_catalogue"})
 
 
 def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
@@ -788,22 +788,22 @@ def _shown_now(exporter: InMemorySpanExporter) -> str | None:
     return None
 
 
-#: `<group_transcript window="N" description="…">…rows…</group_transcript>`
+#: `<transcript window="N" description="…">…rows…</transcript>`
 #: (`nora.domain.blocks.ContextBlock.render`, `nora.agent.prefill.
 #: _transcript_block`) — the body is what `_transcript_block` names group 1.
-#: A body row is XML-escaped (R-13/R-13b), so a real `</group_transcript>`
+#: A body row is XML-escaped (R-13/R-13b), so a real `</transcript>`
 #: cannot appear inside one and end the match early; `re.DOTALL` lets `.`
 #: cross the row boundaries a multi-row window always has.
 #:
 #: Runs on the DECODED text (`_texts_in`), never on the raw span attribute — Strands writes
 #: that as `json.dumps(..., ensure_ascii=False)` (`strands.telemetry.tracer.serialize`), so a
 #: real body's newline is the two characters `\` `n` there, not the one this pattern's
-#: `\n?`/`re.DOTALL` assume. Matching the raw JSON text would find `</group_transcript>` a line
+#: `\n?`/`re.DOTALL` assume. Matching the raw JSON text would find `</transcript>` a line
 #: early and leave a literal `\n` at each end of the captured group — the exact shape
 #: `_shown_now`'s own clock-line pattern already hedges for with `(?=\s|\\n|$)`, which this
 #: module's regexes are not otherwise immune to just because they look like plain text.
 _GROUP_TRANSCRIPT = re.compile(
-    r'<group_transcript\b[^>]*>\n?(.*?)\n?</group_transcript>', re.DOTALL,
+    r'<transcript\b[^>]*>\n?(.*?)\n?</transcript>', re.DOTALL,
 )
 
 
@@ -853,7 +853,7 @@ def _texts_in(raw: str) -> list[str]:
 def _shown_transcript(
     exporter: InMemorySpanExporter, *, agent: str | None = None,
 ) -> str | None:
-    """The `<group_transcript>` block's body exactly as the turn's own model
+    """The `<transcript>` block's body exactly as the turn's own model
     call carried it — the window HER TURN rendered, quote-chase growth
     included, read back off the call rather than re-derived from
     `context_window` (`sandbox_from_snapshot`'s `Sandboxed.transcript` is every
@@ -862,7 +862,7 @@ def _shown_transcript(
 
     **`agent` scopes this to the TURN's own calls (`_under_agent`), and that
     is load-bearing, not a nicety.** The relevance gate renders its OWN
-    `<group_transcript>` too (`nora.ingest.relevance_gate.RelevanceGate`,
+    `<transcript>` too (`nora.ingest.relevance_gate.RelevanceGate`,
     on a raw model call — see `_under_agent`'s docstring), and `[participation]`
     and `[relevance_gate]` are one subsystem (`ENTRY_POINTS["participation"]`'s
     own comment): a `participation` drive can carry the gate's admission call
@@ -885,7 +885,7 @@ def _shown_transcript(
     (not merely claimed) by `tests/unit/test_tool_route_grader.py::
     test_shown_transcript_decodes_the_real_strands_serialized_span`, which
     round-trips a realistic multi-row window — multi-line body, a quote,
-    CJK, an attacker row whose body is a literal `</group_transcript>` —
+    CJK, an attacker row whose body is a literal `</transcript>` —
     through the real renderer, the real `strands.telemetry.tracer.serialize`,
     and this function, and asserts equality.
 
@@ -938,11 +938,11 @@ def _shown_blocks(
     exporter: InMemorySpanExporter, *, agent: str | None = None,
 ) -> tuple[tuple[str, str], ...] | None:
     """`(block name, block as rendered)` for every context block in the message
-    that carried the turn's `<group_transcript>` — `build_prefill`'s volatile
+    that carried the turn's `<transcript>` — `build_prefill`'s volatile
     message, the clock line plus `assemble(declared)` — read off the turn's own
     first model call exactly as `_shown_transcript` reads the window, and
     scoped by `agent` for the same reason (the relevance gate renders a
-    `<group_transcript>` of its own).
+    `<transcript>` of its own).
 
     Anchored on the transcript block rather than on any message with a tag in
     it: the tag message (`<tag_message>`, `<replying_to>`) is the judge's
@@ -2017,7 +2017,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     # cannot itself tell apart from a case that carries no
                     # source BY DESIGN (an injection case, say). A turn that
                     # SPOKE always ran `build_prefill`, which renders
-                    # `<group_transcript>` unconditionally, so a miss here,
+                    # `<transcript>` unconditionally, so a miss here,
                     # scoped to this turn's own agent, is the CAPTURE breaking
                     # — an ERROR about the instrument, never a verdict about
                     # her, and it must cost a judged draw rather than spend one
@@ -2025,7 +2025,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     outcome = dataclasses.replace(
                         outcome,
                         error=(
-                            "no <group_transcript> was captured off the turn's "
+                            "no <transcript> was captured off the turn's "
                             "own model call; the judge's source cannot be bound "
                             "to the window she was shown, so this draw is not "
                             "judged (#459)"
@@ -2837,7 +2837,7 @@ class ContextGrader(Evaluator):
     for and therefore expects non-empty — `_BLOCKS`' own names in
     `nora/agent/prefill.py`: `self`, `peer_card`, `peer_history`,
     `people_in_window`, `notes`, `loop_decisions`, `standing`,
-    `group_transcript`. A case naming none is ungradable by this grader, not
+    `transcript`. A case naming none is ungradable by this grader, not
     a silent pass — the same rule `AbsenceGrader` follows for an `expect` it
     does not recognise.
     """

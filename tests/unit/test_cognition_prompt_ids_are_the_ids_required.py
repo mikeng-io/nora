@@ -84,7 +84,7 @@ def _rooms_by_label(prompt: str) -> dict[str, str]:
     """`room` argument by label, read off the reads line the way a model does:
     `` `signal:room-a` («Weekend Plans») ``."""
     (reads,) = named(prompt, "reads")
-    return {m[2]: m[1] for m in re.finditer(r"`([^`]+)` \(«(.*?)»\)", reads.text or "")}
+    return {b.attrib["label"]: b.attrib["agenda_room"] for b in reads}
 
 
 @dataclass
@@ -304,7 +304,8 @@ def test_hostile_words_names_titles_labels_and_summaries_write_no_element():
     prompt, n_items, _ = _hostile_prompt()
     top = blocks(prompt)                                     # raises if not well-formed
     assert [b.tag for b in top] == [
-        "clock", "reads", "agenda", "notes", "events",
+        "profile", "clock", "reads", "rooms", "members", "transcript", "agenda",
+        "notes", "standing", "events", "memos", "graph", "lessons", "documents", "tool_catalogue",
     ]
     agenda = items(prompt)
     assert len(agenda) == n_items and [i.attrib["index"] for i in agenda] == ["0", "1"]
@@ -328,7 +329,8 @@ def test_hostile_words_names_titles_labels_and_summaries_write_no_element():
     # the room label and the reads line are values too
     assert agenda[0].attrib["room"].startswith("«a & ")
     (reads,) = named(prompt, "reads")
-    assert "forged" in (reads.text or "") and list(reads) == []
+    assert all(b.tag == "binding" and not list(b) for b in reads)
+    assert any("forged" in b.attrib["label"] for b in reads)
     (clock,) = named(prompt, "clock")
     assert (clock.text or "").strip().startswith("It is ")
 

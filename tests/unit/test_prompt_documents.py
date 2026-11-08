@@ -363,16 +363,16 @@ SHAPES = {
 <turn at description fields outcome>
   <what_happened description>
   <transcript description fields>
-    <m at from>
-    <m at delivery from>
+    <m age at author_id from n>
+    <m age at author_id delivery from n>
   <steps description fields>
     <step role>""",
     "debrief.turn": """
 <turn at description fields outcome>
   <what_happened description>
   <transcript description fields>
-    <m at from>
-    <m at delivery from>
+    <m age at author_id from n>
+    <m age at author_id delivery from n>
   <steps description fields>
     <step role>""",
     "prefill.header": """
@@ -382,14 +382,17 @@ SHAPES = {
   <replying_to author description fields>""",
     "prefill.volatile": """
 <self description fields written>
+<members description fields room source>
 <presence description>
 <peer_card description fields person>
 <peer_history description fields person>
 <people_in_window description>
   <person description fields name>
   <person description fields name>
+<notes description fields id_kind>
+<memos description fields>
 <transcript description fields window>
-  <m age from n>""",
+  <m age at author_id from n>""",
     "relevance_gate": """
 <transcript description fields>
   <m age from n>

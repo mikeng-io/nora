@@ -1,0 +1,30 @@
+[
+ {
+  "name": "eval source reads the actual shared transcript tag",
+  "file": "evals/backbone.py",
+  "old": "r'<transcript\\b[^>]*>\\n?(.*?)\\n?</transcript>'",
+  "new": "r'<group_transcript\\b[^>]*>\\n?(.*?)\\n?</group_transcript>'",
+  "target": "tests/unit/test_tool_route_grader.py::test_shown_transcript_reads_the_rendered_window_off_the_chat_span"
+ },
+ {
+  "name": "profile source projects canonical mentions for shared row mapping",
+  "file": "nora/infra/sql/profile_inputs.py",
+  "old": "            sa.func.coalesce(latest.c.mention_persons_json, m.mention_persons_json).label(\n                \"mention_persons_json\"),\n",
+  "new": "",
+  "target": "tests/infra/test_profile_source_inputs.py::test_late_cached_reading_after_cursor_and_restart_is_pending_once[image]"
+ },
+ {
+  "name": "stored transcript restores canonical mention tuple",
+  "file": "nora/infra/sql/tag_traces.py",
+  "old": "    d[\"mention_persons\"] = tuple(d.get(\"mention_persons\", ()))\n",
+  "new": "",
+  "target": "tests/infra/test_tag_trace_store.py::test_transcript_round_trips_including_the_delivery_status_enum"
+ },
+ {
+  "name": "shared last-look clock retains elapsed minute precision",
+  "file": "nora/language/context_render.py",
+  "old": "ago(int(now.timestamp() * 1000) - last_session_ms)",
+  "new": "age(last_session_ms, now)",
+  "target": "tests/unit/test_cognition_render_parity.py::test_the_new_render_is_well_formed_and_loses_no_fact_of_the_old[a-whole-session]"
+ }
+]

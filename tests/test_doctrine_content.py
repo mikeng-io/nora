@@ -420,7 +420,7 @@ def test_identity_carries_the_form_sentence():
 
 def test_guardrails_covers_every_r14_clause():
     text = (_path("constraints")).read_text()
-    # (DEC-123) `group_transcript` and `tag_message` are deliberately NOT named:
+    # (DEC-123) `transcript` and `tag_message` are deliberately NOT named:
     # an enumeration covers only some of the injected blocks, and asserting the
     # names would pin the enumeration back the first time somebody rewrote the
     # section. The clause is a rule over what a block IS, pinned by
@@ -436,7 +436,7 @@ def test_guardrails_covers_every_r14_clause():
 def test_constraints_covers_every_block_by_kind_rather_than_by_name():
     """DEC-123: the anti-instruction rule covers every injected block by kind.
 
-    EIGHT blocks are injected: `group_transcript` and `tag_message`, plus six
+    EIGHT blocks are injected: `transcript` and `tag_message`, plus six
     memory blocks (`self_card`, `peer_card`, `peer_history`, `room_language`,
     `room_exchange`, `room_portrait`). Each block's own hedge demotes against a
     different axis than the one that matters: currency, self-description,

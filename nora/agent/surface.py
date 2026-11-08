@@ -351,7 +351,11 @@ def deferred_surface(tools: Iterable[Any]) -> ToolSurface:
     shelf.stock({name: tool for name, tool in adapted.items() if name not in resident})
 
     async def load_tools(names: list[str], tool_context: Any) -> dict:
-        """Load tools by catalogue name. Call this when you need their schemas."""
+        """Load tools by catalogue name. Call this when you need their schemas.
+
+        Returns status ok with loaded/already_loaded names, nothing_found if no
+        names resolve, or unavailable when there is no agent registry.
+        """
         return load_onto(getattr(tool_context, "agent", None), shelf, names)
 
     loader = adapt(

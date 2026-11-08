@@ -216,7 +216,7 @@ def _served_blocks(body: str) -> tuple[str, ...]:
     """Every block tag the volatile message actually renders, in order.
 
     **TOP-LEVEL tags only, counted by depth — not an exclusion list.** Inner
-    elements such as `m` (a message inside `group_transcript`) and `person` (a
+    elements such as `m` (a message inside `transcript`) and `person` (a
     speaker inside `people_in_window`) would each have to join one. A list of
     things-that-are-not-blocks grows once per new inner element and is wrong in
     the gap between somebody adding one and somebody remembering this file.
@@ -340,7 +340,7 @@ def test_every_injected_block_says_it_is_not_an_instruction():
     it can follow. Both halves are asserted separately so removing either one
     turns a test red on its own.
 
-    **`group_transcript` gets no special case.** Searching the whole body
+    **`transcript` gets no special case.** Searching the whole body
     BEFORE the tag would make this test vacuous for the one block that most
     needs it: it carries `window=`, `description=` and `fields=` attributes to
     hang the clause on, and the preceding body holds siblings each saying
@@ -438,7 +438,7 @@ def test_forged_closing_tag_is_escaped():
 
 
 def _window(text: str) -> str:
-    """What renders BETWEEN the `group_transcript` tags, and nothing else.
+    """What renders BETWEEN the `transcript` tags, and nothing else.
 
     Asserted against the block rather than the whole prefill on purpose: the
     property is how many ROWS the block has, and five other blocks above it

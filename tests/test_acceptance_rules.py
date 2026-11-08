@@ -89,7 +89,7 @@ RULE_TESTS = {
     # — applied by `render_rows` to every accessor, on every one of the eight
     # line grammars in the tree, and
     # `tests/architecture/test_one_row_renders_one_line.py` is what stops the
-    # ninth shipping without it. In the tag prefill's `<group_transcript>` there
+    # ninth shipping without it. In the tag prefill's `<transcript>` there
     # are no lines: `render_messages` gives each message its own `<m>` element,
     # so the forgery needs a `</m>` and `escape` is what refuses it. The named
     # test below reads that block, so it asserts the second shape.

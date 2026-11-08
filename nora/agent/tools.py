@@ -18722,7 +18722,11 @@ def cognition_document_tools(service: Any, reader: Any, authority: Callable[[], 
         return (grant, p, cid) if grant is not None and (p, cid) in grant.rooms else (None, "", "")
 
     async def document_list(agenda_room: str) -> dict:
-        """List shared document revisions. Call this when checking documentation."""
+        """List shared document revisions. Call this when checking documentation.
+
+        Returns status ok with the accessible index, nothing_found if empty, or
+        unavailable when authority or the shared source cannot be checked.
+        """
         grant, p, cid = target(agenda_room)
         if grant is None or reader is None:
             return {
@@ -18742,7 +18746,12 @@ def cognition_document_tools(service: Any, reader: Any, authority: Callable[[], 
         }
 
     async def document_read(document_id: str, agenda_room: str) -> dict:
-        """Read a shared document revision. Call this before revising documentation."""
+        """Read a shared document revision. Call this before revising documentation.
+
+        Returns status ok with document_id, revision and spec; nothing_found
+        without private metadata when absent, or unavailable when the source or
+        authority cannot be checked.
+        """
         grant, p, cid = target(agenda_room)
         if grant is None or service is None:
             return {"status": "unavailable", "note": "The shared document could not be checked."}
@@ -18776,6 +18785,8 @@ def cognition_document_tools(service: Any, reader: Any, authority: Callable[[], 
         Each change has path (JSON pointer), old, new and sources (shown message ids).
         MUST preserve unrelated content and uncertainty; new text quotes cited evidence.
         A conflict needs a fresh read and decision, never an automatic overwrite.
+        Returns status ok with saved revision, refused when evidence or the base
+        revision fails validation, or unavailable when authority/readback fails.
         """
         grant, p, cid = target(agenda_room)
         doc = _document_id(document_id)

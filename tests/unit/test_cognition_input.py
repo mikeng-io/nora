@@ -232,7 +232,9 @@ async def test_the_prompt_names_a_room_by_its_label_and_lists_ids_beside_a_tools
     )
     assert "«Weekend Plans»" in {i.attrib["room"] for i in agenda}
     (reads,) = named(prompt, "reads")
-    assert "`signal:room-a` («Weekend Plans»)" in (reads.text or "")
+    assert any(
+        b.attrib == {"agenda_room": "signal:room-a", "label": "Weekend Plans"} for b in reads
+    )
 
 
 async def test_a_single_room_agenda_says_only_its_label_in_the_reads_line():
@@ -242,8 +244,10 @@ async def test_a_single_room_agenda_says_only_its_label_in_the_reads_line():
     await rig.tick()
     await rig.settle()
     prompt = rig.agent.prompts[0]
-    assert "Your read tools look through room «Weekend Plans»." in prompt
-    assert "room-a" not in prompt
+    (reads,) = named(prompt, "reads")
+    assert [(b.attrib["agenda_room"], b.attrib["label"]) for b in reads] == [
+        ("signal:room-a", "Weekend Plans")
+    ]
 
 
 # ---- a session that closed records no failure cause -----------------------------------
