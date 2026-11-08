@@ -1298,7 +1298,9 @@ async def run(args: Any) -> dict[str, Any]:
                     report = await _run(args)
                 finally:
                     if budget:
-                        evidence.record("run_budget_final", **budget.as_metadata())
+                        metadata = budget.as_metadata()
+                        evidence.record("run_budget_final", **metadata)
+                        freeze(output / "run_budget.json", metadata)
                 if budget:
                     report["run_budget"] = budget.as_metadata()
                     if budget.spent is not None:
@@ -1661,8 +1663,9 @@ def main() -> int:
     args = parser.parse_args()
     if args.stop_after_tokens is not None and args.stop_after_tokens <= 0:
         parser.error("measured token cutoff must be positive")
-    if args.stop_after_tokens and (args.rescore or args.decision_judge):
-        parser.error("measured cutoff currently covers the replay and its fact judges only")
+    if (args.stop_after_tokens or args.inspect_only or args.sample_sha256) and (
+            args.rescore or args.decision_judge):
+        parser.error("cutoff, inspection and sample pinning cover the replay path only")
     if args.per_stratum <= 0 or args.minimum <= 0:
         parser.error("sample sizes must be positive")
 

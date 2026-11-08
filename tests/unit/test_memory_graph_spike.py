@@ -741,8 +741,12 @@ async def test_age_comparison_measures_the_source_once_outside_replay(
         project_only=False,
         skip_projection=True,
         smoke=False,
+        stop_after_tokens=100,
     )
     report = await spike.run(args)
+    budget_receipt = json.loads((args.output / "run_budget.json").read_text())
+    assert budget_receipt == report["run_budget"]
+    assert budget_receipt["stop_after_total_tokens"] == 100
 
     # The comparison ran once, against the populated source — never the
     # empty-at-the-instant sandbox the session runner replayed in.
@@ -873,3 +877,25 @@ def test_prompt_composer_is_registered_when_the_script_runs_directly():
     assert direct_prompt({"source": "Generated evidence"}) == spike.prompt(
         {"source": "Generated evidence"}
     )
+
+
+@pytest.mark.parametrize("mode", ["--rescore", "--decision-judge"])
+@pytest.mark.parametrize("option", [
+    ["--inspect-only"], ["--sample-sha256", "generated-digest"],
+    ["--stop-after-tokens", "100"],
+])
+def test_replay_only_flags_refuse_scoring_modes_before_any_run(monkeypatch, mode, option):
+    import sys
+
+    def must_not_run(*args, **kwargs):
+        pytest.fail("a refused CLI combination reached a runner")
+
+    monkeypatch.setattr(spike, "run_rescore", must_not_run)
+    monkeypatch.setattr(spike, "run_diagnostic", must_not_run)
+    monkeypatch.setattr(sys, "argv", [
+        "memory_graph_spike", "--config", "generated.toml", "--output", "generated-out",
+        mode, "generated-recording", *option,
+    ])
+    with pytest.raises(SystemExit) as exc:
+        spike.main()
+    assert exc.value.code == 2
