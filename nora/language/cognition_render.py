@@ -313,7 +313,7 @@ def _message_row(
             attrs=lambda r: (
                 ("at", when), ("from", speaker_of(r.author)),
                 ("source", ":".join(source_key) if source_key else None),
-                ("person", r.person_id),
+                ("person", None if reacted else r.person_id),
                 ("target", "yes" if target else None),
                 ("reaction", emoji_display(r.emoji or "?") if reacted else None),
                 ("reaction_removed", "yes" if reacted and r.removed else None),
@@ -726,7 +726,8 @@ def rendered_new_sources(agenda: str) -> dict[str, Any]:
     for item in parse_rendered_agenda(agenda):
         for row in item.rows:
             n = row.attributes.get("n")
-            if n is None or row.attributes.get("own") or row.attributes.get("target"):
+            if (n is None or row.attributes.get("own") or row.attributes.get("target")
+                    or row.attributes.get("reaction")):
                 continue
             source = row.attributes.get("source")
             # Context message rows carry source=; fresh messages do not.
@@ -811,6 +812,8 @@ def _item_block(
             if row.id not in candidates:
                 continue
             element = ElementTree.fromstring(rendered)  # noqa: S314 - our escaped row renderer's output
+            if element.get("reaction"):
+                continue
             shown.append({**candidates[row.id], "body": element.text or ""})
             shown_keys[str(row.id)] = keys[str(row.id)]
         memory_item.snapshot["messages"] = shown

@@ -2,8 +2,8 @@
  {
   "name": "3b (a): n is a position (1), not the message's own id: the id shown is no longer the id required",
   "file": "nora/language/cognition_render.py",
-  "old": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"source\", \":\".join(source_key) if source_key else None),\n                (\"person\", r.person_id),\n                (\"target\", \"yes\" if target else None),\n                (\"reaction\", emoji_display(r.emoji or \"?\") if reacted else None),",
-  "new": "            [rec], row_id=lambda r: 1,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"source\", \":\".join(source_key) if source_key else None),\n                (\"person\", r.person_id),\n                (\"target\", \"yes\" if target else None),\n                (\"reaction\", emoji_display(r.emoji or \"?\") if reacted else None),",
+  "old": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"source\", \":\".join(source_key) if source_key else None),\n                (\"person\", None if reacted else r.person_id),\n                (\"target\", \"yes\" if target else None),\n                (\"reaction\", emoji_display(r.emoji or \"?\") if reacted else None),",
+  "new": "            [rec], row_id=lambda r: 1,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"source\", \":\".join(source_key) if source_key else None),\n                (\"person\", None if reacted else r.person_id),\n                (\"target\", \"yes\" if target else None),\n                (\"reaction\", emoji_display(r.emoji or \"?\") if reacted else None),",
   "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_the_prompt_shows_an_id_the_rows_hold_and_no_other_handle"
  },
  {

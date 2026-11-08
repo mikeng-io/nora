@@ -10,6 +10,53 @@ from nora.agent.replay_inspection import compare_inspection
 from scripts.memory_graph_spike import smoke_fact_support
 
 
+@pytest.mark.parametrize("entry, expected", [
+    ({"sources": [101], "location": "item 0 at 12:34", "quote": "first"}, True),
+    ({"sources": [-1], "location": "item 7", "quote": "image"}, True),
+    ({"sources": [999], "location": "row 101", "quote": "first"}, False),
+    ({"sources": [101, 999], "location": "row 101", "quote": "first"}, False),
+    ({"sources": [], "location": "row 101", "quote": "first"}, False),
+    ({"sources": [True], "location": "row 101", "quote": "first"}, False),
+    ({"sources": "101", "location": "row 101", "quote": "first"}, False),
+    ({"sources": [101], "location": "row 101", "quote": "clipped tail"}, False),
+    ({"location": "Agenda item 0, NEW source row 101 at 12:34", "quote": "first"}, True),
+    ({"location": "NEW source -1; agenda item 0; social:generated:123", "quote": "image"}, True),
+    ({"location": "101 / 102", "quote": "first / second"}, True),
+    ({"location": "row 999 and 101; item 0", "quote": "first"}, False),
+    ({"location": "item 101 at 12:34", "quote": "first"}, False),
+    ({"location": "row 101.2", "quote": "first"}, False),
+    ({"location": "row 101foreign", "quote": "first"}, False),
+])
+def test_missed_sources_are_explicit_not_every_number_in_the_locator(entry, expected):
+    from scripts.memory_graph_spike import miss_in_new_sources
+
+    sources = {"101": {"text": "first"}, "102": {"text": "second"},
+               "-1": {"text": "image"}}
+    assert miss_in_new_sources(entry, sources) is expected
+
+
+@pytest.mark.parametrize("source_ids, expected_misses, expected_errors", [
+    ([101], 1, 0), ([999], 0, 0), ([True], 0, 1), ([], 0, 1),
+])
+async def test_structured_missed_sources_reach_the_real_scoring_boundary(
+    source_ids, expected_misses, expected_errors,
+):
+    async def call(model, instruction, payload):
+        assert model == "generated-judge"
+        assert set(payload) == {"session_input", "saved_statements"}
+        assert payload["saved_statements"] == []
+        assert '"sources"' in instruction
+        return json.dumps({"missed": [{"fact": "generated first", "quote": "first",
+            "sources": source_ids, "location": "item 0, row 101 at 12:34",
+            "reason": "generated new fact"}], "context_only": []})
+
+    result = await smoke_fact_support(
+        SimpleNamespace(models=["generated-judge"], call=call),
+        {"new_sources": {"101": {"text": "first"}}}, [])
+    assert result["facts_missed"] == expected_misses
+    assert result["facts_judge_errors"] == expected_errors
+
+
 @pytest.mark.parametrize("malformed", [False, True])
 async def test_scoring_citation_scope_new_rows_and_reasons(malformed):
     calls = []

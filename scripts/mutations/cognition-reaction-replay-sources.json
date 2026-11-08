@@ -1,0 +1,72 @@
+[
+  {
+    "name": "reaction is not a newly citable message",
+    "file": "nora/app/cognition_memory.py",
+    "old": "if row is not None and row.kind != \"reaction\" and row.text is not None:",
+    "new": "if row is not None and row.text is not None:",
+    "target": "tests/unit/test_cognition_source_rows.py::test_reaction_cannot_replace_message_author_or_grant_reactor_authority tests/unit/test_cognition_source_rows.py::test_reaction_alone_neither_makes_target_citable_nor_shows_reactor"
+  },
+  {
+    "name": "reactor id is not message authorship",
+    "file": "nora/language/cognition_render.py",
+    "old": "(\"person\", None if reacted else r.person_id),",
+    "new": "(\"person\", r.person_id),",
+    "target": "tests/unit/test_cognition_source_rows.py::test_reaction_cannot_replace_message_author_or_grant_reactor_authority"
+  },
+  {
+    "name": "reaction context cannot overwrite shown message snapshot",
+    "file": "nora/language/cognition_render.py",
+    "old": "            if element.get(\"reaction\"):\n                continue\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_source_rows.py::test_reaction_cannot_replace_message_author_or_grant_reactor_authority"
+  },
+  {
+    "name": "reaction context is not new source evidence",
+    "file": "nora/language/cognition_render.py",
+    "old": "                    or row.attributes.get(\"reaction\")):",
+    "new": "):",
+    "target": "tests/unit/test_cognition_source_rows.py::test_reaction_alone_neither_makes_target_citable_nor_shows_reactor"
+  },
+  {
+    "name": "reaction context cannot overwrite the support judges cited row",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "                    if row.attributes.get(\"reaction\"):\n                        continue\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_source_rows.py::test_reaction_cannot_replace_message_author_or_grant_reactor_authority"
+  },
+  {
+    "name": "diagnostic cited rows preserve original message",
+    "file": "nora/subject/replay_diagnosis.py",
+    "old": "if n in numbers and not row.attributes.get(\"reaction\"):",
+    "new": "if n in numbers:",
+    "target": "tests/unit/test_replay_diagnosis.py::test_reaction_context_cannot_replace_the_diagnostic_cited_message"
+  },
+  {
+    "name": "structured missed source ids are authoritative",
+    "file": "nora/subject/replay_diagnosis.py",
+    "old": "    if \"sources\" in entry:\n",
+    "new": "    if False:\n",
+    "target": "tests/unit/test_replay_scoring.py::test_missed_sources_are_explicit_not_every_number_in_the_locator"
+  },
+  {
+    "name": "legacy locations ignore item numbers and timestamps",
+    "file": "nora/subject/replay_diagnosis.py",
+    "old": "return list(dict.fromkeys(re.findall(r\"-?\\d+\", references)))",
+    "new": "return list(dict.fromkeys(re.findall(r\"-?\\d+\", location)))",
+    "target": "tests/unit/test_replay_scoring.py::test_missed_sources_are_explicit_not_every_number_in_the_locator"
+  },
+  {
+    "name": "miss diagnostics share the same source resolver",
+    "file": "nora/subject/replay_diagnosis.py",
+    "old": "else set(missed_source_numbers(statement)))",
+    "new": "else set(re.findall(r\"-?\\d+\", str(statement.get(\"location\", \"\")))))",
+    "target": "tests/unit/test_replay_diagnosis.py::test_missed_diagnostic_uses_source_ids_not_item_numbers_or_timestamps"
+  },
+  {
+    "name": "invalid structured source types are judge errors",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "                    or any(type(n) is not int for n in entry[\"sources\"])\n",
+    "new": "",
+    "target": "tests/unit/test_replay_scoring.py::test_structured_missed_sources_reach_the_real_scoring_boundary"
+  }
+]

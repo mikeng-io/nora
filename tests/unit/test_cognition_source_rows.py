@@ -1,5 +1,6 @@
 """Generated wake: citations bind to exactly the rows the agenda emitted."""
 
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -26,7 +27,7 @@ NOTICE = (
 )
 
 
-async def wake(budget=None, seed=None, historical=False):
+async def wake(budget=None, seed=None, historical=False, reaction=False, reaction_only=False):
     stimuli = {
         i: Stimulus(
             id=i,
@@ -52,6 +53,19 @@ async def wake(budget=None, seed=None, historical=False):
             strict=True,
         )
     }
+    if reaction:
+        ref = "message_reaction:201"
+        stimuli[3] = Stimulus(
+            id=3, unit="generated-unit", kind="message", item="reaction", ref=ref,
+            at_ms=NOW - 500, recorded_at_ms=NOW, platform=ROOM.platform,
+            conversation_id=ROOM.conversation_id, person_id="generated-reactor",
+        )
+        records[ref] = RecordItem(
+            ref, "reaction", 101, ROOM, "Generated A", NOW - 500, "Image attached.",
+            emoji="👍", person_id="generated-reactor",
+        )
+        if reaction_only:
+            del stimuli[1]
     sources = (
         Source(("message", "101"), "record", "generated-unit", ("generated-a",), "Image attached."),
         Source(
@@ -122,6 +136,60 @@ async def wake(budget=None, seed=None, historical=False):
     )
     memory.register_shown(state)
     return state, prompt
+
+
+@pytest.mark.parametrize("historical", [False, True])
+async def test_reaction_cannot_replace_message_author_or_grant_reactor_authority(historical):
+    from nora.language.cognition_render import parse_rendered_agenda, rendered_new_sources
+    from scripts.memory_graph_spike import evidence_exchanges
+
+    state, prompt = await wake(historical=historical, reaction=True)
+    item = state.memory_items[0]
+    message = next(r for r in item.snapshot["messages"] if r["id"] == 101)
+    assert message["person_id"] == "generated-a"
+    assert message["ts"] == NOW - 2000
+    assert sum(r["id"] == 101 for r in item.snapshot["messages"]) == 1
+    reaction = next(row for group in parse_rendered_agenda(prompt)
+                    for row in group.rows if row.attributes.get("reaction"))
+    assert "person" not in reaction.attributes
+    assert rendered_new_sources(prompt)["101"]["text"] == "Image attached."
+    result = await state.memory.propose(
+        state, items=[0], statements=[{
+            "type": "reading", "about": [{"person_id": person, "reference": person}],
+            "what": "Generated attachment", "how": "reported",
+            "happened_at": {"source": 101, "expression": None},
+            "cite": [{"source": 101, "quote": "Image attached."}],
+        } for person in ("generated-a", "generated-reactor")])
+    assert result["statements"][0]["status"] == "saved", result
+    assert result["statements"][1]["reason"] == "unknown_subject", result
+    assert state.memory.records.claims
+    events = [
+        {"kind": "event", "name": "nora.model.request", "attributes": {
+            "nora.model.request.body": json.dumps({"messages": [
+                {"role": "user", "content": prompt}]})}},
+        {"kind": "event", "name": "nora.proposal.sources", "span_id": "generated",
+         "attributes": {"body": json.dumps({"101": {"text": "Image attached."}})}},
+        {"kind": "tool_finished", "span_id": "generated",
+         "tool": {"name": "memory_propose", "input": {}},
+         "result": {"content": [{"json": result}]}},
+    ]
+    cited = evidence_exchanges(events)[0]["source_rows"]["101"]["rendered"]
+    assert 'person="generated-a"' in cited and "reaction=" not in cited
+
+
+async def test_reaction_alone_neither_makes_target_citable_nor_shows_reactor():
+    from nora.language.cognition_render import rendered_new_sources
+
+    state, prompt = await wake(historical=True, reaction=True, reaction_only=True)
+    assert "101" not in state.memory_items[0].snapshot["source_keys"]
+    assert "101" not in rendered_new_sources(prompt)
+    assert 'reaction="👍"' in prompt and 'person="generated-reactor"' not in prompt
+    result = await state.memory.propose(state, items=[0], statements=[{
+        "type": "reading", "about": [], "what": "Generated attachment", "how": "reported",
+        "happened_at": {"source": 101, "expression": None},
+        "cite": [{"source": 101, "quote": "Image attached."}],
+    }])
+    assert result["statements"][0]["reason"] == "citation_outside_batch", result
 
 
 def claim(rid, quote):

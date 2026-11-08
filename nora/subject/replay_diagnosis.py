@@ -43,11 +43,31 @@ def cited_source_numbers(value: Any) -> set[str]:
     return set()
 
 
+def missed_source_numbers(entry: dict[str, Any]) -> list[str]:
+    """Structured ids are authoritative; old captures may name rows in prose."""
+    if "sources" in entry:
+        source_ids = entry["sources"]
+        if not isinstance(source_ids, list) or any(type(n) is not int for n in source_ids):
+            return []
+        return list(dict.fromkeys(str(n) for n in source_ids))
+    location = str(entry.get("location", "")).strip()
+    ids = r"-?\d+(?:\s*(?:/|,|\band\b)\s*-?\d+)*"
+    if re.fullmatch(ids, location):
+        references = location
+    else:
+        references = " / ".join(re.findall(
+            rf"\b(?:new\s+)?(?:source(?:\s+row)?|message|row)\s*(?:[=:]\s*)?"
+            rf"({ids})(?!\w|[.-]\d)",
+            location, re.IGNORECASE))
+    return list(dict.fromkeys(re.findall(r"-?\d+", references)))
+
+
 
 def _items(request: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"index": int(item.attributes.get("index", str(index))),
              "rendered": item.rendered, "rows": item.rows,
-             "numbers": {row.attributes["n"] for row in item.rows}}
+             "numbers": {row.attributes["n"] for row in item.rows
+                         if not row.attributes.get("reaction")}}
             for index, item in enumerate(parse_rendered_agenda(request))]
 
 
@@ -100,7 +120,7 @@ def compact_trajectory(statement: dict[str, Any], events: list[dict[str, Any]]) 
     """Project one item's call interval; assemble chunks once, retaining real source anchors."""
     end, item_indices = _proposal_end(statement, events)
     numbers = (cited_source_numbers(statement["statement"]) if statement["kind"] == "unsupported"
-               else set(re.findall(r"-?\d+", str(statement.get("location", "")))))
+               else set(missed_source_numbers(statement)))
     shown = None
     selected = []
     for index, event in enumerate(events[:end + 1]):
@@ -127,7 +147,7 @@ def compact_trajectory(statement: dict[str, Any], events: list[dict[str, Any]]) 
     for item in selected:
         for row in item["rows"]:
             n = row.attributes["n"]
-            if n in numbers:
+            if n in numbers and not row.attributes.get("reaction"):
                 cited[n] = {"rendered": row.rendered, "event_id": events[shown]["event_id"]}
     calls = []
     active: dict[tuple[Any, Any], dict[str, Any]] = {}
