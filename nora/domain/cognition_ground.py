@@ -33,7 +33,9 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from nora.domain.cognition_session import Room
+from nora.domain.context_data import MembersView, RoomLine, TranscriptLine
 from nora.domain.culture import CultureRevision
+from nora.domain.documents_context import DocumentsView
 from nora.domain.memo import Memo
 from nora.domain.models import RowReactions
 from nora.domain.notes import RetainedSource
@@ -340,6 +342,18 @@ class Grounding:
     #: which holds `Persons`; the renderer does not.
     self_profile: ProfileView | None = None
     profile_names: Mapping[str, str] = field(default_factory=dict)
+
+    documents: tuple[DocumentsView, ...] = ()
+    document_rooms: frozenset[tuple[str,str]] = frozenset()
+    profiles: tuple[ProfileView, ...] = ()
+    profile_unavailable: tuple[str, ...] = ()
+    members: tuple[MembersView, ...] = ()
+    rooms: tuple[RoomLine, ...] = ()
+    transcript: tuple[TranscriptLine, ...] = ()
+    transcript_more: int = 0
+    context_withheld: tuple[tuple[str, int], ...] = ()
+    lessons: tuple[str, ...] = ()
+    unavailable: frozenset[str] = frozenset()
 
     def as_dict(self) -> dict[str, object]:
         """The JSON the session row keeps: what she was shown, by reference

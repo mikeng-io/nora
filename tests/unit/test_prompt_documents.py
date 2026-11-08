@@ -388,10 +388,10 @@ SHAPES = {
 <people_in_window description>
   <person description fields name>
   <person description fields name>
-<group_transcript description fields window>
+<transcript description fields window>
   <m age from n>""",
     "relevance_gate": """
-<group_transcript description fields>
+<transcript description fields>
   <m age from n>
 <standing description fields written>""",
     "skills": """

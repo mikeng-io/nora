@@ -8,7 +8,7 @@ selector is a declared context-assembly occasion like every other prompt
 (DEC-273, ADR 0021, design/context-assembly/04-every-occasion.md «How a new
 occasion joins»). The runner only dispatches the POST and records receipts.
 
-It lives in `nora.subject`, not `nora.language`: the `<group_transcript>`
+It lives in `nora.subject`, not `nora.language`: the `<transcript>`
 body is `nora.agent.prefill.render_transcript` — the transcript exactly as
 she is shown it — and the layers contract puts `nora.language` BELOW
 `nora.agent`.
@@ -84,7 +84,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("documents", 60, "turn"),
     ("subagents", 70, "turn"),
     ("standing", 80, "room"),
-    ("group_transcript", 90, "room"),
+    ("transcript", 90, "room"),
 )
 
 #: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
@@ -172,9 +172,9 @@ def selector_prompt(
         ), _ROW))
     # A `group_transcript` the prefill did not serve raises here — a missing
     # mandatory block is a wiring bug, never «no material».
-    b = available["group_transcript"]
+    b = available["transcript"]
     declared.append(restamp(ContextBlock(
-        name="group_transcript",
+        name="transcript",
         body=legacy_composed(prefill.render_transcript(
             ctx.transcript[-8:], display_name=display_name, now=now)),
         attrs=(("window", str(min(8, len(ctx.transcript)))),),

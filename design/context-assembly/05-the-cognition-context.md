@@ -4,7 +4,7 @@ title: "The Cognition context — what the session reads, chosen by what it deci
 description: "Proposed 2026-11-08. The Cognition session's input was built as its own parallel set of blocks, grandfathered by the gate meant to forbid it, and it cannot ground the judgements it is asked to make: it does not know who is in the room, who the people are, what she already learned, or what was said around the item. This node maps every decision the session makes to the input that grounds it, selects only what is related to the agenda, reuses the shared block builders engagement already uses, replaces the people/culture/character blocks with the profile blocks that already exist, fixes one naming and one empty rule for every block, and states the gate and the measurement that decide it."
 tags: [nora, context, prompt, blocks, assembly, cognition, profile, naming]
 timestamp: '2026-11-08'
-status: proposed
+status: implementing
 edges:
   - {dst: 04-every-occasion.md, rel: extends, provenance: asserted}
   - {dst: ../unified-memory/29-one-cognition-session.md, rel: depends_on, provenance: asserted}
@@ -12,7 +12,9 @@ edges:
 
 # The Cognition context
 
-**Status: proposed, for review.** Nothing here is built. The reading that would
+**Status: implementation in progress; semantic acceptance pending.** Source and focused
+validation coverage are recorded with the integrated implementation PR. The parent
+owns independent review and the single approved recorded replay. The reading that would
 reopen it is in §8.
 
 ## 1. What is wrong, measured
@@ -87,6 +89,7 @@ serve a reply in one room, most of them for no decision this session makes.
 | how she should write, from past corrections | her lessons for the unit | `lessons` |
 | when, and how long ago | now, and her last session | `clock` |
 | which rooms the read tools look through | the read scope | `reads` |
+| detect documentation superseded by agenda evidence; read its current revision and revise it | the agenda-room shared document index, then its full current revision and cited rows | `documents`, `agenda`, `transcript` |
 | which tool to reach for | the deferred catalogue | `tool_catalogue` |
 
 **Read but not injected**, each with the reading that would add it:
@@ -94,7 +97,6 @@ serve a reply in one room, most of them for no decision this session makes.
 | Engagement block | Why not | Add it if |
 |---|---|---|
 | `presence`, `computer`, `subagents`, `spoken_turn`, `replying_to`, `tag_message` | facts about one reply turn; no Cognition decision reads them | a decision is added that does |
-| `documents` | the session decides nothing about documents, so no list is injected. Ruled 2026-11-08: it reaches them by tool instead, a list read and `document_read`, deferred like every other tool (§7) | a document verb joins its catalogue |
 | `peer_card`, `peer_history`, `people_in_window`, `character`, `culture`, `unit_culture`, `self` | the same subjects, from four older stores; `profile` replaces all seven (§4) | — |
 | `recalled` | the reply-side pre-fetch; the session's own `graph` serves its seeds | the two are merged into one retrieval block |
 
@@ -228,17 +230,32 @@ One integrated change from this spec, measured once (AGENTS.md):
 
 1. One Cognition context assembly over the shared builders: `rooms`,
    `members`, `profile`, `transcript` (one unit block), `notes`, `memos`, `events`,
-   `standing`, `lessons`, `clock`, `reads`, `tool_catalogue`; Cognition keeps
+   `standing`, `lessons`, `clock`, `reads`, `documents`, `tool_catalogue`; Cognition keeps
    only `agenda` and `graph` as its own types.
 2. Delete Cognition's entries from `LEGACY_COMPOSERS` and `_INITIAL_LEGACY`
    (`cognition_render:render_agenda`, `_register`, `_item_blocks`). The
    `comprehend_render` entries have no production caller; delete them with
    their functions.
-3. Deferred tools on the session, through the same `ToolSurface` engagement
-   uses. The document reads join the catalogue: `document_read`, which exists,
-   and a list read over the same source the `documents` block renders
-   (`nora/language/documents_render.py`), so there is one reader of
-   documents, not two.
+3. Deferred tools on the session through the shared `ToolSurface`. Documents
+   use the existing source, typed index, renderer and service. The index is
+   injected; full bodies are read on demand. `document_list`, `document_read`
+   and `document_revise` are the autonomous surface. Revision changes existing
+   string content only, preserves unrelated content, and requires a prior read,
+   its exact base revision and shown source ids. A stale revision is refused,
+   never retried automatically.
+
+   Autonomous authority is an explicit session capability, not a human
+   requester. It reaches only active documents shared with the entire relevant
+   agenda room under current explicit, nonempty named-audience policy, with all
+   named people known. Wildcard, missing, unknown and other-unit audiences deny.
+   The same authorization predicate filters the index before its limit and
+   rechecks ids and handles on reads and writes. Creator-only metadata and
+   counts never enter the index or an error. Human-requester access is unchanged.
+   The original creator stays on the document; revision history identifies the
+   Cognition session and cited sources. Creation and lifecycle changes are outside
+   this authority. Replacements quote shown evidence; decisions must preserve
+   uncertainty. The service validates and persists through the existing publish
+   path and compare-and-swap; the tool reads the saved revision back.
 4. Gates, each failing on the defect it guards:
    - one block type per store across occasions;
    - a declared block always renders, in exactly one of content / empty /
@@ -269,7 +286,47 @@ input, and the next lever is the instruction (the memory/notebook split).
   row tagged by its room, and its size is dynamic and adaptive inside the
   agenda's one allocation (§5). The replay reads its cost; the one total is the only
   number the build sets.
-- **`documents`** stay out of the injected input; the session gets a list
-  read and `document_read` as deferred tools (§2, §7).
+- **Documents** are the shared agenda-room index and deferred read/revision
+  surface described in §7. Creator-only documents remain private.
 - **Engagement's profile switch** (§4) is separate work, not part of this
   build.
+
+## 10. Delivery coverage
+
+The source implementation uses the shared member, transcript, profile, note, memo,
+standing, lesson, document-index and tool-surface builders. Cognition's `_BLOCKS`
+declarations bind every injected type to a decision and shared-store owner;
+`assemble_declared` refuses undeclared data and unexplained emitted fields. Declared
+empty and unavailable sources are retained. The old Cognition composer exemptions
+and unused comprehend/reshape composers are removed. Quote resolution and actual
+send delivery remain shared when the same transcript is folded.
+
+Generated-fixture coverage is named in
+`tests/unit/test_cognition_shared_context.py` (real session handoff, adaptive
+chronological transcript, media custody, related subjects, unit/disclosure negatives,
+three states and declaration governance), `tests/unit/test_documents_service.py`
+(capability refusal, supported revision, immutable creator, persisted history,
+stale revision and deferred tools), and `tests/unit/test_documents_block.py`
+(shared index formatting, accessible-only limits and unavailable reads).
+`tests/contract/test_document_store_contract.py` exercises both store implementations;
+`tests/infra/test_record_query.py` and `tests/infra/test_profile_store.py` pin
+historical known-at bounds. Existing standing and reminder checks preserve self-wakes
+and note reminder identifiers, due times and action scope.
+
+Autonomous revisions replace one existing string occurrence with a complete quoted
+shown source. They cannot remove an evidence qualifier by quoting only its settled
+fragment, add structure, change audience/lifecycle or create a document. Full bodies
+remain deferred reads. Historical sessions receive bounded historical index/read
+revisions and cannot revise documents. Missing or wildcard audience authority fails
+closed before metadata or accessible counts reach the model. A new decision/rule
+number and its acceptance-rule registration are allocated at merge under
+`nora-decision`; this build does not reserve a number.
+
+**Semantic acceptance is pending execution**, not pending spending approval. The
+parent owns the single authorized candidate replay against the existing five-session
+baseline, the aggregate subject-plus-judge cap, identical candidate evidence for
+judges and independent review. Source checks do not establish a supported-fact gain.
+That sample may contain no document revision, so it cannot establish document-revision
+semantic acceptance; no additional paid sample is implied. Graph read activation,
+engagement's profile flag, prompt splitting, Honcho retirement and host configuration
+remain outside this change.

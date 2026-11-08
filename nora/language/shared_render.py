@@ -26,6 +26,9 @@ def render_shared_state(
     """
     if view is None or view.status == "nothing_found":
         return None
+    if view.status == "unavailable":
+        return ContextBlock(name="standing", body=compose_body(""),
+            attrs=(("status", "unavailable"),), when_empty="self_close")
     now = datetime.fromtimestamp(now_ms / 1000, tz=tz)
     coverage = " · ".join(f"{name} {status}" for name, status in view.sources)
     open_entries = [

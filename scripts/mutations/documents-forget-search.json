@@ -72,9 +72,9 @@
   {
     "name": "service: a handle (or id) is resolved with no room check at all, so a lone other-room document reads",
     "file": "nora/app/documents_service.py",
-    "old": "                if d.summary.platform == platform and d.summary.conversation_id in here\n                and may_read(d.summary, person_id, named)\n            ]\n            current = mine[0] if len(mine) == 1 else None  # two is never picked\n        if (\n            current is None\n            or current.summary.platform != platform\n            or current.summary.conversation_id not in here\n            or not may_read(current.summary, person_id, named)\n        ):\n            return None\n        return current",
-    "new": "                if d.summary.platform == platform and d.summary.conversation_id in here\n                and may_read(d.summary, person_id, named)\n            ]\n            current = mine[0] if len(mine) == 1 else None  # two is never picked\n        return current",
-    "target": "tests/unit/test_document_tools.py::test_a_handle_from_another_room_a_deleted_one_or_none_reads_as_an_unknown_id"
+    "old": "            or current.summary.platform != platform\n            or current.summary.conversation_id not in here\n            or not may_read(current.summary, person_id, named)\n",
+    "new": "            or False\n",
+    "target": "tests/unit/test_documents_service.py::test_another_rooms_document_reads_exactly_like_an_unknown_one"
   },
   {
     "name": "portal route: a deleted document (a forgotten one) is visible to the viewer's state write",

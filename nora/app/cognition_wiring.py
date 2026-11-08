@@ -602,6 +602,7 @@ def build_cognition_runner(
     standing_fold: Any = None,
     rooms_of_unit: Callable[[str], Sequence[tuple[str, str]]] | None = None,
     observations: Any = None,
+    documents: Any = None, documents_context: Any = None,
 ) -> Any:
     """The session runner. Imported lazily: `LiveCognitionAgentRunner` (and
     with it Strands) is loaded only when a session will actually run."""
@@ -669,7 +670,7 @@ def build_cognition_runner(
         read_only_tools=surface.wired,
         skill_text_for=skills.text_for, skill_versions_for=skills.versions_for,
         skills_for=skills.resolved_for, grounder=grounder, render_budget=render_budget,
-        person_known=person_known,
+        person_known=person_known, documents=documents, documents_context=documents_context,
         doctrine_text=text, doctrine_sha256=sha, doctrine_source=doctrine,
         open_note_titles=note_titles, open_events=open_events,
         prior_standing=prior,

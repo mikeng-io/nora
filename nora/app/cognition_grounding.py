@@ -630,6 +630,7 @@ def build_grounder(
     memo_index: Callable[[str], Awaitable[Sequence[Memo]]] | None = None,
     pending_reminds: Callable[[], Awaitable[Sequence[Reminder]]] | None = None,
     observations: Any | None = None,
+    context: Any | None = None,
 ) -> Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]:
     """The session's `Grounder` (`nora.app.cognition_session.Grounder`).
 
@@ -865,7 +866,7 @@ def build_grounder(
         account: CultureRevision | None = None
         profile_view: ProfileView | None = None
         profile_names: dict[str, str] = {}
-        if self_profile is not None:
+        if self_profile is not None and context is None:
             lines = await read_profile(
                 self_profile(unit),
                 stage="cognition_self_profile", platform="cognition",
@@ -878,7 +879,7 @@ def build_grounder(
                     for line in lines if line.told_by is not None
                     if (ref := persons.by_person.get(line.told_by)) is not None
                 }
-        else:
+        elif context is None:
             account = await read_culture(
                 None if self_account is None else self_account(unit),
                 stage="cognition_self", platform="cognition", metrics=metrics,
@@ -887,16 +888,23 @@ def build_grounder(
             await _source_objects(
                 agenda_rooms, allowed, observations, persons,
                 retained=retained_refs))
-        return Grounding(
-            records=records_out, notes=notes, memos=memos, events=tuple(events),
-            rollups=rollups, socials=_social_lines(pending, claimed, persons),
-            observations=observations_out, source_objects=source_objects,
-            source_objects_more=source_objects_more,
-            retained_objects=retained_objects,
-            retained_objects_more=retained_more,
-            own_sends=own_sends, room_labels=labels, self_account=account,
-            self_profile=profile_view, profile_names=profile_names,
-        )
+        result = Grounding(
+              records=records_out, notes=notes, memos=memos, events=tuple(events),
+              rollups=rollups, socials=_social_lines(pending, claimed, persons),
+              observations=observations_out, source_objects=source_objects,
+              source_objects_more=source_objects_more,
+              retained_objects=retained_objects,
+              retained_objects_more=retained_more,
+              own_sends=own_sends, room_labels=labels, self_account=account,
+              self_profile=profile_view, profile_names=profile_names,
+          )
+
+        if context is not None:
+            result = await context.read(unit, items, result,
+                tuple((hit.hit.platform, hit.hit.conversation_id, row, stimulus.id)
+                      for (stimulus, _, hit), row in zip(pairs, named, strict=True)),
+                now_ms=session_ms)
+        return result
 
     return ground
 

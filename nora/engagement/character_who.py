@@ -51,7 +51,7 @@ def _resolve_all(persons: Persons, platform: str, ids: Iterable[str]) -> set[str
     }
 
 
-def _row_mentions(row: TranscriptRow) -> frozenset[str]:
+def row_mentions(row: TranscriptRow) -> frozenset[str]:
     """The ids a stored row's envelopes @-mention (the structural array, the
     same one `MentionRenderer` reads): the original's and, for an edited row,
     the edit's, so a mention an edit added counts. Unreadable means none."""
@@ -90,7 +90,7 @@ def tag_character_people(
             None,
         )
         if parent is not None:
-            ids |= _resolve_all(persons, platform, (parent.sender_id, *_row_mentions(parent)))
+            ids |= _resolve_all(persons, platform, (parent.sender_id, *row_mentions(parent)))
     ids |= _speakers(persons, platform, transcript)
     return tuple(m for m in members if m.person_id in ids)
 

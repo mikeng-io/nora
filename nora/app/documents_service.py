@@ -42,7 +42,7 @@ import copy
 import re
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 from uuid import UUID, uuid4
 
@@ -52,6 +52,7 @@ from nora.documents import catalog_prompt
 from nora.documents.check import Checked, Finding, check_document
 from nora.domain.documents import (
     DOCUMENT_STATES,
+    DocumentAuthority,
     DocumentState,
     DocumentStore,
     RevisionIn,
@@ -214,7 +215,11 @@ class DocumentService:
         # document is read by its creator alone (8765_44827).
         rooms_of: Callable[[str], frozenset[RoomKey]] | None = None,
         content_checks: bool = True,
+        shared_room: Callable[[str, str, str], bool] | None = None,
+        autonomous_screen: Callable[[str], str | None] | None = None,
     ) -> None:
+        self._autonomous_screen = autonomous_screen
+        self._shared_room = shared_room
         self._content_checks = content_checks
         self._store = store
         self._rooms_of = rooms_of
@@ -327,10 +332,13 @@ class DocumentService:
         """The public origin a document link is built under; `""` while none is configured."""
         return self._public_url
 
-
     async def _target_problem(
-        self, platform: str, conversation_id: str, document_id: UUID | None,
-        base_revision: int | None, person_id: str,
+        self,
+        platform: str,
+        conversation_id: str,
+        document_id: UUID | None,
+        base_revision: int | None,
+        person_id: str | DocumentAuthority,
     ) -> PublishResult | None:
         """The refusal a revision's TARGET would earn at the write (another room's or an unknown
         id, a document `person_id` may not revise, not active, a stale revision), or `None`.
@@ -356,7 +364,7 @@ class DocumentService:
                 "conflict", document_id=document_id, revision=current.summary.revision,
                 note=(
                     f"This document is at revision {current.summary.revision}, not "
-                    f"{base_revision}. Read it again, apply your change to that, and publish again."
+                    f"{base_revision}. Read it again before deciding whether to revise."
                 ),
             )
         return None
@@ -458,9 +466,15 @@ class DocumentService:
         from the tool."""
         return catalog_prompt()
 
-    def _named(self, person_id: str | None) -> frozenset[RoomKey]:
+    def _named(self, person_id: str | DocumentAuthority | None) -> frozenset[RoomKey]:
         """The rooms whose explicit list names `person_id`; nothing without a wiring or a
         requester, so only a creator reads (`may_read`)."""
+        if isinstance(person_id, DocumentAuthority):
+            return frozenset(
+                (p, c)
+                for p, c in person_id.rooms
+                if self._shared_room is not None and self._shared_room(person_id.unit, p, c)
+            )
         if self._rooms_of is None or person_id is None:
             return frozenset()
         return self._rooms_of(person_id)
@@ -472,7 +486,7 @@ class DocumentService:
         conversation_id: str,
         document_id: UUID | None,
         handle: str,
-        person_id: str | None,
+        person_id: str | DocumentAuthority | None,
     ) -> StoredDocument | None:
         """The document named by `document_id`, or by the 12-hex `handle` a link carries,
         when it was made in THIS room (any id the room answers to), in ANY state, and `person_id`
@@ -502,6 +516,29 @@ class DocumentService:
             or not may_read(current.summary, person_id, named)
         ):
             return None
+        if (isinstance(person_id, DocumentAuthority) and person_id.as_of_ms is not None
+            and not current.written_by.startswith(f"cognition:{person_id.session_id};")):
+            history = await self._store.history(document_id=current.summary.id)
+            candidates = [h for h in history
+                          if int(h.recorded_at.timestamp() * 1000) <= person_id.as_of_ms]
+            if not candidates:
+                return None
+            head = max(candidates, key=lambda h: h.revision)
+            revision = await self._store.revision(document_id=current.summary.id,
+                                                  revision=head.revision)
+            if revision is None:
+                return None
+            current = replace(current, summary=replace(current.summary,
+                title=revision.title, revision=revision.revision, updated_at=revision.recorded_at),
+                spec=revision.spec, text=revision.text, sha256=revision.sha256,
+                media=revision.media, written_by=revision.written_by)
+        if isinstance(person_id, DocumentAuthority):
+            from nora.agent.egress import scan_reply
+
+            if scan_reply(current.text, content_checks=self._content_checks) or (
+                self._autonomous_screen and self._autonomous_screen(current.text)
+            ):
+                return None
         return current
 
     async def read(
@@ -511,7 +548,7 @@ class DocumentService:
         conversation_id: str,
         document_id: UUID | None = None,
         handle: str = "",
-        person_id: str | None = None,
+        person_id: str | DocumentAuthority | None = None,
     ) -> ReadResult:
         """The current revision of a document made in THIS room that `person_id` may read,
         named by its id or by the 12-hex handle its link carries. Another room's document, a
@@ -554,8 +591,8 @@ class DocumentService:
         id the room answers to). A handle is resolved among THIS room's documents in any
         state, and one that matches none or more than one, like another room's document,
         answers exactly like an unknown id. A deleted document is found here, and only
-        here, so it can be restored.        """
-        if not self._is_person(person_id):
+        here, so it can be restored."""
+        if isinstance(person_id, DocumentAuthority) or not self._is_person(person_id):
             return StateResult(
                 "refused",
                 findings=(Finding("", "unknown_person", "only a known member can do that"),),
@@ -641,7 +678,7 @@ class DocumentService:
         *,
         platform: str,
         conversation_id: str,
-        person_id: str,
+        person_id: str | DocumentAuthority,
         raw: bytes | str | dict[str, Any],
         written_by: str,
         document_id: UUID | None = None,
@@ -649,7 +686,82 @@ class DocumentService:
         person_names: frozenset[str] | None = None,
         live_addresses: frozenset[str] | None = None,
     ) -> PublishResult:
-        if not self._is_person(person_id):
+        if isinstance(person_id, DocumentAuthority):
+            if person_id.read_only:
+                return PublishResult("refused", note="Historical sessions cannot revise documents.")
+            if (
+                document_id is None
+                or not person_id.evidence
+                or (platform, conversation_id) not in self._named(person_id)
+            ):
+                return _no_such_document()
+            current = await self._in_room(
+                platform=platform,
+                conversation_id=conversation_id,
+                document_id=document_id,
+                handle="",
+                person_id=person_id,
+            )
+            if current is None or current.summary.state != "active":
+                return _no_such_document()
+            if base_revision != current.summary.revision:
+                return PublishResult("conflict", note="The revision changed; nothing was updated.")
+            if not isinstance(raw, dict) or set(raw) != {"changes"}:
+                return PublishResult(
+                    "refused", note="Autonomous revisions require cited replacements."
+                )
+            changes = raw["changes"]
+            if not isinstance(changes, list) or not changes:
+                return PublishResult("refused", note="No supported replacement was supplied.")
+            revised = copy.deepcopy(current.spec)
+            sources = {n: (p, c, text) for n, p, c, text in person_id.evidence}
+            cited = set()
+            for change in changes:
+                if not isinstance(change, dict) or set(change) != {"path", "old", "new", "sources"}:
+                    return PublishResult(
+                        "refused", note="Each replacement needs its path and sources."
+                    )
+                path, old, new = change["path"], change["old"], change["new"]
+                ids = change["sources"]
+                if (
+                    not isinstance(path, str)
+                    or not path.startswith("/")
+                    or not isinstance(old, str)
+                    or not old
+                    or not isinstance(new, str)
+                    or not new
+                    or not isinstance(ids, list)
+                    or not ids
+                    or any(not isinstance(n, int) or n not in sources for n in ids)
+                ):
+                    return PublishResult("refused", note="The replacement lacks shown evidence.")
+                here = self._room_ids(platform, conversation_id) | {conversation_id}
+                if any(sources[n][0] != platform or sources[n][1] not in here for n in ids):
+                    return PublishResult(
+                        "refused", note="The evidence is outside this document's room."
+                    )
+                if not any(new == sources[n][2].strip() for n in ids):
+                    return PublishResult(
+                        "refused", note="The replacement must quote its shown evidence."
+                    )
+                try:
+                    parts = [x.replace("~1", "/").replace("~0", "~") for x in path[1:].split("/")]
+                    node = revised
+                    for part in parts[:-1]:
+                        node = node[int(part)] if isinstance(node, list) else node[part]
+                    key = int(parts[-1]) if isinstance(node, list) else parts[-1]
+                    value = node[key]
+                    if not isinstance(value, str) or value.count(old) != 1:
+                        raise ValueError("replacement target changed")
+                    node[key] = value.replace(old, new, 1)
+                except (KeyError, IndexError, TypeError, ValueError):
+                    return PublishResult("refused", note="The replacement target does not match.")
+                cited.update(ids)
+            raw = revised
+            written_by = f"cognition:{person_id.session_id};sources:" + ",".join(
+                map(str, sorted(cited))
+            )
+        if isinstance(person_id, str) and not self._is_person(person_id):
             return PublishResult(
                 "refused",
                 findings=(
@@ -725,6 +837,8 @@ class DocumentService:
 
         try:
             if document_id is None:
+                if not isinstance(person_id, str):
+                    return _no_such_document()
                 made = await self._store.create(
                     document_id=await self._fresh_id(platform, conversation_id, person_id),
                     platform=platform,
@@ -749,13 +863,10 @@ class DocumentService:
                 return _not_active(current.summary.state)
             if current.summary.revision != base_revision:
                 return PublishResult(
-                    "conflict",
-                    document_id=document_id,
-                    revision=current.summary.revision,
+                    "conflict", document_id=document_id, revision=current.summary.revision,
                     note=(
                         f"This document is at revision {current.summary.revision}, not "
-                        f"{base_revision}. Read it again, apply your change to that, and "
-                        "publish again."
+                        f"{base_revision}. Read it again before deciding whether to revise."
                     ),
                 )
             outcome = await self._store.add_revision(

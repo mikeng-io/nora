@@ -281,7 +281,7 @@ def calls_assemble(tree: ast.Module) -> bool:
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom) and _is_blocks_module(node)
         for alias in node.names
-        if alias.name == "assemble"
+        if alias.name in {"assemble", "assemble_declared"}
     }
     return any(
         isinstance(node, ast.Call) and isinstance(node.func, ast.Name)

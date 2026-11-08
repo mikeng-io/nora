@@ -53,6 +53,7 @@ from nora.domain.computer_sessions import (
 from nora.domain.computer_tasks import TERMINAL, ComputerTask
 from nora.domain.computer_vms import ScopedEndpoint
 from nora.domain.documents import (
+    DocumentAuthority,
     DocumentExistsError,
     DocumentState,
     DocumentSummary,
@@ -622,7 +623,10 @@ class FakeRecordStore:
                 row["person_id"] = person_id
                 return
 
-    async def room_activity(self, *, conversation_id: str, since_ts: int) -> RoomActivity:
+    async def room_activity(
+        self, *, conversation_id: str, since_ts: int,
+        platform: str | None = None, as_of_ms: int | None = None,
+    ) -> RoomActivity:
         """Mirrors `SqlRecordStore.room_activity`: human rows only, the count from
         `since_ts` on, the newest `ts` at any time, `None` when there is none.
         `fail_on_recent` covers this read too: it is the switch for «the
@@ -633,6 +637,8 @@ class FakeRecordStore:
         human = [
             r for r in self.rows
             if r["conversation_id"] == conversation_id and not r["is_nora"]
+            and (platform is None or r["platform"] == platform)
+            and (as_of_ms is None or r["ts"] <= as_of_ms)
         ]
         window = [r for r in human if r["ts"] >= since_ts]
         return RoomActivity(
@@ -2574,13 +2580,16 @@ class FakeDocumentStore:
         self._tick += 1
         return datetime(2026, 10, 1, tzinfo=UTC) + timedelta(microseconds=self._tick)
 
-    def _stored(self, document_id: UUID) -> StoredDocument | None:
+    def _stored(self, document_id: UUID, before_ms: int | None = None) -> StoredDocument | None:
         head = self._rooms.get(document_id)
         if head is None:
             return None
         platform, conversation_id, created_by, created_at = head
-        revision, recorded_at = self._revisions[document_id][-1]
-        number = len(self._revisions[document_id])
+        known = [(i, r, at) for i, (r, at) in enumerate(self._revisions[document_id], 1)
+                 if before_ms is None or at.timestamp() * 1000 <= before_ms]
+        if not known:
+            return None
+        number, revision, recorded_at = known[-1]
         return StoredDocument(
             summary=DocumentSummary(
                 id=document_id, platform=platform, conversation_id=conversation_id,
@@ -2596,9 +2605,8 @@ class FakeDocumentStore:
 
     @staticmethod
     def _sees(summary: DocumentSummary, person_id: str, rooms: frozenset[RoomKey]) -> bool:
-        return summary.created_by == person_id or (
-            summary.platform, summary.conversation_id
-        ) in rooms
+        from nora.domain.documents import may_read
+        return may_read(summary, person_id, rooms)
 
     async def create(
         self, *, document_id: UUID, platform: str, conversation_id: str, created_by: str,
@@ -2686,12 +2694,18 @@ class FakeDocumentStore:
 
     async def list_room(
         self, *, platform: str, conversation_ids: frozenset[str], limit: int,
-        person_id: str, rooms: frozenset[RoomKey],
+        person_id: str | DocumentAuthority, rooms: frozenset[RoomKey],
         states: tuple[DocumentState, ...] = ("active",),
     ) -> tuple[DocumentSummary, ...]:
         seen = [
-            d.summary for doc_id in self._rooms
-            if (d := self._stored(doc_id)) is not None
+            d.summary
+            for doc_id in self._rooms
+            if (
+                d := self._stored(
+                    doc_id, person_id.as_of_ms if isinstance(person_id, DocumentAuthority) else None
+                )
+            )
+            is not None
             and d.summary.platform == platform
             and d.summary.conversation_id in conversation_ids
             and d.summary.state in states

@@ -13,6 +13,7 @@ is the only other writer, so a collision is rare and loud, never a forked chain.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -50,14 +51,17 @@ class SqlLessonStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
-    async def lessons(self, *, unit: str) -> tuple[Lesson, ...]:
+    async def lessons(self, *, unit: str, as_of_ms: int | None = None) -> tuple[Lesson, ...]:
         """Every lesson of `unit` with its head revision, oldest lesson first
         (active and retired; the caller filters)."""
         top = LESSON_REVISION.alias("top")
-        newest = (
-            sa.select(sa.func.max(top.c.seq)).where(top.c.lesson_id == LESSON.c.id)
-            .scalar_subquery()
-        )
+        head = sa.select(sa.func.max(top.c.seq)).where(top.c.lesson_id == LESSON.c.id)
+        if as_of_ms is not None:
+            head = head.where(
+                top.c.written_at <= as_of_ms,
+                top.c.recorded_at <= datetime.fromtimestamp(as_of_ms / 1000, UTC),
+            )
+        newest = head.scalar_subquery()
         stmt = (
             sa.select(LESSON.c.id.label("lid"), LESSON.c.unit, LESSON.c.created_at,
                       *LESSON_REVISION.c)

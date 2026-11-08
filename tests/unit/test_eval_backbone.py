@@ -1033,7 +1033,7 @@ async def test_drive_never_judges_blind_when_no_window_was_captured(monkeypatch,
     DEC-75 — which is correct for a case with no source BY DESIGN and
     indistinguishable, to the judge, from a source that should have existed
     and did not because the capture broke. So `_drive` must not call the
-    judge at all here: a spoken reply with no `<group_transcript>` captured
+    judge at all here: a spoken reply with no `<transcript>` captured
     off the turn's own call (`one_path`'s fake `sandbox_from_snapshot`
     reports `Sandboxed.transcript=("earlier line",)`, but this `fake_drive`
     renders nothing, so `_shown_transcript` finds no block) must ERROR the
@@ -1083,9 +1083,9 @@ async def test_the_judges_source_is_the_rendered_window_not_the_whole_seed(
     older = "an older row, from BEFORE the window her turn rendered"
     newest = "the newest row, the one her turn actually rendered"
     rendered = (
-        f'<group_transcript window="1" description="d">\n'
+        f'<transcript window="1" description="d">\n'
         f'<m n="1" age="just now" from="Miles">{newest}</m>\n'
-        f'</group_transcript>'
+        f'</transcript>'
     )
 
     async def fake_sandbox(_subject: object, **kwargs: Any) -> Sandboxed:

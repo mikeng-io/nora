@@ -465,7 +465,7 @@ def test_constraints_covers_every_block_by_kind_rather_than_by_name():
     assert "did not exist when this was written" in section
 
     # The enumeration is gone and must stay gone.
-    for named in ("group_transcript", "tag_message", "self_card", "peer_card",
+    for named in ("transcript", "tag_message", "self_card", "peer_card",
                   "peer_history", "room_language", "room_exchange", "room_portrait"):
         assert named not in section, (
             f"constraints.md names {named!r} again — the anti-instruction rule "

@@ -1,0 +1,30 @@
+[
+  {
+    "name": "unit boundary before any related read",
+    "file": "nora/app/cognition_context.py",
+    "old": "or room.unit != unit",
+    "new": "or False",
+    "target": "tests/unit/test_cognition_shared_context.py::test_foreign_agenda_fails_before_related_subject_or_member_reads"
+  },
+  {
+    "name": "explicit shared audience authorization rechecked on document ids and handles",
+    "file": "nora/app/documents_service.py",
+    "old": "if self._shared_room is not None and self._shared_room(person_id.unit, p, c)",
+    "new": "if True",
+    "target": "tests/unit/test_documents_service.py::test_autonomous_documents_deny_unknown_wildcard_foreign_and_nonagenda"
+  },
+  {
+    "name": "quoted replacement retains evidence qualifiers",
+    "file": "nora/app/documents_service.py",
+    "old": "if not any(new == sources[n][2].strip() for n in ids):",
+    "new": "if False:",
+    "target": "tests/unit/test_documents_service.py::test_autonomous_document_revisions_fail_closed_on_unsupported_evidence[uncertain]"
+  },
+  {
+    "name": "every emitted field is explained by its declaration",
+    "file": "nora/domain/blocks.py",
+    "old": "if unexplained:",
+    "new": "if False:",
+    "target": "tests/unit/test_cognition_shared_context.py::test_assembly_rejects_undeclared_fields_and_failed_content"
+  }
+]

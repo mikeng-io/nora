@@ -65,8 +65,8 @@
  {
   "name": "session runner: the prompt carries the clock",
   "file": "nora/language/cognition_render.py",
-  "old": "    if now_ms is not None:\n        blocks.append(restamp(ContextBlock(\n            name=\"clock\",",
-  "new": "    if False:\n        blocks.append(restamp(ContextBlock(\n            name=\"clock\",",
+  "old": "if now is not None:\n        blocks.append(render_clock(now=now, last_session_ms=last_session_ms))",
+  "new": "if False:\n        blocks.append(render_clock(now=now, last_session_ms=last_session_ms))",
   "target": "tests/unit/test_cognition_wiring.py -k says_what_time_it_is"
  },
  {

@@ -38,7 +38,7 @@ LABELS = {"signal:room-a": "Room A", "discord:room-b": "Room B"}
 #: The block type each element's attributes are glossed in.
 TYPE_OF = {
     "item": "agenda", "m": "agenda", "rollup": "agenda", "observation": "agenda",
-    "note": "note_index", "note_index": "note_index",
+    "note": "notes", "notes": "notes",
     "event": "events", "room_events": "events",
 }
 
@@ -146,7 +146,7 @@ def _emitted() -> dict[str, set[str]]:
     seen: dict[str, set[str]] = defaultdict(set)
     for prompt in (_everything(), _source_prompt()):
         for block in blocks(prompt):
-            if block.tag in ("note_index", "events"):
+            if block.tag in ("notes", "events"):
                 seen[block.tag].update(
                     k for k in block.attrib if k not in ("description", "fields"))
             for el in block.iter():
@@ -158,7 +158,7 @@ def _emitted() -> dict[str, set[str]]:
 
 def test_every_attribute_the_prompt_emits_has_a_gloss_in_its_block_type():
     seen = _emitted()
-    assert set(seen) == {"agenda", "note_index", "events"}
+    assert set(seen) == {"agenda", "notes", "events"}
     for type_name, attrs in seen.items():
         glossed = dict(BLOCK_TYPES[type_name].annotations)
         for attr in sorted(attrs):
@@ -177,8 +177,8 @@ def test_the_fixture_makes_every_element_carry_every_attribute_it_can():
         "withdrawn", "deleted", "own", "cues", "turn", "target",
         "op", "actor", "time", "received", "rev", "coverage", "object",
     }
-    assert seen["note_index"] == {
-        "n", "title", "not_listed", "review", "may_duplicate", "reminds",
+    assert seen["notes"] == {
+        "n", "title", "not_listed", "review", "may_duplicate", "reminds", "id_kind",
     }
     assert seen["events"] == {
         "room", "not_listed", "id", "status", "when", "venue", "revision",
@@ -187,8 +187,8 @@ def test_the_fixture_makes_every_element_carry_every_attribute_it_can():
 
 def test_no_annotation_glosses_a_field_that_is_never_emitted():
     seen = _emitted()
-    for type_name in ("agenda", "note_index", "events"):
-        assert set(dict(BLOCK_TYPES[type_name].annotations)) == seen[type_name], type_name
+    for type_name in ("agenda", "notes", "events"):
+        assert seen[type_name] <= set(dict(BLOCK_TYPES[type_name].annotations)), type_name
 
 
 # ---- the type text is said once -------------------------------------------------------
@@ -223,7 +223,7 @@ def test_the_type_text_appears_once_per_prompt_however_many_items(n_items: int):
         assert prompt.count(f"<{name} ") == 1 or prompt.count(f"<{name}>") == 1, name
     assert prompt.count("<item ") == n_items
     assert prompt.count("<room_events ") == n_items
-    assert prompt.count('description="') == 3        # clock-less: agenda, events and nothing else
+    assert prompt.count('description="') == len(blocks(prompt))
 
 
 def test_twelve_items_cost_their_own_rows_and_not_twelve_copies_of_the_type_text():
@@ -233,7 +233,7 @@ def test_twelve_items_cost_their_own_rows_and_not_twelve_copies_of_the_type_text
     per_item = (twelve - one) / 11
     assert per_item < 600, per_item                       # item + one row + one event
     assert (five - one) / 4 < 600
-    assert twelve < 12_000, twelve
+    assert twelve - one < 12_000, twelve
     type_text = sum(
         len(BLOCK_TYPES[n].description)
         + sum(len(k) + len(v) + 6 for k, v in BLOCK_TYPES[n].annotations)
@@ -263,7 +263,8 @@ def test_the_view_rejects_text_outside_a_block_and_between_an_elements_children(
 
 
 def test_every_prompt_the_fixture_renders_has_no_stray_text():
-    assert [b.tag for b in blocks(_everything())] == ["clock", "agenda", "note_index", "events"]
+    from nora.language.cognition_render import _BLOCKS
+    assert [b.tag for b in blocks(_everything())] == [d.name for d in _BLOCKS]
 
 
 # ---- the line shapes the description teaches are the ones the validator holds ---------

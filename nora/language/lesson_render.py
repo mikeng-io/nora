@@ -33,7 +33,7 @@ DEFAULT_LESSONS_READ_TIMEOUT_SECONDS = 2.0
 
 
 class _Store(Protocol):
-    async def lessons(self, *, unit: str) -> tuple[Lesson, ...]: ...
+    async def lessons(self, *, unit: str, as_of_ms: int | None = None) -> tuple[Lesson, ...]: ...
 
 
 class ActiveLessons:
@@ -43,8 +43,10 @@ class ActiveLessons:
     def __init__(self, store: _Store) -> None:
         self._store = store
 
-    async def bodies(self, *, unit: str) -> tuple[str, ...]:
-        return tuple(x.head.body for x in await self._store.lessons(unit=unit) if x.active)
+    async def bodies(self, *, unit: str, as_of_ms: int | None = None) -> tuple[str, ...]:
+        rows = (await self._store.lessons(unit=unit) if as_of_ms is None
+                else await self._store.lessons(unit=unit, as_of_ms=as_of_ms))
+        return tuple(x.head.body for x in rows if x.active)
 
 
 async def read_lessons(

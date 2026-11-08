@@ -332,6 +332,7 @@ class TranscriptRow:
     # state unknown» and «no reactions» are never collapsed into a zero.
     reactions: RowReactions | None = None
     turn_id: int | None = None
+    mention_persons: tuple[str, ...] = ()
 
     @property
     def turn_handle(self) -> str | None:

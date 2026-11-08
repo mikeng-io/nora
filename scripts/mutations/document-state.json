@@ -107,22 +107,22 @@
   {
     "name": "service set_state: the same-room rule is dropped, so another room changes this room's document",
     "file": "nora/app/documents_service.py",
-    "old": "        if (\n            current is None\n            or current.summary.platform != platform\n            or current.summary.conversation_id not in here\n            or not may_read(current.summary, person_id, named)\n        ):\n            return None\n        return current",
-    "new": "        if current is None:\n            return None\n        return current",
+    "old": "            or current.summary.platform != platform\n            or current.summary.conversation_id not in here\n            or not may_read(current.summary, person_id, named)\n",
+    "new": "            or False\n",
     "target": "tests/unit/test_documents_service.py::test_another_rooms_document_cannot_have_its_state_changed"
   },
   {
     "name": "service set_state: an unknown person changes a state",
     "file": "nora/app/documents_service.py",
-    "old": "        if not self._is_person(person_id):\n            return StateResult(",
-    "new": "        if False:\n            return StateResult(",
+    "old": "if isinstance(person_id, DocumentAuthority) or not self._is_person(person_id):",
+    "new": "if False:",
     "target": "tests/unit/test_documents_service.py::test_only_a_known_person_changes_a_state_and_only_to_a_known_state"
   },
   {
     "name": "review 1: the reader never reads the put-away documents, so a later turn has no id to restore",
     "file": "nora/engagement/documents_context.py",
-    "old": ", states=(\"archived\", \"deleted\"),\n",
-    "new": ",\n",
+    "old": "                        states=(\"archived\", \"deleted\"),",
+    "new": "                        states=(\"active\",),",
     "target": "tests/unit/test_document_tools.py::test_a_deleted_document_is_restored_from_what_a_later_turn_sees"
   },
   {
@@ -142,8 +142,8 @@
   {
     "name": "review 1: the put-away section is not capped",
     "file": "nora/engagement/documents_context.py",
-    "old": "                        platform=platform, conversation_ids=ids, limit=self._put_away,",
-    "new": "                        platform=platform, conversation_ids=ids, limit=self._shown,",
+    "old": "limit=0 if autonomous else self._put_away,",
+    "new": "limit=0 if autonomous else self._shown,",
     "target": "tests/unit/test_documents_block.py::test_put_away_documents_are_a_bounded_section_led_by_their_state"
   },
   {

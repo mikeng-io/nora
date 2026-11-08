@@ -239,7 +239,7 @@ def new_facts(text: str) -> Facts:
                     if "earlier_range" in a else None,
                     int(a.get("unreadable", 0)),
                 ))
-        elif block.tag == "note_index":
+        elif block.tag == "notes":
             a = block.attrib
             facts.notes += [(n.attrib["n"], n.attrib["title"], n.text or "") for n in block]
             facts.notes_not_listed = int(a.get("not_listed", 0))

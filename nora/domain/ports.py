@@ -964,7 +964,10 @@ class RecordStore(Protocol):
 
     async def set_person_id(self, *, row_id: int, person_id: str) -> None: ...
 
-    async def room_activity(self, *, conversation_id: str, since_ts: int) -> RoomActivity:
+    async def room_activity(
+        self, *, conversation_id: str, since_ts: int,
+        platform: str | None = None, as_of_ms: int | None = None,
+    ) -> RoomActivity:
         """People's messages in this conversation at or after `since_ts`, how
         many distinct people sent them, and the newest person's `ts` at any
         time (`RoomActivity`). One indexed

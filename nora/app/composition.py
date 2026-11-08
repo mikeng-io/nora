@@ -2026,6 +2026,18 @@ async def build_dependencies(
     _require_a_sendable_public_url(
         cfg.documents.public_url, content_checks=content_checks,
     )
+    def cognition_context_screen(text: str) -> str | None:
+        from nora.agent.egress import LeakGuard, scan_reply
+
+        return scan_reply(text, content_checks=content_checks) or LeakGuard(
+            doctrine_store.get(applies_to="cognition"), cfg.doctrine.canary
+        ).check(text)
+
+    def cognition_shared_document_room(unit: str, platform: str, cid: str) -> bool:
+        c = allowlist.conversation(platform, cid)
+        return bool(c is not None and c.unit == unit and c.persons
+                    and c.persons <= persons.by_person.keys())
+
     document_service = DocumentService(
         store=documents_store, records=audit, media=media_objects,
         media_window=cfg.store.context_window + LOAD_TRANSCRIPT_MAX,
@@ -2037,7 +2049,8 @@ async def build_dependencies(
         place_locator=route_client,
         # The read grant, from the same policy.toml the portal reads with (8765_44827).
         rooms_of=functools.partial(rooms_named, allowlist),
-        content_checks=content_checks,
+        content_checks=content_checks, shared_room=cognition_shared_document_room,
+        autonomous_screen=cognition_context_screen,
     )
     # `<documents>`: the one reader the tag path and the fire path
     # share. `None` while `[documents]` is off, so no room renders the block (the same
@@ -2046,8 +2059,10 @@ async def build_dependencies(
     if cfg.documents.enabled:
         documents_context = DocumentsContextReader(
             store=documents_store, room_ids=_room_ids_of(allowlist),
-            clock=lambda: datetime.now(UTC), metrics=metrics,
+            clock=clock, metrics=metrics,
             rooms_of=functools.partial(rooms_named, allowlist),
+            shared_room=cognition_shared_document_room,
+            autonomous_screen=cognition_context_screen,
         )
     # `<subagents>`: this room's sub-agent jobs, tag turn only. `None`
     # while `[subagent]` is off. The worker is attached where the desk's is, once built.
@@ -5218,21 +5233,41 @@ async def build_dependencies(
                 )
             # The policy's label for each of those ids: the prompt calls a
             # room by it and never by the conversation id.
-            cognition_room_labels: Mapping[tuple[str, str], str] = LiveMapping(lambda: {
-                (conv.platform, cid): conv.label
-                for conv in allowlist.rooms() for cid in conv.ids
-            })
+            cognition_room_labels: Mapping[tuple[str, str], str] = LiveMapping(
+                lambda: {
+                    (conv.platform, cid): conv.label
+                    for conv in allowlist.rooms()
+                    for cid in conv.ids
+                }
+            )
 
             async def _room_events(
                 unit: str, platform: str, conversation_id: str,
             ) -> Sequence[Any]:
                 return await _open_events(unit, platform, conversation_id)
 
+            from nora.app.cognition_context import CognitionContextReader
+            cognition_profile_reader = SqlProfileStore(
+                engine,
+                screen=functools.partial(text_offence, content_checks=content_checks),
+            )
+            cognition_context = CognitionContextReader(
+                policy=allowlist, persons=persons, lineage=lineage,
+                records=SqlRecordQuery(engine), directory=presence_reader, audit=audit,
+                profiles=cognition_profile_reader,
+                lessons=ActiveLessons(SqlLessonStore(engine)), media_join=media_join,
+                room_for=lambda platform, cid: Room(platform=platform, conversation_id=cid,
+                    roster_source=rosters.get(platform), persons=persons,
+                    self_ids=registry.self_aliases()),
+                screen=cognition_context_screen,
+                record_chars=cfg.cognition.record_chars, documents=documents_context,
+            )
             grounder = build_grounder(
                 # NOT `tool_registry`'s `record`, which is None unless `[record_query]
                 # enabled`: the rows that raised a stimulus are code's own input, and a
                 # session must be grounded with the tool off.
                 records=SqlRecordQuery(engine), persons=persons, media_join=media_join,
+                context=cognition_context,
                 note_index=_note_index, events_in=_room_events,
                 memo_index=lambda unit: memo_store.kept(unit=unit),
                 pending_reminds=lambda: reminders.pending_of(cfg.honcho.ai_peer),
@@ -5295,6 +5330,8 @@ async def build_dependencies(
             try:
                 cognition_runner = build_cognition_runner(
                     memory=cognition_memory,
+                    documents=document_service if cfg.documents.enabled else None,
+                    documents_context=documents_context,
                     tag_trace_store=tag_trace_store,
                     cfg=cfg, models=dream_models,
                     retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),

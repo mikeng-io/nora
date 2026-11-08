@@ -72,8 +72,8 @@
   {
     "name": "6: any name imported from domain.blocks counts as `assemble`",
     "file": "tests/architecture/test_every_model_call_is_a_declared_occasion.py",
-    "old": "        if alias.name == \"assemble\"\n",
-    "new": "        if True\n",
+    "old": "if alias.name in {\"assemble\", \"assemble_declared\"}",
+    "new": "if True",
     "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_a_declared_table_that_is_not_walked_by_the_real_assemble_is_caught"
   },
   {

@@ -51,7 +51,7 @@
  {
   "name": "the transcript block stops explaining the counts",
   "file": "nora/domain/block_types.py",
-  "old": "       reactions=(\n           \"the emoji reactions standing on it now",
+  "old": "reactions=(\n            \"the emoji reactions standing on it now",
   "new": "       reactions_lost=(\n           \"the emoji reactions standing on it now",
   "target": "tests/unit/test_reaction_annotations.py::test_the_reaction_fields_are_glossed_where_the_model_reads_them"
  },

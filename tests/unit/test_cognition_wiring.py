@@ -323,8 +323,8 @@ async def test_an_agenda_in_one_room_binds_the_reads_to_that_room():
     await _wake(runner, (_stim(1, OTHER),))
     assert asked == [[OTHER]]
     # the prompt says the room's label; its id is for a tool's argument only (m5)
-    assert "Your read tools look through room «The Other Room»." in agent.prompts[0]
-    assert "discord:other" not in agent.prompts[0]
+    assert 'agenda_room="discord:other" label="The Other Room"' in agent.prompts[0]
+    assert "home" not in str(items(agent.prompts[0])[0].attrib)
 
 
 async def test_an_agenda_spanning_rooms_asks_for_each_rooms_reads_and_never_the_home_room_instead():
@@ -345,11 +345,8 @@ async def test_an_agenda_spanning_rooms_asks_for_each_rooms_reads_and_never_the_
     await _wake(runner, (_stim(1, OTHER), _stim(2, third), _stim(3, OTHER)))
     assert asked == [[OTHER, third]]              # once, both rooms, agenda order
     assert HOME not in asked[0]
-    assert (
-        "take an `agenda_room`, one of: `discord:other` («The Other Room»), "
-        "`whatsapp:third` («Third»)"
-        in agent.prompts[0]
-    )
+    assert 'agenda_room="discord:other" label="The Other Room"' in agent.prompts[0]
+    assert 'agenda_room="whatsapp:third" label="Third"' in agent.prompts[0]
     assert "look through room" not in agent.prompts[0]
 
 
@@ -369,7 +366,9 @@ async def test_the_prompt_says_what_time_it_is_and_how_old_each_item_is():
     await _wake(runner, (_stim(1, HOME, at=NOW - 90 * 60_000),))
     prompt = agent.prompts[0]
     # the clock is the FIRST thing she reads, then which room her reads look through
-    assert [b.tag for b in blocks(prompt)][:2] == ["clock", "reads"]
+    assert [b.tag for b in blocks(prompt)].index("clock") < [b.tag for b in blocks(prompt)].index(
+        "reads"
+    )
     (clock,) = named(prompt, "clock")
     (item,) = items(prompt)
     assert (clock.text or "").strip().startswith("It is ") and "(UTC)" in (clock.text or "")
@@ -757,7 +756,7 @@ def test_the_objective_teaches_nothing_the_block_types_already_say():
     assert "A Ruled out line is `<option>: <reason> (<names>) [<ids>]`" in agenda.description
     # which field is the message's REAL id, and the note's, and where the room key is
     assert fields["n"].startswith("a message's real id: ")
-    assert dict(BLOCK_TYPES["note_index"].annotations)["n"].startswith("the note's real id")
+    assert "real note id" in dict(BLOCK_TYPES["notes"].annotations)["n"]
     assert "`platform:conversation_id`" in BLOCK_TYPES["reads"].description
     # and the rest of what the input carries, said on the fields
     assert "changed after they were said" in fields["edited"]

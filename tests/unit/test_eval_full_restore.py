@@ -311,9 +311,9 @@ _NOTE_BLOCK = (
     "</notes>"
 )
 _WINDOW = (
-    '<group_transcript window="1" description="the room">\n'
+    '<transcript window="1" description="the room">\n'
     '<m n="1" age="just now" from="Miles">where have we been lately?</m>\n'
-    "</group_transcript>"
+    "</transcript>"
 )
 
 
@@ -430,12 +430,12 @@ async def test_a_recall_judge_is_shown_every_block_her_turn_was_shown(judged, cr
     source = graded["source"]
     assert _NOTE_BLOCK in source, "a block she was shown never reached the recall judge"
     assert source.startswith("<m>the window</m>")
-    assert source.count("<group_transcript") == 0, "the window is the source's head, once"
+    assert source.count("<transcript") == 0, "the window is the source's head, once"
     assert "THE DOCTRINE, NOT A BLOCK" not in source, "only the message carrying her window"
 
 
 _RESULTS = (("media_fetch", '{"status": "unavailable"}'), ("send_reply", "sent"))
-_BLOCKS = (("notes", _NOTE_BLOCK), ("group_transcript", _WINDOW))
+_BLOCKS = (("notes", _NOTE_BLOCK), ("transcript", _WINDOW))
 
 
 @pytest.mark.parametrize("criteria", [

@@ -6,24 +6,17 @@ import json
 from collections import Counter
 
 from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
-from nora.domain.composed import compose_body, legacy_composed
-from nora.domain.comprehend import ComprehendItem, Preview
+from nora.domain.composed import compose_body
+from nora.domain.comprehend import Preview
 from nora.domain.memory_graph import (
     ENTRY,
     PROPOSED_KINDS,
     RELATION_RULES,
-    Evidence,
-    Source,
-    Subgraph,
-    TopicActivity,
 )
 from nora.domain.prompt import escape, one_line
 from nora.language.computer_render import estimate_tokens
 
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
-    ("graph_preview", 10, "turn"),
-    ("comprehend_item", 20, "turn"),
-    ("reshape_graph", 30, "turn"),
     ("memory", 40, "turn"),
     ("cognition_orient", 60, "global"),
 )
@@ -163,78 +156,6 @@ def memory_result_text(text: str, *, query: str, depth: int) -> str:
     )
 
 
-def render_comprehend(item: ComprehendItem, preview: Preview, *, tokens: int = 1500) -> str:
-    payload = {
-        "source": item.work.source,
-        "now": item.work.as_of.isoformat(),
-        "unit": item.work.unit,
-        "historical": item.work.historical,
-        "window": [t.isoformat() for t in preview.window],
-        "sources": [
-            {"key": s.key, "layer": s.layer, "persons": s.persons, "text": s.text}
-            for s in item.sources
-        ],
-        "reading_sources": item.snapshot,
-    }
-    return assemble(
-        [
-            restamp(
-                ContextBlock(
-                    name="graph_preview",
-                        body=legacy_composed(escape(preview_text(preview, tokens=tokens)))
-                ),
-                _ROW,
-            ),
-            restamp(
-                ContextBlock(
-                    name="comprehend_item",
-                    body=legacy_composed(escape(
-                        json.dumps(payload, ensure_ascii=False, default=str).replace(
-                            "\x7f", r"\u007f"
-                        )
-                    )),
-                ),
-                _ROW,
-            ),
-        ]
-    )
-
-
-def render_reshape(
-    entity: tuple[str, str],
-    graph: Subgraph,
-    at: str,
-    *,
-    evidence: tuple[Evidence, ...] = (),
-    sources: tuple[Source, ...] = (),
-    activity: TopicActivity | None = None,
-) -> str:
-    from dataclasses import asdict
-
-    return assemble(
-        [
-            restamp(
-                ContextBlock(
-                    name="reshape_graph",
-                    body=legacy_composed(escape(
-                        json.dumps(
-                            {
-                                "entity": entity,
-                                "topic_activity": asdict(activity) if activity else None,
-                                "now": at,
-                                "graph": asdict(graph),
-                                "evidence": [asdict(e) for e in evidence],
-                                "sources": [asdict(s) for s in sources],
-                            },
-                            default=str,
-                            ensure_ascii=False,
-                        )
-                    )),
-                ),
-                _ROW,
-            )
-        ]
-    )
 
 
 #: The worked examples quote real agenda elements — the clock block and the
@@ -316,6 +237,12 @@ price or a reason nobody gave is not yours to supply as theirs. Web pages
 never establish anything about a private person. A plan does not establish
 attendance.
 
+
+Shared documents are an index, never evidence of what a person said. When agenda evidence
+supersedes a shared document, document_read its current revision before document_revise.
+Use cited replacements only, preserve unrelated content and uncertainty, and never retry a
+conflict automatically. Creator-only documents are inaccessible; no creation or lifecycle
+change is authorized by this session.
 """ + _VOCABULARY + """
 
 The kinds you write, each with its create-when and an example:

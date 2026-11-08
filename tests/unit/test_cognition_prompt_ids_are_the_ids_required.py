@@ -304,7 +304,7 @@ def test_hostile_words_names_titles_labels_and_summaries_write_no_element():
     prompt, n_items, _ = _hostile_prompt()
     top = blocks(prompt)                                     # raises if not well-formed
     assert [b.tag for b in top] == [
-        "clock", "reads", "agenda", "note_index", "events",
+        "clock", "reads", "agenda", "notes", "events",
     ]
     agenda = items(prompt)
     assert len(agenda) == n_items and [i.attrib["index"] for i in agenda] == ["0", "1"]
@@ -319,7 +319,7 @@ def test_hostile_words_names_titles_labels_and_summaries_write_no_element():
     # one row, one line, whatever the words held
     assert sum(1 for ln in prompt.splitlines() if ln.startswith("<m ")) == 2
     # the register: one note, one event, ids and titles are values
-    (note_index,) = named(prompt, "note_index")
+    (note_index,) = named(prompt, "notes")
     (note,) = list(note_index)
     assert note.attrib["n"] == f'n"{FORGE}' and note.attrib["title"].startswith("a & ")
     (group,) = events(prompt)
