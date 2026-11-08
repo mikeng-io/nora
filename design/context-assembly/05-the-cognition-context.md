@@ -84,7 +84,7 @@ serve a reply in one room, most of them for no decision this session makes.
 | what she owes, holds open, already did | her standing | `standing` |
 | move or cancel a reminder she wrote | her pending reminders in the agenda rooms, by id and due time (today: the `reminds` field on each note, `nora/app/cognition_grounding.py` ~769–797, scoped to agenda rooms because `remind_move`/`remind_cancel` refuse others) | `notes` (`reminds` field, kept) |
 | whether something should reach a room as a reminder | the note or rows it rests on, and whether one is already pending | `notes`, `agenda` |
-| set, move or cancel a self-wake | her pending self-wakes, by id, time and why. **No block shows them today**: a wake id is known only from the `wake_at` that returned it, or from the wake item that fires it | `wakes` (new list block) |
+| set, move or cancel a self-wake | her pending self-wakes, by id, due time and subject: already in `standing`'s Waiting section (`nora/app/cognition_session.py` ~1342 passes them into the shared view, `nora/agent/shared_state.py` ~340 makes them pending `wake` entries, `nora/language/shared_render.py` renders them) | `standing` (kept) |
 | how she should write, from past corrections | her lessons for the unit | `lessons` |
 | when, and how long ago | now, and her last session | `clock` |
 | which rooms the read tools look through | the read scope | `reads` |
@@ -197,7 +197,7 @@ One integrated change from this spec, measured once (AGENTS.md):
 
 1. One Cognition context assembly over the shared builders: `members`,
    `profile`, `transcript` (both windows), `notes`, `memos`, `events`,
-   `standing`, `lessons`, `wakes`, `clock`, `reads`, `tool_catalogue`; Cognition keeps
+   `standing`, `lessons`, `clock`, `reads`, `tool_catalogue`; Cognition keeps
    only `agenda` and `graph` as its own types.
 2. Delete Cognition's entries from `LEGACY_COMPOSERS` and `_INITIAL_LEGACY`
    (`cognition_render:render_agenda`, `_register`, `_item_blocks`). The
