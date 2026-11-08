@@ -20,7 +20,6 @@ from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.profile import ProfileView
 from nora.domain.record_query import RecordQuery
-from nora.engagement.character_who import row_mentions
 from nora.language.profile_render import authored_identity
 
 log = logging.getLogger(__name__)
@@ -133,12 +132,11 @@ class CognitionContextReader:
                 frequencies[author_id] += 1
             for pid in row.mention_persons:
                 frequencies.setdefault(self._persons.subject_id_for(pid), 0)
-            for raw_id in row_mentions(row):
-                if (person := self._persons.resolve(platform, raw_id)) is not None:
-                    frequencies.setdefault(person.person_id, 0)
             text = (row.body or "").casefold()
             for alias, ids in aliases.items():
-                if len(ids) == 1 and re.search(r"(?<!\w)" + re.escape(alias) + r"(?!\w)", text):
+                if len(ids) == 1 and re.search(
+                    r"(?<!\w)" + re.escape(alias) + r"(?!\w)", text, flags=re.ASCII
+                ):
                     frequencies.setdefault(next(iter(ids)), 0)
         related = tuple(sorted(frequencies, key=lambda pid: (-frequencies[pid], pid)))
         profiles: list[ProfileView] = []
@@ -245,11 +243,7 @@ class CognitionContextReader:
                         if (hit.platform, hit.conversation_id) not in room_keys:
                             raise ValueError("record outside the declared room read")
                         row = hit.row
-                        mentioned = set(row.mention_persons) | {
-                            p.person_id
-                            for raw in row_mentions(row)
-                            if (p := self._persons.resolve(room.platform, raw)) is not None
-                        }
+                        mentioned = set(row.mention_persons)
                         if not is_agenda_room and not ({row.person_id} | mentioned) & set(related):
                             continue
                         if hit.deleted or row.body is None:

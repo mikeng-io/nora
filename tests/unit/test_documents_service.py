@@ -1243,7 +1243,8 @@ async def test_deferred_document_tools_read_then_revise_and_refuse_stale_read():
 
 
 @pytest.mark.parametrize(
-    "scenario", ["uncertain", "foreign_evidence", "no_evidence", "historical", "archived"]
+    "scenario",
+    ["uncertain", "foreign_evidence", "no_evidence", "historical", "archived", "bool_source"],
 )
 async def test_autonomous_document_revisions_fail_closed_on_unsupported_evidence(scenario):
     from nora.domain.documents import DocumentAuthority
@@ -1257,6 +1258,8 @@ async def test_autonomous_document_revisions_fail_closed_on_unsupported_evidence
         evidence = ((7, *OTHER, "9pm"),)
     if scenario == "no_evidence":
         evidence = ()
+    if scenario == "bool_source":
+        evidence = ((1, *ROOM, "9pm"),)
     grant = DocumentAuthority(
         "u", frozenset({ROOM}), 42, evidence, read_only=scenario == "historical"
     )
@@ -1271,7 +1274,12 @@ async def test_autonomous_document_revisions_fail_closed_on_unsupported_evidence
         written_by="",
         raw={
             "changes": [
-                {"path": "/root/children/0/props/text", "old": "8pm", "new": "9pm", "sources": [7]}
+                {
+                    "path": "/root/children/0/props/text",
+                    "old": "8pm",
+                    "new": "9pm",
+                    "sources": [True] if scenario == "bool_source" else [7],
+                }
             ]
         },
     )

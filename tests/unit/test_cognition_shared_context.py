@@ -87,6 +87,8 @@ async def build(
     foreign_agenda=False,
     documents=None,
     alias_transcript=False,
+    agenda_body=None,
+    stale_raw=None,
 ):
     p1 = PersonRef("p1", "Ada", "p1", aliases=("Ace",))
     p2 = PersonRef("p2", "Ben", "p2")
@@ -160,9 +162,10 @@ async def build(
     )
     agenda_row = replace(
         row(2),
-        body="Ace sent [image a3f2c1]",
+        body=agenda_body or "Ace sent [image a3f2c1]",
         media_json='[{"sha256":"' + SHA + '","media_type":"image/png","size":4}]',
     )
+    agenda_row = replace(agenda_row, raw_json=stale_raw, mention_persons=())
     grounding = Grounding(
         room_labels={"signal:alpha": "Alpha"},
         records={
@@ -416,3 +419,28 @@ async def test_document_evidence_refuses_clipped_qualifiers_but_accepts_complete
     assert "Settled at 9pm" in prompt  # the partial source really reached the candidate
     assert any(n == 1 for n, *_ in state.document_evidence)
     assert all(n != 2 for n, *_ in state.document_evidence)
+
+
+async def test_related_alias_next_to_cjk_text_resolves_to_its_stable_person():
+    grounding, _ = await build(agenda_body="Ben今晚有空嗎？")
+    assert {v.of for v in grounding.profiles if v.entity == "person"} == {"p1", "p2"}
+
+
+async def test_canonical_empty_mentions_do_not_reinterpret_an_older_raw_envelope():
+    import json
+
+    stale = json.dumps(
+        {
+            "envelope": {
+                "dataMessage": {
+                    "message": "@Ben",
+                    "mentions": [{"start": 0, "length": 4, "uuid": "p2"}],
+                }
+            }
+        }
+    )
+    from nora.engagement.character_who import _row_mentions
+
+    assert _row_mentions(replace(row(2), raw_json=stale)) == frozenset({"p2"})
+    grounding, _ = await build(stale_raw=stale)
+    assert {v.of for v in grounding.profiles if v.entity == "person"} == {"p1"}

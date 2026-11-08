@@ -732,7 +732,7 @@ class DocumentService:
                     or not new
                     or not isinstance(ids, list)
                     or not ids
-                    or any(not isinstance(n, int) or n not in sources for n in ids)
+                    or any(type(n) is not int or n not in sources for n in ids)
                 ):
                     return PublishResult("refused", note="The replacement lacks shown evidence.")
                 here = self._room_ids(platform, conversation_id) | {conversation_id}

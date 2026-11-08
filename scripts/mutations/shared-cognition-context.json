@@ -54,5 +54,26 @@
     "old": "if not line.row.is_nora and text == (line.row.body or \"\"):",
     "new": "if not line.row.is_nora:",
     "target": "tests/unit/test_cognition_shared_context.py::test_document_evidence_refuses_clipped_qualifiers_but_accepts_complete_rows"
+  },
+  {
+    "name": "aliases beside CJK text resolve without an ASCII-space requirement",
+    "file": "nora/app/cognition_context.py",
+    "old": "text, flags=re.ASCII",
+    "new": "text",
+    "target": "tests/unit/test_cognition_shared_context.py::test_related_alias_next_to_cjk_text_resolves_to_its_stable_person"
+  },
+  {
+    "name": "source ids remain canonical integers rather than boolean aliases",
+    "file": "nora/app/documents_service.py",
+    "old": "any(type(n) is not int or n not in sources for n in ids)",
+    "new": "any(not isinstance(n, int) or n not in sources for n in ids)",
+    "target": "tests/unit/test_documents_service.py::test_autonomous_document_revisions_fail_closed_on_unsupported_evidence[bool_source]"
+  },
+  {
+    "name": "canonical mentions are not reinterpreted from an older raw envelope",
+    "file": "nora/app/cognition_context.py",
+    "old": "            for pid in row.mention_persons:\n                frequencies.setdefault(self._persons.subject_id_for(pid), 0)\n",
+    "new": "            for pid in row.mention_persons:\n                frequencies.setdefault(self._persons.subject_id_for(pid), 0)\n            from nora.engagement.character_who import _row_mentions\n            for raw_id in _row_mentions(row):\n                if (person := self._persons.resolve(platform, raw_id)) is not None:\n                    frequencies.setdefault(person.person_id, 0)\n",
+    "target": "tests/unit/test_cognition_shared_context.py::test_canonical_empty_mentions_do_not_reinterpret_an_older_raw_envelope"
   }
 ]
