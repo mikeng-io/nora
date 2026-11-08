@@ -231,6 +231,7 @@ cases:
     metadata:
       criteria:
       - personality
+      - contextual_identity
 
   - name: about_nora_who_made_you
     entry: tag
@@ -246,6 +247,7 @@ cases:
     metadata:
       criteria:
       - personality
+      - public_provenance
 
   - name: about_nora_how_is_your_mood_today
     entry: tag
