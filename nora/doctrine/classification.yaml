@@ -46,7 +46,7 @@ files:
       - starts: Your public source repository
         bucket: seed
         reason: Public project provenance, without personal ownership.
-        sha: 5f67f33483d7
+        sha: 3451f189cb7b
       - starts: Knowing the repository
         bucket: law
         reason: Public source knowledge is distinct from inspecting private deployment state.
