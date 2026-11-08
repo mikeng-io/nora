@@ -635,7 +635,8 @@ _CONTEXTUAL_CRITERIA = frozenset({
 
 def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
                   criteria: tuple[str, ...],
-                  blocks: tuple[tuple[str, str], ...] = ()) -> str | None:
+                  blocks: tuple[tuple[str, str], ...] = (), *,
+                  clock: str | None = None) -> str | None:
     """The source data a judge grades against — `transcript` is what
     `_shown_transcript` read back off the turn's own call, i.e. the window
     her turn actually rendered, never the whole seeded room. The tool
@@ -649,8 +650,11 @@ def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
     rendered account outside the transcript. Other criteria retain their
     existing window-and-tool source.
     Never the doctrine: that is the system prompt, not a block, and the judge is
-    handed it separately."""
+    handed it separately. The captured clock line is evidence too: it lives
+    outside those blocks, but grounds the turn's date and time claims."""
     parts = [transcript] if transcript else []
+    if clock:
+        parts.append(clock)
     contextual = _CONTEXTUAL_CRITERIA.intersection(criteria)
     if contextual:
         shown = [text for name, text in blocks if name not in _NOT_RECALL_CONTEXT]
@@ -2040,6 +2044,11 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         _recall_blocks_problem(shown_blocks, blocks_rendered))
                 ):
                     outcome = dataclasses.replace(outcome, error=blocks_problem)
+                elif shown_now is None and not port.public_audience:
+                    outcome = dataclasses.replace(
+                        outcome, error="no clock line was captured off the model call; "
+                        "the judge cannot check time claims against what she was shown",
+                    )
                 else:
                     from evals.rebuilt.grading import criteria_for
 
@@ -2074,6 +2083,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         # was shown too (`_judge_source`'s docstring).
                         source=_judge_source(
                             shown_transcript, tool_results, criteria, shown_blocks or (),
+                            clock=shown_now,
                         ),
                         extra=extra,
                         facts=judge_facts,

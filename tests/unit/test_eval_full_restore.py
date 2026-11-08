@@ -459,7 +459,9 @@ async def test_a_presence_case_is_judged_on_exactly_the_window(judged) -> None:
     judge = _Judge()
     await backbone._drive(_judged_case("presence", ["presence"]), _spec(judge=judge))
     [graded] = judge.graded
-    assert graded["source"] == "<m>the window</m>"
+    assert graded["source"] == (
+        "<m>the window</m>\n\nRight now it is Saturday 11 October 2026, 20:00 HKT."
+    )
 
 
 @pytest.mark.parametrize(("blocks", "rendered", "fragment"), [
@@ -1092,5 +1094,20 @@ async def test_identity_judgements_receive_the_room_role_the_subject_was_shown(
     )
     [graded] = judge.graded
     assert role in graded["source"]
+    assert "Right now it is Saturday 11 October 2026, 20:00 HKT." in graded["source"]
     assert graded["source"].startswith("<m>the window</m>")
     assert "THE DOCTRINE, NOT A BLOCK" not in graded["source"]
+
+
+async def test_a_room_judge_is_not_called_without_the_captured_clock(judged, monkeypatch):
+    from strands_evals.types.evaluation import EvaluationData
+
+    monkeypatch.setattr(backbone, "_shown_now", lambda _: None)
+    judge = _Judge()
+    result = await backbone._drive(
+        _judged_case("generated-missing-clock", ["personality"]),
+        _spec(full_restore=True, judge=judge),
+    )
+    assert judge.graded == []
+    data = EvaluationData(input="x", actual_environment_state=result["environment_state"])
+    assert "no clock line" in backbone.state_of(data, backbone.NORA_ERROR)
