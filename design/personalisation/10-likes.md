@@ -51,7 +51,7 @@ block, make the calculation replayable.
 **Hard constraints are separate from likes scores.** Step 1 also builds a
 frame constraint reader over eligible original messages and extraction
 for explicit restrictions and dated plans. The extraction writer exists,
-but has no retrieval consumer yet (`docs/maintainers/extraction.md:9`);
+but has no retrieval consumer yet (`design/unified-memory/18-extraction.md`);
 this reader and its interval extraction are new build work. It preserves the
 subject, source, assertion time, event interval, place and speech act. Only an
 explicit applicable restriction removes a candidate; a question, guess or

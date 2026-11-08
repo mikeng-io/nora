@@ -70,14 +70,11 @@ _SESSION_ID_MAX = 200
 #: (`nora.app.runtime.dream_loop`), so one pass's units read as one session.
 #: A Cognition session has no room either: `nora.cognition.session_id` is its
 #: own natural identity (one session's agent calls group as one conversation —
-#: a multi-room background session is not forced into one room). Extraction is
-#: not conversational, but a batch is the stable job/attempt identifier its
-#: spans group under (`nora.extraction.batch_id`).
+#: a multi-room background session is not forced into one room).
 _CONVERSATION_KEYS = (
     "nora.conversation_id",
     "nora.dreamer.pass_id",
     "nora.cognition.session_id",
-    "nora.extraction.batch_id",
 )
 
 #: First match wins. Langfuse's recognised `langfuse.observation.type` values;

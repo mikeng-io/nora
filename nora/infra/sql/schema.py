@@ -5213,6 +5213,8 @@ EXTRACTION = sa.Table(
     ),
 )
 
+# ponytail: unwritten since the per-message extraction worker was removed;
+# drop the table in a later migration.
 EXTRACTION_QUEUE = sa.Table(
     "extraction_queue", METADATA,
     sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),

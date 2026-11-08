@@ -1157,26 +1157,6 @@ class OnlineConfig(BaseModel):
     timeout_seconds: float = Field(default=8.0, gt=0)
 
 
-class ExtractionConfig(BaseModel):
-    """Write-only Record perception; independent of the memory index read flag."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    enabled: bool = False
-    # Same gateway and credentials as [llm]; never inherit its tag/reasoning lane.
-    model: str = "ollamacloud/deepseek-v4.1-flash"
-    messages_per_call: int = Field(default=20, ge=1, le=100)
-    context_messages: int = Field(default=20, ge=1, le=100)
-    min_message_age_seconds: float = Field(default=2, ge=0, le=60)
-    timeout_seconds: float = Field(default=90, gt=0, le=300)
-    max_tokens: int = Field(default=6000, ge=256, le=32000)
-
-    @model_validator(mode="after")
-    def _extraction_model_is_flash(self) -> ExtractionConfig:
-        if self.enabled and not re.fullmatch(r"[^/]+/deepseek-v4\.1-flash", self.model):
-            raise ValueError("extraction requires a configured DeepSeek V4.1 Flash route")
-        return self
-
-
 class MemoryIndexConfig(BaseModel):
     """The memory index. The index is written by every store's own write whatever this
     says; `refresh_seconds` is how often the nora process re-projects what those writes
@@ -2736,11 +2716,10 @@ class GraphConfig(BaseModel):
 
 
 class MemoryConfig(BaseModel):
-    """Nora's extraction, memory index and Profile settings."""
+    """Nora's memory graph, index and Profile settings."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     graph: GraphConfig = GraphConfig()
-    extraction: ExtractionConfig = ExtractionConfig()
     index: MemoryIndexConfig = MemoryIndexConfig()
     profile: ProfileConfig = ProfileConfig()
 
@@ -4070,7 +4049,7 @@ class Config(BaseModel):
             raise ValueError("llm requires provider or base_url")
         purposes = {"tag", "participation", "proactive", "summons", "browse", "vision",
                     "speech_format", "reaction", "standing", "relevance_gate", "lesson_check",
-                    "dreamer", "subagent", "extraction", "eval_judge", "context_filter"}
+                    "dreamer", "subagent", "eval_judge", "context_filter"}
         for purpose, route in self.model_routes.items():
             if purpose not in purposes:
                 raise ValueError("unknown model route purpose")
@@ -4095,16 +4074,12 @@ class Config(BaseModel):
         if not isinstance(data, dict):
             return data
         renamed_keys = {
-            "extraction": {"batch_size": "messages_per_call",
-                           "context_size": "context_messages",
-                           "settle_seconds": "min_message_age_seconds"},
             "index": {"enabled": "read", "drain_seconds": "refresh_seconds"},
             "profile": {"enabled": "write", "render": "read"},
         }
         for old, new in (
             ("persona", "memory.profile"),
             ("profile", "memory.profile"),
-            ("message_readings", "memory.extraction"),
             ("memory_index", "memory.index"),
         ):
             if old in data:
@@ -4116,8 +4091,17 @@ class Config(BaseModel):
                                 f"[{old}] {key} has been renamed to [{new}] {replacement}"
                             )
                 raise ValueError(f"[{old}] has been renamed to [{new}]; rename the section")
+        if "message_readings" in data:
+            raise ValueError(
+                "[message_readings] was renamed to [memory.extraction], which has "
+                "been removed; delete the section"
+            )
         memory = data.get("memory", {})
         if isinstance(memory, dict):
+            if "extraction" in memory:
+                raise ValueError(
+                    "[memory.extraction] has been removed; delete the section"
+                )
             for key in HonchoConfig.model_fields:
                 if key in memory:
                     raise ValueError(f"[memory] {key} has been renamed to [honcho] {key}")

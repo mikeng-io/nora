@@ -8,14 +8,6 @@ from html import unescape
 from typing import Any, Literal, get_args
 from zoneinfo import ZoneInfo
 
-VERSION = 1
-
-ExtractionFailureStage = Literal[
-    "input", "request", "usage", "provider_model", "incomplete", "schema",
-    "claims", "publish", "cancelled", "storage",
-]
-EXTRACTION_FAILURE_STAGES: tuple[str, ...] = get_args(ExtractionFailureStage)
-
 ClaimDropReason = Literal[
     "citation_outside_batch", "duplicate_citation", "evidence_not_covering_citations",
     "evidence_absent", "unknown_subject", "event_reference_outside_citations",

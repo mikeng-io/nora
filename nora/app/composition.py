@@ -97,7 +97,6 @@ from nora.app.cognition_wiring import (
 from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
 from nora.app.documents_service import DocumentService, room_label, rooms_named
-from nora.app.extraction import ExtractionWorker
 from nora.app.graph_batches import GraphBatchProducer
 from nora.app.memory_routing import (
     MemoryRoutingError,
@@ -190,7 +189,6 @@ from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.decision_log import SqlDecisionLogStore
 from nora.infra.sql.documents import SqlDocumentStore
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
-from nora.infra.sql.extraction import SqlExtraction
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.lessons import SqlLessonStore
@@ -1471,7 +1469,6 @@ class Dependencies:
     # The memory index's embedding worker: `None` under `[memory.index] embed =
     # false`, the default. `__main__` hands it to the memory drain loop.
     memory_embed: MemoryEmbedWorker | None = None
-    extraction: ExtractionWorker | None = None
     graph_batches: GraphBatchProducer | None = None
     # The social stream's poller: `None` unless `[social.poll] enabled`.
     # `nora/__main__.py` starts it; the eval subject, which composes the same
@@ -1715,7 +1712,6 @@ async def build_dependencies(
         engine,
         max_per_conversation=cfg.store.max_per_conversation,
         metrics=metrics,
-        extraction_unit=_note_unit_of(allowlist) if cfg.memory.extraction.enabled else None,
     )
     # The dashboard consumer reads the derived analytics tables through the
     # same pool as every other Nora store. A second engine would fork the pool
@@ -5483,12 +5479,6 @@ async def build_dependencies(
         story_expiry=story_expiry,
         graph_batches=(GraphBatchProducer(engine, metrics=metrics)
                        if cfg.memory.graph.enabled else None),
-        extraction=(ExtractionWorker(
-            store=SqlExtraction(engine), client=model_client_for("extraction"),
-            config=cfg.memory.extraction.model_copy(update={
-                "model": route_model("extraction", cfg.memory.extraction.model),
-            }), metrics=metrics,
-        ) if cfg.memory.extraction.enabled else None),
         memory_embed=(
             MemoryEmbedWorker(
                 engine, LlamaEmbedder(cfg.memory.index.embedder_url), blobs,
