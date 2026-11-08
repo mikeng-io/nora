@@ -44,6 +44,26 @@ class BridgeUnavailableError(RuntimeError):
     """Transport failure reaching the bridge — distinct from a platform
     rejection, and never reinterpreted as a delivered or refused send."""
 
+    def __init__(self, message: str, *, status: int | None = None) -> None:
+        super().__init__(message)
+        #: The HTTP status the bridge answered, when it answered at all —
+        #: `/v1/self`'s 503-until-login is what `bridge_not_ready` reads.
+        self.status = status
+
+
+def bridge_not_ready(exc: BaseException) -> bool:
+    """True only while a bridge is up but still starting: `/v1/self`
+    answering 503 (the platform login has not landed yet) or the connection
+    refused (its HTTP surface is not bound). Anything else — another
+    status, a malformed body, a timeout — is a real startup failure."""
+    if not isinstance(exc, BridgeUnavailableError):
+        return False
+    if exc.status == 503:
+        return True
+    cause = exc.__cause__
+    return (isinstance(cause, aiohttp.ClientConnectorError)
+            and isinstance(cause.os_error, ConnectionRefusedError))
+
 
 @dataclass(frozen=True)
 class BridgeEndpoint:
@@ -123,7 +143,8 @@ class BridgeAdapter:
                     headers=carrier or None,
                     timeout=aiohttp.ClientTimeout(total=30)) as resp:
                 if resp.status != 200:
-                    raise BridgeUnavailableError(f"{path} -> {resp.status}")
+                    raise BridgeUnavailableError(
+                        f"{path} -> {resp.status}", status=resp.status)
                 return await resp.json()
         except (TimeoutError, aiohttp.ClientError) as exc:
             raise BridgeUnavailableError(f"{path}: {type(exc).__name__}") from exc
@@ -135,7 +156,8 @@ class BridgeAdapter:
                     f"{self._endpoint.base_url}{path}",
                     timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status != 200:
-                    raise BridgeUnavailableError(f"{path} -> {resp.status}")
+                    raise BridgeUnavailableError(
+                        f"{path} -> {resp.status}", status=resp.status)
                 return await resp.json()
         except (TimeoutError, aiohttp.ClientError) as exc:
             raise BridgeUnavailableError(f"{path}: {type(exc).__name__}") from exc
@@ -147,7 +169,8 @@ class BridgeAdapter:
                     f"{self._endpoint.base_url}{path}", data=data,
                     timeout=aiohttp.ClientTimeout(total=60)) as resp:
                 if resp.status not in (200, 201):
-                    raise BridgeUnavailableError(f"{path} -> {resp.status}")
+                    raise BridgeUnavailableError(
+                        f"{path} -> {resp.status}", status=resp.status)
         except (TimeoutError, aiohttp.ClientError) as exc:
             raise BridgeUnavailableError(f"{path}: {type(exc).__name__}") from exc
 
