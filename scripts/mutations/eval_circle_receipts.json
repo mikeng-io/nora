@@ -30,7 +30,7 @@
   {
     "name": "suitability draws fail closed when evidence capture is incomplete",
     "file": "evals/backbone.py",
-    "old": "elif {\"recall_grounded\", \"social_suitability\"} & set(md.get(\"criteria\") or ()) and (",
+    "old": "elif _CONTEXTUAL_CRITERIA.intersection(md.get(\"criteria\") or ()) and (",
     "new": "elif \"recall_grounded\" in tuple(md.get(\"criteria\") or ()) and (",
     "target": "tests/unit/test_eval_full_restore.py::test_a_recall_draw_whose_blocks_are_not_read_back_is_an_error"
   }

@@ -465,8 +465,11 @@ async def test_a_presence_case_is_judged_on_exactly_the_window(judged) -> None:
 @pytest.mark.parametrize(("blocks", "rendered", "fragment"), [
     (None, "", "no context blocks were captured"),
     (_NOTE_BLOCK, "notes,events,group_transcript", "['events']"),
+    (_NOTE_BLOCK, "notes,culture,group_transcript", "['culture']"),
 ])
-@pytest.mark.parametrize("criterion", [CRITERION, "social_suitability"])
+@pytest.mark.parametrize("criterion", [
+    CRITERION, "social_suitability", "personality", "contextual_identity", "public_provenance",
+])
 async def test_a_recall_draw_whose_blocks_are_not_read_back_is_an_error(
     judged, monkeypatch, blocks, rendered, fragment, criterion,
 ) -> None:
@@ -493,7 +496,7 @@ async def test_a_recall_draw_whose_blocks_are_not_read_back_is_an_error(
     data = EvaluationData(input="x", actual_environment_state=result["environment_state"])
     assert state_of(data, NORA_JUDGED) == ""
     error = state_of(data, NORA_ERROR)
-    assert error and fragment in error and "recall_grounded" in error
+    assert error and fragment in error and "context-dependent" in error
 
 
 _SHA = "a" * 64

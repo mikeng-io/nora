@@ -627,6 +627,10 @@ def _reaction_receipts(
 #: (`_shown_transcript`), and `tool_catalogue` describes her tools rather than
 #: holding any record of the group, so neither can support a recalled claim.
 _NOT_RECALL_CONTEXT = frozenset({"group_transcript", "tool_catalogue"})
+_CONTEXTUAL_CRITERIA = frozenset({
+    "recall_grounded", "social_suitability", "personality",
+    "contextual_identity", "public_provenance",
+})
 
 
 def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
@@ -647,8 +651,7 @@ def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
     Never the doctrine: that is the system prompt, not a block, and the judge is
     handed it separately."""
     parts = [transcript] if transcript else []
-    contextual = {"recall_grounded", "social_suitability", "personality",
-                  "contextual_identity", "public_provenance"}.intersection(criteria)
+    contextual = _CONTEXTUAL_CRITERIA.intersection(criteria)
     if contextual:
         shown = [text for name, text in blocks if name not in _NOT_RECALL_CONTEXT]
         if shown:
@@ -1005,21 +1008,21 @@ def _blocks_rendered(exporter: InMemorySpanExporter) -> tuple[str, ...] | None:
 def _recall_blocks_problem(
     blocks: tuple[tuple[str, str], ...] | None, rendered: tuple[str, ...] | None,
 ) -> str | None:
-    """Why a `recall_grounded` draw cannot be judged on what she was shown, or
+    """Why a context-dependent draw cannot be judged on what she was shown, or
     `None` when it can. Fail closed: a judge that misses a block she read
     grades a grounded recall as fabricated, which is the defect this exists
     to end — so an uncaptured or incomplete set is an ERROR, never a blind
     grade."""
     if blocks is None:
         return ("no context blocks were captured off the turn's own model call; "
-                "a recall_grounded draw is not judged without them")
+                "a context-dependent draw is not judged without them")
     if rendered is None:
         return ("no agent.prefill span was captured, so the blocks she was shown "
-                "cannot be checked complete; a recall_grounded draw is not judged")
+                "cannot be checked complete; a context-dependent draw is not judged")
     missing = sorted(set(rendered) - {name for name, _ in blocks})
     if missing:
         return (f"the prefill rendered {missing} but the turn's model call was not "
-                "read back with them; a recall_grounded draw is not judged without them")
+                "read back with them; a context-dependent draw is not judged without them")
     return None
 
 
@@ -2032,7 +2035,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                             "judged (#459)"
                         ),
                     )
-                elif {"recall_grounded", "social_suitability"} & set(md.get("criteria") or ()) and (
+                elif _CONTEXTUAL_CRITERIA.intersection(md.get("criteria") or ()) and (
                     blocks_problem := (None if port.public_audience else
                         _recall_blocks_problem(shown_blocks, blocks_rendered))
                 ):

@@ -372,7 +372,11 @@ def test_the_source_block_says_an_earlier_sourced_turn_is_part_of_the_data():
 
 def test_grounding_distinguishes_chat_metaphors_from_literal_presence():
     text = next(c.description for c in RUBRIC if c.name == "no_overreach_or_fabrication")
-    assert "Ordinary chat metaphors for following the conversation are allowed" in text
+    assert "Ordinary chat metaphors, mock indignation" in text
+    assert "playful exaggeration about participation or blame are allowed" in text
+    assert "Roles and recollections explicitly supported by shown culture or records" in text
+    assert "without establishing wider authority or complete recall" in text
+    assert "Operational claims and concrete event details still require support" in text
     assert "Literal real-world presence, continuous observation or eyewitness knowledge" in text
     assert "requires evidence" in text
     assert "a reported event alone establishes none of those" in text
