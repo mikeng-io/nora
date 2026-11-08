@@ -145,7 +145,7 @@ class StoryFrame:
 @dataclass(frozen=True)
 class StorySnapshot:
     """A story read. `found` False is a complete read: no story is up, or none
-    Nora may see."""
+    the agent may see."""
 
     found: bool
     frames: tuple[StoryFrame, ...] = ()
@@ -211,7 +211,7 @@ POLL_OUTCOMES: tuple[str, ...] = get_args(PollOutcome)
 #: the item limit was reached, a page held nothing inside the day limit, or
 #: its cursor was judged bad, or an empty walk contradicted a positive probe
 #: count (`unreadable`, retried rather than treated as completion), or a
-#: private grid Nora does not follow (`private_not_followed`, settled until access changes).
+#: private grid the agent does not follow (`private_not_followed`, settled until access changes).
 BackfillEnd = Literal[
     "grid_end", "max_items", "max_days", "bad_cursor", "unreadable", "private_not_followed",
 ]
@@ -562,7 +562,7 @@ def perception_context(
         what = f"a {noun} on {platform}, posted {when}"
     if collab:
         what += ", made together with another account"
-    return f"This is {what}, from a member of the group Nora is in."
+    return f"This is {what}, from a member of the group the agent is in."
 
 
 # -- a story frame's bytes (§5) -------------------------------------------------

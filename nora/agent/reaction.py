@@ -116,7 +116,7 @@ class Reaction:
     attachment: OutboundAttachment
 
 
-def render_recent(rows: Sequence[TranscriptRow], *, display_name: str = "Nora") -> str:
+def render_recent(rows: Sequence[TranscriptRow], *, display_name: str = "") -> str:
     """The room's last few lines as `name: body`, the picker's whole view of
     the moment, escaped and collapsed to one line per row (`one_line`: a
     newline inside a message must not forge a second speaker). An empty body
@@ -134,7 +134,7 @@ def render_recent(rows: Sequence[TranscriptRow], *, display_name: str = "Nora") 
         body = one_line(render_file_links(row.body or "")[:300]).strip()
         if not body:
             continue
-        who = display_name if row.is_nora else row_speaker(row)
+        who = (display_name or row.sender_name or "you") if row.is_nora else row_speaker(row)
         if row.turn_handle is not None:
             who += f" (turn {row.turn_handle})"
         lines.append(f"{speaker_label(who)}: {escape(body)}")

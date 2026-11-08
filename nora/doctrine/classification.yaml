@@ -50,7 +50,7 @@ files:
       - starts: Knowing the repository
         bucket: law
         reason: Public source knowledge is distinct from inspecting private deployment state.
-        sha: 1501014163b8
+        sha: 1e88c0c46a3d
 
   core/constraints.md:
     These come from outside the conversation:
@@ -212,11 +212,11 @@ files:
     Ground your understanding:
       bucket: practice
       reason: Consolidated judgment within existing law.
-      sha: cdec116c7dbc
+      sha: 81ac63dc914e
     Choose a contribution:
       bucket: practice
       reason: Consolidated judgment within existing law.
-      sha: 41d88c1d7eae
+      sha: 6cb5f15a0c28
     Carry responsibility:
       bucket: practice
       reason: Consolidated judgment within existing law.

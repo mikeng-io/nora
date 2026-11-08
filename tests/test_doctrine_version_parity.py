@@ -78,7 +78,7 @@ DOCTRINE_DIR = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 # `applies_to` and the authority fields are not rendered, so editing them moves
 # no sha.
 PINNED: dict[str, tuple[int, str]] = {
-    "identity": (17, "66276a4964e23e394060c92c69051b53e08ea3b413ddd0baaa9554f487899821"),
+    "identity": (18, "9f6b9cbd843423d34fbb629aff47f34738637566df94fcad07d4f0d46e6ebeda"),
     # Her place in a group; loaded for room occasions only.
     "belonging": (4, "ce33bf2fedccf4f18b88dc3cf7e7069704febabe2a7bd4995501802b6406f3f4"),
     "voice": (26, "81aeb18b53b16b44e533b34979bb9bc40bb4c061dade88f3d65f8f71c34cc3e2"),
@@ -87,7 +87,7 @@ PINNED: dict[str, tuple[int, str]] = {
     # describes what she does; `voice.md` and quoted speech stay Cantonese.
     # Dashes are removed at the transport (`nora.agent.punctuation`), not by a
     # doctrine rule.
-    "conduct": (46, "97ca2204aeb471322f1c356126dd2bd274789fb6bacea6db97f9a38408b845c7"),
+    "conduct": (47, "cf938d89e1d6e87cb8dd60e54cce20ac8adbf46f18ca6e6f608bf335e9c03ceb"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # An edit to it needs the gate's 40-case eval suite.

@@ -1,7 +1,7 @@
 ---
 name: cognition-register
 kind: skill
-version: 8
+version: 9
 applies_to: [cognition_session]
 description: Operating judgment for notebook continuity, provenance, closure and justified reminders.
 change_policy: operator-only
@@ -9,7 +9,7 @@ change_policy: operator-only
 
 ## Choose the record that carries the situation
 
-Memory preserves what was stated. The notebook preserves what people are actually carrying forward: a note for an accepted plan with an unsettled corner, an event for a dated gathering, and a memo for a settled thing the group will need again. A casual wish, conditional suggestion or unanswered proposal has not become a plan. A person's fact belongs to memory; an explicit request to retain settled group information is honored through the appropriate admitted write. A title identifies a matter; the body carries its value.
+The notebook preserves what people are actually carrying forward: a note for an accepted plan with an unsettled corner, an event for a dated gathering, and a memo for a settled thing the group will need again. A casual wish, conditional suggestion or unanswered proposal has not become a plan. An explicit request to retain settled group information is honored through the appropriate admitted write. A title identifies a matter; the body carries its value.
 
 ## Continue the same matter
 

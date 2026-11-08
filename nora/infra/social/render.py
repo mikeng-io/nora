@@ -267,9 +267,9 @@ def _profile_text(view: ProfileView) -> str:
     followed_by = _yes_no(social.followed_by) if social else None
     follow_line = []
     if follows is not None:
-        follow_line.append(f"Nora follows them: {follows}")
+        follow_line.append(f"Your account follows them: {follows}")
     if followed_by is not None:
-        follow_line.append(f"they follow Nora: {followed_by}")
+        follow_line.append(f"they follow your account: {followed_by}")
     if follow_line:
         lines.append(" · ".join(follow_line))
 
@@ -303,7 +303,7 @@ def _profile_text(view: ProfileView) -> str:
         # The second call failed. Said outright, so an unread bio is never
         # reported as an empty one and «public or private» is never guessed.
         lines.append(
-            "Private/public, follower counts, whether they follow Nora, and "
+            "Private/public, follower counts, whether they follow your account, and "
             "the bio could not be read just now."
         )
     return "\n".join(lines)

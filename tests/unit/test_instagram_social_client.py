@@ -470,7 +470,7 @@ async def test_a_profile_renders_the_curated_fields(client):
     text = out["text"]
     assert text.startswith("<social_post ") and text.rstrip().endswith("</social_post>")
     assert "@example_friend (Example Friend)" in text
-    assert "Nora follows them: yes" in text and "they follow Nora: yes" in text
+    assert "Your account follows them: yes" in text and "they follow your account: yes" in text
     assert "Private account" in text
     assert f"{social['follower_count']} followers" in text
     assert f"{social['media_count']} posts" in text

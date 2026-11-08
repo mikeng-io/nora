@@ -353,7 +353,10 @@ def _open_tag(*, kind: str, name: str, description: str) -> str:
 
 def identity_name(directory: Path) -> str:
     """The restart-bound public name, authored with the identity it labels."""
-    section = parse_section(directory / "core" / "identity.md")
+    try:
+        section = parse_section(directory / "core" / "identity.md")
+    except OSError as exc:
+        raise DoctrineError(f"identity.md: cannot read public identity: {exc}") from exc
     value = section.metadata.get("display_name")
     if not isinstance(value, str) or not value.strip():
         raise DoctrineError("identity.md: display_name is required")
@@ -778,7 +781,7 @@ def law_text(rules: Iterable[Rule]) -> str:
 
 class DoctrineStore:
     def __init__(self, dir: Path, *, strict: bool = True, reload: str = "mtime",
-                 canary: str = "", display_name: str = "Nora", trigger: str = "",
+                 canary: str = "", display_name: str = "you", trigger: str = "",
                  language_hint: str = "", tool_names: Sequence[str] = (),
                  metrics: Metrics) -> None:
         # `tool_names` is what the tool-catalogue gate checks BACKTICKED text

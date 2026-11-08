@@ -58,7 +58,6 @@ from nora.app.cognition_wiring import (
 )
 from nora.domain.cognition_session import Room
 from nora.domain.note_body import (
-    NORA_NAMES,
     NoteBodyError,
     Shown,
     ShownMessage,
@@ -73,6 +72,7 @@ from nora.testing.stimuli import InMemoryStimulusStore
 from tests.objectives import SHIPPED_DREAMER, shipped_objectives
 from tests.unit.test_wake_evaluator import _floor_setup
 
+NORA_NAMES = frozenset({"Nora"})
 NOW = 1_800_000_000_000
 MAPPED = ("message", "rollup", "self", "time")
 #: The bound the skill is written to: a few thousand characters of

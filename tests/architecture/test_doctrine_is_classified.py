@@ -214,7 +214,7 @@ CURRENT_CLASSIFICATION_BOUNDARIES = (
 
 
 @pytest.mark.parametrize(("path", "starts", "bucket"), CURRENT_CLASSIFICATION_BOUNDARIES)
-def test_the_current_classification_boundaries_hold(path: str, starts: str, bucket: str):
+def test_the_operators_rulings_on_the_ambiguous_rows_hold(path: str, starts: str, bucket: str):
     parts = [
         r for r in _rules()
         if r.file == path and " ".join(r.text.split()).startswith(starts)

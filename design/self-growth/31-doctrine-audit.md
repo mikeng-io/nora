@@ -11,7 +11,7 @@ edges:
 
 ## Cognitive doctrine revision
 
-The current revision consolidates the speaking doctrine around neutral participation, evidence, initiative and accepted responsibility. Identity Markdown owns the public name and source repository; private configuration accepts the former name field only for migration. Name changes require restart so runtime labels and served identity change together. Machine identity, account bindings and wake triggers retain their own lifetimes.
+The current revision consolidates the speaking doctrine around neutral participation, evidence, initiative and accepted responsibility. Identity Markdown owns the public name and source repository; private configuration accepts the former name field only for migration. Name changes require restart so runtime labels and served identity change together. The same public name reaches tool and transcript labels, reaction context, profiles and both notebook writers; shared model instructions refer to the agent without baking that name into another surface. Machine identity, account bindings and wake triggers retain their own lifetimes.
 
 Cognition keeps its existing writer, grants, stores and wake paths. Its prelude supplies purpose and its objective owns authored Orient/Decide policy; code supplies the admitted vocabulary. Social self-accounts describe experienced patterns, while shared Standing and execution records carry current commitments, uncertainty and outcomes. Bounded reflectors propose changes for validation; judges and formatters retain their narrow jobs. Privacy, truthfulness, audience isolation and explicit action receipts remain hard boundaries.
 

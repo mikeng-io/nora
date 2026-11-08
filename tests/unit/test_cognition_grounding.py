@@ -721,7 +721,7 @@ def _own_grounder(records: _Records, **kw: Any) -> Any:
     async def events(unit: str, platform: str, cid: str) -> Sequence[Gathering]:
         return ()
 
-    return build_grounder(
+    return build_grounder(ai_display_name="Nora",
         records=records, persons=_PERSONS, media_join=None, note_index=notes, events_in=events,
         lineage=_lineage(), clock=lambda: NOW / 1000,
         unit_rooms=lambda unit: {(A.platform, A.conversation_id), (B.platform, B.conversation_id)},

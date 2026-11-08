@@ -227,6 +227,7 @@ def build_offline_pipeline(
     # `[llm.budgets]` would silently make replay a different agent from the one deployed —
     # which is the whole thing a replay path exists to rule out.
     tool_registry = tool_registry if tool_registry is not None else ToolRegistry(
+        display_name=cfg.doctrine.display_name,
         budget_overrides=cfg.llm.budgets)
     # Hoisted out of the `EngagementPipeline(...)` call because the
     # participation trigger below must hold the SAME instance — two slot maps

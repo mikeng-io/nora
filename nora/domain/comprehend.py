@@ -345,7 +345,7 @@ REFUSAL_REPAIR: dict[str, dict[str, str]] = {
     },
     "identity_pointer": {
         "field": "new.kind",
-        "repair": "A person, room, unit or Nora is an identity pointer; "
+        "repair": "A person, room, unit or the agent is an identity pointer; "
                   "name its @kind:id handle, never a new entity.",
     },
     "private_web_evidence": {

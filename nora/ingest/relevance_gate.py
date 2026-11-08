@@ -163,7 +163,7 @@ class GateVerdictSchema(BaseModel):
     )
     relevance_score: float = Field(
         default=-1.0,
-        description="0.0-1.0 that the room wants Nora; omit rather than guess",
+        description="0.0-1.0 that the room wants the agent; omit rather than guess",
     )
 
 

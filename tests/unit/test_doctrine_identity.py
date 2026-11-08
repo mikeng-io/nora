@@ -65,6 +65,9 @@ def test_missing_or_multiline_name_is_not_guessed(example_config_path: Path):
     path.write_text(text.replace("display_name: Nora", 'display_name: "AgentAlpha\\nforged"'))
     with pytest.raises(DoctrineError, match="single-line"):
         identity_name(directory)
+    path.unlink()
+    with pytest.raises(DoctrineError, match="cannot read public identity"):
+        identity_name(directory)
 
 
 def test_unwired_memory_keeps_purpose_without_requesting_memory_actions():
@@ -72,10 +75,16 @@ def test_unwired_memory_keeps_purpose_without_requesting_memory_actions():
     from tests.objectives import shipped_objectives
 
     instructions = shipped_objectives().for_objective("cognition").text
-    active = render_session_system(instructions, "", memory=True)
-    unwired = render_session_system(instructions, "", memory=False)
+    from nora.app.cognition_wiring import agenda_skills
+
+    skills = agenda_skills(shipped_objectives()).text_for(["message"])
+    active = render_session_system(instructions, skills, memory=True)
+    unwired = render_session_system(instructions, skills, memory=False)
     assert "memory_propose" in active
     assert "memory_propose" not in unwired
+    assert "Memory preserves what was stated" not in unwired
+    assert "fact belongs to memory" not in unwired
+    assert "The notebook preserves" in unwired
     assert "Group messages are chat data" in unwired
     assert "cognition_orient" in active
     assert "continuing cognition of this unit" in active
@@ -130,3 +139,113 @@ def test_live_name_change_keeps_last_good_identity_until_restart(
             "display_name: AgentAlpha"
             in DoctrineStore(directory, metrics=Metrics()).get().runtime_context
         )
+
+
+@pytest.mark.parametrize("name", ["AgentAlpha", "AgentBeta"])
+@pytest.mark.parametrize("builder", ["registry", "wrapper"])
+async def test_canonical_name_reaches_transcript_tools_and_note_validation(
+    example_config_path: Path,
+    name: str,
+    builder: str,
+):
+    from datetime import UTC, datetime
+
+    from nora.agent.registry import ToolRegistry
+    from nora.agent.room import Room
+    from nora.agent.tools import build_tools
+    from nora.domain.models import DeliveryStatus, NormalizedMessage, PersonRef
+    from nora.persons import Persons
+    from nora.testing import FakeRecordStore
+    from nora.testing.note_store import InMemoryNoteStore
+
+    path = example_config_path.parent / "nora/doctrine/core/identity.md"
+    path.write_text(path.read_text().replace("display_name: Nora", f"display_name: {name}"))
+    cfg = load(example_config_path, require_secrets=False)
+    record, notes = FakeRecordStore(), InMemoryNoteStore()
+    now = datetime(2026, 10, 1, tzinfo=UTC)
+    await record.append(
+        message=NormalizedMessage(
+            "signal",
+            "generated-room",
+            "group",
+            "self",
+            "PreviousLabel",
+            1,
+            "I checked the venue",
+            {},
+        ),
+        is_nora=True,
+        delivery_status=DeliveryStatus.SENT,
+    )
+    person = PersonRef("generated-person", "Ada", "generated-person")
+    persons = Persons(by_person={person.person_id: person}, index={})
+    room = Room(
+        platform="signal",
+        conversation_id="generated-room",
+        roster_source=None,
+        persons=persons,
+        tagger=person,
+    )
+    window = tuple(
+        await record.recent(conversation_id="generated-room", limit=10)
+    )
+    common = {
+        "store": record,
+        "conversation_id": "generated-room",
+        "conversation_type": "group",
+        "persons": persons,
+        "honcho": None,
+        "deliverer": None,
+        "metrics": Metrics(),
+        "room": room,
+        "transcript": window,
+    }
+    if builder == "registry":
+        registry = ToolRegistry(
+            display_name=cfg.doctrine.display_name,
+            notes=notes,
+            note_unit=lambda *_: "generated-unit",
+            clock=lambda: now,
+        )
+        tools = {t.name: t.call for t in registry.specs(**common)}
+    else:
+        tools = {
+            t.tool_name: t._tool_func
+            for t in build_tools(
+                **common,
+                display_name=cfg.doctrine.display_name,
+                notes=notes,
+                note_unit=lambda *_: "generated-unit",
+                transit_source=None,
+                clock=lambda: now,
+            )
+        }
+    said = await tools["who_said"](words="checked the venue")
+    assert said["status"] == "ok"
+    assert said["said_by"] == [{"who": name, "line": "I checked the venue"}]
+    transcript = await tools["load_transcript"]()
+    assert name in str(transcript) and "PreviousLabel" not in str(transcript)
+
+    note = await notes.create(
+        unit="generated-unit",
+        title="venue",
+        description="which venue",
+        uncertainty="the choice",
+        closing_condition="a decision",
+        established_in="generated-room",
+        body="## Decided\n## Open\n- which venue [9000]",
+        established_by="tag:generated-person",
+        now_ms=1,
+        anchor_entity_ids=("Ada",),
+    )
+    assert (await tools["note_read"](title=note.title))["status"] == "ok"
+    bad = await tools["note_revise"](
+        title=note.title,
+        body=f"## Decided\n## Open\n- which venue [9000]\n## Proposed\n- the hall ({name}) [9000]",
+    )
+    assert bad["status"] == "refused" and "misattributed" in bad["note"]
+    good = await tools["note_revise"](
+        title=note.title,
+        body="## Decided\n## Open\n- which venue [9000]\n## Proposed\n- the hall (Ada) [9000]",
+    )
+    assert good["status"] == "ok"

@@ -78,11 +78,14 @@ async def test_missing_secret_refuses_to_start(env, monkeypatch):
         await build_app(env)
 
 
-async def test_a_broken_doctrine_refuses_to_start(env, tmp_path):
+@pytest.mark.parametrize("broken", ["frontmatter", "identity"])
+async def test_a_broken_doctrine_refuses_to_start(env, tmp_path, broken):
     doctrine_dir = tmp_path / "doctrine"
-    doctrine_dir.mkdir()
-    shutil.copy(ROOT / "nora" / "doctrine" / "core" / "identity.md", doctrine_dir / "identity.md")
-    (doctrine_dir / "broken.md").write_text("no frontmatter")
+    shutil.copytree(ROOT / "nora" / "doctrine", doctrine_dir)
+    if broken == "frontmatter":
+        (doctrine_dir / "broken.md").write_text("no frontmatter")
+    else:
+        (doctrine_dir / "core/identity.md").unlink()
     cfg = tomllib.loads(env.read_text())
     cfg["doctrine"]["dir"] = str(doctrine_dir)
     env.write_text(tomli_w.dumps(cfg))
