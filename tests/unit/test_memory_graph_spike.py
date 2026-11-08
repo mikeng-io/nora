@@ -923,3 +923,23 @@ def test_expanded_session_completion_requires_all_fifteen():
     assert spike.session_smoke([good] * 15, expected=15)["status"] == "PASS"
     assert spike.session_smoke([good] * 14, expected=15)["status"] == "ERROR"
     assert spike.session_smoke([good] * 15, expected=15)["marks"]["sample"] == 15
+
+
+@pytest.mark.parametrize("delta,status", [
+    ({}, "PASS"),
+    ({"facts_saved": 1, "facts_supported": 1}, "PASS"),
+    ({"facts_saved": 1, "facts_unsupported": 1}, "FAIL"),
+    ({"facts_missed": 1}, "FAIL"),
+    ({"facts_judge_errors": 1}, "ERROR"),
+    ({"facts_saved": 1, "facts_unsure": 1}, "ERROR"),
+    ({"facts_saved": 1}, "ERROR"),
+])
+def test_memory_quality_never_confuses_completion_with_correctness(delta, status):
+    scored = dict.fromkeys(("facts_saved", "facts_supported", "facts_unsupported",
+                           "facts_unsure", "facts_missed", "facts_judge_errors"), 0)
+    scored.update(delta)
+    quality = spike.fact_quality(scored)
+    assert quality["status"] == status
+    assert spike.report_exit({"execution": {"status": "PASS"}, "memory_quality": quality}) == {
+        "PASS": 0, "FAIL": 1, "ERROR": 2}[status]
+    assert spike.fact_quality({})["status"] == "ERROR"

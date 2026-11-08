@@ -567,6 +567,19 @@ def session_smoke(
     }
 
 
+def fact_quality(scored: Mapping[str, Any]) -> dict[str, str]:
+    """Memory correctness is separate from finishing the writer's execution."""
+    fields = ("facts_saved", "facts_supported", "facts_unsupported", "facts_unsure",
+              "facts_missed", "facts_judge_errors")
+    if any(type(scored.get(k)) is not int or scored[k] < 0 for k in fields):
+        return {"status": "ERROR"}
+    if (scored["facts_saved"] != sum(scored[k] for k in (
+            "facts_supported", "facts_unsupported", "facts_unsure"))
+            or scored["facts_judge_errors"] or scored["facts_unsure"]):
+        return {"status": "ERROR"}
+    return {"status": "FAIL" if scored["facts_unsupported"] or scored["facts_missed"] else "PASS"}
+
+
 def check_acts(before: Mapping[str, Any], after: Mapping[str, Any]) -> int:
     """Measure any change, including deletion; the snapshot has no other writers."""
     return sum(after.get(k) != before.get(k) for k in set(before) | set(after))
@@ -1035,7 +1048,8 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                 raise ValueError("wake has no policy room")
             # ponytail: recorded_wake has no last_session or carry; each wake replays
             # as the unit's first session. Restore session continuity if that is measured.
-            measured: dict[str, Any] = {"status": "ERROR", "tokens": None}
+            measured: dict[str, Any] = {
+                "status": "ERROR", "tokens": None, "memory_quality": {"status": "ERROR"}}
             async with sandbox_as_of(args.database_url, at) as (url, _):
                 with TemporaryDirectory(prefix="nora-spike-") as workdir:
                     subject = await obtain(
@@ -1146,7 +1160,9 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                             refused=sum(bool(e["result"].get("refused")) for e in proposals),
                             refused_consumed=len(consumed - admitted),
                         )
-                        measured.update(await smoke_fact_support(judges, inspection, exchanges))
+                        scored = await smoke_fact_support(judges, inspection, exchanges)
+                        measured.update(scored)
+                        measured["memory_quality"] = fact_quality(scored)
                         if not args.smoke:
                             quality = await session_quality(judges, inspection, exchanges)
                             for name, pair in quality["verdicts"].items():
