@@ -38,15 +38,22 @@ Nora?" and "which person is this sender?" are answered by the same flattening.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from collections.abc import Iterable, Mapping, Set
+import time
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Set
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from nora.domain.ports import MediaSource, PlatformAdapter, PlatformIdentity
 from nora.domain.summons import SummonsSink
 from nora.infra.voice.hub import VoiceControllerHub
-from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint
+from nora.platform.bridge.client import (
+    BridgeAdapter,
+    BridgeEndpoint,
+    BridgeUnavailableError,
+    bridge_not_ready,
+)
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.bridge_control import (
     BridgeControlClient,
@@ -66,6 +73,73 @@ log = logging.getLogger("nora.platform.registry")
 class AdapterRegistryError(Exception):
     """An enabled adapter could not be built, or could not resolve its own
     identity. Fatal — the caller is expected to refuse to start."""
+
+
+# A deploy that recreates nora and its bridges in the same moment asks
+# `/v1/self` before the bridge's platform login has landed, so the first
+# answer is the still-starting one (`bridge_not_ready`). Wait it out once
+# for every bridge-backed platform — a slow start, never a guessed
+# identity; the bound keeps a bridge that never readies a startup failure
+# instead of a hang.
+_BRIDGE_IDENTITY_WAIT_SECONDS = 60.0
+_BRIDGE_IDENTITY_INTERVAL_SECONDS = 2.0
+
+
+async def _resolve_bridge_identity(
+    adapter: PlatformAdapter,
+    *,
+    sleep: Callable[[float], Awaitable[None]],
+    clock: Callable[[], float],
+) -> PlatformIdentity:
+    """`resolve_identity` with a bounded wait for a bridge that is
+    reachable but still starting. Only `bridge_not_ready` answers are
+    waited on — any other failure (another status, a malformed identity)
+    raises on the first answer, exactly as before.
+
+    The bound is wall time: each attempt is capped to what remains of it
+    and each sleep to what remains, so no request starts or is accepted
+    past the deadline — an identity that answers at 61 s is refused, not
+    returned."""
+    deadline = clock() + _BRIDGE_IDENTITY_WAIT_SECONDS
+    waited = False
+    while True:
+        remaining = deadline - clock()
+        if remaining <= 0:
+            log.warning(
+                "%s bridge identity still unavailable after %.0fs",
+                adapter.platform, _BRIDGE_IDENTITY_WAIT_SECONDS)
+            raise BridgeUnavailableError(
+                "/v1/self stayed unavailable through the whole identity wait")
+        try:
+            identity = await asyncio.wait_for(
+                adapter.resolve_identity(), timeout=remaining)
+        except Exception as exc:
+            if not bridge_not_ready(exc):
+                raise
+            if clock() >= deadline:
+                log.warning(
+                    "%s bridge identity still unavailable after %.0fs",
+                    adapter.platform, _BRIDGE_IDENTITY_WAIT_SECONDS)
+                raise
+            if not waited:
+                waited = True
+                log.info(
+                    "%s bridge is up but its identity is not ready yet — "
+                    "waiting up to %.0fs",
+                    adapter.platform, _BRIDGE_IDENTITY_WAIT_SECONDS)
+            await sleep(min(_BRIDGE_IDENTITY_INTERVAL_SECONDS,
+                            deadline - clock()))
+            continue
+        if clock() >= deadline:
+            log.warning(
+                "%s bridge identity still unavailable after %.0fs",
+                adapter.platform, _BRIDGE_IDENTITY_WAIT_SECONDS)
+            raise BridgeUnavailableError(
+                "/v1/self answered only after the identity wait bound")
+        if waited:
+            log.info("%s bridge identity resolved after waiting",
+                     adapter.platform)
+        return identity
 
 
 class _SignalPlatformConfig(Protocol):
@@ -165,6 +239,8 @@ class AdapterRegistry:
         instagram_summons: SummonsSink | None = None,
         dm_recipients: Mapping[str, Set[str]] | None = None,
         bridge_token: str = "",
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        clock: Callable[[], float] = time.monotonic,
     ) -> AdapterRegistry:
         """Build+resolve every enabled platform — Signal, Discord, WhatsApp,
         Instagram; each one more `if platforms.<x>.enabled:` block, not a
@@ -212,7 +288,11 @@ class AdapterRegistry:
         `dm_recipients` maps a platform to every direct-message address its
         people hold in `identity.toml` (`Persons.direct_addresses`). Signal's
         and WhatsApp's senders refuse a 1:1 message to any other address; a
-        platform missing from it refuses every 1:1 message."""
+        platform missing from it refuses every 1:1 message.
+
+        `sleep`/`clock` are the time seam for `_resolve_bridge_identity`'s
+        bounded wait — collaborators through construction, so a test can
+        drive the bound without waiting in real time."""
         dms = dm_recipients or {}
         adapters: dict[str, PlatformAdapter] = {}
         identities: dict[str, PlatformIdentity] = {}
@@ -226,7 +306,8 @@ class AdapterRegistry:
                 "signal", BridgeEndpoint(signal_cfg.base_url, bridge_token),
                 dm_recipients=dms.get("signal", frozenset()))
             try:
-                identity = await adapter.resolve_identity()
+                identity = await _resolve_bridge_identity(
+                    adapter, sleep=sleep, clock=clock)
             except Exception as exc:
                 raise AdapterRegistryError(
                     f"signal bridge could not resolve its own identity: {exc}"
@@ -269,7 +350,8 @@ class AdapterRegistry:
                 control=BridgeControlClient(endpoint),
                 speaker=discord_speaker)
             try:
-                discord_identity = await discord_adapter.resolve_identity()
+                discord_identity = await _resolve_bridge_identity(
+                    discord_adapter, sleep=sleep, clock=clock)
             except Exception as exc:
                 raise AdapterRegistryError(
                     f"discord bridge could not resolve its own identity: {exc}"
@@ -306,7 +388,8 @@ class AdapterRegistry:
                 "whatsapp", BridgeEndpoint(whatsapp_cfg.base_url, bridge_token),
                 dm_recipients=dms.get("whatsapp", frozenset()))
             try:
-                whatsapp_identity = await whatsapp_adapter.resolve_identity()
+                whatsapp_identity = await _resolve_bridge_identity(
+                    whatsapp_adapter, sleep=sleep, clock=clock)
             except Exception as exc:
                 raise AdapterRegistryError(
                     f"whatsapp bridge could not resolve its own identity: {exc}"
