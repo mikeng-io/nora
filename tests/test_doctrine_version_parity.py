@@ -87,7 +87,7 @@ PINNED: dict[str, tuple[int, str]] = {
     # describes what she does; `voice.md` and quoted speech stay Cantonese.
     # Dashes are removed at the transport (`nora.agent.punctuation`), not by a
     # doctrine rule.
-    "conduct": (47, "cf938d89e1d6e87cb8dd60e54cce20ac8adbf46f18ca6e6f608bf335e9c03ceb"),
+    "conduct": (48, "daf5ffab5b6ded70f8ca213dee970089541e7ef3983f891011f9443f0c9036fe"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # An edit to it needs the gate's 40-case eval suite.
