@@ -51,6 +51,7 @@ from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.bridge.client import (
     BridgeAdapter,
     BridgeEndpoint,
+    BridgeUnavailableError,
     bridge_not_ready,
 )
 from nora.platform.discord.adapter import DiscordAdapter
@@ -93,12 +94,25 @@ async def _resolve_bridge_identity(
     """`resolve_identity` with a bounded wait for a bridge that is
     reachable but still starting. Only `bridge_not_ready` answers are
     waited on — any other failure (another status, a malformed identity)
-    raises on the first answer, exactly as before."""
+    raises on the first answer, exactly as before.
+
+    The bound is wall time: each attempt is capped to what remains of it
+    and each sleep to what remains, so no request starts or is accepted
+    past the deadline — an identity that answers at 61 s is refused, not
+    returned."""
     deadline = clock() + _BRIDGE_IDENTITY_WAIT_SECONDS
     waited = False
     while True:
+        remaining = deadline - clock()
+        if remaining <= 0:
+            log.warning(
+                "%s bridge identity still unavailable after %.0fs",
+                adapter.platform, _BRIDGE_IDENTITY_WAIT_SECONDS)
+            raise BridgeUnavailableError(
+                "/v1/self stayed unavailable through the whole identity wait")
         try:
-            identity = await adapter.resolve_identity()
+            identity = await asyncio.wait_for(
+                adapter.resolve_identity(), timeout=remaining)
         except Exception as exc:
             if not bridge_not_ready(exc):
                 raise
@@ -113,8 +127,15 @@ async def _resolve_bridge_identity(
                     "%s bridge is up but its identity is not ready yet — "
                     "waiting up to %.0fs",
                     adapter.platform, _BRIDGE_IDENTITY_WAIT_SECONDS)
-            await sleep(_BRIDGE_IDENTITY_INTERVAL_SECONDS)
+            await sleep(min(_BRIDGE_IDENTITY_INTERVAL_SECONDS,
+                            deadline - clock()))
             continue
+        if clock() >= deadline:
+            log.warning(
+                "%s bridge identity still unavailable after %.0fs",
+                adapter.platform, _BRIDGE_IDENTITY_WAIT_SECONDS)
+            raise BridgeUnavailableError(
+                "/v1/self answered only after the identity wait bound")
         if waited:
             log.info("%s bridge identity resolved after waiting",
                      adapter.platform)

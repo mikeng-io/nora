@@ -39,7 +39,7 @@
     "file": "nora/platform/registry.py",
     "old": "            if clock() >= deadline:",
     "new": "            if False:",
-    "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_bridge_that_stays_not_ready_fails_startup_at_the_bound"
+    "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_not_ready_answer_after_the_bound_stops_without_sleeping"
   },
   {
     "name": "only not-ready answers are waited on",
@@ -47,5 +47,12 @@
     "old": "            if not bridge_not_ready(exc):",
     "new": "            if False:",
     "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_bridge_failure_that_is_not_still_starting_fails_immediately"
+  },
+  {
+    "name": "an answer landing after the bound is refused, not accepted",
+    "file": "nora/platform/registry.py",
+    "old": "            continue\n        if clock() >= deadline:",
+    "new": "            continue\n        if False:",
+    "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_request_in_flight_at_the_bound_is_not_accepted"
   }
 ]

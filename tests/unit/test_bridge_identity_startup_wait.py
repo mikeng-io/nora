@@ -14,7 +14,9 @@ real time.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -104,7 +106,13 @@ def _bridge_app(state: dict) -> web.Application:
     (`{"error": "identity_unavailable"}` at `state["status"]`) for the
     first `not_ready` calls, then `state["body"]` — the real route's
     success shape. Wrong auth gets the real bridge's 401, so a client
-    that skipped its bearer fails the way the real bridge fails it."""
+    that skipped its bearer fails the way the real bridge fails it.
+
+    A request takes time too: each call advances `state["clock"]` by its
+    `request_seconds` — a scalar for every call or a list indexed by call
+    number — so a wait that only checks its bound while sleeping cannot
+    hide a slow answer. `response_delay` is a REAL asyncio.sleep for the
+    one test that measures the bound against the real clock."""
 
     @web.middleware
     async def auth(req: web.Request, handler):
@@ -114,6 +122,13 @@ def _bridge_app(state: dict) -> web.Application:
 
     async def get_self(req: web.Request) -> web.Response:
         state["calls"] += 1
+        seconds = state["request_seconds"]
+        if isinstance(seconds, list):
+            seconds = seconds[min(state["calls"], len(seconds)) - 1]
+        if state["clock"] is not None:
+            state["clock"].now += seconds
+        if state["response_delay"]:
+            await asyncio.sleep(state["response_delay"])
         if state["calls"] <= state["not_ready"]:
             return web.json_response(
                 {"error": "identity_unavailable"}, status=state["status"])
@@ -124,9 +139,13 @@ def _bridge_app(state: dict) -> web.Application:
     return app
 
 
-def _state(*, not_ready: int, status: int = 503) -> dict:
+def _state(*, not_ready: int, status: int = 503,
+           request_seconds: float | list[float] = 0.0,
+           response_delay: float = 0.0) -> dict:
     return {
         "calls": 0, "not_ready": not_ready, "status": status,
+        "request_seconds": request_seconds, "response_delay": response_delay,
+        "clock": None,
         "body": {"platform": "discord", "primary": PRIMARY,
                  "aliases": [PRIMARY], "handle": "nora"},
     }
@@ -150,8 +169,9 @@ async def test_a_still_starting_bridge_is_waited_for_until_its_identity_resolves
     succeeds instead of failing the boot on the first answer. One bound
     for every bridge-backed platform, no per-platform case."""
     state = _state(not_ready=3)
+    clock = _FakeTime()
+    state["clock"] = clock
     async with _serve(state) as base_url:
-        clock = _FakeTime()
         with caplog.at_level(logging.INFO, logger="nora.platform.registry"):
             registry = await AdapterRegistry.from_config(
                 _bridge_cfg(platform, base_url), metrics=Metrics(),
@@ -171,8 +191,9 @@ async def test_a_bridge_that_stays_not_ready_fails_startup_at_the_bound(
     """The wait is BOUNDED — a bridge that never becomes ready fails with
     the same startup error as today, not a hang and not a success."""
     state = _state(not_ready=10**9)
+    clock = _FakeTime()
+    state["clock"] = clock
     async with _serve(state) as base_url:
-        clock = _FakeTime()
         with (
             caplog.at_level(logging.WARNING, logger="nora.platform.registry"),
             pytest.raises(
@@ -185,8 +206,10 @@ async def test_a_bridge_that_stays_not_ready_fails_startup_at_the_bound(
 
     waits = int(reg._BRIDGE_IDENTITY_WAIT_SECONDS
                 // reg._BRIDGE_IDENTITY_INTERVAL_SECONDS)
-    assert state["calls"] == waits + 1
+    # The last attempt starts before the bound; none starts at or after it.
+    assert state["calls"] == waits
     assert len(clock.sleeps) == waits
+    assert clock.now <= reg._BRIDGE_IDENTITY_WAIT_SECONDS + 0.5
 
 
 @pytest.mark.parametrize(
@@ -202,8 +225,9 @@ async def test_a_bridge_failure_that_is_not_still_starting_fails_immediately(
 ):
     """Fail-closed, exactly as before: another status or a malformed
     identity is a startup error on the FIRST answer — never waited on."""
+    clock = _FakeTime()
+    state["clock"] = clock
     async with _serve(state) as base_url:
-        clock = _FakeTime()
         with pytest.raises(
                 AdapterRegistryError,
                 match="could not resolve its own identity"):
@@ -233,3 +257,113 @@ async def test_a_refused_connection_is_waited_out_to_the_same_bound():
     # It waited — a refused connection is "starting", not "dead" — then it
     # stopped at the same bound.
     assert len(clock.sleeps) == waits
+    assert clock.now <= reg._BRIDGE_IDENTITY_WAIT_SECONDS + 0.5
+
+
+async def test_a_bridge_that_stays_not_ready_when_answers_take_time():
+    """Requests consume the bound too — the fake clock advances inside
+    each request, not only inside sleep. With 1.2 s answers the last
+    sleep is CAPPED to what remains and the wait stops exactly at the
+    bound; an uncapped wait would be found sleeping at t=59 and asking
+    again at t=61."""
+    state = _state(not_ready=10**9, request_seconds=1.2)
+    clock = _FakeTime()
+    state["clock"] = clock
+    async with _serve(state) as base_url:
+        with pytest.raises(
+                AdapterRegistryError,
+                match="could not resolve its own identity"):
+            await AdapterRegistry.from_config(
+                _bridge_cfg("discord", base_url), metrics=Metrics(),
+                bridge_token=TOKEN, sleep=clock.sleep, clock=clock)
+
+    assert clock.sleeps[-1] < reg._BRIDGE_IDENTITY_INTERVAL_SECONDS
+    assert clock.now <= reg._BRIDGE_IDENTITY_WAIT_SECONDS + 0.5
+
+
+async def test_a_not_ready_answer_after_the_bound_stops_without_sleeping():
+    """A 503 that only arrives past the deadline — its request began
+    inside the budget — ends the wait right there: no sleep is scheduled
+    on top of an answer that already overran, and the bridge's own error
+    is what propagates."""
+    state = _state(not_ready=10**9, request_seconds=5.0)
+    clock = _FakeTime()
+    state["clock"] = clock
+    async with _serve(state) as base_url:
+        with pytest.raises(
+                AdapterRegistryError,
+                match="could not resolve its own identity"):
+            await AdapterRegistry.from_config(
+                _bridge_cfg("discord", base_url), metrics=Metrics(),
+                bridge_token=TOKEN, sleep=clock.sleep, clock=clock)
+
+    # Call 9 starts at t=56 and answers at t=61 — already over the bound,
+    # so the wait must not schedule another sleep on top of it.
+    assert state["calls"] == 9
+    assert clock.sleeps == [reg._BRIDGE_IDENTITY_INTERVAL_SECONDS] * 8
+
+
+async def test_an_identity_that_resolves_after_the_bound_is_refused():
+    """The bound is total, not per-attempt: each 503 takes 10 s, so the
+    success waiting behind call 6 would land at t=70. No attempt may
+    start at or after the deadline — the wait fails at the bound, exactly
+    like a bridge that never readied."""
+    state = _state(not_ready=5, request_seconds=10.0)
+    clock = _FakeTime()
+    state["clock"] = clock
+    async with _serve(state) as base_url:
+        with pytest.raises(
+                AdapterRegistryError,
+                match="could not resolve its own identity"):
+            await AdapterRegistry.from_config(
+                _bridge_cfg("discord", base_url), metrics=Metrics(),
+                bridge_token=TOKEN, sleep=clock.sleep, clock=clock)
+
+    assert state["calls"] == 5
+    assert clock.now <= reg._BRIDGE_IDENTITY_WAIT_SECONDS + 0.5
+
+
+async def test_a_request_in_flight_at_the_bound_is_not_accepted():
+    """A request that started inside the budget but answers after the
+    deadline is refused: call 30 starts at t=58 and its 200 lands at
+    t=68 — too late to be the registry's identity."""
+    state = _state(not_ready=29,
+                   request_seconds=[0.0] * 29 + [10.0])
+    clock = _FakeTime()
+    state["clock"] = clock
+    async with _serve(state) as base_url:
+        with pytest.raises(
+                AdapterRegistryError,
+                match="could not resolve its own identity"):
+            await AdapterRegistry.from_config(
+                _bridge_cfg("discord", base_url), metrics=Metrics(),
+                bridge_token=TOKEN, sleep=clock.sleep, clock=clock)
+
+    # The call was allowed to start — it began inside the budget — but
+    # its late answer is refused. The fake records the request's whole
+    # 10 s because the injected seam cannot cancel it mid-flight; in real
+    # time `asyncio.wait_for` ends the attempt at the bound — the next
+    # test measures that.
+    assert state["calls"] == 30
+
+
+async def test_the_bound_is_wall_time(monkeypatch: pytest.MonkeyPatch):
+    """In real time the attempt is really cut at the bound: a `/v1/self`
+    answer that would arrive after it is cancelled in flight — measured
+    against the real clock, not the fake one."""
+    bound = 0.3
+    monkeypatch.setattr(reg, "_BRIDGE_IDENTITY_WAIT_SECONDS", bound)
+    monkeypatch.setattr(reg, "_BRIDGE_IDENTITY_INTERVAL_SECONDS", 0.05)
+    state = _state(not_ready=0, response_delay=2.0)
+    async with _serve(state) as base_url:
+        started = time.monotonic()
+        with pytest.raises(
+                AdapterRegistryError,
+                match="could not resolve its own identity"):
+            await AdapterRegistry.from_config(
+                _bridge_cfg("discord", base_url), metrics=Metrics(),
+                bridge_token=TOKEN)
+        elapsed = time.monotonic() - started
+
+    assert state["calls"] == 1
+    assert elapsed <= bound + 0.5
