@@ -15,6 +15,8 @@ The current revision consolidates the speaking doctrine around neutral participa
 
 Cognition keeps its existing writer, grants, stores and wake paths. Its prelude supplies purpose and its objective owns authored Orient/Decide policy; code supplies the admitted vocabulary. Social self-accounts describe experienced patterns, while shared Standing and execution records carry current commitments, uncertainty and outcomes. Bounded reflectors propose changes for validation; judges and formatters retain their narrow jobs. Privacy, truthfulness, audience isolation and explicit action receipts remain hard boundaries.
 
+The remaining delivery boundary is generation grounding. The addressed-turn `TagContext` already carries an authenticated speaker and speaker-labelled transcript, and `build_tag_message` attributes the current message. Those inputs alone do not ensure that a generated reply preserves the subject, modality or extent of an account. Live controls still transfer another speaker's plans, promote hypothetical reports to facts, and overstate the agent's own recollection. These are unresolved correctness and completeness findings; clearer doctrine is not evidence that they are fixed. Further repair must demonstrate speaker/subject/modality binding through comprehension, reply and debrief against the existing controls, reusing context assembly and preserving the privacy and action boundaries. A new inference pass, model route or delivery guard needs its own concrete design and spending assessment; none is implied by this doctrine rewrite.
+
 | Loop | Responsibility after the audit |
 |---|---|
 | Addressed, participation, proactive and public turns | Share neutral identity; judge the occasion and carry accepted work within its grants. |
