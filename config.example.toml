@@ -150,15 +150,6 @@ quote_window_multiplier = 3
 [memory.graph]
 enabled = false
 
-[memory.extraction]
-enabled = false
-model = "ollamacloud/deepseek-v4.1-flash"
-messages_per_call = 20
-context_messages = 20
-min_message_age_seconds = 2.0
-timeout_seconds = 90.0
-max_tokens = 6000
-
 [memory.index]
 refresh_seconds = 60.0
 read = false

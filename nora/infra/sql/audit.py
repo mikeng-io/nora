@@ -407,7 +407,6 @@ class SqlRecordStore:
         max_per_conversation: int = DEFAULT_MAX_PER_CONVERSATION,
         metrics: Any = None,
         mention_persons: Any = None,
-        extraction_unit: Any = None,
     ) -> None:
         """`metrics` is INJECTED, never imported.
 
@@ -430,7 +429,6 @@ class SqlRecordStore:
         self._max_per_conversation = max_per_conversation
         self._metrics = metrics
         self._mention_persons = mention_persons
-        self._extraction_unit = extraction_unit
 
     def _resolved_mentions_json(self, message: NormalizedMessage) -> str | None:
         """`mention_persons_json` for one message or edit: the sorted person
@@ -493,23 +491,9 @@ class SqlRecordStore:
             row_id = int((await conn.execute(stmt)).scalar_one())
             # `tx_hook(conn, row_id)` runs INSIDE this transaction — the
             # platform-bridge seam that makes source mapping + message +
-            # extraction + projection one atomic commit (design 03).
+            # projection one atomic commit (design 03).
             if tx_hook is not None:
                 await tx_hook(conn, row_id)
-            if self._extraction_unit is not None:
-                from nora.infra.sql.extraction import admission, enqueue
-
-                row = {
-                    "id": row_id, "platform": message.platform,
-                    "conversation_id": message.conversation_id,
-                    "sender_id": message.sender_id, "ts": message.timestamp,
-                    "platform_message_id": message.message_id, "is_nora": is_nora,
-                }
-                unit, reason = admission(row, self._extraction_unit)
-                if reason == "unmapped":
-                    raise ValueError("extraction owner unavailable")
-                if unit is not None:
-                    await enqueue(conn, row=row, unit=unit)
             # Its node, attachments and edges in the same transaction; a failure
             # queues the projection and never costs the message.
             await memory_index.project(conn, "message", row_id, metrics=self._metrics)

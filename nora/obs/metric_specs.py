@@ -26,7 +26,6 @@ from nora.domain.config_reload import RELOAD_OUTCOMES
 from nora.domain.cues import CUES
 from nora.domain.culture import CHARACTER_KINDS, CHARACTER_OUTCOMES, CULTURE_OUTCOMES
 from nora.domain.doctrine_check import CHECK_OUTCOMES
-from nora.domain.extraction import CLAIM_DROP_REASONS, EXTRACTION_FAILURE_STAGES
 from nora.domain.lessons import LESSONS_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
@@ -2150,66 +2149,30 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "permanent reason, or its third failed read).",
         ("source", "outcome"),
     ),
-    _CounterSpec(
-        "nora_extraction_calls_total",
-        "Transport attempts for extraction, including retries.",
-    ),
-    _CounterSpec(
-        "nora_extraction_input_tokens_total",
-        "Reported input tokens for every extraction response, including rejected output.",
-    ),
-    _CounterSpec(
-        "nora_extraction_output_tokens_total",
-        "Reported output tokens for every extraction response, including rejected output.",
-    ),
-    _CounterSpec(
-        "nora_extraction_failures_total",
-        "Failed extraction attempts or storage operations; durable work is retained. "
-        "stage: " + " / ".join(EXTRACTION_FAILURE_STAGES) + ".",
-        ("stage",),
-    ),
-    _CounterSpec(
-        "nora_extraction_terminal_batches_total",
-        "Extraction batches transitioned to failed after exhausting their attempt allowance.",
-    ),
-    _CounterSpec(
-        "nora_extraction_dropped_claims_total",
-        "Provenance-invalid claims dropped, durably counted per attempt. reason: "
-        + " / ".join(CLAIM_DROP_REASONS) + ".",
-        ("reason",),
-    ),
-    _CounterSpec(
-        "nora_extraction_claims_written_total",
-        "New claims committed by the extraction writer.",
-    ),
-    _CounterSpec(
-        "nora_extraction_usage_missing_total",
-        "Extraction requests whose usage is unavailable; measured cost is incomplete.",
-    ),
     # Retired message-reading counters stay declared at zero (append-only contract).
     _CounterSpec(
         "nora_message_reading_calls_total",
-        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
+        "Retired message-reading counter; frozen at zero.",
     ),
     _CounterSpec(
         "nora_message_reading_input_tokens_total",
-        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
+        "Retired message-reading counter; frozen at zero.",
     ),
     _CounterSpec(
         "nora_message_reading_output_tokens_total",
-        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
+        "Retired message-reading counter; frozen at zero.",
     ),
     _CounterSpec(
         "nora_message_reading_failures_total",
-        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
+        "Retired message-reading counter; frozen at zero.",
     ),
     _CounterSpec(
         "nora_message_reading_claims_written_total",
-        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
+        "Retired message-reading counter; frozen at zero.",
     ),
     _CounterSpec(
         "nora_message_reading_usage_missing_total",
-        "Retired message-reading counter; frozen at zero. Use nora_extraction_*.",
+        "Retired message-reading counter; frozen at zero.",
     ),
     _CounterSpec(
         "nora_config_reloads_total",

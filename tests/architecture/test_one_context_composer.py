@@ -31,7 +31,6 @@ _INITIAL_LEGACY = frozenset(
         "nora.agent.prefill:build_prefill",
         "nora.agent.prefill:build_tag_message",
         "nora.agent.speech_format:render_input",
-        "nora.app.extraction:ExtractionWorker._complete",
         "nora.app.profile_spike:event_judge",
         "nora.ingest.relevance_gate:render_context",
         "nora.language.character:CharacterNoraAdaptor.inputs",

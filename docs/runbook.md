@@ -1663,86 +1663,12 @@ request proves only that an attempt began. Read the normal Dreamer trace and
 and no-change can settle rendered inputs without adding any identity fact.
 Stop after the first account to assess progress before requesting another.
 
-## Extraction history backfill
-
-`scripts/extraction_backfill.py` queues human messages from the last 61 days
-(default; override with `--days N`). It never calls a model itself. The existing
-worker drains them when `[memory.extraction] enabled = true`; processing incurs
-that worker's ordinary model usage. Use the current deployed policy file: room
-ownership, including aliases, is resolved exactly as live enqueue resolves it
-**today**. Unmapped rooms/platforms, hidden and deleted messages are skipped.
-Nora replies are queued as context only: never extracted or citable. Unattributed
-humans and media-only messages remain eligible.
-Already queued rows and replay tombstones are preserved, never reassigned.
-
-From a checkout with `DATABASE_URL` already set, first inspect counts:
-
-```bash
-uv run python scripts/extraction_backfill.py --policy policy.toml --days 61 --dry-run
-```
-
-Output is JSON containing only window timestamps, eligible/already queued/would
-enqueue/enqueued source counts, separate `context_*` counts and skips by reason;
-no message text. Dry-run uses PostgreSQL read-only transactions. Copy its `before_ms` value to freeze the same
-half-open timestamp window for execution and later completion checks:
-
-```bash
-uv run python scripts/extraction_backfill.py --policy policy.toml --days 61 --before-ms <before_ms>
-uv run python scripts/extraction_backfill.py --status
-```
-
-The enqueue is idempotent, oldest message timestamp first (id breaks ties),
-committing every 500 candidates without a run-wide source lock. Visibility is
-rechecked at batch formation and publication.
-Live sources have priority over historical sources, including **due historical
-retries**; a live message arriving during a historical call is eligible at the
-next worker take after its normal minimum age. Calls already in flight finish
-normally. History remains oldest-first, uses the existing snapshot/context
-builder and retry allowance, and may wait during sustained live traffic. No
-second worker or new configuration is required.
-
-Status covers **all rows marked historical**, regardless of the command's time
-window or current policy, and counts queue rows by `unbatched`, `pending`, `done`,
-`failed` and `retired` under `rows` (sources) and `context_rows` (Nora). Context
-rows remain unbatched because they are never extracted; they do not prevent
-completion. `claims_written` counts their currently active claims.
-Each failed batch is listed by id with failure-stage attempt counts; old attempts
-and expired leases without a recorded stage are `unknown`, never inferred.
-`dropped_claims` reports reason counts across attempts of the historical batches
-currently linked to the queue (including failed batches); live batches are
-excluded. A mixed batch publishes its valid claims and records each rejected
-claim's first provenance failure. All-invalid output still fails at `claims`;
-unparseable or schema-invalid output still fails as a whole at `schema`.
-These drops are not silent skips: counts persist in
-`extraction_attempt.dropped_claims` with no dropped content or message text.
-Retries can count the same rejected claim again. Requeue detaches the old batch
-from its queue rows, so status then follows the replacement batch; old attempt
-counts remain queryable by `extraction_id` in the attempt table. Attempts made
-before this instrumentation have empty counts, not measured zero drops.
-Pruned source tombstones without a batch count as retired. A batch may contain
-many source rows, so these row counts are not batch counts.
-
-**Done:** the same frozen-window dry-run reports both `would_enqueue = 0` and
-`context_would_enqueue = 0`, and status reports zero `unbatched`, `pending` **and** `failed` rows. Review any retired rows:
-withdrawal/edit/pruning can invalidate a reading, so zero claims is not proof of
-success. Claims can legitimately be empty when a completed batch asserted
-nothing; check `done` as well. A failed batch is not done. After repairing its
-cause, retain the failed attempt history and release its sources with:
-
-```bash
-uv run python scripts/extraction_requeue.py <failed_batch_id>
-uv run python scripts/extraction_backfill.py --status
-```
-
-Requeue keeps historical priority on those sources. Repeat status after the
-worker has processed them; do not mark a failed or unavailable read as complete.
-
 ### Memory graph code projection
 
 `[memory.graph] enabled = false` is the default. Enabling it writes Record and
 Rollup relations beside the source projection, and produces pending work items;
 Phase 1 makes no model calls and adds no prompt reads or work-item consumer.
-Extraction continues independently. The message producer forms batches of at most
+The message producer forms batches of at most
 20 in one unit and room once the oldest arrival is two seconds old. Its separate
 arrival outbox also records edits. Late media readings, social items, closed
 outings/co-locations/response episodes and Register revisions produce their own

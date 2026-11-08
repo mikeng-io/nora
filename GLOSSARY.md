@@ -666,10 +666,7 @@ number from memory or from chat: re-read the index at merge time
 
 ### Memory configuration
 
-`[honcho]` configures the Honcho client. `[memory.extraction]` configures the
-Record extraction writer: `messages_per_call`, `context_messages` and
-`min_message_age_seconds` name its source count, context count and minimum
-queued-message age. `[memory.index] read` selects the index read surface;
+`[honcho]` configures the Honcho client. `[memory.index] read` selects the index read surface;
 `refresh_seconds` controls projection refreshes. `[memory.profile] write` and
 `read` control Profile writers and prompt reads; `update_every_seconds` is their
 shared age threshold, separate from `[culture] stale_seconds` for the room fold.

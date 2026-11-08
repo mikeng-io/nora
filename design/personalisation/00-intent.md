@@ -114,7 +114,7 @@ frame someone else set, never a list Nora proposes.
 **Inventory evidence.** Retained fact validity columns are
 `nora/infra/sql/schema.py:2015`; deletion of their writers is
 `design/09-decision-index.md:268`. Extraction are write-only today
-(`docs/maintainers/extraction.md:9`), so their consumer is named build
+(`design/unified-memory/18-extraction.md`), so their consumer is named build
 work. Occupancy bins and person/place rhythm differ at
 `nora/infra/sql/schema.py:517` and `nora/infra/sql/schema.py:543`; the forecast
 reads stays at `nora/domain/mobility_forecast.py:235`. The built social

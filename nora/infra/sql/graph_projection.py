@@ -584,7 +584,7 @@ async def message_arrival(conn: AsyncConnection, sid: str, unit: str, room: str)
         (await conn.execute(sa.select(MESSAGES).where(MESSAGES.c.id == int(sid)))).mappings().one()
     )
     if message["is_nora"]:
-        return  # As in extraction, her sends are context rather than new human sources.
+        return  # Her sends are context rather than new human sources.
     edit = (
         await conn.execute(
             sa.select(sa.func.max(MESSAGE_EDIT.c.id)).where(MESSAGE_EDIT.c.message_id == int(sid))
@@ -618,7 +618,7 @@ async def message_arrival(conn: AsyncConnection, sid: str, unit: str, room: str)
 
 
 async def form_batch(conn: AsyncConnection, *, now: datetime) -> int:
-    """Parallel to extraction: 20 sources maximum, oldest ready after two seconds.
+    """20 sources maximum, oldest ready after two seconds.
 
     This only produces durable work; it never claims/consumes graph work items.
     """

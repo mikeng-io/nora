@@ -60,7 +60,7 @@ and `openresponses` are inactive format examples, not supported transports.
 
 Route purposes: tag, participation, proactive, summons, browse, vision,
 speech_format, reaction, standing, relevance_gate, lesson_check, dreamer,
-subagent, extraction, eval_judge, context_filter. Image generation keeps its
+subagent, eval_judge, context_filter. Image generation keeps its
 existing OAuth provider lanes. Media describers may select a named provider;
 legacy kimi/opencode-go keep their direct session-aware transport. Host model
 measurement scripts accept `--config` to select the same purpose routes; explicit

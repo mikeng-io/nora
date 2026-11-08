@@ -78,7 +78,7 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
     ("entity", "attributes"): "semantic attributes; evidence source stores own blob custody",
     ("extraction", "snapshot"): "frozen source text; message rows own blob custody",
     ("extraction_claim", "content"): "statement slots and source ids, never blob custody",
-    ("extraction_attempt", "dropped_claims"): "reason/count JSON only; record_drops rejects text",
+    ("extraction_attempt", "dropped_claims"): "reason/count JSON only, never claim text",
     ("profile_line", "content"): "prose Character slots, never blob custody",
     ("profile_line", "strength"): "code-computed occasion roots and timestamps, never blob custody",
     ("profile_line", "fact_value"): (
