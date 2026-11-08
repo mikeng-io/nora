@@ -905,7 +905,7 @@ async def test_circle_public_adapter_uses_real_occasion_and_narrow_grant(
     from nora.agent import factory
     from nora.agent.registry import ToolRegistry
     from nora.app.summons import PUBLIC_GRANT
-    from nora.doctrine.loader import DoctrineStore
+    from nora.doctrine.loader import DoctrineStore, identity_name
     from nora.domain.summons import SummonsContext, ThreadRow
     from nora.obs.metrics import Metrics
     from nora.persons import load_persons
@@ -915,7 +915,9 @@ async def test_circle_public_adapter_uses_real_occasion_and_narrow_grant(
     identity.write_text('[persons.generated]\nname="Generated"\n')
     persons = load_persons(identity)
     metrics = Metrics()
-    doctrine = DoctrineStore(Path(__file__).resolve().parents[2] / 'nora/doctrine',  # noqa: ASYNC240
+    doctrine_dir = Path(__file__).resolve().parents[2] / 'nora/doctrine'  # noqa: ASYNC240
+    public_name = identity_name(doctrine_dir)
+    doctrine = DoctrineStore(doctrine_dir, display_name=public_name,
         canary='GENERATED-CANARY', strict=True,
         tool_names=ToolRegistry().tool_names(), metrics=metrics)
     calls = []
@@ -938,7 +940,7 @@ async def test_circle_public_adapter_uses_real_occasion_and_narrow_grant(
 
     subject = SimpleNamespace(cfg=SimpleNamespace(endpoint=endpoint,
         agent=SimpleNamespace(name='generated'),
-        doctrine=SimpleNamespace(canary='GENERATED-CANARY'),
+        doctrine=SimpleNamespace(canary='GENERATED-CANARY', display_name=public_name),
         llm=SimpleNamespace(timeout_seconds=5), content_checks=SimpleNamespace(enabled=False)),
         deps=SimpleNamespace(persons=persons, metrics=metrics, doctrine_store=doctrine,
             engagement=SimpleNamespace(

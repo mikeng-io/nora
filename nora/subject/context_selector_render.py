@@ -21,7 +21,7 @@ no network.
 the same call the summons' head makes: a `ContextBlock` cannot render
 without an opening tag, and wrapping either would change the bytes the
 selector reads today. `tests/unit/test_context_selector_render.py` pins the
-render byte for byte against the inline path this module replaces.
+system contract and candidate serialization, including preview bounds.
 """
 
 from __future__ import annotations
