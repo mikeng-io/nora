@@ -8,7 +8,6 @@ status: proposed
 edges:
   - {dst: 04-every-occasion.md, rel: extends, provenance: asserted}
   - {dst: ../unified-memory/29-one-cognition-session.md, rel: depends_on, provenance: asserted}
-  - {dst: ../unified-memory/45-persona-adaptor.md, rel: depends_on, provenance: asserted}
 ---
 
 # The Cognition context
@@ -118,7 +117,7 @@ says how many were left out (`not_listed`), as every list block does.
 
 ## 4. Profile replaces the people, culture and character blocks
 
-The switch already exists for engagement ([45 §5](../unified-memory/45-persona-adaptor.md),
+The switch already exists for engagement (unified-memory node 45 §5,
 `nora/agent/prefill.py` `_PROFILE_REPLACES`): with `[memory.profile] read`, one
 `profile` per entity replaces `self`, `peer_card`, `peer_history`,
 `people_in_window`, `culture`, `unit_culture` and `character`. The renderers are
