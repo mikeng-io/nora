@@ -882,7 +882,7 @@ def test_prompt_composer_is_registered_when_the_script_runs_directly():
 @pytest.mark.parametrize("mode", ["--rescore", "--decision-judge"])
 @pytest.mark.parametrize("option", [
     ["--inspect-only"], ["--sample-sha256", "generated-digest"],
-    ["--stop-after-tokens", "100"],
+    ["--stop-after-tokens", "100"], ["--smoke", "--session-count", "15"],
 ])
 def test_replay_only_flags_refuse_scoring_modes_before_any_run(monkeypatch, mode, option):
     import sys
@@ -899,3 +899,27 @@ def test_replay_only_flags_refuse_scoring_modes_before_any_run(monkeypatch, mode
     with pytest.raises(SystemExit) as exc:
         spike.main()
     assert exc.value.code == 2
+
+
+def test_expanded_sample_retains_the_five_original_sessions_and_exact_seeded_count():
+    candidates = [{"id": n, "at_ms": n * 1000, "strata": ["text"]} for n in range(30)]
+    original = {n: candidates[n] for n in [8, 3, 11, 2, 19]}
+    expanded = spike.extend_sample(candidates, original, size=15, seed=71)
+    assert list(expanded)[:5] == list(original)
+    assert len(expanded) == 15
+    assert expanded == spike.extend_sample(candidates, original, size=15, seed=71)
+    assert list(expanded) != list(spike.extend_sample(candidates, original, size=15, seed=72))
+    assert len(original) == 5
+    with pytest.raises(ValueError, match="discard original"):
+        spike.extend_sample(candidates, original, size=4, seed=71)
+    with pytest.raises(ValueError, match="fewer distinct"):
+        spike.extend_sample(candidates[:5] + candidates[:5], {}, size=15, seed=71)
+
+
+def test_expanded_session_completion_requires_all_fifteen():
+    good = {"status": "PASS", "tokens": 10, "admitted": 1, "refused": 0,
+            "acts": 0, "refused_consumed": 0}
+    assert spike.session_smoke([good] * 6)["status"] == "PASS"
+    assert spike.session_smoke([good] * 15, expected=15)["status"] == "PASS"
+    assert spike.session_smoke([good] * 14, expected=15)["status"] == "ERROR"
+    assert spike.session_smoke([good] * 15, expected=15)["marks"]["sample"] == 15

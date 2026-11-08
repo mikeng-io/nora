@@ -123,6 +123,22 @@ def stratify(rows: list[dict[str, Any]], size: int, seed: int) -> dict[str, list
     }
 
 
+def extend_sample(
+    candidates: Sequence[dict[str, Any]], selected: dict[int, dict[str, Any]],
+    *, size: int, seed: int,
+) -> dict[int, dict[str, Any]]:
+    """Retain the original sample in order, then add seeded distinct wakes."""
+    if size < len(selected):
+        raise ValueError("expanded sample cannot discard original sessions")
+    extra = list({w["id"]: w for w in candidates if w["id"] not in selected}.values())
+    random.Random(seed).shuffle(extra)  # noqa: S311 - reproducible sampling
+    result = dict(selected)
+    result.update((w["id"], w) for w in extra[:size - len(result)])
+    if len(result) != size:
+        raise ValueError("snapshot has fewer distinct sessions than requested")
+    return result
+
+
 def rate(
     verdicts: list[str], minimum: int, threshold: float, *, maximum: bool = False
 ) -> dict[str, Any]:
@@ -524,7 +540,9 @@ SMOKE_MARKS = {
 }
 
 
-def session_smoke(samples: Sequence[dict[str, Any]]) -> dict[str, Any]:
+def session_smoke(
+    samples: Sequence[dict[str, Any]], *, expected: int | None = None,
+) -> dict[str, Any]:
     missing = sum(s.get("tokens") is None for s in samples)
     errors = sum(s.get("status") == "ERROR" for s in samples)
     completed = sum(s.get("status") == "PASS" for s in samples)
@@ -533,7 +551,8 @@ def session_smoke(samples: Sequence[dict[str, Any]]) -> dict[str, Any]:
     counted = sum(s.get("admitted", 0) + s.get("refused", 0) for s in samples)
     return {
         "status": "ERROR"
-        if errors or missing or len(samples) < 5
+        if (errors or missing or len(samples) < 5
+            or (expected is not None and len(samples) != expected))
         else "PASS"
         if completed == len(samples) and counted and not changed and not consumed
         else "FAIL",
@@ -544,7 +563,7 @@ def session_smoke(samples: Sequence[dict[str, Any]]) -> dict[str, Any]:
         "acts": changed,
         "refused_consumed": consumed,
         "missing_usage": missing,
-        "marks": SMOKE_MARKS,
+        "marks": {**SMOKE_MARKS, "sample": expected or SMOKE_MARKS["sample"]},
     }
 
 
@@ -992,6 +1011,9 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                 if len(selected) >= SMOKE_MARKS["sample"]:
                     break
                 selected.setdefault(wake["id"], wake)
+            requested = getattr(args, "session_count", None)
+            if requested is not None:
+                selected = extend_sample(candidates, selected, size=requested, seed=args.seed)
         sample_sha256 = freeze(output / "sample.json", list(selected.values()))
         expected_sample = getattr(args, "sample_sha256", None)
         if expected_sample and sample_sha256 != expected_sample:
@@ -1162,7 +1184,7 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
             age_results.append(
                 await age_comparison(engine, args.age_url, judges, age_dir, args.minimum)
             )
-        health = session_smoke(results)
+        health = session_smoke(results, expected=getattr(args, "session_count", None))
         report = {
             "driver": "cognition_session",
             "sample_sha256": sample_sha256,
@@ -1174,7 +1196,9 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
             },
             "judges": [args.judge_a, args.judge_b],
             "smoke": health,
-            "strata": {s: len(v) for s, v in sample.items()},
+            "strata": ({s: sum(s in w["strata"] for w in selected.values()) for s in STRATA}
+                       if getattr(args, "session_count", None) is not None
+                       else {s: len(v) for s, v in sample.items()}),
             "acts": {
                 "status": "FAIL"
                 if check_acts(before, await acts(engine)) or health["acts"]
@@ -1663,6 +1687,8 @@ def main() -> int:
     parser.add_argument("--project-only", action="store_true")
     parser.add_argument("--skip-projection", action="store_true")
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--session-count", type=int,
+                        help="Expand the five-session smoke sample to this exact count")
     parser.add_argument("--inspect-only", action="store_true",
                         help="Render private snapshot inputs with zero model dispatches")
     parser.add_argument("--sample-sha256", help="Refuse a different frozen replay sample")
@@ -1671,7 +1697,10 @@ def main() -> int:
     args = parser.parse_args()
     if args.stop_after_tokens is not None and args.stop_after_tokens <= 0:
         parser.error("measured token cutoff must be positive")
-    if (args.stop_after_tokens or args.inspect_only or args.sample_sha256) and (
+    if args.session_count is not None and (not args.smoke or args.session_count < 5):
+        parser.error("session-count requires smoke mode and at least five sessions")
+    if (args.stop_after_tokens or args.inspect_only or args.sample_sha256
+            or args.session_count) and (
             args.rescore or args.decision_judge):
         parser.error("cutoff, inspection and sample pinning cover the replay path only")
     if args.per_stratum <= 0 or args.minimum <= 0:
