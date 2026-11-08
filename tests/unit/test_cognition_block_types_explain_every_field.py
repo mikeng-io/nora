@@ -302,3 +302,26 @@ def test_the_owed_and_ruled_out_shapes_the_description_teaches_are_the_validator
     assert completed.text.endswith("- the pier: too far (Ada) [7]")
     text = BLOCK_TYPES["agenda"].description
     assert "-> <due> [<ids>]" in text and "<option>: <reason> (<names>) [<ids>]" in text
+
+
+@pytest.mark.parametrize("source_key", [("media", "generated-object"),
+                                        ("social", "generated-network", "generated-post")])
+def test_non_message_memory_sources_are_explained_on_the_actual_agenda(source_key):
+    from types import SimpleNamespace
+
+    stimulus = _stim(1, A)
+    item = AgendaItem(kind="message", room=A, summary="generated source",
+                      stimulus_ids=(1,), cues=(), surprise=1)
+    memory_item = SimpleNamespace(snapshot={"record_rows": [{
+        "source_key": list(source_key), "body": "Generated source caption",
+        "ts": NOW - 1000, "author": "Ada", "person_id": "ada",
+    }]})
+    prompt = render_agenda(
+        (item,), stimuli={1: stimulus}, grounding=Grounding(), now_ms=NOW, tz=HK,
+        memory_items={0: memory_item},
+    )
+    agenda = next(block for block in blocks(prompt) if block.tag == "agenda")
+    source = next(row for row in agenda.iter("m") if row.attrib.get("source"))
+    assert source.attrib["source"] == ":".join(source_key)
+    assert source.attrib["n"] == "-1"
+    assert "source" in dict(BLOCK_TYPES["agenda"].annotations)

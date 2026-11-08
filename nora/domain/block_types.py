@@ -799,13 +799,12 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
             "earlier_not_shown": "how many older messages were left out to fit",
             "earlier_range": "the first and last message ids among them",
             "unreadable": "how many of the item's messages are not readable now",
-            "n": "a message's real id: cite it exactly as [n] at the end of the note "
-            "line it supports, or as digits in an event's cited ids",
+            "n": "the row's citation id (negative for non-message records); cite [n] "
+            "on supporting note lines or in an event's cited ids",
             "at": "when it was sent (a reaction or a deletion: when it happened), "
             "and how long ago",
-            "from": "who said it: this exact name, as written, goes in parentheses "
-            "before the ids on a Decided, Proposed or Ruled out line that "
-            "rests on it",
+            "from": "who said it; use this exact name in parentheses before cited ids "
+            "on Decided, Proposed or Ruled out lines",
             "edited": "`yes` if its words changed after they were said",
             "reaction": "an emoji on message n; from/text belong to that message, "
             "so cite its own row",
@@ -829,7 +828,8 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
         },
         store="agenda",
 
-        person='stable person id of the row author',),
+        person='stable person id of the row author',
+        source="the cited row's typed record key",),
     # The pre-fetch (design/unified-memory/00 step 3b): `memory_search`'s
     # own answer, run by code from what the message names. One JSON item a
     # line, the shape the tool answers with, so the two read the same.
