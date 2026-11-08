@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import tomllib
+from functools import cached_property
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -3037,7 +3038,14 @@ class DoctrineConfig(BaseModel):
     # convention only this repo understands.
     language_hint: str
     canary: str
-    display_name: str
+    # Accepted for old private files; the authored identity owns the value.
+    legacy_display_name: str | None = Field(default=None, alias="display_name", exclude=True)
+
+    @cached_property
+    def display_name(self) -> str:
+        from nora.doctrine.loader import identity_name
+
+        return identity_name(self.dir)
 
     @model_validator(mode="after")
     def _resolve_paths(self, info: ValidationInfo) -> DoctrineConfig:
@@ -3922,8 +3930,8 @@ class AgentConfig(BaseModel):
     `name` is the MACHINE name: the Strands `agent_id` and the Langfuse trace
     span (`invoke_agent <name>`). Lowercase and STABLE — changing it starts a new
     trace lineage (orphans saved Langfuse views), which is what a genuinely new
-    agent wants. The HUMAN-facing name is `[doctrine].display_name` and the wake
-    word is `[engagement].trigger.text`; a clone sets all three (plus its own
+    agent wants. The HUMAN-facing name is authored in doctrine/core/identity.md and the wake
+    word is `[engagement].trigger.text`; a clone sets its identity and trigger (plus its own
     doctrine files and its own Honcho `ai_peer`/`workspace_id`).
 
     Optional and defaulted like `[media]`/`[route]`; the default is the `nora`

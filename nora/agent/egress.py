@@ -50,6 +50,7 @@ import re
 import unicodedata
 
 from ..doctrine.loader import Doctrine
+from ..domain.prompt import escape_attr
 from .markdown import strip_markdown
 from .punctuation import undash
 
@@ -266,8 +267,15 @@ class LeakGuard:
         # dashes turned into commas (`nora.agent.punctuation`), so a verbatim
         # recital carries the comma and a window across one would miss a
         # haystack that kept the dash.
-        self._haystack = _normalize(undash(strip_markdown(doctrine.doctrine_text)))
-        self._raw_haystack = _normalize(undash(doctrine.doctrine_text))
+        protected = doctrine.doctrine_text
+        for section in doctrine.sections:
+            if section.name == "identity":
+                for key in ("display_name", "source_repository"):
+                    value = section.metadata.get(key)
+                    if isinstance(value, str):
+                        protected = protected.replace(f' {key}="{escape_attr(value)}"', "")
+        self._haystack = _normalize(undash(strip_markdown(protected)))
+        self._raw_haystack = _normalize(undash(protected))
         # The same two haystacks in canonical form, for the canonical candidate
         # (`check`): a zero-width character inside a verbatim span is not a
         # different span.

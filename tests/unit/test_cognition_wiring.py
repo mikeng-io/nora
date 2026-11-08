@@ -694,7 +694,7 @@ def test_the_objective_names_every_close_reason_the_session_closes_with():
     for reason in CLOSE_REASONS:
         if reason == "struck":                      # code's own close, never her argument
             continue
-        assert f"- **{reason}**" in text, reason
+        assert f"`{reason}`" in text, reason
 
 
 def test_the_objective_frames_what_she_reads_and_does_not_list_write_kinds():
@@ -702,12 +702,10 @@ def test_the_objective_frames_what_she_reads_and_does_not_list_write_kinds():
     it says what she is handed, in what order, and what is already written down,
     and it does not enumerate the kinds of write she can make."""
     text = _objective()
-    # the agenda it describes is the one the renderer produces: blocks, in order
-    for phrase in ("a clock, which room your read tools", "the agenda — one `item`",
-                   "the group's open notes", "open events", "marked returning"):
+    for phrase in ("Read the clock, agenda, cited messages and existing accounts",
+                   "your own position and pending work when supplied",
+                   "Returning items may have changed since the last look"):
         assert phrase in text, phrase
-    # the judgement about a returning item, restored: the words may have moved
-    assert "the group's words may have moved since" in text
     # no enumeration of the write verbs (they carry their own descriptions)
     assert "Each note, event, Standing revision" not in text
     assert "note_create" not in text and "event_propose" not in text

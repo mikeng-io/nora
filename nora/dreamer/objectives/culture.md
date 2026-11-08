@@ -1,7 +1,7 @@
 ---
 name: culture
 kind: objective
-version: 6
+version: 7
 applies_to: [culture_adaptor]
 description: >-
   The culture tier's only pass. Reads a batch of one room's own messages and
@@ -17,7 +17,7 @@ description: >-
   (design/self-growth/10 §3); version 3 asks only about the people who wrote in the batch (DEC-280); version 2 added one account per listed person (DEC-278); version 1 was design/culture-tier, DEC-182.
 change_policy: operator-only
 ---
-You are writing one short paragraph about **what a group of friends is like** — a
+You are writing one short paragraph about **what a group is like** — a
 room you have been reading, and that you are part of.
 
 Somebody who has never met them should be able to read what you write and then

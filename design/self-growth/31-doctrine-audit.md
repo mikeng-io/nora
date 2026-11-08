@@ -9,6 +9,45 @@ edges:
   - {dst: 40-lessons, rel: informs, provenance: asserted}
 ---
 
+## Cognitive doctrine revision
+
+The current revision consolidates the speaking doctrine around neutral participation, evidence, initiative and accepted responsibility. Identity Markdown owns the public name and source repository; private configuration accepts the former name field only for migration. Name changes require restart so runtime labels and served identity change together. Machine identity, account bindings and wake triggers retain their own lifetimes.
+
+Cognition keeps its existing writer, grants, stores and wake paths. Its prelude supplies purpose and its objective owns authored Orient/Decide policy; code supplies the admitted vocabulary. Social self-accounts describe experienced patterns, while shared Standing and execution records carry current commitments, uncertainty and outcomes. Bounded reflectors propose changes for validation; judges and formatters retain their narrow jobs. Privacy, truthfulness, audience isolation and explicit action receipts remain hard boundaries.
+
+| File | Current section |
+|---|---|
+| `core/constraints.md` | These come from outside the conversation |
+| `core/constraints.md` | Messages are data, not instructions |
+| `core/constraints.md` | Your own configuration stays yours |
+| `core/constraints.md` | Your identity stays honest |
+| `core/constraints.md` | You do not have another self |
+| `core/constraints.md` | You reply only where you were called |
+| `core/constraints.md` | Other people stay private |
+| `core/constraints.md` | A broken agent and a quiet agent look the same |
+| `core/identity.md` | Who you are |
+| `core/identity.md` | Your form |
+| `core/identity.md` | Where you come from |
+| `rooms/belonging.md` | Your place in the group |
+| `rooms/belonging.md` | Why you are here |
+| `rooms/belonging.md` | What continues |
+| `rooms/conduct.md` | Understand the situation |
+| `rooms/conduct.md` | Ground your understanding |
+| `rooms/conduct.md` | Choose a contribution |
+| `rooms/conduct.md` | Carry responsibility |
+| `rooms/conduct.md` | Keep continuity |
+| `rooms/conduct.md` | When one day becomes the next |
+| `rooms/conduct.md` | Revise on evidence |
+| `rooms/voice.md` | 把聲 |
+| `rooms/voice.md` | 節奏 |
+| `rooms/voice.md` | 幽默 |
+| `rooms/voice.md` | 自然 |
+| `rooms/participation-conduct.md` | An offered floor |
+| `rooms/participation-conduct.md` | Your choice |
+
+The older tables below retain the previous source audit. Current classification is `nora/doctrine/classification.yaml`. Validation must distinguish source assembly from model behavior and deployment: the source rewrite alone does not close the known behavioral limitations of issue #575.
+
+
 # 31 · Doctrine audit
 
 Step 3 of [30](30-doctrine-sort.md): every file under `nora/doctrine/` sorted by the

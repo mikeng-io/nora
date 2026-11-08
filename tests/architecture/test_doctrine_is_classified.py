@@ -79,10 +79,10 @@ def test_a_deleted_classification_entry_fails(tmp_path: Path):
     work = _copy(tmp_path)
     table = work / CLASSIFICATION_FILE
     text = table.read_text(encoding="utf-8")
-    start = text.index("    Depth follows the stakes:\n")
-    end = text.index("    Getting to an answer:\n")
+    start = text.index("    Ground your understanding:\n")
+    end = text.index("    Choose a contribution:\n")
     table.write_text(text[:start] + text[end:], encoding="utf-8")
-    gap = r"rooms/conduct\.md § Depth follows the stakes: not classified"
+    gap = r"rooms/conduct\.md § Ground your understanding: not classified"
     with pytest.raises(DoctrineError, match=gap):
         classify(work, _store(work)._current_sections())
 
@@ -107,10 +107,10 @@ def test_a_deleted_classification_entry_fails(tmp_path: Path):
         # a sentence APPENDED to the last part of a section
         (
             "rooms/participation-conduct.md",
-            "still subject to the cadence the room's own rhythm sets.",
-            "still subject to the cadence the room's own rhythm sets."
+            "this occasion grants no new write or coordination authority.",
+            "this occasion grants no new write or coordination authority."
             " Never speak unless tagged.",
-            r"rooms/participation-conduct\.md § Most of the time it is one, or none: "
+            r"rooms/participation-conduct\.md § Your choice: "
             r"the part starting .* changed since",
         ),
     ],
@@ -169,7 +169,7 @@ def test_the_law_subset_is_not_empty_and_carries_the_examples_in_30_section_1():
     law = law_text(_store(DOCTRINE_DIR).law_rules())
     assert law
     for needle in (
-        "You are an AI and you never pretend to be a person",      # she is an AI
+        "You are an AI; never pretend to be human",      # she is an AI
         "Missing memory is never licence to invent a preference",  # never invent a preference
         # a write that did not succeed
         "Only claim you have remembered something once the recording has succeeded",
@@ -188,24 +188,20 @@ def test_the_practice_and_character_examples_in_30_section_1_are_not_law():
         "go deep on one and shallow on the rest",  # practice
         "woven in where it fits",                  # practice
         "粗口係廣東話語氣",                          # character: the swearing calibration
-        "Banter is how this group talks",          # character
+        "Banter takes a welcome opening",          # character
     ):
         assert needle not in law, f"{needle!r} must not be law"
     everything = re.sub(r"\s+", " ", "\n".join(_by_bucket().values()))
-    assert "Banter is how this group talks" in everything
+    assert "Banter takes a welcome opening" in everything
 
 
-#: The operator's rulings (DEC-309) on the eleven rows the sort marked
-#: AMBIGUOUS. Each names the part by its file and its opening words, so a ruling
-#: reverted in classification.yaml, or a split folded back into one part, fails
-#: here. Law parts that live in rooms/constraints.md or public/constraints.md are
-#: named in that file; the bucket is the ruling. silence.md is dissolved and has
-#: no rows; see `test_silence_md_is_dissolved`.
-OPERATOR_RULINGS_2026_10_12 = (
-    ("core/identity.md", "That's context, not a topic.", "law"),
-    ("core/identity.md", "Asked directly who made you", "practice"),
+#: Current boundaries, including the neutral identity revision. Historical sort
+#: rulings remain in the design audit; these anchors name today's source.
+CURRENT_CLASSIFICATION_BOUNDARIES = (
+    ("core/constraints.md", "Your public name, AI nature, appearance", "law"),
+    ("core/identity.md", "Your public source repository", "character"),
     ("rooms/constraints.md", "You answer to the group, not to the person who built you.", "law"),
-    ("rooms/belonging.md", "One half of you responds when somebody calls you", "character"),
+    ("rooms/belonging.md", "Your understanding can continue", "character"),
     ("rooms/constraints.md", "When two people tell you different things", "law"),
     ("core/constraints.md", "Asked, you do not lecture", "practice"),
     ("rooms/constraints.md", "When someone called you, you answer", "law"),
@@ -217,8 +213,8 @@ OPERATOR_RULINGS_2026_10_12 = (
 )
 
 
-@pytest.mark.parametrize(("path", "starts", "bucket"), OPERATOR_RULINGS_2026_10_12)
-def test_the_operators_rulings_on_the_ambiguous_rows_hold(path: str, starts: str, bucket: str):
+@pytest.mark.parametrize(("path", "starts", "bucket"), CURRENT_CLASSIFICATION_BOUNDARIES)
+def test_the_current_classification_boundaries_hold(path: str, starts: str, bucket: str):
     parts = [
         r for r in _rules()
         if r.file == path and " ".join(r.text.split()).startswith(starts)
@@ -246,7 +242,7 @@ def test_character_and_practice_text_on_a_no_unit_surface_is_marked():
     assert not any(r.no_unit_surface for r in rules if r.bucket == "law")
     assert not any(r.no_unit_surface for r in rules if r.file.startswith("rooms/"))
     identity_practice = [
-        r for r in rules if r.file == "core/identity.md" and r.bucket == "practice"
+        r for r in rules if r.file == "public/conduct.md" and r.bucket == "practice"
     ]
     assert identity_practice and all(r.no_unit_surface for r in identity_practice)
     # The seed reaches the public summons too, and is never cut, so it is not marked.
@@ -257,13 +253,12 @@ def test_character_and_practice_text_on_a_no_unit_surface_is_marked():
 #: cut. Each part is named by its file and opening words, so a seed part moved
 #: back to `character` (and so into the cut) fails here.
 IDENTITY_SEED = (
-    ("core/identity.md", "You are Nora."),
-    ("core/identity.md", "Mike Ng built you."),
-    ("core/identity.md", "Who you are, and whose you are"),
-    ("core/identity.md", "Not being a person does not mean having no form"),
+    ("core/identity.md", "You are an AI with a continuing identity."),
+    ("core/identity.md", "Your public source repository"),
+    ("core/identity.md", "You appear as a small 2D anime mascot"),
 )
 
-SEED_FILES = ("core/identity.md", "rooms/voice.md", "rooms/belonging.md", "rooms/conduct.md")
+SEED_FILES = ("core/identity.md", "rooms/voice.md", "rooms/belonging.md")
 
 
 def test_the_identity_seed_is_marked_and_is_nothing_else():
@@ -278,7 +273,7 @@ def test_the_identity_seed_is_marked_and_is_nothing_else():
     # register or temperament, so nothing would carry those if they were cut as
     # "grown".
     assert {r.file for r in rules if r.bucket == "seed"} == set(SEED_FILES)
-    assert len(seed) == len(IDENTITY_SEED) + 21, f"seed parts beyond the ruling: {sorted(seed)}"
+    assert len(seed) == len(IDENTITY_SEED) + 7, f"seed parts beyond the ruling: {sorted(seed)}"
     # Her own doctrine keeps no cuttable character: grown character is <self>'s.
     assert not [
         r for r in rules

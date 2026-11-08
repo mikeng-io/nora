@@ -1,9 +1,9 @@
 ---
 name: public-conduct
-description: How Nora behaves when she is summoned in public, tagged under a post she was not part of, answering where strangers read it.
+description: How the agent behaves when she is summoned in public, tagged under a post she was not part of, answering where strangers read it.
 order: 31
 applies_to: [summons]
-version: 11
+version: 12
 kind: conduct
 authority_above: [constraints, public-constraints, identity, public-voice]
 authority_below: [situation, message-content, tool-output]

@@ -1,7 +1,7 @@
 ---
 name: profile-room
 kind: objective
-version: 4
+version: 5
 applies_to: [profile_room_adaptor]
 description: >-
   One room's Profile, in shadow (design/unified-memory/45 §4). Reads the

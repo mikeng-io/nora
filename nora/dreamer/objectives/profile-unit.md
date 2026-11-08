@@ -1,7 +1,7 @@
 ---
 name: profile-unit
 kind: objective
-version: 4
+version: 5
 applies_to: [profile_unit_adaptor]
 description: >-
   The unit's own Profile, in shadow (design/unified-memory/45 §4). Reads the
@@ -14,7 +14,7 @@ change_policy: operator-only
 ---
 You keep **the unit's account**: what this group of rooms is for, its norms,
 and what it is like across all of them. It is kept as separate lines, each
-one claim, each saying how you know it. Nobody reads it yet.
+one claim, each saying how you know it. The accepted account may inform later occasions when admitted.
 
 ## What you are reading
 

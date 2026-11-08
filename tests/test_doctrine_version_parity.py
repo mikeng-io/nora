@@ -78,44 +78,39 @@ DOCTRINE_DIR = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 # `applies_to` and the authority fields are not rendered, so editing them moves
 # no sha.
 PINNED: dict[str, tuple[int, str]] = {
-    "identity": (16, "b16875573e56dc00a54c53fb75416f26dddd7a0068d9854abe77f77f0b6cc333"),
+    "identity": (17, "66276a4964e23e394060c92c69051b53e08ea3b413ddd0baaa9554f487899821"),
     # Her place in a group; loaded for room occasions only.
-    "belonging": (3, "4f2a9dd32a1201a543473e544cf5ba261873b3dfc0e285c0ef2b4e97f08c9354"),
-    "voice": (25, "c423581eedc2f1aa209ec467ea085cc366f50a0297bd2e85a37f67eeb3180be9"),
+    "belonging": (4, "ce33bf2fedccf4f18b88dc3cf7e7069704febabe2a7bd4995501802b6406f3f4"),
+    "voice": (26, "81aeb18b53b16b44e533b34979bb9bc40bb4c061dade88f3d65f8f71c34cc3e2"),
     # Eight of its behavioural rules read as restatement and are not; a later
     # compression must not treat them as duplication. It is English because it
     # describes what she does; `voice.md` and quoted speech stay Cantonese.
     # Dashes are removed at the transport (`nora.agent.punctuation`), not by a
     # doctrine rule.
-    "conduct": (45, "0a8ce1acb1fd387947d17c6be79f9e0561a7ec67c1413b8aa832d01aee67f1fb"),
+    "conduct": (46, "97ca2204aeb471322f1c356126dd2bd274789fb6bacea6db97f9a38408b845c7"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # An edit to it needs the gate's 40-case eval suite.
-    "participation": (
-        9, "6aeb190f434d23e40022040fa1cbc8e6ca8f2185260b9458a4504ed8f42c631a",
+    "participation": (10, "65ae1b3c68a95588937bf7d365efaf1e2d04840c02bd99275b2d6d788407630f",
     ),
     # The reaction picker's instruction (`nora.agent.reaction`).
-    "reaction": (
-        5, "24ad6ab63039c66819ca4b0ee1fbc9290b28b06a145a1b33b1acac5c882a3feb",
+    "reaction": (7, "34b87ba59346fa4c99b76bf6348647153b9114171476c629474b6c612c34a836",
     ),
     # The speech formatter's instruction.
-    "speech-format": (
-        1, "b3c17e1505b551b01f88313e447674ed1f7f6d6bc3700da8d066d2dfd3ea8f63",
+    "speech-format": (3, "103e7e6c28572f48cc372fec47164ee9ff8cb8491167443134088a0e6db4d2de",
     ),
-    "participation-conduct": (
-        5, "40a7a6d6fa1acd44428836c51a45814bd3aee8d9af23dc0fdbd285f0d4411bbb",
+    "participation-conduct": (6, "19c2c4e5f0d97b5f7c3ecaf6908eb2dfb957e1f4356897a349a6b78bf3e91dbe",
     ),
-    "constraints": (14, "f7374cf851f8604a26756ff1839275b6b5292ff63379c92297af9e5870acd7db"),
+    "constraints": (15, "70265b460dd618e06e971ff93db9c9fa581733ed9b0ac10477968bbd8c5f709c"),
     # The constraints for room occasions, ordered right after `constraints`.
     "room-constraints": (4, "3cf97670e2fc376bdcf27badad486519c4266a3256a252163f3548c9e691658c"),
     # What she already knows about a picture and when to look again; loaded for room
     # occasions only, before `constraints`.
     "pictures": (4, "513d551a17c9d5968b93d0ce93c01e35440ff8bf89524207bc1e4295f4010498"),
     # The public summons files: loaded only on `applies_to="summons"`.
-    "public-voice": (4, "d555d8540e3e7e55dd341145760c46eb3463c3ea6a0638c7ebd3f4ca96dc8312"),
-    "public-conduct": (11, "c7d08af0b7084a6dba34d383fe21c4ecf795edb3fcc7fd445cb8033cd5c4d3ef"),
-    "public-constraints": (
-        3, "ade23a6bfb329edc9c66c4bda950d9b5923ba11877119941c400d8b3d69bdbc6",
+    "public-voice": (5, "c10d500a013a14095479320f0e6efc34fb4b8dd2b4eb13d25b4f7596bb94c82e"),
+    "public-conduct": (12, "98a5787be348f5ed0ec50c5b464d04cce4c5bf815b4ccfd7bd221de397a8f1ce"),
+    "public-constraints": (4, "1cee022bf1b7a831f898cf8e8c95278fbf6ef857bce660d2f3e1ee77ae8a90df",
     ),
 }
 

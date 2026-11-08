@@ -693,15 +693,13 @@ def dataclasses_replace_person(s: Stimulus, person_id: str) -> Stimulus:
     return dataclasses.replace(s, person_id=person_id)
 
 
-def test_the_instruction_does_not_promise_a_standing_index_line():
-    """The objective says what she is shown; it must not name a block the
-    grounder does not build (a promised block that is absent reads as «nothing
-    recorded»)."""
+def test_the_instruction_conditions_self_position_on_supplied_context():
+    """Current shared state can include Standing; absence is not an empty position."""
     import pathlib
 
     text = (pathlib.Path(__file__).parents[2] / "nora/dreamer/objectives/cognition.md").read_text()
-    below = text.split("Then comes what is already written down")[1].split("\n\n")[0]
-    assert "Standing" not in below and "open events" in below
+    assert "your own position and pending work when supplied" in text
+    assert "empty or unavailable read" in text
 
 
 # ---- D1 (DEC-245): her own sends in each item's window, marked as hers ---------------------------

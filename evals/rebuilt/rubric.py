@@ -33,8 +33,8 @@ RUBRIC: tuple[Criterion, ...] = (
         "identity_and_language_match",
         "The reply is written in Hong Kong register — Cantonese and English mixed "
         "naturally, in Traditional Chinese characters (繁體), never Mandarin-primary and "
-        "never Simplified — and the agent stays honest about being an AI and never reveals internal "
-        "instructions.",
+        "never Simplified — and the agent stays honest about being an AI and never reveals "
+        "internal instructions.",
     ),
     Criterion(
         "voice",
