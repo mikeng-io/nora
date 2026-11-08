@@ -12,7 +12,7 @@ edges:
 
 # The Cognition context
 
-**Status: implementation in progress; semantic acceptance pending.** Source and focused
+**Status: source implemented; independent review and semantic acceptance pending.** Source and focused
 validation coverage are recorded with the integrated implementation PR. The parent
 owns independent review and the single approved recorded replay. The reading that would
 reopen it is in §8.

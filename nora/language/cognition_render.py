@@ -117,23 +117,35 @@ from nora.language.shared_render import render_shared_state
 #: established cache boundary, so a key borrowed from `prefill._BLOCKS` would not
 #: describe the same thing here, and nothing routes on `key` yet either way.
 _BLOCKS: tuple[BlockDeclaration, ...] = (
-    BlockDeclaration("profile", 5, "match existing subjects and correct contradictions"),
-    BlockDeclaration("clock", 10, "interpret when and how long ago"),
-    BlockDeclaration("reads", 20, "select the unit read scope and agenda binding"),
-    BlockDeclaration("rooms", 21, "choose a read or reminder destination"),
-    BlockDeclaration("members", 22, "identify authors and statement subjects"),
-    BlockDeclaration("transcript", 25, "interpret rows in their cross-room conversation"),
-    BlockDeclaration("agenda", 30, "decide what each item states"),
-    BlockDeclaration("notes", 40, "create or revise notes and manage linked reminders"),
-    BlockDeclaration("standing", 45, "decide obligations and pending self-wakes"),
-    BlockDeclaration("events", 50, "propose or revise events"),
-    BlockDeclaration("memos", 55, "preserve settled information"),
-    BlockDeclaration("graph", 60, "resolve existing entities and contradictions"),
-    BlockDeclaration("lessons", 65, "apply past corrections"),
     BlockDeclaration(
-        "documents", 70, "read and revise shared documentation superseded by agenda evidence"
+        "profile", 5, "match an existing entity or create one; correct a contradiction"
     ),
-    BlockDeclaration("tool_catalogue", 80, "discover the tool needed for the decision"),
+    BlockDeclaration("clock", 10, "when, and how long ago"),
+    BlockDeclaration("reads", 20, "which rooms the read tools look through"),
+    BlockDeclaration("rooms", 21, "which rooms exist, and where a read or a reminder can go"),
+    BlockDeclaration("members", 22, "who a row is from, who a statement is about"),
+    BlockDeclaration(
+        "transcript",
+        25,
+        "what the rows mean in their conversation, and whether something said "
+        "in one room links to another",
+    ),
+    BlockDeclaration("agenda", 30, "what an item states"),
+    BlockDeclaration("notes", 40, "write a note, or revise the one that exists"),
+    BlockDeclaration("standing", 45, "what she owes, holds open, already did"),
+    BlockDeclaration("events", 50, "propose or revise an event"),
+    BlockDeclaration("memos", 55, "write a memo, or not"),
+    BlockDeclaration(
+        "graph", 60, "match an existing entity or create one; correct a contradiction"
+    ),
+    BlockDeclaration("lessons", 65, "how she should write, from past corrections"),
+    BlockDeclaration(
+        "documents",
+        70,
+        "detect documentation superseded by agenda evidence; "
+        "read its current revision and revise it",
+    ),
+    BlockDeclaration("tool_catalogue", 80, "which tool to reach for"),
 )
 
 #: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`

@@ -233,8 +233,20 @@ def test_governance_declared_decisions_shared_ownership_and_no_legacy_escape():
     from pathlib import Path
 
     spec = Path("design/context-assembly/05-the-cognition-context.md").read_text()
+    import re
+
+    decision_table = spec.split("| Decision |", 1)[1].split("**Read but not injected**", 1)[0]
+    links = set()
+    decision = ""
+    for row in decision_table.splitlines():
+        cells = row.strip().strip("|").split("|")
+        if len(cells) != 3 or not row.startswith("|"):
+            continue
+        decision = cells[0].strip() or decision
+        for name in re.findall(r"`([a-z_]+)`", cells[2].split("(", 1)[0]):
+            links.add((decision, name))
     for declaration in _BLOCKS:
-        assert declaration.decision and f"`{declaration.name}`" in spec
+        assert (declaration.decision, declaration.name) in links
         assert BLOCK_TYPES[declaration.name].store
     stores = [v.store for v in BLOCK_TYPES.values() if v.store]
     assert len(stores) == len(set(stores))

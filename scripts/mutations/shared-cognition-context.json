@@ -26,5 +26,19 @@
     "old": "if unexplained:",
     "new": "if False:",
     "target": "tests/unit/test_cognition_shared_context.py::test_assembly_rejects_undeclared_fields_and_failed_content"
+  },
+  {
+    "name": "declared block decisions must match their canonical decision table row",
+    "file": "nora/language/cognition_render.py",
+    "old": "\"when, and how long ago\"",
+    "new": "\"invented unrelated decision\"",
+    "target": "tests/unit/test_cognition_shared_context.py::test_governance_declared_decisions_shared_ownership_and_no_legacy_escape"
+  },
+  {
+    "name": "interleaved context rows use the actual shared media custody join",
+    "file": "nora/app/cognition_context.py",
+    "old": "if self._media_join is not None:",
+    "new": "if False:",
+    "target": "tests/unit/test_cognition_shared_context.py::test_reader_scope_related_profiles_and_real_assembly"
   }
 ]
