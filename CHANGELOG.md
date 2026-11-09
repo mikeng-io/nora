@@ -1,5 +1,17 @@
 # Changelog
 
+## [7.17.0](https://github.com/mikeng-io/nora/compare/v7.16.7...v7.17.0) (2026-11-09)
+
+
+### Features
+
+* **computer:** acquire scoped VMs on demand and stop quiet owned disks ([e8b9c22](https://github.com/mikeng-io/nora/commit/e8b9c227cfcac1c78677b33736a02932afeb2244))
+
+
+### Bug Fixes
+
+* **computer:** reconcile real guest quiet state and owned VM recovery ([905e137](https://github.com/mikeng-io/nora/commit/905e13706a133bcb97984d6958d2f6dcb58c188c))
+
 ## [7.16.7](https://github.com/mikeng-io/nora/compare/v7.16.6...v7.16.7) (2026-11-09)
 
 
