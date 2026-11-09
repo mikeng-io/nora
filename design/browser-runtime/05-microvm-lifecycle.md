@@ -5,7 +5,7 @@ automate provisioning using the existing Docker Sandboxes runtime rather than
 adopting OpenSandbox. This document extends the
 [scoped browser contract](00-design.md#current-target--scoped-anonymous-browser-2026-11-02)
 and belongs to [outcome #520](https://github.com/mikeng-io/nora/issues/520).
-Implementation is stopped while this bundle is reconciled. No host installation,
+The implementation is a child PR based on the completed design head. No host installation,
 configuration change, deployment or paid evaluation is part of this revision.
 
 ## Baseline and outcome
@@ -54,7 +54,11 @@ authority, not an additional model-facing tool. Unauthenticated or malformed
 requests must have no host effect. Revocation prevents new acquisition; running
 work follows existing cancellation/drain semantics. It never deletes the disk.
 
-The API exposes acquire/renew/release and observation of lifecycle state. Idle
+The API exposes acquire/release/idle-stop. Leases are durable operation ownership,
+not expiring timers: a long call cannot lose protection because renewal was delayed.
+Release and recovery require positively quiet guest state; an elected successor
+may reconcile an abandoned operation only after the existing SQL owner permits it.
+Passive observation remains the read-only registry and authenticated guest state. Idle
 stop uses the existing elected maintenance owner, with the controller checking
 its own lease state too. No arbitrary create parameters, exec or automatic
 destroy operation is exposed. Lifecycle status is typed: absent, starting,
@@ -76,7 +80,7 @@ A start accepted by the controller is not yet a ready computer.
 4. Publish readiness only after authenticated live scope and nonempty boot
    identity agree with the host registry. The app retains its independent identity
    check. Changed boots expire old handles; no automatic replay of uncertain work.
-5. Release after execution has drained. Long operations renew the lease; timeout
+5. Release after execution has drained. Long operations retain their durable lease; timeout
    and cancellation stop/drain through existing ownership before release. A lost
    response is reconciled by operation identity and measured host state, never by
    blindly issuing another create or repeating a guest action.
@@ -170,3 +174,32 @@ defines tests and readbacks to obtain; it does not assert those tests exist.
 The existing scoped browser/worker outcome is not closed by lifecycle delivery.
 No Lightpanda performance arm, paid model comparison or production data fixture
 is required to prove this slice.
+
+## Reconciled execution contract
+
+`ComputerAdmission.run_segment` is the acquisition boundary after SQL election;
+maintenance segments never acquire. Nested work inherits the segment. The existing
+runner's rebuilt calls pass through admission again. Acquisition failure closes
+the unstarted coroutine and returns `unavailable` with `no_guest_effect`, so queue
+settlement need not infer quiet from a VM that never started. Guest effects are
+never retried by lifecycle code. `binding`, `state`, `instance`, registry reads and
+context readers remain passive. A stopped record has an empty published instance
+before stop, preventing a cached binding from probing and accidentally waking it.
+
+A single installed controller serializes host transitions globally (including the
+bounded readiness wait). This deliberately simple lock reserves capacity across
+concurrent starts and excludes acquire during stop; per-scope parallel startup is
+not required. Explicit maximum slots, configured guest memory and minimum host
+headroom are mandatory host settings. Linux MemAvailable must cover guest memory
+plus headroom, without relying on guest RSS. Unknown inventory refuses admission.
+The wrapper alone runs sbx; the controller invokes only its fixed scope verbs and
+installed scope service template. Its private durable operation record precedes
+creation. Ambiguous or conflicting ownership remains unavailable; no deletion,
+foreign adoption or reset is recovery.
+
+Manual mode remains available with an empty app controller socket setting. Enabling
+automation requires installing the controller and scope unit template, delivering
+the existing bearer privately, setting host limits, and mounting the control
+directory and read-only registry into the application. Merge alone installs none
+of these. The host runtime and whole-VM resource comparison remain live acceptance
+boundaries even when generated local tests pass.
