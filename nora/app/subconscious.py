@@ -15,16 +15,17 @@ its outcome. The session's model call goes through
 `CognitionSessionAdaptor` is Cognition as the Dreamer sees it: its `unit_key`
 is the Dreamer key, `session_run` the work one slot executes, and
 `uses_watermark=False` because Cognition settles its own claim — a
-watermark commit would be a second settlement of the same rows. The
-envelope members (`inputs`/`accept`/`commit`) exist only so the runtime's
-protocol check sees a whole adaptor; `session_run` short-circuits before
-any of them can be called.
+watermark commit would be a second settlement of the same rows. It is a
+`SessionAdaptor`, not an envelope `DreamAdaptor`: `session_run` is the
+work, so the envelope members (`inputs`/`accept`/`commit`) are not
+declared at all — the session's prompt is assembled inside the session
+occasion, not handed to the runtime as `inputs`.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -40,40 +41,25 @@ log = logging.getLogger("nora.app.subconscious")
 
 @dataclass
 class CognitionSessionAdaptor:
-    """ONE wake's session as a `DreamAdaptor` (node 30's second shape).
+    """ONE wake's session as a `SessionAdaptor` (node 30's second shape).
 
     Built per admitted wake by `SubconsciousExecutor`: `session_run` is the
     session's `on_wake` bound to that wake's unit, view and ids, and
-    `DreamerRuntime.run` detects it and drives `_run_session_body` instead of
-    the envelope fold. `uses_watermark=False` and `store_calls_per_tick=0`
-    are not defaults picked for convenience: a session settles its own rows
-    (its wake outcome, its carries, its session record), so the runtime's
-    envelope commit must never fire, and the runtime's `inputs`/`commit`
-    bound must never wrap a call this shape does not make.
+    `DreamerRuntime.run` reads it and drives `_run_session_body` instead of
+    the envelope fold. `uses_watermark=False` is not a default picked for
+    convenience: a session settles its own rows (its wake outcome, its
+    carries, its session record), so the runtime's envelope commit must
+    never fire. It is NOT an envelope `DreamAdaptor` — it carries none of
+    `inputs`/`accept`/`commit`: the session's prompt is assembled inside
+    `session_run` by the session occasion, so declaring an `inputs` here
+    would name a prompt builder that does not exist.
     """
 
     unit_key: str
     session_run: Callable[..., Any]
     name: str = COGNITION_ADAPTOR
-    key_kind: str = "unit"
-    uses_watermark: bool = False
     objective: str = "cognition"
-    envelope_key: str = "cognition"
-    tools: frozenset[str] = frozenset()
-    store_calls_per_tick: int = 0
-
-    async def inputs(self, *, key: str, batch: Sequence[Any]) -> str:
-        return ""
-
-    async def accept(
-        self, *, key: str, items: Sequence[Mapping[str, object]],
-    ) -> Sequence[object]:
-        return ()
-
-    async def commit(
-        self, *, key: str, proposals: Sequence[Any], now_ms: int,
-    ) -> int:
-        return 0
+    uses_watermark: bool = False
 
 
 class SubconsciousExecutor:

@@ -757,7 +757,8 @@ class ReminderStore(Protocol):
         scope. A full page means «unproven remainder», never absence."""
         ...
     async def due(self, *, now: datetime, limit: int) -> Sequence[Reminder]:
-        """PENDING rows whose `due_at` has passed, oldest first, `id`
+        """PENDING rows whose `due_tick` has passed — the eligibility
+        authority (node 18): `due_tick <= tick(now)`, oldest first, `id`
         ASCENDING within an equal `due_at`.
 
         The tiebreak is part of the contract, not an incidental: `due_at` alone

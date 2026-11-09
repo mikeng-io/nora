@@ -686,6 +686,8 @@ CACHE 1
 CACHE 1
 CACHE 1;
 CASE
+CASE
+CASE
 COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
 COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';
 CONSTRAINT ck_assess_report_kind CHECK ((kind = 'nightly_dq'::text)),
@@ -818,6 +820,7 @@ CONSTRAINT ck_profile_line_verdict_part CHECK (((part = 'guesses'::text) = (verd
 CONSTRAINT ck_profile_revision CHECK ((revision >= 0))
 CONSTRAINT ck_reasoning_strip_log_counts CHECK (((continuation_calls >= 1) AND (continuation_calls <= model_calls) AND (strip_calls >= 0) AND (strip_calls <= continuation_calls) AND (stripped_blocks >= 0) AND ((strip_calls = 0) = (stripped_blocks = 0)))),
 CONSTRAINT ck_reasoning_strip_log_tag_id_not_empty CHECK (((tag_id IS NULL) OR (tag_id <> ''::text)))
+CONSTRAINT ck_reminders_due_tick CHECK ((NOT (due_tick IS DISTINCT FROM (ceil(((EXTRACT(epoch FROM (due_at - '1970-01-01 00:00:00+00'::timestamp with time zone)) * (1000)::numeric) / (60000)::numeric)))::bigint))),
 CONSTRAINT ck_reminders_recurrence CHECK ((((recurrence = 'none'::text) AND (recurrence_tz IS NULL) AND (recurrence_count IS NULL) AND (recurrence_until IS NULL) AND (series_id IS NULL) AND (series_anchor_at IS NULL) AND (occurrence = 0)) OR ((recurrence <> 'none'::text) AND (recurrence_tz IS NOT NULL) AND (recurrence_count >= 1) AND (series_id IS NOT NULL) AND (series_anchor_at IS NOT NULL) AND (occurrence >= 0) AND (occurrence < recurrence_count)))),
 CONSTRAINT ck_reminders_recurrence_interval CHECK ((recurrence_interval >= 1)),
 CONSTRAINT ck_reminders_recurrence_kind CHECK ((recurrence = ANY (ARRAY['none'::text, 'minutely'::text, 'hourly'::text, 'daily'::text, 'weekly'::text, 'monthly'::text, 'yearly'::text]))),
@@ -843,6 +846,7 @@ CONSTRAINT ck_social_perception_outcome CHECK ((outcome = ANY (ARRAY['ok'::text,
 CONSTRAINT ck_social_poll_outcome CHECK ((outcome = ANY (ARRAY['unchanged'::text, 'story_due'::text, 'items_due'::text, 'partial'::text, 'count_fell'::text, 'read_ok'::text, 'halted'::text, 'backed_off'::text, 'error'::text, 'abandoned'::text, 'unavailable'::text]))),
 CONSTRAINT ck_social_poll_stage CHECK ((stage = ANY (ARRAY['probe'::text, 'story'::text, 'items'::text, 'item'::text, 'backfill'::text, 'relist'::text, 'recount'::text])))
 CONSTRAINT ck_source_health_event CHECK ((event = ANY (ARRAY['poll'::text, 'transition'::text])))
+CONSTRAINT ck_stimulus_due_tick CHECK ((NOT (due_tick IS DISTINCT FROM
 CONSTRAINT ck_stimulus_kind CHECK ((kind = ANY (ARRAY['message'::text, 'social'::text, 'play'::text, 'rollup'::text, 'time'::text, 'self'::text, 'observation'::text])))
 CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing'::text, 'done'::text, 'failed'::text])))
 CONSTRAINT config_revision_file_check CHECK ((file = ANY (ARRAY['config.toml'::text, 'policy.toml'::text, 'identity.toml'::text])))
@@ -1106,6 +1110,7 @@ CREATE INDEX idx_relation_evidence_entity ON public.relation_evidence USING btre
 CREATE INDEX idx_relation_evidence_relation ON public.relation_evidence USING btree (relation_id);
 CREATE INDEX idx_relation_src_walk ON public.relation USING btree (src_kind, src_id, rel) INCLUDE (unit);
 CREATE INDEX idx_reminders_due ON public.reminders USING btree (state, due_at);
+CREATE INDEX idx_reminders_due_tick ON public.reminders USING btree (state, due_tick);
 CREATE INDEX idx_rendered_claim_window ON public.rendered_claim USING btree (conversation_id, last_rendered_at DESC);
 CREATE INDEX idx_rollup_colocation_key ON public.rollup_colocation USING btree (build_id, unit, valid_from_ms);
 CREATE INDEX idx_rollup_daybook_key ON public.rollup_daybook USING btree (build_id, unit, person_id, local_date);
@@ -1130,7 +1135,7 @@ CREATE INDEX idx_standing_decision_scope ON public.standing_decision USING btree
 CREATE INDEX idx_standing_revision_room_updated ON public.standing_revision USING btree (platform, conversation_id, updated_at DESC, id DESC);
 CREATE INDEX idx_standing_thread_revision_scope ON public.standing_thread_revision USING btree (unit, scope, platform, conversation_id);
 CREATE INDEX idx_standing_thread_scope ON public.standing_thread USING btree (unit, scope, platform, conversation_id);
-CREATE INDEX idx_stimulus_unit_due ON public.stimulus USING btree (unit, due_ms) WHERE (due_ms IS NOT NULL);
+CREATE INDEX idx_stimulus_unit_due ON public.stimulus USING btree (unit, due_tick) WHERE (due_tick IS NOT NULL);
 CREATE INDEX idx_stimulus_unit_id ON public.stimulus USING btree (unit, id);
 CREATE INDEX idx_stimulus_unit_message_recorded ON public.stimulus USING btree (unit, recorded_at) WHERE (kind = 'message'::text);
 CREATE INDEX idx_stimulus_unit_self_item ON public.stimulus USING btree (unit, item) WHERE (kind = 'self'::text);
@@ -1412,7 +1417,9 @@ CREATE UNIQUE INDEX uq_stimulus_time_ref ON public.stimulus USING btree (unit, r
 DECLARE
 DECLARE retired bigint[];
 ELSE
+ELSE ((due_ms / 60000) +
 ELSE ((prediction IS NULL) AND (prediction_observable IS NULL) AND (prediction_window_end IS NULL))
+ELSE 0
 END
 END
 END
@@ -1434,6 +1441,8 @@ END IF;
 END IF;
 END IF;
 END LOOP;
+END)
+END))),
 END),
 ERRCODE = 'insufficient_privilege';
 ERRCODE = 'insufficient_privilege';
@@ -1728,6 +1737,8 @@ UPDATE row_history SET superseded_at = at, superseded_by = version_id
 UPDATE row_history SET superseded_at = at, superseded_by = version_id
 VALUES (version_id, TG_TABLE_NAME, new_key, lower(TG_OP), new_image, at);
 VALUES (version_id, TG_TABLE_NAME, old_key, 'delete', old_image, at);
+WHEN (due_ms IS NULL) THEN NULL::bigint
+WHEN (mod(due_ms, (60000)::bigint) > 0) THEN 1
 WHEN (mode = 'abduced'::text) THEN ((prediction IS NOT NULL) AND (prediction_observable IS NOT NULL) AND (prediction_window_end IS NOT NULL))
 WHERE extraction_id = ANY(retired) AND retired_at IS NULL;
 WHERE extraction_id = ANY(retired);
@@ -2071,6 +2082,8 @@ due_at timestamp with time zone DEFAULT now() NOT NULL,
 due_at timestamp with time zone DEFAULT now() NOT NULL,
 due_at timestamp with time zone NOT NULL,
 due_ms bigint,
+due_tick bigint NOT NULL,
+due_tick bigint,
 duplicate_id uuid NOT NULL,
 duplicate_title text NOT NULL,
 duration_mad_ms bigint,

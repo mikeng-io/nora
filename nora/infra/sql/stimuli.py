@@ -38,7 +38,7 @@ from nora.domain.stimuli import (
     stored_cause,
     wake_state,
 )
-from nora.domain.ticks import tick_of_ms
+from nora.domain.ticks import due_tick_of_ms, tick_of_ms
 from nora.infra.sql.schema import (
     COGNITION_CARRY,
     COGNITION_WAKE,
@@ -132,22 +132,24 @@ def pending_query(
 
 def pending_ids_after(
     *, unit: str, through_id: int, through_ms: int, now_ms: int,
-    after_id: int, limit: int,
+    after_id: int, up_to_id: int, limit: int,
 ) -> sa.Select[Any]:
     """The SAME read as `pending_query`, ids only, continuing past
-    `after_id`: what `view` fetches when the bounded read filled — every
-    eligible id the bound cut, so `UnitView.over` can name them and the
-    watermark leaves them pending (`decide`'s unclaimed list). Bounded per
-    statement (`limit` rows a page); the total is the unit's pending
-    backlog, which the wake must name regardless — the bound caps what a
-    read SHOWS, never what it may silently consume."""
+    `after_id` but never past `up_to_id`: what `view` fetches when the
+    bounded read filled — the eligible ids the bound hid INSIDE the range
+    the next wake's `through` can actually cover (a wake's `through` is
+    `max(mark.through, max(claimed))` and claimed ⊆ shown, so nothing above
+    `up_to_id` is ever endangered: it stays pending un-named). Bounded per
+    statement (`limit` rows a page) AND by `up_to_id` — the bound caps what
+    a read SHOWS, never what it may silently consume, and never asks the
+    read to enumerate the whole backlog to prove it."""
     branches = _branches(
         unit=unit, through_id=through_id, through_ms=through_ms, now_ms=now_ms,
         columns=(STIMULUS.c.id,),
     )
     return (
         sa.select(branches.c.id)
-        .where(branches.c.id > after_id)
+        .where(branches.c.id > after_id, branches.c.id <= up_to_id)
         .order_by(branches.c.id.asc())
         .limit(limit)
     )
@@ -350,7 +352,14 @@ class SqlStimulusStore:
             "conversation_id": stimulus.conversation_id,
             "person_id": stimulus.person_id, "cues": list(stimulus.cues),
             "waits": int(stimulus.waits), "at_ms": stimulus.at_ms,
-            "due_ms": stimulus.due_ms, "recorded_at": _at(recorded_at_ms),
+            "due_ms": stimulus.due_ms,
+            # The writable eligibility authority (node 18): the writer names
+            # the tick its instant means; `ck_stimulus_due_tick` binds it.
+            "due_tick": (
+                None if stimulus.due_ms is None
+                else due_tick_of_ms(stimulus.due_ms)
+            ),
+            "recorded_at": _at(recorded_at_ms),
         }
         stmt: Any = pg_insert(STIMULUS).values(**values)
         if stimulus.kind in _KIND_PREDICATE:
@@ -433,43 +442,34 @@ class SqlStimulusStore:
                 unit=unit, through_id=mark.through_stimulus_id,
                 through_ms=mark.through_ms, now_ms=now_ms, limit=limit,
             )
-            pending = [_stimulus(r) for r in (await conn.execute(pending_q)).all()]
-            # The raw read is BOUNDED; a full bound means eligible rows the
-            # read never fetched may still sit under the id range the next
-            # wake consumes. They cannot be left invisible: `decide` names
-            # `UnitView.over` unclaimed, so the same read continues — ids
-            # only, page by page — until it drains. `InMemoryStimulusStore`
-            # spells the same rule; the contract suite binds them.
-            unseen: list[int] = []
-            if len(pending) == limit:
-                after = pending[-1].id if pending else 0
-                while True:
-                    page = [
-                        int(r.id) for r in (await conn.execute(pending_ids_after(
-                            unit=unit, through_id=mark.through_stimulus_id,
-                            through_ms=mark.through_ms, now_ms=now_ms,
-                            after_id=after, limit=_OVER_PAGE,
-                        ))).all()
-                    ]
-                    unseen.extend(page)
-                    if len(page) < _OVER_PAGE:
-                        break
-                    after = page[-1]
+            raw = [_stimulus(r) for r in (await conn.execute(pending_q)).all()]
+            # Was the raw read's bound actually reached? Only then can
+            # eligible rows the read never fetched sit under the id range the
+            # next wake consumes.
+            raw_filled = len(raw) == limit
             carry_rows = (await conn.execute(_carry_query(unit))).all()
             carry = {int(r.stimulus_id): int(r.strike) for r in carry_rows}
             waiting = {int(r.stimulus_id) for r in carry_rows if r.waits}
-            have = {s.id for s in pending}
+            have = {s.id for s in raw}
             # Two side doors past the range read: what a closed session carried,
             # and what the watermark's wake left UNCLAIMED, which the range
-            # would call consumed. Both name stimuli that were pending.
+            # would call consumed. Both name stimuli that were pending — and
+            # both sit under the watermark by construction, so the fetch is
+            # bounded by `limit` like the raw read: at most `limit` of them can
+            # be shown anyway (the merge is oldest-first); the ids the bound
+            # does not fetch join `over` below and `decide` still names them.
             missing = sorted(({*carry, *mark.unclaimed}) - have)
+            fetched: set[int] = set()
+            pending = list(raw)
             if missing:
                 extra = (await conn.execute(
                     sa.select(STIMULUS).where(
                         STIMULUS.c.id.in_(missing), STIMULUS.c.unit == unit,
                         live_stimulus(STIMULUS.c.id),
-                    ),
+                    ).order_by(STIMULUS.c.id.asc()).limit(limit),
                 )).all()
+                fetched = {int(r.id) for r in extra}
+                have |= fetched
                 for r in extra:
                     row = _stimulus(r)
                     # A stimulus a person's wait closed rides the next wake and
@@ -481,13 +481,38 @@ class SqlStimulusStore:
             # (`InMemoryStimulusStore.view`, bound by the contract suite): the
             # side doors are not exempt from `limit`. Oldest-first is what keeps
             # a truncated read safe: whatever is cut has a higher id than
-            # everything shown — but a wake's `through_stimulus_id` is at least
-            # the watermark it read, which may sit ABOVE a cut stimulus, so the
-            # cut ids are returned in `UnitView.over` for `decide` to name
-            # unclaimed (the watermark leaves them pending). `unseen` joins
-            # them: the ids the RAW bound cut before the merge ever ran.
+            # everything shown — but a wake's `through_stimulus_id` is
+            # `max(mark.through, max(claimed))` with claimed ⊆ shown, so
+            # `ceiling` is the highest id that wake can ever cover. An eligible
+            # id ABOVE it stays pending un-named (no `through` reaches it);
+            # one at or below it that was never shown is named in `over` for
+            # `decide` to leave unclaimed — the ONLY enumeration, paged and
+            # bounded by `ceiling`, never by the backlog.
             pending.sort(key=lambda x: x.id)
-            over = tuple(sorted({*unseen, *(s.id for s in pending[limit:])}))
+            shown = pending[:limit]
+            ceiling = max(
+                mark.through_stimulus_id,
+                shown[-1].id if shown else mark.through_stimulus_id,
+            )
+            unseen: list[int] = []
+            if raw_filled and raw[-1].id < ceiling:
+                after = raw[-1].id
+                while after < ceiling:
+                    page = [
+                        int(r.id) for r in (await conn.execute(pending_ids_after(
+                            unit=unit, through_id=mark.through_stimulus_id,
+                            through_ms=mark.through_ms, now_ms=now_ms,
+                            after_id=after, up_to_id=ceiling, limit=_OVER_PAGE,
+                        ))).all()
+                    ]
+                    unseen.extend(i for i in page if i not in have)
+                    if len(page) < _OVER_PAGE:
+                        break
+                    after = page[-1]
+            over = tuple(sorted(
+                {*unseen, *(s.id for s in pending[limit:]),
+                 *(i for i in missing if i not in fetched)}
+            ))
             del pending[limit:]
             activity_q = activity_query(unit=unit)
             activity = (await conn.execute(activity_q)).scalar_one_or_none()

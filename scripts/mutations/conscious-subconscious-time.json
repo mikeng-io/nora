@@ -2,7 +2,7 @@
   {
     "name": "dreamer run: a session-shaped adaptor is no longer dispatched",
     "file": "nora/agent/dreamer.py",
-    "old": "            if session_run is not None:",
+    "old": "            if isinstance(adaptor, SessionAdaptor):",
     "new": "            if False:",
     "target": "tests/unit/test_subconscious_executor.py"
   },
@@ -23,15 +23,15 @@
   {
     "name": "pending read: the raw LIMIT's cut rows are invisible to over (SQL)",
     "file": "nora/infra/sql/stimuli.py",
-    "old": "            unseen: list[int] = []\n            if len(pending) == limit:",
+    "old": "            unseen: list[int] = []\n            if raw_filled and raw[-1].id < ceiling:",
     "new": "            unseen: list[int] = []\n            if False:",
     "target": "tests/contract/test_stimulus_store_contract.py::test_the_raw_pending_bound_names_what_it_cut"
   },
   {
     "name": "pending read: the raw bound's cut rows are invisible to over (twin)",
     "file": "nora/testing/stimuli.py",
-    "old": "        unseen = [s.id for s in eligible[limit:]]",
-    "new": "        unseen: list[int] = []",
+    "old": "            {s.id for s in eligible[limit:] if s.id <= ceiling}",
+    "new": "            set()",
     "target": "tests/contract/test_stimulus_store_contract.py::test_the_raw_pending_bound_names_what_it_cut"
   },
   {
@@ -56,18 +56,11 @@
     "target": "tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake tests/contract/test_stimulus_store_contract.py::test_a_due_later_wake_does_not_resurrect_earlier_consumed_stimuli"
   },
   {
-    "name": "snapshot seed: generated columns are insert targets again",
-    "file": "nora/infra/sql/snapshot_at.py",
-    "old": "\"AND is_generated = 'NEVER' ORDER BY ordinal_position\"",
-    "new": "\"ORDER BY ordinal_position\"",
-    "target": "tests/infra/test_due_tick_generated.py::test_the_snapshot_insert_never_names_a_generated_column"
-  },
-  {
-    "name": "due_tick: the generated ceiling is the naive (n+59999)/60000",
+    "name": "due_tick: the CHECK's ceiling is the naive (n+59999)/60000",
     "file": "nora/infra/sql/migrations/versions/0150_due_ticks.py",
-    "old": "                \"((due_ms / 60000) + \"\n                \"CASE WHEN due_ms % 60000 > 0 THEN 1 ELSE 0 END)\"",
-    "new": "                \"((due_ms + 59999) / 60000)\"",
-    "target": "tests/infra/test_due_tick_generated.py::test_the_stimulus_due_tick_column_computes_the_signed_ceiling"
+    "old": "    \"(CASE WHEN due_ms IS NULL THEN NULL ELSE (due_ms / 60000) + \"\n    \"CASE WHEN mod(due_ms, 60000) > 0 THEN 1 ELSE 0 END END)\"",
+    "new": "    \"(CASE WHEN due_ms IS NULL THEN NULL ELSE (due_ms + 59999) / 60000 END)\"",
+    "target": "tests/infra/test_due_tick_generated.py::test_the_stimulus_due_tick_is_the_signed_ceiling_or_refused"
   },
   {
     "name": "schedule: a backward clock move reopens a consumed slot",

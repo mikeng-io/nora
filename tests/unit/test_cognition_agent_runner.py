@@ -188,6 +188,40 @@ async def test_a_loop_that_failed_timed_out_or_was_cut_off_leaves_what_it_spent(
     assert total == 7500 and isinstance(outcome, type(exc))      # raised, not swallowed
 
 
+async def test_a_cancelled_loop_leaves_its_partial_record_and_its_spend(
+    monkeypatch,
+):
+    """The CANCELLED positive control: a loop cut off mid-turn has usage in
+    the agent and a PARTIAL retained Record — both must reach `spend`, or a
+    cancelled session writes no trace and no token count at all."""
+    usage = {"inputTokens": 7000, "outputTokens": 500, "totalTokens": 7500}
+    agent = _Agent(usage)
+    agent.messages = [{"role": "user", "content": [{"text": "the agenda"}]}]
+    monkeypatch.setattr(factory, "create_dream_agent", lambda **kw: agent)
+
+    async def invoke(*args: Any, **kwargs: Any) -> Any:
+        # The partial turn: produced inside the loop, after the baseline.
+        agent.messages.append(
+            {"role": "assistant", "content": [{"text": "half a"}]}
+        )
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(factory, "invoke", invoke)
+
+    from nora.app.cognition_session import SESSION_TOKENS, TokenSpend
+    spend = TokenSpend()
+    token = SESSION_TOKENS.set(spend)
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await _run(_runner(Metrics()))
+    finally:
+        SESSION_TOKENS.reset(token)
+    assert spend.total == 7500
+    assert spend.messages == (
+        {"role": "assistant", "content": [{"text": "half a"}]},
+    ), "the partial turn survived the cancel, not just its token count"
+
+
 async def test_a_loop_that_failed_with_no_usage_leaves_none_and_a_broken_reading_never_raises(
     monkeypatch,
 ):

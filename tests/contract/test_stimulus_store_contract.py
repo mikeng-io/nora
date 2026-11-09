@@ -343,6 +343,83 @@ async def test_the_raw_pending_bound_names_what_it_cut(store):
         unit=UNIT, mode="live", now_ms=boundary + 20, limit=100)).pending == ()
 
 
+async def test_a_full_bound_enumerates_only_the_range_the_next_wake_can_cover(store):
+    """The final reviewer's probe: `view(limit=1)` over a 20-row backlog
+    must NOT return the other 19 ids in `over`. The wake this view feeds
+    records `through = max(mark.through, max(claimed))` with claimed ⊆
+    shown — ids above the shown id can never sit under that range, so they
+    stay pending un-named: the read's work stays bounded while the backlog
+    grows, and progress still moves one shown row a wake."""
+    from nora.domain.stimuli import WakePolicy, decide
+
+    policy = WakePolicy(quiet_seconds=0, cooldown_seconds=0, session_seconds=0)
+    for i in range(20):
+        await store.append(stimulus=_msg(f"messages:{i}"), recorded_at_ms=NOW)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW, limit=1)
+    assert len(view.pending) == 1
+    # Watermark 0: the shown id IS the ceiling — nothing above it is named.
+    assert view.over == ()
+    verdict = decide(view, policy, NOW)
+    assert verdict.reason is not None
+    assert verdict.through_stimulus_id == view.pending[-1].id
+    assert verdict.unclaimed_ids == ()
+    await store.record_wake(wake=NewWake(
+        unit=UNIT, mode="live", reason=verdict.reason, from_stimulus_id=0,
+        through_stimulus_id=verdict.through_stimulus_id,
+        stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
+        oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False,
+        at_ms=NOW, unclaimed_ids=verdict.unclaimed_ids,
+    ), recorded_at_ms=NOW)
+    # Bounded progress: the second read shows the second row, the backlog
+    # above it still unenumerated — and nothing was consumed unseen.
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 10, limit=1)
+    assert len(view.pending) == 1 and view.over == ()
+    assert view.pending[0].id == 2
+
+
+async def test_the_continuation_stops_at_the_ceiling_not_the_backlog(
+    _stimulus_db, monkeypatch,
+):
+    """Query counter, SQL only (the fake has no statements to count): with
+    the continuation page shrunk to 3, `view(limit=1)` over a 20-row and a
+    200-row backlog must run the SAME bounded set of statements — the old
+    drain loop would have needed ~7 and ~67 pages. Watermark 0 keeps the
+    ceiling at the shown id, so the continuation does not run at all."""
+    import nora.infra.sql.stimuli as sql_stimuli
+
+    monkeypatch.setattr(sql_stimuli, "_OVER_PAGE", 3)
+    engine = create_sql_engine(_stimulus_db)
+    store = SqlStimulusStore(engine)
+    statements = 0
+
+    @sa.event.listens_for(engine.sync_engine, "before_cursor_execute")
+    def _count(*args: Any) -> None:
+        nonlocal statements
+        statements += 1
+
+    async def _pending_statements(added: int, prefix: str) -> int:
+        nonlocal statements
+        for i in range(added):
+            await store.append(
+                stimulus=_msg(f"{prefix}:{i}"), recorded_at_ms=NOW)
+        statements = 0
+        view = await store.view(unit=UNIT, mode="live", now_ms=NOW, limit=1)
+        assert len(view.pending) == 1 and view.over == ()
+        return statements
+
+    try:
+        small = await _pending_statements(20, "a")
+        large = await _pending_statements(180, "b")
+        assert small == large
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text(
+                "truncate stimulus, cognition_wake, cognition_wake_outcome, "
+                "cognition_carry, stimulus_retraction restart identity"
+            ))
+        await engine.dispose()
+
+
 async def test_an_undated_arrival_inside_the_cutoffs_tick_still_waits(store):
     """Tick arithmetic is for DATED deadlines; undated provenance is exact.
     Two commits in the same minute, the second stamped AFTER the wake's

@@ -479,12 +479,12 @@ def _same_database(a: str, b: str) -> bool:
 async def _target_columns(conn: AsyncConnection, table: str) -> list[tuple[str, str | None, bool]]:
     """(name, default expression, not-null) of each column, in table order.
 
-    GENERATED columns (`is_generated = 'ALWAYS'`, e.g. `due_tick`) are not
-    insertable: Postgres refuses an explicit value for them, and their
-    value is derived from the columns the expression reads anyway. Leaving
-    them out of the insert restores an old image that predates the column
-    and a new image that carries it the same way — the stored instant is
-    restored, the generated tick recomputed.
+    GENERATED columns (`is_generated = 'ALWAYS'`) are not insertable:
+    Postgres refuses an explicit value for them, and their value is
+    derived from the columns the expression reads anyway. A column the
+    contract wants WRITABLE (`due_tick`, the eligibility authority a
+    restore must carry) is a real stored column: the insert names it, and
+    `BACKFILLED` coalesces the derivation for an image that predates it.
     """
     rows = (await conn.execute(sa.text(
         "SELECT column_name, column_default, is_nullable = 'NO' "
@@ -495,18 +495,32 @@ async def _target_columns(conn: AsyncConnection, table: str) -> list[tuple[str, 
     return [(r[0], r[1], bool(r[2])) for r in rows]
 
 
-#: NOT NULL columns a migration added AFTER history began (0068) with a
-#: backfill default it then DROPPED, keyed `(table, column)` to the value that
-#: migration gave every existing row. The target column has no default to read
-#: back, so without this an image recorded before the migration restores the
-#: column as NULL and the whole table's insert is refused. One entry per
-#: `alter_column(..., server_default=None)` on a copied table;
+#: Columns a migration added AFTER history began (0068) whose value a
+#: pre-migration image cannot carry, keyed `(table, column)` to the
+#: expression the migration gave every existing row — read against the
+#: image's OWN fields (`r.` qualifies the jsonb recordset row). The target
+#: column has no default to read back, so without this an image recorded
+#: before the migration restores the column as NULL: for a NOT NULL column
+#: the whole table's insert is refused; for `due_tick` the restored row's
+#: deadline silently never arrives. One entry per
+#: `alter_column(..., server_default=None)` or added-without-default column
+#: on a copied table;
 #: `tests/architecture/test_restore_knows_every_dropped_backfill.py` holds the
 #: list to the migrations.
 BACKFILLED: dict[tuple[str, str], str] = {
     # 0094_compute_jobs_generic_outbox: "every existing row is `legacy`".
     ("compute_jobs", "kind"): "'legacy'::text",
     ("compute_jobs", "payload"): "'{}'::jsonb",
+    # 0150_due_ticks: the writable eligibility authority — the tick the
+    # image's own instant proves, the CHECK's derivation verbatim.
+    ("reminders", "due_tick"): (
+        "(ceil((extract(epoch from (r.\"due_at\" - "
+        "'1970-01-01 00:00:00+00'::timestamptz)) * 1000) / 60000))::bigint"
+    ),
+    ("stimulus", "due_tick"): (
+        "CASE WHEN r.\"due_ms\" IS NULL THEN NULL ELSE (r.\"due_ms\" / 60000) "
+        "+ CASE WHEN mod(r.\"due_ms\", 60000) > 0 THEN 1 ELSE 0 END END"
+    ),
 }
 
 
@@ -524,10 +538,10 @@ def _insert_sql(table: str, columns: list[tuple[str, str | None, bool]]) -> str:
     names = ", ".join(f'"{c}"' for c, _, _ in columns)
     exprs = []
     for name, default, not_null in columns:
-        if not_null and default is not None and not default.startswith("nextval("):
-            exprs.append(f'coalesce(r."{name}", {default})')
-        elif not_null and (table, name) in BACKFILLED:
+        if (table, name) in BACKFILLED:
             exprs.append(f'coalesce(r."{name}", {BACKFILLED[(table, name)]})')
+        elif not_null and default is not None and not default.startswith("nextval("):
+            exprs.append(f'coalesce(r."{name}", {default})')
         else:
             exprs.append(f'r."{name}"')
     guards = []

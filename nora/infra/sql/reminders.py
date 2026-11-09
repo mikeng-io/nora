@@ -71,7 +71,7 @@ from nora.domain.reminders import (
     plan_successor,
     proactive_subject,
 )
-from nora.domain.ticks import tick_of_at
+from nora.domain.ticks import due_tick_of_at, tick_of_at
 from nora.infra.sql.schema import REMINDERS
 
 # PostgreSQL SQLSTATE 23505, unique_violation. Matched EXACTLY rather than
@@ -157,6 +157,9 @@ def _insert_values(row: Reminder) -> dict[str, Any]:
         "text": row.text,
         "created_at": row.created_at,
         "due_at": row.due_at,
+        # The writable eligibility authority (node 18): every writer names
+        # the tick its instant means; `ck_reminders_due_tick` binds it.
+        "due_tick": due_tick_of_at(row.due_at),
         "state": row.state.value,
         "fired_at": row.fired_at,
         "outcome": row.outcome,

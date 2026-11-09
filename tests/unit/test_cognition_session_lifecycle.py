@@ -16,18 +16,23 @@ import asyncio
 import datetime as dt
 import inspect
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
 
+from nora.agent import factory
+from nora.agent.dreamer import AdaptorBudget as DreamBudget
+from nora.agent.dreamer import DreamerRuntime
 from nora.app.cognition_session import (
     AdaptorBudget,
     CognitionRunResult,
     CognitionSessionRunner,
     NotReadOnlyToolError,
 )
+from nora.app.cognition_wiring import CognitionShutdown
+from nora.app.subconscious import SubconsciousExecutor
 from nora.app.wake import WakeEvaluator
 from nora.domain.cognition_session import Room
 from nora.domain.stimuli import NewStimulus, UnitView, WakeHook, WakePolicy
@@ -158,6 +163,37 @@ def _counter() -> Callable[[], str]:
     return mint
 
 
+class _LaneModels:
+    """Inert: `session_run` never builds an agent (`run` short-circuits)."""
+
+    def create(self) -> Any:
+        raise AssertionError("the session shape must not create an agent")
+
+
+@dataclass(frozen=True)
+class _LaneInstructions:
+    text: str = "be careful"
+    sha256: str = "a" * 64
+
+
+class _LaneInstructionStore:
+    def for_objective(self, name: str) -> _LaneInstructions:
+        return _LaneInstructions()
+
+
+class _LaneTools:
+    """Inert the same way: a session adaptor's tools are its own."""
+
+    def read_only(self) -> frozenset[str]:
+        return frozenset()
+
+    def tool_param_names(self) -> dict[str, frozenset[str]]:
+        return {}
+
+    def build(self, **kw: Any) -> list[Any]:
+        raise AssertionError("the session shape must not build lane tools")
+
+
 @dataclass
 class Rig:
     ledger: InMemoryCognitionStore
@@ -166,6 +202,7 @@ class Rig:
     metrics: Metrics
     agent: ScriptedAgent
     runner: CognitionSessionRunner
+    executor: SubconsciousExecutor
     ev: WakeEvaluator
 
     async def say(
@@ -237,11 +274,28 @@ def _rig(
         model_window_tokens=model_window_tokens,
         overflow_window_fraction=overflow_window_fraction, person_known=person_known,
     )
+    executor = SubconsciousExecutor(
+        # The REAL lane the production hook dispatches through: the session
+        # shape never reaches `models`/`tools` (its `session_run` short-
+        # circuits the envelope fold), so those collaborators are inert
+        # stubs — the lane itself, its tasks and its cancellation are live.
+        runtime=DreamerRuntime(
+            models=_LaneModels(), instructions=_LaneInstructionStore(),
+            tools=_LaneTools(), budgets={},
+            default_budget=DreamBudget(
+                turns=4, total_tokens=10_000, output_tokens=1_000,
+                timeout_seconds=5.0,
+            ),
+            retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
+            metrics=metrics, model_name="scripted", store_timeout_seconds=5.0,
+        ),
+        runner=runner,
+    )
     ev = WakeEvaluator(
         store=stimuli, units=lambda: units, policy=policy, metrics=metrics, tz=HK,
-        clock=clock, settle_seconds=0, on_wake=runner.wake_hook,
+        clock=clock, settle_seconds=0, on_wake=executor.wake_hook,
     )
-    return Rig(ledger, stimuli, clock, metrics, agent, runner, ev)
+    return Rig(ledger, stimuli, clock, metrics, agent, runner, executor, ev)
 
 
 
@@ -343,7 +397,13 @@ async def test_a_hook_failure_is_recorded_on_the_session_and_counted_not_only_lo
     assert rig.ends() == ["failed"]
     assert "the model loop blew up" in rig.detail()
     assert rig.metrics.get("nora_cognition_session_ended_total", outcome="failed") == 1
-    assert rig.metrics.get("nora_errors_total", stage="cognition_session") == 1
+    # The hook goes through the Dreamer lane, so a session failure surfaces
+    # as the lane's counted `unavailable`, not as the evaluator's
+    # hook-raised `nora_errors_total` (the session's own `failed` row above
+    # is the durable half of the same signal).
+    assert rig.metrics.get(
+        "nora_dream_sample_total", adaptor="cognition", status="unavailable",
+    ) == 1
 
 
 async def test_a_failure_before_the_model_is_recorded_failed_and_the_model_never_runs():
@@ -834,7 +894,12 @@ async def test_shutdown_cancels_an_in_flight_session_and_records_it_cancelled():
     await rig.tick()
     await agent.started.wait()
 
-    await rig.runner.shutdown()
+    # The composed shutdown object production holds: the lane's own
+    # wait/cancel (`SubconsciousExecutor` → `DreamerRuntime`), then the
+    # runner's finishing-write drain.
+    await CognitionShutdown(
+        evaluator=rig.ev, runner=rig.executor, grace_seconds=0.0,
+    )()
     await rig.settle()
 
     assert agent.cancelled
@@ -853,6 +918,94 @@ async def test_the_evaluator_can_cancel_its_in_flight_sessions_too():
     await agent.started.wait()
     await rig.ev.cancel_in_flight()
     assert rig.ends() == ["cancelled"]
+
+
+async def test_the_lane_settles_every_exit_once_and_refuses_a_second_dispatch():
+    """The node-18 ownership residual, exercised through the REAL composed
+    path — `WakeEvaluator` records the wake, `SubconsciousExecutor` admits
+    it on the REAL `DreamerRuntime` lane, `CognitionSessionRunner` settles
+    it — for every exit the session can take, once each, on one rig:
+
+    - a returned loop closes its wake (`closed`),
+    - a raised loop records `failed`,
+    - the wall clock records `timeout`,
+    - the composed `CognitionShutdown` records `cancelled`,
+    - and a second `dispatch` for a unit the lane already holds is REFUSED:
+      no outcome is written for it (the durable claim is the wake row's —
+      the wake stays open until it expires, which reads as failed), while
+      the admitted session still settles its own once.
+    """
+    agent = ScriptedAgent(script=[ok, blocked, boom, blocked, blocked])
+    rig = _rig(agent=agent)
+
+    # closed: an admitted wake whose loop returns settles its rows once.
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+    assert rig.ends() == ["closed"]
+
+    # refused: while the lane holds this unit's session, the subconscious
+    # boundary refuses a second admission — it never double-books.
+    rig.clock.advance(301)
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await agent.started.wait()
+    second_view = await rig.stimuli.view(
+        unit="u1", mode="live", now_ms=rig.clock.ms, limit=100,
+    )
+    refused = await rig.executor._on_wake(
+        unit="u1", view=second_view, now_ms=rig.clock.ms, wake_id=999_999,
+    )
+    assert refused is None, "a second dispatch must refuse, not double-book"
+    assert 999_999 not in rig.stimuli.outcomes, (
+        "a refused dispatch writes nothing: the wake row stays OPEN until "
+        "it expires — the durable claim was never the lane's to settle"
+    )
+    agent.release.set()
+    await rig.settle()
+    assert rig.ends() == ["closed", "closed"]
+    agent.release.clear()
+
+    # failed: a loop that raises settles its wake `failed` once.
+    rig.clock.advance(301)
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+    assert rig.ends()[-1] == "failed"
+
+    # timeout: a loop that outruns the session's own wall clock settles
+    # `timeout` once — the lane task itself completed, not cancelled.
+    rig.runner._budget = replace(rig.runner._budget, timeout_seconds=0.05)
+    rig.clock.advance(301)
+    await rig.say()
+    rig.clock.advance(1)
+    await rig.tick()
+    await rig.settle()
+    assert rig.ends()[-1] == "timeout"
+    rig.runner._budget = replace(rig.runner._budget, timeout_seconds=30.0)
+    agent.release.clear()
+
+    # cancelled: the composed shutdown — lane wait, lane cancel, the
+    # runner's finishing drain — settles the in-flight session `cancelled`.
+    # Two failures in a row owe the DOUBLED backoff, not the plain cooldown.
+    agent.started.clear()
+    rig.clock.advance(610)
+    await rig.say()
+    rig.clock.advance(1)
+    wakes = await rig.tick()
+    assert wakes, "the last scenario never woke — the assert below is blind"
+    await agent.started.wait()
+    await CognitionShutdown(
+        evaluator=rig.ev, runner=rig.executor, grace_seconds=0.0,
+    )()
+    await rig.settle()
+    assert rig.ends()[-1] == "cancelled"
+    assert list(rig.ends()) == [
+        "closed", "closed", "failed", "timeout", "cancelled",
+    ]
 
 
 async def test_a_hook_that_raises_synchronously_does_not_abort_the_tick_for_other_units():

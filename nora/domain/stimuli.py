@@ -609,13 +609,15 @@ class UnitView:
     #: consumed unseen and act again the moment the kind is ready.
     inert_kinds: frozenset[str] = frozenset()
     #: Ids the merged `limit` bound cut off `pending`, ascending. The range
-    #: read covers them (they are due, not consumed, and under the watermark's
-    #: id range), but the bound kept them out of what a wake is shown. A wake
-    #: names them in `unclaimed_ids` — they sit under its
-    #: `through_stimulus_id` while never having been claimed — or the
-    #: watermark it records would eat them unseen. `decide` adds them to
-    #: `unclaimed_ids` itself; a reader that constructs its own `UnitView`
-    #: must do the same or reproduce the hole.
+    #: the next wake can cover is bounded by `max(mark.through, the highest
+    #: shown id)` — a wake's `through` never exceeds it — so `over` names
+    #: exactly the eligible ids under that ceiling the bound hid; anything
+    #: above it stays pending un-named. A wake names these in
+    #: `unclaimed_ids` — they sit under its `through_stimulus_id` while
+    #: never having been claimed — or the watermark it records would eat
+    #: them unseen. `decide` adds them to `unclaimed_ids` itself; a reader
+    #: that constructs its own `UnitView` must do the same or reproduce the
+    #: hole.
     over: tuple[int, ...] = ()
 
     @property

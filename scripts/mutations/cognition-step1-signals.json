@@ -65,8 +65,8 @@
   {
     "name": "SQL watermark: a stimulus due after the time bound is consumed under its id",
     "file": "nora/infra/sql/stimuli.py",
-    "old": "        sa.select(STIMULUS).where(*base, under, STIMULUS.c.due_tick > through_tick),",
-    "new": "        sa.select(STIMULUS).where(*base, under, sa.false()),",
+    "old": "        sa.select(*columns).where(*base, under, STIMULUS.c.due_tick > through_tick),",
+    "new": "        sa.select(*columns).where(*base, under, sa.false()),",
     "target": "tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake"
   },
   {

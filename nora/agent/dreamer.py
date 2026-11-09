@@ -86,6 +86,7 @@ from ..domain.ports import (
     DreamAdaptor,
     Proposal,
     RosterSource,
+    SessionAdaptor,
     VerbProvenance,
 )
 from ..domain.reasoning_strip import dreamer_path
@@ -1245,7 +1246,8 @@ class DreamerRuntime:
         return instructions.text + "\n\n" + prompt
 
     async def run(
-        self, *, adaptor: DreamAdaptor, key: str, batch: Sequence[TranscriptRow]
+        self, *, adaptor: DreamAdaptor | SessionAdaptor, key: str,
+        batch: Sequence[TranscriptRow],
     ) -> DreamOutcome:
         """One adaptor, one key, one bounded read-only loop, traced.
 
@@ -1261,10 +1263,9 @@ class DreamerRuntime:
                "nora.dreamer.key": key,
                "nora.dreamer.objective": adaptor.objective},
         ):
-            session_run = getattr(adaptor, "session_run", None)
-            if session_run is not None:
+            if isinstance(adaptor, SessionAdaptor):
                 outcome = await self._run_session_body(
-                    adaptor=adaptor, key=key, session_run=session_run,
+                    adaptor=adaptor, key=key, session_run=adaptor.session_run,
                 )
             else:
                 outcome = await self._run_body(
@@ -1274,7 +1275,7 @@ class DreamerRuntime:
             return outcome
 
     async def _run_session_body(
-        self, *, adaptor: DreamAdaptor, key: str, session_run: Any,
+        self, *, adaptor: SessionAdaptor, key: str, session_run: Any,
     ) -> DreamOutcome:
         """A session-shaped adaptor (cognition): the second shape `run`
         hosts, per node 30's contract.
@@ -1339,7 +1340,7 @@ class DreamerRuntime:
         return task is not None and not task.done()
 
     def dispatch(
-        self, *, adaptor: DreamAdaptor, key: str,
+        self, *, adaptor: SessionAdaptor, key: str,
     ) -> asyncio.Task[DreamOutcome] | None:
         """Admit one session-shaped run for `key` and return the OWNED task —
         the subconscious execution boundary (node 18).
@@ -1741,7 +1742,7 @@ class DreamerRuntime:
                     "dreamer.objective": adaptor.objective,
                     "dreamer.instruction_sha256": sha,
                 },
-                agent_name=f"dreamer:{adaptor.name}",
+                agent_name=adaptor.name,
             )
         except TimeoutError:
             log.error(
@@ -1826,8 +1827,8 @@ class DreamerRuntime:
         return screened
 
     def _finish(
-        self, adaptor: DreamAdaptor, status: DreamStatus, written: int,
-        sha: str, stop_reason: str | None, started: float,
+        self, adaptor: DreamAdaptor | SessionAdaptor, status: DreamStatus,
+        written: int, sha: str, stop_reason: str | None, started: float,
     ) -> DreamOutcome:
         self._metrics.inc(
             "nora_dream_run_total", adaptor=adaptor.name, status=status,
@@ -1850,7 +1851,7 @@ class DreamerRuntime:
         tools: Sequence[Any] = (), strands_tools: Sequence[Any] = (),
         guard: DreamGuard | None = None, budget: AdaptorBudget | None = None,
         trace_attributes: Mapping[str, str] | None = None,
-        agent_name: str = "dreamer:session", spend: Any = None,
+        agent_name: str = "session", spend: Any = None,
         max_trace_chars: int = 10_000,
         reservation: TokenReservation | None = None,
     ) -> AgentRunResult:
@@ -1911,11 +1912,10 @@ class DreamerRuntime:
         a timed-out or errored loop is not a session that returned, and only
         a loop that returned may close its items."""
         recording = TurnRecording()
-        agent: Any = None
-        baseline = 0
+        created: dict[str, Any] = {}
         result: Any = None
         try:
-            agent, baseline, result = await self._invoke_once(
+            _agent, _baseline, result = await self._invoke_once(
                 system_prompt=system_prompt, prompt=prompt, tools=tools,
                 guard=guard, budget=budget, trace_attributes=trace_attributes,
                 agent_name=agent_name,
@@ -1923,6 +1923,7 @@ class DreamerRuntime:
                     (recording, reservation) if reservation is not None
                     else (recording,)
                 ),
+                agent_out=created,
             )
             stop_reason = (
                 "limit_total_tokens"
@@ -1939,8 +1940,13 @@ class DreamerRuntime:
             # cancelled loop is the costliest kind and its usage lives in the
             # agent even when no result came back. Sync work only — nothing
             # here may await, for the reason `_invoke_once`'s flush comment
-            # gives. `agent` may not exist (a `create_dream_agent` failure)
-            # — nothing to extract then.
+            # gives. `created` is filled BY `_invoke_once` the moment the
+            # agent exists — the usage and the retained partial messages
+            # live there even when the loop raises or is cancelled before
+            # returning. `agent` may not exist (a `create_dream_agent`
+            # failure) — nothing to extract then.
+            agent = created.get("agent")
+            baseline = created.get("baseline", 0)
             trace = (
                 extract_tag_trace(
                     agent, baseline=baseline,
@@ -1972,6 +1978,7 @@ class DreamerRuntime:
         guard: DreamGuard, budget: AdaptorBudget,
         trace_attributes: Mapping[str, str], agent_name: str,
         tool_hooks: Sequence[Any] = (),
+        agent_out: dict[str, Any] | None = None,
     ) -> tuple[Any, int, Any]:
         """THE one model invocation (node 30): create the agent under this
         call's guard and run it inside `budget`'s deadline and limits —
@@ -1981,6 +1988,10 @@ class DreamerRuntime:
 
         Returns `(agent, baseline, result)`: `baseline` is the agent's
         message count before the loop, for a caller's trace extraction.
+        When `agent_out` is given it is filled with `agent` and `baseline`
+        the MOMENT the agent exists — before the loop runs — so a caller's
+        `finally` still reaches the usage and the retained partial messages
+        when the loop raises or is cancelled and no tuple returns.
         RAISES on timeout, failure and cancellation — translating those is
         the caller's contract (`_sample` counts them, `_invoke_agent`
         propagates them). The reasoning watch is flushed on EVERY exit,
@@ -1995,22 +2006,39 @@ class DreamerRuntime:
             model=self._models.create(), system_prompt=system_prompt,
             tools=tools, guard=guard, reasoning_watch=watch,
             trace_attributes=dict(trace_attributes), retry=self._retry,
-            agent_name=agent_name, tool_hooks=tuple(tool_hooks),
+            agent_name=dreamer_path(agent_name), tool_hooks=tuple(tool_hooks),
         )
         baseline = len(getattr(agent, "messages", ()))
+        if agent_out is not None:
+            agent_out["agent"] = agent
+            agent_out["baseline"] = baseline
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + budget.timeout_seconds
         try:
             with turn_deadline(budget.timeout_seconds):
-                result = await asyncio.wait_for(
-                    factory.invoke(
-                        agent, prompt, invocation_state={},
-                        limits=factory.build_limits(
-                            output_tokens=budget.output_tokens,
-                            turns=budget.turns,
-                            total_tokens=budget.total_tokens,
-                        ),
-                    ),
-                    timeout=budget.timeout_seconds,
-                )
+                try:
+                    async with asyncio.timeout_at(deadline):
+                        result = await factory.invoke(
+                            agent, prompt, invocation_state={},
+                            limits=factory.build_limits(
+                                output_tokens=budget.output_tokens,
+                                turns=budget.turns,
+                                total_tokens=budget.total_tokens,
+                            ),
+                        )
+                except TimeoutError as exc:
+                    # `asyncio.timeout` also turns an EXTERNAL task.cancel()
+                    # into TimeoutError (3.12's `uncancel() <= _cancelling`
+                    # drains the count when only one cancel was requested),
+                    # so the wall clock is the only witness that separates
+                    # the deadline firing from a cancellation: an external
+                    # cancel MUST stay CancelledError, or `_sample` would
+                    # count a cancelled dream as a timeout and
+                    # `cancel_in_flight` would report a completed task.
+                    if (isinstance(exc.__cause__, asyncio.CancelledError)
+                            and loop.time() < deadline):
+                        raise asyncio.CancelledError() from exc
+                    raise
         except BaseException:
             # Flushed here rather than in `finally`: an await in `finally`
             # on a cancelled task re-raises out of the cleanup path, and a

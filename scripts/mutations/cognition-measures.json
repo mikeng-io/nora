@@ -9,7 +9,7 @@
   {
     "name": "5: the live runner reads no usage",
     "file": "nora/agent/dreamer.py",
-    "old": "            total = (\n                reservation.spent if reservation is not None\n                else _total_tokens(result) if result is not None\n                else _usage(_agent_usage(agent))\n            )",
+    "old": "            total = (\n                reservation.spent if reservation is not None\n                else _total_tokens(result) if result is not None\n                else _usage(_agent_usage(agent)) if agent is not None\n                else None\n            )",
     "new": "            total = None",
     "target": "tests/unit/test_cognition_agent_runner.py -k tokens_the_loop_spent"
   },
@@ -30,8 +30,8 @@
   {
     "name": "E2: a failed loop leaves no spend",
     "file": "nora/agent/dreamer.py",
-    "old": "            _fill_spend(spend, total, tuple(trace.messages), requirements)",
-    "new": "            _fill_spend(None, total, tuple(trace.messages), requirements)",
+    "old": "            _fill_spend(\n                spend, total,\n                () if trace is None else tuple(trace.messages), requirements,\n            )",
+    "new": "            _fill_spend(\n                None, total,\n                () if trace is None else tuple(trace.messages), requirements,\n            )",
     "target": "tests/unit/test_cognition_agent_runner.py -k failed_timed_out_or_was_cut_off"
   },
   {

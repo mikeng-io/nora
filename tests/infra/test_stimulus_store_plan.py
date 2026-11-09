@@ -70,7 +70,8 @@ async def test_the_due_read_stays_on_the_pending_batch_as_history_grows(clean_pg
     import json
     from datetime import UTC, datetime
 
-    from nora.infra.sql.schema import STIMULUS
+    from nora.domain.ticks import due_tick_of_ms
+    from nora.infra.sql.schema import STIMULUS, STIMULUS_RETRACTION
 
     def _at(ms: int) -> datetime:
         return datetime.fromtimestamp(ms / 1000, tz=UTC)
@@ -87,7 +88,7 @@ async def test_the_due_read_stays_on_the_pending_batch_as_history_grows(clean_pg
         ):
             loops = int(node.get("Actual Loops", 1))
             out += int(node.get("Actual Rows", 0)) * loops
-            removed += int(node.get("Actual Rows Removed by Filter", 0)) * loops
+            removed += int(node.get("Rows Removed by Filter", 0)) * loops
         for child in node.get("Plans", ()):
             o, r, s = _index_work(child)
             out += o
@@ -118,29 +119,37 @@ async def test_the_due_read_stays_on_the_pending_batch_as_history_grows(clean_pg
         three — one for each branch of the read — and the watermark's id over
         all but the last. Returns `through_id`."""
         rows: list[dict[str, Any]] = []
+
+        def _row(kind: str, item: str, ref: str, at_ms: int,
+                 due_ms: int | None, recorded: int) -> dict[str, Any]:
+            # The writable authority: a writer names the tick its instant
+            # means (`ck_stimulus_due_tick` refuses any other).
+            return {
+                "unit": "nora", "kind": kind, "item": item, "ref": ref,
+                "at_ms": at_ms, "due_ms": due_ms,
+                "due_tick": None if due_ms is None else due_tick_of_ms(due_ms),
+                "recorded_at": _at(recorded),
+            }
+
         for i in range(history):
             # Consumed-shaped history: dated rows whose due tick is at or
             # under the watermark's, undated rows recorded before its time.
             dated = i % 2 == 0
-            rows.append({
-                "unit": "nora", "kind": "self" if dated else "message",
-                "item": "self" if dated else "message", "ref": f"h:{history}:{i}",
-                "at_ms": NOW - 10**7, "due_ms": NOW - 10**6 if dated else None,
-                "recorded_at": _at(NOW - 10**7),
-            })
+            rows.append(_row(
+                "self" if dated else "message",
+                "self" if dated else "message", f"h:{history}:{i}",
+                NOW - 10**7, NOW - 10**6 if dated else None, NOW - 10**7,
+            ))
         rows += [
             # Inside the id range, a dated row whose due tick is past the
             # watermark's tick — `idx_stimulus_unit_due` answers it.
-            {"unit": "nora", "kind": "self", "item": "self", "ref": "p:due",
-             "at_ms": NOW, "due_ms": NOW + 10**8, "recorded_at": _at(NOW - 10**6)},
+            _row("self", "self", "p:due", NOW, NOW + 10**8, NOW - 10**6),
             # Inside the id range, undated, recorded after the watermark's
             # time — `idx_stimulus_unit_undated_recorded` (the late commit
             # the settle margin exists for).
-            {"unit": "nora", "kind": "message", "item": "message", "ref": "p:late",
-             "at_ms": NOW, "due_ms": None, "recorded_at": _at(NOW + 5_000)},
+            _row("message", "message", "p:late", NOW, None, NOW + 5_000),
             # Past the watermark's id — `idx_stimulus_unit_id`.
-            {"unit": "nora", "kind": "message", "item": "message", "ref": "p:after",
-             "at_ms": NOW, "due_ms": None, "recorded_at": _at(NOW + 5_000)},
+            _row("message", "message", "p:after", NOW, None, NOW + 5_000),
         ]
         async with engine.begin() as conn:
             await conn.execute(sa.text("TRUNCATE stimulus RESTART IDENTITY"))
@@ -152,9 +161,22 @@ async def test_the_due_read_stays_on_the_pending_batch_as_history_grows(clean_pg
     try:
         small = await scan_rows(await populate(2_000))
         large = await scan_rows(await populate(8_000))
+        # Positive control for the counter itself: retract the pending
+        # batch and the `NOT EXISTS` filter must really drop those index
+        # rows — `removed` nonzero proves the JSON key reads the executor's
+        # count, not a silently-zero renamed field.
+        through_id = await populate(60)
+        async with engine.begin() as conn:
+            pending_ids = [r[0] for r in (await conn.execute(sa.text(
+                "SELECT id FROM stimulus ORDER BY id DESC LIMIT 3"))).all()]
+            await conn.execute(STIMULUS_RETRACTION.insert(), [
+                {"unit": "nora", "stimulus_id": i, "reason": "moved"}
+                for i in pending_ids])
+        filtered = await scan_rows(through_id)
     finally:
         await engine.dispose()
     # Three pending rows over three index ranges — the number is about the
     # batch, with a little slack for executor detail, never about the table.
     assert 0 < small <= 12, small
     assert large <= small + 4, (small, large)
+    assert filtered > 0, "retracted rows were not removed by filter"

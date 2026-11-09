@@ -2839,6 +2839,38 @@ class DreamAdaptor(Protocol):
         ...
 
 
+@runtime_checkable
+class SessionAdaptor(Protocol):
+    """The subconscious session shape — node 30's SECOND form of work the
+    `DreamerRuntime` lane admits, beside the envelope `DreamAdaptor`.
+
+    A session IS the work: `session_run` owns its agenda, its tools, its
+    outcome rows and its settlement, and the runtime contributes what it
+    contributes to every adaptor — admission, the lane task, cancellation,
+    the root span, the objective's digest, the sample metric and a counted
+    `unavailable`. It deliberately does NOT carry `DreamAdaptor`'s envelope
+    members: a session builds its prompt inside `session_run` through the
+    occasion's own context assembly, so an `inputs` here would name a prompt
+    builder that does not exist — a stub the `inputs` net reads as an
+    undeclared occasion.
+    """
+
+    name: str
+    """The metric label and trace name, same contract as `DreamAdaptor.name`."""
+
+    objective: str
+    """The objective FILE NAME resolved against `DreamerInstructions` — the
+    session reads its digest for the run's provenance, same rule as the
+    envelope shape."""
+
+    def session_run(self, *, key: str) -> Any:
+        """The bound `on_wake` — called `session_run(key=key)` inside the
+        lane task; its result's `stop_reason` annotates the outcome.
+        Declared as a method so the adaptor's own callable attribute
+        satisfies it."""
+        ...
+
+
 @dataclass(frozen=True)
 class ResolvedTrack:
     """What `TrackSource.resolve` hands back — enough to start playback and

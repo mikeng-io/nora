@@ -414,8 +414,9 @@ class TokenSpend:
 
 #: The session's `TokenSpend`, set around the model loop. A context variable and
 #: not a parameter of `CognitionAgentRunner.run`, so every runner double that
-#: predates it still satisfies the Protocol; a task started by `asyncio.wait_for`
-#: copies the context, and the holder is shared by reference.
+#: predates it still satisfies the Protocol; the loop runs inside
+#: `asyncio.timeout` in this task's own context, and the holder is shared by
+#: reference.
 SESSION_TOKENS: contextvars.ContextVar[TokenSpend | None] = contextvars.ContextVar(
     "cognition_session_tokens", default=None,
 )
@@ -1387,9 +1388,11 @@ class CognitionSessionRunner:
         token = SESSION_TOKENS.set(spend)
         result: CognitionRunResult | None = None
         trace_outcome = "llm_error"
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._budget.timeout_seconds
         try:
-            result = await asyncio.wait_for(
-                self._run_agent(
+            async with asyncio.timeout_at(deadline):
+                result = await self._run_agent(
                     unit=unit, pending_ids=frozenset(s.id for s in view.pending),
                     system_prompt=system_prompt, prompt=prompt, tools=tools,
                     historical=historical,
@@ -1399,11 +1402,17 @@ class CognitionSessionRunner:
                         # scales by it: DEC-247).
                         "cognition.items": str(len(items)),
                     },
-                ),
-                timeout=self._budget.timeout_seconds,
-            )
+                )
             trace_outcome = "llm_error" if result.stop_reason in LIMIT_STOP_REASONS else "silent"
         except TimeoutError as exc:
+            # `asyncio.timeout` also turns an EXTERNAL task.cancel() into
+            # TimeoutError (3.12's `uncancel() <= _cancelling` drains the
+            # count when only one cancel was requested), so the wall clock
+            # is the only witness that separates the deadline firing from a
+            # shutdown. A provider-side TimeoutError carries no
+            # CancelledError cause and keeps its own classification.
+            if isinstance(exc.__cause__, asyncio.CancelledError) and loop.time() < deadline:
+                raise asyncio.CancelledError() from exc
             raise SessionTimeoutError(
                 f"the session ran past its {self._budget.timeout_seconds:g}s wall clock",
             ) from exc
@@ -1435,7 +1444,17 @@ class CognitionSessionRunner:
                 bound_rooms=tuple(sorted(state.rooms)),
             )
             if self._tag_trace_store is not None:
-                await asyncio.wait_for(self._tag_trace_store.save(trace), timeout=5.0)
+                save_deadline = loop.time() + 5.0
+                try:
+                    async with asyncio.timeout_at(save_deadline):
+                        await self._tag_trace_store.save(trace)
+                except TimeoutError as exc:
+                    # Same conversion as the session clock above: a shutdown
+                    # landing inside the save is a cancel, not a timeout.
+                    if (isinstance(exc.__cause__, asyncio.CancelledError)
+                            and loop.time() < save_deadline):
+                        raise asyncio.CancelledError() from exc
+                    raise
             # The SAME automatic completion hook the tag path holds (design
             # 20): the tools-less Standing fold runs on this session's
             # complete retained Record — including a silent or failed

@@ -142,8 +142,8 @@
   {
     "name": "cognition_session: the session wall clock actually ends as `timeout`",
     "file": "nora/app/cognition_session.py",
-    "old": "        except TimeoutError as exc:\n            raise SessionTimeoutError(",
-    "new": "        except ZeroDivisionError as exc:\n            raise SessionTimeoutError(",
+    "old": "            raise SessionTimeoutError(\n                f\"the session ran past its {self._budget.timeout_seconds:g}s wall clock\",\n            ) from exc",
+    "new": "            raise TimeoutError(\n                f\"the session ran past its {self._budget.timeout_seconds:g}s wall clock\",\n            ) from exc",
     "target": "tests/unit/test_cognition_session_lifecycle.py -k test_a_timed_out_session_is_cancelled_recorded_timeout_and_strands_nothing"
   },
   {
@@ -289,8 +289,8 @@
   {
     "name": "stimuli sql: a retracted stimulus is actually never pending",
     "file": "nora/infra/sql/stimuli.py",
-    "old": "    base = (\n        STIMULUS.c.unit == unit,\n        since_tick <= now_tick,\n        live_stimulus(STIMULUS.c.id),\n    )",
-    "new": "    base = (\n        STIMULUS.c.unit == unit,\n        since_tick <= now_tick,\n    )",
+    "old": "        STIMULUS.c.unit == unit,\n        eligible,\n        live_stimulus(STIMULUS.c.id),\n    )",
+    "new": "        STIMULUS.c.unit == unit,\n        eligible,\n    )",
     "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_retracted_stimulus_is_never_pending_and_retracting_twice_is_a_no_op"
   },
   {
@@ -415,8 +415,8 @@
   {
     "name": "stimuli sql: a retracted stimulus actually never returns through carry",
     "file": "nora/infra/sql/stimuli.py",
-    "old": "    base = (\n        STIMULUS.c.unit == unit,\n        since_tick <= now_tick,\n        live_stimulus(STIMULUS.c.id),\n    )",
-    "new": "    base = (\n        STIMULUS.c.unit == unit,\n        since_tick <= now_tick,\n    )",
+    "old": "        _counted_carry(COGNITION_CARRY), ~superseded,\n        live_stimulus(COGNITION_CARRY.c.stimulus_id),\n    )",
+    "new": "        _counted_carry(COGNITION_CARRY), ~superseded,\n    )",
     "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_retracted_stimulus_never_returns_through_carry"
   },
   {

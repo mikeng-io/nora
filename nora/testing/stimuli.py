@@ -163,10 +163,6 @@ class InMemoryStimulusStore:
             and not (s.id <= mark.through_stimulus_id and _consumed_by(s, mark))
         ]
         pending = eligible[:limit]
-        # The raw read is bounded: what it cut is invisible unless named —
-        # `SqlStimulusStore.view`'s `pending_ids_after` continuation is the
-        # same fetch, and `over` carries both sets of cut ids to `decide`.
-        unseen = [s.id for s in eligible[limit:]]
         current: dict[int, NewCarry] = {}
         for _, wake_id, carry in self.carries:
             if carry.unit == unit and self._counted(wake_id):
@@ -185,7 +181,20 @@ class InMemoryStimulusStore:
                 waits = s.id in carried and carried[s.id].waits
                 pending.append(replace(s, waits=True) if waits else s)
         pending.sort(key=lambda x: x.id)
-        over = tuple(sorted({*unseen, *(s.id for s in pending[limit:])}))
+        # `SqlStimulusStore.view`'s ceiling: `through` is
+        # `max(mark.through, max(claimed))` and claimed ⊆ shown, so eligible
+        # ids above `ceiling` sit over any range the next wake can cover —
+        # they stay pending un-named, and the `over` enumeration below it is
+        # the same bound both stores name.
+        shown = pending[:limit]
+        ceiling = max(
+            mark.through_stimulus_id,
+            shown[-1].id if shown else mark.through_stimulus_id,
+        )
+        over = tuple(sorted(
+            {s.id for s in eligible[limit:] if s.id <= ceiling}
+            | {s.id for s in pending[limit:]}
+        ))
         del pending[limit:]
         activity = [
             s.recorded_at_ms for s in self.stimuli

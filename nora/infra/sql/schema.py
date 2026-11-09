@@ -1011,20 +1011,22 @@ REMINDERS = sa.Table(
     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     sa.Column("due_at", sa.DateTime(timezone=True), nullable=False),
     # The eligibility authority (node 18, `nora.domain.ticks`): the first
-    # minute tick at or after `due_at` — `ceil(epoch_ms / 60_000)` — written
-    # BY Postgres from `due_at` itself, so a writer can never let the two
-    # disagree and there is exactly one rule. `due()` reads ONLY this column;
-    # `due_at` stays the requested instant and audit field (and orders the
-    # return), a projection rather than a second deadline.
-    sa.Column(
-        "due_tick", sa.BigInteger,
-        # `extract(epoch from timestamptz)` is STABLE, never allowed in a
-        # generated column; the epoch's interval arithmetic is IMMUTABLE,
-        # so the same microseconds are derived through `due_at - epoch`.
-        sa.Computed(
-            "(ceil((extract(epoch from (due_at - '1970-01-01 00:00:00+00'::timestamptz)) "
-            "* 1000) / 60000))::bigint",
-        ),
+    # minute tick at or after `due_at` — `ceil(epoch_ms / 60_000)` — the ONE
+    # writable deadline the `due()` predicate reads. `due_at` stays the
+    # requested instant — provenance, and the ordering the answer returns in
+    # — never a second deadline: the CHECK binds the tick to the instant, so
+    # a writer names the tick it means and can still never let the two
+    # disagree (a derived GENERATED column would make restores unable to
+    # write it — the contract wants it stored).
+    sa.Column("due_tick", sa.BigInteger, nullable=False),
+    sa.CheckConstraint(
+        # `extract(epoch from timestamptz)` is STABLE; the epoch's interval
+        # arithmetic is IMMUTABLE, so the same microseconds come through
+        # `due_at - epoch` — and CHECK requires only immutability.
+        "due_tick IS NOT DISTINCT FROM "
+        "((ceil((extract(epoch from (due_at - '1970-01-01 00:00:00+00'::timestamptz)) "
+        "* 1000) / 60000))::bigint)",
+        name="ck_reminders_due_tick",
     ),
     sa.Column("state", sa.Text, nullable=False),
     # NULL until the row fires, and NULL forever on one that is cancelled.
@@ -3548,18 +3550,21 @@ STIMULUS = sa.Table(
     sa.Column("waits", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("at_ms", sa.BigInteger, nullable=False),
     sa.Column("due_ms", sa.BigInteger),
-    # The due TICK of `due_ms` (`nora.domain.ticks`): `ceil(due_ms / 60_000)`,
-    # generated so the stored deadline and its eligibility index cannot
-    # disagree. Spelled `due_ms / 60000 + (due_ms % 60000 > 0)` rather than
-    # `(due_ms + 59999) / 60000`: Postgres integer division truncates toward
-    # zero, so the naive spelling gives the wrong tick for negative `due_ms`
-    # (a pre-epoch deadline) and can overflow for very large ones. NULL when
-    # `due_ms` is — an undated stimulus is pending once recorded.
-    sa.Column(
-        "due_tick", sa.BigInteger,
-        sa.Computed(
-            "((due_ms / 60000) + CASE WHEN due_ms % 60000 > 0 THEN 1 ELSE 0 END)"
-        ),
+    # The due TICK of `due_ms` (`nora.domain.ticks`): `ceil(due_ms / 60_000)`
+    # — the ONE writable deadline the pending read's due branch ranges over;
+    # `due_ms` stays the requested instant (provenance), never a second
+    # deadline: the CHECK binds them, so a writer names the tick it means
+    # and can still never let the two disagree. The ceiling is spelled
+    # `due_ms / 60000 + (mod(due_ms, 60000) > 0)`, not `(due_ms + 59999) /
+    # 60000`: Postgres integer division truncates toward zero, so the naive
+    # spelling gives the wrong tick for negative `due_ms` (a pre-epoch
+    # deadline) and can overflow for very large ones. NULL when `due_ms`
+    # is — an undated stimulus is pending once recorded.
+    sa.Column("due_tick", sa.BigInteger),
+    sa.CheckConstraint(
+        "due_tick IS NOT DISTINCT FROM (CASE WHEN due_ms IS NULL THEN NULL "
+        "ELSE (due_ms / 60000) + CASE WHEN mod(due_ms, 60000) > 0 THEN 1 ELSE 0 END END)",
+        name="ck_stimulus_due_tick",
     ),
     # System time (`_recorded_at`). The stimulus store states it
     # from the same clock the wake arithmetic runs on; the default covers a
