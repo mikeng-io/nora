@@ -6,6 +6,69 @@ interceptor. It is built as the same **comprehend → measure → serialize** sp
 the rest of the repo runs on (`AGENTS.md`), applied one layer up: comprehend a
 user *journey*, measure the *trajectory* she produces, serialize a *verdict*.
 
+## Before a paid run
+
+Apply this order to every entrypoint, including memory-graph replay, diagnostic
+and rescore commands. The [horizontal measurement contract](../design/evaluation/12-horizontal-measurement-contract.md)
+defines the axes, five-C checks and current delivery limits. Reuse the existing
+runner, corpus fields, private evidence and trace hierarchy.
+
+1. **Comprehend the objective and scenario.** Name the capability and whether
+   this is diagnosis, calibration, regression, capability measurement or a
+   comparison. Bind the scenario's entrypoint, initial state, clock, actor,
+   audience, stimulus and available tools/context. Distinguish historical
+   sources from explicitly authored stimuli. State required, permitted and
+   forbidden outcomes from product requirements or reviewed references.
+2. **Fix the grading contract before candidate results.** Pin the cases,
+   references, rubric, judge-input projection, models, parsing, thresholds and
+   aggregation independently of the subject arm. Trace every expected property
+   to its actual consumer. In the current reply path, appended case acceptance
+   binds only social suitability/contextual identity; folds and lessons use
+   their own consumers. A field's presence does not prove it is measured.
+3. **Measure the instrument before the subject.** Inspect an accepted reference,
+   a nearby invalid one and relevant ambiguous/insufficient-information controls.
+   Calibrate semantic judges against reviewed labels, preserve disagreement and
+   keep independent confirmation examples separate from examples used to tune
+   the grader. Select calibration size and tolerances for the claim; do not
+   treat agreeing vendors, one canary or valid JSON as quality calibration.
+   A declared calibration run freezes its reference labels and controls before
+   judge calls; calibration agreement is its output, not a precondition it must
+   already have measured. New judge calls need a separate explicit budget and
+   do not authorize a subject benchmark. Retained votes can be audited offline.
+4. **Inspect context and observable outcomes.** Read the formatted subject and
+   judge requests, including system instructions, source scope, identities,
+   clock, media, cut/unavailable states, offered schemas and tool results.
+   Requirements are not factual evidence. Check that available tools can reach
+   required state and that readback measures the claimed result. A synthetic
+   export/backend/UI proof precedes paid work where visibility was repaired;
+   an HTTP success or a private file alone is insufficient.
+5. **Serialize a fixed run brief and bounded execution.** Use the existing
+   private evidence/receipt to bind the subject, grading policy, cohort/snapshot,
+   controls, draws, source/config versions, budget, retries/cache behavior and
+   stop condition. Declare intended differences between arms. Preserve every
+   attempted case, error and exclusion. A completed budgeted run does not leave
+   open-ended credit for reruns or rescoring.
+6. **Read back and adjudicate.** Apply Coherence, Consistency, Conformance,
+   Correctness and Completeness to scenario → criterion → evidence → verdict
+   → report. Separate execution, valid measurement, content quality, governance
+   and durable usefulness. Report a Nora defect, an instrument defect or missing
+   evidence honestly; the last two are not passes. Correct abstention may pass
+   an insufficient-information case, but does not prove recall on an answerable
+   one.
+
+If a rubric, expectation or judge evidence changes after observing a failure,
+preserve the original result and record the substantive change and its reason.
+Regrading unchanged answers is **posthoc calibration**, not fresh subject trials
+or independent behavioral acceptance. A corrected rubric can support a clearly
+labelled retrospective comparison when applied consistently to both arms; it
+cannot silently turn a failed behavioral gate into success. New paid grading
+still needs authorization. A candidate's prompt must not silently rewrite its
+answer key.
+
+These are pre-run obligations, not a claim every check is automated. A missing
+obligation stays unmet/unavailable for the selected claim; do not add a parallel
+harness or run models to discover a cause already visible in retained evidence.
+
 ## The rebuilt suite (2026-09-21) — where and how it runs
 
 > The previous harness (`evals.run`, fake stores, hand-authored journeys,
@@ -18,9 +81,11 @@ The suite runs **on the deploy host**, against the deployment's **clone**.
 Every corpus case names a real room at a real instant; the runner composes
 the deployment's own Nora (its `config.toml`, `policy.toml`, `identity.toml`)
 against a sandbox database of the case's own, seeds it with what that room
-held at that instant, and drives one entry point. Nothing is authored and
-nothing is configurable per case (`design/evaluation/11-the-sandbox-rebuild.md`
-§1.2–§1.3).
+held at that instant, and drives one entry point. Declared stimuli and
+counterfactuals may be authored; they must not be presented as recorded history.
+The subject uses the corpus's canonical assembly rather than a bespoke
+per-case dependency graph (`design/evaluation/11-the-sandbox-rebuild.md`
+§1.2–§1.3 and its later amendments).
 
 ```bash
 # on the deploy host, in a checkout of the branch under test (NOT the deploy checkout)

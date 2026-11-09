@@ -62,6 +62,12 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
 
 ## Procedure
 
+Before step 1, complete `docs/eval-sop.md` **Before a paid run**. Bind the
+scenario, required outcomes, actual criterion consumers, independent grading
+policy and context evidence. A posthoc regrade is calibration, never fresh
+behavioral acceptance; preserve the failed original reading. This applies to
+recorded-wake replays and paid diagnostic/rescore calls as well as `python -m evals`.
+
 1. **Read the suite's open defects.** An eval that another session or the operator
    has declared broken or not yet run stays stopped until its fix lands; do not run
    around it and never build a second harness beside `evals/` (the most repeated
