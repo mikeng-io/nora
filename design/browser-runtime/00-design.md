@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Nora's browser — anonymous headed Chrome in a scoped microVM"
-description: "Current target NOT BUILT: one microVM per policy unit or canonical private-DM scope, with one on-demand anonymous headed Chrome, reusable in-memory tabs and direct screenshots. Preserves the accepted ADR 0022 design and historical B1/B2 delivery below; vault, login, streaming and tier optimizations are outside the current slice."
+description: "Scoped VM routing and browser source merged; automatic host provisioning and idle VM lifecycle remain unbuilt: one microVM per policy unit or canonical private-DM scope, with one on-demand anonymous headed Chrome, reusable in-memory tabs and direct screenshots. Preserves the accepted ADR 0022 design and historical B1/B2 delivery below; vault, login, streaming and tier optimizations are outside the current slice."
 tags: [nora, compute, sandbox, sbx, browser, computer-use, credentials, openbao, vault, cdp]
 timestamp: '2026-11-02'
 status: partly-built
@@ -21,12 +21,29 @@ redirects, bypass refusal and real browser/downloader compatibility before rollo
 
 ## Current target — scoped anonymous browser (2026-11-02)
 
-**NOT BUILT.** Operator-directed scope amendment, tracked with the Pi/sandbox
-outcome in [issue #520](https://github.com/mikeng-io/nora/issues/520).
-The baseline is one shared microVM with unit-scoped workspaces, not one VM per
-unit. The [unit migration](../computer-unit-scope/01-migration.md) is already
-shipped; B1/B2 below record browser delivery, not delivery of this topology.
-No host or runtime state was probed by this documentation revision.
+**Source implemented; automatic VM lifecycle NOT BUILT.**
+[PR #584](https://github.com/mikeng-io/nora/pull/584) merged as
+`f3bcfe7b6fcf3ecc1d44cd57d724a303e8cbc00c`. The inspected master
+`6e3de0a75556c2ffc95ee2cd8628a019c679b35b` contains scope-to-VM routing,
+identity-bound task tabs, the execution queue, browser expiry and direct capture.
+The host registry is still provisioned outside Nora; a missing record returns
+`unavailable`. These are source observations, not complete journey acceptance.
+The parent [outcome #520](https://github.com/mikeng-io/nora/issues/520) remains
+open for its broader worker, migration and integrated acceptance obligations.
+
+Read-only host checks on 2026-11-09 found scoped mode configured and three
+production scope services running. They do not establish private-DM activation,
+all browser/export journeys, or current egress acceptance. Earlier shared-VM and
+NOT BUILT statements below are dated history, not the current source topology.
+The shipped [unit migration](../computer-unit-scope/01-migration.md) remains intact.
+
+The next integrated change is the
+[automatic Docker Sandbox lifecycle](05-microvm-lifecycle.md): provision/start
+on authorized demand, bounded capacity, quiet idle stop and disk retention.
+Update this bundle before dispatching that implementation. Keep the existing
+Docker Sandboxes provider; OpenSandbox/E2B migration is outside this slice.
+The [Lightpanda assessment](02-research.md#lightpanda-compatibility-2026-11-09)
+retains native Chrome for real visual operations; no engine replacement is selected.
 
 This section owns the current slice and takes precedence over the historical
 sequence below. ADR 0022 stays accepted and unchanged; its broader login/vault
@@ -99,8 +116,10 @@ not a solver, fabricated success or automatic switch to a stealth engine.
 
 ### Control and model selection — design review (2026-11-04)
 
-**Design first; runtime implementation has not started.** The operator asked to
-reconcile this bundle before building. The scoped topology and session behavior
+**Historical selection record.** The operator asked to reconcile this bundle
+before building. PR #584 subsequently supplied the scoped CDP/browser path;
+[automatic provisioning](05-microvm-lifecycle.md) now requires its own design-first
+implementation against that source. The scoped topology and session behavior
 above are requirements; the model/driver recommendation below is not an accepted
 selection. The historical four-tier architecture is not a requirement to build
 all tiers before the first usable browser.
@@ -333,8 +352,11 @@ that the deployed collector retained a trace or that a chat received a file.
 
 ### Implementation seams and lane ownership (2026-11-04)
 
-Source mapping confirms the following bounded changes; no runtime code has
-been changed. The Compose/Deployment session owns image packaging, lifecycle
+Historical pre-implementation mapping: the table below describes the earlier
+shared-runtime baseline, not current master. PR #584 subsequently implemented
+the scoped path. The current lifecycle seams are mapped in
+[05](05-microvm-lifecycle.md#existing-seams-and-implementation-sequence).
+The Compose/Deployment session owns image packaging, lifecycle
 installation, Redis ACLs and host operations; coordinate required interfaces
 there before editing those files. This lane owns application routing, queue,
 BrowserRunner/session/tab behavior and capture/export integration.
@@ -385,8 +407,11 @@ One integrated scoped-browser change, built in this order:
 
 Pi's full adapter, ACP and another VM provider retain their own delivery scope;
 the routing must agree with them, but implementing every adapter is not browser
-acceptance. Design reconciliation and roadmap updates are the current work;
-per-scope VMs, new tab lifetime and direct capture remain NOT BUILT.
+acceptance. This historical sequence is not a new build instruction. PR #584
+supplies the
+scoped VM/tab/capture source; complete live acceptance remains separate. The
+current unbuilt slice and its acceptance are in
+[05](05-microvm-lifecycle.md).
 
 ### Per-scope computer queue (operator scope addition, 2026-11-04)
 
