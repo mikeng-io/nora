@@ -123,9 +123,17 @@ whether the required information is preserved. An unsupported claim can belong
 to an eligible class, and a permitted incidental detail can miss required
 coverage. Neither is permission to store it: a valid result still requires
 support, eligibility and required coverage. Explicit class exclusions, such as
-duplicating a code-produced presence summary or recording a confidence, remain
-ineligible even when factually supported. If the shown input cannot establish
+duplicating a code-produced presence summary or recording a secret a member
+asked to keep, remain ineligible even when factually supported. If the shown input cannot establish
 the relevant class or exclusion, use unsure rather than assuming eligibility.
+
+Explicitly identified people and depicted activities in shared media are not a
+categorically excluded content class. Retain them only as descriptions attributed
+to that media, with identity supplied by shown explicit text or cited member
+attribution. Appearance and sharing establish no identity; a depicted scene
+establishes no ownership, habit, residence, location or gender. Unavailable media
+cannot support an invented description, even though an explicitly supported,
+properly attributed description would belong to a permitted class.
 
 This definition must appear in the selected frozen judge policy before a new
 calibration. It cannot retrospectively decide an ambiguous older verdict. A

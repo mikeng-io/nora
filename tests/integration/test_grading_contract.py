@@ -369,6 +369,10 @@ async def test_actual_memory_judges_bind_frozen_units_and_keep_diagnostics_unsco
     ({"id": "offer", "verdict": "covered", "reason": "No evidence"}, True, 0),
     ({"id": "offer", "verdict": "covered", "reason": "Wrong row",
       "covered_by": {"statements": [], "reads": [0]}}, True, 0),
+    ({"id": "offer", "verdict": "covered", "reason": "Successful shown read",
+      "covered_by": {"statements": [], "reads": [1]}}, False, 0),
+    ({"id": "offer", "verdict": "covered", "reason": "Extra proof key",
+      "covered_by": {"statements": [], "reads": [1], "note": "Generated"}}, True, 0),
     ({"id": "offer", "verdict": "missed", "reason": "The offer is absent"}, False, 1),
     ({"id": "offer", "verdict": "unsure", "reason": "Cannot determine"}, False, 0),
 ])
@@ -381,12 +385,14 @@ async def test_fixed_coverage_is_total_and_requires_shown_evidence(tmp_path, row
         return json.dumps({"coverage": [row], "diagnostic_misses": []})
     result = await spike.smoke_fact_support(
         SimpleNamespace(models=["generated-a", "generated-b"], call=call), inspection,
-        [{"name": "memory_read", "input": {}, "result": {"status": "unavailable"}}],
+        [{"name": "memory_read", "input": {}, "result": {"status": "unavailable"}},
+         {"name": "memory_read", "input": {},
+          "result": {"status": "ok", "content": "Generated offer"}}],
         contract=contract, reference_key="wake")
     assert result["facts_judge_errors"] == (2 if error else 0)
     assert result["facts_missed"] == missed  # the same miss reported twice is one unit
     assert spike.fact_quality(result)["status"] == (
-        "ERROR" if error or row["verdict"] == "unsure" else "FAIL")
+        "ERROR" if error or row["verdict"] == "unsure" else "FAIL" if missed else "PASS")
 
 
 def test_exact_cohort_and_sources_are_bound(tmp_path):

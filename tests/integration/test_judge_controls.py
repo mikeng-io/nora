@@ -127,6 +127,8 @@ def model_wire(monkeypatch):
             instruction = body["messages"][0]["content"]
             assert "coverage MUST be an array, never an object or null" in instruction
             assert '{"coverage":[],"diagnostic_misses":[]}' in instruction
+            assert "exactly the two keys statements and reads" in instruction
+            assert "no other keys" in instruction
             answer = {"coverage": [{"id": "offer", "verdict": "covered" if saved else "missed",
                        "reason": "Generated coverage check", **({"covered_by": {
                            "statements": [0], "reads": []}} if saved else {})}],

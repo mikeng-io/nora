@@ -749,8 +749,9 @@ Output format: return one JSON object, with no prose or markdown.
 coverage MUST be an array, never an object or null. Return exactly one entry
 for every supplied required_units id, and no other ids. Each entry has a string
 id, verdict covered/missed/unsure, and a nonempty string reason. A covered entry
-also has covered_by with statements and reads arrays of zero-based integer
-indices into saved_statements and session_input.reads respectively; at least
+also has covered_by containing exactly the two keys statements and reads, with
+no other keys. Both values are arrays of zero-based integer indices into
+saved_statements and session_input.reads respectively; at least
 one index must be present. A cited read must have result.status ok and must
 not be load_tools. A catalogue or unavailable read is not coverage evidence.
 Example shape (use the actual supplied ids and evidence, not this example):

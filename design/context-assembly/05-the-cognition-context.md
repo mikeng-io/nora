@@ -347,8 +347,12 @@ now reuse `MEMORY_CRITERIA` from the declared Cognition instruction composer:
 the same kind, exclusion, admission, attribution and citation rules apply to
 saved claims and alleged misses. Passing readings have no durability threshold;
 code-recorded communication acts do not need duplicate accounts. Human
-availability reports and readable shared material retain attribution, without
-becoming verified rosters, endorsements or private-person facts. Complete cited
+availability reports retain attribution rather than becoming verified rosters.
+Readable shared media may retain an explicitly identified person and depicted
+activity as a description attributed to that media, never the sharer's endorsement.
+Identity needs shown explicit text or cited member attribution, not appearance
+or sharing. A depicted scene does not establish ownership, habits, residence,
+location or gender. Complete cited
 premises, event-time roles, depicted versus sender identity, suggestions versus
 actions, and explicit cited assertions of absence are required.
 Selected rows and window labels never establish completeness. Unavailable reads

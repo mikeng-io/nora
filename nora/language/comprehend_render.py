@@ -252,7 +252,11 @@ reading; preserve it as that speaker's report, not as a verified roster.
 
 The group's affairs include substantive content about things discussed or shared
 in the group. Readable shared material may support a reading attributed to that
-material, never the sharer's endorsement or a private person's identity or life.
+material, never the sharer's endorsement. For shared media, retain an explicitly
+identified person and the activity depicted only as a description attributed to
+that media. Resolve identity only from shown explicit text or a member's cited
+attribution, never from appearance or the act of sharing. Do not infer ownership,
+habits, residence, location or gender from a depicted scene.
 Bare links, placeholder media labels and vague reactions supply no substantive
 content to reconstruct. Do not invent what an unavailable read would have shown.
 

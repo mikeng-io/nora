@@ -154,6 +154,11 @@ def test_the_composed_session_text_keeps_its_safety_sentences():
     "a code-generated presence summary",
     "A member's statement about availability can be a passing reading",
     "a reading attributed to that material, never the sharer's endorsement",
+    "retain an explicitly identified person and the activity depicted",
+    "only as a description attributed to that media",
+    "Resolve identity only from shown explicit text or a member's cited attribution",
+    "never from appearance or the act of sharing",
+    "Do not infer ownership, habits, residence, location or gender",
     "Apply no durability or worth-keeping threshold",
 ])
 def test_composed_orient_explains_the_observed_judgment_boundaries(guidance):
