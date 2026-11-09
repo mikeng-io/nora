@@ -131,6 +131,9 @@ def build_structured_model(
     bounded = bounded_http_client(http_client)
     if bounded is not None:
         client_args["http_client"] = bounded
+        from ..domain.run_budget import active_run_budget
+        if active_run_budget.get() is not None:
+            client_args["max_retries"] = 0
     return DashFreeOpenAIModel(
         client_args=client_args,
         model_id=model_id,

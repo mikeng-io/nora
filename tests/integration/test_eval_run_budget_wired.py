@@ -84,6 +84,26 @@ async def test_the_budget_counts_and_caps_the_real_dispatch_path():
     assert len(requests) == 1          # the refused call never left
 
 
+@pytest.mark.parametrize("bounded", [False, True])
+async def test_sdk_owned_client_retry_setting_matches_the_run_boundary(bounded):
+    from nora.agent.structured import build_structured_model
+
+    def forbidden(request):
+        pytest.fail("constructing a client must not dispatch a model request")
+
+    budget = RunBudget(max_requests=1) if bounded else None
+    token = active_run_budget.set(budget)
+    try:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(forbidden)) as transport:
+            model = build_structured_model(base_url="https://generated.invalid/v1",
+                api_key="generated-key", model_id="generated", max_tokens=10,
+                temperature=0, http_client=transport)
+            async with model._get_client() as client:
+                assert client.max_retries == (0 if bounded else 2)
+    finally:
+        active_run_budget.reset(token)
+
+
 def test_the_override_file_is_schema_validated_before_composition(
         example_config_path):
     """`validate_subject_overrides` accepts the scoped fixture's real

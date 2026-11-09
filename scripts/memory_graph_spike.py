@@ -2107,7 +2107,8 @@ def main() -> int:
     parser.add_argument("--sample-sha256", help="Refuse a different frozen replay sample")
     parser.add_argument("--stop-after-tokens", type=int,
                         help="Measured input+output cutoff across all model calls; last call "
-                             "may overrun; also capped at 1000 requests/600k output tokens")
+                             "may overrun; also capped at 1000 requests/600k output tokens "
+                             "(inspection-only always permits zero requests)")
     args = parser.parse_args()
     if args.stop_after_tokens is not None and args.stop_after_tokens <= 0:
         parser.error("measured token cutoff must be positive")

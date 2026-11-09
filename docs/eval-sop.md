@@ -93,7 +93,9 @@ contract flags; memory inspection validates an explicitly supplied contract.
 Memory replay, rescore and decision diagnostics accept `--stop-after-tokens N`.
 With that flag, they share one measured input-plus-output budget across all model
 calls in that invocation, also capped at 1000 requests and 600,000 output tokens.
-Without it, the legacy path installs no measured budget. Neither path grants
+Without it, the non-inspection legacy path installs no measured budget.
+Inspection-only always installs a zero-request budget, with or without the cutoff.
+Neither path grants
 permission to spend. Once usage reaches the cutoff, subsequent calls refuse; the last
 admitted call may overrun it. Unknown usage blocks later spending. A stopped run
 is ERROR, with counters in `run_budget.json`, the report and trace. Inspection

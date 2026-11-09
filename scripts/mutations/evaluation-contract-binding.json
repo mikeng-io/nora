@@ -68,5 +68,12 @@
     "old": "                evidence.record(\"run_budget_final\", **metadata)\n                freeze(output / \"run_budget.json\", metadata)",
     "new": "                freeze(output / \"run_budget.json\", metadata)\n                evidence.record(\"run_budget_final\", **metadata)",
     "target": "tests/integration/test_spike_visibility.py::test_budget_file_failure_retains_terminal_trace_counters"
+  },
+  {
+    "name": "bounded SDK-owned judge client disables automatic retries",
+    "file": "nora/agent/structured.py",
+    "old": "            client_args[\"max_retries\"] = 0\n",
+    "new": "",
+    "target": "tests/integration/test_eval_run_budget_wired.py::test_sdk_owned_client_retry_setting_matches_the_run_boundary"
   }
 ]
