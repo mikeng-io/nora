@@ -33,6 +33,18 @@ OBSERVATIONS = frozenset().union(*OBSERVATIONS_BY_KIND.values())
 MAX_DIAGNOSTIC_INPUT_BYTES = 64_000
 
 
+def memory_scenario(inspection: dict[str, Any]) -> dict[str, Any]:
+    """Shown agenda/NEW custody after the existing transport normalization.
+
+    Work bookkeeping is not model input. The candidate's instruction is a
+    separate arm; authoritative archived requests reconstruct this same view.
+    """
+    from nora.agent.punctuation import _clean
+
+    return _clean({"agenda": inspection.get("agenda", ""),
+                   "new_sources": inspection.get("new_sources", {})})
+
+
 def cited_source_numbers(value: Any) -> set[str]:
     if isinstance(value, list):
         return set().union(*(cited_source_numbers(v) for v in value))

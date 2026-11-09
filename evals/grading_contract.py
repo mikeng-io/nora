@@ -5,11 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from nora.subject.eval_evidence import EvidenceError
+from nora.subject.replay_diagnosis import memory_scenario
 
 _ROOT = Path(__file__).resolve().parents[1]
 IMPLEMENTATION_FILES = tuple(
@@ -48,18 +50,6 @@ def digest(value: Any) -> str:
     ).hexdigest()
 
 
-def memory_scenario(inspection: dict[str, Any]) -> dict[str, Any]:
-    """Shown agenda/NEW custody after the existing transport normalization.
-
-    Work bookkeeping is not model input. The candidate's instruction is a
-    separate arm; authoritative archived requests can reconstruct this same view.
-    """
-    from nora.agent.punctuation import _clean
-
-    return _clean({"agenda": inspection.get("agenda", ""),
-                   "new_sources": inspection.get("new_sources", {})})
-
-
 def case_scenario(case: Any) -> dict[str, Any]:
     """SDK draw/session UUIDs identify executions, not authored scenarios."""
     return case.model_dump(mode="json", exclude={"session_id"})
@@ -78,10 +68,11 @@ class GradingContract:
 
     text: str
     sha256: str
+    _data: dict[str, Any] = field(repr=False, compare=False)
 
     @property
     def data(self) -> dict[str, Any]:
-        return json.loads(self.text)
+        return deepcopy(self._data)
 
     def receipt(self) -> dict[str, Any]:
         data = self.data
@@ -266,7 +257,7 @@ def load_contract(
         raise
     except (OSError, UnicodeError, ValueError, TypeError, KeyError) as exc:
         raise EvidenceError("cannot read a valid fixed grading contract") from exc
-    return GradingContract(text, expected)
+    return GradingContract(text, expected, data)
 
 
 def contract_for(

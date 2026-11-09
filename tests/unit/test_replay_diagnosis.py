@@ -268,9 +268,13 @@ async def test_decision_resolves_fingerprinted_writer_events(tmp_path, monkeypat
             models=["generated"], call=diagnose))
         monkeypatch.setattr(spike, "load", lambda *args: None)
         output_root = tmp_path / "diagnostic"
-        result = await spike.run_diagnostic(SimpleNamespace(output=output_root,
-            decision_judge=target, config=tmp_path / "generated.toml",
-            judge_a="generated-a", judge_b="generated-b"))
+        from tests.integration.test_grading_contract import attach_archive_contract
+        args = SimpleNamespace(output=output_root, decision_judge=target,
+                               config=tmp_path / "generated.toml",
+                               judge_a="generated-a", judge_b="generated-b")
+        args.config.write_text("# generated configuration\n")
+        attach_archive_contract(args, tmp_path, "diagnostic")
+        result = await spike.run_diagnostic(args)
     failed = mode in {"tampered", "http400", "parse", "oversized", "missing_reason"}
     assert spike.report_exit(result) == (2 if failed else 0)
     if mode == "tampered":
@@ -643,9 +647,13 @@ async def test_decision_deduplicates_verdicts_without_collapsing_sessions(tmp_pa
             models=["generated-a"], call=call))
         monkeypatch.setattr(spike, "load", lambda *args: None)
         output = tmp_path / "diagnostic"
-        result = await spike.run_diagnostic(SimpleNamespace(
+        from tests.integration.test_grading_contract import attach_archive_contract
+        args = SimpleNamespace(
             output=output, decision_judge=source_root, config=tmp_path / "generated.toml",
-            judge_a="generated-a", judge_b="generated-b"))
+            judge_a="generated-a", judge_b="generated-b")
+        args.config.write_text("# generated configuration\n")
+        attach_archive_contract(args, tmp_path, "diagnostic")
+        result = await spike.run_diagnostic(args)
     assert result["evidence"]["status"] == "PASS" and result["judge_unavailable"] == 0
     assert result["statements"] == len(calls) == 4
     assert [c["statement"]["kind"] for c in calls] == ["unsupported", "missed"] * 2

@@ -289,6 +289,17 @@ def test_exact_cohort_and_sources_are_bound(tmp_path):
         contract.memory_reference("1", {"new_sources": {}})
 
 
+def test_scenario_binding_matches_actual_transport_without_trusting_work_metadata(tmp_path):
+    inspection = {"system": "Candidate policy", "agenda": "Generated — offer",
+                  "new_sources": {"1": {"text": "Generated — offer"}}, "work": ["bookkeeping"]}
+    contract = load_generated(tmp_path, cases={"1": memory_reference(inspection)})
+    actual = {"system": "Different candidate policy", "agenda": "Generated, offer",
+              "new_sources": {"1": {"text": "Generated, offer"}}}
+    contract.memory_reference("1", actual)
+    with pytest.raises(EvidenceError, match="shown scenario differs"):
+        contract.memory_reference("1", {**actual, "agenda": "Different shown context"})
+
+
 @pytest.mark.parametrize("drift", [False, True])
 async def test_real_replay_preflight_refuses_cohort_drift_before_writer(
         tmp_path, monkeypatch, drift):
