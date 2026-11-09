@@ -332,7 +332,7 @@ async def test_rescore_generated_run_directory(tmp_path, monkeypatch, disagree):
                 if e["kind"] == "fact_scoring_input"] == ["0", "1"]
         before = (original.path / "events.jsonl").read_bytes()
 
-        async def call(model, instruction, payload):
+        async def call(model, instruction, payload, **kwargs):
             calls.append(payload)
             if "statement" in payload:
                 return json.dumps({"verdict": "supported", "reason": "generated evidence",

@@ -291,3 +291,38 @@ def test_remind_passes_on_a_write() -> None:
     """A `remind` case grades `written > 0`."""
     assert Outcome(admitted=None, written=1).meets("remind") is True
     assert Outcome(admitted=None, written=0).meets("remind") is False
+
+
+@pytest.mark.parametrize("fields", [
+    '"score":0,"score":1,"confidence":1',
+    '"score":1,"confidence":0.2,"confidence":1',
+    '"score":1,"score":1,"confidence":1',
+])
+def test_duplicate_rating_fields_are_ungradable_not_last_value_wins(fields):
+    from evals.rebuilt.judge import criterion_verdict, evaluate_raw
+
+    raw = '[{"criterion":"voice",' + fields + ',"rationale":"Generated rating"}]'
+    assert evaluate_raw(raw) == "REVIEW"
+    assert criterion_verdict(raw, "voice") == "REVIEW"
+
+
+@pytest.mark.parametrize("raw", [
+    '{"eligibility":"eligible","eligibility":"Generated explanation"}',
+    '{"eligibility":"ineligible","eligibility":"eligible"}',
+    '```json\n{"coverage":[],"coverage":[]}\n```',
+    '{"coverage":[{"covered_by":{"reads":[],"reads":[0]}}]}',
+])
+def test_fact_parser_rejects_duplicate_fields_at_every_object_depth(raw):
+    from scripts.memory_graph_spike import parse_fact_output
+
+    with pytest.raises(ValueError, match="duplicate_json_field"):
+        parse_fact_output(raw)
+
+
+def test_sequence_parser_keeps_distinct_objects_and_rejects_duplicate_fields():
+    from evals.rebuilt.judge import parse_json_response
+
+    assert parse_json_response('{"id":"first"}\n{"id":"second"}', object_sequence=True) == [
+        {"id": "first"}, {"id": "second"}]
+    with pytest.raises(ValueError, match="duplicate_json_field"):
+        parse_json_response('{"id":"first","id":"second"}', object_sequence=True)

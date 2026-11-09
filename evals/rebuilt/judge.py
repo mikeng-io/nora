@@ -23,6 +23,15 @@ from .rubric import FOLD_KINDS, RUBRIC, SOURCE_SCOPE, Criterion
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
 
+def _unique_fields(items: list[tuple[str, object]]) -> dict[str, object]:
+    result = {}
+    for key, value in items:
+        if key in result:
+            raise ValueError("duplicate_json_field")
+        result[key] = value
+    return result
+
+
 def parse_json_response(raw: str, *, object_sequence: bool = False):
     """One complete JSON payload, optionally inside one complete JSON fence.
 
@@ -39,7 +48,7 @@ def parse_json_response(raw: str, *, object_sequence: bool = False):
     if object_sequence and text.startswith("{"):
         # Coverage previously requested one object per line. Accept only complete
         # whitespace-separated objects; consume every byte before schema checks.
-        decoder = json.JSONDecoder()
+        decoder = json.JSONDecoder(object_pairs_hook=_unique_fields)
         objects = []
         while text:
             item, end = decoder.raw_decode(text)
@@ -51,7 +60,7 @@ def parse_json_response(raw: str, *, object_sequence: bool = False):
                 raise ValueError("objects must be separated by whitespace")
             text = tail.lstrip()
         return objects
-    return json.loads(text)
+    return json.loads(text, object_pairs_hook=_unique_fields)
 
 
 @dataclass(frozen=True)
@@ -65,7 +74,7 @@ class JudgeItem:
 def parse_judge_response(raw: str) -> list[JudgeItem]:
     match = _FENCE.search(raw)
     text = match.group(1) if match else raw
-    data = json.loads(text)
+    data = json.loads(text, object_pairs_hook=_unique_fields)
     return [
         JudgeItem(
             criterion=item["criterion"], score=float(item["score"]),

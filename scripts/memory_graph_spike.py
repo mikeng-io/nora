@@ -23,9 +23,11 @@ from time import perf_counter
 from typing import Any
 
 import sqlalchemy as sa
+from jsonschema import ValidationError, validate
 from sqlalchemy.engine import make_url
 
 from evals.grading_contract import GradingContract, contract_for
+from evals.rebuilt.fact_output import response_format as fact_response_format
 from evals.rebuilt.judge import criterion_verdict, parse_json_response
 from nora.agent.replay_inspection import compare_inspection
 from nora.agent.structured import ask_text, build_structured_model
@@ -263,7 +265,8 @@ class Judges:
         # OS, which reads as an NXDOMAIN, never as a judge verdict.
         return model_endpoint(self.config, "eval_judge", model_id)
 
-    async def call(self, model_id: str, instruction: str, payload: Any) -> str:
+    async def call(self, model_id: str, instruction: str, payload: Any,
+                   *, response_format: dict | None = None) -> str:
         url, key, selected_model = self._endpoint(model_id)
         if selected_model != model_id:
             raise ValueError("effective judge model differs from requested judge")
@@ -275,6 +278,9 @@ class Judges:
             temperature=0,
         )
         model.update_config(stream=False)
+        if response_format is not None:
+            model.update_config(params={**(model.get_config().get("params") or {}),
+                                        "response_format": response_format})
         from nora.agent.replay_capture import served_identities
         with served_identities() as identities:
             result = await ask_text(
@@ -289,6 +295,12 @@ class Judges:
             raise ValueError("truncated model output")
         from nora.agent.replay_capture import record
         record("judge_output", alias=model_id, output=result.content, served=identities)
+        if response_format is not None:
+            try:
+                validate(parse_json_response(result.content),
+                         response_format["json_schema"]["schema"])
+            except ValidationError as exc:
+                raise ValueError("judge_schema_mismatch") from exc
         return result.content
 
     async def score(self, payload: Any) -> list[str]:
@@ -739,13 +751,15 @@ def freeze_fact_session(
 
 # Output requirements are part of the parser interface, not the normative policy.
 _FIXED_SUPPORT_OUTPUT = """
-Output format: return one JSON object, with no prose or markdown:
+Output format: return one JSON object, with no prose or markdown.
+Each field name must occur exactly once per object:
 {"verdict":"supported","reason":"explanation","eligibility":"eligible","eligibility_reason":"explanation"}
 verdict must be supported, unsupported or unsure. eligibility must be eligible,
 ineligible or unsure under the selected policy. Both explanations must be nonempty strings.
 """
 _FIXED_COVERAGE_OUTPUT = """
 Output format: return one JSON object, with no prose or markdown.
+Each field name must occur exactly once per object.
 coverage MUST be an array, never an object or null. Return exactly one entry
 for every supplied required_units id, and no other ids. Each entry has a string
 id, verdict covered/missed/unsure, and a nonempty string reason. A covered entry
@@ -756,8 +770,9 @@ one index must be present. A cited read must have result.status ok and must
 not be load_tools. A catalogue or unavailable read is not coverage evidence.
 Example shape (use the actual supplied ids and evidence, not this example):
 {"coverage":[{"id":"example","verdict":"covered","reason":"explanation","covered_by":{"statements":[0],"reads":[]}}],"diagnostic_misses":[]}
+For missed/unsure entries, set covered_by to null.
 When required_units is empty, return {"coverage":[],"diagnostic_misses":[]}.
-diagnostic_misses must be an array when present; it is unscored.
+diagnostic_misses must be an array of strings; it is unscored.
 """
 
 
@@ -842,6 +857,8 @@ async def smoke_fact_support(
                         model,
                         support_instruction,
                         {"statement": statement, "cited_rows": cited, "session_input": evidence},
+                        **({"response_format": fact_response_format("support")}
+                           if reference is not None else {}),
                     )
                 )
                 verdict = parsed.get("verdict") if isinstance(parsed, dict) else None
@@ -906,6 +923,8 @@ async def smoke_fact_support(
                         "saved_statements": [s for s, _ in saved],
                         **({"required_units": reference["units"]} if reference is not None else {}),
                     },
+                    **({"response_format": fact_response_format("coverage")}
+                       if reference is not None else {}),
                 )
             )
             if reference is not None:

@@ -379,7 +379,7 @@ async def test_actual_memory_judges_bind_frozen_units_and_keep_diagnostics_unsco
 async def test_fixed_coverage_is_total_and_requires_shown_evidence(tmp_path, row, error, missed):
     inspection = {"new_sources": {"1": {"text": "Generated offer"}}}
     contract = load_generated(tmp_path, cases={"wake": memory_reference(inspection)})
-    async def call(model, instruction, payload):
+    async def call(model, instruction, payload, **kwargs):
         assert instruction == "FROZEN_COVERAGE" + spike._FIXED_COVERAGE_OUTPUT
         assert payload["required_units"][0]["id"] == "offer"
         return json.dumps({"coverage": [row], "diagnostic_misses": []})
@@ -485,7 +485,7 @@ async def test_optional_claims_still_need_grounding_and_eligibility_is_separate(
     inspection = {"new_sources": {"1": {"text": "A generated image description"}}}
     contract = load_generated(tmp_path, cases={"wake": memory_reference(inspection, units=False)})
     statement = {"what": "An optional visual detail", "cite": [{"source": 1}]}
-    async def call(model, instruction, payload):
+    async def call(model, instruction, payload, **kwargs):
         if "statement" in payload:
             assert instruction == "FROZEN_SUPPORT" + spike._FIXED_SUPPORT_OUTPUT
             assert payload["cited_rows"]

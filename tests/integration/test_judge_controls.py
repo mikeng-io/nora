@@ -8,6 +8,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from jsonschema import validate
 from openai import AsyncOpenAI
 
 from evals import grading_contract as binding
@@ -103,13 +104,25 @@ def model_wire(monkeypatch):
         assert "opaque-" not in wire and '"oracle"' not in wire
         assert "expected_output" not in wire
         observed.append(body)
+        if mode.get("schema_rejected"):
+            assert body["response_format"]["type"] == "json_schema"
+            return httpx.Response(400, json={"error": {"message": "Unsupported schema mode"}})
         if len(body["messages"]) == 1:
+            assert "response_format" not in body
             assert "I sat beside you and saw it." in wire
             answer = [{"criterion": c, "score": 0, "confidence": 1,
                        "rationale": "Invented presence"}
                       for c in ["no_overreach_or_fabrication", "social_suitability"]]
         elif body["messages"][0]["content"] == "FROZEN_SUPPORT" + spike._FIXED_SUPPORT_OUTPUT:
             assert "spare controller" in wire
+            fmt = body["response_format"]
+            assert fmt["type"] == "json_schema" and fmt["json_schema"]["strict"] is True
+            schema = fmt["json_schema"]["schema"]
+            assert schema["additionalProperties"] is False
+            assert set(schema["required"]) == {
+                "verdict", "reason", "eligibility", "eligibility_reason"}
+            assert schema["properties"]["eligibility"]["enum"] == [
+                "eligible", "ineligible", "unsure"]
             answer = {"verdict": "unsupported" if mode["wrong"] else "supported",
                       "reason": "Generated source check", "eligibility": "eligible",
                       "eligibility_reason": "Generated policy check"}
@@ -125,13 +138,21 @@ def model_wire(monkeypatch):
             payload = json.loads(text[text.index(">") + 1:text.rindex("</")])
             saved = bool(payload["saved_statements"])
             instruction = body["messages"][0]["content"]
+            fmt = body["response_format"]
+            assert fmt["type"] == "json_schema" and fmt["json_schema"]["strict"] is True
+            schema = fmt["json_schema"]["schema"]
+            assert schema["properties"]["coverage"]["type"] == "array"
+            assert schema["properties"]["diagnostic_misses"]["items"]["type"] == "string"
+            proof = schema["properties"]["coverage"]["items"]["properties"]["covered_by"]
+            assert proof["anyOf"][0]["additionalProperties"] is False
+            assert set(proof["anyOf"][0]["required"]) == {"statements", "reads"}
             assert "coverage MUST be an array, never an object or null" in instruction
             assert '{"coverage":[],"diagnostic_misses":[]}' in instruction
             assert "exactly the two keys statements and reads" in instruction
             assert "no other keys" in instruction
             answer = {"coverage": [{"id": "offer", "verdict": "covered" if saved else "missed",
                        "reason": "Generated coverage check", **({"covered_by": {
-                           "statements": [0], "reads": []}} if saved else {})}],
+                           "statements": [0], "reads": []}} if saved else {"covered_by": None})}],
                       "diagnostic_misses": []}
             if not payload["required_units"]:
                 answer = {"coverage": [], "diagnostic_misses": []}
@@ -144,7 +165,7 @@ def model_wire(monkeypatch):
                     answer.pop("coverage")
                 elif failure == "undeclared":
                     answer["coverage"] = [{"id": "invented", "verdict": "missed",
-                                           "reason": "Not a declared unit"}]
+                                           "reason": "Not a declared unit", "covered_by": None}]
                 elif failure == "diagnostics":
                     answer["diagnostic_misses"] = {}
                 elif failure == "http":
@@ -152,12 +173,26 @@ def model_wire(monkeypatch):
                         "error": {"message": "Generated gateway error"}})
             if mode.get("alias_error") and body["model"] == "generated-b":
                 answer["diagnostic_misses"] = None
+        if "response_format" in body and not (
+                mode.get("empty_failure") or mode.get("alias_error")):
+            validate(answer, body["response_format"]["json_schema"]["schema"])
+        if mode.get("schema_extra") and body["model"] == "generated-b" and (
+                body["messages"][0]["content"].startswith("FROZEN_SUPPORT")):
+            answer["unexpected"] = "Generated field outside the requested schema"
         response = completion(request, answer)
         if mode.get("empty_failure") in {"length", "invalid_json"} and len(observed) == 6:
             data = response.json()
             data["choices"][0]["finish_reason"] = (
                 "length" if mode["empty_failure"] == "length" else "stop")
             data["choices"][0]["message"]["content"] = '{"coverage":['
+            response = httpx.Response(200, json=data)
+        if mode.get("duplicate_verdict") and body["model"] == "generated-b" and (
+                body["messages"][0]["content"].startswith("FROZEN_SUPPORT")):
+            data = response.json()
+            data["choices"][0]["message"]["content"] = (
+                '{"verdict":"supported","reason":"Generated cited claim",'
+                '"eligibility":"ineligible","eligibility":"eligible",'
+                '"eligibility_reason":"Generated class explanation"}')
             response = httpx.Response(200, json=data)
         if mode["unknown_usage"]:
             answer = response.json()
@@ -183,6 +218,7 @@ def model_wire(monkeypatch):
 @pytest.mark.parametrize("mode,expected,count", [
     ("normal", "PASS", 8), ("wrong", "FAIL", 8), ("unknown_usage", "ERROR", 1),
     ("cutoff", "ERROR", 1), ("alias_error", "ERROR", 4),
+    ("schema_rejected", "ERROR", 1), ("schema_extra", "ERROR", 4),
 ])
 async def test_frozen_controls_use_real_consumers_capture_and_shared_budget(
         tmp_path, job_files, model_wire, mode, expected, count):
@@ -204,7 +240,7 @@ async def test_frozen_controls_use_real_consumers_capture_and_shared_budget(
     # A refused post-cutoff call can be recorded before its transport rejects it.
     assert requests[:count] == observed
     assert sum(r["kind"] == "transport_response" for r in rows) == (
-        0 if mode == "unknown_usage" else count)
+        0 if mode in {"unknown_usage", "schema_rejected"} else count)
     if mode == "unknown_usage":
         assert any(r["kind"] == "transport_finished" and r.get("error_type") for r in rows)
     metadata = json.loads((out / "run_budget.json").read_text())
@@ -218,6 +254,9 @@ async def test_frozen_controls_use_real_consumers_capture_and_shared_budget(
                    and r["status"] == "PASS" for r in rows)
     else:
         assert any(r["kind"] == "run_budget_final" for r in rows)
+    if mode == "schema_extra":
+        assert [r["validation"] for r in rows if r["kind"] == "judge_error"] == [
+            "judge_schema_mismatch"]
     if mode == "alias_error":
         statuses = {c["alias"]: c["status"] for c in report["comparisons"]}
         assert statuses == {"generated-a": "PASS", "generated-b": "ERROR"}
@@ -340,11 +379,11 @@ def empty_job_files(job_files):
 @pytest.mark.usefixtures("otlp_wire")
 @pytest.mark.parametrize("failure,validation", [
     (None, None),
-    ("object", "coverage_shape"),
-    ("null", "coverage_shape"),
-    ("missing", "coverage_shape"),
+    ("object", "judge_schema_mismatch"),
+    ("null", "judge_schema_mismatch"),
+    ("missing", "judge_schema_mismatch"),
     ("undeclared", "coverage_units_missing_duplicated_or_undeclared"),
-    ("diagnostics", "diagnostic_misses_shape"),
+    ("diagnostics", "judge_schema_mismatch"),
     ("invalid_json", None),
     ("length", "truncated model output"),
     ("http", "judge_call_failed"),
@@ -381,3 +420,22 @@ async def test_empty_coverage_contract_and_failure_stop_through_real_entry(
         while parent["name"] != "eval.case":
             parent = spans[parent["parent_span_id"]]
         assert spans[parent["parent_span_id"]]["name"] == "eval.run"
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("otlp_wire")
+async def test_conflicting_duplicate_verdict_cannot_be_a_successful_control(
+        tmp_path, job_files, model_wire):
+    cfg, _, path, sha = job_files
+    model_wire[1]["duplicate_verdict"] = True
+    prepared = controls.prepare(path, sha, cfg)
+    out = tmp_path / "duplicate-verdict"
+    report = await controls.execute(*prepared, config=cfg, output=out, job_sha256=sha)
+    assert report["status"] == "ERROR"
+    assert len(model_wire[0]) == report["run_budget"]["requests_used"] == 4
+    assert {c["alias"]: c["status"] for c in report["comparisons"]} == {
+        "generated-a": "PASS", "generated-b": "ERROR"}
+    rows = read_events(next(p.parent for p in out.glob("*/events.jsonl")))
+    errors = [r for r in rows if r["kind"] == "judge_error"]
+    assert len(errors) == 1 and errors[0]["validation"] == "duplicate_json_field"
+    assert report["evidence"]["status"] == "ERROR"

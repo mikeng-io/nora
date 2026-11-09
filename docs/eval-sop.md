@@ -152,6 +152,23 @@ consumer. It verifies refusal, per-judge attribution, stop behavior and capture.
 Generated valid responses prove wiring only; they cannot prove that a live judge
 understands either the interface or the normative policy.
 
+Judge JSON objects must have unique field names, including nested objects.
+The shared reply, memory and coverage parsers reject duplicates instead of
+silently using the last value; ambiguous evidence is ERROR/REVIEW, never PASS.
+This parser contract applies to a newly bound measurement. Preserve reports
+accepted by an older parser; do not retrospectively clear or fail them.
+A valid prompt template and a successful canary do not guarantee a provider's
+format reliability. Fixed-reference memory calls request native strict JSON
+schemas through `response_format`; this is one text call, not an SDK tool loop.
+Coverage rows carry nullable `covered_by` for missed/unsure and string diagnostic
+entries; scored meanings, reason/proof validation and reference labels are unchanged.
+Check the actual route's structured-output support before claiming enforcement;
+plain JSON mode, a mock request or a requested field alone is not proof that a
+schema is enforced. An unsupported route is unavailable; do not silently retry
+without the schema or repair the provider's text into a verdict. Keep model/route
+changes and new paid probes explicitly authorized, with the same fixed semantic
+references.
+
 Binding proves that the selected instrument was used. It does not establish
 that reference labels are complete, that a semantic judge is calibrated, that
 SigNoz has retained the complete queryable payload, or that a model run is authorized.
