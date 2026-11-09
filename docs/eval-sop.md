@@ -145,6 +145,32 @@ that reference labels are complete, that a semantic judge is calibrated, that
 SigNoz has retained the complete queryable payload, or that a model run is authorized.
 Those remain the preceding SOP's separate evidence obligations.
 
+## Judge-only development calibration
+
+`python -m evals.judge_controls --job FILE --job-sha256 SHA --config FILE`
+validates a private frozen job without model dispatch. `--execute --output DIR`
+uses the existing memory support/eligibility/coverage and reply graders under
+one shared measured budget and the host's eval lock; it runs no subject.
+Execution requires separate operator spending approval. The job fingerprint is
+an artifact binding, never permission or proof that its answer key is correct.
+
+The job pins source head and tracked diff, config, opaque ordered controls,
+a separate answer key, both lane-specific grading contracts, selected judge
+aliases and finite token/request/output/time limits. Inputs are projected through
+the actual consumers; control labels and expected verdicts never enter requests.
+Memory uses a `rescore` calibration contract, and reply controls use an `eval`
+diagnosis contract. Both contracts select the exact lane and control-file hash.
+Freeze their reference policy independently of candidate writer instructions.
+
+Every selected judge must match each clear control's expected vector. A bad
+answer correctly rejected is a successful discrimination; wrong agreement is a
+failure. Preserve every judge separately, without voting away disagreements.
+Missing/unsure/REVIEW/error is ERROR, never PASS. Stop on unavailable measurement,
+unknown usage, exhausted budget or evidence failure. Retain semantic mismatches
+and complete the already-authorized finite controls; do not retry or retune.
+The report's PASS concerns only this finite generated development check, not
+subject behavior, heldout accuracy or population reliability.
+
 ## The rebuilt suite (2026-09-21) — where and how it runs
 
 > The previous harness (`evals.run`, fake stores, hand-authored journeys,

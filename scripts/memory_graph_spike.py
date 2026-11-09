@@ -1574,15 +1574,18 @@ def spike_contract(args: Any, entrypoint: str) -> GradingContract | None:
 
 @contextmanager
 def measured_run_budget(
-    args: Any, evidence: RunEvidence, output: Path, report: dict[str, Any]
+    args: Any, evidence: RunEvidence, output: Path, report: dict[str, Any],
+    *, max_requests: int = 1000, max_output_tokens: int = 600_000,
+    deadline: float | None = None,
 ) -> Iterator[None]:
     """One measured budget for every model reachable from this entrypoint."""
     from nora.domain.run_budget import RunBudget, active_run_budget
 
     cutoff = getattr(args, "stop_after_tokens", None)
     inspection_only = getattr(args, "inspect_only", False)
-    budget = (RunBudget(max_requests=0 if inspection_only else 1000,
-                        max_output_tokens=600_000, stop_after_total_tokens=cutoff)
+    budget = (RunBudget(max_requests=0 if inspection_only else max_requests,
+                        max_output_tokens=max_output_tokens, deadline=deadline,
+                        stop_after_total_tokens=cutoff)
               if cutoff or inspection_only else None)
     token = active_run_budget.set(budget) if budget else None
     try:

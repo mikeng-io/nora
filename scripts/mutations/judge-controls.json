@@ -1,0 +1,9 @@
+[
+  {
+    "name": "Judge calibration forwards the selected measured cutoff",
+    "file": "evals/judge_controls.py",
+    "old": "args = SimpleNamespace(stop_after_tokens=job[\"budget\"][\"measured_tokens\"])",
+    "new": "args = SimpleNamespace(stop_after_tokens=10**12)",
+    "target": "tests/integration/test_judge_controls.py::test_frozen_controls_use_real_consumers_capture_and_shared_budget[cutoff-ERROR-1]"
+  }
+]
