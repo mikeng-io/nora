@@ -208,8 +208,8 @@ is internal, about exactly one topic entity, cites Record/Rollup keys and has no
 links. Existing stores stay on their own machinery. Topic activity reads current
 `interested_in` evidence directly, grouped by person with asserted times and
 source keys. Step 2 can record topic-account would-writes in its existing shadow
-receipts; it does not write the entry store. No live topic writer, withdrawal
-cascade, lineage rendering, search, or migration of other kinds is built.
+receipts; it does not write the entry store. No live topic writer, lineage rendering, search, or migration of other kinds
+is built.
 
 Each kind's rules get their named tests when that kind is built on
 the entry, as [05](../cognition-loop/05-data-model.md) §3 already requires.
