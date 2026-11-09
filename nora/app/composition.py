@@ -424,8 +424,8 @@ def fetch_provider(cfg: Config) -> SearchProvider | None:
         key = cfg.credentials.get(key_env, "")
         if not key:
             log.warning(
-                "fetch_provider exa configured but %s is unset — falling "
-                "back to the search backend", key_env)
+                "fetch_provider exa configured but its key env is unset — "
+                "falling back to the search backend")
             return None
         from nora.infra.search import ExaSearchProvider
         return ExaSearchProvider(
@@ -443,8 +443,8 @@ def fetch_provider(cfg: Config) -> SearchProvider | None:
     key = cfg.credentials.get(key_env, "")
     if not key:
         log.warning(
-            "fetch_provider tavily configured but %s is unset — falling "
-            "back to the search backend", key_env)
+            "fetch_provider tavily configured but its key env is unset — "
+            "falling back to the search backend")
         return None
     from nora.infra.search import TavilySearchProvider
     return TavilySearchProvider(
