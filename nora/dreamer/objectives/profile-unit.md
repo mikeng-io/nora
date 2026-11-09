@@ -1,20 +1,20 @@
 ---
 name: profile-unit
 kind: objective
-version: 4
+version: 5
 applies_to: [profile_unit_adaptor]
 description: >-
-  The unit's own Profile, in shadow (design/unified-memory/45 §4). Reads the
+  The unit's own Profile (design/unified-memory/45 §4). Reads the
   lines the account holds, each room's current Culture account and the Record
   rows those cite, and on the first session the unit's prose Character
   account; writes typed lines (facts, traits, guesses) with their
   reasoning mode and citations through one `profile_write`, which code judges
-  whole. Nothing it writes is shown to anyone yet.
+  whole. Admitted accounts may inform later occasions.
 change_policy: operator-only
 ---
 You keep **the unit's account**: what this group of rooms is for, its norms,
 and what it is like across all of them. It is kept as separate lines, each
-one claim, each saying how you know it. Nobody reads it yet.
+one claim, each saying how you know it. The accepted account may inform later occasions when admitted.
 
 ## What you are reading
 

@@ -195,7 +195,6 @@ from ..domain.models import (
     strip_mention_placeholders,
 )
 from ..domain.note_body import (
-    NORA_NAMES,
     NoteBodyError,
     Shown,
     ShownMessage,
@@ -3038,6 +3037,7 @@ def _target_item(t: Any, *, now: datetime) -> dict:
 
 def _transcript_messages(
     rows: Sequence[TranscriptRow], *, now: datetime, with_ids: bool = False,
+    display_name: str = "",
     source_events: Sequence[Any] | None = None,
     on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
 ) -> tuple[list[dict], int]:
@@ -3070,7 +3070,7 @@ def _transcript_messages(
         item: dict[str, Any] = {
             # A shared file link as its handle, never the URL (R-18): this is a
             # tool result.
-            "sender": _speaker(r), "body": _file_handles(r.body),
+            "sender": _speaker(r, display_name), "body": _file_handles(r.body),
             "when": stamp(r.ts, now),
         }
         if with_ids:
@@ -3110,7 +3110,7 @@ def _transcript_messages(
             item["reactions_source"] = r.reactions.coverage
         parent = by_ts.get(r.quoted_ts) if r.quoted_ts is not None else None
         if parent is not None and parent.id != r.id:
-            item["reply_to"] = _speaker(parent)
+            item["reply_to"] = _speaker(parent, display_name)
             threaded += 1
         out.append(item)
     if on_rows is not None:
@@ -3772,7 +3772,7 @@ def _memory_hits_result(
     return _memory_result(result)
 
 
-def _speaker(row: TranscriptRow) -> str:
+def _speaker(row: TranscriptRow, display_name: str = "") -> str:
     """The one name a transcript row is called by, for both tools that render one.
 
     `person_name` FIRST, exactly as `nora.agent.prefill._label` orders it
@@ -3790,13 +3790,9 @@ def _speaker(row: TranscriptRow) -> str:
     renderers, and a second hand-written copy of this fallback order is how the
     third one drifts.
 
-    `"Nora"` for her own rows is a literal: `nora.agent.prefill._label` uses
-    `[doctrine] display_name` here, which `build_tool_specs` does not hold. The
-    two agree in this deployment (`display_name = "Nora"`) and would diverge in
-    one that renames her — a known single-line gap, held in one place.
     """
     if row.is_nora:
-        return "Nora"
+        return display_name or row.sender_name or "you"
     return row.person_name or row.sender_name or "unknown"
 
 
@@ -5042,6 +5038,7 @@ def build_tool_specs(
     transcript: tuple[TranscriptRow, ...] | None = None,
     lookup_window: tuple[TranscriptRow, ...] | None = None,
     ai_peer: str = "nora",
+    display_name: str = "",
     fire_turn: bool = False,
     # THIS turn is a relay: another room's words arrived through `Relay`, so `send_to` is
     # refused here as well as left off the surface (8765_44837).
@@ -5417,7 +5414,7 @@ def build_tool_specs(
             # — otherwise a corrected message
             # makes its sender look like nobody said it.
             hits = [
-                {"who": _speaker(row), "line": _file_handles(row.body)}
+                {"who": _speaker(row, display_name), "line": _file_handles(row.body)}
                 | ({"was": _file_handles(row.edit.was)} if row.edit is not None else {})
                 for row in lookup_rows
                 if needle and (
@@ -5622,7 +5619,7 @@ def build_tool_specs(
             if found is not None:
                 this_events, this_events_more = found
         out, threaded = _transcript_messages(
-            rows, now=now, with_ids=on_rows is not None,
+            rows, now=now, with_ids=on_rows is not None, display_name=display_name,
             source_events=this_events, on_rows=on_rows,
         )
         # `rows=0` is an ordinary `ok` — a conversation with nothing older in
@@ -5946,7 +5943,7 @@ def build_tool_specs(
             if found is not None:
                 target_events, target_events_more = found
         out, threaded = _transcript_messages(
-            rows, now=now, with_ids=on_rows is not None,
+            rows, now=now, with_ids=on_rows is not None, display_name=display_name,
             source_events=target_events, on_rows=on_rows,
         )
         # Bodies are never logged: this is a group's transcript.
@@ -6004,7 +6001,7 @@ def build_tool_specs(
             list(found.values()), platform=platform)
         return {
             mid: target_context(
-                row, deleted=mid in gone, author=_speaker(row))
+                row, deleted=mid in gone, author=_speaker(row, display_name))
             for mid, row in zip(found, named, strict=True)
         }
 
@@ -6503,6 +6500,7 @@ def build_tool_specs(
             record_requirement(DisclosureRequirement(origin, (message_lineage(origin),)))
             item = _transcript_messages(
                 [row], now=now, with_ids=dream_adaptor == COGNITION_ADAPTOR,
+                display_name=display_name,
                 on_rows=on_rows if not hit.deleted else None,
             )[0][0]
             item = {"room": names.get((hit.platform, hit.conversation_id), ""), **item}
@@ -15179,7 +15177,7 @@ Args:
             parsed = parse_note_body(mapped, shown=Shown(
                 rendered=tuple(
                     ShownMessage(
-                        id=r.id, sender=_speaker(r), person_id=r.person_id,
+                        id=r.id, sender=_speaker(r, display_name), person_id=r.person_id,
                         is_nora=r.is_nora,
                         turn_handle=r.turn_handle,
                     )
@@ -15191,7 +15189,7 @@ Args:
                     ref.name: pid
                     for pid, ref in getattr(persons, "by_person", {}).items()
                 },
-                nora_names=NORA_NAMES,
+                nora_names=frozenset({display_name}) if display_name else frozenset(),
             ))
         except NoteBodyError as refused:
             _record(metrics, tool, "refused", reason="schema", rule=refused.rule)
@@ -15599,7 +15597,8 @@ Args:
                 or reaction_asked[0]):
             return None, None
         reaction_asked[0] = True
-        got = await reaction_picker.pick(recent=render_recent(bound_window), reply=clean)
+        got = await reaction_picker.pick(
+            recent=render_recent(bound_window, display_name=display_name), reply=clean)
         return (got, got.attachment) if got is not None else (None, None)
 
     def _gif_record(reaction) -> dict:
@@ -17791,7 +17790,7 @@ Args:
                         "status": "ok", "document_id": str(out.document_id),
                         "revision": out.revision,
                         "note": "Stored, with no link yet. Name it in your report by its "
-                                "title and this `document_id`: Nora's delivery reads it back.",
+                                "title and this `document_id`: delivery reads it back.",
                     }
                 return {
                     "status": "ok", "document_id": str(out.document_id),
@@ -17807,7 +17806,7 @@ Args:
                     "status": "ok", "document_id": str(out.document_id),
                     "revision": out.revision, "url": out.url,
                     "note": "Stored. Name it in your report by its title and this "
-                            "`document_id`: Nora's delivery reads it back and adds the "
+                            "`document_id`: delivery reads it back and adds the "
                             "link. Do not write a link yourself.",
                 }
             return {
@@ -18593,6 +18592,7 @@ def build_tools(
     transcript: tuple[TranscriptRow, ...] | None = None,
     lookup_window: tuple[TranscriptRow, ...] | None = None,
     ai_peer: str = "nora",
+    display_name: str = "",
     links: LinkCarry | None = None,
     notes: NoteCollaborator | None = None,
     note_unit: Callable[[str, str], str | None] | None = None,
@@ -18658,7 +18658,7 @@ def build_tools(
         geocoder=geocoder,
         question=question, context_window=context_window, transcript=transcript,
         lookup_window=lookup_window,
-        ai_peer=ai_peer,
+        ai_peer=ai_peer, display_name=display_name,
         links=links, giphy_source=giphy_source, reaction_picker=reaction_picker,
         notes=notes, note_unit=note_unit, memos=memos,
         unit_for=unit_for,

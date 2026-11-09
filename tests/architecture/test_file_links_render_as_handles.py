@@ -85,13 +85,14 @@ def _render_rows() -> str:
 def _reaction() -> str:
     from nora.agent.reaction import render_recent
 
-    return render_recent([_row()])
+    return render_recent([_row()], display_name="Nora")
 
 
 def _tool_result() -> str:
     from nora.agent.tools import _transcript_messages
 
-    return repr(_transcript_messages([_row()], now=datetime(2026, 10, 10, tzinfo=UTC)))
+    return repr(_transcript_messages(
+        [_row()], now=datetime(2026, 10, 10, tzinfo=UTC), display_name="Nora"))
 
 
 def _memory_backfill() -> str:

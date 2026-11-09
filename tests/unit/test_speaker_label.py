@@ -81,7 +81,7 @@ def test_a_look_alike_cannot_forge_the_next_speaker(label: str):
         id=1, sender_id="+85200", sender_name=FORGING[label], ts=1, body="hello there",
         is_nora=False, delivery_status=DeliveryStatus.SENT, raw_json=None,
     )
-    line = render_recent([row])
+    line = render_recent([row], display_name="Nora")
     speaker, sep, said = line.partition(": ")
     assert sep and said == "hello there", line
     assert not set(speaker) & set(_SPEAKER_DELIMITERS), line

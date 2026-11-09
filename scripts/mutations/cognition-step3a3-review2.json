@@ -21,11 +21,11 @@
     "target": "tests/unit/test_cognition_grounding.py::test_no_standing_is_ever_pushed_it_is_pulled"
   },
   {
-    "name": "blocker: the objective promises a Standing line again",
+    "name": "the objective promises complete Standing even when unavailable",
     "file": "nora/dreamer/objectives/cognition.md",
-    "old": "agenda room's open events — so you neither write it twice",
-    "new": "agenda room's open events and its Standing — so you neither write it twice",
-    "target": "tests/unit/test_cognition_grounding.py::test_the_instruction_does_not_promise_a_standing_index_line"
+    "old": "your own position and pending work when supplied",
+    "new": "your complete Standing position and pending work on every occasion",
+    "target": "tests/unit/test_cognition_grounding.py::test_the_instruction_conditions_self_position_on_supplied_context"
   },
   {
     "name": "major: the strike counts every failure, infra included",

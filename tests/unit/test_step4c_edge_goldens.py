@@ -297,9 +297,9 @@ def _duplicate_window() -> list[TranscriptRow]:
 def _all_three(rows: list[TranscriptRow]) -> dict[str, Any]:
     return {
         "debrief": debrief_transcript(rows, display_name="Nora", tz=UTC),
-        "tool": _transcript_messages(rows, now=NOW)[0],
-        "tool_ids": _transcript_messages(rows, now=NOW, with_ids=True)[0],
-        "tool_threaded": _transcript_messages(rows, now=NOW)[1],
+        "tool": _transcript_messages(rows, now=NOW, display_name="Nora")[0],
+        "tool_ids": _transcript_messages(rows, now=NOW, with_ids=True, display_name="Nora")[0],
+        "tool_threaded": _transcript_messages(rows, now=NOW, display_name="Nora")[1],
         # The control: prefill resolves FIRST-wins already and must not move.
         "prefill": render_transcript(rows, display_name="Nora", now=NOW),
     }

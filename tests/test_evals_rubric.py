@@ -18,7 +18,7 @@ def test_every_criterion_has_a_judge_facing_description():
 
 def test_the_voice_criterion_names_the_target_and_the_anti_patterns():
     voice = next(c for c in RUBRIC if c.name == "voice")
-    for word in ("awake", "precise", "companionable"):
+    for word in ("awake", "precise", "natural"):
         assert word in voice.description.lower()
     for anti in ("flat", "sleepy", "cutesy", "melodramatic", "newsreader"):
         assert anti in voice.description.lower()
@@ -291,11 +291,11 @@ def test_the_personality_criterion_states_her_character_not_a_menu_of_replies():
     assert PERSONALITY.name not in {c.name for c in RUBRIC}
     assert OPTIONAL_CRITERIA["personality"] is PERSONALITY
     text = PERSONALITY.description
-    assert "Judge ONE thing" in text
-    assert "the doctrine shown above may say less" in text
+    assert "Judge whether the reply keeps" in text
+    assert "independently of social status" in text
     # Both directions: flatter / assistant-like, and personality worn as a costume.
-    assert "the assistant shows through" in text
-    assert "worn rather than had" in text
+    assert "Do not reward a presumed friend role" in text
+    assert "without forced slang" in text
     assert not re.search(r"[㐀-鿿]", text)
 
 
@@ -343,7 +343,7 @@ def test_the_scope_criterion_reaches_the_judge_prompt_only_when_asked_for():
 
 
 def test_the_source_block_says_an_earlier_sourced_turn_is_part_of_the_data():
-    """The provenance half. The block IS the whole transcript — Nora's own earlier
+    """The provenance half. The block is the rendered window — Nora's own earlier
     replies included — so the two kinds of line are named; unlabelled, the judge
     arbitrates inconsistently whether a fact an earlier turn established still
     counts. Naming them must NOT weaken ATTRIBUTION.
@@ -360,9 +360,32 @@ def test_the_source_block_says_an_earlier_sourced_turn_is_part_of_the_data():
         tag_input="nora.000 x", reply_text="y", doctrine_text="be honest",
         source_data="[search result] four coloured keys",
     )
-    assert "WHOLE conversation" in prompt
+    assert "rendered conversation window" in prompt
+    assert "do not infer complete history" in prompt
+    assert "It is the WHOLE conversation" not in prompt
     assert "named a source for is" in prompt
     assert "does not become a source by being repeated" in prompt
     # the fabrication check is UNTOUCHED — reverting either line reddens this
     assert "ATTRIBUTION" in prompt and "VALUES" in prompt
     assert "the ONLY thing" in prompt and "grounds an attribution" in prompt
+
+
+def test_grounding_distinguishes_chat_metaphors_from_literal_presence():
+    text = next(c.description for c in RUBRIC if c.name == "no_overreach_or_fabrication")
+    assert "Ordinary chat metaphors, mock indignation" in text
+    assert "playful exaggeration about participation or blame are allowed" in text
+    assert "Roles and recollections explicitly supported by shown culture or records" in text
+    assert "without establishing wider authority or complete recall" in text
+    assert "Operational claims and concrete event details still require support" in text
+    assert "Literal real-world presence, continuous observation or eyewitness knowledge" in text
+    assert "requires evidence" in text
+    assert "a reported event alone establishes none of those" in text
+
+
+def test_public_provenance_requires_the_project_path_without_requiring_a_scheme():
+    from evals.rebuilt.rubric import PUBLIC_PROVENANCE
+
+    text = PUBLIC_PROVENANCE.description
+    assert "github.com/mikeng-io/nora repository path" in text
+    assert "with or without an https:// prefix" in text
+    assert "organization-only reference is insufficient" in text

@@ -6,6 +6,18 @@ three seconds after validation. Config and secrets require controlled restart or
 recreation. They are not hot reloaded. See the
 [contract amendment](adr/0033-private-secrets-and-model-endpoints.md) (DEC-325).
 
+## Public agent identity
+
+The identity Markdown at `<doctrine.dir>/core/identity.md` owns `display_name` and
+`source_repository`. The name labels both the served identity and runtime
+transcripts. Change it with a restart: a live rename retains the last good
+prompt until the runtime labels can change together. Machine `[agent].name`,
+transport accounts, memory peers and wake triggers are separate identities and
+do not change with a public rename. The former `[doctrine].display_name` setting
+is accepted for private-file compatibility but ignored and omitted from config
+serialization; it can be removed during ordinary configuration maintenance.
+Public provenance does not reveal private instructions or prove which build runs.
+
 ## Source and schema
 
 ```toml

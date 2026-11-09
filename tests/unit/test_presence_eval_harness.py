@@ -243,15 +243,21 @@ def test_facts_reach_the_judge_prompt_in_their_own_section():
 
 
 class _Answers:
-    """An OpenAI-shaped client whose every completion is `raw`."""
+    """A completed OpenAI response for valid bounded judge requests."""
 
     def __init__(self, raw: str) -> None:
         self._raw = raw
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
 
-    async def _create(self, **_: Any) -> Any:
+    async def _create(self, **kwargs: Any) -> Any:
+        if not kwargs.get("model") or not kwargs.get("messages"):
+            raise ValueError("model and messages are required")
+        ceiling = kwargs.get("max_tokens")
+        if type(ceiling) is not int or ceiling <= 0:
+            raise ValueError("a positive output ceiling is required")
         return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=self._raw))],
+            choices=[SimpleNamespace(
+                finish_reason="stop", message=SimpleNamespace(content=self._raw))],
         )
 
     async def close(self) -> None:
@@ -286,8 +292,8 @@ async def test_a_case_with_no_opted_in_criterion_binds_safety_alone(monkeypatch)
 
 
 async def test_one_failed_judge_sample_is_review_with_its_error(monkeypatch):
-    """Samples run concurrently; one that raises still makes the whole
-    grading an instrument ERROR, never a verdict from the survivors."""
+    """A failed sequential sample makes grading an instrument ERROR, never a
+    verdict from the samples that answered."""
     calls = {"n": 0}
 
     class _OneFails(_Answers):

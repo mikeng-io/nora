@@ -1,4 +1,4 @@
-"""Quoted-notice cases carry their graded requirements through the real loader."""
+"""Case-specific acceptance reaches its declared criterion through the real loader."""
 
 import pytest
 
@@ -7,13 +7,16 @@ from evals.scenarios import load_all
 PAIR = ("circle_brief_fact", "circle_brief_fact_no_time")
 
 
-@pytest.mark.parametrize("name", PAIR)
-def test_quoted_notice_acceptance_is_machine_readable(name):
+@pytest.mark.parametrize(("name", "criterion"), [
+    *((name, "social_suitability") for name in PAIR),
+    ("about_nora_report_is_not_eyewitness_control", "contextual_identity"),
+])
+def test_case_acceptance_is_machine_readable(name, criterion):
     cases = {case.name: case for case in load_all("personality")}
     assert name in cases
     case = cases[name]
     assert case.expected_output.strip(), f"{name}: comments are not a graded contract"
-    assert "social_suitability" in case.metadata["criteria"]
+    assert criterion in case.metadata["criteria"]
     assert case.metadata["entry"] == "tag"
     assert case.metadata["expect"] == "reply"
 

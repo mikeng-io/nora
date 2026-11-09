@@ -79,8 +79,8 @@
   {
     "name": "case requirement reaches judge without becoming evidence",
     "file": "evals/backbone.py",
-    "old": "str(case.expected_output)) if c.name == 'social_suitability' else c",
-    "new": "\"lost requirement\") if c.name == 'social_suitability' else c",
+    "old": "extra = criteria_for(criteria, acceptance=str(case.expected_output or \"\"))",
+    "new": "extra = criteria_for(criteria)",
     "target": "tests/unit/test_eval_full_restore.py::test_circle_judge_receives_requirement_separately_from_actual_evidence"
   },
   {
@@ -149,8 +149,8 @@
   {
     "name": "uncontrolled participation also carries its declared requirement to the judge",
     "file": "evals/backbone.py",
-    "old": "                    if case.expected_output:",
-    "new": "                    if md.get('circle_overlay') or port.public_audience:",
+    "old": "extra = criteria_for(criteria, acceptance=str(case.expected_output or \"\"))",
+    "new": "extra = criteria_for(criteria, acceptance=str(case.expected_output or \"\") if md.get(\"circle_overlay\") or port.public_audience else \"\")",
     "target": "tests/unit/test_eval_full_restore.py::test_circle_judge_receives_requirement_separately_from_actual_evidence"
   }
 ]

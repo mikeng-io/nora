@@ -1,10 +1,10 @@
 ---
 name: lessons
 kind: objective
-version: 2
+version: 3
 applies_to: [lessons_adaptor]
 description: >-
-  Nora's Lessons in one unit (design/self-growth/40-lessons.md, L2): practice
+  the agent's Lessons in one unit (design/self-growth/40-lessons.md, L2): practice
   induced from how people responded to many of her messages. Reads the lessons
   she holds and the closed response episodes since the last session, then
   writes, reinforces or retires lessons through `lesson_write` and

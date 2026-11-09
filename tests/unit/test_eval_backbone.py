@@ -1106,7 +1106,8 @@ async def test_the_judges_source_is_the_rendered_window_not_the_whole_seed(
         # A real `chat` span carrying the block exactly as `_transcript_block`
         # renders it — the seam `_shown_transcript` reads back.
         with span("chat", **{"gen_ai.operation.name": "chat"}):
-            annotate(**{"gen_ai.input.messages": rendered})
+            annotate(**{"gen_ai.input.messages":
+                        "Right now it is Saturday 11 October 2026, 20:00 HKT.\n" + rendered})
         return Outcome(admitted=None, said=("ok",))
 
     monkeypatch.setitem(ENTRY_POINTS, "tag", EntryPoint(drive=fake_drive))

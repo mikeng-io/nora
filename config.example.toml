@@ -690,7 +690,7 @@ reload = "mtime"                      # mtime | startup
 strict = true
 language_hint = "yue-Hant-HK"         # BCP 47 (RFC 5646): Cantonese, Traditional Han, Hong Kong
 canary = "CHANGE-ME-PER-DEPLOYMENT"   # fixed string; R-6 leak sentinel
-display_name = "Nora"
+# The public name is authored in doctrine/core/identity.md; rename on restart.
 
 [obs.logging]
 level = "INFO"

@@ -299,7 +299,8 @@ async def test_the_root_hands_the_loader_the_tool_names_its_gate_needs(cfg, tmp_
     shutil.copytree(ROOT / "nora" / "doctrine", d)
     conduct = d / "rooms" / "conduct.md"
     conduct.write_text(conduct.read_text().replace(
-        "# Honesty", "Reach for `about` when you need to.\n\n# Honesty", 1))
+        "# Ground your understanding",
+        "Reach for `about` when you need to.\n\n# Ground your understanding", 1))
     with pytest.raises(StartupError, match="may not name a tool"):
         await build_dependencies(override_config(cfg, {"doctrine.dir": d}))
 
@@ -2206,3 +2207,35 @@ async def test_profile_render_switch_selects_one_account_writer_and_keeps_the_ju
             "profile-nora", "profile-verdict"} <= names
     legacy = {"culture", "character-person", "character-unit", "character-nora"}
     assert (names & legacy) == (set() if render else legacy)
+
+
+async def test_markdown_identity_reaches_live_tools_and_cognition_writers(cfg, tmp_path):
+    import shutil
+
+    from nora.agent.room import Room
+    from nora.domain.models import TranscriptRow
+
+    directory = tmp_path / "renamed-doctrine"
+    shutil.copytree(cfg.doctrine.dir, directory)
+    identity = directory / "core/identity.md"
+    identity.write_text(
+        identity.read_text().replace("display_name: Nora", "display_name: AgentAlpha")
+    )
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    renamed = override_config(cfg, {**_SESSION_ON, "doctrine.dir": directory})
+    deps = await build_dependencies(renamed)
+    assert deps.cognition_runner is not None
+    assert deps.cognition_runner._nora_names == frozenset({"AgentAlpha"})
+    registry = deps.engagement._tool_registry
+    own = TranscriptRow(id=1, sender_id="self", sender_name="PreviousLabel", ts=1,
+                        body="I checked the venue", is_nora=True,
+                        delivery_status=DeliveryStatus.SENT, raw_json=None)
+    tools = {t.name: t.call for t in registry.specs(
+        store=deps.audit, conversation_id="g1", conversation_type="group",
+        persons=deps.persons, honcho=None, deliverer=None, metrics=deps.metrics,
+        room=Room(platform="signal", conversation_id="g1", roster_source=None,
+                  persons=deps.persons), transcript=(own,),
+    )}
+    result = await tools["who_said"](words="checked the venue")
+    assert result["status"] == "ok"
+    assert result["said_by"] == [{"who": "AgentAlpha", "line": "I checked the venue"}]

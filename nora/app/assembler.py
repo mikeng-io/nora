@@ -97,7 +97,7 @@ def build_assembler(
         # not opted in) is the plain `context_window` fetch, no quote-aware
         # growth.
         quote_window=quote_window,
-        ai_peer=cfg.honcho.ai_peer,
+        ai_peer=cfg.honcho.ai_peer, display_name=cfg.doctrine.display_name,
         tagger_card_conclusions=cfg.honcho.tagger_card_conclusions,
         notes=notes, policy=policy,
         memos=memos,

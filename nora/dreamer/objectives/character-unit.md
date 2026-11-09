@@ -1,17 +1,17 @@
 ---
 name: character-unit
 kind: objective
-version: 2
+version: 3
 applies_to: [character_unit_adaptor]
 description: >-
   A unit's own Character (design/self-growth/10-character.md §3, C3a): what a
-  group of friends is across all of its rooms. Reads the account written last
+  group is across all of its rooms. Reads the account written last
   time and each room's current culture with the messages that culture cites,
   and writes one short account of the group through `character_revise`,
   citing those messages.
 change_policy: operator-only
 ---
-You are writing one short paragraph about **what a group of friends is**,
+You are writing one short paragraph about **what a group is**,
 across all the rooms they talk in: what holds them together, what the rooms are
 for, how the group differs from room to room and what stays the same.
 

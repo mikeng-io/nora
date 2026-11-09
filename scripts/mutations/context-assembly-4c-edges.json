@@ -16,8 +16,8 @@
   {
     "name": "4c: her own display name skips the label, so a colon in it reads as a body",
     "file": "nora/agent/reaction.py",
-    "old": "        who = display_name if row.is_nora else row_speaker(row)\n        if row.turn_handle is not None:\n            who += f\" (turn {row.turn_handle})\"\n        lines.append(f\"{speaker_label(who)}: {escape(body)}\")",
-    "new": "        who = display_name if row.is_nora else row_speaker(row)\n        if row.turn_handle is not None:\n            who += f\" (turn {row.turn_handle})\"\n        lines.append(f\"{escape(display_name if row.is_nora else speaker_label(who))}: {escape(body)}\")",
+    "old": "        who = (display_name or row.sender_name or \"you\") if row.is_nora else row_speaker(row)\n        if row.turn_handle is not None:\n            who += f\" (turn {row.turn_handle})\"\n        lines.append(f\"{speaker_label(who)}: {escape(body)}\")",
+    "new": "        who = (display_name or row.sender_name or \"you\") if row.is_nora else row_speaker(row)\n        if row.turn_handle is not None:\n            who += f\" (turn {row.turn_handle})\"\n        lines.append(f\"{escape(display_name if row.is_nora else speaker_label(who))}: {escape(body)}\")",
     "target": "tests/unit/test_reaction.py -k hers_goes_through_the_same_label"
   },
   {
@@ -86,21 +86,21 @@
   {
     "name": "4c review: the speaker is the raw `or` chain (a lone NBSP is truthy)",
     "file": "nora/agent/reaction.py",
-    "old": "        who = display_name if row.is_nora else row_speaker(row)\n",
+    "old": "        who = (display_name or row.sender_name or \"you\") if row.is_nora else row_speaker(row)\n",
     "new": "        who = display_name if row.is_nora else (row.person_name or row.sender_name or \"unknown\")\n",
     "target": "tests/unit/test_step4c_edge_goldens.py::test_an_input_the_step_does_not_touch_is_byte_identical"
   },
   {
     "name": "4c review: the sender's own name is preferred over the identity's",
     "file": "nora/agent/reaction.py",
-    "old": "        who = display_name if row.is_nora else row_speaker(row)\n",
+    "old": "        who = (display_name or row.sender_name or \"you\") if row.is_nora else row_speaker(row)\n",
     "new": "        who = display_name if row.is_nora else (row.sender_name or row.person_name or \"unknown\")\n",
     "target": "tests/unit/test_step4c_edge_goldens.py::test_a_hostile_person_name_over_an_ordinary_sender_changes_the_same_way tests/unit/test_step4c_edge_goldens.py::test_an_input_the_step_does_not_touch_is_byte_identical"
   },
   {
     "name": "4c review: her display name is ignored",
     "file": "nora/agent/reaction.py",
-    "old": "        who = display_name if row.is_nora else row_speaker(row)\n",
+    "old": "        who = (display_name or row.sender_name or \"you\") if row.is_nora else row_speaker(row)\n",
     "new": "        who = row_speaker(row)\n",
     "target": "tests/unit/test_step4c_edge_goldens.py::test_an_input_the_step_does_not_touch_is_byte_identical"
   },

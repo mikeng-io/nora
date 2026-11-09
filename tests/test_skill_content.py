@@ -807,15 +807,11 @@ def test_the_self_account_carries_no_address(self_account):
         r"\b[a-z0-9][a-z0-9-]*\.(?:com|net|org|io|dev|app|test|xyz|hk)\b",
         self_account.lower(),
     ))
-    assert hosts == {"mikeng.io"}, (
-        f"the self-account carries an address that is not the operator's: "
-        f"{sorted(hosts - {'mikeng.io'})}"
-    )
-    where_from = self_account.split("# Where you come from", 1)[-1].split("#", 1)[0]
-    assert "mikeng.io" in where_from, (
-        "the operator's site left «Where you come from»; the single-address pin "
-        "above now guards nothing"
-    )
+    assert not hosts, "private deployment addresses do not belong in the identity body"
+    from nora.doctrine.loader import parse_section
+
+    identity = parse_section(ROOT / "nora/doctrine/core/identity.md")
+    assert identity.metadata["source_repository"] == "https://github.com/mikeng-io/nora"
 
 
 def test_no_input_of_hers_carries_a_baked_address_or_an_inventory(self_account):
@@ -848,9 +844,7 @@ def test_no_input_of_hers_carries_a_baked_address_or_an_inventory(self_account):
       route named as a page is an improvised page list arriving as an input
       instead of as a guess.
     """
-    assert _flat("Its address is not baked into you either; one that reaches you "
-                 "came in with the turn, inside something you were handed.") in _flat(
-        self_account)
+    assert "Its address comes with the occasion" in _flat(self_account)
 
     routes = _portal_routes()
     baked, live = _baked_inputs(), _live_inputs()
@@ -911,11 +905,7 @@ def test_the_view_is_named_as_material_she_may_not_recite_not_as_a_sanction(
     from nora.web.tools import build_tools_payload
 
     flat = _flat(self_account)
-    assert _flat(
-        "Most of what it lays out is the material you never reproduce, so knowing "
-        "what that view is for is no licence to say what is on it: say you cannot "
-        "go through it rather than describing what it holds."
-    ) in flat
+    assert "knowing it does not authorize describing private material there" in flat
     # The sanction is absent, not merely reworded around.
     assert "reading rather than guessing" not in flat
 
@@ -928,7 +918,7 @@ def test_the_view_is_named_as_material_she_may_not_recite_not_as_a_sanction(
     ) in _flat(constraint)
     # Same shape as the un-activated-skill veto, so the two cannot drift apart.
     assert "say you cannot" in flat
-    assert "rather than describing" in flat
+    assert "does not authorize describing" in flat
     guards = (ROOT / "nora" / "agent" / "guards.py").read_text()
     assert "say you cannot check the rest rather than " in _flat(guards)
 
@@ -976,10 +966,8 @@ def test_the_self_account_says_who_can_reach_the_web_view_and_who_cannot(
     (the gate is TypeScript). It pins that admission is decided by roster
     membership on ONE account kind, and not by a hard-coded identity. No count is
     asserted anywhere: a count of real people is PII and it rots."""
-    assert _flat(
-        "reached through a login you do not issue, and not your operator's alone, and "
-        "not everyone in a room has one"
-    ) in _flat(self_account)
+    assert "A private portal requires its own audience access" in _flat(self_account)
+    assert "room membership alone grants no access" in _flat(self_account)
     # The over-correction is absent.
     assert "their own accounts" not in self_account
 
@@ -1027,10 +1015,9 @@ def test_the_self_account_says_the_build_is_asked_not_inferred(self_account):
     standing over nothing."""
     from nora.agent.registry import ToolRegistry
 
-    assert _flat(
-        "Your build may carry a stamp or carry none; which of those is true here "
-        "is something you ask, never something you work out."
-    ) in _flat(self_account)
+    assert "A running version takes a checked build stamp, which may be unavailable" in _flat(
+        self_account)
+    assert "published releases establish only what was released" in _flat(self_account)
 
     catalog = {t["name"]: t for t in ToolRegistry().catalog()}
     assert "version_list" in catalog, "she must have a way to ask"

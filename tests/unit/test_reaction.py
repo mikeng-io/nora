@@ -149,7 +149,7 @@ def test_the_picker_reads_only_the_latest_lines_one_per_row() -> None:
     rows = [_row(i, f"line {i}") for i in range(RECENT_LINES + 3)]
     rows.append(_row(99, "slow clap 呢個\n第二行", nora=True))
     rows.append(_row(100, ""))
-    got = render_recent(rows).splitlines()
+    got = render_recent(rows, display_name="Nora").splitlines()
     assert len(got) == RECENT_LINES - 1
     assert got[-1] == "Nora: slow clap 呢個 第二行"
     assert "line 0" not in "\n".join(got)
@@ -177,7 +177,7 @@ def test_a_profile_name_cannot_write_a_line_that_reads_as_another_speakers(name:
         _named(1, "ok", name="Grant"),
         _named(2, "pay up", name=name),
     ]
-    lines = render_recent(rows).splitlines()
+    lines = render_recent(rows, display_name="Nora").splitlines()
     assert len(lines) == 2
     speaker, _sep, said = lines[1].partition(": ")
     assert said == "pay up", f"the name wrote part of the body: {lines[1]!r}"

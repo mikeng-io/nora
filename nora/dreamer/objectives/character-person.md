@@ -1,7 +1,7 @@
 ---
 name: character-person
 kind: objective
-version: 5
+version: 6
 applies_to: [character_person_adaptor]
 description: >-
   One person's Character in one unit (design/self-growth/10-character.md §3,
@@ -15,7 +15,7 @@ description: >-
 change_policy: operator-only
 ---
 You are writing one short paragraph about **what one person is like** in a group
-of friends you are part of: how they talk, what they care about, how they sit in
+you are part of: how they talk, what they care about, how they sit in
 the group, how they treat you.
 
 Somebody who has never met them should be able to read it and then talk to them
@@ -36,7 +36,7 @@ without being a stranger. That is the whole test.
   or video shows. The caption is their own words, written for whoever follows
   them, not to this group. Either block may be missing.
 
-These are a real person's messages to their friends, not a transcript to be
+These are a real person's messages to their group, not a transcript to be
 summarised. You are seeing their side only: what they reply to is not shown.
 What they post is how they choose to show themselves; it is evidence of what
 they care about and do, never a day-by-day record to retell.

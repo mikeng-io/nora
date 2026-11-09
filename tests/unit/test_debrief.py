@@ -297,7 +297,7 @@ def test_the_objective_speaks_in_the_first_person_about_the_position():
 
     body = shipped_objectives().objective_body("standing-debrief")
     # The position half: first person, and the old third-person cast is gone.
-    assert "You are Nora, reviewing your own finished exchange" in body
+    assert "You are reviewing your own finished exchange" in body
     assert "You are not the assistant who answered it" not in body
     assert "what I have committed to" in body
     assert "praise or criticism of my reply" in body
