@@ -431,11 +431,12 @@ SESSION_SHUTDOWN_GRACE_SECONDS = 30.0
 
 
 class CognitionShutdown:
-    """Stops the sessions at shutdown, once. The evaluator's background tasks
-    ARE the sessions' tasks, so `cancel_in_flight` and the runner's `shutdown`
-    both cancel the same tasks: each is called and the second call of the whole
-    thing is a no-op, so a process that reaches shutdown twice does not cancel
-    twice.
+    """Stops the sessions at shutdown, once. The session tasks live on the
+    Dreamer lane (`SubconsciousExecutor` → `DreamerRuntime.dispatch`), so
+    the wait and the cancel go through the executor to their owner; the
+    runner's `shutdown` then waits for the cancelled sessions' outcome
+    writes. The second call of the whole thing is a no-op, so a process
+    that reaches shutdown twice does not cancel twice.
 
     The wake loop is already stopped by the time this runs (`App.run` cancels
     every background task before `App.shutdown`), so no NEW wake starts while
@@ -455,8 +456,20 @@ class CognitionShutdown:
         if self._done:
             return
         self._done = True
-        await self._evaluator.wait_in_flight(self._grace)
-        await self._evaluator.cancel_in_flight()
+        # The lane owns the session tasks: wait and cancel there when the
+        # runner exposes it (the executor delegates to `DreamerRuntime`),
+        # falling back to the evaluator's own hook-task bookkeeping for a
+        # wiring that never went through dispatch.
+        wait = getattr(self._runner, "wait_in_flight", None)
+        if wait is not None:
+            await wait(self._grace)
+        else:
+            await self._evaluator.wait_in_flight(self._grace)
+        cancel = getattr(self._runner, "cancel_in_flight", None)
+        if cancel is not None:
+            await cancel()
+        else:
+            await self._evaluator.cancel_in_flight()
         await self._runner.shutdown()
 
 

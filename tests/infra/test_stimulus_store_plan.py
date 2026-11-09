@@ -55,20 +55,45 @@ async def test_the_due_read_stays_on_the_pending_batch_as_history_grows(clean_pg
     generated history rather than trusted from `LIMIT` (node 18's acceptance:
     read work on generated history growing around a fixed pending batch).
 
-    `EXPLAIN ANALYZE`'s `rows=` per index scan is the rows the executor
-    actually ranged over. History (consumed-shaped rows: dated and due long
-    ago, or undated and recorded long ago — all below the watermark's bounds)
-    quadruples while the pending batch is held at three — one per branch of
-    the read: a post-watermark id, a dated row past the watermark's tick, and
-    an undated late commit recorded past its time. The row work the due read
-    performs must hold at the batch's size, not the history's."""
-    import re
+    `EXPLAIN ANALYZE`'s actual counters are the rows the executor really
+    ranged over — `Actual Rows` and `Actual Rows Removed by Filter`, times
+    `Actual Loops`, read off the JSON plan rather than the text's first
+    `rows=` (which is the planner's estimate, not the executor's count).
+    History (consumed-shaped rows: dated and due long ago, or undated and
+    recorded long ago — all below the watermark's bounds) quadruples while
+    the pending batch is held at three — one per branch of the read: a
+    post-watermark id, a dated row past the watermark's tick, and an undated
+    late commit recorded past its time. The row work the due read performs
+    must hold at the batch's size, not the history's. (What this does NOT
+    measure: the query's aggregate planner cost — the assertion is on
+    instrumented row visits alone.)"""
+    import json
     from datetime import UTC, datetime
 
     from nora.infra.sql.schema import STIMULUS
 
     def _at(ms: int) -> datetime:
         return datetime.fromtimestamp(ms / 1000, tz=UTC)
+
+    def _index_work(node: dict[str, Any]) -> tuple[int, int, bool]:
+        """`(rows returned, rows removed by filter, seq-scanned)` for every
+        index-scan node over `stimulus` — actual executor counts times
+        loops, walked recursively."""
+        out = removed = 0
+        seq = node.get("Node Type") == "Seq Scan" and node.get("Relation Name") == "stimulus"
+        if (
+            node.get("Node Type") in ("Index Scan", "Index Only Scan")
+            and node.get("Relation Name") == "stimulus"
+        ):
+            loops = int(node.get("Actual Loops", 1))
+            out += int(node.get("Actual Rows", 0)) * loops
+            removed += int(node.get("Actual Rows Removed by Filter", 0)) * loops
+        for child in node.get("Plans", ()):
+            o, r, s = _index_work(child)
+            out += o
+            removed += r
+            seq |= s
+        return out, removed, seq
 
     engine = create_sql_engine(clean_pg_url)
     through_ms, now_ms = NOW, NOW + 10**9
@@ -81,16 +106,12 @@ async def test_the_due_read_stays_on_the_pending_batch_as_history_grows(clean_pg
                   compile_kwargs={"literal_binds": True}))
         async with engine.connect() as conn:
             await conn.execute(sa.text("SET enable_seqscan = off"))
-            plan = (await conn.exec_driver_sql(
-                "EXPLAIN (ANALYZE, FORMAT TEXT) " + sql)).all()
-        text = "\n".join(r[0] for r in plan)
-        assert "Seq Scan on stimulus" not in text
-        return sum(
-            int(m.group(1)) for line in text.splitlines()
-            if ("Index Scan" in line or "Index Only Scan" in line)
-            and "stimulus" in line and "actual" in line
-            for m in [re.search(r"rows=(\d+)", line)] if m
-        )
+            raw = (await conn.exec_driver_sql(
+                "EXPLAIN (ANALYZE, FORMAT JSON) " + sql)).scalar_one()
+        plan = json.loads(raw) if isinstance(raw, str) else raw
+        out, removed, seq = _index_work(plan[0]["Plan"])
+        assert not seq
+        return out + removed
 
     async def populate(history: int) -> int:
         """`history` consumed-shaped rows, then a fixed pending batch of

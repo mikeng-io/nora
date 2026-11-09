@@ -1116,6 +1116,11 @@ class DreamerRuntime:
         # shape the transport strips reasoning from, so a runtime that holds the
         # watch reports it.
         self._reasoning_strip_store = reasoning_strip_store
+        #: The SESSION lane (node 18): unit key -> the session task this
+        #: boundary admitted and owns. `dispatch` is the only writer;
+        #: `in_flight` is the in-process half of single-flight;
+        #: `wait_in_flight`/`cancel_in_flight` are the shutdown path.
+        self._lane: dict[str, asyncio.Task[DreamOutcome]] = {}
 
     def budget_for(self, adaptor_name: str) -> AdaptorBudget:
         return self._budgets.get(adaptor_name, self._default_budget)
@@ -1316,6 +1321,66 @@ class DreamerRuntime:
             adaptor, "ok", 0, sha,
             getattr(result, "stop_reason", None), started,
         )
+
+    # -- the session lane (node 18): admission, occupancy, cancellation -----
+    #
+    # `run` is the awaited shape `dream_loop` drives; `dispatch` is the
+    # subconscious boundary a WAKE hands a session to. It is one method on
+    # this same runtime rather than a second runtime, because the claim the
+    # design makes is that the Dreamer — not the wake evaluator, not the
+    # session runner — owns admission, the task and its cancellation for
+    # subconscious work.
+
+    def in_flight(self, key: str) -> bool:
+        """Whether the lane holds a live session task for `key` — the
+        in-process half of single-flight, asked of the owner that can answer
+        it."""
+        task = self._lane.get(key)
+        return task is not None and not task.done()
+
+    def dispatch(
+        self, *, adaptor: DreamAdaptor, key: str,
+    ) -> asyncio.Task[DreamOutcome] | None:
+        """Admit one session-shaped run for `key` and return the OWNED task —
+        the subconscious execution boundary (node 18).
+
+        Returns `None` when `key` is already admitted in this process: a
+        second dispatch is refused, never double-booked (the durable
+        single-flight claim stays the stimulus store's wake row; this is the
+        in-process occupancy that shadows it). The task runs
+        `run(adaptor, key)` and is registered on `_lane` before the caller
+        sees it, so the caller hands over the adaptor and never holds a
+        coroutine it could await — or cancel — on its own.
+        """
+        if self.in_flight(key):
+            return None
+        task = asyncio.ensure_future(self.run(adaptor=adaptor, key=key, batch=()))
+        self._lane[key] = task
+
+        def _done(finished: asyncio.Task[DreamOutcome]) -> None:
+            if self._lane.get(key) is finished:
+                del self._lane[key]
+
+        task.add_done_callback(_done)
+        return task
+
+    async def wait_in_flight(self, timeout_seconds: float) -> None:
+        """Give every admitted session task up to `timeout_seconds` to finish
+        — the shutdown path's grace, owned beside the lane it waits on."""
+        tasks = tuple(t for t in self._lane.values() if not t.done())
+        if tasks:
+            await asyncio.wait(tasks, timeout=timeout_seconds)
+
+    async def cancel_in_flight(self) -> None:
+        """Cancel every admitted session task and wait for them to unwind —
+        the boundary that created them is the boundary that cancels them
+        (node 18: cancellation is owned with the task). A cancelled session
+        records its own `cancelled` while it unwinds."""
+        tasks = tuple(self._lane.values())
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _run_body(
         self, *, adaptor: DreamAdaptor, key: str, batch: Sequence[TranscriptRow]
@@ -1660,75 +1725,35 @@ class DreamerRuntime:
             # holds, never a second `ToolRegistry` instance.
             param_names=self._tools.tool_param_names(),
         )
-        # One per SAMPLE, beside the guard and for the same reason: it holds this
-        # sample's own call counts, and a shared one would fold N samples into a
-        # single row whose denominator no longer describes any loop that ran.
-        # `path` carries the adaptor by name; `tag_id` stays None because a
-        # Dreamer run has no tag, and the column is nullable so the absence can be
-        # recorded as an absence.
-        watch = ReasoningStripWatch(
-            path=dreamer_path(adaptor.name),
-            store=self._reasoning_strip_store,
-            metrics=self._metrics,
-        )
         try:
-            agent = factory.create_dream_agent(
-                model=self._models.create(),
-                system_prompt=instructions_text,
-                tools=tools,
-                guard=guard,
-                reasoning_watch=watch,
+            # `_invoke_once`, the same create/invoke/deadline path the
+            # session shape takes (node 30: one model-invocation route).
+            # The watch and its per-sample flush live inside it; the
+            # translations below are this caller's contract: a timeout is
+            # "(None, 'timeout')", any other failure "(None, None)",
+            # counted by the caller, never raised.
+            _agent, _baseline, result = await self._invoke_once(
+                system_prompt=instructions_text, prompt=prompt, tools=tools,
+                guard=guard, budget=budget,
                 trace_attributes={
                     "dreamer.adaptor": adaptor.name,
                     "dreamer.key": key,
                     "dreamer.objective": adaptor.objective,
                     "dreamer.instruction_sha256": sha,
                 },
-                retry=self._retry,
                 agent_name=f"dreamer:{adaptor.name}",
             )
-            # A room-scoped pass can replay `media_fetch`; its describer must see
-            # THIS pass's ceiling, not the `[llm]` loop it was built from.
-            with turn_deadline(budget.timeout_seconds):
-                result = await asyncio.wait_for(
-                    factory.invoke(
-                        agent, prompt, invocation_state={},
-                        limits=factory.build_limits(
-                            output_tokens=budget.output_tokens,
-                            turns=budget.turns,
-                            total_tokens=budget.total_tokens,
-                        ),
-                    ),
-                    timeout=budget.timeout_seconds,
-                )
         except TimeoutError:
             log.error(
                 "dream run timed out after %.0fs (adaptor=%s key=%s)",
                 budget.timeout_seconds, adaptor.name, key,
             )
-            await watch.flush()
             return None, "timeout"
         except Exception:
             log.exception(
                 "dream run failed (adaptor=%s key=%s)", adaptor.name, key,
             )
-            await watch.flush()
             return None, None
-        # On every exit, including the two above: a sample that timed out is still
-        # a sample whose loop made model calls, and those are the calls least
-        # visible from anywhere else. Written out three times rather than hidden
-        # in a `finally`, because awaiting in a `finally` on a cancelled task
-        # re-raises out of the cleanup path, and a record of something that has
-        # already happened must never change how a run ends. `flush` is
-        # idempotent.
-        #
-        # BOUNDED INSIDE `flush`, for `_bounded_store_call`'s reason one method
-        # over: a dream run holds its unit and a wedged store does not raise. This
-        # one is NOT inside `store_bound_for`'s arithmetic: it is not an adaptor
-        # store phase and carries its own, smaller, bound
-        # (`ReasoningStripWatch.DEFAULT_WRITE_TIMEOUT_SECONDS`), because one INSERT
-        # is not a render's worth of reads.
-        await watch.flush()
         stop_reason = getattr(result, "stop_reason", None)
         if stop_reason is not None:
             self._metrics.inc(
@@ -1876,86 +1901,125 @@ class DreamerRuntime:
         max_trace_chars: int, reservation: TokenReservation | None,
         spend: Any,
     ) -> AgentRunResult:
-        """One bounded agent loop: create the agent, invoke it inside the
-        deadline and the reservation, then read its usage and its trace —
-        on EVERY exit, failure and cancellation included, because a failed
-        session is the costliest kind and its usage lives in the agent.
+        """One bounded agent loop: `_invoke_once` creates the agent and runs
+        it inside the deadline and the reservation, then this reads its
+        usage and its trace — on EVERY exit, failure and cancellation
+        included, because a failed session is the costliest kind and its
+        usage lives in the agent.
 
         It RAISES on failure, the session contract (`CognitionAgentRunner`'s):
         a timed-out or errored loop is not a session that returned, and only
         a loop that returned may close its items."""
-        watch = ReasoningStripWatch(
-            path=dreamer_path(agent_name), store=self._reasoning_strip_store,
-            metrics=self._metrics,
-        )
         recording = TurnRecording()
-        agent = factory.create_dream_agent(
-            model=self._models.create(), system_prompt=system_prompt,
-            tools=tools, guard=guard, reasoning_watch=watch,
-            trace_attributes=dict(trace_attributes), retry=self._retry,
-            agent_name=agent_name,
-            tool_hooks=(
-                (recording, reservation) if reservation is not None
-                else (recording,)
-            ),
-        )
-        baseline = len(getattr(agent, "messages", ()))
+        agent: Any = None
+        baseline = 0
         result: Any = None
-        stop_reason: str | None = None
         try:
-            try:
-                with turn_deadline(budget.timeout_seconds):
-                    result = await asyncio.wait_for(
-                        factory.invoke(
-                            agent, prompt, invocation_state={},
-                            limits=factory.build_limits(
-                                output_tokens=budget.output_tokens,
-                                turns=budget.turns,
-                                total_tokens=budget.total_tokens,
-                            ),
-                        ),
-                        timeout=budget.timeout_seconds,
-                    )
-                stop_reason = (
-                    "limit_total_tokens"
-                    if reservation is not None and reservation.stopped
-                    else getattr(result, "stop_reason", None)
+            agent, baseline, result = await self._invoke_once(
+                system_prompt=system_prompt, prompt=prompt, tools=tools,
+                guard=guard, budget=budget, trace_attributes=trace_attributes,
+                agent_name=agent_name,
+                tool_hooks=(
+                    (recording, reservation) if reservation is not None
+                    else (recording,)
+                ),
+            )
+            stop_reason = (
+                "limit_total_tokens"
+                if reservation is not None and reservation.stopped
+                else getattr(result, "stop_reason", None)
+            )
+            if stop_reason is not None:
+                self._metrics.inc(
+                    "nora_dream_stop_reason_total",
+                    adaptor=agent_name, reason=str(stop_reason),
                 )
-                if stop_reason is not None:
-                    self._metrics.inc(
-                        "nora_dream_stop_reason_total",
-                        adaptor=agent_name, reason=str(stop_reason),
-                    )
-            except BaseException:
-                # Flushed here rather than in `finally`: an await in `finally`
-                # on a cancelled task re-raises out of the cleanup path, and a
-                # record of something that already happened must never change
-                # how a run ends. `flush` is idempotent.
-                await watch.flush()
-                raise
-            await watch.flush()
         finally:
             # The trace and the spend, on EVERY exit: a failed, timed-out or
             # cancelled loop is the costliest kind and its usage lives in the
             # agent even when no result came back. Sync work only — nothing
-            # here may await, for the reason the flush comment gives.
-            trace = extract_tag_trace(
-                agent, baseline=baseline,
-                tag_id=str(trace_attributes.get("cognition.session_id", "")),
-                conversation_id="", transcript=(), outcome="silent",
-                max_chars=max_trace_chars, metrics=self._metrics,
+            # here may await, for the reason `_invoke_once`'s flush comment
+            # gives. `agent` may not exist (a `create_dream_agent` failure)
+            # — nothing to extract then.
+            trace = (
+                extract_tag_trace(
+                    agent, baseline=baseline,
+                    tag_id=str(trace_attributes.get("cognition.session_id", "")),
+                    conversation_id="", transcript=(), outcome="silent",
+                    max_chars=max_trace_chars, metrics=self._metrics,
+                )
+                if agent is not None else None
             )
             requirements = recording.to_json()
             total = (
                 reservation.spent if reservation is not None
                 else _total_tokens(result) if result is not None
-                else _usage(_agent_usage(agent))
+                else _usage(_agent_usage(agent)) if agent is not None
+                else None
             )
-            _fill_spend(spend, total, tuple(trace.messages), requirements)
+            _fill_spend(
+                spend, total,
+                () if trace is None else tuple(trace.messages), requirements,
+            )
         return AgentRunResult(
             stop_reason=stop_reason, total_tokens=total,
-            messages=tuple(trace.messages), requirements=requirements,
+            messages=() if trace is None else tuple(trace.messages),
+            requirements=requirements,
         )
+
+    async def _invoke_once(
+        self, *, system_prompt: str, prompt: str, tools: list[Any],
+        guard: DreamGuard, budget: AdaptorBudget,
+        trace_attributes: Mapping[str, str], agent_name: str,
+        tool_hooks: Sequence[Any] = (),
+    ) -> tuple[Any, int, Any]:
+        """THE one model invocation (node 30): create the agent under this
+        call's guard and run it inside `budget`'s deadline and limits —
+        `_invoke_agent` (the session path) and `_sample` (the envelope
+        path) both come through here, so there is exactly one
+        `create_dream_agent`/`factory.invoke` spelling in the runtime.
+
+        Returns `(agent, baseline, result)`: `baseline` is the agent's
+        message count before the loop, for a caller's trace extraction.
+        RAISES on timeout, failure and cancellation — translating those is
+        the caller's contract (`_sample` counts them, `_invoke_agent`
+        propagates them). The reasoning watch is flushed on EVERY exit,
+        success included, before the exception propagates or the result
+        returns.
+        """
+        watch = ReasoningStripWatch(
+            path=dreamer_path(agent_name), store=self._reasoning_strip_store,
+            metrics=self._metrics,
+        )
+        agent = factory.create_dream_agent(
+            model=self._models.create(), system_prompt=system_prompt,
+            tools=tools, guard=guard, reasoning_watch=watch,
+            trace_attributes=dict(trace_attributes), retry=self._retry,
+            agent_name=agent_name, tool_hooks=tuple(tool_hooks),
+        )
+        baseline = len(getattr(agent, "messages", ()))
+        try:
+            with turn_deadline(budget.timeout_seconds):
+                result = await asyncio.wait_for(
+                    factory.invoke(
+                        agent, prompt, invocation_state={},
+                        limits=factory.build_limits(
+                            output_tokens=budget.output_tokens,
+                            turns=budget.turns,
+                            total_tokens=budget.total_tokens,
+                        ),
+                    ),
+                    timeout=budget.timeout_seconds,
+                )
+        except BaseException:
+            # Flushed here rather than in `finally`: an await in `finally`
+            # on a cancelled task re-raises out of the cleanup path, and a
+            # record of something that already happened must never change
+            # how a run ends. `flush` is idempotent.
+            await watch.flush()
+            raise
+        await watch.flush()
+        return agent, baseline, result
 
 
 def as_strands_tools(*tool_groups: Sequence[Any]) -> list[Any]:

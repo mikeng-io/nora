@@ -153,12 +153,20 @@ class InMemoryStimulusStore:
         mark = Watermark.of(mark_wake)
         # The range read: the watermark's OWN test (id and time), which does not
         # know the wake's `unclaimed` list, limited like the SQL read.
-        pending = [
+        # `eligible_ms`, not `pending_tick`: a dated stimulus is pending from
+        # its due tick's boundary, an undated one from its exact recorded_at —
+        # a 90000 recording is not pending at 88000 (node 18).
+        eligible = [
             s for s in self.stimuli
             if s.unit == unit and s.id not in self.uncommitted and self._live(s.id)
-            and s.pending_tick <= tick_of_ms(now_ms)
+            and s.eligible_ms <= now_ms
             and not (s.id <= mark.through_stimulus_id and _consumed_by(s, mark))
-        ][:limit]
+        ]
+        pending = eligible[:limit]
+        # The raw read is bounded: what it cut is invisible unless named —
+        # `SqlStimulusStore.view`'s `pending_ids_after` continuation is the
+        # same fetch, and `over` carries both sets of cut ids to `decide`.
+        unseen = [s.id for s in eligible[limit:]]
         current: dict[int, NewCarry] = {}
         for _, wake_id, carry in self.carries:
             if carry.unit == unit and self._counted(wake_id):
@@ -177,7 +185,7 @@ class InMemoryStimulusStore:
                 waits = s.id in carried and carried[s.id].waits
                 pending.append(replace(s, waits=True) if waits else s)
         pending.sort(key=lambda x: x.id)
-        over = tuple(s.id for s in pending[limit:])
+        over = tuple(sorted({*unseen, *(s.id for s in pending[limit:])}))
         del pending[limit:]
         activity = [
             s.recorded_at_ms for s in self.stimuli

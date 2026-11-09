@@ -63,10 +63,12 @@ _VIEW = UnitView(unit="u1", pending=(), last_activity_ms=None, last_wake=None)
 
 
 async def test_an_admitted_wake_runs_the_session_through_the_dreamer():
-    """The positive composition: hook -> runtime.run -> session_run ->
-    runner.on_wake, with the unit as the Dreamer key."""
+    """The positive composition: hook -> runtime.dispatch -> lane task ->
+    runtime.run -> session_run -> runner.on_wake, with the unit as the
+    Dreamer key — and the task lives ON the lane while it runs."""
     runner = _Runner(result=SimpleNamespace(stop_reason="end_turn"))
-    executor = _executor(_runtime(), runner)
+    runtime = _runtime()
+    executor = _executor(runtime, runner)
     outcome = await executor.wake_hook(
         unit="u1", view=_VIEW, now_ms=1_700_000_000_000, wake_id=7,
     )
@@ -74,31 +76,82 @@ async def test_an_admitted_wake_runs_the_session_through_the_dreamer():
     runner.on_wake.assert_awaited_once_with(
         unit="u1", view=_VIEW, now_ms=1_700_000_000_000, wake_id=7,
     )
+    assert not runtime.in_flight("u1")
+
+
+async def _running(runtime: DreamerRuntime, runner: _Runner, unit: str) -> None:
+    """Wait until the lane's task has actually entered the session body —
+    `in_flight` is true the moment `dispatch` stores the task, which is
+    before `session_run` reaches `on_wake`."""
+    for _ in range(1000):
+        if runtime.in_flight(unit) and runner.on_wake.await_count:
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("the session never entered on_wake")
+
+
+async def test_the_lane_admits_once_and_a_second_wake_is_refused():
+    """Occupancy is the Dreamer's, not the hook's: while the session task
+    is on the lane a second `_on_wake` dispatches nothing and the session
+    body is not entered again."""
+    runner = _Runner(block=True)
+    runtime = _runtime()
+    executor = _executor(runtime, runner)
+    first = asyncio.create_task(executor._on_wake(
+        unit="u1", view=_VIEW, now_ms=0, wake_id=1))
+    await _running(runtime, runner, "u1")
+    assert executor.in_flight("u1")
+    refused = await executor._on_wake(unit="u1", view=_VIEW, now_ms=0, wake_id=2)
+    assert refused is None
+    assert runner.on_wake.await_count == 1
+    await runtime.cancel_in_flight()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    assert not runtime.in_flight("u1")
+
+
+async def test_the_lane_cancels_the_session_once():
+    """`cancel_in_flight` — not the evaluator, not the runner — cancels the
+    session task; the session sees `CancelledError` through `session_run`."""
+    runner = _Runner(block=True)
+    runtime = _runtime()
+    executor = _executor(runtime, runner)
+    task = asyncio.create_task(executor._on_wake(
+        unit="u1", view=_VIEW, now_ms=0, wake_id=9))
+    await _running(runtime, runner, "u1")
+    await runtime.cancel_in_flight()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert runner.on_wake.await_count == 1
+    assert not runtime.in_flight("u1")
 
 
 async def test_the_session_body_is_not_reachable_without_run():
-    """The negative: `runtime.run` is the door — an executor whose runtime
-    never dispatches executes nothing, and `build_cognition_runner` refuses
+    """The negative: `dispatch` is the only door — an executor whose runtime
+    refuses admission executes nothing, and `build_cognition_runner` refuses
     to wire Cognition without the composition's DreamerRuntime."""
     runner = _Runner()
     calls: list[dict[str, Any]] = []
 
-    class _RecordsDispatch:
-        async def run(self, **kw: Any) -> Any:
+    class _RefusesDispatch:
+        def dispatch(self, **kw: Any) -> Any:
             calls.append(kw)
+            return None
 
     executor = SubconsciousExecutor(
-        runtime=_RecordsDispatch(),  # type: ignore[arg-type]
+        runtime=_RefusesDispatch(),  # type: ignore[arg-type]
         runner=runner,
     )
-    await executor._on_wake(unit="u1", view=_VIEW, now_ms=0, wake_id=1)
-    # The ONLY thing the hook did was hand `runtime.run` a session-shaped
-    # adaptor: no session work happens anywhere else, so `on_wake` itself
-    # was never called — dispatch is the runtime's, not the hook's.
+    assert await executor._on_wake(unit="u1", view=_VIEW, now_ms=0, wake_id=1) is None
+    # The ONLY thing the hook did was offer `dispatch` a session-shaped
+    # adaptor keyed on the unit: no task was launched anywhere else, so
+    # `on_wake` itself was never called — dispatch is the runtime's, not
+    # the hook's.
     assert len(calls) == 1
     adaptor = calls[0]["adaptor"]
     assert isinstance(adaptor, CognitionSessionAdaptor)
     assert adaptor.uses_watermark is False
+    assert calls[0]["key"] == "u1"
     runner.on_wake.assert_not_awaited()
 
     from nora.app.cognition_wiring import build_cognition_runner
@@ -119,19 +172,74 @@ async def test_the_session_body_is_not_reachable_without_run():
 
 
 async def test_a_cancelled_session_propagates_cancelled_error_once():
-    """Cancel the `runtime.run` task mid-session: the session sees
-    `CancelledError` (recorded `cancelled` by its own finish), and
-    `_run_session_body` re-raises rather than degrading to `unavailable`."""
+    """Cancel the wake task mid-session: the cancellation reaches the lane
+    task, the session sees `CancelledError` (recorded `cancelled` by its
+    own finish), and `_run_session_body` re-raises rather than degrading
+    to `unavailable`."""
     runner = _Runner(block=True)
-    executor = _executor(_runtime(), runner)
+    runtime = _runtime()
+    executor = _executor(runtime, runner)
     task = asyncio.create_task(executor.wake_hook(
         unit="u1", view=_VIEW, now_ms=0, wake_id=9,
     ))
-    await asyncio.sleep(0)
+    await _running(runtime, runner, "u1")
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
     assert runner.on_wake.await_count == 1
+    assert not runtime.in_flight("u1")
+
+
+async def test_a_composed_tick_reaches_the_session_only_through_the_lane():
+    """The real lifecycle: `WakeEvaluator.tick` writes the wake and spawns
+    the bound hook; the hook's ONLY move is `runtime.dispatch`; the lane
+    task runs the session. The evaluator's own `_background` bookkeeping
+    holds the hook task; the session task is the Dreamer's."""
+    from zoneinfo import ZoneInfo
+
+    from nora.app.wake import WakeEvaluator
+    from nora.domain.stimuli import NewStimulus, WakePolicy
+    from nora.testing.stimuli import InMemoryStimulusStore
+
+    class _Clock:
+        def __init__(self, ms: int) -> None:
+            self.ms = ms
+
+        def __call__(self) -> float:
+            return self.ms / 1000
+
+    clock = _Clock(1_700_000_000_000)
+    store = InMemoryStimulusStore()
+    runner = _Runner(result=SimpleNamespace(stop_reason="end_turn"))
+    runtime = _runtime()
+    executor = _executor(runtime, runner)
+    ev = WakeEvaluator(
+        store=store, units=lambda: ("u1",), metrics=Metrics(),
+        policy=WakePolicy(
+            quiet_seconds=0, cue_quiet_seconds=0, batch_max=10,
+            max_age_seconds=3600, cooldown_seconds=0,
+            max_concurrent_sessions=2, session_seconds=60,
+        ),
+        floors=(), tz=ZoneInfo("Asia/Hong_Kong"), clock=clock,
+        settle_seconds=0.0, on_wake=executor.wake_hook, upcoming=None,
+    )
+    await store.append(stimulus=NewStimulus(
+        unit="u1", kind="message", item="message", ref="messages:1",
+        at_ms=clock.ms,
+    ), recorded_at_ms=clock.ms)
+    marks = await ev.tick()
+    assert marks, "the stimulus must produce a wake"
+    # The hook task and the lane task are two hops of scheduling: wait on the
+    # SESSION running, bounded, not on either task's existence.
+    for _ in range(1000):
+        if runner.on_wake.await_count:
+            break
+        await asyncio.sleep(0)
+    await runtime.wait_in_flight(5.0)
+    assert runner.on_wake.await_count == 1
+    kwargs = runner.on_wake.await_args.kwargs
+    assert kwargs["unit"] == "u1" and kwargs["wake_id"] >= 1
+    assert not runtime.in_flight("u1")
 
 
 async def test_the_executor_shutdown_is_the_runners_once():
@@ -162,6 +270,20 @@ def test_datetime_and_ms_arithmetic_agree():
     off = at + timedelta(seconds=30)
     assert due_tick_of_at(off) == due_tick_of_ms(int(off.timestamp() * 1000))
     assert tick_start_ms(tick_of_at(at)) == int(at.timestamp() * 1000)
+
+
+def test_the_drivers_wait_to_a_cadence_boundary_not_a_fixed_interval():
+    """`seconds_to_boundary` is what heartbeat, wake and dream loops sleep
+    on: a wait that ends ON the next multiple of the interval in epoch time,
+    so a slow pass advances phase rather than drifting it."""
+    from nora.domain.ticks import seconds_to_boundary
+
+    # 40s into the minute -> 20s to the boundary.
+    assert seconds_to_boundary(60, at=1_800_000_040.0) == pytest.approx(20.0)
+    # Exactly ON the boundary -> the full interval (sleeping 0 would busy-fire).
+    assert seconds_to_boundary(60, at=1_800_000_000.0) == pytest.approx(60.0)
+    # A fractional phase is preserved, not rounded.
+    assert seconds_to_boundary(60, at=1_800_000_000.25) == pytest.approx(59.75)
 
 
 async def test_the_fake_reminder_store_spells_the_same_tick_the_column_computes():

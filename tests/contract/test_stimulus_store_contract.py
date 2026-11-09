@@ -290,6 +290,89 @@ async def test_a_due_row_the_merged_bound_cut_is_named_unclaimed(store):
     assert view.pending == ()
 
 
+async def test_the_raw_pending_bound_names_what_it_cut(store):
+    """The independent reviewer's loss: three self-wakes share a due tick; a
+    message wake pushes the watermark past ALL of them while still future.
+    At the boundary, `limit=1` returns the first — and the raw read's bound
+    alone would drop the other two, which the next wake's high watermark
+    would then eat unseen. `view.over` must name them, `decide` must carry
+    them unclaimed, and they must still be pending after the wake."""
+    from nora.domain.stimuli import WakePolicy, decide
+    from nora.domain.ticks import due_tick_of_ms
+
+    policy = WakePolicy(quiet_seconds=0, cooldown_seconds=0, session_seconds=0)
+    due = NOW + 30_000
+    boundary = due_tick_of_ms(due) * 60_000
+    s1 = await store.append(stimulus=_kind("self", "wake:1", at=NOW, due=due),
+                            recorded_at_ms=NOW)
+    s2 = await store.append(stimulus=_kind("self", "wake:2", at=NOW, due=due),
+                            recorded_at_ms=NOW)
+    s3 = await store.append(stimulus=_kind("self", "wake:3", at=NOW, due=due),
+                            recorded_at_ms=NOW)
+    m4 = await store.append(stimulus=_msg("messages:4"), recorded_at_ms=NOW)
+    await store.record_wake(wake=_wake(m4, NOW + 10), recorded_at_ms=NOW + 10)
+    # The bound cuts s2 and s3 INSIDE the raw read — the merged `over` must
+    # still name both (the side door alone never saw them: they sit under
+    # the watermark, not in carry/unclaimed).
+    view = await store.view(unit=UNIT, mode="live", now_ms=boundary, limit=1)
+    assert [s.id for s in view.pending] == [s1]
+    assert set(view.over) == {s2, s3}
+    verdict = decide(view, policy, boundary)
+    assert verdict.reason is not None
+    assert set(verdict.unclaimed_ids) == {s2, s3}
+    await store.record_wake(wake=NewWake(
+        unit=UNIT, mode="live", reason=verdict.reason, from_stimulus_id=0,
+        through_stimulus_id=verdict.through_stimulus_id,
+        stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
+        oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False,
+        at_ms=boundary, unclaimed_ids=verdict.unclaimed_ids,
+    ), recorded_at_ms=boundary)
+    # The new watermark is past every id — the cut rows must still read
+    # pending, then be claimed by the next wake exactly once.
+    view = await store.view(unit=UNIT, mode="live", now_ms=boundary + 10, limit=100)
+    assert [s.id for s in view.pending] == [s2, s3]
+    verdict = decide(view, policy, boundary + 10)
+    await store.record_wake(wake=NewWake(
+        unit=UNIT, mode="live", reason=verdict.reason, from_stimulus_id=0,
+        through_stimulus_id=verdict.through_stimulus_id,
+        stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
+        oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False,
+        at_ms=boundary + 10, unclaimed_ids=verdict.unclaimed_ids,
+    ), recorded_at_ms=boundary + 10)
+    assert (await store.view(
+        unit=UNIT, mode="live", now_ms=boundary + 20, limit=100)).pending == ()
+
+
+async def test_an_undated_arrival_inside_the_cutoffs_tick_still_waits(store):
+    """Tick arithmetic is for DATED deadlines; undated provenance is exact.
+    Two commits in the same minute, the second stamped AFTER the wake's
+    `through_ms`: under the old floor(recorded/Q)<=floor(through/Q) rule the
+    second row was eaten before the settle margin could see it. Now it stays
+    pending, and a handled row is not resurrected by the same rule."""
+    await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
+    late = await store.append(stimulus=_msg("messages:2"), recorded_at_ms=NOW + 100)
+    await store.record_wake(wake=_wake(late, NOW + 50), recorded_at_ms=NOW + 50)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 200, limit=100)
+    assert [s.id for s in view.pending] == [late]
+    # Read again after another wake consumes the late row: `first` — handled —
+    # must not resurface however small the limit.
+    await store.record_wake(wake=_wake(late, NOW + 150), recorded_at_ms=NOW + 150)
+    assert (await store.view(
+        unit=UNIT, mode="live", now_ms=NOW + 300, limit=1)).pending == ()
+
+
+async def test_an_undated_stimulus_is_not_pending_before_its_recorded_instant(store):
+    """The other half of the exact-arrival rule: a row stamped 30s ahead —
+    inside the SAME tick — is not pending to a read taken before its instant.
+    `pending_tick <= tick(now)` admitted it early; `eligible_ms` does not."""
+    late = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW + 30_000)
+    assert NOW % 60_000 + 30_000 < 60_000, "the test must stay inside one tick"
+    assert (await store.view(
+        unit=UNIT, mode="live", now_ms=NOW + 29_999, limit=100)).pending == ()
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 30_000, limit=100)
+    assert [s.id for s in view.pending] == [late]
+
+
 async def test_last_activity_counts_message_stimuli_only(store):
     await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
     await store.append(

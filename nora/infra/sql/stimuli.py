@@ -59,16 +59,98 @@ def _ms(at: datetime) -> int:
     return round(at.timestamp() * 1000)
 
 
-#: `recorded_at` as epoch milliseconds, in SQL, for the pending read.
-_RECORDED_MS = sa.cast(
-    sa.func.round(sa.extract("epoch", STIMULUS.c.recorded_at) * 1000), sa.BigInteger,
-)
+def _branches(
+    *, unit: str, through_id: int, through_ms: int, now_ms: int,
+    columns: Sequence[Any],
+) -> Any:
+    """The pending read's three DISJOINT range reads as a UNION subquery —
+    shared by `pending_query` (rows, bounded) and `pending_ids_after` (ids
+    only, the continuation `view` runs when the bounded read filled).
 
-#: `recorded_at` as its tick (`nora.domain.ticks`), in SQL — what an undated
-#: stimulus is pending from, coalesced under `due_tick` below.
-_RECORDED_TICK = sa.cast(
-    sa.func.floor(sa.extract("epoch", STIMULUS.c.recorded_at) / 60), sa.BigInteger,
-)
+    ELIGIBILITY (`base`) splits on whether the row carries a deadline —
+    node 18: tick arithmetic applies to timed deadlines; an undated
+    stimulus keeps exact commit-order provenance:
+
+    - dated: `due_tick <= tick(now)` — `ceil(due_ms)`, generated — never
+      early.
+    - undated: `recorded_at <= now` at millisecond precision — a message
+      recorded at 90000 is NOT pending to a read at 88000, though both
+      floor to the same tick. Rounding arrivals to ticks would admit
+      same-minute items the cutoff has not reached yet.
+
+    NOT consumed — `NOT (id <= through_id AND pending_since <= through_ms)` —
+    is split into three range reads, each answered by its own index rather
+    than by walking a unit's whole history (`stimulus` is append-only and
+    grows forever): past the watermark's id (`idx_stimulus_unit_id`); at or
+    under it but due after its tick bound (`idx_stimulus_unit_due`); at or
+    under it, undated, and recorded after its time bound
+    (`idx_stimulus_unit_undated_recorded`, the late commit the evaluator's
+    settle margin exists for). `tests/infra/test_stimulus_store_plan.py` holds
+    the plan to those indexes."""
+    now_tick = tick_of_ms(now_ms)
+    through_tick = tick_of_ms(through_ms)
+    eligible = sa.or_(
+        sa.and_(
+            STIMULUS.c.due_ms.isnot(None),
+            STIMULUS.c.due_tick <= now_tick,
+        ),
+        sa.and_(
+            STIMULUS.c.due_ms.is_(None),
+            STIMULUS.c.recorded_at <= _at(now_ms),
+        ),
+    )
+    # A retracted `self` stimulus (its self-wake was cancelled, moved or
+    # superseded) is never pending.
+    base = (
+        STIMULUS.c.unit == unit,
+        eligible,
+        live_stimulus(STIMULUS.c.id),
+    )
+    under = STIMULUS.c.id <= through_id
+    return sa.union_all(
+        sa.select(*columns).where(*base, STIMULUS.c.id > through_id),
+        sa.select(*columns).where(*base, under, STIMULUS.c.due_tick > through_tick),
+        sa.select(*columns).where(
+            *base, under, STIMULUS.c.due_ms.is_(None),
+            STIMULUS.c.recorded_at > _at(through_ms),
+        ),
+    ).subquery("pending")
+
+
+def pending_query(
+    *, unit: str, through_id: int, through_ms: int, now_ms: int, limit: int,
+) -> sa.Select[Any]:
+    """The unit's stimuli not consumed by the watermark `(through_id,
+    through_ms)` and pending by `now_ms`, ascending id — `_branches`' union,
+    bounded."""
+    branches = _branches(
+        unit=unit, through_id=through_id, through_ms=through_ms, now_ms=now_ms,
+        columns=(STIMULUS,),
+    )
+    return sa.select(branches).order_by(branches.c.id.asc()).limit(limit)
+
+
+def pending_ids_after(
+    *, unit: str, through_id: int, through_ms: int, now_ms: int,
+    after_id: int, limit: int,
+) -> sa.Select[Any]:
+    """The SAME read as `pending_query`, ids only, continuing past
+    `after_id`: what `view` fetches when the bounded read filled — every
+    eligible id the bound cut, so `UnitView.over` can name them and the
+    watermark leaves them pending (`decide`'s unclaimed list). Bounded per
+    statement (`limit` rows a page); the total is the unit's pending
+    backlog, which the wake must name regardless — the bound caps what a
+    read SHOWS, never what it may silently consume."""
+    branches = _branches(
+        unit=unit, through_id=through_id, through_ms=through_ms, now_ms=now_ms,
+        columns=(STIMULUS.c.id,),
+    )
+    return (
+        sa.select(branches.c.id)
+        .where(branches.c.id > after_id)
+        .order_by(branches.c.id.asc())
+        .limit(limit)
+    )
 
 
 def _stimulus(r: Any) -> Stimulus:
@@ -133,53 +215,6 @@ def live_stimulus(stimulus_id: Any) -> Any:
     return ~sa.exists().where(STIMULUS_RETRACTION.c.stimulus_id == stimulus_id)
 
 
-def pending_query(
-    *, unit: str, through_id: int, through_ms: int, now_ms: int, limit: int,
-) -> sa.Select[Any]:
-    """The unit's stimuli not consumed by the watermark `(through_id,
-    through_ms)` and pending by `now_ms`, ascending id.
-
-    The time bounds are TICKS (`nora.domain.ticks`, node 18): a stimulus is
-    pending from its `due_tick` — `ceil(due_ms)`, generated — or the tick of
-    its `recorded_at` when undated, and is eligible while that tick is at or
-    under the current one. The watermark's bound compares the same way:
-    a dated stimulus escapes consumption when its due tick is past the
-    watermark's tick (`due_tick > floor(through_ms)`) — an undated one when
-    its real `recorded_at` is past `through_ms`, unchanged (the late-commit
-    branch keeps real instants because it is about commit ORDER, not a
-    deadline).
-
-    NOT consumed — `NOT (id <= through_id AND pending_since <= through_ms)` —
-    is split into three DISJOINT range reads, each answered by its own index
-    rather than by walking a unit's whole history (`stimulus` is append-only
-    and grows forever): past the watermark's id (`idx_stimulus_unit_id`); at or
-    under it but due after its tick bound (`idx_stimulus_unit_due`); at or
-    under it, undated, and recorded after its time bound
-    (`idx_stimulus_unit_undated_recorded`, the late commit the evaluator's
-    settle margin exists for). `tests/infra/test_stimulus_store_plan.py` holds
-    the plan to those indexes."""
-    now_tick = tick_of_ms(now_ms)
-    through_tick = tick_of_ms(through_ms)
-    since_tick = sa.func.coalesce(STIMULUS.c.due_tick, _RECORDED_TICK)
-    # A retracted `self` stimulus (its self-wake was cancelled, moved or
-    # superseded) is never pending.
-    base = (
-        STIMULUS.c.unit == unit,
-        since_tick <= now_tick,
-        live_stimulus(STIMULUS.c.id),
-    )
-    under = STIMULUS.c.id <= through_id
-    branches = sa.union_all(
-        sa.select(STIMULUS).where(*base, STIMULUS.c.id > through_id),
-        sa.select(STIMULUS).where(*base, under, STIMULUS.c.due_tick > through_tick),
-        sa.select(STIMULUS).where(
-            *base, under, STIMULUS.c.due_ms.is_(None),
-            STIMULUS.c.recorded_at > _at(through_ms),
-        ),
-    ).subquery("pending")
-    return sa.select(branches).order_by(branches.c.id.asc()).limit(limit)
-
-
 def activity_query(*, unit: str) -> sa.Select[Any]:
     """The `recorded_at` of the unit's newest person-authored item; one probe
     of `idx_stimulus_unit_message_recorded`."""
@@ -224,6 +259,12 @@ def _mark_query(*, unit: str, mode: str, stale_before_ms: int | None) -> sa.Sele
 #: streak is capped by it, and every consumer of the streak acts long before
 #: (`WakePolicy.max_consecutive_failures`), so it only has to exceed that.
 FAILURE_LOOKBACK = 64
+
+#: One page of the bounded id-continuation `view` runs when the raw pending
+#: read fills its bound (`pending_ids_after`): large enough that the
+#: continuation is one round trip for any plausible backlog, small enough
+#: that each statement stays bounded.
+_OVER_PAGE = 8192
 
 
 def _recent_wakes_query(unit: str, mode: str) -> sa.Select[Any]:
@@ -393,6 +434,27 @@ class SqlStimulusStore:
                 through_ms=mark.through_ms, now_ms=now_ms, limit=limit,
             )
             pending = [_stimulus(r) for r in (await conn.execute(pending_q)).all()]
+            # The raw read is BOUNDED; a full bound means eligible rows the
+            # read never fetched may still sit under the id range the next
+            # wake consumes. They cannot be left invisible: `decide` names
+            # `UnitView.over` unclaimed, so the same read continues — ids
+            # only, page by page — until it drains. `InMemoryStimulusStore`
+            # spells the same rule; the contract suite binds them.
+            unseen: list[int] = []
+            if len(pending) == limit:
+                after = pending[-1].id if pending else 0
+                while True:
+                    page = [
+                        int(r.id) for r in (await conn.execute(pending_ids_after(
+                            unit=unit, through_id=mark.through_stimulus_id,
+                            through_ms=mark.through_ms, now_ms=now_ms,
+                            after_id=after, limit=_OVER_PAGE,
+                        ))).all()
+                    ]
+                    unseen.extend(page)
+                    if len(page) < _OVER_PAGE:
+                        break
+                    after = page[-1]
             carry_rows = (await conn.execute(_carry_query(unit))).all()
             carry = {int(r.stimulus_id): int(r.strike) for r in carry_rows}
             waiting = {int(r.stimulus_id) for r in carry_rows if r.waits}
@@ -422,9 +484,10 @@ class SqlStimulusStore:
             # everything shown — but a wake's `through_stimulus_id` is at least
             # the watermark it read, which may sit ABOVE a cut stimulus, so the
             # cut ids are returned in `UnitView.over` for `decide` to name
-            # unclaimed (the watermark leaves them pending).
+            # unclaimed (the watermark leaves them pending). `unseen` joins
+            # them: the ids the RAW bound cut before the merge ever ran.
             pending.sort(key=lambda x: x.id)
-            over = tuple(s.id for s in pending[limit:])
+            over = tuple(sorted({*unseen, *(s.id for s in pending[limit:])}))
             del pending[limit:]
             activity_q = activity_query(unit=unit)
             activity = (await conn.execute(activity_q)).scalar_one_or_none()

@@ -65,7 +65,7 @@ from dataclasses import dataclass, field
 from typing import Literal, Protocol, get_args
 
 from .cues import is_rearming, is_strong
-from .ticks import due_tick_of_ms, tick_of_ms
+from .ticks import due_tick_of_ms, tick_of_ms, tick_start_ms
 
 #: The stimulus kinds. The evaluator handles all of them generically; each is
 #: raised by its own producer (ingest for `message`, the evaluator for `time`,
@@ -162,11 +162,30 @@ class Stimulus:
         """The tick this stimulus is first eligible in (`nora.domain.ticks`):
         the due tick of its `due_ms` — the first minute boundary at or after
         the due instant — or the tick it was recorded in (an undated stimulus
-        is pending at once). The ONE eligibility arithmetic the SQL pending
-        read (`stimulus.due_tick`, generated) and the in-memory store share."""
+        is pending at once). NOTE the distinction this names: for an undated
+        stimulus the tick is the tick its eligibility LANDS IN, not when it
+        starts — `eligible_ms` holds the exact instant eligibility begins,
+        and eligibility reads use it."""
         return (
             due_tick_of_ms(self.due_ms) if self.due_ms is not None
             else tick_of_ms(self.recorded_at_ms)
+        )
+
+    @property
+    def eligible_ms(self) -> int:
+        """The first instant this stimulus may be read pending — the exact
+        eligibility rule the SQL `base` predicate and the in-memory store
+        share (node 18: tick arithmetic applies to timed deadlines; commit-
+        order provenance stays exact).
+
+        - dated: the START of its due tick — `tick_start(due_tick) <= now`
+          is `due_tick <= tick(now)`, so a deadline is pending from the
+          minute boundary it rounds up to, never before.
+        - undated: its real `recorded_at` — a stimulus recorded at 90000 is
+          not pending to a read at 88000, though both floor to tick 1."""
+        return (
+            tick_start_ms(due_tick_of_ms(self.due_ms))
+            if self.due_ms is not None else self.recorded_at_ms
         )
 
 

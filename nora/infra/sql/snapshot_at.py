@@ -477,11 +477,20 @@ def _same_database(a: str, b: str) -> bool:
 
 
 async def _target_columns(conn: AsyncConnection, table: str) -> list[tuple[str, str | None, bool]]:
-    """(name, default expression, not-null) of each column, in table order."""
+    """(name, default expression, not-null) of each column, in table order.
+
+    GENERATED columns (`is_generated = 'ALWAYS'`, e.g. `due_tick`) are not
+    insertable: Postgres refuses an explicit value for them, and their
+    value is derived from the columns the expression reads anyway. Leaving
+    them out of the insert restores an old image that predates the column
+    and a new image that carries it the same way — the stored instant is
+    restored, the generated tick recomputed.
+    """
     rows = (await conn.execute(sa.text(
         "SELECT column_name, column_default, is_nullable = 'NO' "
         "FROM information_schema.columns "
-        "WHERE table_schema = 'public' AND table_name = :t ORDER BY ordinal_position"
+        "WHERE table_schema = 'public' AND table_name = :t "
+        "AND is_generated = 'NEVER' ORDER BY ordinal_position"
     ), {"t": table})).all()
     return [(r[0], r[1], bool(r[2])) for r in rows]
 

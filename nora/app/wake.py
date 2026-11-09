@@ -52,6 +52,7 @@ from nora.domain.stimuli import (
     restart_detail,
     unit_in_flight,
 )
+from nora.domain.ticks import seconds_to_boundary
 
 log = logging.getLogger("nora.app.wake")
 
@@ -555,7 +556,11 @@ async def wake_loop(
     tick is logged and counted and never takes the loop down."""
     log.info("cognition wake evaluator started: tick every %gs", tick_seconds)
     while True:
-        await asyncio.sleep(tick_seconds)
+        # Aligned (node 18): the next boundary of the cadence grid, never
+        # `tick_seconds` after the last pass ended — a pass's duration does
+        # not drift the phase, and a slow pass skips an opportunity rather
+        # than losing due work.
+        await asyncio.sleep(seconds_to_boundary(tick_seconds))
         try:
             await evaluator.tick()
         except Exception:

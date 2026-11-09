@@ -23,6 +23,8 @@ one floor-division on one time base rather than two.
 
 from __future__ import annotations
 
+import math
+import time
 from datetime import UTC, datetime, timedelta
 
 #: Tick quantum: one minute, in milliseconds and as a `timedelta`.
@@ -77,3 +79,19 @@ def slot_index(at_ms: int, *, quantum_ms: int, phase_ms: int = 0) -> int:
     arithmetic, not a parallel one.
     """
     return (at_ms - phase_ms) // quantum_ms
+
+
+def seconds_to_boundary(interval_seconds: float, *, at: float | None = None) -> float:
+    """Seconds until the next boundary of the `interval_seconds` grid anchored
+    at the Unix epoch — what an ALIGNED driver sleeps (`time.time` seconds).
+
+    A driver that sleeps a fixed interval after each pass lets work duration
+    drift every later pass and can cross a due boundary late; one that sleeps
+    to the next grid boundary lands every pass ON a fixed point, so a due
+    tick that became eligible is seen at the boundary (when the cadence
+    divides the minute) and the configured cadence is preserved. A pass that
+    overruns a boundary lands on the NEXT one: a slow pass may skip an
+    evaluation opportunity, never lose due work (node 18 §3)."""
+    now = time.time() if at is None else at
+    delay = math.ceil(now / interval_seconds) * interval_seconds - now
+    return delay if delay > 0 else interval_seconds

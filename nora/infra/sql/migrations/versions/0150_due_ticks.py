@@ -63,7 +63,15 @@ def upgrade() -> None:
         "stimulus",
         sa.Column(
             "due_tick", sa.BigInteger,
-            sa.Computed("((due_ms + 59999) / 60000)"),
+            # `(due_ms + 59999) / 60000` would be wrong twice over: Postgres
+            # integer division truncates toward zero (a negative `due_ms`
+            # rounds up a whole tick), and `+59999` can overflow bigint.
+            # `q + (r > 0)` is the signed-safe ceiling — identical to
+            # Python's `-((-due_ms) // 60000)`.
+            sa.Computed(
+                "((due_ms / 60000) + "
+                "CASE WHEN due_ms % 60000 > 0 THEN 1 ELSE 0 END)"
+            ),
         ),
     )
     op.drop_index(

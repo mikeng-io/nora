@@ -811,11 +811,9 @@ class CognitionSessionRunner:
         #: model's window WITH the size evidence (in memory: a restart forgets
         #: it, which fails toward `infra`). A `closed` session clears it.
         self._overflowed: dict[str, frozenset[int]] = {}
-        #: Wake id -> the task running its session, for `shutdown`.
-        self._tasks: dict[int, asyncio.Task[Any]] = {}
         #: Outcome writes shielded from a second cancel (a `shutdown` and the
-        #: evaluator's `cancel_in_flight` both cancelling one task), held so
-        #: they are not garbage-collected while they finish.
+        #: Dreamer lane's `cancel_in_flight` both cancelling one task), held
+        #: so they are not garbage-collected while they finish.
         self._finishing: set[asyncio.Task[Any]] = set()
         #: One lock per unit around a pace or remind call's read-check-write:
         #: the model may issue two in one turn, and the pending cap and the
@@ -900,9 +898,6 @@ class CognitionSessionRunner:
         did not close. Every path writes the wake's outcome (or, if that write
         fails, leaves the wake OPEN until it expires): nothing here returns
         with the wake's stimuli consumed and unseen."""
-        task = asyncio.current_task()
-        if task is not None:
-            self._tasks[wake_id] = task
         session_id: int | None = None
         #: Offered to the model loop (`SESSION_TOKENS`) and read by EVERY path
         #: that records this wake's outcome, so a failed, timed-out or cancelled
@@ -1088,8 +1083,6 @@ class CognitionSessionRunner:
                 cause=classify_failure(exc),
             )
             raise
-        finally:
-            self._tasks.pop(wake_id, None)
 
     async def replay(self, *, view: UnitView, now_ms: int, historical: bool = False) -> Any:
         """Run the recorded batch through live assembly, using sandbox collaborators."""
@@ -1222,14 +1215,14 @@ class CognitionSessionRunner:
         )
 
     async def shutdown(self) -> None:
-        """Cancel every session still in flight and wait for it to record
-        itself `cancelled`. A session must not vanish with its wake still
-        reading «in flight» when it could have said otherwise."""
-        tasks = tuple(self._tasks.values())
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        """Wait for the finishing outcome writes to land. The tasks
+        themselves are not this runner's to cancel: a live session's task is
+        admitted on the Dreamer lane (`SubconsciousExecutor` →
+        `DreamerRuntime.dispatch`), and `CognitionShutdown` cancels it there
+        before calling this — the boundary that created the task cancels it
+        (node 18). What remains here is the settlement half: a session must
+        not vanish with its wake still reading «in flight» when it could
+        have said `cancelled`."""
         if self._finishing:
             await asyncio.gather(*tuple(self._finishing), return_exceptions=True)
 

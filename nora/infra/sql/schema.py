@@ -3548,14 +3548,18 @@ STIMULUS = sa.Table(
     sa.Column("waits", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("at_ms", sa.BigInteger, nullable=False),
     sa.Column("due_ms", sa.BigInteger),
-    # The due TICK of `due_ms` (`nora.domain.ticks`): `ceil(due_ms / 60_000)`
-    # as integer division `(due_ms + 59999) / 60000`, generated so the stored
-    # deadline and its eligibility index cannot disagree. NULL when `due_ms`
-    # is — an undated stimulus is pending once recorded, and the pending read
-    # coalesces it to the tick of `recorded_at`.
+    # The due TICK of `due_ms` (`nora.domain.ticks`): `ceil(due_ms / 60_000)`,
+    # generated so the stored deadline and its eligibility index cannot
+    # disagree. Spelled `due_ms / 60000 + (due_ms % 60000 > 0)` rather than
+    # `(due_ms + 59999) / 60000`: Postgres integer division truncates toward
+    # zero, so the naive spelling gives the wrong tick for negative `due_ms`
+    # (a pre-epoch deadline) and can overflow for very large ones. NULL when
+    # `due_ms` is — an undated stimulus is pending once recorded.
     sa.Column(
         "due_tick", sa.BigInteger,
-        sa.Computed("((due_ms + 59999) / 60000)"),
+        sa.Computed(
+            "((due_ms / 60000) + CASE WHEN due_ms % 60000 > 0 THEN 1 ELSE 0 END)"
+        ),
     ),
     # System time (`_recorded_at`). The stimulus store states it
     # from the same clock the wake arithmetic runs on; the default covers a

@@ -44,7 +44,7 @@ from ..agent.dreamer import AdaptorSchedule
 from ..domain.media_join import MediaJoin
 from ..domain.models import TranscriptRow
 from ..domain.ports import DreamAdaptor
-from ..domain.ticks import slot_index
+from ..domain.ticks import seconds_to_boundary, slot_index
 from ..obs.metrics import Metrics
 from ..obs.tracing import TRACE_KIND, annotate, attached, span, traced_read
 
@@ -893,9 +893,11 @@ async def _dream_adaptor_once(
       expressible.
 
     Wall clock, therefore, not `monotonic()`: a slot is arithmetic over an
-    absolute instant. The cost is that a backwards clock jump can re-fire once;
-    that is the right side of the trade, because the alternative is
-    reset-every-deploy, which happens daily rather than never.
+    absolute instant. A backwards jump does NOT reopen a slot: the clock row
+    holds the last successful fire's instant, `_slot(fired_at)` is read out of
+    it and `current <= fired` suppresses — a backward move lands in a slot at
+    or under the consumed one, and `record_fire` itself never writes a
+    regressing instant.
 
     A caller supplying no `clock` gets every-tick — the by-omission default
     `AdaptorSchedule` itself documents.
@@ -948,7 +950,14 @@ async def _dream_adaptor_once(
         # An ABSENT row fires; an epoch-0 row does not get invented for it.
         # `last_fired` returns None for a pair that has never run, and the
         # first slot it sees is by definition one it has not fired in.
-        if fired_at is not None and _slot(now, sched) == _slot(fired_at, sched):
+        #
+        # `<=`, not `==`: a slot that has fired is CONSUMED, including every
+        # earlier one. A backward wall-clock move (NTP step, a test clock
+        # rewound) must not reopen a slot that already succeeded — equality
+        # alone would let `fired in slot 2, clock back to slot 1, forward to
+        # slot 2` run the same scheduled occasion twice. Forward movement
+        # past the fired slot fires exactly once, in the new slot.
+        if fired_at is not None and _slot(now, sched) <= _slot(fired_at, sched):
             # COUNTED, not silently returned: `nora_dream_run_total` counts
             # runs and not their reason, so a schedule that never fires and a
             # tier with nothing to do would be the same series. A hold is the
@@ -1458,7 +1467,10 @@ async def dream_loop(
 
     try:
         while True:
-            await asyncio.sleep(tick_seconds)
+            # Aligned like the heartbeat and wake drivers (node 18): the next
+            # boundary of the cadence grid, so pass duration never shifts
+            # the schedule's evaluation phase.
+            await asyncio.sleep(seconds_to_boundary(tick_seconds))
             _log_instruction_versions(instructions)
             if runtime is None:
                 continue

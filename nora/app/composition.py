@@ -5344,7 +5344,9 @@ async def build_dependencies(
                     result_caps=TOOL_RESULT_CAPS,
                     observations=observation_store,
                     # Cognition hosted as a Dreamer adaptor (node 30): every
-                    # admitted wake executes through `runtime.run`.
+                    # admitted wake is dispatched onto this runtime's lane —
+                    # the same instance `dream_loop` runs the other adaptors
+                    # through.
                     runtime=dreamer_runtime,
                 )
             except (InstructionError, PreludeMissingError, SkillNotInstalledError) as exc:
