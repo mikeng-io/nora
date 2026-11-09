@@ -160,6 +160,8 @@ accepted by an older parser; do not retrospectively clear or fail them.
 A valid prompt template and a successful canary do not guarantee a provider's
 format reliability. Fixed-reference memory calls request native strict JSON
 schemas through `response_format`; this is one text call, not an SDK tool loop.
+Validation and scoring use the same fact parser: a leading complete JSON document
+or fence is read, with trailing explanation ignored; duplicate fields are rejected.
 Coverage rows carry nullable `covered_by` for missed/unsure and string diagnostic
 entries; scored meanings, reason/proof validation and reference labels are unchanged.
 Check the actual route's structured-output support before claiming enforcement;

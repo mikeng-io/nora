@@ -297,7 +297,7 @@ class Judges:
         record("judge_output", alias=model_id, output=result.content, served=identities)
         if response_format is not None:
             try:
-                validate(parse_json_response(result.content),
+                validate(parse_fact_output(result.content),
                          response_format["json_schema"]["schema"])
             except ValidationError as exc:
                 raise ValueError("judge_schema_mismatch") from exc

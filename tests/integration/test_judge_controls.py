@@ -186,6 +186,14 @@ def model_wire(monkeypatch):
                 "length" if mode["empty_failure"] == "length" else "stop")
             data["choices"][0]["message"]["content"] = '{"coverage":['
             response = httpx.Response(200, json=data)
+        if (mode.get("trailing_prose") or mode.get("fenced_trailing")) and (
+                "response_format" in body):
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            if mode.get("fenced_trailing"):
+                content = "```json\n" + content + "\n```"
+            data["choices"][0]["message"]["content"] = content + "\nGenerated trailing explanation."
+            response = httpx.Response(200, json=data)
         if mode.get("duplicate_verdict") and body["model"] == "generated-b" and (
                 body["messages"][0]["content"].startswith("FROZEN_SUPPORT")):
             data = response.json()
@@ -219,6 +227,7 @@ def model_wire(monkeypatch):
     ("normal", "PASS", 8), ("wrong", "FAIL", 8), ("unknown_usage", "ERROR", 1),
     ("cutoff", "ERROR", 1), ("alias_error", "ERROR", 4),
     ("schema_rejected", "ERROR", 1), ("schema_extra", "ERROR", 4),
+    ("trailing_prose", "PASS", 8), ("fenced_trailing", "PASS", 8),
 ])
 async def test_frozen_controls_use_real_consumers_capture_and_shared_budget(
         tmp_path, job_files, model_wire, mode, expected, count):
@@ -248,7 +257,7 @@ async def test_frozen_controls_use_real_consumers_capture_and_shared_budget(
     started = next(r for r in rows if r["kind"] == "run_budget_started")
     assert started["max_requests"] == 8 and started["max_output_tokens"] == 8 * 4096
     assert json.loads((out / "report.json").read_text())["status"] == expected
-    if mode in {"normal", "wrong"}:
+    if mode in {"normal", "wrong", "trailing_prose", "fenced_trailing"}:
         assert report["evidence"]["status"] == "PASS" and len(report["comparisons"]) == 6
         assert any(r["kind"] == "control_comparison" and r["actual"] == "FAIL"
                    and r["status"] == "PASS" for r in rows)
