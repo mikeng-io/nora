@@ -62,9 +62,9 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
 
 ## Procedure
 
-Before step 1, complete `docs/eval-sop.md` **Before a paid run**, including its
-scenario, criterion-consumer, independent policy and context checks. Preserve failed originals:
-posthoc regrades are calibration, not fresh acceptance. This covers replays, diagnostics and rescoring.
+Before step 1, complete `docs/eval-sop.md` **Before a paid run**, including the reviewed contract/hash.
+Set `NORA_EVAL_GRADING_CONTRACT`/`NORA_EVAL_GRADING_CONTRACT_SHA256` from that brief, independently of the candidate.
+Preserve originals; posthoc regrades are calibration. Replays, diagnostics and rescoring share this rule.
 
 1. **Read the suite's open defects.** An eval that another session or the operator
    has declared broken or not yet run stays stopped until its fix lands; do not run
@@ -143,7 +143,7 @@ posthoc regrades are calibration, not fresh acceptance. This covers replays, dia
    exec 9>/tmp/nora-eval.lock; flock -w 900 9 || { echo "LOCK_TIMEOUT" > /tmp/eval-<arm>.rc; exit 75; }
    cd ~/workspace/nora-wt-eval-rebuild || exit 1
    export NORA_EVAL_PSEUDONYM_MAP=~/.config/nora/eval-pseudonyms.txt   # credentials: the deployment's source() (env > .env > secret.toml); .env alone lacks moved ones
-   python3 -c "import os,sys;from pathlib import Path as P;R=P.home()/'workspace/nora';sys.path.insert(0,str(R));from scripts.secret_delivery import source;os.execvpe(str(P.home()/'.local/bin/uv'),['uv','run','python','-m','evals','relevance_gate','--sample','5'],{**os.environ,**source(R)})" \
+   python3 -c "import os,sys;from pathlib import Path as P;R=P.home()/'workspace/nora';sys.path.insert(0,str(R));from scripts.secret_delivery import source;os.execvpe(str(P.home()/'.local/bin/uv'),['uv','run','python','-m','evals','relevance_gate','--sample','5','--grading-contract',os.environ['NORA_EVAL_GRADING_CONTRACT'],'--grading-contract-sha256',os.environ['NORA_EVAL_GRADING_CONTRACT_SHA256']],{**os.environ,**source(R)})" \
      > /tmp/eval-<arm>.log 2>&1; echo "RC=$?" > /tmp/eval-<arm>.rc
    EOF
    ssh nora-host 'cat /tmp/eval-<arm>.rc; grep -E "spend:|PASS|FAIL|ERROR|UNSTABLE" /tmp/eval-<arm>.log'
@@ -164,7 +164,7 @@ posthoc regrades are calibration, not fresh acceptance. This covers replays, dia
 
 9. **Write it into the PR body** (a `What` block, per `CONTRIBUTING.md`):
    ```
-   Eval: `python -m evals <corpus> [--case …] --sample N [--judge]`, on nora-host,
+   Eval: `python -m evals <corpus> --grading-contract FILE --grading-contract-sha256 SHA [--case …] --sample N [--judge]`, on nora-host,
    source refreshed <newest_ts>, one run on the host at a time.
    | case | n | before <sha> P/F/E | after <sha> P/F/E |
    Spend: before <calls> calls, in=<…> (cached <…>), out=<…>; after <…>.

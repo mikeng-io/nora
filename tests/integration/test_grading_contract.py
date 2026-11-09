@@ -405,3 +405,16 @@ def test_standard_cli_does_not_ignore_contract_on_listing(tmp_path, monkeypatch)
     with pytest.raises(SystemExit) as exc:
         cli.main()
     assert exc.value.code == 2
+
+
+def test_replay_cli_explains_missing_contract_before_any_dispatch(tmp_path, monkeypatch, capsys):
+    def forbidden(_):
+        pytest.fail("missing contract reached export setup")
+    monkeypatch.setattr(spike, "evaluation_export_for", forbidden)
+    monkeypatch.setattr("sys.argv", [
+        "memory_graph_spike", "--config", "generated.toml", "--output", str(tmp_path / "out"),
+        "--policy", "generated-policy.toml", "--identity", "generated-identity.toml",
+        "--database-url", "postgresql+asyncpg://127.0.0.1:9/generated", "--snapshot"])
+    assert spike.main() == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "ERROR" and "requires --grading-contract" in result["reason"]

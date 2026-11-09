@@ -2114,6 +2114,9 @@ def main() -> int:
             if not all((args.policy, args.identity, args.database_url)):
                 parser.error("replay requires --policy, --identity and --database-url")
             report = asyncio.run(run(args))
+    except EvidenceError as exc:
+        print(json.dumps({"status": "ERROR", "reason": str(exc)}))
+        return 2
     except Exception:  # noqa: BLE001 - fail closed without private exception text
         print('{"status":"ERROR","reason":"spike failed; inspect private host state"}')
         return 2

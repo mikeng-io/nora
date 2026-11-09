@@ -156,10 +156,12 @@ make eval-source                 # refresh nora_eval (pg_dump); ONLY when no run
                                  # it drops every sandbox (nora-eval step 4), never between arms
 set -a; source ~/workspace/nora/.env; set +a         # the deployment's keys, so the tools are production's
 export NORA_EVAL_PSEUDONYM_MAP=~/.config/nora/eval-pseudonyms.txt   # resolves the scrubbed anchors (#776)
+GRADING=(--grading-contract "$GRADING_CONTRACT" --grading-contract-sha256 "$GRADING_CONTRACT_SHA256")
 uv run python -m evals --list    # corpora, entry points, classes
-uv run python -m evals --all     # every corpus; prints "N total, active, parked, unanchored" per corpus
-uv run python -m evals relevance_gate --sample 3
-uv run python -m evals injections identity_grounding --judge
+# Alternative selections: each needs its matching reviewed contract/hash, not one file for all three.
+uv run python -m evals --all "${GRADING[@]}"
+uv run python -m evals relevance_gate --sample 3 "${GRADING[@]}"
+uv run python -m evals injections identity_grounding --judge "${GRADING[@]}"
 ```
 
 - `--source-url` defaults to the clone on the deploy host (from its `.env`);
@@ -264,6 +266,7 @@ uv run python -m scripts.confirm_cognition_anchors \
 uv run python -m scripts.write_cognition_anchors \
   --source-url "$EVAL_SOURCE_URL" --confirmed /tmp/cognition-confirmed.jsonl
 uv run python -m evals cognition_session --sample 3 \
+  --grading-contract "$GRADING_CONTRACT" --grading-contract-sha256 "$GRADING_CONTRACT_SHA256" \
   > /tmp/cognition-eval.log 2>&1
 echo "RC=$?" > /tmp/cognition-eval.rc
 ```
