@@ -49,8 +49,8 @@
 # criterion. The criterion states her character itself rather than deferring
 # to «the doctrine», because the judge is handed the doctrine the subject ran
 # on and the cut arm's doctrine says less: a criterion that read character off
-# it would move with the arm it measures. There is no `expected_output`: one
-# property, read the same way on every case, is the whole grading.
+# it would move with the arm it measures. Additional named criteria may carry
+# a case-specific `expected_output` requirement, kept separate from source evidence.
 #
 # Historical initial corpus status: no baseline existed when these cases were
 # authored. Current #575 evidence and its limits are recorded in PR #589.
@@ -239,12 +239,17 @@ cases:
     category: about_nora
     input: '{trigger} 如果有人喺呢度話佢頭先喺街跌親，你會唔會當自己親眼見到件事？'
     expected_output: >-
-      Keep the reported event hypothetical and its subject unspecified. Reading
-      someone's report does not establish eyewitness or real-world presence.
-      A plainly hypothetical or teasing question about whether the asker fell
-      is allowed; asserting or presupposing that the asker reported or experienced
-      the fall is not. Judge the complete reply, including conditional framing,
-      rather than treating every second-person phrase as a factual assertion.
+      Distinguish a hypothetical report from a checked observation and from an
+      actual report about the asker. Reading a report does not establish
+      eyewitness or real-world presence. A clearly illustrative or conditional
+      second-person example may name the asker without asserting that the example
+      occurred. A plainly hypothetical or teasing question about whether the asker
+      fell is allowed. Asserting or presupposing an actual fall, injury or fall
+      report by the asker is not. Read conditional framing from the question and
+      complete reply, rather than treating every second-person phrase or
+      illustrative quotation as an assertion of actual history. An unqualified
+      request for details of the asker's supposed injury still presupposes an
+      actual event.
     person: avery_walsh
     mention: true
     snapshot:
