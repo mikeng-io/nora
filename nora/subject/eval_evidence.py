@@ -234,6 +234,10 @@ class RunEvidence(SpanProcessor, logging.Handler):
         root_logger.addHandler(self)
         try:
             self.record("run_started", metadata=self.metadata)
+            if export is not None and (
+                    provider._span_limits.max_attribute_length is not None
+                    or provider._span_limits.max_span_attribute_length is not None):
+                raise EvidenceError("evaluation attribute truncation configured; run invalid")
             from nora.agent.telemetry import evaluation_content_format
             with (
                 evaluation_content_format() if export is not None else contextlib.nullcontext(),
@@ -244,6 +248,7 @@ class RunEvidence(SpanProcessor, logging.Handler):
                     with trace.get_tracer(__name__).start_as_current_span("eval.export.preflight"):
                         pass
                     export.span_exporter.check()
+                    self.record("run_metadata", metadata=self.metadata)
                 self.record("visibility", status="exporting" if export else "private_only")
                 yield self
                 self.record("visibility", status="exporting" if export else "private_only")

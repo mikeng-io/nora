@@ -754,3 +754,19 @@ async def test_dropped_eval_content_invalidates_visibility(evidence_root, monkey
         ):
             for i in range(200):
                 span.add_event("generated-content", {"index": i})
+
+
+def test_truncating_sdk_limits_refuse_before_work(evidence_root, monkeypatch):
+    from nora.agent.telemetry import evaluation_export
+    backbone._prefill_capture()
+    provider = trace.get_tracer_provider()
+    monkeypatch.setattr(provider._span_limits, "max_span_attribute_length", 8)
+    export = evaluation_export({"enabled": True, "exporter": "otlp_http",
+                                "endpoint": "http://127.0.0.1:14318/v1/traces"})
+    reached = []
+    with eval_host_lock() as fd:
+        evidence = capture(fd)
+        with pytest.raises(EvidenceError, match="truncation"), evidence.capture(
+                provider, export=export):
+            reached.append(True)
+    assert reached == []
