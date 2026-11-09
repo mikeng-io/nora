@@ -86,7 +86,7 @@ def _state() -> sa.ColumnElement[str]:
     return sa.func.coalesce(latest, sa.literal("active"))
 
 
-def _summary(r: Row[Any], created_at: Any) -> DocumentSummary:
+def _summary(r: Row[*tuple[Any, ...]], created_at: Any) -> DocumentSummary:
     return DocumentSummary(
         id=r.id,
         platform=r.platform,
@@ -101,7 +101,7 @@ def _summary(r: Row[Any], created_at: Any) -> DocumentSummary:
     )
 
 
-def _stored(r: Row[Any]) -> StoredDocument:
+def _stored(r: Row[*tuple[Any, ...]]) -> StoredDocument:
     return StoredDocument(
         summary=_summary(r, r.created_at),
         spec=r.spec,

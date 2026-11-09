@@ -28,8 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import httpx
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 from strands import Agent, ModelRetryStrategy
 from strands.agent.conversation_manager import (
     NullConversationManager,
@@ -71,7 +70,7 @@ RETRY_BACKOFF_FRACTION = 0.25
 
 
 def create_client(
-    *, base_url: str, api_key: str, http_client: httpx.AsyncClient | None = None,
+    *, base_url: str, api_key: str, http_client: DefaultAsyncHttpxClient | None = None,
 ) -> AsyncOpenAI:
     """`http_client` is the transport seam for an endpoint that wants something
     on EVERY request that the SDK does not send, e.g. OpenCode Go's mandatory

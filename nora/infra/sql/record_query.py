@@ -208,11 +208,11 @@ class SqlRecordQuery:
                     )
             deleted_of: dict[int, int] = {}
             if wanted["message_delete"]:
-                for r in (await conn.execute(
+                for dr in (await conn.execute(
                     sa.select(MESSAGE_DELETE.c.id, MESSAGE_DELETE.c.message_id)
                     .where(MESSAGE_DELETE.c.id.in_(wanted["message_delete"]))
                 )).all():
-                    deleted_of[int(r.id)] = int(r.message_id)
+                    deleted_of[int(dr.id)] = int(dr.message_id)
             message_ids = (
                 wanted["messages"]
                 | {m for m, _, _ in emoji.values()} | set(deleted_of.values())

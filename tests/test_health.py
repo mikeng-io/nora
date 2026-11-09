@@ -84,7 +84,7 @@ async def test_health_reports_the_doctrine_sha256(client):
 
 async def test_health_reports_the_strands_version(client):
     body = await (await client.get("/health")).json()
-    assert body["strands_version"] == "1.50.2"
+    assert body["strands_version"] == "1.64.0"
 
 
 async def test_health_reports_the_last_omniroute_success(aiohttp_client, store):

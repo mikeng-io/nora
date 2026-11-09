@@ -626,7 +626,7 @@ class SqlSocialStreamStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(rows_stmt)).all()
-            counts = dict((await conn.execute(counts_stmt)).tuples().all())
+            counts: dict[str, int] = dict((await conn.execute(counts_stmt)).tuples().all())
         listed: set[str] = set()
         out: dict[str, Backfill] = {}
         probes: dict[str, datetime] = {}

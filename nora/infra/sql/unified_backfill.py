@@ -198,24 +198,24 @@ async def fabricated_message_stimuli(
             at_ms=int(r.ts), platform=r.platform, conversation_id=r.conversation_id,
             person_id=r.person_id, cues=cues_of(r.body),
         ))
-    for r in edits.all():
-        if r.is_nora:
+    for e in edits.all():
+        if e.is_nora:
             continue
         out.append(_fabricate(
-            unit, kind="message", item="edit", ref=f"messages:{r.message_id}",
-            at_ms=int(r.ts), platform=r.platform, conversation_id=r.conversation_id,
-            person_id=r.person_id, cues=cues_of(r.body),
+            unit, kind="message", item="edit", ref=f"messages:{e.message_id}",
+            at_ms=int(e.ts), platform=e.platform, conversation_id=e.conversation_id,
+            person_id=e.person_id, cues=cues_of(e.body),
         ))
     for table, item, rows in (("message_reaction", "reaction", reactions),
                               ("message_delete", "delete", deletes)):
-        for r in rows.all():
-            sender = r.sender_id or ""
-            if sender in mine or (not sender and r.is_nora):
+        for x in rows.all():
+            sender = x.sender_id or ""
+            if sender in mine or (not sender and x.is_nora):
                 continue
             out.append(_fabricate(
-                unit, kind="message", item=item, ref=f"{table}:{r.id}",
-                at_ms=int(r.ts), platform=r.platform,
-                conversation_id=r.conversation_id, person_id=r.person_id,
+                unit, kind="message", item=item, ref=f"{table}:{x.id}",
+                at_ms=int(x.ts), platform=x.platform,
+                conversation_id=x.conversation_id, person_id=x.person_id,
             ))
     return out
 
