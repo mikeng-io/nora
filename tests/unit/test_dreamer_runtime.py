@@ -1602,11 +1602,11 @@ def test_the_dreamer_applies_the_configured_tool_budget_over_the_table():
     adaptor = _Adaptor(sink=_Sink())
     tools = [_named_tool("web_fetch")]
 
-    assert NATIVE_TOOLS["web_fetch"].budget == 2, (
+    assert NATIVE_TOOLS["web_fetch"].budget == 5, (
         "the table's own value — if this changes, the test below is comparing "
         "against the wrong baseline and says nothing"
     )
-    assert _tool_budgets(tools, adaptor) == {"web_fetch": 2}, "no override"
+    assert _tool_budgets(tools, adaptor) == {"web_fetch": 5}, "no override"
     assert _tool_budgets(tools, adaptor, {"web_fetch": 6}) == {"web_fetch": 6}
 
 

@@ -443,7 +443,7 @@ def test_budgets_match_todays_table():
         # fetch (DEC-116, Tavily /extract): a page is heavier than a snippet
         # round trip and there is rarely a reason to open more than one or two
         # links in a turn.
-        "web_fetch": 2,
+        "web_fetch": 5,
         # x_read (DEC-201): a post, then its author's profile or posts, and a
         # second try. x_search: a search and one refinement.
         "x_read": 3,

@@ -1318,6 +1318,28 @@ IDX_TOOL_CALL_LOG_CONV_TS = sa.Index(
 )
 
 
+# `fetched_pages` — one conversation's materialized copy of one url. `web_fetch`
+# fetches a page once, seals the text into the shared `blob_store` (rustfs) and
+# writes this index row; `offset`/`about` reads then answer from the stored copy,
+# never a second provider call. The composite key IS the dedup. `provenance`
+# carries the provider-side facts the served slices keep (`provider`,
+# `saved_copy`, `truncated`, `images`). Its own namespace: a page's words are a
+# stranger's, so fetched text never indexes into memory or documents.
+FETCHED_PAGES = sa.Table(
+    "fetched_pages",
+    METADATA,
+    sa.Column("conversation_id", sa.Text, primary_key=True),
+    sa.Column("url", sa.Text, primary_key=True),
+    sa.Column("blob_key", sa.Text, nullable=False),
+    sa.Column("fetched_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column(
+        "provenance", pg.JSONB, nullable=False,
+        server_default=sa.text("'{}'::jsonb"),
+    ),
+)
+
+
 # `sticker_index` — the platform's own sticker identity to the blob it turned
 # out to be. The ONLY dedup level checkable before bytes
 # move, which is what turns a repeat sighting into zero platform RPC on the

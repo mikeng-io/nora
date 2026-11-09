@@ -1457,12 +1457,23 @@ class SearchConfig(BaseModel):
     higher than `content_max_chars` because a page is one whole document rather
     than a snippet, but still bounded: a tool result is re-sent on every
     subsequent model call, so what accumulates must be bounded.
+
+    `fetch_provider` selects the backend `web_fetch` EXTRACTS through when it
+    should differ from `provider` (the search backend). Empty means "the same
+    as `provider`" — the shape that existed before the split. The split exists
+    because the two verbs want different ceilings: `web_fetch` materializes a
+    whole page into `fetched_pages` (the stored copy serves every later
+    `offset`/`about` read), so its bound is the provider's own text ceiling,
+    not `extract_max_chars`. Tavily `/extract` returns full `raw_content`;
+    Exa `/contents` stops at 10k characters, so `exa` as fetch backend is a
+    real ceiling, honestly reported as `truncated`.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
     provider: Literal["tavily", "exa"] = "tavily"
+    fetch_provider: Literal["", "tavily", "exa"] = ""
     max_results: int = Field(default=5, ge=1, le=20)
     content_max_chars: int = Field(default=1500, ge=1)
     extract_max_chars: int = Field(default=3000, ge=1)
