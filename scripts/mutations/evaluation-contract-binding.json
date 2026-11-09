@@ -16,8 +16,8 @@
   {
     "name": "memory judges receive fixed instructions",
     "file": "scripts/memory_graph_spike.py",
-    "old": "        contract.instruction(\"memory_support\")\n        if contract is not None\n        else _FACT_SUPPORT_INSTRUCTION",
-    "new": "        _FACT_SUPPORT_INSTRUCTION",
+    "old": "        contract.instruction(\"memory_support\") + _FIXED_SUPPORT_OUTPUT\n        if contract is not None\n        else _FACT_SUPPORT_INSTRUCTION",
+    "new": "        _FACT_SUPPORT_INSTRUCTION + _FIXED_SUPPORT_OUTPUT",
     "target": "tests/integration/test_grading_contract.py::test_actual_memory_judges_bind_frozen_units_and_keep_diagnostics_unscored"
   },
   {
