@@ -275,11 +275,20 @@ properties; changing a clock helper cannot substitute for execution ownership.
 `limit` bound — behind carried/unclaimed side-door rows — was consumed by the
 new watermark's id range without ever being shown or claimed. `UnitView.over`
 now reports what the bound cut, and `decide` names it `unclaimed`; the
-contract fuzz (`test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulus`)
-loses nothing on all 12 seeds at limits 3 and 1000, on both stores.
+deterministic contract case (`test_a_due_row_the_merged_bound_cut_is_named_unclaimed`,
+both stores) asserts the cut row is named, listed unclaimed and never consumed
+unseen, and the contract fuzz loses nothing on the seeded runs.
+
+**Mutation proof:** `scripts/mutations/conscious-subconscious-time.json` —
+`make mutate` reports `ALL MUTATIONS CAUGHT` (4/4 RED then green): the
+`session_run` dispatch, the executor's `runtime.run` submission, the
+`view.over` unclaimed clause and fake-store tick eligibility. The twelve
+entries this change re-anchored in `cognition-input`, `cognition-measures`,
+`cognition-step1-signals`, `cognition-step3a2-session` and
+`cognition-step3a3-wiring` were re-proven at their new anchors: `ALL
+MUTATIONS CAUGHT` (14/14).
 
 **Not measured here (honest limits):** live/model runtime acceptance (needs its
 authorized run — this PR authorizes none); a dedicated clock-skew/backward-clock
-case beyond the settle-margin contract; `nora-prove-fix` red/green runs recorded
-with the PR body. The `strands_evals` suite does not collect in this
-environment (module absent) and was not run.
+case beyond the settle-margin contract. The `strands_evals` suite does not
+collect in this environment (module absent) and was not run.

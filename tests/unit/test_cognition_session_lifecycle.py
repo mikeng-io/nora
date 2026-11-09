@@ -31,6 +31,7 @@ from nora.app.cognition_session import (
 from nora.app.wake import WakeEvaluator
 from nora.domain.cognition_session import Room
 from nora.domain.stimuli import NewStimulus, UnitView, WakeHook, WakePolicy
+from nora.domain.ticks import due_tick_of_ms
 from nora.obs.metrics import Metrics
 from nora.testing.cognition_grounding import EmptyGrounder
 from nora.testing.cognition_store import InMemoryCognitionStore
@@ -1002,7 +1003,7 @@ async def test_a_cancelled_self_wake_never_fires_and_an_uncancelled_one_does():
     rig2.clock.advance(1)
     await rig2.tick()
     await rig2.settle()
-    rig2.clock.advance(3600)                  # just past the hour it was set for
+    rig2.clock.ms = _at_due_boundary(rig2)    # the tick the hour-out due opens in
     assert len(await rig2.tick()) == 1
     assert rig2.stimuli.wakes[-1].reason == "self"
 
@@ -1031,11 +1032,11 @@ async def test_a_moved_self_wake_fires_once_at_the_new_time_and_never_at_the_old
     await rig.settle()
     wakes_before = len(rig.stimuli.wakes)
 
-    rig.clock.ms = T + 1 + 3600 + 1_000       # just past the ORIGINAL time
+    rig.clock.ms = due_tick_of_ms(T + 1_000 + 3_600_000) * 60_000   # the ORIGINAL due's tick
     assert await rig.tick() == []
     assert len(rig.stimuli.wakes) == wakes_before
 
-    rig.clock.ms = T + 1 + 400 * 1000 + 3 * 3600_000 + 1_000   # just past the NEW time
+    rig.clock.ms = _at_due_boundary(rig)      # the tick the NEW due opens in
     assert len(await rig.tick()) == 1
     await rig.settle()
     assert rig.stimuli.wakes[-1].reason == "self"
@@ -1124,12 +1125,21 @@ def _carried_self_wake_rig(
     return rig, holder
 
 
+def _at_due_boundary(rig: Rig) -> int:
+    """The ms at which the newest self-wake's due tick opens (node 18:
+    eligibility is `due_tick <= current_tick`; a mid-tick deadline opens at
+    the boundary after it, never at the instant)."""
+    due = next(s.due_ms for s in reversed(rig.stimuli.stimuli) if s.kind == "self")
+    assert due is not None
+    return due_tick_of_ms(due) * 60_000
+
+
 async def _defer_the_self_wake(rig: Rig) -> None:
     await rig.say()
     rig.clock.advance(1)
     await rig.tick()
     await rig.settle()
-    rig.clock.advance(3600)
+    rig.clock.ms = _at_due_boundary(rig)
     await rig.say(cues=("datetime",))
     await rig.tick()
     await rig.settle()
@@ -1171,7 +1181,7 @@ async def test_a_self_wake_moved_while_carried_fires_once_at_its_new_time_only()
     rig.clock.advance(3600)                       # cooldown long past, before the new time
     assert await rig.tick() == []
     assert len(rig.stimuli.wakes) == wakes_before
-    rig.clock.ms = moved_to + 1000
+    rig.clock.ms = due_tick_of_ms(moved_to) * 60_000   # the new due's opening boundary
     assert len(await rig.tick()) == 1
     await rig.settle()
     assert rig.stimuli.wakes[-1].reason == "self"
