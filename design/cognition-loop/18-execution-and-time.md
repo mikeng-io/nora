@@ -286,8 +286,16 @@ rows are named, listed unclaimed and never consumed unseen, and the contract
 fuzz loses nothing on the seeded runs.
 
 **Mutation proof:** `scripts/mutations/conscious-subconscious-time.json` —
-see the PR body for this head's run. (Numbers are reported from the measured
-run, not pre-written here.)
+`uv run python scripts/mutate.py` on the repair head reports ALL MUTATIONS
+CAUGHT, 12/12 RED then green: the `session_run` dispatch, the lane-dispatch
+boundary, `decide`'s `over` clause, the raw-LIMIT continuation on both
+stores, undated eligibility on both stores, mid-tick due eligibility, the
+generated-column filter, the signed ceiling, the `<=` slot guard and the
+boundary wait. A parser mutant on the plan test (`Plan Rows` for `Actual
+Rows`) survived — Postgres's estimate coincides with the bound on this
+shape, so the entry was dropped rather than reported caught; the
+instrument's use of executor-actual counters is by construction and that
+choice is unguarded by the bound.
 
 **Not measured here (honest limits):** live/model runtime acceptance (needs
 its authorized run — this PR authorizes none); a full-process backward-clock

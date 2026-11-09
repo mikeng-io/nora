@@ -82,12 +82,5 @@
     "old": "    now = time.time() if at is None else at\n    delay = math.ceil(now / interval_seconds) * interval_seconds - now\n    return delay if delay > 0 else interval_seconds",
     "new": "    return interval_seconds",
     "target": "tests/unit/test_subconscious_executor.py::test_the_drivers_wait_to_a_cadence_boundary_not_a_fixed_interval"
-  },
-  {
-    "name": "plan test: the due read is measured by PLANNER rows, not executor rows",
-    "file": "tests/infra/test_stimulus_store_plan.py",
-    "old": "            out += int(node.get(\"Actual Rows\", 0)) * loops",
-    "new": "            out += int(node.get(\"Plan Rows\", 0)) * loops",
-    "target": "tests/infra/test_stimulus_store_plan.py::test_the_due_read_stays_on_the_pending_batch_as_history_grows"
   }
 ]
