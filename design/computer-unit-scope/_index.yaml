@@ -4,13 +4,15 @@ title: One computer workspace per unit for group rooms
 description: >
   Implemented unit-scoped group workspaces, leases, browser state and session
   reads; the live room-to-unit disk migration completed on 2026-10-21.
-  The next per-unit/private-DM VM topology is NOT BUILT; see the current
-  target in ../browser-runtime/00-design.md. Shipped migration remains intact.
+  Per-unit/private-DM VM routing source subsequently merged in PR 584; see
+  ../browser-runtime/00-design.md for acceptance limits. Automatic provisioning
+  and idle VM stop remain unbuilt in ../browser-runtime/05-microvm-lifecycle.md.
+  Shipped migration remains intact.
 status: implemented
 timestamp: '2026-10-21'
 governance: operator-directed
 origin: Operator ruling that work must resume across a unit's group transports.
-revision: '2026-11-02: next per-unit/private-DM VM topology remains unbuilt; shipped migration preserved. 2026-10-21; records shipped implementation and live cutover; 00-contract.md retains the original design beneath a current-status banner.'
+revision: '2026-11-09: scoped routing source merged in PR 584; automatic lifecycle unbuilt; shipped migration preserved. 2026-11-02: scoped topology planned. 2026-10-21; records shipped implementation and live cutover; 00-contract.md retains the original design beneath a current-status banner.'
 docs:
   - 00-contract.md
   - 01-migration.md
