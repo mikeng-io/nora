@@ -13,6 +13,8 @@ import os
 import random
 import re
 import statistics
+import sys
+import uuid
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,6 +43,8 @@ from nora.policy import load_policy
 from nora.secret import credentials
 from nora.subject.eval_evidence import (
     RunEvidence,
+    current,
+    evaluation_export_for,
     fingerprint,
     read_events,
     revision,
@@ -1002,135 +1006,149 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
         judges = Judges(cfg, [args.judge_a, args.judge_b], args.config)
         for wake in selected.values():
             replay_ms, view = await recorded_wake(engine, wake["id"])
-            at = datetime.fromtimestamp(replay_ms / 1000, UTC)
-            room = next((c for c in policy.rooms() if c.unit == view.unit), None)
-            if room is None:
-                raise ValueError("wake has no policy room")
-            # ponytail: recorded_wake has no last_session or carry; each wake replays
-            # as the unit's first session. Restore session continuity if that is measured.
-            measured: dict[str, Any] = {"status": "ERROR", "tokens": None}
-            async with sandbox_as_of(args.database_url, at) as (url, _):
-                with TemporaryDirectory(prefix="nora-spike-") as workdir:
-                    subject = await obtain(
-                        SubjectSpec(
-                            database_url=url,
-                            workdir=Path(workdir),
-                            room=(room.platform, room.primary_id),
-                            now=at,
-                            identity=args.identity.read_text(),
-                            policy=args.policy.read_text(),
-                            overrides={
-                                "cognition.enabled": True,
-                                "memory.graph.enabled": True,
-                                "memory.graph.comprehend.enabled": True,
-                                # The deployment's embedder name resolves only
-                                # on the compose network; the spike runs on the
-                                # host, where compose publishes it on loopback
-                                # (`evals.scenarios.MEMORY_INDEX_OVERRIDES`).
-                                "memory.index.embedder_url": EMBEDDER_FROM_HOST,
-                                "llm": cfg.llm.model_dump(),
-                                "providers": {k: v.model_dump() for k, v in cfg.providers.items()},
-                                "model_routes": {
-                                    k: v.model_dump() for k, v in cfg.model_routes.items()
+            evidence = current()
+            if evidence is None:
+                raise ValueError("capture_unavailable")
+            with evidence.case(
+                f"wake:{view.unit}:{wake['id']}", input=wake,
+                metadata={"wake_id": wake["id"], "unit": view.unit, "replay_ms": replay_ms,
+                          "sample_sha256": sample_sha256, "seed": args.seed,
+                          "snapshot_sha256": hashlib.sha256(
+                              args.database_url.encode()).hexdigest()},
+            ):
+                at = datetime.fromtimestamp(replay_ms / 1000, UTC)
+                room = next((c for c in policy.rooms() if c.unit == view.unit), None)
+                if room is None:
+                    raise ValueError("wake has no policy room")
+                # ponytail: recorded_wake has no last_session or carry; each wake replays
+                # as the unit's first session. Restore session continuity if that is measured.
+                measured: dict[str, Any] = {"status": "ERROR", "tokens": None}
+                async with sandbox_as_of(args.database_url, at) as (url, _):
+                    with TemporaryDirectory(prefix="nora-spike-") as workdir:
+                        subject = await obtain(
+                            SubjectSpec(
+                                database_url=url,
+                                workdir=Path(workdir),
+                                room=(room.platform, room.primary_id),
+                                now=at,
+                                identity=args.identity.read_text(),
+                                policy=args.policy.read_text(),
+                                overrides={
+                                    "cognition.enabled": True,
+                                    "memory.graph.enabled": True,
+                                    "memory.graph.comprehend.enabled": True,
+                                    # The deployment's embedder name resolves only
+                                    # on the compose network; the spike runs on the
+                                    # host, where compose publishes it on loopback
+                                    # (`evals.scenarios.MEMORY_INDEX_OVERRIDES`).
+                                    "memory.index.embedder_url": EMBEDDER_FROM_HOST,
+                                    "llm": cfg.llm.model_dump(),
+                                    "providers": {
+                                        k: v.model_dump() for k, v in cfg.providers.items()},
+                                    "model_routes": {
+                                        k: v.model_dump() for k, v in cfg.model_routes.items()
+                                    },
+                                    "cognition": {**cfg.cognition.model_dump(), "enabled": True},
                                 },
-                                "cognition": {**cfg.cognition.model_dump(), "enabled": True},
-                            },
-                        )
-                    )
-                    sandbox_engine = create_sql_engine(url)
-                    before_sandbox = await acts(sandbox_engine)
-                    try:
-                        runner = subject.deps.cognition_runner
-                        if runner is None:
-                            raise ValueError("snapshot session unavailable")
-                        measured["index"] = (
-                            await index_replay_sandbox(
-                                subject, source_url=args.database_url
                             )
-                        ).line()
-                        inspection = await runner.inspect(
-                            view=view, now_ms=replay_ms, historical=True)
-                        tokens_before = subject.deps.metrics.get("nora_cognition_unit_tokens_total")
-                        outcome = await runner.replay(
-                            view=view, now_ms=replay_ms, historical=True
                         )
-                        if outcome is None:
-                            raise ValueError("empty session")
-                        from nora.subject.eval_evidence import current
-                        evidence = current()
-                        if evidence is None:
-                            raise ValueError("capture_unavailable")
-                        events = read_events(evidence.path)
-                        starts = [i for i, e in enumerate(events)
-                                  if e.get("name") == "nora.session.started"]
-                        session_events = events[starts[-1]:] if starts else []
-                        judges.served.setdefault("writer", []).extend(
-                            e["headers"] for e in session_events
-                            if e["kind"] == "transport_response")
-                        exchanges = evidence_exchanges(session_events)
-                        requests = [json.loads(e["attributes"]["nora.model.request.body"])
-                                    for e in session_events
-                                    if e.get("name") == "nora.model.request"]
-                        if (inspection is None or not requests
-                                or not compare_inspection(inspection, requests[0])):
-                            raise ValueError("inspection_projection_mismatch")
-                        freeze_fact_session(output, len(results), wake, inspection, session_events)
-                        proposals = [e for e in exchanges if e["name"] == "memory_propose"]
-                        if any(not isinstance(e["result"], dict) for e in proposals):
-                            raise ValueError("unreadable admission result")
-                        admitted = {i for e in proposals for i in e["result"].get("admitted", [])}
-                        consumed = {
-                            c.item_index
-                            for c in outcome.closed
-                            if c.reason in {"written", "no_change", "covered"}
-                        }
-                        tokens = (
-                            subject.deps.metrics.get("nora_cognition_unit_tokens_total")
-                            - tokens_before
-                        )
-                        from nora.agent.comprehend_tools import egress_reason
+                        sandbox_engine = create_sql_engine(url)
+                        before_sandbox = await acts(sandbox_engine)
+                        try:
+                            runner = subject.deps.cognition_runner
+                            if runner is None:
+                                raise ValueError("snapshot session unavailable")
+                            measured["index"] = (
+                                await index_replay_sandbox(
+                                    subject, source_url=args.database_url
+                                )
+                            ).line()
+                            inspection = await runner.inspect(
+                                view=view, now_ms=replay_ms, historical=True)
+                            tokens_before = subject.deps.metrics.get(
+                                "nora_cognition_unit_tokens_total")
+                            outcome = await runner.replay(
+                                view=view, now_ms=replay_ms, historical=True
+                            )
+                            if outcome is None:
+                                raise ValueError("empty session")
+                            evidence.record("replay_session", wake_id=wake["id"],
+                                            session_id=outcome.session_id,
+                                            sample_sha256=sample_sha256)
+                            events = read_events(evidence.path)
+                            starts = [i for i, e in enumerate(events)
+                                      if e.get("name") == "nora.session.started"]
+                            session_events = events[starts[-1]:] if starts else []
+                            judges.served.setdefault("writer", []).extend(
+                                e["headers"] for e in session_events
+                                if e["kind"] == "transport_response")
+                            exchanges = evidence_exchanges(session_events)
+                            requests = [json.loads(e["attributes"]["nora.model.request.body"])
+                                        for e in session_events
+                                        if e.get("name") == "nora.model.request"]
+                            if (inspection is None or not requests
+                                    or not compare_inspection(inspection, requests[0])):
+                                raise ValueError("inspection_projection_mismatch")
+                            freeze_fact_session(
+                                output, len(results), wake, inspection, session_events)
+                            proposals = [e for e in exchanges if e["name"] == "memory_propose"]
+                            if any(not isinstance(e["result"], dict) for e in proposals):
+                                raise ValueError("unreadable admission result")
+                            admitted = {
+                                i for e in proposals for i in e["result"].get("admitted", [])}
+                            consumed = {
+                                c.item_index
+                                for c in outcome.closed
+                                if c.reason in {"written", "no_change", "covered"}
+                            }
+                            tokens = (
+                                subject.deps.metrics.get("nora_cognition_unit_tokens_total")
+                                - tokens_before
+                            )
+                            from nora.agent.comprehend_tools import egress_reason
 
-                        private_names = tuple(
-                            name
-                            for p in persons.by_person.values()
-                            for name in (p.name, *p.aliases)
-                        )
-                        queries = [
-                            str(e["input"].get("query", e["input"].get("url", "")))
-                            for e in exchanges
-                            if e["name"] in {"web_search", "web_fetch"}
-                        ]
-                        measured["egress_hits"] = sum(
-                            bool(egress_reason(q, private_names)) for q in queries
-                        )
-                        measured["trace_truncated"] = (
-                            subject.deps.metrics.get("nora_tagtrace_truncations_total") > 0
-                        )
-                        measured.update(
-                            status="PASS",
-                            tokens=tokens if tokens > 0 else None,
-                            admitted=sum(bool(e["result"].get("admitted")) for e in proposals),
-                            refused=sum(bool(e["result"].get("refused")) for e in proposals),
-                            refused_consumed=len(consumed - admitted),
-                        )
-                        measured.update(await smoke_fact_support(judges, inspection, exchanges))
-                        if not args.smoke:
-                            quality = await session_quality(judges, inspection, exchanges)
-                            for name, pair in quality["verdicts"].items():
-                                target = scores.setdefault(name, [[], []])
-                                for i, values in enumerate(pair):
-                                    target[i].extend(values)
-                            for key, count in quality["population"].items():
-                                population[key] = population.get(key, 0) + count
-                    except Exception:  # noqa: BLE001 - private exceptions stay on host
-                        measured["status"] = "ERROR"
-                    finally:
-                        measured["acts"] = check_acts(before_sandbox, await acts(sandbox_engine))
-                        await sandbox_engine.dispose()
-                        from evals.backbone import _close
+                            private_names = tuple(
+                                name
+                                for p in persons.by_person.values()
+                                for name in (p.name, *p.aliases)
+                            )
+                            queries = [
+                                str(e["input"].get("query", e["input"].get("url", "")))
+                                for e in exchanges
+                                if e["name"] in {"web_search", "web_fetch"}
+                            ]
+                            measured["egress_hits"] = sum(
+                                bool(egress_reason(q, private_names)) for q in queries
+                            )
+                            measured["trace_truncated"] = (
+                                subject.deps.metrics.get("nora_tagtrace_truncations_total") > 0
+                            )
+                            measured.update(
+                                status="PASS",
+                                tokens=tokens if tokens > 0 else None,
+                                admitted=sum(bool(e["result"].get("admitted")) for e in proposals),
+                                refused=sum(bool(e["result"].get("refused")) for e in proposals),
+                                refused_consumed=len(consumed - admitted),
+                            )
+                            measured.update(await smoke_fact_support(judges, inspection, exchanges))
+                            if not args.smoke:
+                                quality = await session_quality(judges, inspection, exchanges)
+                                for name, pair in quality["verdicts"].items():
+                                    target = scores.setdefault(name, [[], []])
+                                    for i, values in enumerate(pair):
+                                        target[i].extend(values)
+                                for key, count in quality["population"].items():
+                                    population[key] = population.get(key, 0) + count
+                        except Exception:  # noqa: BLE001 - private exceptions stay on host
+                            measured["status"] = "ERROR"
+                        finally:
+                            measured["acts"] = check_acts(
+                                before_sandbox, await acts(sandbox_engine))
+                            await sandbox_engine.dispose()
+                            from evals.backbone import _close
 
-                        await _close(subject)
-            results.append(measured)
+                            await _close(subject)
+                results.append(measured)
         # ponytail: one engine comparison per run, on the frozen projected
         # source. An as-of sandbox correctly holds no graph rows at its wake
         # instant, so a per-wake comparison there measures emptiness N times.
@@ -1261,14 +1279,17 @@ async def run(args: Any) -> dict[str, Any]:
     from opentelemetry import trace
 
     from evals.backbone import _prefill_capture
+    export = evaluation_export_for(args.config)
     _prefill_capture()
     output = private_directory(args.output)
     with TemporaryFile() as lock:
-        evidence = RunEvidence(run_id="spike", metadata={
+        evidence = RunEvidence(run_id=f"spike-{uuid.uuid4().hex}", metadata={
             **revision(Path(__file__).resolve().parents[1]),  # noqa: ASYNC240
             "config_sha256": fingerprint(args.config),
         }, lock_fd=lock.fileno(), private_root=output)
-        with evidence.capture(trace.get_tracer_provider()):
+        with evidence.capture(trace.get_tracer_provider(), export=export):
+            trace_id = trace.get_current_span().get_span_context().trace_id
+            print(f"eval trace: {trace_id:032x}", file=sys.stderr)
             report = await _run(args)
         receipt = validate_events(read_events(evidence.path))
         report["evidence"] = {**receipt, "ref": evidence.path.name}
@@ -1381,47 +1402,57 @@ async def decision_judge(directory: Path, judges: Judges) -> dict[str, Any]:
         if identity in seen:
             continue
         seen.add(identity)
-        scoped = statement.pop("events")
-        judge_statement = {k: v for k, v in statement.items() if k != "session_event_ids"}
-        cause = "trajectory_unavailable"
-        result: dict[str, Any]
-        try:
-            trajectory = compact_trajectory(statement, scoped)
-            payload = {"statement": judge_statement, "trajectory": trajectory,
-                       "allowed_observations": sorted(OBSERVATIONS_BY_KIND[statement["kind"]])}
-            input_bytes = len(prompt(payload).encode("utf-8"))
-            truncated = input_bytes > MAX_DIAGNOSTIC_INPUT_BYTES
-            record("decision_input", input_bytes=input_bytes,
-                   max_input_bytes=MAX_DIAGNOSTIC_INPUT_BYTES, truncated=truncated,
-                   source_sha256=statement.get("source_sha256"),
-                   first_event_id=trajectory["first_event_id"],
-                   last_event_id=trajectory["last_event_id"])
-            cause = "input_truncated"
-            if truncated:
-                raise ValueError("diagnostic_input_truncated")
-            relevant = trajectory["events"]
-            if not any(e.get("reasoning_availability") == "observed" for e in relevant):
-                result = {"observation": "insufficient_evidence", "event_ids": []}
-            else:
-                cause = "judge_call_failed"
-                raw = await judges.call(judges.models[0], instruction, payload)
-                cause = "judge_parse_failed"
-                parsed = parse_fact_output(raw)
-                if (not isinstance(parsed, dict) or parsed.get("observation") not in OBSERVATIONS
-                        or not isinstance(parsed.get("event_ids"), list)
-                        or not isinstance(parsed.get("reason"), str)
-                        or not parsed["reason"].strip()):
-                    raise ValueError("judge_protocol_missing")
-                record("judge_verdict", verdict="diagnostic",
-                       reason=parsed["reason"], output=parsed)
-                result = diagnose(statement, trajectory, parsed)
-        except Exception as exc:  # noqa: BLE001 - failures are not evidenced diagnoses
-            record("judge_error", cause=cause, error_type=type(exc).__name__)
-            result = {"observation": "judge_unavailable", "outcome": "unavailable",
-                      "status": "ERROR", "cause": cause, "event_ids": []}
-        result["statement"] = statement
-        record("decision_diagnostic", result=result)
-        results.append(result)
+        evidence = current()
+        if evidence is None:
+            raise ValueError("capture_unavailable")
+        with evidence.case(
+            "diagnostic:" + hashlib.sha256(identity.encode()).hexdigest(),
+            input={"kind": statement["kind"]},
+            metadata={"source_sha256": statement.get("source_sha256"),
+                      "session_event_ids": statement["session_event_ids"]},
+        ):
+            scoped = statement.pop("events")
+            judge_statement = {k: v for k, v in statement.items() if k != "session_event_ids"}
+            cause = "trajectory_unavailable"
+            result: dict[str, Any]
+            try:
+                trajectory = compact_trajectory(statement, scoped)
+                payload = {"statement": judge_statement, "trajectory": trajectory,
+                           "allowed_observations": sorted(OBSERVATIONS_BY_KIND[statement["kind"]])}
+                input_bytes = len(prompt(payload).encode("utf-8"))
+                truncated = input_bytes > MAX_DIAGNOSTIC_INPUT_BYTES
+                record("decision_input", input_bytes=input_bytes,
+                       max_input_bytes=MAX_DIAGNOSTIC_INPUT_BYTES, truncated=truncated,
+                       source_sha256=statement.get("source_sha256"),
+                       first_event_id=trajectory["first_event_id"],
+                       last_event_id=trajectory["last_event_id"])
+                cause = "input_truncated"
+                if truncated:
+                    raise ValueError("diagnostic_input_truncated")
+                relevant = trajectory["events"]
+                if not any(e.get("reasoning_availability") == "observed" for e in relevant):
+                    result = {"observation": "insufficient_evidence", "event_ids": []}
+                else:
+                    cause = "judge_call_failed"
+                    raw = await judges.call(judges.models[0], instruction, payload)
+                    cause = "judge_parse_failed"
+                    parsed = parse_fact_output(raw)
+                    if (not isinstance(parsed, dict)
+                            or parsed.get("observation") not in OBSERVATIONS
+                            or not isinstance(parsed.get("event_ids"), list)
+                            or not isinstance(parsed.get("reason"), str)
+                            or not parsed["reason"].strip()):
+                        raise ValueError("judge_protocol_missing")
+                    record("judge_verdict", verdict="diagnostic",
+                           reason=parsed["reason"], output=parsed)
+                    result = diagnose(statement, trajectory, parsed)
+            except Exception as exc:  # noqa: BLE001 - failures are not evidenced diagnoses
+                record("judge_error", cause=cause, error_type=type(exc).__name__)
+                result = {"observation": "judge_unavailable", "outcome": "unavailable",
+                          "status": "ERROR", "cause": cause, "event_ids": []}
+            result["statement"] = statement
+            record("decision_diagnostic", result=result)
+            results.append(result)
     unavailable = sum(r["observation"] == "judge_unavailable" for r in results)
     return {"status": "ERROR" if unavailable else "REPORTED", "statements": len(results),
             "judge_unavailable": unavailable,
@@ -1543,9 +1574,14 @@ async def rescore_facts(directory: Path, judges: Judges) -> dict[str, Any]:
         raise ValueError("source_sessions_missing")
     results = []
     for inspection, exchanges, ids, source_sha in sessions:
-        record("fact_scoring_input", inspection=inspection, exchanges=exchanges)
-        results.append(await smoke_fact_support(judges, inspection, exchanges,
-                       session_event_ids=ids, source_sha256=source_sha))
+        evidence = current()
+        if evidence is None:
+            raise ValueError("capture_unavailable")
+        with evidence.case(f"rescore:{source_sha}:{ids[0]}", input={"session_event_ids": ids},
+                           metadata={"source_sha256": source_sha}):
+            record("fact_scoring_input", inspection=inspection, exchanges=exchanges)
+            results.append(await smoke_fact_support(judges, inspection, exchanges,
+                           session_event_ids=ids, source_sha256=source_sha))
     return {"status": "REPORTED", "sessions": len(results), "results": results,
             "independence": served_independence(judges.served)}
 
@@ -1556,14 +1592,17 @@ async def run_rescore(args: Any) -> dict[str, Any]:
     from opentelemetry import trace
 
     from evals.backbone import _prefill_capture
+    export = evaluation_export_for(args.config)
     _prefill_capture()
     output = private_directory(args.output)
     with TemporaryFile() as lock:
-        evidence = RunEvidence(run_id="rescore", metadata=revision(Path.cwd()),
+        evidence = RunEvidence(run_id=f"rescore-{uuid.uuid4().hex}", metadata=revision(Path.cwd()),
                                lock_fd=lock.fileno(), private_root=output)
         report: dict[str, Any] = {"status": "ERROR"}
         try:
-            with evidence.capture(trace.get_tracer_provider()):
+            with evidence.capture(trace.get_tracer_provider(), export=export):
+                trace_id = trace.get_current_span().get_span_context().trace_id
+                print(f"eval trace: {trace_id:032x}", file=sys.stderr)
                 report = await rescore_facts(args.rescore,
                     Judges(load(args.config), [args.judge_a, args.judge_b], args.config))
         except Exception:  # noqa: BLE001 - the private record retains failure details
@@ -1579,14 +1618,18 @@ async def run_diagnostic(args: Any) -> dict[str, Any]:
     from opentelemetry import trace
 
     from evals.backbone import _prefill_capture
+    export = evaluation_export_for(args.config)
     _prefill_capture()
     output = private_directory(args.output)
     with TemporaryFile() as lock:
-        evidence = RunEvidence(run_id="diagnostic", metadata=revision(Path.cwd()),
+        evidence = RunEvidence(run_id=f"diagnostic-{uuid.uuid4().hex}",
+                               metadata=revision(Path.cwd()),
                                lock_fd=lock.fileno(), private_root=output)
         report: dict[str, Any] = {"status": "ERROR"}
         try:
-            with evidence.capture(trace.get_tracer_provider()):
+            with evidence.capture(trace.get_tracer_provider(), export=export):
+                trace_id = trace.get_current_span().get_span_context().trace_id
+                print(f"eval trace: {trace_id:032x}", file=sys.stderr)
                 report = await decision_judge(args.decision_judge,
                     Judges(load(args.config), [args.judge_a, args.judge_b], args.config))
         except Exception:  # noqa: BLE001 - only the private evidence records failure details

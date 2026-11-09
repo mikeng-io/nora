@@ -92,6 +92,14 @@ Request bodies and tool-surface events are persisted before model dispatch;
 raw model paths retain their existing SDK span contents rather than gaining a
 second model wrapper. Run/case IDs and trace/span IDs correlate the records.
 
+
+The memory-graph command shares this automatic operator export: replay,
+`--rescore` and `--decision-judge` all require the configured owner-local sink
+before execution. Stderr prints the trace ID; stdout retains the JSON report.
+Replay cases group one selected wake's writer and both judges with the frozen
+sample and snapshot provenance. No paid replay/rescore is authorized by the
+source tests or a previous synthetic trace.
+
 Read the printed run directory privately. `run_finished` carries the CLI exit
 code; it does not turn a failed case into PASS. A started case/run without a
 terminal record is incomplete, including a process killed before cleanup.

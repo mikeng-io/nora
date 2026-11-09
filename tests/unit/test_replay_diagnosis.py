@@ -7,6 +7,13 @@ import pytest
 from nora.subject.replay_diagnosis import diagnose
 
 
+@pytest.fixture(autouse=True)
+def private_unit_export(monkeypatch):
+    from scripts import memory_graph_spike
+    monkeypatch.setattr(memory_graph_spike, "evaluation_export_for", lambda _: None)
+
+
+
 def scripted_judge(statement, events):
     """The wire shape varies with the record, including invalid responses."""
     if statement.get("wrong_shape"):

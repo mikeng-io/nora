@@ -10,6 +10,13 @@ from nora.agent.replay_inspection import compare_inspection
 from scripts.memory_graph_spike import smoke_fact_support
 
 
+@pytest.fixture(autouse=True)
+def private_unit_export(monkeypatch):
+    from scripts import memory_graph_spike
+    monkeypatch.setattr(memory_graph_spike, "evaluation_export_for", lambda _: None)
+
+
+
 @pytest.mark.parametrize("malformed", [False, True])
 async def test_scoring_citation_scope_new_rows_and_reasons(malformed):
     calls = []
@@ -191,6 +198,8 @@ async def test_rescore_generated_run_directory(tmp_path, monkeypatch, disagree):
                     "nora.model.request.body": json.dumps({"messages": [
                         {"role": "system", "content": "generated"},
                         {"role": "user", "content": agenda}]})})
+                original.record("transport_started", span_id=root)
+                original.record("transport_finished", span_id=root, reasoning_availability="absent")
                 original.record("span_started", span_id=child, parent_span_id=root)
                 use = {"toolUseId": str(number), "name": "memory_propose", "input": {
                     "statements": [{"what": "generated", "cite": [{"source": number + 1}]}]}}

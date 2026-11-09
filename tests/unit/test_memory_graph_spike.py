@@ -15,6 +15,13 @@ from scripts import memory_graph_spike as spike
 
 
 @pytest.fixture(autouse=True)
+def private_unit_export(monkeypatch):
+    from scripts import memory_graph_spike
+    monkeypatch.setattr(memory_graph_spike, "evaluation_export_for", lambda _: None)
+
+
+
+@pytest.fixture(autouse=True)
 def restore_logging_suppression():
     previous = logging.root.manager.disable
     try:
@@ -575,9 +582,7 @@ async def test_judges_dial_the_eval_route_where_the_measurer_runs(
     assert all(d["stream"] is False for d in dialed)
 
 
-async def test_age_comparison_measures_the_source_once_outside_replay(
-    tmp_path, monkeypatch
-):
+def generated_replay_environment(tmp_path, monkeypatch):
     """The engine comparison binds the frozen projected source once per run;
     the as-of sandbox — correctly holding no graph rows at the wake instant —
     serves the session replay and is never asked for the graph population."""
@@ -663,6 +668,8 @@ async def test_age_comparison_measures_the_source_once_outside_replay(
             "nora.model.request.body": json.dumps({"messages": [
                 {"role": "system", "content": "generated"},
                 {"role": "user", "content": "generated"}]})})
+        evidence.record("transport_started")
+        evidence.record("transport_finished", reasoning_availability="absent")
         evidence.record("event", name="nora.session.terminal", attributes={"body": "{}"})
         return SimpleNamespace(session_id="generated-session", closed=[])
 
@@ -742,7 +749,16 @@ async def test_age_comparison_measures_the_source_once_outside_replay(
         skip_projection=True,
         smoke=False,
     )
-    report = await spike.run(args)
+
+    return SimpleNamespace(args=args, runner=runner, bound=bound, calls=calls,
+                           quality=quality, source_url=source_url, cfg=cfg)
+
+
+async def test_age_comparison_measures_the_source_once_outside_replay(tmp_path, monkeypatch):
+    env = generated_replay_environment(tmp_path, monkeypatch)
+    bound, calls, runner = env.bound, env.calls, env.runner
+    quality, source_url = env.quality, env.source_url
+    report = await spike.run(env.args)
 
     # The comparison ran once, against the populated source — never the
     # empty-at-the-instant sandbox the session runner replayed in.

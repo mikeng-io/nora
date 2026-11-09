@@ -198,6 +198,18 @@ console exporters) are refused before model execution. No ambient exporter is
 re-enabled. Credentials use the existing resolver and never become trace content.
 No configuration switch, host installation or historical import is implied.
 
+The memory-graph operator command (`uv run python scripts/memory_graph_spike.py`)
+uses the same configured export for replay, `--rescore` and `--decision-judge`.
+Each resolves the sink before opening private evidence or executing its body,
+and prints the trace reference on stderr while retaining the JSON report on
+stdout. There is no private-only project/inspection exemption. Each run has a
+unique identity; each selected replay wake is one case spanning preparation,
+writer, both fact judges and cleanup. Its stable case name uses unit/wake identity;
+metadata binds wake time, frozen cohort hash, seed and snapshot fingerprint, and
+the completed writer records its session identity. Rescore cases bind source
+hash/session event IDs; diagnostic cases bind the deduplicated statement's source
+session. This grouping changes neither judge inputs nor replay selection/budgets.
+
 `RunEvidence.capture` retains the SDK's in-memory evaluation processors and
 private durable recorder, adds trace identity plus this single checked OTLP
 processor, and restores the original processors afterwards. Content logs remain
