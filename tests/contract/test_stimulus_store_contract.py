@@ -5,11 +5,12 @@ Postgres, and `nora.testing.stimuli.InMemoryStimulusStore`. The evaluator's unit
 tests run on the fake, so the fake must consume stimuli by exactly the rule
 the SQL does, and this suite is what says it does.
 
-**The property it is really about is the watermark.** A unit's watermark is
-its newest wake row, never a row rewritten; a stimulus is consumed when its id
-AND its pending-since time are both at or under that row's. The second bound
-is what keeps a `self`/`time` stimulus due later pending across an earlier wake
-(«pending only from its due time»).
+**The property it is really about is the claim.** A stimulus is consumed when
+a wake that did not fail claimed it — the append-only `stimulus_claim` fact,
+never a watermark's range — and a wake's `pending_floor` bounds where the
+unclaimed residue is looked for. Rows a wake's range passed over stay pending
+without ever being enumerated: reading the backlog under an advanced mark is
+bounded by `limit`, not by the backlog's size.
 
 The database is built ONCE for this module and truncated between tests
 (AGENTS.md, «A contract suite scopes its database to the MODULE»).
@@ -71,7 +72,7 @@ async def store(request: Any) -> AsyncIterator[Any]:
             # later test's pending/over.
             await conn.execute(sa.text(
                 "truncate stimulus, cognition_wake, cognition_wake_outcome, "
-                "cognition_carry, stimulus_retraction restart identity"
+                "cognition_carry, stimulus_retraction, stimulus_claim restart identity"
             ))
         await engine.dispose()
 
@@ -85,11 +86,13 @@ def _msg(ref: str, *, unit: str = UNIT, cues: tuple[str, ...] = (), waits: bool 
     )
 
 
-def _wake(through: int, at: int, *, cut: bool = False) -> NewWake:
+def _wake(through: int, at: int, *, cut: bool = False,
+          claimed: tuple[int, ...] = ()) -> NewWake:
     return NewWake(
         unit=UNIT, mode="live", reason="settled", from_stimulus_id=0,
         through_stimulus_id=through, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=NOW, cut_cooldown=cut, at_ms=at, detail={"k": "v"},
+        claimed_ids=claimed,
     )
 
 
@@ -121,22 +124,25 @@ async def test_pending_is_scoped_to_the_unit(store):
     assert view.pending == () and view.last_activity_ms is None
 
 
-async def test_a_wake_is_the_watermark_and_consumes_through_its_id(store):
+async def test_a_wake_is_the_watermark_and_consumes_what_it_claimed(store):
     a = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
     b = await store.append(stimulus=_msg("messages:2"), recorded_at_ms=NOW + 1)
-    await store.record_wake(wake=_wake(a, NOW + 5), recorded_at_ms=NOW + 5)
+    await store.record_wake(wake=_wake(a, NOW + 5, claimed=(a,)), recorded_at_ms=NOW + 5)
     view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 10, limit=100)
     assert [s.id for s in view.pending] == [b]
     assert view.last_wake is not None
     assert (view.last_wake.through_stimulus_id, view.last_wake.at_ms) == (a, NOW + 5)
     assert view.last_wake.detail == {"k": "v"}
+    assert view.last_wake.claimed_ids == (a,)
 
 
 async def test_the_newest_wake_is_the_watermark(store):
     a = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
     b = await store.append(stimulus=_msg("messages:2"), recorded_at_ms=NOW + 1)
-    await store.record_wake(wake=_wake(a, NOW + 5), recorded_at_ms=NOW + 5)
-    await store.record_wake(wake=_wake(b, NOW + 9, cut=True), recorded_at_ms=NOW + 9)
+    await store.record_wake(wake=_wake(a, NOW + 5, claimed=(a,)), recorded_at_ms=NOW + 5)
+    await store.record_wake(
+        wake=_wake(b, NOW + 9, cut=True, claimed=(b,)), recorded_at_ms=NOW + 9,
+    )
     view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 10, limit=100)
     assert view.pending == ()
     assert view.last_wake is not None and view.last_wake.cut_cooldown is True
@@ -162,7 +168,9 @@ async def test_a_stimulus_due_later_stays_pending_across_an_earlier_wake(store):
     now_msg = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW + 1)
     early = await store.view(unit=UNIT, mode="live", now_ms=NOW + 10, limit=100)
     assert [s.id for s in early.pending] == [now_msg]          # not yet due
-    await store.record_wake(wake=_wake(now_msg, NOW + 10), recorded_at_ms=NOW + 10)
+    await store.record_wake(
+        wake=_wake(now_msg, NOW + 10, claimed=(now_msg,)), recorded_at_ms=NOW + 10,
+    )
     before_due = await store.view(unit=UNIT, mode="live", now_ms=due - 1, limit=100)
     assert before_due.pending == ()
     # At the target instant itself the tick has not turned: still withheld.
@@ -232,13 +240,14 @@ async def test_the_limit_bounds_the_pending_read(store):
     assert len(view.pending) == 2
 
 
-async def test_a_due_row_the_merged_bound_cut_is_named_unclaimed(store):
+async def test_a_due_row_under_an_advanced_mark_is_never_enumerated(store):
     """The row-28 shape the seeded fuzz found at a small limit: a selective
-    wake pushes the watermark past a future-due row's id, and once that row's
-    due tick opens the carried/unclaimed side door re-sorts ahead of it so the
-    merged bound cuts it. `view.over` must name it, `decide` must list it
-    unclaimed, and the wake's own `through` range must not consume it unseen —
-    both stores, same behaviour."""
+    wake pushes its watermark past a future-due row's id. Under the old range
+    rule the mark consumed it unseen, and `view.over` had to enumerate every
+    such row to stay lossless — the defect claims replace. Now the row was
+    never claimed: it is pending on the claim probe alone, the `limit` bound
+    shows it oldest-first like everything else, and `decide` lists it
+    unclaimed only because the view SHOWED it — nothing enumerates it."""
     from nora.domain.stimuli import WakePolicy, decide
     from nora.domain.ticks import due_tick_of_ms
 
@@ -250,32 +259,36 @@ async def test_a_due_row_the_merged_bound_cut_is_named_unclaimed(store):
                             recorded_at_ms=NOW)
     r5 = await store.append(stimulus=_kind("rollup", "colocation|p1|5"), recorded_at_ms=NOW)
     boundary = due_tick_of_ms(NOW + 30_000) * 60_000
-    # A rollup-only wake: through moves past s4's id while s4 is still
-    # future-due — protected then by its due tick, not by its id.
+    # A rollup-only wake: claims only its own kind. The messages it names in
+    # `unclaimed` are the early-door list; s4 sits under its `through` claimed
+    # by nobody.
     await store.record_wake(wake=NewWake(
         unit=UNIT, mode="live", reason="rollup", from_stimulus_id=0,
         through_stimulus_id=r5, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=NOW, cut_cooldown=False, at_ms=NOW + 10,
-        unclaimed_ids=(m1, m2, m3),
+        unclaimed_ids=(m1, m2, m3), claimed_ids=(r5,),
     ), recorded_at_ms=NOW + 10)
-    # The due tick is open now: the eligible set is {m1,m2,m3,s4} and the bound
-    # cuts s4, whose id sits under the wake's watermark.
+    # The due tick is open now: all four are pending on the claim probe; the
+    # bound shows the oldest three — and nothing names a hidden fourth.
     view = await store.view(unit=UNIT, mode="live", now_ms=boundary, limit=3)
     assert [s.id for s in view.pending] == [m1, m2, m3]
-    assert s4 in view.over
+    assert not hasattr(view, "over")
     verdict = decide(view, policy, boundary)
     assert verdict.reason is not None
-    assert s4 in verdict.unclaimed_ids
     await store.record_wake(wake=NewWake(
         unit=UNIT, mode="live", reason=verdict.reason, from_stimulus_id=0,
         through_stimulus_id=verdict.through_stimulus_id,
         stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
         oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False,
         at_ms=boundary, unclaimed_ids=verdict.unclaimed_ids,
+        claimed_ids=verdict.claimed_ids,
     ), recorded_at_ms=boundary)
-    # The range that passed s4's id must not have eaten it: still pending, and
-    # the next wake takes it — exactly once.
+    # The cut row was never endangered: still pending, taken by the next
+    # wake — exactly once. The mark itself never retreated: through stays at
+    # r5, so rows between the last claim and it are only read via the
+    # bounded residual probe — never the unbounded above-mark branch.
     view = await store.view(unit=UNIT, mode="live", now_ms=boundary + 10, limit=100)
+    assert view.mark.through_stimulus_id == r5
     assert [s.id for s in view.pending] == [s4]
     verdict = decide(view, policy, boundary + 10)
     assert verdict.reason is not None
@@ -285,109 +298,93 @@ async def test_a_due_row_the_merged_bound_cut_is_named_unclaimed(store):
         stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
         oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False,
         at_ms=boundary + 10, unclaimed_ids=verdict.unclaimed_ids,
+        claimed_ids=verdict.claimed_ids,
     ), recorded_at_ms=boundary + 10)
     view = await store.view(unit=UNIT, mode="live", now_ms=boundary + 20, limit=100)
     assert view.pending == ()
 
 
-async def test_the_raw_pending_bound_names_what_it_cut(store):
-    """The independent reviewer's loss: three self-wakes share a due tick; a
-    message wake pushes the watermark past ALL of them while still future.
-    At the boundary, `limit=1` returns the first — and the raw read's bound
-    alone would drop the other two, which the next wake's high watermark
-    would then eat unseen. `view.over` must name them, `decide` must carry
-    them unclaimed, and they must still be pending after the wake."""
+@pytest.mark.parametrize("n", [20, 2000])
+async def test_an_advanced_marks_backlog_is_read_in_bounded_oldest_first_cycles(
+    store, n,
+):
+    """The representation the blocker demands: `n` future-due self-wakes and
+    one message; a wake claiming only the message pushes its watermark past
+    ALL `n` of them. At the due boundary, `view(limit=1)` shows the oldest
+    one — and only it — because the rest stay pending on the claim probe,
+    never on a list something had to enumerate. Two consecutive
+    wake/view/settle cycles take the next two oldest: fixed outputs and
+    observable progress whether the backlog is 20 or 2000 rows."""
+    from nora.domain.ports import NewWakeOutcome
     from nora.domain.stimuli import WakePolicy, decide
     from nora.domain.ticks import due_tick_of_ms
 
     policy = WakePolicy(quiet_seconds=0, cooldown_seconds=0, session_seconds=0)
-    due = NOW + 30_000
+    due = NOW + 60_000
     boundary = due_tick_of_ms(due) * 60_000
-    s1 = await store.append(stimulus=_kind("self", "wake:1", at=NOW, due=due),
-                            recorded_at_ms=NOW)
-    s2 = await store.append(stimulus=_kind("self", "wake:2", at=NOW, due=due),
-                            recorded_at_ms=NOW)
-    s3 = await store.append(stimulus=_kind("self", "wake:3", at=NOW, due=due),
-                            recorded_at_ms=NOW)
-    m4 = await store.append(stimulus=_msg("messages:4"), recorded_at_ms=NOW)
-    await store.record_wake(wake=_wake(m4, NOW + 10), recorded_at_ms=NOW + 10)
-    # The bound cuts s2 and s3 INSIDE the raw read — the merged `over` must
-    # still name both (the side door alone never saw them: they sit under
-    # the watermark, not in carry/unclaimed).
-    view = await store.view(unit=UNIT, mode="live", now_ms=boundary, limit=1)
-    assert [s.id for s in view.pending] == [s1]
-    assert set(view.over) == {s2, s3}
-    verdict = decide(view, policy, boundary)
-    assert verdict.reason is not None
-    assert set(verdict.unclaimed_ids) == {s2, s3}
-    await store.record_wake(wake=NewWake(
-        unit=UNIT, mode="live", reason=verdict.reason, from_stimulus_id=0,
-        through_stimulus_id=verdict.through_stimulus_id,
-        stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
-        oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False,
-        at_ms=boundary, unclaimed_ids=verdict.unclaimed_ids,
-    ), recorded_at_ms=boundary)
-    # The new watermark is past every id — the cut rows must still read
-    # pending, then be claimed by the next wake exactly once.
-    view = await store.view(unit=UNIT, mode="live", now_ms=boundary + 10, limit=100)
-    assert [s.id for s in view.pending] == [s2, s3]
-    verdict = decide(view, policy, boundary + 10)
-    await store.record_wake(wake=NewWake(
-        unit=UNIT, mode="live", reason=verdict.reason, from_stimulus_id=0,
-        through_stimulus_id=verdict.through_stimulus_id,
-        stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
-        oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False,
-        at_ms=boundary + 10, unclaimed_ids=verdict.unclaimed_ids,
-    ), recorded_at_ms=boundary + 10)
+    selves = [
+        await store.append(
+            stimulus=_kind("self", f"wake:{i}", at=NOW, due=due), recorded_at_ms=NOW,
+        )
+        for i in range(n)
+    ]
+    assert len(set(selves)) == n
+    msg = await store.append(stimulus=_msg("messages:0"), recorded_at_ms=NOW)
+    # The advanced mark: one wake, claims only the message, `through` past
+    # every self id.
+    wid = await store.record_wake(wake=NewWake(
+        unit=UNIT, mode="live", reason="settled", from_stimulus_id=0,
+        through_stimulus_id=msg, stimulus_count=1, eligible_count=1,
+        oldest_pending_ms=NOW, cut_cooldown=False, at_ms=NOW + 10,
+        claimed_ids=(msg,),
+    ), recorded_at_ms=NOW + 10)
+    assert wid is not None
+    # None is pending before due — pending is a claim probe, but only once
+    # eligible.
     assert (await store.view(
-        unit=UNIT, mode="live", now_ms=boundary + 20, limit=100)).pending == ()
+        unit=UNIT, mode="live", now_ms=due - 1, limit=1)).pending == ()
+    # At the boundary: `limit` shows exactly the oldest — n-1 behind it,
+    # unenumerated.
+    view = await store.view(unit=UNIT, mode="live", now_ms=boundary, limit=1)
+    assert [s.id for s in view.pending] == [selves[0]]
+    assert not hasattr(view, "over")
+    # Two consecutive wake/view/settlement cycles: each takes exactly the
+    # next oldest and the read stays bounded.
+    for take in selves[:2]:
+        verdict = decide(view, policy, boundary)
+        assert verdict.reason is not None and verdict.claimed_ids == {take}
+        assert len(verdict.unclaimed_ids) <= 1
+        wid = await store.record_wake(wake=NewWake(
+            unit=UNIT, mode="live", reason=verdict.reason, from_stimulus_id=0,
+            through_stimulus_id=verdict.through_stimulus_id,
+            stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
+            oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False,
+            at_ms=boundary, unclaimed_ids=verdict.unclaimed_ids,
+            claimed_ids=verdict.claimed_ids, tracked=True,
+        ), recorded_at_ms=boundary, guard=WakeGuard(
+            last_wake_id=None if view.last_wake is None else view.last_wake.id,
+            last_outcome=None if view.last_session is None else view.last_session.outcome,
+        ))
+        assert wid is not None
+        await store.record_outcome(outcome=NewWakeOutcome(
+            wake_id=wid, unit=UNIT, outcome="closed", at_ms=boundary + 1,
+        ), recorded_at_ms=boundary + 1)
+        view = await store.view(unit=UNIT, mode="live", now_ms=boundary + 2, limit=1)
+    assert [s.id for s in view.pending] == [selves[2]]
+    # The residual cursor advanced WITH the claims — it bounds the under-mark
+    # range, never a list of it. The newest mark's floor is `selves[1]`: its
+    # own claim was still open when the floor was written, so it stays inside
+    # the range and the claim probe is what removes it.
+    assert view.mark.pending_floor == selves[1]
 
 
-async def test_a_full_bound_enumerates_only_the_range_the_next_wake_can_cover(store):
-    """The final reviewer's probe: `view(limit=1)` over a 20-row backlog
-    must NOT return the other 19 ids in `over`. The wake this view feeds
-    records `through = max(mark.through, max(claimed))` with claimed ⊆
-    shown — ids above the shown id can never sit under that range, so they
-    stay pending un-named: the read's work stays bounded while the backlog
-    grows, and progress still moves one shown row a wake."""
-    from nora.domain.stimuli import WakePolicy, decide
+async def test_the_pending_reads_work_does_not_grow_with_the_backlog(_stimulus_db):
+    """Query counter, SQL only (the fake has no statements to count): the
+    same advanced-mark shape at n=20 and n=2000 — `view(limit=1)` must run
+    the SAME bounded set of statements. The old drain loop grew with the
+    backlog; the floor-bounded residual does not."""
+    from nora.domain.ticks import due_tick_of_ms
 
-    policy = WakePolicy(quiet_seconds=0, cooldown_seconds=0, session_seconds=0)
-    for i in range(20):
-        await store.append(stimulus=_msg(f"messages:{i}"), recorded_at_ms=NOW)
-    view = await store.view(unit=UNIT, mode="live", now_ms=NOW, limit=1)
-    assert len(view.pending) == 1
-    # Watermark 0: the shown id IS the ceiling — nothing above it is named.
-    assert view.over == ()
-    verdict = decide(view, policy, NOW)
-    assert verdict.reason is not None
-    assert verdict.through_stimulus_id == view.pending[-1].id
-    assert verdict.unclaimed_ids == ()
-    await store.record_wake(wake=NewWake(
-        unit=UNIT, mode="live", reason=verdict.reason, from_stimulus_id=0,
-        through_stimulus_id=verdict.through_stimulus_id,
-        stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
-        oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False,
-        at_ms=NOW, unclaimed_ids=verdict.unclaimed_ids,
-    ), recorded_at_ms=NOW)
-    # Bounded progress: the second read shows the second row, the backlog
-    # above it still unenumerated — and nothing was consumed unseen.
-    view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 10, limit=1)
-    assert len(view.pending) == 1 and view.over == ()
-    assert view.pending[0].id == 2
-
-
-async def test_the_continuation_stops_at_the_ceiling_not_the_backlog(
-    _stimulus_db, monkeypatch,
-):
-    """Query counter, SQL only (the fake has no statements to count): with
-    the continuation page shrunk to 3, `view(limit=1)` over a 20-row and a
-    200-row backlog must run the SAME bounded set of statements — the old
-    drain loop would have needed ~7 and ~67 pages. Watermark 0 keeps the
-    ceiling at the shown id, so the continuation does not run at all."""
-    import nora.infra.sql.stimuli as sql_stimuli
-
-    monkeypatch.setattr(sql_stimuli, "_OVER_PAGE", 3)
     engine = create_sql_engine(_stimulus_db)
     store = SqlStimulusStore(engine)
     statements = 0
@@ -399,23 +396,39 @@ async def test_the_continuation_stops_at_the_ceiling_not_the_backlog(
 
     async def _pending_statements(added: int, prefix: str) -> int:
         nonlocal statements
-        for i in range(added):
+        due = NOW + 60_000
+        boundary = due_tick_of_ms(due) * 60_000
+        unit = f"{UNIT}:{prefix}"
+        selves = [
             await store.append(
-                stimulus=_msg(f"{prefix}:{i}"), recorded_at_ms=NOW)
+                stimulus=_kind("self", f"{prefix}:{i}", at=NOW, due=due, unit=unit),
+                recorded_at_ms=NOW,
+            )
+            for i in range(added)
+        ]
+        msg = await store.append(stimulus=_msg(
+            f"{prefix}:msg", unit=unit), recorded_at_ms=NOW)
+        await store.record_wake(wake=NewWake(
+            unit=unit, mode="live", reason="settled", from_stimulus_id=0,
+            through_stimulus_id=msg, stimulus_count=1, eligible_count=1,
+            oldest_pending_ms=NOW, cut_cooldown=False, at_ms=NOW + 10,
+            claimed_ids=(msg,),
+        ), recorded_at_ms=NOW + 10)
         statements = 0
-        view = await store.view(unit=UNIT, mode="live", now_ms=NOW, limit=1)
-        assert len(view.pending) == 1 and view.over == ()
+        view = await store.view(
+            unit=unit, mode="live", now_ms=boundary, limit=1)
+        assert [s.id for s in view.pending] == [selves[0]]
         return statements
 
     try:
         small = await _pending_statements(20, "a")
-        large = await _pending_statements(180, "b")
-        assert small == large
+        large = await _pending_statements(2000, "b")
+        assert small == large and small > 0
     finally:
         async with engine.begin() as conn:
             await conn.execute(sa.text(
                 "truncate stimulus, cognition_wake, cognition_wake_outcome, "
-                "cognition_carry, stimulus_retraction restart identity"
+                "cognition_carry, stimulus_retraction, stimulus_claim restart identity"
             ))
         await engine.dispose()
 
@@ -426,14 +439,20 @@ async def test_an_undated_arrival_inside_the_cutoffs_tick_still_waits(store):
     `through_ms`: under the old floor(recorded/Q)<=floor(through/Q) rule the
     second row was eaten before the settle margin could see it. Now it stays
     pending, and a handled row is not resurrected by the same rule."""
-    await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
+    first = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
     late = await store.append(stimulus=_msg("messages:2"), recorded_at_ms=NOW + 100)
-    await store.record_wake(wake=_wake(late, NOW + 50), recorded_at_ms=NOW + 50)
+    # The wake was recorded at NOW + 50 — `late`, stamped NOW + 100, did not
+    # exist to it: it claims only `first`.
+    await store.record_wake(
+        wake=_wake(late, NOW + 50, claimed=(first,)), recorded_at_ms=NOW + 50,
+    )
     view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 200, limit=100)
     assert [s.id for s in view.pending] == [late]
     # Read again after another wake consumes the late row: `first` — handled —
     # must not resurface however small the limit.
-    await store.record_wake(wake=_wake(late, NOW + 150), recorded_at_ms=NOW + 150)
+    await store.record_wake(
+        wake=_wake(late, NOW + 150, claimed=(late,)), recorded_at_ms=NOW + 150,
+    )
     assert (await store.view(
         unit=UNIT, mode="live", now_ms=NOW + 300, limit=1)).pending == ()
 
@@ -486,6 +505,7 @@ async def test_a_due_later_wake_does_not_resurrect_earlier_consumed_stimuli(stor
             through_stimulus_id=verdict.through_stimulus_id,
             stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
             oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False, at_ms=at,
+            claimed_ids=verdict.claimed_ids,
         ), recorded_at_ms=at)
     after = await store.view(unit=UNIT, mode="live", now_ms=due + 10**6, limit=100)
     assert after.pending == ()
@@ -499,7 +519,11 @@ async def test_a_stimulus_recorded_after_the_wakes_time_bound_stays_pending_unde
     settle margin relies on exactly this."""
     late = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW + 100)
     early = await store.append(stimulus=_msg("messages:2"), recorded_at_ms=NOW)
-    await store.record_wake(wake=_wake(early, NOW + 50), recorded_at_ms=NOW + 50)
+    # The wake claims `early`, the only row it could have seen: `late`'s stamp
+    # is after its bound, so no claim names it.
+    await store.record_wake(
+        wake=_wake(early, NOW + 50, claimed=(early,)), recorded_at_ms=NOW + 50,
+    )
     view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 200, limit=100)
     assert [s.id for s in view.pending] == [late]
 
@@ -512,9 +536,10 @@ async def test_a_stimulus_recorded_after_the_wakes_time_bound_stays_pending_unde
 # SQL does. Every test below names what reverting the rule would break.
 
 
-def _kind(kind: str, ref: str, *, at: int = NOW, due: int | None = None) -> NewStimulus:
+def _kind(kind: str, ref: str, *, at: int = NOW, due: int | None = None,
+          unit: str = UNIT) -> NewStimulus:
     return NewStimulus(
-        unit=UNIT, kind=kind, item=kind, ref=ref, at_ms=at, due_ms=due,  # type: ignore[arg-type]
+        unit=unit, kind=kind, item=kind, ref=ref, at_ms=at, due_ms=due,  # type: ignore[arg-type]
         person_id="p1" if kind == "rollup" else None,
     )
 
@@ -527,7 +552,7 @@ async def test_a_wake_that_names_unclaimed_stimuli_leaves_exactly_those_pending(
         unit=UNIT, mode="live", reason="rollup", from_stimulus_id=0,
         through_stimulus_id=r2, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=NOW, cut_cooldown=False, at_ms=NOW + 10,
-        unclaimed_ids=(m1,),
+        unclaimed_ids=(m1,), claimed_ids=(r2,),
     )
     await store.record_wake(wake=wake, recorded_at_ms=NOW + 10)
     view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 20, limit=100)
@@ -544,9 +569,11 @@ async def test_an_unclaimed_stimulus_is_taken_by_the_next_wake_and_only_once(sto
     await store.record_wake(wake=NewWake(
         unit=UNIT, mode="live", reason="rollup", from_stimulus_id=0,
         through_stimulus_id=r2, stimulus_count=1, eligible_count=1, oldest_pending_ms=NOW,
-        cut_cooldown=False, at_ms=NOW + 10, unclaimed_ids=(m1,),
+        cut_cooldown=False, at_ms=NOW + 10, unclaimed_ids=(m1,), claimed_ids=(r2,),
     ), recorded_at_ms=NOW + 10)
-    await store.record_wake(wake=_wake(r2, NOW + 20), recorded_at_ms=NOW + 20)  # claims all
+    await store.record_wake(
+        wake=_wake(r2, NOW + 20, claimed=(m1,)), recorded_at_ms=NOW + 20,
+    )  # claims the pending rest
     view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 30, limit=100)
     assert view.pending == ()
     assert view.watermark.unclaimed == frozenset()
@@ -558,7 +585,7 @@ async def test_a_retracted_unclaimed_stimulus_is_not_pending(store):
     await store.record_wake(wake=NewWake(
         unit=UNIT, mode="live", reason="rollup", from_stimulus_id=0,
         through_stimulus_id=r2, stimulus_count=1, eligible_count=1, oldest_pending_ms=NOW,
-        cut_cooldown=False, at_ms=NOW + 10, unclaimed_ids=(m1,),
+        cut_cooldown=False, at_ms=NOW + 10, unclaimed_ids=(m1,), claimed_ids=(r2,),
     ), recorded_at_ms=NOW + 10)
     await store.retract(unit=UNIT, stimulus_id=m1, reason="failed", recorded_at_ms=NOW + 11)
     view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 30, limit=100)
@@ -612,7 +639,7 @@ async def test_a_random_run_of_wakes_claims_every_stimulus_exactly_once(store, s
             through_stimulus_id=verdict.through_stimulus_id,
             stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
             oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False, at_ms=t,
-            unclaimed_ids=verdict.unclaimed_ids,
+            unclaimed_ids=verdict.unclaimed_ids, claimed_ids=verdict.claimed_ids,
         ), recorded_at_ms=t)
         claimed.extend(sorted(verdict.claimed_ids))
         return True
@@ -663,7 +690,7 @@ async def test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulu
         async with store._engine.begin() as conn:
             await conn.execute(sa.text(
                 "truncate stimulus, cognition_wake, cognition_wake_outcome, cognition_carry, "
-                "stimulus_retraction restart identity cascade"
+                "stimulus_retraction, stimulus_claim restart identity cascade"
             ))
     rng = random.Random(seed)
     policy = WakePolicy(
@@ -703,7 +730,8 @@ async def test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulu
             through_stimulus_id=verdict.through_stimulus_id,
             stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
             oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False, at_ms=t,
-            unclaimed_ids=verdict.unclaimed_ids, tracked=True,
+            unclaimed_ids=verdict.unclaimed_ids, claimed_ids=verdict.claimed_ids,
+            tracked=True,
         ), recorded_at_ms=t, guard=WakeGuard(
             last_wake_id=None if view.last_wake is None else view.last_wake.id,
             last_outcome=None if view.last_session is None else view.last_session.outcome,
@@ -760,7 +788,8 @@ async def test_a_truncated_pending_read_is_the_same_bounded_oldest_first_list_in
     wid = await store.record_wake(wake=NewWake(
         unit=UNIT, mode="live", reason="rollup", from_stimulus_id=0,
         through_stimulus_id=r6, stimulus_count=1, eligible_count=1, oldest_pending_ms=NOW,
-        cut_cooldown=False, at_ms=NOW + 10, unclaimed_ids=tuple(ids), tracked=True,
+        cut_cooldown=False, at_ms=NOW + 10, unclaimed_ids=tuple(ids),
+        claimed_ids=(r6,), tracked=True,
     ), recorded_at_ms=NOW + 10, guard=WakeGuard(last_wake_id=None, last_outcome=None))
     await store.record_outcome(
         outcome=NewWakeOutcome(wake_id=wid, unit=UNIT, outcome="closed", at_ms=NOW + 11),
@@ -769,33 +798,40 @@ async def test_a_truncated_pending_read_is_the_same_bounded_oldest_first_list_in
     )
     view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 30, limit=limit)
     assert [s.id for s in view.pending] == [*ids, r6][:limit]
-    # What the bound cut is reported the same in both stores too: a wake names
-    # `over` unclaimed, or a `through` above a cut id would consume it unseen.
-    assert view.over == tuple([*ids, r6][limit:])
+    # What the bound cut needs no name at all: a hidden id stays pending on
+    # the claim probe and the next read's oldest-first walk reaches it.
+    assert not hasattr(view, "over")
 
 
 async def test_a_wakes_detail_is_a_jsonb_object_and_an_old_string_row_still_reads(store):
-    """`record_wake` writes `detail` as a jsonb OBJECT, so `detail->'unclaimed'`
-    is queryable; a row whose detail is a jsonb string still reads, in both
-    stores."""
+    """`record_wake` writes `detail` as a jsonb OBJECT, so `detail->'unclaimed'`,
+    `detail->'claimed'` and `detail->'pending_floor'` are queryable; a row whose
+    detail is a jsonb string still reads, in both stores."""
     m1 = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
     r2 = await store.append(stimulus=_kind("rollup", "colocation|p1,p2|1"), recorded_at_ms=NOW)
     await store.record_wake(wake=NewWake(
         unit=UNIT, mode="live", reason="rollup", from_stimulus_id=0,
         through_stimulus_id=r2, stimulus_count=1, eligible_count=1, oldest_pending_ms=NOW,
         cut_cooldown=False, at_ms=NOW + 10, detail={"k": "v"}, unclaimed_ids=(m1,),
+        claimed_ids=(r2,),
     ), recorded_at_ms=NOW + 10)
     view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 30, limit=100)
     assert view.watermark.unclaimed == frozenset({m1})
+    assert view.watermark.claimed == frozenset({r2})
+    # The floor is the lowest unclaimed-by-a-closed-wake id under `through`:
+    # m1 was never claimed by anyone, so it bounds the residual.
+    assert view.watermark.pending_floor == m1
     assert [s.id for s in view.pending] == [m1]
     if not hasattr(store, "_engine"):
         return
     async with store._engine.begin() as conn:
         typed = (await conn.execute(sa.text(
-            "SELECT jsonb_typeof(detail) AS d, jsonb_typeof(detail->'unclaimed') AS u "
+            "SELECT jsonb_typeof(detail) AS d, jsonb_typeof(detail->'unclaimed') AS u, "
+            "jsonb_typeof(detail->'claimed') AS c, "
+            "jsonb_typeof(detail->'pending_floor') AS f "
             "FROM cognition_wake ORDER BY id DESC LIMIT 1"
         ))).one()
-        assert (typed.d, typed.u) == ("object", "array")
+        assert (typed.d, typed.u, typed.c, typed.f) == ("object", "array", "array", "number")
         # A legacy row: a jsonb string holding the JSON.
         await conn.execute(sa.text(
             "UPDATE cognition_wake SET detail = to_jsonb(detail::text) "

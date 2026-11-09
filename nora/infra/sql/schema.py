@@ -3878,6 +3878,30 @@ UQ_STIMULUS_RETRACTION_STIMULUS = sa.Index(
     "uq_stimulus_retraction_stimulus", STIMULUS_RETRACTION.c.stimulus_id, unique=True,
 )
 
+# `stimulus_claim`: the stimuli a recorded wake claimed — its `claimed_ids`,
+# one row each — the append-only fact the pending read consumes by: a stimulus
+# is consumed exactly when a wake that did not fail claimed it
+# (`nora.infra.sql.stimuli.pending_query`, the ONE probe). The wake row's
+# `detail.claimed` is the same set as provenance; this table is what the read
+# can index. Append-only, like `stimulus_retraction`.
+STIMULUS_CLAIM = sa.Table(
+    "stimulus_claim",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("stimulus_id", sa.BigInteger, nullable=False),
+    sa.Column("wake_id", sa.BigInteger, nullable=False),
+    _recorded_at(),
+)
+
+IDX_STIMULUS_CLAIM_STIMULUS = sa.Index(
+    "idx_stimulus_claim_stimulus", STIMULUS_CLAIM.c.stimulus_id,
+)
+
+IDX_STIMULUS_CLAIM_WAKE = sa.Index(
+    "idx_stimulus_claim_wake", STIMULUS_CLAIM.c.wake_id,
+)
+
 SOURCE_HEALTH = sa.Table(
     "source_health",
     METADATA,

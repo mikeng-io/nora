@@ -14,25 +14,25 @@
     "target": "tests/unit/test_subconscious_executor.py"
   },
   {
-    "name": "decide: a row the merged bound cut under a wake's range is consumed unseen",
+    "name": "decide: the watermark retreats below rows an earlier wake passed over",
     "file": "nora/domain/stimuli.py",
-    "old": "            | {o for o in view.over if o not in taken and o <= through}\n",
-    "new": "",
-    "target": "tests/contract/test_stimulus_store_contract.py -k merged_bound_cut"
+    "old": "    through = max(view.watermark.through_stimulus_id, max(s.id for s in claimed))",
+    "new": "    through = max(s.id for s in claimed)",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_due_row_under_an_advanced_mark_is_never_enumerated"
   },
   {
-    "name": "pending read: the raw LIMIT's cut rows are invisible to over (SQL)",
+    "name": "pending read: a claimed stimulus resurfaces under the mark (SQL)",
     "file": "nora/infra/sql/stimuli.py",
-    "old": "            unseen: list[int] = []\n            if raw_filled and raw[-1].id < ceiling:",
-    "new": "            unseen: list[int] = []\n            if False:",
-    "target": "tests/contract/test_stimulus_store_contract.py::test_the_raw_pending_bound_names_what_it_cut"
+    "old": "        .where(*base, STIMULUS.c.id.between(floor, through_id), ~claimed)",
+    "new": "        .where(*base, STIMULUS.c.id.between(floor, through_id))",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_due_row_under_an_advanced_mark_is_never_enumerated"
   },
   {
-    "name": "pending read: the raw bound's cut rows are invisible to over (twin)",
+    "name": "pending read: a claimed stimulus resurfaces under the mark (twin)",
     "file": "nora/testing/stimuli.py",
-    "old": "            {s.id for s in eligible[limit:] if s.id <= ceiling}",
-    "new": "            set()",
-    "target": "tests/contract/test_stimulus_store_contract.py::test_the_raw_pending_bound_names_what_it_cut"
+    "old": "                 or (floor <= s.id <= mark.through_stimulus_id and s.id not in claimed))",
+    "new": "                 or floor <= s.id <= mark.through_stimulus_id)",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_due_row_under_an_advanced_mark_is_never_enumerated"
   },
   {
     "name": "pending read: an undated stimulus is eligible from its recorded TICK (SQL)",

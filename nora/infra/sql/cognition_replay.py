@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.infra.sql.schema import COGNITION_SESSION, COGNITION_WAKE, STIMULUS
-from nora.infra.sql.stimuli import jsonb_object, unclaimed_ids
+from nora.infra.sql.stimuli import claimed_ids, jsonb_object, unclaimed_ids
 
 
 async def recorded_wake(engine: AsyncEngine, wake_id: int) -> tuple[int, UnitView]:
@@ -17,6 +17,11 @@ async def recorded_wake(engine: AsyncEngine, wake_id: int) -> tuple[int, UnitVie
         wake = (await conn.execute(sa.select(COGNITION_WAKE).where(
             COGNITION_WAKE.c.id == wake_id))).mappings().one()
         excluded = list(unclaimed_ids(wake["detail"]))
+        # The batch as it is recorded now: `detail.claimed` names the exact
+        # stimuli the wake took (the `stimulus_claim` rows' provenance). Older
+        # rows carry no claim — the agenda's ids, then the legacy range rule
+        # minus the unclaimed list, reconstructs theirs.
+        claimed = list(claimed_ids(wake["detail"]))
         session = (await conn.execute(sa.select(
             COGNITION_SESSION.c.agenda, COGNITION_SESSION.c.started_at_ms).where(
             COGNITION_SESSION.c.wake_id == wake_id))).mappings().one_or_none()
@@ -31,11 +36,12 @@ async def recorded_wake(engine: AsyncEngine, wake_id: int) -> tuple[int, UnitVie
             ids = {sid for item in agenda.get("items", []) for sid in item["stimulus_ids"]}
             ids.update(agenda.get("deferred_stimulus_ids", []))
             ids.update(agenda.get("skipped_stimulus_ids", []))
-        batch = (STIMULUS.c.id.in_(ids) if ids is not None else sa.and_(
-            STIMULUS.c.id > wake["from_stimulus_id"],
-            STIMULUS.c.id <= wake["through_stimulus_id"],
-            sa.func.coalesce(STIMULUS.c.due_ms,
-                sa.extract("epoch", STIMULUS.c.recorded_at) * 1000) <= wake["at_ms"]))
+        batch = STIMULUS.c.id.in_(claimed) if claimed else (
+            STIMULUS.c.id.in_(ids) if ids is not None else sa.and_(
+                STIMULUS.c.id > wake["from_stimulus_id"],
+                STIMULUS.c.id <= wake["through_stimulus_id"],
+                sa.func.coalesce(STIMULUS.c.due_ms,
+                    sa.extract("epoch", STIMULUS.c.recorded_at) * 1000) <= wake["at_ms"]))
         rows = (await conn.execute(sa.select(STIMULUS).where(
             STIMULUS.c.unit == wake["unit"],
             batch, STIMULUS.c.id.not_in(excluded),

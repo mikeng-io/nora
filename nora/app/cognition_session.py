@@ -1405,14 +1405,9 @@ class CognitionSessionRunner:
                 )
             trace_outcome = "llm_error" if result.stop_reason in LIMIT_STOP_REASONS else "silent"
         except TimeoutError as exc:
-            # `asyncio.timeout` also turns an EXTERNAL task.cancel() into
-            # TimeoutError (3.12's `uncancel() <= _cancelling` drains the
-            # count when only one cancel was requested), so the wall clock
-            # is the only witness that separates the deadline firing from a
-            # shutdown. A provider-side TimeoutError carries no
-            # CancelledError cause and keeps its own classification.
-            if isinstance(exc.__cause__, asyncio.CancelledError) and loop.time() < deadline:
-                raise asyncio.CancelledError() from exc
+            # `asyncio.timeout` raises TimeoutError only after its own
+            # deadline callback fired; an external task.cancel() propagates
+            # as CancelledError, so TimeoutError here IS the wall clock.
             raise SessionTimeoutError(
                 f"the session ran past its {self._budget.timeout_seconds:g}s wall clock",
             ) from exc
@@ -1445,16 +1440,10 @@ class CognitionSessionRunner:
             )
             if self._tag_trace_store is not None:
                 save_deadline = loop.time() + 5.0
-                try:
-                    async with asyncio.timeout_at(save_deadline):
-                        await self._tag_trace_store.save(trace)
-                except TimeoutError as exc:
-                    # Same conversion as the session clock above: a shutdown
-                    # landing inside the save is a cancel, not a timeout.
-                    if (isinstance(exc.__cause__, asyncio.CancelledError)
-                            and loop.time() < save_deadline):
-                        raise asyncio.CancelledError() from exc
-                    raise
+                # TimeoutError here is the save's own deadline firing, same
+                # classification as the session clock above.
+                async with asyncio.timeout_at(save_deadline):
+                    await self._tag_trace_store.save(trace)
             # The SAME automatic completion hook the tag path holds (design
             # 20): the tools-less Standing fold runs on this session's
             # complete retained Record — including a silent or failed

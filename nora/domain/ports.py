@@ -1011,15 +1011,18 @@ class StimulusStore(Protocol):
         stale_before_ms: int | None = None,
     ) -> UnitView:
         """One tick's read for one unit: its newest wake in `mode`, the
-        stimuli pending against the WATERMARK (the newest wake whose session
-        did not fail; `UnitView.mark`) and due by `now_ms` (ascending id, at
-        most `limit`), plus the stimuli a closed session returned with a
-        strike (`UnitView.carry`, delivered `waits` when a person's wait
-        closed them), and the `recorded_at` of its newest person-authored item
-        (a `message` stimulus, `waits` included). A `self` stimulus that was
-        retracted (`retract`) is never pending. A wake that claimed only the
-        stimuli of its own kind names the rest it left inside its range
-        (`WakeRow.unclaimed_ids`): those are pending too.
+        stimuli pending by `now_ms` (ascending id, at most `limit`) — pending
+        is a per-row fact: live, eligible, and NOT claimed by a wake that did
+        not fail (`stimulus_claim`; the WATERMARK `UnitView.mark` bounds where
+        the residual is looked for, never a list of it) — plus the stimuli a
+        closed session returned with a strike (`UnitView.carry`, delivered
+        `waits` when a person's wait closed them), and the `recorded_at` of
+        its newest person-authored item (a `message` stimulus, `waits`
+        included). A `self` stimulus that was retracted (`retract`) is never
+        pending. A wake that claimed only the stimuli of its own kind still
+        names the rest it left inside its range (`WakeRow.unclaimed_ids`) —
+        the early-door list a reader may re-offer before they are due; they
+        stay pending on their own, no claim was ever written for them.
 
         `stale_before_ms` (a REAL clock, unlike `now_ms`, which is the settle
         cutoff): a TRACKED wake recorded before it with no outcome row is
@@ -1031,7 +1034,11 @@ class StimulusStore(Protocol):
         self, *, wake: NewWake, recorded_at_ms: int, guard: WakeGuard | None = None,
     ) -> int | None:
         """Append one wake row; it is the unit's new watermark in its mode
-        unless it fails or expires (see `view`). With `guard`, the write is
+        unless it fails or expires (see `view`). Its `claimed_ids` are written
+        as `stimulus_claim` rows — the append-only consumption fact `view`
+        reads — and its `pending_floor` is recorded: the lowest stimulus id
+        under `through_stimulus_id` that may still be pending, which bounds
+        the residual read. With `guard`, the write is
         made only if, under the unit's lock, the newest wake and its outcome
         are still what the guard says; otherwise nothing is written and the
         answer is None (the caller reads again next tick)."""

@@ -10,18 +10,18 @@ wake, so the rule is testable without a database or a clock.
 recorded as a wake (`cognition_wake`) with its reason and the stimulus range it
 consumes.
 
-**The watermark is the wake log.** Each unit's durable watermark is the
-`(through_stimulus_id, at_ms)` of its newest wake row in that mode, not a row
-updated in place (loop state is transition rows, the current value is
-the newest). A stimulus is PENDING when it is due by the read's cutoff and not
-consumed, and consumed means `id <= through_stimulus_id AND pending_since <=
-at_ms` of that newest wake. Both bounds only ever grow — `decide` never sets
-`through_stimulus_id` below the one it read, and `at_ms` is the read's cutoff,
-which moves forward with the clock — so «consumed by some earlier wake» and
-«consumed by the newest» are the same test, which is what lets one row carry
-the watermark. The second bound is what keeps a `self` or `time`
-stimulus due at 19:40 pending across a wake at 15:00 (pending only from
-its due time).
+**The watermark is the wake log, and consumption is a per-row fact.** Each
+unit's durable watermark is the `(through_stimulus_id, at_ms)` of its newest
+wake row in that mode, not a row updated in place (loop state is transition
+rows, the current value is the newest). A stimulus is PENDING when it is
+eligible by the read's cutoff and no wake that did not fail CLAIMED it —
+`stimulus_claim` holds one row per claimed stimulus, so what a wake's range
+passed over stays pending without ever being enumerated. `through_stimulus_id`
+only grows — `decide` never sets it below the one it read — and a wake's
+claims sit at or under its own `through`, so «claimed by some earlier wake»
+and «claimed by the newest» are the same probe. `pending_floor` on the mark
+is the residual read's bound: below it every row is retracted or claimed by a
+`closed` wake, permanently, so reading under an advanced mark stays bounded.
 
 **Single-flight and cooldown are derived from durable rows.** With NO session
 hook (only a test builds such an evaluator) no session runs, so a wake is
@@ -61,7 +61,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Awaitable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal, Protocol, get_args
 
 from .cues import is_rearming, is_strong
@@ -214,6 +214,15 @@ class WakeRow:
     #: they stay pending (`Watermark.unclaimed`). Empty for a wake that claims
     #: everything pending.
     unclaimed_ids: tuple[int, ...] = ()
+    #: The stimuli this wake claimed (`stimulus_claim` rows, and the `claimed`
+    #: key in its own `detail`): the append-only fact of what it consumed.
+    claimed_ids: tuple[int, ...] = ()
+    #: The lowest stimulus id under `through_stimulus_id` that may still be
+    #: pending when this wake was written (`detail.pending_floor`): below it,
+    #: every row is retracted or claimed by a `closed` wake — permanently
+    #: consumed. None on rows written before the floor existed (their
+    #: below-mark reads run the full under-mark range, once).
+    pending_floor: int | None = None
 
 
 @dataclass(frozen=True)
@@ -231,6 +240,10 @@ class NewWake:
     detail: dict[str, object] = field(default_factory=dict)
     tracked: bool = False
     unclaimed_ids: tuple[int, ...] = ()
+    #: The stimuli the wake takes — `decide`'s claim. `record_wake` writes
+    #: them as `stimulus_claim` rows: the per-row append-only fact the
+    #: pending read consumes by (a range could never say "all but these").
+    claimed_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -457,37 +470,35 @@ def inert_kinds_for(*, tracked: bool, floors_ready: bool) -> frozenset[str]:
 
 @dataclass(frozen=True)
 class Watermark:
-    """`(through_stimulus_id, through_ms)`: every stimulus with `id <=
-    through_stimulus_id` and pending since no later than `through_ms` is
-    consumed, EXCEPT the ids in `unclaimed`: a wake that claims only the
-    stimuli of its own kind (DEC-245) leaves the rest pending, and a
-    range cannot say that, so the wake lists them. `ZERO` is a unit that has
-    never woken."""
+    """The unit's newest wake that did not fail, as the read's bound.
+
+    `(through_stimulus_id, through_ms)` is the wake's record of how far it
+    got; `claimed` is what it took (the `stimulus_claim` rows) and `unclaimed`
+    the stimuli inside its range it left pending (DEC-245) — the early-door
+    list a reader re-offers before they are due. `pending_floor` is the
+    lowest id under `through_stimulus_id` that may still be pending: below it
+    every row is retracted or claimed by a `closed` wake, permanently. It is
+    the read's bound on the residual range — a cursor, never a list — so
+    reading the backlog under an advanced mark stays bounded however large
+    the backlog grows. None on wakes written before the floor existed.
+
+    `ZERO` is a unit that has never woken."""
 
     through_stimulus_id: int = 0
     through_ms: int = 0
     unclaimed: frozenset[int] = frozenset()
+    claimed: frozenset[int] = frozenset()
+    pending_floor: int | None = None
 
     @classmethod
     def of(cls, wake: WakeRow | None) -> Watermark:
         if wake is None:
             return cls()
-        return cls(wake.through_stimulus_id, wake.at_ms, frozenset(wake.unclaimed_ids))
-
-    def consumed(self, stimulus: Stimulus) -> bool:
-        """Whether this watermark consumed `stimulus`: inside the id range and
-        pending no later than the wake's bound. The pending test is the due
-        TICK for a dated stimulus — `due_tick <= tick(at_ms)`, the same rule
-        `pending_tick` and the generated `stimulus.due_tick` column spell — so
-        a self-wake due mid-minute is consumed only by a wake at or after its
-        due tick. An undated stimulus has no due instant; its real
-        `recorded_at` still compares directly (the late-commit branch of
-        `pending_query`)."""
-        if stimulus.id > self.through_stimulus_id or stimulus.id in self.unclaimed:
-            return False
-        if stimulus.due_ms is None:
-            return stimulus.recorded_at_ms <= self.through_ms
-        return due_tick_of_ms(stimulus.due_ms) <= tick_of_ms(self.through_ms)
+        return cls(
+            wake.through_stimulus_id, wake.at_ms,
+            frozenset(wake.unclaimed_ids), frozenset(wake.claimed_ids),
+            wake.pending_floor,
+        )
 
 
 @dataclass(frozen=True)
@@ -608,17 +619,6 @@ class UnitView:
     #: earlier deploy) are listed as unclaimed by every wake, so they are never
     #: consumed unseen and act again the moment the kind is ready.
     inert_kinds: frozenset[str] = frozenset()
-    #: Ids the merged `limit` bound cut off `pending`, ascending. The range
-    #: the next wake can cover is bounded by `max(mark.through, the highest
-    #: shown id)` — a wake's `through` never exceeds it — so `over` names
-    #: exactly the eligible ids under that ceiling the bound hid; anything
-    #: above it stays pending un-named. A wake names these in
-    #: `unclaimed_ids` — they sit under its `through_stimulus_id` while
-    #: never having been claimed — or the watermark it records would eat
-    #: them unseen. `decide` adds them to `unclaimed_ids` itself; a reader
-    #: that constructs its own `UnitView` must do the same or reproduce the
-    #: hole.
-    over: tuple[int, ...] = ()
 
     @property
     def watermark(self) -> Watermark:
@@ -701,12 +701,20 @@ def failure_run(
     agenda = agenda_failure_streak(state for _, state in pairs)
     if agenda == 0:
         return n, 0, None
+    mark: Watermark | None = None
+    claimed: set[int] = set()
     for wake, state in pairs:
         if state is None or state.state == "closed":
             break
         if state.state == "failed" and state.cause == "agenda" and state.outcome != "cancelled":
-            return n, agenda, Watermark.of(wake)
-    return n, agenda, None
+            # The run's newest agenda-failed wake names the mark; the strike's
+            # claimed set is EVERY agenda-failed wake's claims in it.
+            if mark is None:
+                mark = Watermark.of(wake)
+            claimed.update(wake.claimed_ids)
+    if mark is None:
+        return n, agenda, None
+    return n, agenda, replace(mark, claimed=frozenset(claimed))
 
 
 def backoff_ms(failures: int, policy: WakePolicy) -> int:
@@ -882,21 +890,15 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
         eligible_count=len(eligible),
         oldest_pending_ms=min(s.pending_since_ms for s in eligible),
         claimed_ids=frozenset(taken),
-        # What the range covers and the wake did NOT take: listed, so the
-        # watermark leaves them pending. Above `through` they are pending
-        # anyway.
+        # What the wake showed and did NOT take, under its `through`: the
+        # early-door list (`stimulus_claim` keeps them pending regardless —
+        # this names what a reader may re-offer before they are due). Bounded
+        # like the view: prior `unclaimed` ids the side door re-offered are in
+        # `view.pending` already; ones it did not show simply wait in their
+        # claim-free state, and carrying them forward by name is exactly the
+        # enumeration the claims table exists to remove.
         unclaimed_ids=tuple(sorted(
             {s.id for s in view.pending if s.id not in taken and s.id <= through}
-            # Carried forward from the watermark's own list, WHETHER OR NOT this
-            # read shows them: a truncated read (`limit`) cuts the newest, and a
-            # stimulus the view did not show cannot be claimed here, so dropping
-            # it from the list would consume it unseen under this wake's range.
-            | {u for u in view.watermark.unclaimed if u not in taken and u <= through}
-            # `view.over`: what the MERGED bound cut after the carried and
-            # unclaimed side doors re-sorted ahead of it — inside this wake's
-            # `through` range, due, and never shown. Naming it keeps the wake's
-            # watermark from consuming it the way a `pending`-only list would.
-            | {o for o in view.over if o not in taken and o <= through}
         )),
     )
 

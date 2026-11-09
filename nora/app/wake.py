@@ -438,12 +438,12 @@ class WakeEvaluator:
 
     async def _strike_failed(self, view: UnitView, now_ms: int) -> UnitView:
         """At `max_consecutive_failures` AGENDA failures strike what those wakes
-        claimed: every pending stimulus their newest watermark consumes is
-        retracted with reason `failed`, so an agenda that always fails stops, and
-        a stimulus that arrived after the last agenda-failed wake is never struck
-        unseen. INFRASTRUCTURE failures (provider outage, kill, database) back
-        the unit off (`view.failures`) and never strike, however many in a row
-        (DEC-244): a human message is not dropped for an
+        claimed: every pending stimulus in the run's union of `stimulus_claim`
+        rows is retracted with reason `failed`, so an agenda that always fails
+        stops, and a stimulus that arrived after the last agenda-failed wake is
+        never struck unseen. INFRASTRUCTURE failures (provider outage, kill,
+        database) back the unit off (`view.failures`) and never strike, however
+        many in a row (DEC-244): a human message is not dropped for an
         outage."""
         mark = view.failed_mark
         if (
@@ -451,7 +451,7 @@ class WakeEvaluator:
             or view.agenda_failures < self._policy.max_consecutive_failures
         ):
             return view
-        struck = [s for s in view.pending if mark.consumed(s)]
+        struck = [s for s in view.pending if s.id in mark.claimed]
         if not struck:
             return view
         wrote = 0
@@ -509,6 +509,7 @@ class WakeEvaluator:
                 "rooms": len({s.conversation_id for s in claimed if s.conversation_id}),
             },
             unclaimed_ids=verdict.unclaimed_ids,
+            claimed_ids=tuple(sorted(verdict.claimed_ids)),
         )
         # Tracked: the write re-checks, under the unit's lock, that the view
         # this verdict came from still holds (`WakeGuard`).

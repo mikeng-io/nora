@@ -4,12 +4,12 @@ the RESULT; something must measure the COST»).
 `stimulus` is append-only and grows with every item of every room forever, so
 the evaluator's per-tick read must be answered from indexes, never by
 scanning a unit's history. The contract suite proves the answer; this proves
-the plan: with sequential scans priced out, each branch of the pending read
-ranges over its own index, and the last-activity read probes its own. The
-single predicate the pending read avoids (`NOT (id <= t AND coalesce(...)
-<= m)`, under `ORDER BY id LIMIT`) plans as a walk of `idx_stimulus_unit_id`
-from the start of the unit's history with the predicate as a filter — no Seq
-Scan, and no use of the due or undated index — which is what reddens this.
+the plan: consumption is a per-row `stimulus_claim` fact probed by index, and
+the below-mark residual is a cursor (`pending_floor`), never a walk of the
+unit's history and never a list of the backlog. With sequential scans priced
+out, each branch of the pending read ranges `idx_stimulus_unit_id`, the claim
+probe ranges `idx_stimulus_claim_stimulus`, and the last-activity read probes
+its own index.
 """
 
 from __future__ import annotations
@@ -19,8 +19,10 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from nora.domain.ports import NewWakeOutcome
+from nora.domain.stimuli import NewWake
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.stimuli import activity_query, pending_query
+from nora.infra.sql.stimuli import SqlStimulusStore, activity_query, pending_query
 
 NOW = 1_790_000_000_000
 
@@ -38,15 +40,16 @@ async def test_the_pending_and_activity_reads_plan_onto_indexes(clean_pg_url):
     engine = create_sql_engine(clean_pg_url)
     try:
         pending = await _plan(engine, pending_query(
-            unit="nora", through_id=10, through_ms=NOW, now_ms=NOW + 1, limit=100))
+            unit="nora", mode="live", now_ms=NOW + 1, floor=0, through_id=10,
+            stale_before_ms=None, limit=100))
         activity = await _plan(engine, activity_query(unit="nora"))
     finally:
         await engine.dispose()
     for plan in (pending, activity):
         assert "Seq Scan on stimulus" not in plan, plan
-    for index in ("idx_stimulus_unit_id", "idx_stimulus_unit_due",
-                  "idx_stimulus_unit_undated_recorded"):
-        assert index in pending, pending
+        assert "Seq Scan on stimulus_claim" not in plan, plan
+    assert "idx_stimulus_unit_id" in pending, pending
+    assert "idx_stimulus_claim_stimulus" in pending, pending
     assert "idx_stimulus_unit_message_recorded" in activity, activity
 
 
@@ -56,22 +59,21 @@ async def test_the_due_read_stays_on_the_pending_batch_as_history_grows(clean_pg
     read work on generated history growing around a fixed pending batch).
 
     `EXPLAIN ANALYZE`'s actual counters are the rows the executor really
-    ranged over — `Actual Rows` and `Actual Rows Removed by Filter`, times
-    `Actual Loops`, read off the JSON plan rather than the text's first
-    `rows=` (which is the planner's estimate, not the executor's count).
-    History (consumed-shaped rows: dated and due long ago, or undated and
-    recorded long ago — all below the watermark's bounds) quadruples while
-    the pending batch is held at three — one per branch of the read: a
-    post-watermark id, a dated row past the watermark's tick, and an undated
-    late commit recorded past its time. The row work the due read performs
-    must hold at the batch's size, not the history's. (What this does NOT
-    measure: the query's aggregate planner cost — the assertion is on
-    instrumented row visits alone.)"""
+    ranged over — `Actual Rows` and `Rows Removed by Filter`, times `Actual
+    Loops`, read off the JSON plan rather than the text's first `rows=`
+    (which is the planner's estimate, not the executor's count). History —
+    rows actually CLAIMED by a wake that closed, all at or under the
+    watermark — quadruples while the pending batch is held at two: an
+    unclaimed row under the mark (the residual range reaches it from
+    `pending_floor`) and an undated late commit past it. The row work must
+    hold at the batch's size, not the history's. (What this does NOT measure:
+    the query's aggregate planner cost — the assertion is on instrumented
+    row visits alone.)"""
     import json
     from datetime import UTC, datetime
 
     from nora.domain.ticks import due_tick_of_ms
-    from nora.infra.sql.schema import STIMULUS, STIMULUS_RETRACTION
+    from nora.infra.sql.schema import STIMULUS
 
     def _at(ms: int) -> datetime:
         return datetime.fromtimestamp(ms / 1000, tz=UTC)
@@ -97,12 +99,12 @@ async def test_the_due_read_stays_on_the_pending_batch_as_history_grows(clean_pg
         return out, removed, seq
 
     engine = create_sql_engine(clean_pg_url)
-    through_ms, now_ms = NOW, NOW + 10**9
+    store = SqlStimulusStore(engine)
 
-    async def scan_rows(through_id: int) -> int:
+    async def scan_rows(through_id: int, floor: int) -> tuple[int, int]:
         sql = str(pending_query(
-            unit="nora", through_id=through_id, through_ms=through_ms,
-            now_ms=now_ms, limit=100,
+            unit="nora", mode="live", now_ms=NOW + 10**9, floor=floor,
+            through_id=through_id, stale_before_ms=None, limit=100,
         ).compile(dialect=postgresql.dialect(),
                   compile_kwargs={"literal_binds": True}))
         async with engine.connect() as conn:
@@ -112,71 +114,88 @@ async def test_the_due_read_stays_on_the_pending_batch_as_history_grows(clean_pg
         plan = json.loads(raw) if isinstance(raw, str) else raw
         out, removed, seq = _index_work(plan[0]["Plan"])
         assert not seq
-        return out + removed
+        return out, removed
 
-    async def populate(history: int) -> int:
-        """`history` consumed-shaped rows, then a fixed pending batch of
-        three — one for each branch of the read — and the watermark's id over
-        all but the last. Returns `through_id`."""
+    async def populate(history: int) -> tuple[int, int]:
+        """`history` rows CLAIMED by a wake that closed (the consumed shape),
+        then a fixed pending batch of two — an unclaimed row under the mark
+        and an undated late commit past it. Returns `(through_id, floor)`."""
         rows: list[dict[str, Any]] = []
-
-        def _row(kind: str, item: str, ref: str, at_ms: int,
-                 due_ms: int | None, recorded: int) -> dict[str, Any]:
-            # The writable authority: a writer names the tick its instant
-            # means (`ck_stimulus_due_tick` refuses any other).
-            return {
-                "unit": "nora", "kind": kind, "item": item, "ref": ref,
-                "at_ms": at_ms, "due_ms": due_ms,
-                "due_tick": None if due_ms is None else due_tick_of_ms(due_ms),
-                "recorded_at": _at(recorded),
-            }
-
         for i in range(history):
-            # Consumed-shaped history: dated rows whose due tick is at or
-            # under the watermark's, undated rows recorded before its time.
             dated = i % 2 == 0
-            rows.append(_row(
-                "self" if dated else "message",
-                "self" if dated else "message", f"h:{history}:{i}",
-                NOW - 10**7, NOW - 10**6 if dated else None, NOW - 10**7,
-            ))
-        rows += [
-            # Inside the id range, a dated row whose due tick is past the
-            # watermark's tick — `idx_stimulus_unit_due` answers it.
-            _row("self", "self", "p:due", NOW, NOW + 10**8, NOW - 10**6),
-            # Inside the id range, undated, recorded after the watermark's
-            # time — `idx_stimulus_unit_undated_recorded` (the late commit
-            # the settle margin exists for).
-            _row("message", "message", "p:late", NOW, None, NOW + 5_000),
-            # Past the watermark's id — `idx_stimulus_unit_id`.
-            _row("message", "message", "p:after", NOW, None, NOW + 5_000),
-        ]
+            rows.append({
+                "unit": "nora",
+                "kind": "self" if dated else "message",
+                "item": "self" if dated else "message", "ref": f"h:{history}:{i}",
+                "at_ms": NOW - 10**7,
+                "due_ms": NOW - 10**6 if dated else None,
+                "due_tick": None if not dated else due_tick_of_ms(NOW - 10**6),
+                "recorded_at": _at(NOW - 10**7),
+            })
         async with engine.begin() as conn:
-            await conn.execute(sa.text("TRUNCATE stimulus RESTART IDENTITY"))
+            await conn.execute(sa.text(
+                "TRUNCATE stimulus, cognition_wake, cognition_wake_outcome, "
+                "stimulus_claim RESTART IDENTITY"
+            ))
             await conn.execute(STIMULUS.insert(), rows)
+        # One wake claims ALL of history and closes: the consumed shape.
+        wid = await store.record_wake(wake=NewWake(
+            unit="nora", mode="live", reason="settled", from_stimulus_id=0,
+            through_stimulus_id=history, stimulus_count=history,
+            eligible_count=history, oldest_pending_ms=None, cut_cooldown=False,
+            at_ms=NOW - 10**5, claimed_ids=tuple(range(1, history + 1)),
+        ), recorded_at_ms=NOW - 10**5)
+        assert wid is not None
+        await store.record_outcome(outcome=NewWakeOutcome(
+            wake_id=wid, unit="nora", outcome="closed", at_ms=NOW - 10**4,
+        ), recorded_at_ms=NOW - 10**4)
+        async with engine.begin() as conn:
+            await conn.execute(STIMULUS.insert(), [
+                # Under the mark's `through`, never claimed — the residual's
+                # floor lands on it.
+                {"unit": "nora", "kind": "self", "item": "self", "ref": "p:due",
+                 "at_ms": NOW, "due_ms": NOW + 10**8,
+                 "due_tick": due_tick_of_ms(NOW + 10**8), "recorded_at": _at(NOW - 10**6)},
+                # The late commit, stamped past the mark's time.
+                {"unit": "nora", "kind": "message", "item": "message", "ref": "p:late",
+                 "at_ms": NOW, "due_ms": None, "due_tick": None,
+                 "recorded_at": _at(NOW + 5_000)},
+            ])
             await conn.execute(sa.text("ANALYZE stimulus"))
-            return (await conn.execute(
-                sa.text("SELECT max(id) - 1 FROM stimulus"))).scalar_one()
+            through = int((await conn.execute(sa.text(
+                "SELECT max(id) FROM stimulus"))).scalar_one())
+            # `record_wake` computes the floor on the NEXT wake over this
+            # mark: the first live row under `through` no closed wake claimed.
+            floor = int((await conn.execute(sa.text(
+                "SELECT min(id) FROM stimulus s WHERE NOT EXISTS ("
+                "SELECT 1 FROM stimulus_claim c WHERE c.stimulus_id = s.id)"
+            ))).scalar_one())
+            return through, floor
 
     try:
-        small = await scan_rows(await populate(2_000))
-        large = await scan_rows(await populate(8_000))
-        # Positive control for the counter itself: retract the pending
-        # batch and the `NOT EXISTS` filter must really drop those index
-        # rows — `removed` nonzero proves the JSON key reads the executor's
-        # count, not a silently-zero renamed field.
-        through_id = await populate(60)
+        through, floor = await populate(2_000)
+        small_out, small_removed = await scan_rows(through, floor)
+        through, floor = await populate(8_000)
+        large_out, large_removed = await scan_rows(through, floor)
+        # Positive control for the counter itself, independent of the totals:
+        # a row the index scan visits but the eligibility FILTER drops must
+        # register in `Rows Removed by Filter`. A future-due row above the
+        # mark does exactly that — (a retraction would not prove it: Postgres
+        # plans `live_stimulus`'s NOT EXISTS as an anti-join, whose rejects
+        # never appear in the scan node's `Rows Removed by Filter`).
         async with engine.begin() as conn:
-            pending_ids = [r[0] for r in (await conn.execute(sa.text(
-                "SELECT id FROM stimulus ORDER BY id DESC LIMIT 3"))).all()]
-            await conn.execute(STIMULUS_RETRACTION.insert(), [
-                {"unit": "nora", "stimulus_id": i, "reason": "moved"}
-                for i in pending_ids])
-        filtered = await scan_rows(through_id)
+            await conn.execute(STIMULUS.insert(), [{
+                "unit": "nora", "kind": "self", "item": "self", "ref": "p:future",
+                "at_ms": NOW, "due_ms": NOW + 10**10,
+                "due_tick": due_tick_of_ms(NOW + 10**10),
+                "recorded_at": _at(NOW),
+            }])
+        filtered_out, filtered_removed = await scan_rows(through, floor)
     finally:
         await engine.dispose()
-    # Three pending rows over three index ranges — the number is about the
-    # batch, with a little slack for executor detail, never about the table.
-    assert 0 < small <= 12, small
-    assert large <= small + 4, (small, large)
-    assert filtered > 0, "retracted rows were not removed by filter"
+    # Two pending rows over two index ranges — the number is about the batch,
+    # with a little slack for executor detail, never about the history.
+    assert 0 < small_out <= 8, small_out
+    assert large_out <= small_out + 2, (small_out, large_out)
+    assert filtered_out <= small_out, (small_out, filtered_out)
+    assert filtered_removed > 0, "not-yet-due rows were not removed by filter"

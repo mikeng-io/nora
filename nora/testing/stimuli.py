@@ -33,18 +33,6 @@ from nora.domain.stimuli import (
     stored_cause,
     wake_state,
 )
-from nora.domain.ticks import due_tick_of_ms, tick_of_ms
-
-
-def _consumed_by(s: Stimulus, mark: Watermark) -> bool:
-    """The SQL range read's time bound, without `unclaimed` knowledge (the
-    side door below re-adds those): a dated stimulus is consumed up to the
-    watermark's TICK (`due_tick <= tick(through_ms)` — `pending_tick`'s own
-    arithmetic), an undated one up to its real `recorded_at`."""
-    if s.due_ms is None:
-        return s.recorded_at_ms <= mark.through_ms
-    return due_tick_of_ms(s.due_ms) <= tick_of_ms(mark.through_ms)
-
 
 def live_stimulus(retracted: Collection[int], stimulus_id: int | None) -> bool:
     """THE retraction predicate, the double's twin of
@@ -151,16 +139,23 @@ class InMemoryStimulusStore:
                 mark_wake = wake
                 break
         mark = Watermark.of(mark_wake)
-        # The range read: the watermark's OWN test (id and time), which does not
-        # know the wake's `unclaimed` list, limited like the SQL read.
-        # `eligible_ms`, not `pending_tick`: a dated stimulus is pending from
-        # its due tick's boundary, an undated one from its exact recorded_at —
-        # a 90000 recording is not pending at 88000 (node 18).
+        # Consumption is a per-row fact, as the SQL `stimulus_claim` read makes
+        # it: claimed by a wake that did not fail. A stimulus above the mark's
+        # `through` was never claimable (`through` never retreats and a wake's
+        # claims sit at or under its own); one under it is pending only from
+        # `pending_floor` up — the cursor `record_wake` computes, not a walk of
+        # history — and only while no non-failed wake claims it.
+        claimed = {
+            sid for w in mine for sid in w.claimed_ids
+            if (st := self._state(w, stale_before_ms)) is None or st.state != "failed"
+        }
+        floor = mark.pending_floor or 0
         eligible = [
             s for s in self.stimuli
             if s.unit == unit and s.id not in self.uncommitted and self._live(s.id)
             and s.eligible_ms <= now_ms
-            and not (s.id <= mark.through_stimulus_id and _consumed_by(s, mark))
+            and (s.id > mark.through_stimulus_id
+                 or (floor <= s.id <= mark.through_stimulus_id and s.id not in claimed))
         ]
         pending = eligible[:limit]
         current: dict[int, NewCarry] = {}
@@ -181,20 +176,6 @@ class InMemoryStimulusStore:
                 waits = s.id in carried and carried[s.id].waits
                 pending.append(replace(s, waits=True) if waits else s)
         pending.sort(key=lambda x: x.id)
-        # `SqlStimulusStore.view`'s ceiling: `through` is
-        # `max(mark.through, max(claimed))` and claimed ⊆ shown, so eligible
-        # ids above `ceiling` sit over any range the next wake can cover —
-        # they stay pending un-named, and the `over` enumeration below it is
-        # the same bound both stores name.
-        shown = pending[:limit]
-        ceiling = max(
-            mark.through_stimulus_id,
-            shown[-1].id if shown else mark.through_stimulus_id,
-        )
-        over = tuple(sorted(
-            {s.id for s in eligible[limit:] if s.id <= ceiling}
-            | {s.id for s in pending[limit:]}
-        ))
         del pending[limit:]
         activity = [
             s.recorded_at_ms for s in self.stimuli
@@ -209,7 +190,6 @@ class InMemoryStimulusStore:
             mark=mark, last_session=last_session,
             carry={i: c.strike for i, c in carried.items()},
             failures=failures, agenda_failures=agenda_failures, failed_mark=failed_mark,
-            over=over,
         )
 
     async def record_outcome(
@@ -336,9 +316,31 @@ class InMemoryStimulusStore:
             cut_cooldown=wake.cut_cooldown, at_ms=wake.at_ms,
             recorded_at_ms=recorded_at_ms, detail=dict(wake.detail), tracked=wake.tracked,
             unclaimed_ids=tuple(sorted(wake.unclaimed_ids)),
+            claimed_ids=tuple(sorted(wake.claimed_ids)),
+            pending_floor=self._pending_floor(wake),
         )
         self.wakes.append(row_)
         return row_.id
+
+    def _pending_floor(self, wake: NewWake) -> int:
+        """`SqlStimulusStore.record_wake`'s floor, in memory: the first live
+        stimulus at or under `through` not claimed by a wake that CLOSED (only
+        a closed wake's claims are permanent), starting from the previous
+        floor; `through + 1` when nothing under `through` qualifies."""
+        mine = [w for w in self.wakes if w.unit == wake.unit and w.mode == wake.mode]
+        prev = next(
+            (w.pending_floor for w in reversed(mine) if w.pending_floor is not None),
+            0,
+        ) or 0
+        closed = {
+            sid for w in mine for sid in w.claimed_ids if self._counted(w.id)
+        }
+        for s in self.stimuli:
+            if (s.unit == wake.unit and s.id not in self.uncommitted
+                    and prev <= s.id <= wake.through_stimulus_id
+                    and self._live(s.id) and s.id not in closed):
+                return s.id
+        return wake.through_stimulus_id + 1
 
     def seed_wake(self, unit: str, wake_id: int, *, tracked: bool = True) -> None:
         """A wake row with this id, as the evaluator would have written it, for
@@ -368,7 +370,7 @@ class HealthRow:
 class InMemorySourceHealthLog:
     def __init__(self) -> None:
         self.rows: list[HealthRow] = []
-        #: Set True to make `record` answer False, as a failed INSERT does.
+        #: Set True to make every `record` answer False, as a failed INSERT does.
         self.fail = False
 
     async def record(

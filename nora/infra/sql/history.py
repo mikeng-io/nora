@@ -237,6 +237,9 @@ APPEND_ONLY: dict[str, str] = {
     "cognition_wake_outcome": "recorded_at",
     "cognition_carry": "recorded_at",
     "stimulus_retraction": "recorded_at",
+    # The stimuli a wake claimed — the pending read's consumption fact
+    # (0151). One row per claimed stimulus, never revised.
+    "stimulus_claim": "recorded_at",
 }
 
 #: Changes in place and not yet migrated. Not restorable as of T; `nora

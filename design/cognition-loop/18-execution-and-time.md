@@ -155,9 +155,10 @@ created/started/handled times for provenance. Human and model views show useful
 local time/delay and age as well as any tick identifier needed for explanation.
 All model-facing blocks remain built through existing context assembly.
 
-During migration choose one writable eligibility authority: the target is
-`due_tick`; legacy `due_at` readers receive a projection or are migrated in the
-same change. Do not leave independently writable timestamp and tick deadlines.
+Choose one eligibility authority: the target is `due_tick`, a writable
+column every deadline writer sets; `due_at`/`due_ms` keep the deadline
+instant as provenance, and a CHECK constraint binds the two so an
+independently writable timestamp and tick deadline cannot disagree.
 Inventory reminders, self-wakes, series generation, move/cancel tools, snapshots,
 replay seeds, portal/CLI readers and context blocks before changing the schema.
 Historical views must preserve the original schedule semantics and provenance.
@@ -268,34 +269,42 @@ properties; changing a clock helper cannot substitute for execution ownership.
 | One subconscious execution owner | `SubconsciousExecutor` submits a session-shaped `CognitionSessionAdaptor` to `DreamerRuntime.dispatch`; the Dreamer lane owns admission, single-flight occupancy, the session task and cancellation (`in_flight`/`wait_in_flight`/`cancel_in_flight`). The session runner no longer tracks or cancels live session tasks; `CognitionShutdown` cancels through the lane and the runner waits for outcome writes. The sibling model path is deleted: `DreamerAgentRunner` delegates to `DreamerRuntime.run_agent`, and `_sample` and Cognition session invocation share `_invoke_once` — the same `create_dream_agent`/`factory.invoke` route. | `test_subconscious_executor.py`: a composed `WakeEvaluator.tick` reaches the session only through the lane; `dispatch` refusal executes nothing; a second wake while occupied is refused; `cancel_in_flight` cancels the session once; wiring refuses a missing runtime. `test_cognition_wiring.py`, `test_cognition_session_runner.py` for the preserved session contract. |
 | Reuse of the existing paths | Conscious addressed/deferred turns keep `HeartbeatLoop`/`fire`; sessions keep `CognitionSessionRunner`, its tools, writes, guard vocabulary, trace and `SESSION_TOKENS` spend handoff. | `test_cognition_session_tool_specs.py`, `test_cognition_agenda_skills.py`, `test_cognition_agent_runner.py`, `test_backfill_limits_and_traces.py`, `test_turn_records.py`; no second prompt builder (the session still assembles `_BLOCKS`). |
 | Boundaries and lifecycle survive | Room/requester/kind batching, CAS claim/successor insertion, `WakeGuard`, single-flight, unit lock, `CognitionShutdown` idempotent grace-then-cancel unchanged (the wait/cancel now route to the lane that owns the tasks). | Reminder and stimulus contract suites (`test_reminder_store_contract.py`, `test_stimulus_store_contract.py`, `test_stimulus_session_lifecycle_contract.py`) on SQL and the in-memory twin; `test_wake_evaluator.py` policy/brake cases. |
-| Shared time is real | `nora.domain.ticks` is the one tick/slot vocabulary (`TICK_MS`, `tick_of_ms`, `due_tick_of_ms`, `slot_index`, `seconds_to_boundary`); `due_tick` is generated from the stored deadline instant — `due_at`/`due_ms` stay the one writable deadline authority, the generated tick can never disagree with them — and indexed; `_slot` delegates; heartbeat, wake and dream loops sleep to the next cadence boundary. Eligibility keeps tick arithmetic for DATED deadlines and exact `recorded_at` for undated commit-order provenance (`eligible_ms`). The generated SQL ceiling is signed-safe (`due_ms / 60000 + (due_ms % 60000 > 0)`), correct below the epoch and overflow-free. | Fake-clock boundary cases (`test_subconscious_executor.py`, `test_wake_evaluator.py`, `test_stimulus_store_contract.py`); signed-ceil parity on negative/NULL/boundary values against real Postgres (`tests/infra/test_due_tick_generated.py`); the backward-clock case (`test_a_backward_clock_move_does_not_reopen_a_consumed_slot`) — a slot at or under the last successful fire's is consumed, `unavailable` never stamps; `seconds_to_boundary` phase cases. |
-| No stranded surface | Reminder and stimulus reads/writes migrated; `idx_reminders_due_tick` and re-pointed `idx_stimulus_unit_due`; snapshot seed inserts exclude generated columns (`is_generated = 'NEVER'`) so old images without `due_tick` and new images carrying it restore through the one loader; replay readers keep real instants. `MEMORY_WORK_ITEM`/`BRIDGE_WORK` retry queues are outside the named inventory and unchanged. | `test_stimulus_store_plan.py`: the pending read's three branches plan onto their indexes, and `EXPLAIN (ANALYZE, FORMAT JSON)` actual row/loop/filter-removed counters on generated history (2k → 8k consumed rows) hold the due read at the fixed 3-row pending batch — the executor's instrumented row visits, not a `rows=` estimate. `tests/infra/test_due_tick_generated.py` restores stimulus rows through the seed's `_insert_sql`. |
+| Shared time is real | `nora.domain.ticks` is the one tick/slot vocabulary (`TICK_MS`, `tick_of_ms`, `due_tick_of_ms`, `slot_index`, `seconds_to_boundary`); `due_tick` is a real writable column — the eligibility authority every deadline writer sets — bound to `due_at`/`due_ms` provenance by `ck_reminders_due_tick`/`ck_stimulus_due_tick`, so the two can never disagree; `_slot` delegates; heartbeat, wake and dream loops sleep to the next cadence boundary. Eligibility keeps tick arithmetic for DATED deadlines and exact `recorded_at` for undated commit-order provenance (`eligible_ms`). | Fake-clock boundary cases (`test_subconscious_executor.py`, `test_wake_evaluator.py`, `test_stimulus_store_contract.py`); writable-tick write/refusal cases against real Postgres (`tests/infra/test_due_tick_generated.py`); the backward-clock case (`test_a_backward_clock_move_does_not_reopen_a_consumed_slot`) — a slot at or under the last successful fire's is consumed, `unavailable` never stamps; `seconds_to_boundary` phase cases. |
+| No stranded surface | Reminder and stimulus reads/writes name `due_tick` coherently with the stored instant; `idx_reminders_due_tick` and `idx_stimulus_unit_due` index it; the snapshot seed writes `due_tick` on restore and derives it (`BACKFILLED`) for images recorded before the column existed, so old and new images restore through the one loader; replay readers keep real instants. `MEMORY_WORK_ITEM`/`BRIDGE_WORK` retry queues are outside the named inventory and unchanged. | `test_stimulus_store_plan.py`: the pending read's two bounded branches plan onto their indexes, and `EXPLAIN (ANALYZE, FORMAT JSON)` actual counters on generated claim history bound the residual read by `pending_floor`, with `Rows Removed by Filter` proven nonzero by an independent retraction control. `tests/infra/test_due_tick_generated.py` restores stimulus rows through the seed's `_insert_sql`. |
 
 **Fixed, found by the migration and the independent review:** a stimulus
 eligible but cut by a bound was consumed by the next watermark without ever
-being shown or claimed — in TWO places, not one. The merged `limit` bound
-behind carried/unclaimed side-door rows (`UnitView.over`, kept); and the
-RAW `pending_query` `LIMIT` itself, which dropped unseen old-id due rows
-before `over` could see them — the reviewer's three-self-wakes-one-message
-repro. `view` now continues the same read, ids only, page by page, when the
-bounded read fills (`pending_ids_after`), and `over`/`unclaimed` carry both
-cut sets; the deterministic contract cases
-(`test_a_due_row_the_merged_bound_cut_is_named_unclaimed`,
-`test_the_raw_pending_bound_names_what_it_cut`, both stores) assert the cut
-rows are named, listed unclaimed and never consumed unseen, and the contract
-fuzz loses nothing on the seeded runs.
+being shown or claimed, and the first repair (an enumerated `over` /
+`unclaimed` exception list plus a `pending_ids_after` enumeration) only
+moved the defect: retaining N old rows still required enumerating N ids.
+The list was the wrong representation for a per-row fact. Consumption is
+now one `stimulus_claim` row per (unit, stimulus, wake): a stimulus under
+the watermark stays pending iff no non-failed wake claimed it — never
+re-enumerated — and a `pending_floor` cursor on each wake bounds the
+residual under-mark probe to live rows first seen after the floor. A wake
+with no `pending_floor` detail (pre-cursor rows) uses floor 0 once;
+`unclaimed` remains a bounded early-reoffer list, never the source of
+truth for pending status. The contract cases
+(`test_a_due_row_under_an_advanced_mark_is_never_enumerated`,
+`test_an_advanced_marks_backlog_is_read_in_bounded_oldest_first_cycles`,
+`test_the_pending_reads_work_does_not_grow_with_the_backlog`, both stores,
+backlog n ∈ {20, 2000}) assert a wake whose view bound cuts leaves every
+cut row pending for the next wake without the watermark ever naming
+them — two consecutive wake/view/settle cycles make observable progress
+while the per-view statement count stays flat as the backlog grows 20× —
+and the contract fuzz loses nothing on the seeded runs.
 
 **Mutation proof:** `scripts/mutations/conscious-subconscious-time.json` —
 `uv run python scripts/mutate.py` on the repair head reports ALL MUTATIONS
-CAUGHT, 12/12 RED then green: the `session_run` dispatch, the lane-dispatch
-boundary, `decide`'s `over` clause, the raw-LIMIT continuation on both
-stores, undated eligibility on both stores, mid-tick due eligibility, the
-generated-column filter, the signed ceiling, the `<=` slot guard and the
-boundary wait. A parser mutant on the plan test (`Plan Rows` for `Actual
-Rows`) survived — Postgres's estimate coincides with the bound on this
-shape, so the entry was dropped rather than reported caught; the
-instrument's use of executor-actual counters is by construction and that
-choice is unguarded by the bound.
+CAUGHT, 11/11 RED then green: the `session_run` dispatch, the lane-dispatch
+boundary, `decide`'s mark retreat below rows an earlier wake passed over,
+the claim probe on both stores, undated eligibility on both stores,
+mid-tick due eligibility, the `due_tick` CHECK's naive ceiling, the
+backward-clock slot and the boundary wait. A parser mutant on the plan
+test (`Plan Rows` for `Actual Rows`) survived — Postgres's estimate
+coincides with the bound on this shape, so the entry was dropped rather
+than reported caught; the instrument's use of executor-actual counters is
+by construction and that choice is unguarded by the bound.
 
 **Not measured here (honest limits):** live/model runtime acceptance (needs
 its authorized run — this PR authorizes none); a full-process backward-clock

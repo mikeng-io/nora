@@ -2016,29 +2016,19 @@ class DreamerRuntime:
         deadline = loop.time() + budget.timeout_seconds
         try:
             with turn_deadline(budget.timeout_seconds):
-                try:
-                    async with asyncio.timeout_at(deadline):
-                        result = await factory.invoke(
-                            agent, prompt, invocation_state={},
-                            limits=factory.build_limits(
-                                output_tokens=budget.output_tokens,
-                                turns=budget.turns,
-                                total_tokens=budget.total_tokens,
-                            ),
-                        )
-                except TimeoutError as exc:
-                    # `asyncio.timeout` also turns an EXTERNAL task.cancel()
-                    # into TimeoutError (3.12's `uncancel() <= _cancelling`
-                    # drains the count when only one cancel was requested),
-                    # so the wall clock is the only witness that separates
-                    # the deadline firing from a cancellation: an external
-                    # cancel MUST stay CancelledError, or `_sample` would
-                    # count a cancelled dream as a timeout and
-                    # `cancel_in_flight` would report a completed task.
-                    if (isinstance(exc.__cause__, asyncio.CancelledError)
-                            and loop.time() < deadline):
-                        raise asyncio.CancelledError() from exc
-                    raise
+                # `asyncio.timeout` raises TimeoutError only after the
+                # deadline callback fired; an external task.cancel()
+                # propagates as CancelledError, so `_sample` never counts a
+                # cancelled dream as a timeout.
+                async with asyncio.timeout_at(deadline):
+                    result = await factory.invoke(
+                        agent, prompt, invocation_state={},
+                        limits=factory.build_limits(
+                            output_tokens=budget.output_tokens,
+                            turns=budget.turns,
+                            total_tokens=budget.total_tokens,
+                        ),
+                    )
         except BaseException:
             # Flushed here rather than in `finally`: an await in `finally`
             # on a cancelled task re-raises out of the cleanup path, and a

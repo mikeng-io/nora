@@ -44,6 +44,7 @@ from nora.infra.sql.schema import (
     COGNITION_WAKE,
     COGNITION_WAKE_OUTCOME,
     STIMULUS,
+    STIMULUS_CLAIM,
     STIMULUS_RETRACTION,
 )
 
@@ -59,36 +60,33 @@ def _ms(at: datetime) -> int:
     return round(at.timestamp() * 1000)
 
 
-def _branches(
-    *, unit: str, through_id: int, through_ms: int, now_ms: int,
-    columns: Sequence[Any],
-) -> Any:
-    """The pending read's three DISJOINT range reads as a UNION subquery —
-    shared by `pending_query` (rows, bounded) and `pending_ids_after` (ids
-    only, the continuation `view` runs when the bounded read filled).
+def pending_query(
+    *, unit: str, mode: str, now_ms: int, floor: int, through_id: int,
+    stale_before_ms: int | None, limit: int,
+) -> sa.Select[Any]:
+    """The unit's stimuli pending by `now_ms`, ascending id: live, eligible,
+    and NOT claimed by a wake that did not fail — consumption is a per-row
+    `stimulus_claim` fact (a wake claims a SET, `decide`), never a range the
+    next wake must enumerate to honour.
 
-    ELIGIBILITY (`base`) splits on whether the row carries a deadline —
-    node 18: tick arithmetic applies to timed deadlines; an undated
-    stimulus keeps exact commit-order provenance:
+    Two bounded reads, each an `idx_stimulus_unit_id` walk that stops at
+    `limit` rows:
 
-    - dated: `due_tick <= tick(now)` — `ceil(due_ms)`, generated — never
-      early.
-    - undated: `recorded_at <= now` at millisecond precision — a message
-      recorded at 90000 is NOT pending to a read at 88000, though both
-      floor to the same tick. Rounding arrivals to ticks would admit
-      same-minute items the cutoff has not reached yet.
+    - `id > through_id` — never claimed at all: a wake's claims always sit
+      at or under its own `through`, and `through` never retreats.
+    - `floor <= id <= through_id` — the residual under the watermark. The
+      wake recorded `floor` (`detail.pending_floor`, the lowest id that
+      could still be pending under it — computed from claims by `closed`
+      wakes, which can never release), so the range is a cursor over the
+      real backlog, not a walk of the unit's history. Marks written before
+      the floor existed pass `floor=0`: the whole under-mark range, once —
+      the next wake lands a floor.
 
-    NOT consumed — `NOT (id <= through_id AND pending_since <= through_ms)` —
-    is split into three range reads, each answered by its own index rather
-    than by walking a unit's whole history (`stimulus` is append-only and
-    grows forever): past the watermark's id (`idx_stimulus_unit_id`); at or
-    under it but due after its tick bound (`idx_stimulus_unit_due`); at or
-    under it, undated, and recorded after its time bound
-    (`idx_stimulus_unit_undated_recorded`, the late commit the evaluator's
-    settle margin exists for). `tests/infra/test_stimulus_store_plan.py` holds
-    the plan to those indexes."""
+    ELIGIBILITY splits on whether the row carries a deadline (node 18: tick
+    arithmetic applies to timed deadlines; an undated stimulus keeps exact
+    commit-order provenance — a message recorded at 90000 is not pending to
+    a read at 88000, though both floor to the same tick)."""
     now_tick = tick_of_ms(now_ms)
-    through_tick = tick_of_ms(through_ms)
     eligible = sa.or_(
         sa.and_(
             STIMULUS.c.due_ms.isnot(None),
@@ -99,60 +97,26 @@ def _branches(
             STIMULUS.c.recorded_at <= _at(now_ms),
         ),
     )
-    # A retracted `self` stimulus (its self-wake was cancelled, moved or
-    # superseded) is never pending.
-    base = (
-        STIMULUS.c.unit == unit,
-        eligible,
-        live_stimulus(STIMULUS.c.id),
+    claimed = sa.exists().where(
+        STIMULUS_CLAIM.c.stimulus_id == STIMULUS.c.id,
+        COGNITION_WAKE.c.id == STIMULUS_CLAIM.c.wake_id,
+        COGNITION_WAKE.c.unit == unit,
+        COGNITION_WAKE.c.mode == mode,
+        ~_failed_wake(COGNITION_WAKE, stale_before_ms),
     )
-    under = STIMULUS.c.id <= through_id
-    return sa.union_all(
-        sa.select(*columns).where(*base, STIMULUS.c.id > through_id),
-        sa.select(*columns).where(*base, under, STIMULUS.c.due_tick > through_tick),
-        sa.select(*columns).where(
-            *base, under, STIMULUS.c.due_ms.is_(None),
-            STIMULUS.c.recorded_at > _at(through_ms),
-        ),
-    ).subquery("pending")
-
-
-def pending_query(
-    *, unit: str, through_id: int, through_ms: int, now_ms: int, limit: int,
-) -> sa.Select[Any]:
-    """The unit's stimuli not consumed by the watermark `(through_id,
-    through_ms)` and pending by `now_ms`, ascending id — `_branches`' union,
-    bounded."""
-    branches = _branches(
-        unit=unit, through_id=through_id, through_ms=through_ms, now_ms=now_ms,
-        columns=(STIMULUS,),
+    base = (STIMULUS.c.unit == unit, eligible, live_stimulus(STIMULUS.c.id))
+    above = (
+        sa.select(STIMULUS)
+        .where(*base, STIMULUS.c.id > through_id)
+        .order_by(STIMULUS.c.id.asc()).limit(limit)
     )
-    return sa.select(branches).order_by(branches.c.id.asc()).limit(limit)
-
-
-def pending_ids_after(
-    *, unit: str, through_id: int, through_ms: int, now_ms: int,
-    after_id: int, up_to_id: int, limit: int,
-) -> sa.Select[Any]:
-    """The SAME read as `pending_query`, ids only, continuing past
-    `after_id` but never past `up_to_id`: what `view` fetches when the
-    bounded read filled — the eligible ids the bound hid INSIDE the range
-    the next wake's `through` can actually cover (a wake's `through` is
-    `max(mark.through, max(claimed))` and claimed ⊆ shown, so nothing above
-    `up_to_id` is ever endangered: it stays pending un-named). Bounded per
-    statement (`limit` rows a page) AND by `up_to_id` — the bound caps what
-    a read SHOWS, never what it may silently consume, and never asks the
-    read to enumerate the whole backlog to prove it."""
-    branches = _branches(
-        unit=unit, through_id=through_id, through_ms=through_ms, now_ms=now_ms,
-        columns=(STIMULUS.c.id,),
+    below = (
+        sa.select(STIMULUS)
+        .where(*base, STIMULUS.c.id.between(floor, through_id), ~claimed)
+        .order_by(STIMULUS.c.id.asc()).limit(limit)
     )
-    return (
-        sa.select(branches.c.id)
-        .where(branches.c.id > after_id, branches.c.id <= up_to_id)
-        .order_by(branches.c.id.asc())
-        .limit(limit)
-    )
+    both = sa.union_all(above, below).subquery("pending")
+    return sa.select(both).order_by(both.c.id.asc()).limit(limit)
 
 
 def _stimulus(r: Any) -> Stimulus:
@@ -175,25 +139,42 @@ def _wake(r: Any) -> WakeRow:
         cut_cooldown=bool(r.cut_cooldown), at_ms=int(r.at_ms),
         recorded_at_ms=_ms(r.recorded_at), detail=_wake_detail(r.detail),
         tracked=bool(r.tracked), unclaimed_ids=unclaimed_ids(r.detail),
+        claimed_ids=claimed_ids(r.detail), pending_floor=pending_floor(r.detail),
     )
 
 
-#: The `cognition_wake.detail` key that holds `NewWake.unclaimed_ids`: the
-#: stimuli inside the wake's range it did not claim (DEC-245). In the
-#: existing jsonb, so no migration; `WakeRow.detail` never carries it.
-_UNCLAIMED_KEY = "unclaimed"
-
-
-def unclaimed_ids(raw: Any) -> tuple[int, ...]:
-    """A wake row's unclaimed stimulus ids, whichever form its detail was written in."""
-    ids: Any = jsonb_object(raw).get(_UNCLAIMED_KEY) or ()
+def _detail_ids(raw: Any, key: str) -> tuple[int, ...]:
+    ids: Any = jsonb_object(raw).get(key) or ()
     while isinstance(ids, str):
         ids = json.loads(ids)
     return tuple(int(i) for i in ids or ())
 
 
+def unclaimed_ids(raw: Any) -> tuple[int, ...]:
+    """A wake row's unclaimed stimulus ids, whichever form its detail was written in."""
+    return _detail_ids(raw, _UNCLAIMED_KEY)
+
+
+def claimed_ids(raw: Any) -> tuple[int, ...]:
+    """A wake row's claimed stimulus ids (`detail.claimed`), whichever form
+    its detail was written in."""
+    return _detail_ids(raw, _CLAIMED_KEY)
+
+
+def pending_floor(raw: Any) -> int | None:
+    """A wake row's `detail.pending_floor`: the lowest id under its `through`
+    that may still be pending. None when the row predates it."""
+    floor: Any = jsonb_object(raw).get(_PENDING_FLOOR_KEY)
+    while isinstance(floor, str):
+        floor = json.loads(floor)
+    return None if floor is None else int(floor)
+
+
 def _wake_detail(raw: Any) -> dict[str, object]:
-    return {k: v for k, v in jsonb_object(raw).items() if k != _UNCLAIMED_KEY}
+    return {
+        k: v for k, v in jsonb_object(raw).items()
+        if k not in (_UNCLAIMED_KEY, _CLAIMED_KEY, _PENDING_FLOOR_KEY)
+    }
 
 
 def jsonb_object(raw: Any) -> dict[str, object]:
@@ -205,6 +186,21 @@ def jsonb_object(raw: Any) -> dict[str, object]:
     while isinstance(raw, str):
         raw = json.loads(raw)
     return dict(raw)
+
+
+#: The `cognition_wake.detail` key that holds `NewWake.unclaimed_ids`: the
+#: stimuli inside the wake's range it did not claim (DEC-245) — the early-door
+#: list a reader re-offers, not what keeps them pending. In the existing
+#: jsonb, so no migration; `WakeRow.detail` never carries it.
+_UNCLAIMED_KEY = "unclaimed"
+
+#: The `detail` key that holds `NewWake.claimed_ids` — the same set
+#: `stimulus_claim` indexes, as the wake row's own provenance.
+_CLAIMED_KEY = "claimed"
+
+#: The `detail` key `record_wake` computes: the lowest stimulus id under the
+#: wake's `through` that may still be pending — the residual read's bound.
+_PENDING_FLOOR_KEY = "pending_floor"
 
 
 def live_stimulus(stimulus_id: Any) -> Any:
@@ -261,13 +257,6 @@ def _mark_query(*, unit: str, mode: str, stale_before_ms: int | None) -> sa.Sele
 #: streak is capped by it, and every consumer of the streak acts long before
 #: (`WakePolicy.max_consecutive_failures`), so it only has to exceed that.
 FAILURE_LOOKBACK = 64
-
-#: One page of the bounded id-continuation `view` runs when the raw pending
-#: read fills its bound (`pending_ids_after`): large enough that the
-#: continuation is one round trip for any plausible backlog, small enough
-#: that each statement stays bounded.
-_OVER_PAGE = 8192
-
 
 def _recent_wakes_query(unit: str, mode: str) -> sa.Select[Any]:
     """The unit's newest wakes in the mode WITH their outcome (or NULL), newest
@@ -439,27 +428,25 @@ class SqlStimulusStore:
                     mark_wake = None if mark_row is None else _wake(mark_row)
             mark = Watermark.of(mark_wake)
             pending_q = pending_query(
-                unit=unit, through_id=mark.through_stimulus_id,
-                through_ms=mark.through_ms, now_ms=now_ms, limit=limit,
+                unit=unit, mode=mode, now_ms=now_ms,
+                floor=mark.pending_floor or 0,
+                through_id=mark.through_stimulus_id,
+                stale_before_ms=stale_before_ms, limit=limit,
             )
             raw = [_stimulus(r) for r in (await conn.execute(pending_q)).all()]
-            # Was the raw read's bound actually reached? Only then can
-            # eligible rows the read never fetched sit under the id range the
-            # next wake consumes.
-            raw_filled = len(raw) == limit
             carry_rows = (await conn.execute(_carry_query(unit))).all()
             carry = {int(r.stimulus_id): int(r.strike) for r in carry_rows}
             waiting = {int(r.stimulus_id) for r in carry_rows if r.waits}
             have = {s.id for s in raw}
             # Two side doors past the range read: what a closed session carried,
-            # and what the watermark's wake left UNCLAIMED, which the range
-            # would call consumed. Both name stimuli that were pending — and
-            # both sit under the watermark by construction, so the fetch is
-            # bounded by `limit` like the raw read: at most `limit` of them can
-            # be shown anyway (the merge is oldest-first); the ids the bound
-            # does not fetch join `over` below and `decide` still names them.
+            # and what the watermark's wake left UNCLAIMED — named so a reader
+            # can re-offer them before they are due (they stay pending on their
+            # own; no claim was ever written for them). Both sit under the
+            # watermark by construction, so the fetch is bounded by `limit`
+            # like the raw read: at most `limit` of them can be shown anyway
+            # (the merge is oldest-first), and the rest simply wait in their
+            # claim-free state.
             missing = sorted(({*carry, *mark.unclaimed}) - have)
-            fetched: set[int] = set()
             pending = list(raw)
             if missing:
                 extra = (await conn.execute(
@@ -468,8 +455,6 @@ class SqlStimulusStore:
                         live_stimulus(STIMULUS.c.id),
                     ).order_by(STIMULUS.c.id.asc()).limit(limit),
                 )).all()
-                fetched = {int(r.id) for r in extra}
-                have |= fetched
                 for r in extra:
                     row = _stimulus(r)
                     # A stimulus a person's wait closed rides the next wake and
@@ -479,47 +464,48 @@ class SqlStimulusStore:
                     )
             # ONE bound for the whole read, oldest first, the same in both stores
             # (`InMemoryStimulusStore.view`, bound by the contract suite): the
-            # side doors are not exempt from `limit`. Oldest-first is what keeps
-            # a truncated read safe: whatever is cut has a higher id than
-            # everything shown — but a wake's `through_stimulus_id` is
-            # `max(mark.through, max(claimed))` with claimed ⊆ shown, so
-            # `ceiling` is the highest id that wake can ever cover. An eligible
-            # id ABOVE it stays pending un-named (no `through` reaches it);
-            # one at or below it that was never shown is named in `over` for
-            # `decide` to leave unclaimed — the ONLY enumeration, paged and
-            # bounded by `ceiling`, never by the backlog.
+            # side doors are not exempt from `limit`. Nothing else is
+            # enumerated: a stimulus the bound hides stays pending on the
+            # claim probe alone — the residual read's `floor` cursor bounds
+            # where it is looked for, never a list of it.
             pending.sort(key=lambda x: x.id)
-            shown = pending[:limit]
-            ceiling = max(
-                mark.through_stimulus_id,
-                shown[-1].id if shown else mark.through_stimulus_id,
-            )
-            unseen: list[int] = []
-            if raw_filled and raw[-1].id < ceiling:
-                after = raw[-1].id
-                while after < ceiling:
-                    page = [
-                        int(r.id) for r in (await conn.execute(pending_ids_after(
-                            unit=unit, through_id=mark.through_stimulus_id,
-                            through_ms=mark.through_ms, now_ms=now_ms,
-                            after_id=after, up_to_id=ceiling, limit=_OVER_PAGE,
-                        ))).all()
-                    ]
-                    unseen.extend(i for i in page if i not in have)
-                    if len(page) < _OVER_PAGE:
-                        break
-                    after = page[-1]
-            over = tuple(sorted(
-                {*unseen, *(s.id for s in pending[limit:]),
-                 *(i for i in missing if i not in fetched)}
-            ))
             del pending[limit:]
             activity_q = activity_query(unit=unit)
             activity = (await conn.execute(activity_q)).scalar_one_or_none()
             recent = (await conn.execute(_recent_wakes_query(unit, mode))).all()
+            # `claimed` on every wake the view returns carries the TABLE's
+            # rows, not just `detail.claimed`: marks written before the column
+            # family existed got theirs reconstructed by 0151's backfill, so a
+            # strike (`failure_run`) sees the same set the pending read does.
+            wake_ids = {
+                w.id for w in (last, mark_wake) if w is not None
+            } | {int(r.id) for r in recent}
+            if wake_ids:
+                rows = (await conn.execute(sa.select(
+                    STIMULUS_CLAIM.c.wake_id, STIMULUS_CLAIM.c.stimulus_id,
+                ).where(STIMULUS_CLAIM.c.wake_id.in_(wake_ids)))).all()
+                by_wake: dict[int, list[int]] = {}
+                for wid, sid in rows:
+                    by_wake.setdefault(int(wid), []).append(int(sid))
+                def _with_claims(w: WakeRow) -> WakeRow:
+                    if w.id not in by_wake:
+                        return w
+                    return replace(
+                        w, claimed_ids=tuple(sorted({*w.claimed_ids, *by_wake[w.id]})),
+                    )
+                if last is not None:
+                    last = _with_claims(last)
+                if mark_wake is not None:
+                    mark_wake = _with_claims(mark_wake)
+                recent_pairs = [
+                    (_with_claims(_wake(r)), r) for r in recent
+                ]
+            else:
+                recent_pairs = [(_wake(r), r) for r in recent]
+            mark = Watermark.of(mark_wake)
         failures, agenda_failures, failed_mark = failure_run(
             (
-                _wake(r),
+                w,
                 wake_state(
                     tracked=bool(r.tracked), recorded_at_ms=_ms(r.recorded_at),
                     outcome=None if r.outcome is None else str(r.outcome),
@@ -528,14 +514,13 @@ class SqlStimulusStore:
                     cause=None if r.cause is None else str(r.cause),
                 ),
             )
-            for r in recent
+            for w, r in recent_pairs
         )
         return UnitView(
             unit=unit, pending=tuple(pending),
             last_activity_ms=None if activity is None else _ms(activity),
             last_wake=last, mark=mark, last_session=last_session, carry=carry,
             failures=failures, agenda_failures=agenda_failures, failed_mark=failed_mark,
-            over=over,
         )
 
     async def record_outcome(
@@ -652,20 +637,6 @@ class SqlStimulusStore:
         self, *, wake: NewWake, recorded_at_ms: int, guard: WakeGuard | None = None,
     ) -> int | None:
         check_wake_guard(wake, guard)
-        stmt = sa.insert(COGNITION_WAKE).values(
-            unit=wake.unit, mode=wake.mode, reason=wake.reason,
-            from_stimulus_id=wake.from_stimulus_id,
-            through_stimulus_id=wake.through_stimulus_id,
-            stimulus_count=wake.stimulus_count, eligible_count=wake.eligible_count,
-            oldest_pending_ms=wake.oldest_pending_ms,
-            cut_cooldown=int(wake.cut_cooldown),
-            # The mapping AS ITSELF: the JSONB type serializes what it is
-            # handed. `sa.cast(json.dumps(...), JSONB)` would store a jsonb STRING
-            # holding the JSON (`jsonb_typeof = 'string'`, so `detail->'unclaimed'`
-            # reads NULL); `jsonb_object` reads either form.
-            detail=_with_unclaimed(wake),
-            at_ms=wake.at_ms, recorded_at=_at(recorded_at_ms), tracked=int(wake.tracked),
-        ).returning(COGNITION_WAKE.c.id)
         async with self._engine.begin() as conn:
             if guard is not None:
                 await _lock_unit(conn, wake.unit)
@@ -684,17 +655,76 @@ class SqlStimulusStore:
                     )).scalar_one_or_none()
                     if now_outcome != guard.last_outcome:
                         return None
+            floor = await _pending_floor(conn, wake)
+            stmt = sa.insert(COGNITION_WAKE).values(
+                unit=wake.unit, mode=wake.mode, reason=wake.reason,
+                from_stimulus_id=wake.from_stimulus_id,
+                through_stimulus_id=wake.through_stimulus_id,
+                stimulus_count=wake.stimulus_count, eligible_count=wake.eligible_count,
+                oldest_pending_ms=wake.oldest_pending_ms,
+                cut_cooldown=int(wake.cut_cooldown),
+                # The mapping AS ITSELF: the JSONB type serializes what it is
+                # handed. `sa.cast(json.dumps(...), JSONB)` would store a jsonb STRING
+                # holding the JSON (`jsonb_typeof = 'string'`, so `detail->'unclaimed'`
+                # reads NULL); `jsonb_object` reads either form.
+                detail=_with_detail(wake, floor),
+                at_ms=wake.at_ms, recorded_at=_at(recorded_at_ms), tracked=int(wake.tracked),
+            ).returning(COGNITION_WAKE.c.id)
             result = await conn.execute(stmt)
-            return int(result.scalar_one())
+            wake_id = int(result.scalar_one())
+            if wake.claimed_ids:
+                await conn.execute(sa.insert(STIMULUS_CLAIM), [
+                    {"unit": wake.unit, "stimulus_id": sid, "wake_id": wake_id}
+                    for sid in sorted(wake.claimed_ids)
+                ])
+            return wake_id
 
     async def aclose(self) -> None:
         await self._engine.dispose()
 
 
-def _with_unclaimed(wake: NewWake) -> dict[str, object]:
-    if not wake.unclaimed_ids:
-        return dict(wake.detail)
-    return {**wake.detail, _UNCLAIMED_KEY: sorted(wake.unclaimed_ids)}
+async def _pending_floor(conn: Any, wake: NewWake) -> int:
+    """The lowest stimulus id under the new wake's `through` that may still be
+    pending — `detail.pending_floor`, the residual read's cursor.
+
+    Starting at the previous floor (the newest wake's, for this unit and
+    mode), the first row that is neither retracted nor claimed BY A WAKE THAT
+    CLOSED — a closed wake's claims are permanent; an open or failed wake's
+    are not, so only `closed` may advance the floor — is it. `through + 1`
+    when nothing under `through` qualifies: the residual range is empty, and
+    the floor says so instead of unbounded."""
+    prev = (await conn.execute(
+        sa.select(COGNITION_WAKE.c.detail)
+        .where(
+            COGNITION_WAKE.c.unit == wake.unit, COGNITION_WAKE.c.mode == wake.mode,
+            COGNITION_WAKE.c.detail[_PENDING_FLOOR_KEY].isnot(None),
+        ).order_by(COGNITION_WAKE.c.id.desc()).limit(1),
+    )).scalar_one_or_none()
+    floor = pending_floor(prev) or 0
+    closed_claim = sa.exists().where(
+        STIMULUS_CLAIM.c.stimulus_id == STIMULUS.c.id,
+        COGNITION_WAKE.c.id == STIMULUS_CLAIM.c.wake_id,
+        COGNITION_WAKE_OUTCOME.c.wake_id == COGNITION_WAKE.c.id,
+        COGNITION_WAKE_OUTCOME.c.outcome == "closed",
+    )
+    lowest = (await conn.execute(
+        sa.select(sa.func.min(STIMULUS.c.id)).where(
+            STIMULUS.c.unit == wake.unit,
+            STIMULUS.c.id.between(floor, wake.through_stimulus_id),
+            live_stimulus(STIMULUS.c.id),
+            ~closed_claim,
+        ),
+    )).scalar_one_or_none()
+    return wake.through_stimulus_id + 1 if lowest is None else int(lowest)
+
+
+def _with_detail(wake: NewWake, floor: int) -> dict[str, object]:
+    detail: dict[str, object] = {**wake.detail, _PENDING_FLOOR_KEY: floor}
+    if wake.unclaimed_ids:
+        detail[_UNCLAIMED_KEY] = sorted(wake.unclaimed_ids)
+    if wake.claimed_ids:
+        detail[_CLAIMED_KEY] = sorted(wake.claimed_ids)
+    return detail
 
 
 def _check_outcome(outcome: NewWakeOutcome, carries: Sequence[NewCarry]) -> None:
