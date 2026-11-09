@@ -2,42 +2,13 @@
 type: design_index
 title: "Unified memory — one memory of her own, searched in one way"
 description: >
-  Retire Honcho and give Nora one memory system: every store stays its own
-  table, and a memory graph (one node per item, a closed set of edge
-  relations, citations written with their entries) indexes and connects them
-  behind one retrieval service (scope, hybrid seed, graph expansion, optional
-  rerank). Persona (ruled 2026-10-15) composes identity, character and
-  abduced hypotheses into one account per actor (humans, Nora, other agents)
-  and collective (rooms, units), widening the Character tier. Amended
-  2026-10-15 on an audit: the unit is the read boundary (lineage stays off),
-  a deleted message is hidden and nothing derived is withdrawn, graph
-  expansion has adaptive depth with scope on every node, hypotheses are
-  graded by a judge other than their writer, and shadow changes no prompt.
-  Records the measured
-  Honcho audit, the memory map, a retrieval-stack bake-off plan (trigram vs
-  BM25; bge-m3, EmbeddingGemma 2, WeMM-Embedding; fusion; reranker) and
-  October 2026 prior art. The Persona adaptor, the prompt switch and the
-  index projection are built (steps 6 and 8); 70 prepares step 9, the Honcho
-  cutover, which is not executed. Amended 2026-10-21: every message batch
-  is read once on arrival into the Record; Honcho maps onto the existing
-  layers, Character entries are bounded profile/traits/hypotheses cards,
-  and answerability through Views replaces Character-line fact coverage
-  as the switch gate, with Q1–Q5 decided. Proposed 2026-10-22: nine generic
-  trait dimensions, named prose slots for traits and hypothesis explanations,
-  structured reading claims, citation-computed recurrence and bounded cards;
-  maps collective sections and composes observations into traits and hypotheses
-  checked against independent evidence. Decided by the operator, 2026-10-22:
-  store evidence-supported claims without category/medium/sensitivity bans;
-  location includes named places, with a code-set line flag preserving existing
-  room location reads; minimal public outbound payload accepted; no special
-  handling for sensitive categories; dedicated-key deduction and told-only
-  fallback rules stand. Implementation and an enforcing DEC row land in phase 4.
-  Ratified by the operator 2026-10-28 (27): the memory is a graph — generic entity, relation
-  and evidence stores with closed vocabularies in code, a layer column, a
-  Cognition loop per stimulus that comprehends every signal, enriches from
-  the web, reshapes profiles and decides (separate profile adaptors retire),
-  one time-ordered backfill with acting off, an Apache AGE spike, and
-  graph-shaped queries; supersedes 18.
+  Social understanding across people, relationships, shared experience and ongoing
+  affairs, with personal assistance using the same memory foundation. Read
+  00-intent for purpose and navigation, 15-memory-map for the model and profiles,
+  29-one-cognition-session for the loop, and 50-learning-from-acts for revision.
+  31-build-one-session owns current acceptance and delivery evidence. Remaining
+  nodes are specialist contracts, migration evidence or research references;
+  historical names and gates do not override these owners.
 status: in-progress
 governance: operator-directed
 timestamp: '2026-10-14'
@@ -75,23 +46,23 @@ open_questions:
   - id: Q1
     question: "Answerability thresholds and question-set construction"
     status: decided
-    decision: "2026-10-31: the fixed switch formula below is historical, superseded by 31-build-one-session.md §6 (bounded cutover acceptance); frozen comparisons and grounded answers remain required. Historical decision: the question set is built and frozen before any run; it is not edited after the first answer is seen. Pass requires the new Views' answer to be judged blind as at least as good as Honcho's dialectic on ≥80% of questions, AND the new Views' error rate <5%. An error is an answer asserting something its sources do not support. Both must hold."
+    decision: "Current bounded acceptance, frozen comparisons and grounding requirements are owned by 31-build-one-session.md §6; older fixed parity/sample formulas are historical."
   - id: Q2
     question: "Character session shape: pushed bundle or bounded tool-using session?"
     status: decided
-    decision: "The session follows Honcho's pattern: it is pushed the readings since its last session, has read tools over older readings and messages with a bounded number of iterations, and ends in one settle write (today `persona_write`). There is still one writer per tier; no new writer."
+    decision: "29-one-cognition-session.md owns the current single wake-session contract, with pushed context, bounded scoped tools and in-session admission/profile maintenance; no separate profile reasoning driver is introduced."
   - id: Q3
     question: "Source-rechecked Honcho explicit observations as seed readings, or measurement reference only?"
     status: decided
-    decision: "2026-10-31: Q1's fixed gate reference below is historical, superseded by 31-build-one-session.md §6; source-rechecking and the no-import boundary remain unchanged. Historical decision: Honcho's observations are used only as the measurement reference for the first measure (the Q1 gate and coverage comparisons). Nothing is imported. Whether to seed, only with each observation re-checked against its source message, is decided on that first measure's result."
+    decision: "Honcho observations are measurement references, never imported conclusions. Any future seed decision requires source rechecking and its own evidence; 31 §6 owns current acceptance."
   - id: Q4
     question: "Reading model and budget"
     status: decided
-    decision: "The reading model is DeepSeek V4.1 Flash. The budget is not set now: the first deliverable of phase 2 is to measure real input/output tokens over one day of live messages, then fill in the existing formula C = (I × Pᵢ + O × Pₒ) / 1,000,000 and set the budget from that measurement."
+    decision: "The original extraction experiment selected DeepSeek V4.1 Flash and required measured input/output cost before budgeting. Current session settings and spend authorization follow the deployed configuration and 31, not a historical model name."
   - id: Q5
     question: "Reading granularity: per message or per batch with interleaved context as Honcho?"
     status: decided
-    decision: "Readings are per batch, with the surrounding conversation as context, as Honcho does: a reply like “me too” only means something in context, and this uses fewer calls. Every claim in a reading is still tied to its own source message ids, so per-message citation and the visibility retirement rule are unchanged."
+    decision: "Understand batches in their conversation context, with every statement tied to its own source ids; 29 owns wake scheduling and source custody."
 edges:
   - {src: 33-orient-kind-table, dst: 29-one-cognition-session, rel: amends, provenance: operator-requested}
   - {src: 34-the-replay-records-why, dst: 31-build-one-session, rel: amends, provenance: operator-requested}
