@@ -125,8 +125,9 @@ def hooks() -> list[HookProvider | HookCallback[Any]]:
 
 
 class _Completions:
-    def __init__(self, completions: Any) -> None:
+    def __init__(self, completions: Any, role: str | None = None) -> None:
         self.completions = completions
+        self.role = role
 
     async def create(self, **request: Any) -> Any:
         return await self._request("create", request)
@@ -150,6 +151,7 @@ class _Completions:
                 record(
                     "transport_response",
                     response=response,
+                    **({"model_role": self.role} if self.role else {}),
                     headers=headers,
                     identity_availability="observed" if all(headers.values()) else "unavailable",
                     latency_ns=time.time_ns() - started,
@@ -212,12 +214,12 @@ class _Stream:
 
 
 @asynccontextmanager
-async def client_capture(client: Any) -> AsyncIterator[Any]:
+async def client_capture(client: Any, *, role: str | None = None) -> AsyncIterator[Any]:
     if not eval_capture_enabled() and _IDENTITIES.get() is None:
         yield client
     else:
         yield SimpleNamespace(
-            chat=SimpleNamespace(completions=_Completions(client.chat.completions)),
+            chat=SimpleNamespace(completions=_Completions(client.chat.completions, role)),
             beta=SimpleNamespace(chat=SimpleNamespace(
-                completions=_Completions(client.beta.chat.completions))),
+                completions=_Completions(client.beta.chat.completions, role))),
         )

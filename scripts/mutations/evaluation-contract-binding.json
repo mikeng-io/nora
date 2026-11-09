@@ -81,6 +81,20 @@
     "file": "evals/rebuilt/grading.py",
     "old": "                    record_eval_model_request(request)\n",
     "new": "",
-    "target": "tests/integration/test_grading_contract.py::test_raw_reply_judge_captures_its_request_response_and_model_span[True]"
+    "target": "tests/integration/test_grading_contract.py::test_raw_reply_judge_captures_its_request_response_and_model_span"
+  },
+  {
+    "name": "judge truncation remains REVIEW without discarding capture",
+    "file": "nora/subject/eval_evidence.py",
+    "old": " and event.get(\"model_role\") != \"judge\"",
+    "new": "",
+    "target": "tests/integration/test_grading_contract.py::test_raw_reply_judge_captures_its_request_response_and_model_span"
+  },
+  {
+    "name": "raw judge facade and transport implementation are fixed measurement inputs",
+    "file": "evals/grading_contract.py",
+    "old": "            \"nora/agent/replay_capture.py\",\n",
+    "new": "",
+    "target": "tests/integration/test_grading_contract.py::test_capture_or_export_change_invalidates_the_fixed_measurement"
   }
 ]

@@ -338,7 +338,7 @@ class Judge:
             try:
                 with trace.use_span(span or trace.INVALID_SPAN, end_on_exit=False):
                     record_eval_model_request(request)
-                    async with client_capture(client) as observed:
+                    async with client_capture(client, role="judge") as observed:
                         answer = await asyncio.wait_for(
                             observed.chat.completions.create(**request), self.timeout_seconds)
                     usage = answer.usage

@@ -12,8 +12,8 @@ and none of it may import `strands`. This module owns only the two things
 that genuinely need `strands.telemetry` itself: provider/exporter setup
 (`setup_agent_tracing`) and the span pair a RAW `chat.completions.create` call
 needs to open/close in the SDK's own vocabulary
-(`start_raw_model_span`/`end_raw_model_span`) — `nora.app.composition`'s
-`_RelevanceGateModelClient` imports these thin wrappers rather than reaching
+(`start_raw_model_span`/`end_raw_model_span`) — the relevance gate and eval
+judge use these thin wrappers rather than reaching
 `strands.telemetry.tracer.get_tracer()` itself, the same pattern
 `ask_text`/`ask_structured` already use for a full Agent invocation.
 
@@ -181,10 +181,10 @@ def start_raw_model_span(
     gate's hot path: a broken tracer must not turn into a suppressed
     admission decision.
 
-    Currently used by exactly one caller —
-    `nora.app.composition._RelevanceGateModelClient`, which stays off the
+    The relevance gate's `_RelevanceGateModelClient` stays off the
     Agent SDK because its verdict must not go through `ask_structured`
-    (see `nora.agent.structured`'s own docstring for the reason).
+    (see `nora.agent.structured`'s own docstring for the reason). The eval
+    judge also uses these helpers through `nora.subject.raw_model`.
     `nora.infra.vision.client` is also a raw call but does NOT use this —
     this module's own docstring explains why (`nora.infra` cannot reach it).
 

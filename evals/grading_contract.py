@@ -20,9 +20,11 @@ IMPLEMENTATION_FILES = tuple(
         | {
             "scripts/memory_graph_spike.py",
             "nora/agent/replay_inspection.py",
+            "nora/agent/replay_capture.py",
             "nora/agent/telemetry.py",
             "nora/obs/tracing.py",
             "nora/subject/eval_evidence.py",
+            "nora/subject/raw_model.py",
             "nora/subject/replay_diagnosis.py",
             "nora/domain/blocks.py",
             "nora/domain/composed.py",

@@ -128,8 +128,9 @@ def completion(request, content):
 
 
 @pytest.mark.parametrize("trace_available", [False, True])
+@pytest.mark.parametrize("finish_reason", ["stop", "length"])
 async def test_raw_reply_judge_captures_its_request_response_and_model_span(
-        tmp_path, monkeypatch, trace_available):
+        tmp_path, monkeypatch, trace_available, finish_reason):
     from tempfile import TemporaryFile
 
     from opentelemetry import trace
@@ -144,8 +145,11 @@ async def test_raw_reply_judge_captures_its_request_response_and_model_span(
         assert body["model"] == "generated-a" and body["max_tokens"] == 4096
         assert "Generated answer" in body["messages"][0]["content"]
         requests.append(body)
-        return completion(request, [{"criterion": "no_overreach_or_fabrication",
+        response = completion(request, [{"criterion": "no_overreach_or_fabrication",
             "score": 1, "confidence": 1, "rationale": "Generated support"}])
+        data = response.json()
+        data["choices"][0]["finish_reason"] = finish_reason
+        return httpx.Response(200, json=data)
 
     monkeypatch.setattr(Judge, "_endpoint", lambda self: (
         "https://generated.invalid/v1", "generated-key", self.model))
@@ -167,7 +171,8 @@ async def test_raw_reply_judge_captures_its_request_response_and_model_span(
         assert result.verdict == "REVIEW" and "trace unavailable" in result.error
         assert requests == []
         return
-    assert result.verdict == "PASS" and len(requests) == 1
+    assert result.verdict == ("PASS" if finish_reason == "stop" else "REVIEW")
+    assert len(requests) == 1
     actual = [json.loads(e["attributes"]["nora.model.request.body"])
               for e in rows if e.get("name") == "nora.model.request"]
     assert actual == requests
@@ -176,7 +181,18 @@ async def test_raw_reply_judge_captures_its_request_response_and_model_span(
               and e.get("attributes", {}).get("gen_ai.operation.name") == "chat"]
     assert len(models) == 1
     assert models[0]["attributes"]["gen_ai.usage.input_tokens"] == 10
+    assert models[0]["attributes"]["gen_ai.usage.output_tokens"] == 5
+    assert models[0]["attributes"]["gen_ai.response.model"] == "generated-a"
+    root = next(e for e in rows if e["kind"] == "span_finished" and e["name"] == "eval.run")
+    assert models[0]["trace_id"] == root["trace_id"]
+    assert models[0]["parent_span_id"] == root["span_id"]
     assert validate_events(rows)["status"] == "PASS"
+    if finish_reason == "length":
+        subject_rows = [{**e, "model_role": "subject"}
+                        if e["kind"] == "transport_response" else e for e in rows]
+        assert "truncated" in validate_events(subject_rows)["causes"]
+        unmarked_rows = [{k: v for k, v in e.items() if k != "model_role"} for e in rows]
+        assert "truncated" in validate_events(unmarked_rows)["causes"]
 
 
 def test_contract_drift_is_refused_and_valid_binding_is_immutable(tmp_path):
@@ -209,6 +225,7 @@ def test_wrong_measurement_cannot_silently_run(tmp_path, change, message):
 
 @pytest.mark.parametrize("changed", [
     "nora/subject/eval_evidence.py", "nora/agent/telemetry.py", "nora/obs/tracing.py",
+    "nora/subject/raw_model.py", "nora/agent/replay_capture.py",
 ])
 def test_capture_or_export_change_invalidates_the_fixed_measurement(tmp_path, monkeypatch, changed):
     path, sha = write_contract(tmp_path)

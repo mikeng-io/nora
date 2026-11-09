@@ -376,7 +376,7 @@ def validate_events(events: list[dict[str, Any]], *,
             causes.add("capture_interrupted")
         if kind == "decision_input" and event.get("truncated"):
             causes.add("truncated")
-        if kind == "transport_response" and any(
+        if kind == "transport_response" and event.get("model_role") != "judge" and any(
             c.get("finish_reason") == "length"
             for c in event.get("response", {}).get("choices", [])
         ):
