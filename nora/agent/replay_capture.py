@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager, contextmanager
 from types import SimpleNamespace
 from typing import Any
 
-from opentelemetry import context
+from opentelemetry import context, trace
 from strands.hooks import (
     AfterInvocationEvent,
     AfterModelCallEvent,
@@ -51,6 +51,13 @@ def served_identities() -> Iterator[list[dict[str, Any]]]:
 def record(kind: str, **payload: Any) -> None:
     sink = context.get_value(EVAL_EVIDENCE_KEY)
     if callable(sink):
+        if kind == "transport_response":
+            span = trace.get_current_span()
+            headers = payload.get("headers", {})
+            if headers.get("x-omniroute-model"):
+                span.set_attribute("nora.model.served", headers["x-omniroute-model"])
+            if headers.get("x-omniroute-provider"):
+                span.set_attribute("nora.model.provider", headers["x-omniroute-provider"])
         sink(kind, invocation_id=_INVOCATION.get(), attempt_id=_ATTEMPT.get(), **payload)
 
 

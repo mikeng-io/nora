@@ -10,6 +10,8 @@ import pytest
 
 from evals.rebuilt import profile_coverage as coverage
 from evals.rebuilt.grading import Judge
+from tests.integration.test_spike_visibility import otlp_wire as otlp_wire
+from tests.unit.test_eval_main_budget import configured_main as configured_main
 
 
 def census_input():
@@ -143,7 +145,7 @@ class FakeGateway:
 
 @pytest.mark.parametrize("disagree,expected", [(2, 0), (3, 1)])
 def test_real_cli_roundtrip_calibrates_before_measurement(
-    tmp_path, monkeypatch, capsys, disagree, expected
+    tmp_path, monkeypatch, capsys, disagree, expected, configured_main,
 ):
     from evals.__main__ import main
     from evals.backbone import drain_spend

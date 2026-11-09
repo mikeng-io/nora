@@ -15,6 +15,13 @@ from scripts import memory_graph_spike as spike
 
 
 @pytest.fixture(autouse=True)
+def private_unit_export(monkeypatch):
+    from scripts import memory_graph_spike
+    monkeypatch.setattr(memory_graph_spike, "evaluation_export_for", lambda _: None)
+
+
+
+@pytest.fixture(autouse=True)
 def restore_logging_suppression():
     previous = logging.root.manager.disable
     try:
@@ -575,9 +582,7 @@ async def test_judges_dial_the_eval_route_where_the_measurer_runs(
     assert all(d["stream"] is False for d in dialed)
 
 
-async def test_age_comparison_measures_the_source_once_outside_replay(
-    tmp_path, monkeypatch
-):
+def generated_replay_environment(tmp_path, monkeypatch):
     """The engine comparison binds the frozen projected source once per run;
     the as-of sandbox — correctly holding no graph rows at the wake instant —
     serves the session replay and is never asked for the graph population."""
@@ -663,6 +668,8 @@ async def test_age_comparison_measures_the_source_once_outside_replay(
             "nora.model.request.body": json.dumps({"messages": [
                 {"role": "system", "content": "generated"},
                 {"role": "user", "content": "generated"}]})})
+        evidence.record("transport_started")
+        evidence.record("transport_finished", reasoning_availability="absent")
         evidence.record("event", name="nora.session.terminal", attributes={"body": "{}"})
         return SimpleNamespace(session_id="generated-session", closed=[])
 
@@ -695,6 +702,8 @@ async def test_age_comparison_measures_the_source_once_outside_replay(
     real_age = spike.age_comparison
 
     async def spy(engine, age_url, judges, output_dir, minimum):
+        from opentelemetry import trace
+        assert trace.get_current_span().name == "eval.case"
         bound.append(engine.url)
         return await real_age(engine, age_url, judges, output_dir, minimum)
 
@@ -743,8 +752,17 @@ async def test_age_comparison_measures_the_source_once_outside_replay(
         smoke=False,
         stop_after_tokens=100,
     )
-    report = await spike.run(args)
-    budget_receipt = json.loads((args.output / "run_budget.json").read_text())
+
+    return SimpleNamespace(args=args, runner=runner, bound=bound, calls=calls,
+                           quality=quality, source_url=source_url, cfg=cfg)
+
+
+async def test_age_comparison_measures_the_source_once_outside_replay(tmp_path, monkeypatch):
+    env = generated_replay_environment(tmp_path, monkeypatch)
+    bound, calls, runner = env.bound, env.calls, env.runner
+    quality, source_url = env.quality, env.source_url
+    report = await spike.run(env.args)
+    budget_receipt = json.loads((env.args.output / "run_budget.json").read_text())
     assert budget_receipt == report["run_budget"]
     assert budget_receipt["stop_after_total_tokens"] == 100
 

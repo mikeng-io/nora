@@ -368,6 +368,8 @@ RULE_TESTS = {
     # R-71 and R-72 are retired; the numbers are not reused.
     # R-73 points at `who_said`'s enforcement of the principle; the decision
     # index's R-73 row cites that test as a satisfying one.
+    # Owner-local evaluation authorization is the explicit exception in that
+    # row, with its wired export/refusal tests named alongside the runtime guard.
     "R-73": "test_neither_the_words_nor_a_line_reaches_the_collector",
     # R-76 names the CHILD test rather than either drop test, and that is the
     # deliberate choice: «ingest is not exported» is the symptom everyone

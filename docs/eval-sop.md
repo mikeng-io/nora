@@ -85,10 +85,20 @@ source revision/diff and configuration hashes, run selection, case/draw inputs,
 actual admitted/resident/deferred tool names, formatted OpenAI request bodies,
 existing OTel spans (including model/tool outputs and usage), enabled application
 logs, raw judge votes, typed case results and complete corpus reports. It uses
-the existing provider/SDK spans even when remote tracing/export is disabled.
+the existing provider/SDK spans. The CLI also requires the configured owner-local
+SigNoz sink; [evaluation visibility](observability.md#evaluation-visibility)
+defines the explicit content policy and operator acceptance.
 Request bodies and tool-surface events are persisted before model dispatch;
 raw model paths retain their existing SDK span contents rather than gaining a
 second model wrapper. Run/case IDs and trace/span IDs correlate the records.
+
+
+The memory-graph command shares this automatic operator export: replay,
+`--rescore` and `--decision-judge` all require the configured owner-local sink
+before execution. Stderr prints the trace ID; stdout retains the JSON report.
+Replay cases group one selected wake's writer and both judges with the frozen
+sample and snapshot provenance. No paid replay/rescore is authorized by the
+source tests or a previous synthetic trace.
 
 Read the printed run directory privately. `run_finished` carries the CLI exit
 code; it does not turn a failed case into PASS. A started case/run without a

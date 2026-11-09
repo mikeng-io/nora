@@ -71,7 +71,13 @@ from nora.subject import (
     sweep_stale_private_blank_templates,
 )
 from nora.subject.context_filter import exposure
-from nora.subject.eval_evidence import EvidenceError, RunEvidence, fingerprint, revision
+from nora.subject.eval_evidence import (
+    EvidenceError,
+    RunEvidence,
+    evaluation_export_for,
+    fingerprint,
+    revision,
+)
 from nora.subject.sandbox import EvalLockHeldError, eval_host_lock
 
 #: Coarse S-class grouping for `--class`. Approximate on purpose where a
@@ -808,6 +814,7 @@ def _main(*, lock_fd: int = -1) -> int:
             max_output_tokens=vals[2],
             deadline=time.monotonic() + vals[3] * 60,
             output_reserve=4000)
+    export = evaluation_export_for(Path(args.deployment_config))
     try:
         evidence = RunEvidence(run_id=RUN_ID, lock_fd=lock_fd, metadata={
             **revision(_REPO_ROOT), "corpora": names, "cases": sorted(only or ()),
@@ -826,7 +833,9 @@ def _main(*, lock_fd: int = -1) -> int:
     from nora.domain.run_budget import active_run_budget
     token = active_run_budget.set(budget) if budget is not None else None
     try:
-        with evidence.capture(trace.get_tracer_provider()):
+        with evidence.capture(trace.get_tracer_provider(), export=export):
+            trace_id = trace.get_current_span().get_span_context().trace_id
+            print(f"eval trace: {trace_id:032x}")
             rc = _execute(args, names, only, subject_overrides=subject_overrides)
             if budget is not None:
                 evidence.record("run_budget_final", **budget.as_metadata())

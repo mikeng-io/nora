@@ -25,7 +25,7 @@ two copies drift and the one that drifts is the one you did not read
 ---
 
 Eval CLI runs also keep private durable evidence on the eval host using the same
-OTel provider, independent of remote exporter flags. See
+OTel provider. Private reproducibility and operator visibility are separate requirements. See
 [Durable run evidence](eval-sop.md#durable-run-evidence) for the lock, contents,
 permissions and incomplete-run semantics.
 
@@ -186,6 +186,89 @@ model spans. Read back classification and totals to prevent double counting;
 retain the parent as an agent span. Unknown usage stays unknown, not fabricated
 zero. Raw vision calls need their own model span and per-call usage, including
 individual video windows; an outer comprehension span is not that measurement.
+
+### Evaluation visibility
+
+Evaluation content is explicitly authorized to the configured owner-controlled
+SigNoz collector. The eval CLI reads `[obs.tracing]` from its deployment config
+before executing cases. It requires enabled `otlp_http` and the existing collector
+address: host loopback port 14318 or the `signoz-ingester:4318` Compose alias,
+with `/v1/traces`. Other endpoints (including cloud, legacy Langfuse, file and
+console exporters) are refused before model execution. No ambient exporter is
+re-enabled. Credentials use the existing resolver and never become trace content.
+No configuration switch, host installation or historical import is implied.
+
+The memory-graph operator command (`uv run python scripts/memory_graph_spike.py`)
+uses the same configured export for replay, `--rescore` and `--decision-judge`.
+Each resolves the sink before opening private evidence or executing its body,
+and prints the trace reference on stderr while retaining the JSON report on
+stdout. There is no private-only project/inspection exemption. Each run has a
+unique identity; each selected replay wake is one case spanning preparation,
+writer, both fact judges and cleanup. Its stable case name uses unit/wake identity;
+metadata binds wake time, `frozen_sample_sha256`, seed and snapshot locator fingerprint,
+while the row's `sample_sha256` identifies that case input and metadata. The completed
+writer records its session identity. Non-smoke engine comparisons have their own case.
+Rescore cases bind source
+hash/session event IDs; diagnostic cases bind the deduplicated statement's source
+session. This grouping changes neither judge inputs nor replay selection/budgets.
+
+`RunEvidence.capture` retains the SDK's in-memory evaluation processors and
+private durable recorder, adds trace identity plus this single checked OTLP
+processor, and restores the original processors afterwards. Content logs remain
+private. During the isolated run the installed Strands tracer emits native GenAI
+message/system/tool events for the evaluation SDK mapper. The exporter promotes
+the SDK payloads onto attributes on exported copies so AI Thread can render them;
+it preserves the in-memory mapper's event input. Each span carries
+run/case binding under one run root and case children; SDK agent/model/tool spans
+retain their actual parentage. The exact formatted dispatch body and private
+lifecycle records also appear as `nora.eval.*` events on their current spans.
+Case start/finish/failure rows belong to the case span; run finish/failure rows
+are recorded and validated while the run root is still live.
+These include context assembly evidence (empty/unavailable/cuts when supplied),
+admitted/deferred tools with schema availability, raw responses and served
+identity headers, retries, errors and transport latency. Missing readings remain
+unavailable, never zero. Deferred tools with no schema expose `unavailable`.
+The existing collector strips agent aggregate usage from model totals and
+normalizes cache usage; evaluation introduces no second model span or charge.
+
+A synthetic preflight span must export successfully before cases start. Export
+failure and OTel dropped event/attribute counters invalidate visibility and stop
+new model work; missing formatted-request capture invalidates evidence. The
+private terminal record remains distinct from semantic scores. An OTLP success
+means collector acknowledgement only: backend retention and UI readability still
+require readback. During isolated capture, the shared SDK event limit is
+unlimited (`SpanLimits.UNSET` / `max_events=None`, supported by the installed
+OTel `BoundedList`). The previous limit is restored on every exit, along with
+processors and native content settings. Complete canonical private chunks and
+per-call raw chunk events remain intact, including streams over 128 chunks;
+there is no extra span per chunk. A 129-case generated SDK experiment verifies
+case-local lifecycle rows and complete long-stream request/response content with
+zero dropped counters. Explicitly dropped or truncated content remains ERROR.
+Synchronous per-span export deliberately trades evaluation latency for immediate
+failure detection; runtime tracing is unchanged.
+
+The live root validates the evidence prefix before emitting its terminal; only
+its own not-yet-due terminal is deferred. Final model errors or an invalid receipt
+produce `capture.status=failed`, an error root and a `run_failed` event. Successful
+capture is `complete`, with the execution exit code recorded separately from
+semantic scores. The root's own export status is still `pending_root`: it cannot
+acknowledge its own delivery. After it ends, the private recorder records the
+export acknowledgement or failure. A final root network failure cannot be written
+to an unreachable backend; the private failure/CLI ERROR is authoritative, not a
+claimed completed backend trace. Memory-graph replay retains the completed body's
+sample, scores and cases on late capture/export failure, adds the ERROR receipt
+and freezes the resulting report once with exclusive creation. Its process exits
+2; an existing report is never overwritten.
+
+Acceptance before another paid evaluation: use generated inputs through the real
+SDK and deterministic local provider, including a multi-turn tool trajectory and
+judge invocation. Verify authorized export and unauthorized-sink exclusion, full
+system/messages/tool schemas/results, run/case/model/tool navigation, model-only
+usage, and negative missing-capture/export controls. Then read the generated trace
+back from the existing collector/backend and rendered AI Thread, checking exact
+content and totals. Source tests or HTTP 200 alone do not satisfy this acceptance.
+No production messages are imported. Until the installed source and operator UI
+are verified together, operator-visible acceptance remains unavailable.
 
 ### Recording, content and retention are separate
 
