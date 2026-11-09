@@ -131,8 +131,9 @@ judgements, never independent evidence.
 
 ## Phases, in order
 
-The built history remains in [00 · Sequence](00-intent.md#sequence). The
-forward work is:
+Current delivery evidence and order are owned by
+[31](31-build-one-session.md#6-bounded-cutover-acceptance-2026-10-31).
+The following sequence is historical:
 
 1. **This design revision.**
 2. **Extraction on new messages**, in the Record; nothing reads them
