@@ -158,7 +158,10 @@ an artifact binding, never permission or proof that its answer key is correct.
 
 The job pins source head and tracked diff, config, opaque ordered controls,
 a separate answer key, both lane-specific grading contracts, selected judge
-aliases and finite token/request/output/time limits. Inputs are projected through
+aliases and finite token/request/output/time limits. Optional
+`budget.per_call_output_tokens` selects the output allowance for both judge
+paths (default4096); `output_tokens` is its sum across planned requests. The
+measured input-plus-output cutoff remains independent. Inputs are projected through
 the actual consumers; control labels and expected verdicts never enter requests.
 Memory uses a `rescore` calibration contract, and reply controls use an `eval`
 diagnosis contract. Both contracts select the exact lane and control-file hash.

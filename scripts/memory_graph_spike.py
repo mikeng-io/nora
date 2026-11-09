@@ -250,8 +250,10 @@ def served_independence(served: dict[str, list[dict[str, Any]]]) -> str:
 
 
 class Judges:
-    def __init__(self, cfg: Any, models: list[str], config: Path) -> None:
+    def __init__(self, cfg: Any, models: list[str], config: Path,
+                 *, max_tokens: int = 4096) -> None:
         self.cfg, self.models, self.config = cfg, models, config
+        self.max_tokens = max_tokens
         self.served: dict[str, list[dict[str, Any]]] = {}
         self.effective_models = [self._endpoint(m)[2] for m in models]
 
@@ -269,7 +271,7 @@ class Judges:
             base_url=url,
             api_key=key,
             model_id=selected_model,
-            max_tokens=4096,
+            max_tokens=self.max_tokens,
             temperature=0,
         )
         model.update_config(stream=False)

@@ -123,9 +123,12 @@ def prepare(path: Path, expected: str, config: Path) -> tuple[dict, list, dict, 
                 raise EvidenceError("invalid doctrine control/reference")
             calls += len(judges)
     b = job["budget"]
-    if (set(b) != {"measured_tokens", "requests", "output_tokens", "seconds"}
+    limit = b.get("per_call_output_tokens", 4096)
+    if (set(b) not in ({"measured_tokens", "requests", "output_tokens", "seconds"},
+                      {"measured_tokens", "requests", "output_tokens", "seconds",
+                       "per_call_output_tokens"})
             or any(type(v) is not int or v <= 0 for v in b.values())
-            or b["requests"] != calls or b["output_tokens"] != calls * 4096):
+            or b["requests"] != calls or b["output_tokens"] != calls * limit):
         raise EvidenceError("calibration budget differs from planned calls")
     return job, controls, oracle, contracts
 
@@ -175,7 +178,9 @@ async def execute(job: dict, controls: list, oracle: dict, contracts: dict,
                         deadline=time.monotonic() + job["budget"]["seconds"]):
                     budget = active_run_budget.get()
                     assert budget is not None
-                    judges = spike.Judges(spike.load(config), job["judges"], config)
+                    judges = spike.Judges(spike.load(config), job["judges"], config,
+                                          max_tokens=job["budget"].get(
+                                              "per_call_output_tokens", 4096))
                     for c in controls:
                         budget.would_admit()
                         data, lane, key = c["input"], c["lane"], c["key"]
@@ -198,7 +203,9 @@ async def execute(job: dict, controls: list, oracle: dict, contracts: dict,
                                 comparisons = []
                                 for alias in job["judges"]:
                                     result = await Judge(base_url="", model=alias, samples=1,
-                                        config_path=config, contract=contract).grade(
+                                        config_path=config, contract=contract,
+                                        max_tokens=job["budget"].get(
+                                            "per_call_output_tokens", 4096)).grade(
                                             said=data["answer"],
                                             asked=data["scenario"], source=data["scenario"],
                                             doctrine="", extra=extra)

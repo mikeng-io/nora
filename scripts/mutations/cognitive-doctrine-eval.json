@@ -2,7 +2,7 @@
   {
     "name": "the reply judge declares a bounded final request",
     "file": "evals/rebuilt/grading.py",
-    "old": "\"temperature\": 0, \"max_tokens\": JUDGE_MAX_TOKENS",
+    "old": "\"temperature\": 0, \"max_tokens\": self.max_tokens",
     "new": "\"temperature\": 0",
     "target": "tests/unit/test_eval_run_budget.py::test_the_reply_judge_declares_its_output_ceiling_on_the_final_wire[stop]"
   },

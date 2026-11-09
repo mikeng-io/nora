@@ -5,5 +5,19 @@
     "old": "args = SimpleNamespace(stop_after_tokens=job[\"budget\"][\"measured_tokens\"])",
     "new": "args = SimpleNamespace(stop_after_tokens=10**12)",
     "target": "tests/integration/test_judge_controls.py::test_frozen_controls_use_real_consumers_capture_and_shared_budget[cutoff-ERROR-1]"
+  },
+  {
+    "name": "Selected reply-judge generation allowance reaches HTTP",
+    "file": "evals/rebuilt/grading.py",
+    "old": "\"temperature\": 0, \"max_tokens\": self.max_tokens",
+    "new": "\"temperature\": 0, \"max_tokens\": JUDGE_MAX_TOKENS",
+    "target": "tests/integration/test_judge_controls.py::test_selected_triple_output_allowance_reaches_both_judge_paths"
+  },
+  {
+    "name": "Selected memory-judge generation allowance reaches HTTP",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "max_tokens=self.max_tokens,",
+    "new": "max_tokens=4096,",
+    "target": "tests/integration/test_judge_controls.py::test_selected_triple_output_allowance_reaches_both_judge_paths"
   }
 ]

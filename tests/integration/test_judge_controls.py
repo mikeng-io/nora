@@ -97,7 +97,8 @@ def model_wire(monkeypatch):
     def respond(request):
         body = json.loads(request.content)
         assert body["model"] in {"generated-a", "generated-b"}
-        assert body["max_tokens"] == 4096 and not body.get("stream")
+        assert body["max_tokens"] == mode.get("per_call_output_tokens", 4096)
+        assert not body.get("stream")
         wire = request.content.decode()
         assert "opaque-" not in wire and '"oracle"' not in wire
         assert "expected_output" not in wire
@@ -259,3 +260,21 @@ async def test_final_report_failure_never_leaves_a_successful_terminal_exit_code
     terminal = next(r for r in records if r["kind"] == "run_finished")
     assert terminal["exit_code"] is None
     assert json.loads((out / "report.json").read_text())["status"] == "GENERATED_COLLISION"
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("otlp_wire")
+async def test_selected_triple_output_allowance_reaches_both_judge_paths(
+        tmp_path, job_files, model_wire):
+    cfg, job, path, _ = job_files
+    job["budget"].update(per_call_output_tokens=12288, output_tokens=8 * 12288)
+    sha = save(path, job)["sha256"]
+    model_wire[1]["per_call_output_tokens"] = 12288
+    prepared = controls.prepare(path, sha, cfg)
+    report = await controls.execute(*prepared, config=cfg, output=tmp_path / "triple-output",
+                                    job_sha256=sha)
+    assert report["status"] == "PASS" and len(model_wire[0]) == 8
+    assert {len(r["messages"]) for r in model_wire[0]} == {1, 2}
+    assert all(r["max_tokens"] == 12288 for r in model_wire[0])
+    assert report["run_budget"]["stop_after_total_tokens"] == 10000
+    assert report["run_budget"]["max_requests"] == 8

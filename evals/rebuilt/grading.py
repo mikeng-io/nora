@@ -111,6 +111,7 @@ class Judge:
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     config_path: Path | None = None
     contract: GradingContract | None = None
+    max_tokens: int = JUDGE_MAX_TOKENS
 
     def _endpoint(self) -> tuple[str, str, str]:
         if self.config_path is not None:
@@ -323,7 +324,7 @@ class Judge:
 
             request = {"model": self._endpoint()[2],
                        "messages": [{"role": "user", "content": prompt}],
-                       "temperature": 0, "max_tokens": JUDGE_MAX_TOKENS}
+                       "temperature": 0, "max_tokens": self.max_tokens}
             span = start_raw_model_span(
                 model_id=request["model"], messages=[
                     {"role": "user", "content": [{"text": prompt}]}])
