@@ -45,8 +45,13 @@ push is polled. Stories disappear in 24 hours; the social poller's cadence is
 per person and adaptive, under one budget per login ([22](22-social-stream.md)
 §4, which supersedes the fixed 12-hour clock first written here); Steam every 1–5 minutes per member; the presence
 collector already polls. That is ingestion's clock, not cognition's.
-Cognition has no schedule of its own: it runs only when stimuli wake it (§3),
-and `time` stimuli are the only ones a clock raises.
+Cognition is not an unconditional periodic model job: stimuli and the wake
+rules (§3) make it eligible, including due self-wakes and clock-raised `time`
+stimuli. [18](18-execution-and-time.md) defines the shared tick/slot vocabulary
+and Dreamer's target ownership of execution. Today `wake_loop` evaluates those
+rules independently and starts the Cognition session hook; routing that work
+through Dreamer is remaining runtime work. Ingestion polling remains separate
+from subconscious execution.
 
 ## 2. The social stream
 

@@ -11,6 +11,14 @@ edges:
 
 # 00 · Intent
 
+Execution ownership and time are defined by [18](18-execution-and-time.md):
+conscious speaking turns and subconscious Dreamer work. Its source map records
+the current separate Cognition runner and the remaining consolidation. The
+original four-adaptor roster below is historical where [30](30-cognition.md)'s
+later three-step flow consolidates reflection into Cognition; it is not a
+claim about the current registered adaptor set.
+
+
 > 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
 
 

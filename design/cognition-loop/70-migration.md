@@ -14,6 +14,15 @@ edges:
 
 ## 1. Inside the Dreamer, not beside it
 
+**Current delivery correction:** the runtime ownership stated in this section
+is the target, not the current call graph. Cognition shares Dreamer's agent
+factory and support infrastructure but executes through its own wake/session
+runner. [18](18-execution-and-time.md) §§1–2 owns the reconciled boundary;
+§6 owns the forward integrated consolidation and acceptance. The historical
+steps below do not establish that consolidation as delivered, and their
+Character/Lessons roster remains subject to [30](30-cognition.md)'s later
+three-step flow. No runtime behavior changes with this document amendment.
+
 The operator asked whether this is a great refactor or stays within the
 Dreamer. It stays within: the runtime that makes a background agent safe is
 kept, and what is replaced is how it is woken and how its work is divided.
