@@ -62,6 +62,10 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
 
 ## Procedure
 
+Before step 1, complete `docs/eval-sop.md` **Before a paid run**, including its
+scenario, criterion-consumer, independent policy and context checks. Preserve failed originals:
+posthoc regrades are calibration, not fresh acceptance. This covers replays, diagnostics and rescoring.
+
 1. **Read the suite's open defects.** An eval that another session or the operator
    has declared broken or not yet run stays stopped until its fix lands; do not run
    around it and never build a second harness beside `evals/` (the most repeated
