@@ -10,7 +10,7 @@
 > [current browser status](../browser-runtime/00-design.md#current-target--scoped-anonymous-browser-2026-11-02)
 > for acceptance limits. It preserves this shipped migration. Automatic VM
 > provisioning and idle stop are a separate
-> [unbuilt lifecycle slice](../browser-runtime/05-microvm-lifecycle.md).
+> [lifecycle source and remaining live acceptance](../browser-runtime/05-microvm-lifecycle.md).
 > Historical login continuity below does not add login to the anonymous slice.
 
 Status: proposed, 2026-10-21. Operator decisions are settled; implementation,

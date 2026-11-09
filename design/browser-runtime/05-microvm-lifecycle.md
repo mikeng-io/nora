@@ -1,6 +1,6 @@
 # Automatic scoped MicroVM lifecycle
 
-Status: design target, **NOT IMPLEMENTED**. Operator direction, 2026-11-09:
+Status: source implemented in the stacked child; **NOT INSTALLED OR LIVE-VERIFIED**. Operator direction, 2026-11-09:
 automate provisioning using the existing Docker Sandboxes runtime rather than
 adopting OpenSandbox. This document extends the
 [scoped browser contract](00-design.md#current-target--scoped-anonymous-browser-2026-11-02)
@@ -54,7 +54,7 @@ authority, not an additional model-facing tool. Unauthenticated or malformed
 requests must have no host effect. Revocation prevents new acquisition; running
 work follows existing cancellation/drain semantics. It never deletes the disk.
 
-The API exposes acquire/release/idle-stop. Leases are durable operation ownership,
+The API exposes acquire/release/idle-stop and passive observation. Leases are durable operation ownership,
 not expiring timers: a long call cannot lose protection because renewal was delayed.
 Release and recovery require positively quiet guest state; an elected successor
 may reconcile an abandoned operation only after the existing SQL owner permits it.
@@ -156,8 +156,9 @@ back the installed behavior separately from source checks.
 
 ## Acceptance
 
-Every row is currently **UNMET** for automated lifecycle delivery. This document
-defines tests and readbacks to obtain; it does not assert those tests exist.
+The requirements below remain the acceptance contract. Local delivery evidence
+and unavailable live boundaries are recorded after the table. Source tests do
+not constitute an installed-host journey.
 
 | Property | Required evidence |
 |---|---|
@@ -203,3 +204,24 @@ the existing bearer privately, setting host limits, and mounting the control
 directory and read-only registry into the application. Merge alone installs none
 of these. The host runtime and whole-VM resource comparison remain live acceptance
 boundaries even when generated local tests pass.
+
+## Source delivery evidence
+
+The implementation PR is based on design head
+`a3a6953464c193cc29ae5991129a9432695ed9b0`. Review and merge belong to the parent.
+No host installation, configuration change, deploy or paid evaluation occurred.
+
+| Acceptance | Local status and evidence | Remaining boundary |
+|---|---|---|
+| First use / canonical reuse | MET at the elected executor boundary: `test_elected_execution_acquires_but_maintenance_is_passive`, `test_durable_queue_executor_acquires_before_dispatch`; existing scoped tests retain canonical group/DM routing and grants. | UNAVAILABLE: admitted platform native/file/browser journey on an installed controller. |
+| Same/different scope / capacity | MET: `test_first_use_serialized_reuse_capacity_and_retained_wake`, unknown-inventory refusal; the real Unix server holds one lock through start/readiness and stop. Pending durable starts consume reservations after restart. | UNAVAILABLE: installed sbx capacity and physical headroom readback. |
+| Identity / auth / isolation | MET: bad auth and scope have no wrapper effects; real guest HTTP test rejects wrong/empty boot identity; corrupt ownership and missing controller fail unavailable. | UNAVAILABLE: production socket permissions, egress and guest identity. |
+| Restart / partial state | MET: controller restart, disk-missing refusal, partial ready publication, and actual wrapper recovery after successful create then failed policy publication. A crash before the successful-create receipt is uncertain and remains unavailable, never adopted. | UNAVAILABLE: installed sbx/service crash injection and generated file retention journey. |
+| Idle / active / race | MET: active runs block release/stop, unknown guest reads refuse quiet, acquire waits behind an actual held stop transition; wrapper stops supervision before disk-preserving stop. Maintenance uses existing SQL election. | UNAVAILABLE: installed long-call cancellation/drain, native detached processes and complete browser-tab journey. |
+| Passive | MET: elected maintenance does not acquire; empty boot registry binding/state/instance/enumeration have no host effects. Passive host observation can positively confirm a stopped owned VM for SQL settlement. | UNAVAILABLE: installed background sweep/context/health readback. |
+| Failure / original effects | MET: acquisition failure never awaits guest work and returns `no_guest_effect`; both executors use the same boundary. Durable leases have no expiry; failed release retains exclusion. Existing result journal/queue semantics remain. | UNAVAILABLE: host/process failure journey; no guest-effect replay was performed. |
+| Install / packaging | MET source: units, fixed wrapper controller verb, explicit limits template, read-only mount overlay and installation/package instructions in `deploy/computer/README.md`. Existing host-owned registries can be reused only after exact validation; unowned names are refused. | UNAVAILABLE: actual install and runtime readback; merging does not install files. |
+| Resource effect | UNAVAILABLE locally. | Whole-VM cost, guest-attributed browser descendants, swap/pressure and concurrent demand require installed measurements. |
+
+No acceptance row is silently dropped. Broader worker/DM/export outcome #520
+remains open; independent stack review and required hosted checks remain pending.

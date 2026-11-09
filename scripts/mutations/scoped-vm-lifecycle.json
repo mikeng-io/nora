@@ -1,0 +1,16 @@
+[
+  {
+    "name": "capacity admits no extra running slot",
+    "file": "deploy/computer/lifecycle_controller.py",
+    "old": " + reservations >= self.max_running:",
+    "new": " + reservations > self.max_running:",
+    "target": "tests/integration/test_computer_lifecycle.py::test_first_use_serialized_reuse_capacity_and_retained_wake"
+  },
+  {
+    "name": "maintenance never acquires or wakes",
+    "file": "nora/app/computer_queue.py",
+    "old": "if lifecycle is None or task.kind == \"maintenance\":",
+    "new": "if lifecycle is None:",
+    "target": "tests/integration/test_computer_lifecycle.py::test_elected_execution_acquires_but_maintenance_is_passive"
+  }
+]

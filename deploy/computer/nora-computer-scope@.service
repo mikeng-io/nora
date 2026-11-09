@@ -1,0 +1,12 @@
+[Unit]
+Description=Nora computerd for scope %i
+
+[Service]
+Type=simple
+ExecStart=%h/workspace/nora/deploy/computer/nora-computer scope serve %i
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

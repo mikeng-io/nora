@@ -553,3 +553,54 @@ deploy/computer/nora-computer status           # sandbox=running computerd=healt
 
 Destroying is also what makes the per-room users clean: a workspace made
 before them would keep files owned by the shared `computer` user.
+
+## Automatic scoped lifecycle (explicit installation)
+
+The source release does not install this host controller or enable automation.
+Keep an empty `[computer.scoped] lifecycle_socket` for manual provisioning.
+Automation starts new absent scopes or reuses an exactly matching host-owned
+registry record after measuring its real state. A sandbox without that ownership
+record is refused, never adopted.
+
+Package these files together from the reviewed revision: `nora-computer`,
+`lifecycle_controller.py`, `lifecycle_event.py`, `lifecycle.example.toml`,
+`nora-computer-scope@.service`, `nora-computer-lifecycle.service`, and
+`lifecycle-compose.yml`. Preserve the wrapper's existing relative layout and
+secret-delivery dependencies in the installed runtime root. Linux Python 3.11+,
+sbx (including `start`), curl, flock and a user systemd manager are prerequisites.
+The user must already have authenticated sbx. No browser installation is added.
+
+1. Copy the two units into `~/.config/systemd/user/` and the reviewed host files
+   into the runtime root shown in their `ExecStart`. Do not enable scope instances
+   at boot: only admitted demand starts them. Disable any pre-existing scope units
+   with automatic boot startup before enabling automatic lifecycle.
+2. Copy `lifecycle.example.toml` to `~/.config/nora/computer-lifecycle.toml` and
+   replace the paths. Set an explicit running VM maximum and host memory headroom.
+   `guest_bytes` must match the wrapper/unit guest allocation; unknown inventory
+   or MemAvailable refuses starts. Running unmanaged/eval VMs count too.
+3. The controller starts through `nora-computer controller`, which uses the same
+   `load_token` path as computerd: private secret.toml, configured credential name,
+   explicit environment overrides. No second token file is needed. Service and app
+   must have access to the intended socket group; create `control/` with mode 0750
+   and that group, and make the controller process use it. The socket is 0660.
+   Keep the controller ownership directory private and durable.
+4. Validate configuration using the existing deployment procedure. Install the
+   `lifecycle-compose.yml` overlay in the installed Komodo stack; make the
+   directories exist before recreation. Configure the app registry as
+   `/run/nora-computer-scopes` and `lifecycle_socket` as
+   `/run/nora-computer-control/lifecycle.sock`. The app receives neither sbx nor
+   Docker access. The control-directory mount remains read-only (Unix connection
+   permission comes from socket mode/group).
+5. After operator notification and deployment authorization, reload user systemd,
+   start `nora-computer-lifecycle.service`, and recreate the application using its
+   normal installed deployment procedure. A merge alone does none of this.
+
+Read back installed units, exact source revision, private limits (without token),
+socket ownership, read-only mounts and authenticated scope/boot/egress. Exercise a
+generated scope through first-use file/browser work, idle stop, disk-preserving
+wake and old-handle expiry. Observe all guest processes and browser state before
+claiming quiet. Scope services stop before sbx stop, so supervision cannot wake a
+sleeping VM. Passive app reads require a nonempty observed registry boot; stop
+withdraws it before stopping. Failed or uncertain transitions retain exclusion.
+The host audit spool records wrapper transitions; uncertain state is unavailable,
+never a reason to delete/recreate or replay guest commands.

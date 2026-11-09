@@ -132,6 +132,7 @@ class CapturedImage:
 class ScopeBrowserManager:
     def __init__(
         self, *, runtime: ScopedComputerdRuntime, tabs: BrowserTabStore,
+        lifecycle: Any = None,
         token: str, clock: Callable[[], datetime], idle_after: timedelta,
         observer: Any = None,
         # The execution-owner machinery ([computer.scoped]): `tasks` is the
@@ -147,6 +148,7 @@ class ScopeBrowserManager:
         # `popup_closed`. None keeps cleanup silent.
         on_event: Callable[[str, str, Any], Any] | None = None,
     ) -> None:
+        self._lifecycle = lifecycle
         self._runtime = runtime
         self._tabs = tabs
         self._token = token
@@ -695,8 +697,8 @@ class ScopeBrowserManager:
             return 0
         open_rows = [r for r in rows if r.status == OPEN]
         browser_up = await self._browser_running(scope)
-        if not open_rows and browser_up is not True:
-            return 0  # nothing bound and no live browser to stop
+        if not open_rows and browser_up is not True and self._lifecycle is None:
+            return 0  # manual mode has no VM idle transition
         if self._segments is None or self._tasks is None:
             # The un-owned half (no execution owner wired): the in-process
             # lock is the only boundary the scope has.
@@ -733,6 +735,11 @@ class ScopeBrowserManager:
             browser_up = await self._browser_running(scope)
             expired = await self._sweep_owned(scope, binding, open_rows,
                                               browser_up, now)
+            if self._lifecycle is not None and await self._owns(scope):
+                left = await self._tabs.open_for_scope(scope, instance=binding.instance)
+                if not left:
+                    await self._lifecycle.request(
+                        "idle-stop", scope, str(current_segment.get()))
             return {"status": "ok", "expired": expired}
 
     async def _sweep_owned(

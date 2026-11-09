@@ -62,7 +62,7 @@ EVENTS: frozenset[str] = frozenset({
     "policy_log_read", "egress_apply", "backup", "restore",
     "scope_create", "scope_provision", "scope_computerd_start", "scope_observe",
     "scope_manifest", "scope_verify", "scope_backup", "scope_restore",
-    "scope_revoke",
+    "scope_revoke", "scope_start", "scope_stop", "scope_service_start",
 })
 STATUSES: frozenset[str] = frozenset({"ok", "failed", "refused"})
 

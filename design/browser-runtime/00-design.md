@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Nora's browser — anonymous headed Chrome in a scoped microVM"
-description: "Scoped VM routing and browser source merged; automatic host provisioning and idle VM lifecycle remain unbuilt: one microVM per policy unit or canonical private-DM scope, with one on-demand anonymous headed Chrome, reusable in-memory tabs and direct screenshots. Preserves the accepted ADR 0022 design and historical B1/B2 delivery below; vault, login, streaming and tier optimizations are outside the current slice."
+description: "Scoped VM routing and browser source merged; automatic host provisioning and idle VM lifecycle have source implementation, pending installation and live acceptance: one microVM per policy unit or canonical private-DM scope, with one on-demand anonymous headed Chrome, reusable in-memory tabs and direct screenshots. Preserves the accepted ADR 0022 design and historical B1/B2 delivery below; vault, login, streaming and tier optimizations are outside the current slice."
 tags: [nora, compute, sandbox, sbx, browser, computer-use, credentials, openbao, vault, cdp]
 timestamp: '2026-11-02'
 status: partly-built
@@ -21,13 +21,14 @@ redirects, bypass refusal and real browser/downloader compatibility before rollo
 
 ## Current target — scoped anonymous browser (2026-11-02)
 
-**Source implemented; automatic VM lifecycle NOT BUILT.**
+**Scoped source implemented; automatic VM lifecycle source awaits stack review and live acceptance.**
 [PR #584](https://github.com/mikeng-io/nora/pull/584) merged as
 `f3bcfe7b6fcf3ecc1d44cd57d724a303e8cbc00c`. The inspected master
 `6e3de0a75556c2ffc95ee2cd8628a019c679b35b` contains scope-to-VM routing,
 identity-bound task tabs, the execution queue, browser expiry and direct capture.
-The host registry is still provisioned outside Nora; a missing record returns
-`unavailable`. These are source observations, not complete journey acceptance.
+The host registry remains host-written. The opt-in lifecycle controller obtains
+missing or stopped owned VMs after SQL election; manual mode still returns
+`unavailable` for a missing record. These are source observations, not complete journey acceptance.
 The parent [outcome #520](https://github.com/mikeng-io/nora/issues/520) remains
 open for its broader worker, migration and integrated acceptance obligations.
 
@@ -37,10 +38,10 @@ all browser/export journeys, or current egress acceptance. Earlier shared-VM and
 NOT BUILT statements below are dated history, not the current source topology.
 The shipped [unit migration](../computer-unit-scope/01-migration.md) remains intact.
 
-The next integrated change is the
+The integrated source extension is the
 [automatic Docker Sandbox lifecycle](05-microvm-lifecycle.md): provision/start
 on authorized demand, bounded capacity, quiet idle stop and disk retention.
-Update this bundle before dispatching that implementation. Keep the existing
+The design-only base precedes the separate implementation child. Keep the existing
 Docker Sandboxes provider; OpenSandbox/E2B migration is outside this slice.
 The [Lightpanda assessment](02-research.md#lightpanda-compatibility-2026-11-09)
 retains native Chrome for real visual operations; no engine replacement is selected.
@@ -410,7 +411,7 @@ the routing must agree with them, but implementing every adapter is not browser
 acceptance. This historical sequence is not a new build instruction. PR #584
 supplies the
 scoped VM/tab/capture source; complete live acceptance remains separate. The
-current unbuilt slice and its acceptance are in
+current lifecycle slice and its acceptance are in
 [05](05-microvm-lifecycle.md).
 
 ### Per-scope computer queue (operator scope addition, 2026-11-04)

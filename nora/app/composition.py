@@ -1816,11 +1816,15 @@ async def build_dependencies(
             dm_scope_id,
         )
         from nora.domain.computer_vms import FileScopeEndpoints
+        from nora.infra.computer.lifecycle import HostLifecycleClient
         from nora.infra.computer.manager import ScopeBrowserManager
         from nora.infra.computer.scoped import ScopedComputerdRuntime
         from nora.infra.sql.browser_tabs import SqlBrowserTabStore
         from nora.infra.sql.computer_tasks import SqlComputerTaskStore
 
+        lifecycle = (HostLifecycleClient(socket=scoped_cfg.lifecycle_socket,
+                                      token=computer_token)
+                     if scoped_cfg.lifecycle_socket else None)
         computer_redis = aioredis.from_url(computer_redis_url)
         computer = ScopedComputerdRuntime(
             endpoints=FileScopeEndpoints(scoped_cfg.registry),
@@ -1853,6 +1857,10 @@ async def build_dependencies(
             not proof the old command stopped)."""
             state = await computer.state(scope=scope)
             verdict = anything_running(state)
+            if verdict is None and lifecycle is not None:
+                observed = await lifecycle.request("observe", scope, str(uuid.uuid4()))
+                if observed.get("status") == "ok" and observed.get("state") == "stopped":
+                    return "quiet"  # host positively confirmed this owned VM is stopped
             return ("busy" if verdict is True
                     else "quiet" if verdict is False else "unknown")
 
@@ -1905,19 +1913,19 @@ async def build_dependencies(
         computer_admission = ComputerAdmission(
             tasks=computer_tasks, redis=computer_redis, clock=op_clock,
             executors=computer_segments, reconcile=_reconcile_scope,
-            audit=_queue_audit)
+            audit=_queue_audit, lifecycle=lifecycle)
         browser_manager = ScopeBrowserManager(
             runtime=computer, tabs=browser_tabs, tasks=computer_tasks,
             segments=computer_admission,
             token=computer_token, clock=op_clock,
             idle_after=timedelta(seconds=scoped_cfg.browser_idle_seconds),
-            on_event=_browser_event)
+            on_event=_browser_event, lifecycle=lifecycle)
         computer_task_backend = ComputerTaskBackend(tasks=computer_tasks)
         computer_queue_runner = ComputerQueueRunner(
             tasks=computer_tasks, redis=computer_redis, clock=op_clock,
             metrics=metrics, on_terminal=_deliver_computer_task,
             reconcile=_reconcile_scope, executors=computer_segments,
-            audit=_queue_audit)
+            audit=_queue_audit, lifecycle=lifecycle)
 
         # The canonical scope resolver the WHOLE feature shares — native
         # tools, the context block and worker jobs must land on the same VM:

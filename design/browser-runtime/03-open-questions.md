@@ -5,15 +5,15 @@
 Scoped VM routing/browser source merged in PR #584; the bundle's
 [delivery status](00-design.md#current-target--scoped-anonymous-browser-2026-11-02)
 separates that from live acceptance. Automatic VM provisioning, restart on demand,
-capacity admission and idle VM stop are **NOT BUILT**. Their
-[design and acceptance](05-microvm-lifecycle.md) must precede implementation.
+capacity admission and idle VM stop have opt-in source, pending stack review and live acceptance. Their
+[design and acceptance](05-microvm-lifecycle.md) precede the stacked source implementation; installation and live acceptance remain open.
 The following November 4 selection and October B3 programme are historical,
 not instructions to rebuild existing routing or run a model comparison.
 
 | Question | Current disposition | Evidence or remaining closure |
 |---|---|---|
 | Sandbox platform | Operator selected the existing Docker Sandboxes runtime; no OpenSandbox/E2B migration. | Reuse the sbx wrapper and preserve the provider-independent scope/runtime contract. |
-| Automatic lifecycle | Design target: first-use provisioning, disk-preserving restart, capacity admission and quiet idle stop. | All acceptance rows in 05 need implementation evidence; no runtime delivery is claimed by this document. |
+| Automatic lifecycle | Design target: first-use provisioning, disk-preserving restart, capacity admission and quiet idle stop. | Source evidence and unavailable installation/live boundaries are recorded in 05; no installed delivery is claimed. |
 | Lightpanda as a Chrome replacement | Not selected: real screenshots and visual geometry remain required. | Official docs describe no graphics pipeline and placeholder/text-layout captures; Nora uses real screenshot and geometry calls. |
 | Lightpanda for text-only work | Possible later experiment, not part of lifecycle implementation. | A separately selected corpus must measure CDP/API fit, page correctness and whole-VM resource use; no silent cross-engine continuation. |
 | Host sizing | No memory-reserve or safe-concurrency conclusion from configured VM RAM or RSS alone. | Measure resident/PSS and swap, pressure, guest Chrome processes and concurrent demand; choose explicit limits before enabling the controller. |
