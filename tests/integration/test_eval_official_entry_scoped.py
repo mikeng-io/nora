@@ -33,6 +33,8 @@ import evals.__main__ as cli
 from nora.agent import factory
 from nora.subject import sandbox
 from tests.fakes import FakeHoncho
+from tests.integration.test_spike_visibility import configured_sink, exported_spans
+from tests.integration.test_spike_visibility import otlp_wire as otlp_wire
 
 #: The corpus `room_a` snapshot names a PSEUDONYM; the eval translates it
 #: through `NORA_EVAL_PSEUDONYM_MAP`, which this test generates: the
@@ -188,6 +190,7 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
         f'model_path = "{tmp_path}/wake.onnx"').replace(
         'base_url = "http://127.0.0.1:8000"',
         f'base_url = "{ready.url}"'))
+    configured_sink(deploy_dir / "config.toml", deploy_dir / "config.toml")
     # The subject's policy/identity are the deployment's OWN files — the
     # generated deployment carries a generated room and generated identity,
     # never the real host's.
@@ -269,7 +272,7 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
 
 def test_official_entry_composes_scoped_tool_and_records_evidence(
         tmp_path, monkeypatch, pg_admin, pg_template,
-        example_config_path,):
+        example_config_path, otlp_wire):
     """The real entry exposes and loads the browser schema, and the real
     tool refuses the missing guest. Budget/evidence cover every request;
     live navigation/capture/export are a separate acceptance journey."""
@@ -277,6 +280,9 @@ def test_official_entry_composes_scoped_tool_and_records_evidence(
         tmp_path, monkeypatch, pg_admin, pg_template,
         example_config_path=example_config_path)
     assert rc == 0, "the admitted browser must refuse the missing guest cleanly"
+    spans = exported_spans(otlp_wire)
+    assert any(s.name == "eval.run" for s in spans)
+    assert any(s.name.startswith("chat") for s in spans)
     rows = _rows(evidence_root)
     started = next(r for r in rows if r["kind"] == "run_started")
     md = started.get("metadata", started)
@@ -300,7 +306,7 @@ def test_official_entry_composes_scoped_tool_and_records_evidence(
 
 def test_evidence_write_failure_precludes_any_dispatch(
         tmp_path, monkeypatch, pg_admin, pg_template,
-        example_config_path,):
+        example_config_path, otlp_wire):
     """A refused `nora.model.request` write is `EvidenceError` BEFORE the
     request leaves — the transport sees zero requests, exactly one
     injected refusal, and the run records no successful finish."""
@@ -311,6 +317,7 @@ def test_evidence_write_failure_precludes_any_dispatch(
     assert rc != 0                    # sticky failure, invalid run
     assert _run_one_case.refusals and len(_run_one_case.refusals) == 1
     assert requests == []             # nothing left the process
+    assert otlp_wire.payloads         # the sink preflight actually succeeded
     rows = _rows(evidence_root)
     assert not [r for r in rows if r["kind"] == "event"
                 and r["name"] == "nora.model.request"]

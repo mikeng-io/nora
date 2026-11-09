@@ -42,6 +42,7 @@ from nora.persons import load_persons
 from nora.policy import load_policy
 from nora.secret import credentials
 from nora.subject.eval_evidence import (
+    EvidenceError,
     RunEvidence,
     current,
     evaluation_export_for,
@@ -1268,7 +1269,6 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                 else "PASS",
                 "count": hits,
             }
-        freeze(output / "report.json", report)
         return report
     finally:
         try:
@@ -1292,14 +1292,30 @@ async def run(args: Any) -> dict[str, Any]:
             **revision(Path(__file__).resolve().parents[1]),  # noqa: ASYNC240
             "config_sha256": fingerprint(args.config),
         }, lock_fd=lock.fileno(), private_root=output)
-        with evidence.capture(trace.get_tracer_provider(), export=export):
-            trace_id = trace.get_current_span().get_span_context().trace_id
-            print(f"eval trace: {trace_id:032x}", file=sys.stderr)
-            report = await _run(args)
-        receipt = validate_events(read_events(evidence.path))
+        report: dict[str, Any] = {"status": "ERROR"}
+        capture_failed = False
+        body_completed = False
+        try:
+            with evidence.capture(trace.get_tracer_provider(), export=export):
+                trace_id = trace.get_current_span().get_span_context().trace_id
+                print(f"eval trace: {trace_id:032x}", file=sys.stderr)
+                report = await _run(args)
+                body_completed = True
+        except EvidenceError:
+            if not body_completed:
+                raise
+            capture_failed = True
+        try:
+            receipt = validate_events(read_events(evidence.path))
+        except EvidenceError:
+            receipt = {"status": "ERROR", "causes": ["unreadable_record"]}
+        if capture_failed:
+            receipt = {**receipt, "status": "ERROR",
+                       "causes": sorted(set(receipt.get("causes", [])) | {"capture_failed"})}
         report["evidence"] = {**receipt, "ref": evidence.path.name}
         if receipt["status"] == "ERROR":
             report["status"] = "ERROR"
+        freeze(output / "report.json", report)
         return report
 
 
@@ -1331,7 +1347,11 @@ def decision_sources(path: Path, events: list[dict[str, Any]]) -> dict[str, list
         source = read_events(candidate.parent)
         writer = [e for e in source if e["kind"] not in {
             "judge_error", "judge_verdict", "run_failed"}]
-        if validate_events(writer)["status"] != "PASS":
+        # The writer view omits failed scoring's terminal, but the canonical
+        # source must itself have ended. Session/transport guards still apply.
+        if not any(e["kind"] in {"run_finished", "run_failed"} for e in source):
+            raise ValueError("source_capture_incomplete")
+        if validate_events(writer, require_terminal=False)["status"] != "PASS":
             raise ValueError("source_capture_incomplete")
         sources[expected] = source
     return sources
@@ -1548,7 +1568,9 @@ async def rescore_facts(directory: Path, judges: Judges) -> dict[str, Any]:
         # Old scorer failures are replaceable; capture/terminal failures are not.
         writer_events = [e for e in events if e["kind"] not in {
             "judge_error", "judge_verdict", "run_failed"}]
-        receipt = validate_events(writer_events)
+        if not any(e["kind"] in {"run_finished", "run_failed"} for e in events):
+            raise ValueError("source_capture_incomplete")
+        receipt = validate_events(writer_events, require_terminal=False)
         if receipt["status"] == "ERROR":
             raise ValueError("source_capture_incomplete")
         record("rescore_source", path=str(path.resolve()),

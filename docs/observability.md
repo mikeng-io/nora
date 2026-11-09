@@ -222,6 +222,8 @@ it preserves the in-memory mapper's event input. Each span carries
 run/case binding under one run root and case children; SDK agent/model/tool spans
 retain their actual parentage. The exact formatted dispatch body and private
 lifecycle records also appear as `nora.eval.*` events on their current spans.
+Case start/finish/failure rows belong to the case span; run finish/failure rows
+are recorded and validated while the run root is still live.
 These include context assembly evidence (empty/unavailable/cuts when supplied),
 admitted/deferred tools with schema availability, raw responses and served
 identity headers, retries, errors and transport latency. Missing readings remain
@@ -234,9 +236,29 @@ failure and OTel dropped event/attribute counters invalidate visibility and stop
 new model work; missing formatted-request capture invalidates evidence. The
 private terminal record remains distinct from semantic scores. An OTLP success
 means collector acknowledgement only: backend retention and UI readability still
-require readback. A large run that exceeds SDK content limits is ERROR rather
-than silently accepted with cuts. Synchronous per-span export deliberately trades
-evaluation latency for immediate failure detection; runtime tracing is unchanged.
+require readback. During isolated capture, the shared SDK event limit is
+unlimited (`SpanLimits.UNSET` / `max_events=None`, supported by the installed
+OTel `BoundedList`). The previous limit is restored on every exit, along with
+processors and native content settings. Complete canonical private chunks and
+per-call raw chunk events remain intact, including streams over 128 chunks;
+there is no extra span per chunk. A 129-case generated SDK experiment verifies
+case-local lifecycle rows and complete long-stream request/response content with
+zero dropped counters. Explicitly dropped or truncated content remains ERROR.
+Synchronous per-span export deliberately trades evaluation latency for immediate
+failure detection; runtime tracing is unchanged.
+
+The live root validates the evidence prefix before emitting its terminal; only
+its own not-yet-due terminal is deferred. Final model errors or an invalid receipt
+produce `capture.status=failed`, an error root and a `run_failed` event. Successful
+capture is `complete`, with the execution exit code recorded separately from
+semantic scores. The root's own export status is still `pending_root`: it cannot
+acknowledge its own delivery. After it ends, the private recorder records the
+export acknowledgement or failure. A final root network failure cannot be written
+to an unreachable backend; the private failure/CLI ERROR is authoritative, not a
+claimed completed backend trace. Memory-graph replay retains the completed body's
+sample, scores and cases on late capture/export failure, adds the ERROR receipt
+and freezes the resulting report once with exclusive creation. Its process exits
+2; an existing report is never overwritten.
 
 Acceptance before another paid evaluation: use generated inputs through the real
 SDK and deterministic local provider, including a multi-turn tool trajectory and

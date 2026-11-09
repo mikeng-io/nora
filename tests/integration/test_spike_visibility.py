@@ -14,21 +14,26 @@ from nora.agent.telemetry import EvaluationExportError
 from nora.obs.tracing import record_eval_event
 from nora.subject.eval_evidence import EvidenceError, read_events
 from scripts import memory_graph_spike as spike
-from tests.integration.test_eval_observability import model_round_trip
 from tests.unit.test_memory_graph_spike import generated_replay_environment
 from tests.unit.test_replay_scoring import generated_completion
 
 
 @pytest.fixture
 def otlp_wire(monkeypatch):
-    wire = SimpleNamespace(payloads=[], fail=False)
+    wire = SimpleNamespace(payloads=[], fail=False, fail_on_root=False)
+
+    def rejects(data):
+        request = ExportTraceServiceRequest.FromString(data)
+        root = any(s.name == "eval.run" for r in request.resource_spans
+                   for scope in r.scope_spans for s in scope.spans)
+        return wire.fail or (wire.fail_on_root and root)
 
     def send(session, url, **kwargs):
         import requests
         assert url == "http://127.0.0.1:14318/v1/traces"
         wire.payloads.append(kwargs["data"])
         response = requests.Response()
-        response.status_code = 400 if wire.fail else 200
+        response.status_code = 400 if rejects(kwargs["data"]) else 200
         response._content = b""
         return response
 
@@ -36,7 +41,7 @@ def otlp_wire(monkeypatch):
         from urllib3.response import HTTPResponse
         assert method == "POST" and url == "http://127.0.0.1:14318/v1/traces"
         wire.payloads.append(kwargs["body"])
-        return HTTPResponse(body=b"", status=400 if wire.fail else 200)
+        return HTTPResponse(body=b"", status=400 if rejects(kwargs["body"]) else 200)
 
     monkeypatch.setattr("requests.Session.request", send)
     monkeypatch.setattr("urllib3.PoolManager.request", urllib_send)
@@ -64,6 +69,7 @@ def attrs(span):
 @pytest.mark.parametrize("export_fails", [False, True])
 async def test_memory_graph_replay_exports_writer_and_judges(
         tmp_path, monkeypatch, example_config_path, otlp_wire, export_fails, capsys):
+    from tests.integration.test_eval_observability import model_round_trip
     real_scoring = spike.smoke_fact_support
     env = generated_replay_environment(tmp_path, monkeypatch)
     args, runner = env.args, env.runner
@@ -116,6 +122,7 @@ async def test_memory_graph_replay_exports_writer_and_judges(
     report = await spike.run(args)
 
     assert report["evidence"]["status"] == "PASS"
+    assert json.loads((args.output / "report.json").read_text()) == report
     assert dispatches == ["writer", args.judge_a, args.judge_b] * 2
     spans = exported_spans(otlp_wire)
     cases = [s for s in spans if s.name == "eval.case"]
@@ -212,3 +219,66 @@ async def test_missing_sink_refuses_before_evidence_fd(tmp_path, monkeypatch, en
     monkeypatch.setattr(spike, "RunEvidence", forbidden)
     with pytest.raises(EvidenceError, match="visibility unavailable"):
         await getattr(spike, entry)(SimpleNamespace(config=tmp_path / "missing.toml"))
+
+
+@pytest.mark.parametrize("failure", ["receipt", "root_export"])
+async def test_late_capture_failure_preserves_completed_spike_report(
+        tmp_path, monkeypatch, example_config_path, otlp_wire, failure):
+    from copy import deepcopy
+
+    from nora.subject.eval_evidence import current
+    from tests.integration.test_eval_observability import model_round_trip
+
+    config = tmp_path / "generated.toml"
+    configured_sink(example_config_path, config)
+    expected = {"status": "PASS", "sample_sha256": "generated-cohort", "seed": 17,
+                "scores": [{"case": "generated", "status": "PASS", "score": 1}],
+                "cases": ["generated-completed"], "strata": {"text": 1}}
+    completed, dispatched = [], []
+
+    async def completed_body(args):
+        evidence = current()
+        with evidence.case("generated-completed", input="5", metadata={}):
+            await model_round_trip(dispatched)
+        completed.append(True)
+        if failure == "receipt":
+            evidence.record("judge_error", cause="generated_late_failure")
+        else:
+            otlp_wire.fail_on_root = True  # preflight + model/case exports already succeeded
+        return deepcopy(expected)
+
+    monkeypatch.setattr(spike, "_run", completed_body)
+    output = tmp_path / "output"
+    result = await spike.run(SimpleNamespace(config=config, output=output))
+    assert completed == [True] and len(dispatched) == 2
+    assert result["status"] == result["evidence"]["status"] == "ERROR"
+    assert spike.report_exit(result) == 2
+    assert {k: result[k] for k in expected if k != "status"} == {
+        k: v for k, v in expected.items() if k != "status"}
+    assert json.loads((output / "report.json").read_text()) == result
+    events = read_events(next(output.glob("spike-*")))
+    assert any(e["kind"] == "run_failed" for e in events)
+    root = next(s for s in exported_spans(otlp_wire) if s.name == "eval.run")
+    if failure == "receipt":
+        assert attrs(root)["nora.eval.capture.status"] == "failed"
+        assert any(e.name == "nora.eval.run_failed" for e in root.events)
+    else:
+        # This is a rejected wire payload, not a stored root or an acknowledged export.
+        assert attrs(root)["nora.eval.export.status"] == "pending_root"
+        assert not any(e["kind"] == "export_result" for e in events)
+
+
+async def test_report_freeze_never_overwrites_existing_file(
+        tmp_path, monkeypatch, example_config_path, otlp_wire):
+    config = tmp_path / "generated.toml"
+    configured_sink(example_config_path, config)
+    output = tmp_path / "output"
+
+    async def body(args):
+        spike.freeze(output / "report.json", {"retained": "generated-original"})
+        return {"status": "PASS"}
+
+    monkeypatch.setattr(spike, "_run", body)
+    with pytest.raises(FileExistsError):
+        await spike.run(SimpleNamespace(config=config, output=output))
+    assert json.loads((output / "report.json").read_text()) == {"retained": "generated-original"}

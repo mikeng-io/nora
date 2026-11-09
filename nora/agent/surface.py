@@ -213,7 +213,8 @@ class ToolSurface:
                     "deferred_schemas": {name: (
                         {"status": "ok", "schema": held.tool_spec}
                         if (held := self.shelf.get(name)) is not None
-                        and hasattr(held, "tool_spec") else {"status": "unavailable"}
+                        and hasattr(held, "tool_spec") else {
+                            "status": "unavailable", "note": "Deferred tool schema unavailable."}
                     ) for name in sorted(self.shelf.names())},
                     "grant": sorted(scope.grant) if scope.grant is not None else None,
                 }),

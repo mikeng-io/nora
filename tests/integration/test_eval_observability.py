@@ -18,6 +18,8 @@ from nora.agent import factory
 from nora.agent.surface import ToolScope, ToolShelf, ToolSurface
 from nora.subject.eval_evidence import EvidenceError, RunEvidence
 from nora.subject.sandbox import eval_host_lock
+from tests.integration.test_spike_visibility import configured_sink
+from tests.integration.test_spike_visibility import otlp_wire as otlp_wire
 
 
 @pytest.fixture
@@ -40,7 +42,7 @@ def capture(lock_fd):
 
 
 async def model_round_trip(requests, *, sentinel="", rounds=2, reasoning_prefill=False,
-                           judge=False):
+                           judge=False, stream_chunks=0):
     @tool
     def next_number(value: int) -> str:
         """Return the next integer.
@@ -87,6 +89,11 @@ async def model_round_trip(requests, *, sentinel="", rounds=2, reasoning_prefill
                        "prompt_tokens_details": {"cached_tokens": 4},
                        "completion_tokens_details": {"reasoning_tokens": 2}}},
         ]
+        if stream_chunks and stop == "stop":
+            chunks = [{"id": "generated", "object": "chat.completion.chunk",
+                       "model": "generated-model", "choices": [{"index": 0,
+                       "delta": {"content": f"piece-{i} "}, "finish_reason": None}]}
+                      for i in range(stream_chunks)] + chunks
         data = "".join("data: " + json.dumps(c) + "\n\n" for c in chunks) + "data: [DONE]\n\n"
         return httpx.Response(200, headers={"content-type": "text/event-stream",
                                             "x-omniroute-model": "generated-served",
@@ -163,11 +170,13 @@ def test_real_case_request_tools_results_logs_and_report_are_durable(evidence_ro
     assert surfaces == [{"admitted": ["later_tool", "next_number"],
                          "resident": ["next_number"], "deferred": ["later_tool"],
                          "platform": "signal", "grant": None,
-                         "deferred_schemas": {"later_tool": {"status": "unavailable"}}}]
+                         "deferred_schemas": {"later_tool": {
+                             "status": "unavailable",
+                             "note": "Deferred tool schema unavailable."}}}]
     case = next(r for r in data if r["kind"] == "case_started")
     assert all(r["case_id"] == case["case_id"] for r in data
                if r["kind"] in ("case_result", "case_finished"))
-    assert data[-1]["kind"] == "run_finished" and data[-1]["exit_code"] == 0
+    assert next(r for r in data if r["kind"] == "run_finished")["exit_code"] == 0
     assert stat.S_IMODE(evidence.path.stat().st_mode) == 0o700
     assert stat.S_IMODE((evidence.path / "events.jsonl").stat().st_mode) == 0o600
     assert "generated-private-auth-value" not in (evidence.path / "events.jsonl").read_text()
@@ -182,7 +191,7 @@ def test_started_case_and_failure_survive_interrupt_and_lock_releases(evidence_r
             raise SystemExit(143)
     data = rows(evidence)
     assert any(r["kind"] == "case_started" for r in data)
-    assert data[-1]["kind"] == "run_failed" and data[-1]["exit_code"] == 143
+    assert next(r for r in data if r["kind"] == "run_failed")["exit_code"] == 143
     assert not any(r["kind"] == "run_finished" for r in data)
     from nora.subject.eval_evidence import validate_events
     assert validate_events(data)["status"] == "ERROR"
@@ -233,35 +242,44 @@ def test_mid_run_disk_failure_invalidates_later_work_and_releases_lock(evidence_
         pass
 
 
-def test_cli_capture_failure_refuses_before_execution(evidence_root, monkeypatch):
-    reached = []
-    def disk_full(*_):
+def test_cli_capture_failure_refuses_before_execution(
+        evidence_root, monkeypatch, example_config_path, tmp_path, otlp_wire):
+    config = tmp_path / "generated.toml"
+    configured_sink(example_config_path, config)
+    reached, writes = [], []
+    def disk_full(*args):
+        writes.append(args[0])
         raise OSError("generated full disk")
     monkeypatch.setattr(os, "write", disk_full)
     monkeypatch.setattr(cli, "_execute", lambda *a, **k: reached.append(True) or 0)
-    monkeypatch.setattr("sys.argv", ["python -m evals", "tool_selection"])
+    monkeypatch.setattr("sys.argv", ["python -m evals", "tool_selection",
+                                    "--deployment-config", str(config)])
     assert cli.main() == 2
-    assert reached == []
+    assert reached == [] and writes
 
 
 @pytest.mark.parametrize("failure", ["root_is_file", "unreadable_config"])
 def test_cli_preparation_oserror_is_a_clean_refusal(
-        evidence_root, monkeypatch, capsys, failure, example_config_path):
-    from nora.agent import telemetry
-    monkeypatch.setattr(telemetry, "evaluation_export", lambda _: None)
+        evidence_root, monkeypatch, capsys, failure, example_config_path, tmp_path, otlp_wire):
+    config = tmp_path / "generated.toml"
+    configured_sink(example_config_path, config)
+    injected = []
     monkeypatch.setattr("sys.argv", ["python -m evals", "tool_selection",
-                                    "--deployment-config", str(example_config_path)])
+                                    "--deployment-config", str(config)])
     reached = []
     if failure == "root_is_file":
         evidence_root.write_text("generated regular file")
     else:
         def denied(*_):
+            injected.append(True)
             raise PermissionError("generated unreadable config")
         monkeypatch.setattr(cli, "fingerprint", denied)
     monkeypatch.setattr(cli, "_execute", lambda *a, **k: reached.append(True) or 0)
     assert cli.main() == 2
     assert reached == []
     assert "refusing to run: cannot prepare private eval evidence" in capsys.readouterr().err
+    if failure == "unreadable_config":
+        assert injected
 
 
 def test_no_private_capture_event_outside_eval(evidence_root):
@@ -286,7 +304,7 @@ def test_default_evidence_is_mandatory_without_remote_export(evidence_root, monk
             evidence.exit_code = 0
     assert evidence.path.parent == tmp_path / "private-state/nora/evals"
     assert rows(evidence)[0]["kind"] == "run_started"
-    assert rows(evidence)[-1]["kind"] == "run_finished"
+    assert any(r["kind"] == "run_finished" for r in rows(evidence))
 
 
 @pytest.mark.asyncio
@@ -751,7 +769,7 @@ def test_malformed_visibility_config_is_a_clean_refusal(tmp_path, section):
 async def test_dropped_eval_content_invalidates_visibility(evidence_root, monkeypatch):
     from opentelemetry.sdk.trace.export import SpanExportResult
 
-    from nora.agent.telemetry import EvaluationExportError, evaluation_export
+    from nora.agent.telemetry import evaluation_export
     monkeypatch.setattr(
         "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter.export",
         lambda *args: SpanExportResult.SUCCESS)
@@ -761,10 +779,12 @@ async def test_dropped_eval_content_invalidates_visibility(evidence_root, monkey
     with eval_host_lock() as fd:
         evidence = capture(fd)
         with (
-            pytest.raises(EvaluationExportError),
+            pytest.raises(EvidenceError),
             evidence.capture(trace.get_tracer_provider(), export=export),
             trace.get_tracer(__name__).start_as_current_span("generated-overflow") as span,
         ):
+            from opentelemetry.sdk.util import BoundedList
+            span._events = BoundedList(8)
             for i in range(200):
                 span.add_event("generated-content", {"index": i})
 
@@ -783,3 +803,126 @@ def test_truncating_sdk_limits_refuse_before_work(evidence_root, monkeypatch):
                 provider, export=export):
             reached.append(True)
     assert reached == []
+
+
+def test_template_sink_refusal_precedes_evidence_and_body(
+        evidence_root, monkeypatch, example_config_path, capsys):
+    reached = []
+    monkeypatch.setattr(cli, "_execute", lambda *a, **k: reached.append(True))
+    monkeypatch.setattr("sys.argv", ["python -m evals", "tool_selection",
+                                    "--deployment-config", str(example_config_path)])
+    assert cli.main() == 2
+    assert reached == [] and not evidence_root.exists()
+    assert "configured evaluation visibility unavailable" in capsys.readouterr().err
+
+
+def test_full_corpus_and_long_sdk_stream_export_without_drops(
+        evidence_root, monkeypatch, example_config_path, tmp_path, otlp_wire):
+    from strands.telemetry.tracer import get_tracer
+
+    from nora.agent.telemetry import evaluation_export
+    from tests.integration.test_spike_visibility import attrs, exported_spans
+
+    requests = []
+    async def drive(case, spec):
+        if case.name == "generated-128":
+            await model_round_trip(requests, sentinel="GENERATED_LONG_TAIL", stream_chunks=200)
+        return {"output": "6", "environment_state": [
+            backbone.EnvironmentState(name=backbone.NORA_SAID, state=1)]}
+
+    monkeypatch.setattr(backbone, "_drive_uncaptured", drive)
+    experiment = Experiment(cases=[Case(name=f"generated-{i}", input=str(i)) for i in range(129)],
+                            evaluators=[backbone.AbsenceGrader()])
+    monkeypatch.setattr(cli, "experiment_for", lambda *a, **k: (
+        experiment, backbone.nora_task(backbone.Spec(source_url="", entry="tag"))))
+    monkeypatch.setattr(cli, "census", lambda _: "generated census")
+    backbone._prefill_capture()
+    provider = trace.get_tracer_provider()
+    limits = provider._span_limits
+    before_limit = limits.max_events
+    before_processors = provider._active_span_processor._span_processors
+    tracer = get_tracer()
+    fields = ("use_latest_genai_conventions", "_span_attributes_only",
+              "_include_tool_definitions", "_redaction_enabled")
+    before_format = [getattr(tracer, k) for k in fields]
+    export = evaluation_export({"enabled": True, "exporter": "otlp_http",
+                                "endpoint": "http://127.0.0.1:14318/v1/traces"})
+    with eval_host_lock() as fd:
+        evidence = capture(fd)
+        with evidence.capture(provider, export=export):
+            cli._run_one("generated", source_url="", judge=None, sample=1)
+            evidence.exit_code = 0
+    assert provider._span_limits is limits and limits.max_events == before_limit
+    assert provider._active_span_processor._span_processors is before_processors
+    assert [getattr(tracer, k) for k in fields] == before_format
+    spans = exported_spans(otlp_wire)
+    assert spans and all(s.dropped_events_count == s.dropped_attributes_count
+                         == s.dropped_links_count == 0 for s in spans)
+    cases = [s for s in spans if s.name == "eval.case"]
+    assert len(cases) == 129
+    for case in cases:
+        names = [e.name for e in case.events]
+        assert "nora.eval.case_started" in names and "nora.eval.case_finished" in names
+    root = next(s for s in spans if s.name == "eval.run")
+    assert not any(e.name.startswith("nora.eval.case_") for e in root.events)
+    assert any(e.name == "nora.eval.run_finished" for e in root.events)
+    data = rows(evidence)
+    assert len([e for e in data if e["kind"] == "transport_response"]) > 200
+    private_requests = [json.loads(e["attributes"]["nora.model.request.body"])
+                        for e in data if e.get("name") == "nora.model.request"]
+    assert private_requests == requests and requests[-1]["messages"][-1]["role"] == "tool"
+    assert "GENERATED_LONG_TAIL" in str(requests[-1]["messages"])
+    models = [s for s in spans if attrs(s).get("gen_ai.operation.name") == "chat"]
+    assert len(models) == 2  # many chunks are still one invocation, not invented spans
+    final = next(s for s in models if "piece-199" in attrs(s).get("gen_ai.output.messages", ""))
+    outputs = json.loads(attrs(final)["gen_ai.output.messages"])
+    text = "".join(p.get("content", "") for p in outputs[0]["parts"] if p["type"] == "text")
+    assert text == "".join(f"piece-{i} " for i in range(200)) + "6 GENERATED_LONG_TAIL"
+    mirrored_chunks = [e for e in final.events if e.name == "nora.eval.transport_response"]
+    assert len(mirrored_chunks) == 202
+    assert "GENERATED_LONG_TAIL" in str(mirrored_chunks[-2])
+    assert attrs(root)["nora.eval.capture.status"] == "complete"
+    assert attrs(root)["nora.eval.export.status"] == "pending_root"
+    assert next(e for e in data if e["kind"] == "export_result")["status"] == "acknowledged"
+
+
+@pytest.mark.parametrize("failure", ["receipt", "model", "body"])
+def test_failed_run_terminal_is_exported_while_root_records(
+        evidence_root, otlp_wire, failure):
+    from strands.telemetry.tracer import get_tracer
+
+    from nora.agent.telemetry import evaluation_export
+    from tests.integration.test_spike_visibility import attrs, exported_spans
+
+    backbone._prefill_capture()
+    provider = trace.get_tracer_provider()
+    before_limit = provider._span_limits.max_events
+    fields = ("use_latest_genai_conventions", "_span_attributes_only",
+              "_include_tool_definitions", "_redaction_enabled")
+    before_format = [getattr(get_tracer(), key) for key in fields]
+    before_processors = provider._active_span_processor._span_processors
+    export = evaluation_export({"enabled": True, "exporter": "otlp_http",
+                                "endpoint": "http://127.0.0.1:14318/v1/traces"})
+    with eval_host_lock() as fd:
+        evidence = capture(fd)
+        with (
+            pytest.raises((EvidenceError, ValueError)),
+            evidence.capture(provider, export=export),
+            evidence.case("generated-failure", input="generated", metadata={}),
+        ):
+            if failure == "receipt":
+                evidence.record("judge_error", cause="generated_late_failure")
+            elif failure == "model":
+                evidence.record("call_started")
+                evidence.record("call_finished", error_type="GeneratedModelError", retry=False)
+            else:
+                raise ValueError("generated body error")
+    spans = exported_spans(otlp_wire)
+    root = next(s for s in spans if s.name == "eval.run")
+    assert attrs(root)["nora.eval.capture.status"] == "failed" and root.status.code == 2
+    assert any(e.name == "nora.eval.run_failed" for e in root.events)
+    assert not any(e.name == "nora.eval.run_finished" for e in root.events)
+    assert provider._span_limits.max_events == before_limit
+    assert [getattr(get_tracer(), key) for key in fields] == before_format
+    assert provider._active_span_processor._span_processors is before_processors
+    assert not any(e["kind"] == "run_finished" for e in rows(evidence))

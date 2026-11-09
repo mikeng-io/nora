@@ -22,6 +22,7 @@ from typing import Any
 from opentelemetry import baggage, context, trace
 from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, SynchronousMultiSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import Status, StatusCode
 
 from nora.obs.logging import SEVERITY_NUMBERS
 from nora.obs.tracing import EVAL_EVIDENCE_KEY, TraceIdentityProcessor
@@ -139,7 +140,6 @@ class RunEvidence(SpanProcessor, logging.Handler):
     def on_start(self, span: Any, parent_context: Any = None) -> None:
         if current() is self:
             span.set_attribute("nora.eval.run_id", self.run_id)
-            span.set_attribute("gen_ai.conversation.id", self.run_id)
             if _CASE.get():
                 span.set_attribute("nora.eval.case_id", _CASE.get())
             self.record("span_started", **self._span(span))
@@ -179,18 +179,19 @@ class RunEvidence(SpanProcessor, logging.Handler):
         token = _CASE.set(case_id)
         self._active.add(case_id)
         try:
-            self.record("case_started", name=name, input=input, metadata=metadata,
-                        sample_sha256=hashlib.sha256(json.dumps(
-                            [input, metadata], default=_json_value, sort_keys=True
-                        ).encode()).hexdigest())
             with trace.get_tracer(__name__).start_as_current_span(
                     "eval.case", attributes={"nora.eval.case.name": name}):
-                yield
-            self.record("case_finished")
-        except BaseException as exc:
-            if self.failure is None:
-                self.record("case_failed", error_type=type(exc).__name__)
-            raise
+                try:
+                    self.record("case_started", name=name, input=input, metadata=metadata,
+                                sample_sha256=hashlib.sha256(json.dumps(
+                                    [input, metadata], default=_json_value, sort_keys=True
+                                ).encode()).hexdigest())
+                    yield
+                    self.record("case_finished")
+                except BaseException as exc:
+                    if self.failure is None:
+                        self.record("case_failed", error_type=type(exc).__name__)
+                    raise
         finally:
             self._active.discard(case_id)
             _CASE.reset(token)
@@ -207,6 +208,8 @@ class RunEvidence(SpanProcessor, logging.Handler):
         root_logger = logging.getLogger()
         original_processors = provider._active_span_processor
         original_entries = original_processors._span_processors
+        original_max_events = provider._span_limits.max_events
+        failed_recorded = False
         private_processors = SynchronousMultiSpanProcessor()
         for processor in original_processors._span_processors:
             if (isinstance(getattr(processor, "span_exporter", None), InMemorySpanExporter)
@@ -240,38 +243,73 @@ class RunEvidence(SpanProcessor, logging.Handler):
                     provider._span_limits.max_attribute_length is not None
                     or provider._span_limits.max_span_attribute_length is not None):
                 raise EvidenceError("evaluation attribute truncation configured; run invalid")
+            # OTel's BoundedList supports None (SpanLimits.UNSET) as unlimited.
+            # Existing tracers share this limits object; do not replace it.
+            provider._span_limits.max_events = None
             from nora.agent.telemetry import evaluation_content_format
             with (
                 evaluation_content_format() if export is not None else contextlib.nullcontext(),
                 trace.get_tracer(__name__).start_as_current_span(
                     "eval.run", attributes={"nora.trace_kind": "generation"}) as root,
             ):
-                if export is not None:
-                    with trace.get_tracer(__name__).start_as_current_span("eval.export.preflight"):
-                        pass
-                    export.span_exporter.check()
-                    self.record("run_metadata", metadata=self.metadata)
-                self.record("visibility", status="exporting" if export else "private_only")
-                yield self
-                self.record("visibility", status="exporting" if export else "private_only")
-                root.set_attribute("nora.eval.capture.status", "recorded")
+                try:
+                    if export is not None:
+                        with trace.get_tracer(__name__).start_as_current_span(
+                                "eval.export.preflight"):
+                            pass
+                        export.span_exporter.check()
+                        self.record("run_metadata", metadata=self.metadata)
+                    self.record("visibility", status="exporting" if export else "private_only")
+                    yield self
+                    self.check()
+                    if export is not None:
+                        export.force_flush()
+                        export.span_exporter.check()
+                    # Validate the prefix while the root is live. Only its own
+                    # terminal is not yet due; all model/case/session guards hold.
+                    events = read_events(self.path)
+                    receipt = validate_events(events, require_terminal=False)
+                    if receipt["status"] == "ERROR":
+                        raise EvidenceError("incomplete_record")
+                    if any(e["kind"] == "call_finished" and e.get("error_type")
+                           and not e.get("retry") for e in events):
+                        raise EvidenceError("model_error")
+                    self.record("run_finished", exit_code=self.exit_code,
+                                active_cases=sorted(self._active))
+                    root.set_attribute("nora.eval.capture.status", "complete")
+                    if self.exit_code is not None:
+                        root.set_attribute("nora.eval.exit_code", self.exit_code)
+                    root.set_attribute("nora.eval.export.status",
+                                       "pending_root" if export else "private_only")
+                except BaseException as exc:
+                    root.set_attribute("nora.eval.capture.status", "failed")
+                    root.set_status(Status(StatusCode.ERROR, "evaluation evidence unavailable"))
+                    if self.failure is None:
+                        self.record("run_failed", error_type=type(exc).__name__,
+                                    exit_code=getattr(exc, "code", None),
+                                    active_cases=sorted(self._active))
+                        failed_recorded = True
+                    raise
             if export is not None:
                 export.force_flush()
                 export.span_exporter.check()
+                self.record("export_result", status="acknowledged")
             self.check()
-            self.record("run_finished", exit_code=self.exit_code, active_cases=sorted(self._active))
-            receipt = validate_events(read_events(self.path))
-            if receipt["status"] == "ERROR":
-                raise EvidenceError("incomplete_record")
         except BaseException as exc:
-            if self.failure is None:
+            if self.failure is None and not failed_recorded:
+                # Root export may fail only AFTER it ends. An unreachable sink
+                # cannot acknowledge that fact: retain the truthful private failure.
                 self.record("run_failed", error_type=type(exc).__name__,
                             exit_code=getattr(exc, "code", None), active_cases=sorted(self._active))
+            from nora.agent.telemetry import EvaluationExportError
+            if isinstance(exc, EvaluationExportError):
+                raise EvidenceError("evaluation export unavailable; run invalid") from exc
             raise
         finally:
             for handler in handlers:
                 handler.removeFilter(privacy_filter)
             original_processors._span_processors = original_entries
+            provider._span_limits.max_events = original_max_events
             root_logger.removeHandler(self)
             context.detach(capture_token)
             _CURRENT.reset(token)
@@ -311,8 +349,9 @@ def read_events(path: Path) -> list[dict[str, Any]]:
     return events
 
 
-def validate_events(events: list[dict[str, Any]]) -> dict[str, Any]:
-    """Public receipt: fixed codes and counts only, never captured content."""
+def validate_events(events: list[dict[str, Any]], *,
+                    require_terminal: bool = True) -> dict[str, Any]:
+    """Public receipt; the live prefix check defers only the run's own terminal."""
     causes: set[str] = set()
     pending: dict[tuple[Any, ...], int] = {}
     pairs = {"call_started": "call_finished", "tool_started": "tool_finished",
@@ -346,7 +385,8 @@ def validate_events(events: list[dict[str, Any]]) -> dict[str, Any]:
             causes.add("judge_incomplete")
     if any(pending.values()):
         causes.add("unmatched_event")
-    if not any(e["kind"] in {"run_finished", "run_failed"} for e in events):
+    if require_terminal and not any(
+            e["kind"] in {"run_finished", "run_failed"} for e in events):
         causes.add("terminal_missing")
     transports = sum(e["kind"] == "transport_started" for e in events)
     requests = sum(e.get("name") == "nora.model.request" for e in events)

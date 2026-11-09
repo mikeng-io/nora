@@ -13,6 +13,19 @@ import pytest
 
 import evals.__main__ as m
 from evals.scenarios import selected_cases
+from tests.integration.test_spike_visibility import configured_sink
+from tests.integration.test_spike_visibility import otlp_wire as otlp_wire
+
+
+@pytest.fixture
+def configured_main(monkeypatch, tmp_path, example_config_path, otlp_wire):
+    from nora.subject import sandbox
+    monkeypatch.setattr(sandbox, "EVAL_HOST_LOCK", tmp_path / "eval.lock")
+    config = tmp_path / "generated-deployment.toml"
+    configured_sink(example_config_path, config)
+    monkeypatch.setenv("NORA_CONFIG", str(config))
+    monkeypatch.setenv("NORA_EVAL_EXCHANGES", str(tmp_path / "evidence"))
+    return otlp_wire
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "301"])
@@ -24,7 +37,7 @@ def test_invalid_judge_timeout_is_refused_before_setup(monkeypatch, value, capsy
     assert "judge timeout must be finite" in capsys.readouterr().err
 
 
-def test_judge_timeout_reaches_existing_judge(monkeypatch, tmp_path):
+def test_judge_timeout_reaches_existing_judge(monkeypatch, tmp_path, configured_main):
     runs: list[str] = []
     _stub(monkeypatch, tmp_path, runs)
     seen = []
@@ -52,7 +65,8 @@ def test_spend_keeps_missing_usage_unmeasured(capsys):
     assert "usage UNMEASURED for 1 call(s)" in capsys.readouterr().out
 
 
-def test_config_option_reaches_the_judge_endpoint(monkeypatch, tmp_path, example_config_path):
+def test_config_option_reaches_the_judge_endpoint(
+        monkeypatch, tmp_path, example_config_path, configured_main):
     runs: list[str] = []
     _stub(monkeypatch, tmp_path, runs)
     config = tmp_path / "config.toml"
@@ -100,7 +114,8 @@ def _stub(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, runs: list[str]) -> N
     monkeypatch.setattr(m, "assert_shared_databases_unchanged", lambda url, before: None)
 
 
-def test_a_run_over_the_budget_is_refused_before_any_draw(monkeypatch, tmp_path, capsys):
+def test_a_run_over_the_budget_is_refused_before_any_draw(
+        monkeypatch, tmp_path, capsys, configured_main):
     runs: list[str] = []
     _stub(monkeypatch, tmp_path, runs)
     monkeypatch.setattr(
@@ -114,7 +129,7 @@ def test_a_run_over_the_budget_is_refused_before_any_draw(monkeypatch, tmp_path,
     assert runs == []  # neither the graph checks nor a draw
 
 
-def test_allow_long_lets_the_same_run_start(monkeypatch, tmp_path, capsys):
+def test_allow_long_lets_the_same_run_start(monkeypatch, tmp_path, capsys, configured_main):
     runs: list[str] = []
     _stub(monkeypatch, tmp_path, runs)
     monkeypatch.setattr("sys.argv", [
@@ -125,7 +140,7 @@ def test_allow_long_lets_the_same_run_start(monkeypatch, tmp_path, capsys):
     assert "estimate: " in capsys.readouterr().out
 
 
-def test_a_narrow_run_starts_without_allow_long(monkeypatch, tmp_path, capsys):
+def test_a_narrow_run_starts_without_allow_long(monkeypatch, tmp_path, capsys, configured_main):
     runs: list[str] = []
     _stub(monkeypatch, tmp_path, runs)
     [first, second] = [c.name for c in selected_cases("tool_selection", memory_index=True)][:2]
