@@ -38,6 +38,7 @@ from nora.domain.stimuli import (
     stored_cause,
     wake_state,
 )
+from nora.domain.ticks import tick_of_ms
 from nora.infra.sql.schema import (
     COGNITION_CARRY,
     COGNITION_WAKE,
@@ -61,6 +62,12 @@ def _ms(at: datetime) -> int:
 #: `recorded_at` as epoch milliseconds, in SQL, for the pending read.
 _RECORDED_MS = sa.cast(
     sa.func.round(sa.extract("epoch", STIMULUS.c.recorded_at) * 1000), sa.BigInteger,
+)
+
+#: `recorded_at` as its tick (`nora.domain.ticks`), in SQL — what an undated
+#: stimulus is pending from, coalesced under `due_tick` below.
+_RECORDED_TICK = sa.cast(
+    sa.func.floor(sa.extract("epoch", STIMULUS.c.recorded_at) / 60), sa.BigInteger,
 )
 
 
@@ -132,23 +139,39 @@ def pending_query(
     """The unit's stimuli not consumed by the watermark `(through_id,
     through_ms)` and pending by `now_ms`, ascending id.
 
+    The time bounds are TICKS (`nora.domain.ticks`, node 18): a stimulus is
+    pending from its `due_tick` — `ceil(due_ms)`, generated — or the tick of
+    its `recorded_at` when undated, and is eligible while that tick is at or
+    under the current one. The watermark's bound compares the same way:
+    a dated stimulus escapes consumption when its due tick is past the
+    watermark's tick (`due_tick > floor(through_ms)`) — an undated one when
+    its real `recorded_at` is past `through_ms`, unchanged (the late-commit
+    branch keeps real instants because it is about commit ORDER, not a
+    deadline).
+
     NOT consumed — `NOT (id <= through_id AND pending_since <= through_ms)` —
     is split into three DISJOINT range reads, each answered by its own index
     rather than by walking a unit's whole history (`stimulus` is append-only
     and grows forever): past the watermark's id (`idx_stimulus_unit_id`); at or
-    under it but due after its time bound (`idx_stimulus_unit_due`); at or
+    under it but due after its tick bound (`idx_stimulus_unit_due`); at or
     under it, undated, and recorded after its time bound
     (`idx_stimulus_unit_undated_recorded`, the late commit the evaluator's
     settle margin exists for). `tests/infra/test_stimulus_store_plan.py` holds
     the plan to those indexes."""
-    since = sa.func.coalesce(STIMULUS.c.due_ms, _RECORDED_MS)
+    now_tick = tick_of_ms(now_ms)
+    through_tick = tick_of_ms(through_ms)
+    since_tick = sa.func.coalesce(STIMULUS.c.due_tick, _RECORDED_TICK)
     # A retracted `self` stimulus (its self-wake was cancelled, moved or
     # superseded) is never pending.
-    base = (STIMULUS.c.unit == unit, since <= now_ms, live_stimulus(STIMULUS.c.id))
+    base = (
+        STIMULUS.c.unit == unit,
+        since_tick <= now_tick,
+        live_stimulus(STIMULUS.c.id),
+    )
     under = STIMULUS.c.id <= through_id
     branches = sa.union_all(
         sa.select(STIMULUS).where(*base, STIMULUS.c.id > through_id),
-        sa.select(STIMULUS).where(*base, under, STIMULUS.c.due_ms > through_ms),
+        sa.select(STIMULUS).where(*base, under, STIMULUS.c.due_tick > through_tick),
         sa.select(STIMULUS).where(
             *base, under, STIMULUS.c.due_ms.is_(None),
             STIMULUS.c.recorded_at > _at(through_ms),
@@ -396,9 +419,12 @@ class SqlStimulusStore:
             # (`InMemoryStimulusStore.view`, bound by the contract suite): the
             # side doors are not exempt from `limit`. Oldest-first is what keeps
             # a truncated read safe: whatever is cut has a higher id than
-            # everything shown, and a wake's `through_stimulus_id` is the
-            # highest id it claimed, so the cut stimuli stay pending.
+            # everything shown — but a wake's `through_stimulus_id` is at least
+            # the watermark it read, which may sit ABOVE a cut stimulus, so the
+            # cut ids are returned in `UnitView.over` for `decide` to name
+            # unclaimed (the watermark leaves them pending).
             pending.sort(key=lambda x: x.id)
+            over = tuple(s.id for s in pending[limit:])
             del pending[limit:]
             activity_q = activity_query(unit=unit)
             activity = (await conn.execute(activity_q)).scalar_one_or_none()
@@ -421,6 +447,7 @@ class SqlStimulusStore:
             last_activity_ms=None if activity is None else _ms(activity),
             last_wake=last, mark=mark, last_session=last_session, carry=carry,
             failures=failures, agenda_failures=agenda_failures, failed_mark=failed_mark,
+            over=over,
         )
 
     async def record_outcome(

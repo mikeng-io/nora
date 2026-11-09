@@ -44,6 +44,7 @@ from ..agent.dreamer import AdaptorSchedule
 from ..domain.media_join import MediaJoin
 from ..domain.models import TranscriptRow
 from ..domain.ports import DreamAdaptor
+from ..domain.ticks import slot_index
 from ..obs.metrics import Metrics
 from ..obs.tracing import TRACE_KIND, annotate, attached, span, traced_read
 
@@ -592,10 +593,12 @@ def _now_ms() -> int:
 def _slot(at_ms: int, sched: AdaptorSchedule) -> int:
     """Which scheduling slot an instant falls in.
 
-    `floor((t - offset) / interval)`. Two instants in the same slot are the
-    same scheduled occasion, so a schedule fires at most once per slot — which
-    is what makes "daily at 06:00 UTC" expressible and what lets two adaptors
-    sharing an interval be given different PHASES.
+    `floor((t - offset) / interval)` — `nora.domain.ticks.slot_index`, the
+    shared arithmetic the one-minute canonical tick is a special case of
+    (node 18). Two instants in the same slot are the same scheduled occasion,
+    so a schedule fires at most once per slot — which is what makes "daily
+    at 06:00 UTC" expressible and what lets two adaptors sharing an interval
+    be given different PHASES.
 
     **Arithmetic in MILLISECONDS, not seconds.** Flooring the instant to whole
     seconds first would round every sub-second interval to zero, and the
@@ -614,7 +617,10 @@ def _slot(at_ms: int, sched: AdaptorSchedule) -> int:
         # slot. Returning the instant itself makes that true by construction
         # rather than by a division that would raise.
         return at_ms
-    return (at_ms - int(sched.phase_offset_seconds * 1000)) // interval_ms
+    return slot_index(
+        at_ms, quantum_ms=interval_ms,
+        phase_ms=int(sched.phase_offset_seconds * 1000),
+    )
 
 
 class _AdaptorRunner(Protocol):

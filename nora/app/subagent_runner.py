@@ -1,6 +1,6 @@
 """`SubagentRunner` — runs ONE sub-agent job to a report.
 
-Built on `nora.app.cognition_agent_runner.LiveCognitionAgentRunner`'s shape: one `DreamGuard`
+Built on `nora.agent.dreamer.DreamerRuntime.run_agent`'s shape: one `DreamGuard`
 per run (a ledger is spent state), `factory.create_subagent` (the only constructor allowed
 to build the agent), `factory.invoke` under `factory.build_limits`, `turn_deadline` and
 `asyncio.wait_for`. It differs in three ways:

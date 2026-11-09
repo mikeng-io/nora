@@ -1,4 +1,5 @@
-"""`LiveCognitionAgentRunner`: a failure or a timeout is
+"""`DreamerAgentRunner` — the session's model call through
+`DreamerRuntime.run_agent`: a failure or a timeout is
 RAISED, never swallowed into a normal `CognitionRunResult`.
 
 `CognitionSessionRunner` records a session `failed`/`timeout` only when the
@@ -6,7 +7,7 @@ model loop raises; a runner that returned `stop_reason=None` on an exception
 made a dead session read as one that ran, closed its items `waiting` with a
 strike, and moved the watermark past stimuli nobody looked at. Strands is not
 run: `factory.create_dream_agent` and `factory.invoke` are replaced, which is
-the seam the runner reaches the SDK through.
+the seam the runtime reaches the SDK through.
 """
 
 from __future__ import annotations
@@ -17,9 +18,11 @@ from typing import Any
 import pytest
 
 from nora.agent import factory
-from nora.app.cognition_agent_runner import LiveCognitionAgentRunner, as_strands_tools
+from nora.agent.dreamer import as_strands_tools
+from nora.app.cognition_agent_runner import DreamerAgentRunner
 from nora.app.cognition_session import AdaptorBudget
 from nora.obs.metrics import Metrics
+from tests.fakes import dreamer_runtime_for
 
 
 class _Models:
@@ -27,9 +30,13 @@ class _Models:
         return object()
 
 
-def _runner(metrics: Metrics) -> LiveCognitionAgentRunner:
-    return LiveCognitionAgentRunner(
-        models=_Models(), retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
+def _runner(metrics: Metrics) -> DreamerAgentRunner:
+    return DreamerAgentRunner(
+        runtime=dreamer_runtime_for(
+            models=_Models(),
+            retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
+            metrics=metrics,
+        ),
         metrics=metrics,
     )
 
@@ -43,7 +50,7 @@ async def _tool(x: str) -> dict[str, object]:
     return {"status": "ok"}
 
 
-async def _run(runner: LiveCognitionAgentRunner, *, budget_seconds: float = 5.0) -> Any:
+async def _run(runner: DreamerAgentRunner, *, budget_seconds: float = 5.0) -> Any:
     return await runner.run(
         system_prompt="s", prompt="p", tools=[_tool],
         budget=AdaptorBudget(
@@ -154,7 +161,7 @@ def _raises(exc: BaseException) -> Any:
     return invoke
 
 
-async def _spent_by(runner: LiveCognitionAgentRunner) -> tuple[Any, Any]:
+async def _spent_by(runner: DreamerAgentRunner) -> tuple[Any, Any]:
     from nora.app.cognition_session import SESSION_TOKENS, TokenSpend
     spend = TokenSpend()
     token = SESSION_TOKENS.set(spend)

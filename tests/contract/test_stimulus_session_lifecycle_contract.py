@@ -136,7 +136,10 @@ def _carry(sid: int, strike: int = 1, state: str = "carried", waits: bool = Fals
 
 
 async def _view(stimuli: Any, **kw: Any) -> Any:
-    return await stimuli.view(unit=UNIT, mode="live", now_ms=NOW + 10_000, limit=100, **kw)
+    # NOW+40_000 is the tick boundary for every `due` this file uses: `_self`
+    # deadlines land mid-tick inside (NOW, NOW+40_000], so their due_tick opens
+    # at 29833334 * Q — node 18's «eligible at the boundary, never early».
+    return await stimuli.view(unit=UNIT, mode="live", now_ms=NOW + 40_000, limit=100, **kw)
 
 
 async def _self(stimuli: Any, ref: str, *, due: int = NOW + 100) -> int:

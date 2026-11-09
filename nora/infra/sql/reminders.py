@@ -71,6 +71,7 @@ from nora.domain.reminders import (
     plan_successor,
     proactive_subject,
 )
+from nora.domain.ticks import tick_of_at
 from nora.infra.sql.schema import REMINDERS
 
 # PostgreSQL SQLSTATE 23505, unique_violation. Matched EXACTLY rather than
@@ -337,7 +338,15 @@ class SqlReminderStore:
         return None if row is None else _row_to_reminder(row)
 
     async def due(self, *, now: datetime, limit: int) -> Sequence[Reminder]:
-        """PENDING rows whose `due_at` has passed, `due_at` then `id` ascending.
+        """PENDING rows whose `due_tick` has passed, `due_at` then `id` ascending.
+
+        Eligibility is the tick (`nora.domain.ticks`): a row is due when its
+        `due_tick` — `ceil(due_at)`, generated — is at or under the current
+        tick `floor(now)`. A reminder due at :30 of a minute fires at the next
+        minute boundary, never early; one due exactly on the boundary is due
+        in its own tick. `due_at` remains the requested instant the answer
+        orders by (monotone in the tick, so the order is unchanged) and the
+        audit field.
 
         `limit` is the tick's batch size and is always positive in production,
         but the guard is not optional: unguarded, `LIMIT -1` raises
@@ -356,7 +365,7 @@ class SqlReminderStore:
             sa.select(REMINDERS)
             .where(
                 REMINDERS.c.state == ReminderState.PENDING.value,
-                REMINDERS.c.due_at <= ensure_utc(now, field="now"),
+                REMINDERS.c.due_tick <= tick_of_at(ensure_utc(now, field="now")),
             )
             .order_by(REMINDERS.c.due_at.asc(), REMINDERS.c.id.asc())
             .limit(check_limit(limit))

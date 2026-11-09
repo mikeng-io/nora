@@ -307,9 +307,10 @@ class CognitionRunResult:
 
 class CognitionAgentRunner(Protocol):
     """The test seam (CLAUDE.md's policy: a constructor argument, never an
-    `_fn` hook). `nora.app.cognition_agent_runner.LiveCognitionAgentRunner`
-    is the production implementation, wrapping `nora.agent.factory.
-    create_dream_agent`; `tests/behavioral/
+    `_fn` hook). `nora.app.cognition_agent_runner.DreamerAgentRunner`
+    is the production implementation, delegating to
+    `DreamerRuntime.run_agent` — the one model-invocation route (node 30);
+    `tests/behavioral/
     test_cognition_session_writes_nothing_live.py`'s `ScriptedAgentRunner`
     drives a fixed sequence of tool calls with no model and no Strands.
 

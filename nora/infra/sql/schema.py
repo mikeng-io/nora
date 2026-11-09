@@ -1010,6 +1010,22 @@ REMINDERS = sa.Table(
     sa.Column("text", sa.Text, nullable=False),
     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     sa.Column("due_at", sa.DateTime(timezone=True), nullable=False),
+    # The eligibility authority (node 18, `nora.domain.ticks`): the first
+    # minute tick at or after `due_at` — `ceil(epoch_ms / 60_000)` — written
+    # BY Postgres from `due_at` itself, so a writer can never let the two
+    # disagree and there is exactly one rule. `due()` reads ONLY this column;
+    # `due_at` stays the requested instant and audit field (and orders the
+    # return), a projection rather than a second deadline.
+    sa.Column(
+        "due_tick", sa.BigInteger,
+        # `extract(epoch from timestamptz)` is STABLE, never allowed in a
+        # generated column; the epoch's interval arithmetic is IMMUTABLE,
+        # so the same microseconds are derived through `due_at - epoch`.
+        sa.Computed(
+            "(ceil((extract(epoch from (due_at - '1970-01-01 00:00:00+00'::timestamptz)) "
+            "* 1000) / 60000))::bigint",
+        ),
+    ),
     sa.Column("state", sa.Text, nullable=False),
     # NULL until the row fires, and NULL forever on one that is cancelled.
     sa.Column("fired_at", sa.DateTime(timezone=True), nullable=True),
@@ -1092,6 +1108,15 @@ REMINDERS = sa.Table(
 # because the CHECK constraint on the same table is.
 IDX_REMINDERS_DUE = sa.Index(
     "idx_reminders_due", REMINDERS.c.state, REMINDERS.c.due_at
+)
+
+#: The due predicate's index (node 18): `state = 'pending' AND due_tick <=
+#: current_tick` is what the heartbeat's `due()` reads every tick, so the
+#: eligible set is a prefix scan over it rather than a walk of every pending
+#: row. `idx_reminders_due` stays for the pending-ordering reads
+#: (`all_pending`, `pending_for`), whose order `due_at` still carries.
+IDX_REMINDERS_DUE_TICK = sa.Index(
+    "idx_reminders_due_tick", REMINDERS.c.state, REMINDERS.c.due_tick
 )
 
 #: ONE OPEN PROACTIVE ROW PER NOTE (migration 0064). Without it nothing below
@@ -3523,6 +3548,15 @@ STIMULUS = sa.Table(
     sa.Column("waits", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("at_ms", sa.BigInteger, nullable=False),
     sa.Column("due_ms", sa.BigInteger),
+    # The due TICK of `due_ms` (`nora.domain.ticks`): `ceil(due_ms / 60_000)`
+    # as integer division `(due_ms + 59999) / 60000`, generated so the stored
+    # deadline and its eligibility index cannot disagree. NULL when `due_ms`
+    # is — an undated stimulus is pending once recorded, and the pending read
+    # coalesces it to the tick of `recorded_at`.
+    sa.Column(
+        "due_tick", sa.BigInteger,
+        sa.Computed("((due_ms + 59999) / 60000)"),
+    ),
     # System time (`_recorded_at`). The stimulus store states it
     # from the same clock the wake arithmetic runs on; the default covers a
     # writer that does not.
@@ -3543,8 +3577,8 @@ IDX_STIMULUS_UNIT_ID = sa.Index("idx_stimulus_unit_id", STIMULUS.c.unit, STIMULU
 #: view`): a stimulus due after the watermark's time bound; an undated one
 #: recorded after it; a unit's newest person-authored item.
 IDX_STIMULUS_UNIT_DUE = sa.Index(
-    "idx_stimulus_unit_due", STIMULUS.c.unit, STIMULUS.c.due_ms,
-    postgresql_where=STIMULUS.c.due_ms.isnot(None),
+    "idx_stimulus_unit_due", STIMULUS.c.unit, STIMULUS.c.due_tick,
+    postgresql_where=STIMULUS.c.due_tick.isnot(None),
 )
 IDX_STIMULUS_UNIT_UNDATED_RECORDED = sa.Index(
     "idx_stimulus_unit_undated_recorded", STIMULUS.c.unit, STIMULUS.c.recorded_at,

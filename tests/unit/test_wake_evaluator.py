@@ -531,7 +531,7 @@ async def test_a_self_wake_leaves_a_message_pending_and_a_time_wake_leaves_a_sel
     ev, store, clock, _ = _setup()
     await _say(store, clock, kind="self", ref="wake:1", due_ms=clock.ms + 100 * S)
     m = await _say(store, clock)
-    clock.advance(100)
+    clock.advance(120)               # due at +100s opens its tick at the +120s boundary
     await ev.tick()
     assert [w.reason for w in store.wakes] == ["self"]
     assert await _pending(store, clock=clock) == [(m, "message")]
@@ -710,14 +710,16 @@ def test_a_stimulus_due_after_the_watermarks_time_is_not_consumed_by_the_id_rang
     15:00 watermark's id but not yet pending at its time, so the wake that set
     the watermark did not take it. `Watermark.consumed` is what strikes pending
     stimuli after repeated failed agendas; reading only the id would strike one
-    nobody has seen. The control is the same stimulus once the watermark's time
-    has reached its due time."""
+    nobody has seen. The control is the same stimulus once the watermark's TICK
+    has reached its due tick — a due of 200ms sits in tick 1, consumed only by
+    a watermark at or past the 60s boundary, not merely past the instant."""
     from nora.domain.stimuli import Stimulus, Watermark
 
     due_later = Stimulus(id=3, unit="nora", kind="self", item="self", ref="wake:1",
                          at_ms=10, recorded_at_ms=10, due_ms=200)
     assert Watermark(5, 100).consumed(due_later) is False
-    assert Watermark(5, 300).consumed(due_later) is True
+    assert Watermark(5, 59_999).consumed(due_later) is False
+    assert Watermark(5, 60_000).consumed(due_later) is True
 
 
 # ── a strong cue does not chain (DEC-281) ────────────────────────────────────

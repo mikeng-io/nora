@@ -65,6 +65,7 @@ from dataclasses import dataclass, field
 from typing import Literal, Protocol, get_args
 
 from .cues import is_rearming, is_strong
+from .ticks import due_tick_of_ms, tick_of_ms
 
 #: The stimulus kinds. The evaluator handles all of them generically; each is
 #: raised by its own producer (ingest for `message`, the evaluator for `time`,
@@ -155,6 +156,18 @@ class Stimulus:
     @property
     def pending_since_ms(self) -> int:
         return self.due_ms if self.due_ms is not None else self.recorded_at_ms
+
+    @property
+    def pending_tick(self) -> int:
+        """The tick this stimulus is first eligible in (`nora.domain.ticks`):
+        the due tick of its `due_ms` — the first minute boundary at or after
+        the due instant — or the tick it was recorded in (an undated stimulus
+        is pending at once). The ONE eligibility arithmetic the SQL pending
+        read (`stimulus.due_tick`, generated) and the in-memory store share."""
+        return (
+            due_tick_of_ms(self.due_ms) if self.due_ms is not None
+            else tick_of_ms(self.recorded_at_ms)
+        )
 
 
 @dataclass(frozen=True)
@@ -443,11 +456,19 @@ class Watermark:
         return cls(wake.through_stimulus_id, wake.at_ms, frozenset(wake.unclaimed_ids))
 
     def consumed(self, stimulus: Stimulus) -> bool:
-        return (
-            stimulus.id <= self.through_stimulus_id
-            and stimulus.pending_since_ms <= self.through_ms
-            and stimulus.id not in self.unclaimed
-        )
+        """Whether this watermark consumed `stimulus`: inside the id range and
+        pending no later than the wake's bound. The pending test is the due
+        TICK for a dated stimulus — `due_tick <= tick(at_ms)`, the same rule
+        `pending_tick` and the generated `stimulus.due_tick` column spell — so
+        a self-wake due mid-minute is consumed only by a wake at or after its
+        due tick. An undated stimulus has no due instant; its real
+        `recorded_at` still compares directly (the late-commit branch of
+        `pending_query`)."""
+        if stimulus.id > self.through_stimulus_id or stimulus.id in self.unclaimed:
+            return False
+        if stimulus.due_ms is None:
+            return stimulus.recorded_at_ms <= self.through_ms
+        return due_tick_of_ms(stimulus.due_ms) <= tick_of_ms(self.through_ms)
 
 
 @dataclass(frozen=True)
@@ -568,6 +589,15 @@ class UnitView:
     #: earlier deploy) are listed as unclaimed by every wake, so they are never
     #: consumed unseen and act again the moment the kind is ready.
     inert_kinds: frozenset[str] = frozenset()
+    #: Ids the merged `limit` bound cut off `pending`, ascending. The range
+    #: read covers them (they are due, not consumed, and under the watermark's
+    #: id range), but the bound kept them out of what a wake is shown. A wake
+    #: names them in `unclaimed_ids` — they sit under its
+    #: `through_stimulus_id` while never having been claimed — or the
+    #: watermark it records would eat them unseen. `decide` adds them to
+    #: `unclaimed_ids` itself; a reader that constructs its own `UnitView`
+    #: must do the same or reproduce the hole.
+    over: tuple[int, ...] = ()
 
     @property
     def watermark(self) -> Watermark:
@@ -841,6 +871,11 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
             # stimulus the view did not show cannot be claimed here, so dropping
             # it from the list would consume it unseen under this wake's range.
             | {u for u in view.watermark.unclaimed if u not in taken and u <= through}
+            # `view.over`: what the MERGED bound cut after the carried and
+            # unclaimed side doors re-sorted ahead of it — inside this wake's
+            # `through` range, due, and never shown. Naming it keeps the wake's
+            # watermark from consuming it the way a `pending`-only list would.
+            | {o for o in view.over if o not in taken and o <= through}
         )),
     )
 

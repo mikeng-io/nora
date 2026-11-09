@@ -6,7 +6,9 @@ holds, what it is told, its budget, and how it is stopped.
 `build_cognition_runner` is not called, the model source is not touched and
 `nora.app.cognition_agent_runner` is not imported (it is imported inside the
 function, so importing this module costs nothing). `true` builds exactly one
-`CognitionSessionRunner` whose hook the wake evaluator is handed, and
+`SubconsciousExecutor` — the `CognitionSessionRunner` hosted as a Dreamer
+adaptor, whose hook the wake evaluator is handed and which runs every
+admitted wake through `DreamerRuntime.run` (node 30) — and
 `require_session_hook` refuses to boot if that did not happen.
 
 **What she reads**: the tools of the read catalogue that EXIST and are
@@ -601,14 +603,25 @@ def build_cognition_runner(
     standing_fold: Any = None,
     rooms_of_unit: Callable[[str], Sequence[tuple[str, str]]] | None = None,
     observations: Any = None,
+    runtime: Any = None,
 ) -> Any:
-    """The session runner. Imported lazily: `LiveCognitionAgentRunner` (and
-    with it Strands) is loaded only when a session will actually run."""
-    from nora.app.cognition_agent_runner import LiveCognitionAgentRunner
+    """The session executor: a `SubconsciousExecutor` whose hook the wake
+    evaluator is handed, running each admitted wake through
+    `DreamerRuntime.run`. Imported lazily: `DreamerAgentRunner` (and with it
+    Strands) is loaded only when a session will actually run. `runtime` is
+    the composition's one `DreamerRuntime`; `models`/`retry` are kept for
+    callers that build the runner shape directly in tests."""
+    from nora.app.cognition_agent_runner import DreamerAgentRunner
     from nora.app.cognition_session import CognitionSessionRunner
+    from nora.app.subconscious import SubconsciousExecutor
 
-    agent_runner = LiveCognitionAgentRunner(
-        models=models, retry=retry, metrics=metrics,
+    if runtime is None:
+        raise ValueError(
+            "build_cognition_runner requires the composition's DreamerRuntime: "
+            "a session executes through runtime.run, not a sibling runner",
+        )
+    agent_runner = DreamerAgentRunner(
+        runtime=runtime, metrics=metrics,
         # The READ tools' argument names only. The registry's table also holds
         # the tag path's `note_create`, `note_revise` and `remind`, whose
         # arguments differ from the session's own verbs of the same names
@@ -657,7 +670,7 @@ def build_cognition_runner(
     async def prior(platform: str, conversation_id: str) -> StandingHead | None:
         return await standing_of(platform, conversation_id)
 
-    return CognitionSessionRunner(
+    runner = CognitionSessionRunner(
         tag_trace_store=tag_trace_store, memory=memory,
         store=store, stimulus_store=stimulus_store,
         notes=notes, events=events, standing=standing, reminders=reminders,
@@ -696,6 +709,11 @@ def build_cognition_runner(
         # unchecked).
         observations=observations,
     )
+    # Cognition hosted as a Dreamer adaptor (node 30): the evaluator's hook
+    # is the executor's, and every admitted wake executes inside
+    # `runtime.run(adaptor=…)` — admission, cancellation and the model call
+    # have the one owner every other subconscious adaptor has.
+    return SubconsciousExecutor(runtime=runtime, runner=runner)
 
 
 __all__ = [

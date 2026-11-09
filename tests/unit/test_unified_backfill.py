@@ -379,7 +379,7 @@ def test_failure_key_never_matches_the_live_parked_key():
 class _InnerRunner:
     """The agent-runner seam the meter wraps: answers a fixed result or
     raises, optionally leaving spend in SESSION_TOKENS like
-    `LiveCognitionAgentRunner._leave_spend` does even on failure."""
+    `DreamerRuntime.run_agent` does even on failure."""
 
     def __init__(self, *, result: Any = None, error: Exception | None = None,
                  spend: int | None = None) -> None:

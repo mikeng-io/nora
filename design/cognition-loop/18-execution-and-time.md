@@ -260,3 +260,26 @@ acceptance remain separate states.
 The architecture remains two execution layers. Reopen shared-code choices on
 measured incompatibility or a smaller implementation that preserves these
 properties; changing a clock helper cannot substitute for execution ownership.
+
+### Delivery coverage at the implementation head
+
+| Obligation | Implemented | Actually measured (named evidence) |
+|---|---|---|
+| One subconscious execution owner | `SubconsciousExecutor` submits a session-shaped `CognitionSessionAdaptor` to `DreamerRuntime.run`; `DreamerRuntime` owns admission, the task, cancellation and bounded execution. The sibling model path is deleted: `DreamerAgentRunner` delegates to `DreamerRuntime.run_agent`, the same `create_dream_agent`/`factory.invoke` route every adaptor's `_sample` takes. | `test_subconscious_executor.py`: a composed `_on_wake` dispatches only through `runtime.run` (positive, and the negative that nothing executes outside it); wiring refuses a missing runtime; `test_cognition_wiring.py`; `test_cognition_session_runner.py` for the preserved session contract. |
+| Reuse of the existing paths | Conscious addressed/deferred turns keep `HeartbeatLoop`/`fire`; sessions keep `CognitionSessionRunner`, its tools, writes, guard vocabulary, trace and `SESSION_TOKENS` spend handoff. | `test_cognition_session_tool_specs.py`, `test_cognition_agenda_skills.py`, `test_cognition_agent_runner.py`, `test_backfill_limits_and_traces.py`, `test_turn_records.py`; no second prompt builder (the session still assembles `_BLOCKS`). |
+| Boundaries and lifecycle survive | Room/requester/kind batching, CAS claim/successor insertion, `WakeGuard`, single-flight, unit lock, `CognitionShutdown` idempotent cancel-and-close unchanged. | Reminder and stimulus contract suites (`test_reminder_store_contract.py`, `test_stimulus_store_contract.py`, `test_stimulus_session_lifecycle_contract.py`) on SQL and the in-memory twin; `test_wake_evaluator.py` policy/brake cases. |
+| Shared time is real | `nora.domain.ticks` is the one tick/slot vocabulary (`TICK_MS`, `tick_of_ms`, `due_tick_of_ms`, `slot_index`); `due_tick` is generated from the stored deadline (one writable authority) and indexed; `_slot` delegates; the pending read and `Watermark.consumed` compare ticks. | Fake-clock boundary cases (`test_subconscious_executor.py`, `test_wake_evaluator.py`, `test_stimulus_store_contract.py`): mid-tick deadlines eligible at the next boundary, never early; boundary-aligned deadlines in their own tick; `pending_tick`/`due_tick` parity between SQL and the twin. Backward/forward clock and restart are covered by the watermark/settle contract tests, not by a dedicated clock-skew case — recorded as a gap, below. |
+| No stranded surface | Reminder and stimulus reads/writes migrated; `idx_reminders_due_tick` and re-pointed `idx_stimulus_unit_due`; snapshot/replay readers keep real instants (`due_at`, `fired_at`, `recorded_at` are projections, not eligibility). `MEMORY_WORK_ITEM`/`BRIDGE_WORK` retry queues are outside the named inventory and unchanged. | `test_stimulus_store_plan.py`: the pending read's three branches plan onto their indexes, and `EXPLAIN ANALYZE` on generated history (2k → 8k consumed rows) holds the due read at the fixed 3-row pending batch. |
+
+**Fixed, found by the migration:** a stimulus eligible but cut by the merged
+`limit` bound — behind carried/unclaimed side-door rows — was consumed by the
+new watermark's id range without ever being shown or claimed. `UnitView.over`
+now reports what the bound cut, and `decide` names it `unclaimed`; the
+contract fuzz (`test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulus`)
+loses nothing on all 12 seeds at limits 3 and 1000, on both stores.
+
+**Not measured here (honest limits):** live/model runtime acceptance (needs its
+authorized run — this PR authorizes none); a dedicated clock-skew/backward-clock
+case beyond the settle-margin contract; `nora-prove-fix` red/green runs recorded
+with the PR body. The `strands_evals` suite does not collect in this
+environment (module absent) and was not run.

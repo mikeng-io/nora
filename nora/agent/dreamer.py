@@ -89,6 +89,7 @@ from ..domain.ports import (
     VerbProvenance,
 )
 from ..domain.reasoning_strip import dreamer_path
+from ..domain.stimuli import LIMIT_STOP_REASONS
 from ..domain.turn_deadline import turn_deadline
 from ..obs.metrics import Metrics
 from ..obs.tracing import TRACE_KIND, annotate, span
@@ -100,6 +101,9 @@ from .ports import ToolSpec, adapt
 from .reasoning_strip import ReasoningStripWatch
 from .registry import ToolRegistry
 from .surface import DREAMER_LOOP_TOOLS
+from .tag_trace_extract import extract_tag_trace
+from .token_reservation import TokenReservation
+from .turn_recording import TurnRecording
 
 log = logging.getLogger("nora.dreamer")
 
@@ -352,6 +356,21 @@ class DreamOutcome:
     written: int
     instruction_sha256: str
     stop_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class AgentRunResult:
+    """What one bounded agent loop returned to a session-shaped adaptor
+    (`run_agent`): Strands' `stop_reason` (None when never produced), the
+    loop's total tokens (None when unread, never a zero) and the
+    trace/requirements extracted for provenance. `None` total tokens is
+    `unavailable`, not `nothing_found` — R-27, the same three states
+    `DreamOutcome` carries, at the call grain."""
+
+    stop_reason: str | None = None
+    total_tokens: int | None = None
+    messages: tuple[Mapping[str, Any], ...] = ()
+    requirements: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -1238,11 +1257,65 @@ class DreamerRuntime:
                "nora.dreamer.key": key,
                "nora.dreamer.objective": adaptor.objective},
         ):
-            outcome = await self._run_body(
-                adaptor=adaptor, key=key, batch=batch,
-            )
+            if getattr(adaptor, "session_run", None) is not None:
+                outcome = await self._run_session_body(
+                    adaptor=adaptor, key=key,
+                )
+            else:
+                outcome = await self._run_body(
+                    adaptor=adaptor, key=key, batch=batch,
+                )
             annotate(**{"nora.outcome": outcome.status})
             return outcome
+
+    async def _run_session_body(
+        self, *, adaptor: DreamAdaptor, key: str,
+    ) -> DreamOutcome:
+        """A session-shaped adaptor (cognition): the second shape `run`
+        hosts, per node 30's contract.
+
+        The adaptor's `session_run` IS the work — it owns its agenda, its
+        tools, its outcome rows and its settlement. The runtime contributes
+        what it contributes to every adaptor: the root span, the objective's
+        digest, the sample metric and a counted `unavailable`. The session
+        RAISES on every path that did not close (an outcome write is its
+        settlement, and a session without one is a failure), so nothing here
+        translates a return into a status — `unavailable` means the session
+        itself failed. `asyncio.CancelledError` propagates: a session
+        cancelled by a shutdown or a hold-out is a cancellation, already
+        recorded on the session's own row, and must not degrade to
+        `unavailable` — `run()`'s caller tracks the task and reports it.
+        """
+        started = time.perf_counter()
+        sha = ""
+        try:
+            instructions = self._instructions.for_objective(adaptor.objective)
+            sha = instructions.sha256
+        except Exception:
+            log.exception(
+                "dream session could not read its objective (adaptor=%s)",
+                adaptor.name,
+            )
+        try:
+            result = await adaptor.session_run(key=key)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception(
+                "dream session failed (adaptor=%s key=%s)", adaptor.name, key,
+            )
+            self._metrics.inc(
+                "nora_dream_sample_total", adaptor=adaptor.name,
+                status="unavailable",
+            )
+            return self._finish(adaptor, "unavailable", 0, sha, None, started)
+        self._metrics.inc(
+            "nora_dream_sample_total", adaptor=adaptor.name, status="ok",
+        )
+        return self._finish(
+            adaptor, "ok", 0, sha,
+            getattr(result, "stop_reason", None), started,
+        )
 
     async def _run_body(
         self, *, adaptor: DreamAdaptor, key: str, batch: Sequence[TranscriptRow]
@@ -1746,6 +1819,193 @@ class DreamerRuntime:
             status=status, written=written, instruction_sha256=sha,
             stop_reason=stop_reason,
         )
+
+    async def run_agent(
+        self, *, system_prompt: str, prompt: str,
+        tools: Sequence[Any] = (), strands_tools: Sequence[Any] = (),
+        guard: DreamGuard | None = None, budget: AdaptorBudget | None = None,
+        trace_attributes: Mapping[str, str] | None = None,
+        agent_name: str = "dreamer:session", spend: Any = None,
+        max_trace_chars: int = 10_000,
+        reservation: TokenReservation | None = None,
+    ) -> AgentRunResult:
+        """ONE bounded agent loop — the only model-invocation route
+        (node 30). Every session-shaped adaptor's turn and every envelope
+        adaptor's `_sample` come through the same `create_dream_agent` /
+        `factory.invoke` under the same guard, deadline and budget
+        vocabulary; a session adaptor calls THIS rather than building its
+        own agent, so the sibling model-invocation route is gone rather
+        than renamed.
+
+        `spend` is the caller's mutable holder: its `.total`, `.messages`
+        and `.requirements` are filled even on a failed or cancelled loop,
+        because a failed session is the costliest kind. An unread usage
+        stays `None` — `unavailable`, never a quiet zero."""
+        b = budget or AdaptorBudget()
+        attributes = dict(trace_attributes or {})
+        return await self._invoke_agent(
+            system_prompt=system_prompt, prompt=prompt,
+            tools=as_strands_tools(tools, strands_tools),
+            guard=guard or DreamGuard(), budget=b,
+            trace_attributes=attributes, agent_name=agent_name,
+            max_trace_chars=max_trace_chars, reservation=reservation,
+            spend=spend,
+        )
+
+    async def _invoke_agent(
+        self, *, system_prompt: str, prompt: str, tools: Sequence[Any],
+        guard: DreamGuard, budget: AdaptorBudget,
+        trace_attributes: Mapping[str, str], agent_name: str,
+        max_trace_chars: int, reservation: TokenReservation | None,
+        spend: Any,
+    ) -> AgentRunResult:
+        """One bounded agent loop: create the agent, invoke it inside the
+        deadline and the reservation, then read its usage and its trace —
+        on EVERY exit, failure and cancellation included, because a failed
+        session is the costliest kind and its usage lives in the agent.
+
+        It RAISES on failure, the session contract (`CognitionAgentRunner`'s):
+        a timed-out or errored loop is not a session that returned, and only
+        a loop that returned may close its items."""
+        watch = ReasoningStripWatch(
+            path=dreamer_path(agent_name), store=self._reasoning_strip_store,
+            metrics=self._metrics,
+        )
+        recording = TurnRecording()
+        agent = factory.create_dream_agent(
+            model=self._models.create(), system_prompt=system_prompt,
+            tools=tools, guard=guard, reasoning_watch=watch,
+            trace_attributes=dict(trace_attributes), retry=self._retry,
+            agent_name=agent_name,
+            tool_hooks=(
+                (recording, reservation) if reservation is not None
+                else (recording,)
+            ),
+        )
+        baseline = len(getattr(agent, "messages", ()))
+        result: Any = None
+        stop_reason: str | None = None
+        try:
+            try:
+                with turn_deadline(budget.timeout_seconds):
+                    result = await asyncio.wait_for(
+                        factory.invoke(
+                            agent, prompt, invocation_state={},
+                            limits=factory.build_limits(
+                                output_tokens=budget.output_tokens,
+                                turns=budget.turns,
+                                total_tokens=budget.total_tokens,
+                            ),
+                        ),
+                        timeout=budget.timeout_seconds,
+                    )
+                stop_reason = (
+                    "limit_total_tokens"
+                    if reservation is not None and reservation.stopped
+                    else getattr(result, "stop_reason", None)
+                )
+                if stop_reason is not None:
+                    self._metrics.inc(
+                        "nora_dream_stop_reason_total",
+                        adaptor=agent_name, reason=str(stop_reason),
+                    )
+            except BaseException:
+                # Flushed here rather than in `finally`: an await in `finally`
+                # on a cancelled task re-raises out of the cleanup path, and a
+                # record of something that already happened must never change
+                # how a run ends. `flush` is idempotent.
+                await watch.flush()
+                raise
+            await watch.flush()
+        finally:
+            # The trace and the spend, on EVERY exit: a failed, timed-out or
+            # cancelled loop is the costliest kind and its usage lives in the
+            # agent even when no result came back. Sync work only — nothing
+            # here may await, for the reason the flush comment gives.
+            trace = extract_tag_trace(
+                agent, baseline=baseline,
+                tag_id=str(trace_attributes.get("cognition.session_id", "")),
+                conversation_id="", transcript=(), outcome="silent",
+                max_chars=max_trace_chars, metrics=self._metrics,
+            )
+            requirements = recording.to_json()
+            total = (
+                reservation.spent if reservation is not None
+                else _total_tokens(result) if result is not None
+                else _usage(_agent_usage(agent))
+            )
+            _fill_spend(spend, total, tuple(trace.messages), requirements)
+        return AgentRunResult(
+            stop_reason=stop_reason, total_tokens=total,
+            messages=tuple(trace.messages), requirements=requirements,
+        )
+
+
+def as_strands_tools(*tool_groups: Sequence[Any]) -> list[Any]:
+    """The runtime's ONE way to a Strands tools list, for a session adaptor
+    that holds verbs, tools or both: Strands `tool_spec`s pass through, bare
+    callables go through `nora.agent.ports.adapt` (`_as_tool`, the one place
+    a `ToolSpec` becomes a tool), first occurrence kept by tool name so a
+    session cannot register the same verb twice."""
+    out: dict[str, Any] = {}
+    for tools in tool_groups:
+        for tool in tools:
+            name = str(
+                getattr(tool, "tool_name", None)
+                or getattr(tool, "__name__", "") or ""
+            )
+            if not name:
+                continue
+            if hasattr(tool, "tool_spec") and hasattr(tool, "tool_name"):
+                # Already a Strands tool (a registry read): through untouched.
+                out.setdefault(name, tool)
+            elif name not in out:
+                out[name] = _as_tool(tool) if callable(tool) else tool
+    return list(out.values())
+
+
+def _fill_spend(
+    spend: Any, total: int | None, messages: tuple[Mapping[str, Any], ...],
+    requirements: Mapping[str, Any],
+) -> None:
+    """The caller's mutable spend holder, filled on every exit —
+    `spend`-as-`SessionTokens`, duck-typed so the runtime never imports an
+    app-layer type."""
+    if spend is None:
+        return
+    spend.total = total
+    spend.messages = messages
+    spend.requirements = requirements
+
+
+def _agent_usage(agent: Any) -> Any:
+    """The usage record one loop left on the agent (a Strands accounting
+    mapping), there to be read even when the loop never returned a result —
+    the failed-session case `run_agent`'s `spend` holder exists for. A read
+    that itself fails answers None: it must never mask the loop's own
+    error."""
+    try:
+        return getattr(
+            getattr(agent, "event_loop_metrics", None), "accumulated_usage", None,
+        )
+    except Exception:
+        return None
+
+
+def _usage(usage: Any) -> int | None:
+    """`usage["totalTokens"]` of a Strands accounting mapping, or None when it
+    is absent, not a number, or ZERO: a loop that made a model call spent
+    something, so a zero is a provider that reported no usage, not a free
+    session. An unread count is never a zero."""
+    total = usage.get("totalTokens") if isinstance(usage, Mapping) else None
+    ok = isinstance(total, int) and not isinstance(total, bool) and total > 0
+    return total if ok else None
+
+
+def _total_tokens(result: Any) -> int | None:
+    """The loop's total tokens as Strands accumulated them over every cycle
+    (`AgentResult.metrics.accumulated_usage`), or None (see `_usage`)."""
+    return _usage(getattr(getattr(result, "metrics", None), "accumulated_usage", None))
 
 
 def _dedupe_items(

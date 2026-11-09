@@ -33,6 +33,17 @@ from nora.domain.stimuli import (
     stored_cause,
     wake_state,
 )
+from nora.domain.ticks import due_tick_of_ms, tick_of_ms
+
+
+def _consumed_by(s: Stimulus, mark: Watermark) -> bool:
+    """The SQL range read's time bound, without `unclaimed` knowledge (the
+    side door below re-adds those): a dated stimulus is consumed up to the
+    watermark's TICK (`due_tick <= tick(through_ms)` — `pending_tick`'s own
+    arithmetic), an undated one up to its real `recorded_at`."""
+    if s.due_ms is None:
+        return s.recorded_at_ms <= mark.through_ms
+    return due_tick_of_ms(s.due_ms) <= tick_of_ms(mark.through_ms)
 
 
 def live_stimulus(retracted: Collection[int], stimulus_id: int | None) -> bool:
@@ -145,8 +156,8 @@ class InMemoryStimulusStore:
         pending = [
             s for s in self.stimuli
             if s.unit == unit and s.id not in self.uncommitted and self._live(s.id)
-            and s.pending_since_ms <= now_ms
-            and not (s.id <= mark.through_stimulus_id and s.pending_since_ms <= mark.through_ms)
+            and s.pending_tick <= tick_of_ms(now_ms)
+            and not (s.id <= mark.through_stimulus_id and _consumed_by(s, mark))
         ][:limit]
         current: dict[int, NewCarry] = {}
         for _, wake_id, carry in self.carries:
@@ -166,6 +177,7 @@ class InMemoryStimulusStore:
                 waits = s.id in carried and carried[s.id].waits
                 pending.append(replace(s, waits=True) if waits else s)
         pending.sort(key=lambda x: x.id)
+        over = tuple(s.id for s in pending[limit:])
         del pending[limit:]
         activity = [
             s.recorded_at_ms for s in self.stimuli
@@ -180,6 +192,7 @@ class InMemoryStimulusStore:
             mark=mark, last_session=last_session,
             carry={i: c.strike for i, c in carried.items()},
             failures=failures, agenda_failures=agenda_failures, failed_mark=failed_mark,
+            over=over,
         )
 
     async def record_outcome(

@@ -66,8 +66,12 @@ async def store(request: Any) -> AsyncIterator[Any]:
         yield SqlStimulusStore(engine)
     finally:
         async with engine.begin() as conn:
+            # All five: leftover carry/outcome rows collide with ids `restart
+            # identity` hands out next and leak through the side doors into a
+            # later test's pending/over.
             await conn.execute(sa.text(
-                "truncate stimulus, cognition_wake, stimulus_retraction restart identity"
+                "truncate stimulus, cognition_wake, cognition_wake_outcome, "
+                "cognition_carry, stimulus_retraction restart identity"
             ))
         await engine.dispose()
 
@@ -140,8 +144,16 @@ async def test_the_newest_wake_is_the_watermark(store):
 
 async def test_a_stimulus_due_later_stays_pending_across_an_earlier_wake(store):
     """A self-wake set for 19:40 does not count at 15:00, and a wake at
-    15:00 does not consume it, though its id is under the watermark."""
+    15:00 does not consume it, though its id is under the watermark.
+
+    Node 18's clock contract applies: `due_tick` rounds the instant UP to the
+    containing tick's next boundary, so a mid-tick deadline (`due` below is
+    not minute-aligned) is eligible from that boundary, never at its instant
+    early — «eligible at 12:02» for a target of 12:01:40."""
+    from nora.domain.ticks import due_tick_of_ms
     due = NOW + 60_000
+    boundary = due_tick_of_ms(due) * 60_000
+    assert boundary > due                           # `due` sits inside its tick
     later = await store.append(
         stimulus=NewStimulus(unit=UNIT, kind="self", item="self", ref="wake:1",
                          at_ms=NOW, due_ms=due),
@@ -153,7 +165,11 @@ async def test_a_stimulus_due_later_stays_pending_across_an_earlier_wake(store):
     await store.record_wake(wake=_wake(now_msg, NOW + 10), recorded_at_ms=NOW + 10)
     before_due = await store.view(unit=UNIT, mode="live", now_ms=due - 1, limit=100)
     assert before_due.pending == ()
-    at_due = await store.view(unit=UNIT, mode="live", now_ms=due, limit=100)
+    # At the target instant itself the tick has not turned: still withheld.
+    at_instant = await store.view(unit=UNIT, mode="live", now_ms=due, limit=100)
+    assert at_instant.pending == ()
+    # At the tick boundary the self-wake goes live (and survives the wake).
+    at_due = await store.view(unit=UNIT, mode="live", now_ms=boundary, limit=100)
     assert [s.id for s in at_due.pending] == [later]
 
 
@@ -236,12 +252,14 @@ async def test_a_due_later_wake_does_not_resurrect_earlier_consumed_stimuli(stor
     from nora.domain.stimuli import WakePolicy, decide
 
     policy = WakePolicy(quiet_seconds=0, cooldown_seconds=0, session_seconds=0)
+    from nora.domain.ticks import due_tick_of_ms
     due = NOW + 60_000
+    boundary = due_tick_of_ms(due) * 60_000      # due_tick opens here, mid-tick `due` not
     await store.append(stimulus=NewStimulus(unit=UNIT, kind="self", item="self", ref="wake:1",
                                         at_ms=NOW, due_ms=due), recorded_at_ms=NOW)
     for i in (2, 3, 4):
         await store.append(stimulus=_msg(f"messages:{i}"), recorded_at_ms=NOW + i)
-    for at in (NOW + 10, due + 10):
+    for at in (NOW + 10, boundary):
         view = await store.view(unit=UNIT, mode="live", now_ms=at, limit=100)
         verdict = decide(view, policy, at)
         assert verdict.reason is not None
@@ -533,6 +551,9 @@ async def test_a_truncated_pending_read_is_the_same_bounded_oldest_first_list_in
     )
     view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 30, limit=limit)
     assert [s.id for s in view.pending] == [*ids, r6][:limit]
+    # What the bound cut is reported the same in both stores too: a wake names
+    # `over` unclaimed, or a `through` above a cut id would consume it unseen.
+    assert view.over == tuple([*ids, r6][limit:])
 
 
 async def test_a_wakes_detail_is_a_jsonb_object_and_an_old_string_row_still_reads(store):
