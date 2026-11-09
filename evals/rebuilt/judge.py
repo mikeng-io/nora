@@ -177,7 +177,7 @@ def _build_judge_prompt(
     as fluent, confident text (DEC-75). None omits the source block for cases
     that carry no source data.
 
-    The source block says WHAT it is: the whole transcript, Nora's own earlier
+    The source block says WHAT it is: the rendered window, Nora's own earlier
     replies as well as the snippets she read. Left unlabelled, the judge
     arbitrates inconsistently whether a fact an earlier turn established still
     counts as "in the data". Naming the two kinds of line does not weaken the
@@ -210,7 +210,10 @@ def _build_judge_prompt(
         source_block = (
             "## Source data Nora was working from\n"
             "This is the ONLY factual ground the reply may draw on (besides the "
-            "doctrine). It is the WHOLE conversation, oldest line first, and it holds "
+            "doctrine). It is the rendered conversation window, oldest line first, "
+            "and any labelled context or tool results supplied to this turn. It may "
+            "not cover the whole conversation; do not infer complete history from it. "
+            "The conversation holds "
             "two different kinds of line: what somebody SAID (including Nora's own "
             "earlier replies) and a SOURCE she read and quoted back. Both are part of "
             "the data. So a fact an earlier turn stated AND named a source for is "

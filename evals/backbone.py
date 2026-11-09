@@ -627,11 +627,16 @@ def _reaction_receipts(
 #: (`_shown_transcript`), and `tool_catalogue` describes her tools rather than
 #: holding any record of the group, so neither can support a recalled claim.
 _NOT_RECALL_CONTEXT = frozenset({"transcript", "tool_catalogue"})
+_CONTEXTUAL_CRITERIA = frozenset({
+    "recall_grounded", "social_suitability", "personality",
+    "contextual_identity", "public_provenance",
+})
 
 
 def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
                   criteria: tuple[str, ...],
-                  blocks: tuple[tuple[str, str], ...] = ()) -> str | None:
+                  blocks: tuple[tuple[str, str], ...] = (), *,
+                  clock: str | None = None) -> str | None:
     """The source data a judge grades against — `transcript` is what
     `_shown_transcript` read back off the turn's own call, i.e. the window
     her turn actually rendered, never the whole seeded room. The tool
@@ -640,14 +645,18 @@ def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
 
     `blocks` (`_shown_blocks`) are the OTHER context blocks the same model
     call carried — notes, events, standing, culture, character… — and are
-    read for `recall_grounded` and `social_suitability`: a recall grounded in a note she was shown
-    is not a fabrication, and a judge that never saw the note would grade it as
-    one. Every other criterion's source is byte-for-byte what it is without
-    `blocks` (`test_the_judge_source_is_unchanged_for_every_other_criterion`).
+    read for recall, social suitability, personality and identity/provenance:
+    claims about a situated role or remembered affair can be grounded in a
+    rendered account outside the transcript. Other criteria retain their
+    existing window-and-tool source.
     Never the doctrine: that is the system prompt, not a block, and the judge is
-    handed it separately."""
+    handed it separately. The captured clock line is evidence too: it lives
+    outside those blocks, but grounds the turn's date and time claims."""
     parts = [transcript] if transcript else []
-    if {"recall_grounded", "social_suitability"} & set(criteria):
+    if clock:
+        parts.append(clock)
+    contextual = _CONTEXTUAL_CRITERIA.intersection(criteria)
+    if contextual:
         shown = [text for name, text in blocks if name not in _NOT_RECALL_CONTEXT]
         if shown:
             parts.append(
@@ -657,8 +666,7 @@ def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
     # `recall_grounded` too: «I couldn't check» is graded against what her
     # tools actually returned, so the judge has to see an `unavailable`.
     if (
-        "tool_status_reported" in criteria or "lesson_applied" in criteria
-        or "recall_grounded" in criteria or "social_suitability" in criteria
+        contextual or "tool_status_reported" in criteria or "lesson_applied" in criteria
     ) and results:
         lines = [f"- {name}: {text}" for name, text in results
                  if name not in ("send_reply", "load_tools")]
@@ -1004,21 +1012,21 @@ def _blocks_rendered(exporter: InMemorySpanExporter) -> tuple[str, ...] | None:
 def _recall_blocks_problem(
     blocks: tuple[tuple[str, str], ...] | None, rendered: tuple[str, ...] | None,
 ) -> str | None:
-    """Why a `recall_grounded` draw cannot be judged on what she was shown, or
+    """Why a context-dependent draw cannot be judged on what she was shown, or
     `None` when it can. Fail closed: a judge that misses a block she read
     grades a grounded recall as fabricated, which is the defect this exists
     to end — so an uncaptured or incomplete set is an ERROR, never a blind
     grade."""
     if blocks is None:
         return ("no context blocks were captured off the turn's own model call; "
-                "a recall_grounded draw is not judged without them")
+                "a context-dependent draw is not judged without them")
     if rendered is None:
         return ("no agent.prefill span was captured, so the blocks she was shown "
-                "cannot be checked complete; a recall_grounded draw is not judged")
+                "cannot be checked complete; a context-dependent draw is not judged")
     missing = sorted(set(rendered) - {name for name, _ in blocks})
     if missing:
         return (f"the prefill rendered {missing} but the turn's model call was not "
-                "read back with them; a recall_grounded draw is not judged without them")
+                "read back with them; a context-dependent draw is not judged without them")
     return None
 
 
@@ -2031,11 +2039,16 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                             "judged (#459)"
                         ),
                     )
-                elif {"recall_grounded", "social_suitability"} & set(md.get("criteria") or ()) and (
+                elif _CONTEXTUAL_CRITERIA.intersection(md.get("criteria") or ()) and (
                     blocks_problem := (None if port.public_audience else
                         _recall_blocks_problem(shown_blocks, blocks_rendered))
                 ):
                     outcome = dataclasses.replace(outcome, error=blocks_problem)
+                elif shown_now is None and not port.public_audience:
+                    outcome = dataclasses.replace(
+                        outcome, error="no clock line was captured off the model call; "
+                        "the judge cannot check time claims against what she was shown",
+                    )
                 else:
                     from evals.rebuilt.grading import criteria_for
 
@@ -2049,12 +2062,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         judge_facts = await recall_facts(
                             subject, md, now_ms=seeded.now_ms,
                         )
-                    extra = criteria_for(criteria)
-                    if case.expected_output:
-                        extra = tuple(dataclasses.replace(c, description=c.description +
-                            " Case acceptance requirement (not evidence): " +
-                            str(case.expected_output)) if c.name == 'social_suitability' else c
-                            for c in extra)
+                    extra = criteria_for(criteria, acceptance=str(case.expected_output or ""))
                     judgement = await spec.judge.grade(
                         said=outcome.response,
                         asked=nora_case.input,
@@ -2070,6 +2078,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         # was shown too (`_judge_source`'s docstring).
                         source=_judge_source(
                             shown_transcript, tool_results, criteria, shown_blocks or (),
+                            clock=shown_now,
                         ),
                         extra=extra,
                         facts=judge_facts,

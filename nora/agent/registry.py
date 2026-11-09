@@ -229,6 +229,7 @@ class ToolRegistry:
 
     def __init__(
         self, *,
+        display_name: str = "",
         transit: TransitClient | None = None,
         parking: ParkingProvider | None = None,
         street_parking: StreetParkingProvider | None = None,
@@ -382,6 +383,7 @@ class ToolRegistry:
         observations: Any = None,
         content_checks: bool = True,
     ) -> None:
+        self._display_name = display_name
         self._content_checks = content_checks
         self._observations = observations
         self._budget_overrides = dict(budget_overrides or {})
@@ -983,6 +985,7 @@ class ToolRegistry:
         only introspected.
         """
         return build_tool_specs(
+            display_name=self._display_name,
             store=None,
             conversation_id="catalog",
             conversation_type="group",
@@ -1163,6 +1166,7 @@ class ToolRegistry:
         the Dreamer adaptor's NAME when `nora.agent.dreamer.RegistryToolSource`
         built this set, `""` for every tag and every fire turn."""
         return build_tool_specs(
+            display_name=self._display_name,
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
             room=room, transit_source=self._transit, route_source=self._route,

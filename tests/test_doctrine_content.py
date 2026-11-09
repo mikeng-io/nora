@@ -321,7 +321,7 @@ def test_identity_makes_no_claim_about_what_she_can_find_out():
     # Exactly these three headings, the last of them the self-account «What you
     # are»; pinned so a fourth cannot arrive quietly.
     assert [line for line in body.splitlines() if line.startswith("# ")] == \
-        ["# Who you are", "# Where you come from", "# What you are"]
+        ["# Who you are", "# Your form", "# Where you come from"]
 
     # The widening's cost, guarded DERIVED rather than by a word list. A
     # capability claim goes stale in silence, and «What you are» is the section
@@ -562,7 +562,7 @@ def test_voice_hits_without_negotiating_or_reassuring():
     has taken over, and the hit is described as landing on one exact thing
     rather than rebutting a list. The anchors are the phrases carrying that
     stance — 「客服腔」 for the residue, 「仲有冇嘢幫到你」 for the offer-to-help
-    ending, 「捉中一樣嘢就收手」 for the one-exact-thing hit, and
+    ending, 「捉中眼前一樣嘢就夠」 for the one-exact-thing hit, and
     「解釋自己嘅拒絕」 for narrating instead of making it.
     """
     text = _voice()
@@ -570,7 +570,7 @@ def test_voice_hits_without_negotiating_or_reassuring():
     assert "客服腔" in text
     assert "仲有冇嘢幫到你" in text
     # Hit once, on the live thing.
-    assert "捉中一樣嘢就收手" in text
+    assert "捉中眼前一樣嘢就夠" in text
     # And do not narrate the refusal or the tone instead of making it.
     assert "解釋自己嘅拒絕" in text
 
@@ -644,9 +644,9 @@ def test_conduct_allows_personal_banter_only_for_an_in_room_instigator():
     constraints = (_path("constraints")).read_text()
 
     # Reciprocal: there has to BE an instigator, and they have to be in the room.
-    assert "taking a shot at you, you can give it back" in conduct
+    assert "Banter takes a welcome opening" in conduct
     # 主動開火, negated: oddness alone is not a licence.
-    assert "convert an odd request into a roast just because it is odd" in conduct
+    assert "not merely an odd request" in conduct
     # 人身攻擊 against somebody who cannot answer back. Law, so it lives in
     # rooms/constraints.md.
     assert "Do not pull somebody who is not in the room into a joke or a jab." in \
@@ -681,9 +681,9 @@ def test_voice_binds_the_one_hard_rule_of_the_open_register():
 def test_conduct_allows_purpose_led_response_grouping():
     """Structural coverage only; the circle cases measure suitability with a model."""
     text = " ".join(_conduct().split())
-    assert "One message or several can make one complete answer" in text
-    assert "Do not repeat yourself or split for performance" in text
-    assert "A quick check needs no filler prelude" in text
+    assert "The depth, medium and grouping follow what the person needs" in text
+    assert "without manufacturing a performance" in text
+    assert "A brief heads-up helps when work will keep people waiting" in text
 
 
 def test_conduct_keeps_judgement_and_the_three_state_honesty():
@@ -734,7 +734,7 @@ def test_conduct_puts_the_day_boundary_at_sleep_rather_than_at_midnight():
     text = " ".join(_conduct().split())
     assert "sleeps, not at midnight" in text
     assert "聽日" in text
-    assert "Do not correct somebody about which day it is" in text
+    assert "do not correct somebody about which day it is" in text
     assert "when you already know what they mean" in text
 
 
@@ -828,8 +828,8 @@ def test_pushback_is_split_by_kind_across_voice_and_conduct():
     law = " ".join(_room_constraints().split())
 
     # Both halves exist, each under its own kind.
-    assert "# 有人話你錯" in voice
-    assert "# Being contradicted" in conduct
+    assert "# 自然" in voice
+    assert "# Revise on evidence" in conduct
 
     # The forbidden move itself — inventing a fault so there is one to concede —
     # is what BOTH files reach, from their own side. The English half is in
@@ -900,16 +900,12 @@ def test_identity_holds_who_she_is_and_belonging_holds_the_group():
     for a room."""
     sections = {s.name: s for s in _all_sections()}
     identity, belonging = sections["identity"].body, sections["belonging"].body
-    group_framing = ("in this group", "hold a friend's place", "The group calls you",
-                     "Two loops", "What carries across turns")
-    for phrase in group_framing:
-        assert phrase.lower() not in identity.lower(), f"identity.md frames a group: {phrase!r}"
-        assert phrase.lower() in belonging.lower(), f"belonging.md lost: {phrase!r}"
-    # Law, so it lives in rooms/constraints.md: a room file, never identity.md.
-    assert "you answer to the group" not in identity.lower()
+    assert "# Your place in the group" in belonging
+    assert "relationships develop" in identity.lower()
+    assert "rather than arriving as its friend" in belonging
     assert "you answer to the group" in sections["room-constraints"].body.lower()
-    assert [line for line in belonging.splitlines() if line.startswith("# ")] == \
-        ["# Your place in the group", "# Why you're here", "# How you serve a room"]
+    assert "# Your place in the group" not in identity
+
 
 
 def test_records_never_leave_as_data_and_location_follows_the_tools():

@@ -181,7 +181,7 @@ def test_the_tool_result_carries_the_same_state_additively():
     row = _row(reactions=RowReactions(
         counts=(("👍", 2),), observed_at=NOW_MS - 20 * 60_000, recorded=2,
     ))
-    items, _ = _transcript_messages([row], now=NOW)
+    items, _ = _transcript_messages([row], now=NOW, display_name="Nora")
     assert items[0]["reactions"] == {"👍": 2}
     assert items[0]["reactions_source"] == "recorded"
     assert "reactions_at" in items[0]
@@ -194,13 +194,13 @@ def test_all_removed_reads_removed_not_an_empty_set():
     row = _row(reactions=RowReactions(
         counts=(), observed_at=NOW_MS - 60_000, recorded=2,
     ))
-    items, _ = _transcript_messages([row], now=NOW)
+    items, _ = _transcript_messages([row], now=NOW, display_name="Nora")
     assert "reactions" not in items[0]
     assert items[0]["reactions_removed"] is True
 
 
 def test_an_unread_row_emits_no_reaction_keys():
-    items, _ = _transcript_messages([_row()], now=NOW)
+    items, _ = _transcript_messages([_row()], now=NOW, display_name="Nora")
     assert not any(k.startswith("reactions") for k in items[0])
 
 
@@ -372,14 +372,14 @@ def test_the_tool_dict_carries_display_handles_and_a_bounded_pair_count():
         counts=(("<:wave:1234567890>", 2), ("<a:wave:999>", 1)),
         observed_at=NOW_MS, recorded=3,
     ))
-    items, _ = _transcript_messages([row], now=NOW)
+    items, _ = _transcript_messages([row], now=NOW, display_name="Nora")
     assert items[0]["reactions"] == {":wave:": 3}
     assert "1234567890" not in json.dumps(items[0])
     flood = _row(reactions=RowReactions(
         counts=tuple((f"e{i}", 1) for i in range(30)),
         observed_at=NOW_MS, recorded=30,
     ))
-    items, _ = _transcript_messages([flood], now=NOW)
+    items, _ = _transcript_messages([flood], now=NOW, display_name="Nora")
     assert len(items[0]["reactions"]) == REACTION_PAIRS_MAX
     assert items[0]["reactions_more"] == 30 - REACTION_PAIRS_MAX
 
@@ -444,7 +444,7 @@ def test_a_partial_state_is_marked_never_read_as_complete():
     prompt = render_transcript([_row(reactions=state)], display_name="Nora", now=NOW)
     assert 'reactions="partial"' in prompt
     assert 'reactions_observed="partial ' in prompt
-    items, _ = _transcript_messages([_row(reactions=state)], now=NOW)
+    items, _ = _transcript_messages([_row(reactions=state)], now=NOW, display_name="Nora")
     assert items[0]["reactions_partial"] is True
     assert "reactions" not in items[0]
     assert items[0]["reactions_source"] == "partial"

@@ -1,0 +1,37 @@
+[
+  {
+    "name": "identity judgements receive the rendered room context",
+    "file": "evals/backbone.py",
+    "old": "    contextual = _CONTEXTUAL_CRITERIA.intersection(criteria)",
+    "new": "    contextual = {\"recall_grounded\", \"social_suitability\"}.intersection(criteria)",
+    "target": "tests/unit/test_eval_full_restore.py::test_identity_judgements_receive_the_room_role_the_subject_was_shown"
+  },
+  {
+    "name": "identity judgements refuse incomplete rendered context",
+    "file": "evals/backbone.py",
+    "old": "elif _CONTEXTUAL_CRITERIA.intersection(md.get(\"criteria\") or ()) and (",
+    "new": "elif {\"recall_grounded\", \"social_suitability\"} & set(md.get(\"criteria\") or ()) and (",
+    "target": "tests/unit/test_eval_full_restore.py::test_a_recall_draw_whose_blocks_are_not_read_back_is_an_error"
+  },
+  {
+    "name": "judges receive the clock the subject was shown",
+    "file": "evals/backbone.py",
+    "old": "                            clock=shown_now,",
+    "new": "                            clock=None,",
+    "target": "tests/unit/test_eval_full_restore.py::test_identity_judgements_receive_the_room_role_the_subject_was_shown"
+  },
+  {
+    "name": "room judgements refuse an uncaptured clock",
+    "file": "evals/backbone.py",
+    "old": "elif shown_now is None and not port.public_audience:",
+    "new": "elif False and shown_now is None and not port.public_audience:",
+    "target": "tests/unit/test_eval_full_restore.py::test_a_room_judge_is_not_called_without_the_captured_clock"
+  },
+  {
+    "name": "identity cases retain their declared acceptance requirement",
+    "file": "evals/rebuilt/grading.py",
+    "old": "if acceptance and n in {\"social_suitability\", \"contextual_identity\"}",
+    "new": "if acceptance and n in {\"social_suitability\"}",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_judge_receives_requirement_separately_from_actual_evidence"
+  }
+]

@@ -698,10 +698,10 @@ def test_transit_is_declared_live_only_and_not_terminal():
 def test_the_sourcing_priority_lives_in_conduct_not_a_generated_block():
     """DEC-77, DEC-150: the sourcing nudge lives in conduct.md. A declared
     `source_tier` nothing renders is decoration; the priority lives in
-    conduct's 'Where to look first' section."""
+    conduct's grounding paragraph."""
     conduct = (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
     assert "prefer your own" in conduct
-    assert "open web, which is the last resort" in conduct
+    assert "open web is the last resort" in conduct
 
 
 def test_the_closed_world_clause_lives_in_doctrine_not_a_generated_block(): # DEC-90

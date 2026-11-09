@@ -23,14 +23,14 @@
   {
     "name": "suitability judges see the actual source blocks",
     "file": "evals/backbone.py",
-    "old": "if {\"recall_grounded\", \"social_suitability\"} & set(criteria):",
+    "old": "if contextual:",
     "new": "if \"recall_grounded\" in criteria:",
     "target": "tests/unit/test_eval_full_restore.py::test_a_recall_judge_is_shown_every_block_her_turn_was_shown"
   },
   {
     "name": "suitability draws fail closed when evidence capture is incomplete",
     "file": "evals/backbone.py",
-    "old": "elif {\"recall_grounded\", \"social_suitability\"} & set(md.get(\"criteria\") or ()) and (",
+    "old": "elif _CONTEXTUAL_CRITERIA.intersection(md.get(\"criteria\") or ()) and (",
     "new": "elif \"recall_grounded\" in tuple(md.get(\"criteria\") or ()) and (",
     "target": "tests/unit/test_eval_full_restore.py::test_a_recall_draw_whose_blocks_are_not_read_back_is_an_error"
   }

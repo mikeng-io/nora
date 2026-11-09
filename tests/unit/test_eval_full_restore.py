@@ -440,34 +440,39 @@ _BLOCKS = (("notes", _NOTE_BLOCK), ("transcript", _WINDOW))
 
 @pytest.mark.parametrize("criteria", [
     (), ("presence",), ("tool_status_reported",), ("lesson_applied",),
-    ("personality", "source_scope", "being_contradicted", "appearance"),
+    ("source_scope", "being_contradicted", "appearance"),
 ])
-def test_the_judge_source_is_unchanged_for_every_other_criterion(criteria) -> None:
-    """Byte for byte the window-and-tools source: only `recall_grounded` reads
-    `blocks`."""
+def test_other_criteria_receive_the_clock_but_no_unrelated_blocks(criteria) -> None:
+    """Other criteria still receive the captured clock, without contextual blocks."""
     reporting = {"tool_status_reported", "lesson_applied"} & set(criteria)
-    expected = "<m>hi</m>" + (
+    clock = "Right now it is Saturday 11 October 2026, 20:00 HKT."
+    expected = "<m>hi</m>\n\n" + clock + (
         '\n\nTool results this turn:\n- media_fetch: {"status": "unavailable"}'
         if reporting else ""
     )
-    assert backbone._judge_source("<m>hi</m>", _RESULTS, criteria, _BLOCKS) == expected
-    assert backbone._judge_source("<m>hi</m>", _RESULTS, criteria) == expected
+    assert backbone._judge_source("<m>hi</m>", _RESULTS, criteria, _BLOCKS, clock=clock) == expected
+    assert backbone._judge_source("<m>hi</m>", _RESULTS, criteria, clock=clock) == expected
 
 
-async def test_a_presence_case_is_judged_on_exactly_the_window(judged) -> None:
+async def test_a_presence_case_is_judged_on_the_window_and_captured_clock(judged) -> None:
     """The drive-level half: the same spans carry a `<notes>` block, and a
-    presence case's source is still the window alone."""
+    presence case's source is the window and clock, without unrelated blocks."""
     judge = _Judge()
     await backbone._drive(_judged_case("presence", ["presence"]), _spec(judge=judge))
     [graded] = judge.graded
-    assert graded["source"] == "<m>the window</m>"
+    assert graded["source"] == (
+        "<m>the window</m>\n\nRight now it is Saturday 11 October 2026, 20:00 HKT."
+    )
 
 
 @pytest.mark.parametrize(("blocks", "rendered", "fragment"), [
     (None, "", "no context blocks were captured"),
     (_NOTE_BLOCK, "notes,events,transcript", "['events']"),
+    (_NOTE_BLOCK, "notes,culture,transcript", "['culture']"),
 ])
-@pytest.mark.parametrize("criterion", [CRITERION, "social_suitability"])
+@pytest.mark.parametrize("criterion", [
+    CRITERION, "social_suitability", "personality", "contextual_identity", "public_provenance",
+])
 async def test_a_recall_draw_whose_blocks_are_not_read_back_is_an_error(
     judged, monkeypatch, blocks, rendered, fragment, criterion,
 ) -> None:
@@ -494,7 +499,7 @@ async def test_a_recall_draw_whose_blocks_are_not_read_back_is_an_error(
     data = EvaluationData(input="x", actual_environment_state=result["environment_state"])
     assert state_of(data, NORA_JUDGED) == ""
     error = state_of(data, NORA_ERROR)
-    assert error and fragment in error and "recall_grounded" in error
+    assert error and fragment in error and "context-dependent" in error
 
 
 _SHA = "a" * 64
@@ -905,7 +910,7 @@ async def test_circle_public_adapter_uses_real_occasion_and_narrow_grant(
     from nora.agent import factory
     from nora.agent.registry import ToolRegistry
     from nora.app.summons import PUBLIC_GRANT
-    from nora.doctrine.loader import DoctrineStore
+    from nora.doctrine.loader import DoctrineStore, identity_name
     from nora.domain.summons import SummonsContext, ThreadRow
     from nora.obs.metrics import Metrics
     from nora.persons import load_persons
@@ -915,7 +920,9 @@ async def test_circle_public_adapter_uses_real_occasion_and_narrow_grant(
     identity.write_text('[persons.generated]\nname="Generated"\n')
     persons = load_persons(identity)
     metrics = Metrics()
-    doctrine = DoctrineStore(Path(__file__).resolve().parents[2] / 'nora/doctrine',  # noqa: ASYNC240
+    doctrine_dir = Path(__file__).resolve().parents[2] / 'nora/doctrine'  # noqa: ASYNC240
+    public_name = identity_name(doctrine_dir)
+    doctrine = DoctrineStore(doctrine_dir, display_name=public_name,
         canary='GENERATED-CANARY', strict=True,
         tool_names=ToolRegistry().tool_names(), metrics=metrics)
     calls = []
@@ -938,7 +945,7 @@ async def test_circle_public_adapter_uses_real_occasion_and_narrow_grant(
 
     subject = SimpleNamespace(cfg=SimpleNamespace(endpoint=endpoint,
         agent=SimpleNamespace(name='generated'),
-        doctrine=SimpleNamespace(canary='GENERATED-CANARY'),
+        doctrine=SimpleNamespace(canary='GENERATED-CANARY', display_name=public_name),
         llm=SimpleNamespace(timeout_seconds=5), content_checks=SimpleNamespace(enabled=False)),
         deps=SimpleNamespace(persons=persons, metrics=metrics, doctrine_store=doctrine,
             engagement=SimpleNamespace(
@@ -978,11 +985,12 @@ async def test_circle_declared_entry_is_used_by_the_actual_drive(seams, monkeypa
 
 
 @pytest.mark.parametrize('controlled', [True, False])
+@pytest.mark.parametrize('criterion_name', ['social_suitability', 'contextual_identity'])
 async def test_circle_judge_receives_requirement_separately_from_actual_evidence(
-    judged, monkeypatch, controlled,
+    judged, monkeypatch, controlled, criterion_name,
 ):
     import json
-    case = _judged_case('generated-gif-unavailable', ['social_suitability'])
+    case = _judged_case('generated-gif-unavailable', [criterion_name])
     if controlled:
         case.metadata['circle_overlay'] = {'gif': 'unavailable'}
     case.expected_output = 'No invented sent GIF; words remain possible.'
@@ -994,7 +1002,7 @@ async def test_circle_judge_receives_requirement_separately_from_actual_evidence
     judge = _Judge()
     await backbone._drive(case, _spec(judge=judge))
     [graded] = judge.graded
-    criterion = next(c for c in graded['extra'] if c.name == 'social_suitability')
+    criterion = next(c for c in graded['extra'] if c.name == criterion_name)
     assert 'Case acceptance requirement (not evidence)' in criterion.description
     assert case.expected_output in criterion.description
     assert case.expected_output not in graded['source']
@@ -1066,3 +1074,42 @@ def test_judge_export_retains_raw_votes_and_errors_privately(monkeypatch, tmp_pa
     }
     assert path.stat().st_mode & 0o777 == 0o600
     assert folder.stat().st_mode & 0o777 == 0o700
+
+
+@pytest.mark.parametrize("criterion", ["personality", "contextual_identity", "public_provenance"])
+async def test_identity_judgements_receive_the_room_role_the_subject_was_shown(
+    judged, monkeypatch, criterion,
+):
+    role = ('<culture description="the room account">\n'
+            'In this reading circle, Ada asked the agent to keep the shared reading list.\n'
+            '</culture>')
+
+    async def drive(_subject, _case, *, now_ms):
+        _render_her_turn(blocks=role, rendered="culture,transcript")
+        return Outcome(admitted=True, said=("I keep this circle's reading list.",))
+
+    monkeypatch.setitem(ENTRY_POINTS, "tag", EntryPoint(drive=drive, delivers_input=True))
+    judge = _Judge()
+    await backbone._drive(
+        _judged_case("generated-contextual-role", [criterion]),
+        _spec(full_restore=True, judge=judge),
+    )
+    [graded] = judge.graded
+    assert role in graded["source"]
+    assert "Right now it is Saturday 11 October 2026, 20:00 HKT." in graded["source"]
+    assert graded["source"].startswith("<m>the window</m>")
+    assert "THE DOCTRINE, NOT A BLOCK" not in graded["source"]
+
+
+async def test_a_room_judge_is_not_called_without_the_captured_clock(judged, monkeypatch):
+    from strands_evals.types.evaluation import EvaluationData
+
+    monkeypatch.setattr(backbone, "_shown_now", lambda _: None)
+    judge = _Judge()
+    result = await backbone._drive(
+        _judged_case("generated-missing-clock", ["personality"]),
+        _spec(full_restore=True, judge=judge),
+    )
+    assert judge.graded == []
+    data = EvaluationData(input="x", actual_environment_state=result["environment_state"])
+    assert "no clock line" in backbone.state_of(data, backbone.NORA_ERROR)

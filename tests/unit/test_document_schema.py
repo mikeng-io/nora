@@ -138,3 +138,11 @@ def test_the_node_cap_is_a_rule_the_schema_cannot_state() -> None:
     nodes = 1 + sum(1 + len(g["children"]) for g in grids)
     assert nodes > 500
     assert VALIDATOR.is_valid(doc)
+
+
+def test_the_served_catalog_keeps_image_provenance_independent_of_the_agent_name():
+    from nora.documents import catalog_prompt
+
+    prompt = catalog_prompt()
+    assert "made by the agent" in prompt
+    assert "made by Nora" not in prompt

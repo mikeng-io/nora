@@ -616,7 +616,7 @@ def build_grounder(
     events_in: Callable[[str, str, str], Awaitable[Sequence[Gathering]]],
     lineage: LineagePolicy,
     unit_rooms: Callable[[str], Collection[tuple[str, str]]],
-    ai_display_name: str = "Nora",
+    ai_display_name: str = "you",
     room_label: Callable[[str, str], str] | None = None,
     clock: Callable[[], float] = time.time,
     own_send_lookback_seconds: float = 1800.0,

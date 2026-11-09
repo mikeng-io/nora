@@ -76,6 +76,8 @@ def copy_example_config(tmp_path: Path) -> Path:
     """
     cfg_path = tmp_path / "config.toml"
     shutil.copy(REPO_ROOT / "config.example.toml", cfg_path)
+    shutil.copytree(REPO_ROOT / "nora" / "doctrine", tmp_path / "nora" / "doctrine",
+                    dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__", "*.py"))
     return cfg_path
 
 

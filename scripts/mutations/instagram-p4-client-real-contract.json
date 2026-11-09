@@ -58,7 +58,7 @@
   {
     "name": "an unread bio is reported as an empty one",
     "file": "nora/infra/social/render.py",
-    "old": "        lines.append(\n            \"Private/public, follower counts, whether they follow Nora, and \"\n            \"the bio could not be read just now.\"\n        )",
+    "old": "        lines.append(\n            \"Private/public, follower counts, whether they follow your account, and \"\n            \"the bio could not be read just now.\"\n        )",
     "new": "        lines.append(\"Bio: (none)\")",
     "target": "tests/unit/test_instagram_social_client.py::test_social_unavailable_says_which_half_is_missing"
   },

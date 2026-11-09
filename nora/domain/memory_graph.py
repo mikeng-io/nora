@@ -8,7 +8,7 @@ shown to the session, never accepted from model output.
 (25 §2); each item writer writes them through the existing projector in its own write.
 
 The unit is the read boundary (DEC-231), so an entity belongs to exactly one
-unit and never moves. A person, room, unit or Nora pointer is therefore one
+unit and never moves. A person, room, unit or the agent pointer is therefore one
 entity PER UNIT: `pointer_entity` keys it `<unit>:<kind>:<authored id>` (unique
 across kinds, since the table's key is the id alone) and keeps the
 authored id in `attributes["ref"]`. One person in two units is two entities,
@@ -229,10 +229,10 @@ MEMORY_KINDS: tuple[MemoryKind, ...] = (
                "somebody has decided to do something and a corner is still open; "
                "you can say what would close it", "Record", (*_relations_for("note"), "cites"),
                "Act", "open to pending to ended / kept"),
-    MemoryKind("lesson", "procedural", "a closed response episode teaches how Nora should act",
+    MemoryKind("lesson", "procedural", "a closed response episode teaches how the agent should act",
                "the episodes", (*_relations_for("lesson"), "cites"), "Decide", "retired"),
     MemoryKind("decision", "working",
-               "Nora's own reasoning on one question the Record cannot give back",
+               "the agent's own reasoning on one question the Record cannot give back",
                "Record, links to entries", (*_relations_for("decision"), "links"),
                "Act", "closed, with Reopen if"),
 )

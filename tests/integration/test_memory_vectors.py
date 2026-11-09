@@ -352,9 +352,10 @@ async def test_the_planner_can_use_the_hnsw_index_and_the_pick_index(engine, lla
     await worker(engine, url, batch=10).run_once()
     query = "[" + ",".join(["0.1"] * 256) + "]"
     async with engine.connect() as conn:
-        # Tiny tables favour a scan; switch it off to ask whether the index
-        # CAN serve each query, which is the property the migration owns.
-        await conn.execute(sa.text("SET enable_seqscan = off"))
+        # Ask whether an ordered index scan CAN serve each query; tiny-table
+        # costs can favour either a sequential scan or a bitmap scan plus sort.
+        await conn.execute(sa.text("SET LOCAL enable_seqscan = off"))
+        await conn.execute(sa.text("SET LOCAL enable_bitmapscan = off"))
         dense = "\n".join((await conn.execute(sa.text(
             "EXPLAIN SELECT id FROM memory_node "
             "ORDER BY (subvector(embedding, 1, 256)::halfvec(256)) <=> "

@@ -147,14 +147,6 @@ class ShownMessage:
     turn_handle: str | None = None
 
 
-#: The names Nora goes by in a note body, ONE value for the tag path and the
-#: Cognition session. It is the literal `_speaker` prints for her
-#: own rows (`nora.agent.tools`: `"Nora"`, not `[doctrine].display_name`), so it
-#: is the name a row's sender carries on both paths; a deployment that renames
-#: her changes that one literal, in one place.
-NORA_NAMES: frozenset[str] = frozenset({"Nora"})
-
-
 @dataclass(frozen=True, slots=True)
 class Shown:
     """What a write may cite and name.
@@ -502,7 +494,7 @@ def _check_ids(
         elif row.is_nora and not may_cite_nora:
             raise NoteBodyError(
                 "cites_nora",
-                f"{item!r} cites [{i}], one of Nora's own messages; a note is "
+                f"{item!r} cites [{i}], one of the agent's own messages; a note is "
                 f"the group's, and what she owes is her Standing",
             )
 
@@ -618,7 +610,7 @@ def cited_line(
     """One `<claim> [<ids>]` line under `heading`, held to the grammar every
     Register line shares: absolute dates, ending in the ids and
     Rollup keys it rests on, each one this write was shown or carries. A line
-    may cite one of Nora's own messages only where `may_cite_nora` says so (a
+    may cite one of the agent's own messages only where `may_cite_nora` says so (a
     memo, which may keep what she found or said; never a note). The memo
     body's parser (`nora.domain.memo.parse_memo_body`) is its caller."""
     _check_dates(item)
@@ -667,7 +659,8 @@ def _line(
         if owner in shown.nora_names:
             raise NoteBodyError(
                 "unknown_owner",
-                f"the owner of {item!r} is Nora; what she owes is her Standing, never a note's",
+                f"the owner of {item!r} is the agent; what she owes is her Standing, "
+                "never a note's",
             )
         person_id = shown.roster.get(owner)
         if person_id is None:
@@ -741,7 +734,7 @@ def _line(
     for name in names:
         if name in shown.nora_names:
             raise NoteBodyError(
-                "misattributed", f"{item!r} names Nora; a note records what the group said",
+                "misattributed", f"{item!r} names the agent; a note records what the group said",
             )
         if name not in authors and not unverifiable:
             raise NoteBodyError(

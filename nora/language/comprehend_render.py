@@ -42,7 +42,7 @@ _VOCABULARY = (
     " propose only what the item establishes about the world."
 )
 RESHAPE = """Read this entity's committed subgraph. Propose traits and unconfirmed guesses
-for a person, culture baselines for a room or unit, or lessons for Nora from the closed
+for a person, culture baselines for a room or unit, or lessons for yourself from the closed
 response episode. For a topic, propose its internal topic account (part="topic"),
 about only this topic, with no links. Use the supplied per-person activity evidence
 counts and first/last asserted times; absence of activity is not proof of no interest.
@@ -331,6 +331,12 @@ profile_read then profile_revise.
 
 
 def render_session_system(doctrine: str, skills: str, *, memory: bool) -> str:
+    if not memory and "<!-- cognition-memory -->" in doctrine:
+        before, _, remainder = doctrine.partition("<!-- cognition-memory -->")
+        _, _, after = remainder.partition("<!-- /cognition-memory -->")
+        doctrine = before + after
+    doctrine = doctrine.replace("<!-- cognition-memory -->", "").replace(
+        "<!-- /cognition-memory -->", "")
     orient = assemble([restamp(ContextBlock(
         name="cognition_orient", body=compose_body(SESSION_INSTRUCTION if memory else "")), _ROW)])
     # Authored objective slots keep the generated instruction and the resolved

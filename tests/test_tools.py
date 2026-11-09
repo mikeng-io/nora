@@ -75,7 +75,7 @@ def wiring_with(wiring):
             # name one would exercise only the no-unit refusal — which is
             # a real path with its own test, and is not the path any of these
             # are about.
-            **{"unit_for": lambda *_a: "ws-main", **extra},
+            **{"unit_for": lambda *_a: "ws-main", "display_name": "Nora", **extra},
         )
         return {t.tool_name: t for t in tools}
 
@@ -119,7 +119,7 @@ async def wiring(record_pg_url, tmp_path):
                         persons=persons, honcho=honcho,
                         deliverer=deliverer, metrics=metrics, room=room,
                         transit_source=UNREACHABLE_TRANSIT,
-                        question="who is here", context_window=40)
+                        question="who is here", context_window=40, display_name="Nora")
     try:
         yield {"tools": {t.tool_name: t for t in tools}, "sink": sink,
                "honcho": honcho, "deliverer": deliverer, "store": store, "metrics": metrics,
@@ -396,10 +396,9 @@ def test_the_three_reply_defects_live_in_the_doctrine_not_the_send_reply_schema(
     # states its must-hold fact while keeping DEC-90's concrete examples.
     law = " ".join((_DOCTRINE / "rooms" / "constraints.md").read_text().split())
     # Depth follows need; neither research volume nor chat style dictates it.
-    assert "答幾多跟眼前需要" in voice
-    assert "唔係跟你查咗幾多" in voice
-    assert "唔好為咗短而刪走有用嘅嘢" in voice
-    assert "段落、list 幫到佢睇就用" in voice
+    assert "講幾多由需要決定" in voice
+    assert "唔為短而刪理由" in voice
+    assert "講解都可以有段落同 list" in voice
     # The chatbot tail (voice), and the capability overclaim it leads to (law).
     assert "有需要再搵我" in voice
     assert "Never offer, promise or volunteer an action that your tools and skills " \
@@ -762,11 +761,11 @@ def test_a_second_message_must_earn_its_place():
     """
     section = " ".join(
         (_DOCTRINE / "rooms" / "conduct.md").read_text()
-        .split("# Follow the conversation", 1)[1].split("\n# ", 1)[0].split()
+        .split("# Choose a contribution", 1)[1].split("\n# ", 1)[0].split()
     ).lower()
-    assert "one message or several can make one complete answer" in section
-    assert "each part should help them follow it" in section
-    assert "do not repeat yourself or split for performance" in section
+    assert "the depth, medium and grouping follow what the person needs" in section
+    assert "an additional message earns attention by adding something useful" in section
+    assert "rephrasing the same point only spends it" in section
 
 
 async def test_send_reply_is_the_only_tool_that_can_send(wiring):
@@ -1061,9 +1060,11 @@ class _Picker:
     def __init__(self, reaction=None) -> None:
         self.reaction = reaction
         self.asked: list[str] = []
+        self.recent: list[str] = []
 
     async def pick(self, *, recent: str, reply: str):
         self.asked.append(reply)
+        self.recent.append(recent)
         return self.reaction
 
 
@@ -2014,3 +2015,17 @@ async def test_send_to_on_an_ordinary_turn_still_reaches_the_relay(wiring):
     assert schema["properties"]["room"]["type"] == "string"
     assert "enum" not in schema["properties"]["room"]
     assert "platform" not in schema["properties"]
+
+
+async def test_the_reaction_picker_reads_the_canonical_public_name(wiring, wiring_with):
+    from nora.domain.models import DeliveryStatus, TranscriptRow
+
+    own = TranscriptRow(id=100, sender_id="self", sender_name="PreviousLabel", ts=1,
+                        body="I checked it", is_nora=True,
+                        delivery_status=DeliveryStatus.SENT, raw_json=None)
+    picker = _Picker(None)
+    tools = wiring_with(display_name="AgentAlpha", transcript=(own,),
+                        giphy_source=_GifSource(), reaction_picker=picker)
+    assert await _call(tools["send_reply"], text="係囉") == "sent"
+    assert picker.asked == ["係囉"]
+    assert picker.recent == ["AgentAlpha: I checked it"]

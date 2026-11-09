@@ -26,6 +26,10 @@ describe("the prompt fragment", () => {
     const prompt = emitPrompt();
     for (const name of COMPONENT_NAMES) expect(prompt).toContain(`**${name}**`);
   });
+  it("keeps image provenance independent of the public agent name", () => {
+    expect(emitPrompt()).toContain("made by the agent");
+    expect(emitPrompt()).not.toContain("made by Nora");
+  });
   it("does not promise what the schema refuses", () => {
     // It said "no URL except in Sources" while Markdown links were accepted.
     expect(emitPrompt()).not.toContain("no URL except");

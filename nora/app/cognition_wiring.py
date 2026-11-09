@@ -50,7 +50,6 @@ from nora.domain.gatherings import (
     event_in_scope,
 )
 from nora.domain.live import LiveMapping
-from nora.domain.note_body import NORA_NAMES
 from nora.domain.ports import CognitionStore, StimulusStore
 from nora.domain.reminders import ReminderCaps
 from nora.domain.standing import StandingHead
@@ -581,7 +580,7 @@ def build_cognition_runner(
     open_events_in: Callable[[str, str, str], Awaitable[Sequence[Gathering]]],
     standing_of: Callable[[str, str], Awaitable[StandingHead | None]],
     roster_of: Callable[[str, str], Awaitable[Mapping[str, str] | None]] | None = None,
-    nora_names: frozenset[str] = NORA_NAMES,
+    nora_names: frozenset[str] = frozenset(),
     homes: Mapping[str, Any],
     units: Sequence[str],
     skills: AgendaSkills,

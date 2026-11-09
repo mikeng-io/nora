@@ -1,36 +1,36 @@
 [
  {
   "name": "the Orient restates the reading's happened_at contract",
-  "file": "nora/language/comprehend_render.py",
-  "old": "For a reading, happened_at.source is a cited row's n, and\nhappened_at.expression is that row's own time words copied exactly, or null\nwhen it has none. A row's `at` is when it was sent, not when what it\ndescribes happened \u2014 never copy it into `expression`, and never compute a\ndate: code resolves quoted time words against that row's send time, and a\nreading whose event time is unknown is still a valid reading.\n\n",
-  "new": "",
+  "file": "nora/dreamer/objectives/cognition.md",
+  "old": "A reading's happened_at.source is its cited row's n; happened_at.expression copies that row's own time words or is null when there are none. Its send timestamp is not its event time: code resolves the quoted expression. Record unknown event time honestly.",
+  "new": "Record a reading using its send timestamp as event time.",
   "target": "tests/unit/test_orient_kind_table.py::test_the_composed_text_carries_the_reading_time_contract"
  },
  {
   "name": "the repair rule replaces retry-only coverage",
-  "file": "nora/language/comprehend_render.py",
-  "old": "what it refused \u2014 repair each refused statement that still states a grounded\nfact, even when another statement covered its item: keep its\nwhat/how/citations and change only the rejected field. A refusal is not\n`nothing_here`; propose again",
-  "new": "what it refused \u2014 rewrite the refused statements and propose again",
+  "file": "nora/dreamer/objectives/cognition.md",
+  "old": "repair the rejected field of each still-grounded statement, preserving its meaning, mode and citations",
+  "new": "retry only the items not already covered",
   "target": "tests/unit/test_orient_kind_table.py::test_the_composed_text_carries_the_reading_time_contract"
  },
  {
   "name": "the Act date rule is scoped away from happened_at",
   "file": "nora/dreamer/objectives/cognition.md",
-  "old": "In a notebook, event or reminder date field, write times and dates as dates and\nclock times, read from the clock above, never as \u00abtomorrow\u00bb or \u00ablater\u00bb; a relative\nword in a date field is refused. A memory statement's `happened_at` is not such a\nfield: it quotes the row's own time words, or null when the row has none.",
-  "new": "Write times and dates as dates and\nclock times, read from the clock above, never as \u00abtomorrow\u00bb or \u00ablater\u00bb; a relative\nword in a date field is refused.",
+  "old": "Notebook, event and reminder date fields use dates and clock times grounded in the supplied clock, not relative words; memory's quoted happened_at expression has its own meaning above.",
+  "new": "All date fields, including memory happened_at, use absolute dates instead of relative words.",
   "target": "tests/unit/test_orient_kind_table.py::test_the_composed_text_carries_the_reading_time_contract"
  },
  {
   "name": "the uncomprehended item is not threatened with striking out",
   "file": "nora/dreamer/objectives/cognition.md",
-  "old": "An item you close `waiting` \u2014 or leave open once it is comprehended \u2014 comes back on the next\nagenda with a mark against it, and after a few such marks code closes it for good. One you\nnever comprehended comes back as it was.",
-  "new": "An item you leave open, or close `waiting`, comes back on the next agenda with a mark against\nit, and after a few such marks code closes it for good.",
+  "old": "An uncomprehended item remains pending.",
+  "new": "An uncomprehended item consumes a return attempt.",
   "target": "tests/unit/test_orient_kind_table.py::test_the_composed_text_carries_the_reading_time_contract"
  },
  {
   "name": "happened_at carries its quote-or-null description into the schema",
   "file": "nora/app/comprehend.py",
-  "old": "    expression: str | None = Field(default=None, description=(\n        \"The exact time words copied from that row's body \u2014 \u00abtomorrow\u00bb, \u00abon \"\n        \"Saturday\u00bb \u2014 or null when the row states none. Never the row's `at` \"\n        \"metadata and never a date you computed: code resolves the quoted \"\n        \"words against that row's send time. The only nullable field here.\"))",
+  "old": "    expression: str | None = Field(default=None, description=(\n        \"The exact time words copied from that row's body — «tomorrow», «on \"\n        \"Saturday» — or null when the row states none. Never the row's `at` \"\n        \"metadata and never a date you computed: code resolves the quoted \"\n        \"words against that row's send time. The only nullable field here.\"))",
   "new": "    expression: str | None = None",
   "target": "tests/unit/test_orient_kind_table.py::test_the_generated_schema_carries_the_field_descriptions"
  },

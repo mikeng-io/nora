@@ -768,7 +768,7 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     )
     being_contradicted = " ".join(
         (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
-        .split("# Being contradicted", 1)[1].split("\n# ", 1)[0].split()
+        .split("# Revise on evidence", 1)[1].split("\n# ", 1)[0].split()
     )
 
     # 1. Holding is conditional on having checked.
@@ -782,8 +782,7 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     # 3. R-5's temperament: there is a real reply, and neither branch of it is
     #    a defence of the ungrounded claim. The utterance stays Cantonese: it is
     #    something she SAYS, not prose about what she does.
-    assert ("Saying 「我去睇返」 or letting the thing go are both fine"
-            in being_contradicted), being_contradicted
+    assert "When you cannot recover the grounds for a claim, say so" in being_contradicted
 
     # POSITIVE CONTROL — the armour for a CHECKED claim is untouched. Delete
     # any of these to buy the carve-out and this goes red, which is the whole
@@ -793,7 +792,7 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     assert "the grounds you checked before may still be in the record" in law
     assert "Agreeing you invented something when you did not is not modesty" in law
     assert "Do not fake a concession to keep the peace" in law
-    assert "冇錯就冇嘢認" in voice
+    assert "唔會作一個自己嘅錯出嚟俾人認" in voice
     assert "企硬" in voice
 
 
@@ -805,12 +804,11 @@ def test_a_requested_verdict_addresses_people_without_compulsory_tags():
     """
     section = " ".join(
         (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
-        .split("# Being asked to judge", 1)[1].split("\n# ", 1)[0].split()
+        .split("# Choose a contribution", 1)[1].split("\n# ", 1)[0].split()
     )
-    assert "Read the conversation first, check what the claim rests on" in section
-    assert "not a duty to confront somebody" in section
-    assert "name or tag someone when it clarifies or actually needs their attention" in section
-    assert "A winner-and-loser headline without the reason has not helped" in section
+    assert "explain the grounded difference in a way that helps those involved" in section
+    assert "choose names and notification tags for their actual purpose" in section
+    assert "without making the conversation a contest" in section
     assert not re.search(r"@\w", section), "Worked handles belong in the tool schema"
 
 

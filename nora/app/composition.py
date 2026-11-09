@@ -2264,15 +2264,15 @@ async def build_dependencies(
     # everything downstream receives `Speaker | None`.
     # Built before the speaker (below) because the speech formatter reads its
     # instruction from it.
-    doctrine_store = DoctrineStore(
-        cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
-        canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-        trigger=cfg.engagement.trigger.text,
-        language_hint=cfg.doctrine.language_hint,
-        tool_names=ToolRegistry(content_checks=content_checks).tool_names(),
-        metrics=metrics,
-    )
     try:
+        doctrine_store = DoctrineStore(
+            cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
+            canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
+            trigger=cfg.engagement.trigger.text,
+            language_hint=cfg.doctrine.language_hint,
+            tool_names=ToolRegistry(content_checks=content_checks).tool_names(),
+            metrics=metrics,
+        )
         doctrine = doctrine_store.get(applies_to="tag")
     except DoctrineError as exc:
         raise StartupError(f"doctrine error: {exc}") from exc
@@ -3528,6 +3528,7 @@ async def build_dependencies(
         documents=document_service if cfg.documents.enabled else None,
     ) if cfg.subagent.enabled else None
     tool_registry = ToolRegistry(
+        display_name=cfg.doctrine.display_name,
         # `[external_files]` (ships off): the source a shared file link is
         # opened through; None answers the open `unavailable`.
         external_files=external_files_source(
@@ -4739,7 +4740,7 @@ async def build_dependencies(
                 for key, uk in unit_keys.items()
             })
             profile_nora_keys = LiveMapping(lambda: {
-                key: CollectiveKey(unit=nk.unit, rooms=nk.rooms, label="Nora")
+                key: CollectiveKey(unit=nk.unit, rooms=nk.rooms, label=cfg.doctrine.display_name)
                 for key, nk in nora_keys.items()
             })
             profile_collective_keys = LiveMapping(lambda: {
@@ -5354,6 +5355,7 @@ async def build_dependencies(
                         platform=platform, conversation_id=conversation_id,
                     ),
                     roster_of=_roster_names_of(rosters, persons, registry.self_aliases()),
+                    nora_names=frozenset({cfg.doctrine.display_name}),
                     homes=homes, units=LiveSequence(lambda: tuple(allowlist.home_rooms())),
                     skills=agenda_skills,
                     grounder=grounder,

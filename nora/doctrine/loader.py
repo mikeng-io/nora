@@ -242,6 +242,12 @@ def parse_section(path: Path) -> DoctrineSection:
             "and where that lives instead"
         )
     description = str(meta.pop("description"))
+    for key in ("display_name", "source_repository"):
+        if key in meta and (
+            not isinstance(meta[key], str) or not meta[key].strip()
+            or any(ord(c) < 32 for c in meta[key])
+        ):
+            raise DoctrineError(f"{path.name}: {key} must be nonempty single-line text")
     return DoctrineSection(
         name=doc.name,
         description=description,
@@ -260,6 +266,8 @@ def parse_section(path: Path) -> DoctrineSection:
         sha256=hashlib.sha256(
             render_section(
                 kind=kind, name=doc.name, description=description, body=doc.body,
+                display_name=meta.get("display_name", ""),
+                source_repository=meta.get("source_repository", ""),
             ).encode("utf-8")
         ).hexdigest(),
         metadata=dict(meta),
@@ -343,7 +351,20 @@ def _open_tag(*, kind: str, name: str, description: str) -> str:
     )
 
 
-def render_section(*, kind: str, name: str, description: str, body: str) -> str:
+def identity_name(directory: Path) -> str:
+    """The restart-bound public name, authored with the identity it labels."""
+    try:
+        section = parse_section(directory / "core" / "identity.md")
+    except OSError as exc:
+        raise DoctrineError(f"identity.md: cannot read public identity: {exc}") from exc
+    value = section.metadata.get("display_name")
+    if not isinstance(value, str) or not value.strip():
+        raise DoctrineError("identity.md: display_name is required")
+    return value
+
+
+def render_section(*, kind: str, name: str, description: str, body: str,
+                   display_name: str = "", source_repository: str = "") -> str:
     """Exactly the bytes one section contributes to the assembled doctrine.
 
     **One function, two consumers, and that is the point of it existing.**
@@ -355,8 +376,12 @@ def render_section(*, kind: str, name: str, description: str, body: str) -> str:
     A new rendered attribute therefore lands here and is covered by the pin the
     same day, with no list of "fields that reach a model" to keep in step.
     """
+    opening = _open_tag(kind=kind, name=name, description=description)
+    for key, value in (("display_name", display_name), ("source_repository", source_repository)):
+        if value:
+            opening = opening[:-1] + f' {key}="{escape_attr(value)}">'
     return "\n".join((
-        _open_tag(kind=kind, name=name, description=description),
+        opening,
         body.strip("\n"),
         "</section>",
     ))
@@ -367,6 +392,8 @@ def _assemble(sections: tuple[DoctrineSection, ...]) -> str:
     for s in sections:
         parts.append(render_section(
             kind=s.kind, name=s.name, description=s.description, body=s.body,
+            display_name=s.metadata.get("display_name", ""),
+            source_repository=s.metadata.get("source_repository", ""),
         ))
     parts.append("</nora_doctrine>")
     return "\n".join(parts)
@@ -754,7 +781,7 @@ def law_text(rules: Iterable[Rule]) -> str:
 
 class DoctrineStore:
     def __init__(self, dir: Path, *, strict: bool = True, reload: str = "mtime",
-                 canary: str = "", display_name: str = "Nora", trigger: str = "",
+                 canary: str = "", display_name: str = "you", trigger: str = "",
                  language_hint: str = "", tool_names: Sequence[str] = (),
                  metrics: Metrics) -> None:
         # `tool_names` is what the tool-catalogue gate checks BACKTICKED text
@@ -766,6 +793,7 @@ class DoctrineStore:
         self._strict = strict
         self._canary = canary
         self._display_name = display_name
+        self._identity_name: str | None = None
         self._trigger = trigger
         self._language_hint = language_hint
         self._tool_names = tuple(tool_names)
@@ -831,6 +859,16 @@ class DoctrineStore:
                 )
             by_name[s.name], by_order[s.order] = s.path, s.path
         check_authority_graph(sections)
+        identity = next((s for s in sections if s.name == "identity"), None)
+        name = identity.metadata.get("display_name") if identity is not None else None
+        if self._identity_name is not None and name != self._identity_name:
+            raise DoctrineError(
+                "identity name changed; restart to change runtime labels together"
+            )
+        if name is not None:
+            if not isinstance(name, str):
+                raise DoctrineError("identity.md: display_name must be text")
+            self._identity_name = self._display_name = name
         # `order` is authoritative; filenames break ties.
         return tuple(sorted(sections, key=lambda s: (s.order, s.path.name)))
 

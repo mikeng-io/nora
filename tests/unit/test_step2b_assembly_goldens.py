@@ -143,7 +143,7 @@ async def _pick(
         client=model, prompts=_Prompts(instruction), gifs=_Gifs(*gifs),
         metrics=Metrics(), timeout_seconds=5.0,
     )
-    await picker.pick(recent=render_recent(rows), reply=reply)
+    await picker.pick(recent=render_recent(rows, display_name="Nora"), reply=reply)
     return model.calls
 
 

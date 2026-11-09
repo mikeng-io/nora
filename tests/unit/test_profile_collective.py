@@ -61,7 +61,7 @@ async def _session(kind):
 
 
 @pytest.mark.parametrize(("kind", "owner"), [
-    ("unit", "the unit's"), ("room", "the room's"), ("nora", "Nora's"),
+    ("unit", "the unit's"), ("room", "the room's"), ("nora", "your"),
 ])
 async def test_collective_tool_description_names_its_account_and_recovery(kind, owner):
     adaptor, key, _ = await _session(kind)

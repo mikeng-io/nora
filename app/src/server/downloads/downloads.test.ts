@@ -437,9 +437,14 @@ describe("DownloadRunner", () => {
 
   it("a retry that lands while the run finishes is re-admitted, not stranded", async () => {
     let attempt = 0;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
     const spawnImpl = fakeSpawn((args, proc) => {
       attempt += 1;
-      if (attempt === 1) return; // first run hangs so we can retry mid-flight
+      if (attempt === 1) {
+        markStarted();
+        return; // first run hangs so we can retry mid-flight
+      }
       const outIdx = args.lastIndexOf("-o") + 1;
       const file = args[outIdx].replace("%(ext)s", "mp4");
       writeFileSync(file, "x");
@@ -449,7 +454,7 @@ describe("DownloadRunner", () => {
     const { store, runner } = makeRunner({ spawnImpl: spawnImpl as never });
     const job = store.create("https://media.example/twice", "miles");
     runner.enqueue(job.id);
-    await new Promise((r) => setTimeout(r, 30)); // first run is in flight
+    await started; // cancel the actual child, after DNS, probe and persistence
     // The retry path: mark queued and try to enqueue — refused (slot held)…
     store.update(job.id, { status: "queued" });
     runner.enqueue(job.id);

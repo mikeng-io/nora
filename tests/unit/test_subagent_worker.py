@@ -485,7 +485,7 @@ def test_the_brief_renders_each_decision_with_who_made_it():
     for name in ("subagent_launch", "subagent_brief", "subagent_decisions"):
         assert text.count(f"<{name} ") == 1
     assert text.count('description="') == 3
-    assert "`nora` means Nora assumed it without asking anyone" in text
+    assert "`nora` means the agent assumed it without asking anyone" in text
 
 
 def test_a_decision_cannot_forge_a_block():
@@ -508,7 +508,8 @@ def test_the_doctrine_loads_beside_constraints_and_never_states_a_limit():
     for word in ("limit", "budget", "turns", "tokens", "timeout", "at most", "no more than"):
         assert word not in text.lower(), word
     # the three points the doctrine must make
-    for must in ("report to Nora", "read it back", "cannot ask anyone", "list each decision"):
+    for must in ("report to the parent agent", "read it back",
+                 "cannot ask anyone", "list each decision"):
         assert must in text, must
 
 

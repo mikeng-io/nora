@@ -121,7 +121,6 @@ from nora.domain.memo import (
 )
 from nora.domain.memory_graph import ENTITY_KINDS, ENTRY, Source
 from nora.domain.note_body import (
-    NORA_NAMES,
     NoteBodyError,
     Shown,
     ShownMessage,
@@ -700,7 +699,7 @@ class CognitionSessionRunner:
         overflow_window_fraction: float = 0.8,
         person_known: Callable[[str], bool] | None = None,
         roster_of: RosterOf | None = None,
-        nora_names: frozenset[str] = NORA_NAMES,
+        nora_names: frozenset[str] = frozenset(),
         room_proactive: RoomProactive | None = None,
         max_pending_per_requester: int | None = None,
         remind_min_lead_seconds: int | None = None,

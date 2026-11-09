@@ -1,0 +1,16 @@
+[
+  {
+    "name": "the reply judge declares a bounded final request",
+    "file": "evals/rebuilt/grading.py",
+    "old": "temperature=0, max_tokens=JUDGE_MAX_TOKENS,",
+    "new": "temperature=0,",
+    "target": "tests/unit/test_eval_run_budget.py::test_the_reply_judge_declares_its_output_ceiling_on_the_final_wire[stop]"
+  },
+  {
+    "name": "a truncated judge response remains ungradable",
+    "file": "evals/rebuilt/grading.py",
+    "old": "            if answer.choices[0].finish_reason != \"stop\":\n                raise ValueError(\"judge response truncated or refused\")\n",
+    "new": "",
+    "target": "tests/unit/test_eval_run_budget.py::test_the_reply_judge_declares_its_output_ceiling_on_the_final_wire[length]"
+  }
+]

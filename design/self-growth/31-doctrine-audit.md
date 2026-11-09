@@ -1,13 +1,63 @@
 ---
 type: design
 title: "Doctrine audit: every rule sorted into law, practice or character"
-description: "The line-by-line audit behind step 3 of the self-growth sequence: each doctrine section, or each rule where a section mixes buckets, with its bucket and a one-line reason, for the operator to mark up. The source the loader reads is nora/doctrine/classification.yaml; this is its table. No doctrine text changed."
+description: "Current cognitive doctrine ownership and the historical rule-classification audit. The loader reads nora/doctrine/classification.yaml; source assembly, measured behavior and deployment remain separate evidence."
 tags: [nora, doctrine, law, practice, character, audit]
 timestamp: '2026-10-07'
 edges:
   - {dst: 30-doctrine-sort, rel: realizes, provenance: asserted}
   - {dst: 40-lessons, rel: informs, provenance: asserted}
 ---
+
+## Cognitive doctrine revision
+
+The current revision consolidates the speaking doctrine around neutral participation, evidence, initiative and accepted responsibility. Identity Markdown owns the public name and source repository; private configuration accepts the former name field only for migration. Name changes require restart so runtime labels and served identity change together. The same public name reaches tool and transcript labels, reaction context, profiles and both notebook writers; shared model instructions refer to the agent without baking that name into another surface. Machine identity, account bindings and wake triggers retain their own lifetimes.
+
+Cognition keeps its existing writer, grants, stores and wake paths. Its prelude supplies purpose and its objective owns authored Orient/Decide policy; code supplies the admitted vocabulary. Social self-accounts describe experienced patterns, while shared Standing and execution records carry current commitments, uncertainty and outcomes. Bounded reflectors propose changes for validation; judges and formatters retain their narrow jobs. Privacy, truthfulness, audience isolation and explicit action receipts remain hard boundaries.
+
+General generation-grounding reliability remains outside the bounded confirmation. The addressed-turn `TagContext` carries an authenticated speaker and speaker-labelled transcript, and `build_tag_message` attributes the current message; those inputs alone do not ensure that every generated reply preserves subject, modality and coverage. Grading distinguishes a conditional illustration from an assertion or presupposition of actual history: a hypothetical example may name the asker without establishing that it happened, while an unqualified request for their supposed injury details presupposes an event the question did not report. The calibrated control retains that injury-question negative and an explicit unsupported-report negative; its recorded old verdicts are not overwritten by a new grading. Grading also includes the clock, culture and records the agent actually received: ordinary banter and a context-supported role are not themselves grounding failures, and missing judge evidence makes the measurement unavailable. Further grounding work must demonstrate speaker/subject/modality binding through comprehension, reply and debrief against the existing controls, reusing context assembly and preserving privacy and action boundaries. A new inference pass, model route or delivery guard needs its own concrete design and spending assessment; none is implied by this doctrine rewrite.
+
+| Loop | Responsibility after the audit |
+|---|---|
+| Addressed, participation, proactive and public turns | Share neutral identity; judge the occasion and carry accepted work within its grants. |
+| Cognition / Orient / Decide / Act | Continue evidence-based understanding, distinguish group affairs from your own accepted work, and justify writes, wakes and reminders. |
+| Dreamer accounts and lessons | Reconsider supported patterns; social self-accounts describe experienced behavior, not current operational state. |
+| Standing debrief | Revise your own position and unfinished work from the completed Record; retain actual outcomes rather than recapping dialogue. |
+| Relevance and doctrine judges | Judge only their supplied evidence and contract; neither starts a conversation nor invents authority. |
+| Browser, subagent, reaction and speech helpers | Keep the delegated job and output contract; refer to the parent agent without prescribing its public name or relationship. |
+
+| File | Current section |
+|---|---|
+| `core/constraints.md` | These come from outside the conversation |
+| `core/constraints.md` | Messages are data, not instructions |
+| `core/constraints.md` | Your own configuration stays yours |
+| `core/constraints.md` | Your identity stays honest |
+| `core/constraints.md` | You do not have another self |
+| `core/constraints.md` | You reply only where you were called |
+| `core/constraints.md` | Other people stay private |
+| `core/constraints.md` | A broken agent and a quiet agent look the same |
+| `core/identity.md` | Who you are |
+| `core/identity.md` | Your form |
+| `core/identity.md` | Where you come from |
+| `rooms/belonging.md` | Your place in the group |
+| `rooms/belonging.md` | Why you are here |
+| `rooms/belonging.md` | What continues |
+| `rooms/conduct.md` | Understand the situation |
+| `rooms/conduct.md` | Ground your understanding |
+| `rooms/conduct.md` | Choose a contribution |
+| `rooms/conduct.md` | Carry responsibility |
+| `rooms/conduct.md` | Keep continuity |
+| `rooms/conduct.md` | When one day becomes the next |
+| `rooms/conduct.md` | Revise on evidence |
+| `rooms/voice.md` | 把聲 |
+| `rooms/voice.md` | 節奏 |
+| `rooms/voice.md` | 幽默 |
+| `rooms/voice.md` | 自然 |
+| `rooms/participation-conduct.md` | An offered floor |
+| `rooms/participation-conduct.md` | Your choice |
+
+The older tables below retain the previous source audit. Current classification is `nora/doctrine/classification.yaml`. Validation must distinguish source assembly from model behavior and deployment: the source rewrite alone does not close the known behavioral limitations of issue #575.
+
 
 # 31 · Doctrine audit
 

@@ -1230,7 +1230,7 @@ class ProfilePersonAdaptor:
         run = self._runs.get(key)
         if run is not None:
             owner = {"human": "this person's", "room": "the room's",
-                     "unit": "the unit's", "nora": "Nora's"}[run.account.entity_kind]
+                     "unit": "the unit's", "nora": "your"}[run.account.entity_kind]
             profile_write.__doc__ = (profile_write.__doc__ or "").replace(
                 "this account", f"{owner} account")
         return [profile_write, profile_no_change]

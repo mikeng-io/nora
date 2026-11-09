@@ -1648,3 +1648,44 @@ async def test_a_retained_signal_contact_keeps_top_level_values():
     assert history["status"] == as_of["status"] == "ok"
     assert "extension 42" in json.dumps(history)
     assert "shared@example.invalid" in json.dumps(as_of)
+
+
+@pytest.mark.parametrize("own", [True, False], ids=["own", "other"])
+async def test_an_off_window_target_uses_the_markdown_self_name(example_config_path, own):
+    from nora.app.assembler import build_assembler
+    from nora.config import load
+
+    identity = example_config_path.parent / "nora/doctrine/core/identity.md"
+    identity.write_text(
+        identity.read_text().replace("display_name: Nora", "display_name: AgentAlpha"))
+    cfg = load(example_config_path, require_secrets=False)
+    audit = FakeRecordStore()
+    observations = FakeObservationStore(records=audit)
+    audit.observations = observations
+    mid = await audit.append(message=NormalizedMessage(
+        platform="signal", conversation_id=CID, conversation_type="group",
+        sender_id="generated-account", sender_name="PreviousLabel",
+        timestamp=NOW_MS - 180 * MIN, body="an older message", raw={},
+        message_id="older-target"), is_nora=own)
+    await _say(audit, 41)
+    await observations.append(
+        observation=_obs(kind="reaction", ref="msg:older-target", op="clear",
+                         payload=ReactionPayload(), ago=1, actor="+852111",
+                         actor_status="known", position=1,
+                         target=EditTarget(message_id="older-target")),
+        event_id="generated-reaction", source_digest="generated-digest", target_message_id=mid)
+    ctx = await build_assembler(
+        cfg, audit=audit, memory=FakeMemoryStore(), persons=PERSONS,
+        metrics=Metrics(), policy=_policy(), observations=observations,
+        clock=lambda: NOW,
+    ).assemble(request=_request())
+    assert mid not in {row.id for row in ctx.transcript}
+    prompt = "\n".join(
+        block["text"] for message in build_prefill(
+            ctx, display_name=cfg.doctrine.display_name, context_window=40, now=NOW)
+        for block in message["content"] if "text" in block)
+    expected = "AgentAlpha" if own else "PreviousLabel"
+    assert f'target_author="{expected}"' in prompt
+    assert 'target_text="an older message"' in prompt
+    if own:
+        assert 'target_author="PreviousLabel"' not in prompt

@@ -35,7 +35,8 @@ async def turn(subject: Subject, context: SummonsContext) -> tuple[tuple[str, ..
     occasion = SummonsOccasion(
         client=None, ledger=InMemorySummonsLedger(), summoners=None,
         persons=subject.deps.persons, doctrine_store=subject.deps.doctrine_store,
-        registry=ToolRegistry(content_checks=subject.cfg.content_checks.enabled),
+        registry=ToolRegistry(display_name=subject.cfg.doctrine.display_name,
+                              content_checks=subject.cfg.content_checks.enabled),
         runner=runner, metrics=subject.deps.metrics, canary=subject.cfg.doctrine.canary,
         handle='noraexample', mode='dry_run', max_age=timedelta(hours=1),
         limits=subject.deps.engagement._limits,

@@ -188,6 +188,7 @@ class TranscriptInjection:
         metrics: Any,
         quote_window: QuoteWindow | None = None,
         ai_peer: str = "",
+        display_name: str = "",
         tagger_card_conclusions: int = 0,
         notes: StandingNotesReader | None = None,
         policy: Policy | None = None,
@@ -244,6 +245,7 @@ class TranscriptInjection:
         self._quote_window = quote_window
         self._metrics = metrics
         self._ai_peer = ai_peer
+        self._display_name = display_name
         self._tagger_card_conclusions = tagger_card_conclusions
         # `notes` is `None` while `[notes] enabled = false`: the note tier is
         # dormant, the same "not configured" shape `ai_peer=""` uses to disable
@@ -1364,7 +1366,9 @@ class TranscriptInjection:
                 list(found.values()), platform=msg.platform)
             targets = {
                 mid: target_context(
-                    row, deleted=mid in gone, author=row_speaker(row))
+                    row, deleted=mid in gone,
+                    author=(self._display_name or row.sender_name or "you")
+                    if row.is_nora else row_speaker(row))
                 for mid, row in zip(found, named, strict=True)
             }
             return (

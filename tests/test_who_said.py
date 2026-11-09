@@ -151,7 +151,7 @@ def _build(persons, *, window=WINDOW, metrics=None, store=None, clock=None):
         store=store, conversation_id=CONV, conversation_type="group",
         persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
         metrics=metrics, room=room, transit_source=_UNREACHABLE_TRANSIT,
-        question="邊個話收隊", context_window=40, transcript=window,
+        display_name="Nora", question="邊個話收隊", context_window=40, transcript=window,
         clock=clock,
     )
     return {t.tool_name: t for t in tools}, metrics, store

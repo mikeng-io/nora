@@ -1,77 +1,18 @@
 ---
 name: standing-debrief
 kind: objective
-version: 13
+version: 14
 applies_to: [standing_debrief]
 description: >-
-  The debrief fold — a second model reading one FINISHED exchange (or an
-  untagged stretch, on the event path) and revising Nora's own position in
-  that conversation. It lives in this
-  directory because this is where the hot-reloading instruction substrate is,
-  NOT because Standing is a Dreamer adaptor: it is a tag-path stage running
-  inside the reply slot (design/dreamer-agent-loop/26-standing.md §1). It is
-  read through `objective_body`, so the Dreamer's own research-framed doctrine
-  is deliberately NOT prepended — that framing on a task with no research is
-  one of the two named causes of the token runaway this stage is built to
-  avoid. It is the fold's only call: the grounding verdict that ran beside it
-  from issue #78 Phase 2 was deleted on 2026-09-24
-  (design/standing-compact/). Version 6 tells it what it is reading: the
-  prior's age, and the turn's steps as the only copy of what its tools
-  returned. Version 7 (2026-09-24) removes the note ask: the fold writes the
-  position and nothing else; notes are created by people on a tag and by the
-  note-candidates pass. Version 8 (2026-09-25, issue #445) fixes a drift left
-  by b7f35eaa (09-01): the finding bullet ("what I found or worked out on
-  this turn and have not yet given the room, ... while it is still useful to
-  someone here") was added 7fdb24b4 (09-24) without updating the three other
-  places that still defined a position as only "concluded, committed to, or
-  still holding open" — the derivability test, the closing line, and the only
-  worked example. All three now name the finding AND its usefulness
-  condition, so the fold's own test for what belongs no longer contradicts
-  the bullet that says findings belong, and can no longer be satisfied by
-  trivia nobody in the room could act on. The worked example's finding is now
-  itself an option relevant to a plan still open, with its source, rather
-  than an unrelated aside, and the sentence explaining the example no longer
-  implies a finding is something you concluded. Version 9 (2026-09-25, issue
-  #445, design/standing-compact/30-working-set.md) answers 20-verification
-  §5's open residue question — v8 moved the corpus's one valid residue case
-  0/5 -> 1/5, and the draws that still fail write only the two restaurants
-  already sent, never the others the same search returned: a set of options
-  is several items of the SAME rank, and the paragraph shape gives the model
-  no way to hold more than one without either naming all of them in one
-  crowded sentence or dropping to zero. Adds a second, small JSON field,
-  `working_set`, beside `standing` — one sentence framing what a
-  working-set item IS (context framing, not a menu of cases, per
-  `context-framing-beats-capability-listing`), told to re-judge its own
-  prior (`<standing_working_set_prior>`) the same way it re-judges the
-  paragraph, and a length rule for its own budget. Does NOT touch the
-  paragraph's own cap, rank order or consolidation, which are unchanged.
-  Version 10 (2026-09-25, review of #541, issue #445) tightens `source`:
-  independent review found the write path's check was a SUBSTRING match,
-  so a source that merely mentioned a tool's name inside a description or
-  a paraphrase of the room's question passed as "sourced". The worked
-  example and the schema line now both say `source` is the tool's name
-  EXACTLY — nothing else, not a description of it and not the question
-  it answered — matching what the write path now enforces as an equality
-  check rather than a substring one.
-  Version 12 (2026-11-01, Standing consolidation readback) reconciles the
-  objective with the unit fold that now shares it: `items` was already a
-  documented optional return but the mandatory JSON schema omitted it,
-  the opening said "only" one paragraph, and the worked example's
-  position asserted conclusions the described turn never expressed.
-  Room output and unit items are now explicit BY INPUT
-  (`<standing_ledger_prior>` marks a unit fold), the item contract names
-  the required sections (`Options`/`Leaning` for a decision, `Owed` for a
-  commitment, `outcome` for a close), and the example grounds every
-  retained fact in the turn it describes.
-  Version 13 makes the unit fold's `items` list mandatory: a live unit
-  fold returned only the room paragraph when the list was called optional.
+  Revise your own position, useful working set and unit ledger from a finished
+  exchange or Cognition Record, preserving accepted work and verified outcomes.
 change_policy: operator-only
 ---
-You are Nora, reviewing your own finished exchange in a group chat, after the fact. You are the assistant who answered it, reading your own turn back — and nothing you write is shown to the group. Your job is to revise your own standing — ONE short paragraph for a room fold, or the unit's scoped entries beside it when the input carries `<standing_ledger_prior>`.
+You are reviewing your own finished exchange in a group chat, after the fact. You are the agent whose exchange is being reviewed, reading your own turn back — and nothing you write is shown to the group. Your job is to revise your own standing — ONE short paragraph for a room fold, or the unit's scoped entries beside it when the input carries `<standing_ledger_prior>`.
 
 You are given the position as it stood before (`<standing_prior>`, with how long ago you wrote it) and what the room said since. When you are folding a turn of yours, that is `<transcript>`, together with your own steps on the turn (`<steps>`: what you wrote, the tools you called and what they returned), labelled with how the turn actually ended (`outcome`). The retained Record remains the evidence; Standing carries its current state into later contexts — the position on a room fold, the scoped entries on a unit fold. When you are folding a stretch of the room nobody addressed you in, you get that stretch (`<conversation>`, with the time you are folding at) and no steps.
 
-RE-JUDGE the prior position — the whole paragraph, every turn. Do not write a fresh one beside it, and do not patch the old one in place. Walk every inherited clause and keep it only if it still holds after this turn AND you re-voice it in your own words: inherited clauses written about you in the third person ("Nora 答咗…") are rewritten as "I", never carried over verbatim. If this turn showed the prior was WRONG, correct it and say so plainly — a position that is quietly replaced teaches nothing, and two positions that disagree are worse than one that is out of date.
+RE-JUDGE the prior position — the whole paragraph, every turn. Do not write a fresh one beside it, and do not patch the old one in place. Walk every inherited clause and keep it only if it still holds after this turn AND you re-voice it in your own words: inherited clauses written about you in the third person ("佢答咗…") are rewritten as "I", never carried over verbatim. If this turn showed the prior was WRONG, correct it and say so plainly — a position that is quietly replaced teaches nothing, and two positions that disagree are worse than one that is out of date.
 
 What belongs in the position:
 - what the people in the room are currently doing or deciding, and what is still undecided;

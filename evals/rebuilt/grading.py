@@ -25,7 +25,7 @@ Two properties it does not get to lose:
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -69,6 +69,9 @@ DEFAULT_TIMEOUT_SECONDS = 300.0
 #: into a reading. Odd so a majority exists; FAIL wins any tie it is in, because
 #: a fabrication one sample caught must not be overruled by a coin flip.
 DEFAULT_SAMPLES = 3
+
+#: Every judge request declares a finite output bound to the shared run budget.
+JUDGE_MAX_TOKENS = 4096
 
 # Coverage only: GLM-5.3-Flash defaults to max reasoning; at 4096 this
 # exhausted the entire response without content. Keep the cap, request low.
@@ -313,10 +316,12 @@ class Judge:
                 client.chat.completions.create(
                     model=self._endpoint()[2],
                     messages=[{"role": "user", "content": prompt}],
-                    temperature=0,
+                    temperature=0, max_tokens=JUDGE_MAX_TOKENS,
                 ),
                 self.timeout_seconds,
             )
+            if answer.choices[0].finish_reason != "stop":
+                raise ValueError("judge response truncated or refused")
             return answer.choices[0].message.content or ""
 
         # ONE AFTER ANOTHER, never concurrent: the judge alias's provider
@@ -359,7 +364,7 @@ class Judge:
         )
 
 
-def criteria_for(names: tuple[str, ...]) -> tuple[Criterion, ...]:
+def criteria_for(names: tuple[str, ...], *, acceptance: str = "") -> tuple[Criterion, ...]:
     """The optional criteria a case opted into, by name. An unknown name RAISES
     rather than being skipped: a case asking for a criterion nobody grades would
     otherwise report a clean pass on an axis that was never checked."""
@@ -368,4 +373,10 @@ def criteria_for(names: tuple[str, ...]) -> tuple[Criterion, ...]:
         raise ValueError(
             f"unknown criteria {missing}; known: {sorted(OPTIONAL_CRITERIA)}"
         )
-    return tuple(OPTIONAL_CRITERIA[n] for n in names)
+    return tuple(
+        replace(OPTIONAL_CRITERIA[n], description=OPTIONAL_CRITERIA[n].description +
+                " Case acceptance requirement (not evidence): " + acceptance)
+        if acceptance and n in {"social_suitability", "contextual_identity"}
+        else OPTIONAL_CRITERIA[n]
+        for n in names
+    )

@@ -107,9 +107,9 @@ def test_own_rows_carry_the_same_handle_in_prefill_and_transcript_tools():
     )
     now = datetime(2026, 10, 1, tzinfo=UTC)
     assert 'turn="t7"' in render_transcript((row,), display_name="Nora", now=now)
-    assert _transcript_messages((row,), now=now)[0][0]["turn"] == "t7"
-    assert "Nora (turn t7): checked" in render_recent((row,))
-    other = _transcript_messages((replace(row, is_nora=False),), now=now)[0][0]
+    assert _transcript_messages((row,), now=now, display_name="Nora")[0][0]["turn"] == "t7"
+    assert "Nora (turn t7): checked" in render_recent((row,), display_name="Nora")
+    other = _transcript_messages((replace(row, is_nora=False),), now=now, display_name="Nora")[0][0]
     assert "turn" not in other
 
 

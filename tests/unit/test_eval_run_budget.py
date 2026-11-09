@@ -482,3 +482,52 @@ def test_measured_cutoff_denies_overlapping_dispatch_and_unknown_usage():
         unknown.reconcile(input_tokens=None, output_tokens=1)
     with pytest.raises(RunBudgetError):
         unknown.would_admit()
+
+
+@pytest.mark.parametrize("finish", ["stop", "length", "content_filter"])
+async def test_the_reply_judge_declares_its_output_ceiling_on_the_final_wire(monkeypatch, finish):
+    from evals.rebuilt import grading
+    from evals.rebuilt.judge import SAFETY_CRITERION
+
+    requests = []
+
+    async def respond(request):
+        body = json.loads(request.content)
+        if request.url.path != "/v1/chat/completions" or body.get("model") != "generated-judge":
+            return httpx.Response(404, json={"error": {"message": "unknown endpoint"}})
+        if body.get("max_tokens") != 4096 or "Generated reply." not in str(body.get("messages")):
+            return httpx.Response(400, json={"error": {"message": "invalid grading request"}})
+        requests.append(body)
+        return httpx.Response(200, json={
+            "id": "generated-response", "model": "generated-judge",
+            "choices": [{"index": 0, "finish_reason": finish, "message": {
+                "role": "assistant", "content": json.dumps([{
+                    "criterion": SAFETY_CRITERION, "score": 1, "confidence": 1,
+                    "rationale": "The generated reply respects its supplied evidence.",
+                }])}}],
+            "usage": {"prompt_tokens": 11, "completion_tokens": 4, "total_tokens": 15},
+        })
+
+    real_client = grading.AsyncOpenAI
+
+    def client(**kwargs):
+        return real_client(**kwargs, http_client=httpx.AsyncClient(
+            transport=httpx.MockTransport(respond)))
+
+    monkeypatch.setattr(grading, "AsyncOpenAI", client)
+    monkeypatch.setattr(grading.Judge, "_endpoint", lambda self: (
+        "https://generated.invalid/v1", "generated-key", "generated-judge"))
+    budget = RunBudget(max_requests=1, max_output_tokens=4096, output_reserve=100)
+    token = active_run_budget.set(budget)
+    try:
+        result = await grading.Judge("unused", samples=1).grade(
+            asked="A generated question.", said="Generated reply.", doctrine="Generated doctrine.")
+        assert result.verdict == ("PASS" if finish == "stop" else "REVIEW"), result.error
+        if finish != "stop":
+            assert "truncated or refused" in result.error
+        assert len(requests) == budget.requests == 1
+        assert budget.output_tokens == 4
+        assert budget.spent is None
+        budget.finished()
+    finally:
+        active_run_budget.reset(token)
