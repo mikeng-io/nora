@@ -326,14 +326,37 @@ closed before metadata or accessible counts reach the model. A new decision/rule
 number and its acceptance-rule registration are allocated at merge under
 `nora-decision`; this build does not reserve a number.
 
-**Semantic acceptance is unmet.** The authorized recorded candidate replay ended
-in ERROR and did not establish a supported-fact gain. The parent owns recorded
-evidence diagnosis and independent review; no further paid run is authorized.
-Source checks do not establish semantic improvement.
+**Semantic acceptance is unmet.** The first recorded candidate replay ended
+in ERROR and did not establish a supported-fact gain. A separately authorized
+fifteen-session candidate evaluation completed, but offline inspection found
+source-attribution defects, a missed-source locator defect and inconsistent
+writer/judge criteria. Its raw quality labels are not an audited quality rate,
+and the expanded cohort has no paired baseline. The original five-session totals
+cannot be compared with the whole fifteen. The parent owns recorded evidence
+diagnosis and independent review; another paid comparison needs separate
+authorization. Source checks do not establish semantic improvement.
 That sample may contain no document revision, so it cannot establish document-revision
 semantic acceptance; no additional paid sample is implied. Graph read activation,
 engagement's profile flag, prompt splitting, Honcho retirement and host configuration
 remain outside this change.
+
+The subsequent repair preserves original-message authorship when a reaction
+shares its target's citation number, and judges use structured source ids rather
+than unrelated numbers in location prose. The writer and both fact-judge paths
+now reuse `MEMORY_CRITERIA` from the declared Cognition instruction composer:
+the same kind, exclusion, admission, attribution and citation rules apply to
+saved claims and alleged misses. Passing readings have no durability threshold;
+code-recorded communication acts do not need duplicate accounts. Human
+availability reports and readable shared material retain attribution, without
+becoming verified rosters, endorsements or private-person facts. Complete cited
+premises, event-time roles, depicted versus sender identity, suggestions versus
+actions, and selected versus complete windows are explicit. Unavailable reads
+stay unavailable; judge uncertainty and the quality gate are not relaxed.
+`tests/unit/test_replay_scoring.py` checks the same criteria reach the composed
+writer and both scoring calls, and `tests/unit/test_orient_kind_table.py` checks
+the rendered guidance. These are input-contract checks, not model-compliance
+evidence. The existing fifteen were audited offline with their original verdicts
+preserved; no post-repair paid-model result is claimed.
 
 Hosted contract failures exposed incomplete callers: active eval transcript readers,
 profile-source canonical mentions and trace tuple restoration now share the canonical

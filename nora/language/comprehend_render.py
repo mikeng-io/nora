@@ -197,16 +197,16 @@ happens.
 
 Example:
 input: «lol nice» — Cat [5230]
-yield: nothing_here — the item states nothing worth keeping; close it
+yield: nothing_here — the item states no substantive content; close it
 `no_change`.
 """
 
 
-SESSION_INSTRUCTION = """# Steps
+_SESSION_STEPS = """# Steps
 
 1. For each item, record what it states about people and things: call
 memory_propose with the item's index in `items`, a `statements` list, and
-`nothing_here` naming items that state nothing worth keeping. Each statement
+`nothing_here` naming items that state no substantive content. Each statement
 cites its rows in `cite`. The tool checks citations and handles and tells you
 what it refused — repair each refused statement that still states a grounded
 fact, even when another statement covered its item: keep its
@@ -221,6 +221,9 @@ Check what is already written down before you write.
 3. Decide whether anything should reach a room as a reminder (remind,
 remind_move, remind_cancel), or deserves another look later as a wake
 (wake_at, wake_move, wake_cancel).
+"""
+
+MEMORY_CRITERIA = """
 
 # Memory
 
@@ -238,12 +241,20 @@ never establish anything about a private person. A plan does not establish
 attendance.
 
 
-Shared documents are an index, never evidence of what a person said. When agenda evidence
-supersedes a shared document, document_read its current revision before document_revise.
-Use cited replacements only, preserve unrelated content and uncertainty, and never retry a
-conflict automatically. Creator-only documents are inaccessible; no creation or lifecycle
-change is authorized by this session.
 """ + _VOCABULARY + """
+
+Do not duplicate the code-recorded act of asking, sharing, reacting or replying,
+or a code-generated presence summary. Preserve any substantive content beyond
+that act. A pure question supplies no answer; a suggestion supplies no completed
+action; a joke or lyric supplies no biography. Keep the speaker, quoted source
+and speech act distinct. A member's statement about availability can be a passing
+reading; preserve it as that speaker's report, not as a verified roster.
+
+The group's affairs include substantive content about things discussed or shared
+in the group. Readable shared material may support a reading attributed to that
+material, never the sharer's endorsement or a private person's identity or life.
+Bare links, placeholder media labels and vague reactions supply no substantive
+content to reconstruct. Do not invent what an unavailable read would have shown.
 
 The kinds you write, each with its create-when and an example:
 
@@ -271,9 +282,15 @@ describes happened — never copy it into `expression`, and never compute a
 date: code resolves quoted time words against that row's send time, and a
 reading whose event time is unknown is still a valid reading.
 
+A date in a copied
+share, title or code is not the described event's time merely because it occurs
+in the row. Use it only when the words connect that date to that event.
+
 Record what each item states; whether a write will matter later is decided
-when memory is read, not when it is written. Reshape profile lines only for
-entities whose relations changed this session: profile_read then profile_revise.
+when memory is read, not when it is written. Apply no durability or worth-keeping
+threshold. Cover content once; an already covered fact does not require another
+reading merely to repeat it in a different kind. Entity creation still needs an
+admitted relation, never an orphan.
 
 # Rules
 
@@ -282,7 +299,16 @@ said, never as anything a person said.
 
 A line rests on the messages it cites and carries nothing from a message it
 does not cite: what one room said must not surface in another through your
-words. Something a member asked to keep from someone, a surprise or a
+words. Cite every premise needed to resolve a reply, pronoun, repeated action or
+claimed subject. If the necessary premise is not citable, narrow or omit that
+detail. An assistant's tentative interpretation is not a member's confirmation.
+The message author is not automatically the person depicted in an image, the
+owner of a pictured account, or the author of embedded text. Preserve an unknown
+identity as unknown. The absence of an answer in selected rows is not evidence
+that nobody answered or that a plan remains unsettled; a negative statement
+needs an explicit cited assertion or a shown complete window for that scope.
+Do not infer completeness from a window label or a lack of more rows.
+Something a member asked to keep from someone, a surprise or a
 confidence, is not written into the notebook.
 
 What you write is about the group's affairs. The exception is where a verb
@@ -290,6 +316,17 @@ takes your own words — `i_owe` and `hold_open` on a room's Standing
 (standing_revise), the `why` of a wake or a reminder move, a reminder's
 `text` — and there you say them plainly.
 
+"""
+
+SESSION_INSTRUCTION = _SESSION_STEPS + MEMORY_CRITERIA + """
+Shared documents are an index, never evidence of what a person said. When agenda evidence
+supersedes a shared document, document_read its current revision before document_revise.
+Use cited replacements only, preserve unrelated content and uncertainty, and never retry a
+conflict automatically. Creator-only documents are inaccessible; no creation or lifecycle
+change is authorized by this session.
+
+Reshape profile lines only for entities whose relations changed this session:
+profile_read then profile_revise.
 """ + _WORKED_EXAMPLES
 
 

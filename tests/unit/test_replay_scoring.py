@@ -10,6 +10,40 @@ from nora.agent.replay_inspection import compare_inspection
 from scripts.memory_graph_spike import smoke_fact_support
 
 
+async def test_both_fact_judges_receive_the_composed_writers_full_criteria():
+    from nora.language.comprehend_render import MEMORY_CRITERIA, render_session_system
+
+    system = render_session_system("<!-- cognition-orient -->", "", memory=True)
+    assert system.count(MEMORY_CRITERIA) == 1
+    assert MEMORY_CRITERIA not in render_session_system("", "", memory=False)
+    calls = []
+
+    async def call(model, instruction, payload):
+        assert model == "generated-judge"
+        assert instruction.count(MEMORY_CRITERIA) == 1
+        assert "including all exclusions" in instruction
+        assert "Exclude only" not in instruction
+        assert payload["session_input"]["input"]["system"] == system
+        calls.append("support" if "statement" in payload else "misses")
+        if "statement" in payload:
+            assert set(payload["cited_rows"]) == {"1"}
+            return '{"verdict":"supported","reason":"cited spare controller"}'
+        assert payload["saved_statements"] == [statement]
+        return '{"missed":[],"context_only":[]}'
+
+    statement = {"what": "has a spare controller", "cite": [{"source": 1}]}
+    result = await smoke_fact_support(
+        SimpleNamespace(models=["generated-judge"], call=call),
+        {"system": system, "new_sources": {"1": {"text": "I have a spare controller"}}},
+        [{"name": "memory_propose", "input": {"statements": [statement]},
+          "source_rows": {"1": {"text": "I have a spare controller"}},
+          "result": {"statements": [{"index": 0, "status": "saved"}]}}],
+    )
+    assert calls == ["support", "misses"]
+    assert result["facts_supported"] == 1
+    assert result["facts_judge_errors"] == result["facts_missed"] == 0
+
+
 @pytest.mark.parametrize("entry, expected", [
     ({"sources": [101], "location": "item 0 at 12:34", "quote": "first"}, True),
     ({"sources": [-1], "location": "item 7", "quote": "image"}, True),

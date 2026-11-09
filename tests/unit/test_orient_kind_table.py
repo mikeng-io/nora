@@ -144,6 +144,28 @@ def test_the_composed_session_text_keeps_its_safety_sentences():
         assert sentence in text, sentence
 
 
+@pytest.mark.parametrize("guidance", [
+    "Cite every premise needed to resolve a reply, pronoun, repeated action or claimed subject",
+    "An assistant's tentative interpretation is not a member's confirmation",
+    "The message author is not automatically the person depicted in an image",
+    "Use it only when the words connect that date to that event",
+    "The absence of an answer in selected rows is not evidence that nobody answered",
+    "a suggestion supplies no completed action",
+    "a code-generated presence summary",
+    "A member's statement about availability can be a passing reading",
+    "a reading attributed to that material, never the sharer's endorsement",
+    "Apply no durability or worth-keeping threshold",
+])
+def test_composed_orient_explains_the_observed_judgment_boundaries(guidance):
+    from nora.language.comprehend_render import render_session_system
+
+    text = " ".join(render_session_system(
+        shipped_objectives().for_objective("cognition").text, "", memory=True,
+    ).split())
+    assert guidance in text
+    assert "states nothing worth keeping" not in text
+
+
 @pytest.mark.parametrize("removed,part", [("work", "entity"), ("likes", "relation")])
 async def test_admission_uses_the_kind_constant(monkeypatch, removed, part):
     """Remove a supported row/edge: old vocabulary alone must no longer admit it."""
