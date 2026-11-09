@@ -13,6 +13,7 @@ import stat
 import subprocess
 import threading
 import time
+import tomllib
 import uuid
 from collections.abc import Iterator, Mapping
 from pathlib import Path
@@ -32,6 +33,17 @@ _CASE: contextvars.ContextVar[str | None] = contextvars.ContextVar("eval_case", 
 
 class EvidenceError(RuntimeError):
     """A measurement whose evidence could not be kept must not pass."""
+
+
+def evaluation_export_for(config: Path) -> Any:
+    """Resolve the eval-facing export policy before opening private evidence."""
+    from nora.agent.telemetry import evaluation_export
+    try:
+        with config.open("rb") as config_file:
+            tracing = tomllib.load(config_file).get("obs", {}).get("tracing", {})
+        return evaluation_export(tracing)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise EvidenceError("configured evaluation visibility unavailable") from exc
 
 
 def current() -> RunEvidence | None:

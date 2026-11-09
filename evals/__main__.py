@@ -71,7 +71,13 @@ from nora.subject import (
     sweep_stale_private_blank_templates,
 )
 from nora.subject.context_filter import exposure
-from nora.subject.eval_evidence import EvidenceError, RunEvidence, fingerprint, revision
+from nora.subject.eval_evidence import (
+    EvidenceError,
+    RunEvidence,
+    evaluation_export_for,
+    fingerprint,
+    revision,
+)
 from nora.subject.sandbox import EvalLockHeldError, eval_host_lock
 
 #: Coarse S-class grouping for `--class`. Approximate on purpose where a
@@ -808,13 +814,7 @@ def _main(*, lock_fd: int = -1) -> int:
             max_output_tokens=vals[2],
             deadline=time.monotonic() + vals[3] * 60,
             output_reserve=4000)
-    from nora.agent.telemetry import evaluation_export
-    try:
-        with Path(args.deployment_config).open("rb") as config_file:
-            tracing = tomllib.load(config_file).get("obs", {}).get("tracing", {})
-        export = evaluation_export(tracing)
-    except (OSError, ValueError, RuntimeError) as exc:
-        raise EvidenceError("configured evaluation visibility unavailable") from exc
+    export = evaluation_export_for(Path(args.deployment_config))
     try:
         evidence = RunEvidence(run_id=RUN_ID, lock_fd=lock_fd, metadata={
             **revision(_REPO_ROOT), "corpora": names, "cases": sorted(only or ()),
