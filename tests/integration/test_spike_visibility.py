@@ -111,7 +111,7 @@ async def test_memory_graph_replay_exports_writer_and_judges(
     def judge_response(request):
         body = json.loads(request.content)
         assert body["model"] in {args.judge_a, args.judge_b} and not body["stream"]
-        assert body["messages"][0]["content"] == "FROZEN_COVERAGE"
+        assert body["messages"][0]["content"] == "FROZEN_COVERAGE" + spike._FIXED_COVERAGE_OUTPUT
         dispatches.append(body["model"])
         response = completion(request, {"coverage": [], "diagnostic_misses": []})
         response.headers.update({"x-omniroute-model": body["model"],

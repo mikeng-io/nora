@@ -140,6 +140,18 @@ or unavailable read evidence are ERROR, not PASS. Unlisted possible omissions
 remain unscored diagnostics. Preserve old reports under their original
 instrument; report comparison refuses differing contract identities.
 
+For fixed-reference memory scoring, the request also carries the parser's
+output contract: support and eligibility fields with nonempty reasons, and a
+coverage array containing exactly the supplied unit ids. Empty required units
+require `{"coverage":[],"diagnostic_misses":[]}`. Output-format text is part of
+the pinned implementation; a format change creates a new measurement identity.
+It does not change reference labels or excuse malformed output. Zero-paid
+preflight checks the actual formatted request and injects valid empty/populated
+responses, malformed shapes, truncation and transport failures through the real
+consumer. It verifies refusal, per-judge attribution, stop behavior and capture.
+Generated valid responses prove wiring only; they cannot prove that a live judge
+understands either the interface or the normative policy.
+
 Binding proves that the selected instrument was used. It does not establish
 that reference labels are complete, that a semantic judge is calibrated, that
 SigNoz has retained the complete queryable payload, or that a model run is authorized.

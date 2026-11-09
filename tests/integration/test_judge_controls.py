@@ -108,13 +108,14 @@ def model_wire(monkeypatch):
             answer = [{"criterion": c, "score": 0, "confidence": 1,
                        "rationale": "Invented presence"}
                       for c in ["no_overreach_or_fabrication", "social_suitability"]]
-        elif body["messages"][0]["content"] == "FROZEN_SUPPORT":
+        elif body["messages"][0]["content"] == "FROZEN_SUPPORT" + spike._FIXED_SUPPORT_OUTPUT:
             assert "spare controller" in wire
             answer = {"verdict": "unsupported" if mode["wrong"] else "supported",
                       "reason": "Generated source check", "eligibility": "eligible",
                       "eligibility_reason": "Generated policy check"}
         else:
-            assert body["messages"][0]["content"] == "FROZEN_COVERAGE"
+            assert body["messages"][0]["content"] == (
+                "FROZEN_COVERAGE" + spike._FIXED_COVERAGE_OUTPUT)
             # Prompt text is XML escaped; decode before deciding its real JSON shape.
             import html
             content = body["messages"][1]["content"]
@@ -123,13 +124,39 @@ def model_wire(monkeypatch):
             text = html.unescape(content)
             payload = json.loads(text[text.index(">") + 1:text.rindex("</")])
             saved = bool(payload["saved_statements"])
+            instruction = body["messages"][0]["content"]
+            assert "coverage MUST be an array, never an object or null" in instruction
+            assert '{"coverage":[],"diagnostic_misses":[]}' in instruction
             answer = {"coverage": [{"id": "offer", "verdict": "covered" if saved else "missed",
                        "reason": "Generated coverage check", **({"covered_by": {
                            "statements": [0], "reads": []}} if saved else {})}],
                       "diagnostic_misses": []}
+            if not payload["required_units"]:
+                answer = {"coverage": [], "diagnostic_misses": []}
+                failure = mode.get("empty_failure") if body["model"] == "generated-b" else None
+                if failure == "object":
+                    answer["coverage"] = {}
+                elif failure == "null":
+                    answer["coverage"] = None
+                elif failure == "missing":
+                    answer.pop("coverage")
+                elif failure == "undeclared":
+                    answer["coverage"] = [{"id": "invented", "verdict": "missed",
+                                           "reason": "Not a declared unit"}]
+                elif failure == "diagnostics":
+                    answer["diagnostic_misses"] = {}
+                elif failure == "http":
+                    return httpx.Response(502, json={
+                        "error": {"message": "Generated gateway error"}})
             if mode.get("alias_error") and body["model"] == "generated-b":
                 answer["diagnostic_misses"] = None
         response = completion(request, answer)
+        if mode.get("empty_failure") in {"length", "invalid_json"} and len(observed) == 6:
+            data = response.json()
+            data["choices"][0]["finish_reason"] = (
+                "length" if mode["empty_failure"] == "length" else "stop")
+            data["choices"][0]["message"]["content"] = '{"coverage":['
+            response = httpx.Response(200, json=data)
         if mode["unknown_usage"]:
             answer = response.json()
             answer.pop("usage")
@@ -278,3 +305,77 @@ async def test_selected_triple_output_allowance_reaches_both_judge_paths(
     assert all(r["max_tokens"] == 12288 for r in model_wire[0])
     assert report["run_budget"]["stop_after_total_tokens"] == 10000
     assert report["run_budget"]["max_requests"] == 8
+
+
+@pytest.fixture
+def empty_job_files(job_files):
+    cfg, job, path, _ = job_files
+    # Keep the first populated case, then exercise an empty case before doctrine.
+    input_path = Path(job["controls"]["path"])
+    data = json.loads(input_path.read_text())
+    data[1]["input"]["required_units"] = []
+    job["controls"] = save(input_path, data)
+    oracle_path = Path(job["oracle"]["path"])
+    oracle = json.loads(oracle_path.read_text())
+    oracle[data[1]["key"]]["coverage"] = {}
+    job["oracle"] = save(oracle_path, oracle)
+    for lane, ref in job["contracts"].items():
+        contract_path = Path(ref["path"])
+        contract = json.loads(contract_path.read_text())
+        contract["selection"]["controls_sha256"] = job["controls"]["sha256"]
+        if lane == "memory":
+            inp = data[1]["input"]
+            contract["cases"][data[1]["key"]] = {
+                "input_sha256": binding.digest(
+                    binding.memory_scenario(controls.memory_input(inp)[0])),
+                "units": [], "expected_output": ""}
+        job["contracts"][lane] = save(contract_path, contract)
+    sha = save(path, job)["sha256"]
+    return cfg, path, sha, data
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("otlp_wire")
+@pytest.mark.parametrize("failure,validation", [
+    (None, None),
+    ("object", "coverage_shape"),
+    ("null", "coverage_shape"),
+    ("missing", "coverage_shape"),
+    ("undeclared", "coverage_units_missing_duplicated_or_undeclared"),
+    ("diagnostics", "diagnostic_misses_shape"),
+    ("invalid_json", None),
+    ("length", "truncated model output"),
+    ("http", "judge_call_failed"),
+])
+async def test_empty_coverage_contract_and_failure_stop_through_real_entry(
+        tmp_path, empty_job_files, model_wire, failure, validation):
+    cfg, path, sha, data = empty_job_files
+    model_wire[1]["empty_failure"] = failure
+    prepared = controls.prepare(path, sha, cfg)
+    out = tmp_path / "empty-coverage"
+    report = await controls.execute(*prepared, config=cfg, output=out, job_sha256=sha)
+    assert report["status"] == ("ERROR" if failure else "PASS")
+    assert len(model_wire[0]) == (6 if failure else 8)  # No retry or later doctrine call.
+    assert report["run_budget"]["requests_used"] == len(model_wire[0])
+    rows = read_events(next(p.parent for p in out.glob("*/events.jsonl")))
+    assert sum(r["kind"] == "case_started" for r in rows) == (2 if failure else 3)
+    empty = {c["alias"]: c["status"] for c in report["comparisons"]
+             if c["case"] == data[1]["key"]}
+    assert empty == {"generated-a": "PASS", "generated-b": "ERROR" if failure else "PASS"}
+    if failure:
+        errors = [r for r in rows if r["kind"] == "judge_error"]
+        assert len(errors) == 1 and errors[0]["alias"] == "generated-b"
+        if validation:
+            assert errors[0]["validation"] == validation
+        assert report["evidence"]["status"] == "ERROR"
+    else:
+        assert report["evidence"]["status"] == "PASS"
+    # Every model leaf remains attached to a case in the run, even on failure.
+    spans = {r["span_id"]: r for r in rows if r["kind"] == "span_started"}
+    leaves = [r for r in spans.values() if r["attributes"].get("gen_ai.operation.name") == "chat"]
+    assert len(leaves) == len(model_wire[0])
+    for leaf in leaves:
+        parent = spans[leaf["parent_span_id"]]
+        while parent["name"] != "eval.case":
+            parent = spans[parent["parent_span_id"]]
+        assert spans[parent["parent_span_id"]]["name"] == "eval.run"

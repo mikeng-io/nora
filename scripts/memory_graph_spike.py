@@ -737,6 +737,29 @@ def freeze_fact_session(
            {"wake": wake, "inspection": inspection, "events": events})
 
 
+# Output requirements are part of the parser interface, not the normative policy.
+_FIXED_SUPPORT_OUTPUT = """
+Output format: return one JSON object, with no prose or markdown:
+{"verdict":"supported","reason":"explanation","eligibility":"eligible","eligibility_reason":"explanation"}
+verdict must be supported, unsupported or unsure. eligibility must be eligible,
+ineligible or unsure under the selected policy. Both explanations must be nonempty strings.
+"""
+_FIXED_COVERAGE_OUTPUT = """
+Output format: return one JSON object, with no prose or markdown.
+coverage MUST be an array, never an object or null. Return exactly one entry
+for every supplied required_units id, and no other ids. Each entry has a string
+id, verdict covered/missed/unsure, and a nonempty string reason. A covered entry
+also has covered_by with statements and reads arrays of zero-based integer
+indices into saved_statements and session_input.reads respectively; at least
+one index must be present. A cited read must have result.status ok and must
+not be load_tools. A catalogue or unavailable read is not coverage evidence.
+Example shape (use the actual supplied ids and evidence, not this example):
+{"coverage":[{"id":"example","verdict":"covered","reason":"explanation","covered_by":{"statements":[0],"reads":[]}}],"diagnostic_misses":[]}
+When required_units is empty, return {"coverage":[],"diagnostic_misses":[]}.
+diagnostic_misses must be an array when present; it is unscored.
+"""
+
+
 async def smoke_fact_support(
     judges: Judges,
     inspection: Any,
@@ -762,12 +785,12 @@ async def smoke_fact_support(
     )
     policy_sha = contract.sha256 if contract is not None else ""
     support_instruction = (
-        contract.instruction("memory_support")
+        contract.instruction("memory_support") + _FIXED_SUPPORT_OUTPUT
         if contract is not None
         else _FACT_SUPPORT_INSTRUCTION
     )
     coverage_instruction = (
-        contract.instruction("memory_coverage")
+        contract.instruction("memory_coverage") + _FIXED_COVERAGE_OUTPUT
         if contract is not None
         else _MISSED_FACT_INSTRUCTION
     )

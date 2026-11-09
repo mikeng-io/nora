@@ -115,6 +115,24 @@ thereby required; and an optional detail still fails grounding if invented.
 Unknown identity, source attribution, event time, modality and audience authority
 remain substantive qualifications, not optional presentation details.
 
+In a memory calibration, define eligibility as a diagnostic content-class
+judgment: assuming the described claim were supported, is this kind of statement
+permitted by the selected memory policy? Support separately checks whether the
+shown cited evidence establishes the actual claim. Coverage separately checks
+whether the required information is preserved. An unsupported claim can belong
+to an eligible class, and a permitted incidental detail can miss required
+coverage. Neither is permission to store it: a valid result still requires
+support, eligibility and required coverage. Explicit class exclusions, such as
+duplicating a code-produced presence summary or recording a confidence, remain
+ineligible even when factually supported. If the shown input cannot establish
+the relevant class or exclusion, use unsure rather than assuming eligibility.
+
+This definition must appear in the selected frozen judge policy before a new
+calibration. It cannot retrospectively decide an ambiguous older verdict. A
+post-output clarification is an instrument change, with the original votes and
+failed run retained; unchanged reference labels alone do not make the two
+measurements comparable.
+
 This coverage boundary governs a newly fixed measurement. Preserve earlier
 verdicts under their original instrument; it does not clear a previous failure
 or establish subject improvement by reinterpreting the same output.

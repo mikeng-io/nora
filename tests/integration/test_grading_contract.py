@@ -336,10 +336,10 @@ async def test_actual_memory_judges_bind_frozen_units_and_keep_diagnostics_unsco
         assert body["model"] in {"generated-a", "generated-b"} and not body["stream"]
         instruction = body["messages"][0]["content"]
         requests.append(body)
-        if instruction == "FROZEN_SUPPORT":
+        if instruction == "FROZEN_SUPPORT" + spike._FIXED_SUPPORT_OUTPUT:
             return completion(request, {"verdict": "supported", "reason": "Cited offer",
                 "eligibility": "eligible", "eligibility_reason": "New conveyed offer"})
-        assert instruction == "FROZEN_COVERAGE"
+        assert instruction == "FROZEN_COVERAGE" + spike._FIXED_COVERAGE_OUTPUT
         assert "required_units" in str(body["messages"]) and "offer" in str(body["messages"])
         return completion(request, {"coverage": [{"id": "offer", "verdict": "covered",
             "reason": "The saved statement preserves the offer",
@@ -376,7 +376,8 @@ async def test_fixed_coverage_is_total_and_requires_shown_evidence(tmp_path, row
     inspection = {"new_sources": {"1": {"text": "Generated offer"}}}
     contract = load_generated(tmp_path, cases={"wake": memory_reference(inspection)})
     async def call(model, instruction, payload):
-        assert instruction == "FROZEN_COVERAGE" and payload["required_units"][0]["id"] == "offer"
+        assert instruction == "FROZEN_COVERAGE" + spike._FIXED_COVERAGE_OUTPUT
+        assert payload["required_units"][0]["id"] == "offer"
         return json.dumps({"coverage": [row], "diagnostic_misses": []})
     result = await spike.smoke_fact_support(
         SimpleNamespace(models=["generated-a", "generated-b"], call=call), inspection,
@@ -480,10 +481,12 @@ async def test_optional_claims_still_need_grounding_and_eligibility_is_separate(
     statement = {"what": "An optional visual detail", "cite": [{"source": 1}]}
     async def call(model, instruction, payload):
         if "statement" in payload:
-            assert instruction == "FROZEN_SUPPORT" and payload["cited_rows"]
+            assert instruction == "FROZEN_SUPPORT" + spike._FIXED_SUPPORT_OUTPUT
+            assert payload["cited_rows"]
             return json.dumps({"verdict": support, "reason": "Source comparison",
                                "eligibility": eligibility, "eligibility_reason": "Scope check"})
-        assert instruction == "FROZEN_COVERAGE" and payload["required_units"] == []
+        assert instruction == "FROZEN_COVERAGE" + spike._FIXED_COVERAGE_OUTPUT
+        assert payload["required_units"] == []
         return '{"coverage":[],"diagnostic_misses":[]}'
     result = await spike.smoke_fact_support(
         SimpleNamespace(models=["generated-a", "generated-b"], call=call), inspection,
