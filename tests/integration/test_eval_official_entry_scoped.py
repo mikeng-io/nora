@@ -9,8 +9,10 @@ production. The source is GENERATED — a `generated_eval` database on the
 session's own testcontainer Postgres, migrated by `run_migrations` to the
 candidate's head and seeded by the existing `seed_source` fixture
 machinery at the corpus `room_a` coordinates (conversation id +
-before_ms). The ONE injected seam is the SDK's own `http_client` — the
-documented transport seam — so zero requests leave the process.
+before_ms). SDK model HTTP and OTLP export HTTP use deterministic transports;
+the generated deployment config selects the authorized owner-local sink. Real
+composition, formatting and OTLP encoding remain under test without outbound
+model/export requests.
 
 `respond` asserts the `nora.model.request` row is durable BEFORE it
 answers (transport-time evidence, not after-the-fact), and the
@@ -219,7 +221,7 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
         "computer.scoped.registry": str(registry)}))
     want_sha = hashlib.sha256(fixture.read_bytes()).hexdigest()
 
-    # --- the ONE injected seam: the SDK http_client ---
+    # --- deterministic model transport, beside the configured OTLP fixture ---
     requests: list[dict] = []
     real_create_client = factory.create_client
 
