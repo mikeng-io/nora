@@ -2,7 +2,7 @@
   {
     "name": "dreamer run: a session-shaped adaptor is no longer dispatched",
     "file": "nora/agent/dreamer.py",
-    "old": "            if getattr(adaptor, \"session_run\", None) is not None:",
+    "old": "            if session_run is not None:",
     "new": "            if False:",
     "target": "tests/unit/test_subconscious_executor.py"
   },

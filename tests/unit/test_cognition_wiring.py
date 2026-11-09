@@ -40,7 +40,6 @@ from nora.app.cognition_wiring import (
     units_with_home_rooms,
 )
 from nora.config import DreamBudgetConfig
-from tests.fakes import dreamer_runtime_for
 from nora.domain.cognition_ground import Grounding
 from nora.domain.cognition_session import Room
 from nora.domain.stimuli import Stimulus, UnitView
@@ -48,6 +47,7 @@ from nora.obs.metrics import Metrics
 from nora.testing.cognition_grounding import EmptyGrounder, StaticGrounder
 from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.stimuli import InMemoryStimulusStore
+from tests.fakes import dreamer_runtime_for
 from tests.unit.cognition_view import blocks, items, named
 
 NOW = 1_790_000_000_000

@@ -21,12 +21,14 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
+from nora.agent.dream_guard import DreamGuard
 from nora.agent.dreamer import (
     AdaptorBudget as DreamerBudget,
+)
+from nora.agent.dreamer import (
     DreamerRuntime,
     as_strands_tools,
 )
-from nora.agent.dream_guard import DreamGuard
 from nora.agent.token_reservation import TokenReservation
 from nora.app.agent_runner import DEFAULT_MAX_TRACE_CHARS
 from nora.app.cognition_session import SESSION_TOKENS, AdaptorBudget, CognitionRunResult

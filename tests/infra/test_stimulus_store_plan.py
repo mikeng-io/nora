@@ -101,25 +101,25 @@ async def test_the_due_read_stays_on_the_pending_batch_as_history_grows(clean_pg
             # Consumed-shaped history: dated rows whose due tick is at or
             # under the watermark's, undated rows recorded before its time.
             dated = i % 2 == 0
-            rows.append(dict(
-                unit="nora", kind="self" if dated else "message",
-                item="self" if dated else "message", ref=f"h:{history}:{i}",
-                at_ms=NOW - 10**7, due_ms=NOW - 10**6 if dated else None,
-                recorded_at=_at(NOW - 10**7),
-            ))
+            rows.append({
+                "unit": "nora", "kind": "self" if dated else "message",
+                "item": "self" if dated else "message", "ref": f"h:{history}:{i}",
+                "at_ms": NOW - 10**7, "due_ms": NOW - 10**6 if dated else None,
+                "recorded_at": _at(NOW - 10**7),
+            })
         rows += [
             # Inside the id range, a dated row whose due tick is past the
             # watermark's tick — `idx_stimulus_unit_due` answers it.
-            dict(unit="nora", kind="self", item="self", ref="p:due",
-                 at_ms=NOW, due_ms=NOW + 10**8, recorded_at=_at(NOW - 10**6)),
+            {"unit": "nora", "kind": "self", "item": "self", "ref": "p:due",
+             "at_ms": NOW, "due_ms": NOW + 10**8, "recorded_at": _at(NOW - 10**6)},
             # Inside the id range, undated, recorded after the watermark's
             # time — `idx_stimulus_unit_undated_recorded` (the late commit
             # the settle margin exists for).
-            dict(unit="nora", kind="message", item="message", ref="p:late",
-                 at_ms=NOW, due_ms=None, recorded_at=_at(NOW + 5_000)),
+            {"unit": "nora", "kind": "message", "item": "message", "ref": "p:late",
+             "at_ms": NOW, "due_ms": None, "recorded_at": _at(NOW + 5_000)},
             # Past the watermark's id — `idx_stimulus_unit_id`.
-            dict(unit="nora", kind="message", item="message", ref="p:after",
-                 at_ms=NOW, due_ms=None, recorded_at=_at(NOW + 5_000)),
+            {"unit": "nora", "kind": "message", "item": "message", "ref": "p:after",
+             "at_ms": NOW, "due_ms": None, "recorded_at": _at(NOW + 5_000)},
         ]
         async with engine.begin() as conn:
             await conn.execute(sa.text("TRUNCATE stimulus RESTART IDENTITY"))

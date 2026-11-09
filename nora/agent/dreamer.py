@@ -89,7 +89,6 @@ from ..domain.ports import (
     VerbProvenance,
 )
 from ..domain.reasoning_strip import dreamer_path
-from ..domain.stimuli import LIMIT_STOP_REASONS
 from ..domain.turn_deadline import turn_deadline
 from ..obs.metrics import Metrics
 from ..obs.tracing import TRACE_KIND, annotate, span
@@ -369,7 +368,7 @@ class AgentRunResult:
 
     stop_reason: str | None = None
     total_tokens: int | None = None
-    messages: tuple[Mapping[str, Any], ...] = ()
+    messages: tuple[dict[str, Any], ...] = ()
     requirements: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -1257,9 +1256,10 @@ class DreamerRuntime:
                "nora.dreamer.key": key,
                "nora.dreamer.objective": adaptor.objective},
         ):
-            if getattr(adaptor, "session_run", None) is not None:
+            session_run = getattr(adaptor, "session_run", None)
+            if session_run is not None:
                 outcome = await self._run_session_body(
-                    adaptor=adaptor, key=key,
+                    adaptor=adaptor, key=key, session_run=session_run,
                 )
             else:
                 outcome = await self._run_body(
@@ -1269,7 +1269,7 @@ class DreamerRuntime:
             return outcome
 
     async def _run_session_body(
-        self, *, adaptor: DreamAdaptor, key: str,
+        self, *, adaptor: DreamAdaptor, key: str, session_run: Any,
     ) -> DreamOutcome:
         """A session-shaped adaptor (cognition): the second shape `run`
         hosts, per node 30's contract.
@@ -1297,7 +1297,7 @@ class DreamerRuntime:
                 adaptor.name,
             )
         try:
-            result = await adaptor.session_run(key=key)
+            result = await session_run(key=key)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -1841,19 +1841,36 @@ class DreamerRuntime:
         and `.requirements` are filled even on a failed or cancelled loop,
         because a failed session is the costliest kind. An unread usage
         stays `None` — `unavailable`, never a quiet zero."""
-        b = budget or AdaptorBudget()
+        b = budget if budget is not None else self.budget_for(agent_name)
+        # The default guard is the SESSION shape (DEC-247): the tools passed
+        # are the R-7 membership set, R-99 reads the runtime's own
+        # argument-name table and the result caps hold — but no count vetoes
+        # a call; rounds, tokens and the wall clock are a session's bound.
+        # Callers holding ceilings pass their own guard.
+        g = guard or DreamGuard(
+            adaptor=agent_name,
+            budgets=dict.fromkeys(
+                (n for t in (*tools, *strands_tools)
+                 if (n := str(
+                     getattr(t, "tool_name", None) or getattr(t, "__name__", "")
+                 ))),
+                0,
+            ),
+            metrics=self._metrics, result_caps=_TOOL_RESULT_CAPS,
+            param_names=self._tools.tool_param_names(), per_tool_ceilings=False,
+        )
         attributes = dict(trace_attributes or {})
         return await self._invoke_agent(
             system_prompt=system_prompt, prompt=prompt,
             tools=as_strands_tools(tools, strands_tools),
-            guard=guard or DreamGuard(), budget=b,
+            guard=g, budget=b,
             trace_attributes=attributes, agent_name=agent_name,
             max_trace_chars=max_trace_chars, reservation=reservation,
             spend=spend,
         )
 
     async def _invoke_agent(
-        self, *, system_prompt: str, prompt: str, tools: Sequence[Any],
+        self, *, system_prompt: str, prompt: str, tools: list[Any],
         guard: DreamGuard, budget: AdaptorBudget,
         trace_attributes: Mapping[str, str], agent_name: str,
         max_trace_chars: int, reservation: TokenReservation | None,
@@ -1989,6 +2006,7 @@ def _agent_usage(agent: Any) -> Any:
             getattr(agent, "event_loop_metrics", None), "accumulated_usage", None,
         )
     except Exception:
+        log.warning("agent usage unread", exc_info=True)
         return None
 
 

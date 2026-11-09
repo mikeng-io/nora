@@ -13,15 +13,23 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 
-from nora.agent.dreamer import DreamOutcome, DreamerRuntime
+from nora.agent.dreamer import DreamerRuntime, DreamOutcome
 from nora.app.subconscious import CognitionSessionAdaptor, SubconsciousExecutor
 from nora.domain.stimuli import UnitView
+from nora.domain.ticks import (
+    due_tick_of_at,
+    due_tick_of_ms,
+    tick_of_at,
+    tick_of_ms,
+    tick_start_ms,
+)
 from nora.obs.metrics import Metrics
 from tests.fakes import dreamer_runtime_for
 
@@ -135,17 +143,6 @@ async def test_the_executor_shutdown_is_the_runners_once():
 
 # -- the canonical tick, node 18 -------------------------------------------------
 
-from datetime import UTC, datetime, timedelta
-
-from nora.domain.ticks import (
-    TICK_MS,
-    due_tick_of_at,
-    due_tick_of_ms,
-    tick_of_at,
-    tick_of_ms,
-    tick_start_ms,
-)
-
 
 def test_a_deadline_rounds_up_and_the_boundary_is_its_own_tick():
     """Fake-clock boundaries: due at 03:30:50 is eligible from the 03:31 tick;
@@ -170,9 +167,10 @@ def test_datetime_and_ms_arithmetic_agree():
 async def test_the_fake_reminder_store_spells_the_same_tick_the_column_computes():
     """Reminder `due()` parity: a row due mid-tick is NOT due at its own
     instant, IS due at the next boundary; a boundary row is due in its tick."""
+    import uuid
+
     from nora.domain.reminders import Reminder, ReminderState
     from nora.testing.reminders import FakeReminderStore
-    import uuid
 
     t0 = datetime(2026, 8, 8, 12, 0, 0, tzinfo=UTC)
     store = FakeReminderStore()
@@ -198,5 +196,6 @@ async def test_the_fake_reminder_store_spells_the_same_tick_the_column_computes(
     # Just before the boundary, neither.
     assert await store.due(now=boundary - timedelta(milliseconds=1), limit=10) == []
     # Long overdue: still exactly the pending set.
-    assert {r.id for r in await store.due(now=t0 + timedelta(days=1), limit=10)} == {mid.id, edge.id}
+    late = await store.due(now=t0 + timedelta(days=1), limit=10)
+    assert {r.id for r in late} == {mid.id, edge.id}
     await store.aclose()

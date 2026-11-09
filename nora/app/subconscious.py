@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from nora.agent.dreamer import DreamerRuntime
@@ -84,7 +84,7 @@ class SubconsciousExecutor:
     """
 
     def __init__(
-        self, *, runtime: DreamerRuntime, runner: "CognitionSessionRunner",
+        self, *, runtime: DreamerRuntime, runner: CognitionSessionRunner,
     ) -> None:
         self._runtime = runtime
         self._runner = runner
