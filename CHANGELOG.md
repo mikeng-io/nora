@@ -1,5 +1,27 @@
 # Changelog
 
+## [7.16.7](https://github.com/mikeng-io/nora/compare/v7.16.6...v7.16.7) (2026-11-09)
+
+
+### Bug Fixes
+
+* **doctrine:** allow chat metaphors within grounded self experience ([15b04d2](https://github.com/mikeng-io/nora/commit/15b04d2037d2ee1edbc3ba84cc4b0a89df0d37d5))
+* **doctrine:** answer origin questions as public provenance ([17eb29c](https://github.com/mikeng-io/nora/commit/17eb29c56629f410040a9821a6b9acb5279e6726))
+* **doctrine:** carry the public name into older observation targets ([ae9cf62](https://github.com/mikeng-io/nora/commit/ae9cf62809b164ec12ac5f568c01b717a67b3508))
+* **doctrine:** establish the subject before choosing follow-up ([4d94d44](https://github.com/mikeng-io/nora/commit/4d94d44f676460620c51402ab7fb6be509d1bd1e))
+* **doctrine:** give a complete source link without assigning access ([f0d7774](https://github.com/mikeng-io/nora/commit/f0d777482f862d09af79c156bbeb1f7029dc9a78))
+* **doctrine:** ground self experience in received evidence ([369cf4f](https://github.com/mikeng-io/nora/commit/369cf4f70ff674da43c82077d0209aa24e208c70))
+* **doctrine:** preserve speaker and modality when grounding a turn ([5d9ff01](https://github.com/mikeng-io/nora/commit/5d9ff01aa8666ecd587d6bd99a311a515979a486))
+* **doctrine:** reconcile grounding classification and audit scope ([b1bde4e](https://github.com/mikeng-io/nora/commit/b1bde4e36f5f93cf123b6238b442754dd152d576))
+* **doctrine:** restore source priority and bind case acceptance ([a8fb835](https://github.com/mikeng-io/nora/commit/a8fb8350c5cea0b90449c853d2ecb6a76fda3107))
+* **evals:** align contextual grading and refuse incomplete evidence ([cca0f92](https://github.com/mikeng-io/nora/commit/cca0f92e718cfe1ca5c94d7bc14c844b1087c7f9))
+* **evals:** bound judge draws and isolate index capability checks ([13b59e8](https://github.com/mikeng-io/nora/commit/13b59e807ac9844e8ad71e6c7e039f3c00f66b7d))
+* **evals:** describe the rendered source window accurately ([0e3a545](https://github.com/mikeng-io/nora/commit/0e3a545eaf7a0b29c06ebc4fa217cdbca84a187c))
+* **evals:** distinguish conditional examples from actual reports ([ac5923a](https://github.com/mikeng-io/nora/commit/ac5923a1217d28764e5e8b8d03d1fc9e0f27bb46))
+* **evals:** give reply judges the captured clock ([bacc7f4](https://github.com/mikeng-io/nora/commit/bacc7f476c4ef99b7c79f9a8bfb15ac20518830f))
+* **evals:** ground identity judgements in the rendered context ([4ae7680](https://github.com/mikeng-io/nora/commit/4ae7680732e0af3b3f7d08060ae22e646bc6848e))
+* **identity:** carry Markdown names through every agent loop ([03aaaf4](https://github.com/mikeng-io/nora/commit/03aaaf4bcdf91d0c9f286ffb2a8738b90f8a426b))
+
 ## [7.16.6](https://github.com/mikeng-io/nora/compare/v7.16.5...v7.16.6) (2026-11-08)
 
 
