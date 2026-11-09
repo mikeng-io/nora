@@ -91,8 +91,10 @@ zero-dispatch operations. The standard zero-dispatch commands refuse unused
 contract flags; memory inspection validates an explicitly supplied contract.
 
 Memory replay, rescore and decision diagnostics accept `--stop-after-tokens N`.
-They share the same measured input-plus-output budget across all model calls in
-that invocation. Once usage reaches the cutoff, subsequent calls refuse; the last
+With that flag, they share one measured input-plus-output budget across all model
+calls in that invocation, also capped at 1000 requests and 600,000 output tokens.
+Without it, the legacy path installs no measured budget. Neither path grants
+permission to spend. Once usage reaches the cutoff, subsequent calls refuse; the last
 admitted call may overrun it. Unknown usage blocks later spending. A stopped run
 is ERROR, with counters in `run_budget.json`, the report and trace. Inspection
 and replay sample flags remain refused on scoring-only modes. Selecting a cutoff

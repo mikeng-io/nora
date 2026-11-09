@@ -135,6 +135,7 @@ async def test_memory_graph_replay_exports_writer_and_judges(
     report = await spike.run(args)
 
     assert report["evidence"]["status"] == "PASS"
+    assert "status" not in report  # the completed replay replaces the failure placeholder
     assert json.loads((args.output / "report.json").read_text()) == report
     assert dispatches == ["writer", args.judge_a, args.judge_b] * 2
     spans = exported_spans(otlp_wire)
@@ -310,6 +311,41 @@ async def test_scoring_entrypoints_share_the_measured_budget_and_persist_it(
     assert all(final[0][key] == value for key, value in budget.items())
     assert any(e.name == "nora.eval.run_budget_final"
                for span in exported_spans(otlp_wire) for e in span.events)
+
+
+def test_budget_file_failure_retains_terminal_trace_counters(tmp_path):
+    from tempfile import TemporaryFile
+
+    from evals.backbone import _prefill_capture
+    from nora.domain.run_budget import active_run_budget
+    from nora.subject.eval_evidence import RunEvidence
+
+    output = tmp_path / "generated-budget"
+    output.mkdir(mode=0o700)
+    (output / "run_budget.json").write_text("existing evidence")
+    report = {"status": "ERROR"}
+    previous = active_run_budget.get()
+    _prefill_capture()
+    with TemporaryFile() as lock:
+        evidence = RunEvidence(run_id="generated-budget", metadata={}, lock_fd=lock.fileno(),
+                               private_root=output)
+        with (
+            pytest.raises(FileExistsError),
+            evidence.capture(trace.get_tracer_provider()),
+            spike.measured_run_budget(SimpleNamespace(stop_after_tokens=100),
+                                      evidence, output, report),
+        ):
+            budget = active_run_budget.get()
+            reservation = budget.admit(input_bytes=10, declared_output_tokens=20)
+            budget.reconcile(input_tokens=3, output_tokens=2)
+            budget.release(reservation)
+        rows = read_events(evidence.path)
+    final = [e for e in rows if e["kind"] == "run_budget_final"]
+    assert len(final) == 1
+    assert final[0]["requests_used"] == 1 and final[0]["input_tokens_used"] == 3
+    assert any(e["kind"] == "run_failed" for e in rows)
+    assert active_run_budget.get() is previous
+    assert (output / "run_budget.json").read_text() == "existing evidence"
 
 
 @pytest.mark.parametrize("entry", ["run", "run_rescore", "run_diagnostic"])

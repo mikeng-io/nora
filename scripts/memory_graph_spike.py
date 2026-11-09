@@ -1596,8 +1596,8 @@ def measured_run_budget(
                 report["run_budget"] = metadata
                 if budget.spent is not None:
                     report["status"] = "ERROR"
-                freeze(output / "run_budget.json", metadata)
                 evidence.record("run_budget_final", **metadata)
+                freeze(output / "run_budget.json", metadata)
         finally:
             if token is not None:
                 active_run_budget.reset(token)
@@ -1639,7 +1639,9 @@ async def run(args: Any) -> dict[str, Any]:
                 trace_id = trace.get_current_span().get_span_context().trace_id
                 print(f"eval trace: {trace_id:032x}", file=sys.stderr)
                 with measured_run_budget(args, evidence, output, report):
-                    report.update(await _run(args))
+                    result = await _run(args)
+                    report.clear()
+                    report.update(result)
                     body_completed = True
         except EvidenceError:
             if not body_completed:
@@ -2104,7 +2106,8 @@ def main() -> int:
                         help="Render private snapshot inputs with zero model dispatches")
     parser.add_argument("--sample-sha256", help="Refuse a different frozen replay sample")
     parser.add_argument("--stop-after-tokens", type=int,
-                        help="Measured writer+judge total cutoff; last call may overrun")
+                        help="Measured input+output cutoff across all model calls; last call "
+                             "may overrun; also capped at 1000 requests/600k output tokens")
     args = parser.parse_args()
     if args.stop_after_tokens is not None and args.stop_after_tokens <= 0:
         parser.error("measured token cutoff must be positive")
