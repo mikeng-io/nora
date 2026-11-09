@@ -49,9 +49,10 @@ runner, corpus fields, private evidence and trace hierarchy.
    judge requests, including system instructions, source scope, identities,
    clock, media, cut/unavailable states, offered schemas and tool results.
    Requirements are not factual evidence. Check that available tools can reach
-   required state and that readback measures the claimed result. A synthetic
-   export/backend/UI proof precedes paid work where visibility was repaired;
-   an HTTP success or a private file alone is insufficient.
+   required state and that readback measures the claimed result. A fresh synthetic
+   export and backend API readback precede paid work where visibility was
+   repaired; an HTTP success or a private file alone is insufficient. Frontend
+   checks are required when the acceptance claim concerns frontend behavior.
 5. **Serialize a fixed run brief and bounded execution.** Use the existing
    private evidence/receipt to bind the subject, grading policy, cohort/snapshot,
    controls, draws, source/config versions, budget, retries/cache behavior and
@@ -129,7 +130,7 @@ instrument; report comparison refuses differing contract identities.
 
 Binding proves that the selected instrument was used. It does not establish
 that reference labels are complete, that a semantic judge is calibrated, that
-SigNoz's installed UI has passed readback, or that a model run is authorized.
+SigNoz has retained the complete queryable payload, or that a model run is authorized.
 Those remain the preceding SOP's separate evidence obligations.
 
 ## The rebuilt suite (2026-09-21) — where and how it runs

@@ -130,8 +130,10 @@ What the tests enforce:
      --case route_routine_read_future --case route_routine_read_english \
      --case route_routine_read_usually --case route_routine_read_arrival \
      --case route_routine_read_departure_english --case route_typed_residence_correction \
-     --case route_weather_not_web --sample N --reasons
+     --case route_weather_not_web --sample N --reasons \
+     --grading-contract "$GRADING_CONTRACT" --grading-contract-sha256 "$GRADING_CONTRACT_SHA256"
    ```
+   Take the independent contract/hash from `nora-eval`'s fixed run brief.
    `--reasons` prints the tools each draw executed. Choose N for the claim and
    check the `estimate:` line — the run refuses over 60 minutes, so the whole
    corpus at `--sample 5` (~7 h an arm) can never be the recipe. How and where

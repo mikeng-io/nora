@@ -33,5 +33,19 @@
     "old": "                    or {row[\"id\"] for row in rows} != expected",
     "new": "                    or False",
     "target": "tests/integration/test_grading_contract.py::test_fixed_coverage_is_total_and_requires_shown_evidence"
+  },
+  {
+    "name": "capture and export code belong to the fixed instrument",
+    "file": "evals/grading_contract.py",
+    "old": "            \"nora/agent/telemetry.py\",\n            \"nora/obs/tracing.py\",\n            \"nora/subject/eval_evidence.py\",\n",
+    "new": "",
+    "target": "tests/integration/test_grading_contract.py::test_capture_or_export_change_invalidates_the_fixed_measurement"
+  },
+  {
+    "name": "semantic acceptance needs a judge in this actual run",
+    "file": "evals/grading_contract.py",
+    "old": "            if not self.data[\"judges\"]:\n                raise EvidenceError(\"case acceptance requires an active judge\")\n",
+    "new": "",
+    "target": "tests/integration/test_grading_contract.py::test_required_acceptance_cannot_bind_without_a_judge"
   }
 ]

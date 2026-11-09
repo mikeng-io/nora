@@ -155,6 +155,49 @@ def test_wrong_measurement_cannot_silently_run(tmp_path, change, message):
         load_generated(tmp_path, change=change)
 
 
+@pytest.mark.parametrize("changed", [
+    "nora/subject/eval_evidence.py", "nora/agent/telemetry.py", "nora/obs/tracing.py",
+])
+def test_capture_or_export_change_invalidates_the_fixed_measurement(tmp_path, monkeypatch, changed):
+    path, sha = write_contract(tmp_path)
+    original_root = binding._ROOT
+    isolated = tmp_path / "implementation"
+    for name in binding.IMPLEMENTATION_FILES:
+        target = isolated / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.symlink_to(original_root / name)
+    target = isolated / changed
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.unlink(missing_ok=True)
+    target.write_bytes((original_root / changed).read_bytes())
+    monkeypatch.setattr(binding, "_ROOT", isolated)
+    binding.load_contract(path, sha, entrypoint="replay",
+                          judges=("generated-a", "generated-b"), selection={})
+    target.write_bytes(target.read_bytes() + b"\n# changed capture implementation\n")
+    with pytest.raises(EvidenceError, match="implementation differs"):
+        binding.load_contract(path, sha, entrypoint="replay",
+                              judges=("generated-a", "generated-b"), selection={})
+
+
+@pytest.mark.parametrize("metadata", [
+    {"entry": "tag", "criteria": ["social_suitability"]},
+    {"entry": "tag", "criteria": ["contextual_identity"]},
+    {"entry": "tag", "criteria": ["lesson_applied"]},
+    {"entry": "standing"},
+])
+def test_required_acceptance_cannot_bind_without_a_judge(tmp_path, metadata):
+    case = Case(name="generated", input="Generated request", metadata=metadata)
+    references = {"generated:generated": {
+        "input_sha256": binding.digest(binding.case_scenario(case)),
+        "expected_output": "A required semantic property", "units": []}}
+    without_judge = load_generated(tmp_path, entrypoint="eval", judges=(), cases=references)
+    with pytest.raises(EvidenceError, match="requires an active judge"):
+        without_judge.verify_cases({"generated:generated": case})
+    with_judge = load_generated(tmp_path, entrypoint="eval", judges=("generated-a",),
+                                cases=references)
+    with_judge.verify_cases({"generated:generated": case})
+
+
 @pytest.mark.parametrize("entrypoint,purpose", [
     ("rescore", "confirmation"), ("diagnostic", "regression"),
 ])

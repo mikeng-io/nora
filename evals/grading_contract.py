@@ -20,6 +20,9 @@ IMPLEMENTATION_FILES = tuple(
         | {
             "scripts/memory_graph_spike.py",
             "nora/agent/replay_inspection.py",
+            "nora/agent/telemetry.py",
+            "nora/obs/tracing.py",
+            "nora/subject/eval_evidence.py",
             "nora/subject/replay_diagnosis.py",
             "nora/domain/blocks.py",
             "nora/domain/composed.py",
@@ -110,6 +113,8 @@ class GradingContract:
         if ref["input_sha256"] != digest(case_scenario(case)):
             raise EvidenceError("scenario differs from the frozen grading contract")
         if ref["expected_output"].strip():
+            if not self.data["judges"]:
+                raise EvidenceError("case acceptance requires an active judge")
             from evals.rebuilt.entry import ENTRY_POINTS
 
             md = case.metadata or {}

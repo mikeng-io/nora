@@ -175,7 +175,9 @@ an unavailable private reasoning process is not fabricated telemetry.
 
 One run/case/attempt/model/tool hierarchy leads to the relevant state readback
 and application result. Operator-readable SigNoz content and private durable
-evidence have separate acceptance. Apply the authorized sink and credential
+evidence have separate acceptance. Backend API readback can establish retained,
+queryable payload completeness; frontend interaction is required only for a
+frontend behavior claim. Apply the authorized sink and credential
 rules in [observability](../../docs/observability.md); a collector acknowledgement
 does not prove stored or readable content. Payload completeness also does not
 prove the rubric measures the right property.
