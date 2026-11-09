@@ -54,6 +54,41 @@ grading policy independently of the candidate arm. When a policy change is the
 intended product change, name that change and the new target before measuring;
 do not present a different benchmark as an unchanged regression test.
 
+## Who judges the judging criteria
+
+An automated judge applies the contract; it has no authority to define what the
+user should accept. The endpoint of this chain is accountable product judgment
+and observable evidence, not an unlimited chain of models endorsing one another.
+
+| Role | Owns | Does not establish alone |
+|---|---|---|
+| Product/domain owner | Intended behavior and the cost of false acceptance versus false rejection. For Nora, existing operator rulings are the authority. | Whether a particular implementation or grader reliably meets that intent. |
+| Evaluation author/maintainer | Scenario definitions, references, rubric, evidence requirements and versioned changes. | Independent acceptance of a grader designed around the candidate they built. |
+| Independent evaluation reviewer | The scenario-to-criterion mapping, valid/invalid reference cases, bias controls, calibration evidence and limits. Review follows the existing independence policy. | New product policy, or ground truth established merely by another model's agreement. |
+| Run orchestrator | Executing the approved fixed contract and reconciling the actual evidence and report. | Erasing failures, changing acceptance after seeing results or treating source review as behavioral confirmation. |
+
+The acceptable balance is operational: require everything the task genuinely
+needs, permit materially different valid solutions, and reject behavior that
+violates the stated boundary. The criterion may not demand unavailable facts or
+an unstated workflow. Check false accepts and false rejects on reviewed
+contrasts. Permission, disclosure and fabricated-presence violations cannot be
+averaged away by good style; softer quality trade-offs need an explicit target
+appropriate to that scenario. Do not invent one global percentage for both.
+
+Rubric review asks whether the contract is fair and discriminating before asking
+how many candidate answers pass. Human/domain-reviewed reference labels and
+untouched controls calibrate the automated judge. Independent model review can
+find contradictions and counterexamples; it cannot replace the authority behind
+those labels. Reviewers can also be wrong, so retain disagreements, revisions
+and the evidence that would reopen the decision.
+
+Routine execution of an already fixed contract needs no new product ruling.
+Repair a demonstrated instrument defect against the existing requirement and
+record its measurement impact. Escalate an unresolved value choice or a genuine
+change in acceptable behavior to the product owner; do not resolve it by
+selecting whichever grader produces a pass. If the reference boundary remains
+unsettled, that claim remains unavailable instead of being scored into agreement.
+
 ## Measure: audit across axes
 
 Audit each applicable row through scenario, subject input, grader input and

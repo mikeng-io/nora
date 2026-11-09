@@ -25,6 +25,11 @@ runner, corpus fields, private evidence and trace hierarchy.
    to its actual consumer. In the current reply path, appended case acceptance
    binds only social suitability/contextual identity; folds and lessons use
    their own consumers. A field's presence does not prove it is measured.
+   Name the product/domain owner, evaluation author, independent evaluation
+   reviewer and run orchestrator. The reviewer checks the rubric against reviewed
+   valid/invalid references and calibration evidence; another model's agreement
+   is not ground truth. Existing product rulings govern routine work. Bring only
+   an unresolved value choice or changed acceptable behavior back to the owner.
 3. **Measure the instrument before the subject.** Inspect an accepted reference,
    a nearby invalid one and relevant ambiguous/insufficient-information controls.
    Calibrate semantic judges against reviewed labels, preserve disagreement and
