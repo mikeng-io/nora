@@ -232,6 +232,64 @@ async def test_the_limit_bounds_the_pending_read(store):
     assert len(view.pending) == 2
 
 
+async def test_a_due_row_the_merged_bound_cut_is_named_unclaimed(store):
+    """The row-28 shape the seeded fuzz found at a small limit: a selective
+    wake pushes the watermark past a future-due row's id, and once that row's
+    due tick opens the carried/unclaimed side door re-sorts ahead of it so the
+    merged bound cuts it. `view.over` must name it, `decide` must list it
+    unclaimed, and the wake's own `through` range must not consume it unseen —
+    both stores, same behaviour."""
+    from nora.domain.stimuli import WakePolicy, decide
+    from nora.domain.ticks import due_tick_of_ms
+
+    policy = WakePolicy(quiet_seconds=0, cooldown_seconds=0, session_seconds=0)
+    m1 = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
+    m2 = await store.append(stimulus=_msg("messages:2"), recorded_at_ms=NOW)
+    m3 = await store.append(stimulus=_msg("messages:3"), recorded_at_ms=NOW)
+    s4 = await store.append(stimulus=_kind("self", "ref:4", at=NOW, due=NOW + 30_000),
+                            recorded_at_ms=NOW)
+    r5 = await store.append(stimulus=_kind("rollup", "colocation|p1|5"), recorded_at_ms=NOW)
+    boundary = due_tick_of_ms(NOW + 30_000) * 60_000
+    # A rollup-only wake: through moves past s4's id while s4 is still
+    # future-due — protected then by its due tick, not by its id.
+    await store.record_wake(wake=NewWake(
+        unit=UNIT, mode="live", reason="rollup", from_stimulus_id=0,
+        through_stimulus_id=r5, stimulus_count=1, eligible_count=1,
+        oldest_pending_ms=NOW, cut_cooldown=False, at_ms=NOW + 10,
+        unclaimed_ids=(m1, m2, m3),
+    ), recorded_at_ms=NOW + 10)
+    # The due tick is open now: the eligible set is {m1,m2,m3,s4} and the bound
+    # cuts s4, whose id sits under the wake's watermark.
+    view = await store.view(unit=UNIT, mode="live", now_ms=boundary, limit=3)
+    assert [s.id for s in view.pending] == [m1, m2, m3]
+    assert s4 in view.over
+    verdict = decide(view, policy, boundary)
+    assert verdict.reason is not None
+    assert s4 in verdict.unclaimed_ids
+    await store.record_wake(wake=NewWake(
+        unit=UNIT, mode="live", reason=verdict.reason, from_stimulus_id=0,
+        through_stimulus_id=verdict.through_stimulus_id,
+        stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
+        oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False,
+        at_ms=boundary, unclaimed_ids=verdict.unclaimed_ids,
+    ), recorded_at_ms=boundary)
+    # The range that passed s4's id must not have eaten it: still pending, and
+    # the next wake takes it — exactly once.
+    view = await store.view(unit=UNIT, mode="live", now_ms=boundary + 10, limit=100)
+    assert [s.id for s in view.pending] == [s4]
+    verdict = decide(view, policy, boundary + 10)
+    assert verdict.reason is not None
+    await store.record_wake(wake=NewWake(
+        unit=UNIT, mode="live", reason=verdict.reason, from_stimulus_id=0,
+        through_stimulus_id=verdict.through_stimulus_id,
+        stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
+        oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False,
+        at_ms=boundary + 10, unclaimed_ids=verdict.unclaimed_ids,
+    ), recorded_at_ms=boundary + 10)
+    view = await store.view(unit=UNIT, mode="live", now_ms=boundary + 20, limit=100)
+    assert view.pending == ()
+
+
 async def test_last_activity_counts_message_stimuli_only(store):
     await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
     await store.append(

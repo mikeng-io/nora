@@ -9,22 +9,22 @@
   {
     "name": "decide: the messages a narrow wake leaves are listed as unclaimed, so the watermark never passes them",
     "file": "nora/domain/stimuli.py",
-    "old": "        unclaimed_ids=tuple(sorted(\n            {s.id for s in view.pending if s.id not in taken and s.id <= through}\n            # Carried forward from the watermark's own list, WHETHER OR NOT this\n            # read shows them: a truncated read (`limit`) cuts the newest, and a\n            # stimulus the view did not show cannot be claimed here, so dropping\n            # it from the list would consume it unseen under this wake's range.\n            | {u for u in view.watermark.unclaimed if u not in taken and u <= through}\n        )),",
+    "old": "        unclaimed_ids=tuple(sorted(\n            {s.id for s in view.pending if s.id not in taken and s.id <= through}\n            # Carried forward from the watermark's own list, WHETHER OR NOT this\n            # read shows them: a truncated read (`limit`) cuts the newest, and a\n            # stimulus the view did not show cannot be claimed here, so dropping\n            # it from the list would consume it unseen under this wake's range.\n            | {u for u in view.watermark.unclaimed if u not in taken and u <= through}\n            # `view.over`: what the MERGED bound cut after the carried and\n            # unclaimed side doors re-sorted ahead of it \u2014 inside this wake's\n            # `through` range, due, and never shown. Naming it keeps the wake's\n            # watermark from consuming it the way a `pending`-only list would.\n            | {o for o in view.over if o not in taken and o <= through}\n        )),",
     "new": "        unclaimed_ids=(),",
     "target": "tests/contract/test_stimulus_store_contract.py -k random_run"
   },
   {
     "name": "Watermark.consumed: an unclaimed id is not consumed by the range",
     "file": "nora/domain/stimuli.py",
-    "old": "            and stimulus.id not in self.unclaimed\n        )",
-    "new": "        )",
+    "old": "        if stimulus.id > self.through_stimulus_id or stimulus.id in self.unclaimed:",
+    "new": "        if stimulus.id > self.through_stimulus_id:",
     "target": "tests/unit/test_wake_evaluator.py -k unclaimed_id_is_not_consumed"
   },
   {
     "name": "Watermark.consumed: a failing wake's strike reaches only what it claimed",
     "file": "nora/domain/stimuli.py",
-    "old": "            and stimulus.id not in self.unclaimed\n        )",
-    "new": "        )",
+    "old": "        if stimulus.id > self.through_stimulus_id or stimulus.id in self.unclaimed:",
+    "new": "        if stimulus.id > self.through_stimulus_id:",
     "target": "tests/unit/test_cognition_input.py -k striking_a_failing_floor_wake"
   },
   {

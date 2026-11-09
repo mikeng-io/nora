@@ -1,0 +1,30 @@
+[
+  {
+    "name": "dreamer run: a session-shaped adaptor is no longer dispatched",
+    "file": "nora/agent/dreamer.py",
+    "old": "            if getattr(adaptor, \"session_run\", None) is not None:",
+    "new": "            if False:",
+    "target": "tests/unit/test_subconscious_executor.py"
+  },
+  {
+    "name": "subconscious executor: the session runs beside runtime.run, not inside it",
+    "file": "nora/app/subconscious.py",
+    "old": "        return await self._runtime.run(adaptor=adaptor, key=unit, batch=())",
+    "new": "        return await runner.on_wake(\n            unit=unit, view=view, now_ms=now_ms, wake_id=wake_id,\n        )",
+    "target": "tests/unit/test_subconscious_executor.py"
+  },
+  {
+    "name": "decide: a row the merged bound cut under a wake's range is consumed unseen",
+    "file": "nora/domain/stimuli.py",
+    "old": "            | {o for o in view.over if o not in taken and o <= through}\n",
+    "new": "",
+    "target": "tests/contract/test_stimulus_store_contract.py -k merged_bound_cut"
+  },
+  {
+    "name": "fake store: a mid-tick due stimulus is visible before its tick opens",
+    "file": "nora/testing/stimuli.py",
+    "old": "            and s.pending_tick <= tick_of_ms(now_ms)",
+    "new": "            and s.pending_since_ms <= now_ms",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake tests/contract/test_stimulus_store_contract.py::test_a_due_later_wake_does_not_resurrect_earlier_consumed_stimuli"
+  }
+]

@@ -30,8 +30,8 @@
   {
     "name": "watermark: a stimulus due after the watermark's time counts as consumed by the id range",
     "file": "nora/domain/stimuli.py",
-    "old": "            and stimulus.pending_since_ms <= self.through_ms",
-    "new": "            and True",
+    "old": "        return due_tick_of_ms(stimulus.due_ms) <= tick_of_ms(self.through_ms)",
+    "new": "        return True",
     "target": "tests/unit/test_wake_evaluator.py::test_a_stimulus_due_after_the_watermarks_time_is_not_consumed_by_the_id_range tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake"
   },
   {
@@ -65,7 +65,7 @@
   {
     "name": "SQL watermark: a stimulus due after the time bound is consumed under its id",
     "file": "nora/infra/sql/stimuli.py",
-    "old": "        sa.select(STIMULUS).where(*base, under, STIMULUS.c.due_ms > through_ms),",
+    "old": "        sa.select(STIMULUS).where(*base, under, STIMULUS.c.due_tick > through_tick),",
     "new": "        sa.select(STIMULUS).where(*base, under, sa.false()),",
     "target": "tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake"
   },
