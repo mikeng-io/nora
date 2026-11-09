@@ -245,7 +245,12 @@ def test_cli_capture_failure_refuses_before_execution(evidence_root, monkeypatch
 
 
 @pytest.mark.parametrize("failure", ["root_is_file", "unreadable_config"])
-def test_cli_preparation_oserror_is_a_clean_refusal(evidence_root, monkeypatch, capsys, failure):
+def test_cli_preparation_oserror_is_a_clean_refusal(
+        evidence_root, monkeypatch, capsys, failure, example_config_path):
+    from nora.agent import telemetry
+    monkeypatch.setattr(telemetry, "evaluation_export", lambda _: None)
+    monkeypatch.setattr("sys.argv", ["python -m evals", "tool_selection",
+                                    "--deployment-config", str(example_config_path)])
     reached = []
     if failure == "root_is_file":
         evidence_root.write_text("generated regular file")
@@ -254,7 +259,6 @@ def test_cli_preparation_oserror_is_a_clean_refusal(evidence_root, monkeypatch, 
             raise PermissionError("generated unreadable config")
         monkeypatch.setattr(cli, "fingerprint", denied)
     monkeypatch.setattr(cli, "_execute", lambda *a, **k: reached.append(True) or 0)
-    monkeypatch.setattr("sys.argv", ["python -m evals", "tool_selection"])
     assert cli.main() == 2
     assert reached == []
     assert "refusing to run: cannot prepare private eval evidence" in capsys.readouterr().err
