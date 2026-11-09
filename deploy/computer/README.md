@@ -578,6 +578,10 @@ The user must already have authenticated sbx. No browser installation is added.
    replace the paths. Set an explicit running VM maximum and host memory headroom.
    `guest_bytes` must match the wrapper/unit guest allocation; unknown inventory
    or MemAvailable refuses starts. Running unmanaged/eval VMs count too.
+   If the installed wrapper uses a non-default `NORA_COMPUTER_HOST_IP`, set that
+   same environment value in both systemd units (with an `Environment=` drop-in)
+   and in manual wrapper invocations. The controller validates registry endpoints
+   against that address; inconsistent values refuse lifecycle operations.
 3. The controller starts through `nora-computer controller`, which uses the same
    `load_token` path as computerd: private secret.toml, configured credential name,
    explicit environment overrides. No second token file is needed. Service and app

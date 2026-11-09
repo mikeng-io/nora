@@ -73,7 +73,7 @@ p.write_text(json.dumps(boxes))
     # Guest HTTP behavior varies by route/identity and work state. The actual
     # authenticated guest transport remains a separate installed-host boundary.
     guest_state = {"status": "ok", "processes": [], "tmux": [], "runs": 0,
-                   "browser": {"running": False, "pending_actions": 0}}
+                   "browser": {"running": False}}
     def guest(scope, endpoint, route):
         if route == "identity":
             if not endpoint.get("instance"):
@@ -125,7 +125,7 @@ async def test_first_use_serialized_reuse_capacity_and_retained_wake(host):
     _, owned = ctl.record(SCOPE)
     owned["last_activity"] = 0
     controller_module.atomic(path, owned)
-    assert (await client.request("idle-stop", SCOPE, str(uuid.uuid4())))["stopped"]
+    assert (await client.request("idle-stop", SCOPE, str(uuid.uuid4()))).get("stopped") is True
     stopped = ctl.endpoint(SCOPE)
     assert stopped["instance"] == ""
     wake = await client.request("acquire", SCOPE, str(uuid.uuid4()))
@@ -348,3 +348,69 @@ async def test_partial_ready_publication_recovers_without_another_create(host):
     assert recovered["status"] == "ok" and recovered["instance"]
     calls = [json.loads(line) for line in (ctl.state.parent / "calls").read_text().splitlines()]
     assert calls.count(["scope", "provision", SCOPE]) == 1
+
+
+async def test_registry_only_scopes_are_observed_without_adoption_and_idle_stopped(host):
+    ctl, client, _ = host
+    operation = str(uuid.uuid4())
+    assert (await client.request("acquire", SCOPE, operation))["status"] == "ok"
+    assert (await client.request("release", SCOPE, operation))["status"] == "ok"
+    path, _ = ctl.record(SCOPE)
+    path.unlink()  # pre-controller registry remains the existing host authority
+    registry = ctl.registry / f"{SCOPE}.json"
+    import os
+    os.utime(registry, (0, 0))
+    observed = await client.request("observe", SCOPE, str(uuid.uuid4()))
+    assert observed["status"] == "ok" and observed["idle_eligible"] is True
+    assert not path.exists()  # a passive read neither adopts nor wakes
+    assert (await client.request("idle-stop", SCOPE, str(uuid.uuid4()))).get("stopped") is True
+    path.unlink()
+    stopped = await client.request("observe", SCOPE, str(uuid.uuid4()))
+    assert stopped["status"] == "ok" and stopped["state"] == "stopped"
+    assert not path.exists()
+    assert (await client.request("acquire", SCOPE, str(uuid.uuid4())))["status"] == "ok"
+
+
+@pytest.mark.parametrize("browser, expected", [
+    ({"running": False}, True),
+    ({"running": True, "pending_actions": 0}, True),
+    ({"running": True, "pending_actions": 1}, False),
+    ({"running": True}, False),
+    ({"pending_actions": 0}, False),
+])
+def test_quiet_matches_guest_browser_payload_shapes(host, browser, expected):
+    ctl, _, state = host
+    state["browser"] = browser
+    endpoint = {"instance": "boot-synthetic"}
+    assert ctl.quiet(SCOPE, endpoint) is expected
+    assert ctl.quiet(SCOPE, endpoint, browser=True) is (
+        expected and browser.get("running") is False)
+
+
+async def test_empty_sweeps_claim_only_when_host_idle_is_eligible(host, monkeypatch):
+    from datetime import UTC, datetime
+
+    from nora.app.computer_queue import ComputerAdmission
+    from nora.testing import FakeComputerTaskStore, FakeStreamRedis
+    from tests.unit.test_scoped_computer import _register, _wired
+
+    ctl, client, _ = host
+    operation = str(uuid.uuid4())
+    assert (await client.request("acquire", SCOPE, operation))["status"] == "ok"
+    assert (await client.request("release", SCOPE, operation))["status"] == "ok"
+    store = FakeComputerTaskStore()
+    admission = ComputerAdmission(tasks=store, redis=FakeStreamRedis(),
+        clock=lambda: datetime.now(UTC), lifecycle=client,
+        reconcile=lambda scope: asyncio.sleep(0, "quiet"))
+    rig = _wired(monkeypatch, tasks=store, segments=admission, lifecycle=client)
+    _register(rig.runtime, scope=SCOPE)
+    assert await rig.manager.sweep() == 0
+    assert not store.rows
+    path, owned = ctl.record(SCOPE)
+    owned["last_activity"] = 0
+    controller_module.atomic(path, owned)
+    assert await rig.manager.sweep() == 0
+    assert len(store.rows) == 1
+    row = next(iter(store.rows.values()))
+    assert row.kind == "maintenance" and row.status == "done"
+    assert ctl.inventory()["nora-computer-" + SCOPE[:12]] == "stopped"

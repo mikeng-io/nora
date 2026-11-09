@@ -12,5 +12,40 @@
     "old": "if lifecycle is None or task.kind == \"maintenance\":",
     "new": "if lifecycle is None:",
     "target": "tests/integration/test_computer_lifecycle.py::test_elected_execution_acquires_but_maintenance_is_passive"
+  },
+  {
+    "name": "real stopped browser permits drain",
+    "file": "deploy/computer/lifecycle_controller.py",
+    "old": "    def quiet(self, scope: str, endpoint: dict, *, browser: bool = False) -> bool:\n        self.guest(scope, endpoint, \"identity\")\n        state = self.guest(scope, endpoint, \"state\")\n        browser_state = state.get(\"browser\")\n        if not isinstance(browser_state, dict):\n            return False\n        running = browser_state.get(\"running\")\n        pending = browser_state.get(\"pending_actions\")\n        # BrowserPool.status omits pending_actions when the browser is stopped.\n        drained = running is False or (\n            running is True and type(pending) is int and pending == 0)\n        return (state.get(\"status\") == \"ok\" and state.get(\"processes\") == []\n                and state.get(\"tmux\") == [] and type(state.get(\"runs\")) is int\n                and state[\"runs\"] == 0 and drained\n                and (not browser or running is False))\n",
+    "new": "    def quiet(self, scope: str, endpoint: dict, *, browser: bool = False) -> bool:\n        self.guest(scope, endpoint, \"identity\")\n        state = self.guest(scope, endpoint, \"state\")\n        # Explicit presence/type is required; omitted fields never mean quiet.\n        return (state.get(\"status\") == \"ok\" and state.get(\"processes\") == []\n                and state.get(\"tmux\") == [] and type(state.get(\"runs\")) is int\n                and state[\"runs\"] == 0 and isinstance(state.get(\"browser\"), dict)\n                and type(state[\"browser\"].get(\"pending_actions\")) is int\n                and state[\"browser\"][\"pending_actions\"] == 0\n                and (not browser or state[\"browser\"].get(\"running\") is False))\n",
+    "target": "tests/integration/test_computer_lifecycle.py::test_quiet_matches_guest_browser_payload_shapes"
+  },
+  {
+    "name": "registry ownership permits passive stopped observation",
+    "file": "deploy/computer/lifecycle_controller.py",
+    "old": "            if action == \"observe\":\n                if status not in {\"running\", \"stopped\"}:\n                    raise UnavailableError(\"owned VM state unavailable\")\n                if owned is None:\n                    self.endpoint(scope)  # validate existing host registry authority\n                    last_activity = (self.registry / f\"{scope}.json\").stat().st_mtime\n                else:\n                    last_activity = owned[\"last_activity\"]\n                return {\"status\": \"ok\", \"state\": status,\n                        \"idle_eligible\": (status == \"running\" and\n                            time.time() - last_activity >= self.idle_seconds)}\n",
+    "new": "            if action == \"observe\":\n                if owned is None or status not in {\"running\", \"stopped\"}:\n                    raise UnavailableError(\"owned VM state unavailable\")\n                return {\"status\": \"ok\", \"state\": status}\n",
+    "target": "tests/integration/test_computer_lifecycle.py::test_registry_only_scopes_are_observed_without_adoption_and_idle_stopped"
+  },
+  {
+    "name": "registry ownership permits idle stop",
+    "file": "deploy/computer/lifecycle_controller.py",
+    "old": "            if owned is None:\n                if action != \"idle-stop\" or status not in {\"running\", \"stopped\"}:\n                    raise UnavailableError(\"no owned scope\")\n                self.endpoint(scope)  # same registry authority as acquire/observe\n                owned = {\"scope\": scope, \"name\": name, \"operation\": operation,\n                         \"lease\": \"\", \"phase\": \"ready\" if status == \"running\" else \"stopped\",\n                         \"last_activity\": (self.registry / f\"{scope}.json\").stat().st_mtime}\n                atomic(path, owned)\n",
+    "new": "            if owned is None:\n                raise UnavailableError(\"no owned scope\")\n",
+    "target": "tests/integration/test_computer_lifecycle.py::test_registry_only_scopes_are_observed_without_adoption_and_idle_stopped"
+  },
+  {
+    "name": "successful-create receipt restarts stopped partial disk",
+    "file": "deploy/computer/nora-computer",
+    "old": "    if [ \"$state\" = stopped ] && [ -f \"$intent\" ]; then\n        owned_boot=$(cat \"$intent\")\n        # A private successful-create receipt is the pre-publication ownership\n        # authority. Restart its retained disk, then publish the observed boot.\n        if [[ \"$owned_boot\" != \"$box \"* ]] || [ -z \"${owned_boot#\"$box \"}\" ]; then\n            log \"conflicting partial scope ownership\"; exit 4\n        fi\n        scope_egress \"$box\" || exit 4\n        sbx start \"$box\" </dev/null || exit 6\n        live_boot=$(sbx exec -u root \"$box\" cat /proc/sys/kernel/random/boot_id </dev/null) || exit 5\n        [ -n \"$live_boot\" ] || exit 5\n        printf '%s %s\\n' \"$box\" \"$live_boot\" > \"$intent\" || exit 5\n        state=$(scope_state \"$scope\")\n    fi\n",
+    "new": "",
+    "target": "tests/unit/test_nora_computer_script.py::test_stopped_partial_provision_restarts_only_with_successful_create_receipt"
+  },
+  {
+    "name": "ineligible empty sweep writes no maintenance row",
+    "file": "nora/infra/computer/manager.py",
+    "old": "        if not open_rows and browser_up is not True:\n            if self._lifecycle is None:\n                return 0  # manual mode has no VM idle transition\n            observed = await self._lifecycle.request(\"observe\", scope, str(uuid.uuid4()))\n            if observed.get(\"status\") != \"ok\" or observed.get(\"idle_eligible\") is not True:\n                return 0  # passive eligibility avoids a durable row on every idle tick\n",
+    "new": "        if not open_rows and browser_up is not True and self._lifecycle is None:\n            return 0  # manual mode has no VM idle transition\n",
+    "target": "tests/integration/test_computer_lifecycle.py::test_empty_sweeps_claim_only_when_host_idle_is_eligible"
   }
 ]

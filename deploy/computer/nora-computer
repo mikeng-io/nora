@@ -966,6 +966,20 @@ scope_provision() {
     local state
     state=$(scope_state "$scope")
     local intent="$STATE_DIR/scope-owned-$scope" owned_boot="" live_boot=""
+    if [ "$state" = stopped ] && [ -f "$intent" ]; then
+        owned_boot=$(cat "$intent")
+        # A private successful-create receipt is the pre-publication ownership
+        # authority. Restart its retained disk, then publish the observed boot.
+        if [[ "$owned_boot" != "$box "* ]] || [ -z "${owned_boot#"$box "}" ]; then
+            log "conflicting partial scope ownership"; exit 4
+        fi
+        scope_egress "$box" || exit 4
+        sbx start "$box" </dev/null || exit 6
+        live_boot=$(sbx exec -u root "$box" cat /proc/sys/kernel/random/boot_id </dev/null) || exit 5
+        [ -n "$live_boot" ] || exit 5
+        printf '%s %s\n' "$box" "$live_boot" > "$intent" || exit 5
+        state=$(scope_state "$scope")
+    fi
     if [ "$state" = running ] && [ -f "$intent" ]; then
         owned_boot=$(cat "$intent")
         live_boot=$(sbx exec -u root "$box" cat /proc/sys/kernel/random/boot_id </dev/null 2>/dev/null) || live_boot=""

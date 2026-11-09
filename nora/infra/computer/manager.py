@@ -685,8 +685,8 @@ class ScopeBrowserManager:
         once let a stop land under a mid-segment owner is gone — the claim
         IS the check), a `queued` row makes the pass wait for real work,
         and while the pass holds its row no successor can be granted. A
-        scope with nothing open and no live browser is left untouched —
-        an empty tick never writes a maintenance row."""
+        scope with nothing open and no live browser is left untouched unless
+        the host passively reports it eligible for an idle VM transition."""
         binding = await self._runtime.binding(scope)
         if binding is None:
             return 0  # no verified VM: nothing safe to do this pass
@@ -697,8 +697,12 @@ class ScopeBrowserManager:
             return 0
         open_rows = [r for r in rows if r.status == OPEN]
         browser_up = await self._browser_running(scope)
-        if not open_rows and browser_up is not True and self._lifecycle is None:
-            return 0  # manual mode has no VM idle transition
+        if not open_rows and browser_up is not True:
+            if self._lifecycle is None:
+                return 0  # manual mode has no VM idle transition
+            observed = await self._lifecycle.request("observe", scope, str(uuid.uuid4()))
+            if observed.get("status") != "ok" or observed.get("idle_eligible") is not True:
+                return 0  # passive eligibility avoids a durable row on every idle tick
         if self._segments is None or self._tasks is None:
             # The un-owned half (no execution owner wired): the in-process
             # lock is the only boundary the scope has.

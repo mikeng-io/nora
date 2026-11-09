@@ -168,13 +168,18 @@ class Controller:
     def quiet(self, scope: str, endpoint: dict, *, browser: bool = False) -> bool:
         self.guest(scope, endpoint, "identity")
         state = self.guest(scope, endpoint, "state")
-        # Explicit presence/type is required; omitted fields never mean quiet.
+        browser_state = state.get("browser")
+        if not isinstance(browser_state, dict):
+            return False
+        running = browser_state.get("running")
+        pending = browser_state.get("pending_actions")
+        # BrowserPool.status omits pending_actions when the browser is stopped.
+        drained = running is False or (
+            running is True and type(pending) is int and pending == 0)
         return (state.get("status") == "ok" and state.get("processes") == []
                 and state.get("tmux") == [] and type(state.get("runs")) is int
-                and state["runs"] == 0 and isinstance(state.get("browser"), dict)
-                and type(state["browser"].get("pending_actions")) is int
-                and state["browser"]["pending_actions"] == 0
-                and (not browser or state["browser"].get("running") is False))
+                and state["runs"] == 0 and drained
+                and (not browser or running is False))
 
     def dispatch(self, body: dict) -> dict:
         if (not isinstance(body, dict) or set(body) != {"action", "scope", "operation"}
@@ -193,9 +198,16 @@ class Controller:
             name = "nora-computer-" + scope[:12]
             status = boxes.get(name, "absent")
             if action == "observe":
-                if owned is None or status not in {"running", "stopped"}:
+                if status not in {"running", "stopped"}:
                     raise UnavailableError("owned VM state unavailable")
-                return {"status": "ok", "state": status}
+                if owned is None:
+                    self.endpoint(scope)  # validate existing host registry authority
+                    last_activity = (self.registry / f"{scope}.json").stat().st_mtime
+                else:
+                    last_activity = owned["last_activity"]
+                return {"status": "ok", "state": status,
+                        "idle_eligible": (status == "running" and
+                            time.time() - last_activity >= self.idle_seconds)}
             if action == "acquire":
                 if owned is None:
                     registered = (self.registry / f"{scope}.json").exists()
@@ -264,7 +276,13 @@ class Controller:
                 atomic(path, owned)
                 return {"status": "ok", "instance": endpoint["instance"]}
             if owned is None:
-                raise UnavailableError("no owned scope")
+                if action != "idle-stop" or status not in {"running", "stopped"}:
+                    raise UnavailableError("no owned scope")
+                self.endpoint(scope)  # same registry authority as acquire/observe
+                owned = {"scope": scope, "name": name, "operation": operation,
+                         "lease": "", "phase": "ready" if status == "running" else "stopped",
+                         "last_activity": (self.registry / f"{scope}.json").stat().st_mtime}
+                atomic(path, owned)
             if action == "release":
                 if owned.get("lease") != operation:
                     raise UnavailableError("operation does not own lease")

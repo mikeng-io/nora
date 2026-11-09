@@ -54,7 +54,15 @@ authority, not an additional model-facing tool. Unauthenticated or malformed
 requests must have no host effect. Revocation prevents new acquisition; running
 work follows existing cancellation/drain semantics. It never deletes the disk.
 
-The API exposes acquire/release/idle-stop and passive observation. Leases are durable operation ownership,
+The API exposes acquire/release/idle-stop and passive observation. Passive
+observation accepts the same validated host registry authority as acquisition;
+it never writes an adoption record or starts a VM. Its idle-eligibility hint
+avoids maintenance rows before the idle interval, while the elected owner and
+controller recheck remain authoritative for stopping. A stopped browser reports
+only `running = false`; absence of its pending-action field is valid in that
+state, while a running browser must report a numeric zero before drain.
+
+Leases are durable operation ownership,
 not expiring timers: a long call cannot lose protection because renewal was delayed.
 Release and recovery require positively quiet guest state; an elected successor
 may reconcile an abandoned operation only after the existing SQL owner permits it.

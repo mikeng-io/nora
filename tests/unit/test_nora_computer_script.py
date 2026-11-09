@@ -524,3 +524,32 @@ echo "systemctl stop $3" >> "$STUB_DIR/calls.log"
     assert next(i for i,c in enumerate(calls) if c.startswith("systemctl stop")) < next(
         i for i,c in enumerate(calls) if c.startswith("sbx stop"))
     assert not host.sbx_calls("run") and not host.sbx_calls("rm")
+
+
+def test_stopped_partial_provision_restarts_only_with_successful_create_receipt(tmp_path):
+    from tests.unit.nora_computer_harness import _SBX
+
+    scope = "1234567890abcdef"
+    box = "nora-computer-" + scope[:12]
+    host = Host(tmp_path, sandbox=False)
+    stub = _SBX.replace("nora-computer", box).replace('case "$1" in', """case \"$1\" in
+  start) echo running > \"$STUB_DIR/sandbox\"; exit 0 ;;""").replace('  exec)\n', """  exec)
+      if [ \"${6:-}\" = /proc/sys/kernel/random/boot_id ]; then
+          echo \"${STUB_BOOT_ID:-boot-generated}\"; exit 0
+      fi
+""")
+    host._install("sbx", stub)
+    assert host.run("scope", "provision", scope, STUB_DENY_FAILS="1").returncode != 0
+    assert len(host.sbx_calls("run")) == 1
+    record = host.state_dir / "scope-endpoints" / f"{scope}.json"
+    (host.dir / "sandbox").write_text("stopped")
+    # A retained disk may get a fresh boot on start; the private successful-create
+    # receipt authorizes that start just as the published registry does later.
+    recovered = host.run("scope", "provision", scope, STUB_BOOT_ID="restarted-boot")
+    assert recovered.returncode == 0, recovered.stderr
+    assert record.exists()
+    assert len(host.sbx_calls("start")) == 1 and len(host.sbx_calls("run")) == 1
+    record.unlink()
+    (host.dir / "sandbox").write_text("stopped")
+    assert host.run("scope", "provision", scope).returncode != 0
+    assert len(host.sbx_calls("start")) == 1  # no receipt: no effect on a foreign disk
