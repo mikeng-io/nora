@@ -1,0 +1,10 @@
+# Host-only installation settings; copy privately and set every limit explicitly.
+wrapper = "/home/OPERATOR/workspace/nora/deploy/computer/nora-computer"
+state = "/home/OPERATOR/.local/state/nora-computer/controller"
+registry = "/home/OPERATOR/.local/state/nora-computer/scope-endpoints"
+socket = "/home/OPERATOR/.local/state/nora-computer/control/lifecycle.sock"
+# These examples are not sizing advice. All running VMs count against max_running.
+max_running = 2
+guest_bytes = 3221225472 # must match NORA_COMPUTER_MEMORY=3g in wrapper and scope unit
+headroom_bytes = 4294967296
+idle_seconds = 900

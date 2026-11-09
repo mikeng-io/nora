@@ -2301,6 +2301,7 @@ class ComputerScopedConfig(BaseModel):
 
     enabled: bool = False
     registry: str = ""
+    lifecycle_socket: str = ""
     redis_url_env: str = "NORA_COMPUTER_REDIS_URL"
     browser_idle_seconds: float = Field(default=600.0, gt=0)
     browser_sweep_seconds: float = Field(default=30.0, gt=0)

@@ -340,7 +340,7 @@ class _Rig:
     runtime: _FakeScopedRuntime
 
 
-def _wired(monkeypatch, *, instance="boot-1", tasks=None, segments=None) -> _Rig:
+def _wired(monkeypatch, *, instance="boot-1", tasks=None, segments=None, lifecycle=None) -> _Rig:
     """A manager whose CDP/browser seams are the in-memory pair above."""
     cdp = _Cdp()
     endpoints = FakeScopeEndpoints()
@@ -365,7 +365,7 @@ def _wired(monkeypatch, *, instance="boot-1", tasks=None, segments=None) -> _Rig
     monkeypatch.setattr(mgr_mod, "open_browser_tab", fake_tab)
     return _Rig(
         manager=ScopeBrowserManager(
-            runtime=runtime, tabs=tabs, tasks=tasks, segments=segments,
+            runtime=runtime, tabs=tabs, tasks=tasks, segments=segments, lifecycle=lifecycle,
             token="t",  # noqa: S106 - a test token
             clock=clock(), idle_after=timedelta(minutes=10)),
         tabs=tabs, cdp=cdp, runtime=runtime)
