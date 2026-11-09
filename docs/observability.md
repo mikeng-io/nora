@@ -205,8 +205,10 @@ and prints the trace reference on stderr while retaining the JSON report on
 stdout. There is no private-only project/inspection exemption. Each run has a
 unique identity; each selected replay wake is one case spanning preparation,
 writer, both fact judges and cleanup. Its stable case name uses unit/wake identity;
-metadata binds wake time, frozen cohort hash, seed and snapshot locator fingerprint, and
-the completed writer records its session identity. Rescore cases bind source
+metadata binds wake time, `frozen_sample_sha256`, seed and snapshot locator fingerprint,
+while the row's `sample_sha256` identifies that case input and metadata. The completed
+writer records its session identity. Non-smoke engine comparisons have their own case.
+Rescore cases bind source
 hash/session event IDs; diagnostic cases bind the deduplicated statement's source
 session. This grouping changes neither judge inputs nor replay selection/budgets.
 

@@ -735,6 +735,19 @@ def test_missing_model_request_is_capture_error():
     assert receipt["status"] == "ERROR" and "request_capture_missing" in receipt["causes"]
 
 
+@pytest.mark.parametrize("section", [
+    'obs = "generated-invalid-table"',
+    '[obs]\ntracing = "generated-invalid-table"',
+    '[obs.tracing]\nendpoint = ["generated-invalid-url"]',
+])
+def test_malformed_visibility_config_is_a_clean_refusal(tmp_path, section):
+    from nora.subject.eval_evidence import evaluation_export_for
+    config = tmp_path / "generated.toml"
+    config.write_text(section)
+    with pytest.raises(EvidenceError, match="configured evaluation visibility unavailable"):
+        evaluation_export_for(config)
+
+
 async def test_dropped_eval_content_invalidates_visibility(evidence_root, monkeypatch):
     from opentelemetry.sdk.trace.export import SpanExportResult
 

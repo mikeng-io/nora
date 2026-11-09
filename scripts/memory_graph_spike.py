@@ -1012,7 +1012,7 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
             with evidence.case(
                 f"wake:{view.unit}:{wake['id']}", input=wake,
                 metadata={"wake_id": wake["id"], "unit": view.unit, "replay_ms": replay_ms,
-                          "sample_sha256": sample_sha256, "seed": args.seed,
+                          "frozen_sample_sha256": sample_sha256, "seed": args.seed,
                           "snapshot_locator_sha256": hashlib.sha256(
                               args.database_url.encode()).hexdigest()},
             ):
@@ -1155,9 +1155,14 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
         if not args.smoke:
             age_dir = output / "age"
             age_dir.mkdir(mode=0o700)
-            age_results.append(
-                await age_comparison(engine, args.age_url, judges, age_dir, args.minimum)
-            )
+            evidence = current()
+            if evidence is None:
+                raise ValueError("capture_unavailable")
+            with evidence.case("engine-comparison", input={"minimum": args.minimum},
+                               metadata={"frozen_sample_sha256": sample_sha256}):
+                age_results.append(
+                    await age_comparison(engine, args.age_url, judges, age_dir, args.minimum)
+                )
         health = session_smoke(results)
         report = {
             "driver": "cognition_session",
@@ -1596,8 +1601,11 @@ async def run_rescore(args: Any) -> dict[str, Any]:
     _prefill_capture()
     output = private_directory(args.output)
     with TemporaryFile() as lock:
-        evidence = RunEvidence(run_id=f"rescore-{uuid.uuid4().hex}", metadata=revision(Path.cwd()),
-                               lock_fd=lock.fileno(), private_root=output)
+        evidence = RunEvidence(run_id=f"rescore-{uuid.uuid4().hex}", metadata={
+            **revision(Path(__file__).resolve().parents[1]),  # noqa: ASYNC240
+            "config_sha256": fingerprint(args.config),
+            "source_locator_sha256": hashlib.sha256(str(args.rescore).encode()).hexdigest(),
+        }, lock_fd=lock.fileno(), private_root=output)
         report: dict[str, Any] = {"status": "ERROR"}
         try:
             with evidence.capture(trace.get_tracer_provider(), export=export):
@@ -1623,8 +1631,12 @@ async def run_diagnostic(args: Any) -> dict[str, Any]:
     output = private_directory(args.output)
     with TemporaryFile() as lock:
         evidence = RunEvidence(run_id=f"diagnostic-{uuid.uuid4().hex}",
-                               metadata=revision(Path.cwd()),
-                               lock_fd=lock.fileno(), private_root=output)
+                               metadata={
+            **revision(Path(__file__).resolve().parents[1]),  # noqa: ASYNC240
+            "config_sha256": fingerprint(args.config),
+            "source_locator_sha256": hashlib.sha256(
+                str(args.decision_judge).encode()).hexdigest(),
+        }, lock_fd=lock.fileno(), private_root=output)
         report: dict[str, Any] = {"status": "ERROR"}
         try:
             with evidence.capture(trace.get_tracer_provider(), export=export):

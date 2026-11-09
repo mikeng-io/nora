@@ -142,7 +142,8 @@ async def test_memory_graph_replay_exports_writer_and_judges(
     events = read_events(next(args.output.glob("spike-*")))
     starts = [e for e in events if e["kind"] == "case_started"]
     cohort = spike.fingerprint(args.output / "sample.json")
-    assert all(e["metadata"]["sample_sha256"] == cohort for e in starts)
+    assert all(e["metadata"]["frozen_sample_sha256"] == cohort for e in starts)
+    assert all("sample_sha256" not in e["metadata"] for e in starts)
     assert all(e["metadata"]["snapshot_locator_sha256"] and e["metadata"]["replay_ms"]
                for e in starts)
     assert {e["wake_id"] for e in events if e["kind"] == "replay_session"} == {1, 2}
@@ -159,6 +160,11 @@ async def test_scoring_entrypoints_export_real_judge_call(
         export_fails):
     config = tmp_path / "generated.toml"
     configured_sink(example_config_path, config)
+    # Source provenance belongs to the executing checkout, even when launched
+    # from a private output directory with no repository or lockfile.
+    from pathlib import Path
+    source_head = spike.revision(Path(spike.__file__).resolve().parents[1])["head"]  # noqa: ASYNC240
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(spike, "load", lambda _: SimpleNamespace(
         llm=SimpleNamespace(timeout_seconds=5)))
     monkeypatch.setattr(spike, "model_endpoint", lambda path, purpose, model="": (
@@ -190,6 +196,11 @@ async def test_scoring_entrypoints_export_real_judge_call(
         assert dispatches == []
         return
     assert report["evidence"]["status"] == "PASS" and len(dispatches) == 1
+    events = read_events(next((tmp_path / "output").glob("*-*")))
+    metadata = next(e["metadata"] for e in events if e["kind"] == "run_started")
+    assert source_head and metadata["head"] == source_head
+    assert metadata["config_sha256"] == spike.fingerprint(config)
+    assert metadata["source_locator_sha256"]
     assert any(attrs(s).get("gen_ai.operation.name") == "chat" for s in exported_spans(otlp_wire))
     assert "eval trace: " in capsys.readouterr().err
 

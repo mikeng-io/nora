@@ -702,6 +702,8 @@ def generated_replay_environment(tmp_path, monkeypatch):
     real_age = spike.age_comparison
 
     async def spy(engine, age_url, judges, output_dir, minimum):
+        from opentelemetry import trace
+        assert trace.get_current_span().name == "eval.case"
         bound.append(engine.url)
         return await real_age(engine, age_url, judges, output_dir, minimum)
 

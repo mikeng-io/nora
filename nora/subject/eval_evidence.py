@@ -42,7 +42,7 @@ def evaluation_export_for(config: Path) -> Any:
         with config.open("rb") as config_file:
             tracing = tomllib.load(config_file).get("obs", {}).get("tracing", {})
         return evaluation_export(tracing)
-    except (OSError, ValueError, RuntimeError) as exc:
+    except (OSError, ValueError, RuntimeError, AttributeError, TypeError, KeyError) as exc:
         raise EvidenceError("configured evaluation visibility unavailable") from exc
 
 
@@ -70,6 +70,8 @@ class RunEvidence(SpanProcessor, logging.Handler):
 
     The processor is attached to the SAME provider as the existing in-memory
     evaluator. Context propagation confines records to this run and its cases.
+    The caller owns single-run isolation: capture swaps process-global tracing
+    state and must not overlap another capture or runtime work in this process.
     """
 
     def __init__(self, *, run_id: str, metadata: Mapping[str, Any], lock_fd: int,
