@@ -2,8 +2,8 @@
   {
     "name": "smoke errors cannot pass",
     "file": "scripts/memory_graph_spike.py",
-    "old": "\"ERROR\"\n        if errors or missing or len(samples) < 5",
-    "new": "\"PASS\"\n        if errors or missing or len(samples) < 5",
+    "old": "\"ERROR\"\n        if (errors or missing or len(samples) < 5\n            or (expected is not None and len(samples) != expected))",
+    "new": "\"PASS\"\n        if (errors or missing or len(samples) < 5\n            or (expected is not None and len(samples) != expected))",
     "target": "tests/unit/test_memory_graph_spike.py::test_session_smoke_marks"
   },
   {

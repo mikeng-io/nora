@@ -873,7 +873,7 @@ async def test_source_event_links_to_its_shown_transcript_row():
     pin_events = [e for e in ctx.source_events if e.kind == "pin"]
     assert len(pin_events) == 2
     assert all(e.target_message_id is None for e in pin_events)
-    transcript_part = prompt.split("<group_transcript")[1]
+    transcript_part = prompt.split("<transcript")[1]
     assert all(' on="' not in line
                for line in transcript_part.splitlines()
                if line.startswith("<source_event"))

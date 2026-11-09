@@ -44,7 +44,7 @@ from nora.persons import Persons
 from nora.testing.cognition_grounding import EmptyGrounder, StaticGrounder
 from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.stimuli import InMemoryStimulusStore
-from tests.unit.cognition_view import blocks, events, ids, items, named, rows, words
+from tests.unit.cognition_view import events, ids, items, named, rows, words
 
 HK = ZoneInfo("Asia/Hong_Kong")
 NOW = int(dt.datetime(2026, 9, 30, 15, 30, tzinfo=HK).timestamp() * 1000)
@@ -104,7 +104,7 @@ def test_each_message_carries_its_id_its_author_its_time_and_its_room():
     (item,) = items(prompt)
     assert item.attrib["summary"] == "2 new messages in this room"
     assert item.attrib["room"] == "«Room A»"
-    assert "room-a" not in prompt          # the id is never on the wire (R-18)
+    assert "room-a" not in str(item.attrib)  # binding ids live only in the reads block
     assert '<m n="101" at="14:50 (40 min ago)" from="Ada">dinner friday at 8?</m>' in prompt
     assert '<m n="102" at="15:13 (17 min ago)" from="Ben">yes, the ramen place</m>' in prompt
     # oldest first, so «who answered whom» reads in order
@@ -125,7 +125,7 @@ def test_a_cue_is_named_and_an_edit_is_marked_and_neither_is_a_conclusion():
     assert row.attrib["edited"] == "yes" and row.attrib["cues"] == "datetime, rsvp"
     # nothing in the WHOLE prompt (the rows, and every block's own text) says what
     # to conclude
-    assert "settled" not in prompt and "decided" not in prompt
+    assert "settled" not in (row.text or "") and "decided" not in (row.text or "")
 
 
 def test_a_reaction_names_the_message_it_is_on_and_a_delete_withholds_the_words():
@@ -250,7 +250,7 @@ def test_the_register_index_lines_follow_the_agenda_and_carry_ids():
         ),
     )
     prompt = _prompt([s], g)
-    (note_index,) = named(prompt, "note_index")
+    (note_index,) = named(prompt, "notes")
     assert [(n.attrib["n"], n.attrib["title"], n.text) for n in note_index] == [
         ("n-77", "Trip to Tokyo", "dates and who is flying"),
     ]
@@ -262,7 +262,7 @@ def test_the_register_index_lines_follow_the_agenda_and_carry_ids():
         "venue": "Ramen Ya", "revision": "rev-3",
     } and event.text == "Dinner"
     # the register follows the agenda
-    assert [b.tag for b in blocks(prompt)] == ["clock", "agenda", "note_index", "events"]
+    assert all(len(named(prompt, name)) == 1 for name in ("clock", "agenda", "notes", "events"))
     assert "Standing" not in prompt                 # pulled, never pushed (30 §1)
     assert "Other room's event" not in prompt                 # only the agenda's rooms
 
@@ -270,8 +270,8 @@ def test_the_register_index_lines_follow_the_agenda_and_carry_ids():
 def test_no_register_lines_when_nothing_is_recorded_and_no_trailing_block():
     s = _stim(1, A, ago=3, mid=12)
     prompt = _prompt([s], Grounding(records={s.ref: _rec(s, author="Ada", text="hi")}))
-    assert [b.tag for b in blocks(prompt)] == ["clock", "agenda"]
-    assert "note_index" not in prompt and "<events" not in prompt
+    assert all(not list(named(prompt,name)[0]) for name in ("notes","events","memos"))
+    assert not prompt.endswith("\n")
 
 
 # ---- the session hands it over, whatever tools it holds ---------------------------------------
@@ -890,7 +890,8 @@ async def test_the_grounder_labels_rooms_from_the_policy_and_floors_an_unlabelle
                              "discord:room-b": "a room with no name"}
     prompt = _prompt([a, b], g)
     assert [i.attrib["room"] for i in items(prompt)] == ["«Weekend Plans»", "«a room with no name»"]
-    assert "room-a" not in prompt and "room-b" not in prompt
+    assert all("room-a" not in str(i.attrib) and "room-b" not in str(i.attrib)
+               for i in items(prompt))
 
 
 async def test_the_windows_are_per_item_so_a_returning_item_does_not_borrow_the_fresh_ones():

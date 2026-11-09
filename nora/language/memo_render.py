@@ -64,12 +64,11 @@ def memo_rows(
     return rows, len(kept) - len(rows)
 
 
-def render_memos(memos: Sequence[Memo], *, tz: tzinfo) -> ContextBlock | None:
+def render_memos(memos: Sequence[Memo], *, tz: tzinfo,
+                 lines: int = MEMO_LINES, chars: int = MEMO_CHARS) -> ContextBlock:
     """The tag and fire turns' `<memos>` block at the default cap, or `None`
     when nothing is kept."""
-    rows, left_out = memo_rows(memos, tz=tz)
-    if not rows and not left_out:
-        return None
+    rows, left_out = memo_rows(memos, tz=tz, lines=lines, chars=chars)
     return ContextBlock(
         name="memos", body=compose_body("\n".join(rows)),
         attrs=(("not_listed", str(left_out)),) if left_out else (),

@@ -134,7 +134,8 @@ class WakeMemory:
                 stimulus = stimuli[sid]
                 start = len(sources)
                 row = grounding.records.get(stimulus.ref)
-                if row is not None and row.text is not None:
+                # A reaction's actor does not author its target's words.
+                if row is not None and row.kind != "reaction" and row.text is not None:
                     sources.append(Source(("message", str(row.message_id)), "record", state.unit,
                                           (row.person_id,) if row.person_id else (), row.text))
                     # `records.load` answers TODAY's projected source — its

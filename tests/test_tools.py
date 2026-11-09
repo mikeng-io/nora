@@ -137,28 +137,46 @@ def test_every_declared_tool_is_built(wiring):
         # DEC-146: the window-scoped rung of the recall ladder, below
         # `load_transcript`. Exercised in tests/test_who_said.py.
         "who_said",
-        "now", "load_transcript", "send_reply", "reaction_send", "search_gifs", "send_gif",
+        "now",
+        "load_transcript",
+        "send_reply",
+        "reaction_send",
+        "search_gifs",
+        "send_gif",
         "send_to",
         # The room tools.
-        "room_list", "room_read",
+        "room_list",
+        "room_read",
         # The Record under lineage.
         "record_query",
         # The observation Record's task reads (design/platform-observations
         # 05): built like every closure; with no observation store wired they
         # answer `unavailable` rather than `nothing_found`.
-        "poll_list", "poll_read", "room_state_read",
+        "poll_list",
+        "poll_read",
+        "room_state_read",
         # Built here like every closure; only a Dreamer loop is OFFERED them
         # (`nora.agent.surface.DREAMER_LOOP_TOOLS`).
-        "rollup_read", "standing_read", "character_read", "social_read",
-        "group_members", "lookup_person", "about", "ask_memory", "search_memory",
+        "rollup_read",
+        "standing_read",
+        "character_read",
+        "social_read",
+        "group_members",
+        "lookup_person",
+        "about",
+        "ask_memory",
+        "search_memory",
         "recall_lookups",
         # `search_memory_workspace` IS built here — `build_tools` builds every
         # closure. Which ones a ROOM sees is `ToolScope`'s decision, applied
         # by `ToolRegistry.surface()`, and the Dreamer-only cut is pinned there:
         # tests/unit/test_tool_registry.py (`dreamer - tag`).
         "search_memory_workspace",
-        "calculate", "transit", "route",
-        "place_info", "saved_places",
+        "calculate",
+        "transit",
+        "route",
+        "place_info",
+        "saved_places",
         "where_is",
         # DEC-156: the fetch surface — coordinate to place, the read half.
         "reverse_geocode",
@@ -173,14 +191,18 @@ def test_every_declared_tool_is_built(wiring):
         # A shared file link, read as text.
         "file_fetch",
         "generate_image",
-        "media_search", "media_send",
-        "web_search", "web_fetch",
+        "media_search",
+        "media_send",
+        "web_search",
+        "web_fetch",
         # x_read and x_search (DEC-201):
         # READ-ONLY X via the host bridge.
-        "x_read", "x_search",
+        "x_read",
+        "x_search",
         # linkedin_read and linkedin_search (DEC-201): READ-ONLY LinkedIn via
         # the same host bridge, inert unless [social.linkedin] enabled.
-        "linkedin_read", "linkedin_search",
+        "linkedin_read",
+        "linkedin_search",
         # instagram_read: a person's Instagram
         # profile or story, over the instagram-bridge.
         "instagram_read",
@@ -195,35 +217,62 @@ def test_every_declared_tool_is_built(wiring):
         # The six music verbs are built here too. The Discord-only cut
         # is `ToolScope`'s, pinned by
         # `test_non_discord_catalog_omits_music_tools`.
-        "play_music", "skip_music", "top_music", "stop_music",
-        "music_status", "set_music_volume",
+        "play_music",
+        "skip_music",
+        "top_music",
+        "stop_music",
+        "music_status",
+        "set_music_volume",
         # The loader. Built for every turn;
         # `surface()` hands it to the model only when something is deferred.
         "load_tools",
-        "remind", "list_reminders", "cancel_reminder",
+        "remind",
+        "list_reminders",
+        "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
-        "event_propose", "event_revise", "event_rsvp", "event_set_status",
-        "event_search", "suggest_venue",
+        "event_propose",
+        "event_revise",
+        "event_rsvp",
+        "event_set_status",
+        "event_search",
+        "suggest_venue",
         # Nora's computer (DEC-243).
-        "computer_run", "computer_read", "computer_write", "computer_edit",
-        "computer_export", "computer_import", "computer_session_list",
+        "computer_run",
+        "computer_read",
+        "computer_write",
+        "computer_edit",
+        "computer_export",
+        "computer_import",
+        "computer_session_list",
         # Built here; offered only with a browser runner.
         "computer_browse",
         # Scoped-computer pair: built here like every closure; offered only
         # with `[computer.scoped]` wiring (the queue and the browser manager).
-        "computer_capture", "computer_cancel",
+        "computer_capture",
+        "computer_cancel",
         # A document is published to the web app, read back to edit.
-        "document_publish", "document_read", "document_set_status",
+        "document_publish",
+        "document_read",
+        "document_set_status",
+        "document_list",
+        "document_revise",
         # Subagents (DEC-283).
-        "subagent_create", "subagent_list", "subagent_read", "subagent_cancel",
+        "subagent_create",
+        "subagent_list",
+        "subagent_read",
+        "subagent_cancel",
         # Built here; offered only when `[video_gen]` is wired.
         "video_create",
         # The worker's own place-keeper.
         "checkpoint_update",
         # Running build context plus public release metadata and notes.
-        "version_list", "version_read",
+        "version_list",
+        "version_read",
         # The note tier's four verbs.
-        "note_read", "note_search", "note_create", "note_revise",
+        "note_read",
+        "note_search",
+        "note_create",
+        "note_revise",
         # DEC-306: one kept memo of the unit.
         "memo_read",
         # The remember verb — the conclusion write lane.

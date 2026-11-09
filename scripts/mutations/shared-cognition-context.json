@@ -1,0 +1,86 @@
+[
+  {
+    "name": "unit boundary before any related read",
+    "file": "nora/app/cognition_context.py",
+    "old": "or room.unit != unit",
+    "new": "or False",
+    "target": "tests/unit/test_cognition_shared_context.py::test_foreign_agenda_fails_before_related_subject_or_member_reads"
+  },
+  {
+    "name": "explicit shared audience authorization rechecked on document ids and handles",
+    "file": "nora/app/documents_service.py",
+    "old": "if self._shared_room is not None and self._shared_room(person_id.unit, p, c)",
+    "new": "if True",
+    "target": "tests/unit/test_documents_service.py::test_autonomous_documents_deny_unknown_wildcard_foreign_and_nonagenda"
+  },
+  {
+    "name": "quoted replacement retains evidence qualifiers",
+    "file": "nora/app/documents_service.py",
+    "old": "if not any(new == sources[n][2].strip() for n in ids):",
+    "new": "if False:",
+    "target": "tests/unit/test_documents_service.py::test_autonomous_document_revisions_fail_closed_on_unsupported_evidence[uncertain]"
+  },
+  {
+    "name": "every emitted field is explained by its declaration",
+    "file": "nora/domain/blocks.py",
+    "old": "if unexplained:",
+    "new": "if False:",
+    "target": "tests/unit/test_cognition_shared_context.py::test_assembly_rejects_undeclared_fields_and_failed_content"
+  },
+  {
+    "name": "declared block decisions must match their canonical decision table row",
+    "file": "nora/language/cognition_render.py",
+    "old": "\"when, and how long ago\"",
+    "new": "\"invented unrelated decision\"",
+    "target": "tests/unit/test_cognition_shared_context.py::test_governance_declared_decisions_shared_ownership_and_no_legacy_escape"
+  },
+  {
+    "name": "interleaved context rows use the actual shared media custody join",
+    "file": "nora/app/cognition_context.py",
+    "old": "if self._media_join is not None:",
+    "new": "if False:",
+    "target": "tests/unit/test_cognition_shared_context.py::test_reader_scope_related_profiles_and_real_assembly"
+  },
+  {
+    "name": "identically labelled rooms keep separate quote custody",
+    "file": "nora/language/context_render.py",
+    "old": "return f\"{line.platform}:{line.conversation_id}\" if line.platform else line.room",
+    "new": "return line.room",
+    "target": "tests/unit/test_cognition_shared_context.py::test_identically_named_rooms_cannot_resolve_each_others_quote_parent"
+  },
+  {
+    "name": "clipped qualifiers cannot authorize documentation revisions",
+    "file": "nora/app/cognition_session.py",
+    "old": "if not line.row.is_nora and text == (line.row.body or \"\"):",
+    "new": "if not line.row.is_nora:",
+    "target": "tests/unit/test_cognition_shared_context.py::test_document_evidence_refuses_clipped_qualifiers_but_accepts_complete_rows"
+  },
+  {
+    "name": "aliases beside CJK text resolve without an ASCII-space requirement",
+    "file": "nora/app/cognition_context.py",
+    "old": "text, flags=re.ASCII",
+    "new": "text",
+    "target": "tests/unit/test_cognition_shared_context.py::test_related_alias_next_to_cjk_text_resolves_to_its_stable_person"
+  },
+  {
+    "name": "source ids remain canonical integers rather than boolean aliases",
+    "file": "nora/app/documents_service.py",
+    "old": "any(type(n) is not int or n not in sources for n in ids)",
+    "new": "any(not isinstance(n, int) or n not in sources for n in ids)",
+    "target": "tests/unit/test_documents_service.py::test_autonomous_document_revisions_fail_closed_on_unsupported_evidence[bool_source]"
+  },
+  {
+    "name": "canonical mentions are not reinterpreted from an older raw envelope",
+    "file": "nora/app/cognition_context.py",
+    "old": "            for pid in row.mention_persons:\n                frequencies.setdefault(self._persons.subject_id_for(pid), 0)\n",
+    "new": "            for pid in row.mention_persons:\n                frequencies.setdefault(self._persons.subject_id_for(pid), 0)\n            from nora.engagement.character_who import _row_mentions\n            for raw_id in _row_mentions(row):\n                if (person := self._persons.resolve(platform, raw_id)) is not None:\n                    frequencies.setdefault(person.person_id, 0)\n",
+    "target": "tests/unit/test_cognition_shared_context.py::test_canonical_empty_mentions_do_not_reinterpret_an_older_raw_envelope"
+  },
+  {
+    "name": "profile subject ids remain canonical instead of gaining a kind prefix",
+    "file": "nora/language/profile_render.py",
+    "old": "(\"of\", view.of),",
+    "new": "(\"of\", f\"{view.entity}:{view.of}\"),",
+    "target": "tests/unit/test_profile_render.py::test_profile_tag_names_its_subject_and_author_by_id"
+  }
+]

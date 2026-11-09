@@ -18,6 +18,7 @@ from __future__ import annotations
 import dataclasses
 import json
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa
@@ -62,18 +63,25 @@ from nora.infra.sql.schema import (
 DEFAULT_MAX_PER_CONVERSATION = 500
 
 
-def _latest_edit(*, edits_before: int | None = None) -> Any:
+def _latest_edit(*, edits_before: int | None = None, known_before: int | None = None) -> Any:
     """The newest `message_edit` of the `messages` row in the enclosing
     query, as a LATERAL subquery — one backwards seek on
     `idx_message_edit_message_ts` per row read.
     `edits_before` is the as-of bound `nora.infra.sql.snapshot` reads at: an
     edit made after the instant being reconstructed had not happened yet."""
     stmt = sa.select(
-        MESSAGE_EDIT.c.ts, MESSAGE_EDIT.c.body, MESSAGE_EDIT.c.raw_json,
+        MESSAGE_EDIT.c.ts,
+        MESSAGE_EDIT.c.body,
+        MESSAGE_EDIT.c.raw_json,
         MESSAGE_EDIT.c.mentions_json,
+        MESSAGE_EDIT.c.mention_persons_json,
     ).where(MESSAGE_EDIT.c.message_id == MESSAGES.c.id)
     if edits_before is not None:
         stmt = stmt.where(MESSAGE_EDIT.c.ts <= edits_before)
+    if known_before is not None:
+        stmt = stmt.where(
+            MESSAGE_EDIT.c.recorded_at <= datetime.fromtimestamp(known_before / 1000, UTC)
+        )
     # NEWEST BY ARRIVAL, not by the edit's own clock. Ingest refuses an edit
     # older than the one on record (`edit_stale`) except where the platform
     # itself says it is newer — a Signal edit naming the latest revision, from
@@ -102,7 +110,9 @@ def turn_id_for_message(messages: Any = MESSAGES) -> Any:
 
 
 def transcript_select(
-    *, edits_before: int | None = None,
+    *,
+    edits_before: int | None = None,
+    known_before: int | None = None,
 ) -> Any:
     """The columns every transcript read returns, with the newest edit
     folded in. ONE select for `recent`, `since`, `since_including_nora`,
@@ -120,19 +130,40 @@ def transcript_select(
     then reads it through this same select, so a snapshot before a forget
     correctly shows the row unhidden; a production read never produces that
     image."""
-    latest = _latest_edit(edits_before=edits_before)
+    latest = _latest_edit(edits_before=edits_before, known_before=known_before)
     turn_id = turn_id_for_message()
-    hidden = MESSAGES.c.hidden_at.is_(None)
-    return sa.select(
-        MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
-        MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
-        MESSAGES.c.delivery_status, MESSAGES.c.raw_json,
-        MESSAGES.c.quoted_ts, MESSAGES.c.media_json, MESSAGES.c.person_id,
-        MESSAGES.c.external_files_json,
-        turn_id.label("turn_id"),
-        latest.c.ts.label("edit_ts"), latest.c.body.label("edit_body"),
-        latest.c.raw_json.label("edit_raw_json"),
-    ).select_from(MESSAGES.outerjoin(latest, sa.true())).where(hidden)
+    hidden: sa.ColumnElement[bool] = MESSAGES.c.hidden_at.is_(None)
+    if known_before is not None:
+        hidden = sa.and_(
+            hidden,
+            sa.cast(MESSAGES.c.created_at, sa.DateTime(timezone=True))
+            <= datetime.fromtimestamp(known_before / 1000, UTC),
+        )
+    return (
+        sa.select(
+            MESSAGES.c.id,
+            MESSAGES.c.sender_id,
+            MESSAGES.c.sender_name,
+            MESSAGES.c.ts,
+            MESSAGES.c.body,
+            MESSAGES.c.is_nora,
+            MESSAGES.c.delivery_status,
+            MESSAGES.c.raw_json,
+            MESSAGES.c.quoted_ts,
+            MESSAGES.c.media_json,
+            MESSAGES.c.person_id,
+            MESSAGES.c.external_files_json,
+            turn_id.label("turn_id"),
+            latest.c.ts.label("edit_ts"),
+            latest.c.body.label("edit_body"),
+            latest.c.raw_json.label("edit_raw_json"),
+            sa.func.coalesce(latest.c.mention_persons_json, MESSAGES.c.mention_persons_json).label(
+                "mention_persons_json"
+            ),
+        )
+        .select_from(MESSAGES.outerjoin(latest, sa.true()))
+        .where(hidden)
+    )
 
 
 def _edit_mentions_json(message: NormalizedMessage) -> str | None:
@@ -390,10 +421,8 @@ def transcript_row(r: Any) -> TranscriptRow:
         external_files_json=r.external_files_json,
         person_id=r.person_id,
         turn_id=r.turn_id,
-        edit=(
-            RowEdit(ts=r.edit_ts, was=r.body, raw_json=r.edit_raw_json)
-            if edited else None
-        ),
+        mention_persons=tuple(json.loads(r.mention_persons_json or "[]")),
+        edit=(RowEdit(ts=r.edit_ts, was=r.body, raw_json=r.edit_raw_json) if edited else None),
     )
 
 
@@ -1083,7 +1112,14 @@ class SqlRecordStore:
             # The attribution is the `authored_by` and `shared_by` edges.
             await memory_index.project(conn, "message", row_id, metrics=self._metrics)
 
-    async def room_activity(self, *, conversation_id: str, since_ts: int) -> RoomActivity:
+    async def room_activity(
+        self,
+        *,
+        conversation_id: str,
+        since_ts: int,
+        platform: str | None = None,
+        as_of_ms: int | None = None,
+    ) -> RoomActivity:
         """See `nora.domain.ports.RecordStore.room_activity`.
 
         One aggregate over `idx_messages_conv_ts (conversation_id, ts DESC)`,
@@ -1103,6 +1139,14 @@ class SqlRecordStore:
             MESSAGES.c.conversation_id == conversation_id,
             MESSAGES.c.is_nora == 0,
         )
+        if platform is not None:
+            stmt = stmt.where(MESSAGES.c.platform == platform)
+        if as_of_ms is not None:
+            stmt = stmt.where(
+                MESSAGES.c.ts <= as_of_ms,
+                sa.cast(MESSAGES.c.created_at, sa.DateTime(timezone=True))
+                <= datetime.fromtimestamp(as_of_ms / 1000, UTC),
+            )
         async with self._engine.connect() as conn:
             row = (await conn.execute(stmt)).one()
         return RoomActivity(

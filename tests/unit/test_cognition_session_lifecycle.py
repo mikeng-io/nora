@@ -704,7 +704,9 @@ async def test_items_past_max_items_come_back_on_the_next_agenda_with_a_strike()
     (item,) = second.agenda["items"]  # type: ignore[misc]
     assert item["stimulus_ids"] == [3] and item["strike"] == 1  # type: ignore[index]
     assert item["conversation_id"] == "room-c"  # type: ignore[index]
-    assert "room-c" not in rig.agent.prompts[1]  # the prompt says the label, never the id
+    assert (
+        'agenda_room="signal:room-c"' in rig.agent.prompts[1]
+    )  # canonical tool binding beside label
 
 
 async def test_an_unclosed_item_returns_with_a_strike_and_is_struck_at_max_strikes():

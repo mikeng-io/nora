@@ -567,7 +567,7 @@ def test_0_every_stage_of_the_journey_actually_ran(journey: _Journey) -> None:
     # which is one of the shapes `3a2` accepts for "the fold is told this row
     # went out"; pinning the full tag would make this control refuse a fix
     # `3a2` is written to pass.
-    assert 'at="2026-09-11 16:43"' in lines[1] and 'from="Nora"' in lines[1], (
+    assert 'at="2026-09-11T16:43:57"' in lines[1] and 'from="Nora"' in lines[1], (
         f"her sent row must render at 16:43 as the middle element; got {lines}"
     )
     assert ROUTE_ANSWER[:12] in lines[1], (
@@ -734,7 +734,7 @@ def test_3a2_the_fold_is_told_her_row_in_the_window_was_delivered(
     window = journey.fold_input.split("<transcript ")[1].split("</transcript>")[0]
     her_row = next(
         line for line in window.splitlines()
-        if 'at="2026-09-11 16:43"' in line and 'from="Nora"' in line
+        if 'at="2026-09-11T16:43:57"' in line and 'from="Nora"' in line
     )
     assert any(
         token in her_row.lower() for token in ("delivered", "was sent", "went out")

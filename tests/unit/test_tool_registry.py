@@ -187,20 +187,36 @@ def test_the_registry_exposes_every_declared_tool():
     assert {t.tool_name for t in tools} == {
         # DEC-146: the window-scoped rung below `load_transcript`.
         "who_said",
-        "now", "load_transcript", "send_reply", "reaction_send", "search_gifs", "send_gif",
+        "now",
+        "load_transcript",
+        "send_reply",
+        "reaction_send",
+        "search_gifs",
+        "send_gif",
         "send_to",
         # which rooms this group has, and what is
         # said in one of them.
-        "room_list", "room_read",
+        "room_list",
+        "room_read",
         # the Record over an interval,
         # under lineage.
         "record_query",
         # the Dreamer-only reads.
-        "rollup_read", "standing_read", "character_read", "social_read",
-        "group_members", "lookup_person", "about", "ask_memory", "search_memory",
+        "rollup_read",
+        "standing_read",
+        "character_read",
+        "social_read",
+        "group_members",
+        "lookup_person",
+        "about",
+        "ask_memory",
+        "search_memory",
         "recall_lookups",
-        "calculate", "transit", "route",
-        "place_info", "saved_places",
+        "calculate",
+        "transit",
+        "route",
+        "place_info",
+        "saved_places",
         "where_is",
         # DEC-156: the coordinate -> street-address fetch surface. `where_is`
         # carries no address, so this is the ONLY tool that resolves one, and
@@ -217,14 +233,18 @@ def test_the_registry_exposes_every_declared_tool():
         # a shared file link, read as text.
         "file_fetch",
         "generate_image",
-        "media_search", "media_send",
-        "web_search", "web_fetch",
+        "media_search",
+        "media_send",
+        "web_search",
+        "web_fetch",
         # x_read and x_search (DEC-201, replacing DEC-151's social_fetch):
         # READ-ONLY X via the host bridge.
-        "x_read", "x_search",
+        "x_read",
+        "x_search",
         # linkedin_read and linkedin_search (DEC-201): READ-ONLY LinkedIn via
         # the same host bridge, inert unless [social.linkedin] enabled.
-        "linkedin_read", "linkedin_search",
+        "linkedin_read",
+        "linkedin_search",
         # instagram_read: a person's Instagram
         # profile or story, over the instagram-bridge.
         "instagram_read",
@@ -234,30 +254,55 @@ def test_the_registry_exposes_every_declared_tool():
         "weather",
         # HK parking: TD open-data vacancy for a named car park,
         # and Google Places nearby-search + street meters for «near X».
-        "parking_status", "find_parking",
+        "parking_status",
+        "find_parking",
         # Discord-only music.
-        "play_music", "skip_music", "top_music", "stop_music", "music_status",
+        "play_music",
+        "skip_music",
+        "top_music",
+        "stop_music",
+        "music_status",
         "set_music_volume",
-        "remind", "list_reminders", "cancel_reminder",
+        "remind",
+        "list_reminders",
+        "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
-        "event_propose", "event_revise", "event_rsvp", "event_set_status",
-        "event_search", "suggest_venue",
+        "event_propose",
+        "event_revise",
+        "event_rsvp",
+        "event_set_status",
+        "event_search",
+        "suggest_venue",
         # Nora's computer (DEC-243).
-        "computer_run", "computer_read", "computer_write", "computer_edit",
-        "computer_export", "computer_import", "computer_session_list",
+        "computer_run",
+        "computer_read",
+        "computer_write",
+        "computer_edit",
+        "computer_export",
+        "computer_import",
+        "computer_session_list",
         # a whole browser task, by a sub-agent.
         "computer_browse",
         # the scoped pair: a picture of a task's own tab; a queued or
         # running task stopped.
-        "computer_capture", "computer_cancel",
+        "computer_capture",
+        "computer_cancel",
         # a document is published to the web app, read back to edit.
-        "document_publish", "document_read", "document_set_status",
+        "document_publish",
+        "document_read",
+        "document_set_status",
+        "document_list",
+        "document_revise",
         # (the four `subagent_*` tools are tag-turn only: this Dreamer-path build omits them,
         # and tests/unit/test_subagent_tools.py pins where they ARE built.)
         # DEC-97: what she is running, and what was in an earlier version.
-        "version_list", "version_read",
+        "version_list",
+        "version_read",
         # The note tier's four verbs.
-        "note_read", "note_search", "note_create", "note_revise",
+        "note_read",
+        "note_search",
+        "note_create",
+        "note_revise",
         # DEC-306: one kept memo of the unit.
         "memo_read",
         # The remember verb — the conclusion write lane.
@@ -365,7 +410,7 @@ def test_budgets_match_todays_table():
         # stop of a queued or running task, a second to read the row back.
         "computer_capture": 2, "computer_cancel": 2,
         # no-spec catalog read, publish, a fix, an edit; a read.
-        "document_publish": 6, "document_read": 2,
+        "document_publish": 6, "document_read": 2, "document_list": 2, "document_revise": 2,
         # Archive, delete or restore one document; a second call is an undo or
         # another document.
         "document_set_status": 2,
@@ -937,7 +982,7 @@ def test_cacheable_tools_is_a_frozenset_not_a_list():
 # Hand-listed HERE, in the test, and DERIVED in the code: a hand-copied list of
 # act verbs goes stale as verbs are added (the events family, DEC-117), and a
 # stale list would hand a background agent write verbs.
-ACT_VERBS = frozenset({
+ACT_VERBS = frozenset({"document_revise",
     "remind", "cancel_reminder",
     "event_propose", "event_revise", "event_rsvp", "event_set_status",
     # a command, a file write and a file edit all
@@ -989,7 +1034,7 @@ ACT_VERBS = frozenset({
 # this red as MISSING, and a new act verb that wrongly carries it turns the
 # test above red as a LEAK. The two directions are what make a fail-closed
 # default safe.
-READ_ONLY = frozenset({
+READ_ONLY = frozenset({"document_list",
     # registers shelf tools onto this turn's own
     # agent and nothing else — no store, no room, nothing outside the turn.
     "load_tools",

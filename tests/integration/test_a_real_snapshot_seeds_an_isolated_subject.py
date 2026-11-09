@@ -286,9 +286,12 @@ async def test_the_judges_source_names_every_speaker_and_marks_hers(sandbox, sou
     one, because the judge is a third-party call."""
     seeded = await _seed(sandbox, source)
     assert seeded.transcript == (
-        '<m n="1" age="10m ago" from="Miles">are we still on for friday</m>',
-        '<m n="2" age="4m ago" from="Miles">i can\'t make it</m>',
-        '<m n="3" age="just now" from="Nora">want me to move it?</m>',
+        '<m n="1" age="10m ago" from="Miles" author_id="miles_novak" '
+        'at="2025-07-08T18:30:00+00:00">are we still on for friday</m>',
+        '<m n="2" age="4m ago" from="Miles" author_id="unknown" '
+        'at="2025-07-08T18:36:00+00:00">i can\'t make it</m>',
+        '<m n="3" age="just now" from="Nora" author_id="nora" '
+        'at="2025-07-08T18:39:00+00:00" delivery="not delivered">want me to move it?</m>',
     )
     joined = "\n".join(seeded.transcript)
     sender_ids = {r.sender_id for r in await _rows(sandbox)}

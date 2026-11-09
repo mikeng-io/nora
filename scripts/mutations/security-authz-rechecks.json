@@ -30,15 +30,15 @@
   {
     "name": "8765_44827 read path: the visibility clause is dropped from the one resolution read and set_state share",
     "file": "nora/app/documents_service.py",
-    "old": "            or not may_read(current.summary, person_id, named)\n        ):\n            return None\n        return current",
-    "new": "            or False\n        ):\n            return None\n        return current",
+    "old": "            or not may_read(current.summary, person_id, named)\n",
+    "new": "            or False\n",
     "target": "tests/unit/test_documents_service.py::test_a_wildcard_room_document_is_read_by_its_creator_alone"
   },
   {
     "name": "8765_44827 set_state: a non-creator in a wildcard room can archive or delete the document",
     "file": "nora/app/documents_service.py",
-    "old": "            or not may_read(current.summary, person_id, named)\n        ):\n            return None\n        return current",
-    "new": "            or False\n        ):\n            return None\n        return current",
+    "old": "            or not may_read(current.summary, person_id, named)\n",
+    "new": "            or False\n",
     "target": "tests/unit/test_documents_service.py::test_a_wildcard_room_document_cannot_have_its_state_changed_by_a_non_creator"
   },
   {
@@ -65,8 +65,8 @@
   {
     "name": "8765_44827 <documents> reader: a member the room names is read the room's list with no grant",
     "file": "nora/engagement/documents_context.py",
-    "old": "                        person_id=person_id, rooms=named,\n                    ),\n",
-    "new": "                        person_id=person_id, rooms=frozenset(),\n                    ),\n",
+    "old": "                        rooms=named,\n                    ),\n                    self._store.list_room(",
+    "new": "                        rooms=frozenset(),\n                    ),\n                    self._store.list_room(",
     "target": "tests/unit/test_documents_block.py::test_a_member_the_room_names_reads_the_whole_list_past_their_own"
   },
   {

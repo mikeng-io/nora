@@ -381,7 +381,9 @@ class _OneRoomUnreadable(FakeRecordStore):
     half checked: the case where an absence could wrongly cover a room
     nobody read."""
 
-    async def room_activity(self, *, conversation_id: str, since_ts: int):
+    async def room_activity(
+        self, *, conversation_id: str, since_ts: int, platform=None, as_of_ms=None
+    ):
         if conversation_id == "WA-FRIENDS-ID":
             raise RuntimeError("db down for this room")
         return await super().room_activity(conversation_id=conversation_id, since_ts=since_ts)

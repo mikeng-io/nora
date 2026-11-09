@@ -127,9 +127,9 @@
  },
  {
   "name": "review: memos share the Register's budget again",
-  "file": "nora/language/cognition_render.py",
-  "old": "grounding.memos, tz=tz, lines=budget.memo_lines, chars=budget.memo_chars,",
-  "new": "grounding.memos, tz=tz, lines=budget.memo_lines, chars=max(0, budget.register_chars - spent),",
+  "file": "nora/language/register_render.py",
+  "old": "chars=budget.memo_chars",
+  "new": "chars=max(0, budget.register_chars - spent)",
   "target": "tests/unit/test_cognition_render_budget.py::test_many_memos_never_push_an_agenda_rooms_events_out"
  },
  {

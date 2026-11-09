@@ -71,8 +71,9 @@ DREAMER_LOOP_TOOLS: frozenset[str] = frozenset(
 #: `DREAMER_LOOP_TOOLS` name an adaptor declares).
 TAG_READABLE_LOOP_TOOLS: frozenset[str] = frozenset({"rollup_read"})
 
-DREAMER_ONLY_TOOLS: frozenset[str] = frozenset({"search_memory_workspace"}) | (
-    DREAMER_LOOP_TOOLS - TAG_READABLE_LOOP_TOOLS)
+DREAMER_ONLY_TOOLS: frozenset[str] = frozenset(
+    {"search_memory_workspace", "document_list", "document_revise"}
+) | (DREAMER_LOOP_TOOLS - TAG_READABLE_LOOP_TOOLS)
 
 #: Tag-turn tools only: the four `subagent_*` tools are a person's tool for
 #: handing work to a background worker, and `video_create` starts a clip
@@ -214,6 +215,10 @@ class ToolSurface:
                 }),
             })
 
+    def __iter__(self):
+        yield from self.tools
+        yield from (self.shelf.get(n) for n in sorted(self.shelf.names()))
+
     @cached_property
     def catalogue(self) -> str:
         return "\n".join(self._render(self.admitted, self.resident))
@@ -324,3 +329,53 @@ def load_onto(agent: Any, shelf: ToolShelf, names: Iterable[str]) -> dict:
     if note:
         result["note"] = note
     return result
+
+
+def deferred_surface(tools: Iterable[Any]) -> ToolSurface:
+    """A session's already-bound tools on the same shelf as reply occasions.
+
+    Binding and authorization happen before shelving; loading cannot widen scope.
+    """
+    from nora.agent.ports import ToolSpec, adapt
+    from nora.agent.shelf_hook import ShelfLoader
+
+    adapted = {}
+    for tool in tools:
+        if not hasattr(tool, "tool_name"):
+            tool = adapt(
+                ToolSpec(name=tool.__name__, description="", schema={}, call=tool, budget=20)
+            )
+        adapted[tool.tool_name] = tool
+    shelf = ToolShelf()
+    resident = {name for name in adapted if name == "close"}
+    shelf.stock({name: tool for name, tool in adapted.items() if name not in resident})
+
+    async def load_tools(names: list[str], tool_context: Any) -> dict:
+        """Load tools by catalogue name. Call this when you need their schemas.
+
+        Returns status ok with loaded/already_loaded names, nothing_found if no
+        names resolve, or unavailable when there is no agent registry.
+        """
+        return load_onto(getattr(tool_context, "agent", None), shelf, names)
+
+    loader = adapt(
+        ToolSpec(name="load_tools", description="", schema={}, call=load_tools, budget=20)
+    )
+
+    def catalogue(names: Iterable[str], hot: frozenset[str]) -> list[str]:
+        lines = []
+        for name in sorted(names):
+            spec = adapted[name].tool_spec
+            description = spec.get("description", "").strip().split("\n\n")[0]
+            lines.append(f"{'*' if name in hot else '-'} {name}: {' '.join(description.split())}")
+        return lines
+
+    return ToolSurface(
+        scope=ToolScope(platform=None, dreamer=True, tag_turn=False),
+        tools=[*(adapted[n] for n in sorted(resident)), loader],
+        resident=resident,
+        shelf=shelf,
+        admitted=adapted,
+        render=catalogue,
+        hooks=(ShelfLoader(shelf),),
+    )

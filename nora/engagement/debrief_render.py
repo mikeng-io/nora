@@ -66,14 +66,12 @@ from nora.domain.blocks import (
     assemble,
     render_elements,
     restamp,
-    speaker_name,
 )
 from nora.domain.composed import compose_body
 from nora.domain.culture import CultureRevision
-from nora.domain.models import DeliveryStatus, TranscriptRow
+from nora.domain.models import TranscriptRow
 from nora.domain.profile import ProfileView
 from nora.domain.prompt import age, escape
-from nora.domain.quote_window import first_by_ts
 from nora.domain.standing import Standing, WorkingSetItem
 from nora.domain.standing_ledger import LedgerEntry
 from nora.domain.tag_trace import TagTrace
@@ -182,118 +180,17 @@ _OUTCOME_GLOSS: Mapping[str, str] = {
 #: Without it, a row of hers that had actually reached the room looks exactly
 #: like one that had not, and a turn-scoped «nothing was sent» header is free
 #: to explain it away. The mark binds to `messages.delivery_status`, the column
-#: the sender writes back after the platform accepts the message, so it is the
-#: record's own answer to «did this reach anybody» rather than an inference
-#: from the turn.
-_DELIVERED = "delivered"
-_NOT_DELIVERED = "not delivered"
-
-
-def _delivery(row: TranscriptRow) -> str:
-    """The delivery mark for one of Nora's rows — the seventh mapping.
-
-    Only her own rows carry it: `delivery_status` on an inbound row describes a
-    send that never happened, so marking those would put a word on a line that
-    means nothing there and teach the fold to read the mark as decoration.
-
-    `PENDING` renders as `not delivered` alongside `FAILED`, deliberately. The
-    honest reading of a row still pending is «not known to have reached the
-    room», and the fail-closed direction on a mark whose whole job is to stop a
-    false «I sent nothing» is to under-claim delivery, never to over-claim it.
-    """
-    return _DELIVERED if row.delivery_status is DeliveryStatus.SENT else _NOT_DELIVERED
-
-
-def _clock(ts_ms: int, tz: tzinfo | None) -> str:
-    """`ts` as a local wall-clock time — the first of the seven mappings.
-
-    `tz=None` means the host's own zone, matching every other clock in the
-    prompt (`prefill._now_line`); it is a parameter so a test can pin one and
-    so a deployment in another zone renders its own.
-    """
-    # WITH the date. A watermark
-    # batch can span days, and the objective asks the fold to write dates
-    # instead of «tomorrow»: a row stamped only «22:12» leaves a member's
-    # «tomorrow» from three days back unconvertible — a judgement about WHEN
-    # over an input with no date.
-    return datetime.fromtimestamp(ts_ms / 1000, tz=tz).strftime("%Y-%m-%d %H:%M")
-
-
-def _speaker(row: TranscriptRow, display_name: str) -> str:
-    """Who said it — `is_nora` as a distinct speaker, and NEVER `person_id`.
-
-    Deliberately the same precedence `nora.agent.prefill._label` uses
-    (`person_name`, then the self-set profile name, then "unknown"), because
-    the debrief reads a transcript the reply path already rendered under those
-    names, and two renderers calling one person two things is how a fold
-    concludes two people were talking.
-    """
-    if row.is_nora:
-        return display_name
-    # THROUGH THE HELPER — see `prefill._label`. The guard belongs after the
-    # collapse, not on the raw value.
-    return speaker_name(row.person_name, row.sender_name)
-
-
-#: A wall CLOCK rather than an age: the fold is read against a calendar («what
-#: happened at 11:00») where the reply prompt is read against now. Rendered as
-#: the `at` attribute.
-
-
 def _transcript(
     rows: Sequence[TranscriptRow], *, display_name: str, tz: tzinfo | None
 ) -> str:
-    """The turn's messages for the `<transcript>` block, so the delivery mark
-    can never ship apart from the sentence explaining it (the block's own
-    `fields=`).
+    """The shared chronological transcript, including actual send delivery."""
+    from nora.domain.context_data import TranscriptLine
+    from nora.language.context_render import transcript_rows
 
-    **There is no legend block.** The delivery mark's meaning is the type's own
-    `fields=`: the thing that renders `delivery` is the thing that says what
-    `delivery` means. (Everything between the transcript's tags is a message
-    somebody sent, so a sentence of ours cannot go in there.)
-    """
-    by_ts = first_by_ts(rows)
-
-    def _replying(row: TranscriptRow) -> str:
-        """The reply relation, by the parent's own rendered CLOCK rather than by
-        its id — the fold has the clock on every line above, and has no id for
-        anything. An out-of-window or self-referential pointer renders nothing
-        at all (`prefill._parent_of`'s rule: a symbol that can mean "unknown"
-        invites the model to emit one). Already-rendered text, so it is appended
-        after the speaker's escape rather than through it."""
-        if row.quoted_ts is None:
-            return ""
-        parent = by_ts.get(row.quoted_ts)
-        if parent is None or parent.id == row.id:
-            return ""
-        return f"(replying to {_clock(parent.ts, tz)})"
-
-    def _mark(row: TranscriptRow) -> str:
-        """THE DELIVERY MARK. Hers only, and never escaped from the
-        row's own text — it is the render's word about the record, not anybody's
-        content."""
-        return f"({_delivery(row)})" if row.is_nora else ""
-
-    def _attrs(
-        row: TranscriptRow, _i: int
-    ) -> tuple[tuple[str, str | None], ...]:
-        parent = by_ts.get(row.quoted_ts) if row.quoted_ts is not None else None
-        return (
-            ("at", _clock(row.ts, tz) if row.ts else None),
-            ("from", _speaker(row, display_name)),
-            ("turn", row.turn_handle),
-            # An out-of-window or self-referential pointer renders NOTHING
-            # (`prefill._parent_of`'s rule: a symbol that can mean "unknown"
-            # invites the model to emit one).
-            ("replying_to", None if parent is None or parent.id == row.id
-             else _clock(parent.ts, tz)),
-            # THE DELIVERY MARK, hers only. The render's word
-            # about the record, never anybody's content — which is why it is an
-            # attribute rather than something appended to the speaker field.
-            ("delivery", _delivery(row) if row.is_nora else None),
-        )
-
-    return render_elements(rows, tag="m", attrs=_attrs, body=lambda row: row.body)
+    now = datetime.fromtimestamp(max((row.ts for row in rows), default=0) / 1000, tz=tz)
+    return transcript_rows(
+        [TranscriptLine(row, "") for row in rows], display_name=display_name, now=now
+    )
 
 
 #: **There is no indent helper.** Nested blocks are flat: indenting a rendered

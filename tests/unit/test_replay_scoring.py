@@ -10,6 +10,94 @@ from nora.agent.replay_inspection import compare_inspection
 from scripts.memory_graph_spike import smoke_fact_support
 
 
+async def test_both_fact_judges_receive_the_composed_writers_full_criteria():
+    from nora.language.comprehend_render import MEMORY_CRITERIA, render_session_system
+
+    system = render_session_system("<!-- cognition-orient -->", "", memory=True)
+    assert system.count(MEMORY_CRITERIA) == 1
+    assert MEMORY_CRITERIA not in render_session_system("", "", memory=False)
+    calls = []
+
+    async def call(model, instruction, payload):
+        assert model == "generated-judge"
+        assert instruction.count(MEMORY_CRITERIA) == 1
+        assert "including all exclusions" in instruction
+        assert "Exclude only" not in instruction
+        assert payload["session_input"]["input"]["system"] == system
+        calls.append("support" if "statement" in payload else "misses")
+        if "statement" in payload:
+            assert set(payload["cited_rows"]) == {"1"}
+            return '{"verdict":"supported","reason":"cited spare controller"}'
+        assert payload["saved_statements"] == [statement]
+        return '{"missed":[],"context_only":[]}'
+
+    statement = {"what": "has a spare controller", "cite": [{"source": 1}]}
+    result = await smoke_fact_support(
+        SimpleNamespace(models=["generated-judge"], call=call),
+        {"system": system, "new_sources": {"1": {"text": "I have a spare controller"}}},
+        [{"name": "memory_propose", "input": {"statements": [statement]},
+          "source_rows": {"1": {"text": "I have a spare controller"}},
+          "result": {"statements": [{"index": 0, "status": "saved"}]}}],
+    )
+    assert calls == ["support", "misses"]
+    assert result["facts_supported"] == 1
+    assert result["facts_judge_errors"] == result["facts_missed"] == 0
+
+
+@pytest.mark.parametrize("entry, expected", [
+    ({"sources": [101], "location": "item 0 at 12:34", "quote": "first"}, True),
+    ({"sources": [-1], "location": "item 7", "quote": "image"}, True),
+    ({"sources": [999], "location": "row 101", "quote": "first"}, False),
+    ({"sources": [101, 999], "location": "row 101", "quote": "first"}, False),
+    ({"sources": [], "location": "row 101", "quote": "first"}, False),
+    ({"sources": [True], "location": "row 101", "quote": "first"}, False),
+    ({"sources": "101", "location": "row 101", "quote": "first"}, False),
+    ({"sources": [101], "location": "row 101", "quote": "clipped tail"}, False),
+    ({"location": "Agenda item 0, NEW source row 101 at 12:34", "quote": "first"}, True),
+    ({"location": "NEW source -1; agenda item 0; social:generated:123", "quote": "image"}, True),
+    ({"location": "101 / 102", "quote": "first / second"}, True),
+    ({"location": "row 999 and 101; item 0", "quote": "first"}, False),
+    ({"location": "item 101 at 12:34", "quote": "first"}, False),
+    ({"location": "row 101.2", "quote": "first"}, False),
+    ({"location": "row 101foreign", "quote": "first"}, False),
+    ({"location": "NEW source rows 101 and 102", "quote": "first / second"}, True),
+    ({"location": "sources 101", "quote": "first"}, True),
+    ({"location": "row 101 and 2 context rows", "quote": "first"}, True),
+    ({"location": "row 101 and 2 rows", "quote": "first"}, True),
+    ({"location": "rows 101 and 999", "quote": "first"}, False),
+    ({"location": "row 101 and 2", "quote": "first"}, False),
+    ({"location": "source row 101-103", "quote": "first"}, False),
+])
+def test_missed_sources_are_explicit_not_every_number_in_the_locator(entry, expected):
+    from scripts.memory_graph_spike import miss_in_new_sources
+
+    sources = {"101": {"text": "first"}, "102": {"text": "second"},
+               "-1": {"text": "image"}}
+    assert miss_in_new_sources(entry, sources) is expected
+
+
+@pytest.mark.parametrize("source_ids, expected_misses, expected_errors", [
+    ([101], 1, 0), ([999], 0, 0), ([True], 0, 1), ([], 0, 1),
+])
+async def test_structured_missed_sources_reach_the_real_scoring_boundary(
+    source_ids, expected_misses, expected_errors,
+):
+    async def call(model, instruction, payload):
+        assert model == "generated-judge"
+        assert set(payload) == {"session_input", "saved_statements"}
+        assert payload["saved_statements"] == []
+        assert '"sources"' in instruction
+        return json.dumps({"missed": [{"fact": "generated first", "quote": "first",
+            "sources": source_ids, "location": "item 0, row 101 at 12:34",
+            "reason": "generated new fact"}], "context_only": []})
+
+    result = await smoke_fact_support(
+        SimpleNamespace(models=["generated-judge"], call=call),
+        {"new_sources": {"101": {"text": "first"}}}, [])
+    assert result["facts_missed"] == expected_misses
+    assert result["facts_judge_errors"] == expected_errors
+
+
 @pytest.mark.parametrize("malformed", [False, True])
 async def test_scoring_citation_scope_new_rows_and_reasons(malformed):
     calls = []
@@ -17,6 +105,9 @@ async def test_scoring_citation_scope_new_rows_and_reasons(malformed):
     async def call(model, instruction, payload):
         calls.append(payload)
         if "statement" in payload:
+            assert payload["session_input"]["input"] is inspection
+            assert "<profile" in payload["session_input"]["input"]["agenda"]
+            assert "<transcript" in payload["session_input"]["input"]["agenda"]
             assert payload["cited_rows"] == {"1": {"text": "Generated train arrives"}}
             assert "uncited secret detail" not in json.dumps(payload["cited_rows"])
             return json.dumps({"verdict": "unsupported", **(
@@ -29,7 +120,11 @@ async def test_scoring_citation_scope_new_rows_and_reasons(malformed):
                                              "location": "9", "reason": "older row"}]})
 
     judges = SimpleNamespace(models=["generated-judge"], call=call)
-    inspection = {"new_sources": {"1": {"text": "Generated train arrives"}}}
+    inspection = {
+        "agenda": '<profile of="person:generated">Generated profile</profile>'
+                  '<transcript><m n="1" source_id="1">Generated train arrives</m></transcript>',
+        "new_sources": {"1": {"text": "Generated train arrives"}},
+    }
     exchanges = [{"name": "memory_propose", "input": {"statements": [
         {"what": "uncited secret detail", "cite": [{"source": 1}]}]},
         "source_rows": {"1": {"text": "Generated train arrives"},

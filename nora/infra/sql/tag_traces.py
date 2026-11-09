@@ -175,6 +175,7 @@ def _json_to_row(d: dict[str, Any]) -> TranscriptRow:
         d["reactions"] = RowReactions(**reactions)
     else:
         d["reactions"] = None
+    d["mention_persons"] = tuple(d.get("mention_persons", ()))
     return TranscriptRow(**d)
 
 

@@ -63,6 +63,8 @@ CONVERTED = {
     "nora/language/lessons.py": "her sends and their quoted replies a Lessons session reads",
     "nora/engagement/debrief_render.py":
         "the window the fold and the grounding verdict read",
+    "nora/language/context_render.py": "shared chronological transcript via render_messages",
+    "nora/language/register_render.py": "source objects and retained events via render_elements",
     "nora/language/cognition_render.py":
         "the Cognition session's agenda: each item's messages through "
         "`render_row_window` (`n` is the message's own id, so what the model "

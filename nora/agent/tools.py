@@ -946,8 +946,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                             level=1),
     "room_state_read": NativeTool(1,
                                   source_tier="remembered", read_only=True,
-                                  side_effect_state="none",
-                                  idempotency="idempotent",
+                                  side_effect_state="none", idempotency="idempotent",
                                   retry="safe", output_contract="three_state",
                                   level=1),
     # `rollup_read`: the Rollup's typed rows over an interval, for the Cognition session and
@@ -1223,8 +1222,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     #
     # Both `level=1` (ADR 0015 §3): what + when + what comes back. «Never claim
     # an image the search did not return» is in `media_search`'s `ok` note.
-    "media_search": NativeTool(2,
-                               read_only=True,
+    "media_search": NativeTool(2, read_only=True,
                                side_effect_state="none", idempotency="idempotent", retry="safe",
                                output_contract="three_state", level=1),
     "media_send": NativeTool(2,
@@ -1553,8 +1551,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # note_create: a closing condition and an anchor. note_revise: read first.
     "note_read": NativeTool(3,
                             source_tier="remembered", read_only=True,
-                            side_effect_state="none", idempotency="idempotent", retry="safe",
-                            output_contract="three_state", level=2),
+                            side_effect_state="none", idempotency="idempotent",
+                            retry="safe", output_contract="three_state", level=2),
     "note_search": NativeTool(2,
                               source_tier="remembered", read_only=True,
                               side_effect_state="none", idempotency="idempotent", retry="safe",
@@ -1575,8 +1573,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `level=1` (ADR 0015 §3), like its room sibling.
     "search_memory_workspace": NativeTool(4,
                                           source_tier="remembered", read_only=True,
-                                          side_effect_state="none",
-                                          idempotency="idempotent", retry="safe",
+                                          side_effect_state="none", idempotency="idempotent",
+                                          retry="safe",
                                           output_contract="three_state", level=1),
     # The only three `side_effect_state="confirmed"` entries on this table
     # (ADR 0008 §1): the note tier and `remember` write through a boundary that
@@ -1715,14 +1713,13 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # differently from `unavailable`, and `unavailable` carries `needs_human`.
     "computer_browse": NativeTool(2,
                                   side_effect_state="unknown", idempotency="non_idempotent",
-                                  retry="never",
-                                  output_contract="three_state", level=3),
+                                  retry="never", output_contract="three_state", level=3),
     # `computer_capture` 2: a direct picture of a task's OWN tab, saved into
     # the workspace — no second browse. `confirmed`: the answer is the file's
     # own path/size/digest. `non_idempotent`: each capture is a new file.
     "computer_capture": NativeTool(2,
-                                   side_effect_state="confirmed",
-                                   idempotency="non_idempotent", retry="never",
+                                   side_effect_state="confirmed", idempotency="non_idempotent",
+                                   retry="never",
                                    output_contract="three_state", level=2),
     # `computer_cancel` 2: stop a queued or running computer task by id.
     # `confirmed`: the answer is the row's own state. `idempotent`: cancelling
@@ -1753,9 +1750,16 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `document_read` 2: what a model must see before changing a document is
     # its current revision and spec; a second call is a different document.
     # Level 1: what, when and what comes back.
-    "document_read": NativeTool(2, read_only=True,
+    "document_list": NativeTool(2, time_shiftable=False, read_only=True,
                                 side_effect_state="none", idempotency="idempotent",
                                 retry="safe",
+                                output_contract="three_state", level=1),
+    "document_revise": NativeTool(2, time_shiftable=False, read_only=False,
+                                  side_effect_state="confirmed",
+                                  idempotency="non_idempotent", retry="never",
+                                  output_contract="three_state", level=2),
+    "document_read": NativeTool(2, read_only=True,
+                                side_effect_state="none", idempotency="idempotent", retry="safe",
                                 output_contract="three_state", level=1),
     # `document_set_status` 2: one call archives, deletes or restores a document; a
     # second is a different document or an undo. Not `read_only`: it appends a
@@ -1780,8 +1784,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # a second job. Level 3: a status contract and two MUSTs (the brief is written for a
     # reader who never saw the chat; say she is on it and do not wait).
     "subagent_create": NativeTool(2, read_only=False,
-                                  side_effect_state="confirmed",
-                                  idempotency="non_idempotent", retry="never",
+                                  side_effect_state="confirmed", idempotency="non_idempotent",
+                                  retry="never",
                                   output_contract="three_state", level=3),
     # `subagent_list` 1: one room's few jobs, the same answer if called twice. Level 1.
     "subagent_list": NativeTool(1, time_shiftable=False, read_only=True,
@@ -3779,7 +3783,7 @@ def _speaker(row: TranscriptRow, display_name: str = "") -> str:
     (DEC-80): the identity-canonical name is what every other surface of the
     prompt calls this person — `tag_message from=`, `group_members`,
     `lookup_person`, and the `[label]` on the row's own line in
-    `<group_transcript>` — so preferring it is what lets the model join a tool's
+    `<transcript>` — so preferring it is what lets the model join a tool's
     answer to the prompt by literal match instead of inferring. The self-set
     Signal profile name is the fallback, so an unmapped account stays visible as
     SOMEBODY rather than collapsing to "unknown".
@@ -4627,7 +4631,7 @@ _DOCUMENT_READ_CHARS = 40_000
 #: The document tools. `ToolRegistry` withholds all three
 #: from every surface unless `[documents] enabled`.
 DOCUMENT_TOOLS: frozenset[str] = frozenset(
-    {"document_publish", "document_read", "document_set_status"}
+    {"document_publish", "document_read", "document_set_status", "document_list", "document_revise"}
 )
 
 #: `computer_export`'s title, cut: the portal turns it into a download file name.
@@ -5718,7 +5722,7 @@ def build_tool_specs(
         async def _activity(r: KnownRoom) -> tuple[object, object, object]:
             try:
                 act = await store.room_activity(
-                    conversation_id=r.conversation_id, since_ts=since_ms,
+                    conversation_id=r.conversation_id, since_ts=since_ms, platform=r.platform,
                 )
             except Exception:
                 log.warning("room_list: activity read failed for a %s room",
@@ -15618,7 +15622,7 @@ Args:
 
         Args:
             emoji: The emoji you choose for this conversation.
-            reply_to: The message's `n` in `group_transcript`.
+            reply_to: The message's `n` in `transcript`.
             more: True if another message or action follows this reaction.
         """
         quote = _resolve_quote(reply_to)
@@ -15671,7 +15675,7 @@ Args:
                 "@Jordan somebody here wants to know how tall you are"; a name
                 that is not here reaches nobody.
             reply_to: Optional. The `n` of the `m` element you are answering, as
-                it appears in `group_transcript`. Use it when the room has more
+                it appears in `transcript`. Use it when the room has more
                 than one thread open and it would otherwise be unclear which one
                 you picked up. Leave it out when only one thing is happening,
                 since a reply threaded onto the obvious message is clutter. Never
@@ -18340,6 +18344,8 @@ Args:
         _spec("media_send", media_send),
         _spec("document_publish", document_publish),
         _spec("document_read", document_read),
+        *(s for s in cognition_document_tools(documents, None, lambda: None)
+          if s.name != "document_read"),
         _spec("document_set_status", document_set_status),
         _spec("web_search", web_search),
         _spec("web_fetch", web_fetch),
@@ -18697,3 +18703,133 @@ def build_tools(
         content_checks=content_checks,
     )
     return [adapt(spec) for spec in specs]
+
+def cognition_document_tools(service: Any, reader: Any, authority: Callable[[], Any]) -> list[Any]:
+    """Bind the shared document service to a session capability, never a human identity."""
+    from nora.language.documents_render import render_documents
+
+    def _document_id(value: str) -> UUID | None:
+        try:
+            return UUID(value)
+        except (ValueError, TypeError):
+            return None
+
+    read_revisions: dict[tuple[str, str], int] = {}
+
+    def target(agenda_room: str):
+        grant = authority()
+        p, _, cid = agenda_room.partition(":")
+        return (grant, p, cid) if grant is not None and (p, cid) in grant.rooms else (None, "", "")
+
+    async def document_list(agenda_room: str) -> dict:
+        """List shared document revisions. Call this when checking documentation.
+
+        Returns status ok with the accessible index, nothing_found if empty, or
+        unavailable when authority or the shared source cannot be checked.
+        """
+        grant, p, cid = target(agenda_room)
+        if grant is None or reader is None:
+            return {
+                "status": "unavailable",
+                "note": "The shared document index could not be checked.",
+            }
+        view = await reader.read(platform=p, conversation_id=cid, person_id=grant)
+        if view is None or view.unavailable:
+            return {
+                "status": "unavailable",
+                "note": "The shared document index could not be checked.",
+            }
+        return {
+            "status": "ok" if view.lines else "nothing_found",
+            "index": (block.render() if (block := render_documents(view)) is not None else ""),
+            "note": "Only shared active documents in this agenda room are listed.",
+        }
+
+    async def document_read(document_id: str, agenda_room: str) -> dict:
+        """Read a shared document revision. Call this before revising documentation.
+
+        Returns status ok with document_id, revision and spec; nothing_found
+        without private metadata when absent, or unavailable when the source or
+        authority cannot be checked.
+        """
+        grant, p, cid = target(agenda_room)
+        if grant is None or service is None:
+            return {"status": "unavailable", "note": "The shared document could not be checked."}
+        doc = _document_id(document_id)
+        handle = document_id if doc is None and _is_document_handle(document_id) else ""
+        out = await service.read(
+            platform=p, conversation_id=cid, person_id=grant, document_id=doc, handle=handle
+        )
+        if out.status != "ok" or out.state != "active":
+            return {
+                "status": "unavailable" if out.status == "unavailable" else "nothing_found",
+                "note": "No readable active shared document was returned.",
+            }
+        read_revisions[(agenda_room, str(out.document_id))] = out.revision
+        return {
+            "status": "ok",
+            "document_id": str(out.document_id),
+            "revision": out.revision,
+            "spec": out.spec,
+            "note": "Revise only information superseded by cited agenda evidence.",
+        }
+
+    async def document_revise(
+        document_id: str,
+        base_revision: int,
+        changes: list[dict],
+        agenda_room: str,
+    ) -> dict:
+        """Revise shared documentation. Call this when evidence supersedes its revision.
+
+        Each change has path (JSON pointer), old, new and sources (shown message ids).
+        MUST preserve unrelated content and uncertainty; new text quotes cited evidence.
+        A conflict needs a fresh read and decision, never an automatic overwrite.
+        Returns status ok with saved revision, refused when evidence or the base
+        revision fails validation, or unavailable when authority/readback fails.
+        """
+        grant, p, cid = target(agenda_room)
+        doc = _document_id(document_id)
+        if grant is None or service is None or doc is None:
+            return {
+                "status": "unavailable",
+                "note": "The revision authority could not be established.",
+            }
+        if read_revisions.get((agenda_room, str(doc))) != base_revision:
+            return {"status": "refused", "note": "Read the current revision before changing it."}
+        out = await service.publish(
+            platform=p,
+            conversation_id=cid,
+            person_id=grant,
+            document_id=doc,
+            base_revision=base_revision,
+            raw={"changes": changes},
+            written_by="",
+        )
+        read_revisions.pop((agenda_room, str(doc)), None)
+        if out.status != "ok":
+            return {
+                "status": out.status,
+                "note": out.note or "The revision was refused; nothing changed.",
+            }
+        saved = await service.read(
+            platform=p, conversation_id=cid, person_id=grant, document_id=doc
+        )
+        if saved.status != "ok" or saved.revision != out.revision:
+            return {
+                "status": "unavailable",
+                "write_may_have_succeeded": True,
+                "note": "The write could not be read back; do not retry it blindly.",
+            }
+        return {
+            "status": "ok",
+            "document_id": str(doc),
+            "revision": saved.revision,
+            "note": "The revised shared document was saved and read back.",
+        }
+
+    return [
+        _spec("document_list", document_list),
+        _spec("document_read", document_read),
+        _spec("document_revise", document_revise),
+    ]

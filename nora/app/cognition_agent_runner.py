@@ -35,6 +35,7 @@ from typing import Any
 from nora.agent import factory
 from nora.agent.dream_guard import DreamGuard
 from nora.agent.ports import ToolSpec, adapt
+from nora.agent.surface import ToolSurface
 from nora.agent.tag_trace_extract import extract_tag_trace
 from nora.agent.token_reservation import TokenReservation
 from nora.agent.turn_recording import TurnRecording
@@ -129,11 +130,17 @@ class LiveCognitionAgentRunner:
         self._result_caps = dict(result_caps or {})
 
     async def run(
-        self, *, system_prompt: str, prompt: str, tools: list[Any],
-        budget: AdaptorBudget, trace_attributes: Mapping[str, str],
+        self,
+        *,
+        system_prompt: str,
+        prompt: str,
+        tools: list[Any],
+        budget: AdaptorBudget,
+        trace_attributes: Mapping[str, str],
     ) -> CognitionRunResult:
         tool_names = [getattr(t, "tool_name", None) or t.__name__ for t in tools]
-        tools = as_strands_tools(tools)
+        surface = tools if isinstance(tools, ToolSurface) else None
+        tools = list(surface.tools) if surface is not None else as_strands_tools(tools)
         guard = self._guard(tool_names)
         # ONE root span per session, its stages its children (AGENTS.md,
         # instruments): `nora.trace_kind = generation` is what keeps the trace
@@ -147,8 +154,13 @@ class LiveCognitionAgentRunner:
         ):
             try:
                 result = await self._invoke(
-                    system_prompt=system_prompt, prompt=prompt, tools=tools, guard=guard,
-                    budget=budget, trace_attributes=trace_attributes,
+                    system_prompt=system_prompt,
+                    prompt=prompt,
+                    tools=tools,
+                    guard=guard,
+                    budget=budget,
+                    trace_attributes=trace_attributes,
+                    surface=surface,
                 )
             except TimeoutError:
                 annotate(**{"nora.outcome": "timeout"})
@@ -180,16 +192,30 @@ class LiveCognitionAgentRunner:
         )
 
     async def _invoke(
-        self, *, system_prompt: str, prompt: str, tools: list[Any], guard: DreamGuard,
-        budget: AdaptorBudget, trace_attributes: Mapping[str, str],
+        self,
+        *,
+        system_prompt: str,
+        prompt: str,
+        tools: list[Any],
+        guard: DreamGuard,
+        budget: AdaptorBudget,
+        trace_attributes: Mapping[str, str],
+        surface: ToolSurface | None = None,
     ) -> CognitionRunResult:
         recording = TurnRecording()
         reservation = TokenReservation(budget.total_tokens) if budget.reserve_tokens else None
+        surface_hooks = surface.hooks if surface is not None else ()
         agent = factory.create_dream_agent(
-            model=self._models.create(), system_prompt=system_prompt, tools=tools,
-            guard=guard, trace_attributes=dict(trace_attributes), retry=self._retry,
+            model=self._models.create(),
+            system_prompt=system_prompt,
+            tools=tools,
+            guard=guard,
+            trace_attributes=dict(trace_attributes),
+            retry=self._retry,
             agent_name=self._agent_name,
-            tool_hooks=(recording, reservation) if reservation is not None else (recording,),
+            tool_hooks=(*surface_hooks, recording, reservation)
+            if reservation is not None
+            else (*surface_hooks, recording),
         )
         baseline = len(getattr(agent, "messages", ()))
         # A failure or a timeout is RAISED, never returned as a normal result:
@@ -202,9 +228,12 @@ class LiveCognitionAgentRunner:
             with turn_deadline(budget.timeout_seconds):
                 result = await asyncio.wait_for(
                     factory.invoke(
-                        agent, prompt, invocation_state={},
+                        agent,
+                        prompt,
+                        invocation_state={},
                         limits=factory.build_limits(
-                            output_tokens=budget.output_tokens, turns=budget.turns,
+                            output_tokens=budget.output_tokens,
+                            turns=budget.turns + int(surface is not None and bool(surface.shelf)),
                             total_tokens=budget.total_tokens,
                         ),
                     ),

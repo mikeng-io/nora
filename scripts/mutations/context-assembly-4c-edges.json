@@ -29,10 +29,10 @@
   },
   {
     "name": "4c: the debrief's transcript builds its own last-wins map again",
-    "file": "nora/engagement/debrief_render.py",
-    "old": "    by_ts = first_by_ts(rows)\n",
-    "new": "    by_ts = {row.ts: row for row in rows}\n",
-    "target": "tests/unit/test_step4c_edge_goldens.py::test_the_debrief_transcript_follows_the_same_rule tests/architecture/test_one_quote_resolver.py"
+    "file": "nora/language/context_render.py",
+    "old": "first_by_ts(group)",
+    "new": "{row.ts: row for row in group}",
+    "target": "tests/unit/test_cognition_shared_context.py tests/architecture/test_one_quote_resolver.py"
   },
   {
     "name": "4c: the tool-result transcript builds its own last-wins map again",
@@ -120,10 +120,10 @@
   },
   {
     "name": "4c review: the debrief's map is first-wins over the rows REVERSED (last-wins)",
-    "file": "nora/engagement/debrief_render.py",
-    "old": "    by_ts = first_by_ts(rows)\n",
-    "new": "    by_ts = first_by_ts(reversed(rows))\n",
-    "target": "tests/unit/test_step4c_edge_goldens.py::test_the_debrief_transcript_follows_the_same_rule tests/architecture/test_one_quote_resolver.py"
+    "file": "nora/language/context_render.py",
+    "old": "first_by_ts(group)",
+    "new": "first_by_ts(reversed(group))",
+    "target": "tests/unit/test_cognition_shared_context.py tests/architecture/test_one_quote_resolver.py"
   },
   {
     "name": "4c review: the tool-result map is first-wins over the rows REVERSED",
@@ -134,10 +134,10 @@
   },
   {
     "name": "4c review: the debrief builds the map in a loop through a local key (last-wins)",
-    "file": "nora/engagement/debrief_render.py",
-    "old": "    by_ts = first_by_ts(rows)\n",
-    "new": "    by_ts = {}\n    for row in rows:\n        key = row.ts\n        by_ts[key] = row\n",
-    "target": "tests/unit/test_step4c_edge_goldens.py::test_the_debrief_transcript_follows_the_same_rule tests/architecture/test_one_quote_resolver.py"
+    "file": "nora/language/context_render.py",
+    "old": "first_by_ts(group)",
+    "new": "dict((row.ts, row) for row in group)",
+    "target": "tests/unit/test_cognition_shared_context.py tests/architecture/test_one_quote_resolver.py"
   },
   {
     "name": "4c review: the tool-result map is dict(zip(...)) (last-wins)",

@@ -36,15 +36,20 @@ def _line(line: DocumentLine, view: DocumentsView) -> str:
 
 
 def render_documents(view: DocumentsView | None) -> ContextBlock | None:
-    """The block, or None when there is no view (no document yet, `[documents]` off,
-    or the read did not come back)."""
-    if view is None or not (view.lines or view.put_away):
+    """The shared index: content, successful empty, or an unavailable read."""
+    if view is None:
         return None
-    # A put-away line is LED by its state, so it can never be read as a live document.
     rows = [_line(line, view) for line in view.lines] + [
         f"{line.state} · {_line(line, view)}" for line in view.put_away
     ]
-    body = render_bullets(rows, mark="")
-    if not body:
-        return None
-    return ContextBlock(name="documents", body=compose_body(body))
+    body = "" if view.unavailable else render_bullets(rows, mark="")
+    return ContextBlock(
+        name="documents",
+        body=compose_body(body),
+        when_empty="self_close",
+        attrs=(
+            *((("room", view.room),) if view.room else ()),
+            *((("not_listed", str(view.not_listed)),) if view.not_listed else ()),
+            *((("status", "unavailable"),) if view.unavailable else ()),
+        ),
+    )

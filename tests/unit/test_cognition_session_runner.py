@@ -385,7 +385,7 @@ async def test_rows_a_read_shows_become_the_evidence_a_proposal_may_cite():
         on_rows = kw.get("on_rows")
         assert callable(on_rows)
 
-        async def load_transcript(**_args: Any) -> dict[str, Any]:
+        async def load_transcript() -> dict[str, Any]:
             on_rows([shown, withheld])
             return {"messages": [{"sender": "Ada", "body": "dinner at eight"}]}
         return [load_transcript]

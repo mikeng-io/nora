@@ -483,7 +483,7 @@ def test_the_reaction_fields_are_glossed_where_the_model_reads_them():
     """The coverage explanation lives in the block's field glosses, not in a
     docstring: recorded changes include captured clears/snapshots, upstream
     completeness stays unknown, and partial state is explicit."""
-    for name in ("group_transcript", "agenda"):
+    for name in ("transcript", "agenda"):
         glosses = dict(BLOCK_TYPES[name].annotations)
         assert "reactions" in glosses and "reactions_observed" in glosses
         assert "recorded" in glosses["reactions"]

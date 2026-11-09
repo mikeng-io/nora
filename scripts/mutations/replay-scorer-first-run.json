@@ -78,9 +78,9 @@
   },
   {
     "name": "negative missed-fact locations remain source keys",
-    "file": "scripts/memory_graph_spike.py",
-    "old": "locations = re.findall(r\"-?\\d+\", str(entry[\"location\"]))",
-    "new": "locations = re.findall(r\"\\d+\", str(entry[\"location\"]))",
+    "file": "nora/subject/replay_diagnosis.py",
+    "old": "return list(dict.fromkeys(re.findall(r\"-?\\d+\", references)))",
+    "new": "return list(dict.fromkeys(re.findall(r\"\\d+\", references)))",
     "target": "tests/unit/test_replay_scoring.py::test_negative_social_source_numbers_are_scored"
   },
   {

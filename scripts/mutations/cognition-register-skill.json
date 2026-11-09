@@ -288,8 +288,8 @@
  },
  {
   "name": "(6b) the prohibition is deleted with its sentence",
-  "file": "nora/dreamer/objectives/cognition.md",
-  "old": " Something a member asked to keep from someone, a surprise or a confidence, is not written into the notebook.",
+  "file": "nora/language/comprehend_render.py",
+  "old": "Something a member asked to keep from someone, a surprise or a\nconfidence, is not written into the notebook.",
   "new": "",
   "target": "tests/unit/test_cognition_agenda_skills.py -k a_surprise_and_a_confidence_out"
  },

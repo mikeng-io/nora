@@ -512,13 +512,12 @@ async def test_the_untrusted_text_paragraph_is_in_the_instruction_and_not_invert
 
 
 async def test_the_instruction_keeps_her_writes_her_own_record_as_the_block_types_do():
-    """`note_index` and `notes` say her notes are her own, not what anyone said. The
+    """The shared `notes` block says her notes are her own, not what anyone said. The
     instruction tells her later turns the same: her writes are HER record of what
     the group said, never something a person said."""
     from nora.domain.block_types import BLOCK_TYPES
 
     # the source of truth, read, so a change there is a reason to reread the instruction
-    assert "not what anyone said" in " ".join(BLOCK_TYPES["note_index"].description.split())
     assert "not anything this room said" in " ".join(BLOCK_TYPES["notes"].description.split())
     _real, _prelude, orient, _skill_text = await real_names()
     text = " ".join(orient.split())
@@ -537,6 +536,17 @@ async def test_the_instruction_keeps_a_surprise_and_a_confidence_out_of_the_note
     assert "a surprise or a confidence, is not written into the notebook" in text
     # the premise: no verb has the argument that would make writing it safe
     assert "exclude_persons" not in real
+
+    from nora.language.comprehend_render import render_session_system
+
+    objective = shipped_objectives().for_objective("cognition").text
+    for memory in (False, True):
+        system = render_session_system(objective, "", memory=memory)
+        # The writer/judge criteria and the memory-free notebook each keep the guard.
+        surface = system.split("<cognition_orient", 1)[1].split(
+            "</cognition_orient>", 1)[0] if memory else system
+        assert "a surprise or a confidence, is not written into the notebook" in " ".join(
+            surface.split())
 
 
 async def test_the_instruction_is_true_about_what_she_writes_and_where_her_own_words_go():

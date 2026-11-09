@@ -553,3 +553,43 @@ async def test_own_sends_with_nothing_to_read_reads_nothing(engine, said):
     assert await store.own_sends([], start_ms=T0, end_ms=T0 + 1, limit=5) == ()
     assert await store.own_sends([("signal", "ROOM-A")], start_ms=T0, end_ms=T0, limit=5) == ()
     assert await store.own_sends([("signal", "ROOM-A")], start_ms=T0, end_ms=T0 + 9, limit=0) == ()
+
+
+async def test_context_rows_bound_known_time_related_mentions_and_room(engine):
+    """A late-known row/edit never becomes historical context; mentions are typed."""
+    cut = datetime(2026, 10, 1, tzinfo=UTC)
+    ms = int(cut.timestamp()*1000)
+    a = await _say(engine,platform='signal',room='synthetic-context',person='p1',sender='p1',
+                   ts=ms-3000,body='original')
+    mentioned = await _say(
+        engine,
+        platform="signal",
+        room="synthetic-context",
+        person="p2",
+        sender="p2",
+        ts=ms - 2000,
+        body="mentions Ada",
+    )
+    late = await _say(engine,platform='signal',room='synthetic-context',person='p1',sender='p1',
+                      ts=ms-1000,body='late known')
+    async with engine.begin() as conn:
+        await conn.execute(sa.text('UPDATE messages SET created_at=:stamp WHERE id IN (:a,:b)'),
+                           {'stamp':cut.isoformat(),'a':a,'b':mentioned})
+        await conn.execute(
+            sa.text("UPDATE messages SET mention_persons_json='[\"p1\"]' WHERE id=:n"),
+            {"n": mentioned},
+        )
+        await conn.execute(sa.text('UPDATE messages SET created_at=:stamp WHERE id=:n'),
+                           {'stamp':datetime(2026,10,2,tzinfo=UTC).isoformat(),'n':late})
+        await conn.execute(sa.text('INSERT INTO message_edit(message_id,ts,body,recorded_at) '
+            'VALUES(:n,:ts,\'future correction\',:known)'),
+            {'n':a,'ts':ms-500,'known':datetime(2026,10,2,tzinfo=UTC)})
+    hits,more,_ = await SqlRecordQuery(engine).context_rows(RecordQuery(
+        rooms=(('signal','synthetic-context'),),start_ms=ms-10000,end_ms=ms+1,
+        related_persons=('p1',),limit=500),as_of_ms=ms)
+    assert [h.row.id for h in hits]==[a,mentioned]
+    assert hits[0].row.body=='original' and hits[1].row.mention_persons==('p1',)
+    assert not more
+    other,_,_ = await SqlRecordQuery(engine).context_rows(RecordQuery(
+        rooms=(('discord','synthetic-context'),),start_ms=ms-10000,end_ms=ms+1,limit=500),as_of_ms=ms)
+    assert not other

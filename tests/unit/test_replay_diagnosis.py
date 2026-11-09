@@ -362,6 +362,44 @@ def generated_trajectory(*, later_absent=False, mixed=False, chunks=3, text="not
     return {"kind": "unsupported", "statement": statement}, events
 
 
+@pytest.mark.parametrize("structured", [False, True])
+def test_missed_diagnostic_uses_source_ids_not_item_numbers_or_timestamps(structured):
+    import json
+
+    from nora.subject.replay_diagnosis import compact_trajectory
+
+    _, events = generated_trajectory()
+    request = next(e for e in events if e.get("name") == "nora.model.request")
+    request["attributes"]["nora.model.request.body"] = json.dumps({"messages": [{
+        "role": "user", "content": (
+            '<item index="0"><m n="1">Generated fact</m></item>'
+            '<item index="1"><m n="12">Generated other</m></item>'),
+    }]})
+    statement = {"kind": "missed", "location": "Agenda item 0, NEW source row 1 at 12:34"}
+    if structured:
+        statement["sources"] = [1]
+    trajectory = compact_trajectory(statement, events)
+    assert [i["index"] for i in trajectory["agenda_items"]] == [0]
+    assert set(trajectory["cited_rows"]) == {"1"}
+
+
+def test_reaction_context_cannot_replace_the_diagnostic_cited_message():
+    import json
+
+    from nora.subject.replay_diagnosis import compact_trajectory
+
+    statement, events = generated_trajectory()
+    request = next(e for e in events if e.get("name") == "nora.model.request")
+    request["attributes"]["nora.model.request.body"] = json.dumps({"messages": [{
+        "role": "user", "content": (
+            '<item index="0"><m n="1" person="generated-author">Generated fact</m>'
+            '<m n="1" reaction="👍">Generated fact</m></item>'),
+    }]})
+    trajectory = compact_trajectory(statement, events)
+    assert 'person="generated-author"' in trajectory["cited_rows"]["1"]["rendered"]
+    assert 'reaction="' not in trajectory["cited_rows"]["1"]["rendered"]
+
+
 def test_compact_statement_scope_excludes_later_absent_call():
     from nora.subject.replay_diagnosis import compact_trajectory
     statement, events = generated_trajectory(later_absent=True, failed_proposal=True)

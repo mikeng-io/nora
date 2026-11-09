@@ -2,8 +2,8 @@
  {
   "name": "3b (a): n is a position (1), not the message's own id: the id shown is no longer the id required",
   "file": "nora/language/cognition_render.py",
-  "old": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"source\", \":\".join(source_key) if source_key else None),\n                (\"person\", r.person_id),\n                (\"target\", \"yes\" if target else None),\n                (\"reaction\", emoji_display(r.emoji or \"?\") if reacted else None),",
-  "new": "            [rec], row_id=lambda r: 1,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"source\", \":\".join(source_key) if source_key else None),\n                (\"person\", r.person_id),\n                (\"target\", \"yes\" if target else None),\n                (\"reaction\", emoji_display(r.emoji or \"?\") if reacted else None),",
+  "old": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"source\", \":\".join(source_key) if source_key else None),\n                (\"person\", None if reacted else r.person_id),\n                (\"target\", \"yes\" if target else None),\n                (\"reaction\", emoji_display(r.emoji or \"?\") if reacted else None),",
+  "new": "            [rec], row_id=lambda r: 1,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"source\", \":\".join(source_key) if source_key else None),\n                (\"person\", None if reacted else r.person_id),\n                (\"target\", \"yes\" if target else None),\n                (\"reaction\", emoji_display(r.emoji or \"?\") if reacted else None),",
   "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_the_prompt_shows_an_id_the_rows_hold_and_no_other_handle"
  },
  {
@@ -15,9 +15,9 @@
  },
  {
   "name": "3b (b): the reads line is not escaped, so a room label writes markup",
-  "file": "nora/language/cognition_render.py",
-  "old": "blocks.append(restamp(ContextBlock(name=\"reads\",\n            body=legacy_composed(escape(reads_note))), _ROW))",
-  "new": "blocks.append(restamp(ContextBlock(name=\"reads\",\n            body=legacy_composed(reads_note)), _ROW))",
+  "file": "nora/domain/blocks.py",
+  "old": "f'{key}=\"{escape_attr(collapsed)}\"'",
+  "new": "f'{key}=\"{collapsed}\"'",
   "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_hostile_words_names_titles_labels_and_summaries_write_no_element"
  },
  {
@@ -50,9 +50,9 @@
  },
  {
   "name": "3b (b): a note's description is not cut to one line of 200",
-  "file": "nora/language/cognition_render.py",
-  "old": "            replace(n, description=clip(n.description, _NOTE_LINE_CHARS))\n            for n in grounding.notes",
-  "new": "            n\n            for n in grounding.notes",
+  "file": "nora/language/note_render.py",
+  "old": "body=lambda n: clip(n.description, 200) if isinstance(n, NoteLine) else n.description,",
+  "new": "body=lambda n: n.description,",
   "target": "tests/unit/test_cognition_render_budget.py::test_every_note_and_event_is_listed_with_its_own_id_and_an_old_description_is_one_line"
  },
  {
@@ -72,8 +72,8 @@
  {
   "name": "3b (d): the prompt is joined by hand, so the table's order is a comment again",
   "file": "nora/language/cognition_render.py",
-  "old": "    return assemble(blocks, sep=_SEP)",
-  "new": "    return _SEP.join(b.render() for b in sorted(blocks, key=lambda b: b.order) if b.body or b.when_empty != \"drop\")",
+  "old": "return assemble_declared(_BLOCKS, blocks, unavailable=failed, sep=_SEP)",
+  "new": "return _SEP.join(b.render() for b in blocks)",
   "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
  },
  {
@@ -92,16 +92,16 @@
  },
  {
   "name": "3b: the Register's character budget is never spent, so a long index is not cut",
-  "file": "nora/language/cognition_render.py",
-  "old": "            if exhausted or spent + cost > budget.register_chars:",
-  "new": "            if False:",
+  "file": "nora/language/register_render.py",
+  "old": "if exhausted or spent + cost > budget.register_chars:",
+  "new": "if False:",
   "target": "tests/unit/test_cognition_render_budget.py::test_the_character_budget_leaves_out_whole_rows_and_the_blocks_after_it_say_so"
  },
  {
   "name": "3b: a list past register_lines is cut without saying how many",
-  "file": "nora/language/cognition_render.py",
-  "old": "        left_out = len(notes) - len(rows)\n",
-  "new": "        left_out = 0\n",
+  "file": "nora/language/note_render.py",
+  "old": "left = len(standing) - len(rows)",
+  "new": "left = 0",
   "target": "tests/unit/test_cognition_render_budget.py::test_a_list_past_register_lines_shows_that_many_rows_and_counts_the_rest"
  },
  {
@@ -114,8 +114,8 @@
  {
   "name": "3b: the tag turn's note index takes the real id by default (the opt-in is no opt-in)",
   "file": "nora/language/note_render.py",
-  "old": "    ids: bool = False,\n",
-  "new": "    ids: bool = True,\n",
+  "old": "def render_note_rows(\n    notes: Sequence[N],\n    *,\n    today: int | None = None,\n    extra: Callable[[N], Sequence[tuple[str, str | None]]] = lambda _: (),\n    ids: bool = False,\n) -> str:",
+  "new": "def render_note_rows(\n    notes: Sequence[N],\n    *,\n    today: int | None = None,\n    extra: Callable[[N], Sequence[tuple[str, str | None]]] = lambda _: (),\n    ids: bool = True,\n) -> str:",
   "target": "tests/unit/test_tag_notes_block_is_unchanged_by_step3b.py::test_the_tag_turns_notes_block_is_byte_identical_to_master tests/unit/test_note_render_ids.py::test_the_default_is_the_positional_n_the_tag_turn_remaps"
  },
  {
@@ -163,15 +163,15 @@
  {
   "name": "3b item 1: every item is its own `agenda` block again, so the type text repeats per item",
   "file": "nora/language/cognition_render.py",
-  "old": "        restamp(ContextBlock(name=\"agenda\", body=legacy_composed(\"\\n\".join(elements))), _ROW),\n        *_register(",
-  "new": "        *[restamp(ContextBlock(name=\"agenda\", body=legacy_composed(e)), _ROW) for e in elements],\n        *_register(",
+  "old": "        restamp(ContextBlock(name=\"agenda\", body=compose_body(\"\\n\".join(elements))), _ROW),\n        *render_register(",
+  "new": "        *[restamp(ContextBlock(name=\"agenda\", body=compose_body(e)), _ROW) for e in elements],\n        *render_register(",
   "target": "tests/unit/test_cognition_block_types_explain_every_field.py::test_the_type_text_appears_once_per_prompt_however_many_items tests/unit/test_cognition_block_types_explain_every_field.py::test_twelve_items_cost_their_own_rows_and_not_twelve_copies_of_the_type_text"
  },
  {
   "name": "3b item 1: each room's events are their own block again, so the events text repeats per room",
-  "file": "nora/language/cognition_render.py",
-  "old": "        blocks.append(restamp(ContextBlock(name=\"events\",\n            body=legacy_composed(\"\\n\".join(groups))), _ROW))",
-  "new": "        blocks += [restamp(ContextBlock(name=\"events\",\n            body=legacy_composed(g)), _ROW) for g in groups]",
+  "file": "nora/language/register_render.py",
+  "old": "restamp(ContextBlock(name=\"events\", body=compose_body(\"\\n\".join(groups))), placement)",
+  "new": "*[restamp(ContextBlock(name=\"events\", body=compose_body(g)), placement) for g in groups]",
   "target": "tests/unit/test_cognition_block_types_explain_every_field.py::test_the_type_text_appears_once_per_prompt_however_many_items"
  },
  {
@@ -219,15 +219,15 @@
  {
   "name": "3b item 4: the `from` field no longer says the name goes in parentheses before the ids",
   "file": "nora/domain/block_types.py",
-  "old": "goes in parentheses \"\n                   \"before the ids on a Decided, Proposed or Ruled out line that \"\n                   \"rests on it\"",
-  "new": "goes in a line \"\n                   \"that rests on it\"",
+  "old": "use this exact name in parentheses before cited ids",
+  "new": "use this name before cited ids",
   "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
  },
  {
   "name": "3b item 4: the agenda description loses the section order",
   "file": "nora/domain/block_types.py",
-  "old": "its sections run Decided, \"\n       \"Open, Owed, Proposed, Ruled out. An Owed",
-  "new": "its sections run Decided, \"\n       \"Open, Owed. An Owed",
+  "old": "its sections run Decided, \"\n        \"Open, Owed, Proposed, Ruled out. An Owed",
+  "new": "its sections run Decided, \"\n        \"Open, Owed. An Owed",
   "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
  },
  {
@@ -254,36 +254,36 @@
  {
   "name": "3b last round (a): the agenda `n` gloss calls it a position, not the message's real id",
   "file": "nora/domain/block_types.py",
-  "old": "\"n\": \"a message's real id: cite it exactly as [n]",
-  "new": "\"n\": \"a message's position: cite it exactly as [n]",
+  "old": "the row's citation id (negative for non-message records)",
+  "new": "the row's list position",
   "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
  },
  {
   "name": "3b last round (b): the note_index `n` gloss calls it a position, not the real note id",
   "file": "nora/domain/block_types.py",
-  "old": "n=\"the note's real id, what a revision of it takes\",",
-  "new": "n=\"the note's position, what a revision of it takes\",",
+  "old": "n=\"its handle in this list; real note id when id_kind is real\",",
+  "new": "n=\"the note position\",",
   "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
  },
  {
   "name": "3b last round (c): the reads description no longer says what a read tool's `room` takes",
   "file": "nora/domain/block_types.py",
-  "old": "as `platform:conversation_id` beside \"\n       \"its label. Code wrote it;",
-  "new": "as its key beside \"\n       \"its label. Code wrote it;",
+  "old": "as `platform:conversation_id` beside \"\n        \"its label. Code wrote it;",
+  "new": "as its key beside \"\n        \"its label. Code wrote it;",
   "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
  },
  {
   "name": "3b last round (1): the Owed line shape is no longer taught",
   "file": "nora/domain/block_types.py",
-  "old": "An Owed line is `<name> -> <what> -> \"\n       \"<due> [<ids>]`:",
-  "new": "An Owed line is `<name> -> <what> -> \"\n       \"<due>`:",
+  "old": "An Owed line is `<name> -> <what> -> \"\n        \"<due> [<ids>]`:",
+  "new": "An Owed line is `<name> -> <what> -> \"\n        \"<due>`:",
   "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say tests/unit/test_cognition_block_types_explain_every_field.py::test_the_owed_and_ruled_out_shapes_the_description_teaches_are_the_validators"
  },
  {
   "name": "3b last round (1): the Ruled out line shape loses its (names), as the validator requires them",
   "file": "nora/domain/block_types.py",
-  "old": "A Ruled out line is `<option>: <reason> (<names>) \"\n       \"[<ids>]`.",
-  "new": "A Ruled out line is `<option>: <reason> \"\n       \"[<ids>]`.",
+  "old": "A Ruled out line is `<option>: <reason> (<names>) \"\n        \"[<ids>]`.",
+  "new": "A Ruled out line is `<option>: <reason> \"\n        \"[<ids>]`.",
   "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say tests/unit/test_cognition_block_types_explain_every_field.py::test_the_owed_and_ruled_out_shapes_the_description_teaches_are_the_validators"
  },
  {

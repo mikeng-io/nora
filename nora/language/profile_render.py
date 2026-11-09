@@ -217,7 +217,8 @@ def render_profile(
     if not body:
         return None
     attrs: tuple[tuple[str, str], ...] = (
-        ("of", "nora" if view.entity == "nora" else view.of),
+        ("of", view.of),
+        ("entity", view.entity),
         ("written_by", "nora"), ("source", "what people said in chat"),
     )
     attrs += (("written", _age(written, now) if written is not None else "unknown"),)
@@ -236,13 +237,14 @@ def render_profile_people(
     whole is CUT to what is left, every later one is left out whole and
     counted in one closing `[N more characters not shown]` block, whose room
     is reserved, so the group never exceeds the cap."""
-    budget = PROFILE_PEOPLE_MAX_CHARS - _CLOSING_MARKER_RESERVE
+    budget = PROFILE_PEOPLE_MAX_CHARS - _CLOSING_MARKER_RESERVE - 40
 
     def rendered(view: ProfileView, room: int) -> ContextBlock | None:
         return render_profile(view, name_of=name_of, now=now, max_chars=room)
 
     blocks: list[ContextBlock] = []
     omitted = 0
+    omitted_people = 0
     closed = False  # once an account is cut or left out, every later one is left out whole
     for view in views:
         body, _ = _body(view, name_of=name_of, now_ms=int(now.timestamp() * 1000))
@@ -250,6 +252,7 @@ def render_profile_people(
             continue
         if closed:
             omitted += len(body)
+            omitted_people += 1
             continue
         room = min(len(body), PROFILE_ACCOUNT_MAX_CHARS)
         shown = rendered(view, room)
@@ -263,6 +266,7 @@ def render_profile_people(
         if shown is None or len(shown.render()) + 1 > budget:
             closed = True
             omitted += len(body)
+            omitted_people += 1
             continue
         blocks.append(shown)
         budget -= len(shown.render()) + 1
@@ -273,6 +277,7 @@ def render_profile_people(
         # a separate <profile> would have no subject or author (ADR 0029).
         blocks[-1] = replace(
             blocks[-1],
+            attrs=(*blocks[-1].attrs, ("not_listed", str(omitted_people))),
             body=compose_body(
                 blocks[-1].body.text + f"\n[{omitted} more characters not shown]"
             ),
