@@ -310,20 +310,49 @@ class Judge:
         client = self._client()
 
         async def one_sample() -> str:
+            from opentelemetry import trace
+
+            from nora.subject.eval_evidence import EvidenceError, current
+            from nora.subject.raw_model import (
+                client_capture,
+                end_raw_model_span,
+                end_raw_model_span_with_error,
+                record_eval_model_request,
+                start_raw_model_span,
+            )
+
+            request = {"model": self._endpoint()[2],
+                       "messages": [{"role": "user", "content": prompt}],
+                       "temperature": 0, "max_tokens": JUDGE_MAX_TOKENS}
+            span = start_raw_model_span(
+                model_id=request["model"], messages=[
+                    {"role": "user", "content": [{"text": prompt}]}])
+            if current() is not None and (span is None or not span.is_recording()):
+                raise EvidenceError("judge model trace unavailable before dispatch")
             # A WALL-CLOCK bound on the whole call, not only the client's.
             # The client's `timeout` is httpx's, which bounds each phase
             # (connect, the gap between two reads) rather than the request, so
             # a gateway that trickles bytes would never trip it. A
             # `TimeoutError` here becomes REVIEW: an ERROR about the
             # instrument, never a verdict about her.
-            answer = await asyncio.wait_for(
-                client.chat.completions.create(
-                    model=self._endpoint()[2],
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0, max_tokens=JUDGE_MAX_TOKENS,
-                ),
-                self.timeout_seconds,
-            )
+            try:
+                with trace.use_span(span or trace.INVALID_SPAN, end_on_exit=False):
+                    record_eval_model_request(request)
+                    async with client_capture(client) as observed:
+                        answer = await asyncio.wait_for(
+                            observed.chat.completions.create(**request), self.timeout_seconds)
+                    usage = answer.usage
+                    end_raw_model_span(span=span,
+                        content=answer.choices[0].message.content or "",
+                        finish_reason=answer.choices[0].finish_reason,
+                        input_tokens=usage.prompt_tokens if usage else None,
+                        output_tokens=usage.completion_tokens if usage else None,
+                        total_tokens=usage.total_tokens if usage else None,
+                        response_model=answer.model)
+            except BaseException as exc:
+                end_raw_model_span_with_error(span=span, error_message=str(exc),
+                    exception=exc if isinstance(exc, Exception) else None)
+                raise
             if answer.choices[0].finish_reason != "stop":
                 raise ValueError("judge response truncated or refused")
             return answer.choices[0].message.content or ""

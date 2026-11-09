@@ -127,6 +127,58 @@ def completion(request, content):
     })
 
 
+@pytest.mark.parametrize("trace_available", [False, True])
+async def test_raw_reply_judge_captures_its_request_response_and_model_span(
+        tmp_path, monkeypatch, trace_available):
+    from tempfile import TemporaryFile
+
+    from opentelemetry import trace
+
+    from evals.backbone import _prefill_capture
+    from nora.subject.eval_evidence import RunEvidence, read_events, validate_events
+
+    requests = []
+
+    def respond(request):
+        body = json.loads(request.content)
+        assert body["model"] == "generated-a" and body["max_tokens"] == 4096
+        assert "Generated answer" in body["messages"][0]["content"]
+        requests.append(body)
+        return completion(request, [{"criterion": "no_overreach_or_fabrication",
+            "score": 1, "confidence": 1, "rationale": "Generated support"}])
+
+    monkeypatch.setattr(Judge, "_endpoint", lambda self: (
+        "https://generated.invalid/v1", "generated-key", self.model))
+    monkeypatch.setattr(Judge, "_client", lambda self: AsyncOpenAI(
+        base_url="https://generated.invalid/v1", api_key="generated-key", max_retries=0,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond))))
+    if not trace_available:
+        monkeypatch.setattr("nora.subject.raw_model.start_raw_model_span", lambda **kwargs: None)
+    _prefill_capture()
+    with TemporaryFile() as lock:
+        evidence = RunEvidence(run_id="generated-raw-judge", metadata={},
+            lock_fd=lock.fileno(), private_root=tmp_path / "private")
+        with evidence.capture(trace.get_tracer_provider()):
+            result = await Judge(base_url="https://generated.invalid/v1",
+                model="generated-a", samples=1).grade(
+                    said="Generated answer", asked="Generated question", doctrine="Generated rule")
+        rows = read_events(evidence.path)
+    if not trace_available:
+        assert result.verdict == "REVIEW" and "trace unavailable" in result.error
+        assert requests == []
+        return
+    assert result.verdict == "PASS" and len(requests) == 1
+    actual = [json.loads(e["attributes"]["nora.model.request.body"])
+              for e in rows if e.get("name") == "nora.model.request"]
+    assert actual == requests
+    assert sum(e["kind"] == "transport_response" for e in rows) == 1
+    models = [e for e in rows if e["kind"] == "span_finished"
+              and e.get("attributes", {}).get("gen_ai.operation.name") == "chat"]
+    assert len(models) == 1
+    assert models[0]["attributes"]["gen_ai.usage.input_tokens"] == 10
+    assert validate_events(rows)["status"] == "PASS"
+
+
 def test_contract_drift_is_refused_and_valid_binding_is_immutable(tmp_path):
     path, sha = write_contract(tmp_path)
     good = binding.load_contract(path, sha, entrypoint="replay",
