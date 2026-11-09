@@ -23,7 +23,7 @@ from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, SynchronousMult
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from nora.obs.logging import SEVERITY_NUMBERS
-from nora.obs.tracing import EVAL_EVIDENCE_KEY
+from nora.obs.tracing import EVAL_EVIDENCE_KEY, TraceIdentityProcessor
 
 _CURRENT: contextvars.ContextVar[RunEvidence | None] = contextvars.ContextVar(
     "eval_evidence", default=None)
@@ -83,6 +83,7 @@ class RunEvidence(SpanProcessor, logging.Handler):
         self.run_id = run_id
         self.exit_code: int | None = None
         self._order = 0
+        self._export = None
 
     def check(self) -> None:
         if self.failure:
@@ -90,6 +91,9 @@ class RunEvidence(SpanProcessor, logging.Handler):
 
     def record(self, kind: str, **payload: Any) -> None:
         self.check()
+        if (self._export is not None and self._export.span_exporter.failed
+                and kind in {"case_started", "call_started", "transport_started"}):
+            raise EvidenceError("evaluation export failed; run invalid")
         row = {"kind": kind, "run_id": self.run_id, "case_id": _CASE.get(),
                "time_ns": time.time_ns(), **payload}
         span_context = trace.get_current_span().get_span_context()
@@ -111,12 +115,19 @@ class RunEvidence(SpanProcessor, logging.Handler):
                         raise OSError("short eval evidence write")
                     view = view[written:]
                 os.fsync(self._fd)
+            if self._export is not None and kind not in {"span_started", "span_finished", "log"}:
+                trace.get_current_span().add_event("nora.eval." + kind, {
+                    "nora.eval.record": json.dumps(row, ensure_ascii=False, default=_json_value)})
         except (OSError, ValueError, TypeError) as exc:
             self.failure = f"eval evidence write failed ({type(exc).__name__}); run is invalid"
             raise EvidenceError(self.failure) from exc
 
     def on_start(self, span: Any, parent_context: Any = None) -> None:
         if current() is self:
+            span.set_attribute("nora.eval.run_id", self.run_id)
+            span.set_attribute("gen_ai.conversation.id", self.run_id)
+            if _CASE.get():
+                span.set_attribute("nora.eval.case_id", _CASE.get())
             self.record("span_started", **self._span(span))
 
     def on_end(self, span: ReadableSpan) -> None:
@@ -158,7 +169,8 @@ class RunEvidence(SpanProcessor, logging.Handler):
                         sample_sha256=hashlib.sha256(json.dumps(
                             [input, metadata], default=_json_value, sort_keys=True
                         ).encode()).hexdigest())
-            with trace.get_tracer(__name__).start_as_current_span("eval.case"):
+            with trace.get_tracer(__name__).start_as_current_span(
+                    "eval.case", attributes={"nora.eval.case.name": name}):
                 yield
             self.record("case_finished")
         except BaseException as exc:
@@ -173,7 +185,8 @@ class RunEvidence(SpanProcessor, logging.Handler):
         self.record("case_result", result=result)
 
     @contextlib.contextmanager
-    def capture(self, provider: Any) -> Iterator[RunEvidence]:
+    def capture(self, provider: Any, *, export: Any = None) -> Iterator[RunEvidence]:
+        self._export = export
         token = _CURRENT.set(self)
         capture_token = context.attach(context.set_value(
             EVAL_EVIDENCE_KEY, self.record, baggage.set_baggage("nora.eval.capture", "true")))
@@ -187,6 +200,10 @@ class RunEvidence(SpanProcessor, logging.Handler):
                         and type(processor).__name__ == "_BaggageSpanProcessor")):
                 private_processors.add_span_processor(processor)
         original_processors._span_processors = private_processors._span_processors
+        if export is not None:
+            private_processors.add_span_processor(TraceIdentityProcessor())
+            private_processors.add_span_processor(export)
+            original_processors._span_processors = private_processors._span_processors
         provider.add_span_processor(self)
         # Content-bearing SDK logs go only to this run's private handler.
         class PrivateOnly(logging.Filter):
@@ -205,8 +222,23 @@ class RunEvidence(SpanProcessor, logging.Handler):
         root_logger.addHandler(self)
         try:
             self.record("run_started", metadata=self.metadata)
-            with trace.get_tracer(__name__).start_as_current_span("eval.run"):
+            from nora.agent.telemetry import evaluation_content_format
+            with (
+                evaluation_content_format() if export is not None else contextlib.nullcontext(),
+                trace.get_tracer(__name__).start_as_current_span(
+                    "eval.run", attributes={"nora.trace_kind": "generation"}) as root,
+            ):
+                if export is not None:
+                    with trace.get_tracer(__name__).start_as_current_span("eval.export.preflight"):
+                        pass
+                    export.span_exporter.check()
+                self.record("visibility", status="exporting" if export else "private_only")
                 yield self
+                self.record("visibility", status="exporting" if export else "private_only")
+                root.set_attribute("nora.eval.capture.status", "recorded")
+            if export is not None:
+                export.force_flush()
+                export.span_exporter.check()
             self.check()
             self.record("run_finished", exit_code=self.exit_code, active_cases=sorted(self._active))
             receipt = validate_events(read_events(self.path))
@@ -226,6 +258,8 @@ class RunEvidence(SpanProcessor, logging.Handler):
             _CURRENT.reset(token)
             self._open = False
             os.close(self._fd)
+            if export is not None:
+                export.shutdown()
             # MultiSpanProcessor cannot remove processors. Closed ones remain
             # inert: current() can never select them on a later run.
 
@@ -295,6 +329,10 @@ def validate_events(events: list[dict[str, Any]]) -> dict[str, Any]:
         causes.add("unmatched_event")
     if not any(e["kind"] in {"run_finished", "run_failed"} for e in events):
         causes.add("terminal_missing")
+    transports = sum(e["kind"] == "transport_started" for e in events)
+    requests = sum(e.get("name") == "nora.model.request" for e in events)
+    if transports != requests:
+        causes.add("request_capture_missing")
     starts = sum(e.get("name") == "nora.session.started" for e in events)
     ends = sum(e.get("name") == "nora.session.terminal" for e in events)
     if starts != ends:

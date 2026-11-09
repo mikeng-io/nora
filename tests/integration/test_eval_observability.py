@@ -39,7 +39,8 @@ def capture(lock_fd):
     return RunEvidence(run_id="generated-run", metadata={"corpus": "generated"}, lock_fd=lock_fd)
 
 
-async def model_round_trip(requests, *, sentinel="", rounds=2, reasoning_prefill=False):
+async def model_round_trip(requests, *, sentinel="", rounds=2, reasoning_prefill=False,
+                           judge=False):
     @tool
     def next_number(value: int) -> str:
         """Return the next integer.
@@ -62,7 +63,8 @@ async def model_round_trip(requests, *, sentinel="", rounds=2, reasoning_prefill
                        for r in rows(evidence))
         requests.append(body)
         assert body["model"] == "generated-model"
-        assert body["tools"][0]["function"]["name"] == "next_number"
+        if not judge:
+            assert body["tools"][0]["function"]["name"] == "next_number"
         if len(requests) < rounds:
             delta = {"role": "assistant", "reasoning": sentinel, "tool_calls": [
                      {"index": 0, "id": f"call_generated_{len(requests)}",
@@ -71,8 +73,9 @@ async def model_round_trip(requests, *, sentinel="", rounds=2, reasoning_prefill
             stop = "tool_calls"
         else:
             assert len(requests) == rounds
-            assert any(m.get("role") == "tool" and m.get("content") == "6"
-                       for m in body["messages"])
+            if not judge:
+                assert any(m.get("role") == "tool" and m.get("content") == "6"
+                           for m in body["messages"])
             delta = {"role": "assistant", "content": "6 " + sentinel, "reasoning": sentinel}
             stop = "stop"
         chunks = [
@@ -81,6 +84,7 @@ async def model_round_trip(requests, *, sentinel="", rounds=2, reasoning_prefill
             {"id": "generated", "object": "chat.completion.chunk", "model": "generated-model",
              "choices": [{"index": 0, "delta": {}, "finish_reason": stop}],
              "usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15,
+                       "prompt_tokens_details": {"cached_tokens": 4},
                        "completion_tokens_details": {"reasoning_tokens": 2}}},
         ]
         data = "".join("data: " + json.dumps(c) + "\n\n" for c in chunks) + "data: [DONE]\n\n"
@@ -96,8 +100,11 @@ async def model_round_trip(requests, *, sentinel="", rounds=2, reasoning_prefill
         model = factory.create_model_provider(model="generated-model", max_tokens=100,
                                               temperature=0, client=client, tool_choice="auto")
         agent = factory.create_browse_agent(
-            model=model, system_prompt="Increment the supplied integer.",
-            tools=[next_number], trace_attributes={"gen_ai.conversation.id": "generated"},
+            model=model, system_prompt=(
+                "Judge the generated answer; return a score and reason." if judge
+                else "Increment the supplied integer."),
+            tools=[] if judge else [next_number],
+            trace_attributes={"gen_ai.conversation.id": "generated"},
             retry=factory.build_retry_policy(timeout_seconds=5))
         if reasoning_prefill:
             from nora.agent.reasoning_strip import ReasoningStripWatch
@@ -155,7 +162,8 @@ def test_real_case_request_tools_results_logs_and_report_are_durable(evidence_ro
                 for r in data if r["kind"] == "event" and r["name"] == "nora.tools.surface"]
     assert surfaces == [{"admitted": ["later_tool", "next_number"],
                          "resident": ["next_number"], "deferred": ["later_tool"],
-                         "platform": "signal", "grant": None}]
+                         "platform": "signal", "grant": None,
+                         "deferred_schemas": {"later_tool": {"status": "unavailable"}}}]
     case = next(r for r in data if r["kind"] == "case_started")
     assert all(r["case_id"] == case["case_id"] for r in data
                if r["kind"] in ("case_result", "case_finished"))
@@ -295,7 +303,9 @@ async def test_request_write_failure_prevents_model_dispatch(evidence_root, monk
     assert not any(r["kind"] == "run_finished" for r in rows(evidence))
 
 
-def test_two_round_private_record_sdk_and_each_public_sink(evidence_root, monkeypatch, capsys):
+@pytest.mark.parametrize("authorized", [False, True])
+def test_two_round_private_record_sdk_and_each_public_sink(
+        evidence_root, monkeypatch, capsys, authorized):
     from io import StringIO
 
     from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
@@ -323,7 +333,15 @@ def test_two_round_private_record_sdk_and_each_public_sink(evidence_root, monkey
     try:
         with eval_host_lock() as fd:
             evidence = capture(fd)
-            with evidence.capture(provider):
+            from opentelemetry.sdk.trace.export import SpanExportResult
+
+            from nora.agent.telemetry import evaluation_export
+            monkeypatch.setattr(
+                "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter.export",
+                lambda *args: SpanExportResult.SUCCESS)
+            export = evaluation_export({"enabled": True, "exporter": "otlp_http",
+                "endpoint": "http://127.0.0.1:14318/v1/traces"}) if authorized else None
+            with evidence.capture(provider, export=export):
                 result = task(Case(name="generated-private", input="5", session_id="generated"))
         events = read_events(evidence.path)
         receipt = validate_events(events)
@@ -605,3 +623,130 @@ async def test_cancelled_model_pass_has_its_own_complete_lifecycle(
     # The preceding completed call, when present, cannot vouch for this pass.
     attempts = {e["attempt_id"] for e in events if e["kind"] == "call_started"}
     assert len(attempts) == len(requests) + 1
+
+
+@pytest.mark.parametrize("export_fails", [False, True])
+async def test_authorized_signoz_sdk_export(evidence_root, monkeypatch, tmp_path, export_fails):
+    """Real SDK/tool trajectory and a judge-shaped call through the OTLP encoder."""
+    from io import StringIO
+
+    from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
+    from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+
+    from nora.agent.telemetry import EvaluationExportError, evaluation_export
+    from nora.subject.eval_evidence import read_events, validate_events
+
+    payloads = []
+    def send(session, url, **kwargs):
+        assert url == "http://127.0.0.1:14318/v1/traces"
+        payloads.append(kwargs["data"])
+        import requests
+        response = requests.Response()
+        response.status_code = 400 if export_fails else 200
+        response._content = b""
+        return response
+
+    monkeypatch.setattr("requests.Session.request", send)
+    def urllib_send(pool, method, url, **kwargs):
+        assert method == "POST"
+        assert url == "http://127.0.0.1:14318/v1/traces"
+        payloads.append(kwargs["body"])
+        from urllib3.response import HTTPResponse
+        return HTTPResponse(body=b"", status=400 if export_fails else 200)
+    monkeypatch.setattr("urllib3.PoolManager.request", urllib_send)
+    backbone._prefill_capture()
+    provider = trace.get_tracer_provider()
+    unauthorized = StringIO()
+    provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter(out=unauthorized)))
+    export = evaluation_export({"enabled": True, "exporter": "otlp_http",
+                                "endpoint": "http://127.0.0.1:14318/v1/traces"})
+    requests_seen = []
+    with eval_host_lock() as fd:
+        evidence = capture(fd)
+        if export_fails:
+            with (pytest.raises((EvidenceError, EvaluationExportError)),
+                  evidence.capture(provider, export=export),
+                  evidence.case("generated-failure", input="5", metadata={})):
+                await model_round_trip(requests_seen)
+        else:
+            with evidence.capture(provider, export=export):
+                with evidence.case("generated-writer", input="5", metadata={}):
+                    await model_round_trip(requests_seen, sentinel="GENERATED_EXPORT_SENTINEL")
+                with evidence.case("generated-judge", input="grade generated answer", metadata={}):
+                    # Independent invocation, same real SDK. No paid judge.
+                    await model_round_trip([], sentinel="GENERATED_JUDGE_REASON",
+                                           rounds=1, judge=True)
+    assert payloads  # negative sink checks cannot pass through an idle exporter
+    assert "GENERATED_EXPORT_SENTINEL" not in unauthorized.getvalue()
+    if export_fails:
+        assert validate_events(read_events(evidence.path))["status"] == "ERROR"
+        return
+    decoded = [ExportTraceServiceRequest.FromString(p) for p in payloads]
+    spans = [s for p in decoded for rs in p.resource_spans
+             for ss in rs.scope_spans for s in ss.spans]
+    def attrs(span):
+        return {a.key: a.value.string_value or a.value.int_value for a in span.attributes}
+    roots = [s for s in spans if s.name == "eval.run"]
+    cases = [s for s in spans if s.name == "eval.case"]
+    models = [s for s in spans if attrs(s).get("gen_ai.operation.name") == "chat"]
+    tools = [s for s in spans if attrs(s).get("gen_ai.operation.name") == "execute_tool"]
+    assert len(roots) == 1 and len(cases) == 2 and len(models) == 3 and len(tools) == 1
+    assert all(s.parent_span_id == roots[0].span_id for s in cases)
+    assert len({s.trace_id for s in spans}) == 1
+    assert all(attrs(s)["nora.eval.run_id"] == "generated-run" for s in spans)
+    assert all(attrs(s).get("nora.eval.case_id") for s in models + tools)
+    assert all(attrs(s).get("gen_ai.input.messages") for s in models)
+    assert all(attrs(s).get("gen_ai.output.messages") for s in models)
+    assert all(attrs(s)["gen_ai.system_instructions"] for s in models)
+    assert any("Judge the generated answer" in attrs(s)["gen_ai.system_instructions"]
+               for s in models)
+    assert sum("next_number" in attrs(s)["gen_ai.tool.definitions"] for s in models) == 2
+    assert sum(attrs(s)["gen_ai.usage.input_tokens"] for s in models) == 36
+    assert all(attrs(s)["gen_ai.request.model"] == "generated-model" for s in models)
+    wire = "".join(str(p) for p in decoded)
+    assert "generated-served" in wire and "generated-provider" in wire
+    assert "GENERATED_JUDGE_REASON" in wire and "tool_finished" in wire
+    assert "generated-private-auth-value" not in wire
+    assert validate_events(read_events(evidence.path))["status"] == "PASS"
+    # Synthetic OTLP only, usable for a separate collector/backend readback.
+    combined = ExportTraceServiceRequest()
+    for payload in decoded:
+        combined.resource_spans.extend(payload.resource_spans)
+    (tmp_path / "synthetic-eval.pb").write_bytes(combined.SerializeToString())
+    (tmp_path / "trace-id.txt").write_text(roots[0].trace_id.hex())
+
+
+@pytest.mark.parametrize("endpoint", ["https://cloud.invalid/v1/traces",
+    "http://127.0.0.1:3100/v1/traces", "http://127.0.0.1:14318/v1/traces?token=generated"])
+def test_eval_export_refuses_unauthorized_sink(endpoint):
+    from nora.agent.telemetry import EvaluationExportError, evaluation_export
+    with pytest.raises(EvaluationExportError):
+        evaluation_export({"enabled": True, "exporter": "otlp_http", "endpoint": endpoint})
+
+
+def test_missing_model_request_is_capture_error():
+    from nora.subject.eval_evidence import validate_events
+    receipt = validate_events([{"kind": "transport_started"}, {"kind": "transport_finished"},
+                               {"kind": "run_finished"}])
+    assert receipt["status"] == "ERROR" and "request_capture_missing" in receipt["causes"]
+
+
+async def test_dropped_eval_content_invalidates_visibility(evidence_root, monkeypatch):
+    from opentelemetry.sdk.trace.export import SpanExportResult
+
+    from nora.agent.telemetry import EvaluationExportError, evaluation_export
+    monkeypatch.setattr(
+        "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter.export",
+        lambda *args: SpanExportResult.SUCCESS)
+    backbone._prefill_capture()
+    export = evaluation_export({"enabled": True, "exporter": "otlp_http",
+                                "endpoint": "http://127.0.0.1:14318/v1/traces"})
+    with eval_host_lock() as fd:
+        evidence = capture(fd)
+        with (
+            pytest.raises(EvaluationExportError),
+            evidence.capture(trace.get_tracer_provider(), export=export),
+            trace.get_tracer(__name__).start_as_current_span("generated-overflow") as span,
+        ):
+            for i in range(200):
+                span.add_event("generated-content", {"index": i})

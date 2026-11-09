@@ -808,6 +808,13 @@ def _main(*, lock_fd: int = -1) -> int:
             max_output_tokens=vals[2],
             deadline=time.monotonic() + vals[3] * 60,
             output_reserve=4000)
+    from nora.agent.telemetry import evaluation_export
+    try:
+        with Path(args.deployment_config).open("rb") as config_file:
+            tracing = tomllib.load(config_file).get("obs", {}).get("tracing", {})
+        export = evaluation_export(tracing)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise EvidenceError("configured evaluation visibility unavailable") from exc
     try:
         evidence = RunEvidence(run_id=RUN_ID, lock_fd=lock_fd, metadata={
             **revision(_REPO_ROOT), "corpora": names, "cases": sorted(only or ()),
@@ -826,7 +833,7 @@ def _main(*, lock_fd: int = -1) -> int:
     from nora.domain.run_budget import active_run_budget
     token = active_run_budget.set(budget) if budget is not None else None
     try:
-        with evidence.capture(trace.get_tracer_provider()):
+        with evidence.capture(trace.get_tracer_provider(), export=export):
             rc = _execute(args, names, only, subject_overrides=subject_overrides)
             if budget is not None:
                 evidence.record("run_budget_final", **budget.as_metadata())

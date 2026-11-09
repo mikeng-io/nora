@@ -85,7 +85,9 @@ source revision/diff and configuration hashes, run selection, case/draw inputs,
 actual admitted/resident/deferred tool names, formatted OpenAI request bodies,
 existing OTel spans (including model/tool outputs and usage), enabled application
 logs, raw judge votes, typed case results and complete corpus reports. It uses
-the existing provider/SDK spans even when remote tracing/export is disabled.
+the existing provider/SDK spans. The CLI also requires the configured owner-local
+SigNoz sink; [evaluation visibility](observability.md#evaluation-visibility)
+defines the explicit content policy and operator acceptance.
 Request bodies and tool-surface events are persisted before model dispatch;
 raw model paths retain their existing SDK span contents rather than gaining a
 second model wrapper. Run/case IDs and trace/span IDs correlate the records.

@@ -25,7 +25,7 @@ two copies drift and the one that drifts is the one you did not read
 ---
 
 Eval CLI runs also keep private durable evidence on the eval host using the same
-OTel provider, independent of remote exporter flags. See
+OTel provider. Private reproducibility and operator visibility are separate requirements. See
 [Durable run evidence](eval-sop.md#durable-run-evidence) for the lock, contents,
 permissions and incomplete-run semantics.
 
@@ -186,6 +186,53 @@ model spans. Read back classification and totals to prevent double counting;
 retain the parent as an agent span. Unknown usage stays unknown, not fabricated
 zero. Raw vision calls need their own model span and per-call usage, including
 individual video windows; an outer comprehension span is not that measurement.
+
+### Evaluation visibility
+
+Evaluation content is explicitly authorized to the configured owner-controlled
+SigNoz collector. The eval CLI reads `[obs.tracing]` from its deployment config
+before executing cases. It requires enabled `otlp_http` and the existing collector
+address: host loopback port 14318 or the `signoz-ingester:4318` Compose alias,
+with `/v1/traces`. Other endpoints (including cloud, legacy Langfuse, file and
+console exporters) are refused before model execution. No ambient exporter is
+re-enabled. Credentials use the existing resolver and never become trace content.
+No configuration switch, host installation or historical import is implied.
+
+`RunEvidence.capture` retains the SDK's in-memory evaluation processors and
+private durable recorder, adds trace identity plus this single checked OTLP
+processor, and restores the original processors afterwards. Content logs remain
+private. During the isolated run the installed Strands tracer emits native GenAI
+message/system/tool events for the evaluation SDK mapper. The exporter promotes
+the SDK payloads onto attributes on exported copies so AI Thread can render them;
+it preserves the in-memory mapper's event input. Each span carries
+run/case binding under one run root and case children; SDK agent/model/tool spans
+retain their actual parentage. The exact formatted dispatch body and private
+lifecycle records also appear as `nora.eval.*` events on their current spans.
+These include context assembly evidence (empty/unavailable/cuts when supplied),
+admitted/deferred tools with schema availability, raw responses and served
+identity headers, retries, errors and transport latency. Missing readings remain
+unavailable, never zero. Deferred tools with no schema expose `unavailable`.
+The existing collector strips agent aggregate usage from model totals and
+normalizes cache usage; evaluation introduces no second model span or charge.
+
+A synthetic preflight span must export successfully before cases start. Export
+failure and OTel dropped event/attribute counters invalidate visibility and stop
+new model work; missing formatted-request capture invalidates evidence. The
+private terminal record remains distinct from semantic scores. An OTLP success
+means collector acknowledgement only: backend retention and UI readability still
+require readback. A large run that exceeds SDK content limits is ERROR rather
+than silently accepted with cuts. Synchronous per-span export deliberately trades
+evaluation latency for immediate failure detection; runtime tracing is unchanged.
+
+Acceptance before another paid evaluation: use generated inputs through the real
+SDK and deterministic local provider, including a multi-turn tool trajectory and
+judge invocation. Verify authorized export and unauthorized-sink exclusion, full
+system/messages/tool schemas/results, run/case/model/tool navigation, model-only
+usage, and negative missing-capture/export controls. Then read the generated trace
+back from the existing collector/backend and rendered AI Thread, checking exact
+content and totals. Source tests or HTTP 200 alone do not satisfy this acceptance.
+No production messages are imported. Until the installed source and operator UI
+are verified together, operator-visible acceptance remains unavailable.
 
 ### Recording, content and retention are separate
 
