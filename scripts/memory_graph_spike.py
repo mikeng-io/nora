@@ -24,6 +24,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.engine import make_url
 
+from evals.grading_contract import GradingContract, contract_for
 from evals.rebuilt.judge import criterion_verdict, parse_json_response
 from nora.agent.replay_inspection import compare_inspection
 from nora.agent.structured import ask_text, build_structured_model
@@ -579,11 +580,22 @@ def fact_quality(scored: Mapping[str, Any]) -> dict[str, str]:
               "facts_missed", "facts_judge_errors")
     if any(type(scored.get(k)) is not int or scored[k] < 0 for k in fields):
         return {"status": "ERROR"}
-    if (scored["facts_saved"] != sum(scored[k] for k in (
-            "facts_supported", "facts_unsupported", "facts_unsure"))
-            or scored["facts_judge_errors"] or scored["facts_unsure"]):
+    if (
+        scored["facts_saved"]
+        != sum(scored[k] for k in ("facts_supported", "facts_unsupported", "facts_unsure"))
+        or scored["facts_judge_errors"]
+        or scored["facts_unsure"]
+        or scored.get("eligibility_unsure", 0)
+        or scored.get("coverage_unsure", 0)
+    ):
         return {"status": "ERROR"}
-    return {"status": "FAIL" if scored["facts_unsupported"] or scored["facts_missed"] else "PASS"}
+    return {
+        "status": "FAIL"
+        if scored["facts_unsupported"]
+        or scored["facts_missed"]
+        or scored.get("eligibility_ineligible", 0)
+        else "PASS"
+    }
 
 
 def check_acts(before: Mapping[str, Any], after: Mapping[str, Any]) -> int:
@@ -593,6 +605,8 @@ def check_acts(before: Mapping[str, Any], after: Mapping[str, Any]) -> int:
 
 def compare_reports(before: dict[str, Any], after: dict[str, Any]) -> str:
     """Print every leaf, including added/retired rows and status changes."""
+    if before.get("grading_contract") != after.get("grading_contract"):
+        raise ValueError("incomparable reports: grading contract differs or is missing")
 
     for key in ("sample_sha256", "seed", "judges", "effective_judges", "strata"):
         if key not in before or key not in after or before[key] != after[key]:
@@ -705,18 +719,30 @@ def miss_in_new_sources(entry: dict[str, Any], sources: dict[str, Any]) -> bool:
     return bool(quote) and any(quote in join.join(rows) for join in (" ", " / ", "/", ""))
 
 
-def freeze_fact_session(output: Path, index: int, wake: Any, inspection: Any,
-                        events: list[dict[str, Any]]) -> None:
+def freeze_fact_session(
+    output: Path, index: int, wake: Any, inspection: Any, events: list[dict[str, Any]]
+) -> None:
     from nora.agent.replay_capture import record
 
-    record("fact_scoring_input", inspection=inspection, exchanges=evidence_exchanges(events))
+    record(
+        "fact_scoring_input",
+        inspection=inspection,
+        exchanges=evidence_exchanges(events),
+        grading_reference_key=str(wake["id"]) if "id" in wake else None,
+    )
     freeze(output / f"session-{index}.json",
            {"wake": wake, "inspection": inspection, "events": events})
 
 
 async def smoke_fact_support(
-    judges: Judges, inspection: Any, exchanges: list[dict[str, Any]], *,
-    session_event_ids: list[str] | None = None, source_sha256: str | None = None,
+    judges: Judges,
+    inspection: Any,
+    exchanges: list[dict[str, Any]],
+    *,
+    session_event_ids: list[str] | None = None,
+    source_sha256: str | None = None,
+    contract: GradingContract | None = None,
+    reference_key: str | None = None,
 ) -> dict[str, Any]:
     """The smoke report's fact scoring: each saved statement judged supported /
     unsupported / unsure against its cited quote and the shown rows, and the
@@ -728,6 +754,20 @@ async def smoke_fact_support(
             e for e in exchanges if e["name"] not in {"memory_propose", "profile_revise", "close"}
         ],
     }
+    reference = (
+        contract.memory_reference(str(reference_key), inspection) if contract is not None else None
+    )
+    policy_sha = contract.sha256 if contract is not None else ""
+    support_instruction = (
+        contract.instruction("memory_support")
+        if contract is not None
+        else _FACT_SUPPORT_INSTRUCTION
+    )
+    coverage_instruction = (
+        contract.instruction("memory_coverage")
+        if contract is not None
+        else _MISSED_FACT_INSTRUCTION
+    )
     saved = []
     for exchange in exchanges:
         if exchange["name"] != "memory_propose" or not isinstance(exchange["result"], dict):
@@ -746,8 +786,18 @@ async def smoke_fact_support(
         "facts_judge_errors": 0,
         "facts_context_only": 0,
     }
+    if reference is not None:
+        out.update(
+            measurement_version="fixed-reference-v1",
+            grading_contract_sha256=policy_sha,
+            coverage_units=len(reference["units"]),
+            coverage_unsure=0,
+            eligibility_ineligible=0,
+            eligibility_unsure=0,
+        )
     from nora.agent.replay_capture import record
     from nora.subject.eval_evidence import current
+
     session_ids = list(session_event_ids or [])
     if session_event_ids is None and (evidence_run := current()):
         captured = read_events(evidence_run.path)
@@ -757,13 +807,14 @@ async def smoke_fact_support(
     for statement, source_rows in saved:
         cited = {n: source_rows[n] for n in cited_source_numbers(statement) if n in source_rows}
         verdicts = []
+        eligibility = []
         for model in judges.models:
             try:
                 parsed = parse_fact_output(
                     await judges.call(
-                        model, _FACT_SUPPORT_INSTRUCTION,
-                        {"statement": statement, "cited_rows": cited,
-                         "session_input": evidence},
+                        model,
+                        support_instruction,
+                        {"statement": statement, "cited_rows": cited, "session_input": evidence},
                     )
                 )
                 verdict = parsed.get("verdict") if isinstance(parsed, dict) else None
@@ -771,6 +822,23 @@ async def smoke_fact_support(
                         or not isinstance(parsed.get("reason"), str)
                         or not parsed["reason"].strip()):
                     raise ValueError("judge_reason_or_verdict_missing")
+                if reference is not None:
+                    eligible = parsed.get("eligibility")
+                    if (
+                        eligible not in {"eligible", "ineligible", "unsure"}
+                        or not isinstance(parsed.get("eligibility_reason"), str)
+                        or not parsed["eligibility_reason"].strip()
+                    ):
+                        raise ValueError("eligibility_verdict_missing")
+                    eligibility.append(eligible)
+                    record(
+                        "eligibility_verdict",
+                        alias=model,
+                        statement=statement,
+                        verdict=eligible,
+                        reason=parsed["eligibility_reason"],
+                        grading_contract_sha256=policy_sha,
+                    )
                 record("judge_verdict", alias=model, statement=statement,
                        session_event_ids=session_ids, source_sha256=source_sha256,
                        verdict=verdict,
@@ -782,23 +850,107 @@ async def smoke_fact_support(
                 )
             except Exception as exc:  # noqa: BLE001 - private details stay in evidence
                 verdicts.append("ERROR")
-                record("judge_error", cause="judge_incomplete", detail=type(exc).__name__,
-                       validation=str(exc) if isinstance(exc, ValueError) else "judge_call_failed")
+                record(
+                    "judge_error",
+                    cause="judge_incomplete",
+                    detail=type(exc).__name__,
+                    validation=str(exc) if isinstance(exc, ValueError) else "judge_call_failed",
+                )
         out["facts_judge_errors"] += verdicts.count("ERROR")
+        if reference is not None:
+            out["eligibility_ineligible"] += int("ineligible" in eligibility)
+            out["eligibility_unsure"] += int("unsure" in eligibility)
         if verdicts and all(v == "supported" for v in verdicts):
             out["facts_supported"] += 1
         elif "unsupported" in verdicts:
             out["facts_unsupported"] += 1
         else:
             out["facts_unsure"] += 1
+    missing_units: set[str] = set()
     for model in judges.models:
         try:
             parsed = parse_fact_output(
                 await judges.call(
-                    model, _MISSED_FACT_INSTRUCTION,
-                    {"session_input": evidence, "saved_statements": [s for s, _ in saved]},
+                    model,
+                    coverage_instruction,
+                    {
+                        "session_input": evidence,
+                        "saved_statements": [s for s, _ in saved],
+                        **({"required_units": reference["units"]} if reference is not None else {}),
+                    },
                 )
             )
+            if reference is not None:
+                rows = parsed.get("coverage") if isinstance(parsed, dict) else None
+                if not isinstance(rows, list):
+                    raise ValueError("coverage_shape")
+                expected = {u["id"] for u in reference["units"]}
+                if (
+                    any(
+                        not isinstance(row, dict) or not isinstance(row.get("id"), str)
+                        for row in rows
+                    )
+                    or len(rows) != len(expected)
+                    or {row["id"] for row in rows} != expected
+                ):
+                    raise ValueError("coverage_units_missing_duplicated_or_undeclared")
+                for row in rows:
+                    verdict = row.get("verdict")
+                    if (
+                        verdict not in {"covered", "missed", "unsure"}
+                        or not isinstance(row.get("reason"), str)
+                        or not row["reason"].strip()
+                    ):
+                        raise ValueError("coverage_verdict_missing")
+                    if verdict == "covered":
+                        proof = row.get("covered_by")
+                        if (
+                            not isinstance(proof, dict)
+                            or set(proof) != {"statements", "reads"}
+                            or not all(isinstance(proof[k], list) for k in proof)
+                            or not (proof["statements"] or proof["reads"])
+                        ):
+                            raise ValueError("coverage_support_missing")
+                        for index in proof["statements"]:
+                            if type(index) is not int or not 0 <= index < len(saved):
+                                raise ValueError("coverage_statement_outside_saved")
+                        for index in proof["reads"]:
+                            if type(index) is not int or not 0 <= index < len(evidence["reads"]):
+                                raise ValueError("coverage_read_outside_shown")
+                            read = evidence["reads"][index]
+                            result = read["result"]
+                            if (
+                                read["name"] == "load_tools"
+                                or not isinstance(result, dict)
+                                or result.get("status") != "ok"
+                            ):
+                                raise ValueError("coverage_read_unavailable_or_not_content")
+                    elif verdict == "missed":
+                        missing_units.add(row["id"])
+                    else:
+                        out["coverage_unsure"] += 1
+                    record(
+                        "coverage_verdict",
+                        session_event_ids=session_ids,
+                        source_sha256=source_sha256,
+                        alias=model,
+                        unit=row["id"],
+                        verdict=verdict,
+                        reason=row["reason"],
+                        covered_by=row.get("covered_by"),
+                        grading_contract_sha256=policy_sha,
+                    )
+                diagnostics = parsed.get("diagnostic_misses", [])
+                if not isinstance(diagnostics, list):
+                    raise ValueError("diagnostic_misses_shape")
+                record(
+                    "coverage_diagnostics",
+                    alias=model,
+                    findings=diagnostics,
+                    scored=False,
+                    grading_contract_sha256=policy_sha,
+                )
+                continue
             if not isinstance(parsed, dict) or not all(
                 isinstance(parsed.get(k), list) for k in ("missed", "context_only")
             ):
@@ -833,8 +985,14 @@ async def smoke_fact_support(
             out["facts_context_only"] += len(parsed["context_only"])
         except Exception as exc:  # noqa: BLE001 - private details stay in evidence
             out["facts_judge_errors"] += 1
-            record("judge_error", cause="judge_incomplete", detail=type(exc).__name__,
-                       validation=str(exc) if isinstance(exc, ValueError) else "judge_call_failed")
+            record(
+                "judge_error",
+                cause="judge_incomplete",
+                detail=type(exc).__name__,
+                validation=str(exc) if isinstance(exc, ValueError) else "judge_call_failed",
+            )
+    if reference is not None:
+        out["facts_missed"] = len(missing_units)
     return out
 
 
@@ -1050,7 +1208,11 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
         expected_sample = getattr(args, "sample_sha256", None)
         if expected_sample and sample_sha256 != expected_sample:
             raise ValueError("frozen replay sample differs from the approved baseline")
+        contract = getattr(args, "bound_contract", None)
+        if contract is not None:
+            contract.verify_sample(sample_sha256, list(selected.values()))
         from nora.agent.replay_capture import record
+
         record("snapshot_manifest", sample_sha256=sample_sha256,
                migration_revision=await rows(engine, "SELECT version_num FROM alembic_version"))
         results: list[dict[str, Any]] = []
@@ -1065,11 +1227,18 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
             if evidence is None:
                 raise ValueError("capture_unavailable")
             with evidence.case(
-                f"wake:{view.unit}:{wake['id']}", input=wake,
-                metadata={"wake_id": wake["id"], "unit": view.unit, "replay_ms": replay_ms,
-                          "frozen_sample_sha256": sample_sha256, "seed": args.seed,
-                          "snapshot_locator_sha256": hashlib.sha256(
-                              args.database_url.encode()).hexdigest()},
+                f"wake:{view.unit}:{wake['id']}",
+                input=wake,
+                metadata={
+                    "wake_id": wake["id"],
+                    "unit": view.unit,
+                    "replay_ms": replay_ms,
+                    "frozen_sample_sha256": sample_sha256,
+                    "seed": args.seed,
+                    "snapshot_locator_sha256": hashlib.sha256(
+                        args.database_url.encode()
+                    ).hexdigest(),
+                },
             ):
                 at = datetime.fromtimestamp(replay_ms / 1000, UTC)
                 room = next((c for c in policy.rooms() if c.unit == view.unit), None)
@@ -1099,7 +1268,9 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                                     # (`evals.scenarios.MEMORY_INDEX_OVERRIDES`).
                                     "memory.index.embedder_url": EMBEDDER_FROM_HOST,
                                     "llm": cfg.llm.model_dump(),
-                                    "providers": {k: v.model_dump() for k, v in cfg.providers.items()},
+                                    "providers": {
+                                        k: v.model_dump() for k, v in cfg.providers.items()
+                                    },
                                     "model_routes": {
                                         k: v.model_dump() for k, v in cfg.model_routes.items()
                                     },
@@ -1120,13 +1291,19 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                             ).line()
                             inspection = await runner.inspect(
                                 view=view, now_ms=replay_ms, historical=True)
+                            if contract is not None:
+                                if inspection is None:
+                                    raise EvidenceError("required inspection unavailable")
+                                contract.memory_reference(str(wake["id"]), inspection)
                             if getattr(args, "inspect_only", False):
                                 if inspection is None:
                                     raise ValueError("inspection unavailable")
                                 freeze(output / f"inspection-{wake_index}.json", inspection)
                                 inspections += 1
                                 continue
-                            tokens_before = subject.deps.metrics.get("nora_cognition_unit_tokens_total")
+                            tokens_before = subject.deps.metrics.get(
+                                "nora_cognition_unit_tokens_total"
+                            )
                             outcome = await runner.replay(
                                 view=view, now_ms=replay_ms, historical=True
                             )
@@ -1135,7 +1312,6 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                             evidence.record("replay_session", wake_id=wake["id"],
                                             session_id=outcome.session_id,
                                             sample_sha256=sample_sha256)
-                            from nora.subject.eval_evidence import current
                             evidence = current()
                             if evidence is None:
                                 raise ValueError("capture_unavailable")
@@ -1153,11 +1329,15 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                             if (inspection is None or not requests
                                     or not compare_inspection(inspection, requests[0])):
                                 raise ValueError("inspection_projection_mismatch")
-                            freeze_fact_session(output, len(results), wake, inspection, session_events)
+                            freeze_fact_session(
+                                output, len(results), wake, inspection, session_events
+                            )
                             proposals = [e for e in exchanges if e["name"] == "memory_propose"]
                             if any(not isinstance(e["result"], dict) for e in proposals):
                                 raise ValueError("unreadable admission result")
-                            admitted = {i for e in proposals for i in e["result"].get("admitted", [])}
+                            admitted = {
+                                i for e in proposals for i in e["result"].get("admitted", [])
+                            }
                             consumed = {
                                 c.item_index
                                 for c in outcome.closed
@@ -1192,7 +1372,13 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                                 refused=sum(bool(e["result"].get("refused")) for e in proposals),
                                 refused_consumed=len(consumed - admitted),
                             )
-                            scored = await smoke_fact_support(judges, inspection, exchanges)
+                            scored = await smoke_fact_support(
+                                judges,
+                                inspection,
+                                exchanges,
+                                contract=contract,
+                                reference_key=str(wake["id"]),
+                            )
                             measured.update(scored)
                             measured["memory_quality"] = fact_quality(scored)
                             if not args.smoke:
@@ -1213,7 +1399,9 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                                    frames=[(Path(f.filename).name, f.lineno, f.name)
                                            for f in traceback.extract_tb(exc.__traceback__)[-8:]])
                         finally:
-                            measured["acts"] = check_acts(before_sandbox, await acts(sandbox_engine))
+                            measured["acts"] = check_acts(
+                                before_sandbox, await acts(sandbox_engine)
+                            )
                             await sandbox_engine.dispose()
                             from evals.backbone import _close
 
@@ -1353,21 +1541,64 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
             logging.disable(previous_disable)
 
 
+def spike_contract(args: Any, entrypoint: str) -> GradingContract | None:
+    if entrypoint != "replay" and (
+        getattr(args, "inspect_only", False) or getattr(args, "project_only", False)
+    ):
+        raise EvidenceError("inspection and projection cover the replay path only")
+    if getattr(args, "project_only", False) and (
+        getattr(args, "grading_contract", None) or getattr(args, "grading_contract_sha256", None)
+    ):
+        raise EvidenceError("project-only does not consume a grading contract")
+    if (getattr(args, "inspect_only", False) or getattr(args, "project_only", False)) and not (
+        getattr(args, "grading_contract", None) or getattr(args, "grading_contract_sha256", None)
+    ):
+        return None
+    if not getattr(args, "grading_contract", None) or not getattr(
+        args, "grading_contract_sha256", None
+    ):
+        raise EvidenceError("paid evaluation requires --grading-contract and its SHA256")
+    if entrypoint == "replay":
+        selection = {
+            k: getattr(args, k, None)
+            for k in ("seed", "per_stratum", "minimum", "smoke", "session_count")
+        }
+    else:
+        source = args.rescore if entrypoint == "rescore" else args.decision_judge
+        selection = {"source_sha256": fingerprint(evidence_file(source))}
+    return contract_for(
+        args, entrypoint=entrypoint, judges=(args.judge_a, args.judge_b), selection=selection
+    )
+
+
 async def run(args: Any) -> dict[str, Any]:
     from tempfile import TemporaryFile
 
     from opentelemetry import trace
 
     from evals.backbone import _prefill_capture
+
+    args.bound_contract = spike_contract(args, "replay")
     export = evaluation_export_for(args.config)
     _prefill_capture()
     output = private_directory(args.output)
     with TemporaryFile() as lock:
-        evidence = RunEvidence(run_id=f"spike-{uuid.uuid4().hex}", metadata={
-            **revision(Path(__file__).resolve().parents[1]),  # noqa: ASYNC240
-            "config_sha256": fingerprint(args.config),
-        }, lock_fd=lock.fileno(), private_root=output)
+        evidence = RunEvidence(
+            run_id=f"spike-{uuid.uuid4().hex}",
+            metadata={
+                **revision(Path(__file__).resolve().parents[1]),  # noqa: ASYNC240
+                "config_sha256": fingerprint(args.config),
+                **(
+                    {"grading_contract": args.bound_contract.receipt()}
+                    if args.bound_contract is not None
+                    else {}
+                ),
+            },
+            lock_fd=lock.fileno(),
+            private_root=output,
+        )
         from nora.domain.run_budget import RunBudget, active_run_budget
+
         cutoff = getattr(args, "stop_after_tokens", None)
         inspection_only = getattr(args, "inspect_only", False)
         budget = (RunBudget(max_requests=0 if inspection_only else 1000,
@@ -1380,6 +1611,8 @@ async def run(args: Any) -> dict[str, Any]:
         body_completed = False
         try:
             with evidence.capture(trace.get_tracer_provider(), export=export):
+                if args.bound_contract is not None:
+                    args.bound_contract.record()
                 trace_id = trace.get_current_span().get_span_context().trace_id
                 print(f"eval trace: {trace_id:032x}", file=sys.stderr)
                 if budget:
@@ -1410,6 +1643,8 @@ async def run(args: Any) -> dict[str, Any]:
             receipt = {**receipt, "status": "ERROR",
                        "causes": sorted(set(receipt.get("causes", [])) | {"capture_failed"})}
         report["evidence"] = {**receipt, "ref": evidence.path.name}
+        if args.bound_contract is not None:
+            report["grading_contract"] = args.bound_contract.receipt()
         if receipt["status"] == "ERROR":
             report["status"] = "ERROR"
         freeze(output / "report.json", report)
@@ -1652,15 +1887,18 @@ def crosscheck_fact_input(recorded: dict[str, Any], inspection: dict[str, Any],
                recorded_chars=len(json.dumps(recorded_scope, ensure_ascii=False, sort_keys=True)))
 
 
-async def rescore_facts(directory: Path, judges: Judges) -> dict[str, Any]:
+async def rescore_facts(
+    directory: Path, judges: Judges, *, contract: GradingContract | None = None
+) -> dict[str, Any]:
     """Re-score authoritative writer events; frozen files are cross-checks only."""
     from nora.agent.replay_capture import record
+
     paths = sorted(directory.glob("spike-*/events.jsonl"))  # noqa: ASYNC240 - private offline input
     if (directory / "events.jsonl").exists():
         paths = [directory / "events.jsonl"]
     if not paths:
         raise ValueError("source_record_missing")
-    sessions: list[tuple[Any, list[dict[str, Any]], list[str], str | None]] = []
+    sessions: list[tuple[Any, list[dict[str, Any]], list[str], str | None, str | None]] = []
     for path in paths:
         events = read_events(path.parent)
         # Old scorer failures are replaceable; capture/terminal failures are not.
@@ -1691,22 +1929,53 @@ async def rescore_facts(directory: Path, judges: Judges) -> dict[str, Any]:
                                       inputs[index]["exchanges"])
             record("rescore_session", session_event_ids=[e["event_id"] for e in session["events"]],
                    instructions=session["instructions"])
-            sessions.append((session["inspection"], session["exchanges"],
-                             [e["event_id"] for e in session["events"]], fingerprint(path)))
+            sessions.append(
+                (
+                    session["inspection"],
+                    session["exchanges"],
+                    [e["event_id"] for e in session["events"]],
+                    fingerprint(path),
+                    inputs[index].get("grading_reference_key") if inputs else None,
+                )
+            )
             judges.served.setdefault("writer", []).extend(
                 e["headers"] for e in session["events"] if e["kind"] == "transport_response")
     if not sessions:
         raise ValueError("source_sessions_missing")
+    if contract is not None:
+        if {s[4] for s in sessions} != set(contract.data["cases"]) or len(sessions) != len(
+            contract.data["cases"]
+        ):
+            raise EvidenceError("rescore source lacks the exact frozen reference keys")
+        for inspection, _, _, _, key in sessions:
+            contract.memory_reference(str(key), inspection)
     results = []
-    for inspection, exchanges, ids, source_sha in sessions:
+    for inspection, exchanges, ids, source_sha, key in sessions:
         evidence = current()
         if evidence is None:
             raise ValueError("capture_unavailable")
-        with evidence.case(f"rescore:{source_sha}:{ids[0]}", input={"session_event_ids": ids},
-                           metadata={"source_sha256": source_sha}):
-            record("fact_scoring_input", inspection=inspection, exchanges=exchanges)
-            results.append(await smoke_fact_support(judges, inspection, exchanges,
-                           session_event_ids=ids, source_sha256=source_sha))
+        with evidence.case(
+            f"rescore:{source_sha}:{ids[0]}",
+            input={"session_event_ids": ids},
+            metadata={"source_sha256": source_sha},
+        ):
+            record(
+                "fact_scoring_input",
+                inspection=inspection,
+                exchanges=exchanges,
+                grading_reference_key=key,
+            )
+            results.append(
+                await smoke_fact_support(
+                    judges,
+                    inspection,
+                    exchanges,
+                    session_event_ids=ids,
+                    source_sha256=source_sha,
+                    contract=contract,
+                    reference_key=key,
+                )
+            )
     return {"status": "REPORTED", "sessions": len(results), "results": results,
             "independence": served_independence(judges.served)}
 
@@ -1717,25 +1986,38 @@ async def run_rescore(args: Any) -> dict[str, Any]:
     from opentelemetry import trace
 
     from evals.backbone import _prefill_capture
+
+    args.bound_contract = spike_contract(args, "rescore")
     export = evaluation_export_for(args.config)
     _prefill_capture()
     output = private_directory(args.output)
     with TemporaryFile() as lock:
-        evidence = RunEvidence(run_id=f"rescore-{uuid.uuid4().hex}", metadata={
-            **revision(Path(__file__).resolve().parents[1]),  # noqa: ASYNC240
-            "config_sha256": fingerprint(args.config),
-            "source_locator_sha256": hashlib.sha256(str(args.rescore).encode()).hexdigest(),
-        }, lock_fd=lock.fileno(), private_root=output)
+        evidence = RunEvidence(
+            run_id=f"rescore-{uuid.uuid4().hex}",
+            metadata={
+                "grading_contract": args.bound_contract.receipt(),
+                **revision(Path(__file__).resolve().parents[1]),  # noqa: ASYNC240
+                "config_sha256": fingerprint(args.config),
+                "source_locator_sha256": hashlib.sha256(str(args.rescore).encode()).hexdigest(),
+            },
+            lock_fd=lock.fileno(),
+            private_root=output,
+        )
         report: dict[str, Any] = {"status": "ERROR"}
         try:
             with evidence.capture(trace.get_tracer_provider(), export=export):
                 trace_id = trace.get_current_span().get_span_context().trace_id
                 print(f"eval trace: {trace_id:032x}", file=sys.stderr)
-                report = await rescore_facts(args.rescore,
-                    Judges(load(args.config), [args.judge_a, args.judge_b], args.config))
+                args.bound_contract.record()
+                report = await rescore_facts(
+                    args.rescore,
+                    Judges(load(args.config), [args.judge_a, args.judge_b], args.config),
+                    contract=args.bound_contract,
+                )
         except Exception:  # noqa: BLE001 - the private record retains failure details
             report["status"] = "ERROR"
         report["evidence"] = validate_events(read_events(evidence.path))
+        report["grading_contract"] = args.bound_contract.receipt()
         freeze(output / "report.json", report)
     return report
 
@@ -1746,27 +2028,37 @@ async def run_diagnostic(args: Any) -> dict[str, Any]:
     from opentelemetry import trace
 
     from evals.backbone import _prefill_capture
+
+    args.bound_contract = spike_contract(args, "diagnostic")
     export = evaluation_export_for(args.config)
     _prefill_capture()
     output = private_directory(args.output)
     with TemporaryFile() as lock:
-        evidence = RunEvidence(run_id=f"diagnostic-{uuid.uuid4().hex}",
-                               metadata={
-            **revision(Path(__file__).resolve().parents[1]),  # noqa: ASYNC240
-            "config_sha256": fingerprint(args.config),
-            "source_locator_sha256": hashlib.sha256(
-                str(args.decision_judge).encode()).hexdigest(),
-        }, lock_fd=lock.fileno(), private_root=output)
+        evidence = RunEvidence(
+            run_id=f"diagnostic-{uuid.uuid4().hex}",
+            metadata={
+                "grading_contract": args.bound_contract.receipt(),
+                **revision(Path(__file__).resolve().parents[1]),  # noqa: ASYNC240
+                "config_sha256": fingerprint(args.config),
+                "source_locator_sha256": hashlib.sha256(
+                    str(args.decision_judge).encode()
+                ).hexdigest(),
+            },
+            lock_fd=lock.fileno(),
+            private_root=output,
+        )
         report: dict[str, Any] = {"status": "ERROR"}
         try:
             with evidence.capture(trace.get_tracer_provider(), export=export):
                 trace_id = trace.get_current_span().get_span_context().trace_id
                 print(f"eval trace: {trace_id:032x}", file=sys.stderr)
+                args.bound_contract.record()
                 report = await decision_judge(args.decision_judge,
                     Judges(load(args.config), [args.judge_a, args.judge_b], args.config))
         except Exception:  # noqa: BLE001 - only the private evidence records failure details
             report["status"] = "ERROR"
         report["evidence"] = validate_events(read_events(evidence.path))
+        report["grading_contract"] = args.bound_contract.receipt()
         freeze(output / "report.json", report)
     return report
 
@@ -1787,6 +2079,8 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=20261029)
     parser.add_argument("--judge-a", default="nora-judge")
     parser.add_argument("--judge-b", default="nora-judge-2")
+    parser.add_argument("--grading-contract", type=Path)
+    parser.add_argument("--grading-contract-sha256")
     parser.add_argument("--age-url")
     parser.add_argument("--projection-rate", type=float, default=100)
     parser.add_argument("--project-only", action="store_true")
@@ -1804,7 +2098,7 @@ def main() -> int:
         parser.error("measured token cutoff must be positive")
     if args.session_count is not None and (not args.smoke or args.session_count < 5):
         parser.error("session-count requires smoke mode and at least five sessions")
-    if (args.stop_after_tokens or args.inspect_only or args.sample_sha256
+    if (args.stop_after_tokens or args.inspect_only or args.project_only or args.sample_sha256
             or args.session_count) and (
             args.rescore or args.decision_judge):
         parser.error("cutoff, inspection and sample pinning cover the replay path only")

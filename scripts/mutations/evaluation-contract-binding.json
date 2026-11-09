@@ -1,0 +1,37 @@
+[
+  {
+    "name": "a changed grading artifact refuses before execution",
+    "file": "evals/grading_contract.py",
+    "old": "if hashlib.sha256(raw).hexdigest() != expected:",
+    "new": "if False:",
+    "target": "tests/integration/test_grading_contract.py::test_contract_drift_is_refused_and_valid_binding_is_immutable"
+  },
+  {
+    "name": "reply judge uses independent doctrine, not candidate policy",
+    "file": "evals/rebuilt/grading.py",
+    "old": "doctrine_text=(self.contract.data[\"reference_doctrine\"]\n                           if self.contract is not None else doctrine),",
+    "new": "doctrine_text=doctrine,",
+    "target": "tests/integration/test_grading_contract.py::test_actual_reply_judge_uses_fixed_reference_when_writer_changes"
+  },
+  {
+    "name": "memory judges receive fixed instructions",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "        contract.instruction(\"memory_support\")\n        if contract is not None\n        else _FACT_SUPPORT_INSTRUCTION",
+    "new": "        _FACT_SUPPORT_INSTRUCTION",
+    "target": "tests/integration/test_grading_contract.py::test_actual_memory_judges_bind_frozen_units_and_keep_diagnostics_unscored"
+  },
+  {
+    "name": "the exact cohort is verified before the writer",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "            contract.verify_sample(sample_sha256, list(selected.values()))",
+    "new": "            pass",
+    "target": "tests/integration/test_grading_contract.py::test_real_replay_preflight_refuses_cohort_drift_before_writer"
+  },
+  {
+    "name": "judges cannot silently replace the required units",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "                    or {row[\"id\"] for row in rows} != expected",
+    "new": "                    or False",
+    "target": "tests/integration/test_grading_contract.py::test_fixed_coverage_is_total_and_requires_shown_evidence"
+  }
+]

@@ -42,6 +42,7 @@ from evals.backbone import (
     read,
     sample_read,
 )
+from evals.grading_contract import GradingContract
 from evals.rebuilt.grading import DEFAULT_JUDGE_MODEL, DEFAULT_SAMPLES, Judge
 from evals.scenarios import (
     CORPUS_ENTRY,
@@ -413,10 +414,12 @@ def _run_one(
     context_receipts: list[dict] | None = None,
     memory_index: bool = False,
     subject_overrides: dict[str, Any] | None = None,
+    contract: GradingContract | None = None,
 ) -> bool:
     experiment, task = experiment_for(
         name, source_url=source_url, judge=judge, sample=sample, only=only,
         memory_index=memory_index, overrides=subject_overrides,
+        contract=contract,
     )
     report = experiment.run_evaluations(task=task)
     from nora.subject.eval_evidence import current
@@ -612,6 +615,8 @@ def _main(*, lock_fd: int = -1) -> int:
     ap.add_argument("--coverage-timeout", type=float, default=90.0,
                     help="coverage wall-clock seconds per batch; plan must fit 55 minutes")
     ap.add_argument("--judge-base-url", default="http://127.0.0.1:20128/v1")
+    ap.add_argument("--grading-contract", type=Path)
+    ap.add_argument("--grading-contract-sha256")
     ap.add_argument("--config", type=Path,
                     help="config.toml selecting the eval_judge provider and credentials")
     ap.add_argument("--judge-timeout", type=judge_timeout, default=300.0,
@@ -690,6 +695,9 @@ def _main(*, lock_fd: int = -1) -> int:
              "calls that would cross it raise RunBudgetError BEFORE leaving — "
              "budget exhaustion is ERROR, never PASS.")
     args = ap.parse_args()
+    if (args.list or args.print_input or args.coverage_freeze_input or args.coverage_export) and (
+            args.grading_contract or args.grading_contract_sha256):
+        ap.error("this zero-dispatch operation does not consume a grading contract")
     if args.coverage_freeze_input:
         from evals.profile_coverage_input import freeze_manifest
         try:
@@ -755,7 +763,15 @@ def _main(*, lock_fd: int = -1) -> int:
         )
         return 2
     if args.print_input:
+        if args.grading_contract or args.grading_contract_sha256:
+            ap.error("print-input does not consume a grading contract")
         return _execute(args, names, only)
+    from evals.grading_contract import contract_for
+    args.bound_contract = contract_for(
+        args, entrypoint="eval", judges=(args.judge,) if args.judge else (),
+        selection={"corpora": names, "only": sorted(only or ()),
+                   "sample": args.sample, "judge_samples": args.judge_samples},
+    )
     from opentelemetry import trace
 
     from nora.subject.sandbox import EVAL_HOST_LOCK
@@ -817,6 +833,7 @@ def _main(*, lock_fd: int = -1) -> int:
     export = evaluation_export_for(Path(args.deployment_config))
     try:
         evidence = RunEvidence(run_id=RUN_ID, lock_fd=lock_fd, metadata={
+            "grading_contract": args.bound_contract.receipt(),
             **revision(_REPO_ROOT), "corpora": names, "cases": sorted(only or ()),
             "sample": args.sample, "judge": args.judge, "judge_samples": args.judge_samples,
             "deployment_config_sha256": fingerprint(Path(args.deployment_config)),
@@ -834,6 +851,7 @@ def _main(*, lock_fd: int = -1) -> int:
     token = active_run_budget.set(budget) if budget is not None else None
     try:
         with evidence.capture(trace.get_tracer_provider(), export=export):
+            args.bound_contract.record()
             trace_id = trace.get_current_span().get_span_context().trace_id
             print(f"eval trace: {trace_id:032x}")
             rc = _execute(args, names, only, subject_overrides=subject_overrides)
@@ -855,6 +873,9 @@ def _main(*, lock_fd: int = -1) -> int:
 def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | None,
              *, subject_overrides: dict[str, Any] | None = None) -> int:
     if "profile_coverage" in names:
+        if contract := getattr(args, "bound_contract", None):
+            contract.verify_cases({f"{n}:{c.name}": c for n in names
+                                   for c in selected_cases(n, only=only)})
         # A frozen read-only measurement has no subject to compose, sandbox to
         # mutate or Honcho workspace to create. It still runs the same task,
         # Experiment, Outcome grader, spend and positions report as every entry.
@@ -871,9 +892,11 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
                 raise ValueError("coverage requires --judge")
             judge = Judge(base_url=args.judge_base_url, model=args.judge,
                           config_path=args.config,
+                          contract=getattr(args, "bound_contract", None),
                           samples=1, timeout_seconds=args.coverage_timeout)
             ok = _run_one(names[0], source_url="", judge=judge, sample=1,
-                          only=only, all_reasons=args.reasons, positions=args.positions)
+                          only=only, all_reasons=args.reasons, positions=args.positions,
+                          contract=getattr(args, "bound_contract", None))
             return 0 if ok else 1
         except (ValueError, KeyError, OSError) as exc:
             print(f"coverage ERROR: {exc}", file=sys.stderr)
@@ -995,6 +1018,9 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
             if (why := over_budget(est, allow_long=args.allow_long)) is not None:
                 print(f"refusing to run: {why}", file=sys.stderr)
                 return 2
+            if contract := getattr(args, "bound_contract", None):
+                contract.verify_cases({f"{n}:{c.name}": c for n in names
+                    for c in selected_cases(n, only=only, memory_index=graph)})
             if graph:
                 try:
                     for line in graph_surface_lines(
@@ -1009,6 +1035,7 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
                 base_url=args.judge_base_url, model=args.judge, samples=args.judge_samples,
                 config_path=args.config,
                 timeout_seconds=args.judge_timeout,
+                contract=getattr(args, "bound_contract", None),
             )
 
             ok = True
@@ -1020,6 +1047,7 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
                         memory_index=graph, subject_overrides=subject_overrides,
                         context_receipts=(receipts if args.context_arm != "full"
                                           or args.context_report else None),
+                        contract=getattr(args, "bound_contract", None),
                     ) and ok
                 # Successful Nora replies under fallback cannot pass the selector experiment.
                 ok = ok and not any("selector_error" in r for r in receipts)

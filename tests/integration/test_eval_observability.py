@@ -18,6 +18,7 @@ from nora.agent import factory
 from nora.agent.surface import ToolScope, ToolShelf, ToolSurface
 from nora.subject.eval_evidence import EvidenceError, RunEvidence
 from nora.subject.sandbox import eval_host_lock
+from tests.integration.test_grading_contract import generated_cli_contract as generated_cli_contract
 from tests.integration.test_spike_visibility import configured_sink
 from tests.integration.test_spike_visibility import otlp_wire as otlp_wire
 
@@ -243,7 +244,8 @@ def test_mid_run_disk_failure_invalidates_later_work_and_releases_lock(evidence_
 
 
 def test_cli_capture_failure_refuses_before_execution(
-        evidence_root, monkeypatch, example_config_path, tmp_path, otlp_wire):
+        evidence_root, monkeypatch, example_config_path, tmp_path, otlp_wire,
+        generated_cli_contract):
     config = tmp_path / "generated.toml"
     configured_sink(example_config_path, config)
     reached, writes = [], []
@@ -260,7 +262,8 @@ def test_cli_capture_failure_refuses_before_execution(
 
 @pytest.mark.parametrize("failure", ["root_is_file", "unreadable_config"])
 def test_cli_preparation_oserror_is_a_clean_refusal(
-        evidence_root, monkeypatch, capsys, failure, example_config_path, tmp_path, otlp_wire):
+        evidence_root, monkeypatch, capsys, failure, example_config_path, tmp_path, otlp_wire,
+        generated_cli_contract):
     config = tmp_path / "generated.toml"
     configured_sink(example_config_path, config)
     injected = []
@@ -806,7 +809,7 @@ def test_truncating_sdk_limits_refuse_before_work(evidence_root, monkeypatch):
 
 
 def test_template_sink_refusal_precedes_evidence_and_body(
-        evidence_root, monkeypatch, example_config_path, capsys):
+        evidence_root, monkeypatch, example_config_path, capsys, generated_cli_contract):
     reached = []
     monkeypatch.setattr(cli, "_execute", lambda *a, **k: reached.append(True))
     monkeypatch.setattr("sys.argv", ["python -m evals", "tool_selection",

@@ -306,6 +306,9 @@ async def test_rescore_generated_run_directory(tmp_path, monkeypatch, disagree):
                 original.record("span_finished", span_id=child)
                 event("nora.session.terminal", {"session_id": number})
                 original.record("span_finished", span_id=root)
+                session = spike.recorded_fact_sessions(read_events(original.path))[-1]
+                original.record("fact_scoring_input", inspection=session["inspection"],
+                                exchanges=session["exchanges"], grading_reference_key=str(number))
                 if number == 1:
                     original.record("judge_error", cause="judge_incomplete")
         original_events = read_events(original.path)
@@ -325,26 +328,38 @@ async def test_rescore_generated_run_directory(tmp_path, monkeypatch, disagree):
         spike.freeze(source / "session-0.json", {"inspection": frozen_inspection,
                                                "events": frozen_events})
         assert not (source / "session-1.json").exists()
-        assert not any(e["kind"] == "fact_scoring_input" for e in original_events)
+        assert [e["grading_reference_key"] for e in original_events
+                if e["kind"] == "fact_scoring_input"] == ["0", "1"]
         before = (original.path / "events.jsonl").read_bytes()
 
         async def call(model, instruction, payload):
             calls.append(payload)
             if "statement" in payload:
-                return '{"verdict":"supported","reason":"generated evidence"}'
+                return json.dumps({"verdict": "supported", "reason": "generated evidence",
+                                   "eligibility": "eligible", "eligibility_reason": "new fact"})
             new_sources = payload["session_input"]["input"]["new_sources"]
             assert len(new_sources) == 1 and "99" not in new_sources
             n = next(iter(new_sources))
-            return json.dumps({"missed": [{"fact": "generated", "quote": "generated fact",
-                                          "location": n, "reason": "absent from saved"}],
-                               "context_only": []})
+            assert payload["required_units"][0]["sources"] == [int(n)]
+            return json.dumps({"coverage": [{"id": payload["required_units"][0]["id"],
+                               "verdict": "missed", "reason": "absent from saved"}],
+                               "diagnostic_misses": []})
 
         monkeypatch.setattr(spike, "Judges", lambda *args: SimpleNamespace(
-            models=["generated"], call=call, served={}))
+            models=["generated-a", "generated-b"], call=call, served={}))
         monkeypatch.setattr(spike, "load", lambda *args: None)
         output = tmp_path / "rescored"
-        result = await spike.run_rescore(SimpleNamespace(rescore=source, output=output,
-            config=tmp_path / "generated.toml", judge_a="generated-a", judge_b="generated-b"))
+        from evals.grading_contract import digest, memory_scenario
+        from tests.integration.test_grading_contract import attach_archive_contract
+        args = SimpleNamespace(rescore=source, output=output, config=tmp_path / "generated.toml",
+                               judge_a="generated-a", judge_b="generated-b")
+        args.config.write_text("# generated configuration\n")
+        references = {str(i): {"input_sha256": digest(memory_scenario(s["inspection"])),
+            "expected_output": "", "units": [{"id": f"fact-{i}", "claim": "generated fact",
+                                               "sources": [i + 1]}]}
+            for i, s in enumerate(spike.recorded_fact_sessions(original_events))}
+        attach_archive_contract(args, tmp_path, "rescore", cases=references)
+        result = await spike.run_rescore(args)
         receipt = json.loads((output / "report.json").read_text())
         assert receipt == result
         events = read_events(next(output.glob("rescore-*")))
@@ -360,14 +375,15 @@ async def test_rescore_generated_run_directory(tmp_path, monkeypatch, disagree):
         assert [r["facts_supported"] for r in result["results"]] == [1, 1]
         assert [r["facts_missed"] for r in result["results"]] == [1, 1]
         assert validate_events(events)["status"] == "PASS"
-        assert len(calls) == 4
-        facts = [e for e in events if e["kind"] == "fact_verdict"]
-        verdicts = [e for e in events if e["kind"] == "judge_verdict" and e["verdict"] == "missed"]
-        assert len(facts) == len(verdicts) == 2
-        for fact, verdict in zip(facts, verdicts, strict=True):
-            assert fact.get("session_event_ids") == verdict["session_event_ids"]
-            assert fact.get("source_sha256") == spike.fingerprint(original.path / "events.jsonl")
-            assert fact["session_event_ids"]
+        assert len(calls) == 8
+        verdicts = [e for e in events if e["kind"] == "coverage_verdict"
+                    and e["verdict"] == "missed"]
+        assert len(verdicts) == 4
+        assert verdicts[0]["session_event_ids"] == verdicts[1]["session_event_ids"]
+        assert verdicts[2]["session_event_ids"] == verdicts[3]["session_event_ids"]
+        assert verdicts[0]["session_event_ids"] != verdicts[2]["session_event_ids"]
+        assert all(v["session_event_ids"] and v["source_sha256"] ==
+                   spike.fingerprint(original.path / "events.jsonl") for v in verdicts)
         assert any(e["kind"] == "rescore_source" for e in events)
         mismatches = [e for e in events if e["kind"] == "scope_mismatch"]
         if disagree == "scope":

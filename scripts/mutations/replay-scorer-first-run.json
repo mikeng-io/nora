@@ -37,7 +37,7 @@
   {
     "name": "rescore executes fact scoring",
     "file": "scripts/memory_graph_spike.py",
-    "old": "            results.append(await smoke_fact_support(judges, inspection, exchanges,\n                           session_event_ids=ids, source_sha256=source_sha))",
+    "old": "            results.append(\n                await smoke_fact_support(\n                    judges,\n                    inspection,\n                    exchanges,\n                    session_event_ids=ids,\n                    source_sha256=source_sha,\n                    contract=contract,\n                    reference_key=key,\n                )\n            )",
     "new": "            pass",
     "target": "tests/unit/test_replay_scoring.py::test_rescore_generated_run_directory"
   },

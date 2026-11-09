@@ -1,6 +1,7 @@
 """The operator's memory-graph entrypoints export fresh generated SDK calls."""
 from __future__ import annotations
 
+import hashlib
 import json
 from types import SimpleNamespace
 
@@ -14,6 +15,11 @@ from nora.agent.telemetry import EvaluationExportError
 from nora.obs.tracing import record_eval_event
 from nora.subject.eval_evidence import EvidenceError, read_events
 from scripts import memory_graph_spike as spike
+from tests.integration.test_grading_contract import (
+    attach_archive_contract,
+    attach_replay_contract,
+    completion,
+)
 from tests.unit.test_memory_graph_spike import generated_replay_environment
 from tests.unit.test_replay_scoring import generated_completion
 
@@ -74,6 +80,7 @@ async def test_memory_graph_replay_exports_writer_and_judges(
     env = generated_replay_environment(tmp_path, monkeypatch)
     args, runner = env.args, env.runner
     args.smoke = True
+    args.stop_after_tokens = 200  # eight generated SDK requests must reach the exporter
     env.cfg.llm.timeout_seconds = 5
     configured_sink(example_config_path, args.config)
     # Reuse the existing generated snapshot boundaries, preserving the real
@@ -82,6 +89,9 @@ async def test_memory_graph_replay_exports_writer_and_judges(
     monkeypatch.setattr(spike, "model_endpoint", lambda path, purpose, model="": (
         "https://generated.invalid/v1", "generated-private-auth-value", model))
     runner.inspect.return_value = {"system": "Increment the supplied integer.", "agenda": "5 "}
+    attach_replay_contract(args, tmp_path, runner.inspect.return_value, wakes=[
+        {"id": 1, "at_ms": 1, "strata": ["text"]},
+        {"id": 2, "at_ms": 2, "strata": ["attachment"]}])
     dispatches = []
     writer_requests = []
 
@@ -100,10 +110,12 @@ async def test_memory_graph_replay_exports_writer_and_judges(
     def judge_response(request):
         body = json.loads(request.content)
         assert body["model"] in {args.judge_a, args.judge_b} and not body["stream"]
-        assert "passing moments" in body["messages"][0]["content"]
+        assert body["messages"][0]["content"] == "FROZEN_COVERAGE"
         dispatches.append(body["model"])
-        return generated_completion(body, {"x-omniroute-model": body["model"],
-                                           "x-omniroute-provider": "generated-judge-vendor"})
+        response = completion(request, {"coverage": [], "diagnostic_misses": []})
+        response.headers.update({"x-omniroute-model": body["model"],
+                                 "x-omniroute-provider": "generated-judge-vendor"})
+        return response
 
     original_build = structured.build_structured_model
     # Each SDK-owned provider closes its client after the call; share the
@@ -147,6 +159,10 @@ async def test_memory_graph_replay_exports_writer_and_judges(
         "generated-model", "generated-model", args.judge_a, args.judge_b])
         for group in groups.values())
     events = read_events(next(args.output.glob("spike-*")))
+    frozen = next(e for e in events if e["kind"] == "grading_contract")
+    assert frozen["text"] == args.grading_contract.read_text()
+    assert frozen["sha256"] == hashlib.sha256(frozen["text"].encode()).hexdigest()
+    assert any(e.name == "nora.eval.grading_contract" for span in spans for e in span.events)
     starts = [e for e in events if e["kind"] == "case_started"]
     cohort = spike.fingerprint(args.output / "sample.json")
     assert all(e["metadata"]["frozen_sample_sha256"] == cohort for e in starts)
@@ -184,7 +200,9 @@ async def test_scoring_entrypoints_export_real_judge_call(
         dispatches.append(body)
         return generated_completion(body, {})
 
-    async def body(directory, judges):
+    async def body(directory, judges, **kwargs):
+        if body_name == "rescore_facts":
+            assert kwargs["contract"].receipt()["entrypoint"] == "rescore"
         await judges.call("generated-judge-a", "Generated diagnostic instruction", {})
         return {"status": "REPORTED"}
 
@@ -194,10 +212,13 @@ async def test_scoring_entrypoints_export_real_judge_call(
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as transport:
         monkeypatch.setattr(spike, "build_structured_model", lambda **kw: original_build(
             **kw, http_client=transport))
-        report = await getattr(spike, entry)(SimpleNamespace(
+        args = SimpleNamespace(
             config=config, output=tmp_path / "output", rescore=tmp_path / "source",
             decision_judge=tmp_path / "source", judge_a="generated-judge-a",
-            judge_b="generated-judge-b"))
+            judge_b="generated-judge-b")
+        attach_archive_contract(args, tmp_path,
+                                "rescore" if entry == "run_rescore" else "diagnostic")
+        report = await getattr(spike, entry)(args)
     if export_fails:
         assert otlp_wire.payloads and report["evidence"]["status"] == "ERROR"
         assert dispatches == []
@@ -217,8 +238,16 @@ async def test_missing_sink_refuses_before_evidence_fd(tmp_path, monkeypatch, en
     def forbidden(*args, **kwargs):
         pytest.fail("evidence must not open before sink resolution")
     monkeypatch.setattr(spike, "RunEvidence", forbidden)
+    args = SimpleNamespace(config=tmp_path / "missing.toml", judge_a="generated-a",
+                           judge_b="generated-b", rescore=tmp_path / "source",
+                           decision_judge=tmp_path / "source")
+    if entry == "run":
+        attach_replay_contract(args, tmp_path)
+    else:
+        attach_archive_contract(args, tmp_path,
+                                "rescore" if entry == "run_rescore" else "diagnostic")
     with pytest.raises(EvidenceError, match="visibility unavailable"):
-        await getattr(spike, entry)(SimpleNamespace(config=tmp_path / "missing.toml"))
+        await getattr(spike, entry)(args)
 
 
 @pytest.mark.parametrize("failure", ["receipt", "root_export"])
@@ -249,7 +278,9 @@ async def test_late_capture_failure_preserves_completed_spike_report(
 
     monkeypatch.setattr(spike, "_run", completed_body)
     output = tmp_path / "output"
-    result = await spike.run(SimpleNamespace(config=config, output=output))
+    args = SimpleNamespace(config=config, output=output)
+    attach_replay_contract(args, tmp_path)
+    result = await spike.run(args)
     assert completed == [True] and len(dispatched) == 2
     assert result["status"] == result["evidence"]["status"] == "ERROR"
     assert spike.report_exit(result) == 2
@@ -279,6 +310,8 @@ async def test_report_freeze_never_overwrites_existing_file(
         return {"status": "PASS"}
 
     monkeypatch.setattr(spike, "_run", body)
+    args = SimpleNamespace(config=config, output=output)
+    attach_replay_contract(args, tmp_path)
     with pytest.raises(FileExistsError):
-        await spike.run(SimpleNamespace(config=config, output=output))
+        await spike.run(args)
     assert json.loads((output / "report.json").read_text()) == {"retained": "generated-original"}

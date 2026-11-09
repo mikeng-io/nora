@@ -31,6 +31,7 @@ from typing import Literal
 
 from openai import AsyncOpenAI
 
+from evals.grading_contract import GradingContract
 from nora.subject.obtain import resolve_credentials
 
 from .judge import (
@@ -109,6 +110,7 @@ class Judge:
     samples: int = DEFAULT_SAMPLES
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     config_path: Path | None = None
+    contract: GradingContract | None = None
 
     def _endpoint(self) -> tuple[str, str, str]:
         if self.config_path is not None:
@@ -280,7 +282,9 @@ class Judge:
         """
         bound = (criterion, *(c.name for c in extra if c.name != criterion))
         prompt = _build_judge_prompt(
-            tag_input=asked, reply_text=said, doctrine_text=doctrine,
+            tag_input=asked, reply_text=said,
+            doctrine_text=(self.contract.data["reference_doctrine"]
+                           if self.contract is not None else doctrine),
             source_data=source, extra_criteria=extra, facts=facts,
         )
         return await self._draw(prompt, bound)

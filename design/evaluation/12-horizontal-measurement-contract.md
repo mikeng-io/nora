@@ -91,6 +91,36 @@ unsettled, that claim remains unavailable instead of being scored into agreement
 
 ## Measure: audit across axes
 
+### Required information and permitted visual detail
+
+For readable shared images and stickers, required memory coverage preserves the
+information conveyed. Additional visual description is permitted when grounded;
+omitting poses, clothing, backgrounds or other incidental description alone is
+not a coverage failure. A detail becomes required when the scenario's question
+or conveyed claim turns on it. This does not add a durability threshold: a short
+availability report, an attributed opinion or a copied claim can still convey
+substantive information.
+
+Before confirmation, specify finite semantic coverage units and their necessary
+qualifications from the source and task. Accept equivalent wording, faithful
+decomposition and coverage across existing or newly written state when that
+state is actually evidenced. Do not require one exact sentence, memory kind or
+number of writes without a task requirement. Do not let a judge add required
+details after seeing the answer. Unlisted possible omissions are diagnostic
+findings about reference completeness, not a silent change to the frozen score.
+
+Separate factual support, storage eligibility and required coverage. A grounded
+but redundant statement is not thereby fabricated; a valid extra detail is not
+thereby required; and an optional detail still fails grounding if invented.
+Unknown identity, source attribution, event time, modality and audience authority
+remain substantive qualifications, not optional presentation details.
+
+This coverage boundary governs a newly fixed measurement. Preserve earlier
+verdicts under their original instrument; it does not clear a previous failure
+or establish subject improvement by reinterpreting the same output.
+
+### Audit axes
+
 Audit each applicable row through scenario, subject input, grader input and
 verdict. Explain an inapplicable row instead of manufacturing coverage.
 
@@ -182,7 +212,7 @@ of every semantic expectation or future metadata field.
 | Obligation | Current evidence boundary |
 |---|---|
 | Scenario loading and requirement consumers | Source inspected and census obtained without subjects or judges; not a full per-case ground-truth review. |
-| Fixed candidate-independent grading contract | This procedure defines the obligation; automatic distinct policy-version enforcement and audited contracts for all corpora are not claimed built. |
+| Fixed candidate-independent grading contract | The runner binds a supplied private reference and expected fingerprint before model work; source/case drift refuses. Reply doctrine and memory judge instructions are independent inputs. This binding does not validate the reference labels or establish audited contracts for every corpus. See the [binding procedure](../../docs/eval-sop.md#bind-the-selected-measurement). |
 | Raw request and operator trace visibility | Observability repair has separate source/synthetic evidence; final installed-runner acceptance remains pending. |
 | Judge calibration | The disputed-answer regrade is development calibration. A reviewed reference set and untouched controls for the next claim remain required. |
 | Memory usefulness | Isolated writer sessions do not establish learn → persist → retrieve → answer → correct. |

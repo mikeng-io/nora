@@ -759,6 +759,11 @@ def generated_replay_environment(tmp_path, monkeypatch):
 
 async def test_age_comparison_measures_the_source_once_outside_replay(tmp_path, monkeypatch):
     env = generated_replay_environment(tmp_path, monkeypatch)
+    from tests.integration.test_grading_contract import attach_replay_contract
+    env.args.config.write_text("# generated configuration\n")
+    attach_replay_contract(env.args, tmp_path, env.runner.inspect.return_value, wakes=[
+        {"id": 1, "at_ms": 1, "strata": ["text"]},
+        {"id": 2, "at_ms": 2, "strata": ["attachment"]}])
     bound, calls, runner = env.bound, env.calls, env.runner
     quality, source_url = env.quality, env.source_url
     report = await spike.run(env.args)
@@ -899,7 +904,7 @@ def test_prompt_composer_is_registered_when_the_script_runs_directly():
 
 @pytest.mark.parametrize("mode", ["--rescore", "--decision-judge"])
 @pytest.mark.parametrize("option", [
-    ["--inspect-only"], ["--sample-sha256", "generated-digest"],
+    ["--inspect-only"], ["--project-only"], ["--sample-sha256", "generated-digest"],
     ["--stop-after-tokens", "100"], ["--smoke", "--session-count", "15"],
 ])
 def test_replay_only_flags_refuse_scoring_modes_before_any_run(monkeypatch, mode, option):

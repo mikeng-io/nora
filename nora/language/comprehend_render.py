@@ -292,6 +292,11 @@ threshold. Cover content once; an already covered fact does not require another
 reading merely to repeat it in a different kind. Entity creation still needs an
 admitted relation, never an orphan.
 
+For readable shared images and stickers, preserve the information they convey.
+Extra grounded visual detail is permitted; incidental poses, clothing or
+backgrounds need not be inventoried unless the conveyed claim depends on them.
+Preserve qualifications and source attribution even in a concise description.
+
 # Rules
 
 Your own later turns read what you write as your record of what the group

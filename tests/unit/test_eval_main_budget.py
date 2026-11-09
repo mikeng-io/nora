@@ -13,12 +13,13 @@ import pytest
 
 import evals.__main__ as m
 from evals.scenarios import selected_cases
+from tests.integration.test_grading_contract import generated_cli_contract as generated_cli_contract
 from tests.integration.test_spike_visibility import configured_sink
 from tests.integration.test_spike_visibility import otlp_wire as otlp_wire
 
 
 @pytest.fixture
-def configured_main(monkeypatch, tmp_path, example_config_path, otlp_wire):
+def configured_main(monkeypatch, tmp_path, example_config_path, otlp_wire, generated_cli_contract):
     from nora.subject import sandbox
     monkeypatch.setattr(sandbox, "EVAL_HOST_LOCK", tmp_path / "eval.lock")
     config = tmp_path / "generated-deployment.toml"

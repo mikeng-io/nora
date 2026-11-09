@@ -35,6 +35,7 @@ import evals.__main__ as cli
 from nora.agent import factory
 from nora.subject import sandbox
 from tests.fakes import FakeHoncho
+from tests.integration.test_grading_contract import eval_contract_flags
 from tests.integration.test_spike_visibility import configured_sink, exported_spans
 from tests.integration.test_spike_visibility import otlp_wire as otlp_wire
 
@@ -257,6 +258,8 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
         monkeypatch.setattr(_os, "write", fail_model_request)
 
     # --- the REAL official entry ---
+    contract_flags = eval_contract_flags(
+        tmp_path, names=["tool_selection"], only=["route_computer_browse_a_page"])
     monkeypatch.setattr("sys.argv", [
         "python -m evals", "tool_selection",
         "--case", "route_computer_browse_a_page",
@@ -264,6 +267,7 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
         "--source-url", source_url,
         "--subject-overrides", str(fixture),
         "--run-budget", "12",
+        *contract_flags,
     ])
     # `main()` owns its asyncio.run + SIGTERM handler — it must run on the
     # main thread with no running loop, which is exactly what a

@@ -30,6 +30,11 @@ runner, corpus fields, private evidence and trace hierarchy.
    valid/invalid references and calibration evidence; another model's agreement
    is not ground truth. Existing product rulings govern routine work. Bring only
    an unresolved value choice or changed acceptable behavior back to the owner.
+   Define required semantic coverage separately from factual support and storage
+   eligibility. For shared images/stickers, preserve the conveyed information;
+   extra grounded visual detail is permitted, and its omission alone does not
+   fail coverage unless the scenario turns on that detail. Fix the reference
+   units before outputs; do not add obligations after seeing a candidate answer.
 3. **Measure the instrument before the subject.** Inspect an accepted reference,
    a nearby invalid one and relevant ambiguous/insufficient-information controls.
    Calibrate semantic judges against reviewed labels, preserve disagreement and
@@ -73,6 +78,59 @@ answer key.
 These are pre-run obligations, not a claim every check is automated. A missing
 obligation stays unmet/unavailable for the selected claim; do not add a parallel
 harness or run models to discover a cause already visible in retained evidence.
+
+### Bind the selected measurement
+
+Paid standard evaluations and memory replay, rescore and diagnostic entries
+require `--grading-contract <private.json>` and
+`--grading-contract-sha256 <expected-sha256>`. Select the reference independently
+of the candidate; never regenerate its normative text from the current writer
+merely to make preflight pass. Inspection, listing and source export remain
+zero-dispatch operations. The standard zero-dispatch commands refuse unused
+contract flags; memory inspection validates an explicitly supplied contract.
+
+The version-one JSON object has these fields:
+
+| Field | Meaning |
+|---|---|
+| `version`, `entrypoint`, `purpose` | Version `1`; `eval`, `replay`, `rescore` or `diagnostic`; the declared measurement claim. A rescore cannot be fresh confirmation. |
+| `judges`, `selection` | Exact requested aliases and selection parameters. Standard selection binds corpora, case filter and sample counts. Replay selection binds seed, strata settings, smoke mode and requested cohort size. Archive modes bind the original evidence-file fingerprint. |
+| `implementation` | SHA256 of each path in `evals.grading_contract.IMPLEMENTATION_FILES`: the selected grader, assembly, parser and aggregation source plus dependency lock. A changed implementation needs a newly declared measurement. |
+| `reference_doctrine` | Fixed normative doctrine for the reply judge, independent of the subject's doctrine. Empty for memory/archive entries. |
+| `instructions` | Full fixed `memory_support` and `memory_coverage` instructions for memory grading; empty for standard evals and decision diagnostics. |
+| `cases` | Exact case roster. Each reference contains `input_sha256`, `expected_output` and `units`. |
+| `sample_sha256` | The frozen `sample.json` file fingerprint for replay. |
+
+Standard case keys are `corpus:case-name`. Hash `case_scenario(case)`: the loaded
+SDK case, excluding its generated execution `session_id`. Bind the fixed
+`expected_output` through the existing grader-only channel; a nonempty obligation
+with no real consumer refuses before subject execution. Memory keys are the
+recorded wake IDs. Hash `memory_scenario(inspection)`: shown agenda and NEW source
+custody after the existing transport normalization, excluding work bookkeeping
+and the candidate's system instruction. Each required
+unit has an `id`, semantic `claim` and integer `sources` from shown NEW rows.
+Standard cases use empty `units`; memory cases use empty `expected_output`.
+
+Author the normative reference first. Materializing its implementation hashes
+and calculating its final file hash is mechanical; it is not product approval
+or independent reference validation. Retain that exact reviewed file and pass
+its previously selected hash to each intended arm. Do not replace it after a
+refusal without recording which scenario or measurement changed and why.
+
+The private capture records the exact contract text and fingerprint before
+model work. Run metadata/report receipts identify the binding; formatted SDK
+requests retain the actual dynamic evidence and output independently. Memory
+grading records support, eligibility and finite-unit coverage separately under
+`fixed-reference-v1`. Every required unit needs a verdict; covered units must
+identify saved statements or successful shown reads. Unknown/missing verdicts
+or unavailable read evidence are ERROR, not PASS. Unlisted possible omissions
+remain unscored diagnostics. Preserve old reports under their original
+instrument; report comparison refuses differing contract identities.
+
+Binding proves that the selected instrument was used. It does not establish
+that reference labels are complete, that a semantic judge is calibrated, that
+SigNoz's installed UI has passed readback, or that a model run is authorized.
+Those remain the preceding SOP's separate evidence obligations.
 
 ## The rebuilt suite (2026-09-21) — where and how it runs
 
