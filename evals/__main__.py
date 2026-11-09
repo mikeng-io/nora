@@ -834,6 +834,8 @@ def _main(*, lock_fd: int = -1) -> int:
     token = active_run_budget.set(budget) if budget is not None else None
     try:
         with evidence.capture(trace.get_tracer_provider(), export=export):
+            trace_id = trace.get_current_span().get_span_context().trace_id
+            print(f"eval trace: {trace_id:032x}")
             rc = _execute(args, names, only, subject_overrides=subject_overrides)
             if budget is not None:
                 evidence.record("run_budget_final", **budget.as_metadata())
