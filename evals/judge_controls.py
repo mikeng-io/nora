@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import fcntl
 import hashlib
 import json
 import time
@@ -28,6 +27,7 @@ from nora.subject.eval_evidence import (
     revision,
     validate_events,
 )
+from nora.subject.sandbox import EvalLockHeldError, eval_host_lock
 from scripts import memory_graph_spike as spike
 
 
@@ -139,7 +139,7 @@ def compare_memory(rows: list[dict], alias: str, expected: dict) -> dict:
         "coverage": {r["unit"]: r["verdict"] for r in rows if r["kind"] == "coverage_verdict"
                      and r.get("alias") == alias},
     }
-    errors = any(r["kind"] == "judge_error" for r in rows)
+    errors = any(r["kind"] == "judge_error" and r.get("alias") in {None, alias} for r in rows)
     complete = (len(actual["support"]) == len(expected["support"])
                 and len(actual["eligibility"]) == len(expected["eligibility"])
                 and set(actual["coverage"]) == set(expected["coverage"]))
@@ -156,16 +156,14 @@ async def execute(job: dict, controls: list, oracle: dict, contracts: dict,
 
     from evals.backbone import _prefill_capture
 
-    export = evaluation_export_for(config)
-    _prefill_capture()
-    output = spike.private_directory(output)
-    # Same single-run lock as the official suite. Do not queue a second campaign.
-    with Path("/tmp/nora-eval.lock").open("a") as lock:  # noqa: ASYNC230,S108 - shared host lock
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    with eval_host_lock() as lock_fd:
+        export = evaluation_export_for(config)
+        _prefill_capture()
+        output = spike.private_directory(output)
         evidence = RunEvidence(run_id=f"judge-controls-{uuid.uuid4().hex}",
             metadata={"purpose": "generated development judge discrimination", "subjects": 0,
                       "job_sha256": job_sha256, "job": job,
-                      **revision(binding._ROOT)}, lock_fd=lock.fileno(), private_root=output)
+                      **revision(binding._ROOT)}, lock_fd=lock_fd, private_root=output)
         report: dict[str, Any] = {"status": "ERROR", "subjects": 0, "comparisons": []}
         try:
             with evidence.capture(trace.get_tracer_provider(), export=export):
@@ -217,7 +215,9 @@ async def execute(job: dict, controls: list, oracle: dict, contracts: dict,
                         raise EvidenceError("calibration request count mismatch")
                     report["status"] = ("FAIL" if any(c["status"] == "FAIL"
                                         for c in report["comparisons"]) else "PASS")
-                evidence.exit_code = 0 if report["status"] == "PASS" else 1
+                # Capture completion is not the final report outcome. A late file error
+                # must not leave a successful terminal outcome in the trace.
+                evidence.exit_code = None
         except Exception as exc:  # noqa: BLE001 - no private exception text in reports
             report.update(status="ERROR", error_type=type(exc).__name__)
         report["evidence"] = validate_events(read_events(evidence.path))
@@ -248,6 +248,9 @@ def main() -> int:
                                     output=args.output, job_sha256=args.job_sha256))
         print(json.dumps({"status": report["status"], "subjects": 0}))
         return {"PASS": 0, "FAIL": 1, "ERROR": 2}[report["status"]]
+    except EvalLockHeldError:
+        print("calibration refused: another evaluation holds the host lock")
+        return 2
     except (OSError, ValueError, KeyError, TypeError, EvidenceError):
         print("calibration refused: invalid or changed job; no success claimed")
         return 2

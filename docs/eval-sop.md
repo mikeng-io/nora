@@ -150,7 +150,9 @@ Those remain the preceding SOP's separate evidence obligations.
 `python -m evals.judge_controls --job FILE --job-sha256 SHA --config FILE`
 validates a private frozen job without model dispatch. `--execute --output DIR`
 uses the existing memory support/eligibility/coverage and reply graders under
-one shared measured budget and the host's eval lock; it runs no subject.
+one shared measured budget and `eval_host_lock()` (the same inner lock as the
+official suite); it runs no subject. The operator wrapper may hold the separate
+outer `/tmp/nora-eval.lock` without the command taking that lock again.
 Execution requires separate operator spending approval. The job fingerprint is
 an artifact binding, never permission or proof that its answer key is correct.
 
@@ -168,6 +170,9 @@ failure. Preserve every judge separately, without voting away disagreements.
 Missing/unsure/REVIEW/error is ERROR, never PASS. Stop on unavailable measurement,
 unknown usage, exhausted budget or evidence failure. Retain semantic mismatches
 and complete the already-authorized finite controls; do not retry or retune.
+The final `report.json`, together with its validated capture receipt, owns the
+job outcome. The trace's `run_finished` means capture completion and leaves its
+exit code unset; it cannot assert success before the final report is written.
 The report's PASS concerns only this finite generated development check, not
 subject behavior, heldout accuracy or population reliability.
 

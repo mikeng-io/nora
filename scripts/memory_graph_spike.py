@@ -853,6 +853,7 @@ async def smoke_fact_support(
                 verdicts.append("ERROR")
                 record(
                     "judge_error",
+                    alias=model,
                     cause="judge_incomplete",
                     detail=type(exc).__name__,
                     validation=str(exc) if isinstance(exc, ValueError) else "judge_call_failed",
@@ -988,6 +989,7 @@ async def smoke_fact_support(
             out["facts_judge_errors"] += 1
             record(
                 "judge_error",
+                alias=model,
                 cause="judge_incomplete",
                 detail=type(exc).__name__,
                 validation=str(exc) if isinstance(exc, ValueError) else "judge_call_failed",

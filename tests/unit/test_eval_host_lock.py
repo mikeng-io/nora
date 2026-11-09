@@ -16,6 +16,7 @@ import pytest
 
 import evals.__main__ as m
 from nora.subject import sandbox
+from tests.integration.test_grading_contract import generated_cli_contract as generated_cli_contract
 from tests.integration.test_spike_visibility import otlp_wire as otlp_wire
 from tests.unit.test_eval_main_budget import configured_main as configured_main
 

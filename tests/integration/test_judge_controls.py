@@ -1,7 +1,9 @@
 """Frozen generated controls reach existing graders; real HTTP boundaries stay mocked."""
 from __future__ import annotations
 
+import fcntl
 import json
+import os
 from pathlib import Path
 
 import httpx
@@ -12,6 +14,7 @@ from evals import grading_contract as binding
 from evals import judge_controls as controls
 from evals.rebuilt.grading import Judge
 from nora.agent import structured
+from nora.subject import sandbox
 from nora.subject.eval_evidence import EvidenceError, fingerprint, read_events, revision
 from nora.subject.run_budget_transport import gate_client
 from scripts import memory_graph_spike as spike
@@ -123,6 +126,8 @@ def model_wire(monkeypatch):
                        "reason": "Generated coverage check", **({"covered_by": {
                            "statements": [0], "reads": []}} if saved else {})}],
                       "diagnostic_misses": []}
+            if mode.get("alias_error") and body["model"] == "generated-b":
+                answer["diagnostic_misses"] = None
         response = completion(request, answer)
         if mode["unknown_usage"]:
             answer = response.json()
@@ -147,7 +152,7 @@ def model_wire(monkeypatch):
 @pytest.mark.usefixtures("otlp_wire")
 @pytest.mark.parametrize("mode,expected,count", [
     ("normal", "PASS", 8), ("wrong", "FAIL", 8), ("unknown_usage", "ERROR", 1),
-    ("cutoff", "ERROR", 1),
+    ("cutoff", "ERROR", 1), ("alias_error", "ERROR", 4),
 ])
 async def test_frozen_controls_use_real_consumers_capture_and_shared_budget(
         tmp_path, job_files, model_wire, mode, expected, count):
@@ -183,6 +188,10 @@ async def test_frozen_controls_use_real_consumers_capture_and_shared_budget(
                    and r["status"] == "PASS" for r in rows)
     else:
         assert any(r["kind"] == "run_budget_final" for r in rows)
+    if mode == "alias_error":
+        statuses = {c["alias"]: c["status"] for c in report["comparisons"]}
+        assert statuses == {"generated-a": "PASS", "generated-b": "ERROR"}
+        assert [r["alias"] for r in rows if r["kind"] == "judge_error"] == ["generated-b"]
 
 
 def test_inspection_never_enters_execution_and_refuses_drift(job_files, monkeypatch, capsys):
@@ -201,3 +210,52 @@ def test_oracle_drift_is_refused_before_consumers(job_files):
     Path(job["oracle"]["path"]).write_text('{}')
     with pytest.raises(EvidenceError, match="fingerprint"):
         controls.prepare(path, sha, cfg)
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("otlp_wire")
+async def test_controls_share_the_official_inner_lock_and_allow_the_outer_wrapper(
+        tmp_path, job_files, model_wire):
+    cfg, _, path, sha = job_files
+    prepared = controls.prepare(path, sha, cfg)
+    out = tmp_path / "serialized-run"
+    with sandbox.eval_host_lock(), pytest.raises(sandbox.EvalLockHeldError):
+        await controls.execute(*prepared, config=cfg, output=out, job_sha256=sha)
+    assert model_wire[0] == [] and not out.exists()
+    outer = os.open(sandbox.EVAL_HOST_LOCK.parent / "nora-eval.lock", os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(outer, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        report = await controls.execute(*prepared, config=cfg, output=out, job_sha256=sha)
+    finally:
+        os.close(outer)
+    assert report["status"] == "PASS" and len(model_wire[0]) == 8
+    records = read_events(next(p.parent for p in out.glob("*/events.jsonl")))
+    started = next(r for r in records if r["kind"] == "run_started")
+    assert started["metadata"]["lock_inode"] == sandbox.EVAL_HOST_LOCK.stat().st_ino
+    # Released after completion, including both the refusal and completed paths.
+    with sandbox.eval_host_lock():
+        pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("otlp_wire")
+async def test_final_report_failure_never_leaves_a_successful_terminal_exit_code(
+        tmp_path, job_files, model_wire, monkeypatch):
+    cfg, _, path, sha = job_files
+    prepared = controls.prepare(path, sha, cfg)
+    out = tmp_path / "late-report-failure"
+    original = spike.freeze
+
+    def collide(path, data):
+        if path.name == "report.json":
+            path.write_text('{"status":"GENERATED_COLLISION"}')
+        return original(path, data)
+
+    monkeypatch.setattr(spike, "freeze", collide)
+    with pytest.raises(FileExistsError):
+        await controls.execute(*prepared, config=cfg, output=out, job_sha256=sha)
+    assert len(model_wire[0]) == 8
+    records = read_events(next(p.parent for p in out.glob("*/events.jsonl")))
+    terminal = next(r for r in records if r["kind"] == "run_finished")
+    assert terminal["exit_code"] is None
+    assert json.loads((out / "report.json").read_text())["status"] == "GENERATED_COLLISION"
