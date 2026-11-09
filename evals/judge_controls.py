@@ -155,7 +155,6 @@ async def execute(job: dict, controls: list, oracle: dict, contracts: dict,
     from opentelemetry import trace
 
     from evals.backbone import _prefill_capture
-    from nora.config import load
 
     export = evaluation_export_for(config)
     _prefill_capture()
@@ -178,7 +177,7 @@ async def execute(job: dict, controls: list, oracle: dict, contracts: dict,
                         deadline=time.monotonic() + job["budget"]["seconds"]):
                     budget = active_run_budget.get()
                     assert budget is not None
-                    judges = spike.Judges(load(config), job["judges"], config)
+                    judges = spike.Judges(spike.load(config), job["judges"], config)
                     for c in controls:
                         budget.would_admit()
                         data, lane, key = c["input"], c["lane"], c["key"]
