@@ -1013,7 +1013,7 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                 f"wake:{view.unit}:{wake['id']}", input=wake,
                 metadata={"wake_id": wake["id"], "unit": view.unit, "replay_ms": replay_ms,
                           "sample_sha256": sample_sha256, "seed": args.seed,
-                          "snapshot_sha256": hashlib.sha256(
+                          "snapshot_locator_sha256": hashlib.sha256(
                               args.database_url.encode()).hexdigest()},
             ):
                 at = datetime.fromtimestamp(replay_ms / 1000, UTC)

@@ -143,7 +143,8 @@ async def test_memory_graph_replay_exports_writer_and_judges(
     starts = [e for e in events if e["kind"] == "case_started"]
     cohort = spike.fingerprint(args.output / "sample.json")
     assert all(e["metadata"]["sample_sha256"] == cohort for e in starts)
-    assert all(e["metadata"]["snapshot_sha256"] and e["metadata"]["replay_ms"] for e in starts)
+    assert all(e["metadata"]["snapshot_locator_sha256"] and e["metadata"]["replay_ms"]
+               for e in starts)
     assert {e["wake_id"] for e in events if e["kind"] == "replay_session"} == {1, 2}
     trace_id = roots[0].trace_id.hex()
     assert "eval trace: " + trace_id in capsys.readouterr().err
