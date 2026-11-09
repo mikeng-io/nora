@@ -15,7 +15,8 @@ import re
 import statistics
 import sys
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
@@ -1571,6 +1572,37 @@ def spike_contract(args: Any, entrypoint: str) -> GradingContract | None:
     )
 
 
+@contextmanager
+def measured_run_budget(
+    args: Any, evidence: RunEvidence, output: Path, report: dict[str, Any]
+) -> Iterator[None]:
+    """One measured budget for every model reachable from this entrypoint."""
+    from nora.domain.run_budget import RunBudget, active_run_budget
+
+    cutoff = getattr(args, "stop_after_tokens", None)
+    inspection_only = getattr(args, "inspect_only", False)
+    budget = (RunBudget(max_requests=0 if inspection_only else 1000,
+                        max_output_tokens=600_000, stop_after_total_tokens=cutoff)
+              if cutoff or inspection_only else None)
+    token = active_run_budget.set(budget) if budget else None
+    try:
+        if budget:
+            evidence.record("run_budget_started", **budget.as_metadata())
+        yield
+    finally:
+        try:
+            if budget:
+                metadata = budget.as_metadata()
+                report["run_budget"] = metadata
+                if budget.spent is not None:
+                    report["status"] = "ERROR"
+                freeze(output / "run_budget.json", metadata)
+                evidence.record("run_budget_final", **metadata)
+        finally:
+            if token is not None:
+                active_run_budget.reset(token)
+
+
 async def run(args: Any) -> dict[str, Any]:
     from tempfile import TemporaryFile
 
@@ -1597,15 +1629,6 @@ async def run(args: Any) -> dict[str, Any]:
             lock_fd=lock.fileno(),
             private_root=output,
         )
-        from nora.domain.run_budget import RunBudget, active_run_budget
-
-        cutoff = getattr(args, "stop_after_tokens", None)
-        inspection_only = getattr(args, "inspect_only", False)
-        budget = (RunBudget(max_requests=0 if inspection_only else 1000,
-                            max_output_tokens=600_000,
-                            stop_after_total_tokens=cutoff)
-                  if cutoff or inspection_only else None)
-        token = active_run_budget.set(budget) if budget else None
         report: dict[str, Any] = {"status": "ERROR"}
         capture_failed = False
         body_completed = False
@@ -1615,26 +1638,13 @@ async def run(args: Any) -> dict[str, Any]:
                     args.bound_contract.record()
                 trace_id = trace.get_current_span().get_span_context().trace_id
                 print(f"eval trace: {trace_id:032x}", file=sys.stderr)
-                if budget:
-                    evidence.record("run_budget_started", **budget.as_metadata())
-                try:
-                    report = await _run(args)
+                with measured_run_budget(args, evidence, output, report):
+                    report.update(await _run(args))
                     body_completed = True
-                finally:
-                    if budget:
-                        metadata = budget.as_metadata()
-                        report["run_budget"] = metadata
-                        if budget.spent is not None:
-                            report["status"] = "ERROR"
-                        evidence.record("run_budget_final", **metadata)
-                        freeze(output / "run_budget.json", metadata)
         except EvidenceError:
             if not body_completed:
                 raise
             capture_failed = True
-        finally:
-            if token is not None:
-                active_run_budget.reset(token)
         try:
             receipt = validate_events(read_events(evidence.path))
         except EvidenceError:
@@ -2009,11 +2019,12 @@ async def run_rescore(args: Any) -> dict[str, Any]:
                 trace_id = trace.get_current_span().get_span_context().trace_id
                 print(f"eval trace: {trace_id:032x}", file=sys.stderr)
                 args.bound_contract.record()
-                report = await rescore_facts(
-                    args.rescore,
-                    Judges(load(args.config), [args.judge_a, args.judge_b], args.config),
-                    contract=args.bound_contract,
-                )
+                with measured_run_budget(args, evidence, output, report):
+                    report.update(await rescore_facts(
+                        args.rescore,
+                        Judges(load(args.config), [args.judge_a, args.judge_b], args.config),
+                        contract=args.bound_contract,
+                    ))
         except Exception:  # noqa: BLE001 - the private record retains failure details
             report["status"] = "ERROR"
         report["evidence"] = validate_events(read_events(evidence.path))
@@ -2053,8 +2064,9 @@ async def run_diagnostic(args: Any) -> dict[str, Any]:
                 trace_id = trace.get_current_span().get_span_context().trace_id
                 print(f"eval trace: {trace_id:032x}", file=sys.stderr)
                 args.bound_contract.record()
-                report = await decision_judge(args.decision_judge,
-                    Judges(load(args.config), [args.judge_a, args.judge_b], args.config))
+                with measured_run_budget(args, evidence, output, report):
+                    report.update(await decision_judge(args.decision_judge,
+                        Judges(load(args.config), [args.judge_a, args.judge_b], args.config)))
         except Exception:  # noqa: BLE001 - only the private evidence records failure details
             report["status"] = "ERROR"
         report["evidence"] = validate_events(read_events(evidence.path))
@@ -2098,10 +2110,10 @@ def main() -> int:
         parser.error("measured token cutoff must be positive")
     if args.session_count is not None and (not args.smoke or args.session_count < 5):
         parser.error("session-count requires smoke mode and at least five sessions")
-    if (args.stop_after_tokens or args.inspect_only or args.project_only or args.sample_sha256
+    if (args.inspect_only or args.project_only or args.sample_sha256
             or args.session_count) and (
             args.rescore or args.decision_judge):
-        parser.error("cutoff, inspection and sample pinning cover the replay path only")
+        parser.error("inspection and sample pinning cover the replay path only")
     if args.per_stratum <= 0 or args.minimum <= 0:
         parser.error("sample sizes must be positive")
 

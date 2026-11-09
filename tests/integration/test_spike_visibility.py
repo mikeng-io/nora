@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import suppress
 from types import SimpleNamespace
 
 import httpx
@@ -231,6 +232,84 @@ async def test_scoring_entrypoints_export_real_judge_call(
     assert metadata["source_locator_sha256"]
     assert any(attrs(s).get("gen_ai.operation.name") == "chat" for s in exported_spans(otlp_wire))
     assert "eval trace: " in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("entry,body_name", [
+    ("run_rescore", "rescore_facts"), ("run_diagnostic", "decision_judge"),
+])
+@pytest.mark.parametrize("outcome", ["complete", "cutoff", "unknown_usage", "body_error"])
+async def test_scoring_entrypoints_share_the_measured_budget_and_persist_it(
+        tmp_path, monkeypatch, example_config_path, otlp_wire, entry, body_name, outcome):
+    from nora.domain.run_budget import RunBudget, active_run_budget
+
+    config = tmp_path / "generated.toml"
+    configured_sink(example_config_path, config)
+    monkeypatch.setattr(spike, "load", lambda _: SimpleNamespace(
+        llm=SimpleNamespace(timeout_seconds=5)))
+    monkeypatch.setattr(spike, "model_endpoint", lambda path, purpose, model="": (
+        "https://generated.invalid/v1", "generated-key", model))
+    dispatches = []
+
+    def respond(request):
+        body = json.loads(request.content)
+        assert body["model"] == ["generated-a", "generated-b", "generated-a"][len(dispatches)]
+        assert body["messages"][0]["content"] == "Generated score instruction"
+        assert not body["stream"]
+        dispatches.append(body)
+        response = completion(request, {"generated": len(dispatches)})
+        if outcome == "unknown_usage" and len(dispatches) == 2:
+            data = response.json()
+            data.pop("usage")
+            response = httpx.Response(200, json=data)
+        return response
+
+    outer = RunBudget(max_requests=10)
+
+    async def body(directory, judges, **kwargs):
+        for index, model in enumerate(["generated-a", "generated-b", "generated-a"]):
+            if index == 1 and outcome == "body_error":
+                raise ValueError("generated scoring failure after first dispatch")
+            # The real scorer carries on after individual judge failures; this
+            # must not clear the terminal budget or admit the later call.
+            with suppress(Exception):
+                await judges.call(model, "Generated score instruction", {"attempt": index})
+        return {"status": "REPORTED"}
+
+    monkeypatch.setattr(spike, body_name, body)
+    original_build = structured.build_structured_model
+    monkeypatch.setattr(spike, "build_structured_model", lambda **kw: original_build(
+        **kw, http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond))))
+    args = SimpleNamespace(
+        config=config, output=tmp_path / "output", rescore=tmp_path / "source",
+        decision_judge=tmp_path / "source", judge_a="generated-a", judge_b="generated-b",
+        stop_after_tokens=20 if outcome == "cutoff" else 100)
+    attach_archive_contract(args, tmp_path,
+                            "rescore" if entry == "run_rescore" else "diagnostic")
+    token = active_run_budget.set(outer)
+    try:
+        report = await getattr(spike, entry)(args)
+        assert active_run_budget.get() is outer
+    finally:
+        active_run_budget.reset(token)
+    assert outer.requests == 0
+    expected = {"complete": 3, "cutoff": 2, "unknown_usage": 2, "body_error": 1}[outcome]
+    assert len(dispatches) == expected
+    budget = report["run_budget"]
+    assert budget["requests_used"] == expected
+    known = 1 if outcome == "unknown_usage" else expected
+    assert budget["input_tokens_used"] == known * 10
+    assert budget["output_tokens_used"] == known * 5
+    assert bool(budget["spent_reason"]) == (outcome in {"cutoff", "unknown_usage"})
+    assert report["status"] == ("REPORTED" if outcome == "complete" else "ERROR")
+    assert spike.report_exit(report) == (0 if outcome == "complete" else 2)
+    assert json.loads((args.output / "run_budget.json").read_text()) == budget
+    assert json.loads((args.output / "report.json").read_text()) == report
+    events = read_events(next(args.output.glob("*-*")))
+    final = [e for e in events if e["kind"] == "run_budget_final"]
+    assert len(final) == 1
+    assert all(final[0][key] == value for key, value in budget.items())
+    assert any(e.name == "nora.eval.run_budget_final"
+               for span in exported_spans(otlp_wire) for e in span.events)
 
 
 @pytest.mark.parametrize("entry", ["run", "run_rescore", "run_diagnostic"])

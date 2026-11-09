@@ -905,7 +905,7 @@ def test_prompt_composer_is_registered_when_the_script_runs_directly():
 @pytest.mark.parametrize("mode", ["--rescore", "--decision-judge"])
 @pytest.mark.parametrize("option", [
     ["--inspect-only"], ["--project-only"], ["--sample-sha256", "generated-digest"],
-    ["--stop-after-tokens", "100"], ["--smoke", "--session-count", "15"],
+    ["--smoke", "--session-count", "15"],
 ])
 def test_replay_only_flags_refuse_scoring_modes_before_any_run(monkeypatch, mode, option):
     import sys
@@ -922,6 +922,27 @@ def test_replay_only_flags_refuse_scoring_modes_before_any_run(monkeypatch, mode
     with pytest.raises(SystemExit) as exc:
         spike.main()
     assert exc.value.code == 2
+
+
+@pytest.mark.parametrize("mode,runner", [
+    ("--rescore", "run_rescore"), ("--decision-judge", "run_diagnostic"),
+])
+def test_scoring_cli_forwards_the_measured_cutoff(monkeypatch, mode, runner):
+    import sys
+
+    reached = []
+
+    async def run(args):
+        reached.append(args.stop_after_tokens)
+        return {"status": "REPORTED"}
+
+    monkeypatch.setattr(spike, runner, run)
+    monkeypatch.setattr(sys, "argv", [
+        "memory_graph_spike", "--config", "generated.toml", "--output", "generated-out",
+        mode, "generated-recording", "--stop-after-tokens", "100",
+    ])
+    assert spike.main() == 0
+    assert reached == [100]
 
 
 def test_expanded_sample_retains_the_five_original_sessions_and_exact_seeded_count():
