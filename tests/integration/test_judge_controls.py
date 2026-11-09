@@ -371,7 +371,7 @@ async def test_empty_coverage_contract_and_failure_stop_through_real_entry(
     else:
         assert report["evidence"]["status"] == "PASS"
     # Every model leaf remains attached to a case in the run, even on failure.
-    spans = {r["span_id"]: r for r in rows if r["kind"] == "span_started"}
+    spans = {r["span_id"]: r for r in rows if r["kind"] == "span_finished"}
     leaves = [r for r in spans.values() if r["attributes"].get("gen_ai.operation.name") == "chat"]
     assert len(leaves) == len(model_wire[0])
     for leaf in leaves:
