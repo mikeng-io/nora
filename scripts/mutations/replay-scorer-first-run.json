@@ -37,8 +37,8 @@
   {
     "name": "rescore executes fact scoring",
     "file": "scripts/memory_graph_spike.py",
-    "old": "        results.append(await smoke_fact_support(judges, inspection, exchanges,\n                       session_event_ids=ids, source_sha256=source_sha))",
-    "new": "        pass",
+    "old": "            results.append(await smoke_fact_support(judges, inspection, exchanges,\n                           session_event_ids=ids, source_sha256=source_sha))",
+    "new": "            pass",
     "target": "tests/unit/test_replay_scoring.py::test_rescore_generated_run_directory"
   },
   {
@@ -128,8 +128,8 @@
   {
     "name": "oversized diagnostic input is never sent",
     "file": "scripts/memory_graph_spike.py",
-    "old": "            if truncated:\n                raise ValueError(\"diagnostic_input_truncated\")",
-    "new": "            if False and truncated:\n                raise ValueError(\"diagnostic_input_truncated\")",
+    "old": "                if truncated:\n                    raise ValueError(\"diagnostic_input_truncated\")",
+    "new": "                if False and truncated:\n                    raise ValueError(\"diagnostic_input_truncated\")",
     "target": "tests/unit/test_replay_diagnosis.py::test_decision_resolves_fingerprinted_writer_events[oversized]"
   },
   {
