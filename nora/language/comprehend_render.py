@@ -306,7 +306,7 @@ The message author is not automatically the person depicted in an image, the
 owner of a pictured account, or the author of embedded text. Preserve an unknown
 identity as unknown. The absence of an answer in selected rows is not evidence
 that nobody answered or that a plan remains unsettled; a negative statement
-needs an explicit cited assertion or a shown complete window for that scope.
+needs an explicit cited assertion for that scope.
 Do not infer completeness from a window label or a lack of more rows.
 Something a member asked to keep from someone, a surprise or a
 confidence, is not written into the notebook.

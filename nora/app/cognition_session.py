@@ -3504,7 +3504,7 @@ class CognitionSessionRunner:
                     object, validity and citations), a correction (a held
                     relation's shown id, change and citations) or a reading
                     (about, what, happened_at, where, how and citations).
-                nothing_here: Agenda indices understood and holding nothing to keep.
+                nothing_here: Agenda indices understood and holding no substantive content.
             """
             if self._memory is None:
                 return {"status": "unavailable", "note": "Memory admission is unavailable."}

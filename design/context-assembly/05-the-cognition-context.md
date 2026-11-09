@@ -350,7 +350,8 @@ code-recorded communication acts do not need duplicate accounts. Human
 availability reports and readable shared material retain attribution, without
 becoming verified rosters, endorsements or private-person facts. Complete cited
 premises, event-time roles, depicted versus sender identity, suggestions versus
-actions, and selected versus complete windows are explicit. Unavailable reads
+actions, and explicit cited assertions of absence are required.
+Selected rows and window labels never establish completeness. Unavailable reads
 stay unavailable; judge uncertainty and the quality gate are not relaxed.
 `tests/unit/test_replay_scoring.py` checks the same criteria reach the composed
 writer and both scoring calls, and `tests/unit/test_orient_kind_table.py` checks
