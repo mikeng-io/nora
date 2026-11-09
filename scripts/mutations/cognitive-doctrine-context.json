@@ -26,5 +26,12 @@
     "old": "elif shown_now is None and not port.public_audience:",
     "new": "elif False and shown_now is None and not port.public_audience:",
     "target": "tests/unit/test_eval_full_restore.py::test_a_room_judge_is_not_called_without_the_captured_clock"
+  },
+  {
+    "name": "identity cases retain their declared acceptance requirement",
+    "file": "evals/rebuilt/grading.py",
+    "old": "if acceptance and n in {\"social_suitability\", \"contextual_identity\"}",
+    "new": "if acceptance and n in {\"social_suitability\"}",
+    "target": "tests/unit/test_eval_full_restore.py::test_circle_judge_receives_requirement_separately_from_actual_evidence"
   }
 ]

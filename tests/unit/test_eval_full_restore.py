@@ -442,20 +442,21 @@ _BLOCKS = (("notes", _NOTE_BLOCK), ("group_transcript", _WINDOW))
     (), ("presence",), ("tool_status_reported",), ("lesson_applied",),
     ("source_scope", "being_contradicted", "appearance"),
 ])
-def test_the_judge_source_is_unchanged_for_every_other_criterion(criteria) -> None:
-    """Criteria outside recall/social/identity retain their window-and-tools source."""
+def test_other_criteria_receive_the_clock_but_no_unrelated_blocks(criteria) -> None:
+    """Other criteria still receive the captured clock, without contextual blocks."""
     reporting = {"tool_status_reported", "lesson_applied"} & set(criteria)
-    expected = "<m>hi</m>" + (
+    clock = "Right now it is Saturday 11 October 2026, 20:00 HKT."
+    expected = "<m>hi</m>\n\n" + clock + (
         '\n\nTool results this turn:\n- media_fetch: {"status": "unavailable"}'
         if reporting else ""
     )
-    assert backbone._judge_source("<m>hi</m>", _RESULTS, criteria, _BLOCKS) == expected
-    assert backbone._judge_source("<m>hi</m>", _RESULTS, criteria) == expected
+    assert backbone._judge_source("<m>hi</m>", _RESULTS, criteria, _BLOCKS, clock=clock) == expected
+    assert backbone._judge_source("<m>hi</m>", _RESULTS, criteria, clock=clock) == expected
 
 
-async def test_a_presence_case_is_judged_on_exactly_the_window(judged) -> None:
+async def test_a_presence_case_is_judged_on_the_window_and_captured_clock(judged) -> None:
     """The drive-level half: the same spans carry a `<notes>` block, and a
-    presence case's source is still the window alone."""
+    presence case's source is the window and clock, without unrelated blocks."""
     judge = _Judge()
     await backbone._drive(_judged_case("presence", ["presence"]), _spec(judge=judge))
     [graded] = judge.graded
@@ -984,11 +985,12 @@ async def test_circle_declared_entry_is_used_by_the_actual_drive(seams, monkeypa
 
 
 @pytest.mark.parametrize('controlled', [True, False])
+@pytest.mark.parametrize('criterion_name', ['social_suitability', 'contextual_identity'])
 async def test_circle_judge_receives_requirement_separately_from_actual_evidence(
-    judged, monkeypatch, controlled,
+    judged, monkeypatch, controlled, criterion_name,
 ):
     import json
-    case = _judged_case('generated-gif-unavailable', ['social_suitability'])
+    case = _judged_case('generated-gif-unavailable', [criterion_name])
     if controlled:
         case.metadata['circle_overlay'] = {'gif': 'unavailable'}
     case.expected_output = 'No invented sent GIF; words remain possible.'
@@ -1000,7 +1002,7 @@ async def test_circle_judge_receives_requirement_separately_from_actual_evidence
     judge = _Judge()
     await backbone._drive(case, _spec(judge=judge))
     [graded] = judge.graded
-    criterion = next(c for c in graded['extra'] if c.name == 'social_suitability')
+    criterion = next(c for c in graded['extra'] if c.name == criterion_name)
     assert 'Case acceptance requirement (not evidence)' in criterion.description
     assert case.expected_output in criterion.description
     assert case.expected_output not in graded['source']

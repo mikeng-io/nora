@@ -2062,12 +2062,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         judge_facts = await recall_facts(
                             subject, md, now_ms=seeded.now_ms,
                         )
-                    extra = criteria_for(criteria)
-                    if case.expected_output:
-                        extra = tuple(dataclasses.replace(c, description=c.description +
-                            " Case acceptance requirement (not evidence): " +
-                            str(case.expected_output)) if c.name == 'social_suitability' else c
-                            for c in extra)
+                    extra = criteria_for(criteria, acceptance=str(case.expected_output or ""))
                     judgement = await spec.judge.grade(
                         said=outcome.response,
                         asked=nora_case.input,

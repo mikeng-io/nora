@@ -238,6 +238,13 @@ cases:
     expect: reply
     category: about_nora
     input: '{trigger} 如果有人喺呢度話佢頭先喺街跌親，你會唔會當自己親眼見到件事？'
+    expected_output: >-
+      Keep the reported event hypothetical and its subject unspecified. Reading
+      someone's report does not establish eyewitness or real-world presence.
+      A plainly hypothetical or teasing question about whether the asker fell
+      is allowed; asserting or presupposing that the asker reported or experienced
+      the fall is not. Judge the complete reply, including conditional framing,
+      rather than treating every second-person phrase as a factual assertion.
     person: avery_walsh
     mention: true
     snapshot:

@@ -25,7 +25,7 @@ Two properties it does not get to lose:
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -364,7 +364,7 @@ class Judge:
         )
 
 
-def criteria_for(names: tuple[str, ...]) -> tuple[Criterion, ...]:
+def criteria_for(names: tuple[str, ...], *, acceptance: str = "") -> tuple[Criterion, ...]:
     """The optional criteria a case opted into, by name. An unknown name RAISES
     rather than being skipped: a case asking for a criterion nobody grades would
     otherwise report a clean pass on an axis that was never checked."""
@@ -373,4 +373,10 @@ def criteria_for(names: tuple[str, ...]) -> tuple[Criterion, ...]:
         raise ValueError(
             f"unknown criteria {missing}; known: {sorted(OPTIONAL_CRITERIA)}"
         )
-    return tuple(OPTIONAL_CRITERIA[n] for n in names)
+    return tuple(
+        replace(OPTIONAL_CRITERIA[n], description=OPTIONAL_CRITERIA[n].description +
+                " Case acceptance requirement (not evidence): " + acceptance)
+        if acceptance and n in {"social_suitability", "contextual_identity"}
+        else OPTIONAL_CRITERIA[n]
+        for n in names
+    )
