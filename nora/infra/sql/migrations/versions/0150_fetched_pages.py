@@ -13,7 +13,6 @@ reads as a miss and the next fetch writes over it.
 
 Revision ID: 0150_fetched_pages
 Revises: 0149_computer_profile_merge
-Create Date: 2026-11-10
 """
 
 from __future__ import annotations

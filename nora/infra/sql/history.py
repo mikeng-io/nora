@@ -293,6 +293,10 @@ NOT_RESTORED: dict[str, str] = {
         "live scope-FIFO ledger; obligations of the running deployment, not replayed as of T"
     ),
     "browser_tasks": "live CDP target bindings; no restore holds tabs on absent VMs",
+    # 0150_fetched_pages: a 24h materialization of a public page — its bytes
+    # live in RustFS under `blob_key`; a restore re-fetches the url rather
+    # than replaying a cache, and the row's own expires_at bounds it.
+    "fetched_pages": "ephemeral page materialization; refetched on demand, never restored",
 }
 
 
