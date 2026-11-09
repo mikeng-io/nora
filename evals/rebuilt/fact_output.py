@@ -1,4 +1,4 @@
-"""Wire schemas for fixed-reference memory judges; semantics stay in the policy."""
+"""Local output contracts for memory judges; semantics stay in the policy."""
 from __future__ import annotations
 
 from typing import Literal

@@ -158,16 +158,19 @@ silently using the last value; ambiguous evidence is ERROR/REVIEW, never PASS.
 This parser contract applies to a newly bound measurement. Preserve reports
 accepted by an older parser; do not retrospectively clear or fail them.
 A valid prompt template and a successful canary do not guarantee a provider's
-format reliability. Fixed-reference memory calls request native strict JSON
-schemas through `response_format`; this is one text call, not an SDK tool loop.
+format reliability. Fixed-reference memory calls use the existing text request
+protocol and validate the response against strict local JSON schemas. Local schema
+validation does not require a provider-native `response_format` capability and
+does not add a second model call or an SDK tool loop.
 Validation and scoring use the same fact parser: a leading complete JSON document
 or fence is read, with trailing explanation ignored; duplicate fields are rejected.
 Coverage rows carry nullable `covered_by` for missed/unsure and string diagnostic
 entries; scored meanings, reason/proof validation and reference labels are unchanged.
 Check the actual route's structured-output support before claiming enforcement;
 plain JSON mode, a mock request or a requested field alone is not proof that a
-schema is enforced. An unsupported route is unavailable; do not silently retry
-without the schema or repair the provider's text into a verdict. Keep model/route
+schema is enforced. Provider-native enforcement is separate from local validation;
+a route lacking it can still use the ordinary protocol with strict local checks.
+Never silently retry, discard local validation or repair provider text into a verdict. Keep model/route
 changes and new paid probes explicitly authorized, with the same fixed semantic
 references.
 

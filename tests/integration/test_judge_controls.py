@@ -8,7 +8,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-from jsonschema import validate
 from openai import AsyncOpenAI
 
 from evals import grading_contract as binding
@@ -104,8 +103,7 @@ def model_wire(monkeypatch):
         assert "opaque-" not in wire and '"oracle"' not in wire
         assert "expected_output" not in wire
         observed.append(body)
-        if mode.get("schema_rejected"):
-            assert body["response_format"]["type"] == "json_schema"
+        if "response_format" in body or mode.get("schema_rejected"):
             return httpx.Response(400, json={"error": {"message": "Unsupported schema mode"}})
         if len(body["messages"]) == 1:
             assert "response_format" not in body
@@ -115,14 +113,6 @@ def model_wire(monkeypatch):
                       for c in ["no_overreach_or_fabrication", "social_suitability"]]
         elif body["messages"][0]["content"] == "FROZEN_SUPPORT" + spike._FIXED_SUPPORT_OUTPUT:
             assert "spare controller" in wire
-            fmt = body["response_format"]
-            assert fmt["type"] == "json_schema" and fmt["json_schema"]["strict"] is True
-            schema = fmt["json_schema"]["schema"]
-            assert schema["additionalProperties"] is False
-            assert set(schema["required"]) == {
-                "verdict", "reason", "eligibility", "eligibility_reason"}
-            assert schema["properties"]["eligibility"]["enum"] == [
-                "eligible", "ineligible", "unsure"]
             answer = {"verdict": "unsupported" if mode["wrong"] else "supported",
                       "reason": "Generated source check", "eligibility": "eligible",
                       "eligibility_reason": "Generated policy check"}
@@ -138,14 +128,6 @@ def model_wire(monkeypatch):
             payload = json.loads(text[text.index(">") + 1:text.rindex("</")])
             saved = bool(payload["saved_statements"])
             instruction = body["messages"][0]["content"]
-            fmt = body["response_format"]
-            assert fmt["type"] == "json_schema" and fmt["json_schema"]["strict"] is True
-            schema = fmt["json_schema"]["schema"]
-            assert schema["properties"]["coverage"]["type"] == "array"
-            assert schema["properties"]["diagnostic_misses"]["items"]["type"] == "string"
-            proof = schema["properties"]["coverage"]["items"]["properties"]["covered_by"]
-            assert proof["anyOf"][0]["additionalProperties"] is False
-            assert set(proof["anyOf"][0]["required"]) == {"statements", "reads"}
             assert "coverage MUST be an array, never an object or null" in instruction
             assert '{"coverage":[],"diagnostic_misses":[]}' in instruction
             assert "exactly the two keys statements and reads" in instruction
@@ -173,9 +155,6 @@ def model_wire(monkeypatch):
                         "error": {"message": "Generated gateway error"}})
             if mode.get("alias_error") and body["model"] == "generated-b":
                 answer["diagnostic_misses"] = None
-        if "response_format" in body and not (
-                mode.get("empty_failure") or mode.get("alias_error")):
-            validate(answer, body["response_format"]["json_schema"]["schema"])
         if mode.get("schema_extra") and body["model"] == "generated-b" and (
                 body["messages"][0]["content"].startswith("FROZEN_SUPPORT")):
             answer["unexpected"] = "Generated field outside the requested schema"
@@ -187,7 +166,7 @@ def model_wire(monkeypatch):
             data["choices"][0]["message"]["content"] = '{"coverage":['
             response = httpx.Response(200, json=data)
         if (mode.get("trailing_prose") or mode.get("fenced_trailing")) and (
-                "response_format" in body):
+                len(body["messages"]) > 1):
             data = response.json()
             content = data["choices"][0]["message"]["content"]
             if mode.get("fenced_trailing"):

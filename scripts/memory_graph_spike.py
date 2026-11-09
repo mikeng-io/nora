@@ -278,9 +278,6 @@ class Judges:
             temperature=0,
         )
         model.update_config(stream=False)
-        if response_format is not None:
-            model.update_config(params={**(model.get_config().get("params") or {}),
-                                        "response_format": response_format})
         from nora.agent.replay_capture import served_identities
         with served_identities() as identities:
             result = await ask_text(
