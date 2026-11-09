@@ -73,7 +73,7 @@
     "name": "bounded SDK-owned judge client disables automatic retries",
     "file": "nora/agent/structured.py",
     "old": "            client_args[\"max_retries\"] = 0\n",
-    "new": "",
+    "new": "            client_args[\"max_retries\"] = 2\n",
     "target": "tests/integration/test_eval_run_budget_wired.py::test_sdk_owned_client_retry_setting_matches_the_run_boundary"
   }
 ]
