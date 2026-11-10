@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.17.2](https://github.com/mikeng-io/nora/compare/v7.17.1...v7.17.2) (2026-11-10)
+
+
+### Bug Fixes
+
+* **cognition:** carry the deployed session timeout into the claim backfill ([bc83d10](https://github.com/mikeng-io/nora/commit/bc83d10397d9baf8adb6cc80ea5675464923fa39))
+
 ## [7.17.1](https://github.com/mikeng-io/nora/compare/v7.17.0...v7.17.1) (2026-11-10)
 
 
