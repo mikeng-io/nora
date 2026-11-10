@@ -175,8 +175,8 @@ class DreamerInstructions:
     (`tests/unit/test_dreamer_instruction_goldens.py`). The digest still covers
     the pair, the prelude in the doctrine's place.
 
-    **A skill** is a text the Cognition session injects after its instruction,
-    per agenda kind (`DreamerSkill`, `skill`). It lives here, not in
+    **A skill** is a text the Cognition session injects after its instruction
+    as part of its tool-gated guidance (`DreamerSkill`, `skill`). It lives here, not in
     `nora/skills/`, so it hot-reloads on the bind mount with the rest of the
     Dreamer's text and each load of it is recorded with the corpus
     (`doctrine_revision`, corpus `dreamer`).

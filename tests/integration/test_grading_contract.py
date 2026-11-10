@@ -694,7 +694,7 @@ async def test_replay_recovers_only_proven_predispatch_argument_failures(
             else:
                 contextvars.copy_context().run(hook.capture, after)
         evidence.record("event", name="nora.session.terminal", attributes={"body": "{}"})
-        return SimpleNamespace(session_id="generated-session", closed=[])
+        return SimpleNamespace(session_id="generated-session", stop_reason="end_turn")
 
     env.runner.replay.side_effect = replay
     report = await spike.run(env.args)

@@ -324,11 +324,10 @@ def read_tools_for(
 
 
 class SkillNotInstalledError(LookupError):
-    """A skill the agenda table maps is not in the corpus. At startup the
+    """Cognition's notebook guidance is not in the corpus. At startup the
     composition turns it into a `StartupError`; on a live hot reload that deleted
-    or renamed the file, the session that needed it records a `failed` wake
-    (cause `infra`, so the unit backs off and no message is struck) and never
-    runs without it."""
+    or renamed the file, the session records a `failed` wake, leaves its stimuli
+    pending and never runs without it."""
 
 
 class PreludeMissingError(RuntimeError):

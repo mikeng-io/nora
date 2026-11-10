@@ -1,7 +1,7 @@
 ---
 type: design
 title: "One Cognition session: what it means, what it connects to, whether to act"
-description: "The operator's 2026-10-29 ruling. Cognition is one stimulus-response session per wake that comprehends, connects and decides as one continuous act, replacing the three separate step sessions of 27 §7 and the per-item comprehend runner. The session observes, orients, decides and acts; proposals and acts are independently available. Profiles are proposed inside the same session. Memory updates at wake time. One verb set across every kind (create, revise, set_status, read, search) and two cross-kind graph tools (memory_search, memory_read) that return a subgraph over the one new graph. Docs only, not built."
+description: "Cognition is one stimulus-response session per wake that observes, orients, decides and acts. Proposals and acts are independently available. Profiles are proposed inside the same session. Memory updates at wake time. One verb set across every kind (create, revise, set_status, read, search) and two cross-kind graph tools (memory_search, memory_read) return a subgraph over the one new graph."
 tags: [nora, cognition, memory-graph, cms, stimulus, tools, vocabulary]
 timestamp: '2026-10-29'
 edges:

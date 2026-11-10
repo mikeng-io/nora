@@ -554,7 +554,6 @@ SMOKE_MARKS = {
     "sample": 5,
     "completion_rate": 1.0,
     "acts": 0,
-    "refused_consumed": 0,
     "missing_usage": 0,
 }
 
@@ -566,21 +565,19 @@ def session_smoke(
     errors = sum(s.get("status") == "ERROR" for s in samples)
     completed = sum(s.get("status") == "PASS" for s in samples)
     changed = sum(s.get("acts", 0) for s in samples)
-    consumed = sum(s.get("refused_consumed", 0) for s in samples)
     counted = sum(s.get("admitted", 0) + s.get("refused", 0) for s in samples)
     return {
         "status": "ERROR"
         if (errors or missing or len(samples) < 5
             or (expected is not None and len(samples) != expected))
         else "PASS"
-        if completed == len(samples) and counted and not changed and not consumed
+        if completed == len(samples) and counted and not changed
         else "FAIL",
         "sessions": len(samples),
         "completed": completed,
         "proposals_admitted": sum(s.get("admitted", 0) for s in samples),
         "proposals_refused": sum(s.get("refused", 0) for s in samples),
         "acts": changed,
-        "refused_consumed": consumed,
         "missing_usage": missing,
         "marks": {**SMOKE_MARKS, "sample": expected or SMOKE_MARKS["sample"]},
     }

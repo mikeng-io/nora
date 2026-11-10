@@ -3,8 +3,8 @@
 **The failure this exists for.** An agenda line is a count: «room R has 23 new
 messages». A session handed only that has nothing to tell a plan from a joke,
 cannot cite a message id in a note (a body line MUST end in the ids it rests on,
-`nora.domain.note_body`) and cannot see what is already recorded, so it writes
-a duplicate or closes `no_change` on a room it never read. AGENTS.md's spine
+`nora.domain.note_body`) and cannot see what is already recorded, so it duplicates
+or contradicts what the room already holds. AGENTS.md's spine
 says it once for every model that judges: the input has to explain itself, and
 a judgement whose input cannot ground it does not fail loudly, it answers
 wrong at a rate nothing reports. So code hands it, for

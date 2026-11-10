@@ -299,13 +299,11 @@ def test_session_smoke_marks():
             "admitted": 1,
             "refused": 0,
             "acts": 0,
-            "refused_consumed": 0,
         }
         for _ in range(5)
     ]
     assert spike.session_smoke(healthy)["status"] == "PASS"
-    for field in ("acts", "refused_consumed"):
-        assert spike.session_smoke([*healthy[:-1], {**healthy[-1], field: 1}])["status"] == "FAIL"
+    assert spike.session_smoke([*healthy[:-1], {**healthy[-1], "acts": 1}])["status"] == "FAIL"
     assert (
         spike.session_smoke([*healthy[:-1], {**healthy[-1], "tokens": None}])["status"] == "ERROR"
     )
@@ -671,7 +669,7 @@ def generated_replay_environment(tmp_path, monkeypatch):
         evidence.record("transport_started")
         evidence.record("transport_finished", reasoning_availability="absent")
         evidence.record("event", name="nora.session.terminal", attributes={"body": "{}"})
-        return SimpleNamespace(session_id="generated-session", closed=[])
+        return SimpleNamespace(session_id="generated-session", stop_reason="end_turn")
 
     runner = SimpleNamespace(
         inspect=AsyncMock(return_value={"system": "generated", "agenda": "generated"}),
@@ -961,8 +959,7 @@ def test_expanded_sample_retains_the_five_original_sessions_and_exact_seeded_cou
 
 
 def test_expanded_session_completion_requires_all_fifteen():
-    good = {"status": "PASS", "tokens": 10, "admitted": 1, "refused": 0,
-            "acts": 0, "refused_consumed": 0}
+    good = {"status": "PASS", "tokens": 10, "admitted": 1, "refused": 0, "acts": 0}
     assert spike.session_smoke([good] * 6)["status"] == "PASS"
     assert spike.session_smoke([good] * 15, expected=15)["status"] == "PASS"
     assert spike.session_smoke([good] * 14, expected=15)["status"] == "ERROR"

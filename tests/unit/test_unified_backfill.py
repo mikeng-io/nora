@@ -139,19 +139,16 @@ class _Runner:
     """Answers like `CognitionSessionRunner` in the historical lane:
     `inspect` returns the per-item work digests `on_wake`'s inspect branch
     builds, `replay` records that it was asked `historical=True` — the flag
-    that withholds every act tool in the real runner. On `replay` it can be
-    scripted to make NOTHING covered (a normal return that admitted nothing —
-    the refusal shape) so the frontier check sees the truth."""
+    that withholds every act tool in the real runner. By default it writes no
+    completion receipt, so the frontier correctly reports unresolved work."""
 
     def __init__(self, *, work_by_batch: list[list[dict[str, Any]]] | None = None,
-                 fail_on: set[int] | None = None,
-                 admit_on: set[int] | None = None) -> None:
+                 fail_on: set[int] | None = None) -> None:
         self.max_items = 12
         self.inspect_calls: list[tuple[tuple[int, ...], int]] = []
         self.replay_calls: list[tuple[tuple[int, ...], int, bool]] = []
         self._work = work_by_batch or []
         self._fail_on = fail_on or set()
-        self._admit_on = admit_on or set()
         self._seen: dict[tuple[int, ...], list[dict[str, Any]]] = {}
 
     async def inspect(
@@ -279,16 +276,15 @@ async def test_done_items_are_skipped_and_changed_input_reruns(
     _patch_sql(monkeypatch, stimuli=stimuli, pairs=pairs, covered={1, 2})
     monkeypatch.setattr(ub.sql, "session_inputs_done", _pairs2)
 
-    # After replay the receipt pair lands at the new hash (a successful
-    # proposal writes it under the current input).
-    async def _replay_then_admit(*, view: Any, now_ms: int,
-                                 historical: bool) -> Any:
+    # A normal session completion writes the receipt at the current input hash.
+    async def _replay_then_complete(*, view: Any, now_ms: int,
+                                    historical: bool) -> Any:
         runner2.replay_calls.append(
             (tuple(s.id for s in view.pending), now_ms, historical))
         pairs.add(("stimuli:1,2", "hNEW"))
         return object()
 
-    runner2.replay = _replay_then_admit  # type: ignore[assignment]
+    runner2.replay = _replay_then_complete  # type: ignore[assignment]
     out2 = await ub.run_units(
         _FakeEngine(object()), runner=runner2, **_run_kwargs())
     assert len(runner2.replay_calls) == 1

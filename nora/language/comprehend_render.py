@@ -135,34 +135,31 @@ def memory_result_text(text: str, *, query: str, depth: int) -> str:
 
 
 MEMORY_CRITERIA = (
-    "Use memory_propose for relations first, readings only when no relation holds the "
-     "fact, and corrections for contradicted shown relations. Work against the people "
-     "and entities shown. likes/dislikes concerns a specific thing; interested_in a subject. "
-     "Chatter, bare links, promotions and vague replies that add no claim need no write."
+    "Use `memory_propose` for relations first, a reading only when no relation holds "
+    "the fact, and a correction for a contradicted shown relation. Chatter that adds "
+    "no claim needs no write. likes/dislikes concerns a specific thing; interested_in "
+    "a subject."
 )
 
 
 # Tool-gated stage guidance belongs to this declared context occasion.
 _ORIENT_GUIDANCE = (
     (frozenset({"memory_search", "memory_read"}),
-     "Search memory and read its connections before proposing a new entity or relation."),
+     "Use {tools} to find and inspect held memory before forming a new entity or relation."),
     (frozenset({"memory_propose"}), MEMORY_CRITERIA),
     (frozenset({"profile_read", "profile_revise"}),
-     "Use profile tools to connect changed relations to held topics, traits, lessons "
-     "and profiles; read before revising."),
+     "Use {tools} to connect changed relations to held accounts; read before revising."),
 )
 _ACT_GUIDANCE = (
     (frozenset({"standing_revise"}),
-     "Standing holds your position: i_owe is what you took on; hold_open is what "
-     "you are keeping open and what would resolve it."),
-    (frozenset({"remind", "remind_move", "remind_cancel"}),
-     "A reminder prepares a later room turn when someone can usefully act; "
-     "continue, move or cancel it as the matter changes."),
-    (frozenset({"wake_at", "wake_move", "wake_cancel"}),
-     "A wake schedules a later look of your own when a time or change could matter."),
+     "Use {tools} to hold your position: i_owe is what you took on; hold_open is "
+     "what you are keeping open and what would resolve it."),
     (frozenset({"document_revise"}),
-     "Revise a shared document to carry a settled change forward, preserving unrelated content."),
+     "Use {tools} to carry a settled change into a shared document, preserving "
+     "unrelated content."),
 )
+_REMIND_TOOLS = frozenset({"remind", "remind_move", "remind_cancel"})
+_WAKE_TOOLS = frozenset({"wake_at", "wake_move", "wake_cancel"})
 _NOTEBOOK_TOOLS = frozenset({
     "note_create", "note_revise", "note_set_status", "note_merge",
     "memo_create", "memo_revise", "memo_set_status",
@@ -170,9 +167,28 @@ _NOTEBOOK_TOOLS = frozenset({
 })
 
 
+def _tool_list(tool_names: frozenset[str]) -> str:
+    return ", ".join(f"`{name}`" for name in sorted(tool_names))
+
+
 def _guidance(sections: tuple, tool_names: frozenset[str]) -> list[str]:
-    return [f"{text} Tools: {', '.join(sorted(required & tool_names))}."
+    return [text.format(tools=_tool_list(required & tool_names))
             for required, text in sections if required & tool_names]
+
+
+def _remind_and_wake_guidance(tool_names: frozenset[str]) -> str | None:
+    reminders = _REMIND_TOOLS & tool_names
+    wakes = _WAKE_TOOLS & tool_names
+    if not reminders and not wakes:
+        return None
+    reminder = "`remind`" if "remind" in tool_names else _tool_list(reminders)
+    wake = "`wake_at`" if "wake_at" in tool_names else _tool_list(wakes)
+    if reminders and wakes:
+        return (f"Use {reminder} for a later room turn and {wake} for your own later look; "
+                "move or cancel either as the matter changes.")
+    if reminders:
+        return f"Use {reminder} for a later room turn; move or cancel it as the matter changes."
+    return f"Use {wake} for your own later look; move or cancel it as its reason changes."
 
 
 def render_session_system(doctrine: str, skills: str, *, tool_names: frozenset[str]) -> str:
@@ -188,7 +204,10 @@ def render_session_system(doctrine: str, skills: str, *, tool_names: frozenset[s
             "# Orient\n\n" + "\n\n".join(sections) if sections else "")), _ROW)])
     actions = []
     if tool_names & _NOTEBOOK_TOOLS:
-        actions.append(skills + "\nTools: " + ", ".join(sorted(tool_names & _NOTEBOOK_TOOLS)) + ".")
+        actions.append(skills)
+    pace = _remind_and_wake_guidance(tool_names)
+    if pace is not None:
+        actions.append(pace)
     actions.extend(_guidance(_ACT_GUIDANCE, tool_names))
     act = assemble([restamp(ContextBlock(
         name="cognition_act", body=compose_body(

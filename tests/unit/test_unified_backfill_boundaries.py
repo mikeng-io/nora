@@ -174,10 +174,10 @@ async def test_historical_proposal_result_uses_safe_graph_payload():
                 entity=Entity("e1", "event", "u1", "future-private-name")),),
                 (GraphEdge(relation, 0),))
     class Admitter:
-        async def _admit(self, *args):
+        async def _admit(self, *args, confirmed=()):
             return (Admission(relations=(relation,)), [],
                     {"report": {0: {"status": "saved", "kind": "relation"}},
-                     "claims": {}, "cited_items": {0: {0}}})
+                     "claims": {}})
     memory = WakeMemory(records=Records(), graph=Graph(), metrics=None, content_checks=False)
     memory.admission = Admitter()
     state = SimpleNamespace(unit="u1", session_id=1, historical=True,

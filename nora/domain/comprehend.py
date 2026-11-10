@@ -250,8 +250,8 @@ REFUSAL_REPAIR: dict[str, dict[str, str]] = {
     # A reading dropped by the provenance checks.
     "citation_outside_batch": {
         "field": "cite",
-        "repair": "Cite rendered `n` rows of the items named in this call's "
-                  "`items`; never a hidden or context-only row.",
+        "repair": "Cite rendered `n` rows shown in this session; never a hidden "
+                  "or context-only row.",
     },
     "duplicate_citation": {
         "field": "cite",

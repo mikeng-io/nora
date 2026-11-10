@@ -144,7 +144,7 @@ EXAMPLE_ROSTER = {"Ada": "p-ada", "Ben": "p-ben", "Cat": "p-cat"}
 FIXED_TOKENS = {"no reason given", "no date given"}
 
 
-#: A snake_case word: how every verb, parameter and close reason is spelled.
+#: A snake_case word used by generated tool names and arguments.
 SNAKE = re.compile(r"\b[a-z]+(?:_[a-z]+)+\b")
 
 

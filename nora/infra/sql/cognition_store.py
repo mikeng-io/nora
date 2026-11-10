@@ -1,7 +1,7 @@
-"""`CognitionStore` over SQLAlchemy Core: `cognition_session`,
-`cognition_session_close` and `cognition_self_wake`.
+"""`CognitionStore` over SQLAlchemy Core: `cognition_session` and
+`cognition_self_wake`.
 
-All three tables are append-only (`nora.infra.sql.history.APPEND_ONLY`):
+Both tables are append-only (`nora.infra.sql.history.APPEND_ONLY`):
 every method here INSERTs once and never updates or deletes a row.
 """
 

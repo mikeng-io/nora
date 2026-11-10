@@ -105,7 +105,7 @@ async def test_memory_graph_replay_exports_writer_and_judges(
             await model_round_trip(writer_requests if not writer_requests else [])
             record_eval_event("nora.session.terminal", {"body": json.dumps({
                 "session_id": kwargs["now_ms"]})})
-        return SimpleNamespace(session_id=kwargs["now_ms"], closed=[])
+        return SimpleNamespace(session_id=kwargs["now_ms"], stop_reason="end_turn")
 
     runner.replay.side_effect = replay
     def judge_response(request):

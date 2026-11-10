@@ -194,7 +194,7 @@ async def test_live_preview_carries_alias_candidates_with_shown_provenance(monke
 
 
 
-async def test_only_invalid_reading_leaves_the_item_pending():
+async def test_an_invalid_reading_is_refused_without_a_write():
     memory = wake_memory()
     state = _state(memory)
     result = await memory.propose(
@@ -237,8 +237,7 @@ def test_every_primary_refusal_reason_has_a_field_and_a_repair():
 
 
 async def test_a_saved_sibling_does_not_erase_the_refused_statements_repair():
-    """An admitted item still reports its refused statement's repair: coverage
-    of the item never blanks the drop's field, repair or refused row."""
+    """A saved statement never blanks its refused sibling's field, repair or row."""
     memory = wake_memory()
     state = _state(memory)
     payload = _payload()
@@ -1009,7 +1008,7 @@ async def test_possible_existing_registers_only_what_the_returned_cards_emit():
                 "object": {"new": {"kind": "place", "name": "some venue"}},
                 "cite": [{"source": 1, "quote": "I like Lantern Game"}]}
 
-    refused = await memory.propose(state, items=[0],
+    refused = await memory.propose(state,
                                    statements=[stmt({"name": "generated gala"})])
     entry = refused["statements"][0]
     assert entry["status"] == "refused" and entry["reason"] == "possible_existing"
@@ -1023,7 +1022,7 @@ async def test_possible_existing_registers_only_what_the_returned_cards_emit():
         ("event", "e1"), ("place", "p0"), ("place", "p1"), ("place", "p2")}
     assert state.possible_existing == {("event", "generated gala")}
 
-    saved = await memory.propose(state, items=[0], statements=[stmt({
+    saved = await memory.propose(state, statements=[stmt({
         "name": "generated gala", "distinct": "a different gala entirely"})])
     assert saved["statements"][0]["status"] == "saved"
 
@@ -1070,13 +1069,13 @@ async def test_possible_existing_grants_nothing_when_the_call_fails_after_lookup
                 "cite": [{"source": 1, "quote": "I like Lantern Game"}]}
 
     with pytest.raises(RuntimeError, match="connected graph unavailable"):
-        await memory.propose(state, items=[0],
+        await memory.propose(state,
                              statements=[stmt({"name": "generated gala"})])
     assert set(state.shown_keys) == before_keys
     assert not getattr(state, "shown_relations", None)
     assert not getattr(state, "possible_existing", None)
 
     graph.failing = False
-    retried = await memory.propose(state, items=[0], statements=[stmt({
+    retried = await memory.propose(state, statements=[stmt({
         "name": "generated gala", "distinct": "a different gala entirely"})])
     assert retried["statements"][0]["reason"] == "possible_existing"

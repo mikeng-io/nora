@@ -184,6 +184,7 @@ async def test_cli_root_contains_session_and_generation_spans(
 
     async def replay(**kwargs):
         await run_model(metered, 200)
+        receipts.add(("stimuli:1", "h"))
 
     monkeypatch.setattr(lane, "replay", replay)
 
@@ -221,7 +222,9 @@ async def test_cli_root_contains_session_and_generation_spans(
 
 
 @pytest.mark.parametrize("after_commit", ["limit", "graph_failure"])
-async def test_session_failure_leaves_all_inputs_pending_even_after_a_saved_reading(monkeypatch, after_commit):
+async def test_session_failure_leaves_all_inputs_pending_even_after_a_saved_reading(
+    monkeypatch, after_commit,
+):
     from nora.app.cognition_session import CognitionRunResult
     from tests.unit.cognition_rig import A, B, Script, session
     from tests.unit.test_cognition_session_runner import wake_memory

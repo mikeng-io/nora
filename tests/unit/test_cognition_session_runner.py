@@ -158,7 +158,7 @@ async def test_a_unit_with_no_home_room_makes_no_model_call_and_is_recorded_fail
 
 
 # --------------------------------------------------------------------------
-# a real session: records itself, runs the model exactly once, closes items
+# a real session: records itself, runs the model exactly once, ends normally
 # --------------------------------------------------------------------------
 
 async def test_a_session_with_a_nonempty_agenda_records_itself_and_calls_the_model_once():
@@ -266,7 +266,7 @@ async def test_an_unprojected_message_still_runs_its_wake_on_its_own_text():
     assert fake.results[0]["status"] == "ok"
 
 
-async def test_cognition_08_proposal_answer_lists_refusal_with_reason():
+async def test_an_out_of_vocabulary_relation_is_refused_by_the_schema():
     payload = proposal()
 
     payload["statements"] = [relation_statement(
@@ -277,7 +277,9 @@ async def test_cognition_08_proposal_answer_lists_refusal_with_reason():
     await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
         last_activity_ms=None, last_wake=None), now_ms=NOW)
     assert fake.results[0]["status"] == "refused"
-    assert any(row["reason"] == "schema" for row in fake.results[0]["refused"])
+    statement = fake.results[0]["statements"][0]
+    assert statement["reason"] == "schema"
+    assert any("rel" in error for error in statement["errors"])
     assert not store.paces
 
 

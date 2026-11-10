@@ -3291,6 +3291,7 @@ class CognitionSessionRunner:
 
         async def memory_propose(statements: list[Statement]) -> dict[str, Any]:
             """Save grounded relations, corrections and readings from shown evidence.
+            Call this when a shown row changes what you understand.
 
             Returns each statement's saved/refused result and connected memory.
             Refusals explain what failed and how to repair a grounded statement;

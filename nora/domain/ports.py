@@ -1295,8 +1295,8 @@ class ObservationStore(Protocol):
 
 @runtime_checkable
 class CognitionStore(Protocol):
-    """A Cognition session's own bookkeeping: `cognition_session`,
-    `cognition_session_close` and `cognition_self_wake`, each append-only. The
+    """A Cognition session's own bookkeeping: `cognition_session` and
+    `cognition_self_wake`, each append-only. The
     session's writes to the tiers go to the tiers' own stores (notes, events,
     Standing, reminders), never here.
     Implementations: `nora.infra.sql.cognition_store.SqlCognitionStore`,

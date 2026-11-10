@@ -1,7 +1,7 @@
 ---
 type: design
-title: "Cognition — the one loop: comprehend on arrival, reshape what changed, decide and act on the wake"
-description: "The Cognition loop, the one background driver (operator, 2026-10-28): three ordered steps, each its own bounded session, handing off only through committed state. Sections 1-5 describe step 3, the decide-and-act session as built. What the session is handed (the situation and an agenda whose items each bind a room), what it holds (every permitted read, write verbs per tier, one act verb whose rows the fire path composes in the target room, a closing verb), what code enforces on every write and act and what the Assess adaptor measures instead, skills injected by code, budgets, and what stays outside the loop."
+title: "Cognition — one OODA loop"
+description: "The Cognition loop is one background session per wake. It observes new stimuli, orients against memory and the Notebook, decides whether anything is worth doing, and acts through reminders and its own wakes. It holds the permitted reads, memory and profile proposals, Notebook and Standing writes, and the brakes code enforces; Assess measures the result."
 tags: [nora, cognition, ooda, agent-loop, strands, write-verbs, proactive, skills]
 timestamp: '2026-09-28'
 edges:
@@ -147,8 +147,8 @@ versions injected, the config revision in force, and the model id and route
 | class | verbs | leaves the session how |
 |---|---|---|
 | **read** | every read tool the registry admits (`read_only_tools()`) except the live social reads ([20](20-observe.md) §2), plus the Notebook and Rollup reads of [15](15-map.md) §4: `record_query`, `rollup_read`, `event_search`, `memo_read`, `character_read`, `standing_read`, `social_items` (built as `social_read`, [15](15-map.md) §4) | returns into context, filtered by the item's room |
-| **write** | one family per tier: Register (`note_create`, `note_revise`, `memo_create`, `memo_set_status`, `event_propose` (status `staged` or `proposed`), `event_revise`, `event_set_status`), Standing (`standing_revise`); each takes `base_revision_id`, and each Register write is followed by its own graph links in the same session (27 §7a). Character's, culture's and Lessons' verbs belong to step ② and graph writes to step ① (§0) | code validates, then commits (§3) |
-| **act** | `remind(at, room, brief)`, the one act verb; `room` is the agenda item's bound room. `remind_move(reminder_id, at, why)` and `remind_cancel(reminder_id, why)` for reminders Cognition itself wrote, never a person's | a reminder row; the fire path composes it when due |
+| **write** | memory (`memory_propose`), profiles (`profile_read`, `profile_revise`), the Notebook (`note_*`, `memo_*`, `event_*`) and Standing (`standing_revise`) | code validates, then commits (§3); Register revisions carry their base ids and project their graph links in the same session |
+| **act** | `remind(at, room, brief)` prepares a room contribution; `remind_move` and `remind_cancel` maintain Cognition's own reminders | a reminder row; the fire path composes it when due |
 | **pace** | `wake_at(at, subject_rows, why)`, `wake_move(wake_id, at, why)`, `wake_cancel(wake_id, why)` | write verbs on the unit's stimulus table, not a tier: a `self` stimulus due at `at` ([20](20-observe.md) §3); nothing leaves for a room |
 
 **One time base, one room.** Every time a session verb takes (`at` on the
@@ -157,66 +157,43 @@ pace verbs and on `remind`, `remind_move`; `when` on an event; a note's
 in code; a time with no offset or no meaning is refused `bad_time`. Every write
 and act verb resolves its `room` through the agenda (DEC-250).
 
-**Every act is a reminder** (DEC-162's decide/compose split, kept). Cognition
-decides and writes a reminder carrying a **brief**: an intent (`tell` or
-`ask`) and the subject rows (Register ids, Rollup keys, Record ids), never
-prose. "Speak now" is a reminder due now; "ask" is a brief whose intent is
-`ask`. When it comes due, the fire path composes the words inside the target
-room, under that room's guards: the brief's rows are assembled through the
-room's lineage and the live DisclosureGuard, the room's `proactive` flag
-applies, and `max_pending_per_requester` caps what is pending. The room is
-always the agenda item's bound room: DEC-162's home room, generalised. There
-is no separate speak or ask send path. `remind` is the tool the tag path
-already holds, so adding `brief` changes a shared tool and is measured with
-`tool_selection` ([70](70-migration.md) §8).
+**Every act is a reminder.** Cognition decides and writes a reminder carrying
+a **brief**: an intent (`tell` or `ask`) and the subject rows (Register ids,
+Rollup keys, Record ids), never prose. "Speak now" is a reminder due now;
+"ask" is a brief whose intent is `ask`. When it comes due, the fire path
+composes the words inside the target room, under that room's guards: the
+brief's rows are assembled through the room's lineage and the live
+DisclosureGuard, the room's `proactive` flag applies, and
+`max_pending_per_requester` caps what is pending. There is no separate speak
+or ask send path.
 
 **A person's reminder after cognition revises its event** fires with the
 event's current revision. If cognition cancelled the event, the reminder is
-kept and fires flagged as being about a cancelled event: only the tag path
-cancels a reminder a person set. **Amended by DEC-249 for after E2**
-([05](05-data-model.md) §7): `remind` and `cancel_reminder` stay on the tag
-turn as machinery (they change a reminder row, not the Notebook), and
-Cognition may also cancel a reminder a person set when it cancels that
-reminder's event on `told` evidence (a person's cancellation in words is
-Record it reads). The senders stay those of R-1b: the tag
-path, the fire path and, since DEC-212, the public summons.
+kept and fires flagged as being about a cancelled event. Cognition may cancel
+a person's reminder when it cancels that reminder's event on `told` evidence;
+other changes to a person's reminder belong to the tag path.
 
 **Self-wakes are not acts** ([20](20-observe.md) §3 defines the pace verbs,
 their guards and their surfacing).
 
-**Which holds what, the conscious or the subconscious** ([55](55-self.md) §6). The pace verbs and `remind_move`/`remind_cancel` belong to
-the subconscious only: no tag or fire turn holds them, and neither can read
-an agenda or a pending self-wake. `remind` is the bridge: Cognition holds it
-to reach the conscious, and the tag turn holds it for a reminder a
-person asks for. The write verbs on the Register and room Standing are held
-by both the conscious and the subconscious; that is shared state, not a command. **Amended by DEC-249**
-([05](05-data-model.md) §7): from the cut-over only the subconscious writes
-the Notebook (one writer per tier), and the tag turn hands off through a strong-cue stimulus
-instead of holding these write verbs.
+**Which holds what, the conscious or the subconscious** ([55](55-self.md) §6).
+The pace verbs and `remind_move`/`remind_cancel` belong to the subconscious:
+no tag or fire turn holds them, and neither can read an agenda or a pending
+self-wake. `remind` is the bridge: Cognition holds it to reach the conscious,
+and the tag turn holds it for a reminder a person asks for. Cognition writes
+the Notebook; the tag turn hands new evidence off through a strong-cue
+stimulus.
 
-**The grant.** The runtime's ceiling today is "may look, may not act": every
-read verb and one act verb (DEC-162). A new DEC at step 0 extends it by
-granting named **write** verbs through `AdaptorGrant` (write verbs are not act
-verbs), and `remind_move`/`remind_cancel` by name for reminders Cognition
-wrote; `remind` stays the only verb that sends.
+**The surface.** Live sessions offer reads, memory and profile writes, the
+Notebook, Standing, pace and acts together. Act verbs do not depend on a prior
+memory proposal. Historical sessions offer evidence reads and `memory_propose`
+only, with no act verbs or current-profile access.
 
 **Session outcome.** A normal `end_turn` consumes the session's observed stimuli,
 even when there is nothing to write or do. There are no per-item close calls,
 coverage declarations or strikes. Failed or bounded sessions leave their inputs
 pending with backoff; the five-failure park and operator requeue remain.
 `max_items` defers unseen input without dropping it. `wake_at` requests a later look.
-Act verbs do not depend on a prior memory proposal.
-
-**Shared with the tag path.** `note_create`/`note_revise` as today. The tag
-path's event tools (`create_event`, `update_event`, `cancel_event`,
-`rsvp_event`, `list_events`) move to the event verbs and `event_search` at
-step 2b, each rename measured with `tool_selection` before and after (ADR
-0015), so a note or event written by cognition and one written on a tag turn
-pass the same validator.
-
-**Shadow before cut-over.** Until step 4, every reminder cognition writes is
-mirrored to a review channel and held, as participation's shadow is
-(`nora/app/fire.py`).
 
 ## 3. What code enforces, and what is measured instead
 

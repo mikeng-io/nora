@@ -7574,12 +7574,10 @@ Returns `status`: ok (`members`, `scope`) or unavailable (`note`)."""
         """Search what this group said, shared, kept, planned and where people
         went. Call this when an answer needs something older than what you see.
 
-        It returns what matches as a graph, each item with its age and links.
-        The other arguments narrow it to one person, a span of dates or some
-        kinds of memory. Asked what you know about someone, set `person` to
-        them. Reading everything said on a day or span, with no topic to look
-        for, is `record_query`. Use it to check whether the graph already
-        holds an entity or statement before proposing it as new.
+        It returns matches as an aged, linked graph. Narrow by person, dates or
+        kind; set `person` for what you know about someone. For everything said
+        on a day or span with no topic, use `record_query`. Check the graph for
+        an entity or statement before proposing it as new.
 
         SHOULD: write `query` yourself, as what you are looking for, not the raw
         tag message.
