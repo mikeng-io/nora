@@ -419,6 +419,7 @@ class SqlStimulusStore:
             )
         stmt = stmt.returning(STIMULUS.c.id)
         async with self._engine.begin() as conn:
+            await _lock_unit(conn, stimulus.unit)
             row = (await conn.execute(stmt)).first()
             if row is not None:
                 # A row per mode the unit has SEEDED (the `stimulus_id = 0`
@@ -472,6 +473,8 @@ class SqlStimulusStore:
             .limit(1)
         )
         async with self._engine.begin() as conn:
+            # Seeding and append must see each other's committed rows.
+            await _lock_unit(conn, unit)
             await _ensure_seeded(conn, unit, mode)
             last_row = (await conn.execute(last_q)).first()
             last = None if last_row is None else _wake(last_row)
