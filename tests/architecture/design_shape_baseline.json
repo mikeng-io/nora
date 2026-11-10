@@ -1463,10 +1463,6 @@
   "not-a-design-file",
   "date"
  ],
- "design/policy-reload/00-design.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
  "design/private-dm.md": [
   "date"
  ],

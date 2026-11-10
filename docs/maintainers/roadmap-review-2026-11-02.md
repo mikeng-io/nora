@@ -199,7 +199,7 @@ design/platform-observations/03-model-projections.md
 design/platform-observations/04-build-and-acceptance.md
 design/platform-observations/05-occasion-map.md
 design/platform-observations/_index.yaml
-design/policy-reload/00-design.md
+design/policy-reload/README.md
 design/private-dm.md
 design/private-dm/00-contract.md
 design/private-dm/01-current-flow.md

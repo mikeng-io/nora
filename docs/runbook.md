@@ -1229,7 +1229,7 @@ missing or allow-nothing policy edits keep the last good version and log WARNING
 last applied content. Changes to policy unit/workspace declarations or identity
 Honcho workspace bindings refuse the whole reload and require recreation.
 Always validate a candidate copy, then copy it in place to preserve the mounted
-inode. See [the capture audit and limitations](../design/policy-reload/00-design.md).
+inode. See [the capture audit and limitations](../design/policy-reload/README.md).
 
 **Storage and credentials.** Compose mounts `./data` at `/app/data` and the
 whole `./state` directory at `/app/state` in Nora. Signal session material is

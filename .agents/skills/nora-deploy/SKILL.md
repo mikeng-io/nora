@@ -125,7 +125,7 @@ in-process within three seconds — read each consumer's `nora_config_reloads_to
 last good file; restore/fix the copy. `restart_required` refuses the whole file:
 write the scoped reload request and use native Stack recreation for policy
 `[units]` or identity `[workspaces]` binding edits.
-See [the full capture audit](../../../design/policy-reload/00-design.md).
+See [the full capture audit](../../../design/policy-reload/README.md).
 On failure restore the backup under the lock, then use native Stack recovery
 and repeat receipt, image, health and process-config readback.
 

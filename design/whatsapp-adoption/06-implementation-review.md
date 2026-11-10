@@ -3,7 +3,7 @@
 > Operational amendment, 2026-10-28: the recreate advice below records the old
 > implementation. Valid identity/policy edits now hot-reload within three seconds
 > when copied in place; workspace-binding edits still require recreation.
-> See [the reload design](../policy-reload/00-design.md).
+> See [the reload design](../policy-reload/README.md).
 
 type: review
 title: "WhatsApp Transport Implementation — Independent Audit"

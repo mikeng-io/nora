@@ -389,7 +389,7 @@ compose and disagreed with this file). Identity and policy are bind-mounted read
 validation every three seconds**. Invalid edits retain the last good version;
 workspace-binding edits refuse the whole reload until recreation. The
 `nora_config_reloads_total` outcomes and `/health` staleness expose pending or
-refused changes (see `design/policy-reload/00-design.md`). `identity.toml` takes one
+refused changes (see `design/policy-reload/README.md`). `identity.toml` takes one
 `[[persons.<id>.<platform>]]` block **per account**, all resolving to one
 `person_id` (their Honcho peer, A2/DEC-14). `policy.toml` is deny-by-default and
 Nora **refuses to start** if it is missing or allows nothing (R-5). Memory's
