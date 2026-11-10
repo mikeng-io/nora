@@ -253,10 +253,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "Issue #385 folds triage into contribution-content.yml. The historical ADR "
         "records the earlier workflow and remains historical; resolves in git history."
     ),
-    ('design/evaluation/11-the-sandbox-rebuild.md', 'evals/PERSONA_IDENTITY.md'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
     ('design/private-dm/01-current-flow.md', 'nora/infra/sql/persona.py'): (
         "ADR 0029 renamed this typed-tier file; this historical design or generated "
         "evidence citation resolves in git history. Current code uses profile names."
@@ -376,13 +372,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     #
     # `_paragraphs` treats each list item as its own record; each of these is a
     # design record naming the code of its day.
-    ("design/evaluation/10-the-scenario-map.md", "evals/rebuilt/__main__.py"): (
-        "the old CLI, recorded as deleted in the same bullet (capitalized "
-        "'Deleted.', which the lowercase marker does not match)"
-    ),
-    ("design/evaluation/10-the-scenario-map.md", "evals/rebuilt/report.py"): (
-        "the old CLI's renderer, deleted in the same step"
-    ),
     ("design/social-per-network/10-changes.md", "tests/test_social_fetch_tool.py"): (
         "the plan names the file it replaces; DEC-201 PR 1 (abeab8e4) moved "
         "those tests to per-tool tests under tests/unit/"
@@ -401,18 +390,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # under `evals/cases/` and `evals/adversarial/` are deleted; the live
     # corpora are `evals/corpora/*.yaml` and the runner is
     # `evals/backbone.py`. These lines record what was true when written.
-    **{
-        (doc, "evals/rebuilt/runner.py"): (
-            "the old harness, deleted 2026-09-21; `evals/backbone._drive` is "
-            "the one path (design/evaluation/11 §1.3)"
-        )
-        for doc in (
-            "design/evaluation/04-the-convention.md",
-            "design/evaluation/07-sdk-native.md",
-            "design/evaluation/08-the-sdk-surface.md",
-            "design/evaluation/GOAL.md",
-        )
-    },
     **{
         (doc, old): f"pre-port copy deleted 2026-09-21; now evals/corpora/{new}"
         for doc, old, new in (
@@ -440,7 +417,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
             "design/ambient-loop/02-doctrine-and-measurement.md",
             "design/capability-drop/03-code-surface.md",
             "design/capability-drop/implementation-brief.md",
-            "design/evaluation/06-first-full-run.md",
         )
     },
     # The eval-layer modules live in `tests/`; these references name where the
@@ -465,50 +441,12 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
         "reference records where it lived"
     ),
-    ("design/evaluation/01-boundaries.md", "evals/harness.py"): (
-        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/01-boundaries.md", "nora/app/eval_support.py"): (
-        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/01-boundaries.md", "nora/app/offline.py"): (
-        "re-homed to `tests/offline_pipeline.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/02-the-rebuild.md", "nora/app/offline.py"): (
-        "re-homed to `tests/offline_pipeline.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/04-the-convention.md", "evals/harness.py"): (
-        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/04-the-convention.md", "nora/app/offline.py"): (
-        "re-homed to `tests/offline_pipeline.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/05-live-parity.md", "nora/app/eval_support.py"): (
-        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
     (
         "docs/adr/0011-the-relevance-gate-stays-off-the-sdk-transport.md",
         "nora/app/eval_support.py",
     ): (
         "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
         "reference records where it lived"
-    ),
-    ("design/evaluation/04-the-convention.md", "nora/app/eval_support.py"): (
-        "the convention names where it WAS while explaining where it went"
-    ),
-    ("design/evaluation/04-the-convention.md", "evals/relevance_gate.py"): (
-        "the convention quotes its docstring as the evidence that the facade was a boundary adapter"
-    ),
-    ("design/evaluation/04-the-convention.md", "tests/integration/test_live_parity_gate.py"): (
-        "the convention names the parity test as the one-way door the delete passed; the "
-        "reference is the point"
     ),
     # The ROUTING tier, which has no counterpart — DEC-76 is NOT ENFORCED.
     # These two lines NAME that absence, so the reference is the point.

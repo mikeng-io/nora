@@ -118,7 +118,7 @@ No additional Loki, Grafana or Quickwit stack is part of this decision. No promp
 management/evaluation platform or replacement for the eval runner is introduced.
 
 Related bundles keep their own responsibilities: [platform bridge operations](../design/platform-bridges/04-operations.md#short-linked-otel-operations-and-routing-amendment)
-carry queue lifetimes/links and the transitional route; [evaluation SDK compatibility](../design/evaluation/08-the-sdk-surface.md#7-observability-migration-compatibility--2026-10-30)
+carry queue lifetimes/links and the transitional route; [evaluation SDK compatibility](../design/evaluation/measurement.md)
 requires populated Sessions after any span-format change. Neither duplicates the
 backend/cutover contract here.
 
@@ -1001,7 +1001,7 @@ Recorded here so they are findings rather than surprises.
   never went through before. Before this change, the gate's span carried
   only its own safe verdict JSON; the comment in `nora/ingest/
   relevance_gate.py` that said the prompt was never put on the wire was true
-  until this date. `design/evaluation/08-the-sdk-surface.md` §4.2 had
+  until this date. `design/evaluation/measurement.md` §4.2 had
   already named this exact fork — "either unscreened model text goes on the
   collector wire, or a second gate-specific mapper is written… 40 of 150
   [eval] cases wait on it" — one day before the session that resolved it.

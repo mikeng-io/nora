@@ -312,7 +312,7 @@
       reconstructs the grounding; the room's transcript does not carry it.
     returns_when: |
       The sandbox replays Honcho into its own workspace
-      (design/evaluation/11-the-sandbox-rebuild.md §3) and a real room holds
+      (design/evaluation/subject.md §3) and a real room holds
       a moment where a member asks about something she had earlier told them
       off-transcript.
 

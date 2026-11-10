@@ -270,7 +270,7 @@ type = "layers"
 # The reverse import does not exist and stays forbidden.
 layers = [
     # `nora.subject` obtains the composed graph for a caller that is NOT
-    # production (design/evaluation/01-boundaries.md §6, operator 2026-09-17).
+    # production (design/evaluation/subject.md §6, operator 2026-09-17).
     # It sits ABOVE `nora.app` so it may reach the composition root while the
     # reverse is refused — the property that stops the application learning it
     # is being measured. Before this layer existed there was no slot for that
@@ -317,7 +317,7 @@ type = "forbidden"
 # and `build_dependencies` takes a `Config`. It reads config for the same reason
 # `nora.app` does. Recorded because this list is explicit — a package not named
 # here is unconstrained because nothing looks, not because anything decided, and
-# that was measured while choosing the layer (design/evaluation/01-boundaries §6).
+# that was measured while choosing the layer (design/evaluation/subject.md).
 source_modules = [
     "nora.agent", "nora.obs", "nora.doctrine", "nora.language", "nora.platform",
     "nora.domain", "nora.persons", "nora.tag",

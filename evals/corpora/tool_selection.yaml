@@ -273,7 +273,7 @@ cases:
   # visibly rather than being deleted: nothing in a turn says the file exists
   # until S2b-2's <computer> block renders the workspace, and an anchor cannot
   # carry that state. It is owed work, not a parking reason (P-B was
-  # rejected, design/evaluation/11). It gains its anchor with S2b-2.
+  # rejected, design/evaluation/subject.md). It gains its anchor with S2b-2.
   # A trend's slope on eight numbers is a few `calculate` expressions, a
   # correct route; the first version of this case expected the computer for it
   # and measured the expectation (0/5, every draw used calculate). A p-value
@@ -1037,7 +1037,7 @@ cases:
   # Standing CANNOT be seeded with the live line, so the condition that
   # produced the failure (her believing she already knew) is not present
   # here. Standing is REPLAYED from real production folds, never authored
-  # (`design/evaluation/11-the-sandbox-rebuild.md`, "standing | replayed";
+  # (`design/evaluation/subject.md`, "standing | replayed";
   # `standing_revision` keyed by conversation and time). Querying
   # `nora_eval`'s `standing_revision` for `draw`/`portrait`/`picture of`
   # (2026-09-25) found no room whose replayed standing says this, and writing

@@ -19,7 +19,7 @@ Every corpus case names a real room at a real instant; the runner composes
 the deployment's own Nora (its `config.toml`, `policy.toml`, `identity.toml`)
 against a sandbox database of the case's own, seeds it with what that room
 held at that instant, and drives one entry point. Nothing is authored and
-nothing is configurable per case (`design/evaluation/11-the-sandbox-rebuild.md`
+nothing is configurable per case (`design/evaluation/subject.md`
 §1.2–§1.3).
 
 ```bash

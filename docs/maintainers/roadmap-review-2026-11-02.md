@@ -157,9 +157,9 @@ design/cognition-loop/data.md
 design/cognition-loop/README.md
 design/cognition-loop/data.md
 design/notebook-memory-types/00-design.md
-design/evaluation/08-the-sdk-surface.md
-design/evaluation/10-the-scenario-map.md
-design/evaluation/11-the-sandbox-rebuild.md
+design/evaluation/measurement.md
+design/evaluation/coverage.md
+design/evaluation/subject.md
 design/fit/00-intent.md
 design/fit/10-preference-model.md
 design/fit/20-ranker.md

@@ -131,7 +131,7 @@ test test-fast test-affected:
 # the LLM key env set) ---
 #
 # `python -m evals` runs a NAMED corpus (or `--class`, or `--all`) rather than
-# a file path — `design/evaluation/10-the-scenario-map.md` §15's port put the
+# a file path — `design/evaluation/coverage.md` §15's port put the
 # 150 corpus cases behind `evals.scenarios.experiment_for()`, and adding a
 # corpus adds a dict entry there, not a target here.
 #
@@ -139,7 +139,7 @@ test test-fast test-affected:
 # (`nora_eval`, made by `scripts/refresh_eval_clone.sh`). Every case names a
 # real room at a real instant, is seeded from the clone into a sandbox
 # database of its own, and composes the deployment's own config, policy and
-# roster (design/evaluation/11-the-sandbox-rebuild.md §1.2). Off the deploy
+# roster (design/evaluation/subject.md §1.2). Off the deploy
 # host there is no source and no deployment to compose, and the run says so.
 
 # Refresh the eval source from production. Deploy host only.

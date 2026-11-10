@@ -167,7 +167,7 @@ which surfaces as cost rather than as an error. The same anchored cases run
 either side, before and after, or the comparison is not one.
 
 **A caution on the 3-vs-4 call question.** A driven case recorded in
-`design/evaluation/10-the-scenario-map.md` §13 shows **four** `InferenceSpan`s
+`design/evaluation/coverage.md` §13 shows **four** `InferenceSpan`s
 in one turn. That is a `participation` case, not a tag turn, and the tag trace
 this bundle measured (`836eda48…`) ran **three** `chat` generations. So the
 baseline is lane-dependent and n=1 on the participation side. **Measure the

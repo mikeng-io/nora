@@ -100,7 +100,7 @@
       "persona": 1
     }
   },
-  "design/evaluation/11-the-sandbox-rebuild.md": {
+  "design/evaluation/subject.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "NORA_EVAL_PERSONA_CASES": 1,
