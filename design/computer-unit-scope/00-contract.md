@@ -36,7 +36,7 @@ inherit the relay's per-request membership checks. A room needing privacy
 from its unit belongs in its own unit; no per-room file filter is proposed.
 
 Only group rooms use this scope. Private DMs require the separate person-plus-
-anchor scope in the [private DM bundle](../private-dm/00-contract.md).
+anchor scope in the [private DM bundle](../private-dm/README.md).
 This design is its prerequisite, not permission to give a group access to DMs.
 
 ## 2. Source baseline and existing seams

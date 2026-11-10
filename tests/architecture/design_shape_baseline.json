@@ -444,36 +444,6 @@
  "design/private-dm.md": [
   "date"
  ],
- "design/private-dm/00-contract.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/private-dm/01-current-flow.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/private-dm/02-storage.md": [
-  "numbered-or-dated-name"
- ],
- "design/private-dm/03-execution.md": [
-  "numbered-or-dated-name"
- ],
- "design/private-dm/04-build-and-acceptance.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/private-dm/05-cross-platform.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/private-dm/06-cross-unit-reads.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/private-dm/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "design/room-topology/00-intent.md": [
   "numbered-or-dated-name",
   "date"

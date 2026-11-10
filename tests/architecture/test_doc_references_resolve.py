@@ -250,10 +250,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "Issue #385 folds triage into contribution-content.yml. The historical ADR "
         "records the earlier workflow and remains historical; resolves in git history."
     ),
-    ('design/private-dm/01-current-flow.md', 'nora/infra/sql/persona.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
     ('openwiki/concepts/persona-and-provenance.md', 'nora/domain/persona.py'): (
         "ADR 0029 renamed this typed-tier file; this historical design or generated "
         "evidence citation resolves in git history. Current code uses profile names."

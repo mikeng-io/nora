@@ -111,14 +111,13 @@
       "persona": 2
     }
   },
-  "design/private-dm/00-contract.md": {
+  "design/private-dm/README.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
-      "Persona": 12,
-      "persona": 2
+      "Persona": 6
     }
   },
-  "design/private-dm/01-current-flow.md": {
+  "design/private-dm/admission.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 2,
@@ -128,31 +127,11 @@
       "persona_scopes_of_person": 1
     }
   },
-  "design/private-dm/02-storage.md": {
-    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
-    "matches": {
-      "Persona": 5,
-      "persona": 1,
-      "persona_line": 1
-    }
-  },
-  "design/private-dm/03-execution.md": {
+  "design/private-dm/curation.md": {
     "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
     "matches": {
       "Persona": 10,
       "persona_dispute": 1
-    }
-  },
-  "design/private-dm/04-build-and-acceptance.md": {
-    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
-    "matches": {
-      "Persona": 6
-    }
-  },
-  "design/private-dm/_index.yaml": {
-    "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
-    "matches": {
-      "Persona": 1
     }
   },
   "design/unified-memory/README.md": {

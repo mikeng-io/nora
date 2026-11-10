@@ -26,7 +26,7 @@ The “Also” section of #168 records these operational limits:
   unit/DM backup follow-up, not fixed by the migration: a workspace venv can
   make an otherwise completed backup fail its restore check. The required
   backup preparation and restore proof are in
-  [DM acceptance](../private-dm/04-build-and-acceptance.md#2-deterministic-proof-and-actual-inputs).
+  [DM acceptance](../private-dm/README.md#2-deterministic-proof-and-actual-inputs).
   Keep archive validation fail-closed; never allow arbitrary external links.
 - The executable HOST command below uses `docker run` on Nora's captured
   immutable image ID for Komodo, with the installed policy and database network.

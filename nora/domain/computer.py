@@ -92,7 +92,7 @@ DM_SCOPE_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "nora/computer/dm-scope")
 
 
 def dm_scope_id(person_id: str, anchor_unit: str) -> str | None:
-    """The canonical private-DM scope id (`design/private-dm/05-cross-platform.md`):
+    """The canonical private-DM scope id (`design/private-dm/workspaces.md`):
     `uuid5(DM_SCOPE_NAMESPACE, "<person_id>:<anchor_unit>")`, rendered in
     canonical lowercase hyphenated form. `None` when either half is empty —
     a DM scope is NEVER minted from a person alone or a guessed unit."""
@@ -103,7 +103,7 @@ def dm_scope_id(person_id: str, anchor_unit: str) -> str | None:
 
 def computer_dm_scope(dm_scope_id: str) -> str:
     """Opaque canonical-DM workspace key
-    (`design/private-dm/05-cross-platform.md` «Computer, browser and export»):
+    (`design/private-dm/workspaces.md` «Computer, browser and export»):
     `sha256("dm:" + dm_scope_id)[:32]`, the scope id rendered in canonical
     lowercase hyphenated form. The `(person, anchor unit)` binding that
     produces `dm_scope_id` is DM admission's — it is resolved by the caller,
