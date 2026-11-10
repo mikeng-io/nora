@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.17.5](https://github.com/mikeng-io/nora/compare/v7.17.4...v7.17.5) (2026-11-10)
+
+
+### Maintenance
+
+* **conventions:** apply review findings to the guidance rewrite ([fc827e6](https://github.com/mikeng-io/nora/commit/fc827e6fb1f644e07f4692b883788ea61bad1a69))
+* **conventions:** make the design bundle the anchor and stop append-only guidance ([26cf07a](https://github.com/mikeng-io/nora/commit/26cf07aca2c3945e9ffb1b118a57ba858f2a0f4f))
+
 ## [7.17.4](https://github.com/mikeng-io/nora/compare/v7.17.3...v7.17.4) (2026-11-10)
 
 
