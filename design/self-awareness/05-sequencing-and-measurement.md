@@ -5,7 +5,7 @@
 This section first said new tools wait for the tool catalogue: added before
 it, each costs about 400 tokens on every turn; added after, about 18. The
 catalogue was then measured and stays OFF
-(`design/tool-catalogue/05-measurement.md` §3a): deferring schemas moved input
+(`design/tool-catalogue/deferral.md` §3a): deferring schemas moved input
 from cached to uncached (10.3k to 19.5k uncached tokens a turn) and added
 about 1.4 model calls a turn, so `[llm] defer_tools` is `false` by measured
 decision. There is nothing left to wait for. The room tools are built with

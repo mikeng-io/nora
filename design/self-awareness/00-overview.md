@@ -43,7 +43,7 @@ from the system that actually knows the fact.** That is the whole design.
 |---|---|---|---|
 | **Who** | what kind of thing am I | `identity.md` (unchanged) | doctrine, cached prefix |
 | **Where** | which networks and rooms, which is in front of me, which transports are up | the room table loaded from `policy.toml` + each adapter's `health()` | a generated `<presence>` block, per turn (`02-presence.md`), plus room tools (`03-room-tools.md`) |
-| **What** | what can I do | the tool registry | **the tool catalogue** (`design/tool-catalogue/`), not a new block |
+| **What** | what can I do | the tool registry | **the tool catalogue** (`design/tool-catalogue/README.md`), not a new block |
 
 `01-three-layers.md` argues each row. The short version: the tool catalogue
 already *is* the capability layer, generated from the registry, so this

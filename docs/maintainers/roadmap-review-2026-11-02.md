@@ -249,7 +249,7 @@ design/standing-ledger/40-verification.md
 design/standing-ledger/50-migration.md
 design/standing-ledger/_index.yaml
 design/subagent/00-design.md
-design/tool-catalogue/05-measurement.md
+design/tool-catalogue/deferral.md
 design/unified-memory/README.md
 design/unified-memory/README.md
 design/unified-memory/README.md

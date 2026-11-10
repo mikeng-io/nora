@@ -46,7 +46,7 @@ every turn. The detail she needs only sometimes goes to tools (`03`).
 
 ## What: the tool catalogue
 
-The tool catalogue (`design/tool-catalogue/00-overview.md`) generates one line
+The tool catalogue (`design/tool-catalogue/README.md`) generates one line
 per tool from the registry and keeps it resident, 991 tokens for all 54 tools.
 That is a capability list that cannot go stale, because it is rebuilt from the
 thing it describes. It is this layer. Adding a second capability surface here

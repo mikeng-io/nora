@@ -42,7 +42,7 @@ admitted when something can serve it.
 left is a one-network tool with a `platform` parameter that accepts one
 value and a redirect branch for a network it no longer serves. Every turn
 pays for that shape, because every tool is resident (`[llm] defer_tools`
-stays `false`, `../tool-catalogue/05-measurement.md` §3a).
+stays `false`, `../tool-catalogue/deferral.md` §3a).
 
 The two conditions 09 kept when it reopened the per-network split still
 hold, and this bundle keeps them:

@@ -744,38 +744,6 @@
   "not-a-design-file",
   "date"
  ],
- "design/tool-catalogue/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/tool-catalogue/01-the-catalogue.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/tool-catalogue/02-load-tools.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/tool-catalogue/03-result-handling.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/tool-catalogue/04-code-surface.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/tool-catalogue/05-measurement.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
- ],
- "design/tool-catalogue/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
- "design/tool-catalogue/spike_dynamic_tools.py": [
-  "not-a-design-file"
- ],
  "design/tool-concurrency/00-overview.md": [
   "numbered-or-dated-name",
   "date"
