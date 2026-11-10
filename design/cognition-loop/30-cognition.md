@@ -1,7 +1,7 @@
 ---
 type: design
-title: "Cognition — the one loop: comprehend on arrival, reshape what changed, decide and act on the wake"
-description: "The Cognition loop, the one background driver (operator, 2026-10-28): three ordered steps, each its own bounded session, handing off only through committed state. Sections 1-5 describe step 3, the decide-and-act session as built. What the session is handed (the situation and an agenda whose items each bind a room), what it holds (every permitted read, write verbs per tier, one act verb whose rows the fire path composes in the target room, a closing verb), what code enforces on every write and act and what the Assess adaptor measures instead, skills injected by code, budgets, and what stays outside the loop."
+title: "Cognition — the session contract: inputs, verbs, enforcement, budgets"
+description: "The contract of the one Cognition session per unit per wake that runs the OODA loop of 00: what code hands it, what it holds (every read, write verbs per tier, remind as the one act verb, its own wakes), what code enforces on every write and act and what the Assess adaptor measures instead, budgets, and what stays outside the loop. Step-numbered wording below reads as the one session (unified-memory/29)."
 tags: [nora, cognition, ooda, agent-loop, strands, write-verbs, proactive, skills]
 timestamp: '2026-09-28'
 edges:
@@ -13,77 +13,19 @@ edges:
 
 # 30 · Cognition
 
-> **Authoritative amendments:** the operator's 2026-10-29
-> [one-session ruling](../unified-memory/29-one-cognition-session.md) supersedes
-> the three-session topology below. [One Standing](../notebook-memory-types/20-standing.md),
-> clarified 2026-10-31, owns input and completion: Cognition reads/thinks/decides
-> across the unit, then the existing Standing updater automatically organizes
-> its full retained Record and actual results. No `decision_conclude` verb or
-> extra self-report obligation. Room and unit state keep separate scope keys
-> under the common model; room is source/delivery context, not an agenda-based
-> read/edit boundary. Each consumer gets one `standing` block with appropriate
-> source/disclosure rules. Cognition retains substantive Notebook authority;
-> the updater adds no new judgment or independent wake. The tag-debrief writer
-> wording in §7 and destination/exact-citation dedupe description below are
-> historical where they conflict. The new node owns migration, automatic update
-> flow and unit-wide action arbitration. Design targets are not runtime claims.
+This node is the session's contract: what code hands it, the verbs it holds,
+what code enforces and what Assess measures, budgets, and what stays outside.
+The loop it serves, and why it is one session, is [00](00-intent.md). The
+one-session ruling ([unified-memory/29](../unified-memory/29-one-cognition-session.md))
+supersedes the step ①/②/③ wording that remains in the sections below: read
+each step as the same session. [One Standing](../notebook-memory-types/20-standing.md)
+owns Standing's input and completion; the tag-debrief writer wording in §7 is
+history where it conflicts. Cognition is live (DEC-277).
 
-> 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
-
-
-## 0. The loop, as ruled 2026-10-28
-
-The execution owner is the subconscious Dreamer runtime; the target handoff,
-current sibling-runner gap and shared time contract are canonical in
-[18](18-execution-and-time.md). A wake policy makes Cognition eligible; it is
-not a second executor. The three-step work below retains its own agenda and
-committed-state handoffs. Runtime consolidation is unimplemented; sharing an
-agent factory today does not establish Dreamer ownership.
-
-Cognition is the **one background driver** (operator, 2026-10-28,
-[unified-memory/27](../unified-memory/27-the-memory-is-a-graph.md) §7, §9).
-Everything said and done keeps shaping memory, profiles and plans, so one loop
-owns all three, in three ordered steps. Each step is **its own bounded Strands
-session** with its own focused input and its own verbs; the steps hand off
-**only through committed state**, never by waiting on each other or passing
-prose into another prompt (§8).
-
-```
-ingestion (code) ─▶ RECORD / ROLLUP ─┬─▶ work item (every item) ─▶ ① COMPREHEND ─▶ graph
-                                     │                              (on arrival)
-                                     │                                   │
-                                     │                                   ▼
-                                     │                              ② RESHAPE ─▶ profiles, culture,
-                                     │                              (links changed)  lessons
-                                     └─▶ stimulus ─▶ wake rules ─▶ ③ DECIDE & ACT ─▶ Register, Standing,
-                                                                   (①'s readings     reminders, wake_at
-                                                                    + preview, §1)
-```
-
-| step | runs | input | holds | writes |
-|---|---|---|---|---|
-| ① comprehend | **on each arrival**, one work item (a message batch, a social item, a late media reading, a closed Rollup episode, a Register write) | the item fully read (media join, link, reply parent, a social item's caption and media) and the code-built **graph preview** of what the graph already knows (27 §7) | read tools, `memory_search` / `memory_read`, the read lanes (`media_fetch`, `instagram_read`, `instagram_search`, `x_read`, `x_search`), egress-screened web search and fetch (27 §8), one staged graph write | readings, entities, judgement relations with evidence (27 §5, §7a) |
-| ② reshape | right after a step ① that changed relations | the subgraph of each changed entity, in the order persons → their rooms and units → Nora | graph reads, `character_revise`, `lesson_write`, `lesson_retire` | traits and guesses (facts are rendered by code), a room's or unit's culture, Nora's lessons (27 §9) |
-| ③ decide and act | on the wake rules ([20](20-observe.md) §3: `settled`, `strong_cue`, `batch`, `max_age`, `time`, `self`) | the agenda, each item carrying step ①'s readings and preview (§1) | §2's verbs | Register items with their own links, Standing, reminders, `wake_at` (§2) |
-
-**Rules that hold across the steps** (27 §7):
-
-1. Step ① is complete; only step ③ is capped (`max_items`, §1).
-2. Acting is a switch: the backfill runs ① and ② in its own lane, each item
-   read as of its own time, and step ③ stays off until one catch-up wake at
-   the end (27 §10).
-3. Step ② runs only for entities whose relations changed.
-4. No step grades itself: guesses and lessons are checked by an instrument
-   other than their writer ([50](50-character-and-standing.md) §6; §6 below).
-5. A step ① work item is never dropped: retried, then parked `failed` for the
-   operator's re-queue; a wake failure only ever strikes step ③'s agenda.
-6. Each step commits on its own; a step ③ failure undoes nothing before it.
-7. The backfill has its own concurrency and never takes a live slot.
-
-**What retires into the loop:** the extraction pass (into ①); the Character,
-profile, culture and Lessons adaptors (into ②). Assess stays outside (§6).
-Sections 1-5 below are **step ③**, the session as built since DEC-277,
-amended in place where the ruling changed it.
+[00 §5](00-intent.md#5-per-item-machinery-is-deleted) (operator, 2026-11-11)
+deletes the per-item `close` reasons, strikes and the quiet-close stop of §2 and
+§5, and replaces the per-kind skills of §4. They run as built until that change
+lands.
 
 ## 1. What code hands it
 

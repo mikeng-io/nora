@@ -14,7 +14,7 @@ edges:
 
 > 2026-10-03 (DEC-279): **a Rollup stimulus no longer wakes a session.** It rides the next wake for any other reason, and every wake, a `time` floor's and a `self` wake's included, claims the pending ones; the daily floors bound the wait. The `rollup` row of the wake table below is withdrawn and `rollup_delay_seconds` is read by nothing. Measured: six of one unit's nine sessions in a day were a lone `deviation_anomaly`, each closed `no_change`.
 >
-> 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
+> Cognition is live and the one background writer of notes, events, Standing and her reminders (DEC-277); shadow-mode and clocked-adaptor wording below is history.
 
 
 Observe is **code**. It never asks a model what is worth recording; it records
@@ -106,7 +106,7 @@ its outcomes counted (§4).
 
 ## 3. Stimuli
 
-> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): beside the stimuli below, every recorded item (message batch, social item, late media reading, closed Rollup episode, Register write) is also a **work item** that drives steps ① and ② on arrival, never waits for a wake and is never struck. The wake rules below now start step ③ only.
+> One Cognition session ([00](00-intent.md), [unified-memory/29](../unified-memory/29-one-cognition-session.md)): the wake rules below start that session. The per-item work items and steps ①–③ once named here are retired ([unified-memory/29](../unified-memory/29-one-cognition-session.md) §5).
 
 Every ingested item, every Rollup change of [25](25-rollup.md) §4's kinds,
 and every `time` trigger raises a **stimulus**: `(unit, kind, ref, cues, at)`.
@@ -351,7 +351,7 @@ next.
 
 ### The slow adaptors and Assess
 
-> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
+> One Cognition session ([00](00-intent.md), [unified-memory/29](../unified-memory/29-one-cognition-session.md)): read "the Character adaptor" and "the Lessons adaptor" below as that session, which maintains profiles (traits and guesses; facts are rendered by code), culture and lessons while it orients.
 
 Each has its own per-key watermark and its own wake rule; none runs on a
 fixed schedule, and none is woken by a single message, except a

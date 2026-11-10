@@ -16,7 +16,7 @@ edges:
 
 > 2026-10-21 (ADR 0026): Layer › Tier › Kind › Entry stays canonical. Character keeps person, room, unit and Nora kinds; its entries have profile, traits and hypotheses parts, and "account" now means only platform account. "Persona" is retired; one typed-line `character-*` writer family is the target, with the code rename deferred to one migration PR before the prompt switch. The body below is preserved. See [ADR 0026](../../docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md).
 
-> 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
+> Cognition is live and the one background writer of notes, events, Standing and her reminders (DEC-277); shadow-mode and clocked-adaptor wording below is history.
 
 
 **This node is canonical for the topology and the vocabulary** (operator
@@ -138,7 +138,7 @@ the cited message when the View renders it, never stored.
 
 ## 3. The entry
 
-> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the Character and Lessons adaptors named in this section retire into step ② of the one Cognition loop, which writes Character (traits and guesses; facts are rendered by code), culture and Lessons right after step ① changes an entity's relations; it has no wake rule of its own. Read "the Character adaptor" / "the Lessons adaptor" below as step ②.
+> One Cognition session ([00](00-intent.md), [unified-memory/29](../unified-memory/29-one-cognition-session.md)): read "the Character adaptor" and "the Lessons adaptor" below as that session, which maintains profiles (traits and guesses; facts are rendered by code), culture and lessons while it orients.
 
 Every Notebook row is an **entry**: one shape, one machinery.
 
@@ -275,7 +275,7 @@ from the tree on 2026-10-01; each departure is a migration item, §9):
 
 ## 7. The Notebook's writers, and how the speaking turns hand off
 
-> 2026-10-28 (operator, ruled; [30](30-cognition.md#0-the-loop-as-ruled-2026-10-28)): the writers below change. Step ① of the Cognition loop writes the memory graph's judgement relations; step ② writes Character (traits and guesses; facts are rendered by code), culture and Lessons; step ③ writes the Register and Standing. One writer per tier still holds; the Character and Lessons adaptors retire.
+> One Cognition session ([00](00-intent.md), [unified-memory/29](../unified-memory/29-one-cognition-session.md)): it writes graph statements, profiles (traits and guesses; facts are rendered by code), culture, lessons, the Register and Standing. One writer per tier still holds; the Character and Lessons adaptors are retired.
 
 The operator's model ([55](55-self.md) §6), the conscious and the
 subconscious (明意識 / 潛意識): **the subconscious thinks and writes the
