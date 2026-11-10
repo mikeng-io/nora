@@ -1,4 +1,4 @@
-// Connection lifecycle (design/voice-channel/07-audio-owner-controller.md
+// Connection lifecycle (design/voice-channel/audio.md
 // §3.1): ONE serialized connection lifecycle, single guild hard-bound to
 // the configured GUILD_ID:
 //

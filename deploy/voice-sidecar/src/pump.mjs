@@ -17,7 +17,7 @@ import { encodeHello, encodeFrame } from './codec.mjs';
  * start of an utterance is not lost; when the wake gate is genuinely down,
  * frames are dropped rather than queued unboundedly.
  *
- * Connected-state bound (B12, design/voice-channel/07 §7): once the socket
+ * Connected-state bound (B12, design/voice-channel/audio.md): once the socket
  * is up, each user gets a backlog bound of `maxUserBacklog` frames (16 ×
  * 20 ms by default) measured as written-but-not-yet-flushed. A frame that
  * would exceed the bound is DROPPED and counted; pump.stats() exposes the

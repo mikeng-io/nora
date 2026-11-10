@@ -1,4 +1,4 @@
-// Endpoint contract tests (design/voice-channel/07 §3): response shapes,
+// Endpoint contract tests (design/voice-channel/audio.md): response shapes,
 // generation scoping, single-guild binding, replace-play, stop-vs-exit,
 // pause-during-speech, volume bounds, speech bounds, status/health,
 // request_id dedupe, voice-death and channel-emptied events.

@@ -1,4 +1,4 @@
-// Arbiter (design/voice-channel/07-audio-owner-controller.md §5): ONE audio
+// Arbiter (design/voice-channel/audio.md): ONE audio
 // pipeline arbitrating exactly ONE current music slot and ONE bounded
 // speech queue. The upcoming music queue lives in nora; this module owns no
 // enqueue semantics — /music/play REPLACES the current slot.

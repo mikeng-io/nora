@@ -431,7 +431,7 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ("voice-lab/docs/audit-brief-kimi-integration.md", "nora/platform/discord/voice_session.py"): (
         "a 2026-09 audit brief moved in from the voice-lab repo; it proposes where "
         "stage-1 TTS+ducking WOULD live. The file was never created (the voice "
-        "channel went the sidecar route, design/voice-channel/05) — the brief is a "
+        "channel went the sidecar route, design/voice-channel/receive.md) — the brief is a "
         "historical record of the proposal, not a link to fix"
     ),
     ("design/discord-integration/00-overview.md", "deploy/watchdog.sh"): (

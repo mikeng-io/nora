@@ -1,7 +1,7 @@
 # nora-voice-sidecar (spike scaffolding)
 
 Receive-only voice sidecar for Nora's voice channel, per
-`nora-wt-voice-design/design/voice-channel/05-sidecar-receive.md`. It joins a
+`nora-wt-voice-design/design/voice-channel/receive.md`. It joins a
 Discord voice channel with `@discordjs/voice`, subscribes per-user Opus
 streams, relies on the library's built-in DAVE decrypt path (see
 `DAVE-NOTES.md`), decodes to PCM, and forwards `{user_id, pcm}` over a local

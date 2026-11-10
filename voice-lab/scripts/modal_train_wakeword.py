@@ -99,7 +99,7 @@ def _package(local_dir: Path, arc_root: str, tar_path: Path, limit: int = 0,
     phrase 「喂Nora啦喂Nora啦」 mislabelled negative; weight ratio with
     max_negative_weight:150 is ~71:1 against positives — this is why the
     V3 optimiser collapsed to speech-presence detection).
-    See design/voice-channel/03-wake-word-training.md §V4 retrain.
+    See design/voice-channel/receive.md §V4 retrain.
     """
     n = 0
     with tarfile.open(tar_path, "w") as tf:

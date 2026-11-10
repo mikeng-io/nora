@@ -1,5 +1,5 @@
 // Production entry for the audio-controller (the voice sidecar, phase 1 of
-// design/voice-channel/07-audio-owner-controller.md).
+// design/voice-channel/audio.md).
 //
 //   node src/service.mjs
 //

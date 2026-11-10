@@ -1,4 +1,4 @@
-// Arbiter state-machine tests (design/voice-channel/07 §5): replace-not-
+// Arbiter state-machine tests (design/voice-channel/audio.md): replace-not-
 // enqueue, speech preemption with hard cut + revive-from-0, late-start
 // guard, stop/pause rules, natural-end event, stall termination, kill
 // escalation, bounded speech queue, remembered volume.

@@ -407,7 +407,7 @@ docker image inspect voice-sidecar:latest --format '{{.Id}}'    # must match
 
 There is no per-guild container: one sidecar serves every server Nora holds
 voice on, and one wake gate serves every sidecar connection
-(design/voice-channel/07 §12.5).
+(design/voice-channel/audio.md).
 
 **THE THREE VOICE IMAGES MOVE TOGETHER.** `nora`, `voice-sidecar` and
 `voice-wake` speak two seams that have both changed inside one release:

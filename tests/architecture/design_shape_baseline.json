@@ -918,53 +918,6 @@
   "not-a-design-file",
   "date"
  ],
- "design/voice-channel/00-overview.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker"
- ],
- "design/voice-channel/01-tts-playback-and-ducking.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker"
- ],
- "design/voice-channel/02-module-layout-ddd.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker"
- ],
- "design/voice-channel/03-wake-word-training.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
- ],
- "design/voice-channel/04-deferred.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/voice-channel/05-sidecar-receive.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/voice-channel/06-stt-provider-decision.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "design/voice-channel/07-audio-owner-controller.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker",
-  "over-budget"
- ],
- "design/voice-channel/08-speech-formatter.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/voice-channel/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "design/whatsapp-adoption/00-overview.md": [
   "numbered-or-dated-name",
   "date"

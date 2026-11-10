@@ -1,7 +1,7 @@
 [project]
 name = "nora-stt"
 version = "0.1.0"
-description = "Nora STT -- local OpenAI-compatible transcription endpoint, Cantonese-first. Two engines behind one /v1/audio/transcriptions: JackyHoCL whisper-large-v3-turbo-cantonese-noise-detection (transformers, the default since 2026-09-15, design/voice-channel/06) and SenseVoiceSmall (FunASR, the 2026-08-21 backup). Separate app from Nora herself (own image, own dependency set) that lives in the same repo and docker-compose project."
+description = "Nora STT -- local OpenAI-compatible transcription endpoint, Cantonese-first. Two engines behind one /v1/audio/transcriptions: JackyHoCL whisper-large-v3-turbo-cantonese-noise-detection (transformers, the default since 2026-09-15, design/voice-channel/receive.md) and SenseVoiceSmall (FunASR, the 2026-08-21 backup). Separate app from Nora herself (own image, own dependency set) that lives in the same repo and docker-compose project."
 requires-python = ">=3.12"
 dependencies = [
     # FunASR -- SenseVoiceSmall model runtime (iic/SenseVoiceSmall), Apache-2.0.

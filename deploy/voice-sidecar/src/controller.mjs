@@ -1,4 +1,4 @@
-// HTTP control plane (design/voice-channel/07-audio-owner-controller.md §3):
+// HTTP control plane (design/voice-channel/audio.md):
 // the audio-controller is the SOLE owner of the Discord voice connection;
 // nora decides everything and drives it through these routes.
 //
