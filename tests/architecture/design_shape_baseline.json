@@ -132,12 +132,6 @@
   "not-a-design-file",
   "date"
  ],
- "design/artifact/00-design.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker",
-  "over-budget"
- ],
  "design/browser-runtime/00-design.md": [
   "numbered-or-dated-name",
   "date",

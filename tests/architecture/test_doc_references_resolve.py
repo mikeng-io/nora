@@ -499,10 +499,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ("design/event-abstraction/04-dispatch-and-batching.md", "tests/test_events.py"): (
         "same event-abstraction planning-doc-vs-shipped-name drift as 02-naming-rename.md"
     ),
-    ("design/artifact/00-design.md", "nora/compute/smith/skills/html_report/render.py"): (
-        "the design's measured account of the HTML path ADR 0020 replaced; Smith's tree "
-        "was deleted in S3b (DEC-254) and this dated record deliberately is not rewritten"
-    ),
     ("docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
      "nora/compute/smith/page_shell.py"): (
         "an accepted ADR names the file whose choice it reverses; the file was deleted "

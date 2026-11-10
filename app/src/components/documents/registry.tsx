@@ -4,7 +4,7 @@
 // primitives. Not the shadcn package's components: DESIGN.md's Hairline-First
 // rule (a panel is one hairline, never a card inside a card) is not what
 // shadcn's Card is, and S0 found its layout defaults and Alert colours broken
-// on this theme (design/artifact/00-design.md §13). json-render supplies the
+// on this theme (design/artifact/README.md §13). json-render supplies the
 // catalog, the registry and the renderer; the look is the portal's.
 import { createContext, useContext, type ReactNode } from "react";
 import { useTranslations } from "next-intl";

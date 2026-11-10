@@ -1,6 +1,6 @@
 # 0020 · Documents are JSON specs the portal renders, not HTML a model writes
 
-- **Status:** accepted as built (2026-10-01, operator): documents are live. Amended in part by [0023](0023-artifacts-are-files-the-portal-shares-and-drop-retires.md) (point 5's "Drop's link shortener stays" is reversed: Drop and every shortener are retired) and by `design/artifact/00-design.md`
+- **Status:** accepted as built (2026-10-01, operator): documents are live. Amended in part by [0023](0023-artifacts-are-files-the-portal-shares-and-drop-retires.md) (point 5's "Drop's link shortener stays" is reversed: Drop and every shortener are retired) and by `design/artifact/README.md`
   §34 (the present view, print/PDF and revision history this text calls "not built" are built), §35 (web pictures are kept), §40 (a Map names its places) and §42 (the catalog has 19 components, not 21: no Tabs)
 - **Date:** 2026-09-30
 - **Extends:** [0019](0019-noras-computer-runs-in-an-sbx-microvm.md): its `computer_export`
@@ -13,7 +13,7 @@
 
 Nora's artifacts were HTML that Smith, a separate agent, wrote by hand and published to Drop,
 which serves it on a public URL. Read from the tree and from norty on 2026-09-30
-([design/artifact/00-design.md](../../design/artifact/00-design.md) §3, §17):
+([design/artifact/README.md](../../design/artifact/README.md) §3, §17):
 
 - **Style drifts per run.** `page_shell.py` holds the only shared tokens, a second copy of the
   theme the portal already owns, and each stored document carries its own 1.1 to 5.8 KB of CSS.
@@ -84,7 +84,7 @@ which serves it on a public URL. Read from the tree and from norty on 2026-09-30
   #660, #667, #668, #670, #673, #674). The renderer still validates every document before drawing it, so a
   bad one is reported, not shown.
 - **Not built.** A present view, print/PDF and a revision-history view are planned
-  (`design/artifact/00-design.md` §32). Search, a phone bottom-bar entry and `nora person forget` reaching documents
+  (`design/artifact/README.md` §32). Search, a phone bottom-bar entry and `nora person forget` reaching documents
   (#655) are built since (§33).
 - **The portal sends no Content-Security-Policy** (`app/next.config.ts`). Documents rely on the
   schema, the renderer's own checks and the Mermaid source rule; a CSP for the document route would

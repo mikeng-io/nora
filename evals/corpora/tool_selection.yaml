@@ -495,7 +495,7 @@ cases:
     metadata: {tools: [computer_import], not_tools: [media_fetch]}
     snapshot: *room_a
 
-  # --- documents (design/artifact/00-design.md §26, ADR 0020) ----------------------
+  # --- documents (design/artifact/README.md §26, ADR 0020) ----------------------
   # `document_publish` against the tools a written piece could be mistaken for:
   # `note_create` (a private memory, not a page), `generate_image` and the
   # computer (a FILE: CSV, PDF, a script's output). The HTML path it replaced

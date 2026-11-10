@@ -123,7 +123,7 @@ design/agent-worker/30-sandbox-port.md
 design/agent-worker/40-models-egress-permissions.md
 design/agent-worker/50-verification-and-migration.md
 design/agent-worker/_index.yaml
-design/artifact/00-design.md
+design/artifact/README.md
 design/capability-drop/01-when-stays-in-schema.md
 design/cognition-loop/README.md
 design/cognition-loop/data.md

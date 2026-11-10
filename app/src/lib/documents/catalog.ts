@@ -1,5 +1,5 @@
 // The document catalog: the ONE definition of what a document may contain
-// (design/artifact/00-design.md §4, §9). Three consumers read it: the React
+// (design/artifact/README.md §4, §9). Three consumers read it: the React
 // registry that renders (registry.tsx), the JSON Schema Nora's Python checker
 // validates against (nora/documents/document.schema.json), and the prompt
 // fragment the document-creation skill embeds. They cannot disagree because
