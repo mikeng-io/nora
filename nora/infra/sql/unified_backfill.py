@@ -3,7 +3,7 @@ existing durable state it resumes on.
 
 No new persistence — no queue, no ledger, no migration. Progress is exactly
 what the one Cognition session already writes (`cognition_session` rows, and
-`comprehend_result` `session_complete`/`stimulus_failure`/`stimulus_requeue` rows);
+`comprehend_result` normal-completion, legacy reading, failure and requeue receipts);
 29 §5 retired the per-item work-item table as intake and nothing here revives
 it.
 
@@ -323,9 +323,10 @@ async def stimulus_keys(
 async def session_inputs_done(
     conn: AsyncConnection, work_ids: Collection[str],
 ) -> set[tuple[str, str]]:
-    """Read exact input hashes only from normally ended sessions."""
+    """Read exact input hashes from normal completions and legacy reading receipts."""
+    wanted = set(work_ids)
     by_unit: dict[str, list[str]] = {}
-    for key in work_ids:
+    for key in wanted:
         unit, sid = key.removeprefix("input:").rsplit(":", 1)
         by_unit.setdefault(unit, []).append(sid)
     if not by_unit:
@@ -336,17 +337,40 @@ async def session_inputs_done(
                         RESULT.c.payload["inputs"].has_any(sa.cast(ids, sa.ARRAY(sa.Text))))
                  for unit, ids in by_unit.items())),
     ))).scalars()
-    wanted = set(work_ids)
-    return {(key, digest) for row in rows for sid, digest in row["inputs"].items()
-            if (key := f"input:{row['unit']}:{sid}") in wanted}
+    current = {(key, digest) for row in rows for sid, digest in row["inputs"].items()
+               if (key := f"input:{row['unit']}:{sid}") in wanted}
+    legacy = (await conn.execute(
+        sa.select(RESULT.c.work_id, RESULT.c.input_hash)
+        .where(RESULT.c.part.in_(("readings", "readings_input")),
+               RESULT.c.work_id.in_(list(wanted)))
+        .distinct()
+    )).all()
+    return current | {(str(r.work_id), str(r.input_hash)) for r in legacy}
 
 
 async def completed_sessions(conn: AsyncConnection, unit: str) -> list[dict[str, str]]:
-    """Inputs of historical sessions that ended on their own, independent of writes."""
+    """Inputs of normally ended sessions and legacy completed readings."""
     rows = (await conn.execute(sa.select(RESULT.c.payload).where(
         RESULT.c.part == "session_complete", RESULT.c.work_id == f"session:{unit}",
     ))).scalars()
-    return [row["inputs"] for row in rows]
+    legacy = (await conn.execute(
+        sa.select(RESULT.c.work_id, RESULT.c.input_hash)
+        .select_from(RESULT.join(
+            COGNITION_SESSION, COGNITION_SESSION.c.id == RESULT.c.session_id))
+        .where(COGNITION_SESSION.c.unit == unit,
+               RESULT.c.part.in_(("readings", "readings_input")))
+        .distinct()
+    )).all()
+    completed = [row["inputs"] for row in rows]
+    for work_id, digest in legacy:
+        if work_id.startswith("stimuli:"):
+            ids = work_id.removeprefix("stimuli:").split(",")
+        elif work_id.startswith(f"input:{unit}:"):
+            ids = [work_id.rsplit(":", 1)[1]]
+        else:
+            continue
+        completed.append({sid: digest for sid in ids if sid})
+    return completed
 
 
 #: The isolated identity historical attempts write under — the SAME

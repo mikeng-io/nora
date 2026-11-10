@@ -610,12 +610,11 @@ async def test_a_session_task_cancelled_before_its_first_step_loses_nothing():
     assert session.from_stimulus_id == 1
 
 
-async def test_a_close_that_cannot_be_written_is_not_processed_twice():
+async def test_a_failed_outcome_write_leaves_stimuli_pending_once():
     """Minor 1: the session ran, and its `closed` write failed. Nothing of the
-    close lands (no carry), and the failure write fails too, so the wake stays
-    OPEN and then expires. Its stimuli come back ONCE, with no strike — not
-    once through carry and once through the watermark, and not with a strike
-    for a session that never closed."""
+    outcome lands (no carry), and the failure write fails too, so the wake stays
+    OPEN and then expires. Its stimuli come back ONCE, pending — not once
+    through carry and once through the watermark."""
     rig = _rig(agent=ScriptedAgent(script=[ok, ok]))
     await rig.say()
     rig.clock.advance(1)
@@ -635,7 +634,7 @@ async def test_a_close_that_cannot_be_written_is_not_processed_twice():
     _, second, _ = rig.ledger.sessions[1]
     (item,) = second.agenda["items"]  # type: ignore[misc]
     assert item["stimulus_ids"] == [1]  # type: ignore[index]
-    assert rig.carried() == []          # one strike, not two
+    assert rig.carried() == []          # pending once, never consumed twice
 
 
 async def test_more_than_two_units_in_flight_is_refused_on_real_sessions():

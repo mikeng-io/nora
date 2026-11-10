@@ -80,6 +80,19 @@ def test_notebook_section_renders_for_any_of_its_tools(offered):
     assert "Tools:" not in text
 
 
+@pytest.mark.parametrize("marker", ["<!-- cognition-orient -->", "<!-- cognition-act-skill -->"])
+def test_a_missing_stage_marker_appends_its_section(marker):
+    doctrine = (
+        "<!-- cognition-act-skill -->"
+        if marker == "<!-- cognition-orient -->"
+        else "<!-- cognition-orient -->"
+    )
+    text = render_session_system(
+        doctrine, "NOTEBOOK", tool_names=frozenset({"memory_propose", "note_create"}))
+    assert text.count("# Orient") == 1 and text.count("# Act") == 1
+    assert "NOTEBOOK" in text
+
+
 def _dump(directory: Path) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     for historical in (True, False):

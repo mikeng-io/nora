@@ -212,7 +212,8 @@ def render_session_system(doctrine: str, skills: str, *, tool_names: frozenset[s
     act = assemble([restamp(ContextBlock(
         name="cognition_act", body=compose_body(
             "# Act\n\n" + "\n\n".join(actions) if actions else "")), _ROW)])
-    if "<!-- cognition-orient -->" not in doctrine:
-        return doctrine + orient + act
-    return doctrine.replace("<!-- cognition-orient -->", orient).replace(
-        "<!-- cognition-act-skill -->", act)
+    orient_marker, act_marker = "<!-- cognition-orient -->", "<!-- cognition-act-skill -->"
+    doctrine = (doctrine.replace(orient_marker, orient) if orient_marker in doctrine
+                else doctrine + orient)
+    return (doctrine.replace(act_marker, act) if act_marker in doctrine
+            else doctrine + act)

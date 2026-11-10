@@ -143,9 +143,9 @@ class WakeEvaluator:
         logged, counted and contained: it never aborts the tick for another
         unit.
 
-        `floors_ready` (DEC-245): whether a skill ships for the `time`
-        agenda kind (`AgendaSkills.by_kind`). False, a unit whose wakes start sessions raises NO
-        floor, because a session woken by one would have nothing to do.
+        `floors_ready` (DEC-245): whether the session can do the daily notebook
+        review. False, a unit whose wakes start sessions raises NO floor, because
+        a session woken by one would have nothing to do.
 
         `upcoming(unit, now_ms)` (DEC-303): the unit's rooms holding an event
         that is coming up. With each floor it raises one `time` stimulus per

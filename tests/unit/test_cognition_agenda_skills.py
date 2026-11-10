@@ -31,7 +31,6 @@ from tests.objectives import SHIPPED_DREAMER, shipped_objectives
 
 NORA_NAMES = frozenset({"Nora"})
 NOW = 1_800_000_000_000
-MAPPED = ("message", "rollup", "self", "time")
 #: The bound the skill is written to: a few thousand characters of
 #: cached prefix, against a session's tens of thousands of input tokens.
 MAX_SKILL_CHARS = 3_000
