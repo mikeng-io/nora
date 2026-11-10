@@ -1,6 +1,6 @@
 """Typed platform observations: the shared header, payload union and fold.
 
-Design/platform-observations 02 made concrete. An **observation** is what a
+Design/platform-observations/observations.md made concrete. An **observation** is what a
 source reported about an OBJECT (a reaction's target message, a poll, a room
 or thread, a member set, a pin set, a shared artifact, a message's own
 metadata) — created, revised, withdrawn, added/removed, cleared or observed
@@ -70,7 +70,7 @@ ACTOR_STATUSES: tuple[str, ...] = (
 )
 
 #: Kinds a platform's PINNED bridge cannot supply at all — the coverage
-#: matrix's explicit "unavailable" cells (design/platform-observations 01:
+#: matrix's explicit "unavailable" cells (design/platform-observations/observations.md
 #: Instagram polls at mautrix-meta v0.2609.0, where a poll read must answer
 #: `unavailable`, never a confident `nothing_found`). A kind absent from a
 #: platform's set is NOT claimed supported — it is simply not known to be

@@ -491,35 +491,6 @@
   "not-a-design-file",
   "date"
  ],
- "design/platform-observations/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/platform-observations/01-coverage.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/platform-observations/02-observation-contract.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
- ],
- "design/platform-observations/03-model-projections.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/platform-observations/04-build-and-acceptance.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/platform-observations/05-occasion-map.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/platform-observations/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "design/private-dm.md": [
   "date"
  ],

@@ -55,7 +55,7 @@ TITLE_MAX_CHARS = 60
 DESCRIPTION_MAX_CHARS = 200
 #: How many platform objects one note may keep a pointer to. The retained
 #: lane is how a still-relevant object survives the Standing block's recency
-#: page (design/platform-observations 03), so it must stay a pointer set, not
+#: page (design/platform-observations/projections.md), so it must stay a pointer set, not
 #: a second store: a note may not pin the room's whole object state.
 NOTE_OBJECT_REFS_MAX = 8
 #: The OPERATING body cap: what a writer should produce. Not configurable:
@@ -389,7 +389,7 @@ class Note:
     anchor_date: int | None = None
     anchor_entity_ids: tuple[str, ...] = ()
     # The platform objects this matter still concerns, as resolved pointers
-    # (design/platform-observations 03's retained lane): while the note is
+    # (design/platform-observations/projections.md's retained lane): while the note is
     # open, Standing presents their CURRENT state even when the recency page
     # would have evicted them. Pointers, never copied state — a closed poll
     # does not close the note, and a retired note's refs retire with it while

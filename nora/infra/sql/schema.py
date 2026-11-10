@@ -2441,7 +2441,7 @@ NOTE = sa.Table(
     sa.Column("anchor_date", sa.Integer),
     sa.Column("anchor_entity_ids", pg.ARRAY(sa.Text), nullable=False,
               server_default=sa.text("'{}'")),
-    # The curated source-object pointers (design/platform-observations 03's
+    # The curated source-object pointers (design/platform-observations/projections.md's
     # retained lane): [{platform, conversation_id, thread, handle}] — the
     # objects this matter still concerns, resolved fresh at every assembly.
     sa.Column("object_refs", pg.JSONB, nullable=False,
@@ -5781,7 +5781,7 @@ sa.Index("idx_bridge_action_owner", BRIDGE_ACTION.c.owner_kind,
          BRIDGE_ACTION.c.owner_id)
 
 
-# ---- platform observations (design/platform-observations 02) --------------
+# ---- platform observations (design/platform-observations/observations.md) --------------
 # The typed Record of what a source reported about an OBJECT — a poll, a
 # room/thread, a member set, a pin set, an artifact, a reaction's target or a
 # message's own metadata. `platform_observation` is the history: one row per

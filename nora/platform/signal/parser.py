@@ -490,7 +490,7 @@ def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
 class ParsedObservations:
     """The non-utterance facts one signal-cli envelope reported — poll
     definitions and votes, pin transitions, room state, shared artifacts and
-    message metadata — as typed `Observation`s (design/platform-observations).
+    message metadata — as typed `Observation`s (design/platform-observations/README.md).
 
     `conversation_id`/`sender_id`/`sender_name`/`timestamp` are the envelope's
     own room/actor/sent-time so an observation-only event still carries real

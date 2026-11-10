@@ -1112,7 +1112,7 @@ class TranscriptInjection:
         tuple[SourceEvent, ...], tuple[SourceEvent, ...], bool, int, int,
     ]:
         """`(events, objects, failed, events_more, objects_more)` of THIS
-        room — the scoped source read of design/platform-observations 04.
+        room — the scoped source read of design/platform-observations/exposure.md.
 
         `recent` is bounded by the prompt window; `heads` by
         `_SOURCE_OBJECT_MAX` of the objects OBSERVED NEWEST first (an old

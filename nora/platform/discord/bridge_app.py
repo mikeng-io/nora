@@ -1001,7 +1001,7 @@ class DiscordBridge:
         if not ok:
             log.warning("capture sink refused an admitted event (kind=%s)", kind)
 
-    # ---- platform observations (design/platform-observations) ---------------
+    # ---- platform observations (design/platform-observations/README.md) ---------------
 
     async def _emit_observation(
         self, obs: Any, *, upstream: str,

@@ -1045,7 +1045,7 @@ def _standing_block(
             block = ContextBlock(name="standing", body=legacy_composed(objects))
         else:
             block = replace(block, body=legacy_composed("\n".join((block.body.text, objects))))
-    # The retained lane (design/platform-observations 03): an ongoing
+    # The retained lane (design/platform-observations/projections.md): an ongoing
     # matter's curated `object_refs`, resolved NOW through the store — an
     # old tracked poll keeps its CURRENT state in view after the recency
     # page above evicted it. `matter` says which note tracks it, and a ref

@@ -226,7 +226,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("observations.py", "resolve_targets"): _Pin(
         "deferred_consumer",
         "The port's standalone re-link of a retained observation to its "
-        "target (design/platform-observations 02). Production relinking "
+        "target (design/platform-observations/observations.md). Production relinking "
         "instead commits inside the arriving message row's own transaction — "
         "`relink_arriving_targets` (nora/app/bridge_queue.py) — so no caller "
         "outside an ingest commit exists yet.",
@@ -234,7 +234,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("observations.py", "unresolved_targets"): _Pin(
         "deferred_consumer",
         "The retained-but-unresolved target listing, named for the exposure "
-        "lanes in design/platform-observations 02 («read "
+        "lanes in design/platform-observations/observations.md(«read "
         "ObservationStore.current/heads/history and unresolved_targets»). No "
         "lane reads it this stage: the context and grounding reads take "
         "recent/heads/by_ids/head_for_handle only.",

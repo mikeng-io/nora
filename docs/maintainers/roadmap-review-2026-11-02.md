@@ -38,9 +38,9 @@ identifies current integration/validation attention, not a new execution order.
 | Multi-step computer work delegated to Pi, with switchable worker and sandbox | [agent-worker intent](../../design/agent-worker/00-intent.md), [adapters](../../design/agent-worker/20-adapters.md), [sandbox port](../../design/agent-worker/30-sandbox-port.md), [verification](../../design/agent-worker/50-verification-and-migration.md) | One outcome, design reconciliation first (operator, 2026-11-04; issue #520); implementation not started. Proposed/Now reflects current design attention. Next scope: one VM per unit/canonical private-DM scope, reusable anonymous Chrome task tabs and direct screenshots with executor/model selection explicit before implementation; reuse of CDP/Flash is recommended, Jev/cua-s1 remain unselected alternatives. Existing Strands subagent stays Nora; Pi is the computer worker inside the sandbox. Streamed spawn, measured Pi adapter and scoped relay are delivery slices; ACP and another VM provider are later extensions, not new parallel projects. Current sbx microVM is not a future unbuilt capability. |
 | Personalised replies and useful group recommendations | [personalisation](../../design/personalisation/00-intent.md), [migration](../../design/personalisation/60-migration.md) | Own outcome, Proposed/Later. Likes, constraints, one ranker, venues/games and feedback share one engine. Historical fit/recommendations bundles were renamed, not three engines to build. Refresh graph-backed inputs and Standing dependencies before a bounded venue/reply slice. |
 | One private conversation across linked platforms with curated shared understanding | [existing #124](https://github.com/mikeng-io/nora/issues/124), [private DM](../../design/private-dm/00-contract.md), [cross-unit reads](../../design/private-dm/06-cross-unit-reads.md) | Reuse Proposed/Later. WhatsApp/Signal continuity, owner-map and backup prerequisites, default-unit writes and provenance-preserving publication remain the scope. Shared unit computer migration is already recorded implemented; do not repeat it as a prerequisite build. |
-| Understand reactions, polls and room changes from captured evidence | [existing #433](https://github.com/mikeng-io/nora/issues/433), [observations](../../design/platform-observations/00-overview.md), [coverage](../../design/platform-observations/01-coverage.md) | Reuse Validating/Now. November 2 source includes typed observation foundation, read tools and Standing projections despite older proposed frontmatter. Complete platform-specific lifecycle/coverage and input readback; counts/reactions never become inferred agreement or consent. Telegram adoption is separate. |
+| Understand reactions, polls and room changes from captured evidence | [existing #433](https://github.com/mikeng-io/nora/issues/433), [observations](../../design/platform-observations/README.md), [coverage](../../design/platform-observations/observations.md) | Reuse Validating/Now. November 2 source includes typed observation foundation, read tools and Standing projections despite older proposed frontmatter. Complete platform-specific lifecycle/coverage and input readback; counts/reactions never become inferred agreement or consent. Telegram adoption is separate. |
 | Keep receiving and recover work across application releases | [existing #422](https://github.com/mikeng-io/nora/issues/422), [bridges](../../design/platform-bridges/00-contract.md) | Reuse Validating/Now. Source includes standalone bridges/durable handoff. Retain pending failure-window, recreation, platform and installed-wrapper proof as acceptance; design frontmatter alone cannot roll delivery back to not-built. |
-| Join Telegram through the same platform contracts | [observation coverage](../../design/platform-observations/01-coverage.md), [platform adoption questions](../../design/platform-observations/_index.yaml) | Own outcome, Proposed/Later. First decide bot versus client mode and required account permissions/capabilities. Then trace identity/policy, ingest, replies/media, observations and recovery end to end. No account creation, token request or implementation is authorized by this card. |
+| Join Telegram through the same platform contracts | [observation coverage](../../design/platform-observations/observations.md), [platform adoption questions](../../design/platform-observations/_index.yaml) | Own outcome, Proposed/Later. First decide bot versus client mode and required account permissions/capabilities. Then trace identity/policy, ingest, replies/media, observations and recovery end to end. No account creation, token request or implementation is authorized by this card. |
 | Inspect Nora's behavior and cost across deployments | [existing #440](https://github.com/mikeng-io/nora/issues/440), [observability](../observability.md) | Reuse Validating/Now. SigNoz code migration is source-delivered; retained logs, four-producer correlation, usage/cost and installed telemetry acceptance remain evidence questions. Do not declare production cutover from merged source. |
 | Consistent Mini/adult identity and usable modeled forms | [existing #245](https://github.com/mikeng-io/nora/issues/245), [representations](../../design/self-reference/modeling.md), [Mini](../../design/self-reference/identity.md) | Reuse Planned/Later. Approved 2D references and recent social artwork are delivered source assets. Orthographic consistency, mesh, rig and animation remain separately measured deliverables. Retain current Mini runtime direction. |
 
@@ -192,12 +192,12 @@ design/platform-bridges/03-ownership-and-recovery.md
 design/platform-bridges/04-operations.md
 design/platform-bridges/05-build-and-acceptance.md
 design/platform-bridges/_index.yaml
-design/platform-observations/00-overview.md
-design/platform-observations/01-coverage.md
-design/platform-observations/02-observation-contract.md
-design/platform-observations/03-model-projections.md
-design/platform-observations/04-build-and-acceptance.md
-design/platform-observations/05-occasion-map.md
+design/platform-observations/README.md
+design/platform-observations/observations.md
+design/platform-observations/observations.md
+design/platform-observations/projections.md
+design/platform-observations/exposure.md
+design/platform-observations/exposure.md
 design/platform-observations/_index.yaml
 design/policy-reload/README.md
 design/private-dm.md
@@ -261,7 +261,7 @@ design/unified-memory/graph.md
 design/unified-memory/understanding.md
 design/unified-memory/profiles.md
 design/unified-memory/understanding.md
-design/platform-observations/00-overview.md
+design/platform-observations/README.md
 design/unified-memory/profiles.md
 design/unified-memory/README.md
 design/unified-memory/profiles.md
