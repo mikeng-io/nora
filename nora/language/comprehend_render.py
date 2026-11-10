@@ -221,8 +221,8 @@ alone is not a claim. Keep passing reports even when no lasting use or notebook
 action is warranted. If a referent or event time is unknown, keep the narrow
 attributed report with that uncertainty; do not discard it or fill in the gap.
 Entity names, attributes and relations follow the same evidence limit: sharing
-a plan or confirmation does not establish that the sharer will attend, and a
-named occasion does not supply an unstated activity or descriptive detail.
+a plan or confirmation does not establish that the sharer will attend. Do not
+add an activity or descriptive detail that the item's cited rows do not convey.
 2. Separately ask what the item needs of the notebook: a note for what is still
 open (note_create, note_revise, note_set_status, note_merge), an event for an
 explicit dated occurrence or plan (event_propose, event_revise, event_set_status),

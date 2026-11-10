@@ -740,4 +740,10 @@ def test_batched_item_completion_requires_all_conveyed_content():
     assert "Keep passing reports even when no lasting use or notebook action is warranted" in system
     assert "Separately ask what the item needs of the notebook" in system
     assert "sharing a plan or confirmation does not establish that the sharer will attend" in system
+    assert ("Do not add an activity or descriptive detail that the item's cited rows do not convey"
+            in system)
+    assert "an event for an explicit dated occurrence or plan" in system
+    assert "dated thing people will attend" not in system
+    assert "A pure question or the act alone is not a claim" in system
+    assert "keep the narrow attributed report with that uncertainty" in system
     assert "incidental poses, clothing or backgrounds need not be inventoried" in system
